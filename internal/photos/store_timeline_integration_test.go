@@ -228,3 +228,45 @@ func TestTimelineBuckets_chronologyOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestTimelineBuckets_implausibleYear verifies a photo dated to a year no
+// photograph can have been taken in (the 9009 a Facebook download's file name
+// once produced) keeps its bucket — flagged, with its true count and a
+// cumulative that still indexes it in the grid — while the stored date itself is
+// left exactly as it was.
+func TestTimelineBuckets_implausibleYear(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	bogus := time.Date(9009, 3, 10, 0, 0, 0, 0, time.UTC)
+	june := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
+	uids := seedTimelineBuckets(t, store, []timelineBucketFixture{
+		{hash: "tli-a", takenAt: new(bogus)},
+		{hash: "tli-b", takenAt: new(june)},
+	})
+
+	timeline, err := store.TimelineBuckets(ctx, photos.ListParams{})
+	if err != nil {
+		t.Fatalf("TimelineBuckets: %v", err)
+	}
+	want := []photos.TimelineBucket{
+		{Year: 9009, Month: 3, Count: 1, Cumulative: 0, Implausible: true},
+		{Year: 2023, Month: 6, Count: 1, Cumulative: 1},
+	}
+	if len(timeline.Buckets) != len(want) {
+		t.Fatalf("buckets = %+v, want %+v", timeline.Buckets, want)
+	}
+	for i, b := range timeline.Buckets {
+		if b != want[i] {
+			t.Fatalf("bucket[%d] = %+v, want %+v", i, b, want[i])
+		}
+	}
+
+	got, err := store.GetByUID(ctx, uids["tli-a"])
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.TakenAt == nil || !got.TakenAt.Equal(bogus) {
+		t.Fatalf("taken_at = %v, want the stored %v untouched", got.TakenAt, bogus)
+	}
+}

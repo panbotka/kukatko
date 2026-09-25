@@ -49,6 +49,44 @@ export function anchorOf(bucket: TimelineBucket): string {
   return `${String(bucket.year).padStart(4, '0')}-${String(bucket.month).padStart(2, '0')}`
 }
 
+/**
+ * Folds each run of **implausible** buckets — months dated to a year no
+ * photograph can have been taken in, flagged by the server — into one bucket
+ * of its own, so the rail offers them as a single "impossible date" band
+ * instead of as a year.
+ *
+ * The bug this guards against: one photo whose `taken_at` a Facebook file name
+ * had turned into March 9009 got a year band of its own above 2026, a place on
+ * the time axis that cannot exist. Dropping the bucket would have made the
+ * photo unreachable from the rail, and bending the scale around it would have
+ * meant inventing a cutoff; folding keeps both honest. The band sits exactly
+ * where its photos sit in the grid — such dates are the extremes of the date
+ * order, so every run is contiguous at one end — with the summed count and the
+ * run's first `cumulative`, so a jump to it lands on its first photo and
+ * {@link rankForIndex} still maps every grid index to the right band or month.
+ *
+ * Plausible buckets are passed through as the same objects, and a timeline with
+ * nothing implausible comes back as the very array it was given. The stored
+ * dates are untouched: this is presentation only.
+ */
+export function foldImplausible(buckets: TimelineBucket[]): TimelineBucket[] {
+  if (!buckets.some((bucket) => bucket.implausible === true)) {
+    return buckets
+  }
+  const folded: TimelineBucket[] = []
+  for (const bucket of buckets) {
+    const previous = folded.at(-1)
+    if (bucket.implausible !== true) {
+      folded.push(bucket)
+    } else if (previous?.implausible === true) {
+      folded[folded.length - 1] = { ...previous, count: previous.count + bucket.count }
+    } else {
+      folded.push({ ...bucket, implausible: true })
+    }
+  }
+  return folded
+}
+
 /** A stable key for a month bucket (year+month uniquely identifies it). */
 export function bucketKey(bucket: TimelineBucket): string {
   return `${bucket.year}-${bucket.month}`
@@ -94,13 +132,18 @@ export function rankForFraction(fraction: number, count: number): number {
  * between them, and it counts the *span*, not the buckets: an album holding one
  * photo from 1910 and one from 2026 spans 116 years, however few months of it
  * hold a photograph.
+ *
+ * An implausible band ({@link foldImplausible}) is no point in time, so it does
+ * not stretch the span: a two-week trip with one photo dated 9009 still spans
+ * one month.
  */
 export function spanMonths(buckets: TimelineBucket[]): number {
-  if (buckets.length === 0) {
+  const dated = buckets.filter((bucket) => bucket.implausible !== true)
+  if (dated.length === 0) {
     return 0
   }
-  const first = buckets[0]
-  const last = buckets[buckets.length - 1]
+  const first = dated[0]
+  const last = dated[dated.length - 1]
   const months = (last.year - first.year) * 12 + (last.month - first.month)
   return Math.abs(months) + 1
 }
@@ -148,8 +191,17 @@ export interface RailTick {
   target: TimelineBucket
   /** Distance from the rail's top, in percent. */
   top: number
-  /** The year to print beside the mark, or `null` when no label fits here. */
+  /**
+   * The year to print beside the mark, or `null` when no label fits here. On an
+   * implausible band it is the band's own (bogus) year, non-null only to say
+   * "labelled" — the renderer prints a question mark there, never the year.
+   */
   year: number | null
+  /**
+   * True for the tick of an implausible band ({@link foldImplausible}): it
+   * stands for that band alone, never collapsed together with real months.
+   */
+  implausible: boolean
   /** Rank of the newest bucket in the range (inclusive). */
   firstRank: number
   /** Rank of the oldest bucket in the range (inclusive). */
@@ -173,6 +225,12 @@ export interface RailTick {
  * tick's `[firstRank, lastRank]` range, so nothing becomes unreachable and the
  * active month always highlights some tick. `heightPx <= 0` (not measured yet)
  * falls back to {@link FALLBACK_RAIL_HEIGHT_PX}.
+ *
+ * An implausible band ({@link foldImplausible}) is always a tick of its own: a
+ * range never runs into it or out of it, because a tick that mixed it with real
+ * months would have to be named after both. It takes a label like any other,
+ * but one that names no year, so the first real year after it still counts as
+ * new.
  */
 export function buildRail(
   buckets: TimelineBucket[],
@@ -200,6 +258,7 @@ export function buildRail(
     if (count - lastRank - 1 < perTick) {
       lastRank = count - 1
     }
+    lastRank = endOfRange(buckets, firstRank, lastRank)
     // Rail order, then date order: which end of the range a click lands on is a
     // question about the rail (its far end must stay one click away), while what
     // the tick is *called* is a question about dates — and an album read
@@ -215,10 +274,12 @@ export function buildRail(
     const topPx = topFraction * height
     // A label is worth printing when it names a year no earlier label already
     // named and there is room for it below the previous one.
-    const labelled = target.year !== lastLabelYear && topPx - lastLabelTop >= labelGapPx
+    const implausible = first.implausible === true
+    const labelled =
+      (implausible || target.year !== lastLabelYear) && topPx - lastLabelTop >= labelGapPx
     if (labelled) {
       lastLabelTop = topPx
-      lastLabelYear = target.year
+      lastLabelYear = implausible ? null : target.year
     }
     ticks.push({
       key: bucketKey(first),
@@ -227,6 +288,7 @@ export function buildRail(
       target,
       top: topFraction * 100,
       year: labelled ? target.year : null,
+      implausible,
       firstRank,
       lastRank,
     })
@@ -245,13 +307,31 @@ export function buildRail(
       if (ticks[i].year === null) {
         continue
       }
-      if (tops[ticks.length - 1] - tops[i] < labelGapPx || ticks[i].year === final.target.year) {
+      const sameYear =
+        !ticks[i].implausible && !final.implausible && ticks[i].year === final.target.year
+      if (tops[ticks.length - 1] - tops[i] < labelGapPx || sameYear) {
         ticks[i].year = null
       }
       break
     }
   }
   return ticks
+}
+
+/**
+ * Where a tick's range really ends: an implausible band is a range of exactly
+ * itself, and a range of real months stops short of the first band inside it.
+ */
+function endOfRange(buckets: TimelineBucket[], firstRank: number, lastRank: number): number {
+  if (buckets[firstRank].implausible === true) {
+    return firstRank
+  }
+  for (let rank = firstRank + 1; rank <= lastRank; rank++) {
+    if (buckets[rank].implausible === true) {
+      return rank - 1
+    }
+  }
+  return lastRank
 }
 
 /** The bucket's month as one comparable number, for ordering by date. */
@@ -285,11 +365,17 @@ function monthIndex(bucket: TimelineBucket): number {
  * wherever one fits, and nothing precedes the first), so in practice no tick is
  * ever orphaned before the first target; a rail that somehow began unlabelled
  * would promote its first tick rather than drop it.
+ *
+ * An implausible band is always a target of its own — it is labelled wherever it
+ * stands, and it is never swallowed into a year's range. It may itself swallow
+ * the unlabelled months right after it (it is labelled, they are not), which
+ * keeps the partition; a tap on it still lands on the band's first photo, with
+ * those months directly behind it in the grid.
  */
 export function touchTargets(ticks: RailTick[]): RailTick[] {
   const targets: RailTick[] = []
   for (const tick of ticks) {
-    if (tick.year !== null || targets.length === 0) {
+    if (tick.year !== null || tick.implausible || targets.length === 0) {
       // A copy: `buildRail`'s output is memoized by its caller and must not be
       // rewritten under it.
       targets.push({ ...tick })

@@ -1601,12 +1601,19 @@ export async function fetchTrashInfo(signal?: AbortSignal): Promise<TrashInfo> {
  * default newest-first grid order (`cumulative`). Because buckets are ordered
  * newest-first and never overlap, `cumulative` is the scroll index of the
  * bucket's first photo — which is exactly what the scrubber jumps to.
+ *
+ * `implausible` (present only when true) marks a month dated to a year no
+ * photograph can have been taken in — before 1826 or more than a year ahead,
+ * the server's `exif.PlausibleCaptureYear`. The bucket still counts and indexes
+ * its photos exactly; the flag tells the rail not to offer the year as a place
+ * on its time axis (see `foldImplausible` in `timelineRail`).
  */
 export interface TimelineBucket {
   year: number
   month: number
   count: number
   cumulative: number
+  implausible?: boolean
 }
 
 /**

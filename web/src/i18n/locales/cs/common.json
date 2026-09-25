@@ -915,7 +915,9 @@
     "timeline": {
       "label": "Časová osa",
       "jumpTo": "Přejít na {{month}}",
-      "jumpToRange": "Přejít na {{from}} – {{to}}"
+      "jumpToRange": "Přejít na {{from}} – {{to}}",
+      "implausible": "Nemožné datum",
+      "jumpToImplausible": "Přejít na fotky s nemožným datem pořízení"
     }
   },
   "search": {

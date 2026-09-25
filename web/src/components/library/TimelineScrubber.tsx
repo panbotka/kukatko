@@ -21,6 +21,7 @@ import {
   anchorOf,
   bucketKey,
   buildRail,
+  foldImplausible,
   fractionForRank,
   rankForFraction,
   rankForIndex,
@@ -301,7 +302,11 @@ export function TimelineScrubber({
   onJump,
 }: TimelineScrubberProps) {
   const { t, i18n } = useTranslation()
-  const { buckets, total, status } = useTimeline(params)
+  const timeline = useTimeline(params)
+  const { total, status } = timeline
+  // The rail's buckets: the server's months, with any run of impossible dates
+  // folded into one band (see `foldImplausible`). Everything below reads these.
+  const buckets = useMemo(() => foldImplausible(timeline.buckets), [timeline.buckets])
   const gridTop = useGridTop(gridWrapRef)
   // Re-measured whenever the result's size changes, on top of the resize and
   // body-growth signals the hook watches for itself.
@@ -535,7 +540,9 @@ export function TimelineScrubber({
           style={{ top: `${fractionForRank(activeRank, buckets.length) * 100}%` }}
           aria-hidden="true"
         >
-          {formatMonth(activeBucket.year, activeBucket.month, i18n.language)}
+          {activeBucket.implausible === true
+            ? t('library.timeline.implausible')
+            : formatMonth(activeBucket.year, activeBucket.month, i18n.language)}
         </span>
       )}
       {ticks.map((tick) => {
@@ -565,14 +572,18 @@ export function TimelineScrubber({
         // A tick shows at most a year, and a mark on a rail says nothing about
         // where it lands — so the month (or the range a crowded tick swallowed)
         // is composed once and given to the screen reader and the mouse alike.
-        const jumpLabel = collapsed
-          ? t('library.timeline.jumpToRange', {
-              from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
-              to: formatMonth(range.newest.year, range.newest.month, i18n.language),
-            })
-          : t('library.timeline.jumpTo', {
-              month: formatMonth(range.newest.year, range.newest.month, i18n.language),
-            })
+        // An impossible-date band is named for what it is, not for a month —
+        // whatever months a finger target of it swallowed, the tap lands on it.
+        const jumpLabel = range.target.implausible === true
+          ? t('library.timeline.jumpToImplausible')
+          : collapsed
+            ? t('library.timeline.jumpToRange', {
+                from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
+                to: formatMonth(range.newest.year, range.newest.month, i18n.language),
+              })
+            : t('library.timeline.jumpTo', {
+                month: formatMonth(range.newest.year, range.newest.month, i18n.language),
+              })
         return (
           <button
             key={tick.key}
@@ -589,7 +600,7 @@ export function TimelineScrubber({
             <span className="kukatko-timeline-mark" aria-hidden="true" />
             {tick.year !== null && (
               <span className="kukatko-timeline-year" aria-hidden="true">
-                {tick.year}
+                {tick.implausible ? '?' : tick.year}
               </span>
             )}
           </button>

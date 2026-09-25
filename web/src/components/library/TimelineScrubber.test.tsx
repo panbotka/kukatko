@@ -370,6 +370,43 @@ describe('TimelineScrubber', () => {
     })
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
+
+  it('offers an impossible date as one band, never as a year', async () => {
+    // What box staging showed: a photo a Facebook file name had dated to March
+    // 9009, drawn as a "9009" band above 2026. The band keeps its photos
+    // reachable where the grid holds them — its first — but names no year.
+    fetchMock.mockResolvedValue({
+      buckets: [
+        { year: 9009, month: 3, count: 1, cumulative: 0, implausible: true },
+        { year: 9009, month: 1, count: 1, cumulative: 1, implausible: true },
+        { year: 2026, month: 2, count: 3, cumulative: 2 },
+        { year: 2026, month: 1, count: 5, cumulative: 5 },
+      ],
+      total: 10,
+    })
+    const onJump = vi.fn()
+    const user = userEvent.setup()
+    const { container } = renderScrubber({ activeIndex: 1, onJump })
+
+    const band = await screen.findByRole('button', {
+      name: 'Jump to photos with an impossible capture date',
+    })
+    expect(container).not.toHaveTextContent('9009')
+    expect(band).toHaveTextContent('?')
+    // Both impossible months are one band, and the months after it are intact.
+    expect(
+      screen.getAllByRole('button', { name: 'Jump to photos with an impossible capture date' }),
+    ).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Jump to Feb 2026' })).toBeInTheDocument()
+    // Scrolled into the band, the rail says where the reader is without a year.
+    expect(band).toHaveAttribute('aria-current', 'true')
+    expect(container.querySelector('.kukatko-timeline-current')).toHaveTextContent(
+      'Impossible date',
+    )
+
+    await user.click(band)
+    expect(onJump).toHaveBeenCalledWith({ index: 0, month: '9009-03', replace: false })
+  })
 })
 
 /**

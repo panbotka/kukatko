@@ -3,6 +3,9 @@ package photos
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/panbotka/kukatko/internal/exif"
 )
 
 // TestAccumulate verifies that cumulative counts are the running sum of the
@@ -46,6 +49,39 @@ func TestAccumulate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestFlagImplausible verifies that only the buckets dated to a year no
+// photograph can have been taken in are flagged — the 9009 a Facebook file name
+// once produced, and anything before photography — and that flagging leaves the
+// counts and cumulatives, which are still exact grid indices, untouched.
+func TestFlagImplausible(t *testing.T) {
+	t.Parallel()
+
+	thisYear := time.Now().UTC().Year()
+	buckets := []TimelineBucket{
+		{Year: 9009, Month: 3, Count: 1},
+		{Year: thisYear + exif.CaptureYearLookahead, Month: 1, Count: 2},
+		{Year: thisYear, Month: 9, Count: 4},
+		{Year: 1905, Month: 1, Count: 13},
+		{Year: exif.MinCaptureYear, Month: 1, Count: 1},
+		{Year: exif.MinCaptureYear - 1, Month: 12, Count: 1},
+		{Year: 1, Month: 1, Count: 1},
+	}
+	accumulate(buckets)
+	flagImplausible(buckets)
+
+	want := []bool{true, false, false, false, false, true, true}
+	cumulative := 0
+	for i, b := range buckets {
+		if b.Implausible != want[i] {
+			t.Errorf("bucket %d-%02d Implausible = %v, want %v", b.Year, b.Month, b.Implausible, want[i])
+		}
+		if b.Cumulative != cumulative {
+			t.Errorf("bucket %d-%02d Cumulative = %d, want %d", b.Year, b.Month, b.Cumulative, cumulative)
+		}
+		cumulative += b.Count
 	}
 }
 

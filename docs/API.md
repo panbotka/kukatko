@@ -337,9 +337,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   their fused result the same way before paginating);
   `GET /photos/timeline` (authenticated) — a **monthly date histogram** of the library (backing the
   year/month scrubber): accepts the **same filters** as `GET /photos` via `parseListParams`, response
-  `{buckets:[{year,month,count,cumulative}],total}`, `cumulative` = the number of photos **before** the
-  bucket (maps the bucket to a scroll index), `total` (via `Count`) also includes photos without a
-  capture date. The histogram **mirrors the grid's order**: newest first by `taken_at` by default,
+  `{buckets:[{year,month,count,cumulative,implausible?}],total}`, `cumulative` = the number of photos
+  **before** the bucket (maps the bucket to a scroll index), `total` (via `Count`) also includes photos
+  without a capture date. `implausible: true` (omitted otherwise) marks a month dated to a year no
+  photograph can have been taken in — `exif.PlausibleCaptureYear`, before 1826 or more than a year ahead
+  (a Facebook file name once dated a photo to 9009) — so the scrubber folds it into an "impossible date"
+  band instead of a year; its count and cumulative stay exact, and the stored date is not touched. The histogram **mirrors the grid's order**: newest first by `taken_at` by default,
   oldest first for an ascending request, and grouped on the same `COALESCE(taken_at, created_at)` an
   album scope is ordered by — so under an album no photo falls outside a bucket and `cumulative` is an
   exact grid index. The sort *key* is otherwise ignored (always grouped by date). Backed by

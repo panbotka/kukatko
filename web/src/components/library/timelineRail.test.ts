@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { type TimelineBucket } from '../../services/photos'
 import { realisticTimeline } from '../../test/timeline'
 
 import {
@@ -8,6 +9,7 @@ import {
   TICK_MIN_GAP_PX,
   TOUCH_TARGET_PX,
   buildRail,
+  foldImplausible,
   fractionForRank,
   rankForFraction,
   rankForIndex,
@@ -291,5 +293,127 @@ describe('buildRail on an ascending rail', () => {
   it('keeps a key per tick that no other tick shares', () => {
     const ticks = buildRail(ascending, 300)
     expect(new Set(ticks.map((tick) => tick.key)).size).toBe(ticks.length)
+  })
+})
+
+describe('implausible years', () => {
+  // The production timeline with what box staging actually carried on top of it:
+  // photos a Facebook file name had dated to 9009, which sort before 2026 in the
+  // newest-first grid — two months of them here, to prove a run folds into one.
+  const bogus: TimelineBucket[] = [
+    { year: 9009, month: 3, count: 1, cumulative: 0, implausible: true },
+    { year: 9009, month: 1, count: 2, cumulative: 1, implausible: true },
+  ]
+  const shift = 3
+  const raw = [...bogus, ...buckets.map((b) => ({ ...b, cumulative: b.cumulative + shift }))]
+  const folded = foldImplausible(raw)
+
+  it('hands back a timeline with nothing implausible as the very same array', () => {
+    expect(foldImplausible(buckets)).toBe(buckets)
+  })
+
+  it('folds a run of implausible months into one band where its photos sit', () => {
+    expect(folded).toHaveLength(buckets.length + 1)
+    expect(folded[0]).toEqual({ year: 9009, month: 3, count: 3, cumulative: 0, implausible: true })
+    // Real months come through untouched — the same objects, so nothing below
+    // the band re-renders for it.
+    expect(folded[1]).toBe(raw[2])
+    expect(folded.slice(1).every((b) => b.implausible !== true)).toBe(true)
+  })
+
+  it('folds each end of the date order into a band of its own', () => {
+    const both = foldImplausible([
+      raw[0],
+      raw[2],
+      raw[3],
+      { year: 1700, month: 5, count: 4, cumulative: 99, implausible: true },
+    ])
+    expect(both.map((b) => b.implausible === true)).toEqual([true, false, false, true])
+    expect(both[3].count).toBe(4)
+  })
+
+  it('keeps every grid index mapped to its band or month', () => {
+    // The band's photos are the grid's first three: a scroll there is "in the
+    // band", and the fourth photo is 2026 again.
+    expect(rankForIndex(folded, 0)).toBe(0)
+    expect(rankForIndex(folded, 2)).toBe(0)
+    expect(rankForIndex(folded, shift)).toBe(1)
+  })
+
+  it('does not let the band stretch the span of the timeline', () => {
+    expect(spanMonths(folded)).toBe(spanMonths(buckets))
+    expect(spanMonths(folded.slice(0, 1))).toBe(0)
+  })
+
+  for (const [name, gap] of [
+    ['a mouse', LABEL_MIN_GAP_PX],
+    ['a finger', TOUCH_TARGET_PX],
+  ] as const) {
+    describe(`on a rail for ${name}`, () => {
+      for (const height of HEIGHTS) {
+        const ticks = buildRail(folded, height, gap)
+
+        it(`offers no impossible year at ${height}px`, () => {
+          // The regression itself: the top of the rail read "9009". Every year
+          // a tick names is now a real one; the band is a tick of its own.
+          const named = ticks.filter((tick) => tick.year !== null && !tick.implausible)
+          expect(named.every((tick) => tick.year !== null && tick.year <= 2026)).toBe(true)
+          expect(ticks[0].implausible).toBe(true)
+          expect(ticks.filter((tick) => tick.implausible)).toHaveLength(1)
+        })
+
+        it(`keeps the band reachable and on its own at ${height}px`, () => {
+          const band = ticks[0]
+          expect([band.firstRank, band.lastRank]).toEqual([0, 0])
+          expect(band.target).toBe(folded[0])
+          // Labelled, so a finger has a target on it.
+          expect(band.year).not.toBeNull()
+          // No tick of real months reaches into it.
+          expect(ticks.slice(1).every((tick) => tick.firstRank >= 1)).toBe(true)
+        })
+
+        it(`still partitions every bucket at ${height}px`, () => {
+          const rails = gap === TOUCH_TARGET_PX ? [ticks, touchTargets(ticks)] : [ticks]
+          for (const rail of rails) {
+            expect(rail[0].firstRank).toBe(0)
+            expect(rail[rail.length - 1].lastRank).toBe(folded.length - 1)
+            for (let i = 1; i < rail.length; i++) {
+              expect(rail[i].firstRank).toBe(rail[i - 1].lastRank + 1)
+            }
+          }
+        })
+
+        it(`still prints the first real year once the band has had its label at ${height}px`, () => {
+          // The band names no year, so it must not stop the year after it from
+          // counting as new.
+          const firstYear = ticks.find((tick) => !tick.implausible && tick.year !== null)
+          expect(firstYear).toBeDefined()
+        })
+      }
+    })
+  }
+
+  it('keeps the band a target of its own for a finger', () => {
+    const targets = touchTargets(buildRail(folded, 549, TOUCH_TARGET_PX))
+    expect(targets[0].implausible).toBe(true)
+    expect(targets[0].target).toBe(folded[0])
+    expect(targets.slice(1).every((tick) => !tick.implausible)).toBe(true)
+  })
+
+  it('ends an oldest-first rail on the band, labelled', () => {
+    // An album reads oldest-first, so a date nobody can have taken a photo on
+    // sits at the bottom — the rail's far end, which always names itself.
+    const ascending = [...folded].reverse()
+    for (const height of HEIGHTS) {
+      const ticks = buildRail(ascending, height)
+      const final = ticks[ticks.length - 1]
+      expect(final.implausible).toBe(true)
+      expect([final.firstRank, final.lastRank]).toEqual([
+        ascending.length - 1,
+        ascending.length - 1,
+      ])
+      expect(final.year).not.toBeNull()
+      expect(ticks.slice(0, -1).every((tick) => !tick.implausible)).toBe(true)
+    }
   })
 })

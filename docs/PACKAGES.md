@@ -486,7 +486,8 @@ to `## Package map` in `CLAUDE.md`.
   `buildWhere` with `List`/`Count`, so the buckets exactly match the list; photos the date expression
   leaves NULL don't fall into buckets (they sort last), but `Total` (via `Count`) includes them — under
   chronology nothing is left out and the counts sum to the total — the basis of `photoapi`'s timeline
-  scrubber),
+  scrubber; `flagImplausible` then sets `Implausible` on every bucket whose year fails
+  `exif.PlausibleCaptureYear`, the one place that rule lives, so the rail does not restate it),
   `YearBuckets(params)` (year-histogram `Years{Years:[]YearBucket{Year,Count},Total}` in
   `store_years.go` — one `GROUP BY date_part('year', taken_at)`, ordered `year DESC`; shares
   `buildWhere` with `List`/`Count`, so a bucket's count = exactly what `List` returns for the same filters

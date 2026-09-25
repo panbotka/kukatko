@@ -1029,6 +1029,14 @@ here.
   *called* is resolved by date). **`minSpanMonths`** renders no rail at all below a given span
   (`spanMonths(buckets)`) — the library passes nothing, the album page 24, because a scale of months
   over one afternoon is a control offering nothing at the cost of a strip of the screen.
+  **An impossible year is never a place on the rail**: each run of buckets the server flags `implausible`
+  (a year no photograph can have been taken in — box staging drew a „9009" band above 2026 for a photo a
+  Facebook file name had dated) is folded by `foldImplausible` into one band, a tick of its own labelled
+  „?", named „Přejít na fotky s nemožným datem pořízení", and shown in the bubble as „Nemožné datum". It
+  sits where its photos sit in the grid (such dates are the ends of the date order), so they stay one
+  click away and `rankForIndex` still maps every index; the stored `taken_at` is untouched — fixing it is
+  `maintenance repair --impossible-dates`, a decision for a person. The year facet and `year:` keep
+  offering such a year on purpose: they are explicit filters, and another way to find the photo.
   **The phone gets the same rail, narrowed and asleep** — below 576 px it used
   to be `display:none`, which left the device photos are actually browsed on with nothing but scrolling
   to cross a 369 000 px list. There (`styles/app.css` `@media (max-width: 575.98px)`) it is a 2.5 rem
@@ -1269,7 +1277,11 @@ here.
   line of text — and then `touchTargets(ticks)` reduces it to the ticks that can carry a 44 px box: the
   labelled ones, each extended to own the buckets of the unlabelled ticks after it (so the result still
   partitions, and `oldest`/`newest` name the whole swallowed range by date). It copies rather than
-  rewrites, because `buildRail`'s output is memoized by the component),
+  rewrites, because `buildRail`'s output is memoized by the component. `foldImplausible(buckets)` folds
+  each run of server-flagged impossible years into one band bucket (summed count, the run's first
+  `cumulative`; the input array itself when nothing is flagged); `buildRail` keeps such a band a tick of
+  its own (`RailTick.implausible`, its label names no year so the next real one still counts as new),
+  `touchTargets` never swallows it, and `spanMonths` ignores it),
   `SimilarPhotos` (a reusable horizontally scrollable strip
   of similar photos over `GET /photos/{uid}/similar` via `fetchSimilar`, links to the detail,
   empty-friendly + loading/error, refetch on `uid` change),

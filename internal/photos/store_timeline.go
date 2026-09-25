@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/panbotka/kukatko/internal/exif"
 )
 
 // TimelineBucket is one month-granularity date bucket of the photo timeline: the
@@ -12,11 +14,20 @@ import (
 // (Cumulative). Because the buckets follow that same order and month ranges do
 // not overlap, Cumulative is the scroll index of the bucket's first photo in the
 // grid, which lets a date scrubber jump to a month.
+//
+// Implausible marks a bucket whose year no photograph can have been taken in
+// (exif.PlausibleCaptureYear: before 1826 or more than a year ahead — a
+// Facebook download named 90090310_… once dated a photo to March 9009). The
+// bucket is still reported, with its true count and cumulative, because the
+// photos in it are still in the grid at exactly that position; the flag only
+// tells a scrubber not to present the year as a place on the time axis. The
+// stored date is left alone: fixing it is the maintenance scan's business.
 type TimelineBucket struct {
-	Year       int `json:"year"`
-	Month      int `json:"month"`
-	Count      int `json:"count"`
-	Cumulative int `json:"cumulative"`
+	Year        int  `json:"year"`
+	Month       int  `json:"month"`
+	Count       int  `json:"count"`
+	Cumulative  int  `json:"cumulative"`
+	Implausible bool `json:"implausible,omitempty"`
 }
 
 // Timeline is the date histogram of the photo library returned by
@@ -78,6 +89,7 @@ func (s *Store) TimelineBuckets(ctx context.Context, params ListParams) (Timelin
 		return Timeline{}, fmt.Errorf("photos: iterating timeline buckets: %w", err)
 	}
 	accumulate(buckets)
+	flagImplausible(buckets)
 
 	total, err := s.Count(ctx, params)
 	if err != nil {
@@ -131,5 +143,15 @@ func accumulate(buckets []TimelineBucket) {
 	for i := range buckets {
 		buckets[i].Cumulative = running
 		running += buckets[i].Count
+	}
+}
+
+// flagImplausible marks every bucket whose year fails exif.PlausibleCaptureYear,
+// so the scrubber reads the rule from the one place it lives instead of
+// restating it. It changes nothing else: the counts and cumulatives stay exact,
+// because the flagged photos keep their place in the grid.
+func flagImplausible(buckets []TimelineBucket) {
+	for i := range buckets {
+		buckets[i].Implausible = !exif.PlausibleCaptureYear(buckets[i].Year)
 	}
 }

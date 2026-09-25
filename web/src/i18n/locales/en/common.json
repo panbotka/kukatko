@@ -905,7 +905,9 @@
     "timeline": {
       "label": "Timeline",
       "jumpTo": "Jump to {{month}}",
-      "jumpToRange": "Jump to {{from}} – {{to}}"
+      "jumpToRange": "Jump to {{from}} – {{to}}",
+      "implausible": "Impossible date",
+      "jumpToImplausible": "Jump to photos with an impossible capture date"
     }
   },
   "search": {
