@@ -19,6 +19,7 @@ export type IconName =
   | 'bookmarks'
   | 'bounding-box'
   | 'box-arrow-in-down'
+  | 'box-arrow-in-up-right'
   | 'box-arrow-right'
   | 'box-arrow-up-right'
   | 'calendar-range'

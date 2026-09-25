@@ -17,10 +17,15 @@ export interface ReviewPhotoProps {
   /**
    * Where the photo's own page is (`/photos/{uid}`). Handed in rather than built
    * here, because the page's `o` shortcut opens the same target — one string for
-   * both means the link the player copies and the tab the key opens can never
+   * both means the link the player copies and the page the key opens can never
    * disagree.
    */
   href: string
+  /**
+   * The navigation state the corner anchor hands the photo's page — the game's
+   * way back. Given, the anchor navigates in place; see {@link ReviewStage}.
+   */
+  linkState?: object
   /**
    * The tight face box, normalised `[x, y, w, h]` in display space (face
    * questions only). The drawn rectangle is padded ~30 % around it — a person
@@ -41,7 +46,7 @@ export interface ReviewPhotoProps {
  * vocabulary: it thinks in {@link Photo} rows, the stage thinks in a photo's uid
  * and dimensions.
  */
-export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
+export function ReviewPhoto({ photo, href, linkState, bbox, alt }: ReviewPhotoProps) {
   return (
     <ReviewStage
       photoUid={photo.uid}
@@ -51,6 +56,7 @@ export function ReviewPhoto({ photo, href, bbox, alt }: ReviewPhotoProps) {
       size={REVIEW_PREVIEW_SIZE}
       bbox={bbox}
       href={href}
+      linkState={linkState}
       alt={alt}
     />
   )

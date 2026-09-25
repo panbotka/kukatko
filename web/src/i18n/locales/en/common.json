@@ -2366,6 +2366,7 @@
     "missing": "This no longer exists.",
     "missingHint": "It was most likely purged from the trash. The audit log keeps linking to deleted things — it is the record of that change.",
     "back": "Back to the list",
+    "backToReview": "Back to review",
     "prev": "Previous",
     "next": "Next",
     "download": "Download original",
@@ -3751,7 +3752,8 @@
       "zoomAlt": "The face under review, enlarged",
       "zoomClose": "Close the enlarged face"
     },
-    "openPhoto": "Open the photo in a new tab",
+    "openPhoto": "Open the photo",
+    "openPhotoNewTab": "Open the photo in a new tab",
     "lightbox": {
       "title": "Enlarged photo",
       "close": "Close",

@@ -553,6 +553,47 @@
   opacity: 1;
 }
 
+/* The way back to the sorting game, in words (a photo opened from the game).
+   It sits in the top bar's flow, first, so the name yields to it rather than
+   running under it; the heading then needs no room cleared for a floating
+   arrow. It never fades and never stops taking taps with the bar: an installed
+   app has no browser Back, so this is the only guaranteed way home. */
+.kk-viewer__return {
+  flex: none;
+  gap: 0.45rem;
+  padding: 0 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.kk-viewer__return + .kk-viewer__heading {
+  padding-left: 0;
+  align-self: center;
+}
+
+/* A phone's bar has no room for the pill beside the view toggles (measured at
+   375px: 144px of pill + 213px of toggles overran the screen, and squeezed the
+   photo's name to nothing). So there it takes a row of its own under the bar —
+   still at the top, still first for a screen reader — while the name and the
+   toggles keep the row they always had. The name's zero basis is what lets the
+   two share that row instead of wrapping apart. */
+@media (max-width: 767.98px) {
+  .kk-viewer__chrome--return {
+    flex-wrap: wrap;
+    row-gap: var(--kk-space-2);
+  }
+
+  .kk-viewer__chrome--return > .kk-viewer__heading {
+    flex-basis: 0;
+  }
+
+  .kk-viewer__chrome--return > .kk-viewer__return {
+    order: 1;
+  }
+}
+
 /* ---- Library operations (the overflow menu) --------------------------- */
 
 /* Archive and hide are the only controls in the viewer that change WHAT IS IN

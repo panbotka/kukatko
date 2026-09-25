@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from 'react'
 import Alert from 'react-bootstrap/Alert'
@@ -11,7 +12,7 @@ import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { AuthContext } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -35,6 +36,7 @@ import { useReviewStreak } from '../hooks/useReviewStreak'
 import { useReviewSwipe } from '../hooks/useReviewSwipe'
 import { type SwipeVerdict } from '../lib/gestures'
 import { isTypingElement } from '../lib/ratingHotkeys'
+import { type ReviewReturn, reviewReturnState } from '../lib/reviewReturn'
 import { cardPhoto, type ReviewCard } from '../lib/reviewRounds'
 import { type Bbox, type Subject } from '../services/people'
 import { type Photo, thumbUrl } from '../services/photos'
@@ -66,7 +68,7 @@ const DRAG_TILT = 1 / 24
 /**
  * The path of a photo's own detail page. The game's single place for it: the
  * anchor on the stage and the `o` shortcut are handed the same string, so the
- * link the player copies and the tab the key opens can never disagree.
+ * link the player copies and the page the key opens can never disagree.
  */
 function photoDetailPath(uid: string): string {
   return `/photos/${encodeURIComponent(uid)}`
@@ -376,10 +378,26 @@ function QuestionHint({ question }: { question: ReviewQuestion }) {
  * check, the face crop plus its context for the outlier check, the full frame
  * (with the face rectangle, where there is one) for everything else.
  */
-function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: string }) {
+function QuestionStage({
+  question,
+  alt,
+  linkState,
+}: {
+  question: ReviewQuestion
+  alt: string
+  /** The game's way back, handed to the photo's page by every corner anchor. */
+  linkState: ReviewReturn
+}) {
   const { t } = useTranslation()
   if (question.kind === 'duplicate' && question.other !== undefined) {
-    return <ReviewDuplicate photo={question.photo} other={question.other} href={photoDetailPath} />
+    return (
+      <ReviewDuplicate
+        photo={question.photo}
+        other={question.other}
+        href={photoDetailPath}
+        linkState={linkState}
+      />
+    )
   }
   if (question.kind === 'outlier' && question.bbox !== undefined) {
     return (
@@ -387,6 +405,7 @@ function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: strin
         photo={question.photo}
         bbox={question.bbox.relative}
         href={photoDetailPath(question.photo.uid)}
+        linkState={linkState}
         alt={t('review.outlier.faceAlt')}
       />
     )
@@ -395,6 +414,7 @@ function QuestionStage({ question, alt }: { question: ReviewQuestion; alt: strin
     <ReviewPhoto
       photo={question.photo}
       href={photoDetailPath(question.photo.uid)}
+      linkState={linkState}
       bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
       alt={alt}
     />
@@ -486,7 +506,14 @@ export function ReviewPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('nav.review'))
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+  // What every way out to a photo hands the photo's page: the game's own URL,
+  // so the page can offer the way back to this very source.
+  const returnState = useMemo(
+    () => reviewReturnState(location.pathname, location.search),
+    [location.pathname, location.search],
+  )
   const source = parseSource(searchParams.get('source'))
   // The run is resumable per user: a peek at a photo's page and straight back
   // lands on the same card (see useReviewGame). Read null-safely, so the page
@@ -623,20 +650,20 @@ export function ReviewPage() {
   })
 
   /**
-   * The keyboard twin of the anchor in {@link ReviewPhoto}: opens the photo on
-   * screen in a new tab, same path and same `noopener`. It answers nothing and
-   * touches the queue not at all — the card the player is looking at is still
-   * there when they come back. A new tab, not this one: the run would survive a
-   * round trip in this tab too (see useReviewGame), but a new tab keeps the game
-   * on screen and costs no re-render of the stage.
+   * The keyboard twin of the anchor in {@link ReviewPhoto}: goes to the photo on
+   * screen in this window, same path and same state. It answers nothing and
+   * touches the queue not at all — the run is snapshotted (see useReviewGame),
+   * so Back, or the photo page's own way back to sorting, lands on this very
+   * card. This window, never a new tab: an installed app has no tabs, and a
+   * "new" one replaced the game with no way home.
    */
   const openPhoto = useCallback(() => {
     const photo = card === undefined ? undefined : cardPhoto(card)
     if (photo === undefined) {
       return
     }
-    window.open(photoDetailPath(photo.uid), '_blank', 'noopener,noreferrer')
-  }, [card])
+    void navigate(photoDetailPath(photo.uid), { state: returnState })
+  }, [card, navigate, returnState])
 
   useKeyboardShortcuts(
     {
@@ -796,7 +823,7 @@ export function ReviewPage() {
             className={`review-game__card${swipe.dragging ? ' review-game__card--dragging' : ''}`}
             style={dragStyle}
           >
-            <QuestionStage question={question} alt={t('review.photoAlt')} />
+            <QuestionStage question={question} alt={t('review.photoAlt')} linkState={returnState} />
           </div>
           {swipe.hint !== null && (
             <span
@@ -849,6 +876,7 @@ export function ReviewPage() {
       <BreatherCard
         breather={card.breather}
         href={photoDetailPath(card.breather.photo.uid)}
+        linkState={returnState}
         onDismiss={advance}
       />
     )

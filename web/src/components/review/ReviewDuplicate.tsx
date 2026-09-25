@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { type Photo, thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
+
+import { OpenPhotoLink } from './ReviewStage'
 
 /**
  * The preview size of one half of the pair. `fit_*` (whole frame), because the
@@ -22,10 +23,22 @@ export interface ReviewDuplicateProps {
   other: Photo
   /** Builds the path of a photo's own page, for the corner anchors. */
   href: (uid: string) => string
+  /** The game's way back, handed to the photo's page; see {@link ReviewStage}. */
+  linkState?: object
 }
 
 /** One half of the pair: the frame, its size caption and its way out. */
-function DuplicateHalf({ photo, href, label }: { photo: Photo; href: string; label: string }) {
+function DuplicateHalf({
+  photo,
+  href,
+  linkState,
+  label,
+}: {
+  photo: Photo
+  href: string
+  linkState?: object
+  label: string
+}) {
   const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
 
@@ -52,16 +65,7 @@ function DuplicateHalf({ photo, href, label }: { photo: Photo; href: string; lab
             className="review-duplicate__img"
           />
         )}
-        <Link
-          to={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="review-photo__open"
-          aria-label={t('review.openPhoto')}
-          title={t('review.openPhoto')}
-        >
-          <Icon name="box-arrow-up-right" />
-        </Link>
+        <OpenPhotoLink href={href} linkState={linkState} />
       </div>
       {/* The dimensions and the file name are what actually settle a lot of these
           pairs — the same shot exported twice differs in nothing a thumbnail can
@@ -92,14 +96,25 @@ function DuplicateHalf({ photo, href, label }: { photo: Photo; href: string; lab
  * the screen either way (see review.css).
  *
  * Each half carries the same quiet corner anchor the single-photo stage does, so
- * either copy can be opened and inspected properly without leaving the game.
+ * either copy can be opened and inspected properly — and the run is still there
+ * on the way back.
  */
-export function ReviewDuplicate({ photo, other, href }: ReviewDuplicateProps) {
+export function ReviewDuplicate({ photo, other, href, linkState }: ReviewDuplicateProps) {
   const { t } = useTranslation()
   return (
     <div className="review-duplicate" data-testid="review-duplicate">
-      <DuplicateHalf photo={photo} href={href(photo.uid)} label={t('review.duplicate.altFirst')} />
-      <DuplicateHalf photo={other} href={href(other.uid)} label={t('review.duplicate.altSecond')} />
+      <DuplicateHalf
+        photo={photo}
+        href={href(photo.uid)}
+        linkState={linkState}
+        label={t('review.duplicate.altFirst')}
+      />
+      <DuplicateHalf
+        photo={other}
+        href={href(other.uid)}
+        linkState={linkState}
+        label={t('review.duplicate.altSecond')}
+      />
     </div>
   )
 }

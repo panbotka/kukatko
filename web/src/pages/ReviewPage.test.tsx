@@ -1,12 +1,20 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, useSearchParams } from 'react-router-dom'
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { VERDICT_THRESHOLD } from '../lib/gestures'
+import { reviewReturnPath } from '../lib/reviewReturn'
 import { DAILY_STORAGE_KEY } from '../lib/reviewRounds'
 import { REVIEW_SNAPSHOT_KEY } from '../lib/reviewSnapshot'
 import { type Label } from '../services/organize'
@@ -226,11 +234,25 @@ function SourceProbe() {
   return <span data-testid="source-probe">{params.get('source') ?? ''}</span>
 }
 
+/**
+ * Reflects where the router is and the way back it was handed, so a test can see
+ * the game navigate without a route to land on.
+ */
+function LocationProbe() {
+  const location = useLocation()
+  return (
+    <span data-testid="location-probe" data-return={reviewReturnPath(location.state) ?? ''}>
+      {location.pathname}
+    </span>
+  )
+}
+
 function renderPage(entry = '/review') {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={[entry]}>
         <SourceProbe />
+        <LocationProbe />
         <ReviewPage />
       </MemoryRouter>
     </I18nextProvider>,
@@ -430,45 +452,51 @@ describe('ReviewPage', () => {
     const { unmount } = renderPage()
 
     await screen.findByTestId('review-question')
-    const faceLink = screen.getByRole('link', { name: 'Open the photo in a new tab' })
+    const faceLink = screen.getByRole('link', { name: 'Open the photo' })
     expect(faceLink).toHaveAttribute('href', '/photos/p-q1')
     unmount()
 
     queueMock.mockResolvedValue(makeQueue([labelQuestion('q2')]))
     renderPage()
     await screen.findByTestId('review-question')
-    expect(screen.getByRole('link', { name: 'Open the photo in a new tab' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Open the photo' })).toHaveAttribute(
       'href',
       '/photos/p-q2',
     )
   })
 
-  it('opens the photo in a new tab without handing it the opener', async () => {
+  it('opens the photo in this window, never in a new tab', async () => {
+    // An installed app has no tabs: a `_blank` there replaced the game with the
+    // photo and left no way home. The anchor stays an anchor — a modified click
+    // and "open in new tab" still work on a desktop — but a plain one navigates.
     queueMock.mockResolvedValue(makeQueue([faceQuestion('q1')]))
     renderPage()
 
     await screen.findByTestId('review-question')
-    const link = screen.getByRole('link', { name: 'Open the photo in a new tab' })
-    expect(link).toHaveAttribute('target', '_blank')
-    // A `_blank` target without `noopener` would let the photo page reach back
-    // into the game's window through `window.opener`.
-    expect(link.getAttribute('rel')).toContain('noopener')
+    const link = screen.getByRole('link', { name: 'Open the photo' })
+    expect(link).toHaveAttribute('href', '/photos/p-q1')
+    expect(link).not.toHaveAttribute('target')
+    expect(link).toHaveAttribute('title', 'Open the photo')
   })
 
-  it('does not answer or advance the queue when the photo link is clicked', async () => {
+  it('navigates to the photo in place on a click, without answering anything', async () => {
     const user = userEvent.setup()
-    // jsdom cannot open a tab; stub it so the click is quiet and the assertion
-    // is about the game, not about the navigation.
-    vi.spyOn(window, 'open').mockReturnValue(null)
-    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
-    renderPage()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(
+      makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')], { source: 'people' }),
+    )
+    renderPage('/review?source=people')
     await screen.findByTestId('review-question')
 
-    await user.click(screen.getByRole('link', { name: 'Open the photo in a new tab' }))
+    await user.click(screen.getByRole('link', { name: 'Open the photo' }))
 
+    const probe = screen.getByTestId('location-probe')
+    expect(probe).toHaveTextContent('/photos/p-q1')
+    // The photo page is told where the game was — source included — so it can
+    // offer the way back.
+    expect(probe).toHaveAttribute('data-return', '/review?source=people')
+    expect(open).not.toHaveBeenCalled()
     expect(answerMock).not.toHaveBeenCalled()
-    expect(screen.getByTestId('review-question')).toHaveTextContent('Alice')
-    expect(screen.getByTestId('review-progress')).toHaveTextContent('0 answered')
   })
 
   it('opens the photo on `o` without answering, and still answers on y / n', async () => {
@@ -479,7 +507,11 @@ describe('ReviewPage', () => {
     await screen.findByTestId('review-question')
 
     await user.keyboard('o')
-    expect(open).toHaveBeenCalledWith('/photos/p-q1', '_blank', 'noopener,noreferrer')
+    // In place, like the anchor: the same path and the same way back.
+    const probe = screen.getByTestId('location-probe')
+    expect(probe).toHaveTextContent('/photos/p-q1')
+    expect(probe).toHaveAttribute('data-return', '/review')
+    expect(open).not.toHaveBeenCalled()
     // The shortcut is a detour, not an answer: nothing was sent and the same
     // card is still on screen.
     expect(answerMock).not.toHaveBeenCalled()
@@ -1212,6 +1244,45 @@ function renderSignedIn(uid = 'u1', entry = '/review') {
   )
 }
 
+/**
+ * Stands in for the photo's own page: shows where it is, the way back it was
+ * handed, and a Back that steps through history the way the browser (or a
+ * phone's system back) does.
+ */
+function PhotoPageStub() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  return (
+    <div data-testid="photo-page-stub" data-return={reviewReturnPath(location.state) ?? ''}>
+      {location.pathname}
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(-1)
+        }}
+      >
+        system back
+      </button>
+    </div>
+  )
+}
+
+/** The game and the photo page as real routes, so a trip unmounts the game. */
+function renderRoundTrip(entry = '/review') {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <AuthContext.Provider value={signedIn('u1')}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Routes>
+            <Route path="/review" element={<ReviewPage />} />
+            <Route path="/photos/:uid" element={<PhotoPageStub />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </I18nextProvider>,
+  )
+}
+
 /** Five face questions P1…P5 in one round. */
 function fiveQuestions() {
   return makeQueue([1, 2, 3, 4, 5].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`)))
@@ -1267,6 +1338,103 @@ describe('ReviewPage resume', () => {
     expect(within(summary).getByTestId('review-tally-skipped')).toHaveTextContent('1')
     // ...and an ended session leaves nothing to resume.
     expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+  })
+
+  it('goes to the photo in place and comes back to the same card with the run intact', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(fiveQuestions())
+    renderRoundTrip()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard(' ')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P3')
+    })
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledTimes(2)
+    })
+
+    await user.click(screen.getByRole('link', { name: 'Open the photo' }))
+
+    const stub = screen.getByTestId('photo-page-stub')
+    expect(stub).toHaveTextContent('/photos/p-q3')
+    expect(stub).toHaveAttribute('data-return', '/review')
+    // The game is gone from the screen — the trip happened in this window.
+    expect(screen.queryByTestId('review-question')).toBeNull()
+    expect(open).not.toHaveBeenCalled()
+
+    queueMock.mockClear()
+    await user.click(screen.getByRole('button', { name: 'system back' }))
+
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('P3')
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent('3/5')
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('1 answered')
+    // A resume, not a new round, and nothing answered twice.
+    expect(queueMock).not.toHaveBeenCalled()
+    expect(answerMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('takes the `o` trip the same way, keeping the chosen source for the way back', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(
+      makeQueue([faceQuestion('q1', 'P1'), faceQuestion('q2', 'P2')], { source: 'people' }),
+    )
+    renderRoundTrip('/review?source=people')
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('o')
+
+    const stub = await screen.findByTestId('photo-page-stub')
+    expect(stub).toHaveTextContent('/photos/p-q1')
+    expect(stub).toHaveAttribute('data-return', '/review?source=people')
+
+    await user.click(screen.getByRole('button', { name: 'system back' }))
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('P1')
+    expect(answerMock).not.toHaveBeenCalled()
+  })
+
+  it('opens the outlier, duplicate and breather photos in place too', async () => {
+    const user = userEvent.setup()
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    queueMock.mockResolvedValue(
+      makeQueue([outlierQuestion('q1', 'Alice'), duplicateQuestion('q2'), faceQuestion('q3')], {
+        breathers: [breather('b1', 'Svatba u Kozáků', 1962)],
+      }),
+    )
+    renderRoundTrip()
+    await screen.findByTestId('review-outlier')
+
+    /** Every corner anchor on screen goes in place, and one of them is taken. */
+    const takeTrip = async (index: number, expected: string) => {
+      const links = screen.getAllByRole('link', { name: 'Open the photo' })
+      for (const link of links) {
+        expect(link).not.toHaveAttribute('target')
+      }
+      await user.click(links[index])
+      const stub = screen.getByTestId('photo-page-stub')
+      expect(stub).toHaveTextContent(expected)
+      expect(stub).toHaveAttribute('data-return', '/review')
+      await user.click(screen.getByRole('button', { name: 'system back' }))
+    }
+
+    // The outlier: the face crop's anchor and the context photo's.
+    await takeTrip(0, '/photos/p-q1')
+    expect(await screen.findByTestId('review-outlier')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowRight}')
+    await screen.findByTestId('review-duplicate')
+    // The duplicate pair: either copy, here the second.
+    await takeTrip(1, '/photos/p-q2-b')
+    expect(await screen.findByTestId('review-duplicate')).toBeInTheDocument()
+
+    await user.keyboard('{ArrowRight}')
+    await screen.findByTestId('review-breather')
+    // The breather, which a player is the likeliest to want to keep.
+    await takeTrip(0, '/photos/b1')
+    expect(await screen.findByTestId('review-breather')).toHaveTextContent('Svatba u Kozáků')
+    expect(open).not.toHaveBeenCalled()
   })
 
   it('keeps a failed answer retryable across the resume, without counting it twice', async () => {
@@ -1486,7 +1654,8 @@ describe('ReviewPage swipe', () => {
     // untouched by it — this is the key-collision regression the game keeps
     // being at risk of.
     await user.keyboard('o')
-    expect(open).toHaveBeenCalledWith('/photos/p-q1', '_blank', 'noopener,noreferrer')
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/photos/p-q1')
+    expect(open).not.toHaveBeenCalled()
     expect(answerMock).not.toHaveBeenCalled()
 
     await user.keyboard('y')

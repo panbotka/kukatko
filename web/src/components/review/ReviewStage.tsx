@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
@@ -47,6 +47,14 @@ export interface ReviewStageProps {
    * stage offers no way out.
    */
   href?: string
+  /**
+   * Navigation state for a trip in this window. Given, the corner anchor
+   * navigates in place and hands the state to the photo's page — the review
+   * game, whose run survives the trip and whose state tells the page to offer
+   * the way back. Absent, the anchor opens a new tab: a review tool's results
+   * live only in memory, and navigating away would throw them away.
+   */
+  linkState?: object
   /** Accessible description of the photo. */
   alt: string
 }
@@ -82,9 +90,9 @@ export function ReviewStage({
   size,
   bbox,
   href,
+  linkState,
   alt,
 }: ReviewStageProps) {
-  const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
   const stage = useImageFrame({
     source: photoUid,
@@ -140,26 +148,53 @@ export function ReviewStage({
       )}
       {/* The way out to the photo itself. A real anchor, not a click handler:
           the point is to *get the URL* — right-click → copy link address,
-          Ctrl/Cmd+click, middle-click — and only an `href` can give that. It
-          opens in a new tab because what is around it lives in memory (the
-          game's queue, a tool's search results): navigating away would throw the
-          whole run away, and the user wants to set a photo aside, not leave. It
-          sits in the frame's corner rather than being the whole preview, so a
-          click into the photo stays unambiguous. */}
+          Ctrl/Cmd+click, middle-click — and only an `href` can give that. Where
+          it goes on a plain click is the caller's call (see `linkState`): in
+          place for the game, a new tab for a tool. It sits in the frame's corner
+          rather than being the whole preview, so a click into the photo stays
+          unambiguous. */}
       {href !== undefined && (
-        <Link
-          to={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="review-photo__open"
-          aria-label={t('review.openPhoto')}
-          title={t('review.openPhoto')}
-          data-testid="review-open-photo"
-        >
-          <Icon name="box-arrow-up-right" />
+        <OpenPhotoLink href={href} linkState={linkState}>
           <kbd className="review-game__kbd">o</kbd>
-        </Link>
+        </OpenPhotoLink>
       )}
     </div>
+  )
+}
+
+/** Props for {@link OpenPhotoLink}. */
+export interface OpenPhotoLinkProps {
+  /** The photo's own page. */
+  href: string
+  /** Navigation state for an in-place trip; absent means a new tab. */
+  linkState?: object
+  /** What the anchor shows after its icon (the stage's key hint). */
+  children?: ReactNode
+}
+
+/**
+ * The corner anchor out to a photo's own page, shared by every review surface
+ * so the game's cards and the tools' lightbox cannot disagree on where it goes
+ * or what it says. With `linkState` it navigates in this window (the review
+ * game, which survives the trip); without, it opens a new tab and says so.
+ */
+export function OpenPhotoLink({ href, linkState, children }: OpenPhotoLinkProps) {
+  const { t } = useTranslation()
+  const inPlace = linkState !== undefined
+  const label = inPlace ? t('review.openPhoto') : t('review.openPhotoNewTab')
+  return (
+    <Link
+      to={href}
+      state={linkState}
+      target={inPlace ? undefined : '_blank'}
+      rel={inPlace ? undefined : 'noopener noreferrer'}
+      className="review-photo__open"
+      aria-label={label}
+      title={label}
+      data-testid="review-open-photo"
+    >
+      <Icon name={inPlace ? 'box-arrow-in-up-right' : 'box-arrow-up-right'} />
+      {children}
+    </Link>
   )
 }

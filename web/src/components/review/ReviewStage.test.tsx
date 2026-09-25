@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
 import { frameRatio, loadImageAs } from '../../test/imageFrame'
@@ -34,6 +34,10 @@ function stageImage(): HTMLImageElement {
 }
 
 describe('ReviewStage', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
+  })
+
   it('draws no face box until the photo has actually been measured', () => {
     // A box placed against the catalogue row's estimate lands off the face on a
     // row with a transposed dimension pair, and then visibly jumps once the real
@@ -81,6 +85,28 @@ describe('ReviewStage', () => {
     expect(open).toHaveAttribute('rel', expect.stringContaining('noopener'))
     expect(open).toHaveAttribute('href', '/photos/ph1')
     expect(stageImage().closest('a')).toBeNull()
+  })
+
+  it('says it opens a new tab when it does, for a tool whose results live in memory', () => {
+    renderStage({ href: '/photos/ph1' })
+
+    expect(screen.getByTestId('review-open-photo')).toHaveAccessibleName(
+      'Open the photo in a new tab',
+    )
+  })
+
+  it('navigates in place, and says only that, when handed a way back', () => {
+    // The review game: its run survives the trip, and an installed app has no
+    // tabs to open. Still an anchor with an href, so a modified click works.
+    renderStage({ href: '/photos/ph1', linkState: { reviewReturn: '/review' } })
+
+    const open = screen.getByTestId('review-open-photo')
+
+    expect(open).toHaveAttribute('href', '/photos/ph1')
+    expect(open).not.toHaveAttribute('target')
+    expect(open).not.toHaveAttribute('rel')
+    expect(open).toHaveAccessibleName('Open the photo')
+    expect(open).toHaveAttribute('title', 'Open the photo')
   })
 
   it('offers no way out when there is nowhere to go', () => {

@@ -4213,3 +4213,128 @@ describe('the open-task chip', () => {
     expect(screen.queryByText(/Open task:/)).not.toBeInTheDocument()
   })
 })
+
+/**
+ * A photo opened from the sorting game. The game navigates here in the same
+ * window (an installed app has no tabs), so the page must offer a labelled way
+ * back at the top — with no browser Back, the only guaranteed way home.
+ */
+describe('PhotoDetailPage — the way back to sorting', () => {
+  const FROM_GAME = { reviewReturn: '/review?source=people' }
+
+  /** The page with the game behind it in history, as the game leaves it. */
+  function renderFromGame(state: unknown = FROM_GAME) {
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
+        >
+          <AuthContext.Provider value={auth(true)}>
+            <MemoryRouter
+              initialEntries={['/review?source=people', { pathname: '/photos/b', state }]}
+            >
+              <Routes>
+                <Route path="/review" element={<div>the game</div>} />
+                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+              </Routes>
+              <LocationProbe />
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('shows the way back to sorting, in words, and it lands on the game', async () => {
+    const user = userEvent.setup()
+    renderFromGame()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    const back = screen.getByRole('button', { name: 'Back to review' })
+    // It stands in for the bare arrow — "back to the list" would be a lie here.
+    expect(screen.queryByRole('button', { name: 'Back to the list' })).toBeNull()
+    // In the top bar, ahead of the photo's name.
+    expect(back.closest('.kk-viewer__chrome')).not.toBeNull()
+
+    await user.click(back)
+
+    // Stepping back through history: the game's own entry, source and all, so
+    // its snapshot resumes the very card.
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+    })
+    expect(screen.getByText('the game')).toBeInTheDocument()
+  })
+
+  it('goes back to the game on Escape as well', async () => {
+    renderFromGame()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+    })
+  })
+
+  it('finds the game even with nothing behind it in history', async () => {
+    const user = userEvent.setup()
+    renderPage(true, { pathname: '/photos/b', state: FROM_GAME })
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to review' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+    })
+  })
+
+  it('keeps the way back while paging to a neighbour', async () => {
+    const user = userEvent.setup()
+    renderFromGame()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(await screen.findByRole('link', { name: 'Next' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+    })
+    expect(screen.getByRole('button', { name: 'Back to review' })).toBeInTheDocument()
+  })
+
+  it('labels the way back on a photo that failed to load too', async () => {
+    fetchPhotoMock.mockRejectedValue(new Error('boom'))
+    renderFromGame()
+
+    expect(await screen.findByText('This could not be loaded.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to review' })).toBeInTheDocument()
+  })
+
+  it('shows no way back to a game the photo was not opened from', async () => {
+    renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Back to review' })).toBeNull()
+  })
+
+  it('ignores a state that does not name the game', async () => {
+    renderFromGame({ reviewReturn: '/admin' })
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    expect(screen.queryByRole('button', { name: 'Back to review' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to the list' })).toBeInTheDocument()
+  })
+
+  it('says it in Czech by default', async () => {
+    await i18n.changeLanguage('cs')
+    try {
+      renderFromGame()
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(screen.getByRole('button', { name: 'Zpět k třídění' })).toBeInTheDocument()
+    } finally {
+      await i18n.changeLanguage('en')
+    }
+  })
+})

@@ -2647,7 +2647,17 @@ here.
   at mount) `backHref(view)` reconstructs the list URL. That same reconstructed URL names the list in the
   terms its grid remembers itself under, and the viewer stamps the photograph on stage into that entry
   (`rememberGridPhoto`) on every step: paging *replaces* the history entry, so without it the way back would
-  land on the photograph first clicked rather than the one being looked at. **Keys:** ←/→ steps through neighbors, `f`
+  land on the photograph first clicked rather than the one being looked at. **Opened from the sorting game**
+  (router state `{reviewReturn}`, read through `lib/reviewReturn`, which accepts only the game's own `/review`
+  route), the arrow gives way to a labelled pill **„Zpět k třídění"** (`photo.backToReview`,
+  `.kk-viewer__return`) as the first item *in* the top bar's flow — so the name yields to it rather than
+  running under it — exempt from the bar's fade and its pointer-events cut: an installed PWA has no browser
+  Back, so it is the only guaranteed way home. It runs the same `close` (a pop lands on the game's entry, whose
+  snapshot resumes the same card; opened directly it pushes the stored game URL), Esc included; the loading and
+  error screens carry it too, and prev/next paging (keys, swipe, the on-image arrows) passes the state along so
+  it survives a replaced entry. Below 768 px it takes its own row under the name and toggles (`flex-wrap` on
+  `.kk-viewer__chrome--return`; at 375 px pill + toggles overran the screen). Reached any other way, nothing
+  changes. **Keys:** ←/→ steps through neighbors, `f`
   favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
@@ -4130,16 +4140,22 @@ here.
   Nevím** are real buttons (large, at the bottom, thumb-reachable on touch), **but the keyboard is the
   primary interface**: `→`/`y` yes, `←`/`n` no, **spacebar**/`↓` don't know, `z` and **Ctrl/Cmd+Z** undo
   (the chord binds outside `useKeyboardShortcuts`, which deliberately ignores modifiers), `o` open the photo
-  under question **in a new tab**, `Esc` end (leaves `Esc` for an open help modal)
+  under question **in this window**, `Esc` end (leaves `Esc` for an open help modal)
   — all registered in the `?` overlay via
   `shortcuts.groups.review`; **the photo leads out to itself**: a small anchor in the frame's top-right corner
   (`ReviewPhoto`'s `href` prop, built by the page's `photoDetailPath` — one string for both routes, so the copied
-  link and the opened tab can't disagree) to `/photos/{uid}` with `target="_blank"` +
-  `rel="noopener noreferrer"`, and `o` opens the same path via `window.open(…, 'noopener,noreferrer')` — it is a
-  **real `href`**, so right-click → copy link address, middle-click and Ctrl/Cmd+click all work; *getting the
-  URL* is the point (a photo worth sharing is found mid-game and would otherwise have to be hunted down again
-  in the library), and a click handler cannot give that. A new tab, so the game stays on screen (a round trip
-  in the same tab would resume the run too, see below) — and neither route answers, skips nor moves the queue;
+  link and the opened page can't disagree) to `/photos/{uid}`, **navigating in the same window** with the
+  router state `{ reviewReturn: '/review?…' }` (`lib/reviewReturn`, the game's own path + query), and `o`
+  does the same via `navigate(photoDetailPath(uid), { state })` — no `window.open`, no `target="_blank"`:
+  an installed PWA has no tabs, so a "new" one replaced the game with no way home. It is still a **real
+  `href`**, so right-click → copy link address, middle-click and Ctrl/Cmd+click (a new tab, on a desktop)
+  all work; *getting the URL* is the point (a photo worth sharing is found mid-game and would otherwise have
+  to be hunted down again in the library), and a click handler cannot give that. Every card with the anchor
+  behaves alike — the question stage, the outlier crop and its context photo, both halves of the duplicate
+  pair and the „jen pro radost" breather (all through `linkState`, see `ReviewStage`). The photo page, seeing
+  that state, puts **„Zpět k třídění"** at the top (see `PhotoDetailPage`); Back — the browser's, the
+  phone's, or that button — lands on the same card (below) — and neither route answers, skips nor moves the
+  queue;
   the answers are **optimistic** (the UI moves on, the request finishes in the background) and
   the next card is **always already in memory** (`useReviewGame` refills in the background, `useImagePreloader`
   decodes `PRELOAD_AHEAD = 4` photos ahead), so between cards **a spinner never flashes**;
@@ -4230,7 +4246,11 @@ here.
   (the run's write/read round trip, a foreign user, another source, and every malformed shape it must refuse)
   + the `ReviewPage resume` tests (a remount restores the card, the round, the combo and the tallies without a
   fetch or a re-sent answer; a failed answer stays retryable; another account, another source, an unreadable
-  snapshot, a finished round and an explicit exit all start fresh) + `lib/gestures.test.ts`,
+  snapshot, a finished round and an explicit exit all start fresh; and the real trip over two routes — the
+  anchor and `o` navigate in place with the way back in the state, never `window.open`, and Back lands on the
+  same card for the question, outlier, duplicate and breather cards alike) + `lib/reviewReturn.test.ts` +
+  the `PhotoDetailPage — the way back to sorting` tests (the labelled button only when the state names the
+  game, pop vs push, Esc, paging, the error screen, Czech by default) + `lib/gestures.test.ts`,
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
   **Žebříček** link is seen by a viewer too; since 2026-08-07 it is the last entry of the „Procházet"
   dropdown rather than a top-level slot beside **Třídění** — one player and 38 answers on the live instance
@@ -4529,9 +4549,11 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   the ratio in **display** (EXIF-oriented) space — orientation 5–8 swap width/height —,
   fallback 3:2 so the stage never collapses; the face frame = `padBbox` (~30 %) → `faceBoxStyle`,
   `pointer-events: none` + `aria-hidden`, the surroundings a gentle dim; a broken preview degrades to an icon, a new
-  photo resets the flag; the `.review-photo__open` anchor to the `href` prop (the page's `photoDetailPath`, which
-  its `o` shortcut opens too) in the frame's **top-right corner**, `target="_blank"` +
-  `rel="noopener noreferrer"`: deliberately a small corner target and **not the whole preview**, because the
+  photo resets the flag; the `.review-photo__open` anchor (`OpenPhotoLink`, shared by every review surface) to
+  the `href` prop (the page's `photoDetailPath`, which its `o` shortcut opens too) in the frame's **top-right
+  corner** — with a `linkState` (the game) it navigates in place, carries the state and is labelled
+  `review.openPhoto` („Otevřít fotku"); without one (a tool's lightbox, whose results live only in memory) it
+  keeps `target="_blank"` + `rel="noopener noreferrer"` and says so (`review.openPhotoNewTab`): deliberately a small corner target and **not the whole preview**, because the
   preview carries the face rectangle and a click into it must not be ambiguous — the three answers stay the
   easiest thing on the screen (measured: 0 px overlap with the action row, ~620 px away from it on a desktop, ~360
   px on a phone). It is an overlay, so it costs the photo no height; `z-index: 2` puts it above the dimming veil,
@@ -6049,6 +6071,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   something the catalogue does not know, and the page falls back to the raw label — a missing translation must
   never blank a row. The values are literal `ParseKeys`, not a computed `` `activity.actions.${…}` `` template,
   so a key absent from the catalogue is a compile error,
+  `reviewReturn.ts` = **the way back from a photo's page to the sorting game**, pure: `ReviewReturn{reviewReturn}`
+  (the router state the game attaches to every way out to a photo), `reviewReturnState(pathname, search)` and
+  `reviewReturnPath(state)` — history state is opaque and outlives its navigation, so anything that is not the
+  game's own `/review` route (another page, another origin, a grid's handoff) reads as "not from the game";
+  tests `reviewReturn.test.ts`,
   `reviewDecisions.ts` = the view model for `ReviewDecisionsPage`: the `ReviewDecisionsView` type
   (`user`/`decision`/`offset`, string-only for the URL) + `REVIEW_DECISIONS_DEFAULTS`
   + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (always `via:'review'` + `decision`)

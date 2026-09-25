@@ -1,6 +1,5 @@
 import { type CSSProperties, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { cropImageStyle, displayFrame, faceMarkerStyle, padBbox } from '../../lib/faceGeometry'
 import {
@@ -12,9 +11,9 @@ import {
 } from '../../lib/faceSource'
 import { type Bbox } from '../../services/people'
 import { type Photo, thumbUrl } from '../../services/photos'
-import { Icon } from '../Icon'
 
 import { ReviewPhoto } from './ReviewPhoto'
+import { OpenPhotoLink } from './ReviewStage'
 
 /**
  * How much of the photo around the face the crop keeps, per side. A little more
@@ -33,6 +32,8 @@ export interface ReviewOutlierProps {
   bbox: Bbox
   /** Where the photo's own page is (`/photos/{uid}`). */
   href: string
+  /** The game's way back, handed to the photo's page; see {@link ReviewStage}. */
+  linkState?: object
   /** Accessible description of the face crop. */
   alt: string
 }
@@ -61,7 +62,7 @@ export interface ReviewOutlierProps {
  * ski slope, and the context is often what decides it. On a portrait phone the
  * pair stacks (see review.css).
  */
-export function ReviewOutlier({ photo, bbox, href, alt }: ReviewOutlierProps) {
+export function ReviewOutlier({ photo, bbox, href, linkState, alt }: ReviewOutlierProps) {
   const { t } = useTranslation()
   const crop = padBbox(bbox, OUTLIER_CROP_PADDING)
   const frame = displayFrame(photo.file_width, photo.file_height, photo.file_orientation ?? 0)
@@ -105,23 +106,18 @@ export function ReviewOutlier({ photo, bbox, href, alt }: ReviewOutlierProps) {
           style={faceMarkerStyle(bbox, crop)}
           data-testid="review-outlier-bbox"
         />
-        {/* The way out, mirroring the single-photo stage's corner anchor: a real
-            anchor so the URL can be copied, opening in a new tab so the queue —
-            which lives in memory — survives the detour. */}
-        <Link
-          to={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="review-photo__open"
-          aria-label={t('review.openPhoto')}
-          title={t('review.openPhoto')}
-          data-testid="review-open-photo"
-        >
-          <Icon name="box-arrow-up-right" />
-        </Link>
+        {/* The way out, the single-photo stage's own corner anchor: a real
+            anchor so the URL can be copied, going where the stage's goes. */}
+        <OpenPhotoLink href={href} linkState={linkState} />
       </div>
       <div className="review-outlier__context">
-        <ReviewPhoto photo={photo} href={href} bbox={bbox} alt={t('review.outlier.contextAlt')} />
+        <ReviewPhoto
+          photo={photo}
+          href={href}
+          linkState={linkState}
+          bbox={bbox}
+          alt={t('review.outlier.contextAlt')}
+        />
       </div>
     </div>
   )

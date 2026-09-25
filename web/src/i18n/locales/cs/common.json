@@ -2468,6 +2468,7 @@
     "missing": "Tohle už neexistuje.",
     "missingHint": "Nejspíš to bylo trvale smazáno z koše. Auditní log na smazané věci odkazuje dál — je to záznam o té změně.",
     "back": "Zpět na seznam",
+    "backToReview": "Zpět k třídění",
     "prev": "Předchozí",
     "next": "Další",
     "download": "Stáhnout originál",
@@ -3913,7 +3914,8 @@
       "zoomAlt": "Zvětšená posuzovaná tvář",
       "zoomClose": "Zavřít zvětšenou tvář"
     },
-    "openPhoto": "Otevřít fotku v nové záložce",
+    "openPhoto": "Otevřít fotku",
+    "openPhotoNewTab": "Otevřít fotku v nové záložce",
     "lightbox": {
       "title": "Zvětšená fotka",
       "close": "Zavřít",

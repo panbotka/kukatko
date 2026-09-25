@@ -51,11 +51,14 @@ function reasonKey(reason: string): (typeof REASON_KEYS)[keyof typeof REASON_KEY
 export function BreatherCard({
   breather,
   href,
+  linkState,
   onDismiss,
 }: DismissProps & {
   breather: ReviewBreather
   /** The photo's own page, built by the page so every route agrees. */
   href: string
+  /** The game's way back, handed to the photo's page; see `ReviewStage`. */
+  linkState?: object
 }) {
   const { t } = useTranslation()
   const reason = reasonKey(breather.reason)
@@ -75,7 +78,12 @@ export function BreatherCard({
         {reason !== undefined && <p className="review-game__face-hint">{t(reason)}</p>}
       </section>
       <main className="review-game__stage">
-        <ReviewPhoto photo={breather.photo} href={href} alt={breather.title} />
+        <ReviewPhoto
+          photo={breather.photo}
+          href={href}
+          linkState={linkState}
+          alt={breather.title}
+        />
       </main>
       <footer className="review-game__actions">
         <Button

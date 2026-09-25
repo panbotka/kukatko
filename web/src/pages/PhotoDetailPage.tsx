@@ -83,6 +83,7 @@ import {
   thumbnailRebuildPending,
   versionedUrl,
 } from '../lib/renditionRebuild'
+import { type ReviewReturn, reviewReturnPath } from '../lib/reviewReturn'
 import { toMode } from '../lib/searchView'
 import { isFormModalOpen } from '../lib/shortcuts'
 import { readUrlState } from '../lib/urlState'
@@ -334,6 +335,19 @@ export function PhotoDetailPage() {
   // there is no grid entry to pop and Back must reconstruct the list URL instead.
   const openedDirectlyRef = useRef(location.key === 'default')
 
+  // The sorting game this photo was opened from, when it was: the game navigates
+  // here in place (an installed app has no tabs) and says so in the navigation
+  // state, so the page can put a labelled way back at the top — the only way home
+  // an installed app has, with no browser Back button. Reached any other way the
+  // state is absent (or not the game's) and the page is exactly as it always was.
+  const reviewReturn = reviewReturnPath(location.state)
+  // ...and the state that keeps it: paging replaces the history entry, and a
+  // replacement without it would drop the only way home mid-browse.
+  const reviewReturnNav = useMemo<ReviewReturn | undefined>(
+    () => (reviewReturn === undefined ? undefined : { reviewReturn }),
+    [reviewReturn],
+  )
+
   // Tell the list this photo came from which photograph is on stage. Paging with
   // the arrows *replaces* the history entry rather than adding one, so without
   // this the way back would always land on the photograph first clicked, however
@@ -368,10 +382,10 @@ export function PhotoDetailPage() {
   const goToNeighbor = useCallback(
     (neighbor: NeighborPhoto | null): void => {
       if (neighbor !== null) {
-        void navigate(neighborTo(neighbor.uid), { replace: true })
+        void navigate(neighborTo(neighbor.uid), { replace: true, state: reviewReturnNav })
       }
     },
-    [navigate, neighborTo],
+    [navigate, neighborTo, reviewReturnNav],
   )
 
   // A direction pressed before the list order was known, kept until it lands. A
@@ -427,9 +441,27 @@ export function PhotoDetailPage() {
     // captures the new state, and otherwise degrades to the photograph fading
     // out over the page change — see `components/morph`.
     morph.morph(uid, () => {
-      void (openedDirectlyRef.current ? navigate(backHref(view)) : navigate(-1))
+      void (openedDirectlyRef.current ? navigate(reviewReturn ?? backHref(view)) : navigate(-1))
     })
   }
+
+  // The labelled way back to the sorting game, standing in for the bare back
+  // arrow when the photo came from there. The same `close` behind it — the entry
+  // behind this one IS the game, whose run is snapshotted, so stepping back lands
+  // on the very card — but in words, because "back to the list" would be a lie
+  // and an arrow alone does not say that the run is still there.
+  // `floating` pins it where the bare arrow floats, for the screens with no bar.
+  const reviewReturnButton = (floating: boolean) => (
+    <button
+      type="button"
+      className={`kk-viewer__btn kk-viewer__return${floating ? ' kk-viewer__back' : ''}`}
+      onClick={close}
+      data-testid="photo-back-to-review"
+    >
+      <Icon name="arrow-left" />
+      <span>{t('photo.backToReview')}</span>
+    </button>
+  )
 
   // The favorite is lifted here so the header heart and the `f` shortcut share one
   // optimistic toggle. It resyncs to the photo's stored flag once it loads.
@@ -973,15 +1005,19 @@ export function PhotoDetailPage() {
     const handed = handoffPreviewUrl(location.state, uid)
     return (
       <div className="kk-viewer" data-chrome="visible">
-        <button
-          type="button"
-          className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
-          aria-label={t('photo.back')}
-          title={t('photo.back')}
-          onClick={close}
-        >
-          <Icon name="arrow-left" />
-        </button>
+        {reviewReturn !== undefined ? (
+          reviewReturnButton(true)
+        ) : (
+          <button
+            type="button"
+            className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
+            aria-label={t('photo.back')}
+            title={t('photo.back')}
+            onClick={close}
+          >
+            <Icon name="arrow-left" />
+          </button>
+        )}
         <div className="kk-viewer__stage d-flex justify-content-center align-items-center">
           {handed === undefined ? (
             <Spinner animation="border" role="status" variant="light">
@@ -1013,7 +1049,7 @@ export function PhotoDetailPage() {
             hint={gone ? t('photo.missingHint') : undefined}
             action={
               <Button variant="outline-light" size="sm" onClick={close}>
-                {t('photo.back')}
+                {reviewReturn !== undefined ? t('photo.backToReview') : t('photo.back')}
               </Button>
             }
           />
@@ -1408,20 +1444,30 @@ export function PhotoDetailPage() {
           the same control, so a tap meant to shut the panel dropped the whole
           photograph instead. The arrow leaves the photo; the cross closes what is
           over it. */}
-      <button
-        type="button"
-        className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
-        aria-label={t('photo.back')}
-        title={t('photo.back')}
-        onClick={close}
-      >
-        <Icon name="arrow-left" />
-      </button>
+      {reviewReturn === undefined && (
+        <button
+          type="button"
+          className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__back"
+          aria-label={t('photo.back')}
+          title={t('photo.back')}
+          onClick={close}
+        >
+          <Icon name="arrow-left" />
+        </button>
+      )}
 
       {/* Auto-hiding top action bar: the photo's name, then the view toggles —
           plus, on a pointer-sized screen, the curation loop (on a phone that one
           lives in the bottom dock instead). */}
-      <div className="kk-viewer__chrome">
+      <div
+        className={`kk-viewer__chrome${reviewReturn !== undefined ? ' kk-viewer__chrome--return' : ''}`}
+      >
+        {/* Came from the sorting game: the way back in words, IN the bar's flow
+            rather than floating over it, so the name beside it yields to it
+            instead of running underneath — its width is the label's, which no
+            fixed padding can know in every locale. It is exempt from the bar's
+            fade (see viewer.css): this is the one way home. */}
+        {reviewReturn !== undefined && reviewReturnButton(false)}
         <div className="kk-viewer__heading">
           <h1 className="kk-viewer__title">
             {displayTitle.kind === 'facts' ? (
@@ -1556,6 +1602,7 @@ export function PhotoDetailPage() {
         <Link
           to={neighborTo(neighbors.prev.uid)}
           replace
+          state={reviewReturnNav}
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--prev"
           aria-label={t('photo.prev')}
           title={t('photo.prev')}
@@ -1567,6 +1614,7 @@ export function PhotoDetailPage() {
         <Link
           to={neighborTo(neighbors.next.uid)}
           replace
+          state={reviewReturnNav}
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--next"
           aria-label={t('photo.next')}
           title={t('photo.next')}
