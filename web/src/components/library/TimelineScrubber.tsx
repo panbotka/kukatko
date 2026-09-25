@@ -574,16 +574,17 @@ export function TimelineScrubber({
         // is composed once and given to the screen reader and the mouse alike.
         // An impossible-date band is named for what it is, not for a month —
         // whatever months a finger target of it swallowed, the tap lands on it.
-        const jumpLabel = range.target.implausible === true
-          ? t('library.timeline.jumpToImplausible')
-          : collapsed
-            ? t('library.timeline.jumpToRange', {
-                from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
-                to: formatMonth(range.newest.year, range.newest.month, i18n.language),
-              })
-            : t('library.timeline.jumpTo', {
-                month: formatMonth(range.newest.year, range.newest.month, i18n.language),
-              })
+        const jumpLabel =
+          range.target.implausible === true
+            ? t('library.timeline.jumpToImplausible')
+            : collapsed
+              ? t('library.timeline.jumpToRange', {
+                  from: formatMonth(range.oldest.year, range.oldest.month, i18n.language),
+                  to: formatMonth(range.newest.year, range.newest.month, i18n.language),
+                })
+              : t('library.timeline.jumpTo', {
+                  month: formatMonth(range.newest.year, range.newest.month, i18n.language),
+                })
         return (
           <button
             key={tick.key}

@@ -4138,14 +4138,17 @@ here.
   `rel="noopener noreferrer"`, and `o` opens the same path via `window.open(…, 'noopener,noreferrer')` — it is a
   **real `href`**, so right-click → copy link address, middle-click and Ctrl/Cmd+click all work; *getting the
   URL* is the point (a photo worth sharing is found mid-game and would otherwise have to be hunted down again
-  in the library), and a click handler cannot give that. A new tab, because the queue lives in memory and
-  navigating away would drop the run — and neither route answers, skips nor moves the queue;
+  in the library), and a click handler cannot give that. A new tab, so the game stays on screen (a round trip
+  in the same tab would resume the run too, see below) — and neither route answers, skips nor moves the queue;
   the answers are **optimistic** (the UI moves on, the request finishes in the background) and
   the next card is **always already in memory** (`useReviewGame` refills in the background, `useImagePreloader`
   decodes `PRELOAD_AHEAD = 4` photos ahead), so between cards **a spinner never flashes**;
   an unsaved answer isn't lost — it sits in an alert with **Uložit znovu**/**Zahodit**, undo has its own
   alert with retry; **leaving mid-round loses nothing**, because every answer was persisted on its own the
-  moment it was given.
+  moment it was given — and **coming back resumes the run**: a round trip to a photo's page and back to `/review`
+  in the same browser session lands on the same card with the same round position, tallies, combo and „Dnešní
+  mix" flag (`lib/reviewSnapshot`, see `useReviewGame`), while a finished round, the closing card and „Ukončit
+  hru" leave nothing to resume.
   **On touch the three answers are also a swipe** (`useReviewSwipe` on the stage): right Ano, left Ne, down
   Nevím, with the card following the finger (`.review-game__card`, an inline `translate`+`rotate` at
   `DRAG_TILT = 1/24 °/px`) and the verdict **named before the finger lifts**. The wrapper fills the stage
@@ -4223,7 +4226,11 @@ here.
   so `100cqh` still measures what the face box was normalised against; and the swipe verdict staying off the
   answer row and `pointer-events: none` — read out of the shipped stylesheet like the `app.css` guards in
   `src/styles/`) + `lib/reviewRounds.test.ts` (breather placement, the reveal's one-slot-per-round rule, the
-  milestone edges and the local-day daily flag, including storage that throws) + `lib/gestures.test.ts`,
+  milestone edges and the local-day daily flag, including storage that throws) + `lib/reviewSnapshot.test.ts`
+  (the run's write/read round trip, a foreign user, another source, and every malformed shape it must refuse)
+  + the `ReviewPage resume` tests (a remount restores the card, the round, the combo and the tallies without a
+  fetch or a re-sent answer; a failed answer stays retryable; another account, another source, an unreadable
+  snapshot, a finished round and an explicit exit all start fresh) + `lib/gestures.test.ts`,
   `LeaderboardPage` = `/leaderboard` (**any logged-in user** — reading aggregates is not a write, so the
   **Žebříček** link is seen by a viewer too; since 2026-08-07 it is the last entry of the „Procházet"
   dropdown rather than a top-level slot beside **Třídění** — one player and 38 answers on the live instance
@@ -5554,7 +5561,20 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   answered counter and the seen-set survive — they are about the session, not the selection. A batch that was
   in flight during the switch is recognised by the `source` the response **echoes** and dropped; because the
   refill effect already ran behind the in-flight latch, dropping it also **bumps a reload key**, otherwise
-  nothing would ever fetch the source the player actually chose;
+  nothing would ever fetch the source the player actually chose. `useReviewGame(source, user)` makes a run
+  **resumable**: given the signed-in user's uid (`ReviewPage` reads it null-safely from `AuthContext`) every change
+  is written to a snapshot in **`sessionStorage`** (`lib/reviewSnapshot`, key `kukatko.review.run`, versioned) —
+  the cards exactly as `GET /review/queue` handed them over plus the counters, the seen-set, the undone ids that
+  must take the direct paths, the markers learned during undo and the `failed` answers; no animation, drag, DOM
+  or image data. A mount for the same user and source starts **from** it: same card, round, tallies and combo,
+  no fetch until the resumed queue runs out, the session count not overwritten by the server's, nothing re-sent.
+  Failed answers stay retryable; one still in flight when the page went away settles on its own and, should it
+  fail afterwards, is dropped — it was counted once and is never counted again. The undo target does **not**
+  survive (its request may not have settled). `readReviewSnapshot` treats storage as **untrusted input**: another
+  user, another source, another version, unparseable JSON or any shape the renderer could trip over reads as
+  "none", and the game starts a fresh round. The snapshot is dropped whenever there is no run to resume — the
+  round-summary card is up, the queue is empty, or the cards in hand belong to a source just switched away from
+  — and `end()` (the closing card, an explicit exit) drops it and latches so nothing is written again;
   `useReviewSwipe({onVerdict,enabled})` = the game's **touch input**: right Ano, left Ne, down Nevím (the pure
   decision is `swipeVerdict` in `lib/gestures`, in the directions the arrow keys already use, so the two input
   methods can never disagree). It returns the live `offset` the card is translated by, the `hint` — the verdict

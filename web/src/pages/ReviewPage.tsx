@@ -1,4 +1,11 @@
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from 'react'
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
@@ -6,6 +13,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { Trans, useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
+import { AuthContext } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { Icon, type IconName } from '../components/Icon'
 import { KeyboardShortcutsHelp } from '../components/KeyboardShortcutsHelp'
@@ -480,7 +488,11 @@ export function ReviewPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const source = parseSource(searchParams.get('source'))
-  const game = useReviewGame(source)
+  // The run is resumable per user: a peek at a photo's page and straight back
+  // lands on the same card (see useReviewGame). Read null-safely, so the page
+  // still plays — just without the resume — outside an auth provider.
+  const userUid = useContext(AuthContext)?.user?.uid
+  const game = useReviewGame(source, userUid)
   const streak = useReviewStreak()
   const { prime } = useImagePreloader()
   /** True once the player has asked to leave and the closing card is up. */
@@ -517,13 +529,16 @@ export function ReviewPage() {
     )
   }, [prime, game.pending])
 
+  const { end } = game
   const leave = useCallback(() => {
+    // Leaving on purpose ends the run: nothing is left to resume next time.
+    end()
     if (window.history.length > 1) {
       void navigate(-1)
       return
     }
     void navigate('/')
-  }, [navigate])
+  }, [end, navigate])
 
   const played = game.session.confirmed + game.session.rejected + game.session.skipped
 
@@ -540,6 +555,15 @@ export function ReviewPage() {
     }
     leave()
   }, [leave, leaving, played])
+
+  // The closing card is the session's end, however it was reached (Esc, the ✕,
+  // or a dry backend after the last round): the run is over, so no snapshot of
+  // it may survive to be resumed.
+  useEffect(() => {
+    if (leaving) {
+      end()
+    }
+  }, [end, leaving])
 
   const card: ReviewCard | undefined = game.current
   const question = card?.type === 'question' ? card.question : undefined
@@ -602,8 +626,9 @@ export function ReviewPage() {
    * The keyboard twin of the anchor in {@link ReviewPhoto}: opens the photo on
    * screen in a new tab, same path and same `noopener`. It answers nothing and
    * touches the queue not at all — the card the player is looking at is still
-   * there when they come back. A new tab, not this one, because the queue lives
-   * in memory and leaving would drop the whole run.
+   * there when they come back. A new tab, not this one: the run would survive a
+   * round trip in this tab too (see useReviewGame), but a new tab keeps the game
+   * on screen and costs no re-render of the stage.
    */
   const openPhoto = useCallback(() => {
     const photo = card === undefined ? undefined : cardPhoto(card)

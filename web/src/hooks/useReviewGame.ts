@@ -10,6 +10,13 @@ import {
   type ReviewCard,
 } from '../lib/reviewRounds'
 import {
+  clearReviewSnapshot,
+  readReviewSnapshot,
+  REVIEW_SNAPSHOT_VERSION,
+  type ReviewSnapshot,
+  writeReviewSnapshot,
+} from '../lib/reviewSnapshot'
+import {
   confirmDuplicate,
   confirmFace,
   dismissDuplicate,
@@ -214,6 +221,17 @@ export interface ReviewGame {
   dismissFailed: () => void
   /** Acknowledges the celebration so it stops showing. */
   clearMilestone: () => void
+  /**
+   * Ends the run for good: its snapshot is dropped and none is written again,
+   * so the next visit to `/review` starts a new round. Called when the session
+   * closes ("Díky za třídění!") or the player leaves the game explicitly.
+   */
+  end: () => void
+}
+
+/** The run `user` left behind for `source`; null without a user (no persistence). */
+function restoreRun(user: string | undefined, source: ReviewSource): ReviewSnapshot | null {
+  return user === undefined ? null : readReviewSnapshot(user, source)
 }
 
 /**
@@ -255,22 +273,37 @@ export interface ReviewGame {
  * counter and the seen-set survive the switch — they are about the session, not
  * about the selection — while the undo target does not, since the card it would
  * restore no longer belongs to the game on screen.
+ *
+ * Given the signed-in `user`, a run in progress survives leaving the page: every
+ * change is written to a session-scoped snapshot (see `lib/reviewSnapshot`) and
+ * a remount for the same user and source picks the run up where it was — the
+ * same card, round position, tallies and combo, with no request re-sent and no
+ * fetch until the resumed queue runs out. Failed answers ride along and stay
+ * retryable; an answer still in flight when the page went away settles on its
+ * own, and one that fails after that is dropped, never counted again. The undo
+ * target does not survive the trip: its request may not have settled, and an
+ * inverse sent against a guess is not an undo. A finished round and an ended
+ * session leave nothing behind.
  */
-export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
-  const [queue, setQueue] = useState<ReviewCard[]>([])
-  const [round, setRound] = useState<RoundProgress>(NO_ROUND)
+export function useReviewGame(source: ReviewSource = 'both', user?: string): ReviewGame {
+  // Read once, on mount: everything below starts from it or from scratch.
+  const [restored] = useState(() => restoreRun(user, source))
+  const [queue, setQueue] = useState<ReviewCard[]>(restored?.queue ?? [])
+  const [round, setRound] = useState<RoundProgress>(restored?.round ?? NO_ROUND)
   const [summary, setSummary] = useState<RoundSummary | null>(null)
-  const [combo, setCombo] = useState(0)
-  const [answered, setAnswered] = useState(0)
-  const [session, setSession] = useState<SessionTally>({ confirmed: 0, rejected: 0, skipped: 0 })
-  const [touched, setTouched] = useState<Photo[]>([])
+  const [combo, setCombo] = useState(restored?.combo ?? 0)
+  const [answered, setAnswered] = useState(restored?.answered ?? 0)
+  const [session, setSession] = useState<SessionTally>(
+    restored?.session ?? { confirmed: 0, rejected: 0, skipped: 0 },
+  )
+  const [touched, setTouched] = useState<Photo[]>(restored?.touched ?? [])
   const [milestone, setMilestone] = useState<number | null>(null)
-  const [remaining, setRemaining] = useState(0)
+  const [remaining, setRemaining] = useState(restored?.remaining ?? 0)
   const [fetching, setFetching] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [exhausted, setExhausted] = useState(false)
   const [reason, setReason] = useState<string | undefined>(undefined)
-  const [failed, setFailed] = useState<FailedAnswer[]>([])
+  const [failed, setFailed] = useState<FailedAnswer[]>(restored?.failed ?? [])
   const [lastAnswer, setLastAnswer] = useState<AnsweredQuestion | null>(null)
   const [undoing, setUndoing] = useState(false)
   const [undoError, setUndoError] = useState(false)
@@ -281,31 +314,41 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
   // The queue's source of truth. State only mirrors it for rendering: two
   // answers can land within one render (arrow keys at speed), and reading the
   // head from state would answer the same card twice.
-  const queueRef = useRef<ReviewCard[]>([])
+  const queueRef = useRef<ReviewCard[]>(restored?.queue ?? [])
   /** Every question id ever enqueued this session — refill deduplication. */
-  const seenRef = useRef<Set<string>>(new Set())
+  const seenRef = useRef<Set<string>>(new Set(restored?.seen))
   /** Ids of undone questions whose next yes/no must use the direct paths. */
-  const directRef = useRef<Set<string>>(new Set())
+  const directRef = useRef<Set<string>>(new Set(restored?.direct))
   /** Marker uids learned during undo, keyed by question id. */
-  const markerRef = useRef<Map<string, string>>(new Map())
+  const markerRef = useRef<Map<string, string>>(new Map(Object.entries(restored?.markers ?? {})))
   /** In-flight answer requests; undo awaits them before reverting. */
   const inflightRef = useRef<Map<string, Promise<boolean>>>(new Map())
   const fetchingRef = useRef(false)
-  const startedRef = useRef(false)
+  // A resumed run has started already: the server's session count must not
+  // overwrite the one it carried in.
+  const startedRef = useRef(restored !== null)
   /** The selection the queue currently belongs to; a batch for anything else is stale. */
   const sourceRef = useRef<ReviewSource>(source)
+  /**
+   * The source the cards in hand were built for. It trails `source` for one
+   * render after a switch, which is exactly when the snapshot must not tag the
+   * old cards with the new selection.
+   */
+  const queueSourceRef = useRef<ReviewSource>(restored?.source ?? source)
+  /** Latched by `end()`: a closed session writes no snapshot again. */
+  const endedRef = useRef(false)
   const undoingRef = useRef(false)
   const failedRef = useRef<FailedAnswer[]>([])
   failedRef.current = failed
   const lastAnswerRef = useRef<AnsweredQuestion | null>(null)
   lastAnswerRef.current = lastAnswer
   /** The live round, read synchronously while answers land back to back. */
-  const roundRef = useRef<RoundProgress>(NO_ROUND)
+  const roundRef = useRef<RoundProgress>(restored?.round ?? NO_ROUND)
   /** The combo, and what to put back when an undo takes an answer away. */
-  const comboRef = useRef(0)
-  const comboBeforeRef = useRef(0)
+  const comboRef = useRef(restored?.combo ?? 0)
+  const comboBeforeRef = useRef(restored?.comboBefore ?? 0)
   /** The session's answer count, for the milestone comparison. */
-  const answeredRef = useRef(0)
+  const answeredRef = useRef(restored?.answered ?? 0)
   /** Whether today's mix is already behind the player (read once, then tracked). */
   const dailyDoneRef = useRef(dailyMixDone(new Date()))
 
@@ -352,6 +395,7 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
         seenRef.current.add(q.id)
       }
       if (fresh.length > 0) {
+        queueSourceRef.current = res.source
         commitQueue([...queueRef.current, ...buildRoundCards(fresh, res.breathers ?? [])])
         commitRound({
           ...NO_ROUND,
@@ -703,6 +747,42 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     setMilestone(null)
   }, [])
 
+  // The snapshot follows the run: written on every change while a round is in
+  // progress, and dropped the moment there is nothing to resume — the round is
+  // over (its summary card is up), the queue is empty, or the cards in hand
+  // belong to a source the player has just switched away from.
+  useEffect(() => {
+    if (user === undefined || endedRef.current) {
+      return
+    }
+    if (summary !== null || queue.length === 0 || queueSourceRef.current !== source) {
+      clearReviewSnapshot()
+      return
+    }
+    writeReviewSnapshot({
+      version: REVIEW_SNAPSHOT_VERSION,
+      user,
+      source,
+      queue,
+      round,
+      combo,
+      comboBefore: comboBeforeRef.current,
+      answered,
+      session,
+      touched,
+      remaining,
+      seen: [...seenRef.current],
+      direct: [...directRef.current],
+      markers: Object.fromEntries(markerRef.current),
+      failed,
+    })
+  }, [user, source, queue, round, summary, combo, answered, session, touched, remaining, failed])
+
+  const end = useCallback(() => {
+    endedRef.current = true
+    clearReviewSnapshot()
+  }, [])
+
   return {
     current: queue[0],
     pending: queue,
@@ -730,5 +810,6 @@ export function useReviewGame(source: ReviewSource = 'both'): ReviewGame {
     retryFailed,
     dismissFailed,
     clearMilestone,
+    end,
   }
 }

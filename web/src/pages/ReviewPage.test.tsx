@@ -4,9 +4,11 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { VERDICT_THRESHOLD } from '../lib/gestures'
 import { DAILY_STORAGE_KEY } from '../lib/reviewRounds'
+import { REVIEW_SNAPSHOT_KEY } from '../lib/reviewSnapshot'
 import { type Label } from '../services/organize'
 import { type Subject } from '../services/people'
 import { type Photo } from '../services/photos'
@@ -1189,6 +1191,199 @@ describe('ReviewPage rounds', () => {
     await user.keyboard('{Escape}')
     // A player who answered nothing is not shown a summary of nothing.
     expect(screen.queryByTestId('review-session-summary')).toBeNull()
+  })
+})
+
+/** A signed-in session as far as the game reads it: just the user's uid. */
+function signedIn(uid: string): AuthContextValue {
+  return { user: { uid } } as unknown as AuthContextValue
+}
+
+/** The page under a signed-in user, which is what makes a run resumable. */
+function renderSignedIn(uid = 'u1', entry = '/review') {
+  return render(
+    <I18nextProvider i18n={i18n}>
+      <AuthContext.Provider value={signedIn(uid)}>
+        <MemoryRouter initialEntries={[entry]}>
+          <ReviewPage />
+        </MemoryRouter>
+      </AuthContext.Provider>
+    </I18nextProvider>,
+  )
+}
+
+/** Five face questions P1…P5 in one round. */
+function fiveQuestions() {
+  return makeQueue([1, 2, 3, 4, 5].map((n) => faceQuestion(`q${String(n)}`, `P${String(n)}`)))
+}
+
+/**
+ * The run survives a round trip away from `/review` — to a photo's own page and
+ * straight back is the case that matters — through a session-scoped snapshot.
+ * A remount is exactly that trip as far as the game can tell.
+ */
+describe('ReviewPage resume', () => {
+  beforeEach(() => {
+    window.sessionStorage.clear()
+  })
+
+  it('resumes the same card, round position, combo and tallies after a remount', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(fiveQuestions())
+    const first = renderSignedIn()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard(' ')
+    await user.keyboard('{ArrowRight}')
+    await user.keyboard('{ArrowLeft}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P4')
+    })
+    await waitFor(() => {
+      expect(answerMock).toHaveBeenCalledTimes(3)
+    })
+    first.unmount()
+
+    // Anything fetched now would be a new round — the resume must not ask.
+    queueMock.mockClear()
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q9', 'Zdeněk')]))
+    renderSignedIn()
+
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('P4')
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent('4/5')
+    // The day's first round stays the day's first round.
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent("Today's mix")
+    expect(screen.getByTestId('review-combo')).toHaveTextContent('2')
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('2 answered')
+    expect(queueMock).not.toHaveBeenCalled()
+    // Nothing the server already accepted goes out again.
+    expect(answerMock).toHaveBeenCalledTimes(3)
+
+    // The session's tallies came along: the closing card reports all of it.
+    await user.keyboard('{Escape}')
+    const summary = await screen.findByTestId('review-session-summary')
+    expect(within(summary).getByTestId('review-tally-confirmed')).toHaveTextContent('1')
+    expect(within(summary).getByTestId('review-tally-rejected')).toHaveTextContent('1')
+    expect(within(summary).getByTestId('review-tally-skipped')).toHaveTextContent('1')
+    // ...and an ended session leaves nothing to resume.
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+  })
+
+  it('keeps a failed answer retryable across the resume, without counting it twice', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(fiveQuestions())
+    answerMock.mockRejectedValueOnce(new Error('offline'))
+    const first = renderSignedIn()
+    await screen.findByTestId('review-question')
+
+    await user.keyboard('{ArrowRight}')
+    await screen.findByTestId('review-answer-errors')
+    first.unmount()
+
+    renderSignedIn()
+    await screen.findByTestId('review-answer-errors')
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('1 answered')
+
+    await user.click(screen.getByRole('button', { name: 'Save again' }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('review-answer-errors')).toBeNull()
+    })
+    expect(answerMock).toHaveBeenCalledTimes(2)
+    expect(answerMock).toHaveBeenLastCalledWith('q1', 'yes')
+    // A retry settles what was already counted; it is not a second answer.
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('1 answered')
+  })
+
+  it('never hands the run to a different account', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(fiveQuestions())
+    const first = renderSignedIn('u1')
+    await screen.findByTestId('review-question')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P2')
+    })
+    first.unmount()
+
+    queueMock.mockClear()
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q9', 'Zdeněk')]))
+    renderSignedIn('u2')
+
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('Zdeněk')
+    expect(screen.getByTestId('review-progress')).toHaveTextContent('0 answered')
+    expect(queueMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts fresh when the run was taken for a different source', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(fiveQuestions())
+    const first = renderSignedIn('u1', '/review?source=both')
+    await screen.findByTestId('review-question')
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(screen.getByTestId('review-question')).toHaveTextContent('P2')
+    })
+    first.unmount()
+
+    queueMock.mockClear()
+    queueMock.mockResolvedValue(
+      makeQueue([labelQuestion('l1', 'Dogs')], { source: 'labels' as ReviewSource }),
+    )
+    renderSignedIn('u1', '/review?source=labels')
+
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('Dogs')
+    expect(queueMock).toHaveBeenCalledWith('labels')
+  })
+
+  it('starts fresh over a snapshot it cannot read, without crashing', async () => {
+    window.sessionStorage.setItem(REVIEW_SNAPSHOT_KEY, '{"version":1,"user":"u1","queue":[{')
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderSignedIn()
+
+    expect(await screen.findByTestId('review-question')).toHaveTextContent('Alice')
+    expect(queueMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves no snapshot behind a finished round', async () => {
+    const user = userEvent.setup()
+    queueMock
+      .mockResolvedValueOnce(makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')]))
+      .mockResolvedValue(
+        makeQueue([faceQuestion('q3', 'Cyril')], {
+          round: nextRound(2),
+        }),
+      )
+    const first = renderSignedIn()
+    await screen.findByTestId('review-question')
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).not.toBeNull()
+
+    await user.keyboard('{ArrowRight}')
+    await user.keyboard('{ArrowRight}')
+    await screen.findByTestId('review-round-summary')
+    // The next round loads behind the summary card, and still nothing is kept:
+    // a finished round is not a run to come back to.
+    await waitFor(() => {
+      expect(queueMock).toHaveBeenCalledTimes(2)
+    })
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
+    first.unmount()
+
+    renderSignedIn()
+    await waitFor(() => {
+      expect(queueMock).toHaveBeenCalledTimes(3)
+    })
+  })
+
+  it('forgets the run when the player leaves the game explicitly', async () => {
+    const user = userEvent.setup()
+    queueMock.mockResolvedValue(fiveQuestions())
+    renderSignedIn()
+    await screen.findByTestId('review-question')
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).not.toBeNull()
+
+    // Nothing answered: "Ukončit hru" leaves straight away, and takes the run along.
+    await user.click(screen.getByRole('button', { name: 'Leave the game' }))
+    expect(window.sessionStorage.getItem(REVIEW_SNAPSHOT_KEY)).toBeNull()
   })
 })
 

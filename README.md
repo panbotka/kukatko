@@ -185,8 +185,10 @@ to: say it three times about one person and the game stops asking *you* about th
 then tries once more on a face you have never been shown — never on the ones you already gave up
 on, and never as a statement that it is not them. Every answer goes through the same write paths
 the ordinary pages use, so it is audited and undoable — and the game never merges, deletes or
-invalidates anything on its own. A leaderboard counts who has answered the most and how many
-days in a row, because a shared library is tidied by more than one person.
+invalidates anything on its own. Stepping out to look at a photo properly and coming straight
+back picks the round up where you left it — same question, same score — rather than starting
+over. A leaderboard counts who has answered the most and how many days in a row, because a
+shared library is tidied by more than one person.
 
 ### The everyday library
 

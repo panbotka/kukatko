@@ -196,11 +196,12 @@ describe('TasksPage', () => {
     expect(await screen.findByText(/last by Tomáš Kozák/)).toBeInTheDocument()
     // An actor whose account is gone still gets a line, not a blank.
     expect(screen.getByText(/last by someone/)).toBeInTheDocument()
-    // The stamp is machine-readable as well as relative.
-    expect(screen.getAllByText(/ago|now|yesterday/)[0].closest('time')).toHaveAttribute(
-      'dateTime',
-      '2026-09-18T10:00:00Z',
-    )
+    // The stamp is machine-readable as well as human-readable. Found by its
+    // attribute, not by "ago": the fixture's date is fixed, so the relative
+    // wording it renders in depends on the day the suite runs.
+    const stamp = document.querySelector('time[datetime="2026-09-18T10:00:00Z"]')
+    expect(stamp).not.toBeNull()
+    expect(stamp?.textContent).not.toBe('')
   })
 
   it('says a task over nothing has no photos, in words and with the placeholder', async () => {
