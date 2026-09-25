@@ -368,6 +368,7 @@
       "subject": "Person or label",
       "when": "When"
     },
+    "openPhoto": "Open the photo",
     "empty": {
       "title": "No decisions",
       "hint": "This user has no recorded decisions for the current filter."

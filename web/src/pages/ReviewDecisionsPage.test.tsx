@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -156,6 +156,9 @@ describe('ReviewDecisionsPage', () => {
     expect(within(yesRow).getByText('Grandma')).toBeInTheDocument()
     const thumb = within(yesRow).getByTestId('decision-thumb')
     expect(thumb).toHaveAttribute('src', expect.stringContaining('ph-1'))
+    // A square centre crop big enough for the 96 px box (tile_100 would upscale).
+    expect(thumb).toHaveAttribute('src', expect.stringContaining('/thumb/tile_224'))
+    expect(thumb).toHaveClass('kk-decision-thumb')
 
     // The rejection is a "Ne" (No).
     const noRow = screen.getByTestId('decision-row-2')
@@ -166,6 +169,47 @@ describe('ReviewDecisionsPage', () => {
       expect.objectContaining({ user: 'u1', via: 'review' }),
       expect.any(AbortSignal),
     )
+  })
+
+  it("links each thumbnail to the photo's own page, in the same window", async () => {
+    const user = userEvent.setup()
+    auditMock.mockResolvedValue(
+      response([record(2, 'label.reject', 'lb-1', { photo_uid: 'ph-2' })]),
+    )
+
+    renderPage(true, '/audit/reviews?user=u1&decision=no&offset=60')
+
+    const row = await screen.findByTestId('decision-row-2')
+    const link = within(row).getByRole('link', { name: 'Open the photo' })
+    expect(link).toHaveAttribute('href', '/photos/ph-2')
+    // A client-side route change, never a new tab.
+    expect(link).not.toHaveAttribute('target')
+    expect(within(link).getByTestId('decision-thumb')).toBeInTheDocument()
+
+    await user.click(link)
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/photos\/ph-2$/)
+  })
+
+  it('renders a blank well with no link for a missing or broken thumbnail', async () => {
+    auditMock.mockResolvedValue(
+      response([
+        record(1, 'label.reject', 'lb-1', {}),
+        record(2, 'label.reject', 'lb-1', { photo_uid: 'ph-2' }),
+      ]),
+    )
+
+    renderPage()
+
+    // No photo on the record: the blank well, the same box, and nothing to click.
+    const missing = await screen.findByTestId('decision-row-1')
+    expect(within(missing).getByTestId('decision-thumb-empty')).toHaveClass('kk-decision-thumb')
+    expect(within(missing).queryByRole('link')).not.toBeInTheDocument()
+
+    // A thumbnail that fails to load falls back to the same well and drops its link.
+    const broken = screen.getByTestId('decision-row-2')
+    fireEvent.error(within(broken).getByTestId('decision-thumb'))
+    expect(within(broken).getByTestId('decision-thumb-empty')).toHaveClass('kk-decision-thumb')
+    expect(within(broken).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('shows an empty state when the user has no recorded decisions', async () => {

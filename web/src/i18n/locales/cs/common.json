@@ -372,6 +372,7 @@
       "subject": "Osoba nebo štítek",
       "when": "Kdy"
     },
+    "openPhoto": "Otevřít detail fotky",
     "empty": {
       "title": "Žádná rozhodnutí",
       "hint": "Tento uživatel nemá žádná zaznamenaná rozhodnutí pro aktuální filtr."

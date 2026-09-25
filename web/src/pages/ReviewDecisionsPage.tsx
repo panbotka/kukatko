@@ -33,8 +33,13 @@ import { fetchSubjects } from '../services/people'
 import { fetchLeaderboard, type Leaderboard, type LeaderboardEntry } from '../services/review'
 import { thumbUrl } from '../services/photos'
 
-/** The centre-cropped square thumbnail size for the compact decision list. */
-const THUMB_SIZE = 'tile_100'
+/**
+ * The centre-cropped square rendition a decision's thumbnail is drawn from. The
+ * box is 96 px on a desktop (see `.kk-decision-thumb`), so `tile_100` would be
+ * upscaled on any high-density screen; `tile_224` covers 2× and stays a square
+ * crop that fills the box — a `fit_*` rendition would letterbox it.
+ */
+const THUMB_SIZE = 'tile_224'
 
 /**
  * The Ano/Ne filter options with the i18n key for each button label, `as const`
@@ -295,7 +300,11 @@ function DecisionContent({ state, decisions, locale, onRetry, onOffset }: Decisi
             <th scope="col">{t('reviewDecisions.columns.photo')}</th>
             <th scope="col">{t('reviewDecisions.columns.decision')}</th>
             <th scope="col">{t('reviewDecisions.columns.subject')}</th>
-            <th scope="col">{t('reviewDecisions.columns.when')}</th>
+            {/* A phone has no room for a fourth column: the date moves under the
+                name instead (see DecisionRow), so the table never scrolls sideways. */}
+            <th scope="col" className="d-none d-sm-table-cell">
+              {t('reviewDecisions.columns.when')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -320,6 +329,7 @@ function DecisionRow({ decision, locale }: DecisionRowProps) {
   const { t } = useTranslation()
   const kindLabel =
     decision.kind === 'face' ? t('reviewDecisions.kind.face') : t('reviewDecisions.kind.label')
+  const when = formatDateTime(decision.createdAt, locale)
   return (
     <tr data-testid={`decision-row-${String(decision.id)}`}>
       <td>
@@ -342,36 +352,50 @@ function DecisionRow({ decision, locale }: DecisionRowProps) {
         <Icon name={decision.kind === 'face' ? 'person-bounding-box' : 'tags'} />{' '}
         <span className="text-secondary small">{kindLabel}</span>
         <div>{decision.targetName || '—'}</div>
+        <div className="d-sm-none small text-secondary" data-testid="decision-when-inline">
+          {when}
+        </div>
       </td>
-      <td className="text-nowrap">{formatDateTime(decision.createdAt, locale)}</td>
+      <td className="text-nowrap d-none d-sm-table-cell">{when}</td>
     </tr>
   )
 }
 
-/** A fixed-size photo thumbnail that falls back to a blank well if it fails. */
+/**
+ * A decision's photo as a square thumbnail that opens the photo's own page in
+ * the app (client-side, same window — Back returns to this page, filter and
+ * offset, since they all live in the URL). A missing photo or a thumbnail that
+ * fails to load falls back to a blank well of the same size, with no link.
+ */
 function DecisionThumb({ photoUid }: { photoUid: string | null }) {
+  const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
   if (photoUid === null || failed) {
     return (
       <span
-        className="d-inline-block rounded bg-body-tertiary"
-        style={{ width: 48, height: 48 }}
+        className="kk-decision-thumb rounded bg-body-tertiary"
         aria-hidden="true"
         data-testid="decision-thumb-empty"
       />
     )
   }
   return (
-    <FadeInImage
-      src={thumbUrl(photoUid, THUMB_SIZE)}
-      alt=""
-      className="rounded"
-      style={{ width: 48, height: 48, objectFit: 'cover' }}
-      data-testid="decision-thumb"
-      onError={() => {
-        setFailed(true)
-      }}
-    />
+    <Link
+      to={`/photos/${encodeURIComponent(photoUid)}`}
+      aria-label={t('reviewDecisions.openPhoto')}
+      className="kk-decision-thumb-link rounded"
+      data-testid="decision-thumb-link"
+    >
+      <FadeInImage
+        src={thumbUrl(photoUid, THUMB_SIZE)}
+        alt=""
+        className="kk-decision-thumb rounded bg-body-tertiary"
+        data-testid="decision-thumb"
+        onError={() => {
+          setFailed(true)
+        }}
+      />
+    </Link>
   )
 }
 

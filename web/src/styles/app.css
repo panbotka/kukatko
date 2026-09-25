@@ -3275,3 +3275,35 @@ body {
     white-space: normal;
   }
 }
+
+/* ==========================================================================
+ * Review decisions — one sorting decision per table row
+ * ==========================================================================
+ * The thumbnail is where a wrong Ano/Ne gets spotted, so it is big enough to
+ * judge and opens the photo. The blank well of a missing photo takes exactly
+ * the same box, so a row keeps its height either way. A phone shrinks it, so
+ * the four columns still fit without the table scrolling sideways.
+ */
+.kk-decision-thumb {
+  display: block;
+  width: 6rem;
+  height: 6rem;
+  object-fit: cover;
+}
+
+.kk-decision-thumb-link {
+  display: block;
+  width: fit-content;
+}
+
+.kk-decision-thumb-link:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+@media (max-width: 575.98px) {
+  .kk-decision-thumb {
+    width: 4rem;
+    height: 4rem;
+  }
+}

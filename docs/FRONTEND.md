@@ -4350,13 +4350,18 @@ here.
   with `?via=review&user=…` (`fetchAuditLog`). At the top the user's name + their **Ano/Ne/Celkem** tally
   (looked up from `fetchLeaderboard('all')`), below it the **Ano/Ne filter** (`ButtonGroup`, held in the URL
   query `decision`, `viewToAuditParams` maps it to the backend), a table **Fotka · Rozhodnutí · Osoba
-  nebo štítek · Kdy**: `thumbUrl(photo_uid,'tile_100')` via `FadeInImage` (fallback an empty well),
-  an Ano/Ne `Badge` (`check-lg`/`x-lg`), the subject/label name translated via rosters
-  (`fetchSubjects`/`fetchLabels`, best-effort). prev/next pagination over `offset`/`next_offset`
+  nebo štítek · Kdy**: `thumbUrl(photo_uid,'tile_224')` via `FadeInImage` in a 96 px square
+  (`.kk-decision-thumb`, 64 px on a phone), wrapped in a router `Link` to `/photos/{uid}` (same window,
+  aria-label `reviewDecisions.openPhoto`, focus ring on `.kk-decision-thumb-link`; a missing photo or a
+  failed load renders the same-size blank well with no link); on a phone the Kdy column hides and the date
+  moves under the name, so the table never scrolls sideways; an Ano/Ne `Badge` (`check-lg`/`x-lg`), the
+  subject/label name translated via rosters (`fetchSubjects`/`fetchLabels`, best-effort). prev/next pagination over `offset`/`next_offset`
   (limit 60), state in the URL (`user`/`decision`/`offset` — „Back always works"). An empty state when the
   user has no decisions; without a selected user a hint back to the leaderboard; self-gated on `isAdmin`.
   i18n `reviewDecisions.*` (cs/en). Tests: `ReviewDecisionsPage.test.tsx` (the Ano/Ne split + thumbnails,
-  the tally from the leaderboard, the filter changes the URL and refetches, the empty state, a non-admin alert),
+  the tally from the leaderboard, the thumbnail link to the photo, the blank well with no link, the filter
+  changes the URL and refetches, the empty state, a non-admin alert) + `styles/reviewDecisions.test.ts`
+  (the 96/64 px square and the focus ring),
   `NotFoundPage`,
   `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
   current role may not enter, so `/review`, `/duplicates`, `/upload`, `/import`, … no longer bounce a
