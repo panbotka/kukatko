@@ -244,10 +244,10 @@ describe('MultiSelect', () => {
     // Above every layer of in-page chrome the app draws itself…
     expect(menu).toBeGreaterThan(zIndexOf(css, /\.kk-tabbar\s*(?=\{)/))
     expect(menu).toBeGreaterThan(zIndexOf(css, /\.kk-batch-dock\s*(?=\{)/))
-    // …and below Bootstrap's first dialog layer (offcanvas backdrop, 1040), so a
+    // …and below the dialog band's first layer (the offcanvas backdrop), so a
     // menu open in a modal cannot outrank the backdrop if the modal ever stops
     // being its own stacking context.
-    expect(menu).toBeLessThan(1040)
+    expect(menu).toBeLessThan(zIndexOf(css, /\.offcanvas-backdrop\s*(?=\{)/))
   })
 
   it('flows the suggestions inside the scroll on a phone so they clear the keyboard', async () => {

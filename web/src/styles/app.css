@@ -72,10 +72,23 @@
        1025  mobile bottom tab bar    above the rail, which stops short of it
        1030  floating batch dock      above the tab bar it rises over
        1035  overlay menus            above all of the page chrome above
-       ----  1040/1045 offcanvas, 1050/1055 modal: Bootstrap's dialog band
-       1080  immersive viewer         `--kk-viewer-z` (tokens.css), owns its route
+       1080  immersive viewer         `--kk-viewer-z` (tokens.css), owns its route;
+                                      the review game, the album face run and the
+                                      slideshow are full-screen sheets at 1080 too
+       1082  offcanvas backdrop  ┐
+       1083  offcanvas           │    Bootstrap's dialog band, lifted off its own
+       1084  modal backdrop      │    1040–1055 (see "The dialog band" below)
+       1085  modal               ┘
        1090  PWA offline/update note  ambient, still under…
        1100  toast stack              `.kk-toast-stack` (tokens.css)
+
+     The dialog band sits above the full-screen sheets, not under them as
+     Bootstrap ships it: a dialog is only ever opened *from* whatever is on
+     screen, so it has to cover that — at 1055 a confirm opened in the viewer
+     (deleting a photo comment) painted under the photograph, and the image took
+     every click meant for its buttons. The backdrops rise with their dialogs, or
+     the sheet would still win the hit test around them. The band stays under the
+     PWA note and the toasts, whose order against a dialog is what it always was.
 
      An overlay menu — a `MultiSelect`'s fixed suggestion list — tops the
      page-chrome band because it is opened from a field that any of those bars
@@ -91,7 +104,40 @@
   --kk-tabbar-z: 1025;
   --kk-batch-dock-z: 1030;
   --kk-overlay-menu-z: 1035;
+  --kk-offcanvas-backdrop-z: 1082;
+  --kk-offcanvas-z: 1083;
+  --kk-modal-backdrop-z: 1084;
+  --kk-modal-z: 1085;
   --kk-pwa-status-z: 1090;
+}
+
+/* ---- The dialog band ----------------------------------------------------
+   Bootstrap's modal and offcanvas, moved onto the scale above. The modal and
+   the offcanvas panels take their z-index from a variable Bootstrap declares on
+   the element's own class, so the variable is re-declared on that same class
+   (this sheet loads after Bootstrap's, so equal specificity wins); the
+   offcanvas backdrop has a literal z-index and gets one back. Every dialog —
+   those written today and those written next — lands above the viewer without
+   a line of its own. `styles/dialogBand.test.ts` holds the order. */
+.modal {
+  --bs-modal-zindex: var(--kk-modal-z);
+}
+
+.modal-backdrop {
+  --bs-backdrop-zindex: var(--kk-modal-backdrop-z);
+}
+
+.offcanvas,
+.offcanvas-sm,
+.offcanvas-md,
+.offcanvas-lg,
+.offcanvas-xl,
+.offcanvas-xxl {
+  --bs-offcanvas-zindex: var(--kk-offcanvas-z);
+}
+
+.offcanvas-backdrop {
+  z-index: var(--kk-offcanvas-backdrop-z);
 }
 
 html {
@@ -558,7 +604,7 @@ body {
    edge while a grid selection is active — the same translucent-glass recipe as
    the top nav, echoing the command-style search. It floats over the photo wall
    (fixed, centred) rather than pushing it, and layers above the grid but below
-   the immersive viewer (1080) and Bootstrap modals (1040/1050). The dock is a
+   the immersive viewer (1080) and the dialog band above it (1082–1085). The dock is a
    transparent column so its gap passes clicks through to the photos beneath;
    each child re-enables pointer events. */
 /* The floating batch bar and the mobile tab bar both live on the bottom edge, so

@@ -144,10 +144,10 @@ export interface ReviewFaceZoomProps {
  * centre-cropped square, i.e. a different frame from the one the box was
  * normalised against, so cropping one lands beside the face.
  *
- * It is a layer of the game's own, not a react-bootstrap `Modal`: the game is a
- * fixed `z-index: 1080` sheet (the immersive viewer's layer, since it owns the
- * whole screen too) and Bootstrap's dialog band tops out at 1055, so a modal
- * opened from here renders *underneath* the photograph. Drawn inside the game,
+ * It is a layer of the game's own, not a react-bootstrap `Modal`. It was first
+ * drawn here because Bootstrap's dialog band (then 1040–1055) painted under the
+ * game's fixed `z-index: 1080` sheet; the band now sits above it (the dialog
+ * band in `styles/app.css`), but the reason to stay holds: drawn inside the game,
  * the veil is above the answer buttons rather than beneath them, which is also
  * what keeps a tap meant to dismiss from answering the question by accident.
  *

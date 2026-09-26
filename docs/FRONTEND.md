@@ -538,11 +538,11 @@ here.
   **`.kk-overlay-menu`**, which lifts it off Bootstrap's `.dropdown-menu` z-index (1000 — under every
   sticky bar the app draws) onto the app's own **layering scale** (the `--kk-*-z` block on `:root` in
   `app.css`: timeline rail 1018 < sticky toolbar 1019 < navbar 1020 < tab bar 1025 < batch dock 1030
-  < **overlay menu 1035** < Bootstrap's dialog band 1040+). Without it the sticky bar under `/upload`'s
+  < **overlay menu 1035** < full-screen sheets 1080 < Bootstrap's dialog band, lifted to 1082–1085). Without it the sticky bar under `/upload`'s
   album picker (1019 — the progress header of the day, `.kk-upload-rail` now) painted over the open
   album list and swallowed its clicks —
   measured with `elementFromPoint`, the two rows overlapping the header hit the header, not the option.
-  The layer deliberately stops **below** 1040, so a dialog opened over the page still covers the menu and
+  The layer deliberately stops **below** the dialog band, so a dialog opened over the page still covers the menu and
   a menu inside a modal can never outrank the modal backdrop (the modal is its own stacking context in
   any case, which is why the same class changes nothing in `BulkEditModal` or the bulk pickers). Phone
   keeps no layer at all — a `position: static` box does not stack. The `destructive` prop tints the label and chips into the danger key, so a removal never looks
@@ -736,7 +736,13 @@ here.
   `KeyboardShortcutsHelp`, `SlideshowStart`, `WelcomeModal` do). `Modal.Title`, `Modal.Body` and
   `Modal.Footer` are the library's own components and the rendered markup is unchanged. Every dialog
   imports this instead of `react-bootstrap/Modal`, and ESLint's `no-restricted-imports` enforces it, so
-  a dialog written next cannot silently opt back out of the translation. Tests: `Modal.test.tsx`),
+  a dialog written next cannot silently opt back out of the translation. **Every dialog paints above the
+  full-screen sheets**: Bootstrap ships its dialog band at 1040–1055, under the immersive viewer (1080)
+  and the review game, album face run and slideshow sheets (1080 too), so the comment-delete confirm
+  opened in the viewer painted under the photograph and the image took every click. `app.css` re-declares
+  the band on the scale — offcanvas backdrop/panel 1082/1083, modal backdrop/dialog 1084/1085, still under
+  the PWA note (1090) and the toasts (1100) — on Bootstrap's own classes, so no dialog needs a line of its
+  own. Guarded by `styles/dialogBand.test.ts`. Tests: `Modal.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search).

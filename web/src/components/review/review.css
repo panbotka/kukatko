@@ -642,11 +642,12 @@
 
 /* The enlarged crop behind the face chip.
 
-   A layer of the game's own rather than a Bootstrap dialog: `.review-game` is a
-   fixed sheet at `z-index: 1080` and the dialog band tops out at 1055, so a
-   modal opened from here would render *under* the photograph. Drawn inside the
-   game it also puts the veil above the answer buttons, so a tap meant to dismiss
-   the look cannot answer the question underneath it. */
+   A layer of the game's own rather than a Bootstrap dialog. It was first drawn
+   here because the dialog band (then 1040–1055) painted under the game's
+   `z-index: 1080` sheet; the band is lifted above it now (the dialog band in
+   `styles/app.css`), and the layer stays for its other reason: drawn inside the
+   game it puts the veil above the answer buttons, so a tap meant to dismiss the
+   look cannot answer the question underneath it. */
 .review-face-zoom {
   position: absolute;
   inset: 0;
