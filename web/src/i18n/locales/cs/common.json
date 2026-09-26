@@ -183,7 +183,8 @@
         "title": "Uživatelské role",
         "body": "Co v Kukátku můžete dělat, závisí na vaší roli. Role tvoří žebříček – každá vyšší umí všechno, co ta nižší, a něco navíc:",
         "viewer": "Prohlíží fotky, alba, štítky, mapu i žebříček. Nic nemění.",
-        "editor": "Navíc upravuje fotky a jejich údaje, třídí obličeje a spravuje alba i štítky.",
+        "curator": "Navíc třídí obličeje a lidi, spravuje alba i štítky, hraje třídicí hru a nahrává fotky.",
+        "editor": "Navíc upravuje fotky a jejich údaje (třeba datum pořízení), slučuje duplicity a přesouvá fotky do koše.",
         "admin": "Navíc spravuje uživatele, vidí auditní log a může trvale mazat.",
         "maintainer": "Navíc spouští importy a údržbu, sleduje stav systému a spravuje zálohy."
       },
@@ -390,6 +391,7 @@
   },
   "roles": {
     "viewer": "Prohlížeč",
+    "curator": "Kurátor",
     "editor": "Editor",
     "admin": "Správce",
     "maintainer": "Správce systému",
@@ -3016,6 +3018,7 @@
   "forbidden": {
     "title": "Sem nemáte přístup",
     "message": {
+      "curator": "Na tuhle část potřebujete roli kurátora — požádejte o ni správce.",
       "editor": "Na tuhle část potřebujete roli editora — požádejte o ni správce.",
       "admin": "Na tuhle část potřebujete roli správce — požádejte o ni někoho, kdo ji už má.",
       "maintainer": "Na tuhle část potřebujete roli správce systému — požádejte o ni někoho, kdo ji už má."

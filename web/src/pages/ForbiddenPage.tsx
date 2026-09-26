@@ -13,10 +13,11 @@ import { type GuardRole } from '../services/auth'
  *
  * Each role gets its own sentence instead of one template with the role name
  * interpolated: Czech would have to decline it („roli editora", „roli správce
- * systému"), and the way to obtain the role differs — an editor asks an admin,
+ * systému"), and the way to obtain the role differs — a curator or an editor asks an admin,
  * an admin asks someone who already is one.
  */
 const MESSAGE_KEYS = {
+  curator: 'forbidden.message.curator',
   editor: 'forbidden.message.editor',
   admin: 'forbidden.message.admin',
   maintainer: 'forbidden.message.maintainer',

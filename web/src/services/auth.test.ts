@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  canCurate,
   canImport,
   canWrite,
   changePassword,
@@ -250,21 +251,39 @@ describe('API tokens', () => {
 
 describe('role helpers', () => {
   // The four roles in ascending ladder order: viewer < editor < admin < maintainer.
-  const ROLES: Role[] = ['viewer', 'editor', 'admin', 'maintainer']
+  const ROLES: Role[] = ['viewer', 'curator', 'editor', 'admin', 'maintainer']
 
   it('roleAtLeast respects the strict ladder ordering', () => {
     expect(roleAtLeast('maintainer', 'admin')).toBe(true)
     expect(roleAtLeast('admin', 'editor')).toBe(true)
     expect(roleAtLeast('editor', 'editor')).toBe(true)
     expect(roleAtLeast('viewer', 'editor')).toBe(false)
+    // The curator sits between viewer and editor.
+    expect(roleAtLeast('curator', 'viewer')).toBe(true)
+    expect(roleAtLeast('curator', 'editor')).toBe(false)
+    expect(roleAtLeast('editor', 'curator')).toBe(true)
     // A lower role never meets a higher threshold.
     expect(roleAtLeast('admin', 'maintainer')).toBe(false)
     expect(roleAtLeast('editor', 'admin')).toBe(false)
   })
 
+  it('canCurate is true for curator and above', () => {
+    const expected: Record<Role, boolean> = {
+      viewer: false,
+      curator: true,
+      editor: true,
+      admin: true,
+      maintainer: true,
+    }
+    for (const role of ROLES) {
+      expect(canCurate(role)).toBe(expected[role])
+    }
+  })
+
   it('canWrite is true for editor and above', () => {
     const expected: Record<Role, boolean> = {
       viewer: false,
+      curator: false,
       editor: true,
       admin: true,
       maintainer: true,
@@ -277,6 +296,7 @@ describe('role helpers', () => {
   it('isAdmin is admin-or-higher (admin and maintainer)', () => {
     const expected: Record<Role, boolean> = {
       viewer: false,
+      curator: false,
       editor: false,
       admin: true,
       maintainer: true,
@@ -289,6 +309,7 @@ describe('role helpers', () => {
   it('the maintainer/import capability is maintainer-only', () => {
     const expected: Record<Role, boolean> = {
       viewer: false,
+      curator: false,
       editor: false,
       admin: false,
       maintainer: true,

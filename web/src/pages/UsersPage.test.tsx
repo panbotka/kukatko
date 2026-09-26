@@ -186,6 +186,21 @@ describe('UsersPage', () => {
     expect(within(maintainerSelect).getByRole('option', { name: 'Maintainer' })).toBeInTheDocument()
   })
 
+  it('offers the curator role to a plain admin, in ladder order', async () => {
+    fetchUsersMock.mockResolvedValue([])
+    const actor = userEvent.setup()
+
+    // Only maintainer is restricted; any admin may grant curator.
+    renderPage(auth({ isAdmin: true }))
+    await actor.click(screen.getByRole('button', { name: 'New user' }))
+    const dialog = await screen.findByRole('dialog')
+    const select = within(dialog).getByLabelText('Role')
+    const names = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+    expect(names).toEqual(['Viewer', 'Curator', 'Editor', 'Administrator'])
+  })
+
   it('locks a maintainer account against a non-maintainer admin', async () => {
     fetchUsersMock.mockResolvedValue([user({ uid: 'u9', username: 'ops', role: 'maintainer' })])
     renderPage(auth({ isAdmin: true }))

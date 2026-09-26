@@ -105,10 +105,11 @@ export interface UpdateUserBody {
 
 /**
  * The assignable roles (`auth.Role`) in ascending ladder order,
- * `viewer < editor < admin < maintainer`. Granting `maintainer` is restricted to
- * maintainers on the backend, so the UI only offers it to a maintainer actor.
+ * `viewer < curator < editor < admin < maintainer`. Granting `maintainer` is
+ * restricted to maintainers on the backend, so the UI only offers it to a
+ * maintainer actor; every other role, `curator` included, any admin may grant.
  */
-export const ROLES: readonly Role[] = ['viewer', 'editor', 'admin', 'maintainer']
+export const ROLES: readonly Role[] = ['viewer', 'curator', 'editor', 'admin', 'maintainer']
 
 /** Maximum length of a user note in characters (`auth.MaxNoteLen`). */
 export const MAX_NOTE_LENGTH = 1000

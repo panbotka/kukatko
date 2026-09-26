@@ -15,6 +15,8 @@ import { Layout } from './Layout'
 /** Builds an auth context value with the given capabilities. */
 function auth(
   opts: {
+    /** A curator: curation without the wider write access. */
+    canCurate?: boolean
     canWrite?: boolean
     isAdmin?: boolean
     isMaintainer?: boolean
@@ -23,10 +25,18 @@ function auth(
     subjectUid?: string
   } = {},
 ): AuthContextValue {
-  const { canWrite = false, isMaintainer = false } = opts
+  const { canCurate = false, canWrite = false, isMaintainer = false } = opts
   // A maintainer is admin-or-higher, so it satisfies isAdmin too.
   const isAdmin = opts.isAdmin ?? isMaintainer
-  const role = isMaintainer ? 'maintainer' : isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer'
+  const role = isMaintainer
+    ? 'maintainer'
+    : isAdmin
+      ? 'admin'
+      : canWrite
+        ? 'editor'
+        : canCurate
+          ? 'curator'
+          : 'viewer'
   return {
     status: 'authenticated',
     user: {
@@ -38,6 +48,7 @@ function auth(
     },
     role,
     downloadToken: null,
+    canCurate: canCurate || canWrite || isAdmin,
     canWrite: canWrite || isAdmin,
     isAdmin,
     isMaintainer,
@@ -314,6 +325,22 @@ describe('MobileNavDrawer', () => {
       '/stats',
       '/help',
     ])
+  })
+
+  it('gives a curator review, upload and the curation tools, not duplicates or trash', async () => {
+    const user = userEvent.setup()
+    renderShell(auth({ canCurate: true }))
+    const drawer = await openDrawer(user)
+
+    const hrefs = drawerHrefs(drawer)
+    for (const href of ['/review', '/upload', '/expand', '/faces', '/duplicate-markers']) {
+      expect(hrefs).toContain(href)
+    }
+    for (const href of ['/duplicates', '/trash']) {
+      expect(hrefs).not.toContain(href)
+    }
+    expect(within(drawer).getByRole('region', { name: 'Tools' })).toBeInTheDocument()
+    expect(within(drawer).queryByRole('region', { name: 'Admin' })).not.toBeInTheDocument()
   })
 
   it('gives an admin governance but withholds the maintainer operations', async () => {

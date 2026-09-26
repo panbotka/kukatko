@@ -1,12 +1,14 @@
 /**
  * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
- * ladder `viewer < editor < admin < maintainer` where each role inherits every
- * permission of the ones below it. viewer is read-only; editor adds write access
- * to media and metadata; admin adds governance (user management, audit, emptying
+ * ladder `viewer < curator < editor < admin < maintainer` where each role inherits
+ * every permission of the ones below it. viewer is read-only; curator adds the
+ * curation of the library — people and faces, albums and labels, the review game
+ * and uploading; editor adds write access to the photos' own metadata and to
+ * archiving; admin adds governance (user management, audit, emptying
  * the trash); maintainer adds operations (imports, maintenance, system status,
  * backup, restore, jobs, processing) and is the most powerful role.
  */
-export type Role = 'viewer' | 'editor' | 'admin' | 'maintainer'
+export type Role = 'viewer' | 'curator' | 'editor' | 'admin' | 'maintainer'
 
 /**
  * The roles that are meaningful as a route-guard threshold. `viewer` is the
@@ -555,14 +557,24 @@ export async function revokeApiToken(id: string, signal?: AbortSignal): Promise<
  */
 const ROLE_RANK: Record<Role, number> = {
   viewer: 0,
-  editor: 1,
-  admin: 2,
-  maintainer: 3,
+  curator: 1,
+  editor: 2,
+  admin: 3,
+  maintainer: 4,
 }
 
 /** Reports whether `role` meets or exceeds the `required` role. */
 export function roleAtLeast(role: Role, required: Role): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[required]
+}
+
+/**
+ * Reports whether a role may curate the library — name people and faces, sort
+ * photos into albums and labels, play the review game, upload (curator and
+ * above). Mirrors backend `Role.CanCurate`; an editor clears it too.
+ */
+export function canCurate(role: Role): boolean {
+  return roleAtLeast(role, 'curator')
 }
 
 /** Reports whether a role may perform write actions (editor and above). */

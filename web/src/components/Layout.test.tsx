@@ -14,6 +14,8 @@ import { Layout } from './Layout'
 /** Builds an auth context value with the given capabilities. */
 function auth(
   opts: {
+    /** A curator: curation without the wider write access. */
+    canCurate?: boolean
     canWrite?: boolean
     isAdmin?: boolean
     isMaintainer?: boolean
@@ -24,11 +26,20 @@ function auth(
     pictureVersion?: number
   } = {},
 ): AuthContextValue {
-  const { canWrite = false, isMaintainer = false } = opts
+  const { canCurate = false, canWrite = false, isMaintainer = false } = opts
   // A maintainer is admin-or-higher, so it satisfies isAdmin too.
   const isAdmin = opts.isAdmin ?? isMaintainer
   const role =
-    opts.role ?? (isMaintainer ? 'maintainer' : isAdmin ? 'admin' : canWrite ? 'editor' : 'viewer')
+    opts.role ??
+    (isMaintainer
+      ? 'maintainer'
+      : isAdmin
+        ? 'admin'
+        : canWrite
+          ? 'editor'
+          : canCurate
+            ? 'curator'
+            : 'viewer')
   return {
     status: 'authenticated',
     user: {
@@ -40,6 +51,7 @@ function auth(
     },
     role,
     downloadToken: null,
+    canCurate: canCurate || canWrite || isAdmin,
     canWrite: canWrite || isAdmin,
     isAdmin,
     isMaintainer,
@@ -525,6 +537,25 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('link', { name: 'Upload' })).toHaveClass('kukatko-nav-cta')
     // No other top-level entry borrows the call-to-action styling.
     expect(screen.getByRole('link', { name: 'Albums' })).not.toHaveClass('kukatko-nav-cta')
+  })
+
+  it('gives a curator review, upload and the curation tools, not duplicates or trash', async () => {
+    const user = userEvent.setup()
+    renderLayout(auth({ canCurate: true }))
+
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/review')
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
+
+    await user.click(screen.getByRole('button', { name: 'Tools' }))
+    for (const [name, href] of [
+      ['Expand', '/expand'],
+      ['Repeated markers', '/duplicate-markers'],
+    ]) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
+    }
+    // Duplicates and the trash touch the photos themselves: editors only.
+    expect(screen.queryByRole('link', { name: 'Duplicates' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Trash' })).not.toBeInTheDocument()
   })
 
   it('tucks the expand tool inside the Tools group instead of shouting at top level', async () => {

@@ -11,19 +11,20 @@ import { declarations, readCss, ruleBody, zIndexOf } from '../test/css'
 import { Layout } from './Layout'
 import { MobileTabBar } from './MobileTabBar'
 
-/** A minimal signed-in auth context; `canWrite` decides the Upload tab. */
-function auth(canWrite: boolean): AuthContextValue {
+/** A minimal signed-in auth context; `canCurate` decides the Upload tab. */
+function auth(role: 'viewer' | 'curator' | 'editor'): AuthContextValue {
   return {
     status: 'authenticated',
     user: {
       uid: 'u1',
       username: 'u',
       display_name: 'User One',
-      role: canWrite ? 'editor' : 'viewer',
+      role,
     },
-    role: canWrite ? 'editor' : 'viewer',
+    role,
     downloadToken: null,
-    canWrite,
+    canCurate: role !== 'viewer',
+    canWrite: role === 'editor',
     isAdmin: false,
     isMaintainer: false,
     canImport: false,
@@ -52,10 +53,10 @@ function mockViewport(narrow: boolean): void {
 }
 
 /** Renders the bar alone at `path`, so the active tab is the one under test. */
-function renderBar(canWrite = true, path = '/') {
+function renderBar(role: 'viewer' | 'curator' | 'editor' = 'editor', path = '/') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(canWrite)}>
+      <AuthContext.Provider value={auth(role)}>
         <MemoryRouter initialEntries={[path]}>
           <MobileTabBar />
         </MemoryRouter>
@@ -68,7 +69,7 @@ function renderBar(canWrite = true, path = '/') {
 function renderShell(path = '/') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(true)}>
+      <AuthContext.Provider value={auth('editor')}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route element={<Layout />}>
@@ -136,7 +137,7 @@ describe('MobileTabBar on a phone', () => {
   })
 
   it('highlights the tab for the current route, sub-paths included', () => {
-    renderBar(true, '/albums/ab12')
+    renderBar('editor', '/albums/ab12')
 
     // react-router marks the matching NavLink; the album detail page still reads
     // as "you are in Albums".
@@ -148,13 +149,19 @@ describe('MobileTabBar on a phone', () => {
   })
 
   it('marks the library tab active on the site root only', () => {
-    renderBar(true, '/')
+    renderBar('editor', '/')
     expect(screen.getByRole('link', { name: 'Library' })).toHaveClass('active')
     expect(screen.getByRole('link', { name: 'Albums' })).not.toHaveClass('active')
   })
 
-  it('hides the write-gated Upload tab from a viewer', () => {
-    renderBar(false)
+  it('offers a curator the Upload tab, which is curation', () => {
+    renderBar('curator')
+
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
+  })
+
+  it('hides the curation-gated Upload tab from a viewer', () => {
+    renderBar('viewer')
 
     expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()

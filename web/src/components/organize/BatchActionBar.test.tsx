@@ -132,6 +132,7 @@ const editorAuth: AuthContextValue = {
   user: null,
   role: 'editor',
   downloadToken: null,
+  canCurate: true,
   canWrite: true,
   isAdmin: false,
   isMaintainer: false,

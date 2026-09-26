@@ -28,6 +28,7 @@ describe('ForbiddenPage', () => {
   it('names the role the route actually needs', async () => {
     await i18n.changeLanguage('en')
     const cases: [GuardRole, RegExp][] = [
+      ['curator', /curator role/i],
       ['editor', /editor role/i],
       ['admin', /administrator role/i],
       ['maintainer', /maintainer role/i],

@@ -36,7 +36,7 @@ import {
   REVIEW_ITEM,
   STATS_ITEM,
   TASKS_PATH,
-  TOOLS_GROUP,
+  toolsGroup,
   UPLOAD_ITEM,
 } from './navItems'
 import { PersonAvatar } from './PersonAvatar'
@@ -128,7 +128,7 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  */
 export function Layout() {
   const { t } = useTranslation()
-  const { user, canWrite, isAdmin, isMaintainer, logout } = useAuth()
+  const { user, canCurate, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const drawerNav = useIsNavDrawerViewport()
@@ -153,6 +153,10 @@ export function Layout() {
   // empty for a viewer or an editor, two entries for an admin, all five for a
   // maintainer.
   const admin = adminItems({ isAdmin, isMaintainer })
+  // The "Nástroje" dropdown, likewise gated per item: the face and collection
+  // tools for a curator, duplicates and the trash on top for an editor, and no
+  // dropdown at all for a viewer.
+  const tools = toolsGroup({ canCurate, canWrite })
 
   // Close the collapsed menu on every navigation, whatever control was tapped
   // (top-level link, group dropdown item, or user menu item all change the
@@ -318,20 +322,20 @@ export function Layout() {
                 {/* The remaining browse destinations — saved searches and the
                     leaderboard among them — one level down. */}
                 {renderGroup(BROWSE_GROUP)}
-                {/* The review game: editors only, and kept in plain sight. */}
-                {canWrite && renderLink(REVIEW_ITEM)}
+                {/* The review game: curators and above, and kept in plain sight. */}
+                {canCurate && renderLink(REVIEW_ITEM)}
                 {/* Adding photos is the loop's payoff: the bar's one filled CTA,
                     hidden from viewers. */}
-                {canWrite && renderLink(UPLOAD_ITEM, { cta: true })}
+                {canCurate && renderLink(UPLOAD_ITEM, { cta: true })}
 
                 {/* A divider fences off the quieter power-user cluster, but only
                     when the current role actually has something below it. */}
-                {canWrite && <div className="kukatko-nav-divider" aria-hidden="true" />}
+                {tools !== null && <div className="kukatko-nav-divider" aria-hidden="true" />}
 
-                {/* Editor-only tools (expand, faces, duplicates, …); hidden from
-                    viewers. The administration that used to follow it here now
-                    hangs off the user menu instead. */}
-                {canWrite && renderGroup(TOOLS_GROUP)}
+                {/* The tools (expand, faces, duplicates, …), per item by role;
+                    hidden from viewers. The administration that used to follow
+                    it here now hangs off the user menu instead. */}
+                {tools !== null && renderGroup(tools)}
               </Nav>
               <Nav className="align-items-center">
                 <KeyboardShortcutsHelp />

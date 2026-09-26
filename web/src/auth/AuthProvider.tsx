@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
 import {
+  canCurate,
   canImport,
   canWrite,
   isAdmin,
@@ -112,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       role: user?.role ?? null,
       downloadToken: state.session?.download_token ?? null,
+      canCurate: user ? canCurate(user.role) : false,
       canWrite: user ? canWrite(user.role) : false,
       isAdmin: user ? isAdmin(user.role) : false,
       isMaintainer: user ? isMaintainer(user.role) : false,

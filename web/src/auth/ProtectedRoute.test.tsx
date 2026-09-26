@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
-import { type Role } from '../services/auth'
+import { type GuardRole, type Role } from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
 import { RequireAuth, RequireImport, RequireRole } from './ProtectedRoute'
@@ -17,6 +17,7 @@ function authValue(status: AuthStatus, role: Role | null = null): AuthContextVal
     user: role ? ({ role } as AuthContextValue['user']) : null,
     role,
     downloadToken: null,
+    canCurate: role === 'curator' || role === 'editor' || isAdmin,
     canWrite: role === 'editor' || isAdmin,
     isAdmin,
     isMaintainer,
@@ -40,10 +41,11 @@ function renderApp(
   value: AuthContextValue,
   guard: 'auth' | 'role' | 'import',
   initial = '/secret',
+  guardRole: GuardRole = 'admin',
 ) {
   const guardElement = {
     auth: <RequireAuth />,
-    role: <RequireRole role="admin" />,
+    role: <RequireRole role={guardRole} />,
     import: <RequireImport />,
   }[guard]
   return render(
@@ -132,6 +134,30 @@ describe('RequireRole', () => {
     renderApp(authValue('authenticated', 'admin'), 'role')
 
     expect(screen.getByText('secret content')).toBeInTheDocument()
+  })
+
+  it('lets a curator and everyone above it through a curator gate', () => {
+    for (const role of ['curator', 'editor', 'admin', 'maintainer'] as const) {
+      const { unmount } = renderApp(authValue('authenticated', role), 'role', '/secret', 'curator')
+      expect(screen.getByText('secret content')).toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('tells a viewer at a curator gate that the curator role is missing', () => {
+    renderApp(authValue('authenticated', 'viewer'), 'role', '/secret', 'curator')
+
+    expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/curator role/i)
+    expect(screen.queryByText('secret content')).not.toBeInTheDocument()
+  })
+
+  it('stops a curator at an editor gate and names the editor role', () => {
+    // Duplicates and the trash stay behind the editor gate: they touch the
+    // photos themselves, which a curator may not.
+    renderApp(authValue('authenticated', 'curator'), 'role', '/secret', 'editor')
+
+    expect(screen.getByTestId('forbidden-page')).toHaveTextContent(/editor role/i)
+    expect(screen.queryByText('secret content')).not.toBeInTheDocument()
   })
 })
 

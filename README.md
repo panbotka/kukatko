@@ -464,7 +464,8 @@ were written.
 - Originals on **local disk** or in an **S3-compatible bucket** (Cloudflare R2, with short-lived
   signed URLs), plus **S3 backup** — `pg_dump` and originals with retention — and a restore runbook
   that has been used.
-- Four roles (viewer < editor < admin < maintainer), a durable **audit trail** written in the same
+- Five roles (viewer < curator < editor < admin < maintainer — a curator sorts people, faces, albums
+  and labels without touching the photos themselves), a durable **audit trail** written in the same
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and
   `kukatko ctl` — a kubectl-style CLI against your own instance.
 - **Sign in with a passkey.** Add the fingerprint reader on your phone or laptop, or a hardware

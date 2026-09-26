@@ -95,6 +95,18 @@ const adminAuth = {
   isMaintainer: false,
 } as unknown as AuthContextValue
 
+/**
+ * A signed-in curator: people, faces, albums, labels, review and upload, but
+ * none of the editor's access to the photos themselves.
+ */
+const curatorAuth = {
+  ...viewerAuth,
+  user: { uid: 'u3', username: 'c', display_name: 'C', role: 'curator' },
+  role: 'curator',
+  canCurate: true,
+  canWrite: false,
+} as unknown as AuthContextValue
+
 /** Nobody signed in — what a visitor arriving at a public route looks like. */
 const unauthenticated = {
   ...viewerAuth,
@@ -205,13 +217,42 @@ describe('routing', () => {
   })
 
   it('explains the refusal on a fullscreen route a viewer may not enter', async () => {
-    // /review is editors-only and lives outside Layout. A viewer who typed it —
+    // /review is curators-and-up and lives outside Layout. A viewer who typed it —
     // or followed a shared link — used to land in the library with no word of
     // explanation; now the route itself says why, and the address survives.
     renderRoutes(['/review'])
 
-    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/editor role/i)
+    expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/curator role/i)
     expect(screen.getByTestId('pathname')).toHaveTextContent('/review')
+  })
+
+  it('gates the curation routes on the curator role', async () => {
+    // A viewer is told the *curator* role is what is missing — proof the gate
+    // sits at curator, not at editor where it used to be.
+    for (const path of [
+      '/review',
+      '/albums/a1/faces',
+      '/people/clusters',
+      '/faces',
+      '/expand',
+      '/recognition',
+      '/outliers',
+      '/duplicate-markers',
+      '/upload',
+    ]) {
+      const { unmount } = renderRoutes([path])
+      expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/curator role/i)
+      unmount()
+    }
+  })
+
+  it('keeps duplicates and the trash behind the editor gate, out of a curator’s reach', async () => {
+    for (const path of ['/duplicates', '/duplicates/compare', '/trash']) {
+      const { unmount } = renderRoutes([path], 0, curatorAuth)
+      expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/editor role/i)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(path)
+      unmount()
+    }
   })
 
   it('explains the refusal inside the shell for a viewer on /upload', async () => {

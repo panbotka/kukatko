@@ -1,6 +1,14 @@
 import { createContext, useContext } from 'react'
 
-import { canImport, canWrite, isAdmin, isMaintainer, type Role, type User } from '../services/auth'
+import {
+  canCurate,
+  canImport,
+  canWrite,
+  isAdmin,
+  isMaintainer,
+  type Role,
+  type User,
+} from '../services/auth'
 
 /**
  * Lifecycle of the auth session: still loading, signed in, signed out — or
@@ -22,6 +30,11 @@ export interface AuthContextValue {
   role: Role | null
   /** Opaque token for authorizing media downloads; null when signed out. */
   downloadToken: string | null
+  /**
+   * True when the current user may curate the library — people and faces,
+   * albums and labels, the review game, uploading (curator and above).
+   */
+  canCurate: boolean
   /** True when the current user may perform write actions (editor and above). */
   canWrite: boolean
   /**
@@ -92,4 +105,4 @@ export function useAuth(): AuthContextValue {
 }
 
 /** Helper re-exports so consumers can derive capabilities from a role. */
-export { canWrite, canImport, isAdmin, isMaintainer }
+export { canCurate, canWrite, canImport, isAdmin, isMaintainer }

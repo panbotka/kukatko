@@ -183,7 +183,8 @@
         "title": "User roles",
         "body": "What you can do in Kukátko depends on your role. Roles form a ladder – each higher one can do everything the one below can, plus more:",
         "viewer": "Views photos, albums, labels, the map and the leaderboard. Changes nothing.",
-        "editor": "Additionally edits photos and their details, sorts faces, and manages albums and labels.",
+        "curator": "Additionally sorts faces and people, manages albums and labels, plays the review game and uploads photos.",
+        "editor": "Additionally edits photos and their details (the capture date among them), merges duplicates and moves photos to the trash.",
         "admin": "Additionally manages users, sees the audit log, and can delete permanently.",
         "maintainer": "Additionally runs imports and maintenance, watches system status, and manages backups."
       },
@@ -386,6 +387,7 @@
   },
   "roles": {
     "viewer": "Viewer",
+    "curator": "Curator",
     "editor": "Editor",
     "admin": "Administrator",
     "maintainer": "Maintainer",
@@ -2890,6 +2892,7 @@
   "forbidden": {
     "title": "You can't open this page",
     "message": {
+      "curator": "You need the curator role for this part — ask an administrator for it.",
       "editor": "You need the editor role for this part — ask an administrator for it.",
       "admin": "You need the administrator role for this part — ask someone who already has it.",
       "maintainer": "You need the maintainer role for this part — ask someone who already has it."

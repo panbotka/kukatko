@@ -33,17 +33,20 @@ here.
   icon, **no role gate** — the competitive standing is just an aggregate of counts, so **every logged-in
   user** sees it, even a viewer). The leaderboard used to hold a top-level slot beside Třídění; on the live
   instance it has one player and 38 answers in total, which does not buy a place next to Knihovna and Alba.
-  **Třídění** `/review` (`REVIEW_ITEM`, gated on `canWrite`) does stay
+  **Třídění** `/review` (`REVIEW_ITEM`, gated on `canCurate`) does stay
   top-level, not under „Nástroje" — tidying the library one question at a time is the most-used curatorial
   loop, and a game nobody finds is a game nobody plays; **Nahrát** `/upload` (gated on
-  `canWrite`) is the bar's **single call-to-action** — a filled pill (`kukatko-nav-cta`, prop `cta`
+  `canCurate`) is the bar's **single call-to-action** — a filled pill (`kukatko-nav-cta`, prop `cta`
   in `renderLink`) so adding photos stands out. After it a **divider** (`kukatko-nav-divider` — a vertical
   hairline in the inline bar ≥ md, horizontal in the collapsed burger menu; drawn only when a role
   actually has something behind it) separates the quieter power-user cluster — since 2026-08-14 that is the
   editor dropdown **Nástroje** (`nav.tools`,
-  `TOOLS_GROUP`, entirely gated on `canWrite`) and nothing else: it leads with **Rozšířit** `/expand` (a power-user tool that used to
+  `TOOLS_GROUP`, gated **per item** through `toolsGroup({ canCurate, canWrite })`: each `TOOL_ITEMS` entry
+  carries a `gate` of `curator` or `editor`, and a role that clears none gets `null` — no dropdown, no
+  divider) and nothing else: it leads with **Rozšířit** `/expand` (a power-user tool that used to
   shout top-level next to albums/labels) + **Najít osobu** `/faces` + **Rozpoznávání** `/recognition` +
-  **Možné chyby** `/outliers` + **Duplikáty** `/duplicates` + **Koš** `/trash`. **Administration is no longer
+  **Možné chyby** `/outliers` + **Vícenásobné značky** `/duplicate-markers` — all `curator` — then
+  **Duplikáty** `/duplicates` + **Koš** `/trash`, which stay `editor` because they archive or delete photos. **Administration is no longer
   in the bar at all**: the two dropdowns that used to follow Nástroje — **Provoz** (`nav.operations`,
   `OPERATIONS_GROUP`, `isMaintainer`: import, maintenance, system) and **Správa** (`nav.admin`,
   `GOVERNANCE_GROUP`, `isAdmin`: users, audit) — are merged into **one „Správa" section of the user menu**
@@ -164,8 +167,9 @@ here.
   the focus trap and the body scroll-lock come from Bootstrap; the header adds a labelled close button
   (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
   `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní**
-  (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canWrite`,
-  the last keeping the bar's filled CTA look), **Procházet**, the `canWrite` **Nástroje**,
+  (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canCurate`,
+  the last keeping the bar's filled CTA look), **Procházet**, **Nástroje** (the same per-item
+  `toolsGroup()` as the bar, dropped when it comes back `null`),
   and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
   keyboard-shortcuts overlay, **the build version**, the **„Správa" group** and Odhlásit se, i.e. the user dropdown unfolded; the
   version is a plain `<p class="kk-navdrawer__version">` above them — no row, no tap target,
@@ -190,7 +194,7 @@ here.
   **Hledat** `/search` (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
   drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
   row in the drawer: on a phone searching had no entry at all, while browsing by label is the rarer errand),
-  **Nahrát** `/upload` (gated on `canWrite` — a viewer gets three). Browse / Třídění /
+  **Nahrát** `/upload` (`curateOnly`, gated on `canCurate` — a viewer gets three). Browse / Třídění /
   Nástroje / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
   being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
@@ -1903,7 +1907,7 @@ here.
   likely person for each face, so the normal rhythm is yes, yes, yes.
   It is **full screen outside `Layout`** (like `/review` and the viewer — `.kk-album-faces` is
   `position: fixed; inset: 0` at z-index 1080, a flex column where nothing scrolls but the row list)
-  and behind `RequireRole role="editor"`, with an explicit **Zavřít** back to the album. The header
+  and behind `RequireRole role="curator"`, with an explicit **Zavřít** back to the album. The header
   says **Fotka 12/86**, the stage draws the photo with `FaceOverlay`'s numbered boxes over a frame
   measured by `useImageFrame` (never the catalogue row's estimate — see the note on transposed
   dimensions), and below it comes one row per unnamed face: the number drawn on its box, a
@@ -2480,7 +2484,9 @@ here.
   (`users.selfDisableHint`), **deletion is not offered** — an account is retired by disabling it, so the history
   (photos, ratings, audit) stays whole. **The maintainer boundary** (mirrors the backend
   `authorizeUserManagement`): the **maintainer** role may be granted only by a maintainer — the role
-  `<select>` doesn't offer it to a non-maintainer at all (`ROLES.filter`, prop `isMaintainer`) — and a maintainer account may not
+  `<select>` doesn't offer it to a non-maintainer at all (`ROLES.filter`, prop `isMaintainer`; `ROLES` in
+  `services/users.ts` is the ladder in order, `viewer`, `curator`, `editor`, `admin`, `maintainer`, and any
+  admin may grant every rung below maintainer, `curator` included) — and a maintainer account may not
   be edited / re-passworded / disabled by a non-maintainer, so its three row actions go off with the hint
   `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). This is the one place
   the app keeps the buttons on screen instead of hiding them — and rightly so: it is **not** a role gate but a
@@ -4367,9 +4373,11 @@ here.
   viewer to the library without a word. Styled like `NotFoundPage`, its sibling in „this page is not
   for you": a heading, one sentence and a link back to the library. It takes the demanded role
   (`GuardRole` = `Role` without `viewer`, the floor nobody can miss) and prints **its own sentence per
-  role** — `forbidden.message.{editor,admin,maintainer}` — rather than interpolating a role name into
+  role** — `forbidden.message.{curator,editor,admin,maintainer}` — rather than interpolating a role name into
   one template: Czech would have to decline it („roli editora" / „roli správce systému") and the way
-  to *get* the role differs (an editor asks an admin; an admin asks someone who already is one).
+  to *get* the role differs (a curator or an editor asks an admin; an admin asks someone who already is one).
+  `MESSAGE_KEYS` is exhaustive over `GuardRole`, so a new rung on the ladder fails the build until it has
+  its sentence.
   Because it renders instead of navigating, **the URL stays on the protected route** — a reload
   repeats the explanation and Back goes where the user came from, not one step forward again. On the
   two fullscreen guarded routes (`/review`, `/duplicates/compare`) the guard sits outside `Layout`, so
@@ -5008,7 +5016,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   section asking a question does not look like eight alarms in a row, and nothing has to fight `.btn` for
   specificity);
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
-  exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/`canWrite`/`isAdmin`
+  exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/**`canCurate`**
+  (curator+: people and faces, albums and labels, the review game, uploading — `canCurate()` in
+  `services/auth.ts`, beside `canWrite()` on the same `ROLE_RANK` ladder
+  `viewer < curator < editor < admin < maintainer`)/`canWrite` (editor+)/`isAdmin`
   (admin+)/`isMaintainer`/`canImport`/**`pictureVersion`**/**`pictureChanged()`**. The last two are the
   profile picture's cache buster: a counter of the changes this tab has made to the signed-in user's own
   picture, and the announcement that bumps it. It lives on the session because the picture is changed in one
@@ -5036,7 +5047,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `maintainer`). They used to `<Navigate to="/" replace>`, which dropped the user on a page they had not
   asked for, with no explanation and without the address — a shared link to `/duplicates` opened the
   library and read as a broken app. `RequireRole`'s prop is a `GuardRole`, so `role="viewer"` — a
-  threshold nobody could fail — is a compile error),
+  threshold nobody could fail — is a compile error. **The route gates in `App.tsx`**: `role="curator"` for
+  the curation routes — `/review`, `/albums/:uid/faces`, `/upload`, `/people/clusters`, `/faces`, `/expand`,
+  `/recognition`, `/outliers`, `/duplicate-markers`; `role="editor"` for what touches the photos
+  themselves — `/duplicates`, `/duplicates/compare`, `/trash`; `admin` and `maintainer` as before. Page-
+  and panel-level controls still read `canWrite`, so a curator may see fewer buttons than the backend
+  would honour — the safe direction until each control is moved over to `canCurate`),
   `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = what the instance is —
   the feature flags `{semantic_search}` **and the running build `{version?}`** — from
   `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,

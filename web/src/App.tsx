@@ -84,15 +84,17 @@ export function AppRoutes() {
             viewport — so it lives outside the shell too (no navbar/footer). */}
         <Route path="/photos/:uid" element={<PhotoDetailPage />} />
         {/* The review game is fullscreen too — one question must own the whole
-            screen — and it writes, so it is editors and admins only. */}
-        <Route element={<RequireRole role="editor" />}>
+            screen — and it curates, so it is curators and above. */}
+        <Route element={<RequireRole role="curator" />}>
           <Route path="/review" element={<ReviewPage />} />
           {/* Naming an album's faces one photo at a time is the same shape: one
-              question owns the screen, and it writes. */}
+              question owns the screen, and it curates. */}
           <Route path="/albums/:uid/faces" element={<AlbumFacesPage />} />
-          {/* Comparing two duplicates needs the whole viewport — the decision is
-              made by looking at the pixels — and it merges/archives, so it is
-              editors and admins only, like the list it is reached from. */}
+        </Route>
+        {/* Comparing two duplicates needs the whole viewport — the decision is
+            made by looking at the pixels — and it merges/archives, so it is
+            editors and above, like the list it is reached from. */}
+        <Route element={<RequireRole role="editor" />}>
           <Route path="/duplicates/compare" element={<DupComparePage />} />
         </Route>
         <Route element={<Layout />}>
@@ -131,22 +133,26 @@ export function AppRoutes() {
               own (their shared photos are discarded, not silently dropped),
               and it forwards an editor to /upload with the staged share. */}
           <Route path="/share-target" element={<ShareTargetPage />} />
-          {/* Uploading and cluster review are write actions: editors and admins only. */}
-          <Route element={<RequireRole role="editor" />}>
+          {/* Uploading and cluster review are curation: curators and above. */}
+          <Route element={<RequireRole role="curator" />}>
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/people/clusters" element={<ClustersPage />} />
-            {/* Finding a person among untagged photos assigns faces: a write action. */}
+            {/* Finding a person among untagged photos assigns faces: curation. */}
             <Route path="/faces" element={<FacesPage />} />
-            {/* Growing an album/label with similar photos adds members: a write action. */}
+            {/* Growing an album/label with similar photos adds members: curation. */}
             <Route path="/expand" element={<ExpandPage />} />
-            {/* The recognition sweep confirms faces across everyone: a write action. */}
+            {/* The recognition sweep confirms faces across everyone: curation. */}
             <Route path="/recognition" element={<RecognitionPage />} />
-            {/* Reviewing a person's outliers unassigns faces: a write action. */}
+            {/* Reviewing a person's outliers unassigns faces: curation. */}
             <Route path="/outliers" element={<OutliersPage />} />
-            {/* Fixing a person tagged twice on one photo detaches markers: a
-                write action, editors and admins only. */}
+            {/* Fixing a person tagged twice on one photo detaches markers:
+                curation, curators and above. */}
             <Route path="/duplicate-markers" element={<DuplicateMarkersPage />} />
-            {/* Duplicate review archives photos in bulk: editors and admins only. */}
+          </Route>
+          {/* Archiving and deleting photos is editing the catalogue itself, which
+              a curator may not do: editors and above. */}
+          <Route element={<RequireRole role="editor" />}>
+            {/* Duplicate review archives photos in bulk. */}
             <Route path="/duplicates" element={<DuplicatesPage />} />
             {/* Trash management (restore / permanent delete) is a write action. */}
             <Route path="/trash" element={<TrashPage />} />

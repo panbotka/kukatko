@@ -15,8 +15,8 @@ interface TabEntry {
   labelKey: ParseKeys
   titleKey: ParseKeys
   icon: IconName
-  /** Editors only — a viewer simply gets one tab fewer. */
-  writeOnly?: boolean
+  /** Curators and above only — a viewer simply gets one tab fewer. */
+  curateOnly?: boolean
 }
 
 /**
@@ -47,7 +47,7 @@ const TABS: readonly TabEntry[] = [
     labelKey: 'nav.upload',
     titleKey: 'nav.titles.upload',
     icon: 'cloud-arrow-up',
-    writeOnly: true,
+    curateOnly: true,
   },
 ]
 
@@ -77,7 +77,7 @@ const TABS: readonly TabEntry[] = [
  */
 export function MobileTabBar() {
   const { t } = useTranslation()
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const drawerNav = useIsNavDrawerViewport()
   const barRef = useRef<HTMLElement>(null)
 
@@ -113,7 +113,7 @@ export function MobileTabBar() {
     return null
   }
 
-  const tabs = TABS.filter((tab) => tab.writeOnly !== true || canWrite)
+  const tabs = TABS.filter((tab) => tab.curateOnly !== true || canCurate)
 
   return (
     <nav ref={barRef} className="kk-tabbar d-lg-none" aria-label={t('nav.tabBar')}>

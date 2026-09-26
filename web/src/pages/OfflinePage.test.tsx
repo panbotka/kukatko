@@ -14,6 +14,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     user: null,
     role: null,
     downloadToken: null,
+    canCurate: false,
     canWrite: false,
     isAdmin: false,
     isMaintainer: false,

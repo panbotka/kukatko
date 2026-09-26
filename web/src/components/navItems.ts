@@ -93,52 +93,103 @@ export const BROWSE_GROUP: NavGroup = {
 }
 
 /**
- * The editor-only "Nástroje" (Tools) group, gated behind `canWrite`. It gathers
- * the power-user curation tools that a day-to-day browser rarely reaches for —
- * starting with "Rozšířit" (expand), which grows an album or label with similar
- * photos. Keeping expand here, rather than shouting for attention next to Alba /
- * Štítky, is the whole point of Part 3: the everyday loop stays uncluttered while
- * the tools remain one visible dropdown away.
+ * Which role unlocks one entry of the "Nástroje" section: `curator` for the face,
+ * people and collection tools, `editor` for the ones that archive or delete
+ * photos (duplicates, trash). Each is "that role *or* higher", mirroring the
+ * route guard in `App.tsx` the entry leads to.
  */
+export type ToolGate = 'curator' | 'editor'
+
+/** One entry of the "Nástroje" group, carrying the role that unlocks it. */
+export interface ToolEntry extends NavEntry {
+  gate: ToolGate
+}
+
+/**
+ * The entries of the "Nástroje" (Tools) group: power-user curation tools that a day-to-day
+ * browser rarely reaches for — starting with "Rozšířit" (expand), which grows an
+ * album or label with similar photos. Keeping expand here, rather than shouting
+ * for attention next to Alba / Štítky, is the whole point of Part 3: the everyday
+ * loop stays uncluttered while the tools remain one visible dropdown away.
+ *
+ * The gate is **per item** (see {@link toolsGroup}): a curator gets the face and
+ * collection tools but not duplicates or the trash, which touch the photos
+ * themselves; a viewer gets no group at all.
+ */
+export const TOOL_ITEMS: ToolEntry[] = [
+  {
+    to: '/expand',
+    labelKey: 'nav.expand',
+    titleKey: 'nav.titles.expand',
+    icon: 'magic',
+    gate: 'curator',
+  },
+  {
+    to: '/faces',
+    labelKey: 'nav.faceSearch',
+    titleKey: 'nav.titles.faceSearch',
+    icon: 'person-bounding-box',
+    gate: 'curator',
+  },
+  {
+    to: '/recognition',
+    labelKey: 'nav.recognition',
+    titleKey: 'nav.titles.recognition',
+    icon: 'person-check',
+    gate: 'curator',
+  },
+  {
+    to: '/outliers',
+    labelKey: 'nav.outliers',
+    titleKey: 'nav.titles.outliers',
+    icon: 'exclamation-triangle',
+    gate: 'curator',
+  },
+  {
+    to: '/duplicate-markers',
+    labelKey: 'nav.duplicateMarkers',
+    titleKey: 'nav.titles.duplicateMarkers',
+    icon: 'person-lines-fill',
+    gate: 'curator',
+  },
+  {
+    to: '/duplicates',
+    labelKey: 'nav.duplicates',
+    titleKey: 'nav.titles.duplicates',
+    icon: 'files',
+    gate: 'editor',
+  },
+  {
+    to: '/trash',
+    labelKey: 'nav.trash',
+    titleKey: 'nav.titles.trash',
+    icon: 'trash',
+    gate: 'editor',
+  },
+]
+
+/** The whole "Nástroje" group, every entry regardless of role, in menu order. */
 export const TOOLS_GROUP: NavGroup = {
   id: 'nav-tools',
   labelKey: 'nav.tools',
   titleKey: 'nav.titles.tools',
   icon: 'tools',
-  items: [
-    { to: '/expand', labelKey: 'nav.expand', titleKey: 'nav.titles.expand', icon: 'magic' },
-    {
-      to: '/faces',
-      labelKey: 'nav.faceSearch',
-      titleKey: 'nav.titles.faceSearch',
-      icon: 'person-bounding-box',
-    },
-    {
-      to: '/recognition',
-      labelKey: 'nav.recognition',
-      titleKey: 'nav.titles.recognition',
-      icon: 'person-check',
-    },
-    {
-      to: '/outliers',
-      labelKey: 'nav.outliers',
-      titleKey: 'nav.titles.outliers',
-      icon: 'exclamation-triangle',
-    },
-    {
-      to: '/duplicate-markers',
-      labelKey: 'nav.duplicateMarkers',
-      titleKey: 'nav.titles.duplicateMarkers',
-      icon: 'person-lines-fill',
-    },
-    {
-      to: '/duplicates',
-      labelKey: 'nav.duplicates',
-      titleKey: 'nav.titles.duplicates',
-      icon: 'files',
-    },
-    { to: '/trash', labelKey: 'nav.trash', titleKey: 'nav.titles.trash', icon: 'trash' },
-  ],
+  items: TOOL_ITEMS,
+}
+
+/**
+ * The "Nástroje" group narrowed to the entries the given roles may actually
+ * reach, in menu order — or null when that leaves nothing, so neither the bar's
+ * dropdown nor the drawer's section renders an empty shell (a viewer's case).
+ */
+export function toolsGroup(roles: { canCurate: boolean; canWrite: boolean }): NavGroup | null {
+  const items = TOOL_ITEMS.filter((entry) =>
+    entry.gate === 'editor' ? roles.canWrite : roles.canCurate,
+  )
+  if (items.length === 0) {
+    return null
+  }
+  return { ...TOOLS_GROUP, items }
 }
 
 /**
@@ -223,7 +274,7 @@ export function adminItems(roles: { isAdmin: boolean; isMaintainer: boolean }): 
 }
 
 /**
- * The write-gated review game. Top-level rather than buried in "Nástroje":
+ * The curation-gated review game (`canCurate`). Top-level rather than buried in "Nástroje":
  * tidying the library one question at a time is the app's most-used curation
  * loop, and a game nobody can find is a game nobody plays.
  */
@@ -235,7 +286,7 @@ export const REVIEW_ITEM: NavEntry = {
 }
 
 /**
- * The write-gated upload entry. Adding photos is the everyday loop's payoff, so
+ * The curation-gated upload entry (`canCurate`). Adding photos is the everyday loop's payoff, so
  * it is not just top-level but the bar's one call-to-action: rendered as a filled
  * pill (see `renderLink`'s `cta` option) so a non-technical user's eye lands on
  * "add photos" instead of treating it as just another link beside Import.

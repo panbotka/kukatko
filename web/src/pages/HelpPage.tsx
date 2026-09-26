@@ -135,6 +135,7 @@ const QUERY_EXAMPLES: { id: 'year' | 'person' | 'album'; query: string }[] = [
 /** The role ladder rows shown inside the "roles" section, low to high. */
 const ROLE_ROWS: { role: ParseKeys; descKey: ParseKeys }[] = [
   { role: 'roles.viewer', descKey: 'help.sections.roles.viewer' },
+  { role: 'roles.curator', descKey: 'help.sections.roles.curator' },
   { role: 'roles.editor', descKey: 'help.sections.roles.editor' },
   { role: 'roles.admin', descKey: 'help.sections.roles.admin' },
   { role: 'roles.maintainer', descKey: 'help.sections.roles.maintainer' },

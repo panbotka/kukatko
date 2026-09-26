@@ -23,7 +23,7 @@ import {
   REVIEW_ITEM,
   STATS_ITEM,
   TASKS_PATH,
-  TOOLS_GROUP,
+  toolsGroup,
   UPLOAD_ITEM,
 } from './navItems'
 import { WaitingBadge } from './tasks/WaitingBadge'
@@ -64,7 +64,7 @@ interface DrawerSection {
  *
  * **The set of items and their role gating is exactly the navbar's**, because
  * both read the same registries in `navItems.ts`: the everyday block, Procházet,
- * the editor-only Nástroje, and the account block that stands in for the user
+ * Nástroje (gated per item, curator and up), and the account block that stands in for the user
  * menu (account, the library statistics, help, the keyboard-shortcuts overlay,
  * the **Správa** group and sign-out). A section whose role gate is closed is not
  * rendered at all, exactly as its dropdown is not rendered in the bar.
@@ -90,7 +90,7 @@ export function MobileNavDrawer({
   onLogout: () => void
 }) {
   const { t } = useTranslation()
-  const { user, canWrite, isAdmin, isMaintainer } = useAuth()
+  const { user, canCurate, canWrite, isAdmin, isMaintainer } = useAuth()
   // The build the server runs, printed above sign-out exactly as the desktop
   // user menu prints it. It comes from the capabilities the shell already holds,
   // so opening the drawer costs no request.
@@ -108,11 +108,11 @@ export function MobileNavDrawer({
 
   // Each of the bar's dropdowns becomes one section, unfolded, behind the very
   // same role gate — a closed gate drops the whole section, exactly as it drops
-  // the dropdown up in the bar. Browse is open to every signed-in role.
-  const groups: { open: boolean; group: NavGroup }[] = [
-    { open: true, group: BROWSE_GROUP },
-    { open: canWrite, group: TOOLS_GROUP },
-  ]
+  // the dropdown up in the bar. Browse is open to every signed-in role; the
+  // tools are gated per item like the bar's dropdown: a curator gets the face
+  // and collection tools, an editor duplicates and the trash on top.
+  const tools = toolsGroup({ canCurate, canWrite })
+  const groups: NavGroup[] = [BROWSE_GROUP, ...(tools === null ? [] : [tools])]
 
   // The everyday block leads (it is what the bar shows loudest), then the browse
   // destinations, then the role-gated clusters in ladder order.
@@ -122,11 +122,9 @@ export function MobileNavDrawer({
       labelKey: 'nav.sections.main',
       // The review game and the upload CTA share one gate, so they share one
       // spread; the leaderboard they used to sandwich now lives in Procházet.
-      items: [...PRIMARY_ITEMS, ...(canWrite ? [REVIEW_ITEM, UPLOAD_ITEM] : [])],
+      items: [...PRIMARY_ITEMS, ...(canCurate ? [REVIEW_ITEM, UPLOAD_ITEM] : [])],
     },
-    ...groups
-      .filter((candidate) => candidate.open)
-      .map(({ group }) => ({ id: group.id, labelKey: group.labelKey, items: group.items })),
+    ...groups.map((group) => ({ id: group.id, labelKey: group.labelKey, items: group.items })),
   ]
 
   /**
