@@ -87,7 +87,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/embedjob` — worker handler `image_embed` + backfill
 - `internal/exif` — EXIF/GPS extraction (exiftool, pure-Go fallback)
 - `internal/expand` — "expand a collection": photos similar to an album/label (per-photo kNN + voting, exclude members, vote rule, label rejections/negative-exemplar); read-only, **never writes**
-- `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireWrite)
+- `internal/expandapi` — `GET /albums/{uid}/similar`, `GET /labels/{uid}/similar` (RequireCurator)
 - `internal/facejob` — worker handler `face_detect` + backfill
 - `internal/facematch` — face↔marker IoU matching, identity suggestions, the compact per-photo roll-call, assignment state machine
 - `internal/family` — the genealogy over subjects: the family is the node (a couple, a lone parent or a bare sibling group, plus their children), everything else is derived; byte-ordered pairs, one family per child, cycle check, bounded descendant/ancestor walks

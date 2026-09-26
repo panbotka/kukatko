@@ -278,7 +278,7 @@ func TestBulkStatus(t *testing.T) {
 func TestHandleBulk_unauthenticated(t *testing.T) {
 	t.Parallel()
 
-	api := NewAPI(Config{Service: stubService{}, RequireWrite: passthrough})
+	api := NewAPI(Config{Service: stubService{}, RequireWrite: passthrough, RequireCurator: passthrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 
@@ -301,7 +301,7 @@ func TestHandleBulk_rateLimited(t *testing.T) {
 	// A burst of 2 with a negligible refill rate so the third request within the
 	// test window is denied.
 	limiter := ratelimit.New(0.0001, 2)
-	api := NewAPI(Config{Service: stubService{}, RequireWrite: passthrough, RateLimit: limiter.Middleware})
+	api := NewAPI(Config{Service: stubService{}, RequireWrite: passthrough, RequireCurator: passthrough, RateLimit: limiter.Middleware})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 
@@ -327,21 +327,24 @@ func TestHandleBulk_rateLimited(t *testing.T) {
 	}
 }
 
-// TestHandleBulk_rateLimitRunsBehindTheWriteGuard verifies the middleware order:
-// the limiter sits *inside* RequireWrite, so a request the guard rejects never
+// TestHandleBulk_rateLimitRunsBehindTheRoleGuard verifies the middleware order:
+// the limiter sits *inside* RequireCurator, so a request the guard rejects never
 // reaches a bucket and cannot spend a legitimate caller's burst. That order is
 // what lets the limiter read the caller's identity (and let an exempt API token
 // through); this test is the guard against quietly swapping it back.
-func TestHandleBulk_rateLimitRunsBehindTheWriteGuard(t *testing.T) {
+func TestHandleBulk_rateLimitRunsBehindTheRoleGuard(t *testing.T) {
 	t.Parallel()
 
 	limiter := ratelimit.New(0.0001, 1) // one token, so a single charge exhausts it
-	denyWrite := func(http.Handler) http.Handler {
+	denyCurate := func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 		})
 	}
-	api := NewAPI(Config{Service: stubService{}, RequireWrite: denyWrite, RateLimit: limiter.Middleware})
+	api := NewAPI(Config{
+		Service: stubService{}, RequireCurator: denyCurate, RequireWrite: denyCurate,
+		RateLimit: limiter.Middleware,
+	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 

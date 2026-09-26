@@ -1,9 +1,9 @@
-// Package expandapi exposes the "expand a collection" search over HTTP for editors
-// and admins: GET /albums/{uid}/similar and GET /labels/{uid}/similar return the
+// Package expandapi exposes the "expand a collection" search over HTTP for curators
+// and above: GET /albums/{uid}/similar and GET /labels/{uid}/similar return the
 // photos most like an album's or a label's members that are not in it yet, so a
 // half-tagged library can be finished. Both are read-only — adding the found photos
 // to the collection goes through the existing POST /photos/bulk path, so this
-// package adds no second write path. It depends on a search behaviour and a write
+// package adds no second write path. It depends on a search behaviour and a curator
 // guard, both injected, so it stays decoupled from the expand package's wiring.
 package expandapi
 
@@ -35,12 +35,12 @@ type Service interface {
 // handlers share one implementation differing only in the not-found sentinel.
 type finder func(ctx context.Context, uid string, req expand.Request) (expand.Result, error)
 
-// API exposes the collection-expansion search over HTTP. The write guard is
+// API exposes the collection-expansion search over HTTP. The curator guard is
 // supplied by the caller (the auth subsystem) so this package depends on auth's
 // behaviour, not its wiring.
 type API struct {
-	service      Service
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoints
@@ -48,23 +48,24 @@ type API struct {
 type Config struct {
 	// Service backs the collection-expansion search.
 	Service Service
-	// RequireWrite guards the endpoints for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the endpoints for curators and above: they lead
+	// into the album/label curation a curator owns, so they move with it.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite}
+	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator}
 }
 
 // RegisterRoutes mounts the expansion endpoints onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	GET /albums/{uid}/similar  RequireWrite  photos most like an album's members
-//	GET /labels/{uid}/similar  RequireWrite  photos most like a label's members
+//	GET /albums/{uid}/similar  RequireCurator  photos most like an album's members
+//	GET /labels/{uid}/similar  RequireCurator  photos most like a label's members
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Get("/albums/{uid}/similar", a.handleAlbum)
-	r.With(a.requireWrite).Get("/labels/{uid}/similar", a.handleLabel)
+	r.With(a.requireCurator).Get("/albums/{uid}/similar", a.handleAlbum)
+	r.With(a.requireCurator).Get("/labels/{uid}/similar", a.handleLabel)
 }
 
 // handleAlbum expands the path album.

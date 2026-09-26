@@ -44,7 +44,7 @@ func TestEnqueueSidecars_onePerUpdatedPhoto(t *testing.T) {
 		pairs = append(pairs, [2]string{fmt.Sprintf("pht%04d", i), bulk.StatusUpdated})
 	}
 	enq := &recordingEnqueuer{}
-	api := NewAPI(Config{Service: nil, Sidecar: enq, RequireWrite: passthrough})
+	api := NewAPI(Config{Service: nil, Sidecar: enq, RequireWrite: passthrough, RequireCurator: passthrough})
 
 	api.enqueueSidecars(context.Background(), resultOf(pairs...))
 
@@ -61,7 +61,7 @@ func TestEnqueueSidecars_skipsUnchangedPhotos(t *testing.T) {
 	t.Parallel()
 
 	enq := &recordingEnqueuer{}
-	api := NewAPI(Config{Sidecar: enq, RequireWrite: passthrough})
+	api := NewAPI(Config{Sidecar: enq, RequireWrite: passthrough, RequireCurator: passthrough})
 
 	api.enqueueSidecars(context.Background(), resultOf(
 		[2]string{"pht1", bulk.StatusUpdated},
@@ -88,7 +88,7 @@ func TestEnqueueSidecars_failureIsSwallowed(t *testing.T) {
 	t.Parallel()
 
 	enq := &recordingEnqueuer{err: errors.New("queue down")}
-	api := NewAPI(Config{Sidecar: enq, RequireWrite: passthrough})
+	api := NewAPI(Config{Sidecar: enq, RequireWrite: passthrough, RequireCurator: passthrough})
 
 	// The call must not panic and must keep going past the first failure, so a
 	// transient queue error does not silently truncate the rest of the batch.
@@ -107,7 +107,7 @@ func TestEnqueueSidecars_failureIsSwallowed(t *testing.T) {
 func TestEnqueueSidecars_withoutEnqueuer(t *testing.T) {
 	t.Parallel()
 
-	api := NewAPI(Config{Sidecar: nil, RequireWrite: passthrough})
+	api := NewAPI(Config{Sidecar: nil, RequireWrite: passthrough, RequireCurator: passthrough})
 	// Must not panic on a nil enqueuer.
 	api.enqueueSidecars(context.Background(), resultOf([2]string{"pht1", bulk.StatusUpdated}))
 }

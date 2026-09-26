@@ -1069,7 +1069,8 @@ to `## Package map` in `CLAUDE.md`.
   for the maintenance backfill; the credit budget in `internal/placesjob` still bounds the spend, deferring a
   job rather than failing it when the window is empty. A failed enqueue is a `enqueue_failed` **warning**, not
   a failed upload — every one of these jobs is re-schedulable by a backfill;
-  `API` = `NewAPI(svc, requireWrite)` + `RegisterRoutes` mounts `POST /upload` behind `RequireWrite`;
+  `API` = `NewAPI(svc, requireCurator, rateLimit)` + `RegisterRoutes` mounts `POST /upload` behind
+  `RequireCurator` (curator and above);
   multipart is streamed part-by-part, never the whole file in RAM),
   `internal/sidecar/`
   (**metadata next to the media** — reads what the export wrote *into a file next to* the photo, not into it:
@@ -2499,9 +2500,10 @@ to `## Package map` in `CLAUDE.md`.
   a non-error empty `Candidates:[]`); a single photo degenerates to per-photo similarity. **Read-only** —
   adding goes through `POST /photos/bulk`. Unit tests with fakes + an integration test over real embeddings+DB),
   `internal/expandapi/`
-  (an editor/admin HTTP API over collection expansion: the `Service` interface (satisfied by `*expand.Service`) with two
-  methods `Album`/`Label`, `NewAPI(Config{Service,RequireWrite})` + `RegisterRoutes` mounts
-  `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireWrite`; both share `respond` +
+  (a curator-and-above HTTP API over collection expansion: the `Service` interface (satisfied by `*expand.Service`)
+  with two methods `Album`/`Label`, `NewAPI(Config{Service,RequireCurator})` + `RegisterRoutes` mounts
+  `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireCurator` (they lead into the
+  album/label curation a curator owns); both share `respond` +
   `finder`, differing only in the not-found sentinel; `parseRequest` reads the query `?threshold=&limit=` (empty →
   default, non-numeric / negative → 400); 503 without a backend, 404 missing album/label
   (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`); mounted in `serve` (`buildExpandAPI` in
@@ -3111,22 +3113,22 @@ to `## Package map` in `CLAUDE.md`.
   that have no actor)), `internal/organizeapi/`
   (a read/curation HTTP API over albums and labels — the basis of the Albums/Labels UI: the interfaces `AlbumStore`/
   `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
-  `NewAPI(Config{Albums,Labels,RequireAuth,RequireWrite})`+`RegisterRoutes` mounts two
+  `NewAPI(Config{Albums,Labels,RequireAuth,RequireCurator})`+`RegisterRoutes` mounts two
   subrouters: **albums** `GET /albums` (RequireAuth, `{albums:[AlbumSummary]}` — counts, the effective
   `cover_uid`, the further covers `cover_uids` and the range `taken_from`/`taken_to`),
-  `POST /albums` (RequireWrite, 201, `title` required, type validation via `ErrInvalidType`),
-  `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireWrite, edits
+  `POST /albums` (RequireCurator, 201, `title` required, type validation via `ErrInvalidType`),
+  `GET /albums/{uid}` (RequireAuth), `PATCH /albums/{uid}` (RequireCurator, edits
   title/description/cover_photo_uid/private; **the structural `type` is preserved** —
   the handler loads the existing album and does not take `type` from the body, so folder/moment/… can't be overwritten),
-  `DELETE /albums/{uid}` (RequireWrite → 204), membership `POST /albums/{uid}/photos`
+  `DELETE /albums/{uid}` (RequireCurator → 204), membership (RequireCurator) `POST /albums/{uid}/photos`
   `{photo_uids:[…]}` (adds, no position — an album is always chronological),
   `DELETE /albums/{uid}/photos` `{photo_uids:[…]}` (removes, idempotent) — both
   membership endpoints return the current chronological order `{photo_uids:[…]}`, first verifying the
   existence of the album (`requireAlbum` → 404); manual reordering `PATCH /albums/{uid}/order` was
   removed (→ 404); **labels** `GET /labels` (RequireAuth, `{labels:[LabelCount]}`),
-  `POST /labels` (RequireWrite, 201, `name` required), `GET /labels/{uid}` (RequireAuth),
-  `PATCH /labels/{uid}` (RequireWrite, name/priority), `DELETE /labels/{uid}` (RequireWrite → 204),
-  attachment `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` → 204 (source validation
+  `POST /labels` (RequireCurator, 201, `name` required), `GET /labels/{uid}` (RequireAuth),
+  `PATCH /labels/{uid}` (RequireCurator, name/priority), `DELETE /labels/{uid}` (RequireCurator → 204),
+  attachment (RequireCurator) `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}` → 204 (source validation
   via `ErrInvalidSource`), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204 (verifies the existence of the
   label → 404, then an idempotent detach); body decode `DisallowUnknownFields` + 1 MiB limit;
   **each mutation writes exactly one audit record in the same transaction** (calls the audited store variants,
@@ -3687,14 +3689,20 @@ to `## Package map` in `CLAUDE.md`.
   (`json:"-"`): the photos the batch really **moved**, compared against the stored row rather than the
   request, so a re-sent coordinate schedules no reverse geocode and spends no mapy.com credit;
   `Summary()` (audit details, recording `only_missing` — the same coordinate with and without it is a
-  different edit) + `IsEmpty()`; `LocationSummary(ctx, photoUIDs) (LocationSummary{Total,WithLocation},
+  different edit) + `IsEmpty()`; **`BeyondCuration()`** — the pure, I/O-free predicate behind the curator's
+  field rule: does the batch ask for anything beyond album/label membership and the per-user
+  `Favorite`/`Rating`/`Flag` (which a viewer already sets one photo at a time)? It is an **allow-list**: it
+  blanks the fields a curator may touch and asks `IsEmpty()` of the rest, so a field added to `Operations`
+  later is an editor's until somebody decides otherwise; `LocationSummary(ctx, photoUIDs) (LocationSummary{Total,WithLocation},
   error)` is the read-only preview behind the dialog: how many of the selection exist (a repeated uid
   counts once) and how many already carry a full coordinate, validated against the same batch limits as
   `Apply`), `internal/bulkapi/`
   (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary) — fakeable; `NewAPI(Config{Service,
-  Sidecar, Places, RequireWrite, RateLimit})`+`RegisterRoutes` mounts `POST /photos/bulk` and the read-only
-  `POST /photos/bulk/location-summary` (a POST because its argument is the whole selection) behind
-  `RequireWrite`; after a committed batch `enqueueSidecars` schedules one sidecar rewrite per updated photo
+  Sidecar, Places, RequireWrite, RequireCurator, RateLimit})`+`RegisterRoutes` mounts `POST /photos/bulk` behind
+  `RequireCurator` and the read-only `POST /photos/bulk/location-summary` (a POST because its argument is the
+  whole selection) behind `RequireWrite` — it only feeds the bulk location operation, which a curator may not
+  use; `handleBulk` then authorizes **on the fields**: a caller whose role is not `CanWrite()` and whose batch
+  is `bulk.Operations.BeyondCuration()` gets **403 before `Apply` runs**, so nothing of the batch is written; after a committed batch `enqueueSidecars` schedules one sidecar rewrite per updated photo
   and `enqueueGeocodes` one `places` job per photo in `LocationChanged` — the same derived work a
   single-photo location edit owes (`photoapi.PlacesEnqueuer`), both best-effort: a queue failure is logged,
   never returned, and never breaks the edit it derives from; the body
@@ -4988,9 +4996,9 @@ to `## Package map` in `CLAUDE.md`.
   token and not refunded one, so an exempt caller cannot drain the budget a throttled one shares (an exemption
   is the absence of a bucket, not a private one; a nil predicate is the plain middleware). It is how an API
   token marked `unlimited` skips the throttle (`auth.RateLimitExempt`), which is also why `POST /upload` and
-  `POST /photos/bulk` now mount the limiter **behind `RequireWrite` rather than ahead of it**: the caller's
-  identity has to be known when the limiter runs. Nothing expensive became reachable — both routes already
-  required write access, so an unauthenticated flood merely pays one indexed credential lookup before its
+  `POST /photos/bulk` now mount the limiter **behind their role guard (`RequireCurator`) rather than ahead of
+  it**: the caller's identity has to be known when the limiter runs. Nothing expensive became reachable — both
+  routes already required a role above viewer, so an unauthenticated flood merely pays one indexed credential lookup before its
   401), `internal/clientip/`
   (**who a request actually came from** — the one answer the rate limiters, the audit trail and the access log
   all key on. A forwarding header is request data like any other, so chi's `middleware.RealIP`, which believed

@@ -174,10 +174,10 @@ func passThrough(next http.Handler) http.Handler { return next }
 // newServer mounts an API backed by the given stores behind pass-through guards.
 func newServer(albums organizeapi.AlbumStore, labels organizeapi.LabelStore) http.Handler {
 	api := organizeapi.NewAPI(organizeapi.Config{
-		Albums:       albums,
-		Labels:       labels,
-		RequireAuth:  passThrough,
-		RequireWrite: passThrough,
+		Albums:         albums,
+		Labels:         labels,
+		RequireAuth:    passThrough,
+		RequireCurator: passThrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)

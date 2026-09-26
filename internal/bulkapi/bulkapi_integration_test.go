@@ -69,9 +69,10 @@ func newEnv(t *testing.T, maxBatch int) *env {
 
 	places := &recordingPlacesQueue{}
 	api := bulkapi.NewAPI(bulkapi.Config{
-		Service:      bulk.NewService(db.Pool(), maxBatch),
-		Places:       places,
-		RequireWrite: authAPI.RequireWrite,
+		Service:        bulk.NewService(db.Pool(), maxBatch),
+		Places:         places,
+		RequireWrite:   authAPI.RequireWrite,
+		RequireCurator: authAPI.RequireCurator,
 	})
 
 	r := chi.NewRouter()

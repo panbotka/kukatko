@@ -48,10 +48,10 @@ func newEnv(t *testing.T) *env {
 
 	store := organize.NewStore(db.Pool())
 	api := organizeapi.NewAPI(organizeapi.Config{
-		Albums:       store,
-		Labels:       store,
-		RequireAuth:  authAPI.RequireAuth,
-		RequireWrite: authAPI.RequireWrite,
+		Albums:         store,
+		Labels:         store,
+		RequireAuth:    authAPI.RequireAuth,
+		RequireCurator: authAPI.RequireCurator,
 	})
 
 	r := chi.NewRouter()

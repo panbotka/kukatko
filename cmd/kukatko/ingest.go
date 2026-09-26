@@ -14,7 +14,7 @@ import (
 
 // buildIngest assembles the upload/ingest subsystem: the configured original
 // store, the thumbnailer, the photo repository, and the HTTP API. The upload
-// route reuses the auth subsystem's write guard (editors and admins) supplied
+// route reuses the auth subsystem's curator guard (curators and above) supplied
 // via authAPI. enqueuer is the shared persistent-queue adapter, so a freshly
 // uploaded photo immediately gets its image_embed and face_detect jobs queued.
 // sidecar queues its metadata-sidecar job too, so a photo is described on disk
@@ -56,5 +56,5 @@ func buildIngest(
 	// Throttled by client IP, except for a request bearing an API token an admin
 	// marked unlimited — an agent importing a shoebox of scans is the case the
 	// limiter's burst was never meant to stop.
-	return ingest.NewAPI(svc, authAPI.RequireWrite, uploadLimit.MiddlewareExcept(auth.RateLimitExempt)), nil
+	return ingest.NewAPI(svc, authAPI.RequireCurator, uploadLimit.MiddlewareExcept(auth.RateLimitExempt)), nil
 }

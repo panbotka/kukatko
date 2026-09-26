@@ -39,7 +39,7 @@ func passthrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts an API over svc, scoped under /api/v1 like the real server.
 func newRouter(svc Service) http.Handler {
-	api := NewAPI(Config{Service: svc, RequireWrite: passthrough})
+	api := NewAPI(Config{Service: svc, RequireCurator: passthrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	return r

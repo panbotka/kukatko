@@ -44,6 +44,52 @@ func TestOperations_IsEmpty(t *testing.T) {
 	}
 }
 
+// TestOperations_BeyondCuration pins the line a curator's batch may not cross:
+// album and label membership and the caller's own favorite/rating/flag stay on
+// the curator's side, every catalogue-metadata field — the capture date and the
+// location above all — puts the batch beyond it, even mixed with membership.
+func TestOperations_BeyondCuration(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(1974, 1, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		ops  Operations
+		want bool
+	}{
+		{"nothing set", Operations{}, false},
+		{"album only", Operations{AddAlbums: []string{"al1"}, RemoveAlbums: []string{"al2"}}, false},
+		{"label only", Operations{AddLabels: []string{"lb1"}, RemoveLabels: []string{"lb2"}}, false},
+		{
+			"favorite, rating and flag are per-user",
+			Operations{AddAlbums: []string{"al1"}, Favorite: new(true), Rating: new(4), Flag: new("pick")},
+			false,
+		},
+		{"capture date", Operations{TakenAt: &TakenAt{At: at, Precision: "year"}}, true},
+		{"capture date beside an album", Operations{
+			AddAlbums: []string{"al1"}, TakenAt: &TakenAt{At: at, Precision: "year"},
+		}, true},
+		{"clear capture date", Operations{ClearTakenAt: true}, true},
+		{"location", Operations{Location: &Location{Lat: 49.2, Lng: 16.6}}, true},
+		{"location beside a label", Operations{
+			AddLabels: []string{"lb1"}, Location: &Location{Lat: 49.2, Lng: 16.6},
+		}, true},
+		{"clear location", Operations{ClearLocation: true}, true},
+		{"title, even emptied", Operations{Title: new("")}, true},
+		{"description", Operations{Description: new("desc")}, true},
+		{"archive", Operations{Archive: new(false)}, true},
+		{"hide", Operations{Hide: new(true)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.ops.BeyondCuration(); got != tt.want {
+				t.Errorf("BeyondCuration() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestOperations_Summary verifies only requested operations appear in the audit
 // summary, including the clear-location marker.
 func TestOperations_Summary(t *testing.T) {

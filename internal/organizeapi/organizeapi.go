@@ -6,8 +6,9 @@
 // parameters, so this package owns only the catalogue and membership surface and
 // the frontend reuses the same photo grid.
 //
-// Reads are open to any authenticated user; mutations require the editor/admin
-// write guard. The guards are injected and the store is an interface, so the
+// Reads are open to any authenticated user; mutations require the curator guard
+// (curators and above) — deleting an album or a label included, since that throws
+// away a stitching-together, not a photograph. The guards are injected and the store is an interface, so the
 // package stays decoupled from auth's wiring and is unit-testable with fakes.
 package organizeapi
 
@@ -89,11 +90,11 @@ type LabelStore interface {
 // supplied by the caller (the auth subsystem) so this package depends on auth's
 // behaviour, not its wiring.
 type API struct {
-	albums       AlbumStore
-	labels       LabelStore
-	sidecar      SidecarEnqueuer
-	requireAuth  func(http.Handler) http.Handler
-	requireWrite func(http.Handler) http.Handler
+	albums         AlbumStore
+	labels         LabelStore
+	sidecar        SidecarEnqueuer
+	requireAuth    func(http.Handler) http.Handler
+	requireCurator func(http.Handler) http.Handler
 }
 
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
@@ -117,18 +118,18 @@ type Config struct {
 	Sidecar SidecarEnqueuer
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
-	// RequireWrite guards the mutating endpoints for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the mutating endpoints for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		albums:       cfg.Albums,
-		labels:       cfg.Labels,
-		sidecar:      cfg.Sidecar,
-		requireAuth:  cfg.RequireAuth,
-		requireWrite: cfg.RequireWrite,
+		albums:         cfg.Albums,
+		labels:         cfg.Labels,
+		sidecar:        cfg.Sidecar,
+		requireAuth:    cfg.RequireAuth,
+		requireCurator: cfg.RequireCurator,
 	}
 }
 
@@ -136,41 +137,41 @@ func NewAPI(cfg Config) *API {
 // has scoped under the API base path (for example /api/v1):
 //
 //	GET    /albums                RequireAuth   list albums with counts + cover
-//	POST   /albums                RequireWrite  create an album
+//	POST   /albums                RequireCurator  create an album
 //	GET    /albums/{uid}          RequireAuth   one album
-//	PATCH  /albums/{uid}          RequireWrite  edit title/description/cover/private
-//	DELETE /albums/{uid}          RequireWrite  delete an album
-//	POST   /albums/{uid}/photos   RequireWrite  add photos to the album
-//	DELETE /albums/{uid}/photos   RequireWrite  remove photos from the album
+//	PATCH  /albums/{uid}          RequireCurator  edit title/description/cover/private
+//	DELETE /albums/{uid}          RequireCurator  delete an album
+//	POST   /albums/{uid}/photos   RequireCurator  add photos to the album
+//	DELETE /albums/{uid}/photos   RequireCurator  remove photos from the album
 //
 //	GET    /labels                RequireAuth   list labels with counts
-//	POST   /labels                RequireWrite  create a label
+//	POST   /labels                RequireCurator  create a label
 //	GET    /labels/{uid}          RequireAuth   one label
-//	PATCH  /labels/{uid}          RequireWrite  edit name/priority
-//	DELETE /labels/{uid}          RequireWrite  delete a label
-//	POST   /labels/{uid}/photos   RequireWrite  attach the label to a photo
-//	DELETE /labels/{uid}/photos   RequireWrite  detach the label from a photo
+//	PATCH  /labels/{uid}          RequireCurator  edit name/priority
+//	DELETE /labels/{uid}          RequireCurator  delete a label
+//	POST   /labels/{uid}/photos   RequireCurator  attach the label to a photo
+//	DELETE /labels/{uid}/photos   RequireCurator  detach the label from a photo
 //
 // An album's or label's photos are browsed via the shared GET /photos endpoint
 // with the ?album={uid} / ?label={uid} scope, so no list-photos route lives here.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/albums", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleAlbumList)
-		r.With(a.requireWrite).Post("/", a.handleAlbumCreate)
+		r.With(a.requireCurator).Post("/", a.handleAlbumCreate)
 		r.With(a.requireAuth).Get("/{uid}", a.handleAlbumGet)
-		r.With(a.requireWrite).Patch("/{uid}", a.handleAlbumUpdate)
-		r.With(a.requireWrite).Delete("/{uid}", a.handleAlbumDelete)
-		r.With(a.requireWrite).Post("/{uid}/photos", a.handleAlbumAddPhotos)
-		r.With(a.requireWrite).Delete("/{uid}/photos", a.handleAlbumRemovePhotos)
+		r.With(a.requireCurator).Patch("/{uid}", a.handleAlbumUpdate)
+		r.With(a.requireCurator).Delete("/{uid}", a.handleAlbumDelete)
+		r.With(a.requireCurator).Post("/{uid}/photos", a.handleAlbumAddPhotos)
+		r.With(a.requireCurator).Delete("/{uid}/photos", a.handleAlbumRemovePhotos)
 	})
 	r.Route("/labels", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleLabelList)
-		r.With(a.requireWrite).Post("/", a.handleLabelCreate)
+		r.With(a.requireCurator).Post("/", a.handleLabelCreate)
 		r.With(a.requireAuth).Get("/{uid}", a.handleLabelGet)
-		r.With(a.requireWrite).Patch("/{uid}", a.handleLabelUpdate)
-		r.With(a.requireWrite).Delete("/{uid}", a.handleLabelDelete)
-		r.With(a.requireWrite).Post("/{uid}/photos", a.handleLabelAttach)
-		r.With(a.requireWrite).Delete("/{uid}/photos", a.handleLabelDetach)
+		r.With(a.requireCurator).Patch("/{uid}", a.handleLabelUpdate)
+		r.With(a.requireCurator).Delete("/{uid}", a.handleLabelDelete)
+		r.With(a.requireCurator).Post("/{uid}/photos", a.handleLabelAttach)
+		r.With(a.requireCurator).Delete("/{uid}/photos", a.handleLabelDetach)
 	})
 }
 
@@ -179,7 +180,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // User-Agent onto the given action, target and details. The store writes the
 // returned entry inside the mutation's transaction.
 //
-// The mutating routes are guarded by RequireWrite, so a principal is present in
+// The mutating routes are guarded by RequireCurator, so a principal is present in
 // production; an absent principal yields an empty actor UID (stored as NULL)
 // rather than failing, which keeps the handlers exercisable behind pass-through
 // guards in unit tests.

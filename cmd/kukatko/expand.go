@@ -16,15 +16,15 @@ import (
 
 // buildExpandAPI assembles the "expand a collection" search over the shared pool:
 // the expand service (which votes each of an album's or a label's members' embedding
-// neighbours together) behind its editor/admin endpoints. The media store stamps
-// the candidate photos' URLs; the write guard is supplied via authAPI so the
+// neighbours together) behind its curator endpoints. The media store stamps
+// the candidate photos' URLs; the curator guard is supplied via authAPI so the
 // expandapi package stays decoupled from auth's wiring.
 func buildExpandAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 ) *expandapi.API {
 	return expandapi.NewAPI(expandapi.Config{
-		Service:      buildExpandService(cfg, db, mediaStore),
-		RequireWrite: authAPI.RequireWrite,
+		Service:        buildExpandService(cfg, db, mediaStore),
+		RequireCurator: authAPI.RequireCurator,
 	})
 }
 

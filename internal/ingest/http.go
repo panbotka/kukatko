@@ -15,28 +15,28 @@ import (
 )
 
 // API exposes the ingest pipeline over HTTP. It mounts the multipart upload
-// endpoint behind a write-access guard supplied by the auth subsystem, so the
+// endpoint behind a curator guard supplied by the auth subsystem, so the
 // ingest package depends on auth only for the caller's identity, not its wiring.
 type API struct {
-	svc          *Service
-	requireWrite func(http.Handler) http.Handler
-	rateLimit    func(http.Handler) http.Handler
+	svc            *Service
+	requireCurator func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API that runs uploads through svc and protects the route
-// with requireWrite (typically auth.API.RequireWrite, allowing editors and
-// admins). requireWrite must not be nil. rateLimit is an optional per-client-IP
+// with requireCurator (typically auth.API.RequireCurator, allowing curators and
+// above). requireCurator must not be nil. rateLimit is an optional per-client-IP
 // throttle applied *behind* the auth check, so it can read who the caller is; a
 // nil value disables throttling.
 func NewAPI(
 	svc *Service,
-	requireWrite func(http.Handler) http.Handler,
+	requireCurator func(http.Handler) http.Handler,
 	rateLimit func(http.Handler) http.Handler,
 ) *API {
 	if rateLimit == nil {
 		rateLimit = passthroughMiddleware
 	}
-	return &API{svc: svc, requireWrite: requireWrite, rateLimit: rateLimit}
+	return &API{svc: svc, requireCurator: requireCurator, rateLimit: rateLimit}
 }
 
 // passthroughMiddleware is a no-op middleware used when no rate limiter is configured.
@@ -45,9 +45,9 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // RegisterRoutes mounts the upload endpoint onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	POST /upload   RequireWrite + rate limit   multipart/form-data, one or more files
+//	POST /upload   RequireCurator + rate limit   multipart/form-data, one or more files
 //
-// The rate limiter runs *inside* the write guard, not ahead of it: the throttle
+// The rate limiter runs *inside* the curator guard, not ahead of it: the throttle
 // keys on the client IP for everybody, but an API token an admin marked
 // unlimited is exempt from it (see auth.RateLimitExempt), and that is knowable
 // only once the caller has been authenticated. Nothing expensive becomes
@@ -55,7 +55,7 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // credential lookup before its 401, and the upload itself is still behind the
 // guard.
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite, a.rateLimit).Post("/upload", a.handleUpload)
+	r.With(a.requireCurator, a.rateLimit).Post("/upload", a.handleUpload)
 }
 
 // uploadResponse is the JSON body returned by the upload endpoint: one result
@@ -115,7 +115,7 @@ func (a *API) ingestParts(
 }
 
 // uploaderUID returns the authenticated user's UID for attribution, or the
-// empty string when no user is on the context (the write guard should prevent
+// empty string when no user is on the context (the curator guard should prevent
 // this, but ingest tolerates anonymous attribution).
 func uploaderUID(r *http.Request) string {
 	if user, ok := auth.UserFromContext(r.Context()); ok {

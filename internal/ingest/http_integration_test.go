@@ -53,7 +53,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 		Duplicate:   config.DuplicateConfig{Enabled: false},
 		TempDir:     t.TempDir(),
 	})
-	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireWrite, nil)
+	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireCurator, nil)
 
 	r := chi.NewRouter()
 	// Mirrors the real server: a forwarding header is only believed from a
@@ -167,8 +167,25 @@ func TestHTTPUpload_editorCreatesPhotos(t *testing.T) {
 	}
 }
 
-// TestHTTPUpload_viewerForbidden verifies a viewer (no write access) is rejected
-// with 403 by the RequireWrite guard before any ingest happens.
+// TestHTTPUpload_curatorCreatesPhotos verifies the upload hangs on
+// RequireCurator: a curator may add photos to the library, not only file them.
+func TestHTTPUpload_curatorCreatesPhotos(t *testing.T) {
+	env := newHTTPEnv(t)
+	client := env.loginClient(t, "curator", auth.RoleCurator)
+
+	status, results := env.uploadFiles(t, client, map[string][]byte{
+		"green.jpg": jpegBytes(t, 30, 210, 30, 90),
+	})
+	if status != http.StatusOK {
+		t.Fatalf("upload status = %d, want 200 for curator", status)
+	}
+	if len(results) != 1 || results[0].Outcome != ingest.OutcomeCreated || results[0].PhotoUID == "" {
+		t.Errorf("results = %+v, want one created photo with a UID", results)
+	}
+}
+
+// TestHTTPUpload_viewerForbidden verifies a viewer (below curator) is rejected
+// with 403 by the RequireCurator guard before any ingest happens.
 func TestHTTPUpload_viewerForbidden(t *testing.T) {
 	env := newHTTPEnv(t)
 	client := env.loginClient(t, "viewer", auth.RoleViewer)

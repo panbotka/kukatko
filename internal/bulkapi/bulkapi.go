@@ -1,9 +1,13 @@
 // Package bulkapi exposes the bulk metadata editing endpoint over HTTP. One
 // POST /photos/bulk request lists target photo UIDs and an operation set; the
 // whole batch is applied transactionally (with an audit-log entry) and the
-// response carries a per-photo result summary plus aggregate counts. The
-// mutation is guarded by the editor/admin write guard, injected so the package
-// stays decoupled from auth's wiring and is unit-testable with fakes.
+// response carries a per-photo result summary plus aggregate counts. The apply
+// is guarded by the curator guard and then limited on its fields inside the
+// handler — a curator may change album and label membership and its own
+// favorite/rating/flag, only an editor anything beyond (bulk.Operations.
+// BeyondCuration). The location summary keeps the editor/admin write guard. Both
+// guards are injected so the package stays decoupled from auth's wiring and is
+// unit-testable with fakes.
 package bulkapi
 
 import (
@@ -60,11 +64,12 @@ type PlacesEnqueuer interface {
 
 // API exposes the bulk endpoints over HTTP.
 type API struct {
-	service      Service
-	sidecar      SidecarEnqueuer
-	places       PlacesEnqueuer
-	requireWrite func(http.Handler) http.Handler
-	rateLimit    func(http.Handler) http.Handler
+	service        Service
+	sidecar        SidecarEnqueuer
+	places         PlacesEnqueuer
+	requireWrite   func(http.Handler) http.Handler
+	requireCurator func(http.Handler) http.Handler
+	rateLimit      func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI.
@@ -77,8 +82,11 @@ type Config struct {
 	// Places schedules a reverse geocode per photo the batch moved on the map.
 	// When nil no geocode is scheduled and the batch still succeeds.
 	Places PlacesEnqueuer
-	// RequireWrite guards the endpoint for editors and admins.
+	// RequireWrite guards the location summary for editors and above.
 	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the bulk apply for curators and above; the handler
+	// then refuses a curator any operation beyond curation.
+	RequireCurator func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied *behind* the auth
 	// check, so it can read who the caller is. A nil value disables throttling.
 	RateLimit func(http.Handler) http.Handler
@@ -91,11 +99,12 @@ func NewAPI(cfg Config) *API {
 		rateLimit = passthroughMiddleware
 	}
 	return &API{
-		service:      cfg.Service,
-		sidecar:      cfg.Sidecar,
-		places:       cfg.Places,
-		requireWrite: cfg.RequireWrite,
-		rateLimit:    rateLimit,
+		service:        cfg.Service,
+		sidecar:        cfg.Sidecar,
+		places:         cfg.Places,
+		requireWrite:   cfg.RequireWrite,
+		requireCurator: cfg.RequireCurator,
+		rateLimit:      rateLimit,
 	}
 }
 
@@ -105,15 +114,20 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // RegisterRoutes mounts the bulk endpoints onto r, scoped by the caller under
 // the API base path (for example /api/v1):
 //
-//	POST /photos/bulk                   RequireWrite + rate limit   apply metadata operations to many photos
-//	POST /photos/bulk/location-summary   RequireWrite + rate limit   count the targets that already have a location
+//	POST /photos/bulk                   RequireCurator + rate limit   apply metadata operations to many photos
+//	POST /photos/bulk/location-summary   RequireWrite + rate limit     count the targets that already have a location
 //
 // The summary is a POST despite reading nothing but counts: its argument is the
 // selection itself, up to a full batch of UIDs, which belongs in a body rather
-// than in a query string. It is guarded like the apply because it exists only to
-// answer the apply's own question.
+// than in a query string. It stays on RequireWrite although the apply moved to
+// RequireCurator: it exists only to feed the bulk location operation, which a
+// curator may not use.
 //
-// The rate limiter runs *inside* the write guard, not ahead of it: the throttle
+// The apply's guard admits a curator, but the handler refuses one any batch
+// beyond album/label membership and the per-user operations, with 403 before a
+// row changes; see bulk.Operations.BeyondCuration.
+//
+// The rate limiter runs *inside* the role guard, not ahead of it: the throttle
 // keys on the client IP for everybody, but an API token an admin marked
 // unlimited is exempt from it (see auth.RateLimitExempt), and the caller's
 // identity is knowable only after authentication. The batch apply still happens
@@ -121,7 +135,7 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 // unauthenticated flood merely pays one indexed credential lookup before its
 // 401.
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite, a.rateLimit).Post("/photos/bulk", a.handleBulk)
+	r.With(a.requireCurator, a.rateLimit).Post("/photos/bulk", a.handleBulk)
 	r.With(a.requireWrite, a.rateLimit).
 		Post("/photos/bulk/location-summary", a.handleLocationSummary)
 }
@@ -146,8 +160,10 @@ func (a *API) handleLocationSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBulk decodes the request, resolves the operation set, applies it for the
-// acting user and writes the per-photo result. Validation failures return 400, an
-// oversized batch returns 413, and other failures return 500. A run with
+// acting user and writes the per-photo result. A caller who may curate but not
+// write gets 403 for a batch beyond curation, before anything is applied.
+// Validation failures return 400, an oversized batch returns 413, and other
+// failures return 500. A run with
 // per-photo errors still returns 200 with the errors detailed in the body.
 func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
@@ -163,6 +179,11 @@ func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 	ops, err := req.Operations.toOperations()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if ops.BeyondCuration() && !user.Role.CanWrite() {
+		writeError(w, http.StatusForbidden,
+			"only an editor may change a photo's metadata; a curator may change albums, labels and its own marks")
 		return
 	}
 	result, err := a.service.Apply(r.Context(), user.UID, req.PhotoUIDs, ops)

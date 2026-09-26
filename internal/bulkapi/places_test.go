@@ -28,7 +28,7 @@ func TestEnqueueGeocodes_onlyMovedPhotos(t *testing.T) {
 	t.Parallel()
 
 	enq := &recordingPlaces{}
-	api := NewAPI(Config{Places: enq, RequireWrite: passthrough})
+	api := NewAPI(Config{Places: enq, RequireWrite: passthrough, RequireCurator: passthrough})
 
 	result := resultOf(
 		[2]string{"pht1", bulk.StatusUpdated},
@@ -50,7 +50,7 @@ func TestEnqueueGeocodes_failureIsSwallowed(t *testing.T) {
 	t.Parallel()
 
 	enq := &recordingPlaces{err: errors.New("queue down")}
-	api := NewAPI(Config{Places: enq, RequireWrite: passthrough})
+	api := NewAPI(Config{Places: enq, RequireWrite: passthrough, RequireCurator: passthrough})
 
 	result := resultOf([2]string{"pht1", bulk.StatusUpdated}, [2]string{"pht2", bulk.StatusUpdated})
 	result.LocationChanged = []string{"pht1", "pht2"}
@@ -66,7 +66,7 @@ func TestEnqueueGeocodes_failureIsSwallowed(t *testing.T) {
 func TestEnqueueGeocodes_withoutEnqueuer(t *testing.T) {
 	t.Parallel()
 
-	api := NewAPI(Config{Places: nil, RequireWrite: passthrough})
+	api := NewAPI(Config{Places: nil, RequireWrite: passthrough, RequireCurator: passthrough})
 	result := resultOf([2]string{"pht1", bulk.StatusUpdated})
 	result.LocationChanged = []string{"pht1"}
 	// Must not panic on a nil enqueuer.

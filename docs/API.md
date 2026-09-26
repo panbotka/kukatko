@@ -281,7 +281,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `oauth-authorization-server` or `openid-configuration` metadata has to be told "nothing here". Answering
   `200` with `index.html` made such a client parse a web page as JSON and fail incomprehensibly instead of
   concluding that this server has no OAuth. Ordinary client-side routes still reach the SPA unchanged.
-- **Upload API (`/api/v1`):** `POST /upload` (editor/admin via `RequireWrite`, **then** the per-IP
+- **Upload API (`/api/v1`):** `POST /upload` (curator and above via `RequireCurator`, **then** the per-IP
   `ratelimit.upload` throttle — the limiter moved *behind* the auth guard so it can see who the caller is and
   let an `unlimited` API token through; the bucket key is still the client IP for everyone else, and an
   unauthenticated flood now pays one indexed credential lookup before its 401) — `multipart/form-data`
@@ -1120,7 +1120,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **before** the first line (listing subjects failed) → clean 500 JSON; an error **mid**-stream (the client
   disconnected) only logs (200 has already been sent). 503 without a backend. Mounted by `server.WithAPI`
   (`buildSweepAPI` in `cmd/kukatko/sweep.go`), sharing `candidates.Service` with the candidates endpoint.
-- **Expand-a-collection API (`/api/v1`, `internal/expandapi`, editor/admin via `RequireWrite`):**
+- **Expand-a-collection API (`/api/v1`, `internal/expandapi`, curator and above via `RequireCurator`):**
   "find photos similar to a whole album / label" — filling out a half-tagged collection. `GET /albums/{uid}/similar`
   and `GET /labels/{uid}/similar` with query `?threshold=&limit=` (`threshold` = max cosine distance,
   default `expand.max_distance` = 0.20, i.e. 80 % similarity — re-derived for SigLIP 2, it was 0.30 under
@@ -1626,22 +1626,24 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a date — no photo has `taken_at`, or the album is empty — are **at the end**; an archived
   photo does not affect the order. The ordering is **not a user choice**: the endpoint has no `sort`/`order`
   parameter and the frontend does not change the server's order. `POST /albums`
-  (RequireWrite) → 201 from `{title,description?,type?,cover_photo_uid?,private?}` (empty
+  (RequireCurator) → 201 from `{title,description?,type?,cover_photo_uid?,private?}` (empty
   title / invalid type → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
-  (RequireWrite) edits title/description/cover_photo_uid/private (**`type` is preserved**,
-  not editable); `DELETE /albums/{uid}` (RequireWrite → 204); membership
+  (RequireCurator) edits title/description/cover_photo_uid/private (**`type` is preserved**,
+  not editable); `DELETE /albums/{uid}` (RequireCurator → 204); membership
   `POST /albums/{uid}/photos` `{photo_uids:[…]}` (adds), `DELETE /albums/{uid}/photos`
-  `{photo_uids:[…]}` (removes) — both return the current **chronological** order `{photo_uids:[…]}`,
+  `{photo_uids:[…]}` (removes), both RequireCurator — both return the current **chronological** order `{photo_uids:[…]}`,
   404 for a missing album/photo. There is no manual album ordering: `PATCH /albums/{uid}/order` was
   removed (→ 404) and an album always displays from the oldest photo (see Photos API). **Labels** `GET /labels`
   (RequireAuth) → `{labels:[{...label, photo_count, cover_uid?}]}` (ordered by priority DESC), where `cover_uid`
   is the photo standing for the label — its newest visible one, derived exactly as the global-search hits' cover
   is and in **one batched query** for the whole listing (`organize.Store.LabelCovers`), absent for a label on no
   visible photo; a label has no cover to pick by hand. `POST /labels`
-  (RequireWrite) → 201 from `{name,priority?}` (empty name → 400); `GET /labels/{uid}`
-  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireWrite, name/priority/review_enabled); `DELETE /labels/{uid}`
-  (RequireWrite → 204); attaching `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
-  → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204.
+  (RequireCurator) → 201 from `{name,priority?}` (empty name → 400); `GET /labels/{uid}`
+  (RequireAuth, 404); `PATCH /labels/{uid}` (RequireCurator, name/priority/review_enabled); `DELETE /labels/{uid}`
+  (RequireCurator → 204); attaching `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
+  → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204, both RequireCurator.
+  Every album and label write is a curator's, deleting included: deleting a collection throws away a
+  stitching-together, never a photograph.
   Every label payload carries **`review_enabled`** — whether the review game may ask about it. It is `true` for
   every created label (`POST` ignores the field) and is switched on the labels page via `PATCH`; **omitting it
   from a PATCH body keeps the stored value**, so the rename form and the toggle can each send only what they
@@ -1874,9 +1876,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   moment the two lists disagree. The answer is compiled into the binary (no store is touched), so a client
   fetches it once and keeps it; the command palette completes filter keys and values from it, which is how
   it can never offer a filter the parser would reject.
-- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, editor/admin via `RequireWrite`, **then** the per-IP
-  `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly as
-  `POST /upload` above):**
+- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, the apply curator and above via `RequireCurator`
+  **limited on its fields** (below), the location summary editor/admin via `RequireWrite`; each **then** the
+  per-IP `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly
+  as `POST /upload` above):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
   **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
@@ -1889,6 +1892,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `skipped` (duplicate uid)/`error` (the photo does not exist — it **does not abort valid** ones); only a DB error
   rolls back the whole batch (500). A set/clear, archive/unarchive or hide/unhide conflict, an unknown operation,
   a missing album/label in an add → **400**; a batch above `bulk.max_batch_size` (default 1000) → **413**.
+  **The field rule:** a caller who is a curator but not an editor may send only `add_to_albums`/
+  `remove_from_albums`, `add_labels`/`remove_labels` and the per-user `set_favorite`/`set_rating`/`set_flag`
+  (a viewer already sets those one photo at a time, so bulk is not stricter than the single-photo route). A
+  curator's batch carrying anything else — caption, description, `set_taken_at`/`clear_taken_at`,
+  `set_location`/`clear_location`, archive/unarchive, hide/unhide — is refused **as a whole with 403** before
+  any row changes, the album/label part included; an editor is unaffected. The judgement is
+  `bulk.Operations.BeyondCuration`, an allow-list, so an operation added later is an editor's until decided
+  otherwise.
   `set_taken_at` re-dates a whole selection at once — the repair for a shelf of scans carrying the day the
   scanner was switched on. The value's shape follows the precision, so the two cannot disagree:
   `{"precision":"day","value":"1974-06-14"}`, `"month"`/`1974-06`, `"year"`/`1974`,
@@ -1912,7 +1923,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /photos/bulk/location-summary` `{photo_uids:[…]}` → `{total, with_location}` is the read that
   precedes it: how many of the selection exist (a repeated uid counts once, a missing photo not at all)
   and how many of those already have a full coordinate, so the dialog can state what an overwrite would
-  replace **before** writing. Read-only, guarded and rate-limited like the apply, same 400/413 rules.
+  replace **before** writing. Read-only and rate-limited like the apply, same 400/413 rules, but it stays on
+  **`RequireWrite`**: it exists only to feed the bulk location operation, which a curator may not use.
   `clear_taken_at` (bool) is the opposite statement — **the date is unknown** — and the bulk twin of a
   `PATCH` with `taken_at: null`: it wipes `taken_at`, stamps `taken_at_source = unknown`, resets
   `taken_at_precision` to `day` and **moves the outgoing date into `taken_at_before_unknown`** so the

@@ -14,7 +14,9 @@ import (
 // membership, description/caption, location, archive state and the caller's
 // favorite) to many photos transactionally, writing an audit-log entry
 // in the same transaction. The per-request batch-size limit comes from config,
-// and the write guard is supplied via authAPI so bulkapi stays decoupled from
+// and both guards are supplied via authAPI — the curator guard for the apply
+// (which then refuses a curator anything beyond curation), the write guard for
+// the location summary — so bulkapi stays decoupled from
 // auth's wiring. sidecar schedules one metadata-sidecar job per photo the batch
 // changed, so a 500-photo edit costs 500 small inserts rather than 500 file
 // writes inside the request. places schedules the reverse geocode of every photo
@@ -27,10 +29,11 @@ func buildBulkAPI(
 	service := bulk.NewService(db.Pool(), cfg.Bulk.MaxBatchSize)
 	bulkLimit := ratelimit.New(cfg.RateLimit.Bulk.RatePerSec, cfg.RateLimit.Bulk.Burst)
 	return bulkapi.NewAPI(bulkapi.Config{
-		Service:      service,
-		Sidecar:      sidecar,
-		Places:       places,
-		RequireWrite: authAPI.RequireWrite,
+		Service:        service,
+		Sidecar:        sidecar,
+		Places:         places,
+		RequireWrite:   authAPI.RequireWrite,
+		RequireCurator: authAPI.RequireCurator,
 		// By client IP, except for an unlimited API token — see buildIngest.
 		RateLimit: bulkLimit.MiddlewareExcept(auth.RateLimitExempt),
 	})

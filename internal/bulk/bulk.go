@@ -187,6 +187,27 @@ func (o Operations) IsEmpty() bool {
 	return len(o.Summary()) == 0
 }
 
+// BeyondCuration reports whether the batch asks for anything a curator may not
+// do: anything beyond album and label membership and the acting user's own
+// favorite, rating and flag. A true answer means the batch rewrites catalogue
+// metadata — title, description, capture date, location, archive or hide state —
+// which stays an editor's job (see the curator-role design, §4).
+//
+// The per-user operations count as curation because a viewer may already set
+// each of them one photo at a time; bulk must not be stricter than the
+// single-photo route.
+//
+// It judges by allow-list, not by deny-list: it blanks the fields a curator may
+// touch and asks whether anything is left, so a field added to Operations later
+// is refused to a curator until somebody decides otherwise. It performs no I/O.
+func (o Operations) BeyondCuration() bool {
+	rest := o
+	rest.AddAlbums, rest.RemoveAlbums = nil, nil
+	rest.AddLabels, rest.RemoveLabels = nil, nil
+	rest.Favorite, rest.Rating, rest.Flag = nil, nil, nil
+	return !rest.IsEmpty()
+}
+
 // Summary returns a JSON-able description of the requested operations, used for
 // the audit-log details. Only operations that change something appear.
 func (o Operations) Summary() map[string]any {
