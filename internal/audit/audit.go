@@ -396,6 +396,12 @@ const (
 	// a permanent record that outlives the secret it would copy, and rotating a
 	// leaked secret should not leave the old one readable in the log.
 	ActionSettingsUpdate = "settings.update"
+	// ActionNotificationPrefsUpdate records an account replacing its
+	// notification preferences — which kinds of notification it wants. The
+	// target is the account; the details carry the choices as they were stored
+	// (kind → enabled), so the trail answers "since when does this person not
+	// get tag notifications" without a second lookup.
+	ActionNotificationPrefsUpdate = "notification_prefs.update"
 	// ActionAuditPurge records a maintainer purging old audit entries by retention
 	// (deleting rows older than a cutoff). The applied cutoff, the retention window
 	// in days and the number of deleted rows are recorded in the entry's details.
@@ -450,7 +456,7 @@ var knownActions = map[string]struct{}{
 	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
 	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
-	ActionLibraryReset: {},
+	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {},
 }
 
 // KnownAction reports whether action is one of the trail's own action labels. An

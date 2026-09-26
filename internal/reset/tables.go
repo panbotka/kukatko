@@ -48,6 +48,8 @@ var catalogueTables = []string{
 	"label_rejections",
 	"labels",
 	"markers",
+	"notification_photos",
+	"notifications",
 	"photo_edits",
 	"photo_files",
 	"photo_hls_renditions",
@@ -85,6 +87,13 @@ var catalogueTables = []string{
 // receives people — whether registration is open, its shared secret, the welcome
 // text — is not part of the photo library, and a reset that closed registration
 // and threw away the secret would lock out everybody the operator meant to keep.
+// notification_prefs stays for the same reason push_subscriptions does, below:
+// which kinds of notification somebody wants is a choice about their account,
+// not about the photographs, and a wipe that silently switched everybody's
+// choices back to the defaults would be an outage of a person's settings. The
+// notifications themselves are catalogue: each one points at photographs the
+// wipe removes, and a notification about photos that no longer exist is a
+// dangling record with no meaning.
 // passkey_credentials stays for the same reason api_tokens does, only more so:
 // it holds the *only* copy of the public key a passkey sign-in is checked
 // against, and wiping it would silently turn every registered authenticator into
@@ -115,6 +124,7 @@ var preservedTables = []string{
 	"api_tokens",
 	"audit_log",
 	"instance_settings",
+	"notification_prefs",
 	"passkey_credentials",
 	"password_reset_tokens",
 	"push_subscriptions",

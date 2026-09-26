@@ -474,6 +474,23 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   several rows per account. No secret lives here — the VAPID private key is in the environment.
   Preserved by `kukatko maintenance reset`: it is account data, next to the password and the profile,
   not library data.
+- **`notifications` + `notification_photos` + `notification_prefs`** — the **record behind a push
+  notification** (migration `0087`, package `internal/notification`). A notification has to survive being
+  tapped: "you were tagged in 12 photos" opens exactly those 12, even after a thirteenth is tagged and even
+  the next morning, so it is a stored record with a **frozen photo set** — the same reasoning as a task's
+  group below, not a transient message. `notifications` holds one as it was sent: a `nt…` `uid`, the
+  account (`user_uid` → `users` `ON DELETE CASCADE`), `kind`, `title`/`body` text, the deeplink `link`
+  path, `created_at` and nullable `read_at`. `notification_photos` is the set as
+  `(notification_uid, photo_uid, position)` rows — `position` unique per notification keeps the order,
+  the photo cascades, so a deleted photograph drops out and a notification whose whole set is gone stays a
+  legitimate record; an archived, hidden or private one stays in the set and **the reader filters**,
+  because who may see it depends on who asks. `notification_prefs` is one `(user_uid, kind, enabled)` row
+  per explicit choice; **an absent row means the kind's default**, and `kind` carries no CHECK anywhere, so
+  a new kind costs a Go constant and a locale string — never a migration or a backfill. The wipe
+  (`maintenance reset`) empties the two notification tables (they point at photographs) and keeps
+  `notification_prefs` (account data, like `push_subscriptions`). Retention is a purge by age — read ones
+  after `DefaultReadRetention` (30 d), unread after the longer `DefaultUnreadRetention` (90 d) — exposed
+  but not scheduled yet.
 - **`photo_tasks` + `photo_task_photos` + `photo_task_participants`** — the **work queue**: a question
   about a group of photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the
   resolution that closes it and the search that produced the group, plus the group itself as

@@ -5407,6 +5407,52 @@ to `## Package map` in `CLAUDE.md`.
     completions, and `Enqueue` queuing nothing with push off, without devices or in a rolled-back
     transaction.
 
+- **Notification records (`internal/notification`):** what a push notification **is** once it has been
+  sent — the record tapping it opens, with its frozen photo set — plus each account's choice of which
+  kinds it wants. It sends nothing and serves nothing: delivery is `internal/pushjob`, the HTTP surface is
+  later work. Tables `notifications`, `notification_photos`, `notification_prefs` (migration `0087`,
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
+  - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
+    photos) and **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) — in a
+    package registry with their defaults (both **on**) and display order: `Kinds()`, `Kind.Known()`,
+    `Kind.Default()`. A new kind is a constant + a registry entry + a locale string; the `kind` columns
+    carry no CHECK, so it never costs a migration.
+  - **`Store.Create(ctx, New)`** writes the notification **and its whole photo set in one transaction**
+    (`unnest … WITH ORDINALITY` → zero-based `position`, so the set keeps the given order; a repeated uid
+    keeps its first position). Validation first: an account, a known kind (`ErrUnknownKind`), a non-blank
+    title ≤ `MaxTitleLen` (200) characters, a body ≤ `MaxBodyLen` (1000), a `Link` that is empty or an
+    in-app path (no absolute URL, no `//host`, no `/\host`; ≤ 2048 bytes) — all `ErrInvalid` — and at most
+    `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph is `ErrPhotoNotFound`, a missing account
+    `ErrUserNotFound`, and either leaves **nothing** written. It does not consult preferences — the caller
+    asks `Wants` first.
+  - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
+    foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
+    uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is
+    idempotent — `COALESCE` keeps the first reading.
+  - **`Photos(ctx, ownerUID, uid, Visibility)`** is the only way to read a set, and it makes the caller
+    state visibility instead of handing out a raw list to render blindly: the zero `Visibility` drops
+    archived, hidden-from-library and private photographs; `IncludeArchived`/`IncludeHidden`/
+    `IncludePrivate` let each through. The order is the frozen `position`. A set that is empty or wholly
+    deleted yields an empty non-nil slice and no error.
+  - **Preferences.** `Preferences(ctx, userUID)` returns one `Preference{Kind, Enabled, IsDefault}` per
+    known kind, stored choices merged over the defaults (a row for a retired kind is ignored);
+    `Wants(ctx, userUID, kind)` answers one. **`ReplacePreferences(ctx, userUID, prefs, audit.Entry)`**
+    replaces every stored row (a kind left out returns to its default; a kind named is stored even when it
+    equals the default) and writes the audit entry **in the same transaction** — action
+    `notification_prefs.update`, target `users`/`userUID` unless the caller set them, the stored choices
+    under `details.preferences`. A kind named twice is **`ErrDuplicateKind`** (no silent last-write-wins),
+    an unknown one `ErrUnknownKind`, a missing account `ErrUserNotFound`; each writes nothing.
+  - **Retention.** `Purge(ctx, now, Retention{Read, Unread})` deletes read notifications recorded more
+    than `Read` ago and unread ones more than `Unread` ago (both measured from `created_at`); `Unread`
+    shorter than `Read`, or a non-positive threshold, is `ErrInvalidRetention`. `DefaultRetention()` is
+    30 d / 90 d. **No scheduler is wired** — when to run it is a later decision.
+  - The wipe (`internal/reset`) empties `notifications` + `notification_photos` and preserves
+    `notification_prefs`. Tests: field rules, the registry, preference merge and audit-entry shaping as
+    unit tests; over a real database — atomic create (a missing photo or account leaves nothing), the
+    order, a photo-less record, foreign uid = not found for every read, idempotent mark-read, visibility
+    per flag, a wholly deleted set, the default merge, an audited replace with the acting user, the
+    refused replaces writing neither rows nor audit, the purge at both thresholds, and the account cascade.
+
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client
