@@ -1421,38 +1421,29 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   parent — there the link is the whole relation, the other person's membership goes and a group that drops
   below two children is deleted. With a parent on the family they are siblings *because* they are that
   parent's children, so there is nothing between them to remove and the answer is **409**.
-  `GET /subjects/{uid}/tree?direction=descendants|ancestors|network&generations=N` (RequireAuth) → the
-  layout-ready payload the tree page draws: `{"root":{…relative},"direction":"descendants",
-  "members":[{…relative,"depth":1,"generation":1,"partner":false}],
-  "families":[{…family,"child_uids":["su_…"]}],"truncated":false,"total":1}`. `depth` is unsigned (generations
-  *away* from the root); `generation` is the same distance **signed** — root 0, a parent −1, a child +1, a
-  partner the generation of the person they married — positive in a descendant walk, negative in a pedigree.
-  `direction` defaults to `descendants` — "the Nečas family" means the descendants of a chosen root plus
-  their partners (a `partner:true` member is in the set by marriage, carrying the depth of the descendant
-  they married); `ancestors` is the binary pedigree: nobody is in it by marriage (both sides of every
-  family are already in the set, so no member carries `partner:true`), and a person's parents are read off
-  `families` as *the family whose `child_uids` contains them* — the database keeps a person a child in at most
-  one family, which is what makes that a lookup rather than a search. `generations` bounds the walk and defaults
-  to the whole bounded one (the store clamps it to `family.MaxDepth` = 20, so asking for a thousand yields the
-  deepest walk there is rather than an error); it is the parameter a pedigree needs and a descendant walk does
-  not, since the latter is bounded by the family it finds. The tree page sends it only for `ancestors`, where it
-  is `generations=` in the address and 3 by default. An unrecognised `direction` or a negative/non-numeric
-  `generations` is 400; an unknown subject 404. `families` lists only the child edges whose person is also in
-  `members`, so the renderer is never handed an edge to a node it was not given.
-  **`direction=network`** answers with everybody reachable from the root through family links — up, down
-  **and sideways**: every family a reached person is a partner *or a child* in is followed, so a parentless
-  sibling group leads to an aunt and on to her children, which neither directional walk can reach. It ignores
-  `generations` (still validated) and is capped at **400 people** (`family.NetworkLimit`) instead: the walk
-  is breadth-first, so what the cap leaves out is always further away than what it keeps, and
-  `"truncated":true` says the component was cut; `total` still counts the **whole** component (the walk goes on
-  past the cap only counting), so a client can say "the nearest 400 of 812". A family is taken **whole or not at all**, so every uid in a
-  box's partners and `child_uids` is a member (the child list is not filtered — in the network it does not
-  need to be). A person reachable two ways is reported **once**, and the nearest relationship names their
-  `generation` (a mother-in-law who is also a cousin's daughter is −1, not 0); `depth` is its absolute
-  value, `partner` is always `false`, and `families` now includes sibling groups, which name no partner.
-  Members come ordered by `generation`, then birth year, name and uid. The directional walks never set
-  `truncated` and report their member count as `total`. The tree page asks only for `network` (step 2 of the
-  network redesign); the two directional walks are still answered until step 3 removes them.
+  `GET /subjects/{uid}/tree` (RequireAuth) → the whole family around the subject, as the layout-ready
+  payload the tree page draws: `{"root":{…relative},"members":[{…relative,"generation":-1}],
+  "families":[{…family,"child_uids":["su_…"]}],"truncated":false,"total":5}`. The answer is everybody
+  reachable from the root through family links — up, down **and sideways**: every family a reached person is
+  a partner *or a child* in is followed, so a parentless sibling group leads to an aunt and on to her
+  children. `generation` is **signed** — root 0, a parent −1, a child +1, a partner the generation of the
+  person they married — and a person reachable two ways is reported **once**, the nearest relationship
+  naming their generation (a mother-in-law who is also a cousin's daughter is −1, not 0). The walk is capped
+  at **400 people** (`family.NetworkLimit`): it is breadth-first, so what the cap leaves out is always further
+  away than what it keeps, and `"truncated":true` says the component was cut; `total` still counts the
+  **whole** component (the walk goes on past the cap only counting), so a client can say "the nearest 400 of
+  812". A family is taken **whole or not at all**, so every uid in a box's partners and `child_uids` is a
+  member and the renderer is never handed an edge to a node it was not given; `families` includes sibling
+  groups, which name no partner, and a person's parents are read off `families` as *the family whose
+  `child_uids` contains them* (the database keeps a person a child in at most one family). Members come
+  ordered by `generation`, then birth year, name and uid; families by the year the union began (unknown
+  last), then creation and uid. An unknown subject is 404. The endpoint takes **no parameters**: the
+  `direction` (`descendants`/`ancestors`/`network`) and `generations` it took until the 2026-09-26 network
+  redesign are gone, together with the members' unsigned `depth`, their `partner` flag (a network has no
+  line to be married *into*) and the payload's `direction`. A request that still carries them is answered
+  exactly like one without them — neither obeyed nor refused, so a stale client or bookmark gets the
+  network rather than a 400. This is deliberately **not** the set the `family:` search filter matches (see
+  there): the page shows a family, the filter narrows a listing.
   `PATCH /families/{uid}` (RequireCurator) → edits the family row itself, as opposed to who is in it:
   `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
   Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and
@@ -2500,7 +2491,7 @@ put a photo taken minutes either side of New Year in the same year.
 | `label:` | text | a label by **name** or UID |
 | `task:` | text | membership in a **task** — the work queue's frozen group — by the task's **question** (substring, `*` wildcard) or exact UID. Closed tasks match too: the group is the record of what a batch of edits touched, which is exactly what somebody searching for it wants back |
 | `person:` (alias `subject:`) | text | a subject by **name**, by **nickname** or by UID, via non-invalid markers. The name and the nickname are matched on the same terms (substring, `*` wildcard, case- and accent-insensitive like `album:`) against the same bound pattern, so `person:Bohouš` finds Bohumil Nečas and `person:Necas` finds him too; an empty nickname matches nothing. The exact lower-case value **`me`** is reserved: it means the person the caller's own account is linked to (`users.subject_uid`) — see below |
-| `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the set is the one `GET /subjects/{uid}/tree?direction=descendants` draws, so a page and a filter can never disagree about who "the Nečas family" is. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
+| `family:` | text | a whole **family**: the named subject, everybody **descended** from them and all of those people's **partners**, matched through non-invalid markers. The root is named exactly as `person:` names a subject — by **name**, by **nickname** or by **UID**, same substring/`*`/case rules — and the filter keeps its **own** walk (`internal/photos`), independent of `internal/family`. It is deliberately **not** a connected component: in a village the families marry into each other, and a component would eventually swallow everybody and stop filtering anything. That makes it deliberately **different** from `GET /subjects/{uid}/tree`, which since the 2026-09-26 network redesign draws the whole reachable family (aunts, cousins, in-laws' relatives): the tree page shows a family, the filter narrows a listing, and the two answer different questions on purpose — do not "fix" the inconsistency by unifying them. A person reachable by two paths (cousins marrying) is counted **once**. The walk is bounded at 20 generations. The exact lower-case value **`me`** is reserved here too — see above. There is **no** Czech alias `rodina:`, for the same reason `osoba:` is unsupported: the key registry is English-only |
 | `uploader:` | text | who uploaded the photo, by the account's **username or display name** (substring, `*` wildcard, accent-insensitive like every text filter — a name is typed from memory, so `uploader:tomas` finds "Tomáš") or by exact UID. Two exact lower-case values are reserved: **`me`** is the caller's own account (see below) and **`none`** are the photos with **no** uploader, the ones an import brought in — so `uploader:!none` is everything somebody did upload |
 | `favorite:` `private:` `archived:` | `yes\|no` | per-user favourite / private / archived; `archived:` **removes the default live-only scope** |
 | `hidden:` | `yes\|no` | hidden from the library (`photos.hidden_from_library`); like `archived:` it **removes the default visible-only scope**, so `hidden:yes` is the documented way back to a hidden photo |

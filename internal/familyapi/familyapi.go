@@ -1,5 +1,5 @@
 // Package familyapi exposes the genealogy over subjects — internal/family — over
-// HTTP: one subject's immediate relations, the tree walked up or down from them,
+// HTTP: one subject's immediate relations, the whole family reachable from them,
 // recording and removing a relation, and editing the family row itself. Reads are
 // open to any authenticated user; the three mutations require the curator
 // guard (curators and above). Both guards are injected and the store is an interface, so this
@@ -39,10 +39,10 @@ type Store interface {
 	// Relations returns the four derived lists of a subject's immediate family,
 	// or family.ErrSubjectNotFound.
 	Relations(ctx context.Context, subjectUID string) (family.Relations, error)
-	// Tree returns the layout-ready tree walked from rootUID in the given
-	// direction, bounded by generations (0 = the whole bounded walk; ignored by
-	// the network, which is capped by family.NetworkLimit people instead).
-	Tree(ctx context.Context, rootUID string, direction family.Direction, generations int) (family.Tree, error)
+	// Tree returns the layout-ready network of everybody the family links reach
+	// from rootUID, capped at family.NetworkLimit people, or
+	// family.ErrSubjectNotFound.
+	Tree(ctx context.Context, rootUID string) (family.Tree, error)
 	// AddRelationAudited records a relation on the subject, creating the person on
 	// the other side first when the request described one instead of naming it.
 	AddRelationAudited(
@@ -98,11 +98,12 @@ func NewAPI(cfg Config) *API {
 //	GET    /subjects/{uid}/relations         RequireAuth   parents, siblings, partners, children
 //	POST   /subjects/{uid}/relations         RequireCurator  record a relation (parent/child/partner/sibling)
 //	DELETE /subjects/{uid}/relations/{uid2}  RequireCurator  remove the relation between two subjects
-//	GET    /subjects/{uid}/tree              RequireAuth   the tree walked from the subject
+//	GET    /subjects/{uid}/tree              RequireAuth   the family network around the subject
 //	PATCH  /families/{uid}                   RequireCurator  edit a family: kind, years, note
 //
-// The tree takes direction=descendants|ancestors|network (default descendants)
-// and generations=N (default: the whole bounded walk; the network ignores it).
+// The tree takes no parameters: it always answers with the whole reachable
+// family. The direction and generations it once took are ignored if a stale
+// client still sends them.
 //
 // Flat patterns (rather than a mounted subrouter) are used so this group can
 // coexist on the same router with peopleapi's and outlierapi's /subjects routes

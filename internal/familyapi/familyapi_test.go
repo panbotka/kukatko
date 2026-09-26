@@ -34,12 +34,11 @@ type fakeStore struct {
 	getErr       error
 	updateErr    error
 
-	lastDirection   family.Direction
-	lastGenerations int
-	lastAdd         family.AddRelation
-	lastRemoved     [2]string
-	lastUpdate      family.Update
-	lastEntry       audit.Entry
+	lastTreeRoot string
+	lastAdd      family.AddRelation
+	lastRemoved  [2]string
+	lastUpdate   family.Update
+	lastEntry    audit.Entry
 }
 
 // Relations returns the canned relations or error.
@@ -47,11 +46,9 @@ func (f *fakeStore) Relations(_ context.Context, _ string) (family.Relations, er
 	return f.relations, f.relationsErr
 }
 
-// Tree records the walk parameters and returns the canned tree or error.
-func (f *fakeStore) Tree(
-	_ context.Context, _ string, direction family.Direction, generations int,
-) (family.Tree, error) {
-	f.lastDirection, f.lastGenerations = direction, generations
+// Tree records the root and returns the canned tree or error.
+func (f *fakeStore) Tree(_ context.Context, rootUID string) (family.Tree, error) {
+	f.lastTreeRoot = rootUID
 	return f.tree, f.treeErr
 }
 
@@ -227,62 +224,53 @@ func TestHandleRelations_unknownSubject(t *testing.T) {
 	}
 }
 
-// TestHandleTree_defaults walks down and asks for the whole bounded walk when
-// neither parameter is given: "the Nečas family" means the descendants.
-func TestHandleTree_defaults(t *testing.T) {
+// TestHandleTree_network asks the store for the network around the subject in
+// the path and answers with it.
+func TestHandleTree_network(t *testing.T) {
 	t.Parallel()
-	store := &fakeStore{}
+	store := &fakeStore{tree: family.Tree{
+		Root:    family.Relative{UID: "su_a"},
+		Members: []family.Member{{Relative: family.Relative{UID: "su_a"}}},
+		Total:   1,
+	}}
 	rec := do(t, newServer(store), http.MethodGet, "/subjects/su_a/tree", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if store.lastDirection != family.DirectionDescendants || store.lastGenerations != 0 {
-		t.Errorf("walk = %q/%d, want descendants/0", store.lastDirection, store.lastGenerations)
+	if store.lastTreeRoot != "su_a" {
+		t.Errorf("root = %q, want su_a", store.lastTreeRoot)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decoding body: %v", err)
+	}
+	if _, ok := body["direction"]; ok {
+		t.Errorf("payload still names a direction: %s", rec.Body.String())
 	}
 }
 
-// TestHandleTree_params passes the requested direction and generation bound on.
-func TestHandleTree_params(t *testing.T) {
+// TestHandleTree_ignoresTheOldParams answers a request that still carries the
+// retired direction and generations — valid or not — exactly like one without
+// them: a stale client or bookmark gets the network, never a 400.
+func TestHandleTree_ignoresTheOldParams(t *testing.T) {
 	t.Parallel()
-	store := &fakeStore{}
-	rec := do(t, newServer(store), http.MethodGet,
-		"/subjects/su_a/tree?direction=ancestors&generations=3", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if store.lastDirection != family.DirectionAncestors || store.lastGenerations != 3 {
-		t.Errorf("walk = %q/%d, want ancestors/3", store.lastDirection, store.lastGenerations)
-	}
-}
-
-// TestHandleTree_network passes the network direction on; a generation bound
-// is still validated but means nothing to it, which is the store's business.
-func TestHandleTree_network(t *testing.T) {
-	t.Parallel()
-	store := &fakeStore{}
-	rec := do(t, newServer(store), http.MethodGet, "/subjects/su_a/tree?direction=network", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if store.lastDirection != family.DirectionNetwork {
-		t.Errorf("walk = %q, want network", store.lastDirection)
-	}
-}
-
-// TestHandleTree_badParams rejects a walk nobody can perform instead of quietly
-// answering a different question.
-func TestHandleTree_badParams(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct{ name, query string }{
-		{name: "direction", query: "?direction=sideways"},
-		{name: "generations not a number", query: "?generations=many"},
-		{name: "generations negative", query: "?generations=-2"},
+	for _, query := range []string{
+		"?direction=ancestors&generations=3",
+		"?direction=descendants",
+		"?direction=network",
+		"?direction=sideways",
+		"?generations=many",
+		"?generations=-2",
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(query, func(t *testing.T) {
 			t.Parallel()
-			rec := do(t, newServer(&fakeStore{}), http.MethodGet, "/subjects/su_a/tree"+tc.query, "")
-			if rec.Code != http.StatusBadRequest {
-				t.Fatalf("status = %d, want 400", rec.Code)
+			store := &fakeStore{}
+			rec := do(t, newServer(store), http.MethodGet, "/subjects/su_a/tree"+query, "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			if store.lastTreeRoot != "su_a" {
+				t.Errorf("root = %q, want su_a", store.lastTreeRoot)
 			}
 		})
 	}

@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // networkFamiliesSQL reads every family one of the given people belongs to —
@@ -12,11 +14,10 @@ import (
 // network walk: the walk hands it a breadth-first frontier and gets back the
 // family boxes that frontier opens.
 //
-// Unlike treeFamiliesSQL it does not filter the children to a walked set: the
-// network walk takes a family into the drawing only together with everybody in
-// it, so every child it lists is a member by construction. That missing filter
-// is the whole reason aunts and cousins appear here and in neither directional
-// walk.
+// It does not filter the children to a walked set: the walk takes a family into
+// the drawing only together with everybody in it, so every child it lists is a
+// member by construction. That is the reason aunts and cousins appear here; the
+// descendant and pedigree walks this one replaced filtered them out.
 const networkFamiliesSQL = `
 SELECT f.uid, f.partner_a_uid, f.partner_b_uid, f.kind, f.from_year, f.to_year,
        f.note, f.created_at, f.updated_at,
@@ -29,10 +30,9 @@ WHERE f.partner_a_uid = ANY($1) OR f.partner_b_uid = ANY($1)
 
 // networkMembersSQL hydrates the walked set: the relative columns of every
 // member plus the signed generation the walk gave them, read side by side from
-// two parallel arrays. The depth column is the distance in generations, so the
-// row scans exactly like a directional walk's.
+// two parallel arrays.
 const networkMembersSQL = `
-SELECT ` + relativeColumns + `, ABS(w.generation), FALSE
+SELECT ` + relativeColumns + `, w.generation
 FROM unnest($1::varchar[], $2::int[]) AS w(uid, generation)
 JOIN subjects s ON s.uid = w.uid
 ORDER BY w.generation, s.birth_year NULLS LAST, s.name, s.uid`
@@ -175,6 +175,26 @@ func (w *network) assign(next []string, uid string, generation int) []string {
 	return append(next, uid)
 }
 
+// Tree returns the layout-ready payload of the family around a subject: the
+// root, everybody the family links reach from them — up, down and sideways,
+// aunts, cousins and in-laws' relatives included — and every family box tying
+// them together. The walk is capped at NetworkLimit people and says so when the
+// cap cut it (see walkNetwork).
+//
+// This is deliberately not what the `family:` search filter means. That filter
+// has its own recursive SQL in internal/photos and keeps meaning the descendants
+// of a root plus their partners: the tree page shows a family, the filter
+// narrows a listing, and the two answer different questions on purpose.
+//
+// A missing root returns ErrSubjectNotFound.
+func (s *Store) Tree(ctx context.Context, rootUID string) (Tree, error) {
+	root, err := getRelative(ctx, s.pool, rootUID)
+	if err != nil {
+		return Tree{}, err
+	}
+	return s.network(ctx, root, NetworkLimit)
+}
+
 // network walks the component around rootUID (see walkNetwork), keeping at most
 // limit people, and hydrates it into the tree payload. The caller has already
 // checked that the root exists.
@@ -189,12 +209,9 @@ func (s *Store) network(ctx context.Context, root Relative, limit int) (Tree, er
 		uids = append(uids, uid)
 		generations = append(generations, walk.generation[uid])
 	}
-	members, err := queryMembers(ctx, s.pool, "the network", networkMembersSQL, uids, generations)
+	members, err := queryMembers(ctx, s.pool, uids, generations)
 	if err != nil {
 		return Tree{}, err
-	}
-	for i := range members {
-		members[i].Generation = walk.generation[members[i].UID]
 	}
 	slices.SortStableFunc(walk.families, compareTreeFamilies)
 	families := walk.families
@@ -202,14 +219,14 @@ func (s *Store) network(ctx context.Context, root Relative, limit int) (Tree, er
 		families = []TreeFamily{}
 	}
 	return Tree{
-		Root: root, Direction: DirectionNetwork, Members: members, Families: families,
+		Root: root, Members: members, Families: families,
 		Truncated: walk.truncated, Total: walk.total,
 	}, nil
 }
 
-// compareTreeFamilies orders family boxes the way treeFamiliesSQL does: by the
-// year the union began, unknown last, then by creation and uid, so the payload
-// reads the same whichever walk produced it.
+// compareTreeFamilies orders family boxes by the year the union began, unknown
+// last, then by creation and uid, so the payload reads the same on every call
+// whatever order the breadth-first walk took the families in.
 func compareTreeFamilies(a, b TreeFamily) int {
 	switch {
 	case a.FromYear == nil && b.FromYear != nil:
@@ -250,4 +267,40 @@ func (s *Store) networkFamilies(ctx context.Context, uids []string) ([]TreeFamil
 		return nil, fmt.Errorf("family: reading network families: %w", err)
 	}
 	return out, nil
+}
+
+// queryMembers hydrates the walked set — uids with their generations, pairwise —
+// through networkMembersSQL and collects its rows.
+func queryMembers(ctx context.Context, q querier, uids []string, generations []int) ([]Member, error) {
+	rows, err := q.Query(ctx, networkMembersSQL, uids, generations)
+	if err != nil {
+		return nil, fmt.Errorf("family: reading the network: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Member{}
+	for rows.Next() {
+		member, err := scanMember(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, member)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("family: reading the network: %w", err)
+	}
+	return out, nil
+}
+
+// scanMember reads one member row: the relative columns, then the generation
+// the walk gave the person.
+func scanMember(row pgx.Row) (Member, error) {
+	var member Member
+	if err := row.Scan(
+		&member.UID, &member.Slug, &member.Name, &member.Type, &member.BirthYear,
+		&member.DeathYear, &member.CoverPhotoUID, &member.PhotoCount, &member.Generation,
+	); err != nil {
+		return Member{}, fmt.Errorf("family: scanning tree member: %w", err)
+	}
+	return member, nil
 }

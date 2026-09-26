@@ -3701,7 +3701,7 @@ here.
   role may look at it (the tree is filled in from the strip on the person's page and from the drawing's `+`). It
   draws **everybody the family links reach** from the person — up, down and sideways through a sibling group to
   aunts, cousins and their in-laws — in **one layered drawing**, a generation per row, fetched once
-  (`fetchTree(uid)` → `GET /subjects/{uid}/tree?direction=network`). There is **no direction switch and no
+  (`fetchTree(uid)` → `GET /subjects/{uid}/tree`). There is **no direction switch and no
   generations control** (both, and their `direction=`/`generations=`/`closed=` URL state, went with the
   2026-09-26 network redesign; an old bookmark carrying them simply draws the network): a reader looking at a
   family wants all of it, and a drawing that grows is a drawing you pan. It only fetches and wires: `fetchTree`
@@ -6760,11 +6760,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the message: 409 = the state of the tree is in the way (a cycle, a second parentage, two prospective siblings
   already in different families — the same request would have been accepted against different rows),
   400 = the request got itself wrong; `fetchTree(subjectUid,signal)` over
-  `GET /subjects/{uid}/tree?direction=network` is the layout's input — `FamilyTree{root,direction,members,
-  families,truncated,total}` with `TreeMember` = a `Relative` plus the **signed** `generation` (root 0, parent
-  −1, child +1, a partner the generation of the one they married; the nearest relationship names it and is the
-  drawing's layer) and the still-transmitted `depth`/`partner`, `TreeFamily` = a `Family` plus `child_uids` (in a
-  network a family is taken whole, so every child is also a member; both partners null = a sibling group),
+  `GET /subjects/{uid}/tree` is the layout's input — `FamilyTree{root,members,families,truncated,total}` with
+  `TreeMember` = a `Relative` plus the **signed** `generation` (root 0, parent −1, child +1, a partner the
+  generation of the one they married; the nearest relationship names it and is the drawing's layer; the
+  unsigned `depth` and the `partner` flag left the wire with the directional walks), `TreeFamily` = a
+  `Family` plus `child_uids` (in a network a family is taken whole, so every child is also a member; both
+  partners null = a sibling group),
   `truncated` = the server's 400-people cap cut the network, and `total` = how many people the whole family holds
   (the "of *M*" of the page's banner);
   `recognition.ts` = the recognition-sweep client: `streamSweep(params,onMessage,signal)` over

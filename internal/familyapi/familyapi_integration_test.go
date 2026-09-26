@@ -353,9 +353,11 @@ func TestRemoveRelation_roundTrip(t *testing.T) {
 	}
 }
 
-// TestTree_directionsAndGenerations walks a three-generation family both ways and
-// checks that the generation bound actually cuts the walk short.
-func TestTree_directionsAndGenerations(t *testing.T) {
+// TestTree_ignoresTheRetiredParams sends the direction and generations the
+// endpoint used to take — a pedigree, a one-generation bound, a direction that
+// never existed — and gets the same whole network every time: the parameters
+// are gone, and a stale client carrying them is neither obeyed nor refused.
+func TestTree_ignoresTheRetiredParams(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.RoleEditor)
 
@@ -365,33 +367,48 @@ func TestTree_directionsAndGenerations(t *testing.T) {
 	env.addRelation(t, editor, father, `{"role":"parent","subject_uid":"`+grandfather+`"}`)
 	env.addRelation(t, editor, child, `{"role":"parent","subject_uid":"`+father+`"}`)
 
-	var tree family.Tree
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+grandfather+"/tree",
-		nil, http.StatusOK, &tree)
-	if tree.Direction != family.DirectionDescendants || len(tree.Members) != 3 {
-		t.Errorf("descendants = %d members (%q), want 3 descendants", len(tree.Members), tree.Direction)
+	var plain family.Tree
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+child+"/tree",
+		nil, http.StatusOK, &plain)
+	want := map[string]int{grandfather: -2, father: -1, child: 0}
+	if got := memberGenerations(plain.Members); !maps.Equal(got, want) {
+		t.Fatalf("generations = %v, want %v", got, want)
 	}
-	if len(tree.Families) != 2 {
-		t.Errorf("families = %d, want 2", len(tree.Families))
-	}
-
-	env.decode(t, editor, http.MethodGet,
-		"/api/v1/subjects/"+grandfather+"/tree?generations=1", nil, http.StatusOK, &tree)
-	if len(tree.Members) != 2 {
-		t.Errorf("one-generation walk = %d members, want 2", len(tree.Members))
+	if len(plain.Families) != 2 || plain.Total != 3 || plain.Truncated {
+		t.Errorf("families = %d, total = %d, truncated = %v; want 2, 3, false",
+			len(plain.Families), plain.Total, plain.Truncated)
 	}
 
-	env.decode(t, editor, http.MethodGet,
-		"/api/v1/subjects/"+child+"/tree?direction=ancestors&generations=1", nil, http.StatusOK, &tree)
-	if tree.Direction != family.DirectionAncestors || len(tree.Members) != 2 {
-		t.Errorf("one-generation pedigree = %d members (%q), want 2 ancestors",
-			len(tree.Members), tree.Direction)
+	for _, query := range []string{
+		"?direction=ancestors&generations=1",
+		"?direction=descendants",
+		"?direction=network",
+		"?generations=1",
+		"?direction=sideways&generations=-2",
+	} {
+		var tree family.Tree
+		env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+child+"/tree"+query,
+			nil, http.StatusOK, &tree)
+		if got := memberGenerations(tree.Members); !maps.Equal(got, want) || len(tree.Families) != 2 {
+			t.Errorf("%s: generations = %v with %d families, want the whole network %v",
+				query, got, len(tree.Families), want)
+		}
 	}
 }
 
+// memberGenerations maps a tree's members to their signed generations.
+func memberGenerations(members []family.Member) map[string]int {
+	out := make(map[string]int, len(members))
+	for _, m := range members {
+		out[m.UID] = m.Generation
+	}
+	return out
+}
+
 // TestTree_network walks sideways through a parentless sibling group to an aunt
-// and her daughter, and checks the wire shape the page will read: a signed
-// generation beside the unsigned depth on every member, and the truncated flag.
+// and her daughter, and checks the wire shape the page reads: a signed
+// generation on every member and nothing of the retired walks — no depth, no
+// partner flag, no direction — beside the explicit truncated flag and total.
 func TestTree_network(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.RoleEditor)
@@ -407,20 +424,19 @@ func TestTree_network(t *testing.T) {
 	env.addRelation(t, editor, cousin, `{"role":"parent","subject_uid":"`+aunt+`"}`)
 
 	var raw struct {
-		Direction string `json:"direction"`
-		Truncated *bool  `json:"truncated"`
-		Total     int    `json:"total"`
-		Members   []struct {
-			UID        string `json:"uid"`
-			Depth      *int   `json:"depth"`
-			Generation *int   `json:"generation"`
-		} `json:"members"`
-		Families []family.TreeFamily `json:"families"`
+		Truncated *bool               `json:"truncated"`
+		Total     int                 `json:"total"`
+		Members   []map[string]any    `json:"members"`
+		Families  []family.TreeFamily `json:"families"`
+		Direction *string             `json:"direction"`
 	}
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree?direction=network",
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree",
 		nil, http.StatusOK, &raw)
-	if raw.Direction != "network" || raw.Truncated == nil || *raw.Truncated {
-		t.Errorf("direction = %q, truncated = %v, want network and an explicit false", raw.Direction, raw.Truncated)
+	if raw.Direction != nil {
+		t.Errorf("the payload still names a direction: %q", *raw.Direction)
+	}
+	if raw.Truncated == nil || *raw.Truncated {
+		t.Errorf("truncated = %v, want an explicit false", raw.Truncated)
 	}
 	if raw.Total != 5 {
 		t.Errorf("total = %d, want the whole five-person component", raw.Total)
@@ -428,27 +444,23 @@ func TestTree_network(t *testing.T) {
 	want := map[string]int{son: 0, mother: -1, father: -1, aunt: -1, cousin: 0}
 	got := map[string]int{}
 	for _, m := range raw.Members {
-		if m.Depth == nil || m.Generation == nil {
-			t.Fatalf("member %s lacks depth or generation on the wire", m.UID)
+		uid, _ := m["uid"].(string)
+		generation, ok := m["generation"].(float64)
+		if !ok {
+			t.Fatalf("member %s lacks a generation on the wire", uid)
 		}
-		if *m.Depth != max(*m.Generation, -*m.Generation) {
-			t.Errorf("member %s: depth %d is not the unsigned generation %d", m.UID, *m.Depth, *m.Generation)
+		for _, retired := range []string{"depth", "partner"} {
+			if _, ok := m[retired]; ok {
+				t.Errorf("member %s still carries %q", uid, retired)
+			}
 		}
-		got[m.UID] = *m.Generation
+		got[uid] = int(generation)
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("generations = %v, want %v", got, want)
 	}
 	if len(raw.Families) != 3 {
 		t.Errorf("families = %d, want 3", len(raw.Families))
-	}
-
-	// The existing directions answer as before, and do not reach the aunt.
-	var tree family.Tree
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree?direction=ancestors",
-		nil, http.StatusOK, &tree)
-	if len(tree.Members) != 3 || tree.Truncated {
-		t.Errorf("pedigree = %d members, truncated %v; want 3, false", len(tree.Members), tree.Truncated)
 	}
 }
 

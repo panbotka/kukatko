@@ -87,24 +87,3 @@ func TestCheckRelationTarget(t *testing.T) {
 		})
 	}
 }
-
-// TestWithinDepth trims a descendant walk to the generations that were asked for,
-// keeping the root (depth 0) whatever the bound.
-func TestWithinDepth(t *testing.T) {
-	t.Parallel()
-	members := []Member{
-		{Relative: Relative{UID: "su_root"}, Depth: 0},
-		{Relative: Relative{UID: "su_kid"}, Depth: 1},
-		{Relative: Relative{UID: "su_inlaw"}, Depth: 1, Partner: true},
-		{Relative: Relative{UID: "su_grandkid"}, Depth: 2},
-	}
-	got := withinDepth(members, 1)
-	if len(got) != 3 {
-		t.Fatalf("withinDepth(…, 1) kept %d members, want 3: %+v", len(got), got)
-	}
-	for _, m := range got {
-		if m.UID == "su_grandkid" {
-			t.Errorf("a grandchild survived a one-generation walk: %+v", got)
-		}
-	}
-}

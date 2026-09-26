@@ -5,6 +5,7 @@ package family_test
 import (
 	"context"
 	"errors"
+	"maps"
 	"strings"
 	"testing"
 
@@ -65,8 +66,8 @@ func entryFor(actorUID, action string) audit.Entry {
 }
 
 // village is the seeded family the walk tests read: three generations with a
-// cousin marriage at the bottom, which is what makes the descendant walk a
-// diamond rather than a tree.
+// cousin marriage at the bottom, which is what makes the family a diamond rather
+// than a tree.
 //
 //	     Bohumil ⚭ Marie
 //	      /             \
@@ -76,8 +77,8 @@ func entryFor(actorUID, action string) audit.Entry {
 //	             |
 //	            Jan
 //
-// Jan is reachable from Bohumil through his father and through his mother, so
-// UNION ALL would return him twice; UNION returns him once.
+// Jan is reachable from Bohumil through his father and through his mother, and
+// the tree must still draw him once.
 type village struct {
 	bohumil, marie   string
 	josef, ludmila   string
@@ -121,110 +122,6 @@ func seedVillage(t *testing.T, fam *family.Store, ppl *people.Store, db *databas
 		}
 	}
 	return v
-}
-
-// memberDepths maps a walk's result to uid → depth, failing the test if any uid
-// appears twice: a person drawn twice is exactly what UNION ALL would produce
-// once cousins marry.
-func memberDepths(t *testing.T, members []family.Member) map[string]int {
-	t.Helper()
-	depths := make(map[string]int, len(members))
-	for _, m := range members {
-		if _, seen := depths[m.UID]; seen {
-			t.Errorf("%s (%s) appears twice in the walk", m.Name, m.UID)
-		}
-		depths[m.UID] = m.Depth
-	}
-	return depths
-}
-
-func TestDescendants_cousinMarriageIsWalkedOnce(t *testing.T) {
-	fam, ppl, _, db := stores(t)
-	ctx := context.Background()
-	v := seedVillage(t, fam, ppl, db)
-
-	members, err := fam.Descendants(ctx, v.bohumil, family.DescendantOptions{})
-	if err != nil {
-		t.Fatalf("Descendants: %v", err)
-	}
-	depths := memberDepths(t, members)
-	want := map[string]int{
-		v.bohumil: 0, v.josef: 1, v.anna: 1, v.petr: 2, v.eva: 2, v.jan: 3,
-	}
-	if len(depths) != len(want) {
-		t.Fatalf("walked %d people, want %d (%v)", len(depths), len(want), depths)
-	}
-	for uid, depth := range want {
-		if got, ok := depths[uid]; !ok || got != depth {
-			t.Errorf("%s: depth %d (present=%v), want %d", uid, got, ok, depth)
-		}
-	}
-}
-
-func TestDescendants_withPartnersAddsTheOnesWhoMarriedIn(t *testing.T) {
-	fam, ppl, _, db := stores(t)
-	ctx := context.Background()
-	v := seedVillage(t, fam, ppl, db)
-
-	members, err := fam.Descendants(ctx, v.bohumil, family.DescendantOptions{WithPartners: true})
-	if err != nil {
-		t.Fatalf("Descendants: %v", err)
-	}
-	depths := memberDepths(t, members)
-	if len(depths) != 9 {
-		t.Fatalf("walked %d people, want 9 (%v)", len(depths), depths)
-	}
-	for _, uid := range []string{v.marie, v.ludmila, v.karel} {
-		if _, ok := depths[uid]; !ok {
-			t.Errorf("%s married in but is missing from the walk", uid)
-		}
-	}
-	flags := map[string]bool{}
-	for _, m := range members {
-		flags[m.UID] = m.Partner
-	}
-	if !flags[v.ludmila] {
-		t.Error("Ludmila is in the set only as a partner, want Partner=true")
-	}
-	// Petr and Eva are partners of each other *and* descendants; descent wins, so
-	// neither is flagged as having married in.
-	if flags[v.petr] || flags[v.eva] {
-		t.Errorf("the cousins are descendants, want Partner=false, got petr=%v eva=%v",
-			flags[v.petr], flags[v.eva])
-	}
-}
-
-func TestAncestors_theDiamondIsClimbedOnce(t *testing.T) {
-	fam, ppl, _, db := stores(t)
-	ctx := context.Background()
-	v := seedVillage(t, fam, ppl, db)
-
-	members, err := fam.Ancestors(ctx, v.jan, 3)
-	if err != nil {
-		t.Fatalf("Ancestors: %v", err)
-	}
-	depths := memberDepths(t, members)
-	want := map[string]int{
-		v.jan: 0, v.petr: 1, v.eva: 1,
-		v.josef: 2, v.ludmila: 2, v.anna: 2, v.karel: 2,
-		v.bohumil: 3, v.marie: 3,
-	}
-	if len(depths) != len(want) {
-		t.Fatalf("climbed to %d people, want %d (%v)", len(depths), len(want), depths)
-	}
-	for uid, depth := range want {
-		if got, ok := depths[uid]; !ok || got != depth {
-			t.Errorf("%s: depth %d (present=%v), want %d", uid, got, ok, depth)
-		}
-	}
-
-	bounded, err := fam.Ancestors(ctx, v.jan, 1)
-	if err != nil {
-		t.Fatalf("Ancestors(1): %v", err)
-	}
-	if len(bounded) != 3 {
-		t.Errorf("one generation up = %d people, want 3 (Jan and his parents)", len(bounded))
-	}
 }
 
 func TestRelations_areDerivedFromTheFamilyRows(t *testing.T) {
@@ -284,20 +181,31 @@ func uidsOf(rels []family.Relative) []string {
 	return out
 }
 
-func TestTree_carriesTheFamilyBoxesOfTheWalkedSet(t *testing.T) {
+// TestTree_cousinMarriageIsDrawnOnce walks the village from its founder. The
+// cousins Petr and Eva are reachable along two lines each, and the network still
+// draws every person once, at the generation the nearest line gives them, with
+// the partners who married in on their spouse's row.
+func TestTree_cousinMarriageIsDrawnOnce(t *testing.T) {
 	fam, ppl, _, db := stores(t)
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, v.bohumil, family.DirectionDescendants, 0)
+	tree, err := fam.Tree(ctx, v.bohumil)
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
-	if tree.Root.UID != v.bohumil {
-		t.Errorf("root = %s, want %s", tree.Root.UID, v.bohumil)
+	if tree.Root.UID != v.bohumil || tree.Truncated || tree.Total != 9 {
+		t.Errorf("root = %s truncated=%v total=%d, want an untruncated 9 from Bohumil",
+			tree.Root.UID, tree.Truncated, tree.Total)
 	}
-	if len(tree.Members) != 9 {
-		t.Errorf("members = %d, want 9", len(tree.Members))
+	want := map[string]int{
+		v.bohumil: 0, v.marie: 0,
+		v.josef: 1, v.ludmila: 1, v.anna: 1, v.karel: 1,
+		v.petr: 2, v.eva: 2,
+		v.jan: 3,
+	}
+	if got := generations(t, tree.Members); !maps.Equal(got, want) {
+		t.Errorf("generations = %v, want %v", got, want)
 	}
 	// Four couples: the root pair, both of their children's marriages, and the
 	// cousins' own.
@@ -311,9 +219,7 @@ func TestTree_carriesTheFamilyBoxesOfTheWalkedSet(t *testing.T) {
 	if got := children[v.familyOfChildren[v.josef]]; len(got) != 2 {
 		t.Errorf("the root couple's box lists %v, want two children", got)
 	}
-	if _, err := fam.Tree(ctx, v.bohumil, "sideways", 0); !errors.Is(err, family.ErrInvalidKind) {
-		t.Errorf("Tree(sideways) = %v, want ErrInvalidKind", err)
-	}
+	assertClosed(t, tree)
 }
 
 func TestAddParent_refusesASecondParentage(t *testing.T) {
@@ -609,9 +515,8 @@ func TestStore_missingSubjectsAreSentinels(t *testing.T) {
 	if _, err := fam.Relations(ctx, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("Relations(missing) = %v, want ErrSubjectNotFound", err)
 	}
-	if _, err := fam.Descendants(ctx, "sumissing", family.DescendantOptions{}); !errors.Is(
-		err, family.ErrSubjectNotFound) {
-		t.Errorf("Descendants(missing) = %v, want ErrSubjectNotFound", err)
+	if _, err := fam.Tree(ctx, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
+		t.Errorf("Tree(missing) = %v, want ErrSubjectNotFound", err)
 	}
 	if _, err := fam.AddPartnerAudited(ctx, known, "sumissing",
 		entryFor(actor, audit.ActionSubjectRelationAdd)); !errors.Is(err, family.ErrSubjectNotFound) {

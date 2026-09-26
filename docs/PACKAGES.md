@@ -1769,20 +1769,11 @@ to `## Package map` in `CLAUDE.md`.
   four derived lists the subject page's strip draws, each carrying a `Relative` (subject identity, life years,
   cover and the **photo count counted the way the people index counts it**, so a chip's badge is a promise about
   the next page) — a `Partnership` keeps its `Family` and a **nil `Partner` for a lone-parent family**;
-  `Descendants(rootUID, {WithPartners})` = the design's walk verbatim, **`UNION` not `UNION ALL`** (cousins marry
-  in a village, the same person is then reachable by two paths, and `UNION ALL` would both duplicate rows and
-  explode combinatorially), collapsed to one row per person at their **shortest** depth, with the non-recursive
-  partner step adding everybody who married in (`Member.Partner`); `Ancestors(subjectUID, generations)` = the
-  bounded pedigree (`clampGenerations` → 1..`MaxDepth`); `Tree(rootUID, direction, generations)` → the
-  **layout-ready**
-  payload (root, members, and the family boxes of the walked set, whose `ChildUIDs` are **filtered to members**
-  so the renderer is never handed an edge to a node it was not given) — a **pedigree** takes the bound in SQL,
-  a **descendant** walk is trimmed in Go (`withinDepth`), since its depth guard sits inside a recursive term,
-  which takes no parameter; the trim is exact because each person is reported at their shortest depth and a
-  partner carries the depth of the descendant they married; **`Tree(rootUID, DirectionNetwork, _)`** is the
-  third walk (`network.go`) — the whole **connected component** over the bipartite graph of people and
-  families, a person joined to a family by being one of its partners *or one of its children*, both edges
-  followed both ways. It is breadth-first in Go rather than a recursive CTE, one `networkFamiliesSQL` query per
+  `Tree(rootUID)` → the **layout-ready** payload (root, members with their signed `Generation`, the family
+  boxes tying them together, `Truncated`, `Total`), produced by the package's **one read walk**
+  (`network.go`) — the whole **connected component** over the bipartite graph of people and families, a
+  person joined to a family by being one of its partners *or one of its children*, both edges followed both
+  ways. It is breadth-first in Go rather than a recursive CTE, one `networkFamiliesSQL` query per
   frontier (every family a frontier person belongs to, with **all** its children — no filter to the walked
   set, which is what makes aunts and cousins appear), because the two things it promises are awkward in SQL:
   a **signed generation** assigned **first-write-wins** (a family takes its partners' generation, its children
@@ -1790,15 +1781,18 @@ to `## Package map` in `CLAUDE.md`.
   **cap** (`NetworkLimit` = 400) that keeps the nearest and reports `Tree.Truncated`. Past the cap the walk
   goes on to the end of the component **only counting**, so `Tree.Total` says how many people it holds (the
   page's "nearest *N* of *M*"); the order is deterministic, so what a capped walk keeps is exactly the prefix an
-  uncapped one had reached when the first family stopped fitting (`keptPeople`/`keptFamilies`). The directional
-  walks report their member count as `Total`. A family is taken whole
-  or not at all, so every uid a returned box names is a member. The traversal (`walkNetwork`) takes a
-  `familyFetcher` and is a pure function over it; ties resolve in a fixed order (frontier order, families by
-  uid, partners before children), so the result does not depend on row order. Visiting each person and family
-  once, it terminates on any graph and needs no depth guard — `MaxDepth` stays the recursive CTEs' cycle
-  guard, not repurposed. `Member.Generation` is also filled for the two directional walks (the depth,
-  negated for a pedigree). The `family:` search filter keeps its own recursive SQL in `internal/photos` on
-  purpose — it answers a different question; `GetFamily(uid)`.
+  uncapped one had reached when the first family stopped fitting (`keptPeople`/`keptFamilies`). A family is
+  taken whole or not at all, so every uid a returned box names is a member. The traversal (`walkNetwork`)
+  takes a `familyFetcher` and is a pure function over it; ties resolve in a fixed order (frontier order,
+  families by uid, partners before children), so the result does not depend on row order. Visiting each
+  person and family once, it terminates on any graph and needs no depth guard — `MaxDepth` stays the cycle
+  check's guard (`ancestorUIDsSQL`), not repurposed. The directional walks it replaced — `Descendants`,
+  `Ancestors`, their `descendantsSQL`/`ancestorsSQL`, `clampGenerations`, `Member.Depth`, `Member.Partner`
+  and the `Direction` type — were removed in step 3 of the 2026-09-26 network redesign. The `family:` search
+  filter is **not** built on this walk: it keeps its own recursive SQL in `internal/photos` (`familyDepthLimit`)
+  and keeps meaning *the descendants of a root plus their partners* — the tree page shows a family, the filter
+  narrows a listing, and the two answer **different questions on purpose**; do not unify them.
+  `GetFamily(uid)`.
   **Writes** all go through the generic `mutateAudited(ctx, pool, entry, fn)` (the `internal/people` convention),
   so the audit row lands **in the mutation's own transaction** — and `entry.TargetUID` is stamped **before** the
   call, because `mutateAudited` copies the entry and a stamp made inside the closure is lost:
@@ -1851,7 +1845,7 @@ to `## Package map` in `CLAUDE.md`.
   applied is superseded by the run that edit itself schedules. Both tables are classified in
   `internal/reset` as catalogue tables (a wipe empties them). Unit tests cover pair normalisation, the cycle rule
   and the validators; the integration test seeds a **three-generation family with a cousin marriage** and proves
-  the diamond is walked once, that the one-family-per-child index refuses a second parentage (asserted against the
+  the diamond is drawn once, at the nearest generation, that the one-family-per-child index refuses a second parentage (asserted against the
   schema, not only through the store), that an ancestor cannot be attached as a child, and that a refused
   mutation writes **no** audit row; `network_test.go` drives `walkNetwork` over an in-memory graph and
   `network_integration_test.go` seeds the production shape (a couple with a child, a parentless sibling group,
@@ -1873,7 +1867,7 @@ to `## Package map` in `CLAUDE.md`.
   (`buildFamilyAPI` in `cmd/kukatko/family.go`) rather than with a fresh `server.WithAPI` line in
   `buildServices`, which sits at the `funlen` limit.
   The handlers are thin — decode, guard, delegate, map the error — and the three decisions worth naming are
-  the status mapping, the audit details and the tree's parameters. **`familyStatus`** answers **404** for a
+  the status mapping, the audit details and the tree's lack of parameters. **`familyStatus`** answers **404** for a
   missing subject/family/relation, **409** for a refusal about the *state* of the tree (`ErrCycle`,
   `ErrAlreadyChild`, `ErrFamilyConflict`, `ErrDifferentFamilies`, `ErrSiblingsDerived` — the request was well
   formed and the same one would have been
@@ -1886,12 +1880,10 @@ to `## Package map` in `CLAUDE.md`.
   up front (`subject.relation.remove`), and `PATCH` loads the family **first** so `familyChanges` can record
   the old→new diff via `ChangeSet.StampInto` and so a missing family answers 404 before anything is written —
   `decodeFamilyUpdate` resolves an omitted `kind` to `partnership` there, the same default the store applies,
-  so the recorded diff matches what is stored. **`parseTreeParams`** defaults `direction` to `descendants`,
-  accepts `ancestors` and `network`, and rejects an unrecognised one rather than quietly answering a different
-  question; `generations` defaults
-  to 0 (= the whole bounded walk) and rejects a negative or non-numeric value, while the **upper** bound stays
-  the store's business (`clampGenerations`), because a client asking for a thousand generations means "all of
-  them", not an error about a limit it has no reason to know. Bodies are decoded with
+  so the recorded diff matches what is stored. **The tree** takes no parameters and reads no query string:
+  the `direction`/`generations` it once parsed (`parseTreeParams`) were removed with the directional walks,
+  and a request still carrying them — valid or not — is answered exactly like one without, so a stale client
+  gets the network rather than a 400. Bodies are decoded with
   `DisallowUnknownFields` under a 1 MiB limit. Unit tests drive the handlers behind pass-through guards with a
   fake store (routing, decoding, the status table, the audit entry); the integration test mounts the **real**
   auth guards over the test database and covers each route end to end plus the three things only the real

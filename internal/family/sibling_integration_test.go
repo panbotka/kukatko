@@ -126,25 +126,24 @@ func TestSibling_withNoParents(t *testing.T) {
 		t.Errorf("Marie's siblings = %v, want both of them", got)
 	}
 
-	// The walks read the partner columns, so a family naming nobody is simply not
-	// on any of their paths. That must be a quiet skip rather than a broken walk:
-	// a group member's tree is themselves, and asking for it is not an error.
-	tree, err := fam.Tree(ctx, josef, family.DirectionDescendants, 0)
+	// The network walks through a family by its children as well as by its
+	// partners, so a group nobody parents is not a dead end: Josef's tree is the
+	// three siblings side by side in the one box, all on his own generation.
+	tree, err := fam.Tree(ctx, josef)
 	if err != nil {
 		t.Fatalf("Tree(Josef) over a sibling group: %v", err)
 	}
-	if len(tree.Members) != 1 || tree.Members[0].UID != josef {
-		t.Errorf("descendant tree = %v, want only Josef himself", memberUIDs(tree.Members))
+	if got := memberUIDs(tree.Members); len(got) != 3 ||
+		!slices.Contains(got, anna) || !slices.Contains(got, marie) {
+		t.Errorf("tree = %v, want Josef, Anna and Marie", got)
 	}
-	if len(tree.Families) != 0 {
-		t.Errorf("descendant tree drew %d family boxes, want none for a group nobody parents", len(tree.Families))
+	for _, m := range tree.Members {
+		if m.Generation != 0 {
+			t.Errorf("%s: generation %d, want 0 beside their siblings", m.Name, m.Generation)
+		}
 	}
-	up, err := fam.Tree(ctx, josef, family.DirectionAncestors, 0)
-	if err != nil {
-		t.Fatalf("Tree(Josef, ancestors) over a sibling group: %v", err)
-	}
-	if len(up.Members) != 1 {
-		t.Errorf("pedigree = %v, want only Josef: the group records nobody above him", memberUIDs(up.Members))
+	if len(tree.Families) != 1 || tree.Families[0].UID != res.Family.UID {
+		t.Errorf("tree drew %d family boxes, want only the sibling group", len(tree.Families))
 	}
 
 	// A second, unrelated group: the pre-0076 index would have collapsed the two

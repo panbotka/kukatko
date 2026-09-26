@@ -23,9 +23,9 @@ import (
 //	      |              |
 //	    Tomáš          Petra
 //
-// From Tomáš the descendant walk finds only him and the pedigree only his
-// parents; Dagmar (an aunt) and Petra (a cousin) sit sideways, through a family
-// that names nobody as a partner.
+// Dagmar (an aunt) and Petra (a cousin) sit sideways from Tomáš, through a
+// family that names nobody as a partner: a walk only up or only down never
+// reaches them.
 type kozaks struct {
 	tomas, ludmila, ales, dagmar, petra string
 	sisters                             string
@@ -100,25 +100,16 @@ func TestNetwork_reachesTheAuntAndTheCousin(t *testing.T) {
 	ctx := context.Background()
 	k := seedKozaks(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, k.tomas, family.DirectionNetwork, 0)
+	tree, err := fam.Tree(ctx, k.tomas)
 	if err != nil {
-		t.Fatalf("Tree(network): %v", err)
+		t.Fatalf("Tree: %v", err)
 	}
 	want := map[string]int{k.tomas: 0, k.ludmila: -1, k.ales: -1, k.dagmar: -1, k.petra: 0}
 	if got := generations(t, tree.Members); !maps.Equal(got, want) {
 		t.Errorf("generations = %v, want %v", got, want)
 	}
-	for _, m := range tree.Members {
-		if want := max(m.Generation, -m.Generation); m.Depth != want {
-			t.Errorf("%s: depth = %d, want the unsigned generation %d", m.Name, m.Depth, want)
-		}
-		if m.Partner {
-			t.Errorf("%s: partner flag set in a network, where it means nothing", m.Name)
-		}
-	}
-	if tree.Direction != family.DirectionNetwork || tree.Truncated || tree.Root.UID != k.tomas {
-		t.Errorf("tree = %q truncated=%v root=%s, want an untruncated network from Tomáš",
-			tree.Direction, tree.Truncated, tree.Root.UID)
+	if tree.Truncated || tree.Root.UID != k.tomas {
+		t.Errorf("truncated=%v root=%s, want an untruncated network from Tomáš", tree.Truncated, tree.Root.UID)
 	}
 	if len(tree.Families) != 3 {
 		t.Fatalf("families = %d, want the couple, the sibling group and Dagmar's", len(tree.Families))
@@ -131,23 +122,6 @@ func TestNetwork_reachesTheAuntAndTheCousin(t *testing.T) {
 		t.Errorf("the sibling group lists %v, want both sisters", got)
 	}
 	assertClosed(t, tree)
-
-	// The directional walks are untouched and still stop short of the aunt.
-	down, err := fam.Tree(ctx, k.tomas, family.DirectionDescendants, 0)
-	if err != nil {
-		t.Fatalf("Tree(descendants): %v", err)
-	}
-	up, err := fam.Tree(ctx, k.tomas, family.DirectionAncestors, 0)
-	if err != nil {
-		t.Fatalf("Tree(ancestors): %v", err)
-	}
-	if len(down.Members) != 1 || len(up.Members) != 3 {
-		t.Errorf("descendants = %v, ancestors = %v, want Tomáš alone and him with his parents",
-			memberUIDs(down.Members), memberUIDs(up.Members))
-	}
-	if got := generations(t, up.Members); got[k.ludmila] != -1 {
-		t.Errorf("the pedigree gives Ludmila generation %d, want -1", got[k.ludmila])
-	}
 }
 
 // cousinMarriage is a cycle whose two paths disagree: Cyril marries Klára, the
@@ -185,7 +159,7 @@ func TestNetwork_aCousinMarriageIsWalkedOnceAndTheNearestWins(t *testing.T) {
 		}
 	}
 
-	tree, err := fam.Tree(ctx, uid["Cyril"], family.DirectionNetwork, 0)
+	tree, err := fam.Tree(ctx, uid["Cyril"])
 	if err != nil {
 		t.Fatalf("Tree(network): %v", err)
 	}
@@ -246,14 +220,14 @@ func TestNetwork_aPersonWithNoFamilyAndAMissingRoot(t *testing.T) {
 	ctx := context.Background()
 	alone := makeSubject(t, ppl, "Samotář")
 
-	tree, err := fam.Tree(ctx, alone, family.DirectionNetwork, 0)
+	tree, err := fam.Tree(ctx, alone)
 	if err != nil {
 		t.Fatalf("Tree(network): %v", err)
 	}
 	if len(tree.Members) != 1 || tree.Members[0].UID != alone || tree.Families == nil || len(tree.Families) != 0 {
 		t.Errorf("tree = %+v, want the root alone and an empty (not nil) family list", tree)
 	}
-	if _, err := fam.Tree(ctx, "su_ghost", family.DirectionNetwork, 0); !errors.Is(err, family.ErrSubjectNotFound) {
+	if _, err := fam.Tree(ctx, "su_ghost"); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("Tree(missing root) = %v, want ErrSubjectNotFound", err)
 	}
 }

@@ -2,7 +2,7 @@ package family
 
 import "context"
 
-// NetworkWithin is Tree(DirectionNetwork) with a cap the test chooses, so the
+// NetworkWithin is Tree with a cap the test chooses, so the
 // integration tests can walk a component past the cap without seeding
 // NetworkLimit people first.
 func (s *Store) NetworkWithin(ctx context.Context, rootUID string, limit int) (Tree, error) {

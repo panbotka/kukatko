@@ -23,16 +23,12 @@ func (a *API) handleRelations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, relations)
 }
 
-// handleTree returns the tree walked from the subject in the requested direction,
-// bounded by the requested number of generations. A malformed parameter answers
-// 400 and an unknown subject 404.
+// handleTree returns the family network around the subject: everybody the
+// family links reach from them, up, down and sideways, capped by the store. The
+// query string is not read, so the direction and generations an older client
+// sent change nothing. An unknown subject answers 404.
 func (a *API) handleTree(w http.ResponseWriter, r *http.Request) {
-	direction, generations, err := parseTreeParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	tree, err := a.store.Tree(r.Context(), chi.URLParam(r, "uid"), direction, generations)
+	tree, err := a.store.Tree(r.Context(), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)

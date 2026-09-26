@@ -23,12 +23,19 @@
 // unique pair index (NULLS NOT DISTINCT, and partial over the rows that name a
 // partner) makes one couple exactly one family and one lone parent exactly one
 // family, while leaving every sibling group a row of its own; the unique index on
-// child_uid makes a person a child in at most one family, which is what keeps the
+// child_uid makes a person a child in at most one family, which is what keeps a
 // descendant walk a tree rather than a general graph. Cycles are the one thing SQL
 // cannot refuse on its own — A the child of B's family while B is the child of A's — so every
 // attachment walks the prospective parents' ancestors first (see wouldCycle), and
 // every recursive walk carries a depth guard so a cycle that somehow reached the
 // table still cannot hang a request.
+//
+// The package has one read walk, the network (see Store.Tree): everybody the
+// family links reach from a subject, in every direction. The `family:` search
+// filter is not built on it. That filter has its own recursive SQL in
+// internal/photos and keeps meaning the descendants of a root plus their
+// partners — the tree page shows a family, the filter narrows a listing, and the
+// two answer different questions on purpose. Do not unify them.
 package family
 
 import (
@@ -84,10 +91,12 @@ const (
 	// family a photo archive can hold still fits. Mirrored by the SQL CHECK
 	// constraint of migration 0073.
 	MinYear = 1800
-	// MaxDepth bounds every recursive walk. A family archive is nowhere near
-	// twenty generations deep, so the guard costs nothing real; what it buys is
-	// that a cycle which somehow reached the tables — despite wouldCycle — ends
-	// the query instead of the request.
+	// MaxDepth bounds every recursive walk — the cycle check's climb in
+	// ancestorUIDsSQL, where it is inlined because a recursive term takes no
+	// parameter. A family archive is nowhere near twenty generations deep, so the
+	// guard costs nothing real; what it buys is that a cycle which somehow
+	// reached the tables — despite wouldCycle — ends the query instead of the
+	// request. The network walk needs no such guard (see walkNetwork).
 	MaxDepth = 20
 	// NetworkLimit caps how many people the network walk returns. It is a
 	// product limit, unlike MaxDepth: in a village the families eventually marry
@@ -140,34 +149,6 @@ const (
 func (k ChildKind) valid() bool {
 	switch k {
 	case ChildBirth, ChildAdopted, ChildStep:
-		return true
-	default:
-		return false
-	}
-}
-
-// Direction says which way a tree is walked from its root.
-type Direction string
-
-// The recognised walk directions.
-const (
-	// DirectionDescendants walks down: the root's children, their children, and
-	// the partners who married in.
-	DirectionDescendants Direction = "descendants"
-	// DirectionAncestors walks up: parents, grandparents, a binary pedigree
-	// bounded by generation.
-	DirectionAncestors Direction = "ancestors"
-	// DirectionNetwork walks everywhere: up, down and sideways through every
-	// family a reached person belongs to, until the whole connected component —
-	// aunts, cousins and in-laws' relatives included — is reached or
-	// NetworkLimit people are. It takes no generation limit.
-	DirectionNetwork Direction = "network"
-)
-
-// valid reports whether d is one of the recognised directions.
-func (d Direction) valid() bool {
-	switch d {
-	case DirectionDescendants, DirectionAncestors, DirectionNetwork:
 		return true
 	default:
 		return false
@@ -283,55 +264,36 @@ type Relations struct {
 // them.
 type Member struct {
 	Relative
-	// Depth is how many generations separate this person from the root, which is
-	// itself at depth 0. When two paths reach the same person — which happens as
-	// soon as cousins marry — the shortest one wins.
-	Depth int `json:"depth"`
-	// Generation is the same distance signed: the root is 0, a parent −1, a
-	// child +1, and a partner shares the generation of the person they married.
-	// A descendant walk reports it positive and an ancestor walk negative; the
-	// network walk is the one that needs the sign, because it reaches both ways
-	// at once, and there the nearest relationship names it (see walkNetwork).
+	// Generation is the person's generation relative to the root, signed: the
+	// root is 0, a parent −1, a child +1, and a partner shares the generation of
+	// the person they married. When two paths reach the same person — which
+	// happens as soon as cousins marry — the nearest relationship names it (see
+	// walkNetwork).
 	Generation int `json:"generation"`
-	// Partner reports that this person is in the set only because they are
-	// partnered with a descendant, not because they descend from the root. It is
-	// the "plus their partners" half of what "the Nečas family" means.
-	Partner bool `json:"partner"`
 }
 
-// TreeFamily is one family box of a drawn tree: the family itself plus the
-// children of it that the walk actually reached, so the renderer draws no edge
-// to a person it was not given. In a network every child of a taken family is
-// reached, so there the list is all of them.
+// TreeFamily is one family box of a drawn tree: the family itself plus all of
+// its children. The walk takes a family in whole or not at all, so every child
+// listed is also a member and the renderer draws no edge to a person it was not
+// given.
 type TreeFamily struct {
 	Family
 	ChildUIDs []string `json:"child_uids"`
 }
 
-// Tree is the layout-ready payload of one family tree: every person in it, every
-// family box tying them together, and which way it was walked. The layout itself
-// is a pure function in the frontend; this is only its input.
+// Tree is the layout-ready payload of the family around one subject: every
+// person the walk reached and every family box tying them together. The layout
+// itself is a pure function in the frontend; this is only its input.
 type Tree struct {
-	Root      Relative     `json:"root"`
-	Direction Direction    `json:"direction"`
-	Members   []Member     `json:"members"`
-	Families  []TreeFamily `json:"families"`
-	// Truncated reports that the network walk stopped at NetworkLimit people
-	// with more of the component left unreached. The directional walks never
-	// set it.
+	Root     Relative     `json:"root"`
+	Members  []Member     `json:"members"`
+	Families []TreeFamily `json:"families"`
+	// Truncated reports that the walk stopped at NetworkLimit people with more
+	// of the component left unreached.
 	Truncated bool `json:"truncated"`
 	// Total is how many people the whole component holds, counted past the cap:
 	// len(Members) unless Truncated, when it is the "of M" the page reports.
-	// The directional walks report their own member count.
 	Total int `json:"total"`
-}
-
-// DescendantOptions tunes the descendant walk.
-type DescendantOptions struct {
-	// WithPartners adds every subject who shares a family with a descendant — the
-	// people who married into the family. They carry the depth of the descendant
-	// they are partnered with and Member.Partner true.
-	WithPartners bool
 }
 
 // normalisePair orders a couple the way the database stores it: by byte order,

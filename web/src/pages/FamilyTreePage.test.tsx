@@ -49,8 +49,6 @@ function member(
     death_year: null,
     photo_count: 0,
     generation,
-    depth: Math.abs(generation),
-    partner: false,
   }
 }
 
@@ -78,7 +76,6 @@ function family(uid: string, a: string | null, b: string | null, children: strin
 function network(): FamilyTree {
   return {
     root: ROOT,
-    direction: 'network',
     members: [
       member('s1', 'Tomáš Kozák', 0, 1980),
       member('s2', 'Ludmila Kozáková', -1, 1955),

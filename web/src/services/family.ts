@@ -222,13 +222,6 @@ export async function addRelation(
 }
 
 /**
- * Which walk produced a tree (`family.Direction`). The page only ever asks for
- * `network`; the two directional walks are still answered by the endpoint until
- * it drops them.
- */
-export type TreeDirection = 'descendants' | 'ancestors' | 'network'
-
-/**
  * One person in a walked tree (`family.Member`): the relative plus where the
  * walk found them.
  */
@@ -241,10 +234,6 @@ export interface TreeMember extends Relative {
    * layer.
    */
   generation: number
-  /** The same distance unsigned. Superseded by {@link generation}; still on the wire. */
-  depth: number
-  /** Meaningless in a network, where it is always false; still on the wire. */
-  partner: boolean
 }
 
 /**
@@ -263,7 +252,6 @@ export interface TreeFamily extends Family {
  */
 export interface FamilyTree {
   root: Relative
-  direction: TreeDirection
   members: TreeMember[]
   families: TreeFamily[]
   /**
@@ -277,13 +265,9 @@ export interface FamilyTree {
 
 /**
  * Reads everybody the family links reach from a subject via
- * `GET /subjects/{uid}/tree?direction=network`: up, down and sideways, capped by
- * the server at its nearest few hundred. An unknown subject is an
- * {@link ApiError} 404.
+ * `GET /subjects/{uid}/tree`: up, down and sideways, capped by the server at its
+ * nearest few hundred. An unknown subject is an {@link ApiError} 404.
  */
 export async function fetchTree(subjectUid: string, signal?: AbortSignal): Promise<FamilyTree> {
-  return getJSON<FamilyTree>(
-    `/subjects/${encodeURIComponent(subjectUid)}/tree?direction=network`,
-    signal,
-  )
+  return getJSON<FamilyTree>(`/subjects/${encodeURIComponent(subjectUid)}/tree`, signal)
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/family"
@@ -59,48 +58,4 @@ func decodeFamilyUpdate(r *http.Request) (family.Update, error) {
 	}
 	in.Note = strings.TrimSpace(in.Note)
 	return in, nil
-}
-
-// parseTreeParams reads the tree endpoint's query parameters: which way to walk
-// and how far. An omitted direction walks down, which is the tree people mean
-// when they say "the Nečas family"; network walks the whole reachable family
-// and ignores generations; an omitted generations means the whole bounded walk.
-// An unrecognised direction or a non-numeric generations is
-// rejected rather than silently defaulted, because quietly answering a different
-// question than the one asked is worse than an error.
-func parseTreeParams(r *http.Request) (family.Direction, int, error) {
-	query := r.URL.Query()
-	direction := family.DirectionDescendants
-	if raw := query.Get("direction"); raw != "" {
-		direction = family.Direction(raw)
-		switch direction {
-		case family.DirectionDescendants, family.DirectionAncestors, family.DirectionNetwork:
-		default:
-			return "", 0, errors.New("direction must be descendants, ancestors or network")
-		}
-	}
-	generations, err := parseGenerations(query.Get("generations"))
-	if err != nil {
-		return "", 0, err
-	}
-	return direction, generations, nil
-}
-
-// parseGenerations reads how many generations a tree request asks for. An empty
-// value means 0 — the whole bounded walk — and a negative or non-numeric value is
-// rejected. The upper bound is the store's business: it clamps to family.MaxDepth,
-// so a client asking for a thousand generations gets the deepest walk there is
-// rather than an error about a limit it has no reason to know.
-func parseGenerations(raw string) (int, error) {
-	if raw == "" {
-		return 0, nil
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, errors.New("generations must be an integer")
-	}
-	if value < 0 {
-		return 0, errors.New("generations must not be negative")
-	}
-	return value, nil
 }

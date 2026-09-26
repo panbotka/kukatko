@@ -256,36 +256,4 @@ func TestKindsAndDirection_valid(t *testing.T) {
 	if ChildKind("foster").valid() {
 		t.Error(`ChildKind("foster").valid() = true`)
 	}
-	for _, d := range []Direction{DirectionDescendants, DirectionAncestors} {
-		if !d.valid() {
-			t.Errorf("Direction(%q).valid() = false", d)
-		}
-	}
-	if Direction("sideways").valid() {
-		t.Error(`Direction("sideways").valid() = true`)
-	}
-}
-
-func TestClampGenerations(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		in   int
-		want int
-	}{
-		{name: "a plain request is kept", in: 4, want: 4},
-		{name: "zero means the whole bounded walk", in: 0, want: MaxDepth},
-		{name: "negative means the same", in: -3, want: MaxDepth},
-		{name: "the guard is the ceiling", in: 1000, want: MaxDepth},
-		{name: "the ceiling itself is kept", in: MaxDepth, want: MaxDepth},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := clampGenerations(tt.in); got != tt.want {
-				t.Errorf("clampGenerations(%d) = %d, want %d", tt.in, got, tt.want)
-			}
-		})
-	}
 }
