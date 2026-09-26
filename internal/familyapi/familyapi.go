@@ -40,7 +40,8 @@ type Store interface {
 	// or family.ErrSubjectNotFound.
 	Relations(ctx context.Context, subjectUID string) (family.Relations, error)
 	// Tree returns the layout-ready tree walked from rootUID in the given
-	// direction, bounded by generations (0 = the whole bounded walk).
+	// direction, bounded by generations (0 = the whole bounded walk; ignored by
+	// the network, which is capped by family.NetworkLimit people instead).
 	Tree(ctx context.Context, rootUID string, direction family.Direction, generations int) (family.Tree, error)
 	// AddRelationAudited records a relation on the subject, creating the person on
 	// the other side first when the request described one instead of naming it.
@@ -100,8 +101,8 @@ func NewAPI(cfg Config) *API {
 //	GET    /subjects/{uid}/tree              RequireAuth   the tree walked from the subject
 //	PATCH  /families/{uid}                   RequireCurator  edit a family: kind, years, note
 //
-// The tree takes direction=descendants|ancestors (default descendants) and
-// generations=N (default: the whole bounded walk).
+// The tree takes direction=descendants|ancestors|network (default descendants)
+// and generations=N (default: the whole bounded walk; the network ignores it).
 //
 // Flat patterns (rather than a mounted subrouter) are used so this group can
 // coexist on the same router with peopleapi's and outlierapi's /subjects routes

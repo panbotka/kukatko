@@ -1421,9 +1421,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   parent — there the link is the whole relation, the other person's membership goes and a group that drops
   below two children is deleted. With a parent on the family they are siblings *because* they are that
   parent's children, so there is nothing between them to remove and the answer is **409**.
-  `GET /subjects/{uid}/tree?direction=descendants|ancestors&generations=N` (RequireAuth) → the
+  `GET /subjects/{uid}/tree?direction=descendants|ancestors|network&generations=N` (RequireAuth) → the
   layout-ready payload the tree page draws: `{"root":{…relative},"direction":"descendants",
-  "members":[{…relative,"depth":1,"partner":false}],"families":[{…family,"child_uids":["su_…"]}]}`.
+  "members":[{…relative,"depth":1,"generation":1,"partner":false}],
+  "families":[{…family,"child_uids":["su_…"]}],"truncated":false}`. `depth` is unsigned (generations
+  *away* from the root); `generation` is the same distance **signed** — root 0, a parent −1, a child +1, a
+  partner the generation of the person they married — positive in a descendant walk, negative in a pedigree.
   `direction` defaults to `descendants` — "the Nečas family" means the descendants of a chosen root plus
   their partners (a `partner:true` member is in the set by marriage, carrying the depth of the descendant
   they married); `ancestors` is the binary pedigree: nobody is in it by marriage (both sides of every
@@ -1436,6 +1439,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   is `generations=` in the address and 3 by default. An unrecognised `direction` or a negative/non-numeric
   `generations` is 400; an unknown subject 404. `families` lists only the child edges whose person is also in
   `members`, so the renderer is never handed an edge to a node it was not given.
+  **`direction=network`** answers with everybody reachable from the root through family links — up, down
+  **and sideways**: every family a reached person is a partner *or a child* in is followed, so a parentless
+  sibling group leads to an aunt and on to her children, which neither directional walk can reach. It ignores
+  `generations` (still validated) and is capped at **400 people** (`family.NetworkLimit`) instead: the walk
+  is breadth-first, so what the cap leaves out is always further away than what it keeps, and
+  `"truncated":true` says the component was cut. A family is taken **whole or not at all**, so every uid in a
+  box's partners and `child_uids` is a member (the child list is not filtered — in the network it does not
+  need to be). A person reachable two ways is reported **once**, and the nearest relationship names their
+  `generation` (a mother-in-law who is also a cousin's daughter is −1, not 0); `depth` is its absolute
+  value, `partner` is always `false`, and `families` now includes sibling groups, which name no partner.
+  Members come ordered by `generation`, then birth year, name and uid. The directional walks never set
+  `truncated`. (Step 1 of the network redesign — the page still uses the two directional walks.)
   `PATCH /families/{uid}` (RequireCurator) → edits the family row itself, as opposed to who is in it:
   `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
   Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and

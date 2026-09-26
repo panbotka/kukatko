@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -385,6 +386,65 @@ func TestTree_directionsAndGenerations(t *testing.T) {
 	if tree.Direction != family.DirectionAncestors || len(tree.Members) != 2 {
 		t.Errorf("one-generation pedigree = %d members (%q), want 2 ancestors",
 			len(tree.Members), tree.Direction)
+	}
+}
+
+// TestTree_network walks sideways through a parentless sibling group to an aunt
+// and her daughter, and checks the wire shape the page will read: a signed
+// generation beside the unsigned depth on every member, and the truncated flag.
+func TestTree_network(t *testing.T) {
+	env := newEnv(t)
+	editor := env.login(t, "editor", auth.RoleEditor)
+
+	mother := env.subject(t, "Ludmila")
+	father := env.subject(t, "Aleš")
+	son := env.subject(t, "Tomáš")
+	aunt := env.subject(t, "Dagmar")
+	cousin := env.subject(t, "Petra")
+	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+mother+`"}`)
+	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
+	env.addRelation(t, editor, mother, `{"role":"sibling","subject_uid":"`+aunt+`"}`)
+	env.addRelation(t, editor, cousin, `{"role":"parent","subject_uid":"`+aunt+`"}`)
+
+	var raw struct {
+		Direction string `json:"direction"`
+		Truncated *bool  `json:"truncated"`
+		Members   []struct {
+			UID        string `json:"uid"`
+			Depth      *int   `json:"depth"`
+			Generation *int   `json:"generation"`
+		} `json:"members"`
+		Families []family.TreeFamily `json:"families"`
+	}
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree?direction=network",
+		nil, http.StatusOK, &raw)
+	if raw.Direction != "network" || raw.Truncated == nil || *raw.Truncated {
+		t.Errorf("direction = %q, truncated = %v, want network and an explicit false", raw.Direction, raw.Truncated)
+	}
+	want := map[string]int{son: 0, mother: -1, father: -1, aunt: -1, cousin: 0}
+	got := map[string]int{}
+	for _, m := range raw.Members {
+		if m.Depth == nil || m.Generation == nil {
+			t.Fatalf("member %s lacks depth or generation on the wire", m.UID)
+		}
+		if *m.Depth != max(*m.Generation, -*m.Generation) {
+			t.Errorf("member %s: depth %d is not the unsigned generation %d", m.UID, *m.Depth, *m.Generation)
+		}
+		got[m.UID] = *m.Generation
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("generations = %v, want %v", got, want)
+	}
+	if len(raw.Families) != 3 {
+		t.Errorf("families = %d, want 3", len(raw.Families))
+	}
+
+	// The existing directions answer as before, and do not reach the aunt.
+	var tree family.Tree
+	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree?direction=ancestors",
+		nil, http.StatusOK, &tree)
+	if len(tree.Members) != 3 || tree.Truncated {
+		t.Errorf("pedigree = %d members, truncated %v; want 3, false", len(tree.Members), tree.Truncated)
 	}
 }
 

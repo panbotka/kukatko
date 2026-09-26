@@ -124,7 +124,20 @@ func (s *Store) Ancestors(ctx context.Context, subjectUID string, generations in
 	if _, err := getRelative(ctx, s.pool, subjectUID); err != nil {
 		return nil, err
 	}
-	return queryMembers(ctx, s.pool, "ancestors", ancestorsSQL, subjectUID, clampGenerations(generations))
+	members, err := queryMembers(ctx, s.pool, "ancestors", ancestorsSQL, subjectUID, clampGenerations(generations))
+	if err != nil {
+		return nil, err
+	}
+	return upward(members), nil
+}
+
+// upward signs an ancestor walk's generations: an ancestor is above the root,
+// so a parent is −1 where their depth is 1.
+func upward(members []Member) []Member {
+	for i := range members {
+		members[i].Generation = -members[i].Depth
+	}
+	return members
 }
 
 // clampGenerations bounds a requested generation count into 1..MaxDepth. Zero or
@@ -152,6 +165,9 @@ func clampGenerations(generations int) int {
 // the walk reports each person at their shortest depth and a partner carries the
 // depth of the descendant they married.
 //
+// DirectionNetwork ignores generations: it walks the whole connected component
+// around the root, capped at NetworkLimit people (see walkNetwork).
+//
 // An unrecognised direction returns ErrInvalidKind; a missing root returns
 // ErrSubjectNotFound.
 func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction, generations int) (Tree, error) {
@@ -161,6 +177,9 @@ func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction, g
 	root, err := getRelative(ctx, s.pool, rootUID)
 	if err != nil {
 		return Tree{}, err
+	}
+	if direction == DirectionNetwork {
+		return s.network(ctx, root, NetworkLimit)
 	}
 	members, err := s.treeMembers(ctx, rootUID, direction, clampGenerations(generations))
 	if err != nil {
@@ -178,7 +197,11 @@ func (s *Store) treeMembers(
 	ctx context.Context, rootUID string, direction Direction, depth int,
 ) ([]Member, error) {
 	if direction == DirectionAncestors {
-		return queryMembers(ctx, s.pool, "ancestors", ancestorsSQL, rootUID, depth)
+		members, err := queryMembers(ctx, s.pool, "ancestors", ancestorsSQL, rootUID, depth)
+		if err != nil {
+			return nil, err
+		}
+		return upward(members), nil
 	}
 	members, err := queryMembers(ctx, s.pool, "descendants", descendantsSQL, rootUID, true)
 	if err != nil {
@@ -238,7 +261,7 @@ func (s *Store) treeFamilies(ctx context.Context, uids []string) ([]TreeFamily, 
 	return out, nil
 }
 
-// queryMembers runs one of the two walks and collects its rows, which carry the
+// queryMembers runs one of the walks and collects its rows, which carry the
 // relative columns followed by the walk's depth and its partner flag.
 func queryMembers(ctx context.Context, q querier, what, sql string, args ...any) ([]Member, error) {
 	rows, err := q.Query(ctx, sql, args...)
@@ -262,7 +285,9 @@ func queryMembers(ctx context.Context, q querier, what, sql string, args ...any)
 }
 
 // scanMember reads one walk row: the relative columns, then the depth the walk
-// found the person at and whether they are in the set only as a partner.
+// found the person at and whether they are in the set only as a partner. The
+// generation starts out as the depth, which is right for a walk downward; the
+// callers of the other walks sign it themselves.
 func scanMember(row pgx.Row) (Member, error) {
 	var member Member
 	if err := row.Scan(
@@ -272,5 +297,6 @@ func scanMember(row pgx.Row) (Member, error) {
 	); err != nil {
 		return Member{}, fmt.Errorf("family: scanning tree member: %w", err)
 	}
+	member.Generation = member.Depth
 	return member, nil
 }

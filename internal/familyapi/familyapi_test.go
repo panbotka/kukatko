@@ -255,6 +255,20 @@ func TestHandleTree_params(t *testing.T) {
 	}
 }
 
+// TestHandleTree_network passes the network direction on; a generation bound
+// is still validated but means nothing to it, which is the store's business.
+func TestHandleTree_network(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{}
+	rec := do(t, newServer(store), http.MethodGet, "/subjects/su_a/tree?direction=network", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if store.lastDirection != family.DirectionNetwork {
+		t.Errorf("walk = %q, want network", store.lastDirection)
+	}
+}
+
 // TestHandleTree_badParams rejects a walk nobody can perform instead of quietly
 // answering a different question.
 func TestHandleTree_badParams(t *testing.T) {

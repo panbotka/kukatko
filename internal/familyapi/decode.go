@@ -63,8 +63,9 @@ func decodeFamilyUpdate(r *http.Request) (family.Update, error) {
 
 // parseTreeParams reads the tree endpoint's query parameters: which way to walk
 // and how far. An omitted direction walks down, which is the tree people mean
-// when they say "the Nečas family"; an omitted generations means the whole
-// bounded walk. An unrecognised direction or a non-numeric generations is
+// when they say "the Nečas family"; network walks the whole reachable family
+// and ignores generations; an omitted generations means the whole bounded walk.
+// An unrecognised direction or a non-numeric generations is
 // rejected rather than silently defaulted, because quietly answering a different
 // question than the one asked is worse than an error.
 func parseTreeParams(r *http.Request) (family.Direction, int, error) {
@@ -72,8 +73,10 @@ func parseTreeParams(r *http.Request) (family.Direction, int, error) {
 	direction := family.DirectionDescendants
 	if raw := query.Get("direction"); raw != "" {
 		direction = family.Direction(raw)
-		if direction != family.DirectionDescendants && direction != family.DirectionAncestors {
-			return "", 0, errors.New("direction must be descendants or ancestors")
+		switch direction {
+		case family.DirectionDescendants, family.DirectionAncestors, family.DirectionNetwork:
+		default:
+			return "", 0, errors.New("direction must be descendants, ancestors or network")
 		}
 	}
 	generations, err := parseGenerations(query.Get("generations"))
