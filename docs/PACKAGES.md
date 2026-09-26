@@ -109,7 +109,18 @@ to `## Package map` in `CLAUDE.md`.
   nothing. `Store.ListApprovalRecipients` reads the enabled admins and maintainers to notify (no
   filtering on the address: skipping a `.invalid` placeholder is `internal/mailjob`'s single decision);
   reading them fails soft, and so does an individual notice that will not schedule — the person's own
-  confirmation is the only mail whose failure fails the registration. The audit entry
+  confirmation is the only mail whose failure fails the registration. **Besides the mail, each of those
+  recipients is notified by push** (`schedulePush`, same transaction, after the mails): when
+  `RegistrationConfig.Notifications` (`NotificationRecorder`, satisfied by `*notification.Store`) and
+  `Push` (`PushScheduler`, satisfied by `*pushjob.Enqueuer`) are both set, every recipient who has not
+  turned `registration_pending` off gets one notification record — the Czech
+  `notification.RenderRegistrationPending` text naming the newcomer (display name, else username),
+  link `/users`, the approval screen — and one `push_send` job per device, tagged with the record's uid.
+  Each recipient runs under its own **savepoint**, because a failed statement would otherwise abort the
+  whole registration: a notification that will not record or schedule is rolled back to it, logged, and
+  the registration goes on (the administrators' mail rule). The preference is push-only — a recipient who
+  turned the kind off still gets the mail — and push off instance-wide is `pushjob`'s silent refusal, not
+  a case here (the record is still written). Either field nil means mail only. The audit entry
   (`audit.ActionUserRegister`, `user.register`) names the new account as both actor and target and is
   written in that same transaction. `perAddressLimiter` derives the endpoint's per-address
   `ratelimit.Limiter` from the login budget when the caller supplies none (shared with the
@@ -5424,7 +5435,13 @@ to `## Package map` in `CLAUDE.md`.
     in-app path (no absolute URL, no `//host`, no `/\host`; ≤ 2048 bytes) — all `ErrInvalid` — and at most
     `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph is `ErrPhotoNotFound`, a missing account
     `ErrUserNotFound`, and either leaves **nothing** written. It does not consult preferences — the caller
-    asks `Wants` first.
+    asks `Wants` first. **`CreateTx(ctx, tx, New)`** and **`WantsTx(ctx, tx, userUID, kind)`** are the same
+    on the caller's open transaction, for a notification that must commit with the mutation that caused
+    it (self-service registration in `internal/auth`); a caller that must survive a failed insert runs
+    them under a savepoint.
+  - **Wording** (`texts.go`) is rendered the way `internal/mailer` renders its mails: a pure function of a
+    data struct, in Czech, returning `Text{Title, Body}` — `RenderRegistrationPending` ("Nová registrace
+    čeká na schválení", the body naming the person by display name, else username).
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
     foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
     uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is

@@ -503,3 +503,60 @@ func TestDeletingAccountCascades(t *testing.T) {
 		}
 	}
 }
+
+// TestCreateTxSharesTheCallersFate checks the transaction-bound variants: a
+// notification created on a transaction that rolls back is gone, one created on
+// a transaction that commits is there, and WantsTx sees a choice the same
+// transaction wrote before it was committed.
+func TestCreateTxSharesTheCallersFate(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	n := notification.New{
+		UserUID: owner, Kind: notification.KindRegistrationPending,
+		Title: "Nová registrace čeká na schválení", Link: "/users",
+	}
+
+	tx, err := f.db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := f.store.CreateTx(ctx, tx, n); err != nil {
+		t.Fatalf("CreateTx: %v", err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if got := f.count(t, "SELECT count(*) FROM notifications"); got != 0 {
+		t.Fatalf("after a rollback %d notifications remain, want 0", got)
+	}
+
+	tx, err = f.db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "INSERT INTO notification_prefs (user_uid, kind, enabled) "+
+		"VALUES ($1, 'registration_pending', FALSE)", stranger); err != nil {
+		t.Fatalf("storing a preference: %v", err)
+	}
+	if wants, err := f.store.WantsTx(ctx, tx, stranger, notification.KindRegistrationPending); err != nil || wants {
+		t.Fatalf("WantsTx(stranger) = %v, %v; want the uncommitted false", wants, err)
+	}
+	if wants, err := f.store.WantsTx(ctx, tx, owner, notification.KindRegistrationPending); err != nil || !wants {
+		t.Fatalf("WantsTx(owner) = %v, %v; want the default true", wants, err)
+	}
+	created, err := f.store.CreateTx(ctx, tx, n)
+	if err != nil {
+		t.Fatalf("CreateTx: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	got, err := f.store.Get(ctx, owner, created.UID)
+	if err != nil {
+		t.Fatalf("Get after commit: %v", err)
+	}
+	if got.Title != n.Title || got.Link != n.Link || got.Kind != n.Kind {
+		t.Errorf("stored %+v, want the fields of %+v", got, n)
+	}
+}

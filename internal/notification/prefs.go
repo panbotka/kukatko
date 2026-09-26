@@ -26,10 +26,21 @@ func (s *Store) Preferences(ctx context.Context, userUID string) ([]Preference, 
 // Wants reports whether userUID wants notifications of kind: its stored choice,
 // or the kind's default when it never chose. An unknown kind is ErrUnknownKind.
 func (s *Store) Wants(ctx context.Context, userUID string, kind Kind) (bool, error) {
+	return wants(ctx, s.pool, userUID, kind)
+}
+
+// WantsTx is Wants read through the caller's open transaction tx, for a caller
+// that decides whom to notify inside the mutation that caused the notification.
+func (s *Store) WantsTx(ctx context.Context, tx pgx.Tx, userUID string, kind Kind) (bool, error) {
+	return wants(ctx, tx, userUID, kind)
+}
+
+// wants is Wants and WantsTx over q, the pool or a transaction.
+func wants(ctx context.Context, q querier, userUID string, kind Kind) (bool, error) {
 	if !kind.Known() {
 		return false, fmt.Errorf("%w: %q", ErrUnknownKind, kind)
 	}
-	prefs, err := s.Preferences(ctx, userUID)
+	prefs, err := readPrefs(ctx, q, userUID)
 	if err != nil {
 		return false, err
 	}
@@ -109,7 +120,7 @@ const insertPrefsSQL = `
 INSERT INTO notification_prefs (user_uid, kind, enabled)
 SELECT $1, k, e FROM unnest($2::text[], $3::boolean[]) AS u (k, e)`
 
-// querier is what readPrefs needs: the pool, or the transaction of a replace.
+// querier is what readPrefs needs: the pool, or an open transaction.
 type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }

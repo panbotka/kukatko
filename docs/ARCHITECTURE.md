@@ -824,7 +824,8 @@ lost on restart).
   its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the
   transaction of the mutation that caused it** (the way audit rows are written), so a rolled-back registration
-  sends nothing. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
+  sends nothing — neither its mails nor the administrators' push notifications, which a registration
+  records and enqueues in that same transaction. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
   tasks whose move is theirs; it is enqueued by a scheduler at `tasks.digest.hour` UTC (only with the digest
   and mail both on), schedules `mail_send` jobs rather than sending, and stamps `users.task_digest_at` so a
   queue that has not moved since the last digest sends nothing. See `internal/taskdigestjob`.

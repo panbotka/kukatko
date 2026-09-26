@@ -12,6 +12,8 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -26,7 +28,9 @@ import (
 // an administrator makes in the instance settings, not a deployment one: with it
 // switched off the endpoint refuses every caller, and switching it on needs no
 // restart. Its mails go through the queue like every other message, so an
-// instance with mail disabled registers people and sends nothing.
+// instance with mail disabled registers people and sends nothing; so do the
+// administrators' push notifications, which an instance with push disabled
+// records but never delivers.
 func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, error) {
 	store := auth.NewStore(db.Pool())
 	svc := auth.NewService(store, auth.SessionPolicy{
@@ -36,9 +40,11 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 	limiter := auth.NewLimiter(cfg.Auth.LoginRateLimit, cfg.Auth.LoginRateWindow)
 	mail := mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled})
 	registration := auth.NewRegistration(auth.RegistrationConfig{
-		Service:  svc,
-		Settings: settings.NewStore(db.Pool()),
-		Mail:     mail,
+		Service:       svc,
+		Settings:      settings.NewStore(db.Pool()),
+		Mail:          mail,
+		Notifications: notification.NewStore(db.Pool()),
+		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: cfg.Push.Enabled}),
 	})
 	approval := auth.NewApproval(auth.ApprovalConfig{
 		Service:   svc,

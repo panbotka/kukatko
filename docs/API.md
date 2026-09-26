@@ -134,7 +134,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   confirmation to the person, and one `new_registration_pending` notice per **enabled admin or
   maintainer**, naming the username, display name and address. A registration that rolls back
   therefore sends nothing, and mail switched off (`mail.enabled: false`) or an administrator with a
-  placeholder `.invalid` address costs only the notification — the registration still succeeds. The
+  placeholder `.invalid` address costs only the notification — the registration still succeeds. In the
+  same transaction every such recipient who has not turned the `registration_pending` kind off also gets a
+  **notification record and one `push_send` job per subscribed device** (opening `/users`); that is
+  best-effort like the notices — a push that will not schedule is logged and the registration goes on —
+  and turning the kind off stops only the push, never the mail. The response is unchanged. The
   audit entry names the new account as **both actor and target**: nobody else was involved.
   **`POST /admin/users/{uid}/approve` (admin) — letting a waiting account in.** No body; **200**
   returns the updated account (the admin view, `note` included) with `approved_at` filled from the

@@ -83,6 +83,25 @@ WHERE n.uid = $1 AND n.user_uid = $2`
 // Create sends nothing and does not consult the account's preferences — the
 // caller asks Wants first.
 func (s *Store) Create(ctx context.Context, n New) (Notification, error) {
+	var out Notification
+	err := s.inTx(ctx, "creating notification", func(tx pgx.Tx) error {
+		var err error
+		out, err = s.CreateTx(ctx, tx, n)
+		return err
+	})
+	if err != nil {
+		return Notification{}, err
+	}
+	return out, nil
+}
+
+// CreateTx is Create on the caller's open transaction tx instead of one of its
+// own, so a notification caused by another mutation commits with that mutation
+// or not at all. It validates, maps a missing photograph or account and sends
+// nothing exactly as Create does. A failed insert leaves tx aborted, as any
+// failed statement does; a caller that must survive the failure runs CreateTx
+// under a savepoint (tx.Begin).
+func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, error) {
 	photos, err := n.validate()
 	if err != nil {
 		return Notification{}, err
@@ -91,23 +110,15 @@ func (s *Store) Create(ctx context.Context, n New) (Notification, error) {
 	if err != nil {
 		return Notification{}, err
 	}
-	var out Notification
-	err = s.inTx(ctx, "creating notification", func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.Link); err != nil {
-			return mapForeignKey(err)
-		}
-		if len(photos) > 0 {
-			if _, err := tx.Exec(ctx, insertPhotosSQL, uid, photos); err != nil {
-				return mapForeignKey(err)
-			}
-		}
-		out, err = scanNotification(tx.QueryRow(ctx, getSQL, uid, n.UserUID))
-		return err
-	})
-	if err != nil {
-		return Notification{}, err
+	if _, err := tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.Link); err != nil {
+		return Notification{}, mapForeignKey(err)
 	}
-	return out, nil
+	if len(photos) > 0 {
+		if _, err := tx.Exec(ctx, insertPhotosSQL, uid, photos); err != nil {
+			return Notification{}, mapForeignKey(err)
+		}
+	}
+	return scanNotification(tx.QueryRow(ctx, getSQL, uid, n.UserUID))
 }
 
 // Get returns the notification uid if it belongs to ownerUID. A notification
