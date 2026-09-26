@@ -273,6 +273,15 @@ function WelcomePersonStep({ subjects, linkedUid, onFinish }: WelcomePersonStepP
   )
 }
 
+/** Props for {@link WelcomeModal}. */
+interface WelcomeModalProps {
+  /**
+   * Called once the welcome is settled for this page load — it will not open,
+   * or it was just closed. Called at most once per phase change to `done`.
+   */
+  onSettled?: () => void
+}
+
 /**
  * The first-run welcome: shown once, over whatever the reader landed on, to an
  * account that has never seen it.
@@ -307,8 +316,13 @@ function WelcomePersonStep({ subjects, linkedUid, onFinish }: WelcomePersonStepP
  * not be fetched (a 5xx, an unreachable backend) means the welcome quietly does
  * not happen this time. That failure records nothing, so the next sign-in tries
  * again — the greeting is postponed, not lost.
+
+ *
+ * `onSettled` tells the shell when the welcome is out of the way — never
+ * needed, or closed — so a dialog queued behind it (the notification prompt)
+ * never stacks on top of it.
  */
-export function WelcomeModal() {
+export function WelcomeModal({ onSettled }: WelcomeModalProps = {}) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const [phase, setPhase] = useState<Phase>('idle')
@@ -370,6 +384,12 @@ export function WelcomeModal() {
       controller.abort()
     }
   }, [phase])
+
+  useEffect(() => {
+    if (phase === 'done') {
+      onSettled?.()
+    }
+  }, [phase, onSettled])
 
   /**
    * Closes the welcome for good and records the visit in the background.

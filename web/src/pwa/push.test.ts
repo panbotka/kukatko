@@ -4,6 +4,8 @@ import {
   decodeBase64Url,
   getPushPermission,
   getPushState,
+  isIosOutsideInstalledApp,
+  isPushEnabled,
   isPushSupported,
   requestPushPermission,
   subscribeToPush,
@@ -427,5 +429,80 @@ describe('decodeBase64Url', () => {
 
   it('decodes the url-safe alphabet', () => {
     expect([...decodeBase64Url('-_8')]).toEqual([0xfb, 0xff])
+  })
+})
+
+describe('isPushEnabled', () => {
+  it('reports an instance with push on and a key as enabled', async () => {
+    await expect(isPushEnabled()).resolves.toBe(true)
+  })
+
+  it.each([
+    ['push switched off', json({ enabled: false, public_key: PUBLIC_KEY })],
+    ['no VAPID key', json({ enabled: true, public_key: '' })],
+    ['a failing config request', json({}, 500)],
+    ['an unreachable server', new Error('offline')],
+  ])('reports %s as not enabled', async (_name, config) => {
+    serve({ config })
+
+    await expect(isPushEnabled()).resolves.toBe(false)
+  })
+})
+
+describe('isIosOutsideInstalledApp', () => {
+  const IPHONE =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+
+  /** Pretends to be a browser with `userAgent` and touch points. */
+  function pretend(userAgent: string, maxTouchPoints = 0): void {
+    // Own properties shadow the prototype's getters (jsdom has no
+    // maxTouchPoints at all), and the afterEach below removes them again.
+    for (const [name, value] of Object.entries({ userAgent, maxTouchPoints })) {
+      Object.defineProperty(navigator, name, { value, configurable: true })
+    }
+  }
+
+  afterEach(() => {
+    for (const name of ['userAgent', 'maxTouchPoints']) {
+      Reflect.deleteProperty(navigator, name)
+    }
+  })
+
+  /** Answers `(display-mode: standalone)` with `standalone`. */
+  function displayMode(standalone: boolean): void {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: standalone })),
+    )
+  }
+
+  it('reports an iPhone in a Safari tab', () => {
+    pretend(IPHONE, 5)
+    displayMode(false)
+
+    expect(isIosOutsideInstalledApp()).toBe(true)
+  })
+
+  it('reports an iPad that calls itself a Mac', () => {
+    pretend('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5)
+    displayMode(false)
+
+    expect(isIosOutsideInstalledApp()).toBe(true)
+  })
+
+  it('does not report an iPhone running the installed home-screen app', () => {
+    pretend(IPHONE, 5)
+    displayMode(true)
+
+    expect(isIosOutsideInstalledApp()).toBe(false)
+  })
+
+  it('does not report a desktop Mac or an Android phone', () => {
+    displayMode(false)
+    pretend('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 0)
+    expect(isIosOutsideInstalledApp()).toBe(false)
+
+    pretend('Mozilla/5.0 (Linux; Android 14; Pixel 8)', 5)
+    expect(isIosOutsideInstalledApp()).toBe(false)
   })
 })

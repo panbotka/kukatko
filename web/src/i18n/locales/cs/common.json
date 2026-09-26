@@ -4124,6 +4124,18 @@
       "error": "Propojení se nepodařilo uložit. Zkus to prosím znovu."
     }
   },
+  "pushPrompt": {
+    "title": "Chceš dostávat oznámení?",
+    "body": "Kukátko ti dá vědět, když tě někdo označí na fotce.",
+    "later": "Oznámení můžeš kdykoli zapnout nebo vypnout v nastavení.",
+    "notNow": "Teď ne",
+    "turnOn": "Zapnout oznámení",
+    "close": "Zavřít dotaz na oznámení",
+    "understood": "Rozumím",
+    "enabled": "Oznámení jsou zapnutá.",
+    "blocked": "Prohlížeč oznámení pro Kukátko zablokoval. Tahle stránka se už znovu zeptat nemůže — povolit je musíš v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky).",
+    "failed": "Oznámení se nepodařilo zapnout. Zkus to prosím později v nastavení."
+  },
   "pwa": {
     "offline": "Jsi offline. Kukátko se otevře, ale fotky a knihovna potřebují připojení.",
     "update": {

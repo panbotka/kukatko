@@ -612,6 +612,18 @@ on unexplained jargon that even a non-developer admin will struggle with.
     same thing as its `aria-label`, out of the same `t()` call — state-switching and interpolated
     labels included — while the `aria-label` stays, because a phone shows no tooltip at all.
     Buttons with visible text were deliberately left alone. See `FRONTEND.md` (`Icon`).
+13. **New (2026-09-26) — notifications are asked about exactly once.** A setting nobody opens is
+    a feature nobody uses, so push is offered in a small dialog (`PushPrompt`) right after the
+    first-run welcome, in the same visit. The decision is to ask **once per account and browser**:
+    „not now", the ✕, a dismissed browser prompt, a browser block and a failure are all remembered
+    and never asked again — a prompt that keeps returning after a „no" teaches people to block the
+    site, and a blocked site can never be asked again at all. The settings page is the only way
+    back. The dialog is not shown where its button could not work (push off, an unsupported
+    browser, already blocked or subscribed) — including **iOS in a browser tab**, where only the
+    home-screen app can receive a push; the honest place to explain installing is settings, not a
+    button that silently fails. A browser-level denial is answered plainly: the browser blocked it
+    and it has to be re-allowed in the browser's own site settings. See `FRONTEND.md`
+    (`PushPrompt`).
 
 ---
 

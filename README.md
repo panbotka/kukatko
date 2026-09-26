@@ -448,6 +448,10 @@ those photos — the set as it was when the message was sent, not a live search 
 change: one photo opens straight in the viewer, several as a grid under the message itself, and if some
 have since become private or archived the page says how many are no longer available to you instead of
 quietly showing fewer. Signed out in the meantime? Sign in and you land back on them.
+Nobody has to go looking for the switch: right after the first sign-in (and the welcome), Kukátko
+asks once whether to send notifications. "Not now" is remembered and never asked again; turning them
+on later is a settings matter. On an iPhone the question waits for the app added to the home screen,
+the only place iOS delivers a push.
 
 ### Built for small hardware that is sometimes offline
 

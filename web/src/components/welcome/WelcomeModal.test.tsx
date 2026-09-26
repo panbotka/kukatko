@@ -70,7 +70,11 @@ function counted(uid: string, name: string, photos: number): SubjectCount {
 }
 
 /** Mounts the welcome under an authenticated context, as the shell does. */
-function renderWelcome(user: User, refresh = vi.fn().mockResolvedValue(undefined)) {
+function renderWelcome(
+  user: User,
+  refresh = vi.fn().mockResolvedValue(undefined),
+  onSettled?: () => void,
+) {
   const auth = {
     status: 'authenticated',
     user,
@@ -89,7 +93,7 @@ function renderWelcome(user: User, refresh = vi.fn().mockResolvedValue(undefined
   const { unmount } = render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
-        <WelcomeModal />
+        <WelcomeModal onSettled={onSettled} />
       </AuthContext.Provider>
     </I18nextProvider>,
   )
@@ -282,5 +286,28 @@ describe('WelcomeModal', () => {
     // …and still offers to change it, which is the picker one click later.
     await user.click(modal.getByRole('button', { name: 'Pick someone else' }))
     expect(await modal.findByRole('searchbox', { name: 'Find a person' })).toBeInTheDocument()
+  })
+
+  it('reports itself settled at once for an account that has already seen it', async () => {
+    const onSettled = vi.fn()
+    renderWelcome(account({ welcome_seen_at: '2026-08-01T09:00:00Z' }), undefined, onSettled)
+
+    await waitFor(() => {
+      expect(onSettled).toHaveBeenCalled()
+    })
+  })
+
+  it('reports itself settled only once the reader has closed it', async () => {
+    const user = userEvent.setup()
+    const onSettled = vi.fn()
+    renderWelcome(account(), undefined, onSettled)
+
+    const modal = await dialog()
+    expect(onSettled).not.toHaveBeenCalled()
+    await user.click(modal.getByRole('button', { name: 'Skip' }))
+
+    await waitFor(() => {
+      expect(onSettled).toHaveBeenCalledTimes(1)
+    })
   })
 })

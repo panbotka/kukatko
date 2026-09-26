@@ -3936,6 +3936,18 @@
       "error": "Could not save the link. Please try again."
     }
   },
+  "pushPrompt": {
+    "title": "Would you like notifications?",
+    "body": "Kukátko will let you know when somebody tags you in a photo.",
+    "later": "You can turn notifications on or off any time in settings.",
+    "notNow": "Not now",
+    "turnOn": "Turn on notifications",
+    "close": "Close the notification question",
+    "understood": "Got it",
+    "enabled": "Notifications are on.",
+    "blocked": "Your browser has blocked notifications for Kukátko. This page cannot ask again — you have to allow them in the browser's own site settings (usually behind the icon next to the address).",
+    "failed": "Notifications could not be turned on. Please try again later in settings."
+  },
   "pwa": {
     "offline": "You are offline. Kukátko opens, but photos and the library need a connection.",
     "update": {

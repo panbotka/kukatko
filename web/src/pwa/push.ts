@@ -200,6 +200,42 @@ async function fetchPushConfig(): Promise<PushConfig | null> {
 }
 
 /**
+ * Reports whether the instance has push switched on and a VAPID key to push
+ * with. A configuration that cannot be read (a 5xx, the network) reads as
+ * off: nobody should be offered something the server may not deliver.
+ */
+export async function isPushEnabled(): Promise<boolean> {
+  const config = await fetchPushConfig()
+  return config !== null && config.enabled && config.public_key !== ''
+}
+
+/**
+ * Reports whether this is iOS (or iPadOS) outside an installed home-screen
+ * app — the one place where a push can never arrive however the permission is
+ * answered, because Safari delivers pushes only to a PWA added to the home
+ * screen (16.4+). Recent Safari hides `PushManager` in a tab, so
+ * {@link isPushSupported} usually says so already; this is the explicit check
+ * for the UI that has to be honest about it rather than rely on an omission.
+ * iPadOS reports itself as a Mac, so a "Mac" with a touch screen counts as one.
+ */
+export function isIosOutsideInstalledApp(): boolean {
+  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
+    return false
+  }
+  const ios =
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
+  if (!ios) {
+    return false
+  }
+  const installed =
+    (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    (typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches)
+  return !installed
+}
+
+/**
  * Decodes a base64url string (the VAPID public key's encoding, padding
  * optional) into the bytes `applicationServerKey` expects.
  */

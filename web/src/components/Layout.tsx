@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Container from 'react-bootstrap/Container'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Nav from 'react-bootstrap/Nav'
@@ -40,6 +40,7 @@ import {
   UPLOAD_ITEM,
 } from './navItems'
 import { PersonAvatar } from './PersonAvatar'
+import { PushPrompt } from './push/PushPrompt'
 import { SearchCommand } from './search/SearchCommand'
 import { WaitingBadge } from './tasks/WaitingBadge'
 import { WelcomeModal } from './welcome/WelcomeModal'
@@ -145,6 +146,12 @@ export function Layout() {
   // mix of bare `NavLink`s and raw `Dropdown` items does not reliably emit — so
   // the menu stayed open over the page it had just navigated to.
   const [expanded, setExpanded] = useState(false)
+  // The notification prompt waits for the first-run welcome to settle (never
+  // needed, or closed), so a freshly signed-in person meets one dialog at a time.
+  const [welcomeSettled, setWelcomeSettled] = useState(false)
+  const settleWelcome = useCallback(() => {
+    setWelcomeSettled(true)
+  }, [])
   // "My photos", offered only to an account that has said which person of the
   // library it is. An entry that leads nowhere is worse than no entry, so an
   // unlinked account simply does not get one.
@@ -466,7 +473,11 @@ export function Layout() {
       {/* Shown once, to an account that has never seen it, over whatever it
           landed on. It renders nothing — and asks the backend nothing — for
           everybody else, which is almost every page load. */}
-      <WelcomeModal />
+      <WelcomeModal onSettled={settleWelcome} />
+      {/* Asked once per account and browser whether to send notifications —
+          only after the welcome is out of the way, so two dialogs never stack.
+          It also renders nothing, and asks nothing, once answered. */}
+      {welcomeSettled && <PushPrompt />}
     </div>
   )
 }

@@ -331,8 +331,36 @@ here.
   not happen this time** — nothing is recorded, so the next sign-in tries again: it is postponed, not lost.
   However it ends — confirmed, skipped, or closed with the X — `finish()` closes first and fires
   `markWelcomeSeen()` **fire-and-forget with the rejection swallowed**: a request the reader cannot see failing
-  is not a reason to keep them in a dialog, and the backend stamp is idempotent. Texts `welcome.*` (cs/en).
-  Tests: `WelcomeModal.test.tsx`),
+  is not a reason to keep them in a dialog, and the backend stamp is idempotent. An optional `onSettled`
+  prop fires once the phase reaches `done` — never needed, or closed — which is how `Layout` queues the
+  notification prompt behind it. Texts `welcome.*` (cs/en). Tests: `WelcomeModal.test.tsx`),
+  `PushPrompt` (`components/push/`, **asks once whether to send notifications**: mounted by `Layout`
+  right after `WelcomeModal`, but only once the welcome reports itself settled (`onSettled` →
+  `welcomeSettled`), so a freshly signed-in person meets one dialog at a time and the prompt follows the
+  welcome in the same visit. A `Phase` (`idle`→`checking`→`open`|`done`) latched like the welcome's;
+  `shouldOfferPush(uid)` decides, cheapest check first: **already answered** in this browser
+  (`lib/pushPromptAnswer.ts`, localStorage key `kukatko.pushPrompt.answered.<uid>` — per account because
+  a browser may be shared, per browser because a subscription belongs to the browser; **unreadable storage
+  counts as answered**, since a prompt that cannot remember would return on every load), push
+  **unsupported**, **iOS outside the installed app** (`isIosOutsideInstalledApp` — there a push can never
+  arrive, so the prompt stays away rather than offer a button that silently fails; the settings page
+  explains the install), permission **already denied**, `getPushState()` anything but `prompt`/
+  `unsubscribed` (already `subscribed`, `no-worker` on the dev server, `failed`), and last the instance
+  (`isPushEnabled()` — push off or no key). A decision of "no" records nothing. The dialog says in one
+  sentence what the notifications are for (being tagged in a photo) and that settings is where they are
+  switched later; two buttons, „Teď ne" and „Zapnout oznámení". **Nothing requests permission on mount**:
+  the „turn on" click awaits `requestPushPermission()` first (the gesture) and then `subscribeToPush()`
+  from the same click (Firefox wants the gesture for `subscribe` too). **Every ending is recorded**: „not
+  now", the ✕, a browser prompt dismissed without an answer (`default` — a „not now" too), `subscribed`
+  (closes + success toast „Oznámení jsou zapnutá."), a browser-level **denial** (the dialog stays open on
+  a warning `Alert` saying the browser blocked it, that the page cannot ask again and that it must be
+  re-allowed in the browser's own site settings, with a single „Rozumím" — no button that would only
+  fail again), and any other subscribe failure (a danger `Alert`, „try later in settings"). The way back
+  after any answer is the settings page, never this prompt. It paints in the shared dialog band (1085,
+  above the 1080 sheets) with no rule of its own — verified in a real Chromium over a `kk-viewer` sheet
+  with `elementFromPoint` on the button and a CDP click reaching the permission request. Texts
+  `pushPrompt.*` (cs/en). Tests: `PushPrompt.test.tsx` (the `pwa/push` module mocked, real `userEvent`
+  clicks) + `lib/pushPromptAnswer.test.ts`),
   `JobStateLegend` (**shared legend of job-queue states**: a compact `dl` with a bold term + a quiet
   one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
   shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
@@ -7512,10 +7540,17 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   app first"), never a broken button. One more platform note from the same data: Firefox (72+, Android 79+)
   accepts `pushManager.subscribe` only **inside a user gesture** as well, so the later UI calls
   `subscribeToPush()` from the same click as `requestPushPermission()`, not from an effect.
+  Two more helpers serve the UI that has to decide whether to offer push at all: `isPushEnabled()`
+  (`GET /push/config` says on **and** a key is set; a config that cannot be read counts as off) and
+  `isIosOutsideInstalledApp()` (an iPhone/iPod/iPad — iPadOS reports a `Macintosh` user agent with touch points — not
+  running as the home-screen app, i.e. neither `navigator.standalone` nor `(display-mode: standalone)`),
+  the explicit form of the iOS limit above rather than a reliance on Safari hiding `PushManager`.
   Tests: the push half of `build/pwa.test.ts` (a well-formed payload's title/body/icon/badge/tag/data,
   collapsing, the contract table, the unreadable payload, the rejected options, a click focusing and
   navigating the open window, preferring the focused one, opening a window with none open or with an
   uncontrolled one, off-origin deeplinks, the unchanged listener set and whitelist) plus the images
   block; `src/pwa/push.test.ts` walks every branch of `push.ts` (unsupported incl. no `PushManager`,
   no-worker, disabled, denied, prompt, granted, reuse and key rotation, subscribe refusals, the server's
-  503/500/network rollback, unsubscribe with the server forgetful or unreachable).
+  503/500/network rollback, unsubscribe with the server forgetful or unreachable, `isPushEnabled` over
+  on/off/no key/5xx/network, `isIosOutsideInstalledApp` over iPhone tab, iPad-as-Mac, installed app,
+  desktop Mac and Android).
