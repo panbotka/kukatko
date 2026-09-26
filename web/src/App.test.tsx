@@ -54,6 +54,30 @@ vi.mock('./services/auth', async (importOriginal) => {
   return { ...actual, fetchPasswordResetStatus: vi.fn(() => new Promise(() => undefined)) }
 })
 
+// The notification deeplink page reads its notification and marks it read on
+// mount; stub both so the route tests exercise the wiring, not the network.
+vi.mock('./services/notifications', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/notifications')>()
+  return {
+    ...actual,
+    fetchNotification: vi.fn(() =>
+      Promise.resolve({
+        uid: 'nt1',
+        kind: 'tagged',
+        title: 'You were tagged in 2 photos',
+        body: '',
+        link: '/n/nt1',
+        created_at: '2026-09-20T10:00:00Z',
+        read_at: null,
+        photos: [],
+        total_count: 0,
+        dropped_count: 0,
+      }),
+    ),
+    markNotificationRead: vi.fn(() => new Promise(() => undefined)),
+  }
+})
+
 const { fetchPhotos, fetchTimeline } = await import('./services/photos')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
 const fetchTimelineMock = vi.mocked(fetchTimeline)
@@ -374,5 +398,41 @@ describe('routing', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pathname')).toHaveTextContent('/nowhere')
     })
+  })
+
+  it('renders a notification’s own page at the short /n/:uid deeplink', async () => {
+    renderRoutes(['/n/nt1'])
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'You were tagged in 2 photos' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/n/nt1')
+  })
+
+  it('brings a signed-out push tap back to the notification after signing in', async () => {
+    // A push tapped on a phone that has since been signed out: the guard bounces
+    // to /login, and signing in must land on the notification, not the library.
+    const tree = (auth: AuthContextValue) => (
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth}>
+          <MemoryRouter initialEntries={['/n/nt1?from=push']}>
+            <AppRoutes />
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>
+    )
+    const { rerender } = render(tree(unauthenticated))
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/login')
+    })
+
+    rerender(tree(viewerAuth))
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'You were tagged in 2 photos' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/n/nt1')
+    expect(screen.getByTestId('search')).toHaveTextContent('?from=push')
   })
 })

@@ -2870,6 +2870,21 @@
   "takenDate": {
     "decade": "{{from}}–{{to}}"
   },
+  "notification": {
+    "title": "Notification",
+    "back": "Back to the library",
+    "error": "The notification could not be loaded.",
+    "missing": {
+      "title": "This notification is no longer here",
+      "hint": "It may have expired, or the link belongs to another account."
+    },
+    "empty": {
+      "title": "No photos to show",
+      "hint": "This notification has no photos."
+    },
+    "dropped_one": "{{count}} photo is no longer available to you.",
+    "dropped_other": "{{count}} photos are no longer available to you."
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",

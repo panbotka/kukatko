@@ -443,7 +443,11 @@ account saying which person you are — you get **one push per hour, not one per
 fotek, na kterých vás označili." An afternoon of naming faces from a village event is one message.
 It never says who did the tagging, never tells you about your own, never counts a private, hidden or
 archived photo, and a tag taken back before the hour is up is taken out of the count. The hour is
-configurable, and the kind can be switched off in your notification settings.
+configurable, and the kind can be switched off in your notification settings. Tapping it opens exactly
+those photos — the set as it was when the message was sent, not a live search a thirteenth tag would
+change: one photo opens straight in the viewer, several as a grid under the message itself, and if some
+have since become private or archived the page says how many are no longer available to you instead of
+quietly showing fewer. Signed out in the meantime? Sign in and you land back on them.
 
 ### Built for small hardware that is sometimes offline
 

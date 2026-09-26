@@ -57,6 +57,7 @@ import { useVideoEncodeWatch } from '../hooks/useVideoEncodeWatch'
 import { useViewportBox } from '../hooks/useViewportBox'
 import { useViewerChrome } from '../hooks/useViewerChrome'
 import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '../lib/detailView'
+import { isDirectEntry } from '../lib/directEntry'
 import { displayFrame } from '../lib/faceGeometry'
 import { readFaceOverlay, writeFaceOverlay } from '../lib/faceOverlayPref'
 import { formatCaptureParts, formatDateTimeMinutes } from '../lib/format'
@@ -333,7 +334,10 @@ export function PhotoDetailPage() {
   // change must not flip this): the initial entry's key is `default` only when the
   // photo was loaded directly (a deep link, a refresh, a shared URL), in which case
   // there is no grid entry to pop and Back must reconstruct the list URL instead.
-  const openedDirectlyRef = useRef(location.key === 'default')
+  // A page that forwarded here by replacing its own first entry — the
+  // notification deeplink with one photograph — says so in the state
+  // (`lib/directEntry`), since the replacement handed us a fresh key.
+  const openedDirectlyRef = useRef(location.key === 'default' || isDirectEntry(location.state))
 
   // The sorting game this photo was opened from, when it was: the game navigates
   // here in place (an installed app has no tabs) and says so in the navigation

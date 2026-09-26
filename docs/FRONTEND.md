@@ -2017,6 +2017,29 @@ here.
   who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
+  `NotificationPage` = `/n/:uid`, the **deeplink a push opens** (`notification.PathPrefix` on the server
+  writes it; the path is two characters because it rides in a push payload with a hard size limit), inside
+  the shell, any signed-in role — the server scopes it to the reader's own notifications. **A junction, not a
+  destination:** it reads `GET /notifications/{uid}` (the **frozen** set in its stored order, filtered by
+  what the reader may see *now*) and with **exactly one visible photograph and nothing dropped** it
+  `navigate`s straight to `/photos/{uid}` with `replace` — no grid of one tile, and Back does not bounce
+  here; when the page was the **first entry** (`isFirstEntry`: the router's `default` key, or the browser
+  router's `history.state.idx === 0`, which also covers the sign-in round trip, whose guard and login page
+  both replace) it attaches `directEntryState()` so the viewer's close reconstructs a way out instead of
+  stepping back into nothing. Several photographs render through the library's own `PhotoGrid` (virtuoso,
+  `favoritable`, `useGridScrollMemory` keyed on `/n/{uid}` so Back from the viewer lands on the tile), headed
+  by a `BackLink` to the library, the notification's **own title as the `h1`**, its body and its time.
+  `dropped_count > 0` is **said plainly** („2 fotky už pro vás nejsou dostupné", `notification.dropped`,
+  plural) above the grid, and a set that shrank to *one* because the rest were dropped stays on the page
+  rather than forwarding, since the viewer could not say it. None → `EmptyState` (its hint is the dropped
+  count when that is why). A 404 (retention purged it, or somebody else's uid) → a friendly `EmptyState`
+  with a button back to the library, never the error treatment; any other failure → `ErrorState` with
+  retry. **Marked read once** (`POST /notifications/{uid}/read`, fire-and-forget) after the load succeeds,
+  guarded by a ref per uid and **skipped when `read_at` is already set** — Back from the viewer remounts
+  the page, and that visit has nothing to record. The tiles carry **no detail scope**: there is no list
+  filter for a notification's set, so the viewer's prev/next pages the library around the photo. Tests
+  `NotificationPage.test.tsx` (virtuoso mocked through `test/virtuoso`, so the real wall renders) and the
+  route + sign-in round trip in `App.test.tsx`,
   `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
   seen Kukátko: the byline (`TaskQuestion`) is the page's **eyebrow above** the `h1`, not a line under it —
   it says where the question came from, which is worth knowing before reading it and never worth reading
@@ -2664,7 +2687,9 @@ here.
   photo. Arrow = leave the photo, cross = close what is over it. It and **Esc**
   always work and return **to the exact previous scroll position**: `navigate(-1)` when you arrived here from
   the grid (the browser restores scroll), otherwise (a direct link/refresh — caught by `location.key === 'default'`
-  at mount) `backHref(view)` reconstructs the list URL. That same reconstructed URL names the list in the
+  at mount, or by the router state `{directEntry: true}` from `lib/directEntry` that a page forwarding here by
+  *replacing* its own first entry attaches, since the replacement hands the viewer a fresh key: the
+  notification deeplink with one photograph) `backHref(view)` reconstructs the list URL. That same reconstructed URL names the list in the
   terms its grid remembers itself under, and the viewer stamps the photograph on stage into that entry
   (`rememberGridPhoto`) on every step: paging *replaces* the history entry, so without it the way back would
   land on the photograph first clicked rather than the one being looked at. **Opened from the sorting game**
@@ -6119,6 +6144,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `reviewReturnPath(state)` — history state is opaque and outlives its navigation, so anything that is not the
   game's own `/review` route (another page, another origin, a grid's handoff) reads as "not from the game";
   tests `reviewReturn.test.ts`,
+  `directEntry.ts` = **"this page is where the visit started"**, for a page that forwards elsewhere by
+  replacing its own history entry: `directEntryState()` (router state `{directEntry: true}`),
+  `isDirectEntry(state)` (checked, never trusted — anything but the exact marker is "no") and
+  `isFirstEntry(locationKey)` (the `default` key, or `history.state.idx === 0` from the browser router;
+  a memory router keeps no index, so there only the key decides). `PhotoDetailPage` treats the state like
+  the `default` key; `NotificationPage` attaches it; tests `directEntry.test.ts`,
   `reviewDecisions.ts` = the view model for `ReviewDecisionsPage`: the `ReviewDecisionsView` type
   (`user`/`decision`/`offset`, string-only for the URL) + `REVIEW_DECISIONS_DEFAULTS`
   + `REVIEW_DECISIONS_PAGE_SIZE` (60) + `viewToAuditParams` (always `via:'review'` + `decision`)
@@ -6458,6 +6489,12 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   instance where nobody wrote a greeting answers **200 with an empty string, not a 404** — "there is no
   greeting" is an answer — so a rejection here means the question could not be asked, which `WelcomeModal`
   deliberately does not treat as an empty greeting,
+  `notifications.ts` = `fetchNotification(uid, signal)` over `GET /api/v1/notifications/{uid}` →
+  `NotificationDetail` (`NotificationRecord{uid, kind, title, body, link, created_at, read_at}` + `photos`
+  in the frozen order, `total_count`, `dropped_count`) and `markNotificationRead(uid)` over `POST
+  …/{uid}/read`; both throw `ApiError` so a page tells a 404 (unknown, foreign or purged — never a 403)
+  apart from a failure. `NOTIFICATION_PATH_PREFIX` (`/n/`) + `notificationPath(uid)` mirror
+  `notification.PathPrefix`,
   `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
   photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
   (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;

@@ -14,6 +14,7 @@ import { FIRST_RUN_HOLD_MS } from '../hooks/useViewerChrome'
 import { COARSE_POINTER_QUERY } from '../lib/mapGestures'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
+import { directEntryState } from '../lib/directEntry'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
 import { resetRenditionVersions } from '../lib/renditionRebuild'
@@ -4392,5 +4393,58 @@ describe('PhotoDetailPage — the way back to sorting', () => {
     } finally {
       await i18n.changeLanguage('en')
     }
+  })
+})
+
+/**
+ * A photo a page forwarded to by replacing its own first entry — the
+ * notification deeplink with one photograph. The replacement hands the viewer a
+ * fresh location key, so without the state it would believe a grid lies behind
+ * it and close into nothing (or out of the app).
+ */
+describe('PhotoDetailPage — forwarded from a first entry', () => {
+  /** The viewer with `/elsewhere` behind it, as a forward with `replace` leaves it. */
+  function renderForwarded(state: unknown) {
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <CapabilitiesContext.Provider
+          value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
+        >
+          <AuthContext.Provider value={auth(true)}>
+            <MemoryRouter initialEntries={['/elsewhere', { pathname: '/photos/b', state }]}>
+              <Routes>
+                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                <Route path="*" element={<div>not the viewer</div>} />
+              </Routes>
+              <LocationProbe />
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </CapabilitiesContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('closes onto the reconstructed list, not back through history', async () => {
+    const user = userEvent.setup()
+    renderForwarded(directEntryState())
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
+    })
+  })
+
+  it('still steps back through history without the state', async () => {
+    const user = userEvent.setup()
+    renderForwarded(undefined)
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    await user.click(screen.getByRole('button', { name: 'Back to the list' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/elsewhere')
+    })
   })
 })

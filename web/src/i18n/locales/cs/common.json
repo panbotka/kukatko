@@ -2996,6 +2996,23 @@
   "takenDate": {
     "decade": "{{from}}–{{to}}"
   },
+  "notification": {
+    "title": "Oznámení",
+    "back": "Zpět do knihovny",
+    "error": "Oznámení se nepodařilo načíst.",
+    "missing": {
+      "title": "Toto oznámení už tu není",
+      "hint": "Mohlo už vypršet, nebo odkaz patří k jinému účtu."
+    },
+    "empty": {
+      "title": "Žádné fotky k zobrazení",
+      "hint": "K tomuto oznámení nepatří žádné fotky."
+    },
+    "dropped_one": "{{count}} fotka už pro vás není dostupná.",
+    "dropped_few": "{{count}} fotky už pro vás nejsou dostupné.",
+    "dropped_many": "{{count}} fotky už pro vás nejsou dostupné.",
+    "dropped_other": "{{count}} fotek už pro vás není dostupných."
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",

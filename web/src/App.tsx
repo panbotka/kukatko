@@ -32,6 +32,7 @@ import { LoginPage } from './pages/LoginPage'
 import { MaintenancePage } from './pages/MaintenancePage'
 import { MapPage } from './pages/MapPage'
 import { MyActivityPage } from './pages/MyActivityPage'
+import { NotificationPage } from './pages/NotificationPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { OutliersPage } from './pages/OutliersPage'
 import { PasswordResetPage } from './pages/PasswordResetPage'
@@ -115,6 +116,12 @@ export function AppRoutes() {
               the person who edits the library, and the link is sent to them. */}
           <Route path="/tasks" element={<TasksPage />} />
           <Route path="/tasks/:uid" element={<TaskDetailPage />} />
+          {/* A notification's own page — the deeplink its push opens, so the path
+              is kept as short as the push payload's size limit wants it (it must
+              match `notification.PathPrefix`). Any signed-in role: it is scoped
+              to the reader's own notifications server-side. One photograph
+              forwards straight to the viewer; several render as a grid. */}
+          <Route path="/n/:uid" element={<NotificationPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/saved" element={<SavedSearchesPage />} />
           <Route path="/map" element={<MapPage />} />
