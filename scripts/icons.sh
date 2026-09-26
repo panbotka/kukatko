@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Render Kukátko's app identity (PWA icons, favicons, apple-touch-icon) from the
-# two committed source SVGs in web/public/icons/.
+# Render Kukátko's app identity (PWA icons, favicons, apple-touch-icon, the
+# notification badge) from the committed source SVGs in web/public/icons/.
 #
 #   ./scripts/icons.sh            # re-render every PNG + favicon.ico
 #
 # The outputs are COMMITTED — the build never downloads or generates assets, and
 # `npm run build` just copies web/public/ into the bundle. Run this only after
-# editing kukatko.svg / kukatko-maskable.svg, then commit the regenerated files.
+# editing kukatko.svg / kukatko-maskable.svg / kukatko-badge.svg, then commit the regenerated files.
 #
 # Rasterising is done by headless Chromium, the only renderer on this box that
 # handles the gradients faithfully (ImageMagick 6 falls back to its own toy SVG
@@ -86,6 +86,12 @@ render "$ICONS_DIR/kukatko-maskable.svg" 512 "$ICONS_DIR/kukatko-maskable-512.pn
 # come out as black notches under the mask.
 echo "Rendering apple-touch-icon from kukatko-maskable.svg:"
 render "$ICONS_DIR/kukatko-maskable.svg" 180 "$PUBLIC_DIR/apple-touch-icon.png"
+
+# Android draws a notification's status-bar glyph from its `badge` using only
+# the alpha channel; the master is a white-on-transparent silhouette, and the
+# transparent backdrop of render() keeps it that way.
+echo "Rendering the notification badge from kukatko-badge.svg:"
+render "$ICONS_DIR/kukatko-badge.svg" 96 "$ICONS_DIR/kukatko-badge-96.png"
 
 echo "Rendering favicons from kukatko.svg:"
 render "$ICONS_DIR/kukatko.svg" 32 "$PUBLIC_DIR/favicon-32.png"

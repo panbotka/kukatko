@@ -10,6 +10,22 @@ import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  deeplinkPath,
+  notificationTag,
+  parsePushPayload,
+  PUSH_BADGE,
+  PUSH_BODY_FIELD,
+  PUSH_FALLBACK_TAG,
+  PUSH_FALLBACK_TITLE,
+  PUSH_HOME_PATH,
+  PUSH_ICON,
+  PUSH_KIND_FIELD,
+  PUSH_TAG_FIELD,
+  PUSH_TITLE_FIELD,
+  PUSH_URL_FIELD,
+  type PushDisplay,
+} from '../src/pwa/pushContract'
+import {
   parseShareEntry,
   SHARE_CACHE,
   SHARE_FILES_FIELD,
@@ -100,6 +116,30 @@ class FakeCacheStorage {
   }
 }
 
+/**
+ * An open window as `clients.matchAll` reports it: its URL, whether it has
+ * focus, and the two calls a notification click makes on it. `navigate` rejects
+ * when `controlled` is false, as a browser does for a page the worker does not
+ * control.
+ */
+class FakeWindowClient {
+  url: string
+  readonly focused: boolean
+  private readonly controlled: boolean
+  readonly focus = vi.fn(() => Promise.resolve(this))
+  readonly navigate = vi.fn((url: string) =>
+    this.controlled
+      ? Promise.resolve(Object.assign(this, { url }))
+      : Promise.reject(new TypeError('not controlled')),
+  )
+
+  constructor(url: string, focused = false, controlled = true) {
+    this.url = url
+    this.focused = focused
+    this.controlled = controlled
+  }
+}
+
 /** A worker under test: its global scope, its listeners and its caches. */
 interface Harness {
   listeners: Map<string, (event: unknown) => void>
@@ -108,6 +148,14 @@ interface Harness {
   skipWaiting: ReturnType<typeof vi.fn>
   claim: ReturnType<typeof vi.fn>
   fetch: ReturnType<typeof vi.fn>
+  /** `registration.showNotification`; resolves unless a test makes it reject. */
+  showNotification: ReturnType<typeof vi.fn>
+  /** `clients.matchAll`, answering with {@link Harness.windows}. */
+  matchAll: ReturnType<typeof vi.fn>
+  /** `clients.openWindow`. */
+  openWindow: ReturnType<typeof vi.fn>
+  /** The windows `clients.matchAll` reports; tests push into it. */
+  windows: FakeWindowClient[]
   /** Dispatches a fetch event and resolves with what the worker answered, or null. */
   handleFetch: (input: unknown) => Promise<unknown>
 }
@@ -165,10 +213,15 @@ function runWorker(manifest: string[], origin = 'https://kukatko.test'): Harness
   const skipWaiting = vi.fn()
   const claim = vi.fn(() => Promise.resolve())
   const fetchMock = vi.fn(() => Promise.resolve({ ok: true, url: 'network', clone: () => ({}) }))
+  const showNotification = vi.fn((_title: string, _options?: unknown) => Promise.resolve())
+  const windows: FakeWindowClient[] = []
+  const matchAll = vi.fn((_options?: unknown) => Promise.resolve([...windows]))
+  const openWindow = vi.fn((_url: string) => Promise.resolve(null))
 
   const self = {
     location: { origin },
-    clients: { claim },
+    clients: { claim, matchAll, openWindow },
+    registration: { showNotification },
     skipWaiting,
     addEventListener: (type: string, handler: (event: unknown) => void) => {
       listeners.set(type, handler)
@@ -193,6 +246,10 @@ function runWorker(manifest: string[], origin = 'https://kukatko.test'): Harness
     skipWaiting,
     claim,
     fetch: fetchMock,
+    showNotification,
+    matchAll,
+    openWindow,
+    windows,
     handleFetch: async (input: unknown) => {
       const handler = listeners.get('fetch')
       if (!handler) {
@@ -551,6 +608,287 @@ describe('the rendered service worker, receiving a share', () => {
     // the user's photos: only shell caches are pruned.
     expect([...harness.cacheStorage.caches.keys()].sort()).toEqual([SHARE_CACHE, harness.cacheName])
     expect(stagedEntries(harness)).toHaveLength(1)
+  })
+})
+
+/**
+ * Push notifications: the `push` and `notificationclick` handlers. These drive
+ * the real worker against src/pwa/pushContract.ts — the module that documents
+ * the payload the server sends and what the worker makes of it — so the
+ * worker's copy of those rules cannot drift from the contract without a test
+ * going red.
+ */
+describe('the rendered service worker, receiving a push', () => {
+  const manifest = ['/index.html', '/assets/index-B1c2d3.js']
+  const origin = 'https://kukatko.test'
+
+  /** Stands for a payload whose `text()` throws (one the browser cannot decrypt). */
+  const UNREADABLE = Symbol('unreadable')
+
+  /** The payload of a push, as the server writes it (`push.Notification`). */
+  function payload(fields: Record<string, unknown>): string {
+    return JSON.stringify(fields)
+  }
+
+  /**
+   * Dispatches a push carrying `data` — the text of its payload, null for a
+   * push without one, or {@link UNREADABLE} for a payload whose `text()` throws —
+   * and resolves once the worker's waitUntil settles.
+   */
+  async function push(harness: Harness, data: string | null | typeof UNREADABLE): Promise<void> {
+    let waited: Promise<unknown> = Promise.resolve()
+    const pushData =
+      data === null
+        ? null
+        : {
+            text: () => {
+              if (data === UNREADABLE) {
+                throw new Error('undecryptable payload')
+              }
+              return data
+            },
+          }
+    harness.listeners.get('push')?.({
+      data: pushData,
+      waitUntil: (promise: Promise<unknown>) => {
+        waited = promise
+      },
+    })
+    await waited
+  }
+
+  /** What the worker is expected to pass to showNotification for `display`. */
+  function expectedCall(display: PushDisplay): [string, Record<string, unknown>] {
+    const options: Record<string, unknown> = {
+      body: display.body,
+      icon: display.icon,
+      badge: display.badge,
+      data: { url: display.url, kind: display.kind },
+    }
+    if (display.tag !== null) {
+      options.tag = display.tag
+      options.renotify = true
+    }
+    return [display.title, options]
+  }
+
+  /** The one notification the worker showed, as [title, options]. */
+  function shown(harness: Harness): [string, Record<string, unknown>] {
+    expect(harness.showNotification).toHaveBeenCalledTimes(1)
+    const [title, options] = harness.showNotification.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ]
+    // The options object was built in the worker's realm; bring it into this
+    // one so the structural comparison sees plain objects.
+    return [title, JSON.parse(JSON.stringify(options)) as Record<string, unknown>]
+  }
+
+  /** Dispatches a click on a notification carrying `data` and waits for it. */
+  async function click(harness: Harness, data: unknown): Promise<ReturnType<typeof vi.fn>> {
+    const close = vi.fn()
+    let waited: Promise<unknown> = Promise.resolve()
+    harness.listeners.get('notificationclick')?.({
+      notification: { data, close },
+      waitUntil: (promise: Promise<unknown>) => {
+        waited = promise
+      },
+    })
+    await waited
+    return close
+  }
+
+  it('shows the title, body, app icon, badge, collapse tag and deeplink of a payload', async () => {
+    const harness = await installed(manifest)
+
+    await push(
+      harness,
+      payload({
+        [PUSH_TITLE_FIELD]: 'Byli jste označeni',
+        [PUSH_BODY_FIELD]: 'Na 3 fotkách',
+        [PUSH_URL_FIELD]: '/notifications/nt_1',
+        [PUSH_KIND_FIELD]: 'tagged',
+        [PUSH_TAG_FIELD]: 'nt_1',
+      }),
+    )
+
+    expect(shown(harness)).toEqual([
+      'Byli jste označeni',
+      {
+        body: 'Na 3 fotkách',
+        icon: PUSH_ICON,
+        badge: PUSH_BADGE,
+        tag: notificationTag('nt_1'),
+        renotify: true,
+        data: { url: '/notifications/nt_1', kind: 'tagged' },
+      },
+    ])
+  })
+
+  it('gives two pushes of one collapse key the same tag, so the second replaces the first', async () => {
+    const harness = await installed(manifest)
+    const first = payload({ [PUSH_TITLE_FIELD]: 'Jedna', [PUSH_TAG_FIELD]: 'tagged-u1' })
+    const second = payload({ [PUSH_TITLE_FIELD]: 'Dvě', [PUSH_TAG_FIELD]: 'tagged-u1' })
+
+    await push(harness, first)
+    await push(harness, second)
+
+    const tags = harness.showNotification.mock.calls.map(
+      (call) => (call[1] as { tag?: string }).tag,
+    )
+    expect(tags).toEqual([notificationTag('tagged-u1'), notificationTag('tagged-u1')])
+  })
+
+  it.each([
+    [
+      'a complete payload',
+      payload({ title: 'T', body: 'B', url: '/tasks/t1', kind: 'k', tag: 'x' }),
+    ],
+    ['a payload without a collapse key', payload({ title: 'T', body: 'B', url: '/', tag: '' })],
+    ['a payload with a blank title', payload({ title: '   ', body: 'B', url: '/albums/a1' })],
+    ['a payload with no fields at all', payload({})],
+    ['fields of the wrong type', payload({ title: 7, body: null, url: 42, kind: [], tag: {} })],
+    ['an absolute deeplink', payload({ title: 'T', url: 'https://evil.example/x' })],
+    ['a scheme-relative deeplink', payload({ title: 'T', url: '//evil.example/x' })],
+    ['a backslash deeplink', payload({ title: 'T', url: '/\\evil.example/x' })],
+    ['a relative deeplink', payload({ title: 'T', url: 'photos/p1' })],
+    ['text that is not JSON', 'not { json'],
+    ['a JSON array', '["title"]'],
+    ['a JSON string', '"title"'],
+    ['JSON null', 'null'],
+    ['an empty payload', ''],
+    ['a push without a payload', null],
+  ])('shows exactly what the contract says for %s', async (_label, text) => {
+    const harness = await installed(manifest)
+
+    await push(harness, text)
+
+    expect(shown(harness)).toEqual(expectedCall(parsePushPayload(text)))
+  })
+
+  it('still shows a generic Kukátko notification for a payload it cannot read', async () => {
+    const harness = await installed(manifest)
+
+    await push(harness, UNREADABLE)
+
+    const [title, options] = shown(harness)
+    expect(title).toBe(PUSH_FALLBACK_TITLE)
+    expect(options).toMatchObject({
+      badge: PUSH_BADGE,
+      tag: PUSH_FALLBACK_TAG,
+      data: { url: PUSH_HOME_PATH },
+    })
+  })
+
+  it('falls back to the bare generic notification when the browser rejects the options', async () => {
+    const harness = await installed(manifest)
+    harness.showNotification.mockImplementationOnce(() =>
+      Promise.reject(new TypeError('bad options')),
+    )
+
+    await push(harness, payload({ title: 'T', tag: 'x' }))
+
+    expect(harness.showNotification).toHaveBeenCalledTimes(2)
+    expect(harness.showNotification.mock.calls[1][0]).toBe(PUSH_FALLBACK_TITLE)
+  })
+
+  it('focuses and navigates the open Kukátko window instead of opening a second one', async () => {
+    const harness = await installed(manifest)
+    const open = new FakeWindowClient(`${origin}/albums`)
+    harness.windows.push(open)
+
+    const close = await click(harness, { url: '/tasks/t1', kind: 'task' })
+
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(open.focus).toHaveBeenCalledTimes(1)
+    expect(open.navigate).toHaveBeenCalledWith(`${origin}/tasks/t1`)
+    expect(harness.openWindow).not.toHaveBeenCalled()
+    expect(harness.matchAll).toHaveBeenCalledWith({ type: 'window', includeUncontrolled: true })
+  })
+
+  it('prefers the window that has focus when several are open', async () => {
+    const harness = await installed(manifest)
+    const background = new FakeWindowClient(`${origin}/`)
+    const foreground = new FakeWindowClient(`${origin}/people`, true)
+    harness.windows.push(background, foreground)
+
+    await click(harness, { url: '/photos/p1' })
+
+    expect(foreground.navigate).toHaveBeenCalledWith(`${origin}/photos/p1`)
+    expect(background.navigate).not.toHaveBeenCalled()
+  })
+
+  it('opens a window on the deeplink when no Kukátko window is open', async () => {
+    const harness = await installed(manifest)
+    harness.windows.push(new FakeWindowClient('https://elsewhere.test/'))
+
+    const close = await click(harness, { url: '/notifications/nt_1' })
+
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(harness.openWindow).toHaveBeenCalledWith(`${origin}/notifications/nt_1`)
+  })
+
+  it('opens a window when the open one refuses to navigate', async () => {
+    const harness = await installed(manifest)
+    harness.windows.push(new FakeWindowClient(`${origin}/`, true, false))
+
+    await click(harness, { url: '/tasks/t1' })
+
+    expect(harness.openWindow).toHaveBeenCalledWith(`${origin}/tasks/t1`)
+  })
+
+  it.each([
+    ['an off-origin deeplink', { url: 'https://evil.example/' }],
+    ['no deeplink', { kind: 'tagged' }],
+    ['no data at all', null],
+  ])('sends a click on %s to the home page', async (_label, data) => {
+    const harness = await installed(manifest)
+
+    await click(harness, data)
+
+    const target = new URL(deeplinkPath((data as { url?: unknown } | null)?.url), origin).href
+    expect(target).toBe(`${origin}${PUSH_HOME_PATH}`)
+    expect(harness.openWindow).toHaveBeenCalledWith(target)
+  })
+
+  it('adds only the two push listeners, and leaves the fetch whitelist as it was', async () => {
+    const harness = await installed(manifest)
+    await push(harness, payload({ title: 'T' }))
+
+    expect([...harness.listeners.keys()].sort()).toEqual([
+      'activate',
+      'fetch',
+      'install',
+      'message',
+      'notificationclick',
+      'push',
+    ])
+    expect(await harness.handleFetch(request(`${origin}/api/v1/push/config`))).toBeNull()
+    expect(await harness.handleFetch(request(`${origin}${PUSH_ICON}`))).toBeNull()
+    expect(await harness.handleFetch(request(`${origin}${PUSH_BADGE}`))).toBeNull()
+    expect(await harness.handleFetch(request(`${origin}/assets/index-B1c2d3.js`))).toEqual({
+      url: '/assets/index-B1c2d3.js',
+      cached: true,
+    })
+  })
+})
+
+/**
+ * The two notification images are plain files under web/public, so nothing but
+ * this test notices when a path in the contract stops matching a real file.
+ */
+describe('the notification images', () => {
+  const publicDir = resolve(dirname(fileURLToPath(import.meta.url)), '../public')
+
+  it.each([
+    ['the icon', PUSH_ICON, 192],
+    ['the badge', PUSH_BADGE, 96],
+  ])('ships %s as a square PNG of the promised size', (_label, path, size) => {
+    const png = readFileSync(resolve(publicDir, `.${path}`))
+
+    // The IHDR chunk: width and height as big-endian words at offsets 16 and 20.
+    expect(png.subarray(1, 4).toString('ascii')).toBe('PNG')
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([size, size])
   })
 })
 

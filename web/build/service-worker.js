@@ -37,6 +37,22 @@
  * format — is documented in src/pwa/shareContract.ts, which build/pwa.test.ts
  * imports to hold this file to it.
  *
+ * # Push notifications
+ *
+ * Two more events have nothing to do with fetching and leave the whitelist
+ * above untouched. `push` reads the server's JSON payload (a title, a body, a
+ * deeplink path, a kind and a collapse tag) and shows it with the app icon, the
+ * monochrome Android badge and the tag, so a newer notification of the same
+ * collapse key replaces the older one instead of stacking; an empty or
+ * unreadable payload still shows a generic „Kukátko" notification rather than
+ * throwing. `notificationclick` closes the notification and opens its
+ * deeplink — in the Kukátko window that is already open when there is one
+ * (focused and navigated: an installed app has no tabs, and a second window
+ * leaves the person no way back), in a new window otherwise. The contract —
+ * field names, icon paths, the tag shape, the deeplink rule — is documented in
+ * src/pwa/pushContract.ts, which build/pwa.test.ts imports to hold this file
+ * to it.
+ *
  * # Updates
  *
  * Install does NOT call skipWaiting: a freshly deployed worker parks in
@@ -94,6 +110,29 @@ const SHARE_ENTRY_PREFIX = '/__kukatko-share__/'
 /** Headers carrying what a Response cannot: the file's name and mtime. */
 const SHARE_NAME_HEADER = 'x-kukatko-share-name'
 const SHARE_MODIFIED_HEADER = 'x-kukatko-share-modified'
+
+/** The push payload's field names; mirror the PUSH_*_FIELD constants in src/pwa/pushContract.ts. */
+const PUSH_TITLE_FIELD = 'title'
+const PUSH_BODY_FIELD = 'body'
+const PUSH_URL_FIELD = 'url'
+const PUSH_KIND_FIELD = 'kind'
+const PUSH_TAG_FIELD = 'tag'
+
+/** The notification's large icon and its Android status-bar glyph; mirror PUSH_ICON and PUSH_BADGE. */
+const PUSH_ICON = '/icons/kukatko-192.png'
+const PUSH_BADGE = '/icons/kukatko-badge-96.png'
+
+/** Title of a notification whose payload carries none; mirrors PUSH_FALLBACK_TITLE. */
+const PUSH_FALLBACK_TITLE = 'Kukátko'
+
+/** Every tag this worker sets starts with this; mirrors PUSH_TAG_PREFIX. */
+const PUSH_TAG_PREFIX = 'kukatko-'
+
+/** Tag of the generic notification an unreadable payload becomes; mirrors PUSH_FALLBACK_TAG. */
+const PUSH_FALLBACK_TAG = PUSH_TAG_PREFIX + 'fallback'
+
+/** Where a notification without a usable deeplink leads; mirrors PUSH_HOME_PATH. */
+const PUSH_HOME_PATH = '/'
 
 /** Distinguishes shares minted in the same millisecond by one worker. */
 let shareSequence = 0
@@ -252,6 +291,139 @@ async function receiveShare(request) {
   return Response.redirect(new URL(target, self.location.origin).toString(), 303)
 }
 
+/**
+ * The notification tag for a payload's collapse key, or null for none. Mirrors
+ * notificationTag in src/pwa/pushContract.ts.
+ */
+function notificationTag(tag) {
+  if (typeof tag !== 'string' || tag === '') {
+    return null
+  }
+  return PUSH_TAG_PREFIX + tag
+}
+
+/**
+ * The deeplink as a path on this instance; anything that would leave the origin
+ * (or is not a path at all) becomes the home page. Mirrors deeplinkPath.
+ */
+function deeplinkPath(url) {
+  if (typeof url !== 'string' || !url.startsWith('/')) {
+    return PUSH_HOME_PATH
+  }
+  if (url.startsWith('//') || url.startsWith('/\\')) {
+    return PUSH_HOME_PATH
+  }
+  return url
+}
+
+/** The generic notification an empty or unreadable payload turns into. */
+function fallbackDisplay() {
+  return {
+    title: PUSH_FALLBACK_TITLE,
+    body: '',
+    icon: PUSH_ICON,
+    badge: PUSH_BADGE,
+    tag: PUSH_FALLBACK_TAG,
+    url: PUSH_HOME_PATH,
+    kind: '',
+  }
+}
+
+/**
+ * Reads a push's payload into what to show. Mirrors parsePushPayload in
+ * src/pwa/pushContract.ts field for field; never throws — a payload that is
+ * missing, not JSON or not an object becomes the generic notification.
+ */
+function readPush(data) {
+  let text = null
+  try {
+    text = data ? data.text() : null
+  } catch {
+    return fallbackDisplay()
+  }
+  if (text === null || text === '') {
+    return fallbackDisplay()
+  }
+  let payload
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    return fallbackDisplay()
+  }
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    return fallbackDisplay()
+  }
+  const field = (name) => (typeof payload[name] === 'string' ? payload[name] : '')
+  const title = field(PUSH_TITLE_FIELD).trim()
+  return {
+    title: title === '' ? PUSH_FALLBACK_TITLE : title,
+    body: field(PUSH_BODY_FIELD),
+    icon: PUSH_ICON,
+    badge: PUSH_BADGE,
+    tag: notificationTag(payload[PUSH_TAG_FIELD]),
+    url: deeplinkPath(payload[PUSH_URL_FIELD]),
+    kind: field(PUSH_KIND_FIELD),
+  }
+}
+
+/**
+ * Shows one notification. A tagged one replaces the earlier notification with
+ * the same tag and re-alerts (`renotify`, which a browser refuses without a
+ * tag, hence only then). Should the browser reject the options themselves, the
+ * bare generic notification still goes up: a push that shows nothing is the one
+ * outcome this handler must never have.
+ */
+function showPush(display) {
+  const options = {
+    body: display.body,
+    icon: display.icon,
+    badge: display.badge,
+    data: { url: display.url, kind: display.kind },
+  }
+  if (display.tag !== null) {
+    options.tag = display.tag
+    options.renotify = true
+  }
+  return self.registration.showNotification(display.title, options).catch(() =>
+    self.registration.showNotification(PUSH_FALLBACK_TITLE, {
+      icon: PUSH_ICON,
+      badge: PUSH_BADGE,
+      data: { url: PUSH_HOME_PATH, kind: '' },
+    }),
+  )
+}
+
+/**
+ * Opens a clicked notification's deeplink. An open Kukátko window is reused —
+ * the focused one if any, else the first — by focusing it and navigating it
+ * there: an installed PWA has no tabs, so a second window would leave the
+ * person with no way back to the first. Only with no window open (or one that
+ * refuses to navigate, i.e. a page this worker does not control) does it open a
+ * new one.
+ */
+async function openDeeplink(path) {
+  const target = new URL(deeplinkPath(path), self.location.origin).href
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+  const own = windows.filter((client) => {
+    try {
+      return new URL(client.url).origin === self.location.origin
+    } catch {
+      return false
+    }
+  })
+  const client = own.find((candidate) => candidate.focused) || own[0]
+  if (client) {
+    try {
+      const focused = await client.focus()
+      await (focused || client).navigate(target)
+      return
+    } catch {
+      // Uncontrolled or gone: fall through to a new window.
+    }
+  }
+  await self.clients.openWindow(target)
+}
+
 self.addEventListener('install', (event) => {
   // No skipWaiting: see the header comment on the update flow.
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE)))
@@ -297,4 +469,16 @@ self.addEventListener('fetch', (event) => {
   if (PRECACHE_SET.has(pathname)) {
     event.respondWith(cacheFirst(request, pathname))
   }
+})
+
+self.addEventListener('push', (event) => {
+  // Showing *something* is part of the userVisibleOnly promise the subscription
+  // made, so the notification goes inside waitUntil, whatever the payload holds.
+  event.waitUntil(showPush(readPush(event.data)))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const data = event.notification.data
+  event.waitUntil(openDeeplink(data && data.url))
 })

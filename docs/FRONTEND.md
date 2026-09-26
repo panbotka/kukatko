@@ -7315,7 +7315,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   with the strip disabled proving the guard actually sees the hoisted import rather than passing vacuously.
 
   **Installable PWA (`web/build/`, `src/pwa/`, `components/pwa/`).** The app installs to a phone
-  home screen and opens standalone. Four pieces:
+  home screen and opens standalone. Its pieces:
   **(1) Identity.** `public/icons/kukatko.svg` is the master icon — an original door-peephole motif
   (metal ring, dark bezel, azure lens with a glint, the aperture in the middle) painted in the app's
   own tokens: the warm near-black surface ramp and the single cool accent, so the launcher icon and
@@ -7324,7 +7324,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   respect). Every raster is **generated and committed** by `scripts/icons.sh` (headless Chromium →
   crop; ImageMagick only for the crop and `favicon.ico`): `icons/kukatko-{192,512}.png`,
   `icons/kukatko-maskable-{192,512}.png`, `apple-touch-icon.png` (180, from the maskable master —
-  iOS masks it itself and composites onto black), `favicon-{16,32}.png`, `favicon.ico`. Nothing is
+  iOS masks it itself and composites onto black), `favicon-{16,32}.png`, `favicon.ico`, and the
+  notification badge `icons/kukatko-badge-96.png` from its own master (see (6)). Nothing is
   fetched at runtime and `vite.svg` is gone.
   **(2) Manifest.** `public/manifest.webmanifest`: name/short_name „Kukátko", `lang: cs`,
   `display: standalone`, `id`/`start_url`/`scope` `/`, `theme_color` = `background_color` =
@@ -7408,3 +7409,76 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   activate) plus a manifest contract block; `src/pwa/shareTarget.test.ts`, `ShareTargetPage.test.tsx`,
   the share cases in `UploadPage.test.tsx` (including the StrictMode double-invoke) and
   `usePasteFiles.test.tsx`.
+  **(6) Push notifications — the worker half and the browser module.** No UI yet (the permission
+  modal and the settings section are their own tasks); this is the plumbing they call.
+  `src/pwa/pushContract.ts` is the contract, in the same spirit as `shareContract.ts` and just as
+  **DOM-free**, so `build/pwa.test.ts` imports it and drives the **real** worker against it: the payload
+  field names of `push.Notification` in `internal/push` (`title`, `body`, `url`, `kind`, `tag`), the two
+  images (`PUSH_ICON` = `/icons/kukatko-192.png`, `PUSH_BADGE` = `/icons/kukatko-badge-96.png`), the
+  fallback title „Kukátko", the tag shape (`notificationTag`: the payload's collapse key under the
+  `kukatko-` prefix, `null` for an empty key — the server's "empty never collapses"), the deeplink rule
+  (`deeplinkPath`: a path on this instance or `/`; an absolute URL, `//host` and `/\host` never leave the
+  origin, even though the server already refuses them) and `parsePushPayload`, the whole mapping from
+  payload text to what is shown. The worker keeps its own copy of those rules (it cannot import) and the
+  test holds that copy to `parsePushPayload` across a table of well-formed, partial, mistyped and
+  garbage payloads.
+  The worker's **`push`** handler shows, inside `waitUntil`, the title, the body, the app icon, the
+  **badge**, `data: {url, kind}` and — when there is a key — the **tag with `renotify: true`**, so a
+  newer notification of the same key *replaces* the older one in the shade and still alerts (a browser
+  refuses `renotify` without a tag, hence only then). A payload that is empty, not JSON, not an object or
+  whose `text()` throws shows the **generic „Kukátko" notification** under `kukatko-fallback` (a run of
+  them collapses into one); a blank title falls back on its own and keeps the body and deeplink; and if
+  the browser rejects the options themselves, the bare generic notification still goes up. A push that
+  shows nothing is the one outcome it never has — it breaks the `userVisibleOnly` promise.
+  **`notificationclick`** closes the notification and resolves the deeplink against the origin, then
+  asks `clients.matchAll({type: 'window', includeUncontrolled: true})` for an open Kukátko window — the
+  focused one if any, else the first — and **focuses and navigates it**; only with none open (or one
+  that refuses `navigate`, i.e. a page this worker does not control) does it `openWindow`. An installed
+  PWA has no tabs, so a second window would leave the person no way back — the same trap the review
+  game hit once. **The fetch whitelist is untouched**: push has nothing to do with fetching, and a test
+  asserts the listener set is exactly the six events and that `/api/v1/push/…` and both notification
+  images still fall through.
+  **The badge.** Android draws the status-bar glyph from `badge` and uses **only its alpha channel**;
+  with none Chrome shows a generic dot. `public/icons/kukatko-badge.svg` is the peephole reduced to a
+  silhouette — housing ring plus lens with the aperture cut out (even-odd), pure white on transparent,
+  no plate or gradients — and `scripts/icons.sh` renders it to the committed 96×96
+  `icons/kukatko-badge-96.png` like every other raster. A test reads both PNGs' headers to hold the
+  contract's paths to real files of the promised sizes.
+  **`src/pwa/push.ts`** is the browser half and **never throws at its caller**: every export resolves to
+  a `PushState` `{status, endpoint}` (or a permission). `status` is one of `unsupported` (no service
+  worker container, `PushManager` or `Notification`), `no-worker` (the API is there but no registration —
+  the dev server, or a failed registration; looked up with `getRegistration('/')`, never `ready`, which
+  would hang), `disabled` (`GET /push/config` says push is off or has no key), `denied`, `prompt`
+  (nobody asked yet), `unsubscribed`, `subscribed` (with the endpoint) and `failed`. `isPushSupported()`
+  and `getPushPermission()` are synchronous; `getPushState()` reports without asking anything or calling
+  the server. **`requestPushPermission()` is exported for a click handler and never called by the
+  module** — a browser grants the prompt only from a user gesture, and `subscribeToPush()` therefore
+  **refuses (`prompt`/`denied`) until the permission is already granted**, since `pushManager.subscribe`
+  would raise the prompt itself. `subscribeToPush()` reads the config, reuses a subscription made with
+  the same VAPID key (one made with a rotated key is dropped first — a browser will not resubscribe
+  under a new key while it holds one), subscribes with `userVisibleOnly: true` and the decoded
+  base64url key, and POSTs `toJSON()` plus `user_agent` to `/push/subscriptions`. It is `subscribed`
+  only when **both** halves hold it: a `503` (push switched off meanwhile) reports `disabled`, any other
+  refusal `failed`, and either way the **browser subscription is dropped again**, so the browser never
+  believes in a subscription nothing delivers to. `unsubscribeFromPush()` DELETEs the endpoint on the
+  server (`404` and a network error are both fine — once the browser drops it, the push service answers
+  "gone" and the `push_send` job prunes the row) and then unsubscribes the browser.
+  **Android and iOS differ** (checked on 2026-09-26 against MDN's browser-compat data for
+  `PushManager` and WebKit's „Web Push for Web Apps on iOS and iPadOS" post). **Android needs nothing
+  beyond VAPID**: the compat data lists the Push API in Chrome for Android since 42 (the spec for this
+  work said 50; either way far below anything in use) and Firefox for Android since 48, in a **plain
+  browser tab**, no install needed; the old `gcm_sender_id` manifest field and an FCM project were
+  superseded by VAPID and are deliberately **not** added. **iOS delivers push only to an installed PWA**
+  (Safari 16.4+, „supported in web apps saved to the home screen" in the same data): in a mobile Safari
+  tab there is no `PushManager`, and a `subscribe` refused with
+  `NotSupportedError` maps to `unsupported` too — an ordinary state the later UI explains („install the
+  app first"), never a broken button. One more platform note from the same data: Firefox (72+, Android 79+)
+  accepts `pushManager.subscribe` only **inside a user gesture** as well, so the later UI calls
+  `subscribeToPush()` from the same click as `requestPushPermission()`, not from an effect.
+  Tests: the push half of `build/pwa.test.ts` (a well-formed payload's title/body/icon/badge/tag/data,
+  collapsing, the contract table, the unreadable payload, the rejected options, a click focusing and
+  navigating the open window, preferring the focused one, opening a window with none open or with an
+  uncontrolled one, off-origin deeplinks, the unchanged listener set and whitelist) plus the images
+  block; `src/pwa/push.test.ts` walks every branch of `push.ts` (unsupported incl. no `PushManager`,
+  no-worker, disabled, denied, prompt, granted, reuse and key rotation, subscribe refusals, the server's
+  503/500/network rollback, unsubscribe with the server forgetful or unreachable).

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kukátko's notification badge — the master of icons/kukatko-badge-96.png,
+  rendered by scripts/icons.sh like every other raster in this directory.
+
+  Android draws the small status-bar glyph of a notification from its `badge`
+  and uses ONLY the alpha channel, so this is the peephole of kukatko.svg reduced
+  to a silhouette: pure white on transparent, no gradients, no plate. The metal
+  ring and the lens stay; the aperture is a hole (even-odd fill), so the glyph
+  still reads as a peephole at 24 dp.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 96 96"
+  width="96"
+  height="96"
+  role="img"
+  aria-label="Kukátko"
+>
+  <!-- The housing ring. -->
+  <circle cx="48" cy="48" r="39" fill="none" stroke="#ffffff" stroke-width="9" />
+  <!-- The lens, with the aperture cut out of it. -->
+  <path
+    fill="#ffffff"
+    fill-rule="evenodd"
+    d="M48 20a28 28 0 1 0 0 56a28 28 0 1 0 0-56z M48 37a11 11 0 1 1 0 22a11 11 0 1 1 0-22z"
+  />
+</svg>
