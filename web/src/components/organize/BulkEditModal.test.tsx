@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import i18n from '../../i18n'
-import { ApiError } from '../../services/auth'
+import { ApiError, canCurate, canWrite, type Role } from '../../services/auth'
 import { type BulkResult } from '../../services/bulk'
 import { type AlbumCount, type LabelCount } from '../../services/organize'
 
@@ -81,14 +81,15 @@ function result(
 const onHide = vi.fn()
 const onDone = vi.fn()
 
-/** A signed-in editor by default; a viewer when `canWrite` is false. */
-function auth(canWrite: boolean): AuthContextValue {
+/** A signed-in user of `role` — an editor by default. */
+function auth(role: Role): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
-    role: canWrite ? 'editor' : 'viewer',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
     downloadToken: null,
-    canWrite,
+    canCurate: canCurate(role),
+    canWrite: canWrite(role),
     isAdmin: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -96,10 +97,10 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderModal(photoUids = ['ph1', 'ph2'], canWrite = true) {
+function renderModal(photoUids = ['ph1', 'ph2'], role: Role = 'editor') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(canWrite)}>
+      <AuthContext.Provider value={auth(role)}>
         <BulkEditModal show photoUids={photoUids} onHide={onHide} onDone={onDone} />
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -460,7 +461,7 @@ describe('BulkEditModal', () => {
 
   it('offers no create entry to a viewer', async () => {
     const user = userEvent.setup()
-    renderModal(['ph1', 'ph2'], false)
+    renderModal(['ph1', 'ph2'], 'viewer')
 
     const input = await screen.findByRole('combobox', { name: 'Add to albums' })
     await user.type(input, 'Dovolená')
@@ -468,6 +469,39 @@ describe('BulkEditModal', () => {
     const listbox = screen.getByRole('listbox', { name: 'Add to albums' })
     expect(within(listbox).queryByRole('option', { name: /^Create/ })).not.toBeInTheDocument()
     expect(within(listbox).getByText('No matches.')).toBeInTheDocument()
+  })
+
+  it('shows a curator only the album and label fields plus the favorite', async () => {
+    renderModal(['ph1', 'ph2'], 'curator')
+
+    for (const field of ['Add to albums', 'Remove from albums', 'Add labels', 'Remove labels']) {
+      expect(await screen.findByRole('combobox', { name: field })).toBeInTheDocument()
+    }
+    expect(screen.getByLabelText('Favorite')).toBeInTheDocument()
+    // Everything `POST /photos/bulk` refuses from a curator is not rendered at
+    // all — no greyed-out capture date, no disabled archive.
+    for (const field of ['Description', 'Capture date', 'Location', 'Archive', 'Library']) {
+      expect(screen.queryByLabelText(field)).not.toBeInTheDocument()
+    }
+    expect(screen.queryByRole('heading', { name: 'Metadata' })).not.toBeInTheDocument()
+  })
+
+  it('lets a curator create an album and apply a membership-only batch', async () => {
+    bulkMock.mockResolvedValue(result({ total: 2, updated: 2 }))
+    createAlbumMock.mockResolvedValue(album('al9', 'Ostatky'))
+    const user = userEvent.setup()
+    renderModal(['ph1', 'ph2'], 'curator')
+
+    await pickCreate(user, 'Add to albums', 'Ostatky')
+    await user.selectOptions(screen.getByLabelText('Favorite'), 'true')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() => {
+      expect(bulkMock).toHaveBeenCalledWith(['ph1', 'ph2'], {
+        add_to_albums: ['al9'],
+        set_favorite: true,
+      })
+    })
   })
 
   it('fills the set-location coordinates from a searched-for place name', async () => {

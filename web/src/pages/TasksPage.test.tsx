@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { type Role } from '../services/auth'
 import { type Task, type TaskPage, type TaskSummary } from '../services/tasks'
 import { TaskSummaryContext, type TaskSummaryState } from '../tasks/TaskSummaryContext'
 
@@ -51,13 +52,16 @@ function page(tasks: Task[]): TaskPage {
   return { tasks, total: tasks.length, limit: 50, offset: 0 }
 }
 
-function auth(canWrite: boolean): AuthContextValue {
+/** `true` is an editor, `false` a viewer; a role name picks that rung exactly. */
+function auth(who: boolean | Role): AuthContextValue {
+  const role: Role = who === true ? 'editor' : who === false ? 'viewer' : who
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
-    role: canWrite ? 'editor' : 'viewer',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
     downloadToken: null,
-    canWrite,
+    canCurate: role !== 'viewer',
+    canWrite: role !== 'viewer' && role !== 'curator',
     isAdmin: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -76,7 +80,7 @@ function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
   }
 }
 
-function renderPage(entry = '/tasks', canWrite = true, counts?: TaskSummaryState) {
+function renderPage(entry = '/tasks', canWrite: boolean | Role = true, counts?: TaskSummaryState) {
   const page = (
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
@@ -269,6 +273,12 @@ describe('TasksPage', () => {
     unmount()
 
     renderPage('/tasks', false)
+    await screen.findAllByText(/3 photos/)
+    expect(screen.queryByRole('button', { name: /New task/ })).not.toBeInTheDocument()
+  })
+
+  it('offers a curator no way to open a task — that stays an editor’s', async () => {
+    renderPage('/tasks', 'curator')
     await screen.findAllByText(/3 photos/)
     expect(screen.queryByRole('button', { name: /New task/ })).not.toBeInTheDocument()
   })

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { writeGridScroll } from '../lib/gridScroll'
-import { ApiError } from '../services/auth'
+import { ApiError, type Role } from '../services/auth'
 import { type Album } from '../services/organize'
 import { type Photo, type PhotoListResponse, type Timeline } from '../services/photos'
 
@@ -196,13 +196,16 @@ function album(): Album {
   }
 }
 
-function auth(canWrite: boolean): AuthContextValue {
+/** `true` is an editor, `false` a viewer; a role name picks that rung exactly. */
+function auth(who: boolean | Role): AuthContextValue {
+  const role: Role = who === true ? 'editor' : who === false ? 'viewer' : who
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
-    role: canWrite ? 'editor' : 'viewer',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
     downloadToken: null,
-    canWrite,
+    canCurate: role !== 'viewer',
+    canWrite: role !== 'viewer' && role !== 'curator',
     isAdmin: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -235,7 +238,7 @@ function albumPage(from: number, count: number): PhotoListResponse {
   }
 }
 
-function renderPage(canWrite = true, entry = '/albums/al_1') {
+function renderPage(canWrite: boolean | Role = true, entry = '/albums/al_1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
@@ -378,6 +381,18 @@ describe('AlbumDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
+  })
+
+  it('gives a curator the album controls — renaming and deleting are curation', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage('curator')
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    // The tiles are selectable, so photos can be put into and out of albums.
+    expect(screen.getByRole('button', { name: 'Select a.jpg' })).toBeInTheDocument()
   })
 
   it('deletes the album through the styled confirm dialog, not a native prompt', async () => {

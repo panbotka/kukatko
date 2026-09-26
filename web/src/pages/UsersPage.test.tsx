@@ -91,6 +91,7 @@ function auth(opts: { isAdmin?: boolean; isMaintainer?: boolean } = {}): AuthCon
     user: { uid: ME, username: 'root', display_name: 'Root', role },
     role,
     downloadToken: null,
+    canCurate: isAdmin,
     canWrite: isAdmin,
     isAdmin,
     isMaintainer,

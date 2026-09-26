@@ -62,13 +62,13 @@ type State =
 /**
  * A subject's page: header (name, type, edit, and the shared images-per-row
  * density control — a view preference open to everyone who can see the page),
- * the photo gallery (with a set-cover action for editors), and — for editors —
+ * the photo gallery (with a set-cover action for curators), and — for curators —
  * two review sections: the candidate search (untagged photos where this person
  * likely appears, to confirm/reject) and the outlier review (spot and detach
  * mis-assigned faces). The gallery pages through `GET /subjects/{uid}/photos`
  * with a load-more control.
  *
- * Editors can also select photos in the gallery; picking one raises the
+ * Curators can also select photos in the gallery; picking one raises the
  * library's own floating batch bar, so the full set of batch actions (add to
  * album, add/remove labels, favorite, archive, download, stack, the full editor)
  * is available here too, and the gallery refetches afterwards, since the edit
@@ -78,12 +78,12 @@ type State =
  * The two repairs for a mis-catalogued person live here as well, because this is
  * the page where either problem is noticed. "Merge into another person" is for
  * the same person filed twice; "Move to another person", on the batch bar, is for
- * the photos in this gallery that are somebody else. Both are editors-only: a
+ * the photos in this gallery that are somebody else. Both are curation: a
  * viewer sees neither.
  */
 export function SubjectPage() {
   const { t } = useTranslation()
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const { density } = useGridDensity()
   const location = useLocation()
   const navigate = useNavigate()
@@ -145,7 +145,7 @@ export function SubjectPage() {
   // endpoint is always newest-first), so the scope is the sole non-default facet.
   const detailQuery = useMemo(() => detailQueryString({ ...DETAIL_DEFAULTS, person: uid }), [uid])
 
-  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // Hover-select: a curator's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
   // `gridSelection` is the role gate — it is undefined for a viewer, who never
   // selects, exactly as the shared photo grids read it.
@@ -344,7 +344,7 @@ export function SubjectPage() {
               anyone can re-column the gallery, exactly as the other galleries
               expose it through the FilterBar. */}
           <GridDensityControl />
-          {canWrite && (
+          {canCurate && (
             <>
               <Button
                 variant="outline-secondary"
@@ -373,11 +373,11 @@ export function SubjectPage() {
       </div>
 
       {/* Who this person belongs to, above their photographs: in nine cases out
-          of ten that is what a reader came for, and for an editor the row of +
+          of ten that is what a reader came for, and for a curator the row of +
           buttons is where a family tree actually gets filled in. The section
           draws itself only when it has something to show or somebody who can add
           it, exactly as `Outliers` does further down. */}
-      <FamilyStrip subjectUid={subject.uid} subjectName={subject.name} canWrite={canWrite} />
+      <FamilyStrip subjectUid={subject.uid} subjectName={subject.name} canCurate={canCurate} />
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
       {status === 'loading' && <GridSkeleton label={t('subject.loadingPhotos')} />}
@@ -412,7 +412,7 @@ export function SubjectPage() {
                     key={photo.uid}
                     photo={photo}
                     isCover={subject.cover_photo_uid === photo.uid}
-                    canSetCover={canWrite}
+                    canSetCover={canCurate}
                     busy={coverBusy}
                     onSetCover={(photoUid) => {
                       void setCover(photoUid)
@@ -444,7 +444,7 @@ export function SubjectPage() {
         </>
       )}
 
-      {canWrite && (
+      {canCurate && (
         <section className="mt-4">
           <h2 className="kk-section-title">{t('candidates.title')}</h2>
           <p className="text-secondary small">{t('candidates.subtitle')}</p>
@@ -457,7 +457,7 @@ export function SubjectPage() {
       {/* The section brings its own heading and frame, and draws neither when it
           has nothing to ask about — most people have no suspicious face at all,
           and a titled empty box is worse than no box. */}
-      {canWrite && <Outliers subjectUid={subject.uid} />}
+      {canCurate && <Outliers subjectUid={subject.uid} />}
 
       {bulk.canBulkEdit && selecting && (
         <>
@@ -470,7 +470,7 @@ export function SubjectPage() {
         </>
       )}
 
-      {canWrite && (
+      {canCurate && (
         <SubjectEditModal
           subject={subject}
           show={editing}
@@ -487,7 +487,7 @@ export function SubjectPage() {
       {/* Both dialogs are mounted only while open: each loads the whole people
           list to pick from, and a page that never opens them must not pay for
           it. Neither has state worth keeping between openings. */}
-      {canWrite && merging && (
+      {canCurate && merging && (
         <MergeSubjectModal
           subject={subject}
           show
@@ -508,7 +508,7 @@ export function SubjectPage() {
         />
       )}
 
-      {canWrite && moving && (
+      {canCurate && moving && (
         <MoveFacesModal
           sourceUid={subject.uid}
           sourceName={subject.name}

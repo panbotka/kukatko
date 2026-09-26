@@ -89,6 +89,7 @@ function auth(isAdmin: boolean): AuthContextValue {
     user: { uid: 'admin', username: 'root', display_name: 'Root', role },
     role,
     downloadToken: null,
+    canCurate: isAdmin,
     canWrite: isAdmin,
     isAdmin,
     login: vi.fn(),

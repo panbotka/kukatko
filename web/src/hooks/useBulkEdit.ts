@@ -19,7 +19,7 @@ export interface UseBulkEditOptions {
   onEdited?: (outcome?: BulkEditOutcome) => void
   /**
    * Opt into hover-select: the grid is always selectable (a corner checkmark on
-   * every tile) for a writer, with no explicit "enter selection mode" step, and
+   * every tile) for a curator, with no explicit "enter selection mode" step, and
    * turns selection-first the moment anything is picked. Every photo-list page
    * uses this, so multi-select works the same way everywhere; a page then shows
    * its selection toolbar on `selection.count > 0` rather than on
@@ -28,11 +28,11 @@ export interface UseBulkEditOptions {
    */
   hoverSelect?: boolean
   /**
-   * Let every signed-in role select, not only a writer. The task page opts in:
+   * Let every signed-in role select, not only a curator. The task page opts in:
    * putting a selection into the discussion is a comment, and commenting is
    * open to viewers, so the tiles must be selectable for them too. The bar then
-   * hides the writer-only actions itself; a page that opts in must not offer
-   * writer-only `extraActions` to a viewer.
+   * hides the curation and editor actions itself; a page that opts in must not
+   * offer a viewer `extraActions` it may not use.
    */
   openToViewers?: boolean
 }
@@ -40,10 +40,11 @@ export interface UseBulkEditOptions {
 /** Selection state plus the bulk-edit dialog wiring for one photo list. */
 export interface UseBulkEditResult {
   /**
-   * Whether the acting user may select at all — a writer always, a viewer only
-   * where the page opted in with `openToViewers`. Pages gate their selection
-   * toolbar on it; the writer-only actions inside the toolbar gate on
-   * `useAuth().canWrite` themselves.
+   * Whether the acting user may select at all — a curator (or above) always, a
+   * viewer only where the page opted in with `openToViewers`. Pages gate their
+   * selection toolbar on it; the actions inside the toolbar gate on
+   * `useAuth().canCurate` / `canWrite` themselves, so a curator's bar carries
+   * only the album, label and favorite operations the backend lets it send.
    */
   canBulkEdit: boolean
   /** The underlying grid selection (enter/leave selection mode, toggle tiles). */
@@ -77,8 +78,8 @@ export interface UseBulkEditResult {
  */
 export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult {
   const { onEdited, hoverSelect = false, openToViewers = false } = options
-  const { canWrite } = useAuth()
-  const canSelect = canWrite || openToViewers
+  const { canCurate } = useAuth()
+  const canSelect = canCurate || openToViewers
   const selection = useSelection()
   const [editing, setEditing] = useState(false)
 
@@ -107,7 +108,7 @@ export function useBulkEdit(options: UseBulkEditOptions = {}): UseBulkEditResult
     if (!canSelect) {
       return undefined
     }
-    // Hover-select is always on for a writer (no explicit mode to enter); the
+    // Hover-select is always on for a curator (no explicit mode to enter); the
     // plain mode only wires the grid once selection mode is entered.
     if (hoverSelect) {
       return {

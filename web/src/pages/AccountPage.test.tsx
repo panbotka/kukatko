@@ -35,6 +35,7 @@ const editorAuth = {
   user: { uid: 'u1', username: 'jana', display_name: 'Jana', role: 'editor' },
   role: 'editor',
   downloadToken: null,
+  canCurate: true,
   canWrite: true,
   isAdmin: false,
   login: vi.fn(),

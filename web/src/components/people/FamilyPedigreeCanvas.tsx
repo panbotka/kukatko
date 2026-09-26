@@ -37,7 +37,7 @@ export interface FamilyPedigreeCanvasProps {
  * It is drawn rather than left out, and that is the whole point of the pedigree.
  * A missing great-grandmother in a library of 118 people is not an error to be
  * hidden — it is the most interesting thing on the page, because it is the one
- * somebody can still fix. Under `canWrite` the gap is a button straight into the
+ * somebody can still fix. Under `canCurate` the gap is a button straight into the
  * dialog that fills it, opened on the **child** the slot belongs to, since a
  * parent is recorded on their child and not the other way round.
  */

@@ -128,6 +128,7 @@ function auth(): AuthContextValue {
     user: { uid: 'u1', username: 'u', display_name: 'U', role: 'editor' },
     role: 'editor',
     downloadToken: null,
+    canCurate: true,
     canWrite: true,
     isAdmin: false,
     login: vi.fn(),

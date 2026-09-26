@@ -70,6 +70,7 @@ function auth(
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
     role,
     downloadToken: null,
+    canCurate: isAdmin || canImport,
     canWrite: isAdmin || canImport,
     isAdmin,
     isMaintainer: canImport,

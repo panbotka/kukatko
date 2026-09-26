@@ -333,6 +333,7 @@ const viewerAuth = {
   user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer' },
   role: 'viewer',
   downloadToken: null,
+  canCurate: false,
   canWrite: false,
   isAdmin: false,
   login: vi.fn(),
@@ -345,6 +346,7 @@ const editorAuth = {
   ...viewerAuth,
   user: { uid: 'u2', username: 'e', display_name: 'E', role: 'editor' },
   role: 'editor',
+  canCurate: true,
   canWrite: true,
 } as unknown as AuthContextValue
 

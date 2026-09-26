@@ -62,7 +62,7 @@ const ANCHOR_PARAM = 'at'
  * as tall as the whole library from the first response on and fetches the pages
  * under the viewport as they come into view, which is what lets the timeline jump
  * to any month at a fixed cost. Every tile carries a favorite heart
- * (a personal toggle for all roles); an editor additionally gets a modern
+ * (a personal toggle for all roles); a curator (or above) additionally gets a modern
  * multi-select — a corner checkmark on each tile (hover to reveal, Shift+click for
  * a range) and a floating batch action bar that rises once anything is picked, for
  * add-to-album, add/remove-label, favorite, archive, download and the full editor
@@ -85,7 +85,7 @@ const ANCHOR_PARAM = 'at'
 export function LibraryPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('library.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const navigate = useNavigate()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [savingView, setSavingView] = useState(false)
@@ -116,7 +116,7 @@ export function LibraryPage() {
   // Who contributed to what is on screen — the option list behind the uploader
   // filter, counted under the rest of the view like every other facet.
   const uploaders = useUploaders(params)
-  // Hover-select: every tile carries a corner checkmark for a writer, with no
+  // Hover-select: every tile carries a corner checkmark for a curator, with no
   // explicit "enter selection mode" step, and the floating batch bar rises the
   // moment anything is picked.
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
@@ -228,12 +228,12 @@ export function LibraryPage() {
   const selectPhoto = useCallback(
     (index: number) => {
       const p = displayPhotos.at(index)
-      if (!p || !canWrite) {
+      if (!p || !canCurate) {
         return
       }
       selection.toggle(p.uid)
     },
-    [displayPhotos, canWrite, selection],
+    [displayPhotos, canCurate, selection],
   )
   // Select every loaded tile in view (only what has paged in, not every match —
   // and with a windowed list that is the pages around the reader's position).
@@ -393,9 +393,9 @@ export function LibraryPage() {
       {catalogEmpty && (
         <EmptyState
           title={t('library.emptyCatalog.title')}
-          hint={canWrite ? t('library.emptyCatalog.hint') : t('library.emptyCatalog.hintViewer')}
+          hint={canCurate ? t('library.emptyCatalog.hint') : t('library.emptyCatalog.hintViewer')}
           action={
-            canWrite ? (
+            canCurate ? (
               <Link to="/upload" className="btn btn-primary">
                 {t('library.emptyCatalog.action')}
               </Link>

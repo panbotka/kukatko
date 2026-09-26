@@ -63,6 +63,7 @@ const viewerAuth = {
   user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer' },
   role: 'viewer',
   downloadToken: null,
+  canCurate: false,
   canWrite: false,
   isAdmin: false,
   login: vi.fn(),

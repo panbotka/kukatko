@@ -141,11 +141,11 @@
       },
       "albums": {
         "title": "Albums",
-        "body": "Albums group photos that belong together by hand – a trip, a party, a year. Add a photo to an album from its detail view or in bulk from a selection in the library. The “Expand” tool then finds more similar photos across the whole library, so nothing gets left out. Albums are managed by editors."
+        "body": "Albums group photos that belong together by hand – a trip, a party, a year. Add a photo to an album from its detail view or in bulk from a selection in the library. The “Expand” tool then finds more similar photos across the whole library, so nothing gets left out. Albums are managed by curators."
       },
       "labels": {
         "title": "Labels",
-        "body": "Labels (tags) describe what's in a photo – “sunset”, “dog”, “family”. A photo can have several, and they make filtering and searching quick. Adding and managing labels is for editors; labels also support “Expand”, which finds more photos a label would suit."
+        "body": "Labels (tags) describe what's in a photo – “sunset”, “dog”, “family”. A photo can have several, and they make filtering and searching quick. Adding and managing labels is for curators; labels also support “Expand”, which finds more photos a label would suit."
       },
       "favorites": {
         "title": "Favourites & ratings",
@@ -173,7 +173,7 @@
       },
       "sharing": {
         "title": "Adding photos from your phone",
-        "body": "On Android it works straight from the gallery: pick the photos, tap Share and choose Kukátko. The app opens on the upload page with those files already queued — look them over, give the batch an album and labels if you like, and upload as usual. The one condition is that Kukátko is added to the home screen (installed); otherwise it does not appear in the share sheet.\niPhone cannot do this yet — Safari has no support for sharing into web apps, and there is no honest way to fake it. Add photos on the upload page instead: the Choose files button opens the photo library, or copy a photo in Photos and paste it here. Adding Kukátko to the home screen still pays off: it then opens straight away, even with no signal.\nUploading needs the editor role or higher. A view-only account is told why its shared photos were not added. Only photos and videos can be shared; anything else is left out and listed on the page."
+        "body": "On Android it works straight from the gallery: pick the photos, tap Share and choose Kukátko. The app opens on the upload page with those files already queued — look them over, give the batch an album and labels if you like, and upload as usual. The one condition is that Kukátko is added to the home screen (installed); otherwise it does not appear in the share sheet.\niPhone cannot do this yet — Safari has no support for sharing into web apps, and there is no honest way to fake it. Add photos on the upload page instead: the Choose files button opens the photo library, or copy a photo in Photos and paste it here. Adding Kukátko to the home screen still pays off: it then opens straight away, even with no signal.\nUploading needs the curator role or higher. A view-only account is told why its shared photos were not added. Only photos and videos can be shared; anything else is left out and listed on the page."
       },
       "import": {
         "title": "Importing the library",
@@ -2284,7 +2284,7 @@
       "mark": "No embedding",
       "note": "This face has no embedding — it can only ever be named here, by hand. Suggestions, similarity search and the review game will never reach it."
     },
-    "viewerNote": "You can look through the faces, but naming them needs the editor role — ask an administrator for it."
+    "viewerNote": "You can look through the faces, but naming them needs the curator role — ask an administrator for it."
   },
   "outliers": {
     "title": "Is this still the same person?",
@@ -2802,7 +2802,7 @@
       "action": "Go to upload"
     },
     "forbidden": {
-      "message": "Your account can only view the library, not add to it, so the shared files were discarded. Ask an administrator for the editor role if you need to upload.",
+      "message": "Your account can only view the library, not add to it, so the shared files were discarded. Ask an administrator for the curator role if you need to upload.",
       "action": "Back to the library"
     }
   },

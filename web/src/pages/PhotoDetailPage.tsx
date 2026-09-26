@@ -183,7 +183,7 @@ export function PhotoDetailPage() {
   const { t, i18n } = useTranslation()
   const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
-  const { canWrite, downloadToken, user, isAdmin, isMaintainer } = useAuth()
+  const { canCurate, canWrite, downloadToken, user, isAdmin, isMaintainer } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1416,7 +1416,7 @@ export function PhotoDetailPage() {
               setPanel('faces')
             }}
             onHover={setHoveredFace}
-            readOnly={!canWrite}
+            readOnly={!canCurate}
           />
         )}
       </div>
@@ -1729,7 +1729,7 @@ export function PhotoDetailPage() {
               <FacesPanel
                 photoUid={photo.uid}
                 faces={faces}
-                canWrite={canWrite}
+                canCurate={canCurate}
                 takenAt={photo.taken_at}
                 hovered={hoveredFace}
                 onHover={setHoveredFace}
@@ -1754,13 +1754,13 @@ export function PhotoDetailPage() {
 
               <section className="kk-viewer__section">
                 <p className="kk-text-eyebrow mb-2">{t('photo.sections.organize')}</p>
-                <OrganizePanel photo={photo} canWrite={canWrite} onChanged={setPhoto} />
+                <OrganizePanel photo={photo} canCurate={canCurate} onChanged={setPhoto} />
                 <hr />
                 <PeoplePanel
                   photoUid={photo.uid}
                   faces={faces}
                   people={photo.people ?? []}
-                  canWrite={canWrite}
+                  canCurate={canCurate}
                   // A chip leads to the faces panel only where that panel can
                   // open at all; on a photo whose boxes stand down (a saved crop)
                   // it would silently fall back to the metadata.

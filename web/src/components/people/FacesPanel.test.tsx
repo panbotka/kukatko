@@ -52,7 +52,7 @@ const onClose = vi.fn()
 
 function renderPanel(
   faces: UseFacesResult,
-  canWrite = true,
+  canCurate = true,
   hovered: number | null = null,
   takenAt?: string,
 ) {
@@ -61,7 +61,7 @@ function renderPanel(
       <FacesPanel
         photoUid="ph_1"
         faces={faces}
-        canWrite={canWrite}
+        canCurate={canCurate}
         takenAt={takenAt}
         hovered={hovered}
         onHover={onHover}
@@ -208,7 +208,7 @@ describe('FacesPanel', () => {
         <FacesPanel
           photoUid="ph_1"
           faces={facesResult({ faces: [face], selected: face, select })}
-          canWrite
+          canCurate
           hovered={null}
           onHover={onHover}
           onClose={onClose}
@@ -518,13 +518,13 @@ describe('FacesPanel', () => {
     // panel says, once, that naming is an editor's job.
     expect(
       screen.getByText(
-        'You can look through the faces, but naming them needs the editor role — ask an administrator for it.',
+        'You can look through the faces, but naming them needs the curator role — ask an administrator for it.',
       ),
     ).toBeInTheDocument()
   })
 
   it('keeps the note off an editor’s panel and off an empty one', () => {
-    const note = /naming them needs the editor role/
+    const note = /naming them needs the curator role/
     renderPanel(facesResult({ faces: [faceView({ face_index: 0, subject_name: 'Alice' })] }))
     expect(screen.queryByText(note)).not.toBeInTheDocument()
 

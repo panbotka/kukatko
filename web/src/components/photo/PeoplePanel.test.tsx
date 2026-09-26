@@ -100,7 +100,7 @@ const onPeopleChanged = vi.fn()
 
 /** Everything past the faces the panel may be handed, each with its resting value. */
 interface PanelOptions {
-  canWrite?: boolean
+  canCurate?: boolean
   loading?: boolean
   photoUid?: string
   people?: PhotoSubject[]
@@ -109,7 +109,7 @@ interface PanelOptions {
 
 function panel(faces: UseFacesResult, options: PanelOptions = {}) {
   const {
-    canWrite = true,
+    canCurate = true,
     loading = false,
     photoUid = 'photo1',
     people = [],
@@ -123,7 +123,7 @@ function panel(faces: UseFacesResult, options: PanelOptions = {}) {
           photoUid={photoUid}
           faces={faces}
           people={people}
-          canWrite={canWrite}
+          canCurate={canCurate}
           canOpenFaces={canOpenFaces}
           loading={loading}
           onEditFace={onEditFace}
@@ -203,7 +203,7 @@ describe('PeoplePanel', () => {
           faceView({ face_index: 1 }),
         ],
       }),
-      { canWrite: false },
+      { canCurate: false },
     )
     // Named person visible read-only; the unnamed detection and every control gone.
     expect(screen.getByText('Alice')).toBeInTheDocument()
@@ -409,7 +409,7 @@ describe('PeoplePanel', () => {
 
     it('shows a viewer the chips and neither control', () => {
       renderPanel(facesResult({ faces: [] }), {
-        canWrite: false,
+        canCurate: false,
         people: [attached('su_a', 'Alice')],
       })
 

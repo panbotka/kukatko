@@ -76,6 +76,7 @@ function renderWelcome(user: User, refresh = vi.fn().mockResolvedValue(undefined
     user,
     role: user.role,
     downloadToken: 'tok',
+    canCurate: true,
     canWrite: true,
     isAdmin: false,
     isMaintainer: false,

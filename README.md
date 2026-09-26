@@ -130,7 +130,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   ("1923–1998"), roughly how old they were in every dated photograph, and a jump straight to the
   decade you meant.
 - **Who belongs to whom is written down, and drawn.** A person's page carries their immediate family —
-  parents, siblings, partner, children — as a row of face chips, and an editor fills it in from there:
+  parents, siblings, partner, children — as a row of face chips, and a curator fills it in from there:
   pick an existing person or type a name nobody has recorded yet and the great-grandmother is created
   and related in one go, which is the difference between a tree that gets filled in over a few evenings
   and one that stays empty. The model is the one genealogy settled on decades ago — the **family** is
@@ -143,7 +143,7 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   thing as a drawing, and it goes both ways: **potomci** are generations down the page, a couple in one
   box, branches that fold away; **předci** are the pedigree above a person, two slots per generation
   for as many generations as you ask for. An ancestor nobody has recorded is drawn as an **empty slot**
-  rather than quietly left out — and for an editor that gap is a button: click it and the dialog opens
+  rather than quietly left out — and for a curator that gap is a button: click it and the dialog opens
   on the right person, ready to record their mother or father. Both drawings pan and zoom, and a click
   on anybody redraws from them. The person it is drawn from, the direction, the depth and the folded
   branches are all in the address, so Back undoes any of them and a link carries the view. And the same
@@ -464,8 +464,11 @@ were written.
 - Originals on **local disk** or in an **S3-compatible bucket** (Cloudflare R2, with short-lived
   signed URLs), plus **S3 backup** — `pg_dump` and originals with retention — and a restore runbook
   that has been used.
-- Five roles (viewer < curator < editor < admin < maintainer — a curator sorts people, faces, albums
-  and labels without touching the photos themselves), a durable **audit trail** written in the same
+- Five roles (viewer < curator < editor < admin < maintainer). A **curator** names faces, manages
+  people and their family tree, creates and fills albums and labels (one photo at a time or a whole
+  selection), plays the sorting game and uploads — without touching the photos themselves: the capture
+  date, description, location, image edits, stacks, archiving, tasks and duplicate merging stay an
+  editor's, and the app simply does not show a curator those controls. A durable **audit trail** written in the same
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and
   `kukatko ctl` — a kubectl-style CLI against your own instance.
 - **Sign in with a passkey.** Add the fingerprint reader on your phone or laptop, or a hardware

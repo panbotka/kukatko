@@ -105,6 +105,7 @@ const EDITOR = {
   status: 'authenticated',
   user: { uid: 'u1', username: 'u', display_name: 'U', role: 'editor' },
   role: 'editor',
+  canCurate: true,
   canWrite: true,
   isAdmin: false,
 } as unknown as AuthContextValue

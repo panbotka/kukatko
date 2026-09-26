@@ -315,12 +315,15 @@ function buildOperations(
  * is sent. Afterwards the per-photo result summary the endpoint returns replaces
  * the form.
  *
- * Only editors/admins reach it (the caller gates the trigger), except the favorite
- * operation which is itself per-user.
+ * Only a curator or above reaches it (the caller gates the trigger), and what it
+ * shows follows the role: a **curator** gets the album and label fields plus the
+ * per-user favorite — exactly what `POST /photos/bulk` accepts from it — while the
+ * description, capture date, location, archive and hide fields are an **editor's**
+ * and are not rendered for a curator at all.
  */
 export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: BulkEditModalProps) {
   const { t, i18n } = useTranslation()
-  const { canWrite } = useAuth()
+  const { canCurate, canWrite } = useAuth()
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [busy, setBusy] = useState(false)
@@ -517,7 +520,8 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
                   albums={load.albums}
                   labels={load.labels}
                   busy={busy}
-                  allowCreate={canWrite}
+                  allowCreate={canCurate}
+                  editorFields={canWrite}
                   onChange={update}
                 />
                 <PendingChanges
@@ -627,21 +631,32 @@ function labelOption(label: LabelCount): MultiSelectOption {
   return { value: label.uid, label: label.name, count: label.photo_count }
 }
 
-/** The editable operation form (albums/labels, description, location, flags). */
+/**
+ * The editable operation form (albums/labels, description, location, flags).
+ * Without `editorFields` it is the curator's form: the organize section and the
+ * favorite, nothing that rewrites what the catalogue says about a photo.
+ */
 function BulkEditForm({
   form,
   albums,
   labels,
   busy,
   allowCreate,
+  editorFields,
   onChange,
 }: {
   form: FormState
   albums: AlbumCount[]
   labels: LabelCount[]
   busy: boolean
-  /** Whether the add fields may create entries (the acting user may write). */
+  /** Whether the add fields may create entries (the acting user may curate). */
   allowCreate: boolean
+  /**
+   * Whether the photo-metadata fields render — description, capture date,
+   * location, archive and hide (the acting user may write). A curator's batch
+   * may carry none of them, so it is never offered them.
+   */
+  editorFields: boolean
   onChange: (patch: Partial<FormState>) => void
 }) {
   const { t } = useTranslation()
@@ -734,6 +749,50 @@ function BulkEditForm({
         </Row>
       </Section>
 
+      {editorFields && <EditorSections form={form} busy={busy} onChange={onChange} />}
+
+      <Section title={t('bulkEdit.sections.flags')} className="mb-0">
+        <Row className="g-3">
+          {editorFields && <EditorFlags form={form} busy={busy} onChange={onChange} />}
+          <Col xs={12} md={4}>
+            <Form.Group controlId="bulk-favorite">
+              <Form.Label className="kk-text-caption mb-1">
+                {t('bulkEdit.favorite.label')}
+              </Form.Label>
+              <Form.Select
+                value={form.favoriteMode}
+                disabled={busy}
+                onChange={(e) => {
+                  onChange({ favoriteMode: e.target.value as BoolMode })
+                }}
+              >
+                <option value="">{t('bulkEdit.favorite.noChange')}</option>
+                <option value="true">{t('bulkEdit.favorite.yes')}</option>
+                <option value="false">{t('bulkEdit.favorite.no')}</option>
+              </Form.Select>
+            </Form.Group>
+          </Col>
+        </Row>
+      </Section>
+    </Form>
+  )
+}
+
+/** The props every editor-only slice of the form shares. */
+interface FormSliceProps {
+  form: FormState
+  busy: boolean
+  onChange: (patch: Partial<FormState>) => void
+}
+
+/**
+ * The editor's metadata and location sections: description, capture date and
+ * coordinates. The backend refuses every one of them from a curator.
+ */
+function EditorSections({ form, busy, onChange }: FormSliceProps) {
+  const { t } = useTranslation()
+  return (
+    <>
       <Section title={t('bulkEdit.sections.metadata')}>
         <Form.Group controlId="bulk-description-mode">
           <Form.Label className="kk-text-caption mb-1">
@@ -826,75 +885,61 @@ function BulkEditForm({
           </>
         )}
       </Section>
+    </>
+  )
+}
 
-      <Section title={t('bulkEdit.sections.flags')} className="mb-0">
-        <Row className="g-3">
-          <Col xs={12} md={4}>
-            <Form.Group controlId="bulk-archive">
-              {/* Archiving is the one destructive flag: it takes the photos out of
+/** The editor's flags: archive and hide, both a change to what the library shows. */
+function EditorFlags({ form, busy, onChange }: FormSliceProps) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Col xs={12} md={4}>
+        <Form.Group controlId="bulk-archive">
+          {/* Archiving is the one destructive flag: it takes the photos out of
                   the library. Only the archive choice — not unarchive — is toned. */}
-              <Form.Label
-                className={`kk-text-caption mb-1 ${
-                  form.archiveMode === 'archive' ? 'text-danger' : ''
-                }`}
-              >
-                {t('bulkEdit.archive.label')}
-              </Form.Label>
-              <Form.Select
-                className={form.archiveMode === 'archive' ? 'border-danger' : ''}
-                value={form.archiveMode}
-                disabled={busy}
-                onChange={(e) => {
-                  onChange({ archiveMode: e.target.value as FormState['archiveMode'] })
-                }}
-              >
-                <option value="">{t('bulkEdit.archive.noChange')}</option>
-                <option value="archive">{t('bulkEdit.archive.archive')}</option>
-                <option value="unarchive">{t('bulkEdit.archive.unarchive')}</option>
-              </Form.Select>
-            </Form.Group>
-          </Col>
-          <Col xs={12} md={4}>
-            <Form.Group controlId="bulk-hidden">
-              {/* Hiding is not archiving and is deliberately not toned danger:
+          <Form.Label
+            className={`kk-text-caption mb-1 ${
+              form.archiveMode === 'archive' ? 'text-danger' : ''
+            }`}
+          >
+            {t('bulkEdit.archive.label')}
+          </Form.Label>
+          <Form.Select
+            className={form.archiveMode === 'archive' ? 'border-danger' : ''}
+            value={form.archiveMode}
+            disabled={busy}
+            onChange={(e) => {
+              onChange({ archiveMode: e.target.value as FormState['archiveMode'] })
+            }}
+          >
+            <option value="">{t('bulkEdit.archive.noChange')}</option>
+            <option value="archive">{t('bulkEdit.archive.archive')}</option>
+            <option value="unarchive">{t('bulkEdit.archive.unarchive')}</option>
+          </Form.Select>
+        </Form.Group>
+      </Col>
+      <Col xs={12} md={4}>
+        <Form.Group controlId="bulk-hidden">
+          {/* Hiding is not archiving and is deliberately not toned danger:
                   nothing is deleted, the photos stay in their albums and labels,
                   and the hint says how to list them again. */}
-              <Form.Label className="kk-text-caption mb-1">{t('bulkEdit.hidden.label')}</Form.Label>
-              <Form.Select
-                value={form.hiddenMode}
-                disabled={busy}
-                onChange={(e) => {
-                  onChange({ hiddenMode: e.target.value as FormState['hiddenMode'] })
-                }}
-              >
-                <option value="">{t('bulkEdit.hidden.noChange')}</option>
-                <option value="hide">{t('bulkEdit.hidden.hide')}</option>
-                <option value="unhide">{t('bulkEdit.hidden.unhide')}</option>
-              </Form.Select>
-              <Form.Text className="kk-text-caption">{t('bulkEdit.hidden.hint')}</Form.Text>
-            </Form.Group>
-          </Col>
-          <Col xs={12} md={4}>
-            <Form.Group controlId="bulk-favorite">
-              <Form.Label className="kk-text-caption mb-1">
-                {t('bulkEdit.favorite.label')}
-              </Form.Label>
-              <Form.Select
-                value={form.favoriteMode}
-                disabled={busy}
-                onChange={(e) => {
-                  onChange({ favoriteMode: e.target.value as BoolMode })
-                }}
-              >
-                <option value="">{t('bulkEdit.favorite.noChange')}</option>
-                <option value="true">{t('bulkEdit.favorite.yes')}</option>
-                <option value="false">{t('bulkEdit.favorite.no')}</option>
-              </Form.Select>
-            </Form.Group>
-          </Col>
-        </Row>
-      </Section>
-    </Form>
+          <Form.Label className="kk-text-caption mb-1">{t('bulkEdit.hidden.label')}</Form.Label>
+          <Form.Select
+            value={form.hiddenMode}
+            disabled={busy}
+            onChange={(e) => {
+              onChange({ hiddenMode: e.target.value as FormState['hiddenMode'] })
+            }}
+          >
+            <option value="">{t('bulkEdit.hidden.noChange')}</option>
+            <option value="hide">{t('bulkEdit.hidden.hide')}</option>
+            <option value="unhide">{t('bulkEdit.hidden.unhide')}</option>
+          </Form.Select>
+          <Form.Text className="kk-text-caption">{t('bulkEdit.hidden.hint')}</Form.Text>
+        </Form.Group>
+      </Col>
+    </>
   )
 }
 

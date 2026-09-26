@@ -71,6 +71,7 @@ function auth(isAdmin: boolean): AuthContextValue {
     user: { uid: 'u1', username: 'jana', display_name: 'Jana', role: isAdmin ? 'admin' : 'editor' },
     role: isAdmin ? 'admin' : 'editor',
     downloadToken: null,
+    canCurate: true,
     canWrite: true,
     isAdmin,
   } as unknown as AuthContextValue

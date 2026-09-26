@@ -141,11 +141,11 @@
       },
       "albums": {
         "title": "Alba",
-        "body": "Alba slouží k ručnímu seskupení fotek, které patří k sobě – výlet, oslava, jeden rok. Fotku přidáte do alba z jejího detailu nebo hromadně z výběru v knihovně. Funkce „Rozšířit“ pak k albu dohledá další podobné fotky z celé knihovny, takže na nic nezapomenete. Alba spravují editoři."
+        "body": "Alba slouží k ručnímu seskupení fotek, které patří k sobě – výlet, oslava, jeden rok. Fotku přidáte do alba z jejího detailu nebo hromadně z výběru v knihovně. Funkce „Rozšířit“ pak k albu dohledá další podobné fotky z celé knihovny, takže na nic nezapomenete. Alba spravují kurátoři."
       },
       "labels": {
         "title": "Štítky",
-        "body": "Štítky (tagy) popisují, co na fotce je – „západ slunce“, „pes“, „rodina“. Jedna fotka jich může mít víc a slouží k rychlému filtrování a hledání. Přidávání a správu štítků zvládnou editoři; i u štítků funguje „Rozšířit“, které dohledá další fotky, kam by se štítek hodil."
+        "body": "Štítky (tagy) popisují, co na fotce je – „západ slunce“, „pes“, „rodina“. Jedna fotka jich může mít víc a slouží k rychlému filtrování a hledání. Přidávání a správu štítků zvládnou kurátoři; i u štítků funguje „Rozšířit“, které dohledá další fotky, kam by se štítek hodil."
       },
       "favorites": {
         "title": "Oblíbené a hodnocení",
@@ -173,7 +173,7 @@
       },
       "sharing": {
         "title": "Přidávání fotek z telefonu",
-        "body": "Na Androidu to jde přímo z galerie: vyberte snímky, dejte Sdílet a zvolte Kukátko. Aplikace se otevře na stránce Nahrát s vybranými soubory ve frontě — projdete je, můžete jim rovnou vybrat album a štítky a nahrajete je jako každé jiné. Podmínka je jediná: Kukátko musí být přidané na plochu (nainstalované), jinak se v nabídce sdílení neobjeví.\niPhone tohle zatím neumí — Safari sdílení do webových aplikací nepodporuje a předstírat to nejde. Fotky proto přidáte na stránce Nahrát: tlačítko Vybrat soubory otevře knihovnu fotek, nebo snímek zkopírujete ve Fotkách a tady ho vložíte. Když si Kukátko přidáte na plochu, otevře se rovnou a rychle, i bez signálu.\nNahrávat mohou účty s rolí editora a vyšší. Prohlížejícímu účtu Kukátko sdílené fotky nepřidá a řekne proč. Sdílet lze jen fotky a videa; co jimi není, zůstane stranou a stránka to vypíše."
+        "body": "Na Androidu to jde přímo z galerie: vyberte snímky, dejte Sdílet a zvolte Kukátko. Aplikace se otevře na stránce Nahrát s vybranými soubory ve frontě — projdete je, můžete jim rovnou vybrat album a štítky a nahrajete je jako každé jiné. Podmínka je jediná: Kukátko musí být přidané na plochu (nainstalované), jinak se v nabídce sdílení neobjeví.\niPhone tohle zatím neumí — Safari sdílení do webových aplikací nepodporuje a předstírat to nejde. Fotky proto přidáte na stránce Nahrát: tlačítko Vybrat soubory otevře knihovnu fotek, nebo snímek zkopírujete ve Fotkách a tady ho vložíte. Když si Kukátko přidáte na plochu, otevře se rovnou a rychle, i bez signálu.\nNahrávat mohou účty s rolí kurátora a vyšší. Prohlížejícímu účtu Kukátko sdílené fotky nepřidá a řekne proč. Sdílet lze jen fotky a videa; co jimi není, zůstane stranou a stránka to vypíše."
       },
       "import": {
         "title": "Import knihovny",
@@ -2378,7 +2378,7 @@
       "mark": "Bez embeddingu",
       "note": "Tenhle obličej nemá embedding — jméno mu jde dát jen tady a ručně. Návrhy, hledání podle podoby ani hra na třídění se k němu nikdy nedostanou."
     },
-    "viewerNote": "Obličeje si můžete prohlédnout, ale na jejich pojmenování potřebujete roli editora — požádejte o ni správce."
+    "viewerNote": "Obličeje si můžete prohlédnout, ale na jejich pojmenování potřebujete roli kurátora — požádejte o ni správce."
   },
   "outliers": {
     "title": "Je to pořád tato osoba?",
@@ -2927,7 +2927,7 @@
       "action": "Přejít na nahrávání"
     },
     "forbidden": {
-      "message": "Váš účet je jen pro prohlížení, fotky do knihovny přidávat nemůže. Sdílené soubory jsme proto zahodili. Chcete-li nahrávat, požádejte správce o roli editora.",
+      "message": "Váš účet je jen pro prohlížení, fotky do knihovny přidávat nemůže. Sdílené soubory jsme proto zahodili. Chcete-li nahrávat, požádejte správce o roli kurátora.",
       "action": "Zpět do knihovny"
     }
   },

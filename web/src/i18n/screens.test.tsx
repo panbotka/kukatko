@@ -21,6 +21,7 @@ function maintainerAuth(): AuthContextValue {
     user: { uid: 'u1', username: 'ops', display_name: 'Ops', role: 'maintainer' },
     role: 'maintainer',
     downloadToken: null,
+    canCurate: true,
     canWrite: true,
     isAdmin: true,
     isMaintainer: true,

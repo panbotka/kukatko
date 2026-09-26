@@ -73,6 +73,7 @@ function auth(isAdmin: boolean): AuthContextValue {
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
     role,
     downloadToken: null,
+    canCurate: true,
     canWrite: true,
     isAdmin,
     isMaintainer: false,

@@ -18,6 +18,7 @@ import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { stageRenditionName } from '../lib/rendition'
 import { resetRenditionVersions } from '../lib/renditionRebuild'
 import { ENCODE_POLL_INTERVAL_MS } from '../lib/videoEncode'
+import { type Role } from '../services/auth'
 import { type AlbumCount, type LabelCount } from '../services/organize'
 import { type FacesResponse, type PhotoSubject, type SubjectCount } from '../services/people'
 import {
@@ -279,13 +280,16 @@ function labelCount(uid: string, name: string): LabelCount {
   }
 }
 
-function auth(canWrite: boolean): AuthContextValue {
+/** `true` is an editor, `false` a viewer; a role name picks that rung exactly. */
+function auth(who: boolean | Role): AuthContextValue {
+  const role: Role = who === true ? 'editor' : who === false ? 'viewer' : who
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
-    role: canWrite ? 'editor' : 'viewer',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
     downloadToken: null,
-    canWrite,
+    canCurate: role !== 'viewer',
+    canWrite: role !== 'viewer' && role !== 'curator',
     isAdmin: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -310,7 +314,7 @@ function LocationProbe() {
  * available so a `mode=semantic` URL is followed as written.
  */
 function renderPage(
-  canWrite = true,
+  canWrite: boolean | Role = true,
   entry: string | Partial<Location> = '/photos/b?sort=oldest',
   semanticSearch = true,
   videoStreaming = false,
@@ -3574,6 +3578,58 @@ describe('PhotoDetailPage — immersive viewer', () => {
       screen.queryByRole('button', { name: 'Select face #1: No name' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Name this face')).not.toBeInTheDocument()
+  })
+
+  it('gives a curator the curation controls and none of the editor ones', async () => {
+    const user = userEvent.setup()
+    fetchFacesMock.mockResolvedValue(facesResponse(1))
+    fetchPhotoMock.mockResolvedValue(
+      photo({
+        stack_members: [
+          {
+            uid: 'b',
+            file_name: 'b.jpg',
+            media_type: 'image',
+            file_mime: 'image/jpeg',
+            file_width: 4000,
+            file_height: 3000,
+            file_size: 1000,
+            is_primary: true,
+          },
+          {
+            uid: 'b2',
+            file_name: 'b.nef',
+            media_type: 'raw',
+            file_mime: 'image/x-nikon-nef',
+            file_width: 4000,
+            file_height: 3000,
+            file_size: 2000,
+            is_primary: false,
+          },
+        ],
+      }),
+    )
+    renderPage('curator')
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    // The image editor and the archive/hide menu are an editor's: not rendered.
+    expect(screen.queryByRole('button', { name: 'Edits' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Library actions' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Info' }))
+    // Albums and labels are curation — the add fields are there.
+    expect(await screen.findByRole('combobox', { name: 'Add to album' })).toBeInTheDocument()
+    // The photo's own metadata (title, capture date…) stays an editor's.
+    expect(screen.queryByRole('button', { name: 'Edit Title' })).not.toBeInTheDocument()
+    // The stack strip is shown, but none of its controls.
+    expect(screen.getByText('Stack · 2 files')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unstack all' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Set as primary' })).not.toBeInTheDocument()
+
+    // Faces are curation: a curator selects one to name it.
+    await user.click(screen.getByRole('button', { name: 'Show faces' }))
+    loadPreview()
+    expect(screen.getByRole('button', { name: 'Unnamed face 1' })).toBeEnabled()
   })
 
   describe('progressive display', () => {

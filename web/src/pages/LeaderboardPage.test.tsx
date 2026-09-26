@@ -52,6 +52,7 @@ function auth(uid: string, isAdmin = false, canWrite = isAdmin): AuthContextValu
     user: { uid, username: 'me', display_name: 'Me', role },
     role,
     downloadToken: null,
+    canCurate: canWrite,
     canWrite,
     isAdmin,
     login: vi.fn(),

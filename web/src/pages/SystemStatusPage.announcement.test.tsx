@@ -51,6 +51,7 @@ function auth(isMaintainer: boolean): AuthContextValue {
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
     role,
     downloadToken: null,
+    canCurate: isMaintainer,
     canWrite: isMaintainer,
     isAdmin: isMaintainer,
     isMaintainer,

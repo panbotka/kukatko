@@ -139,7 +139,7 @@ function parentsOf(
  * drawings: descendants are a genuine tree once a couple is one box, and are
  * laid out as a tidy tree that folds; ancestors are a binary pedigree, bounded
  * by generation, in which **an unknown grandparent is a visible gap** — and,
- * for an editor, a gap that can be clicked straight into the dialog that fills
+ * for a curator, a gap that can be clicked straight into the dialog that fills
  * it. The page itself only fetches and wires: `GET /subjects/{uid}/tree` gives
  * the people and the family boxes, `lib/familyLayout` decides the coordinates in
  * pure functions, and the two canvases paint them. The three are separate
@@ -150,7 +150,7 @@ function parentsOf(
 export function FamilyTreePage() {
   const { t } = useTranslation()
   const { uid = '' } = useParams<{ uid: string }>()
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const location = useLocation()
   const [view, setView] = useUrlState(TREE_DEFAULTS)
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -255,10 +255,10 @@ export function FamilyTreePage() {
     [addingParentOf, tree, people],
   )
 
-  // A pedigree with nothing recorded still says something an editor can act on:
+  // A pedigree with nothing recorded still says something a curator can act on:
   // two empty slots over the person, which is the invitation. A reader who
   // cannot fill them in is better served by the sentence that says where.
-  const invites = direction === 'ancestors' && canWrite
+  const invites = direction === 'ancestors' && canCurate
   const showEmptyState = tree !== null && tree.families.length === 0 && !invites
 
   return (
@@ -343,7 +343,7 @@ export function FamilyTreePage() {
                   people={people}
                   rootUid={tree.root.uid}
                   personHref={personHref}
-                  onAddParent={canWrite ? setAddingParentOf : null}
+                  onAddParent={canCurate ? setAddingParentOf : null}
                 />
               ) : (
                 <FamilyTreeCanvas
@@ -362,7 +362,7 @@ export function FamilyTreePage() {
           {/* Mounted only while open: the dialog loads every subject in the
               library to pick from, and a page that never opens it must not pay
               for that. */}
-          {canWrite && addingParentOf !== null && (
+          {canCurate && addingParentOf !== null && (
             <AddRelationModal
               subjectUid={addingParentOf}
               subjectName={people.get(addingParentOf)?.name ?? addingParentOf}

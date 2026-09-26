@@ -89,7 +89,7 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
 
 function renderPanel(props: {
   photo?: PhotoDetail
-  canWrite?: boolean
+  canCurate?: boolean
   onChanged?: (photo: PhotoDetail) => void
 }) {
   return render(
@@ -97,7 +97,7 @@ function renderPanel(props: {
       <MemoryRouter>
         <OrganizePanel
           photo={props.photo ?? photo()}
-          canWrite={props.canWrite ?? true}
+          canCurate={props.canCurate ?? true}
           onChanged={props.onChanged ?? vi.fn()}
         />
       </MemoryRouter>
@@ -112,7 +112,7 @@ function renderPanel(props: {
  */
 function StatefulPanel({ initial }: { initial: PhotoDetail }) {
   const [current, setCurrent] = useState(initial)
-  return <OrganizePanel photo={current} canWrite onChanged={setCurrent} />
+  return <OrganizePanel photo={current} canCurate onChanged={setCurrent} />
 }
 
 function renderStatefulPanel(initial: PhotoDetail = photo()) {
@@ -239,7 +239,7 @@ describe('OrganizePanel autocomplete', () => {
         albums: [{ uid: 'a1', title: 'Holidays' }],
         labels: [{ uid: 'l1', name: 'sunset' }],
       }),
-      canWrite: false,
+      canCurate: false,
     })
 
     const albumChip = screen.getByRole('link', { name: 'Holidays' })
@@ -276,7 +276,7 @@ describe('OrganizePanel autocomplete', () => {
   })
 
   it('hides the add controls from viewers', async () => {
-    renderPanel({ canWrite: false })
+    renderPanel({ canCurate: false })
     // Give any (skipped) fetch a tick; controls must never appear for viewers.
     await Promise.resolve()
     expect(screen.queryByRole('combobox', { name: 'Add to album' })).not.toBeInTheDocument()
@@ -287,7 +287,7 @@ describe('OrganizePanel autocomplete', () => {
 
 describe('OrganizePanel empty state', () => {
   it('reads an empty album and an empty label list the same way', () => {
-    renderPanel({ canWrite: false })
+    renderPanel({ canCurate: false })
 
     const noAlbums = screen.getByText('Not in any album.')
     const noLabels = screen.getByText('No labels.')
@@ -303,7 +303,7 @@ describe('OrganizePanel empty state', () => {
 
   it('keeps its own wording for each list, translated', async () => {
     await i18n.changeLanguage('cs')
-    renderPanel({ canWrite: false })
+    renderPanel({ canCurate: false })
 
     expect(screen.getByText('V žádném albu.')).toBeInTheDocument()
     expect(screen.getByText('Bez štítků.')).toBeInTheDocument()
@@ -312,7 +312,7 @@ describe('OrganizePanel empty state', () => {
   it('drops the caption once the list carries a chip', () => {
     renderPanel({
       photo: photo({ labels: [{ uid: 'l1', name: 'sunset' }] }),
-      canWrite: false,
+      canCurate: false,
     })
 
     expect(screen.queryByText('No labels.')).toBeNull()

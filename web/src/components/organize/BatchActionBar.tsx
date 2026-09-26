@@ -172,19 +172,21 @@ function BarAction({
  * The album and label pickers create as well as pick: a name no album or label
  * carries yet offers to be created, which is how a new album usually starts
  * ("these forty photos are Ostatky 2022"). Creation is deferred to the apply, so
- * closing the picker never leaves an empty album behind, and only an editor is
- * offered it — a viewer picks from what exists.
+ * closing the picker never leaves an empty album behind, and only a curator (or
+ * above) is offered it — a viewer picks from what exists.
  *
  * Every photo list shows this same bar, so the batch vocabulary does not change
  * from page to page; a page that owns actions of its own (an album's set-cover /
  * remove-from-album) hands them over as `extraActions` and they join the bar
  * instead of forcing a second toolbar next to it.
  *
- * The bar is a writer's tool, with one exception: on a task page a **viewer**
- * selects too (the page opens selection to them), and their bar carries only
- * what a viewer may do — select all, download, share and **Do diskuse** — the
- * metadata actions are hidden, not disabled, because a control that can never
- * work is furniture.
+ * The bar follows the role ladder. A **curator** gets the album and label
+ * pickers, favorite and the full editor (which itself shows a curator only those
+ * fields); location, archive, stacking and asking a task are an **editor's**. On a
+ * task page a **viewer** selects too (the page opens selection to them), and
+ * their bar carries only what a viewer may do — select all, download, share and
+ * **Do diskuse**. Whatever a role may not do is hidden, not disabled, because a
+ * control that can never work is furniture.
  */
 export function BatchActionBar({
   bulk,
@@ -199,7 +201,7 @@ export function BatchActionBar({
   const [discussing, setDiscussing] = useState(false)
   const { t } = useTranslation()
   const { show } = useToast()
-  const { canWrite } = useAuth()
+  const { canCurate, canWrite } = useAuth()
   const [busy, setBusy] = useState(false)
   const [picker, setPicker] = useState<Picker>(null)
   const [options, setOptions] = useState<OptionsState>({ status: 'idle' })
@@ -515,18 +517,24 @@ export function BatchActionBar({
         disabled={busy}
       />
     ) : null
-  // Everything that writes metadata is a writer's; a viewer's bar keeps the
-  // downloads and the discussion.
-  const writerActions = canWrite
+  // Membership in albums and labels (plus the per-user favorite) is curation, so
+  // a curator gets it; the photo's own metadata, archiving, stacking and asking a
+  // task stay an editor's. A viewer's bar keeps the downloads and the discussion.
+  // Nothing forbidden is rendered — the same mechanic for both lines.
+  const curatorActions = canCurate
     ? {
         album: albumAction,
         label: labelAction,
         favorite: favoriteAction,
+        more: moreAction,
+      }
+    : null
+  const editorActions = canWrite
+    ? {
         location: locationControl,
         archive: archiveAction,
         stack: stackControl,
         ask: askAction,
-        more: moreAction,
       }
     : null
   const extras = extraActions?.map((action) => (
@@ -557,8 +565,8 @@ export function BatchActionBar({
         </span>
         {narrow ? (
           <>
-            {writerActions?.album}
-            {writerActions?.label}
+            {curatorActions?.album}
+            {curatorActions?.label}
             <Dropdown drop="up" align="end" className="kk-batch-overflow">
               <Dropdown.Toggle
                 variant="outline-light"
@@ -574,15 +582,15 @@ export function BatchActionBar({
               <Dropdown.Menu className="kk-batch-overflow-menu">
                 <div className="d-grid gap-1">
                   {selectAllControl}
-                  {writerActions?.favorite}
-                  {writerActions?.location}
-                  {writerActions?.archive}
+                  {curatorActions?.favorite}
+                  {editorActions?.location}
+                  {editorActions?.archive}
                   {downloadControl}
                   {shareControl}
-                  {writerActions?.stack}
-                  {writerActions?.ask}
+                  {editorActions?.stack}
+                  {editorActions?.ask}
                   {discussAction}
-                  {writerActions?.more}
+                  {curatorActions?.more}
                   {extras}
                 </div>
               </Dropdown.Menu>
@@ -591,17 +599,17 @@ export function BatchActionBar({
         ) : (
           <>
             {selectAllControl}
-            {writerActions?.album}
-            {writerActions?.label}
-            {writerActions?.favorite}
-            {writerActions?.location}
-            {writerActions?.archive}
+            {curatorActions?.album}
+            {curatorActions?.label}
+            {curatorActions?.favorite}
+            {editorActions?.location}
+            {editorActions?.archive}
             {downloadControl}
             {shareControl}
-            {writerActions?.stack}
-            {writerActions?.ask}
+            {editorActions?.stack}
+            {editorActions?.ask}
             {discussAction}
-            {writerActions?.more}
+            {curatorActions?.more}
             {extras}
           </>
         )}
@@ -642,7 +650,7 @@ export function BatchActionBar({
               placeholder={t('batch.albumPlaceholder')}
               disabled={busy}
               onCreate={
-                canWrite
+                canCurate
                   ? (name) => {
                       setAddAlbums((prev) => [...prev, pendingValue(name)])
                     }
@@ -661,7 +669,7 @@ export function BatchActionBar({
                 placeholder={t('batch.labelPlaceholder')}
                 disabled={busy}
                 onCreate={
-                  canWrite
+                  canCurate
                     ? (name) => {
                         setAddLabels((prev) => [...prev, pendingValue(name)])
                       }

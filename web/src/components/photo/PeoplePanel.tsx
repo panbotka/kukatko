@@ -52,8 +52,8 @@ export interface PeoplePanelProps {
    * resulting list, so the block never re-reads the photo to redraw itself.
    */
   people: PhotoSubject[]
-  /** Whether the current user may name/clear people (editor/admin). */
-  canWrite: boolean
+  /** Whether the current user may name/clear people (curator and up). */
+  canCurate: boolean
   /**
    * Whether a click on a face chip can actually reach the faces panel. It cannot
    * on a photo whose boxes the viewer refuses to draw (a saved crop leaves a
@@ -68,7 +68,7 @@ export interface PeoplePanelProps {
    */
   loading?: boolean
   /**
-   * Called with a face's `face_index` when an editor clicks its chip: the page
+   * Called with a face's `face_index` when a curator clicks its chip: the page
    * shows the faces panel and selects that face there. Assignment lives in exactly
    * one place, and these chips are the way to reach it without knowing about `m`.
    */
@@ -84,9 +84,9 @@ export interface PeoplePanelProps {
  * **The faces the detector found** are person chips (rose, like every other person
  * chip in the app) over the same {@link useFaces} state machine that drives the
  * on-image overlay. It answers "who is in this photo" without turning the face
- * boxes on — they are off by default — and an editor's click on a chip opens the
+ * boxes on — they are off by default — and a curator's click on a chip opens the
  * faces panel at that face. Named faces are rose chips, unnamed detections neutral
- * chips an editor can still name; a viewer sees only the named people, read-only.
+ * chips a curator can still name; a viewer sees only the named people, read-only.
  *
  * Each face chip carries a crop of its own face, so "who is on this photo" is
  * answered by looking rather than by reading — and an unnamed detection stops
@@ -104,7 +104,7 @@ export interface PeoplePanelProps {
  * and add. On a still it is what covers the profiles, backs of heads and faces in
  * a crowd the detector misses. Such a person has no crop to show, so the chip
  * carries the generic person glyph instead — which is exactly what tells the two
- * kinds apart at a glance — and, for an editor, an X that detaches them again.
+ * kinds apart at a glance — and, for a curator, an X that detaches them again.
  * The add control is offered on every medium and whatever the detector found,
  * because "somebody in the background nobody detected" is not a fallback case, it
  * is the ordinary one.
@@ -119,7 +119,7 @@ export function PeoplePanel({
   photoUid,
   faces,
   people,
-  canWrite,
+  canCurate,
   canOpenFaces = true,
   loading = false,
   onEditFace,
@@ -199,11 +199,11 @@ export function PeoplePanel({
       className="rounded-circle flex-shrink-0"
     />
   )
-  // Viewers only care about the people who have a name; an editor also sees the
+  // Viewers only care about the people who have a name; a curator also sees the
   // unnamed detections so they can name them.
   const visible = faces.faces
     .map((face, position) => ({ face, number: position + 1 }))
-    .filter(({ face }) => canWrite || isNamed(face))
+    .filter(({ face }) => canCurate || isNamed(face))
 
   // Keep every named person and the first few unnamed detections, in the order
   // the faces come in — a name that sits behind the crowd keeps its place rather
@@ -219,7 +219,7 @@ export function PeoplePanel({
   })
   const hidden = unnamedTotal - unnamedShown
   // A chip only offers the click when there is somewhere for it to lead.
-  const chipsOpenFaces = canWrite && canOpenFaces
+  const chipsOpenFaces = canCurate && canOpenFaces
 
   return (
     <div>
@@ -302,7 +302,7 @@ export function PeoplePanel({
                 kind="person"
                 to={`/people/${subject.subject_uid}`}
                 remove={
-                  canWrite
+                  canCurate
                     ? {
                         label: t('photo.organize.removePerson', { name: subject.name }),
                         onRemove: () => {
@@ -334,7 +334,7 @@ export function PeoplePanel({
             )}
           </div>
 
-          {canWrite && (
+          {canCurate && (
             <>
               <Button
                 variant="outline-secondary"

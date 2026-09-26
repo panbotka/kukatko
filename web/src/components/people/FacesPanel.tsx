@@ -29,8 +29,8 @@ export interface FacesPanelProps {
   photoUid: string
   /** The faces state machine, shared with the overlay drawn on the photo. */
   faces: UseFacesResult
-  /** Whether the viewer may assign people (editors and admins). */
-  canWrite: boolean
+  /** Whether the viewer may assign people (curators and up). */
+  canCurate: boolean
   /**
    * The photo's capture time (ISO), or undefined when it has none. With it — and
    * a named person whose birth year is known — each row can say roughly how old
@@ -100,7 +100,7 @@ const STATE_CHIP: Record<FaceState, string> = {
 export function FacesPanel({
   photoUid,
   faces,
-  canWrite,
+  canCurate,
   takenAt,
   hovered,
   onHover,
@@ -121,7 +121,7 @@ export function FacesPanel({
   // reader which of the two identical buttons to press. While a run is going the
   // control stays put whatever the count does — it is now the stop button, and
   // pulling it out from under a finger mid-run would be worse than a stale label.
-  const showBatch = canWrite && (running || batch.length >= 2)
+  const showBatch = canCurate && (running || batch.length >= 2)
 
   // Birth year by subject uid, so a row can date the face it shows without a
   // lookup per render. The subject list is already loaded here for the assign
@@ -207,7 +207,7 @@ export function FacesPanel({
             once, in words, what the missing controls would have said one by one.
             The note is placed above the list because that is where a reader
             starts, and it is not an `Alert`: nothing is wrong. */}
-        {!canWrite && faces.faces.length > 0 && (
+        {!canCurate && faces.faces.length > 0 && (
           <p className="text-secondary small mb-2">{t('faces.viewerNote')}</p>
         )}
 
@@ -250,7 +250,7 @@ export function FacesPanel({
             const embedded = hasEmbedding(face)
             const chip = state === 'named' ? (face.subject_name ?? '') : t('faces.state.unnamed')
             const age = faceAge(face)
-            // An editor's row is a button whose aria-label replaces its content,
+            // A curator's row is a button whose aria-label replaces its content,
             // so the age has to travel inside that label or a screen reader
             // never hears it. Composed here rather than as a second key: it is
             // the same sentence with one more clause.
@@ -272,7 +272,7 @@ export function FacesPanel({
                   </span>
                 )}
                 {!embedded && (
-                  // The row of a `canWrite` viewer is a button whose aria-label
+                  // The row of a `canCurate` reader is a button whose aria-label
                   // replaces its content, so it says this in its own label instead;
                   // the hidden text is what a viewer's plain row announces.
                   // `opacity` rather than `text-secondary`: it stays muted on a
@@ -288,7 +288,7 @@ export function FacesPanel({
 
             return (
               <div key={face.face_index} data-selected={isSelected ? 'true' : undefined}>
-                {canWrite ? (
+                {canCurate ? (
                   <button
                     type="button"
                     className={`list-group-item list-group-item-action d-flex align-items-center gap-2 ${
@@ -344,7 +344,7 @@ export function FacesPanel({
                   </div>
                 )}
 
-                {canWrite && isSelected && (
+                {canCurate && isSelected && (
                   <FaceAssignPanel
                     // Remounting on selection change resets the reassign mode and
                     // the typed name, so no state leaks from the previous face.

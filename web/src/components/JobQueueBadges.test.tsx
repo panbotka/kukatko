@@ -32,6 +32,7 @@ function auth(role: TestRole): AuthContextValue {
     user: { uid: 'u1', username: 'u', display_name: 'User', role },
     role,
     downloadToken: null,
+    canCurate: isAdmin || role === 'editor',
     canWrite: isAdmin || role === 'editor',
     isAdmin,
     isMaintainer,

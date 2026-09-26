@@ -58,14 +58,14 @@ function parseWindow(raw: string | null): LeaderboardWindow {
  * toggle whose state lives in the URL so "Back always works". Visible to every
  * signed-in role — watching the game is not a write action — but the two
  * invitations *into* the game (the empty state's button and the not-on-board
- * hint, both pointing at the editors-only `/review`) are shown to writers only:
+ * hint, both pointing at the curators-and-up `/review`) are shown to curators and up:
  * for a viewer they were a button that appeared to do nothing.
  * See docs/FRONTEND.md.
  */
 export function LeaderboardPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('leaderboard.title'))
-  const { user, canWrite, isAdmin } = useAuth()
+  const { user, canCurate, isAdmin } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [reloadKey, reload] = useReloadKey()
 
@@ -127,11 +127,11 @@ export function LeaderboardPage() {
       <EmptyState
         icon={<Icon name="trophy" />}
         title={t('leaderboard.empty.title')}
-        // The review game is editors-only, so a viewer gets neither the
+        // The review game is curators-and-up, so a viewer gets neither the
         // invitation to play nor the button: it would land them on a 403.
-        hint={canWrite ? t('leaderboard.empty.hint') : t('leaderboard.empty.hintViewer')}
+        hint={canCurate ? t('leaderboard.empty.hint') : t('leaderboard.empty.hintViewer')}
         action={
-          canWrite ? (
+          canCurate ? (
             <Link to="/review" className="btn btn-primary d-inline-flex align-items-center gap-2">
               <Icon name="ui-checks" />
               {t('leaderboard.empty.action')}
@@ -233,7 +233,7 @@ export function LeaderboardPage() {
         {/* The hint is the way *into* the game, so it is only for those who may
             play. A viewer will never be on the board and cannot get on it; the
             line would just be a link to a 403. */}
-        {!onBoard && canWrite && (
+        {!onBoard && canCurate && (
           <p className="text-secondary small mt-3 mb-0" data-testid="leaderboard-not-on-board">
             {t('leaderboard.notOnBoard.hint')}{' '}
             <Link to="/review">{t('leaderboard.notOnBoard.action')}</Link>

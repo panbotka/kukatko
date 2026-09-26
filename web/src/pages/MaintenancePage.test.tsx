@@ -80,6 +80,7 @@ function auth(opts: { isMaintainer?: boolean; role?: string } = {}): AuthContext
     user: { uid: 'u1', username: 'u', display_name: 'U', role },
     role,
     downloadToken: null,
+    canCurate: isAdmin,
     canWrite: isAdmin,
     isAdmin,
     isMaintainer,

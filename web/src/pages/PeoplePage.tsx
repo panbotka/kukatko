@@ -38,7 +38,7 @@ const TILE_GAP = 12
 
 /**
  * The people index: a responsive, virtualized grid of subjects (cover, name,
- * photo count), each linking to its page. Editors and admins also get a link to
+ * photo count), each linking to its page. Curators and above also get a link to
  * the cluster review queue, the fast bulk-naming path. The whole view is
  * read-only here; naming and editing happen on the subject and cluster pages.
  *
@@ -56,7 +56,7 @@ const TILE_GAP = 12
 export function PeoplePage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('people.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
   const [view, setView] = useUrlState<PeopleView>(PEOPLE_DEFAULTS)
@@ -90,7 +90,7 @@ export function PeoplePage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('people.title')}</h1>
-        {canWrite && (
+        {canCurate && (
           <Link to="/people/clusters" className="btn btn-outline-primary">
             {t('people.reviewClusters')}
           </Link>

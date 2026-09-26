@@ -83,13 +83,13 @@ const TIMELINE_MIN_MONTHS = 24
 
 /**
  * An album's detail page: a header (title, description, count, private badge,
- * back link) with editor controls (rename/delete via modal), above the photo grid
+ * back link) with curator controls (rename/delete via modal), above the photo grid
  * scoped to the album. An album is always presented chronologically — the backend
  * pins the sort key to capture time, with the upload time standing in for undated
  * photos — so the only ordering choice is the direction, and the shared
  * {@link FilterBar} offers exactly those two ({@link ALBUM_SORTS}), resting at
  * oldest-first. That, the filters, and the position on the timeline all live in
- * the URL. Editors can select photos to remove from the album, set one as the
+ * the URL. Curators can select photos to remove from the album, set one as the
  * cover or bulk-edit their metadata, and rename or delete the album. Mutation
  * controls are hidden from viewers.
  *
@@ -100,14 +100,14 @@ const TIMELINE_MIN_MONTHS = 24
  * viewport, so jumping to 1936 in an album of 781 photos costs one scroll and one
  * request instead of paging through everything in between.
  *
- * A writer's tiles offer the corner checkmark from the outset (hover-select, as
+ * A curator's tiles offer the corner checkmark from the outset (hover-select, as
  * on the library), and picking the first photo raises the same floating batch
  * bar the library uses — with the album's own actions (set cover, remove from
  * album) merged into it, so the page never shows two competing toolbars.
  */
 export function AlbumDetailPage() {
   const { t, i18n } = useTranslation()
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
@@ -156,7 +156,7 @@ export function AlbumDetailPage() {
   // where everybody is named offers nothing to do, so it offers no button.
   const unnamedFaces = useAlbumFaceCount(uid)
 
-  // Hover-select: a writer's tiles carry the corner checkmark from the outset,
+  // Hover-select: a curator's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
   const bulk = useBulkEdit({ onEdited: reload, hoverSelect: true })
   const selection = bulk.selection
@@ -362,7 +362,7 @@ export function AlbumDetailPage() {
               ),
             ]}
             secondary={[
-              canWrite && unnamedFaces !== null && unnamedFaces > 0 && (
+              canCurate && unnamedFaces !== null && unnamedFaces > 0 && (
                 /* An anchor styled as a button, not a Button with an onClick:
                    the run has an address of its own, so it must be openable in a
                    new tab and copyable like every other link in the app. */
@@ -383,7 +383,7 @@ export function AlbumDetailPage() {
                   variant="outline-secondary"
                 />
               ),
-              canWrite && (
+              canCurate && (
                 <Button
                   key="edit"
                   variant="outline-secondary"
@@ -397,7 +397,7 @@ export function AlbumDetailPage() {
               ),
             ]}
             destructive={[
-              canWrite && (
+              canCurate && (
                 <Button
                   key="delete"
                   variant="outline-danger"
@@ -488,7 +488,7 @@ export function AlbumDetailPage() {
         <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
       )}
 
-      {canWrite && album && (
+      {canCurate && album && (
         <AlbumEditModal
           album={album}
           show={editing}
@@ -502,7 +502,7 @@ export function AlbumDetailPage() {
         />
       )}
 
-      {canWrite && album && (
+      {canCurate && album && (
         <ConfirmModal
           show={pendingDelete}
           title={t('albumDetail.confirmTitle')}

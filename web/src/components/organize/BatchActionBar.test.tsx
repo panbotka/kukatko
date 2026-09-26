@@ -146,7 +146,15 @@ const editorAuth: AuthContextValue = {
 }
 
 /** A viewer auth context — read-only, so nothing may be created inline. */
-const viewerAuth: AuthContextValue = { ...editorAuth, role: 'viewer', canWrite: false }
+const viewerAuth: AuthContextValue = {
+  ...editorAuth,
+  role: 'viewer',
+  canCurate: false,
+  canWrite: false,
+}
+
+/** A curator auth context — album and label membership, never photo metadata. */
+const curatorAuth: AuthContextValue = { ...editorAuth, role: 'curator', canWrite: false }
 
 function renderBar(
   bulk: UseBulkEditResult,
@@ -506,6 +514,39 @@ describe('BatchActionBar inline creation', () => {
     // cannot do — hidden, not greyed out.
     expect(screen.queryByRole('button', { name: 'Add to album' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Labels' })).toBeNull()
+  })
+})
+
+describe('BatchActionBar for a curator', () => {
+  it('offers the album, label, favorite and full-editor actions', () => {
+    renderBar(makeBulk(), undefined, curatorAuth)
+
+    for (const name of ['Add to album', 'Labels', 'Favorite', 'More edits']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('renders none of the editor-only actions — not even greyed out', () => {
+    renderBar(makeBulk(), undefined, curatorAuth)
+
+    // Location, archive, stacking and asking a task are refused by the backend
+    // for a curator, so the bar never offers them.
+    for (const name of ['Set location', 'Archive', 'Stack selected', 'Ask about these']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+  })
+
+  it('lets a curator create an album from the picker', async () => {
+    albumsMock.mockResolvedValue([])
+    labelsMock.mockResolvedValue([])
+    const user = userEvent.setup()
+    renderBar(makeBulk(), undefined, curatorAuth)
+
+    await user.click(screen.getByRole('button', { name: 'Add to album' }))
+    await user.type(await screen.findByLabelText('Add to albums'), 'Ostatky 2022')
+
+    // Creating an album is curation (`POST /albums` is on RequireCurator).
+    expect(await screen.findByRole('option', { name: 'Create “Ostatky 2022”' })).toBeInTheDocument()
   })
 })
 

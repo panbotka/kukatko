@@ -112,6 +112,7 @@ function auth(canWrite: boolean): AuthContextValue {
     user: { uid: 'u1', username: 'u', display_name: 'U', role: canWrite ? 'editor' : 'viewer' },
     role: canWrite ? 'editor' : 'viewer',
     downloadToken: null,
+    canCurate: canWrite,
     canWrite,
     isAdmin: false,
     login: vi.fn(),

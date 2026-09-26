@@ -24,8 +24,8 @@ import { AddAutocomplete } from './AddAutocomplete'
 export interface OrganizePanelProps {
   /** The photo whose album/label memberships are shown and edited. */
   photo: PhotoDetail
-  /** Whether the current user may add/remove memberships (editor/admin). */
-  canWrite: boolean
+  /** Whether the current user may add/remove memberships (curator and up). */
+  canCurate: boolean
   /** Called with the photo whose albums/labels arrays were updated in place. */
   onChanged: (photo: PhotoDetail) => void
 }
@@ -35,7 +35,7 @@ export interface OrganizePanelProps {
  * {@link EntityChip} linking to its scoped list — the same chip the read-only
  * strip above the photo draws), with inline add (a type-to-filter autocomplete
  * over the remaining albums/labels — see {@link AddAutocomplete}) and remove
- * controls for editors. Mutations call the organize API and update the photo's
+ * controls for curators. Mutations call the organize API and update the photo's
  * memberships in place. Viewers see the chips read-only.
  *
  * Both fields also create: typing a name nothing carries offers to create the
@@ -44,16 +44,16 @@ export interface OrganizePanelProps {
  * the Albums page would give it — a plain, public album with no description —
  * which stay editable there.
  */
-export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps) {
+export function OrganizePanel({ photo, canCurate, onChanged }: OrganizePanelProps) {
   const { t } = useTranslation()
   const [albums, setAlbums] = useState<AlbumCount[]>([])
   const [labels, setLabels] = useState<LabelCount[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
 
-  // Only editors need the full album/label lists for the add dropdowns.
+  // Only curators need the full album/label lists for the add dropdowns.
   useEffect(() => {
-    if (!canWrite) {
+    if (!canCurate) {
       return
     }
     const controller = new AbortController()
@@ -66,7 +66,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
     return () => {
       controller.abort()
     }
-  }, [canWrite])
+  }, [canCurate])
 
   // Offer only albums/labels the photo is not already in, mapped to the
   // autocomplete's option shape.
@@ -204,7 +204,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
             kind="album"
             to={`/albums/${album.uid}`}
             remove={
-              canWrite
+              canCurate
                 ? {
                     label: t('photo.organize.removeAlbum', { name: album.title }),
                     onRemove: () => {
@@ -219,7 +219,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
         ))}
       </div>
       {/* Like the label field, this stays even with no options — it creates. */}
-      {canWrite && (
+      {canCurate && (
         <AddAutocomplete
           id="organize-add-album"
           label={t('photo.organize.addAlbum')}
@@ -242,7 +242,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
             kind="tag"
             to={`/labels/${label.uid}`}
             remove={
-              canWrite
+              canCurate
                 ? {
                     label: t('photo.organize.removeLabel', { name: label.name }),
                     onRemove: () => {
@@ -256,7 +256,7 @@ export function OrganizePanel({ photo, canWrite, onChanged }: OrganizePanelProps
           </EntityChip>
         ))}
       </div>
-      {canWrite && (
+      {canCurate && (
         <AddAutocomplete
           id="organize-add-label"
           label={t('photo.organize.addLabel')}

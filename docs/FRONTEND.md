@@ -457,9 +457,10 @@ here.
   jména → `/review` (the review game works over the nameless **detections**, which is why the link hangs off
   `faces_unassigned` and not off a marker count), skrytých → `/?q=hidden%3Ayes` (the documented way back to a
   hidden photo, ungated: hiding is an edit, reading the hidden ones is not) and vidíte v Knihovně → the
-  library itself, so the number can be checked where it is disputed. The two write destinations are gated on
-  `useAuth().canWrite` and render as plain text
-  for a viewer — never a link that would bounce them (N13). The caller still owns loading/errors/retry. It is
+  library itself, so the number can be checked where it is disputed. The two gated destinations carry the
+  rung they sit behind (`gate`: `curator` for `/review`, `editor` for `/trash`, read off `useAuth().canCurate` /
+  `canWrite`) and render as plain text
+  for a role below it — never a link that would bounce them (N13). The caller still owns loading/errors/retry. It is
   the statistics page's rendering only: `SystemStatusPage` answers a different question ("what is in the
   library?") from the dashboard half of its own snapshot, see `components/system/LibraryOverview`),
   `components/stats/` = **the charts of the statistics dashboard**, plain CSS over the app's tokens
@@ -1446,7 +1447,7 @@ here.
   lazy from `fetchAlbums`/`fetchLabels` — the effect keys **only on `picker`** (+ a retry counter), never on
   `options.status`, otherwise writing `loading`/`ready` would re-run the effect and **abort its own fetch**;
   "already loaded" is held by `useRef`, a retry after an error bumps the counter, cache per session.
-  Both **add** fields also **create**: `onCreate` (only for `useAuth().canWrite` — a viewer just picks)
+  Both **add** fields also **create**: `onCreate` (only for `useAuth().canCurate` — a viewer just picks)
   appends **„Vytvořit «název»“** for a name no album/label carries, which is where a new album usually
   starts ("these forty photos are Ostatky 2022"). The pick is held as a `create:` marker
   (`lib/pendingCreate`, shared with `BulkEditModal` and `UploadOrganize`) and turned into a real album/label
@@ -1483,9 +1484,12 @@ here.
   thread. Elsewhere the prop is absent and the action does not exist, because there is no thread.
   **Viewer gating:** the bar is a writer's tool with one exception — a task page opens selection to a
   viewer (`useBulkEdit({openToViewers: true})`), and their bar keeps only what a viewer may do: clear, the
-  count, **Vybrat vše**, **Stáhnout**/**Sdílet** and **Do diskuse**; every metadata action (album, labels,
-  favorite, location, archive, stack, ask, the full editor) is **hidden, not disabled**, gated on
-  `useAuth().canWrite` inside the bar. A page that opts in must not hand a viewer writer-only `extraActions`
+  count, **Vybrat vše**, **Stáhnout**/**Sdílet** and **Do diskuse**; every metadata action is **hidden, not
+  disabled**, gated inside the bar along the role ladder: **album, labels, favorite and the full editor**
+  (`BulkEditModal`, which itself narrows to a curator's fields) on `useAuth().canCurate`, **location,
+  archive, stack and ask** on `canWrite` — so a curator's bar is the membership half and never offers what
+  `POST /photos/bulk` would refuse it. `useBulkEdit` makes selection itself a `canCurate` affordance
+  (`canBulkEdit`). A page that opts in must not hand a viewer `extraActions` it may not use
   (the task page passes none to a viewer),
   `BulkEditControl` (**a reusable trigger** for bulk editing: a button
   (`selection.edit`) + `BulkEditModal`, driven solely by the result of `useBulkEdit`; **it doesn't render at all
@@ -1533,14 +1537,14 @@ here.
   batch (one transaction, one audit entry, `location_source = manual` — a picked location is never an
   estimate, and the backend enqueues the reverse geocode + sidecar rewrite for every photo it moved). The
   apply is a `ReasonedButton` off until a place is picked (`batch.location.pickFirst`); the success toast
-  says how many were set and how many kept their own. **Editor/admin only** (absent for a viewer), i18n
+  says how many were set and how many kept their own. **Editor/admin only** (absent for a viewer and a curator), i18n
   `batch.location.*`, tests `SetLocationControl.test.tsx` + the wiring in `BatchActionBar.test.tsx`),
   `BulkEditModal` (**bulk edit** of the selection via `POST /photos/bulk`, the whole batch
   in a single transaction on the backend; the form is split into **four sections** (`.kk-text-eyebrow`
   headings): **Zařazení** (add/remove albums, add/remove labels — four `MultiSelect`s, so one
   apply handles **multiple albums and multiple labels at once**; the add fields additionally offer via `onCreate`
   **„Vytvořit «název»“** for a name that fold-insensitively matches nothing existing — only for
-  users with write permission (`useAuth().canWrite`). A new item appears immediately as a chip
+  users who may curate (`useAuth().canCurate`). A new item appears immediately as a chip
   (value `create:<název>`, `CREATE_PREFIX` — the colon doesn't occur in a base32 UID; the shared
   helpers `pendingValue`/`pendingName`/`pendingOptions`/`hasPending`/`resolvePending` live in
   `lib/pendingCreate` and are also used by `BatchActionBar` and
@@ -1554,7 +1558,11 @@ here.
   (set/clear coordinates; above the `lat`/`lng` fields on `set` sits **the same `PlaceSearch`** as in the detail
   editor — it fills only those two fields, so the sent batch is the same as if someone typed the coordinates
   by hand) and **Příznaky** (private, archive, **Knihovna** = `hide`/`unhide`, favorite); the set/clear
-  pairs remain separate modes. The Knihovna select is the bulk half of hide-from-library and the one that
+  pairs remain separate modes. **The field set follows the role**: a curator (`canCurate` without `canWrite`)
+  gets only **Zařazení** and the favorite select under Příznaky — the album and label fields plus the
+  per-user favorite (rating has no bulk field), exactly what `internal/bulk`'s `BeyondCuration` lets through —
+  and **Metadata**, **Poloha**, archive and Knihovna are not rendered for them at all (`BulkEditForm`'s
+  `editorFields`, split into `EditorSections`/`EditorFlags`). The Knihovna select is the bulk half of hide-from-library and the one that
   actually solves the stated problem (fifty document scans at once, not one); it carries a `Form.Text`
   hint naming `hidden:yes`, and it is deliberately **not** toned danger — nothing is deleted and the
   photos stay in their albums and labels. **Destructive choices** (removal from an album/label, archiving)
@@ -1877,7 +1885,7 @@ here.
   **Smazat** fold into
   the „…" overflow menu on a phone, so the header keeps to one row instead of wrapping into two or
   three; on desktop the actions stay inline exactly as before, and either way the RBAC gate is the
-  same `canWrite` on the same buttons.
+  same `canCurate` on the same buttons (an album is curation: a curator renames and deletes it).
   **Obličeje (N)** is the way into the album face-tagging run (`AlbumFacesPage`, below): an `<a>`
   styled as a button (`btn btn-outline-secondary btn-sm`) to `/albums/:uid/faces` — an anchor, not
   an `onClick`, because the run has an address and must be openable in a new tab. `N` is
@@ -3656,7 +3664,7 @@ here.
   for `photo_count === 0` (no request that could only 404) or a rendition that fails: a relative nobody
   photographed is an **ordinary** node of a family tree, not a hole. A row nobody filled in is left out rather
   than drawn empty and the whole section disappears for a viewer of a person with no recorded family; under
-  `canWrite` every row stays and gains a **`+`** (`person-plus`, the row named in its `aria-label`), because
+  `canCurate` every row stays and gains a **`+`** (`person-plus`, the row named in its `aria-label`), because
   there the `+` is the invitation. A strip that fails to load draws nothing at all — it is secondary to the
   page it sits on, and an error banner over a gallery that loaded perfectly well would be louder than what it
   reports. Each `+` opens **`AddRelationModal`** (`components/people/AddRelationModal.tsx`, mounted **only
@@ -3746,7 +3754,7 @@ here.
   `FamilyPedigreeCanvas` (`components/people/FamilyPedigreeCanvas.tsx`) is the **ancestors** drawing: the person at
   the bottom, each generation of parents on the row above, and — the point of the whole view — a **visible gap**
   wherever the library does not know who stood there. A gap is a dashed slot the full size of a person, captioned
-  „Zapsat rodiče" with a `+` under `canWrite` (`role="button"`, `tabIndex=0`, Enter/Space, the child named in its
+  „Zapsat rodiče" with a `+` under `canCurate` (`role="button"`, `tabIndex=0`, Enter/Space, the child named in its
   `aria-label`) and „Neznámý" with a `?` for everybody else (`role="img"`, still named — a screen reader that
   skipped it would report a pedigree with fewer people in it rather than one with holes). i18n under
   `familyTree.*`.
@@ -4273,8 +4281,8 @@ here.
   param** `window` (`useSearchParams`, replace — „Back always works"), changing the window refetches.
   `ListSkeleton` while loading, `ErrorState` with retry (`useReloadKey`), an **empty state** (`EmptyState`
   „Zatím žádná rozhodnutí" + a CTA to `/review`); if the logged-in user is off the leaderboard, a quiet hint „Zatím
-  nejste na žebříčku" with a link to `/review`. **Both invitations are `canWrite`-only**: `/review` is
-  editors-only, so for a viewer the „Začněte třídit" button was the reported *broken button* — pressed,
+  nejste na žebříčku" with a link to `/review`. **Both invitations are `canCurate`-only**: `/review` is
+  curators-and-up, so for a viewer the „Začněte třídit" button was the reported *broken button* — pressed,
   it silently produced the library. A viewer now gets neither the button (and a different empty-state
   hint, `leaderboard.empty.hintViewer`) nor the not-on-board line, which they could never act on
   anyway. The board is small (a row per user), so a **plain
@@ -4925,7 +4933,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   answering about one face they are looking at (`docs/THRESHOLDS.md`) — and **one person only
   once per photograph**: when two faces top-suggest the same subject only the surer one is confirmed and the
   other is left for a human, because the same person on two markers of one photo is exactly what
-  `internal/dupmarkers` exists to clean up. It is shown only to `canWrite` and only from **two** faces up (with
+  `internal/dupmarkers` exists to clean up. It is shown only to `canCurate` and only from **two** faces up (with
   one, the row's own button is the shorter path), and it is a **single** button that becomes its own stop
   control while the run goes (`aria-busy`, **Potvrzuji 1 / 4 — zastavit**) — so a keyboard that started the
   batch still has focus on something, and the control does not move out from under a finger when the count
@@ -5050,9 +5058,18 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   threshold nobody could fail — is a compile error. **The route gates in `App.tsx`**: `role="curator"` for
   the curation routes — `/review`, `/albums/:uid/faces`, `/upload`, `/people/clusters`, `/faces`, `/expand`,
   `/recognition`, `/outliers`, `/duplicate-markers`; `role="editor"` for what touches the photos
-  themselves — `/duplicates`, `/duplicates/compare`, `/trash`; `admin` and `maintainer` as before. Page-
-  and panel-level controls still read `canWrite`, so a curator may see fewer buttons than the backend
-  would honour — the safe direction until each control is moved over to `canCurate`),
+  themselves — `/duplicates`, `/duplicates/compare`, `/trash`; `admin` and `maintainer` as before.
+  **Page- and panel-level controls follow the same line**: whatever creates, renames, deletes or attaches
+  albums, labels, people, faces or family relations reads `canCurate` — `AlbumsPage`/`AlbumDetailPage`,
+  `LabelsPage`, `PeoplePage`, `SubjectPage` (edit, merge, move faces, cover, candidates, outliers),
+  `FamilyStrip`/`FamilyTreePage`, `FacesPanel` and the photo's face boxes, `OrganizePanel`/`PeoplePanel`
+  (both take a `canCurate` prop), `UploadPage`/`ShareTargetPage`, the library's empty-state upload CTA, the
+  leaderboard's invitations and the batch bar's membership half; whatever rewrites the photo itself keeps
+  `canWrite` — `MetadataPanel` (title, description, **capture date**, credits), `TechnicalDetails`,
+  `PhotoLocation` and the map's "add locations" link, `StackStrip`, the image editor, archive/hide
+  (`LibraryActionsMenu` and its `s` key), the task pages' writes (`TasksPage`, `TaskDetailPage`) and
+  duplicate merging. A forbidden control is **not rendered at all** — the same mechanic `canWrite` has
+  always used for a viewer: no greyed-out buttons, no explanatory badges),
   `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = what the instance is —
   the feature flags `{semantic_search}` **and the running build `{version?}`** — from
   `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,

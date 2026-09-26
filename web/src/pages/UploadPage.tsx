@@ -55,7 +55,7 @@ import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
 export function UploadPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('upload.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const {
     items,
     summary,
@@ -166,7 +166,7 @@ export function UploadPage() {
     onAlbums: setAlbums,
     onLabels: setLabels,
     disabled: assigning,
-    allowCreate: canWrite,
+    allowCreate: canCurate,
   }
 
   return (

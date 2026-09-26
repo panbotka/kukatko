@@ -40,7 +40,7 @@ const NO_LABELS: LabelCount[] = []
 
 /**
  * The labels index: a wrapping cloud of label chips with photo counts, each
- * linking to its scoped photo grid. Editors and admins can create, rename and
+ * linking to its scoped photo grid. Curators and above can create, rename and
  * delete labels, and switch a label in or out of the review game; mutation
  * controls are hidden from viewers.
  *
@@ -63,7 +63,7 @@ const NO_LABELS: LabelCount[] = []
 export function LabelsPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('labels.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState<Label | null>(null)
   const [creating, setCreating] = useState(false)
@@ -178,7 +178,7 @@ export function LabelsPage() {
     [labels, view, language],
   )
 
-  const actions: LabelChipActions | undefined = canWrite
+  const actions: LabelChipActions | undefined = canCurate
     ? {
         onRename: (label) => {
           setEditing(label)
@@ -197,7 +197,7 @@ export function LabelsPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('labels.title')}</h1>
-        {canWrite && (
+        {canCurate && (
           <Button
             variant="primary"
             onClick={() => {
@@ -259,7 +259,7 @@ export function LabelsPage() {
         </>
       )}
 
-      {canWrite && (
+      {canCurate && (
         <LabelEditModal
           show={creating}
           onHide={() => {
@@ -271,7 +271,7 @@ export function LabelsPage() {
           }}
         />
       )}
-      {canWrite && (
+      {canCurate && (
         <LabelEditModal
           label={editing}
           show={editing !== null}

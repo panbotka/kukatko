@@ -29,10 +29,16 @@ const NO_FACES_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('faces:0')}`
 const HIDDEN_HREF = `${LIBRARY_PATH}?q=${encodeURIComponent('hidden:yes')}`
 
 /**
- * Where a count leads when it is clicked. `needsWrite` marks a destination only
- * an editor may open (the review game, the trash): a viewer sees the number as
- * plain text rather than a link that would bounce them off a page they are not
- * allowed on.
+ * The rung a stat link's destination sits behind: `curator` for the review game,
+ * `editor` for the trash. Mirrors the route gates in `App.tsx`.
+ */
+type StatGate = 'curator' | 'editor'
+
+/**
+ * Where a count leads when it is clicked. `gate` marks a destination only some
+ * roles may open (the review game for a curator, the trash for an editor): a
+ * reader below it sees the number as plain text rather than a link that would
+ * bounce them off a page they are not allowed on.
  */
 interface StatLink {
   /** Route the number links to. */
@@ -42,8 +48,8 @@ interface StatLink {
    * nothing, so the destination is spelled out for the title and aria-label.
    */
   labelKey: ParseKeys
-  /** True when only editors and above may follow the link. */
-  needsWrite?: boolean
+  /** The lowest role that may follow the link; omitted = every role. */
+  gate?: StatGate
 }
 
 /**
@@ -127,7 +133,7 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
           key: 'archived',
           labelKey: 'stats.archived',
           value: stats.photos_archived,
-          link: { to: '/trash', labelKey: 'stats.links.trash', needsWrite: true },
+          link: { to: '/trash', labelKey: 'stats.links.trash', gate: 'editor' },
         },
         { key: 'live', labelKey: 'stats.live', value: stats.photos_live },
         {
@@ -173,7 +179,7 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
           labelKey: 'stats.facesUnnamed',
           value: stats.faces_unassigned,
           gap: true,
-          link: { to: '/review', labelKey: 'stats.links.unnamed', needsWrite: true },
+          link: { to: '/review', labelKey: 'stats.links.unnamed', gate: 'curator' },
         },
         { key: 'with-faces', labelKey: 'stats.withFaces', value: stats.photos_with_faces },
         {
@@ -228,11 +234,11 @@ function groupsFor(stats: LibraryStats): StatGroup[] {
  * a link; its accessible name is the destination, because a link named "16 585"
  * tells a screen-reader user nothing.
  */
-function StatValue({ row, canWrite }: { row: StatRow; canWrite: boolean }) {
+function StatValue({ row, allowed }: { row: StatRow; allowed: Record<StatGate, boolean> }) {
   const { t, i18n } = useTranslation()
   const text = formatCount(row.value, i18n.language)
   const link = row.link
-  if (link === undefined || (link.needsWrite === true && !canWrite)) {
+  if (link === undefined || (link.gate !== undefined && !allowed[link.gate])) {
     return <>{text}</>
   }
   const name = t(link.labelKey)
@@ -279,7 +285,8 @@ function StatNoteText({ note }: { note: StatNote }) {
  */
 export function LibraryStatsCards({ stats }: { stats: LibraryStats }) {
   const { t, i18n } = useTranslation()
-  const { canWrite } = useAuth()
+  const { canCurate, canWrite } = useAuth()
+  const allowed: Record<StatGate, boolean> = { curator: canCurate, editor: canWrite }
   return (
     <Row className="g-3" xs={1} md={2} xl={3} data-testid="library-stats">
       {groupsFor(stats).map((group) => (
@@ -304,7 +311,7 @@ export function LibraryStatsCards({ stats }: { stats: LibraryStats }) {
                       }`}
                       data-testid={`stat-${group.id}-${row.key}`}
                     >
-                      <StatValue row={row} canWrite={canWrite} />
+                      <StatValue row={row} allowed={allowed} />
                     </dd>
                   </Fragment>
                 ))}

@@ -52,13 +52,13 @@ const NO_ALBUMS: AlbumSummary[] = []
  * rather than tile by tile, because overlapping albums share their newest photo
  * and a per-tile choice drew it on every one of them.
  *
- * Editors and admins get a create button; the modal refetches the grid on
+ * Curators and above get a create button; the modal refetches the grid on
  * success. Mutation controls are hidden from viewers.
  */
 export function AlbumsPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('albums.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
   const [reloadKey, reload] = useReloadKey()
@@ -100,7 +100,7 @@ export function AlbumsPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('albums.title')}</h1>
-        {canWrite && (
+        {canCurate && (
           <Button
             variant="primary"
             onClick={() => {
@@ -173,7 +173,7 @@ export function AlbumsPage() {
         </>
       )}
 
-      {canWrite && (
+      {canCurate && (
         <AlbumEditModal
           show={creating}
           onHide={() => {

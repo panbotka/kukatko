@@ -20,7 +20,7 @@ const UPLOAD_PATH = '/upload'
  *
  * Three ways through:
  *
- *  - **An editor with a staged share** is forwarded to the upload page, which
+ *  - **A curator (or above) with a staged share** is forwarded to the upload page, which
  *    collects the files and queues them. `replace` keeps the junction out of
  *    history, so Back from the upload page leaves the app rather than bouncing
  *    through here again — and the share id is single-use anyway.
@@ -31,7 +31,7 @@ const UPLOAD_PATH = '/upload'
  *    the server answered the POST with the app shell. Both end here with the
  *    same honest sentence and a way to the picker.
  *
- * The route sits inside `RequireAuth` but outside the editor gate, so a visitor
+ * The route sits inside `RequireAuth` but outside the curator gate, so a visitor
  * who is not signed in goes to login first and comes back to this exact URL —
  * the files wait for them in the cache, which is what lets a share survive the
  * login round trip.
@@ -39,25 +39,25 @@ const UPLOAD_PATH = '/upload'
 export function ShareTargetPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('share.title'))
-  const { canWrite } = useAuth()
+  const { canCurate } = useAuth()
   const [searchParams] = useSearchParams()
   const shareId = searchParams.get(SHARE_PARAM) ?? ''
 
   // A share nobody may upload is thrown away rather than left to expire.
   useEffect(() => {
-    if (!canWrite && shareId !== '') {
+    if (!canCurate && shareId !== '') {
       void discardSharedFiles(shareId)
     }
-  }, [canWrite, shareId])
+  }, [canCurate, shareId])
 
-  if (canWrite && shareId !== '') {
+  if (canCurate && shareId !== '') {
     return <Navigate to={`${UPLOAD_PATH}?${SHARE_PARAM}=${encodeURIComponent(shareId)}`} replace />
   }
 
   return (
     <div className="py-4" data-testid="share-target-page">
       <h1 className="kk-page-title mb-3">{t('share.title')}</h1>
-      {canWrite ? (
+      {canCurate ? (
         <>
           <Alert variant="warning">{t('share.missing.message')}</Alert>
           <Link to={UPLOAD_PATH} className="btn btn-primary">

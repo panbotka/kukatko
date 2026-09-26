@@ -17,8 +17,8 @@ export interface FamilyStripProps {
   subjectUid: string
   /** Their name, for the add dialog's copy. */
   subjectName: string
-  /** Whether the current user may record relations (editor/admin). */
-  canWrite: boolean
+  /** Whether the current user may record relations (curator and up). */
+  canCurate: boolean
 }
 
 /** The empty relations, used while the fetch is in flight or after it failed. */
@@ -65,22 +65,22 @@ interface FamilyRowProps {
   /** The accessible name of the row's `+`, e.g. "Přidat rodiče". */
   addLabel: string
   /** Whether the `+` is offered at all. */
-  canWrite: boolean
+  canCurate: boolean
   /** Opens the add dialog on this row's relation. */
   onAdd: () => void
 }
 
 /**
- * One row of the strip: its name, its chips, and — for an editor — the `+` that
+ * One row of the strip: its name, its chips, and — for a curator — the `+` that
  * fills it.
  *
  * A row nobody has filled in is left out rather than drawn empty, because four
- * empty rows say nothing four times over. Under `canWrite` it stays: there the
+ * empty rows say nothing four times over. Under `canCurate` it stays: there the
  * `+` is the invitation, and a row that vanished would take the invitation with
  * it.
  */
-function FamilyRow({ label, people, addLabel, canWrite, onAdd }: FamilyRowProps) {
-  if (people.length === 0 && !canWrite) {
+function FamilyRow({ label, people, addLabel, canCurate, onAdd }: FamilyRowProps) {
+  if (people.length === 0 && !canCurate) {
     return null
   }
   return (
@@ -89,7 +89,7 @@ function FamilyRow({ label, people, addLabel, canWrite, onAdd }: FamilyRowProps)
       {people.map((relative) => (
         <RelativeChip key={relative.uid} relative={relative} />
       ))}
-      {canWrite && (
+      {canCurate && (
         <Button
           variant="outline-secondary"
           size="sm"
@@ -130,7 +130,7 @@ function FamilyRow({ label, people, addLabel, canWrite, onAdd }: FamilyRowProps)
  * secondary to the person's page, and an error banner over a gallery that loaded
  * perfectly well would be louder than what it reports.
  */
-export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripProps) {
+export function FamilyStrip({ subjectUid, subjectName, canCurate }: FamilyStripProps) {
   const { t } = useTranslation()
   const [relations, setRelations] = useState<Relations>(NO_RELATIONS)
   const [adding, setAdding] = useState<RelationKind | null>(null)
@@ -175,8 +175,8 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
     relations.children.length === 0
 
   // Nothing recorded and nothing to record with: no heading over four rows that
-  // are all missing. An editor keeps the section, because the + is the point.
-  if (empty && !canWrite) {
+  // are all missing. A curator keeps the section, because the + is the point.
+  if (empty && !canCurate) {
     return null
   }
 
@@ -197,7 +197,7 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
         label={t('family.rows.parents')}
         people={relations.parents}
         addLabel={t('family.add.parent')}
-        canWrite={canWrite}
+        canCurate={canCurate}
         onAdd={() => {
           setAdding('parent')
         }}
@@ -206,7 +206,7 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
         label={t('family.rows.siblings')}
         people={relations.siblings}
         addLabel={t('family.add.sibling')}
-        canWrite={canWrite}
+        canCurate={canCurate}
         onAdd={() => {
           setAdding('sibling')
         }}
@@ -215,7 +215,7 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
         label={t('family.rows.partners')}
         people={partners}
         addLabel={t('family.add.partner')}
-        canWrite={canWrite}
+        canCurate={canCurate}
         onAdd={() => {
           setAdding('partner')
         }}
@@ -224,7 +224,7 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
         label={t('family.rows.children')}
         people={relations.children}
         addLabel={t('family.add.child')}
-        canWrite={canWrite}
+        canCurate={canCurate}
         onAdd={() => {
           setAdding('child')
         }}
@@ -232,7 +232,7 @@ export function FamilyStrip({ subjectUid, subjectName, canWrite }: FamilyStripPr
 
       {/* Mounted only while open: the dialog loads every subject in the library
           to pick from, and a page that never opens it must not pay for that. */}
-      {canWrite && adding !== null && (
+      {canCurate && adding !== null && (
         <AddRelationModal
           subjectUid={subjectUid}
           subjectName={subjectName}
