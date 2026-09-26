@@ -141,3 +141,11 @@ describe('AccountPage language section', () => {
     expect(screen.getByRole('button', { name: 'Změnit heslo' })).toBeInTheDocument()
   })
 })
+
+describe('AccountPage notifications section', () => {
+  it('carries the notifications section — the per-user page, not the instance settings', async () => {
+    renderAccount()
+
+    expect(await screen.findByRole('heading', { name: 'Notifications' })).toBeInTheDocument()
+  })
+})

@@ -624,6 +624,17 @@ on unexplained jargon that even a non-developer admin will struggle with.
     button that silently fails. A browser-level denial is answered plainly: the browser blocked it
     and it has to be re-allowed in the browser's own site settings. See `FRONTEND.md`
     (`PushPrompt`).
+14. **New (2026-09-26) — the notification settings say which scope each control has.** Web push
+    has two scopes people reliably confuse: the subscription belongs to one **browser**, the choice
+    of messages to the **account**. `NotificationsCard` on `/account` therefore headlines and
+    hints each part with its scope — „Tento prohlížeč … platí jen pro prohlížeč, ve kterém jsi
+    právě teď" over the on/off switch, „Tyhle volby patří k tvému účtu: platí na všech
+    zařízeních" over the per-kind checkboxes — and lists the registered devices with this browser
+    badged, so the two can be seen side by side. It sits on the account page, not the admin-only
+    instance settings. Where a control could not work it is replaced by the reason (a browser-level
+    block → re-allow in the browser's site settings; iOS in a tab → install the app; push off
+    instance-wide → one sentence for the whole section), and the „registration waiting" kind is
+    shown only to the roles that can receive it. See `FRONTEND.md` (`NotificationsCard`).
 
 ---
 

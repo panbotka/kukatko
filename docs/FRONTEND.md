@@ -356,7 +356,7 @@ here.
   a warning `Alert` saying the browser blocked it, that the page cannot ask again and that it must be
   re-allowed in the browser's own site settings, with a single „Rozumím" — no button that would only
   fail again), and any other subscribe failure (a danger `Alert`, „try later in settings"). The way back
-  after any answer is the settings page, never this prompt. It paints in the shared dialog band (1085,
+  after any answer is the settings page (`NotificationsCard` on `AccountPage`), never this prompt. It paints in the shared dialog band (1085,
   above the 1080 sheets) with no rule of its own — verified in a real Chromium over a `kk-viewer` sheet
   with `elementFromPoint` on the button and a CDP click reaching the permission request. Texts
   `pushPrompt.*` (cs/en). Tests: `PushPrompt.test.tsx` (the `pwa/push` module mocked, real `userEvent`
@@ -1760,6 +1760,40 @@ here.
   virtualised, URL-driven and selection-aware, built for browsing tens of thousands of photographs, and this
   needs one photo found by typing a word — and it does not try to predict the server's refusal of a private
   or hidden photo; the card above shows the 400. Tests: `MyPictureCard.test.tsx`,
+  **plus `NotificationsCard`** (`components/account/`, right under the Jazyk section — both are about how
+  Kukátko talks to this one person; the admin-only `SettingsPage` is about the instance, so it does not
+  belong there): push notifications in three parts, each **saying which scope it is**, because per-browser
+  versus per-account is what people reliably get wrong about web push. **„Tento prohlížeč"** is the master
+  control and says it applies to this browser only — every phone or computer is turned on separately: off
+  = a sentence + a button that asks for the permission (only from that click, and only when it is still
+  `default`) and calls `subscribeToPush`; on = „V tomhle prohlížeči jsou oznámení zapnutá." + a button that
+  calls `unsubscribeFromPush` (browser **and** server). A browser that holds a subscription the server **no
+  longer lists** (removed from another device) reads as **off**, so "on" is never claimed for a browser
+  nothing delivers to; turning it on re-registers the same subscription. Either button also records the
+  `pushPromptAnswer`, so the one-time `PushPrompt` stays away. Where no button could work there is none: a
+  browser-level **block** is a warning saying to re-allow it in the browser's own site settings,
+  **iOS outside the home-screen app** is told to install it (`isIosOutsideInstalledApp`), an unsupported
+  browser and a page without a service worker get one sentence each — and the rest of the card stays,
+  because it still matters for the other devices. **„O čem mi dávat vědět"** is the per-kind checkboxes,
+  worded as an **account** setting that applies to every device; the `registration_pending` kind is offered
+  **only to an admin or a maintainer** (`isKindOffered`, `isAdmin`), and a kind the client has no words for
+  is left out rather than shown by its raw name. A toggle saves at once, optimistically, and puts the box
+  back with an alert on failure; the body (`withPreference` in `services/notifications.ts`) is the stored
+  choices plus the changed kind — kinds still on their default are **not** posted, since `PUT` replaces the
+  set and posting a default would freeze it into a choice nobody made. **„Zařízení, která dostávají
+  oznámení"** lists `GET /push/subscriptions` with the user-agent **summarised** by `lib/userAgent.ts`
+  (`describeUserAgent` → a browser name + a system key; the "na Androidu"/"ve Windows" phrase is a locale
+  string per system, because Czech declines it) — „Chrome na Androidu", never the raw string — plus when it
+  last got a notification (or „Zatím žádné oznámení · přidáno …"); the browser in use is badged „Tento
+  prohlížeč". Every row is removable behind a `ConfirmModal`; removing **this** browser is the master
+  control's turn-off (a server-only delete would leave the browser believing it is on), any other is
+  `DELETE /push/subscriptions?endpoint=` (a 404 counts as done). **Push off instance-wide** (`isPushEnabled`
+  false, which includes an unreadable config) turns the whole card into one sentence, no controls, no
+  further requests. Texts in `account.notifications.*`; `NotificationsCard.test.tsx` covers on/off, the
+  already-granted path, the unlisted-subscription case, the browser and prompt blocks, iOS, the scope copy,
+  push off, saving and a failed save, the registration kind per role, the readable device names, the
+  current-browser badge, removal of another device and of this one, and Czech; `userAgent.test.ts` the
+  summariser,
   **plus `PasskeysCard`** (`components/account/`, directly under the password form — it is the same question,
   how this person gets in, answered better): the account's WebAuthn credentials. It renders **nothing at all**
   unless `useCapabilities()` reports `known && passkeys` — an instance with no relying party configured gets

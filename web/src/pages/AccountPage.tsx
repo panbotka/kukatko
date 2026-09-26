@@ -14,6 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ApiTokensCard } from '../components/account/ApiTokensCard'
 import { MyPictureCard } from '../components/account/MyPictureCard'
 import { MySubjectCard } from '../components/account/MySubjectCard'
+import { NotificationsCard } from '../components/account/NotificationsCard'
 import { PasskeysCard } from '../components/account/PasskeysCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
@@ -81,6 +82,11 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * Under the password form sits {@link PasskeysCard} — the passkeys this account
  * signs in with instead of typing that password. It appears only on an instance
  * that has passkeys configured.
+ *
+ * Beside the language sits {@link NotificationsCard} — this browser's push
+ * switch, which messages the account wants (an account-wide choice) and the
+ * devices registered for them. It lives here rather than on the admin-only
+ * {@link SettingsPage}, which is about the instance, not about one person.
  *
  * The last section is {@link ApiTokensCard} — the personal API tokens a script
  * or the CLI authenticates with. It sits beside the password because it is the
@@ -201,6 +207,12 @@ export function AccountPage() {
             <div className="text-secondary small mt-2">{t('account.languageHint')}</div>
           </Card.Body>
         </Card>
+
+        {/* How this person hears about things while not looking: this browser's
+            push switch, the account-wide choice of messages, and the devices.
+            It sits with the language because both are about how Kukátko talks to
+            this one person, not about the photos. */}
+        <NotificationsCard />
 
         <Card text="light" className="mb-4">
           <Card.Body>

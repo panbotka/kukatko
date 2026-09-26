@@ -523,6 +523,60 @@
       "hint": "Přehled toho, co jste v Kukátku udělali — od nejnovějšího. Hodí se, když víte, že jste něco odklikli špatně, a potřebujete to najít.",
       "link": "Zobrazit moji aktivitu"
     },
+    "notifications": {
+      "title": "Oznámení",
+      "intro": "Kukátko ti může poslat oznámení do telefonu nebo počítače — třeba když tě někdo označí na fotce.",
+      "loading": "Načítám nastavení oznámení…",
+      "instanceOff": "Oznámení jsou na téhle instanci Kukátka vypnutá, takže tu není co nastavit.",
+      "browser": {
+        "title": "Tento prohlížeč",
+        "scope": "Tenhle přepínač platí jen pro prohlížeč, ve kterém jsi právě teď. Na každém telefonu nebo počítači, kde chceš oznámení dostávat, je musíš zapnout zvlášť.",
+        "on": "V tomhle prohlížeči jsou oznámení zapnutá.",
+        "off": "V tomhle prohlížeči jsou oznámení vypnutá.",
+        "turnOn": "Zapnout v tomhle prohlížeči",
+        "turnOff": "Vypnout v tomhle prohlížeči",
+        "failed": "Změna se nepovedla. Zkus to prosím později.",
+        "blocked": "Tenhle prohlížeč oznámení pro Kukátko zablokoval, takže je stránka zapnout nemůže. Povol je v nastavení webu přímo v prohlížeči (obvykle pod ikonou vedle adresy stránky) a stránku pak načti znovu.",
+        "unsupported": "Tenhle prohlížeč oznámení přijímat neumí. Zkus aktuální Chrome, Firefox nebo Edge, případně telefon.",
+        "iosInstall": "Na iPhonu a iPadu chodí oznámení jen do nainstalované aplikace: otevři Kukátko v Safari, zvol Sdílet → Přidat na plochu a oznámení zapni až tam.",
+        "noWorker": "Oznámení teď na téhle stránce nejde nastavit. Načti stránku znovu a zkus to ještě jednou."
+      },
+      "kindsTitle": "O čem mi dávat vědět",
+      "kindsScope": "Tyhle volby patří k tvému účtu: platí na všech zařízeních, kde máš oznámení zapnutá, nejen na tomhle.",
+      "kinds": {
+        "tagged": "Když mě někdo označí na fotce",
+        "registration_pending": "Když na schválení čeká nová registrace"
+      },
+      "saveError": "Volbu se nepodařilo uložit. Zkus to prosím znovu.",
+      "prefsLoadError": "Volby oznámení se nepodařilo načíst.",
+      "devices": {
+        "title": "Zařízení, která dostávají oznámení",
+        "hint": "Všechny prohlížeče, kde máš pro svůj účet zapnutá oznámení. To, které už nepoužíváš, můžeš odebrat.",
+        "empty": "Zatím žádné zařízení oznámení nedostává.",
+        "loadError": "Zařízení se nepodařilo načíst.",
+        "removeError": "Zařízení se nepodařilo odebrat. Zkus to prosím znovu.",
+        "confirmTitle": "Vypnout oznámení na tomhle zařízení?",
+        "confirmBody": "{{name}} přestane dostávat oznámení. Znovu je jde zapnout přímo na tom zařízení.",
+        "confirmAction": "Odebrat"
+      },
+      "thisBrowserBadge": "Tento prohlížeč",
+      "deviceName": "{{browser}} {{os}}",
+      "deviceNameOsOnly": "Prohlížeč {{os}}",
+      "deviceUnknown": "Neznámé zařízení",
+      "os": {
+        "android": "na Androidu",
+        "ios": "na iPhonu",
+        "ipados": "na iPadu",
+        "windows": "ve Windows",
+        "macos": "na macOS",
+        "chromeos": "na ChromeOS",
+        "linux": "na Linuxu"
+      },
+      "lastUsed": "Poslední oznámení {{date}}",
+      "neverUsed": "Zatím žádné oznámení · přidáno {{date}}",
+      "remove": "Odebrat",
+      "removeNamed": "Odebrat {{name}}"
+    },
     "passkeys": {
       "title": "Passkeye",
       "intro": "Passkey je přihlášení bez hesla: místo psaní potvrdíte přihlášení otiskem prstu, obličejem nebo PINem zařízení, ve kterém je uložený.",

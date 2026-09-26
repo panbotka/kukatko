@@ -519,6 +519,60 @@
       "hint": "A list of what you have done in Kukátko, newest first. Useful when you know you clicked something wrong and need to find it.",
       "link": "Show my activity"
     },
+    "notifications": {
+      "title": "Notifications",
+      "intro": "Kukátko can send a notification to your phone or computer — for example when somebody tags you in a photo.",
+      "loading": "Loading notification settings…",
+      "instanceOff": "Notifications are switched off on this Kukátko instance, so there is nothing to set here.",
+      "browser": {
+        "title": "This browser",
+        "scope": "This switch applies only to the browser you are using right now. Every phone or computer where you want notifications has to be turned on separately.",
+        "on": "Notifications are on in this browser.",
+        "off": "Notifications are off in this browser.",
+        "turnOn": "Turn on in this browser",
+        "turnOff": "Turn off in this browser",
+        "failed": "The change did not go through. Please try again later.",
+        "blocked": "This browser has blocked notifications for Kukátko, so the page cannot turn them on. Allow them in the browser's own site settings (usually behind the icon next to the address), then reload the page.",
+        "unsupported": "This browser cannot receive notifications. Try a current Chrome, Firefox or Edge, or your phone.",
+        "iosInstall": "On an iPhone or iPad notifications only reach the installed app: open Kukátko in Safari, choose Share → Add to Home Screen, and turn them on from there.",
+        "noWorker": "Notifications cannot be set up on this page right now. Reload the page and try again."
+      },
+      "kindsTitle": "What to notify me about",
+      "kindsScope": "These choices belong to your account: they apply to every device where notifications are on, not just this one.",
+      "kinds": {
+        "tagged": "When somebody tags me in a photo",
+        "registration_pending": "When a new registration is waiting for approval"
+      },
+      "saveError": "The choice could not be saved. Please try again.",
+      "prefsLoadError": "Your notification choices could not be loaded.",
+      "devices": {
+        "title": "Devices receiving notifications",
+        "hint": "Every browser where notifications are turned on for your account. Remove one you no longer use.",
+        "empty": "No device receives notifications yet.",
+        "loadError": "The devices could not be loaded.",
+        "removeError": "The device could not be removed. Please try again.",
+        "confirmTitle": "Stop notifications on this device?",
+        "confirmBody": "{{name}} will stop receiving notifications. It can be turned on again from that device.",
+        "confirmAction": "Remove"
+      },
+      "thisBrowserBadge": "This browser",
+      "deviceName": "{{browser}} {{os}}",
+      "deviceNameOsOnly": "A browser {{os}}",
+      "deviceUnknown": "Unknown device",
+      "os": {
+        "android": "on Android",
+        "ios": "on iPhone",
+        "ipados": "on iPad",
+        "windows": "on Windows",
+        "macos": "on macOS",
+        "chromeos": "on ChromeOS",
+        "linux": "on Linux"
+      },
+      "lastUsed": "Last notification {{date}}",
+      "neverUsed": "No notification yet · added {{date}}",
+      "remove": "Remove",
+      "removeNamed": "Remove {{name}}"
+    },
     "passkeys": {
       "title": "Passkeys",
       "intro": "A passkey signs you in without a password: instead of typing one you confirm with the fingerprint, face or PIN of the device the key is stored on.",

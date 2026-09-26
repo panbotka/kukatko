@@ -119,3 +119,129 @@ export async function markNotificationRead(uid: string): Promise<NotificationRec
   })
   return readJson<NotificationRecord>(res)
 }
+
+/**
+ * One browser registered to receive this account's pushes, as listed by
+ * `GET /push/subscriptions`. The client keys are never returned — they are
+ * encryption secrets, not something a settings page shows.
+ */
+export interface PushSubscriptionRecord {
+  id: string
+  /** The push-service endpoint; equal to the browser's own when it is this one. */
+  endpoint: string
+  /** The raw user-agent the browser registered with; summarise it before showing it. */
+  user_agent: string
+  /** When the browser first registered (RFC 3339). */
+  created_at: string
+  /** When a push was last delivered to it (RFC 3339), or null before the first. */
+  last_used_at: string | null
+}
+
+/**
+ * Lists the browsers registered for the caller's pushes, oldest first.
+ *
+ * @throws ApiError when the request fails.
+ */
+export async function fetchPushSubscriptions(
+  signal?: AbortSignal,
+): Promise<PushSubscriptionRecord[]> {
+  const res = await fetch(`${API_BASE}/push/subscriptions`, {
+    credentials: 'same-origin',
+    signal,
+  })
+  const body = await readJson<{ subscriptions: PushSubscriptionRecord[] | null }>(res)
+  return body.subscriptions ?? []
+}
+
+/**
+ * Forgets one of the caller's registered browsers by its endpoint. Only the
+ * server's half: the browser itself keeps its subscription, and its pushes
+ * simply stop arriving. A `404` — somebody (that device, another tab) already
+ * removed it — counts as done.
+ *
+ * @throws ApiError on any other failure.
+ */
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`,
+    { method: 'DELETE', credentials: 'same-origin' },
+  )
+  if (res.ok || res.status === 404) {
+    return
+  }
+  await readJson<unknown>(res)
+}
+
+/**
+ * One kind's effective setting (`notification.Preference`): the stored choice,
+ * or the kind's default when the account never chose (`is_default`).
+ */
+export interface NotificationPreference {
+  kind: NotificationKind
+  enabled: boolean
+  is_default: boolean
+}
+
+/** A choice to store, as `PUT /notifications/preferences` takes it. */
+export interface NotificationPreferenceInput {
+  kind: NotificationKind
+  enabled: boolean
+}
+
+/** The response body of both preference routes. */
+interface PreferencesBody {
+  preferences: NotificationPreference[] | null
+}
+
+/**
+ * Reads the caller's effective notification preferences — every known kind in
+ * display order, defaults merged in. They belong to the **account**: one set
+ * for every device it is signed in on.
+ *
+ * @throws ApiError when the request fails.
+ */
+export async function fetchNotificationPreferences(
+  signal?: AbortSignal,
+): Promise<NotificationPreference[]> {
+  const res = await fetch(`${API_BASE}/notifications/preferences`, {
+    credentials: 'same-origin',
+    signal,
+  })
+  return (await readJson<PreferencesBody>(res)).preferences ?? []
+}
+
+/**
+ * Replaces the caller's stored choices and resolves with the new effective set.
+ * **A kind left out returns to its default**, so a caller changing one kind
+ * sends the other stored choices along — see {@link withPreference}.
+ *
+ * @throws ApiError when the server refuses the set or the request fails.
+ */
+export async function updateNotificationPreferences(
+  preferences: NotificationPreferenceInput[],
+): Promise<NotificationPreference[]> {
+  const res = await fetch(`${API_BASE}/notifications/preferences`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferences }),
+  })
+  return (await readJson<PreferencesBody>(res)).preferences ?? []
+}
+
+/**
+ * The body that changes one kind and keeps everything else as it is: every
+ * choice the account already stored, plus `kind` set to `enabled`. Kinds still
+ * on their default are left out on purpose — posting them would freeze today's
+ * default into a stored choice the account never made.
+ */
+export function withPreference(
+  current: NotificationPreference[],
+  kind: NotificationKind,
+  enabled: boolean,
+): NotificationPreferenceInput[] {
+  const stored = current
+    .filter((pref) => !pref.is_default && pref.kind !== kind)
+    .map((pref) => ({ kind: pref.kind, enabled: pref.enabled }))
+  return [...stored, { kind, enabled }]
+}

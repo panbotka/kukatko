@@ -452,6 +452,13 @@ Nobody has to go looking for the switch: right after the first sign-in (and the 
 asks once whether to send notifications. "Not now" is remembered and never asked again; turning them
 on later is a settings matter. On an iPhone the question waits for the app added to the home screen,
 the only place iOS delivers a push.
+The Notifications section of *My account* is that settings matter. It keeps the two things web push
+mixes up apart and says so: the switch for **this browser** (each phone and computer is turned on on
+its own; a browser that blocked Kukátko is told where to re-allow it rather than handed a button that
+cannot work), and **which messages you want** — a choice of your account that holds on every device.
+Below them, every device that receives your notifications, named the way you would name it ("Chrome
+na Androidu", with this browser marked) and removable. Administrators also get the switch for "a
+registration is waiting"; nobody else sees a setting for a message they could never get.
 
 ### Built for small hardware that is sometimes offline
 
