@@ -52,6 +52,8 @@ same RBAC as every other route:
   **`maintainer`** → read and write. A purely writing agent only needs `editor` (the lowest role with
   write access); the former `ai` role was removed (migration `0036`), and its successor at the top of
   the ladder is `maintainer`.
+- A **`curator`** gets the read-only server: the split keys on `CanWrite()`, which a curator fails, so
+  none of the write tools is offered to it (the curate gate `CanCurate()` is an HTTP-route concept only).
 
 ### The 401 and why there is no OAuth discovery
 

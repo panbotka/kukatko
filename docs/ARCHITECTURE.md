@@ -25,7 +25,7 @@ as the point — earlier attempts at this had the features and were still hard t
 - Design per [Bootswatch Superhero](https://bootswatch.com/superhero/), with a focus on usability.
 - Slideshow on labels/albums — configurable transition effect and speed.
 - Reliable "back" (including on a filter).
-- Users viewer/editor/admin/maintainer (a strict ladder), bcrypt passwords.
+- Users viewer/curator/editor/admin/maintainer (a strict ladder), bcrypt passwords.
 - Maps via [mapy.com](https://mapy.com).
 - Bulk metadata editing (albums, labels, captions, location).
 - Per-user favorite photos.
@@ -120,7 +120,7 @@ Each subsystem has one purpose, a clear interface, and can be tested independent
 | S7 | **People** | Face detection/embedding, IoU marker matching, subjects, suggestions, auto-clustering, outliers. |
 | S8 | **Organization** | Albums, labels, bulk metadata editing, per-user favorites. |
 | S9 | **Maps** | mapy.com proxy (tile + reverse geocode), GeoJSON for the map, client-side clustering. |
-| S10 | **Auth** | Users viewer/editor/admin/maintainer (ladder), bcrypt, sliding sessions, rate-limit, audit. |
+| S10 | **Auth** | Users viewer/curator/editor/admin/maintainer (ladder), bcrypt, sliding sessions, rate-limit, audit. |
 | S11–S12 | ~~**The one-off importers**~~ | Done and removed in 08/2026 — see [§9](#9-the-one-off-importers-s11s12--retired). |
 | S13 | **Backup** | S3-compatible backup of originals + `pg_dump`, scheduled, in-process. |
 | S14 | **Frontend (SPA)** | React/Bootstrap Superhero, i18n, mobile/tablet, back/history, slideshow, detail. |
@@ -408,7 +408,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
 - **`albums`** + **`album_photos`** — `type IN (album|folder|moment|state|month)`; an album is always
   chronological (migration 0022 removed both the manual `sort_order` and the `order_by` sort choice).
 - **`labels`** + **`photo_labels`** — `source IN (manual|ai|import)`, `uncertainty`.
-- **`users`** — `role IN (viewer|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`,
+- **`users`** — `role IN (viewer|curator|editor|admin|maintainer)`, `password_hash` (bcrypt cost 12), `disabled`,
   plus the nullable `approved_at` (NULL = registered, waiting for an administrator — distinct from
   `disabled`, which is an account that *was* let in and then blocked) and `welcome_seen_at`
   (NULL = the first-run welcome has never been seen), migration `0064_users_approval_welcome.sql`.
@@ -947,8 +947,12 @@ is the primary system and imports from nothing but the disk.
 
 ## 11. Auth and security
 
-- **Users:** roles viewer/editor/admin/maintainer (a strict ladder, each inherits the lower one); write from
-  `editor` up, `maintainer` is the top (operations: imports/maintenance/backup/…). Bcrypt cost 12.
+- **Users:** roles viewer/curator/editor/admin/maintainer (a strict ladder, each inherits the lower one);
+  curation of the catalogue (faces, people, albums, labels) from `curator` up, write from `editor` up,
+  `maintainer` is the top (operations: imports/maintenance/backup/…). The ladder is enforced by explicit
+  predicates in `internal/auth` (`CanCurate`/`CanWrite`/…), never by rank arithmetic, so an inserted rung
+  inherits nothing by accident. Design of the curator rung:
+  `docs/superpowers/specs/2026-09-26-curator-role-design.md`. Bcrypt cost 12.
   Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
 - **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
   **Improvements over the previous system:**

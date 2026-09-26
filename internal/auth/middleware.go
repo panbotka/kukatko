@@ -11,8 +11,16 @@ func (a *API) RequireAuth(next http.Handler) http.Handler {
 	return a.requireRole(requireAuth, next)
 }
 
+// RequireCurator wraps next so it runs only for authenticated users who may
+// curate the catalogue (faces, people, albums, labels): curators and every role
+// with write access. Viewers get 403; unauthenticated requests get 401.
+func (a *API) RequireCurator(next http.Handler) http.Handler {
+	return a.requireRole(requireCurate, next)
+}
+
 // RequireWrite wraps next so it runs only for authenticated users with write
-// access (editor or admin). Viewers get 403; unauthenticated requests get 401.
+// access (editor, admin or maintainer). Viewers and curators get 403;
+// unauthenticated requests get 401.
 func (a *API) RequireWrite(next http.Handler) http.Handler {
 	return a.requireRole(requireWrite, next)
 }

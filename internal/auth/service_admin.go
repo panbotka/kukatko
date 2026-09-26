@@ -112,9 +112,9 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 // authorizeUserManagement enforces the maintainer boundary on a user-management
 // action taken by an actor of role actor: granting the maintainer role (newRole
 // is maintainer) or touching an account that already holds it (current is
-// maintainer) is reserved to maintainers, while every other viewer/editor/admin
-// action is allowed. A zero current ("") means a creation, where only newRole
-// matters. It returns ErrMaintainerRequired when the boundary is crossed.
+// maintainer) is reserved to maintainers, while every other
+// viewer/curator/editor/admin action is allowed. A zero current ("") means a
+// creation, where only newRole matters. It returns ErrMaintainerRequired when the boundary is crossed.
 func authorizeUserManagement(actor, current, newRole Role) error {
 	if actor.CanMaintain() {
 		return nil

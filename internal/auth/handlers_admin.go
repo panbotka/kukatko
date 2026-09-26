@@ -145,7 +145,7 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrMaintainerRequired):
 		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
+		writeError(w, http.StatusBadRequest, "invalid role (want viewer, curator, editor, admin, or maintainer)")
 	case errors.Is(err, ErrPasswordTooShort):
 		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
 	case errors.Is(err, ErrNoteTooLong):
@@ -283,7 +283,7 @@ func writeUserMutationError(w http.ResponseWriter, err error, fallback string) {
 	case errors.Is(err, ErrLastMaintainer):
 		writeError(w, http.StatusConflict, ErrLastMaintainer.Error())
 	case errors.Is(err, ErrInvalidRole):
-		writeError(w, http.StatusBadRequest, "invalid role (want viewer, editor, admin, or maintainer)")
+		writeError(w, http.StatusBadRequest, "invalid role (want viewer, curator, editor, admin, or maintainer)")
 	case errors.Is(err, ErrNoteTooLong):
 		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
 	case errors.Is(err, ErrInvalidEmail):

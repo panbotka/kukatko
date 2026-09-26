@@ -29,7 +29,7 @@ to `## Package map` in `CLAUDE.md`.
   not create extensions is unaffected;
   SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
   (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
-  (authentication/authorization: `Role` viewer/editor/admin/maintainer + `authorize`, bcrypt cost 12
+  (authentication/authorization: `Role` viewer/curator/editor/admin/maintainer + `authorize`, bcrypt cost 12
   `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
   (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
   `KUKATKO_TEST_BCRYPT_COST` override, compiled only under the `integration` tag), so no running
@@ -37,7 +37,7 @@ to `## Package map` in `CLAUDE.md`.
   moves; UID/token generators, sliding-window `Limiter`,
   `Store` over pgx, `Service` orchestrating login/session/bootstrap/user management,
   `API` = HTTP handlers + RBAC middleware
-  `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
+  `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
   **`directory.go`** is the one all-authenticated view of accounts: `DirectoryEntry{UID,Name}`,
   `Store.Directory`/`Service.Directory` and `GET /users`, listing the active approved accounts by the
@@ -159,12 +159,19 @@ to `## Package map` in `CLAUDE.md`.
   for an account with a NULL `approved_at`, *after* the bcrypt comparison and *after* the disabled
   check, so only a caller who already holds the credentials learns it and a blocked account stays
   indistinguishable from a wrong password.
-  **Strict role ladder** viewer < editor < admin < maintainer (migration `0036_role_maintainer.sql`
+  **Strict role ladder** viewer < curator < editor < admin < maintainer (migration `0036_role_maintainer.sql`
   redefines the CHECK on `users.role` and drops the `ai` role that `0023_role_ai.sql` had added earlier; `ai`
-  accounts are promoted to maintainer): every role inherits the rights of the lower ones. `viewer` only reads; `editor` writes media/metadata;
+  accounts are promoted to maintainer; `0085_role_curator.sql` widens the same CHECK by `curator`): every
+  role inherits the rights of the lower ones. `viewer` only reads; `curator` curates the catalogue (faces,
+  people, albums, labels) without rewriting a photo's own metadata; `editor` writes media/metadata;
   `admin` adds management (users, audit, trash); `maintainer` is the top — operations (imports, maintenance, status,
-  backup/restore, jobs, processing). Predicates: `CanWrite()` = editor+, `IsAdmin()` = admin **or**
-  maintainer (inheritance), `CanMaintain()`/`CanImport()` = maintainer only. Import is therefore an operational action
+  backup/restore, jobs, processing). Predicates: `CanCurate()` = curator **or** any `CanWrite()` role
+  (`requireCurate`/`RequireCurator`), `CanWrite()` = editor+, `IsAdmin()` = admin **or**
+  maintainer (inheritance), `CanMaintain()`/`CanImport()` = maintainer only. **No rank arithmetic in
+  Go:** every predicate names its roles explicitly, so an inserted rung inherits nothing by accident
+  (the numeric rank lives only in the frontend). A curator fails `CanWrite()`/`IsAdmin()`/`CanMaintain()`/
+  `CanImport()`; as of the role's first step no route hangs on `RequireCurator` yet, so a curator
+  behaves exactly like a viewer, and self-registration still lands on `viewer`. Import is therefore an operational action
   for maintainers only (`requireImport`/`RequireImport`). **Only a maintainer** may create/promote to the
   `maintainer` role or modify a maintainer account — otherwise `ErrMaintainerRequired` (403); the actor's role is passed into
   the create/update validation from the context. Bootstrap creates the first user as a **maintainer**.

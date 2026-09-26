@@ -60,6 +60,7 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 	r.Route("/api/v1", func(r chi.Router) {
 		api.RegisterRoutes(r)
 		r.With(api.RequireAuth).Get("/probe/auth", probeOK)
+		r.With(api.RequireCurator).Get("/probe/curate", probeOK)
 		r.With(api.RequireWrite).Get("/probe/write", probeOK)
 		// The shape every throttled write in the library has: the real limiter
 		// mounted *inside* the write guard with the real exemption predicate, so

@@ -6,7 +6,8 @@ import (
 )
 
 // TestRole_Valid verifies role validity classification for the strict ladder
-// viewer < editor < admin < maintainer, and that the retired 'ai' role is rejected.
+// viewer < curator < editor < admin < maintainer, and that the retired 'ai' role
+// is rejected.
 func TestRole_Valid(t *testing.T) {
 	t.Parallel()
 
@@ -15,6 +16,7 @@ func TestRole_Valid(t *testing.T) {
 		want bool
 	}{
 		{RoleViewer, true},
+		{RoleCurator, true},
 		{RoleEditor, true},
 		{RoleAdmin, true},
 		{RoleMaintainer, true},
@@ -23,6 +25,7 @@ func TestRole_Valid(t *testing.T) {
 		{Role("root"), false},
 		{Role("Admin"), false},
 		{Role("Maintainer"), false},
+		{Role("Curator"), false},
 	}
 	for _, tt := range tests {
 		if got := tt.role.Valid(); got != tt.want {
@@ -31,26 +34,32 @@ func TestRole_Valid(t *testing.T) {
 	}
 }
 
-// TestRole_Predicates verifies the privilege helpers across the four roles on the
-// ladder: write is editor and up, admin (governance) is admin and up, and both
-// maintain (operations) and import require maintainer.
+// TestRole_Predicates verifies the privilege helpers across the five roles on
+// the ladder: curate is curator and up, write is editor and up, admin
+// (governance) is admin and up, and both maintain (operations) and import
+// require maintainer. A curator fails every predicate but CanCurate.
 func TestRole_Predicates(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		role            Role
+		wantCurate      bool
 		wantWrite       bool
 		wantIsAdmin     bool
 		wantCanMaintain bool
 		wantCanImport   bool
 	}{
-		{RoleViewer, false, false, false, false},
-		{RoleEditor, true, false, false, false},
-		{RoleAdmin, true, true, false, false},
-		{RoleMaintainer, true, true, true, true},
-		{Role("bogus"), false, false, false, false},
+		{RoleViewer, false, false, false, false, false},
+		{RoleCurator, true, false, false, false, false},
+		{RoleEditor, true, true, false, false, false},
+		{RoleAdmin, true, true, true, false, false},
+		{RoleMaintainer, true, true, true, true, true},
+		{Role("bogus"), false, false, false, false, false},
 	}
 	for _, tt := range tests {
+		if got := tt.role.CanCurate(); got != tt.wantCurate {
+			t.Errorf("Role(%q).CanCurate() = %v, want %v", tt.role, got, tt.wantCurate)
+		}
 		if got := tt.role.CanWrite(); got != tt.wantWrite {
 			t.Errorf("Role(%q).CanWrite() = %v, want %v", tt.role, got, tt.wantWrite)
 		}
@@ -66,46 +75,47 @@ func TestRole_Predicates(t *testing.T) {
 	}
 }
 
-// TestAuthorize verifies the RBAC decision matrix across roles and requirements,
-// including that requireAdmin is satisfied by a maintainer (ladder inheritance)
-// and that requireMaintain and requireImport admit only the maintainer.
+// TestAuthorize pins the whole RBAC decision matrix: every role on the ladder
+// against every requirement, one row per role. It proves the ladder inheritance
+// (a maintainer satisfies requireAdmin, every writer satisfies requireCurate)
+// and that the inserted curator rung satisfies requireCurate and nothing above
+// it. Invalid roles satisfy nothing, not even requireAuth.
 func TestAuthorize(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
+	// want lists the decision for each requirement in the column order below.
+	reqs := []struct {
 		name string
-		role Role
 		req  requirement
-		want bool
 	}{
-		{"viewer satisfies auth", RoleViewer, requireAuth, true},
-		{"viewer blocked from write", RoleViewer, requireWrite, false},
-		{"viewer blocked from admin", RoleViewer, requireAdmin, false},
-		{"viewer blocked from maintain", RoleViewer, requireMaintain, false},
-		{"viewer blocked from import", RoleViewer, requireImport, false},
-		{"editor satisfies write", RoleEditor, requireWrite, true},
-		{"editor blocked from admin", RoleEditor, requireAdmin, false},
-		{"editor blocked from maintain", RoleEditor, requireMaintain, false},
-		{"editor blocked from import", RoleEditor, requireImport, false},
-		{"admin satisfies write", RoleAdmin, requireWrite, true},
-		{"admin satisfies admin", RoleAdmin, requireAdmin, true},
-		{"admin blocked from maintain", RoleAdmin, requireMaintain, false},
-		{"admin blocked from import", RoleAdmin, requireImport, false},
-		{"maintainer satisfies auth", RoleMaintainer, requireAuth, true},
-		{"maintainer satisfies write", RoleMaintainer, requireWrite, true},
-		{"maintainer satisfies admin", RoleMaintainer, requireAdmin, true},
-		{"maintainer satisfies maintain", RoleMaintainer, requireMaintain, true},
-		{"maintainer satisfies import", RoleMaintainer, requireImport, true},
-		{"ai role satisfies nothing", Role("ai"), requireAuth, false},
-		{"invalid role satisfies nothing", Role("x"), requireAuth, false},
+		{"auth", requireAuth},
+		{"curate", requireCurate},
+		{"write", requireWrite},
+		{"admin", requireAdmin},
+		{"maintain", requireMaintain},
+		{"import", requireImport},
+	}
+	tests := []struct {
+		role Role
+		want [6]bool // auth, curate, write, admin, maintain, import
+	}{
+		{RoleViewer, [6]bool{true, false, false, false, false, false}},
+		{RoleCurator, [6]bool{true, true, false, false, false, false}},
+		{RoleEditor, [6]bool{true, true, true, false, false, false}},
+		{RoleAdmin, [6]bool{true, true, true, true, false, false}},
+		{RoleMaintainer, [6]bool{true, true, true, true, true, true}},
+		{Role("ai"), [6]bool{}},
+		{Role("x"), [6]bool{}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if got := authorize(tt.role, tt.req); got != tt.want {
-				t.Errorf("authorize(%q, %v) = %v, want %v", tt.role, tt.req, got, tt.want)
-			}
-		})
+		for i, rq := range reqs {
+			t.Run(string(tt.role)+"/"+rq.name, func(t *testing.T) {
+				t.Parallel()
+				if got := authorize(tt.role, rq.req); got != tt.want[i] {
+					t.Errorf("authorize(%q, %s) = %v, want %v", tt.role, rq.name, got, tt.want[i])
+				}
+			})
+		}
 	}
 }
 
@@ -124,6 +134,9 @@ func TestAuthorizeUserManagement(t *testing.T) {
 	}{
 		{"admin creates viewer", RoleAdmin, "", RoleViewer, nil},
 		{"admin creates admin", RoleAdmin, "", RoleAdmin, nil},
+		{"admin creates curator", RoleAdmin, "", RoleCurator, nil},
+		{"admin promotes curator to editor", RoleAdmin, RoleCurator, RoleEditor, nil},
+		{"admin promotes curator to maintainer", RoleAdmin, RoleCurator, RoleMaintainer, ErrMaintainerRequired},
 		{"admin creates maintainer", RoleAdmin, "", RoleMaintainer, ErrMaintainerRequired},
 		{"admin promotes editor to maintainer", RoleAdmin, RoleEditor, RoleMaintainer, ErrMaintainerRequired},
 		{"admin modifies maintainer", RoleAdmin, RoleMaintainer, RoleMaintainer, ErrMaintainerRequired},

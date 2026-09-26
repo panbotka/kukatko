@@ -20,7 +20,7 @@ var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	// ErrSessionExpired indicates the session existed but has passed its expiry.
 	ErrSessionExpired = errors.New("auth: session expired")
-	// ErrInvalidRole indicates a role value outside viewer/editor/admin/maintainer.
+	// ErrInvalidRole indicates a role value outside viewer/curator/editor/admin/maintainer.
 	ErrInvalidRole = errors.New("auth: invalid role")
 	// ErrMaintainerRequired indicates a non-maintainer tried to grant the
 	// maintainer role or to modify an account that already holds it. Only a

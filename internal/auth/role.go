@@ -1,7 +1,7 @@
 // Package auth implements Kukátko's authentication and authorization: local
 // users with bcrypt passwords, opaque-token sessions with sliding expiry,
-// login rate limiting, and role-based access control (viewer / editor / admin /
-// maintainer).
+// login rate limiting, and role-based access control (viewer / curator / editor /
+// admin / maintainer).
 //
 // The package is layered: pure helpers (Role, password hashing, UID and token
 // generation, the rate limiter) carry no I/O and are unit-tested; Store wraps
@@ -10,9 +10,13 @@
 // shared pgx pool.
 package auth
 
-// Role is a user's access level on a strict ladder: viewer < editor < admin <
-// maintainer. Each role inherits every permission of the roles below it. viewer
-// is read-only; editor adds write access to media and metadata; admin adds
+// Role is a user's access level on a strict ladder: viewer < curator < editor <
+// admin < maintainer. Each role inherits every permission of the roles below it,
+// but Go has no rank arithmetic: every predicate names its roles explicitly, so
+// an inserted rung never inherits a permission by accident. viewer is read-only;
+// curator adds curation of the catalogue (faces, people, albums, labels) without
+// rewriting a photo's own metadata; editor adds write access to media and
+// metadata; admin adds
 // governance (user management, audit log, emptying/purging trash); maintainer
 // adds operations (imports, maintenance, system status, backup, restore, jobs,
 // processing backfills) and is the most powerful role.
@@ -29,6 +33,11 @@ const (
 	// RoleEditor is a viewer plus write access to media and metadata, sorting and
 	// review, and album/label management.
 	RoleEditor Role = "editor"
+	// RoleCurator is a viewer plus curation of the catalogue — faces, people,
+	// albums and labels — without the wider write access that rewrites a photo's
+	// own metadata. It satisfies CanCurate but none of CanWrite, IsAdmin,
+	// CanMaintain or CanImport.
+	RoleCurator Role = "curator"
 	// RoleViewer has read-only access to photos, albums and labels.
 	RoleViewer Role = "viewer"
 )
@@ -36,7 +45,7 @@ const (
 // Valid reports whether r is one of the known roles.
 func (r Role) Valid() bool {
 	switch r {
-	case RoleViewer, RoleEditor, RoleAdmin, RoleMaintainer:
+	case RoleViewer, RoleCurator, RoleEditor, RoleAdmin, RoleMaintainer:
 		return true
 	default:
 		return false
@@ -47,6 +56,13 @@ func (r Role) Valid() bool {
 // admins and maintainers can write; viewers cannot.
 func (r Role) CanWrite() bool {
 	return r == RoleEditor || r == RoleAdmin || r == RoleMaintainer
+}
+
+// CanCurate reports whether r may curate the catalogue — faces, people, albums and
+// labels — without the wider write access that rewrites a photo's own metadata.
+// A curator qualifies, and so does every role that already CanWrite.
+func (r Role) CanCurate() bool {
+	return r == RoleCurator || r.CanWrite()
 }
 
 // IsAdmin reports whether r holds the governance privileges (user management,
@@ -77,6 +93,9 @@ type requirement int
 const (
 	// requireAuth only needs an authenticated user of any role.
 	requireAuth requirement = iota
+	// requireCurate needs a role that CanCurate (curator, editor, admin or
+	// maintainer).
+	requireCurate
 	// requireWrite needs a role that CanWrite (editor, admin or maintainer).
 	requireWrite
 	// requireAdmin needs a role that IsAdmin (admin or maintainer).
@@ -88,7 +107,7 @@ const (
 )
 
 // authorize reports whether role satisfies req. It is the pure decision behind
-// the RequireAuth / RequireWrite / RequireAdmin / RequireMaintainer /
+// the RequireAuth / RequireCurator / RequireWrite / RequireAdmin / RequireMaintainer /
 // RequireImport middlewares; an invalid role never satisfies any requirement.
 func authorize(role Role, req requirement) bool {
 	if !role.Valid() {
@@ -97,6 +116,8 @@ func authorize(role Role, req requirement) bool {
 	switch req {
 	case requireAuth:
 		return true
+	case requireCurate:
+		return role.CanCurate()
 	case requireWrite:
 		return role.CanWrite()
 	case requireAdmin:
