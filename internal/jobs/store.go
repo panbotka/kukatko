@@ -58,11 +58,14 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // 0044) keys the per-photo types on (type, payload ->> 'photo_uid'); the
 // library-wide types — idx_jobs_family_export_dedup (migration 0075) and
 // idx_jobs_task_digest_dedup (migration 0084) — key on the type alone, since
-// their payloads name no photo and NULLs would otherwise be distinct.
+// their payloads name no photo and NULLs would otherwise be distinct. The
+// per-account tag_notify job (idx_jobs_tag_notify_dedup, migration 0089) keys
+// on the payload's user_uid for the same reason.
 var dedupIndexes = map[string]bool{
 	"idx_jobs_dedup":               true,
 	"idx_jobs_family_export_dedup": true,
 	"idx_jobs_task_digest_dedup":   true,
+	"idx_jobs_tag_notify_dedup":    true,
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint
@@ -125,6 +128,24 @@ type Execer interface {
 func Enqueue(
 	ctx context.Context, exec Execer, jobType string, payload json.RawMessage, opts EnqueueOptions,
 ) (Job, error) {
+	const q = `INSERT INTO jobs (type, state, priority, payload, max_attempts, run_after)
+		VALUES ($1, 'queued', $2, $3, $4, $5)
+		RETURNING ` + jobColumns
+	maxAttempts, runAfter := opts.resolve()
+	job, err := scanJob(exec.QueryRow(ctx, q,
+		jobType, opts.Priority, payloadOrEmpty(payload), maxAttempts, runAfter))
+	if err != nil {
+		if name, ok := isUniqueViolation(err); ok && dedupIndexes[name] {
+			return Job{}, ErrDuplicate
+		}
+		return Job{}, err
+	}
+	return job, nil
+}
+
+// resolve returns the attempt cap and first run time an insert stores for opts:
+// DefaultMaxAttempts for a non-positive cap, now for no RunAfter.
+func (opts EnqueueOptions) resolve() (int, time.Time) {
 	maxAttempts := opts.MaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = DefaultMaxAttempts
@@ -133,15 +154,40 @@ func Enqueue(
 	if opts.RunAfter != nil {
 		runAfter = *opts.RunAfter
 	}
-	const q = `INSERT INTO jobs (type, state, priority, payload, max_attempts, run_after)
+	return maxAttempts, runAfter
+}
+
+// enqueueOrSkipSQL is Enqueue's insert with ON CONFLICT DO NOTHING. Without a
+// conflict target it covers every unique index on jobs, the partial dedup
+// indexes included, and it inserts no row — and returns none — when one of them
+// already holds the key.
+const enqueueOrSkipSQL = `INSERT INTO jobs (type, state, priority, payload, max_attempts, run_after)
 		VALUES ($1, 'queued', $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING
 		RETURNING ` + jobColumns
-	job, err := scanJob(exec.QueryRow(ctx, q,
+
+// EnqueueOrSkip is Enqueue for a caller whose transaction must survive the
+// duplicate. Enqueue lets the insert hit the dedup index and maps the violation
+// to ErrDuplicate — which is fine on a pool, but inside a transaction the failed
+// statement has already aborted the whole transaction, and the mutation the job
+// was meant to follow with it. EnqueueOrSkip asks the insert to step aside
+// instead (ON CONFLICT DO NOTHING), so a duplicate is still ErrDuplicate but
+// the caller's transaction carries on as if nothing had been tried.
+//
+// It is meant for exec being an open transaction that enqueues work "unless it
+// is already scheduled". A concurrent transaction holding an uncommitted row
+// with the same key makes the insert wait for that transaction to finish, as
+// any unique insert does, and then skip or insert according to its outcome.
+func EnqueueOrSkip(
+	ctx context.Context, exec Execer, jobType string, payload json.RawMessage, opts EnqueueOptions,
+) (Job, error) {
+	maxAttempts, runAfter := opts.resolve()
+	job, err := scanJob(exec.QueryRow(ctx, enqueueOrSkipSQL,
 		jobType, opts.Priority, payloadOrEmpty(payload), maxAttempts, runAfter))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Job{}, ErrDuplicate
+	}
 	if err != nil {
-		if name, ok := isUniqueViolation(err); ok && dedupIndexes[name] {
-			return Job{}, ErrDuplicate
-		}
 		return Job{}, err
 	}
 	return job, nil

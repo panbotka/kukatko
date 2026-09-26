@@ -68,6 +68,8 @@ func TestNewValidate(t *testing.T) {
 			mutate:  func(n *New) { n.Body = strings.Repeat("a", MaxBodyLen+1) },
 			wantErr: ErrInvalid,
 		},
+		{name: "self link", mutate: func(n *New) { n.Link = ""; n.SelfLink = true }},
+		{name: "self link and a link", mutate: func(n *New) { n.SelfLink = true }, wantErr: ErrInvalid},
 		{name: "absolute URL", mutate: func(n *New) { n.Link = "https://evil.test/" }, wantErr: ErrInvalid},
 		{name: "scheme-relative", mutate: func(n *New) { n.Link = "//evil.test/" }, wantErr: ErrInvalid},
 		{name: "backslash host", mutate: func(n *New) { n.Link = `/\evil.test` }, wantErr: ErrInvalid},
@@ -208,5 +210,24 @@ func TestPrefsEntry(t *testing.T) {
 	kept := prefsEntry(audit.Entry{Action: "x", TargetType: "t", TargetUID: "u"}, "us1", nil)
 	if kept.Action != "x" || kept.TargetType != "t" || kept.TargetUID != "u" {
 		t.Fatalf("prefsEntry overwrote set fields: %+v", kept)
+	}
+}
+
+// TestPath checks a notification's own page and that New stores it only when
+// asked to.
+func TestPath(t *testing.T) {
+	t.Parallel()
+
+	if got := Path("ntabc"); got != "/n/ntabc" {
+		t.Fatalf("Path = %q, want /n/ntabc", got)
+	}
+	if err := validateLink(Path("ntabc")); err != nil {
+		t.Fatalf("Path is not a valid in-app link: %v", err)
+	}
+	if got := (New{SelfLink: true}).link("ntabc"); got != "/n/ntabc" {
+		t.Errorf("self link = %q, want /n/ntabc", got)
+	}
+	if got := (New{Link: "/users"}).link("ntabc"); got != "/users" {
+		t.Errorf("plain link = %q, want /users", got)
 	}
 }

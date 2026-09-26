@@ -438,6 +438,13 @@ app next. Come back after a while and the library greets you with what happened:
 arrived (one click to see them), which albums were started, who was newly named, how many comments
 were written.
 
+And when somebody tags *you* — on a phone or browser where you allowed notifications, and with your
+account saying which person you are — you get **one push per hour, not one per photo**: "Přibylo 12
+fotek, na kterých vás označili." An afternoon of naming faces from a village event is one message.
+It never says who did the tagging, never tells you about your own, never counts a private, hidden or
+archived photo, and a tag taken back before the hour is up is taken out of the count. The hour is
+configurable, and the kind can be switched off in your notification settings.
+
 ### Built for small hardware that is sometimes offline
 
 - **One executable.** A single static Go binary (`CGO_ENABLED=0`) with the whole React frontend

@@ -3319,6 +3319,7 @@
         "backup": "Backup",
         "mail_send": "Sending an e-mail",
         "push_send": "Sending a browser notification",
+        "tag_notify": "Summing up who was tagged in photos",
         "nameless_detach": "Detaching the nameless person",
         "nameless_restore": "Restoring the nameless person",
         "family_export": "Writing the family tree to storage",

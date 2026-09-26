@@ -100,7 +100,9 @@ RETURNING uid`
 // hand-attached people, ordered by name.
 //
 // It is idempotent: attaching somebody already attached leaves exactly one link
-// and answers the same body as the first attach. entry's TargetUID defaults to
+// and answers the same body as the first attach. A new link is reported to the
+// store's tag observer as a tagging by entry.ActorUID; a repeat one is not.
+// entry's TargetUID defaults to
 // the marker recording the link. A missing photo returns ErrPhotoNotFound and a
 // missing subject ErrSubjectNotFound; both roll back, writing no audit row.
 func (s *Store) AttachSubjectToPhoto(
@@ -118,6 +120,15 @@ func (s *Store) AttachSubjectToPhoto(
 		if err := tx.QueryRow(ctx, attachSubjectSQL, markerUID, photoUID, subjectUID).
 			Scan(&stored); err != nil {
 			return "", fmt.Errorf("people: attaching %s to %s: %w", subjectUID, photoUID, err)
+		}
+		// A repeat attach keeps the existing marker; only a new one put
+		// somebody on the photo who was not on it by hand already.
+		if stored == markerUID {
+			if err := s.tagged(ctx, tx, Tagging{
+				PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
+			}); err != nil {
+				return "", err
+			}
 		}
 		return stored, nil
 	})
@@ -145,8 +156,16 @@ func (s *Store) DetachSubjectFromPhoto(
 		if err := requireLinkable(ctx, tx, photoUID, subjectUID); err != nil {
 			return "", err
 		}
-		if _, err := tx.Exec(ctx, detachSubjectSQL, photoUID, subjectUID); err != nil {
+		tag, err := tx.Exec(ctx, detachSubjectSQL, photoUID, subjectUID)
+		if err != nil {
 			return "", fmt.Errorf("people: detaching %s from %s: %w", subjectUID, photoUID, err)
+		}
+		if tag.RowsAffected() > 0 {
+			if err := s.untagged(ctx, tx, Tagging{
+				PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
+			}); err != nil {
+				return "", err
+			}
 		}
 		return subjectUID, nil
 	})

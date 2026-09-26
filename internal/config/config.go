@@ -103,6 +103,10 @@ var (
 	// URL. An enabled sender that quietly dropped every notification would be
 	// worse than none, so it fails startup instead.
 	ErrInvalidPushConfig = errors.New("config: push.enabled is true but its VAPID configuration is invalid")
+	// ErrInvalidPushTagsWindow indicates push.tags.window is not positive: a
+	// window that never opens would announce every tag on its own, which is the
+	// flood the window exists to prevent.
+	ErrInvalidPushTagsWindow = errors.New("config: push.tags.window must be positive")
 	// ErrInvalidTaskDigestHour indicates tasks.digest.hour is not an hour of the
 	// day.
 	ErrInvalidTaskDigestHour = errors.New("config: tasks.digest.hour must be between 0 and 23")
@@ -756,6 +760,17 @@ type MailConfig struct {
 type PushConfig struct {
 	Enabled bool            `mapstructure:"enabled"`
 	VAPID   PushVAPIDConfig `mapstructure:"vapid"`
+	Tags    PushTagsConfig  `mapstructure:"tags"`
+}
+
+// PushTagsConfig configures the "you were tagged in N photos" notification
+// (internal/tagnotifyjob): tagging is collected per account and announced once
+// per window rather than once per photo.
+type PushTagsConfig struct {
+	// Window is how long a window stays open: the first tag of a person opens
+	// it, every photo they are tagged on inside it is counted, and one
+	// notification is sent when it closes. It must be positive; default 1h.
+	Window time.Duration `mapstructure:"window"`
 }
 
 // PushVAPIDConfig is the instance's VAPID identity (RFC 8292), minted once with
@@ -772,11 +787,17 @@ type PushVAPIDConfig struct {
 	Subject string `mapstructure:"subject"`
 }
 
-// validate checks the push settings. A disabled sender is always valid: it is
-// never consulted, so an instance without push need not mention a single key.
+// validate checks the push settings. The tagging window must be positive
+// whether push is on or off (ErrInvalidPushTagsWindow), because it is a plain
+// setting with a default rather than a credential. A disabled sender is
+// otherwise always valid: it is never consulted, so an instance without push
+// need not mention a single key.
 // An enabled one must name all three VAPID keys — every missing one reported at
 // once, names only — and they must form a valid pair with a valid subject.
 func (p PushConfig) validate() error {
+	if p.Tags.Window <= 0 {
+		return ErrInvalidPushTagsWindow
+	}
 	if !p.Enabled {
 		return nil
 	}
@@ -1306,6 +1327,7 @@ func setPushDefaults(v *viper.Viper) {
 	v.SetDefault("push.vapid.public_key", "")
 	v.SetDefault("push.vapid.private_key", "")
 	v.SetDefault("push.vapid.subject", "")
+	v.SetDefault("push.tags.window", "1h")
 }
 
 func setMapsDefaults(v *viper.Viper) {

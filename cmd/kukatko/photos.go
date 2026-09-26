@@ -34,12 +34,15 @@ import (
 // buildFaceMatch assembles the face-matching service (face↔marker IoU matching,
 // the assignment state machine and identity suggestions) over the shared pool. It
 // is shared by the photo faces endpoints and the auto-clustering service, which
-// reuses its assignment state machine to name a whole cluster.
+// reuses its assignment state machine to name a whole cluster. Every assignment
+// goes through its people store, so that is where the "you were tagged"
+// recorder hooks in — once, for manual tagging, the review game, cluster
+// assignment and candidate acceptance alike.
 func buildFaceMatch(cfg *config.Config, db *database.DB) *facematch.Service {
 	return facematch.New(facematch.Config{
 		Photos:                photos.NewStore(db.Pool()),
 		Faces:                 vectors.NewStore(db.Pool()),
-		People:                people.NewStore(db.Pool()),
+		People:                people.NewStore(db.Pool()).WithTagObserver(buildTagNotifyRecorder(cfg, db)),
 		IoUThreshold:          cfg.Faces.IoUThreshold,
 		SuggestionLimit:       cfg.Faces.SuggestionLimit,
 		SuggestionMaxDistance: cfg.Faces.SuggestionMaxDistance,
@@ -139,8 +142,9 @@ func buildPhotoAPI(
 		Faces:    faceSvc,
 		// Attaching a person by hand — no box, no detected face — is the only way
 		// to record somebody the detector cannot see: anybody after a video's
-		// poster frame, a profile, a back of a head.
-		Attacher:  people.NewStore(db.Pool()),
+		// poster frame, a profile, a back of a head. It is a tagging like any
+		// other, so the "you were tagged" recorder hears it too.
+		Attacher:  people.NewStore(db.Pool()).WithTagObserver(buildTagNotifyRecorder(cfg, db)),
 		Favorites: organizeStore,
 		Ratings:   organizeStore,
 		Organizer: organizeStore,

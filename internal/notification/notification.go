@@ -164,10 +164,34 @@ type New struct {
 	// "/", at most MaxLinkLen bytes. An absolute URL or a scheme-relative
 	// "//host" is refused — a notification must never open another site.
 	Link string
+	// SelfLink stores the notification's own page, Path(uid), as its link —
+	// the uid is assigned by the store, so a caller cannot spell that path
+	// itself. Link must be empty when it is set.
+	SelfLink bool
 	// PhotoUIDs is the frozen set in the order it is to be shown. A photograph
 	// given twice keeps its first position. Nil or empty for a kind with no
 	// photographs.
 	PhotoUIDs []string
+}
+
+// PathPrefix is the in-app route of one notification's own page, the uid
+// appended. It is deliberately short: the path travels inside a push payload,
+// which has a hard size limit. The frontend page behind it opens the frozen
+// photo set (one photo straight in the viewer, several as a grid).
+const PathPrefix = "/n/"
+
+// Path returns the in-app path of notification uid's own page.
+func Path(uid string) string {
+	return PathPrefix + uid
+}
+
+// link returns the deeplink to store for n once the store assigned uid: its own
+// page when SelfLink is set, the given Link otherwise.
+func (n New) link(uid string) string {
+	if n.SelfLink {
+		return Path(uid)
+	}
+	return n.Link
 }
 
 // validate checks n against the field rules and returns the normalised photo
@@ -185,6 +209,9 @@ func (n New) validate() ([]string, error) {
 		return nil, fmt.Errorf("%w: title over %d characters", ErrInvalid, MaxTitleLen)
 	case utf8.RuneCountInString(n.Body) > MaxBodyLen:
 		return nil, fmt.Errorf("%w: body over %d characters", ErrInvalid, MaxBodyLen)
+	}
+	if n.SelfLink && n.Link != "" {
+		return nil, fmt.Errorf("%w: both a link and a link to itself", ErrInvalid)
 	}
 	if err := validateLink(n.Link); err != nil {
 		return nil, err
@@ -242,6 +269,14 @@ type Visibility struct {
 	// IncludePrivate keeps photographs flagged private.
 	IncludePrivate bool
 }
+
+// VisiblePhotoSQL is the zero Visibility — no archived, no hidden, no private
+// photograph — as a SQL predicate over the photos table aliased p. Photos
+// applies the same three filters when a notification is read; a producer that
+// decides whether a photograph may be named in a notification at all (the
+// tagging window, internal/tagnotifyjob) uses this one definition rather than
+// spelling its own, so what is announced and what the page later shows agree.
+const VisiblePhotoSQL = "(p.archived_at IS NULL AND NOT p.hidden_from_library AND NOT p.private)"
 
 // Retention is the purge's two age thresholds, both measured from when a
 // notification was recorded.

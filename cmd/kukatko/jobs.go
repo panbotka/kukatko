@@ -28,6 +28,7 @@ import (
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
+	"github.com/panbotka/kukatko/internal/tagnotifyjob"
 	"github.com/panbotka/kukatko/internal/taskdigestjob"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -56,7 +57,9 @@ import (
 // registers the `mail_send` job that renders a queued message and hands it to the
 // SMTP server), the push service (always built; it registers the `push_send` job
 // that delivers a queued notification to one browser and, with push off,
-// completes a leftover one unsent) and the library-maintenance service/API,
+// completes a leftover one unsent), the tagging-window service (always built;
+// it registers the `tag_notify` job that turns a window's tags into one
+// notification) and the library-maintenance service/API,
 // since all are part of the job subsystem; a build failure for any of them is
 // returned as an error.
 func buildJobs(
@@ -192,6 +195,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
 		taskDigest: buildTaskDigestServiceOrNil(d.cfg, d.db),
+		tagNotify:  buildTagNotifyService(d.cfg, d.db),
 	}, maintenanceSvc, nil
 }
 
@@ -217,6 +221,9 @@ type registryServices struct {
 	// taskDigest mails the daily list of tasks waiting on a person; nil unless
 	// the digest and mail are both switched on.
 	taskDigest *taskdigestjob.Service
+	// tagNotify closes a tagging window into one "you were tagged" notification;
+	// always built, like push.
+	tagNotify *tagnotifyjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -237,6 +244,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeStoryboard, svc.storyboard.Handle)
 	registry.Register(jobs.TypeFaceCluster, svc.cluster.Handle)
 	registry.Register(jobs.TypePushSend, svc.push.Handle)
+	registry.Register(jobs.TypeTagNotify, svc.tagNotify.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

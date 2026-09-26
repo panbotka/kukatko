@@ -1450,7 +1450,12 @@ to `## Package map` in `CLAUDE.md`.
   and `pgx.Tx` satisfy it), so a job can be scheduled **inside the caller's transaction** exactly the way
   `audit.Write` records a mutation: a registration that rolls back schedules no mail, one that commits
   schedules it once. A payload with no `photo_uid` (a mail, a backup) never dedupes, NULLs being distinct
-  in a unique index;
+  in a unique index — except `tag_notify`, whose own index `idx_jobs_tag_notify_dedup` (migration 0089)
+  keys on the payload's `user_uid` while **queued**, one open tagging window per account.
+  **`EnqueueOrSkip(ctx, exec, type, payload, opts)`** is the same insert with `ON CONFLICT DO NOTHING`:
+  a duplicate is still `ErrDuplicate`, but it **does not abort the caller's transaction** the way a
+  unique violation would — for a caller that enqueues "unless already scheduled" in the middle of its
+  own mutation (the tagging recorder, `internal/tagnotifyjob`);
   `Claim(ctx,workerID,types...)` (atomically via `SELECT … FOR UPDATE SKIP LOCKED`,
   `run_after<=now()`, ordered priority DESC/run_after ASC/id ASC, mark running+lock →
   an empty queue `ErrNoJobs`), `Complete(id,workerID)`/`Fail(id,workerID,err)` (increments attempts →
@@ -2112,7 +2117,17 @@ to `## Package map` in `CLAUDE.md`.
   together — `internal/family` records a relation to a person who does not exist yet without ever leaving an
   orphan behind. Each slug attempt runs in a **nested transaction (a savepoint)**, because a colliding insert
   aborts the statement's transaction and the caller's work has to survive the collision; the pooled variants
-  can simply start a fresh transaction per attempt, which is why they do. `SetMarkerInvalidAudited` (action `marker.invalidate`, used by the repeated-marker review)
+  can simply start a fresh transaction per attempt, which is why they do. **Tag observer:**
+  `WithTagObserver(people.TagObserver)` returns a copy of the store that reports every marker change
+  putting a subject on a photo (`Tagged`: a marker created with a subject, an assignment to a different
+  subject, a new hand attachment) or taking one off (`Untagged`: unassign, re-assignment away,
+  `DeleteMarker`, a detach that removed a link) as a
+  `Tagging{PhotoUID, SubjectUID, ActorUID}` **inside the change's transaction** — the actor is the audit
+  entry's, empty for the plain and cluster paths; re-assigning to the same subject reports nothing, and
+  an observer error fails the change. `buildFaceMatch` and the photo API's `Attacher` wire the
+  `internal/tagnotifyjob` recorder here, which is why every way of tagging (face UI, review game,
+  clusters, candidates, attaching a person by hand) is covered.
+  `SetMarkerInvalidAudited` (action `marker.invalidate`, used by the repeated-marker review)
   changes **nothing but the flag**: the row survives and keeps its subject, so the decision is reversible and an
   invalidation stays distinguishable from an unassignment), `internal/facematch/`
   (linking detected faces to markers/subjects + identity suggestions, all behind the interfaces
@@ -5410,8 +5425,8 @@ to `## Package map` in `CLAUDE.md`.
     not decode or names no subscription (`ErrMissingSubscription`) is terminal.
   - Wired in `cmd/kukatko` (`buildPushService`, over `push.New` + `push.Store`) and registered
     **unconditionally** — with push off the no-op sender is wired and leftover jobs drain unsent rather
-    than wait forever for a claimant. The worker gives `push_send` its own **two-slot** pool. Nothing
-    enqueues yet: the callers (task events) are later work. Tests: the enqueue fan-out and refusals against
+    than wait forever for a claimant. The worker gives `push_send` its own **two-slot** pool. Callers:
+    self-service registration (`internal/auth`) and the tagging window (`internal/tagnotifyjob`). Tests: the enqueue fan-out and refusals against
     a fake scheduler, the handler's outcome table against an in-memory store and `push.Fake`, and over a
     real database — delivery to each device once with the send recorded, 410 deletes, 500 records a
     failure and requeues, the threshold retires, an oversized payload is terminal, the nothing-to-do
@@ -5438,10 +5453,20 @@ to `## Package map` in `CLAUDE.md`.
     asks `Wants` first. **`CreateTx(ctx, tx, New)`** and **`WantsTx(ctx, tx, userUID, kind)`** are the same
     on the caller's open transaction, for a notification that must commit with the mutation that caused
     it (self-service registration in `internal/auth`); a caller that must survive a failed insert runs
-    them under a savepoint.
+    them under a savepoint. **`New.SelfLink`** stores the notification's own page, **`Path(uid)`** =
+    `PathPrefix` (`/n/`) + uid, as its link — the uid is assigned by the store, so a producer cannot spell
+    it; the short route is the frontend's deeplink page (it must stay short: it rides in the push
+    payload). Setting both `SelfLink` and `Link` is `ErrInvalid`.
+  - **`VisiblePhotoSQL`** is the zero `Visibility` (not archived, not hidden, not private) as a predicate
+    over `photos p` — the one definition a producer uses to decide whether a photo may be named in a
+    notification at all, so what is announced and what the page shows agree (`internal/tagnotifyjob`).
   - **Wording** (`texts.go`) is rendered the way `internal/mailer` renders its mails: a pure function of a
     data struct, in Czech, returning `Text{Title, Body}` — `RenderRegistrationPending` ("Nová registrace
-    čeká na schválení", the body naming the person by display name, else username).
+    čeká na schválení", the body naming the person by display name, else username) and
+    **`RenderTagged(Language, count)`** ("Označili vás na fotce/fotkách", "Přibyla 1 fotka / Přibyly 3
+    fotky / Přibylo 12 fotek, na kterých vás označili." — all three Czech plural forms with the verb
+    agreeing, CLDR categories; `LanguageEnglish` "You were tagged in a photo / in 12 photos."; any other
+    language is Czech). It names **nobody**: several people may tag inside one window.
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
     foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
     uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is
@@ -5501,6 +5526,55 @@ to `## Package map` in `CLAUDE.md`.
     (defaults, audited replace, refused replaces changing nothing, reset), the detail filtering archived /
     hidden / private in frozen order with counts and media URLs (and un-archiving bringing one back),
     foreign/unknown uid 404 for read and mark-read, idempotent mark-read, anonymous 401 on every route.
+
+- **Tagging window (`internal/tagnotifyjob`):** "you were tagged in N photos" — one notification per
+  **window**, not per photo, so an afternoon of naming faces from a village event is one message, not
+  forty. Table `tag_notices` (migration 0088: `(user_uid, photo_uid)` PK, `recorded_at`, both sides
+  `ON DELETE CASCADE`), job type `tag_notify` (payload `{user_uid}`, dedup index migration 0089),
+  config `push.tags.window` (default **1h**). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
+  - **`Recorder`** (`NewRecorder(RecorderConfig{Enabled, Window, Preferences, Logger, Now})`, panicking
+    without `Preferences`) is the `people.TagObserver`. **`Tagged`** records, for every enabled, approved
+    account linked to the subject (several may be — migration 0060), one notice, and opens the account's
+    window when none is open: **`jobs.EnqueueOrSkip`** of `tag_notify` with `RunAfter = now + window`.
+    It records **nothing at all** when push is off, when the acting account is itself linked to the
+    subject (nobody hears about their own work — nor does a second account of the same person), when the
+    photo is private, hidden or archived (`notification.VisiblePhotoSQL`; a notification would disclose
+    it) or the subject is not actually on it through a valid marker, and for an account that turned
+    `KindTagged` off (so the table does not fill up for somebody who does not want it). The same photo
+    twice is one notice. **`Untagged`** deletes the matching notices of every linked account unless the
+    subject is still on the photo through another valid marker — with push off too.
+  - **"First notice of a window" = no queued job for the account**, checked under a per-account
+    **advisory transaction lock** (`pg_advisory_xact_lock(hashtextextended('tag_notify:'||uid, 0))`)
+    that the job takes too. So a tag either lands before the job reads (and is in its notification) or
+    after it committed (and opens a new window) — never between; a cluster of hundreds assigned in one
+    transaction queues **one** job; and a window whose job was dead-lettered self-heals on the next tag,
+    which a count of notices would not. A tag landing while the job **runs** opens a fresh window (the
+    dedup index is queued-only) — correct, not a bug.
+  - **Best-effort, never costs an assignment:** every call runs under a savepoint of the assignment's
+    transaction; a failure rolls back to it, is logged, and the assignment commits. A rolled-back
+    assignment announces nothing (notice and job share its transaction).
+  - **`Service.Handle`/`Close`** (`New(Config{DB, Notifications, Push, Language, Logger})`, panicking on a
+    missing dependency): in one transaction, take the lock, `DELETE … RETURNING` every notice of the
+    account and keep the photos that **still** qualify — visible now and still carrying the account's
+    linked person on a valid marker (an archive, a merge or an invalidation inside the window is caught
+    here) — **newest photo first** (`taken_at DESC NULLS LAST, created_at DESC`); nothing left → commit
+    and send nothing (never "0 photos"); kind turned off meanwhile → consume and send nothing; otherwise
+    `notification.CreateTx` (`KindTagged`, `RenderTagged`, `SelfLink`, the frozen set capped at
+    `MaxPhotos` with the count matching the set) and `pushjob.Enqueuer.Enqueue` on the same transaction
+    (`Tag` = the record's uid). A crash part-way rolls back and the retry re-runs cleanly. A payload
+    naming no account is `worker.Terminal`.
+  - Wired in `cmd/kukatko/tagnotify.go`: the recorder into `buildFaceMatch`'s people store and the photo
+    API's `Attacher` (a person attached by hand — the only way a video names anybody — is a tagging), the handler
+    registered **unconditionally** (like `push_send`, so a window left open when push was switched off
+    closes; its delivery then queues nothing). Tests: payload, refusals and defaults as unit tests; over a
+    real database — twelve tags collapse into one notification with the right Czech count, newest first,
+    its own link and one push per device; a hand attachment records and its detach clears; a second
+    window after the first closed; a tag during a run
+    opens a new window; an in-flight tag is waited for by the closing job; untagging removes a notice; an
+    all-untagged window sends nothing; a photo archived inside the window is left out; nothing recorded
+    for self-assignment, private/hidden/archived photos, the kind off, an unlinked subject, a disabled
+    account, push off, a rolled-back assignment; 300 notices in one transaction queue exactly one job; a
+    deleted account's window finds nothing.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

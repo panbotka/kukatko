@@ -71,7 +71,7 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	created, err := insertMarkerTx(ctx, tx, m)
+	created, err := s.insertMarkerTx(ctx, tx, m, "")
 	if err != nil {
 		return Marker{}, err
 	}
@@ -84,8 +84,10 @@ func (s *Store) createMarkerWithSubject(ctx context.Context, m Marker) (Marker, 
 // insertMarkerTx inserts m within tx and, when it names a subject, refreshes the
 // denormalised faces cache for the new marker in the same transaction. It is the
 // shared core of the plain and audited marker-create paths, so both keep the
-// faces cache consistent identically. A missing subject returns ErrSubjectNotFound.
-func insertMarkerTx(ctx context.Context, tx pgx.Tx, m Marker) (Marker, error) {
+// faces cache consistent identically. A marker created already naming a subject
+// is a tagging, reported to the store's observer with actorUID. A missing subject
+// returns ErrSubjectNotFound.
+func (s *Store) insertMarkerTx(ctx context.Context, tx pgx.Tx, m Marker, actorUID string) (Marker, error) {
 	var name string
 	if m.SubjectUID != nil {
 		resolved, err := subjectName(ctx, tx, *m.SubjectUID)
@@ -102,6 +104,11 @@ func insertMarkerTx(ctx context.Context, tx pgx.Tx, m Marker) (Marker, error) {
 	}
 	if m.SubjectUID != nil {
 		if err := assignFacesCache(ctx, tx, created.UID, *m.SubjectUID, name); err != nil {
+			return Marker{}, err
+		}
+		if err := s.tagged(ctx, tx, Tagging{
+			PhotoUID: created.PhotoUID, SubjectUID: *m.SubjectUID, ActorUID: actorUID,
+		}); err != nil {
 			return Marker{}, err
 		}
 	}
@@ -164,7 +171,7 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	updated, err := assignSubjectTx(ctx, tx, markerUID, subjectUID)
+	updated, err := s.assignSubjectTx(ctx, tx, markerUID, subjectUID, "")
 	if err != nil {
 		return Marker{}, err
 	}
@@ -178,8 +185,19 @@ func (s *Store) AssignSubject(ctx context.Context, markerUID, subjectUID string)
 // denormalised faces cache in the same transaction. It is the shared core of the
 // plain and audited assign paths. It returns ErrSubjectNotFound or ErrMarkerNotFound
 // when either side is missing.
-func assignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID, subjectUID string) (Marker, error) {
+//
+// With a tag observer the change is reported to it, attributed to actorUID: the
+// subject the marker carried before (if another) as untagged, the new one as
+// tagged. Re-assigning a marker to the subject it already carries reports
+// nothing — nobody was put on the photo who was not on it already.
+func (s *Store) assignSubjectTx(
+	ctx context.Context, tx pgx.Tx, markerUID, subjectUID, actorUID string,
+) (Marker, error) {
 	name, err := subjectName(ctx, tx, subjectUID)
+	if err != nil {
+		return Marker{}, err
+	}
+	previous, err := s.previousSubject(ctx, tx, markerUID)
 	if err != nil {
 		return Marker{}, err
 	}
@@ -193,7 +211,44 @@ func assignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID, subjectUID strin
 	if err := assignFacesCache(ctx, tx, markerUID, subjectUID, name); err != nil {
 		return Marker{}, err
 	}
+	if previous == subjectUID {
+		return updated, nil
+	}
+	if previous != "" {
+		if err := s.untagged(ctx, tx, Tagging{
+			PhotoUID: updated.PhotoUID, SubjectUID: previous, ActorUID: actorUID,
+		}); err != nil {
+			return Marker{}, err
+		}
+	}
+	if err := s.tagged(ctx, tx, Tagging{
+		PhotoUID: updated.PhotoUID, SubjectUID: subjectUID, ActorUID: actorUID,
+	}); err != nil {
+		return Marker{}, err
+	}
 	return updated, nil
+}
+
+// previousSubject returns the subject markerUID carries before a re-assignment,
+// locking the row so the answer holds until the update, or "" for an unassigned
+// or missing marker (the update that follows reports the missing one). Without a
+// tag observer nothing needs the answer, so nothing is read.
+func (s *Store) previousSubject(ctx context.Context, tx pgx.Tx, markerUID string) (string, error) {
+	if s.tags == nil {
+		return "", nil
+	}
+	var previous *string
+	err := tx.QueryRow(ctx, "SELECT subject_uid FROM markers WHERE uid = $1 FOR UPDATE", markerUID).Scan(&previous)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("people: reading the subject of marker %s: %w", markerUID, err)
+	}
+	if previous == nil {
+		return "", nil
+	}
+	return *previous, nil
 }
 
 // unassignMarkerSQL clears a marker's subject and returns the refreshed row.
@@ -210,7 +265,7 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	updated, err := unassignSubjectTx(ctx, tx, markerUID)
+	updated, err := s.unassignSubjectTx(ctx, tx, markerUID, "")
 	if err != nil {
 		return Marker{}, err
 	}
@@ -222,9 +277,14 @@ func (s *Store) UnassignSubject(ctx context.Context, markerUID string) (Marker, 
 
 // unassignSubjectTx clears markerUID's subject within tx and resets the cached
 // subject on any faces tied to it, in the same transaction. It is the shared core
-// of the plain and audited unassign paths. It returns ErrMarkerNotFound if no such
-// marker exists.
-func unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID string) (Marker, error) {
+// of the plain and audited unassign paths. The subject it carried, if any, is
+// reported to the store's tag observer as untagged, attributed to actorUID. It
+// returns ErrMarkerNotFound if no such marker exists.
+func (s *Store) unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID, actorUID string) (Marker, error) {
+	previous, err := s.previousSubject(ctx, tx, markerUID)
+	if err != nil {
+		return Marker{}, err
+	}
 	updated, err := scanMarker(tx.QueryRow(ctx, unassignMarkerSQL, markerUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -234,6 +294,13 @@ func unassignSubjectTx(ctx context.Context, tx pgx.Tx, markerUID string) (Marker
 	}
 	if err := clearFacesSubject(ctx, tx, markerUID); err != nil {
 		return Marker{}, err
+	}
+	if previous != "" {
+		if err := s.untagged(ctx, tx, Tagging{
+			PhotoUID: updated.PhotoUID, SubjectUID: previous, ActorUID: actorUID,
+		}); err != nil {
+			return Marker{}, err
+		}
 	}
 	return updated, nil
 }
@@ -296,7 +363,8 @@ func (s *Store) updateMarkerFlag(ctx context.Context, col, uid string, val bool)
 
 // DeleteMarker removes the marker identified by uid and clears the cached
 // marker_uid/subject_uid/subject_name on any faces that referenced it, in one
-// transaction. It returns ErrMarkerNotFound if no such marker exists.
+// transaction; a subject the marker carried is reported to the tag observer as
+// untagged. It returns ErrMarkerNotFound if no such marker exists.
 func (s *Store) DeleteMarker(ctx context.Context, uid string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -310,12 +378,22 @@ func (s *Store) DeleteMarker(ctx context.Context, uid string) error {
 	); err != nil {
 		return fmt.Errorf("people: clearing faces cache for marker %s: %w", uid, err)
 	}
-	tag, err := tx.Exec(ctx, "DELETE FROM markers WHERE uid = $1", uid)
+	var (
+		photoUID   string
+		subjectUID *string
+	)
+	err = tx.QueryRow(ctx, "DELETE FROM markers WHERE uid = $1 RETURNING photo_uid, subject_uid", uid).
+		Scan(&photoUID, &subjectUID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrMarkerNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("people: deleting marker %s: %w", uid, err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrMarkerNotFound
+	if subjectUID != nil {
+		if err := s.untagged(ctx, tx, Tagging{PhotoUID: photoUID, SubjectUID: *subjectUID}); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("people: commit delete marker %s: %w", uid, err)

@@ -110,7 +110,7 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 	if err != nil {
 		return Notification{}, err
 	}
-	if _, err := tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.Link); err != nil {
+	if _, err := tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid)); err != nil {
 		return Notification{}, mapForeignKey(err)
 	}
 	if len(photos) > 0 {

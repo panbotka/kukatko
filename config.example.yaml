@@ -591,6 +591,14 @@ push:
     # How a push service reaches the operator: a mailto: or an https: URL,
     # e.g. "mailto:admin@example.org".
     subject: ""
+  # "You were tagged in N photos": tagging is announced once per window, not
+  # once per photo. The first time somebody tags a person, a window opens for
+  # the account linked to that person; every photo they are tagged on inside it
+  # is counted, and one notification is sent when it closes. Nobody is told
+  # about their own tagging, nor about a private, hidden or archived photo.
+  tags:
+    # How long a window stays open. Must be positive.
+    window: 1h
 
 # The task queue's one message that leaves the app: a daily e-mail to every
 # person listing the open tasks whose move is theirs (the listing's "Na mně").

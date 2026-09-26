@@ -491,6 +491,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `notification_prefs` (account data, like `push_subscriptions`). Retention is a purge by age — read ones
   after `DefaultReadRetention` (30 d), unread after the longer `DefaultUnreadRetention` (90 d) — exposed
   but not scheduled yet.
+- **`tag_notices`** — the photos an account is **waiting to hear it was tagged on** (migration `0088`,
+  package `internal/tagnotifyjob`): one `(user_uid, photo_uid)` row per photo in the account's open
+  tagging window, `recorded_at`, primary key on the pair (tagging one person twice on a photo is one
+  photo), both sides `ON DELETE CASCADE` (a deleted account's window finds nothing). Written by the
+  assignment write path, deleted by an untagging, consumed by the `tag_notify` job — see §8. Emptied by
+  the wipe: every row names a photograph.
 - **`photo_tasks` + `photo_task_photos` + `photo_task_participants`** — the **work queue**: a question
   about a group of photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the
   resolution that closes it and the search that produced the group, plus the group itself as
@@ -797,7 +803,7 @@ lost on restart).
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
-  `push_send`, `task_digest`, `face_cluster`
+  `push_send`, `task_digest`, `tag_notify`, `face_cluster`
   (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
@@ -835,6 +841,34 @@ lost on restart).
   subscription lifecycle — a device the push service reports gone (404/410) is deleted, one whose run of
   consecutive failures reaches the threshold is retired — and an oversized notification is a terminal
   failure. See `internal/pushjob`.
+- **"You were tagged in N photos" — one push per window, not per photo** (`internal/tagnotifyjob`). Somebody
+  naming the faces of a whole village event must not send the people they name forty notifications, so
+  tagging is collected per account:
+  1. **Every assignment** — face UI, review game, cluster, candidate acceptance, attaching a person by
+     hand — ends in the people store,
+     which reports it to its **tag observer** inside the assignment's transaction. For each account linked
+     to the tagged subject (`users.subject_uid`) the recorder writes a `tag_notices (user_uid, photo_uid)`
+     row, and **when the account has no window open** (no queued `tag_notify` job) enqueues one with
+     `run_after = now + push.tags.window` (default 1 h). Later tags inside the window add rows and find
+     the job queued. Both writes share the assignment's transaction: a rolled-back assignment announces
+     nothing. The recorder runs under a savepoint, so a failure costs the notice, never the assignment.
+  2. **What is never recorded:** the tagger's own person (nobody hears about their own work); a private,
+     hidden or archived photo (a notification would disclose that it exists — the same predicate the
+     notification page filters with); anything for an account that turned the kind off (the table must
+     not fill up for somebody who does not want it); anything with push off; a subject no account is
+     linked to. **Untagging before the window closes deletes the notice.**
+  3. **The window closes** when the job runs: in one transaction it consumes every notice (`DELETE …
+     RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), records
+     one `notifications` row with the frozen set **newest photo first** and the link `/n/<uid>` (the
+     notification's own page), and enqueues its `push_send` deliveries. Nothing left → it sends nothing;
+     a crash rolls it all back and the retry re-runs cleanly — never lost, never announced twice.
+  4. **Concurrency** is settled by a per-account advisory transaction lock taken by the recorder and the
+     job: a tag in flight when the window closes is waited for and included; one landing while the job
+     runs finds no *queued* job (the dedup index, migration 0089, is queued-only) and **opens a new
+     window** — correct, since the running job already read its notices. A whole cluster assigned in one
+     transaction is hundreds of notices, one job, one notification.
+  The message names nobody (several people may tag inside one window) and uses all three Czech plural
+  forms ("Přibyla 1 fotka / Přibyly 3 fotky / Přibylo 12 fotek, na kterých vás označili.").
 - **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
   When the box is offline, `image_embed`/`face_detect`/`ocr` jobs stay `queued` with `run_after`
   pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue

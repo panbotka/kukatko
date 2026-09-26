@@ -223,6 +223,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"push.vapid.public_key", cfg.Push.VAPID.PublicKey, ""},
 		{"push.vapid.private_key", cfg.Push.VAPID.PrivateKey, ""},
 		{"push.vapid.subject", cfg.Push.VAPID.Subject, ""},
+		// Tagging is announced once per hour-long window, not once per photo.
+		{"push.tags.window", cfg.Push.Tags.Window, time.Hour},
 		// The daily tasks digest is off out of the box and, once on, goes out at
 		// 07:00 UTC.
 		{"tasks.digest.enabled", cfg.Tasks.Digest.Enabled, false},
@@ -1497,6 +1499,7 @@ func pushEnv(t *testing.T) map[string]string {
 // environment, the nested VAPID ones included.
 func TestLoad_pushEnvOverride(t *testing.T) {
 	env := pushEnv(t)
+	env["KUKATKO_PUSH_TAGS_WINDOW"] = "15m"
 	setMinimalEnv(t)
 	for k, v := range env {
 		t.Setenv(k, v)
@@ -1506,7 +1509,7 @@ func TestLoad_pushEnvOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if !cfg.Push.Enabled ||
+	if !cfg.Push.Enabled || cfg.Push.Tags.Window != 15*time.Minute ||
 		cfg.Push.VAPID.PublicKey != env["KUKATKO_PUSH_VAPID_PUBLIC_KEY"] ||
 		cfg.Push.VAPID.PrivateKey != env["KUKATKO_PUSH_VAPID_PRIVATE_KEY"] ||
 		cfg.Push.VAPID.Subject != "mailto:ops@example.com" {
@@ -1551,6 +1554,12 @@ func TestLoad_pushValidation(t *testing.T) {
 			wantErr: ErrInvalidPushConfig,
 		},
 		{name: "bare address subject", env: with("KUKATKO_PUSH_VAPID_SUBJECT", "ops@example.com"), wantErr: ErrInvalidPushConfig},
+		{name: "zero tags window", env: with("KUKATKO_PUSH_TAGS_WINDOW", "0s"), wantErr: ErrInvalidPushTagsWindow},
+		{
+			name:    "negative tags window with push off",
+			env:     map[string]string{"KUKATKO_PUSH_ENABLED": "false", "KUKATKO_PUSH_TAGS_WINDOW": "-1h"},
+			wantErr: ErrInvalidPushTagsWindow,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

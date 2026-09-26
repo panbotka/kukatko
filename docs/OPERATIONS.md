@@ -2068,8 +2068,13 @@ other type; values ≤ 0 are ignored and a type
   was made for the public key. Delivery always goes **through the job queue** (`push_send`, one job per
   subscribed device, `internal/pushjob`); unlike `mail_send` its handler is registered **even with push
   off**, so a job left over from when push was on completes unsent instead of waiting for a claimant, and
-  nothing new is enqueued while it is off. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
-  `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`.
+  nothing new is enqueued while it is off. `tags.window` (duration, **default `1h`**) is how long a
+  **tagging window** stays open: the first time somebody's linked person is tagged, a window opens, every
+  photo they are tagged on inside it is counted, and when it closes one "you were tagged in N photos"
+  notification is sent (the `tag_notify` job, `internal/tagnotifyjob`) — not one per photo. It must be
+  positive, checked **whether push is on or off** (`ErrInvalidPushTagsWindow`); with push off nothing is
+  recorded at all. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
+  `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`, `KUKATKO_PUSH_TAGS_WINDOW`.
 - **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
   outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's
   „Na mně"), up to 20 of them with a link each and „…a dalších M" for the rest, plus a link to

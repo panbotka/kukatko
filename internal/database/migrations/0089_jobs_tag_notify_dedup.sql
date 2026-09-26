@@ -1,0 +1,32 @@
+-- 0089_jobs_tag_notify_dedup: at most one *queued* tag_notify job per account.
+--
+-- The `tag_notify` job closes one account's tagging window: it reads every
+-- pending tag_notices row of that account (migration 0088) and turns them into
+-- one "you were tagged in N photos" notification. The first tag of a window
+-- enqueues it with run_after one window into the future; every later tag inside
+-- the window must find that job and add nothing.
+--
+-- The queue's existing dedup index (idx_jobs_dedup) keys on
+-- (type, payload ->> 'photo_uid'), and this job belongs to no photo: its payload
+-- carries a user_uid instead, the photo expression is NULL, and NULLs are
+-- distinct in a unique index — so, exactly as 0075 (family_export) and 0084
+-- (task_digest) found, the job needs an index of its own. Unlike those two it is
+-- not a singleton per type: every account has its own window, so the key is the
+-- account named in the payload.
+--
+-- The predicate is state = 'queued' only, for the reason 0044 and 0075 give. A
+-- job that is already *running* has read (and deleted) its account's notices, so
+-- a tag landing afterwards is not in that job's notification. With 'running' in
+-- the predicate that tag would be swallowed as a duplicate and never announced;
+-- scoped to 'queued', it opens a fresh window instead. That second window is the
+-- correct behaviour, not a bug.
+--
+-- It is a partial index over one job type rather than a rewrite of
+-- idx_jobs_dedup, so nothing about the per-photo dedup changes and this index
+-- costs nothing for every other type. The store maps a violation of it to
+-- ErrDuplicate exactly as it does the others.
+--
+-- This migration is wrapped in a transaction by the runner.
+
+CREATE UNIQUE INDEX idx_jobs_tag_notify_dedup ON jobs ((payload ->> 'user_uid'))
+    WHERE type = 'tag_notify' AND state = 'queued';

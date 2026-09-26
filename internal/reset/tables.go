@@ -67,6 +67,7 @@ var catalogueTables = []string{
 	"subject_families",
 	"subject_family_children",
 	"subjects",
+	"tag_notices",
 	"user_favorites",
 	"user_ratings",
 }
@@ -93,7 +94,9 @@ var catalogueTables = []string{
 // choices back to the defaults would be an outage of a person's settings. The
 // notifications themselves are catalogue: each one points at photographs the
 // wipe removes, and a notification about photos that no longer exist is a
-// dangling record with no meaning.
+// dangling record with no meaning. So is tag_notices, the photos an account is
+// still waiting to hear it was tagged on: every row names a photograph the wipe
+// removes (and the tag_notify jobs that would announce them go with jobs).
 // passkey_credentials stays for the same reason api_tokens does, only more so:
 // it holds the *only* copy of the public key a passkey sign-in is checked
 // against, and wiping it would silently turn every registered authenticator into

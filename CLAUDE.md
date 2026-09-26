@@ -169,6 +169,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/sweepapi` — `GET /faces/sweep` (RequireCurator) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`
+- `internal/tagnotifyjob` — "you were tagged in N photos": the people store's tag observer records `tag_notices` in the assignment's transaction (never self, never a private/hidden/archived photo, never with the kind off; untag un-announces) and opens a `push.tags.window` window; the `tag_notify` job closes it into one notification + push
 - `internal/taskdigestjob` — the `task_digest` job + its daily scheduler: one mail per person listing the open tasks whose move is theirs, only when something changed since `users.task_digest_at`; sends through `mail_send`, never itself; on only with `tasks.digest.enabled` **and** mail
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)

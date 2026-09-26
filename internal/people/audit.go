@@ -209,7 +209,8 @@ func (s *Store) DeleteSubjectAudited(ctx context.Context, uid string, entry audi
 // marker created while assigning a face to a subject and the record of who did it
 // commit atomically. entry's TargetUID defaults to the marker's UID. It behaves
 // like CreateMarker otherwise (type/bounds validation, faces cache refresh when a
-// subject is named, ErrSubjectNotFound for a missing subject).
+// subject is named, ErrSubjectNotFound for a missing subject). A marker naming a
+// subject is reported to the tag observer as a tagging by entry.ActorUID.
 func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.Entry) (Marker, error) {
 	if m.Type == "" {
 		m.Type = MarkerFace
@@ -231,7 +232,7 @@ func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.E
 		entry.TargetUID = m.UID
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return insertMarkerTx(ctx, tx, m)
+		return s.insertMarkerTx(ctx, tx, m, entry.ActorUID)
 	})
 }
 
@@ -240,7 +241,7 @@ func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.E
 // who made it commit atomically. entry's TargetUID defaults to markerUID. It behaves
 // like AssignSubject otherwise (refreshing the faces cache, ErrMarkerNotFound or
 // ErrSubjectNotFound when either side is missing — each rolls back, writing no
-// audit row).
+// audit row). The tag observer hears the change as made by entry.ActorUID.
 func (s *Store) AssignSubjectAudited(
 	ctx context.Context, markerUID, subjectUID string, entry audit.Entry,
 ) (Marker, error) {
@@ -248,7 +249,7 @@ func (s *Store) AssignSubjectAudited(
 		entry.TargetUID = markerUID
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return assignSubjectTx(ctx, tx, markerUID, subjectUID)
+		return s.assignSubjectTx(ctx, tx, markerUID, subjectUID, entry.ActorUID)
 	})
 }
 
@@ -278,6 +279,7 @@ func (s *Store) SetMarkerInvalidAudited(
 // and writes entry in the same transaction. entry's TargetUID defaults to markerUID.
 // It behaves like UnassignSubject otherwise (resetting the faces cache,
 // ErrMarkerNotFound for a missing marker — which rolls back, writing no audit row).
+// The tag observer hears the untagging as made by entry.ActorUID.
 func (s *Store) UnassignSubjectAudited(
 	ctx context.Context, markerUID string, entry audit.Entry,
 ) (Marker, error) {
@@ -285,6 +287,6 @@ func (s *Store) UnassignSubjectAudited(
 		entry.TargetUID = markerUID
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return unassignSubjectTx(ctx, tx, markerUID)
+		return s.unassignSubjectTx(ctx, tx, markerUID, entry.ActorUID)
 	})
 }

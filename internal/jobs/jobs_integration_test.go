@@ -202,6 +202,99 @@ func TestEnqueueDedup_taskDigestIsSingletonPerQueuedState(t *testing.T) {
 	}
 }
 
+// userPayload builds a {"user_uid": uid} JSON payload, the shape of a
+// tag_notify job.
+func userPayload(t *testing.T, uid string) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{"user_uid": uid})
+	if err != nil {
+		t.Fatalf("marshaling payload: %v", err)
+	}
+	return raw
+}
+
+// TestEnqueueDedup_tagNotifyIsPerAccountWhileQueued verifies migration 0089's
+// index: one queued tag_notify job per account, a second account is not a
+// duplicate, and a job already running never blocks the next window.
+func TestEnqueueDedup_tagNotifyIsPerAccountWhileQueued(t *testing.T) {
+	store, _ := newStore(t)
+	ctx := t.Context()
+
+	if _, err := store.Enqueue(ctx, jobs.TypeTagNotify, userPayload(t, "u1"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("first tag_notify enqueue: %v", err)
+	}
+	_, err := store.Enqueue(ctx, jobs.TypeTagNotify, userPayload(t, "u1"), jobs.EnqueueOptions{})
+	if !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second queued tag_notify for the same account = %v, want ErrDuplicate", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeTagNotify, userPayload(t, "u2"), jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("tag_notify for another account = %v, want success", err)
+	}
+	if _, err := store.Claim(ctx, "w1", jobs.TypeTagNotify); err != nil {
+		t.Fatalf("Claim tag_notify: %v", err)
+	}
+	// One of the two is running now; enqueuing both again must yield exactly one
+	// new job — the running account's fresh window.
+	inserted := 0
+	for _, uid := range []string{"u1", "u2"} {
+		_, err := store.Enqueue(ctx, jobs.TypeTagNotify, userPayload(t, uid), jobs.EnqueueOptions{})
+		switch {
+		case err == nil:
+			inserted++
+		case !errors.Is(err, jobs.ErrDuplicate):
+			t.Fatalf("tag_notify enqueue for %s: %v", uid, err)
+		}
+	}
+	if inserted != 1 {
+		t.Fatalf("enqueues after one claim inserted %d jobs, want 1 (the running account's next window)", inserted)
+	}
+}
+
+// TestEnqueueOrSkip_duplicateKeepsTransaction verifies the transaction-safe
+// enqueue: a duplicate is reported as ErrDuplicate without aborting the
+// caller's transaction, which can go on to commit its other work.
+func TestEnqueueOrSkip_duplicateKeepsTransaction(t *testing.T) {
+	_, db := newStore(t)
+	ctx := t.Context()
+
+	tx, err := db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	runAfter := time.Now().Add(time.Hour)
+	first, err := jobs.EnqueueOrSkip(ctx, tx, jobs.TypeTagNotify, userPayload(t, "u1"),
+		jobs.EnqueueOptions{RunAfter: &runAfter})
+	if err != nil {
+		t.Fatalf("first EnqueueOrSkip: %v", err)
+	}
+	if !first.RunAfter.Equal(runAfter.Truncate(time.Microsecond)) || first.MaxAttempts != jobs.DefaultMaxAttempts {
+		t.Fatalf("first job = run_after %v max_attempts %d, want %v and the default",
+			first.RunAfter, first.MaxAttempts, runAfter)
+	}
+	if _, err := jobs.EnqueueOrSkip(ctx, tx, jobs.TypeTagNotify, userPayload(t, "u1"),
+		jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second EnqueueOrSkip = %v, want ErrDuplicate", err)
+	}
+	// The transaction must still be usable after the skipped insert.
+	if _, err := jobs.EnqueueOrSkip(ctx, tx, jobs.TypeTagNotify, userPayload(t, "u2"),
+		jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("EnqueueOrSkip after a duplicate: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit after a duplicate: %v", err)
+	}
+	var n int
+	if err := db.Pool().QueryRow(ctx,
+		"SELECT count(*) FROM jobs WHERE type = $1", jobs.TypeTagNotify).Scan(&n); err != nil {
+		t.Fatalf("counting jobs: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("committed %d tag_notify jobs, want 2", n)
+	}
+}
+
 // TestClaimOrdering verifies claiming respects run_after (skips not-yet-due),
 // then priority DESC, then FIFO by id.
 func TestClaimOrdering(t *testing.T) {
