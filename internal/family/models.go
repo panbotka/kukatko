@@ -320,6 +320,10 @@ type Tree struct {
 	// with more of the component left unreached. The directional walks never
 	// set it.
 	Truncated bool `json:"truncated"`
+	// Total is how many people the whole component holds, counted past the cap:
+	// len(Members) unless Truncated, when it is the "of M" the page reports.
+	// The directional walks report their own member count.
+	Total int `json:"total"`
 }
 
 // DescendantOptions tunes the descendant walk.

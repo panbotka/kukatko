@@ -2,19 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import {
   boxWidth,
+  cardCentre,
   COUPLE_GAP,
   edgePath,
   emptyLayout,
-  emptyPedigree,
   type FamilyLayout,
   type LayoutFamily,
   type LayoutNode,
-  layoutAncestors,
-  layoutDescendants,
+  layoutNetwork,
   LEVEL_GAP,
+  LEVEL_STRIDE,
   NODE_HEIGHT,
-  type Pedigree,
-  type PedigreeSlot,
   PERSON_WIDTH,
   SIBLING_GAP,
   TREE_PADDING,
@@ -25,13 +23,31 @@ function family(uid: string, partners: string[], children: string[] = []): Layou
   return { uid, partnerUids: partners, childUids: children }
 }
 
+/** Lays out a network rooted at `root`, the generations given as a plain record. */
+function layout(
+  root: string,
+  generations: Record<string, number>,
+  families: LayoutFamily[],
+): FamilyLayout {
+  return layoutNetwork({
+    rootUid: root,
+    generations: new Map(Object.entries(generations)),
+    families,
+  })
+}
+
 /** The node of a given id, failing the test rather than returning undefined. */
-function node(layout: FamilyLayout, id: string): LayoutNode {
-  const found = layout.nodes.find((candidate) => candidate.id === id)
+function node(drawing: FamilyLayout, id: string): LayoutNode {
+  const found = drawing.nodes.find((candidate) => candidate.id === id)
   if (found === undefined) {
     throw new Error(`the drawing has no node ${id}`)
   }
   return found
+}
+
+/** Every box a person stands in. */
+function boxesOf(drawing: FamilyLayout, personUid: string): LayoutNode[] {
+  return drawing.nodes.filter((candidate) => candidate.personUids.includes(personUid))
 }
 
 /** The horizontal centre of a box, which is what the drawing lines up on. */
@@ -40,17 +56,17 @@ function centre(box: LayoutNode): number {
 }
 
 /**
- * Asserts that no two boxes on one level come closer than the sibling gap. This
- * is the invariant the whole tidy layout exists for, and it is worth checking
- * on every shape rather than only on the one that broke.
+ * Asserts that no two boxes of one layer come closer than the sibling gap. This
+ * is the invariant the coordinate step exists for, and it is worth checking on
+ * every shape rather than only on the one that broke.
  */
-function expectNoOverlap(layout: FamilyLayout): void {
-  const byDepth = new Map<number, LayoutNode[]>()
-  for (const box of layout.nodes) {
-    byDepth.set(box.depth, [...(byDepth.get(box.depth) ?? []), box])
+function expectNoOverlap(drawing: FamilyLayout): void {
+  const byLayer = new Map<number, LayoutNode[]>()
+  for (const box of drawing.nodes) {
+    byLayer.set(box.y, [...(byLayer.get(box.y) ?? []), box])
   }
-  for (const level of byDepth.values()) {
-    const ordered = [...level].sort((a, b) => a.x - b.x)
+  for (const layer of byLayer.values()) {
+    const ordered = [...layer].sort((a, b) => a.x - b.x)
     for (let i = 1; i < ordered.length; i += 1) {
       const gap = ordered[i].x - (ordered[i - 1].x + ordered[i - 1].width)
       expect(gap, `gap between ${ordered[i - 1].id} and ${ordered[i].id}`).toBeGreaterThanOrEqual(
@@ -58,6 +74,20 @@ function expectNoOverlap(layout: FamilyLayout): void {
       )
     }
   }
+}
+
+/**
+ * The production shape the network exists for: Ludmila and Aleš with their son
+ * Tomáš, Ludmila in a parentless sibling group with her sister Dagmar, and
+ * Dagmar's daughter Petra. Five people, three generations' worth of lines, one
+ * of them sideways.
+ */
+function kozaks(): FamilyLayout {
+  return layout('tomas', { tomas: 0, ludmila: -1, ales: -1, dagmar: -1, petra: 0 }, [
+    family('fm_couple', ['ludmila', 'ales'], ['tomas']),
+    family('fm_sisters', [], ['ludmila', 'dagmar']),
+    family('fm_dagmar', ['dagmar'], ['petra']),
+  ])
 }
 
 describe('boxWidth', () => {
@@ -73,182 +103,187 @@ describe('boxWidth', () => {
 
 describe('emptyLayout', () => {
   it('is a canvas with nothing on it', () => {
-    const layout = emptyLayout()
-    expect(layout.nodes).toEqual([])
-    expect(layout.edges).toEqual([])
-    expect(layout.width).toBe(2 * TREE_PADDING)
+    const empty = emptyLayout()
+    expect(empty.nodes).toEqual([])
+    expect(empty.edges).toEqual([])
+    expect(empty.width).toBe(2 * TREE_PADDING)
+    expect(empty.height).toBe(2 * TREE_PADDING)
   })
 })
 
-describe('layoutDescendants', () => {
+describe('layoutNetwork', () => {
+  it('draws the empty graph as an empty canvas', () => {
+    expect(layout('nobody', {}, [])).toEqual(emptyLayout())
+  })
+
   it('draws a person with no family at all as a single box', () => {
-    const layout = layoutDescendants({ rootUid: 'a', families: [] })
-
-    expect(layout.nodes).toHaveLength(1)
-    expect(layout.nodes[0].personUids).toEqual(['a'])
-    expect(layout.nodes[0].familyUid).toBeNull()
-    expect(layout.nodes[0].x).toBe(TREE_PADDING)
-    expect(layout.nodes[0].y).toBe(TREE_PADDING)
-    expect(layout.edges).toEqual([])
+    const drawing = layout('solo', { solo: 0 }, [])
+    expect(drawing.nodes).toHaveLength(1)
+    const box = node(drawing, 'person:solo')
+    expect(box).toMatchObject({ x: TREE_PADDING, y: TREE_PADDING, generation: 0 })
+    expect(drawing.edges).toEqual([])
+    expect(drawing.width).toBe(PERSON_WIDTH + 2 * TREE_PADDING)
+    expect(drawing.height).toBe(NODE_HEIGHT + 2 * TREE_PADDING)
   })
 
-  it('stacks a straight line of generations on one vertical axis', () => {
-    const layout = layoutDescendants({
-      rootUid: 'a',
-      families: [
-        family('f1', ['a', 'a2'], ['b']),
-        family('f2', ['b', 'b2'], ['c']),
-        family('f3', ['c', 'c2']),
-      ],
-    })
+  it('puts every box on the layer of its signed generation, the oldest on top', () => {
+    const drawing = kozaks()
+    // The oldest generation present is −1, so it is the top row — pushed down
+    // by half a gap, because the sisters' bar hangs above it.
+    const top = TREE_PADDING + LEVEL_GAP / 2
+    expect(node(drawing, 'fm_couple').y).toBe(top)
+    expect(node(drawing, 'fm_dagmar').y).toBe(top)
+    expect(node(drawing, 'person:tomas').y).toBe(top + LEVEL_STRIDE)
+    expect(node(drawing, 'person:petra').y).toBe(top + LEVEL_STRIDE)
+    expect(node(drawing, 'fm_couple').generation).toBe(-1)
+    expect(drawing.height).toBe(top + LEVEL_STRIDE + NODE_HEIGHT + TREE_PADDING)
+  })
 
-    expect(layout.nodes.map((box) => box.id)).toEqual(['f1', 'f2', 'f3'])
-    expect(layout.nodes.map((box) => box.depth)).toEqual([0, 1, 2])
-    // Each parent is centred over its only child, so the whole line shares one axis.
-    expect(centre(node(layout, 'f2'))).toBeCloseTo(centre(node(layout, 'f1')))
-    expect(centre(node(layout, 'f3'))).toBeCloseTo(centre(node(layout, 'f1')))
-    // And every generation sits one stride below the previous one.
-    expect(node(layout, 'f2').y - node(layout, 'f1').y).toBe(
-      node(layout, 'f3').y - node(layout, 'f2').y,
+  it('reaches sideways: the aunt and the cousin are drawn beside the parents', () => {
+    const drawing = kozaks()
+    const drawn = drawing.nodes.flatMap((box) => box.personUids).sort()
+    expect(drawn).toEqual(['ales', 'dagmar', 'ludmila', 'petra', 'tomas'])
+    expectNoOverlap(drawing)
+  })
+
+  it('draws a couple as one box, their children hanging off the bar between them', () => {
+    const drawing = kozaks()
+    const couple = node(drawing, 'fm_couple')
+    expect([...couple.personUids].sort()).toEqual(['ales', 'ludmila'])
+    expect(couple.width).toBe(boxWidth(2))
+    const edge = drawing.edges.find((candidate) => candidate.childId === 'tomas')
+    expect(edge).toMatchObject({
+      parentId: 'fm_couple',
+      x1: centre(couple),
+      y1: couple.y + NODE_HEIGHT,
+      x2: centre(node(drawing, 'person:tomas')),
+      y2: node(drawing, 'person:tomas').y,
+    })
+  })
+
+  it('turns a couple towards the partner’s own family', () => {
+    const drawing = kozaks()
+    const couple = node(drawing, 'fm_couple')
+    const dagmar = node(drawing, 'fm_dagmar')
+    // Ludmila is drawn on the side of her sister, so the sibling bar does not
+    // have to run across Aleš to reach her.
+    const ludmilaSide = cardCentre(couple, 'ludmila') < cardCentre(couple, 'ales') ? -1 : 1
+    const sisterSide = centre(dagmar) < centre(couple) ? -1 : 1
+    expect(ludmilaSide).toBe(sisterSide)
+  })
+
+  it('joins a parentless sibling group with one bar just above the siblings', () => {
+    const drawing = kozaks()
+    const bar = drawing.edges.filter((edge) => edge.parentId === 'fm_sisters')
+    expect(bar.map((edge) => edge.childId).sort()).toEqual(['dagmar', 'ludmila'])
+    const couple = node(drawing, 'fm_couple')
+    const dagmar = node(drawing, 'fm_dagmar')
+    const [first, second] = bar
+    // One shared start, halfway between the two sisters' cards, in the gap above
+    // their row — a sibling group has no box to hang off.
+    expect(first.x1).toBe(second.x1)
+    expect(first.x1).toBe((cardCentre(couple, 'ludmila') + cardCentre(dagmar, 'dagmar')) / 2)
+    expect(first.y1).toBe(couple.y - LEVEL_GAP / 2)
+    // Over the top row the bar still lands on the canvas, inside its padding.
+    expect(first.y1).toBe(TREE_PADDING)
+    expect(bar.find((edge) => edge.childId === 'ludmila')?.x2).toBe(cardCentre(couple, 'ludmila'))
+  })
+
+  it('packs a wide sibship without overlap and centres the parents over it', () => {
+    const drawing = layout('p', { p: 0, q: 0, a: 1, b: 1, c: 1, d: 1 }, [
+      family('f', ['p', 'q'], ['a', 'b', 'c', 'd']),
+    ])
+    expectNoOverlap(drawing)
+    const kids = ['a', 'b', 'c', 'd'].map((uid) => node(drawing, `person:${uid}`))
+    // The order given is the order drawn.
+    expect(kids.map((kid) => kid.x)).toEqual([...kids.map((kid) => kid.x)].sort((x, y) => x - y))
+    const middle = (centre(kids[0]) + centre(kids[3])) / 2
+    expect(centre(node(drawing, 'f'))).toBeCloseTo(middle, 6)
+  })
+
+  it('never lets two boxes of one layer overlap, however hard they pull', () => {
+    // Three couples whose children all married into one generation, every one
+    // pulling towards the same place.
+    const drawing = layout(
+      'x1',
+      { a1: 0, a2: 0, b1: 0, b2: 0, c1: 0, c2: 0, x1: 1, x2: 1, y1: 1, y2: 1, z1: 1, z2: 1, k: 2 },
+      [
+        family('fa', ['a1', 'a2'], ['x1', 'y1']),
+        family('fb', ['b1', 'b2'], ['x2', 'z1']),
+        family('fc', ['c1', 'c2'], ['y2', 'z2']),
+        family('fx', ['x1', 'x2'], ['k']),
+        family('fy', ['y1', 'y2']),
+        family('fz', ['z1', 'z2']),
+      ],
     )
-    expect(layout.edges).toHaveLength(2)
-    expectNoOverlap(layout)
+    expectNoOverlap(drawing)
+    expect(drawing.nodes).toHaveLength(7)
   })
 
-  it('spreads a wide sibship in order and centres the parents over it', () => {
-    const children = ['c1', 'c2', 'c3', 'c4', 'c5']
-    const layout = layoutDescendants({
-      rootUid: 'a',
-      families: [family('f1', ['a', 'a2'], children)],
-    })
-
-    expect(layout.nodes).toHaveLength(6)
-    const boxes = children.map((uid) => node(layout, `person:${uid}`))
-    // Drawn left to right in the order they were given.
-    for (let i = 1; i < boxes.length; i += 1) {
-      expect(boxes[i].x).toBeGreaterThan(boxes[i - 1].x)
-    }
-    const parents = node(layout, 'f1')
-    expect(centre(parents)).toBeCloseTo((centre(boxes[0]) + centre(boxes[4])) / 2)
-    expectNoOverlap(layout)
-  })
-
-  it('interlocks a deep narrow branch with a shallow wide one', () => {
-    const layout = layoutDescendants({
-      rootUid: 'a',
-      families: [
-        family('f1', ['a'], ['b', 'c']),
-        // b's line runs three generations down and stays one box wide.
-        family('f2', ['b'], ['b1']),
-        family('f3', ['b1'], ['b2']),
-        // c's line is one generation and four children wide.
-        family('f4', ['c'], ['c1', 'c2', 'c3', 'c4']),
+  it('lays out a cycle — a cousin marriage — without drawing anybody twice', () => {
+    // Grandparents g1+g2; their children s and t each marry out; s's son u
+    // marries t's daughter v, and they have w. Every person is reachable from w
+    // along two paths.
+    const drawing = layout(
+      'w',
+      { g1: -3, g2: -3, s: -2, sp: -2, t: -2, tp: -2, u: -1, v: -1, w: 0 },
+      [
+        family('fg', ['g1', 'g2'], ['s', 't']),
+        family('fs', ['s', 'sp'], ['u']),
+        family('ft', ['t', 'tp'], ['v']),
+        family('fu', ['u', 'v'], ['w']),
       ],
-    })
-
-    expectNoOverlap(layout)
-    // The deep branch is only pushed aside by what is actually beside it: the
-    // bottom of b's line clears c's *box*, not c's four children.
-    expect(centre(node(layout, 'f3'))).toBeLessThan(node(layout, 'person:c1').x)
+    )
+    for (const uid of ['g1', 'g2', 's', 'sp', 't', 'tp', 'u', 'v', 'w']) {
+      expect(boxesOf(drawing, uid), uid).toHaveLength(1)
+    }
+    expect(drawing.nodes.every((box) => box.repeatUids.length === 0)).toBe(true)
+    expect(drawing.edges).toHaveLength(5)
+    expectNoOverlap(drawing)
   })
 
   it('draws a remarriage as two boxes sharing a marked partner', () => {
-    const layout = layoutDescendants({
-      rootUid: 'a',
-      families: [family('f1', ['a', 'x'], ['c1']), family('f2', ['a', 'y'], ['c2'])],
-    })
-
-    const first = node(layout, 'f1')
-    const second = node(layout, 'f2')
-    expect(first.depth).toBe(0)
-    expect(second.depth).toBe(0)
-    expect(first.personUids).toEqual(['a', 'x'])
-    expect(second.personUids).toEqual(['a', 'y'])
-    // The shared partner is drawn twice and said to be a repeat the second time.
-    expect(first.repeatUids).toEqual([])
-    expect(second.repeatUids).toEqual(['a'])
-    // Each marriage keeps its own children.
-    expect(first.childIds).toEqual(['person:c1'])
-    expect(second.childIds).toEqual(['person:c2'])
-    expectNoOverlap(layout)
+    const drawing = layout('m', { m: 0, w1: 0, w2: 0, a: 1, b: 1 }, [
+      family('f1', ['m', 'w1'], ['a']),
+      family('f2', ['m', 'w2'], ['b']),
+    ])
+    const boxes = boxesOf(drawing, 'm')
+    expect(boxes.map((box) => box.id).sort()).toEqual(['f1', 'f2'])
+    expect(boxes.filter((box) => box.repeatUids.includes('m'))).toHaveLength(1)
+    // The root's own box is drawn first, and is the one the repeat is not in.
+    expect(node(drawing, 'f1').repeatUids).toEqual([])
+    expectNoOverlap(drawing)
   })
 
-  it('folds a collapsed branch away and says how many people it hides', () => {
-    const families = [
-      family('f1', ['a'], ['b', 'c']),
-      family('f2', ['b', 'b2'], ['b1', 'b3']),
-      family('f3', ['c']),
-    ]
-    const open = layoutDescendants({ rootUid: 'a', families })
-    expect(open.nodes).toHaveLength(5)
-
-    const folded = layoutDescendants({ rootUid: 'a', families, collapsed: ['f2'] })
-
-    expect(folded.nodes.map((box) => box.id)).toEqual(['f1', 'f2', 'f3'])
-    const hidden = node(folded, 'f2')
-    expect(hidden.collapsed).toBe(true)
-    expect(hidden.childIds).toEqual([])
-    // b1 and b3 are hidden; b and b2 are drawn in the box that was folded.
-    expect(hidden.hiddenCount).toBe(2)
-    expect(folded.edges.map((edge) => edge.childId)).toEqual(['f2', 'f3'])
-    // Folding narrows the drawing, which is the point of folding.
-    expect(folded.width).toBeLessThan(open.width)
+  it('draws the whole payload even when it is not one component', () => {
+    const drawing = layout('a', { a: 0, stray: 0 }, [])
+    expect(drawing.nodes.map((box) => box.id).sort()).toEqual(['person:a', 'person:stray'])
+    expectNoOverlap(drawing)
   })
 
-  it('draws a cousin marriage once, however many paths reach it', () => {
-    const layout = layoutDescendants({
-      rootUid: 'r',
-      families: [
-        family('f0', ['r', 'r2'], ['a', 'b']),
-        family('fa', ['a', 'a2'], ['c1']),
-        family('fb', ['b', 'b2'], ['c2']),
-        // The cousins marry: c1 and c2 are both descendants of r.
-        family('fm', ['c1', 'c2'], ['d']),
-      ],
-    })
-
-    const ids = layout.nodes.map((box) => box.id)
-    expect(ids.filter((id) => id === 'fm')).toHaveLength(1)
-    expect(ids.filter((id) => id === 'person:d')).toHaveLength(1)
-    // Everybody appears in exactly one box.
-    const drawn = layout.nodes.flatMap((box) => box.personUids)
-    expect(new Set(drawn).size).toBe(drawn.length)
-    // The shared box hangs off whichever cousin was reached first, and the
-    // couple is drawn as one box rather than as two competing halves.
-    expect(node(layout, 'fm').personUids).toEqual(['c1', 'c2'])
-    expect(node(layout, 'fm').parentId).toBe('fa')
-    expectNoOverlap(layout)
+  it('ignores a family member the payload gave no generation for', () => {
+    const drawing = layout('a', { a: 0, c: 1 }, [family('f', ['a', 'ghost'], ['c', 'nobody'])])
+    expect(node(drawing, 'f').personUids).toEqual(['a'])
+    expect(drawing.edges.map((edge) => edge.childId)).toEqual(['c'])
   })
 
-  it('stops at the collapsed box even when the branch below it is a diamond', () => {
-    const layout = layoutDescendants({
-      rootUid: 'r',
-      families: [
-        family('f0', ['r'], ['a', 'b']),
-        family('fa', ['a'], ['c1']),
-        family('fb', ['b'], ['c2']),
-        family('fm', ['c1', 'c2'], ['d']),
-      ],
-      collapsed: ['fa'],
-    })
+  it('is deterministic: the same family comes out the same', () => {
+    expect(kozaks()).toEqual(kozaks())
+  })
 
-    // c1 is no longer drawn under a, so the cousin marriage hangs off b instead.
-    expect(node(layout, 'fm').parentId).toBe('fb')
-    expect(node(layout, 'fa').hiddenCount).toBe(0)
-    expectNoOverlap(layout)
+  it('starts a drawing with no sibling bar on top right at the padding', () => {
+    const drawing = layout('c', { p: -1, c: 0 }, [family('f', ['p'], ['c'])])
+    expect(node(drawing, 'f').y).toBe(TREE_PADDING)
   })
 
   it('sizes the canvas around everything it drew', () => {
-    const layout = layoutDescendants({
-      rootUid: 'a',
-      families: [family('f1', ['a', 'a2'], ['b', 'c'])],
-    })
-
-    const right = Math.max(...layout.nodes.map((box) => box.x + box.width))
-    const bottom = Math.max(...layout.nodes.map((box) => box.y + box.height))
-    expect(layout.width).toBe(right + TREE_PADDING)
-    expect(layout.height).toBe(bottom + TREE_PADDING)
-    expect(bottom - TREE_PADDING).toBeGreaterThan(NODE_HEIGHT)
+    const drawing = kozaks()
+    for (const box of drawing.nodes) {
+      expect(box.x).toBeGreaterThanOrEqual(TREE_PADDING)
+      expect(box.x + box.width).toBeLessThanOrEqual(drawing.width - TREE_PADDING + 0.001)
+      expect(box.y + box.height).toBeLessThanOrEqual(drawing.height - TREE_PADDING)
+    }
+    expect(Math.min(...drawing.nodes.map((box) => box.x))).toBe(TREE_PADDING)
   })
 })
 
@@ -257,217 +292,5 @@ describe('edgePath', () => {
     expect(edgePath({ parentId: 'p', childId: 'c', x1: 100, y1: 60, x2: 40, y2: 120 })).toBe(
       'M 100 60 V 90 H 40 V 120',
     )
-  })
-})
-
-/**
- * A four-generation pedigree of the kind the page is drawn for: Jan, his
- * parents, all four grandparents and all eight great-grandparents.
- *
- * The uids spell out where everybody stands — `p` for the paternal side, `m` for
- * the maternal one — because a pedigree test that has to be decoded is a test
- * nobody will keep.
- */
-function fullPedigree(): LayoutFamily[] {
-  return [
-    family('f_jan', ['pa', 'ma'], ['jan']),
-    family('f_pa', ['pp', 'pm'], ['pa']),
-    family('f_ma', ['mp', 'mm'], ['ma']),
-    family('f_pp', ['ppp', 'ppm'], ['pp']),
-    family('f_pm', ['pmp', 'pmm'], ['pm']),
-    family('f_mp', ['mpp', 'mpm'], ['mp']),
-    family('f_mm', ['mmp', 'mmm'], ['mm']),
-  ]
-}
-
-/** The slot of a given id, failing the test rather than returning undefined. */
-function slot(pedigree: Pedigree, id: string): PedigreeSlot {
-  const found = pedigree.slots.find((candidate) => candidate.id === id)
-  if (found === undefined) {
-    throw new Error(`the pedigree has no slot ${id}`)
-  }
-  return found
-}
-
-/** The slot standing for a given person, of which there may be several. */
-function slotsOf(pedigree: Pedigree, personUid: string): PedigreeSlot[] {
-  return pedigree.slots.filter((candidate) => candidate.personUid === personUid)
-}
-
-/** Asserts that no two slots of one generation overlap or touch. */
-function expectRowsClear(pedigree: Pedigree): void {
-  const byGeneration = new Map<number, PedigreeSlot[]>()
-  for (const place of pedigree.slots) {
-    byGeneration.set(place.generation, [...(byGeneration.get(place.generation) ?? []), place])
-  }
-  for (const row of byGeneration.values()) {
-    const ordered = [...row].sort((a, b) => a.x - b.x)
-    for (let i = 1; i < ordered.length; i += 1) {
-      const gap = ordered[i].x - (ordered[i - 1].x + ordered[i - 1].width)
-      expect(gap, `gap between ${ordered[i - 1].id} and ${ordered[i].id}`).toBeGreaterThanOrEqual(
-        -0.001,
-      )
-    }
-  }
-}
-
-describe('layoutAncestors', () => {
-  it('draws a full four-generation pedigree, oldest row on top', () => {
-    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
-
-    // 1 + 2 + 4 + 8: a pedigree is bounded by construction.
-    expect(pedigree.slots).toHaveLength(15)
-    expect(pedigree.slots.filter((place) => place.personUid === null)).toHaveLength(0)
-    expect(slot(pedigree, 'a1').personUid).toBe('jan')
-    expect(slot(pedigree, 'a2').personUid).toBe('pa')
-    expect(slot(pedigree, 'a3').personUid).toBe('ma')
-    // Ahnentafel: the father of n is 2n, the mother 2n+1, all the way up.
-    expect(slot(pedigree, 'a8').personUid).toBe('ppp')
-    expect(slot(pedigree, 'a15').personUid).toBe('mmm')
-
-    // The root sits at the bottom and each generation one row above the last.
-    const rowStride = NODE_HEIGHT + LEVEL_GAP
-    expect(slot(pedigree, 'a1').y).toBe(TREE_PADDING + 3 * rowStride)
-    expect(slot(pedigree, 'a2').y).toBe(TREE_PADDING + 2 * rowStride)
-    expect(slot(pedigree, 'a8').y).toBe(TREE_PADDING)
-    expectRowsClear(pedigree)
-  })
-
-  it('centres a person between the two parents above them', () => {
-    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
-
-    for (const place of pedigree.slots) {
-      const parents = pedigree.edges.filter((edge) => edge.childId === place.id)
-      if (parents.length === 0) {
-        continue
-      }
-      const centres = parents.map((edge) => edge.x1)
-      const between = (Math.min(...centres) + Math.max(...centres)) / 2
-      expect(place.x + place.width / 2).toBeCloseTo(between, 5)
-    }
-  })
-
-  it('leaves an unknown parent as a visible slot naming the child to fill it on', () => {
-    const pedigree = layoutAncestors({
-      rootUid: 'jan',
-      families: [family('f_jan', ['pa', 'ma'], ['jan']), family('f_pa', ['pp'], ['pa'])],
-      generations: 2,
-    })
-
-    // Jan's father has one recorded parent; the other side of that couple is a
-    // slot with nobody in it, to be filled in on the child it belongs to.
-    expect(slot(pedigree, 'a4').personUid).toBe('pp')
-    expect(slot(pedigree, 'a5').personUid).toBeNull()
-    expect(slot(pedigree, 'a5').childUid).toBe('pa')
-    // Jan's mother has no recorded parents at all: two blanks, not a missing row.
-    expect(slot(pedigree, 'a6').personUid).toBeNull()
-    expect(slot(pedigree, 'a7').personUid).toBeNull()
-    expect(slot(pedigree, 'a6').childUid).toBe('ma')
-    expectRowsClear(pedigree)
-  })
-
-  it('does not climb above a slot nobody has filled in', () => {
-    const pedigree = layoutAncestors({ rootUid: 'jan', families: [], generations: 4 })
-
-    // An unknown parent has no knowable parents of their own, so the drawing
-    // stops rather than fanning sixteen blanks out of nothing.
-    expect(pedigree.slots).toHaveLength(3)
-    expect(pedigree.edges).toHaveLength(2)
-  })
-
-  it('narrows to the branch that exists instead of reserving empty columns', () => {
-    const line = layoutAncestors({
-      rootUid: 'jan',
-      families: [
-        family('f_jan', ['pa'], ['jan']),
-        family('f_pa', ['pp'], ['pa']),
-        family('f_pp', ['ppp'], ['pp']),
-      ],
-      generations: 3,
-    })
-    const full = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
-
-    // One recorded line four generations deep is half the paper the full
-    // pedigree of the same depth needs: each unknown half of a couple is one
-    // blank slot, not the eight columns its descendants would have filled.
-    expect(line.slots).toHaveLength(7)
-    expect(line.width).toBeLessThan(full.width * 0.6)
-    expect(line.height).toBe(full.height)
-  })
-
-  it('draws a shared ancestor on both sides without looping', () => {
-    // Petr and Eva are cousins: their fathers Josef and Karel are brothers, so
-    // Bohumil and Marie are Jan's great-grandparents twice over.
-    const pedigree = layoutAncestors({
-      rootUid: 'jan',
-      families: [
-        family('f_jan', ['petr', 'eva'], ['jan']),
-        family('f_petr', ['josef', 'ludmila'], ['petr']),
-        family('f_eva', ['karel', 'anna'], ['eva']),
-        family('f_old', ['bohumil', 'marie'], ['josef', 'anna']),
-      ],
-      generations: 3,
-    })
-
-    expect(slotsOf(pedigree, 'bohumil')).toHaveLength(2)
-    expect(slotsOf(pedigree, 'bohumil').filter((place) => place.repeat)).toHaveLength(1)
-    // Josef and Anna are the siblings the collapse runs through; each is drawn
-    // once, on the side they descend to.
-    expect(slotsOf(pedigree, 'josef')).toHaveLength(1)
-    expect(slotsOf(pedigree, 'anna')).toHaveLength(1)
-    expectRowsClear(pedigree)
-  })
-
-  it('stops a person who is their own ancestor instead of climbing for ever', () => {
-    const pedigree = layoutAncestors({
-      rootUid: 'jan',
-      families: [family('f_jan', ['jan', 'eva'], ['jan'])],
-      generations: 6,
-    })
-
-    // Jan is drawn again as his own father, marked as the repeat it is, and the
-    // climb ends there rather than recursing into itself. Eva's own parents are
-    // two blanks, which is why the drawing is five slots and not three.
-    expect(slotsOf(pedigree, 'jan')).toHaveLength(2)
-    expect(slot(pedigree, 'a2').repeat).toBe(true)
-    expect(slot(pedigree, 'a2').x).not.toBeNaN()
-    expect(pedigree.slots).toHaveLength(5)
-  })
-
-  it('bounds how far up it will draw', () => {
-    const deep = layoutAncestors({
-      rootUid: 'jan',
-      families: fullPedigree(),
-      generations: 99,
-    })
-    const none = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 0 })
-
-    // A silly request is clamped, and above the last recorded generation there
-    // is only one row of blanks — an unknown ancestor has no knowable parents —
-    // so the drawing stops at 15 people and the 16 gaps above them…
-    expect(deep.slots).toHaveLength(31)
-    expect(Math.max(...deep.slots.map((place) => place.generation))).toBe(4)
-    // …and a request for nothing still yields the parents, which is the least a
-    // pedigree can say.
-    expect(none.slots).toHaveLength(3)
-  })
-
-  it('sizes the canvas around everything it drew', () => {
-    const pedigree = layoutAncestors({ rootUid: 'jan', families: fullPedigree(), generations: 3 })
-
-    const right = Math.max(...pedigree.slots.map((place) => place.x + place.width))
-    const bottom = Math.max(...pedigree.slots.map((place) => place.y + place.height))
-    expect(pedigree.width).toBeCloseTo(right + TREE_PADDING, 5)
-    expect(pedigree.height).toBeCloseTo(bottom + TREE_PADDING, 5)
-    expect(Math.min(...pedigree.slots.map((place) => place.x))).toBeGreaterThanOrEqual(TREE_PADDING)
-  })
-
-  it('has a canvas even with nothing on it', () => {
-    expect(emptyPedigree()).toEqual({
-      slots: [],
-      edges: [],
-      width: 2 * TREE_PADDING,
-      height: 2 * TREE_PADDING,
-    })
   })
 })

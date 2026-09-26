@@ -1,30 +1,35 @@
 /**
- * The pure geometry of the family tree, in both of its directions: families in,
- * coordinates out. No DOM, no React, no fetching — which is the point, because
- * this is where the risk of the whole page lives and a pure function is what
- * makes it unit-testable. The SVG renderers on top of it
- * (`components/people/FamilyTreeCanvas` and `FamilyPedigreeCanvas`) only paint
+ * The pure geometry of the family tree: people, their generations and the
+ * families tying them together in, coordinates out. No DOM, no React, no
+ * fetching — which is the point, because this is where the risk of the whole
+ * page lives and a pure function is what makes it unit-testable. The SVG
+ * renderer on top of it (`components/people/FamilyNetworkCanvas`) only paints
  * what this module decided.
  *
- * **Downwards** ({@link layoutDescendants}) is a classic tidy tree
- * (Reingold–Tilford): each subtree is laid out on its own, subtrees are packed
- * against each other by their **contours** — the leftmost and rightmost edge at
- * every level — and a parent is then centred over its children. That is what
- * keeps a deep narrow branch from being pushed halfway across the page by a
- * shallow wide one, and what makes the drawing readable at all once a family has
- * four generations in it. It is a genuine tree only because **a couple is one
- * box**: a person is a child in at most one family (the database enforces it),
- * so the boxes hang off each other.
+ * The page draws **everybody the family links reach** from one person — up, down
+ * and sideways through a sibling group to aunts and cousins — so what it draws is
+ * a graph, not a tree: once cousins marry it has cycles, and it grows upwards as
+ * readily as downwards. {@link layoutNetwork} is therefore a **layered**
+ * (Sugiyama-style) layout rather than a tidy tree or a pedigree:
  *
- * **Upwards** ({@link layoutAncestors}) is a different shape and therefore a
- * different function: a binary pedigree, bounded by construction (2, 4, 8, 16 …)
- * and read as a grid of generations, in which every known person carries two
- * slots whether or not the library can fill them. That is why the design splits
- * the page by direction instead of drawing one graph both ways.
+ * 1. the **layer** is given: it is the signed generation the server computed, so
+ *    a parent sits one row above their child whichever way the walk found them;
+ * 2. the **order** within a layer is seeded breadth-first from the root and then
+ *    improved by a few barycentre sweeps, a box moving towards the mean of the
+ *    boxes it is tied to — its parents, its children, its siblings and the other
+ *    marriage of a remarried partner — which is what keeps a family's lines short
+ *    and mostly uncrossed;
+ * 3. the **coordinates** are packed left to right, never closer than
+ *    {@link SIBLING_GAP}, and nudged towards that same barycentre, a box with more
+ *    ties pulling harder — solved exactly, per layer, as a weighted isotonic
+ *    regression, so the nudging can never make two boxes overlap.
  *
- * No dependency is taken for either. The frontend's dependency list is
- * deliberately lean — leaflet is its only visualisation library — and this is
- * arithmetic, not a reason to add d3, dagre or elkjs.
+ * **A couple is one box**, exactly as it always was: two partners side by side
+ * with the bar that joins them, and their children hanging off the bar.
+ *
+ * No dependency is taken. The frontend's dependency list is deliberately lean —
+ * leaflet is its only visualisation library — and the design chose this
+ * hand-written pure layout over d3, dagre or elkjs on purpose.
  */
 
 /** The width of one person's card inside a box, in layout units (≈ CSS px). */
@@ -49,41 +54,53 @@ export const LEVEL_GAP = 58
 export const TREE_PADDING = 24
 
 /** The distance from one generation's top edge to the next one's. */
-const LEVEL_STRIDE = NODE_HEIGHT + LEVEL_GAP
+export const LEVEL_STRIDE = NODE_HEIGHT + LEVEL_GAP
 
 /**
- * One family as the layout needs it: who is partnered in it and which of their
- * children the walk actually reached. Children outside the walked set are left
- * out by the backend deliberately — a box must never be handed an edge to a
- * person it was given no node for.
+ * How many barycentre sweeps the layout makes, each one down the layers and back
+ * up. A handful is what the method needs to settle — the families of a village
+ * archive are a few generations deep — and a fixed number keeps the drawing
+ * deterministic: the same family always comes out the same.
+ */
+const SWEEPS = 6
+
+/**
+ * One family as the layout needs it: who is partnered in it and who its children
+ * are. A family with no partners at all is a **sibling group** — two sisters whose
+ * parents nobody recorded — and draws no box of its own, only the bar that joins
+ * the siblings.
  */
 export interface LayoutFamily {
   /** The family row's UID, which is also the box's node id. */
   uid: string
-  /** The one or two people partnered in it. A lone parent is a family too. */
+  /** The partners in it: two for a couple, one for a lone parent, none for a sibling group. */
   partnerUids: readonly string[]
-  /** The children of it that were walked, in the order they should be drawn. */
+  /** Its children, in the order they should be drawn. */
   childUids: readonly string[]
 }
 
-/** What {@link layoutDescendants} is asked to draw. */
-export interface FamilyLayoutInput {
-  /** The person the tree is rooted at. */
+/** What {@link layoutNetwork} is asked to draw. */
+export interface NetworkInput {
+  /** The person the drawing is about; the breadth-first seed starts from them. */
   rootUid: string
-  /** Every family box available; the walk picks the ones it can reach. */
+  /**
+   * Everybody to draw, with the signed generation the server gave them: the root
+   * 0, a parent −1, a child +1, a partner the generation of the one they married.
+   */
+  generations: ReadonlyMap<string, number>
+  /** Every family tying them together. */
   families: readonly LayoutFamily[]
-  /** The ids of the boxes whose branches are folded away. */
-  collapsed?: Iterable<string>
 }
 
 /**
- * One box of the drawing: a couple (or a lone parent, or a childless leaf) with
- * its place on the page already decided. `x`/`y` are the box's top-left corner.
+ * One box of the drawing: a couple, a lone parent, or a person who is nobody's
+ * partner, with its place on the page already decided. `x`/`y` are the box's
+ * top-left corner.
  */
 export interface LayoutNode {
-  /** The box's identity: the family's UID, or `person:<uid>` for a lone leaf. */
+  /** The box's identity: the family's UID, or `person:<uid>` for a lone person. */
   id: string
-  /** The family drawn here, or null for a person who is in no family at all. */
+  /** The family drawn here, or null for a person who is in no box as a partner. */
   familyUid: string | null
   /** The people in the box, left to right. One or two. */
   personUids: string[]
@@ -93,33 +110,29 @@ export interface LayoutNode {
    * them, so a reader is not left counting the same person twice.
    */
   repeatUids: string[]
-  /** The box this one hangs off, or null for a root box. */
-  parentId: string | null
-  /** The boxes hanging off this one, left to right. Empty when collapsed. */
-  childIds: string[]
-  /** Generations between this box and the root's, the root's being 0. */
-  depth: number
+  /** The layer: the signed generation of the people in the box. */
+  generation: number
   x: number
   y: number
   width: number
   height: number
-  /** Whether this box's branch is folded away. */
-  collapsed: boolean
-  /**
-   * How many people the fold is hiding. Zero for a box that is not collapsed,
-   * and zero for one whose children happen to be drawn elsewhere anyway.
-   */
-  hiddenCount: number
 }
 
-/** One line from a box down to a child's box, as four plain numbers. */
+/**
+ * One line from a family down to one of its children, as four plain numbers. For
+ * a couple or a lone parent it starts at the foot of their box; for a sibling
+ * group, which has no box, it starts just above the children, so the group
+ * reads as one bar with a short stub where the unrecorded parents would hang.
+ */
 export interface LayoutEdge {
+  /** The family the line comes from. */
   parentId: string
+  /** The child it leads to — a person, since a child is drawn wherever their own box is. */
   childId: string
-  /** The foot of the drop line: the bottom centre of the parent's box. */
+  /** Where the line starts. */
   x1: number
   y1: number
-  /** The head of the child's line: the top centre of the child's box. */
+  /** Where it ends: the top centre of the child's own card. */
   x2: number
   y2: number
 }
@@ -144,158 +157,161 @@ export function emptyLayout(): FamilyLayout {
   return { nodes: [], edges: [], width: 2 * TREE_PADDING, height: 2 * TREE_PADDING }
 }
 
-/** The contour of a subtree: its leftmost and rightmost edge at every level. */
-interface Contour {
-  left: number[]
-  right: number[]
+/** The horizontal centre of one person's card inside the box that holds them. */
+export function cardCentre(node: LayoutNode, personUid: string): number {
+  const index = Math.max(node.personUids.indexOf(personUid), 0)
+  return node.x + index * (PERSON_WIDTH + COUPLE_GAP) + PERSON_WIDTH / 2
 }
 
-/** A node while it is being placed: its subtree, its contour, its offset. */
-interface Placed {
-  node: LayoutNode
-  children: Placed[]
-  contour: Contour
-  /** Centre of this subtree relative to its parent's centre. */
-  offset: number
+/** The boxes, before and while they are placed, with what ties them together. */
+interface Graph {
+  nodes: LayoutNode[]
+  /** The box each person is drawn in first — where a line to them lands. */
+  primary: Map<string, LayoutNode>
+  /** Every box a box is tied to, once per tie, so a double tie pulls twice. */
+  ties: Map<string, LayoutNode[]>
 }
 
 /**
- * Lays out the descendants of `rootUid` as a tidy tree of family boxes.
+ * Lays out everybody in `input.generations` as a layered drawing of family boxes.
  *
- * The walk is breadth-first, which is what makes the drawing honest when the
- * same person is reachable by two paths — and in a village, once cousins marry,
- * they are. Every person and every family is drawn **once**, at the shallowest
- * place it was reached; a second path to an already-drawn family simply does not
- * produce a second box, so the diamond closes instead of being duplicated into
- * two identical branches.
+ * Every family with a partner is **one box**; a person partnered in no family
+ * gets a box of their own; a partnerless sibling group gets no box, only the bar
+ * joining its children. A person is drawn once — except the partner a remarriage
+ * shares, who stands in both marriages' boxes (two marriages are two boxes
+ * because their children hang off different couples), marked as a repeat in all
+ * but the first. A cycle — a cousin marriage — therefore closes instead of
+ * duplicating anybody.
  *
- * A person partnered in several families (a remarriage) yields one box per
- * family, side by side, with the shared partner marked as a repeat in all but
- * the first: two marriages are two boxes because their children hang off
- * different couples, and pretending otherwise would attach a child to the wrong
- * parent.
- *
- * The order of `families` and of each family's `childUids` is preserved as the
- * drawing order, so a caller who wants children by birth year sorts them before
- * calling rather than asking this function to know about birthdays.
+ * The order of `families` and of each family's `childUids` seeds the order within
+ * a layer, so a caller who wants children by birth year sorts them before calling
+ * rather than asking this function to know about birthdays.
  */
-export function layoutDescendants(input: FamilyLayoutInput): FamilyLayout {
-  const collapsed = new Set(input.collapsed ?? [])
-  const built = buildNodes(input.rootUid, input.families, collapsed)
-  if (built.nodes.length === 0) {
+export function layoutNetwork(input: NetworkInput): FamilyLayout {
+  if (input.generations.size === 0) {
     return emptyLayout()
   }
-  countHidden(built, input.families, collapsed)
-  place(built)
-  return { nodes: built.nodes, edges: edgesOf(built), ...canvasOf(built.nodes) }
-}
-
-/** The structure of the drawing, before anything has coordinates. */
-interface Built {
-  nodes: LayoutNode[]
-  byId: Map<string, LayoutNode>
-  roots: string[]
-  /** Everybody who ended up in a box, so a fold knows who it is hiding. */
-  drawn: Set<string>
-}
-
-/** One person waiting to be turned into boxes, with where they hang. */
-interface Pending {
-  personUid: string
-  parentId: string | null
-  depth: number
-}
-
-/**
- * Walks the families breadth-first from the root and emits one box per family
- * reached, plus a bare box for a person who is in no family at all (a childless,
- * unmarried descendant is still somebody's child and has to be drawn).
- */
-function buildNodes(
-  rootUid: string,
-  families: readonly LayoutFamily[],
-  collapsed: ReadonlySet<string>,
-): Built {
-  const byPartner = indexByPartner(families)
-  const built: Built = { nodes: [], byId: new Map(), roots: [], drawn: new Set() }
-  const drawnFamilies = new Set<string>()
-  const processed = new Set<string>()
-  const queue: Pending[] = [{ personUid: rootUid, parentId: null, depth: 0 }]
-
-  // The queue is appended to while it is walked, which an array iterator
-  // handles: it re-reads the length on every step, so a child pushed at depth 2
-  // is reached in the same loop. That is what makes this breadth-first.
-  for (const item of queue) {
-    if (processed.has(item.personUid)) {
-      continue
+  const graph = buildGraph(input)
+  const layers = layersOf(graph.nodes)
+  for (const layer of layers) {
+    packLayer(layer)
+  }
+  for (let sweep = 0; sweep < SWEEPS; sweep += 1) {
+    for (const layer of layers) {
+      settleLayer(layer, graph.ties)
     }
-    processed.add(item.personUid)
-
-    const open = (byPartner.get(item.personUid) ?? []).filter((f) => !drawnFamilies.has(f.uid))
-    if (open.length === 0) {
-      // Nothing left to draw for this person. A person already in somebody
-      // else's box (the other half of a cousin marriage) gets no second box;
-      // one nobody has drawn yet gets a box of their own.
-      if (!built.drawn.has(item.personUid)) {
-        addNode(built, leafNode(item), item.parentId)
-        built.drawn.add(item.personUid)
-      }
-      continue
-    }
-    for (const family of open) {
-      drawnFamilies.add(family.uid)
-      const node = familyNode(family, item, built.drawn)
-      addNode(built, node, item.parentId)
-      for (const uid of node.personUids) {
-        built.drawn.add(uid)
-      }
-      if (collapsed.has(node.id)) {
-        node.collapsed = true
-        continue
-      }
-      for (const child of family.childUids) {
-        queue.push({ personUid: child, parentId: node.id, depth: item.depth + 1 })
-      }
+    for (const layer of [...layers].reverse()) {
+      settleLayer(layer, graph.ties)
     }
   }
-  return built
+  faceParents(graph, input.families)
+  moveIntoView(graph, input.families)
+  return {
+    nodes: graph.nodes,
+    edges: edgesOf(graph, input.families),
+    ...canvasOf(graph.nodes),
+  }
 }
 
-/** Every family indexed by each of its partners, keeping the given order. */
-function indexByPartner(families: readonly LayoutFamily[]): Map<string, LayoutFamily[]> {
-  const byPartner = new Map<string, LayoutFamily[]>()
+/** Every family indexed by each person in it, as a partner or as a child, in order. */
+function indexByPerson(families: readonly LayoutFamily[]): Map<string, LayoutFamily[]> {
+  const byPerson = new Map<string, LayoutFamily[]>()
   for (const family of families) {
-    for (const uid of family.partnerUids) {
-      const existing = byPartner.get(uid)
+    for (const uid of [...family.partnerUids, ...family.childUids]) {
+      const existing = byPerson.get(uid)
       if (existing === undefined) {
-        byPartner.set(uid, [family])
-      } else {
+        byPerson.set(uid, [family])
+      } else if (!existing.includes(family)) {
         existing.push(family)
       }
     }
   }
-  return byPartner
+  return byPerson
 }
 
-/** A box for one person who is in no family the walk can draw. */
-function leafNode(item: Pending): LayoutNode {
-  return blankNode(`person:${item.personUid}`, null, [item.personUid], [], item.depth)
+/**
+ * Builds the boxes breadth-first from the root, which seeds the order within a
+ * layer — the root's own family first, the relatives it leads to after — and
+ * then the ties the sweeps pull along. Anybody the walk from the root cannot
+ * reach (a payload that is not one component) is started from in turn, so nobody
+ * given is left undrawn.
+ */
+function buildGraph(input: NetworkInput): Graph {
+  const known = (uid: string) => input.generations.has(uid)
+  const families = input.families.map((family) => ({
+    uid: family.uid,
+    partnerUids: family.partnerUids.filter(known),
+    childUids: family.childUids.filter(known),
+  }))
+  const byPerson = indexByPerson(families)
+  const graph: Graph = { nodes: [], primary: new Map(), ties: new Map() }
+  const seen = new Set<string>()
+  const opened = new Set<string>()
+  const starts = [input.rootUid, ...input.generations.keys()].filter(known)
+  for (const start of starts) {
+    if (seen.has(start)) {
+      continue
+    }
+    seen.add(start)
+    const queue = [start]
+    // The queue is appended to while it is walked, which an array iterator
+    // handles: it re-reads the length on every step. That is what makes this
+    // breadth-first.
+    for (const person of queue) {
+      for (const family of byPerson.get(person) ?? []) {
+        if (opened.has(family.uid)) {
+          continue
+        }
+        opened.add(family.uid)
+        if (family.partnerUids.length > 0) {
+          addBox(graph, family, person, input.generations)
+        }
+        for (const next of [...family.partnerUids, ...family.childUids]) {
+          if (!seen.has(next)) {
+            seen.add(next)
+            queue.push(next)
+          }
+        }
+      }
+      if (!graph.primary.has(person)) {
+        addLoneBox(graph, person, input.generations.get(person) ?? 0)
+      }
+    }
+  }
+  tieUp(graph, families)
+  return graph
 }
 
 /**
  * A box for one family, with the person the walk arrived at drawn first and
- * their partner beside them, so a reader's eye follows the line it came down.
+ * their partner beside them. The box sits on its partners' layer — on the upper
+ * of the two, should a cycle have given them different ones.
  */
-function familyNode(family: LayoutFamily, item: Pending, drawn: ReadonlySet<string>): LayoutNode {
-  const others = family.partnerUids.filter((uid) => uid !== item.personUid)
-  const people = [item.personUid, ...others]
-  return blankNode(
-    family.uid,
-    family.uid,
-    people,
-    people.filter((uid) => drawn.has(uid)),
-    item.depth,
-  )
+function addBox(
+  graph: Graph,
+  family: LayoutFamily,
+  arrivedAt: string,
+  generations: ReadonlyMap<string, number>,
+): void {
+  const people = family.partnerUids.includes(arrivedAt)
+    ? [arrivedAt, ...family.partnerUids.filter((uid) => uid !== arrivedAt)]
+    : [...family.partnerUids]
+  const generation = Math.min(...people.map((uid) => generations.get(uid) ?? 0))
+  const node = blankNode(family.uid, family.uid, people, generation)
+  node.repeatUids = people.filter((uid) => graph.primary.has(uid))
+  graph.nodes.push(node)
+  for (const uid of people) {
+    if (!graph.primary.has(uid)) {
+      graph.primary.set(uid, node)
+    }
+  }
+}
+
+/** A box for a person who is partnered in no family: a child, a sibling, the root alone. */
+function addLoneBox(graph: Graph, personUid: string, generation: number): void {
+  const node = blankNode(`person:${personUid}`, null, [personUid], generation)
+  graph.nodes.push(node)
+  graph.primary.set(personUid, node)
 }
 
 /** A node with its structure filled in and its geometry still at the origin. */
@@ -303,213 +319,272 @@ function blankNode(
   id: string,
   familyUid: string | null,
   personUids: string[],
-  repeatUids: string[],
-  depth: number,
+  generation: number,
 ): LayoutNode {
   return {
     id,
     familyUid,
     personUids,
-    repeatUids,
-    parentId: null,
-    childIds: [],
-    depth,
+    repeatUids: [],
+    generation,
     x: 0,
-    y: depth * LEVEL_STRIDE,
+    y: 0,
     width: boxWidth(personUids.length),
     height: NODE_HEIGHT,
-    collapsed: false,
-    hiddenCount: 0,
-  }
-}
-
-/** Files a node under its parent, or as another root of the forest. */
-function addNode(built: Built, node: LayoutNode, parentId: string | null): void {
-  node.parentId = parentId
-  built.nodes.push(node)
-  built.byId.set(node.id, node)
-  if (parentId === null) {
-    built.roots.push(node.id)
-    return
-  }
-  const parent = built.byId.get(parentId)
-  if (parent !== undefined) {
-    parent.childIds.push(node.id)
   }
 }
 
 /**
- * Counts, for every folded box, how many people the fold is actually hiding —
- * the descendants below it and the partners they brought, minus anyone who is
- * drawn elsewhere in the tree anyway. A fold that hides nobody says so with a
- * zero rather than tempting a reader to open an empty branch.
+ * Records what pulls on what: a family's box and each child's box pull on each
+ * other, the children of a sibling group pull on each other (they have no box to
+ * gather under), and the boxes of a remarriage pull on each other through the
+ * partner they share.
  */
-function countHidden(
-  built: Built,
-  families: readonly LayoutFamily[],
-  collapsed: ReadonlySet<string>,
-): void {
-  if (collapsed.size === 0) {
-    return
+function tieUp(graph: Graph, families: readonly LayoutFamily[]): void {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const tie = (a: LayoutNode | undefined, b: LayoutNode | undefined) => {
+    if (a === undefined || b === undefined || a === b) {
+      return
+    }
+    for (const [from, to] of [
+      [a, b],
+      [b, a],
+    ]) {
+      const existing = graph.ties.get(from.id)
+      if (existing === undefined) {
+        graph.ties.set(from.id, [to])
+      } else {
+        existing.push(to)
+      }
+    }
   }
-  const byPartner = indexByPartner(families)
-  const byUID = new Map(families.map((family) => [family.uid, family]))
-  for (const node of built.nodes) {
-    if (!node.collapsed) {
+  for (const family of families) {
+    const children = family.childUids.map((uid) => graph.primary.get(uid))
+    const box = byId.get(family.uid)
+    if (box !== undefined) {
+      for (const child of children) {
+        tie(box, child)
+      }
       continue
     }
-    const family = node.familyUid === null ? undefined : byUID.get(node.familyUid)
-    if (family === undefined) {
-      continue
+    for (const [index, child] of children.entries()) {
+      for (const sibling of children.slice(index + 1)) {
+        tie(child, sibling)
+      }
     }
-    node.hiddenCount = countBelow(family, byPartner, built.drawn)
+  }
+  for (const node of graph.nodes) {
+    for (const uid of node.repeatUids) {
+      tie(node, graph.primary.get(uid))
+    }
   }
 }
 
-/** The people below one family that no box in the drawing contains. */
-function countBelow(
-  family: LayoutFamily,
-  byPartner: ReadonlyMap<string, LayoutFamily[]>,
-  drawn: ReadonlySet<string>,
-): number {
-  const seen = new Set<string>()
-  const queue = [...family.childUids]
-  // Appended to while walked, exactly as the drawing's own queue is.
-  for (const uid of queue) {
-    if (seen.has(uid)) {
-      continue
-    }
-    seen.add(uid)
-    for (const below of byPartner.get(uid) ?? []) {
-      queue.push(...below.partnerUids, ...below.childUids)
-    }
-  }
-  let hidden = 0
-  for (const uid of seen) {
-    if (!drawn.has(uid)) {
-      hidden += 1
-    }
-  }
-  return hidden
-}
-
-/**
- * Gives every box its coordinates. Each subtree is placed relative to its own
- * root, siblings are packed by contour so that no two boxes on any level come
- * closer than {@link SIBLING_GAP}, and every parent is then centred over its
- * children. The roots of the forest — a remarried root person makes more than
- * one — are packed with each other exactly the same way.
- */
-function place(built: Built): void {
-  const roots = built.roots.map((id) => placeSubtree(built, id))
-  const offsets = packSiblings(roots)
-  for (const [index, root] of roots.entries()) {
-    assign(root, offsets[index])
-  }
-  shiftIntoView(built.nodes)
-}
-
-/** Places one subtree, returning it with its own contour and its children's. */
-function placeSubtree(built: Built, id: string): Placed {
-  const node = built.byId.get(id)
-  if (node === undefined) {
-    throw new Error(`familyLayout: unknown node ${id}`)
-  }
-  const children = node.childIds.map((childId) => placeSubtree(built, childId))
-  const half = node.width / 2
-  if (children.length === 0) {
-    return { node, children, contour: { left: [-half], right: [half] }, offset: 0 }
-  }
-  const offsets = packSiblings(children)
-  const centre = (offsets[0] + offsets[offsets.length - 1]) / 2
-  for (const [index, child] of children.entries()) {
-    child.offset = offsets[index] - centre
-  }
-  return { node, children, contour: contourOf(half, children), offset: 0 }
-}
-
-/**
- * Packs already-placed subtrees left to right, returning each one's centre. A
- * subtree is pushed right only as far as its own contour demands against the
- * ones before it, which is what a tidy layout means: two deep branches interlock
- * where they are narrow instead of both clearing the widest level of the other.
- */
-function packSiblings(subtrees: readonly Placed[]): number[] {
-  const offsets: number[] = []
-  const acc: Contour = { left: [], right: [] }
-  for (const subtree of subtrees) {
-    let offset = 0
-    const overlap = Math.min(acc.right.length, subtree.contour.left.length)
-    for (let depth = 0; depth < overlap; depth += 1) {
-      offset = Math.max(offset, acc.right[depth] + SIBLING_GAP - subtree.contour.left[depth])
-    }
-    offsets.push(offset)
-    mergeContour(acc, subtree.contour, offset)
-  }
-  return offsets
-}
-
-/** Widens `acc` to also cover `contour` shifted right by `offset`. */
-function mergeContour(acc: Contour, contour: Contour, offset: number): void {
-  for (let depth = 0; depth < contour.left.length; depth += 1) {
-    const left = contour.left[depth] + offset
-    const right = contour.right[depth] + offset
-    if (depth < acc.left.length) {
-      acc.left[depth] = Math.min(acc.left[depth], left)
-      acc.right[depth] = Math.max(acc.right[depth], right)
+/** The boxes grouped by generation, oldest layer first, each in seed order. */
+function layersOf(nodes: readonly LayoutNode[]): LayoutNode[][] {
+  const byGeneration = new Map<number, LayoutNode[]>()
+  for (const node of nodes) {
+    const layer = byGeneration.get(node.generation)
+    if (layer === undefined) {
+      byGeneration.set(node.generation, [node])
     } else {
-      acc.left.push(left)
-      acc.right.push(right)
+      layer.push(node)
+    }
+  }
+  return [...byGeneration.entries()].sort(([a], [b]) => a - b).map(([, layer]) => layer)
+}
+
+/** Packs one layer tightly from zero, in its current order. */
+function packLayer(layer: readonly LayoutNode[]): void {
+  let x = 0
+  for (const node of layer) {
+    node.x = x
+    x += node.width + SIBLING_GAP
+  }
+}
+
+/** The horizontal centre of a box. */
+function centreOf(node: LayoutNode): number {
+  return node.x + node.width / 2
+}
+
+/**
+ * One step of a sweep over one layer: every box's target is the mean centre of
+ * the boxes it is tied to (its own centre when it is tied to nothing), the layer
+ * is re-ordered by target, and the boxes are then placed as near their targets as
+ * {@link SIBLING_GAP} allows, a box with more ties weighing more.
+ */
+function settleLayer(layer: LayoutNode[], ties: ReadonlyMap<string, LayoutNode[]>): void {
+  const targets = new Map<LayoutNode, { centre: number; weight: number }>()
+  for (const node of layer) {
+    const tied = ties.get(node.id) ?? []
+    const centre =
+      tied.length === 0
+        ? centreOf(node)
+        : tied.reduce((sum, other) => sum + centreOf(other), 0) / tied.length
+    targets.set(node, { centre, weight: 1 + tied.length })
+  }
+  const target = (node: LayoutNode) => targets.get(node) ?? { centre: centreOf(node), weight: 1 }
+  // Array.prototype.sort is stable, so boxes with equal targets keep the order
+  // they had — the breadth-first seed, or the previous sweep's answer.
+  layer.sort((a, b) => target(a).centre - target(b).centre)
+  placeNearest(
+    layer,
+    layer.map((node) => target(node)),
+  )
+}
+
+/** A run of boxes that have been pushed against each other and move as one. */
+interface Block {
+  /** The weighted mean of the members' shifted targets. */
+  value: number
+  weight: number
+  count: number
+}
+
+/**
+ * Places a layer's boxes, in their given order, so that no two come closer than
+ * {@link SIBLING_GAP} and the weighted squared distance of every centre from its
+ * target is as small as it can be.
+ *
+ * Subtracting from each target the least distance its box can sit from the
+ * first box turns the spacing constraint into "non-decreasing", which makes this
+ * a weighted isotonic regression: solved exactly by pooling adjacent violators —
+ * a box that wants to be left of its neighbour is merged with it into a block
+ * that sits at the pair's weighted mean. That is the "nudge towards the
+ * barycentre by priority" of the design, with overlap ruled out by construction
+ * rather than repaired after the fact.
+ */
+function placeNearest(
+  layer: readonly LayoutNode[],
+  targets: readonly { centre: number; weight: number }[],
+): void {
+  const offsets: number[] = []
+  for (const [index, node] of layer.entries()) {
+    const previous = index === 0 ? undefined : layer[index - 1]
+    offsets.push(
+      previous === undefined
+        ? 0
+        : offsets[index - 1] + previous.width / 2 + SIBLING_GAP + node.width / 2,
+    )
+  }
+  const blocks: Block[] = []
+  for (const [index, target] of targets.entries()) {
+    blocks.push({ value: target.centre - offsets[index], weight: target.weight, count: 1 })
+    for (;;) {
+      const last = blocks[blocks.length - 1]
+      const before = blocks.length > 1 ? blocks[blocks.length - 2] : undefined
+      if (before === undefined || before.value <= last.value) {
+        break
+      }
+      blocks.splice(blocks.length - 2, 2, {
+        value:
+          (before.value * before.weight + last.value * last.weight) / (before.weight + last.weight),
+        weight: before.weight + last.weight,
+        count: before.count + last.count,
+      })
+    }
+  }
+  let index = 0
+  for (const block of blocks) {
+    for (let member = 0; member < block.count; member += 1) {
+      const node = layer[index]
+      node.x = block.value + offsets[index] - node.width / 2
+      index += 1
     }
   }
 }
 
-/** The contour of a parent of half-width `half` over its centred children. */
-function contourOf(half: number, children: readonly Placed[]): Contour {
-  const below: Contour = { left: [], right: [] }
-  for (const child of children) {
-    mergeContour(below, child.contour, child.offset)
-  }
-  return { left: [-half, ...below.left], right: [half, ...below.right] }
-}
-
-/** Writes absolute coordinates into a placed subtree, given its centre. */
-function assign(placed: Placed, centre: number): void {
-  placed.node.x = centre - placed.node.width / 2
-  for (const child of placed.children) {
-    assign(child, centre + child.offset)
-  }
-}
-
-/** Slides the whole drawing so its left edge sits at {@link TREE_PADDING}. */
-function shiftIntoView(nodes: readonly LayoutNode[]): void {
-  let minX = Infinity
-  for (const node of nodes) {
-    minX = Math.min(minX, node.x)
-  }
-  const shift = TREE_PADDING - minX
-  for (const node of nodes) {
-    node.x += shift
-    node.y += TREE_PADDING
-  }
-}
-
-/** The line from every box down to each of its children. */
-function edgesOf(built: Built): LayoutEdge[] {
-  const edges: LayoutEdge[] = []
-  for (const node of built.nodes) {
-    for (const childId of node.childIds) {
-      const child = built.byId.get(childId)
-      if (child === undefined) {
+/**
+ * Turns each couple to face their own parents: the partner whose parents stand
+ * further left is drawn on the left, so the line from each set of parents drops
+ * onto their own child without crossing the other's. A partner with no parents in
+ * the drawing looks towards their siblings instead, and one with neither leaves
+ * the couple as it was.
+ */
+function faceParents(graph: Graph, families: readonly LayoutFamily[]): void {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const anchor = new Map<string, number>()
+  for (const family of families) {
+    const box = byId.get(family.uid)
+    for (const child of family.childUids) {
+      if (box !== undefined) {
+        anchor.set(child, centreOf(box))
         continue
       }
+      const siblings = family.childUids
+        .filter((uid) => uid !== child)
+        .map((uid) => graph.primary.get(uid))
+        .filter((node): node is LayoutNode => node !== undefined)
+      if (siblings.length > 0) {
+        anchor.set(child, siblings.reduce((sum, node) => sum + centreOf(node), 0) / siblings.length)
+      }
+    }
+  }
+  for (const node of graph.nodes) {
+    if (node.personUids.length !== 2) {
+      continue
+    }
+    const centre = centreOf(node)
+    const [left, right] = node.personUids
+    if ((anchor.get(left) ?? centre) > (anchor.get(right) ?? centre)) {
+      node.personUids = [right, left]
+    }
+  }
+}
+
+/**
+ * Slides the drawing so its left edge sits at {@link TREE_PADDING}, and gives
+ * every box its row: the oldest generation on top, one {@link LEVEL_STRIDE} per
+ * generation down. A sibling group on the top row hangs its bar in the gap
+ * above it, so that row is pushed down by half a gap to keep the bar on the
+ * canvas.
+ */
+function moveIntoView(graph: Graph, families: readonly LayoutFamily[]): void {
+  let minX = Infinity
+  let minGeneration = Infinity
+  for (const node of graph.nodes) {
+    minX = Math.min(minX, node.x)
+    minGeneration = Math.min(minGeneration, node.generation)
+  }
+  const boxed = new Set(graph.nodes.map((node) => node.familyUid))
+  const barOnTop = families.some(
+    (family) =>
+      !boxed.has(family.uid) &&
+      family.childUids.some((uid) => graph.primary.get(uid)?.generation === minGeneration),
+  )
+  const top = TREE_PADDING + (barOnTop ? LEVEL_GAP / 2 : 0)
+  for (const node of graph.nodes) {
+    node.x += TREE_PADDING - minX
+    node.y = (node.generation - minGeneration) * LEVEL_STRIDE + top
+  }
+}
+
+/**
+ * The line from every family to each of its children, landing on the child's own
+ * card — which, in a couple's box, is one half of it, not the middle.
+ */
+function edgesOf(graph: Graph, families: readonly LayoutFamily[]): LayoutEdge[] {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]))
+  const edges: LayoutEdge[] = []
+  for (const family of families) {
+    const heads = family.childUids.flatMap((uid) => {
+      const node = graph.primary.get(uid)
+      return node === undefined ? [] : [{ uid, x: cardCentre(node, uid), y: node.y }]
+    })
+    if (heads.length === 0) {
+      continue
+    }
+    const box = byId.get(family.uid)
+    const groupX = heads.reduce((sum, head) => sum + head.x, 0) / heads.length
+    for (const head of heads) {
       edges.push({
-        parentId: node.id,
-        childId,
-        x1: node.x + node.width / 2,
-        y1: node.y + node.height,
-        x2: child.x + child.width / 2,
-        y2: child.y,
+        parentId: family.uid,
+        childId: head.uid,
+        x1: box === undefined ? groupX : centreOf(box),
+        y1: box === undefined ? head.y - LEVEL_GAP / 2 : box.y + box.height,
+        x2: head.x,
+        y2: head.y,
       })
     }
   }
@@ -537,279 +612,4 @@ function canvasOf(nodes: readonly LayoutNode[]): { width: number; height: number
 export function edgePath(edge: LayoutEdge): string {
   const midY = (edge.y1 + edge.y2) / 2
   return `M ${edge.x1} ${edge.y1} V ${midY} H ${edge.x2} V ${edge.y2}`
-}
-
-/* ------------------------------------------------------------------------- *
- * The pedigree: the other direction, and the other shape.
- * ------------------------------------------------------------------------- */
-
-/**
- * The deepest pedigree this module will draw. A binary pedigree doubles every
- * generation — 2, 4, 8, 16, 32 — so the bound is not a matter of taste: six
- * generations above the root are already sixty-four slots and eleven thousand
- * layout units of paper, which is the last width a reader can still find their
- * way around by panning. A caller asking for more gets this.
- */
-export const MAX_PEDIGREE_GENERATIONS = 6
-
-/**
- * One place in a pedigree, filled or not. An unknown grandmother is a slot with
- * no person in it rather than a missing box, because the gap is the whole point:
- * it is what tells a reader the library does not know, and what invites them to
- * say so.
- */
-export interface PedigreeSlot {
-  /** The slot's identity, and its place: the Ahnentafel number, `a1` at the root. */
-  id: string
-  /** Who stands here, or null for an ancestor nobody has recorded. */
-  personUid: string | null
-  /**
-   * The known person one row below whose parent this slot is — which is the
-   * subject a blank slot is filled *on*, since a parent is recorded on their
-   * child. Null for the root, who is nobody's parent here.
-   */
-  childUid: string | null
-  /** Generations above the root, the root itself being 0. */
-  generation: number
-  /**
-   * Whether this person is already drawn in an earlier slot. Once cousins marry
-   * the same ancestor stands on both sides of the pedigree — pedigree collapse —
-   * and a chart draws them in both places, because both places are true; the
-   * mark is what stops a reader counting one person as two.
-   */
-  repeat: boolean
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-/** The finished pedigree: its slots, its lines, and the canvas they need. */
-export interface Pedigree {
-  slots: PedigreeSlot[]
-  edges: LayoutEdge[]
-  /** The drawing's own size, padding included — the SVG's `viewBox`. */
-  width: number
-  height: number
-}
-
-/** What {@link layoutAncestors} is asked to draw. */
-export interface PedigreeInput {
-  /** The person the pedigree is climbed from, drawn at the bottom. */
-  rootUid: string
-  /** Every family box available; a person's parents are the family they are a child in. */
-  families: readonly LayoutFamily[]
-  /** How many generations above the root to draw; clamped into 1…{@link MAX_PEDIGREE_GENERATIONS}. */
-  generations: number
-}
-
-/** A pedigree with nothing in it, which still has a canvas to be rendered into. */
-export function emptyPedigree(): Pedigree {
-  return { slots: [], edges: [], width: 2 * TREE_PADDING, height: 2 * TREE_PADDING }
-}
-
-/** One slot with its subtree, while the pedigree is still being measured. */
-interface Branch {
-  slot: PedigreeSlot
-  /** The two slots above: father and mother, in the family's own order. Empty at a leaf. */
-  parents: Branch[]
-  /** The width of everything this branch spreads over, in layout units. */
-  width: number
-}
-
-/** What the climb needs to know throughout, gathered once. */
-interface PedigreeContext {
-  /** The family each person is a child in — that family's partners are their parents. */
-  parentsOf: Map<string, LayoutFamily>
-  /** Everybody already given a slot, so a second appearance can be marked as one. */
-  seen: Set<string>
-  /** How many generations above the root are drawn. */
-  generations: number
-}
-
-/**
- * Lays out the ancestors of `rootUid` as a pedigree: the root at the bottom and
- * each generation of parents on the row above, every known person carrying
- * **two** slots whether or not the library can fill them.
- *
- * This is not the tidy tree of {@link layoutDescendants} and deliberately so.
- * Descendants fan out unboundedly and have to be packed; ancestors are bounded
- * by construction (2, 4, 8, 16 …) and are read as a grid of generations, which
- * is why the design splits the page by direction rather than drawing one graph
- * both ways. A branch that stops early does not, however, reserve the empty
- * columns it would have filled: the drawing is laid out from the slots that
- * exist, so a pedigree with one long line in it is a narrow drawing rather than
- * a field of white.
- *
- * **Empty slots are the feature.** A person whose parents nobody recorded gets
- * two blank slots above them, each naming the child it belongs to, because a
- * parent is recorded *on their child* — that is what makes a gap clickable.
- *
- * **Pedigree collapse does not loop.** When cousins marry, the same ancestor is
- * reached along both sides; they are drawn in both places (a pedigree that hid
- * one of them would misstate the descent) with every appearance after the first
- * marked `repeat`. A person who is somehow their own ancestor terminates the
- * climb at the repeat instead of recursing, and the generation bound holds the
- * whole thing up regardless.
- */
-export function layoutAncestors(input: PedigreeInput): Pedigree {
-  const ctx: PedigreeContext = {
-    parentsOf: indexByChild(input.families),
-    seen: new Set(),
-    generations: clampGenerations(input.generations),
-  }
-  const root = climb(input.rootUid, null, 1, 0, new Set(), ctx)
-  const deepest = deepestGeneration(root)
-  placeBranch(root, TREE_PADDING, deepest)
-  const slots = inReadingOrder(root)
-  return {
-    slots,
-    edges: pedigreeEdges(root),
-    width: root.width + 2 * TREE_PADDING,
-    height: (deepest + 1) * NODE_HEIGHT + deepest * LEVEL_GAP + 2 * TREE_PADDING,
-  }
-}
-
-/** Bounds a requested depth into 1…{@link MAX_PEDIGREE_GENERATIONS}. */
-function clampGenerations(generations: number): number {
-  if (!Number.isFinite(generations) || generations < 1) {
-    return 1
-  }
-  return Math.min(Math.floor(generations), MAX_PEDIGREE_GENERATIONS)
-}
-
-/**
- * Every family indexed by each of its children. The database keeps a person a
- * child in at most one family, which is what makes "my parents" a lookup rather
- * than a search — and what keeps this climb a walk instead of a graph traversal.
- */
-function indexByChild(families: readonly LayoutFamily[]): Map<string, LayoutFamily> {
-  const byChild = new Map<string, LayoutFamily>()
-  for (const family of families) {
-    for (const uid of family.childUids) {
-      if (!byChild.has(uid)) {
-        byChild.set(uid, family)
-      }
-    }
-  }
-  return byChild
-}
-
-/**
- * Builds one slot and, for a known person below the generation bound, the two
- * above it. `path` is the line of descent leading here, which is what stops a
- * person who is their own ancestor from being climbed for ever.
- */
-function climb(
-  personUid: string | null,
-  childUid: string | null,
-  ahnentafel: number,
-  generation: number,
-  path: ReadonlySet<string>,
-  ctx: PedigreeContext,
-): Branch {
-  const repeat = personUid !== null && ctx.seen.has(personUid)
-  if (personUid !== null) {
-    ctx.seen.add(personUid)
-  }
-  const slot: PedigreeSlot = {
-    id: `a${ahnentafel}`,
-    personUid,
-    childUid,
-    generation,
-    repeat,
-    x: 0,
-    y: 0,
-    width: PERSON_WIDTH,
-    height: NODE_HEIGHT,
-  }
-  // A blank slot has no knowable parents, and neither has one whose person is
-  // already below on this very line of descent — which is where a cycle that
-  // reached the tables would otherwise send the climb.
-  const climbable = personUid !== null && generation < ctx.generations && !path.has(personUid)
-  if (!climbable) {
-    return { slot, parents: [], width: PERSON_WIDTH }
-  }
-  const family = ctx.parentsOf.get(personUid)
-  const pair = parentPair(family)
-  const deeper = new Set(path).add(personUid)
-  const parents = pair.map((uid, index) =>
-    climb(uid, personUid, ahnentafel * 2 + index, generation + 1, deeper, ctx),
-  )
-  return { slot, parents, width: parents[0].width + SIBLING_GAP + parents[1].width }
-}
-
-/**
- * The two parent slots of one person: the partners of the family they are a
- * child in, in that family's own order, padded to two. A lone-parent family
- * yields one person and one blank, which is the honest drawing of a father
- * nobody remembers — and one the reader can fill in.
- */
-function parentPair(family: LayoutFamily | undefined): (string | null)[] {
-  const partners = family?.partnerUids ?? []
-  return [partners[0] ?? null, partners[1] ?? null]
-}
-
-/** The highest generation the climb actually reached. */
-function deepestGeneration(branch: Branch): number {
-  let deepest = branch.slot.generation
-  for (const parent of branch.parents) {
-    deepest = Math.max(deepest, deepestGeneration(parent))
-  }
-  return deepest
-}
-
-/**
- * Gives a branch and everything above it their coordinates. The parents are laid
- * side by side across the branch's own width and the child is centred **between
- * them** rather than over the band, so the two lines meeting at a couple are
- * symmetrical whichever side turned out to be the deeper one.
- */
-function placeBranch(branch: Branch, left: number, deepest: number): void {
-  branch.slot.y = (deepest - branch.slot.generation) * (NODE_HEIGHT + LEVEL_GAP) + TREE_PADDING
-  if (branch.parents.length === 0) {
-    branch.slot.x = left
-    return
-  }
-  const [first, second] = branch.parents
-  placeBranch(first, left, deepest)
-  placeBranch(second, left + first.width + SIBLING_GAP, deepest)
-  branch.slot.x = (first.slot.x + second.slot.x) / 2
-}
-
-/**
- * The slots in the order a reader meets them: the person the pedigree is about
- * first, then their parents, then the row above. It is also the tab order, and
- * a pedigree is read from the person outwards rather than from the oldest
- * ancestor down.
- */
-function inReadingOrder(root: Branch): PedigreeSlot[] {
-  const slots: PedigreeSlot[] = []
-  const queue: Branch[] = [root]
-  // Appended to while it is walked, which is what makes this breadth-first.
-  for (const branch of queue) {
-    slots.push(branch.slot)
-    queue.push(...branch.parents)
-  }
-  return slots
-}
-
-/** The line from every slot down to the child whose parent it is. */
-function pedigreeEdges(root: Branch): LayoutEdge[] {
-  const edges: LayoutEdge[] = []
-  const queue: Branch[] = [root]
-  for (const branch of queue) {
-    for (const parent of branch.parents) {
-      edges.push({
-        parentId: parent.slot.id,
-        childId: branch.slot.id,
-        x1: parent.slot.x + parent.slot.width / 2,
-        y1: parent.slot.y + parent.slot.height,
-        x2: branch.slot.x + branch.slot.width / 2,
-        y2: branch.slot.y,
-      })
-      queue.push(parent)
-    }
-  }
-  return edges
 }

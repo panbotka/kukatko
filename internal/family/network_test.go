@@ -162,6 +162,10 @@ func TestWalkNetwork_theCapKeepsTheNearest(t *testing.T) {
 			if got.truncated != tc.truncated {
 				t.Errorf("truncated = %v, want %v", got.truncated, tc.truncated)
 			}
+			// The count goes on past the cap: the page says "the nearest N of 5".
+			if got.total != 5 {
+				t.Errorf("total = %d, want the whole component of 5", got.total)
+			}
 			for _, f := range got.families {
 				for _, uid := range append(f.partnerUIDs(), f.ChildUIDs...) {
 					if !slices.Contains(got.order, uid) {

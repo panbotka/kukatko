@@ -221,8 +221,12 @@ export async function addRelation(
   )
 }
 
-/** Which way a tree is walked from its root (`family.Direction`). */
-export type TreeDirection = 'descendants' | 'ancestors'
+/**
+ * Which walk produced a tree (`family.Direction`). The page only ever asks for
+ * `network`; the two directional walks are still answered by the endpoint until
+ * it drops them.
+ */
+export type TreeDirection = 'descendants' | 'ancestors' | 'network'
 
 /**
  * One person in a walked tree (`family.Member`): the relative plus where the
@@ -230,58 +234,56 @@ export type TreeDirection = 'descendants' | 'ancestors'
  */
 export interface TreeMember extends Relative {
   /**
-   * Generations between this person and the root, which is itself at 0. When
-   * two paths reach the same person — which happens as soon as cousins marry —
-   * the shortest one wins.
+   * The person's generation relative to the root, signed: the root is 0, a
+   * parent −1, a child +1, and a partner shares the generation of the person
+   * they married. When two paths reach the same person — which happens as soon
+   * as cousins marry — the nearest relationship names it. It is the drawing's
+   * layer.
    */
+  generation: number
+  /** The same distance unsigned. Superseded by {@link generation}; still on the wire. */
   depth: number
-  /**
-   * True for somebody who is in the set only because they are partnered with a
-   * descendant: the "plus their partners" half of what a family means here.
-   */
+  /** Meaningless in a network, where it is always false; still on the wire. */
   partner: boolean
 }
 
 /**
- * One family box of a drawn tree (`family.TreeFamily`): the family plus the
- * children of it the walk actually reached. A child outside the walked set is
- * left out on purpose, so the drawing is never handed an edge to a person it was
- * given no node for.
+ * One family box of a drawn tree (`family.TreeFamily`): the family plus its
+ * children. In a network a family is taken whole or not at all, so every child
+ * listed is also a member — the drawing is never handed an edge to a person it
+ * was given no node for. A family with neither partner is a sibling group.
  */
 export interface TreeFamily extends Family {
   child_uids: string[]
 }
 
 /**
- * The layout-ready payload of one family tree (`family.Tree`). The layout itself
- * is a pure function in `lib/familyLayout`; this is only its input.
+ * The layout-ready payload of one family network (`family.Tree`). The layout
+ * itself is a pure function in `lib/familyLayout`; this is only its input.
  */
 export interface FamilyTree {
   root: Relative
   direction: TreeDirection
   members: TreeMember[]
   families: TreeFamily[]
+  /**
+   * The network stopped at the server's cap with more of the family left
+   * unreached. The walk is breadth-first, so the members kept are the nearest.
+   */
+  truncated: boolean
+  /** How many people the whole family holds — the members' count unless truncated. */
+  total: number
 }
 
 /**
- * Reads the tree walked from a subject via `GET /subjects/{uid}/tree`.
- *
- * `generations` is optional and bounded by the backend: omitted means the whole
- * walk, which for a village archive is a page and not a denial of service. An
- * unknown subject is an {@link ApiError} 404.
+ * Reads everybody the family links reach from a subject via
+ * `GET /subjects/{uid}/tree?direction=network`: up, down and sideways, capped by
+ * the server at its nearest few hundred. An unknown subject is an
+ * {@link ApiError} 404.
  */
-export async function fetchTree(
-  subjectUid: string,
-  direction: TreeDirection,
-  generations?: number,
-  signal?: AbortSignal,
-): Promise<FamilyTree> {
-  const params = new URLSearchParams({ direction })
-  if (generations !== undefined) {
-    params.set('generations', String(generations))
-  }
+export async function fetchTree(subjectUid: string, signal?: AbortSignal): Promise<FamilyTree> {
   return getJSON<FamilyTree>(
-    `/subjects/${encodeURIComponent(subjectUid)}/tree?${params.toString()}`,
+    `/subjects/${encodeURIComponent(subjectUid)}/tree?direction=network`,
     signal,
   )
 }

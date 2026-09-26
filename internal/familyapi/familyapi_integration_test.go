@@ -409,6 +409,7 @@ func TestTree_network(t *testing.T) {
 	var raw struct {
 		Direction string `json:"direction"`
 		Truncated *bool  `json:"truncated"`
+		Total     int    `json:"total"`
 		Members   []struct {
 			UID        string `json:"uid"`
 			Depth      *int   `json:"depth"`
@@ -420,6 +421,9 @@ func TestTree_network(t *testing.T) {
 		nil, http.StatusOK, &raw)
 	if raw.Direction != "network" || raw.Truncated == nil || *raw.Truncated {
 		t.Errorf("direction = %q, truncated = %v, want network and an explicit false", raw.Direction, raw.Truncated)
+	}
+	if raw.Total != 5 {
+		t.Errorf("total = %d, want the whole five-person component", raw.Total)
 	}
 	want := map[string]int{son: 0, mother: -1, father: -1, aunt: -1, cousin: 0}
 	got := map[string]int{}

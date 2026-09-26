@@ -1424,7 +1424,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `GET /subjects/{uid}/tree?direction=descendants|ancestors|network&generations=N` (RequireAuth) → the
   layout-ready payload the tree page draws: `{"root":{…relative},"direction":"descendants",
   "members":[{…relative,"depth":1,"generation":1,"partner":false}],
-  "families":[{…family,"child_uids":["su_…"]}],"truncated":false}`. `depth` is unsigned (generations
+  "families":[{…family,"child_uids":["su_…"]}],"truncated":false,"total":1}`. `depth` is unsigned (generations
   *away* from the root); `generation` is the same distance **signed** — root 0, a parent −1, a child +1, a
   partner the generation of the person they married — positive in a descendant walk, negative in a pedigree.
   `direction` defaults to `descendants` — "the Nečas family" means the descendants of a chosen root plus
@@ -1444,13 +1444,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   sibling group leads to an aunt and on to her children, which neither directional walk can reach. It ignores
   `generations` (still validated) and is capped at **400 people** (`family.NetworkLimit`) instead: the walk
   is breadth-first, so what the cap leaves out is always further away than what it keeps, and
-  `"truncated":true` says the component was cut. A family is taken **whole or not at all**, so every uid in a
+  `"truncated":true` says the component was cut; `total` still counts the **whole** component (the walk goes on
+  past the cap only counting), so a client can say "the nearest 400 of 812". A family is taken **whole or not at all**, so every uid in a
   box's partners and `child_uids` is a member (the child list is not filtered — in the network it does not
   need to be). A person reachable two ways is reported **once**, and the nearest relationship names their
   `generation` (a mother-in-law who is also a cousin's daughter is −1, not 0); `depth` is its absolute
   value, `partner` is always `false`, and `families` now includes sibling groups, which name no partner.
   Members come ordered by `generation`, then birth year, name and uid. The directional walks never set
-  `truncated`. (Step 1 of the network redesign — the page still uses the two directional walks.)
+  `truncated` and report their member count as `total`. The tree page asks only for `network` (step 2 of the
+  network redesign); the two directional walks are still answered until step 3 removes them.
   `PATCH /families/{uid}` (RequireCurator) → edits the family row itself, as opposed to who is in it:
   `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
   Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and

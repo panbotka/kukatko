@@ -43,7 +43,7 @@ export interface TreeStageProps {
   resetKey: string
   /** The point (in layout units) the "back to the person" button returns to. */
   focus?: { x: number; y: number } | null
-  /** The accessible name of that button, which differs per direction. */
+  /** The accessible name of that button; the generic "back to the person" by default. */
   focusLabel?: string
   /** The drawing itself, in layout units, painted inside the transformed group. */
   children: ReactNode
@@ -87,16 +87,14 @@ function useStageSize(ref: React.RefObject<HTMLElement | null>): Size {
 }
 
 /**
- * The pannable, zoomable sheet of paper both family drawings are painted on:
+ * The pannable, zoomable sheet of paper the family drawing is painted on:
  * drag to pan, wheel or buttons to zoom, one button to fit the whole thing and
  * one to come back to the person it is about.
  *
- * It is shared by {@link FamilyTreeCanvas} and {@link FamilyPedigreeCanvas}
- * because the two directions are two *layouts*, not two pages: the design splits
- * the tree by direction precisely because a tidy tree and a binary pedigree are
- * different shapes — but the sheet they are drawn on, and everything a reader
- * does to move around it, is the same in both, and a second copy of this would
- * be a second thing to keep in step.
+ * It is its own component rather than part of {@link FamilyNetworkCanvas}
+ * because moving around a drawing and deciding what the drawing is are two
+ * separate jobs: this one is the same whatever is painted on it, and the
+ * pointer handling it holds has its own tests.
  *
  * Everything inside the transformed `<g>` is in **layout units**, font sizes
  * included, so type shrinks with the drawing rather than staying stubbornly

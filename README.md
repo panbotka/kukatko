@@ -139,16 +139,17 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   whose parents are not in the library are recorded all the same: they share a family nobody is a parent
   in yet, and the day a parent turns up, adding them to either sibling makes them the parent of the whole
   group — no invented "unknown parent" ever appears among the people.
-  **Zobrazit rodokmen** opens the whole
-  thing as a drawing, and it goes both ways: **potomci** are generations down the page, a couple in one
-  box, branches that fold away; **předci** are the pedigree above a person, two slots per generation
-  for as many generations as you ask for. An ancestor nobody has recorded is drawn as an **empty slot**
-  rather than quietly left out — and for a curator that gap is a button: click it and the dialog opens
-  on the right person, ready to record their mother or father. Both drawings pan and zoom, and a click
-  on anybody redraws from them. The person it is drawn from, the direction, the depth and the folded
-  branches are all in the address, so Back undoes any of them and a link carries the view. And the same
-  family is a **search filter**: `family:Nečas` (or `family:me`) is every photo of the clan, the same
-  people the drawing walks, so the page and the query can never disagree.
+  **Zobrazit rodokmen** opens the whole family as one drawing: everybody the family links reach from
+  that person — parents and grandparents, children and grandchildren, and sideways through a sister to
+  her children, the aunts and cousins and the people they married — a generation per row, a couple in
+  one box. There is no direction to pick and no depth to set; the drawing pans and zooms, a click on
+  anybody redraws it around them, and if a village-sized family ever outgrows it the page says it is
+  showing the nearest few hundred. For a curator every person with a parent the library does not know
+  carries a **+** on their card: click it and the dialog opens on the right person, ready to record
+  their mother or father. And the family is also a **search filter**: `family:Nečas` (or `family:me`)
+  is every photo of the clan — the descendants of that person plus the people they married, a narrower
+  question on purpose, because a filter is there to narrow a listing and the drawing is there to show a
+  family.
 - A catalogue of people goes wrong in exactly two ways and both have a repair: **merge** the same
   person filed twice into one record, and **move** the photos that turn out to be somebody else to
   whoever they really are.

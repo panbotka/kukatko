@@ -1787,7 +1787,11 @@ to `## Package map` in `CLAUDE.md`.
   set, which is what makes aunts and cousins appear), because the two things it promises are awkward in SQL:
   a **signed generation** assigned **first-write-wins** (a family takes its partners' generation, its children
   one more, so the nearest relationship names it and nobody is reported twice even when cousins marry), and a
-  **cap** (`NetworkLimit` = 400) that keeps the nearest and reports `Tree.Truncated`. A family is taken whole
+  **cap** (`NetworkLimit` = 400) that keeps the nearest and reports `Tree.Truncated`. Past the cap the walk
+  goes on to the end of the component **only counting**, so `Tree.Total` says how many people it holds (the
+  page's "nearest *N* of *M*"); the order is deterministic, so what a capped walk keeps is exactly the prefix an
+  uncapped one had reached when the first family stopped fitting (`keptPeople`/`keptFamilies`). The directional
+  walks report their member count as `Total`. A family is taken whole
   or not at all, so every uid a returned box names is a member. The traversal (`walkNetwork`) takes a
   `familyFetcher` and is a pure function over it; ties resolve in a fixed order (frontier order, families by
   uid, partners before children), so the result does not depend on row order. Visiting each person and family

@@ -218,8 +218,9 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}
-	if !tree.Truncated {
-		t.Error("a five-person component under a cap of four was not reported truncated")
+	if !tree.Truncated || tree.Total != 5 {
+		t.Errorf("truncated = %v, total = %d; want a five-person component under a cap of four "+
+			"reported truncated, with all five counted", tree.Truncated, tree.Total)
 	}
 	want := map[string]int{k.tomas: 0, k.ludmila: -1, k.ales: -1, k.dagmar: -1}
 	if got := generations(t, tree.Members); !maps.Equal(got, want) {
@@ -234,7 +235,7 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}
-	if whole.Truncated || len(whole.Members) != 5 {
+	if whole.Truncated || len(whole.Members) != 5 || whole.Total != 5 {
 		t.Errorf("a cap the component fits exactly = %d members, truncated %v; want 5, false",
 			len(whole.Members), whole.Truncated)
 	}

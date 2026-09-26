@@ -1,7 +1,9 @@
 # The family tree as a reachable network — design
 
-**Status:** approved 2026-09-26 — awaiting implementation. No code has been written for
-this document.
+**Status:** approved 2026-09-26. Steps 1 (the network walk) and 2 (the page) of §10 are
+implemented; step 3 (removing the directional walks from the endpoint) is pending.
+Implementation note: the response also carries `total` — the size of the whole component,
+counted past the cap — so the page's banner can say "the nearest N of M".
 
 The tree page at `/people/{uid}/tree` asks the database one question at a time: *who is
 above this person*, or *who is below them*. Both answers are drawn well, and neither is

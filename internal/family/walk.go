@@ -189,7 +189,9 @@ func (s *Store) Tree(ctx context.Context, rootUID string, direction Direction, g
 	if err != nil {
 		return Tree{}, err
 	}
-	return Tree{Root: root, Direction: direction, Members: members, Families: families}, nil
+	return Tree{
+		Root: root, Direction: direction, Members: members, Families: families, Total: len(members),
+	}, nil
 }
 
 // treeMembers walks one direction from the root, bounded by depth generations.

@@ -44,13 +44,8 @@ export interface TreePersonCardProps {
 }
 
 /**
- * One person inside a box of either drawing: a round face, their name, and the
- * years anybody recorded for them.
- *
- * It is shared by the descendants tree and the ancestors pedigree because a
- * person looks the same whichever way the drawing walks — only what surrounds
- * them differs — and two cards drifting apart would be two things to keep
- * consistent for no gain.
+ * One person inside a box of the family drawing: a round face, their name, and
+ * the years anybody recorded for them.
  *
  * The face is the server-cut square (`GET /subjects/{uid}/avatar`), falling back
  * to the coloured initial for somebody with no photographs at all — which in a

@@ -322,6 +322,11 @@ the full page.
 
 ### 8.2 `FamilyTreePage` at `/people/:uid/tree`
 
+> **Superseded 2026-09-26** by
+> [`2026-09-26-family-network-view-design.md`](2026-09-26-family-network-view-design.md):
+> the page now draws the whole reachable network in one layered drawing, with no
+> direction split. The text below is kept as the record of the original decision.
+
 Split by direction, because each direction is a different problem:
 
 - **Descendants** are a genuine tree once a couple is one box, so a classic tidy-tree

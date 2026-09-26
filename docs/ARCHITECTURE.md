@@ -920,6 +920,41 @@ to belong to at all. Left only in Postgres, the tree would be the one thing a us
 - **An empty genealogy is written, not skipped.** A library whose last relation was removed is described by a
   file with no families in it; leaving the previous file would let a rebuild restore a tree the user deleted.
 
+### 8.3 The family tree page — one drawing of the reachable network
+
+**Decision (2026-09-26, revising §8.2 of the
+[2026-09-12 family tree design](superpowers/specs/2026-09-12-family-tree-design.md)):** `/people/:uid/tree`
+draws **everybody the family links reach** from one person — up, down and sideways, in-laws' relatives
+included — as **one layered drawing**, with no direction switch and no generation control. It replaced two
+directional renderers (a descendants tidy tree and an ancestors pedigree), neither of which could show an aunt
+or a cousin: the path to them runs sideways through a parentless sibling group, and on production data that
+hid two of the five people one family link reached. Full design:
+[`2026-09-26-family-network-view-design.md`](superpowers/specs/2026-09-26-family-network-view-design.md).
+
+**Key decisions:**
+
+- **The whole connected component, with a budget instead of a direction.** The walk
+  (`GET /subjects/{uid}/tree?direction=network`, `internal/family` `walkNetwork`) is breadth-first over the
+  bipartite person/family graph and capped at `family.NetworkLimit` = 400 people, so what it leaves out is
+  always further away than what it keeps; the response says `truncated` and counts the whole component in
+  `total`, and the page says "the nearest *N* of *M*". The 2026-09-12 fear that a component "would one day
+  swallow the whole of Veselice" is about the `family:` **search filter**, whose job is to narrow a listing —
+  that filter keeps its own descendants-plus-partners SQL, and the page and the filter answer different
+  questions **on purpose**.
+- **Signed generations from the server, layers in the client.** The walk gives every member a signed
+  `generation` (first write wins, so the nearest relationship names it and nobody appears twice in a cycle).
+  The frontend's `layoutNetwork` is a **layered (Sugiyama-style)** layout: the layer is the generation, a
+  couple is one box, the order within a layer is seeded breadth-first from the root and improved by
+  barycentre sweeps, and the coordinates are a per-layer weighted isotonic regression that cannot overlap. It
+  stays a **pure, dependency-free** function — the 2026-09-12 choice of a hand-written layout over
+  d3/dagre/elkjs stands — because that is where the page's risk is and where the vitest coverage belongs.
+- **The pedigree's empty slot moved onto the card.** A layered drawing has no fixed places for unknown
+  parents, so the `+` that recorded a missing parent is now on every card whose person lacks one, under the
+  same `canCurate` permission. It works for everybody in the drawing rather than only the line above the root.
+- **No folding.** A network has no single direction to fold away; with today's five-person components there
+  is nothing to hide. If a filled-in library makes the drawing unwieldy, folding a family box is the natural
+  place to start.
+
 ---
 
 ## 9. The one-off importers (S11–S12) — retired

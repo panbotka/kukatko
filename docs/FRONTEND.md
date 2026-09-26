@@ -3698,66 +3698,63 @@ here.
   lead to a page that can never load again. After a move it clears the selection and refetches (the moved
   photos have left this gallery),
   `FamilyTreePage` = **`/people/:uid/tree`** the whole family of one person, drawn — read-only, so any signed-in
-  role may look at it (the tree is filled in from the strip on the person's page). It only fetches and wires:
-  `fetchTree` gives the people and the family boxes, `lib/familyLayout` decides the coordinates in a **pure**
-  function, and `FamilyTreeCanvas` paints them — three parts because each fails differently (a fetch loudly, a
-  layout arithmetically and unit-testably, a rendering by *looking* wrong, which only eyes catch).
-  **Every navigation is a link and every one of them lives in the URL**: the root is the route parameter (clicking
-  a person re-roots the drawing on them, which is how a reader walks sideways through a village; the root's own
-  card leads to their person page instead, since it has nowhere to re-root to), the direction is `direction=`
-  (`descendants`|`ancestors`, an unrecognised value walking downwards), the pedigree's depth is `generations=`
-  (default 3 — the four-generation chart genealogy has printed on one sheet for two centuries — clamped to
-  `MAX_PEDIGREE_GENERATIONS` 6) and the folded branches are `closed=` (a comma-separated list of node ids). So Back
-  undoes a fold, a re-root **or a change of direction**, a bookmark keeps the branch that was opened, and a middle
-  click opens a branch in a new tab — the standing "Back always works" rule applied to a drawing that would
-  otherwise hold all its state in a component. The pan/zoom is deliberately **not** in the URL: it is where the eye
-  is, not what is being looked at, and a history entry per wheel notch would bury the states that matter. The
-  **direction switch** is therefore two `Link`s in a `btn-group` (the active one `aria-current="page"`) and not two
-  buttons, and the depth is a `Form.Select` that pushes `generations=`; a re-root keeps both and drops `closed=`,
-  whose ids name boxes of the drawing being left behind. Only a pedigree asks for `generations` — a descendant walk
-  is bounded by the family it finds, and sending a limit it does not need would be a second thing to keep true.
-  A sibship is ordered here — oldest first where a birth year was recorded, alphabetically among those without —
-  because the layout is pure and knows nothing about birthdays. The header carries the walk's size
-  (people × generations) and a link to the root's own page; a subject with no families at all gets the `EmptyState`
-  saying where relations are recorded — **except** an editor looking upwards, who gets the pedigree's two blank
-  parent slots instead, because there the gap *is* the invitation and a sentence about another page is not.
-  Clicking a blank slot opens `AddRelationModal` on the **child** it belongs to (a parent is recorded on their
-  child) with the role picker on *parent* and that child's known parent already in hand for the sibling copy;
-  a successful add refetches the walk rather than patching the new person into the old answer.
-  `TreeStage` (`components/people/TreeStage.tsx` + `familyTree.css`) is the sheet of paper **both** drawings are
+  role may look at it (the tree is filled in from the strip on the person's page and from the drawing's `+`). It
+  draws **everybody the family links reach** from the person — up, down and sideways through a sibling group to
+  aunts, cousins and their in-laws — in **one layered drawing**, a generation per row, fetched once
+  (`fetchTree(uid)` → `GET /subjects/{uid}/tree?direction=network`). There is **no direction switch and no
+  generations control** (both, and their `direction=`/`generations=`/`closed=` URL state, went with the
+  2026-09-26 network redesign; an old bookmark carrying them simply draws the network): a reader looking at a
+  family wants all of it, and a drawing that grows is a drawing you pan. It only fetches and wires: `fetchTree`
+  gives the people (each with the server's signed `generation`) and the family boxes, `lib/familyLayout`
+  `layoutNetwork` decides the coordinates in a **pure** function, and `FamilyNetworkCanvas` paints them — three
+  parts because each fails differently (a fetch loudly, a layout arithmetically and unit-testably, a rendering
+  by *looking* wrong, which only eyes catch). The root is the route parameter, so clicking a person **re-roots**
+  the drawing on them (the same family, centred on somebody else, generations counted from them) as an ordinary
+  link that Back undoes; the root's own card leads to their person page instead, since it has nowhere to re-root
+  to. The pan/zoom is deliberately **not** in the URL: it is where the eye is, not what is being looked at. A
+  sibship is ordered here (`orderChildren`) — oldest first where a birth year was recorded, Czech-collated
+  alphabetically among those without — because the layout is pure and knows nothing about birthdays. The header
+  carries the network's size — people × (`max(generation) − min(generation) + 1`) generations — and a link to the
+  root's own page. A **truncated** response (the server caps the walk at its nearest 400) shows a plain
+  `Alert` saying the nearest *N* of *M* (`total`) are drawn. A subject with no families at all gets the
+  `EmptyState` saying where relations are recorded — **except** for a curator, who gets their lone card with its
+  `+`, because there the invitation is worth more than a sentence about another page. **The `+` on a card** is
+  where the old pedigree's empty slot went: under `canCurate` (the permission the slot used), every person
+  **missing a parent** — a child of no family, of a lone parent or of a partnerless sibling group — carries a `+`
+  that opens `AddRelationModal` on that person (a parent is recorded on their child) with the role picker on
+  *parent* and their known parent already in hand for the sibling copy; a successful add refetches the network
+  rather than patching the new person into the old answer.
+  `TreeStage` (`components/people/TreeStage.tsx` + `familyTree.css`) is the sheet of paper the drawing is
   painted on: drag to pan (a drag that travels more than 4 px swallows the click that ends it, so panning over a
   person does not also follow their link), wheel to zoom about the cursor (a
   **hand-attached** listener — React's own wheel handler is passive and cannot `preventDefault`, without which the
   page scrolls instead of the tree zooming) and four buttons (zoom in/out, fit, back to the person it is about).
   The pointer is captured **only once that 4 px has been passed**, never on `pointerdown`: capture retargets every
   mouse event derived from that pointer, so an eager one delivers the `mouseup` — and with it the `click` — to the
-  `<svg>`, leaving every control inside the drawing (a person, a fold handle, a blank slot) dead to a **mouse**
-  while it still works under a finger. jsdom stubs the whole Pointer Capture API inert, so no simulated click can
-  see that: `TreeStage.test.tsx` guards the **timing of the capture call** instead. A move whose `buttons` is 0
-  ends the drag, because until the capture is taken a release outside the stage is never heard.
+  `<svg>`, leaving every control inside the drawing (a person, a card's `+`) dead to a **mouse** while it still
+  works under a finger. jsdom stubs the whole Pointer Capture API inert, so no simulated click can see that:
+  `TreeStage.test.tsx` guards the **timing of the capture call** instead. A move whose `buttons` is 0 ends the
+  drag, because until the capture is taken a release outside the stage is never heard.
   Everything inside the transformed `<g>` is in **layout units**, font sizes included, so type shrinks with the
-  drawing rather than staying 13 px while the tree gets smaller around it. `resetKey` is what the drawing is *of*:
-  when it changes the reader's pan and zoom are dropped, so a new root starts fitted while a fold or a dialog
-  leaves the view exactly where it was. `TreePersonCard` (`TreePersonCard.tsx`) is one person in either drawing —
-  the server-cut round face (`GET /subjects/{uid}/avatar`), falling back to `avatarIdentity`'s coloured initial for
-  `photo_count === 0` or a rendition that fails (the ordinary case in a tree, not a failure), the name cut to the
-  card's width by `lib/text` `truncateText` (SVG has no `text-overflow`; the whole name is in the link's `title`)
-  and the life span under it. The root's card is outlined in the accent; a card **repeated** in the same drawing
-  (the partner two marriages share, the ancestor a cousin marriage puts on both sides) is dashed in the muted text
-  colour — it was dashed in the border's until the pedigree was looked at in a browser, where rgb(66,59,49) on
-  rgb(42,37,30) was a mark nobody could see. Both are split out of `FamilyTreeCanvas` rather than copied, so the
-  two directions cannot drift apart.
-  `FamilyTreeCanvas` (`components/people/FamilyTreeCanvas.tsx`) is the **descendants** drawing on that stage: a
-  couple joined by a **line**, not the ⚭ glyph, which is not in the theme's typeface and falls back to a smudge
-  nobody chose, and a fold handle under each box naming the couple it hangs under and how many people it is hiding
-  (a fold that hides nobody says zero, rather than tempting a reader to open an empty branch).
-  `FamilyPedigreeCanvas` (`components/people/FamilyPedigreeCanvas.tsx`) is the **ancestors** drawing: the person at
-  the bottom, each generation of parents on the row above, and — the point of the whole view — a **visible gap**
-  wherever the library does not know who stood there. A gap is a dashed slot the full size of a person, captioned
-  „Zapsat rodiče" with a `+` under `canCurate` (`role="button"`, `tabIndex=0`, Enter/Space, the child named in its
-  `aria-label`) and „Neznámý" with a `?` for everybody else (`role="img"`, still named — a screen reader that
-  skipped it would report a pedigree with fewer people in it rather than one with holes). i18n under
-  `familyTree.*`.
+  drawing rather than staying 13 px while the tree gets smaller around it. `resetKey` is what the drawing is *of*
+  (the root plus the number of boxes): when it changes the reader's pan and zoom are dropped, so a new root — or a
+  drawing a recorded parent just grew — starts fitted, while opening a dialog leaves the view exactly where it
+  was. `TreePersonCard` (`TreePersonCard.tsx`) is one person in the drawing — the server-cut round face
+  (`GET /subjects/{uid}/avatar`), falling back to `avatarIdentity`'s coloured initial for `photo_count === 0` or
+  a rendition that fails (the ordinary case in a tree, not a failure), the name cut to the card's width by
+  `lib/text` `truncateText` (SVG has no `text-overflow`; the whole name is in the link's `title`) and the life
+  span under it. The root's card is outlined in the accent; a card **repeated** in the same drawing (the partner
+  two marriages share) is dashed in the muted text colour — it was dashed in the border's until the drawing was
+  looked at in a browser, where rgb(66,59,49) on rgb(42,37,30) was a mark nobody could see.
+  `FamilyNetworkCanvas` (`components/people/FamilyNetworkCanvas.tsx`) paints `layoutNetwork`'s answer on that
+  stage: the elbow edges, then one `TreeBox` per box — a couple joined by a **line**, not the ⚭ glyph, which is
+  not in the theme's typeface and falls back to a smudge nobody chose — and on each card whose person is in
+  `missingParent` (never on a repeated card) the `AddParentBadge`: a `+` on the card's top edge, clear of the
+  line that lands mid-card, `role="button"`, `tabIndex=0`, Enter/Space, the person named in its `aria-label`
+  („Zapsat rodiče osoby …"). It is a **sibling** of the card's link, not inside it, because a button inside a
+  link is two controls fighting over one click. It replaced `FamilyTreeCanvas` (the descendants tidy tree with
+  fold handles) and `FamilyPedigreeCanvas` (the ancestors pedigree with its empty slots), both deleted with the
+  network redesign. i18n under `familyTree.*`.
   `ClustersPage` = `/people/clusters` (editor/admin) a review queue of unnamed clusters:
   `ClusterCard` (a representative + samples + removal of a strayed face + one-shot naming
   of the whole cluster) in the **review tools' density grid** — `useGridDensity(REVIEW_GRID_SCOPE)` +
@@ -5838,34 +5835,40 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `panBy`, `clampView` (the pan stays within `(scale-1)*box/2`, so the image can't be dragged out of the panel),
   `isZoomed`, `viewTransform`; deliberately separate from `gestures.ts` — that one is touch-only and measures against
   the viewport;
-  `familyLayout.ts` = **the family tree's geometry in both directions**, pure, DOM-free and unit-tested
-  (`familyLayout.test.ts`), because that is where the whole page's risk lives and the SVG on top of it is thin.
-  Downwards (`layoutDescendants`) is a classic tidy tree
-  (Reingold–Tilford): each subtree is laid out on its own, siblings are packed by **contour** (the leftmost and
-  rightmost edge at every level, so a deep narrow branch interlocks with a shallow wide one instead of clearing
-  its widest level), and a parent is centred over its children. `LayoutFamily{uid,partnerUids,childUids}` +
-  `rootUid` + `collapsed` in → `FamilyLayout{nodes,edges,width,height}` out; `LayoutNode` carries `personUids`
-  (one or two, left to right), `repeatUids`, `parentId`/`childIds`, `depth`, the box rect, `collapsed` and
-  `hiddenCount`; `LayoutEdge` is four numbers and `edgePath(edge)` turns it into the genealogy elbow (down,
-  across, down — the horizontal run is what makes a sibship read as one row). The walk is **breadth-first** and
-  draws every person and every family **once**, at the shallowest place it was reached: once cousins marry the
-  same couple is reachable by two paths, and a second path simply produces no second box. A person partnered in
-  several families is one box per family side by side, the shared partner listed in `repeatUids` of all but the
-  first — two marriages are two boxes because their children hang off different couples. It preserves the order
-  it is given (the page sorts a sibship by birth year; the layout knows nothing about birthdays) and it takes
-  **no dependency**: two hundred lines of arithmetic is not a reason for d3/dagre/elkjs. Upwards
-  (`layoutAncestors({rootUid,families,generations})` → `Pedigree{slots,edges,width,height}`, `emptyPedigree()`) is
-  the other shape and therefore the other function: a binary pedigree, the root at the **bottom** and each
-  generation of parents on the row above, `PedigreeSlot` carrying the Ahnentafel id (`a1` at the root, the parents
-  of *n* at `2n`/`2n+1`), `personUid` (**null for a gap**), the `childUid` a gap is filled in on, `generation`,
-  `repeat` and the rect. Every known person gets **two** slots whether or not the library can fill them, and a
-  blank one is a leaf — an unknown grandmother has no knowable parents — so a pedigree with one recorded line in it
-  is a narrow drawing and not a field of white; a child is centred **between** its two parents, `generations` is
-  clamped into 1…`MAX_PEDIGREE_GENERATIONS` (6: a pedigree doubles every row), a person reached along both sides
-  (cousin marriage — pedigree collapse) is drawn in **both** places with every appearance after the first marked
-  `repeat`, and a person who is somehow their own ancestor ends the climb rather than recursing. Constants
-  `PERSON_WIDTH`/`NODE_HEIGHT`/`COUPLE_GAP`/`SIBLING_GAP`/`LEVEL_GAP`/`TREE_PADDING`/`AVATAR_CIRCLE` are shared
-  with the renderers;
+  `familyLayout.ts` = **the family drawing's geometry**, pure, DOM-free and unit-tested (`familyLayout.test.ts`),
+  because that is where the whole page's risk lives and the SVG on top of it is thin. `layoutNetwork({rootUid,
+  generations, families})` — `generations` a `Map` of every person to the **signed generation the server
+  computed**, `families` `LayoutFamily{uid,partnerUids,childUids}` (no partners = a sibling group) — returns
+  `FamilyLayout{nodes,edges,width,height}` (`emptyLayout()` for nobody at all). It is a **layered
+  (Sugiyama-style)** layout, because what the page draws is a graph and not a tree — it grows upwards as readily as
+  downwards and, once cousins marry, has cycles: (1) the **layer is given**,
+  `y = (generation − minGeneration) * LEVEL_STRIDE` (plus half a gap of headroom when a sibling group's bar hangs
+  over the top row); (2) **a couple is one box** — every family with a partner is a box, a person partnered in
+  none gets a `person:<uid>` box of their own, a partnerless sibling group gets no box, only the bar joining its
+  children — and the order within a layer is seeded **breadth-first from the root**, then improved by
+  `SWEEPS` = 6 **barycentre sweeps** down and up the layers, each box moving towards the mean centre of the boxes
+  it is tied to (its parents' box, its children's, a sibling group's other children, the other marriage of a
+  remarried partner); (3) the **coordinates** are packed left to right with `PERSON_WIDTH`/`SIBLING_GAP`/
+  `COUPLE_GAP` and nudged towards that barycentre **by priority** (1 + number of ties) — solved exactly per layer
+  as a **weighted isotonic regression** (pool adjacent violators over the targets minus each box's least offset
+  from the first), so no two boxes of a layer can ever come closer than `SIBLING_GAP` rather than being repaired
+  after the fact. A couple is then turned to face its parents (the partner whose parents — or, lacking them,
+  siblings — stand further left is drawn on the left). Every person is drawn **once**, so a cycle closes instead
+  of duplicating anybody; the one exception is the partner a remarriage shares, who stands in both marriages'
+  boxes (two marriages are two boxes because their children hang off different couples) and is listed in
+  `repeatUids` of all but the first. A person the payload names in a family but gave no generation is ignored; a
+  payload that is not one component is still drawn whole. `LayoutNode` carries `personUids` (one or two, left to
+  right), `repeatUids`, `generation` and the box rect; `cardCentre(node, uid)` is where a line to one person
+  lands. `LayoutEdge` is four numbers: from the foot of the family's box — or, for a sibling group, from just
+  above the children, so the group reads as one bar with a short stub where the unrecorded parents would hang —
+  to the top centre of the child's **own card** (in a couple's box, one half of it). `edgePath(edge)` turns it
+  into the genealogy elbow (down, across, down — the horizontal run is what makes a sibship read as one row). It
+  preserves the order it is given (the page sorts a sibship by birth year) and is deterministic, and it takes
+  **no dependency**: the design chose a hand-written pure layout over d3/dagre/elkjs and that stands. It replaced
+  the Reingold–Tilford `layoutDescendants` and the Ahnentafel `layoutAncestors` (with `MAX_PEDIGREE_GENERATIONS`),
+  neither of which could express a component with cycles and negative generations. Constants
+  `PERSON_WIDTH`/`NODE_HEIGHT`/`COUPLE_GAP`/`SIBLING_GAP`/`LEVEL_GAP`/`LEVEL_STRIDE`/`TREE_PADDING`/
+  `AVATAR_CIRCLE` are shared with the renderer;
   `treeView.ts` = the family tree's **pure pan/zoom maths**, deliberately not `compareZoom.ts` (whose `MIN_SCALE`
   is 1 — shrinking two photographs compares nothing, where the first thing a tree needs is to be seen whole):
   `TreeView{scale,x,y}` applied as `translate(x,y) scale(s)` with the default **top-left** origin,
@@ -6756,12 +6759,14 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   may have to be created with nobody in its partner columns); a refusal is an `ApiError` whose **status** is
   the message: 409 = the state of the tree is in the way (a cycle, a second parentage, two prospective siblings
   already in different families — the same request would have been accepted against different rows),
-  400 = the request got itself wrong; `fetchTree(subjectUid,direction,generations?,signal)` over
-  `GET /subjects/{uid}/tree` is the layout's input — `FamilyTree{root,direction,members,families}` with
-  `TreeMember` = a `Relative` plus `depth` (the **shortest** path wins when two reach the same person) and
-  `partner` (in the set only by marriage, the "plus their partners" half of what a family means here), and
-  `TreeFamily` = a `Family` plus `child_uids`, **only** the children the walk reached, so the drawing is never
-  handed an edge to a person it was given no node for;
+  400 = the request got itself wrong; `fetchTree(subjectUid,signal)` over
+  `GET /subjects/{uid}/tree?direction=network` is the layout's input — `FamilyTree{root,direction,members,
+  families,truncated,total}` with `TreeMember` = a `Relative` plus the **signed** `generation` (root 0, parent
+  −1, child +1, a partner the generation of the one they married; the nearest relationship names it and is the
+  drawing's layer) and the still-transmitted `depth`/`partner`, `TreeFamily` = a `Family` plus `child_uids` (in a
+  network a family is taken whole, so every child is also a member; both partners null = a sibling group),
+  `truncated` = the server's 400-people cap cut the network, and `total` = how many people the whole family holds
+  (the "of *M*" of the page's banner);
   `recognition.ts` = the recognition-sweep client: `streamSweep(params,onMessage,signal)` over
   `GET /faces/sweep` **streams NDJSON** (`fetch`+`ReadableStream`, it splits lines by hand, `onMessage` receives
   only complete lines), the types `SweepParams` `{confidence,limit}` (`confidence` = **percent**, the backend

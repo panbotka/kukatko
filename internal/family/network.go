@@ -44,13 +44,20 @@ ORDER BY w.generation, s.birth_year NULLS LAST, s.name, s.uid`
 type familyFetcher func(ctx context.Context, uids []string) ([]TreeFamily, error)
 
 // network is what the walk found: the members with their signed generations in
-// the order they were reached, the family boxes tying them together, and whether
-// the cap cut the component short.
+// the order they were reached, the family boxes tying them together, whether
+// the cap cut the component short, and how many people the whole component
+// holds — which is the "of M" a page needs to say how much it left out.
 type network struct {
 	order      []string
 	generation map[string]int
 	families   []TreeFamily
 	truncated  bool
+	total      int
+	// keptPeople and keptFamilies mark where the cap cut the walk: the lengths
+	// of order and families at the first family that would not fit. Meaningful
+	// only once truncated is set.
+	keptPeople   int
+	keptFamilies int
 }
 
 // walkNetwork walks the whole connected component around rootUID over the
@@ -70,26 +77,35 @@ type network struct {
 // A family is taken in whole or not at all, so every uid a returned family
 // names is a member and a renderer is never handed an edge to a person it has
 // no node for. When taking the next family would push the walk past limit
-// people it stops there and reports truncated; everything already taken is
-// nearer than anything left out. The walk visits each person and each family
-// once, so it terminates on any graph, cycles included, without a depth guard.
+// people, the drawing is cut there and the walk reports truncated; everything
+// kept is nearer than anything left out. The walk itself goes on to the end of
+// the component, only counting, so total says how many people it holds: the
+// order is deterministic, so what a capped walk keeps is exactly the prefix an
+// uncapped one had reached at that moment. The walk visits each person and each
+// family once, so it terminates on any graph, cycles included, without a depth
+// guard.
 func walkNetwork(ctx context.Context, rootUID string, limit int, fetch familyFetcher) (network, error) {
 	walk := network{order: []string{rootUID}, generation: map[string]int{rootUID: 0}}
 	taken := map[string]bool{}
-	for frontier := []string{rootUID}; len(frontier) > 0 && !walk.truncated; {
+	for frontier := []string{rootUID}; len(frontier) > 0; {
 		families, err := fetch(ctx, frontier)
 		if err != nil {
 			return network{}, err
 		}
 		frontier = walk.expand(frontier, families, taken, limit)
 	}
+	walk.total = len(walk.order)
+	if walk.truncated {
+		walk.order = walk.order[:walk.keptPeople]
+		walk.families = walk.families[:walk.keptFamilies]
+	}
 	return walk, nil
 }
 
 // expand takes, in frontier order, every family of a frontier person the walk
 // has not taken yet, and returns the people reached for the first time — the
-// next frontier. It stops, marking the walk truncated, at the first family that
-// would not fit under limit.
+// next frontier. At the first family that would not fit under limit it marks
+// the walk truncated and records where the kept drawing ends.
 func (w *network) expand(frontier []string, families []TreeFamily, taken map[string]bool, limit int) []string {
 	slices.SortFunc(families, func(a, b TreeFamily) int { return cmp.Compare(a.UID, b.UID) })
 	var next []string
@@ -99,9 +115,9 @@ func (w *network) expand(frontier []string, families []TreeFamily, taken map[str
 			if taken[fam.UID] || !ok {
 				continue
 			}
-			if len(w.order)+len(w.newcomers(fam)) > limit {
+			if !w.truncated && len(w.order)+len(w.newcomers(fam)) > limit {
 				w.truncated = true
-				return nil
+				w.keptPeople, w.keptFamilies = len(w.order), len(w.families)
 			}
 			taken[fam.UID] = true
 			next = w.take(next, fam, generation)
@@ -187,7 +203,7 @@ func (s *Store) network(ctx context.Context, root Relative, limit int) (Tree, er
 	}
 	return Tree{
 		Root: root, Direction: DirectionNetwork, Members: members, Families: families,
-		Truncated: walk.truncated,
+		Truncated: walk.truncated, Total: walk.total,
 	}, nil
 }
 
