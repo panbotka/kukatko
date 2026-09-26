@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/review"
 )
@@ -104,7 +105,7 @@ func doJSON(t *testing.T, method, url, body string, out any) int {
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("Do: %v", err)
 	}

@@ -16,6 +16,7 @@ linters:
     - exhaustive
     - exptostd
     - fatcontext
+    - forbidigo
     - forcetypeassert
     - funlen
     - gocognit
@@ -85,6 +86,17 @@ linters:
           disabled: true
     exhaustive:
       default-signifies-exhaustive: true
+    forbidigo:
+      forbid:
+        # http.DefaultClient and the http.Get/Post helpers that wrap it share
+        # http.DefaultTransport, a process-wide connection pool that
+        # httptest.Server.Close() empties on behalf of its users. Parallel tests
+        # then evict each other's connections; see internal/apitest for the whole
+        # story. Production code wants its own client (and its own timeout) too.
+        - pattern: ^http\.DefaultClient$
+          msg: use a client with a pool of its own — apitest.Client() in tests
+        - pattern: ^http\.(Get|Head|Post|PostForm)$
+          msg: these run on http.DefaultClient; use a client of your own — apitest.Client() in tests
     lll:
       line-length: 120
     nakedret:

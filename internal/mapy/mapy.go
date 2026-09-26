@@ -243,6 +243,28 @@ type HTTPClient struct {
 // compile-time assertion that HTTPClient satisfies Client.
 var _ Client = (*HTTPClient)(nil)
 
+// ownConnectionPool returns a connection pool for this client alone: a clone of
+// the stdlib default, so it keeps its proxy, dial and protocol settings, but not
+// http.DefaultTransport itself.
+//
+// A nil Transport would mean http.DefaultTransport, which is process-wide — and
+// therefore shared with everyone who empties it. httptest.Server.Close() does
+// exactly that on every teardown, on behalf of its users, so in a package of
+// parallel tests this client's pooled connection to the upstream could be taken
+// away between two of its own requests: the request in flight then failed at the
+// transport and the API answered 503 where the test upstream had said 401, which
+// is the shape of the mapsapi flake in CI. internal/apitest has the whole
+// mechanism.
+func ownConnectionPool() http.RoundTripper {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		// Unreachable with the stdlib default; a pool of our own is still the
+		// point, so build a bare one rather than fall back to the shared one.
+		return &http.Transport{}
+	}
+	return transport.Clone()
+}
+
 // New builds an HTTPClient from cfg. It returns ErrInvalidURL when BaseURL is not
 // a valid HTTP(S) URL with a host.
 func New(cfg Config) (*HTTPClient, error) {
@@ -270,7 +292,7 @@ func New(cfg Config) (*HTTPClient, error) {
 	}
 	client := cfg.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Transport: ownConnectionPool()}
 	}
 	return &HTTPClient{
 		baseURL:   parsed,

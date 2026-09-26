@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/mapsapi"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -79,7 +80,7 @@ func (e *geoEnv) seedGeo(t *testing.T, hash string, p photos.Photo) photos.Photo
 // fetchGeo fetches the GeoJSON feed at the given query and decodes it.
 func (e *geoEnv) fetchGeo(t *testing.T, query string) geoFeatureCollection {
 	t.Helper()
-	resp, err := http.Get(e.server.URL + "/api/v1/map/photos" + query)
+	resp, err := apitest.Client().Get(e.server.URL + "/api/v1/map/photos" + query)
 	if err != nil {
 		t.Fatalf("GET %s: %v", query, err)
 	}

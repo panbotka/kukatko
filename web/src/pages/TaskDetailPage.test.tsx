@@ -583,7 +583,12 @@ describe('the photo wall', () => {
     // The library's half-viewport reserve keeps a page whose whole content is
     // the grid from collapsing; here the grid is a section between the question
     // and the answer box, where that reserve is a hole.
-    expect(gridMinHeight()).toBe('0')
+    // The wall arrives with a fetch of its own, so wait for the wall rather than
+    // reading it off the question's snapshot — until then there is no element and
+    // `minHeight` is `undefined`.
+    await waitFor(() => {
+      expect(gridMinHeight()).toBe('0')
+    })
   })
 })
 

@@ -1211,6 +1211,14 @@ follow these rules; **a task is not done with red lint or tests.**
 - External dependencies (the embeddings sidecar, mapy.com, S3) behind an **interface**
   (interface) → mocked/fake in tests; verify the sidecar contract with a contract test against
   a fake server too.
+- **No HTTP test runs on `http.DefaultClient`, and no production client on `http.DefaultTransport`.**
+  `httptest.Server.Close()` empties the default transport's idle connections on behalf of its users, and
+  that transport is process-wide: in a package of parallel tests, each raising and tearing down a server of
+  its own, one teardown takes a connection another test is using and the request in flight dies with
+  `transport connection broken: http: CloseIdleConnections called`. A POST is what surfaces it — net/http
+  silently replays only an idempotent request. Drive a test server with **`apitest.Client()`**
+  (`internal/apitest`, which pools nothing); a client that ships gets a pool of its own by cloning the
+  default (`internal/mapy`, `internal/embedding`). A **`forbidigo`** rule keeps the door shut.
 - Meaningful coverage of the logic (not vanity %). New behavior = new/updated tests.
 
 ### 19.3 Frontend tests

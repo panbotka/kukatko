@@ -600,7 +600,11 @@ describe('UploadPage — shared files', () => {
 
     expect(await screen.findByRole('heading', { name: 'Uploading…' })).toBeInTheDocument()
     expect(collectMock).toHaveBeenCalledWith('1700000000000-1')
-    expect(uploadMock).toHaveBeenCalledTimes(2)
+    // The queue starts itself from an effect, one task after the commit that put
+    // the files on screen — so the stage is visible before the requests are out.
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2)
+    })
     expect(screen.getByText('2 shared files are ready. Check them and upload.')).toBeInTheDocument()
   })
 
@@ -614,7 +618,11 @@ describe('UploadPage — shared files', () => {
         'These files are not photos or videos, so they were left out: smlouva.pdf',
       ),
     ).toBeInTheDocument()
-    expect(uploadMock).toHaveBeenCalledTimes(1)
+    // Same effect-after-commit gap as above: the rejection sentence renders with
+    // the batch, the upload of the accepted file follows it.
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('says so when a share turned out to hold no photos at all', async () => {

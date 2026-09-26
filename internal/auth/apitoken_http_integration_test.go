@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
@@ -123,7 +124,7 @@ func (e *tokenEnv) request(t *testing.T, method, path, bearer, body string) (int
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -145,7 +146,7 @@ func (e *tokenEnv) login(t *testing.T, username string) *http.Cookie {
 		t.Fatalf("new login request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("login %q: %v", username, err)
 	}
@@ -179,7 +180,7 @@ func (e *tokenEnv) cookieRequest(
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.AddCookie(cookie)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
@@ -429,7 +430,7 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 	}
 	req.AddCookie(cookie)
 	req.Header.Set("Authorization", "Bearer kkt_atnope_nope")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}
@@ -445,7 +446,7 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 	}
 	req2.AddCookie(cookie)
 	req2.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
-	resp2, err := http.DefaultClient.Do(req2)
+	resp2, err := apitest.Client().Do(req2)
 	if err != nil {
 		t.Fatalf("probe: %v", err)
 	}

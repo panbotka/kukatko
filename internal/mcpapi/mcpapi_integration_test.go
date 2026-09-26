@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
@@ -212,7 +213,7 @@ func (e *env) rpcWithHeader(t *testing.T, bearer, method string, params any) (in
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("do %s: %v", method, err)
 	}

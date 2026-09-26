@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/mapsapi"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -109,7 +110,7 @@ func httpGet(t *testing.T, urlStr string) *http.Response {
 	if err != nil {
 		t.Fatalf("NewRequest %s: %v", urlStr, err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", urlStr, err)
 	}

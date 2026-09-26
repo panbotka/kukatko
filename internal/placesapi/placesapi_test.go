@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -46,7 +47,7 @@ func getPlaces(t *testing.T, url string) *http.Response {
 	if err != nil {
 		t.Fatalf("NewRequest %s: %v", url, err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apitest.Client().Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}

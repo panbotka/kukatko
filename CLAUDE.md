@@ -56,6 +56,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
 - `internal/announcement` — single instance-wide banner message (`Get`/`Set`/`Clear`), one-row table, publish/clear audited in the mutation's transaction
 - `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
+- `internal/apitest` — the HTTP client the API packages' tests drive their `httptest` servers with; never `http.DefaultClient`, whose process-wide pool a closing test server empties under a parallel test
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
 - `internal/auth` — viewer/curator/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn), all-authenticated name directory (`GET /users`)

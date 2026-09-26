@@ -28,7 +28,17 @@ to `## Package map` in `CLAUDE.md`.
   `CREATE EXTENSION` at all, only a `pg_extension` read, so a managed/shared instance whose role may
   not create extensions is unaffected;
   SQL migrations in `internal/database/migrations/*.sql`), `internal/database/dbtest/`
-  (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/auth/`
+  (integration test harness: `dbtest.New(t)`, `dbtest.TruncateAll`), `internal/apitest/`
+  (**the HTTP client the API packages' tests drive their `httptest` servers with**:
+  `apitest.Client()` returns one shared client whose transport pools nothing.
+  `http.DefaultClient` is the wrong one, and a `forbidigo` rule in `.golangci.yml` now says so:
+  `httptest.Server.Close()` empties `http.DefaultTransport`'s idle connections on behalf of its
+  users, and that transport is process-wide, so in a package of parallel tests one test's teardown
+  evicts the connection another test is reusing — the request in flight then fails with
+  `net/http: HTTP/1.x transport connection broken: http: CloseIdleConnections called`. A POST is
+  what surfaces it, since net/http silently replays only an idempotent request. Which test loses
+  the race is arbitrary, which is why it moves between runs and reads as someone else's
+  regression), `internal/auth/`
   (authentication/authorization: `Role` viewer/curator/editor/admin/maintainer + `authorize`, bcrypt cost 12
   `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
   (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
@@ -3740,7 +3750,10 @@ to `## Package map` in `CLAUDE.md`.
   `internal/mapy/`
   (a server-side HTTP client of the mapy.com REST API, **the key never leaves the server** — it is sent only
   in the `X-Mapy-Api-Key` header, never in a URL/error, all behind the `Client` interface (fakeable):
-  `New(Config{BaseURL,APIKey,Lang,Timeout,HTTPClient})` → `*HTTPClient`; `Tile(ctx,TileParams{
+  `New(Config{BaseURL,APIKey,Lang,Timeout,HTTPClient})` → `*HTTPClient` (**without an `HTTPClient` the
+  client gets a connection pool of its own** — `ownConnectionPool()`, a clone of `http.DefaultTransport`,
+  so it keeps the default's proxy/dial settings without sharing the process-wide pool that
+  `httptest.Server.Close()` empties behind everyone's back; see `internal/apitest`); `Tile(ctx,TileParams{
   Mapset,Z,X,Y,Retina}) (*TileResult,error)` (validates the mapset allowlist, builds the URL
   `/v1/maptiles/{mapset}/256[@2x]/{z}/{x}/{y}`, **streams** the body through a `cancelReadCloser` that
   cancels the request ctx on Close — it never holds a tile in RAM), `ReverseGeocode(ctx,lat,lng)
