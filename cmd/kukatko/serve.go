@@ -383,7 +383,8 @@ func buildServices(
 // outliers, the people (subject) catalogue and the genealogy over it, albums and
 // labels, the places browse
 // hierarchy, per-user saved searches and search history, the announcement banner,
-// the instance settings, the returning-reader digest, the grouped global search
+// the instance settings, the returning-reader digest, the notification surface
+// (push subscriptions, preferences, one notification), the grouped global search
 // and the audit log. Route
 // groups mount on distinct paths, so their relative order does not matter.
 // Splitting them out keeps buildServices within the function-length limit.
@@ -443,6 +444,7 @@ func readAPIOptions(
 		server.WithAPI(buildAnnouncementAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildSettingsAPI(cfg, db, authAPI).RegisterRoutes),
 		server.WithAPI(buildWhatsNewAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildNotificationAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}

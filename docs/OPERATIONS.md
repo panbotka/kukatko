@@ -1704,7 +1704,9 @@ other type; values ≤ 0 are ignored and a type
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
-  because one person is chatty would be wrong. Login has its own limiter (`auth.login_rate_*`), the geocode
+  because one person is chatty would be wrong. The same `comment` settings, each in a bucket of its own and
+  keyed the same way, also throttle a task's thread and `POST /push/subscriptions` (`internal/notificationapi`).
+  Login has its own limiter (`auth.login_rate_*`), the geocode
   proxy too (`maps.*`).
 - **Login keys (`auth.login_rate_limit`, `auth.login_rate_window`):** default **10 failed attempts per
   (username, client IP) within 15m**, then 429; a successful login clears the count. Every attempt is

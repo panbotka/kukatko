@@ -119,6 +119,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
 - `internal/namelessjob` — the nameless catch-all subject repair as queue work: the undo-file format shared with the CLI, the report/schedule service, the `nameless_detach`/`nameless_restore` handlers
 - `internal/notification` — the record behind a push notification: owner-scoped (foreign uid = not found), a frozen ordered photo set read only through caller-stated visibility, per-kind preferences (absent row = default, replace audited in its transaction), retention purge (not scheduled)
+- `internal/notificationapi` — all-authenticated `/push/*` (VAPID public key + push on?, the caller's subscriptions; the write 503s with push off and is rate-limited) and `/notifications/*` (effective preferences, one notification whose frozen photos are filtered by visibility *now*, mark read); foreign uid = 404, never a client key or the private key
 - `internal/obs` — structured logging (JSON slog to stderr)
 - `internal/ocrjob` — worker handler `ocr` + backfill: reads the text printed in a photo via the sidecar and stores it for search; stills only, an empty reading is a recorded success
 - `internal/organize` — albums, labels, **per-user** favorites and ratings

@@ -5305,7 +5305,7 @@ to `## Package map` in `CLAUDE.md`.
 
 - **Web Push (`internal/push`):** the one way Kukátko sends a push notification, the same shape as
   `internal/mailer`. Its only caller is the `push_send` handler in `internal/pushjob`; the HTTP surface
-  and the frontend service worker are later work. Everything goes through the
+  (subscriptions) is `internal/notificationapi`, the frontend service worker later work. Everything goes through the
   **`Sender`** interface (`Send(ctx, Subscription, Notification) error` — one notification to one
   subscription): **`VAPIDSender`** in production, **`Noop`** when `push.enabled` is false (accepts
   everything, encrypts and dials nothing), and **`Fake`** in tests (`Sent`/`Last`/`Reset`, `FailWith` for
@@ -5410,8 +5410,8 @@ to `## Package map` in `CLAUDE.md`.
 - **Notification records (`internal/notification`):** what a push notification **is** once it has been
   sent — the record tapping it opens, with its frozen photo set — plus each account's choice of which
   kinds it wants. It sends nothing and serves nothing: delivery is `internal/pushjob`, the HTTP surface is
-  later work. Tables `notifications`, `notification_photos`, `notification_prefs` (migration `0087`,
-  [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
+  `internal/notificationapi`. Tables `notifications`, `notification_photos`, `notification_prefs`
+  (migration `0087`, [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos) and **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) — in a
     package registry with their defaults (both **on**) and display order: `Kinds()`, `Kind.Known()`,
@@ -5452,6 +5452,38 @@ to `## Package map` in `CLAUDE.md`.
     order, a photo-less record, foreign uid = not found for every read, idempotent mark-read, visibility
     per flag, a wholly deleted set, the default merge, an audited replace with the acting user, the
     refused replaces writing neither rows nor audit, the purge at both thresholds, and the account cascade.
+
+- **Notification HTTP surface (`internal/notificationapi`):** exposes over HTTP what `internal/push` and
+  `internal/notification` already do, with **no business logic of its own** — the endpoints are in
+  [`API.md`](API.md). Wired by `buildNotificationAPI` (`cmd/kukatko/notification.go`) inside
+  `readAPIOptions`, every route behind `RequireAuth` (all roles).
+  - **Interfaces, not stores:** `SubscriptionStore` (`Upsert`/`ListForUser`/`DeleteByID` of
+    `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`Photos`/`Preferences`/`ReplacePreferences` of
+    `notification.Store`) and `PhotoStore` (`ListByUIDs`). `Storage` feeds an `internal/mediaurl` builder
+    that stamps the media URLs on the returned photos.
+  - **Two secrets kept out by construction.** `PushSettings{Enabled, PublicKey}` is all of the push
+    configuration the package is given — there is no field the VAPID private key could travel in
+    (`pushSettings(cfg)` in the wiring copies the two, and a `cmd/kukatko` test follows a full key pair
+    through it to the response). A subscription is only ever serialised through `subscriptionView`, which
+    has no `p256dh`/`auth`.
+  - **Removal by endpoint without a new store method:** the caller's own rows are listed, the endpoint is
+    matched among them and the row deleted with the owner-scoped `DeleteByID` — another account's endpoint
+    is a 404 and can never be touched.
+  - **Visibility now:** the detail reads the frozen set with the **zero `notification.Visibility`**
+    (archived, hidden and private all drop out, whoever the caller is), restores the frozen order after
+    `ListByUIDs`, and reports `dropped_count = PhotoCount − visible` (clamped at 0, the two reads being
+    separate statements).
+  - The subscription write takes an optional `SubscribeThrottle`, mounted inside the auth guard; the wiring
+    passes a per-account limiter built from the `ratelimit.comment` settings (its own bucket) with the
+    unlimited-token exemption. With push off the write is a 503 before anything is decoded.
+  - Tests: unit — the capability response (public key only, nothing when off, no private key), the
+    throttle wrapping only the write, the defensive 401s, the subscription view without client keys, the
+    body decoders, the user-agent cut, the order/count helpers. Integration over a real database with real
+    sessions — the subscription lifecycle (refresh keeps one row, keys never listed, a foreign delete is
+    404), unusable subscriptions refused, push off → 503 and nothing stored, the rate limit, preferences
+    (defaults, audited replace, refused replaces changing nothing, reset), the detail filtering archived /
+    hidden / private in frozen order with counts and media URLs (and un-archiving bringing one back),
+    foreign/unknown uid 404 for read and mark-read, idempotent mark-read, anonymous 401 on every route.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

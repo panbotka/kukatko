@@ -1836,6 +1836,57 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
   of the new photographs was of them, and the client shows no line for it either way; being a subset of
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
+- **Notification API (`/api/v1`, `internal/notificationapi` over `internal/push` + `internal/notification`,
+  every route `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
+  may use every route**, viewers included — being told you were tagged is not a curation power — and every
+  operation is **scoped to the calling account**. Mounted by `server.WithAPI` (`buildNotificationAPI` in
+  `cmd/kukatko/notification.go`). There is **deliberately no "list my notifications" route**: there is no
+  in-app notification centre, and a deeplink only ever needs one record.
+  - **`GET /push/config`** → `200 {enabled, public_key}`: whether `push.enabled` is on and the VAPID
+    **public** key a browser passes to `pushManager.subscribe` (`""` while push is off). The frontend reads
+    it before rendering any push control. **The private key never appears** — the API is never handed it
+    (`notificationapi.PushSettings` has no field for it), and a test follows the real configuration through
+    the wiring to the response to prove it.
+  - **`POST /push/subscriptions`** — register or refresh **this browser**. Body is the browser's
+    `PushSubscription.toJSON()` posted as it is: `{endpoint, keys:{p256dh, auth}, expirationTime?}` plus an
+    optional `user_agent` (default: the request's `User-Agent`, cut to 512 bytes). **Upsert by endpoint,
+    always bound to the caller** (`push.Store.Upsert`): the same browser subscribing again keeps its row;
+    an endpoint another account held moves to the caller. → `200` with the subscription view. A missing
+    field, an unknown field, a non-https endpoint or keys that do not decode to a P-256 point and a 16-byte
+    secret → `400`. **Push off instance-wide → `503`** and nothing is stored — a subscription nothing will
+    ever deliver to is worse than none. **Rate-limited** per account (`ratelimit.comment` settings, a bucket
+    of its own; `429`); an API token flagged unlimited is exempt. A browser whose push service rotated its
+    endpoint arrives as a new endpoint and a new row; the stale one is pruned by the `push_send` job when
+    the push service reports it gone, not here.
+  - **`GET /push/subscriptions`** → `200 {subscriptions:[{id, endpoint, user_agent, created_at,
+    last_used_at}]}`, oldest first — enough for a settings page to show "this browser" (compare `endpoint`
+    with the browser's own subscription) against the other devices. **The client keys `p256dh`/`auth` are
+    never returned** (encryption secrets, not display data; asserted by a test), nor the failure bookkeeping.
+  - **`DELETE /push/subscriptions?endpoint=<url-encoded>`** → `204`. The subscription is looked up among
+    the caller's own rows and deleted under the caller's account, so an endpoint that is unknown **or
+    somebody else's** is `404`; no `endpoint` → `400`. Works with push off, so a device can always be
+    cleaned up.
+  - **`GET /notifications/preferences`** → `200 {preferences:[{kind, enabled, is_default}]}`: the
+    **effective** set, one entry per known kind in display order (`tagged`, `registration_pending`), the
+    stored choice or the kind's default (`is_default: true`), so the frontend needs no knowledge of the
+    defaults. **`PUT /notifications/preferences`** with `{preferences:[{kind, enabled}]}` **replaces** the
+    stored choices (a kind left out returns to its default, `[]` resets all; `is_default` is accepted and
+    ignored, so a read posts back unchanged) → `200` with the new effective set. An unknown kind, a kind
+    given twice, an entry without `enabled` or a body without `preferences` → `400`, nothing changes.
+    **Audited** (`notification_prefs.update`) in the replace's transaction.
+  - **`GET /notifications/{uid}`** → `200 {uid, kind, title, body, link, created_at, read_at, photos:[…],
+    total_count, dropped_count}`. `photos` is the **frozen set in its stored order**, each shaped like every
+    other photo payload of the API (the `photos.Photo` JSON, `thumb_url`/`preview_url`/`download_url`
+    minted by `internal/mediaurl`), so the page renders a grid straight from it. **The set is filtered by
+    what the caller may see now**, not when the notification was made: a photograph **archived, hidden
+    from the library or made private since drops out**. `total_count` is how many set members still exist
+    (a deleted photograph is gone from the set by the cascade) and `dropped_count` how many of those were
+    filtered out, so the page can explain "10 of 12" honestly. A notification without photos has `photos:
+    []`. Reading does **not** mark it read.
+  - **`POST /notifications/{uid}/read`** → `200 {uid, kind, title, body, link, created_at, read_at}`;
+    idempotent — marking again keeps the first reading.
+  - **An unknown or foreign `{uid}` is `404`, never `403`**, for both routes (the `savedsearchapi` rule),
+    so a uid cannot be probed for existence — an admin cannot read somebody else's notification either.
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover?,thumb_url?,photo_count}], labels:[{uid,name,cover?,thumb_url?,photo_count}],
