@@ -127,6 +127,12 @@ const (
 	// do not finish sooner — they only make sure that nothing else in the queue
 	// runs while a batch of uploaded videos is being transcoded.
 	defaultHLSConcurrency = 1
+	// defaultPushConcurrency is how many push_send jobs run at once when the
+	// configuration does not name the type. Each send is one small HTTPS request
+	// to a browser vendor's push service — different vendors for different
+	// devices — so a second slot is cheap, while a pool of its own is what keeps a
+	// notification from waiting behind a backlog of thumbnails.
+	defaultPushConcurrency = 2
 	// sharedPoolName labels the pool that drains every job type without a
 	// per-type override; it appears in worker ids and in the startup log.
 	sharedPoolName = "shared"
@@ -309,16 +315,19 @@ func New(cfg Config) *Worker {
 // and, just as importantly, so a mail never waits behind a queue of thumbnails.
 // The HLS transcode gets one for the opposite reason — it is the job that would
 // otherwise take the whole machine — so a batch of uploaded videos serialises
-// instead of starving every other job type.
+// instead of starving every other job type. Push delivery gets a two-slot pool
+// for mail's second reason: a notification is news and must not queue behind
+// a thumbnail backlog.
 // Entries <= 0 are ignored, so a zero left over from an unset config field never
 // disables a pool.
 func effectiveTypeConcurrency(configured map[string]int) map[string]int {
-	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+2)
+	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+3)
 	for _, jobType := range sidecarBoundTypes {
 		limits[jobType] = defaultSidecarBoundConcurrency
 	}
 	limits[jobs.TypeMailSend] = defaultMailConcurrency
 	limits[jobs.TypeHLSTranscode] = defaultHLSConcurrency
+	limits[jobs.TypePushSend] = defaultPushConcurrency
 	for jobType, n := range configured {
 		if jobType != "" && n > 0 {
 			limits[jobType] = n

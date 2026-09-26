@@ -3318,6 +3318,7 @@
         "hls_transcode": "Preparing a video for playback",
         "backup": "Backup",
         "mail_send": "Sending an e-mail",
+        "push_send": "Sending a browser notification",
         "nameless_detach": "Detaching the nameless person",
         "nameless_restore": "Restoring the nameless person",
         "family_export": "Writing the family tree to storage",

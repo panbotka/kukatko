@@ -1629,7 +1629,9 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   `type_count` does not mention them** (a YAML map *replaces* the default, it does not merge into it),
   so running several against the box is only ever an explicit entry. **`mail_send` gets its own one-slot pool
   for the same reason** — one conversation at a time with a remote mail server, and a message that never waits
-  behind a backlog of thumbnails; **`hls_transcode` gets one for the opposite reason** — it is the job that
+  behind a backlog of thumbnails; **`push_send` gets a two-slot pool of its own** for that second reason (a
+  notification is news; each send is one small request to a browser vendor's push service);
+  **`hls_transcode` gets one for the opposite reason** — it is the job that
 would otherwise take the whole machine, so a batch of uploaded videos serialises instead of starving every
 other type; values ≤ 0 are ignored and a type
   with no registered handler gets no pool at all (with `mail.enabled` false there is no `mail_send` handler,
@@ -2061,7 +2063,10 @@ other type; values ≤ 0 are ignored and a type
   P-256, or are **not a matching pair**, and a subject that is neither `mailto:` nor `https:`, fail with
   `ErrInvalidPushConfig` — a sender that looks configured while every notification is lost is worse than
   none. A *disabled* section is never checked. **Never rotate the pair casually:** every stored subscription
-  was made for the public key. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
+  was made for the public key. Delivery always goes **through the job queue** (`push_send`, one job per
+  subscribed device, `internal/pushjob`); unlike `mail_send` its handler is registered **even with push
+  off**, so a job left over from when push was on completes unsent instead of waiting for a claimant, and
+  nothing new is enqueued while it is off. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
   `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`.
 - **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
   outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's

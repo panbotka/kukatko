@@ -5,7 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/push"
+	"github.com/panbotka/kukatko/internal/pushjob"
 )
 
 // pushKeysReminder is printed on stderr after a key pair, so redirecting stdout
@@ -58,4 +60,29 @@ func newPushGenerateKeysCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// buildPushService assembles the push-delivery service — the `push_send` job
+// handler that sends a queued notification to one subscribed browser and prunes
+// the dead ones — over store.
+//
+// Unlike mail it is built, and its handler registered, even with push switched
+// off: push.New then hands back the no-op sender without reading a key, and the
+// handler completes any job left over from a period when push was on without
+// sending it, so an operator turning push off drains the queue instead of
+// leaving jobs nothing will ever claim. An enabled section with a bad key pair
+// is an error, so the start fails rather than every notification.
+func buildPushService(cfg *config.Config, store pushjob.SubscriptionStore) (*pushjob.Service, error) {
+	sender, err := push.New(push.Config{
+		Enabled:    cfg.Push.Enabled,
+		PublicKey:  cfg.Push.VAPID.PublicKey,
+		PrivateKey: cfg.Push.VAPID.PrivateKey,
+		Subject:    cfg.Push.VAPID.Subject,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("building the push sender: %w", err)
+	}
+	return pushjob.NewService(pushjob.ServiceConfig{
+		Enabled: cfg.Push.Enabled, Sender: sender, Store: store,
+	}), nil
 }

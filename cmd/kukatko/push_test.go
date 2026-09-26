@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/push"
 )
 
@@ -45,5 +47,53 @@ func TestPushGenerateKeys_rejectsArgs(t *testing.T) {
 
 	if _, err := executeCmd(t, "push", "generate-keys", "extra"); err == nil {
 		t.Fatal("push generate-keys accepted an argument")
+	}
+}
+
+// TestBuildPushService builds the handler with push off (no key needed, since
+// the no-op sender is wired) and with a valid pair, and refuses an enabled
+// section whose keys are not a pair.
+func TestBuildPushService(t *testing.T) {
+	t.Parallel()
+
+	keys, err := push.GenerateKeys()
+	if err != nil {
+		t.Fatalf("GenerateKeys: %v", err)
+	}
+	other, err := push.GenerateKeys()
+	if err != nil {
+		t.Fatalf("GenerateKeys: %v", err)
+	}
+	tests := []struct {
+		name    string
+		push    config.PushConfig
+		wantErr error
+	}{
+		{name: "disabled", push: config.PushConfig{}},
+		{
+			name: "enabled",
+			push: config.PushConfig{Enabled: true, VAPID: config.PushVAPIDConfig{
+				PublicKey: keys.PublicKey, PrivateKey: keys.PrivateKey, Subject: "mailto:ops@example.org",
+			}},
+		},
+		{
+			name: "enabled with a mismatched pair",
+			push: config.PushConfig{Enabled: true, VAPID: config.PushVAPIDConfig{
+				PublicKey: keys.PublicKey, PrivateKey: other.PrivateKey, Subject: "mailto:ops@example.org",
+			}},
+			wantErr: push.ErrInvalidConfig,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc, err := buildPushService(&config.Config{Push: tt.push}, push.NewStore(nil))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("buildPushService error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && svc == nil {
+				t.Fatal("buildPushService returned no service")
+			}
+		})
 	}
 }

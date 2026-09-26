@@ -24,6 +24,8 @@ import (
 	"github.com/panbotka/kukatko/internal/ocrjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processapi"
+	"github.com/panbotka/kukatko/internal/push"
+	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/taskdigestjob"
@@ -52,8 +54,10 @@ import (
 // photo's signs say and backs the OCR backfill, reusing embedClient because it is
 // the same sidecar on the same box), the mail service (nil when mail is off; it
 // registers the `mail_send` job that renders a queued message and hands it to the
-// SMTP server) and the library-maintenance service/API, since all are part of the
-// job subsystem; a build failure for any of them is
+// SMTP server), the push service (always built; it registers the `push_send` job
+// that delivers a queued notification to one browser and, with push off,
+// completes a leftover one unsent) and the library-maintenance service/API,
+// since all are part of the job subsystem; a build failure for any of them is
 // returned as an error.
 func buildJobs(
 	cfg *config.Config, db *database.DB, store *jobs.Store, authAPI *auth.API, enqueuer *jobs.Enqueuer,
@@ -178,9 +182,13 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
+	pushSvc, err := buildPushService(d.cfg, push.NewStore(d.db.Pool()))
+	if err != nil {
+		return registryServices{}, nil, err
+	}
 	return registryServices{
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
-		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc,
+		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc, push: pushSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
 		taskDigest: buildTaskDigestServiceOrNil(d.cfg, d.db),
@@ -198,6 +206,7 @@ type registryServices struct {
 	sidecar    *sidecarjob.Service
 	ocr        *ocrjob.Service
 	mail       *mailjob.Service
+	push       *pushjob.Service
 	nameless   *namelessjob.Service
 	storyboard *storyboardjob.Service
 	cluster    *clusterjob.Service
@@ -227,6 +236,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeNamelessRestore, svc.nameless.HandleRestore)
 	registry.Register(jobs.TypeStoryboard, svc.storyboard.Handle)
 	registry.Register(jobs.TypeFaceCluster, svc.cluster.Handle)
+	registry.Register(jobs.TypePushSend, svc.push.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

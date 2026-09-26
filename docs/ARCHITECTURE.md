@@ -780,7 +780,7 @@ lost on restart).
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
-  `task_digest`, `face_cluster`
+  `push_send`, `task_digest`, `face_cluster`
   (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into
@@ -811,6 +811,12 @@ lost on restart).
   tasks whose move is theirs; it is enqueued by a scheduler at `tasks.digest.hour` UTC (only with the digest
   and mail both on), schedules `mail_send` jobs rather than sending, and stamps `users.task_digest_at` so a
   queue that has not moved since the last digest sends nothing. See `internal/taskdigestjob`.
+  `push_send` is the same thing for Web Push, with one difference: a job delivers to **one subscribed
+  device**, not to an account. The enqueue helper fans out inside the caller's transaction, one job per
+  `push_subscriptions` row, so a retry re-sends only to the device that failed. The handler owns the
+  subscription lifecycle — a device the push service reports gone (404/410) is deleted, one whose run of
+  consecutive failures reaches the threshold is retired — and an oversized notification is a terminal
+  failure. See `internal/pushjob`.
 - **Box offline:** the embeddings client checks the sidecar's availability before processing (health check).
   When the box is offline, `image_embed`/`face_detect`/`ocr` jobs stay `queued` with `run_after`
   pushed out (backoff), upload and browsing work without restriction. Once the box comes up the queue

@@ -47,6 +47,7 @@ const TYPE_LABELS: Record<string, ParseKeys | undefined> = {
   hls_transcode: 'system.jobs.types.hls_transcode',
   backup: 'system.jobs.types.backup',
   mail_send: 'system.jobs.types.mail_send',
+  push_send: 'system.jobs.types.push_send',
   nameless_detach: 'system.jobs.types.nameless_detach',
   nameless_restore: 'system.jobs.types.nameless_restore',
   face_cluster: 'system.jobs.types.face_cluster',

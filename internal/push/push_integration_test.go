@@ -269,3 +269,46 @@ func TestStore_accountDeletionCascades(t *testing.T) {
 		t.Fatalf("%d subscriptions survived their account", left)
 	}
 }
+
+// TestStore_getAndSubscriptionIDs covers the single-row read (and ErrNotFound
+// for an unknown id) and the id listing, both on the pool and inside a
+// transaction that sees its own uncommitted row.
+func TestStore_getAndSubscriptionIDs(t *testing.T) {
+	store, users, db := newStore(t)
+	ctx := context.Background()
+	owner := makeUser(t, users, "push_owner", "owner")
+	phone, err := store.Upsert(ctx, subscription(t, owner, "https://push.example.org/phone", "phone"))
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	got, err := store.Get(ctx, phone.ID)
+	if err != nil || got.ID != phone.ID || got.Endpoint != phone.Endpoint || got.P256dh != phone.P256dh {
+		t.Fatalf("Get = %+v, %v; want the phone", got, err)
+	}
+	if _, err := store.Get(ctx, "psmissing"); !errors.Is(err, push.ErrNotFound) {
+		t.Fatalf("Get(unknown) = %v, want ErrNotFound", err)
+	}
+
+	ids, err := push.SubscriptionIDs(ctx, db.Pool(), owner)
+	if err != nil || len(ids) != 1 || ids[0] != phone.ID {
+		t.Fatalf("SubscriptionIDs = %v, %v; want [%s]", ids, err, phone.ID)
+	}
+	if none, err := push.SubscriptionIDs(ctx, db.Pool(), "nobody"); err != nil || none == nil || len(none) != 0 {
+		t.Fatalf("SubscriptionIDs(nobody) = %#v, %v; want an empty non-nil slice", none, err)
+	}
+
+	tx, err := db.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }() // the test only reads through it
+	if _, err := tx.Exec(ctx, `INSERT INTO push_subscriptions (id, user_uid, endpoint, p256dh, auth)
+VALUES ('pstxonly', $1, 'https://push.example.org/tx', $2, $3)`, owner, phone.P256dh, phone.Auth); err != nil {
+		t.Fatalf("inserting inside the transaction: %v", err)
+	}
+	inTx, err := push.SubscriptionIDs(ctx, tx, owner)
+	if err != nil || len(inTx) != 2 {
+		t.Fatalf("SubscriptionIDs inside the transaction = %v, %v; want both rows", inTx, err)
+	}
+}

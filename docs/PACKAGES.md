@@ -1474,7 +1474,7 @@ to `## Package map` in `CLAUDE.md`.
   row if a worker claims it concurrently — so the flag is never lost *and* never applied in flight. It inserts
   nothing: the active-job count for that photo and type is unchanged; **job types** `image_embed`/
   `face_detect`/`thumbnail`/`places`/`metadata`/`ocr`/`sidecar`/`family_export`/`storyboard`/`mail_send`/
-  `nameless_detach`/
+  `push_send`/`nameless_detach`/
   `nameless_restore`/`face_cluster`/`pp_import`/`ps_migrate`/`backup`; `Enqueuer` =
   `NewEnqueuer(store)`
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
@@ -1518,7 +1518,8 @@ to `## Package map` in `CLAUDE.md`.
   serves one request at a time, so CPU-bound work must not queue behind it and raising them must be
   explicit (config maps replace rather than merge, so the cap cannot be lost by omission). **`mail_send`
   gets the same one-slot treatment** (`defaultMailConcurrency`): one conversation at a time with a remote
-  mail server, and a message that never waits behind a queue of thumbnails. A type with no
+  mail server, and a message that never waits behind a queue of thumbnails. **`push_send`** gets a
+  **two-slot** pool (`defaultPushConcurrency`) for the second of those reasons. A type with no
   handler gets no pool, and an empty shared pool is not started at all (a type-less `Claim` would mean
   "claim anything"). Worker ids are `<IDPrefix>-<pool>-<i>`, unique across pools. It
   dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
@@ -5303,8 +5304,8 @@ to `## Package map` in `CLAUDE.md`.
     partial run), and the scheduler's timing.
 
 - **Web Push (`internal/push`):** the one way Kukátko sends a push notification, the same shape as
-  `internal/mailer`. **Nothing calls it yet** — the delivery job, the HTTP surface and the frontend
-  service worker are later work; this is the foundation they build on. Everything goes through the
+  `internal/mailer`. Its only caller is the `push_send` handler in `internal/pushjob`; the HTTP surface
+  and the frontend service worker are later work. Everything goes through the
   **`Sender`** interface (`Send(ctx, Subscription, Notification) error` — one notification to one
   subscription): **`VAPIDSender`** in production, **`Noop`** when `push.enabled` is false (accepts
   everything, encrypts and dials nothing), and **`Fake`** in tests (`Sent`/`Last`/`Reset`, `FailWith` for
@@ -5347,7 +5348,10 @@ to `## Package map` in `CLAUDE.md`.
     endpoint — the same browser subscribing again rewrites its row and keeps its id, and clears the failure
     bookkeeping; an endpoint that changes hands (another person subscribed on the same browser) moves to
     them with its created/last-used stamps started over. It validates first, so nothing unsendable is
-    stored. `ListForUser` (oldest first), `DeleteByEndpoint` (whoever owns it — what an unsubscribing
+    stored. `Get(id)` (whoever owns it; `ErrNotFound` once it is gone), `ListForUser` (oldest first),
+    **`SubscriptionIDs(ctx, Querier, userUID)`** (a package function over any `Query`-er, pool or
+    `pgx.Tx`, so the push fan-out reads the devices **inside the caller's transaction**),
+    `DeleteByEndpoint` (whoever owns it — what an unsubscribing
     browser and an `ErrGone` both name), `DeleteByID(userUID, id)` (**owner-scoped**: a foreign id is
     `ErrNotFound` like a missing one), `DeleteAllForUser`, `RecordSuccess` (stamps `last_used_at`, resets
     the count) and `RecordFailure` (returns the failures since the last success, so the caller can retire a
@@ -5359,7 +5363,49 @@ to `## Package map` in `CLAUDE.md`.
     validation; the VAPID sender against an `httptest` TLS push service that **decrypts the payload the way
     a browser does** (RFC 8291) and **verifies the ES256 signature and claims**; every status class; the
     fake; and the store over a real database (upsert by endpoint, moving hands, owner-scoped delete,
-    bookkeeping, the cascade).
+    bookkeeping, the cascade, `Get` and `SubscriptionIDs` inside a transaction).
+
+- **Queued push (`internal/pushjob`):** the delivery path for Web Push, the twin of `internal/mailjob` —
+  `internal/push` encrypts and speaks the protocol, this package decides **what** is scheduled, **whether**
+  anything is scheduled at all, and what each answer of the push service does to the job **and to the
+  device**.
+  - **One job per device, not per account.** The payload is `{subscription_id, notification}` — one
+    `push_subscriptions` row and the `push.Notification` for it. The subscription is read by id **when the
+    job runs**, so a browser that re-subscribed meanwhile gets the fresh keys and one that unsubscribed gets
+    nothing. That split is what makes a retry safe: a job retried because the laptop's push service was
+    unreachable re-sends to the laptop only, never a second time to the phone.
+  - **`Enqueuer`** (`NewEnqueuer(EnqueuerConfig{Enabled,Schedule,List,Logger})`) is the fan-out:
+    `Enqueue(ctx, exec, userUID, Notification) (queued int, err)` reads the account's subscription ids
+    (`push.SubscriptionIDs`) and inserts one `push_send` per id (`jobs.Enqueue`, `MaxAttempts` **8** ≈ an
+    hour of the 30 s-doubling backoff), both through `exec` — a `pushjob.Execer` (`jobs.Execer` +
+    `push.Querier`: a pool or **the transaction of the mutation that caused the notification**, so it is
+    scheduled if and only if that mutation commits). **Two silent refusals returning `0, nil`:** push is
+    disabled, and the account has no subscription — nothing queued is the correct outcome, a job that can
+    never deliver is not. **Refused with an error:** no account (`ErrMissingUser`) and a notification
+    `Encode` rejects (`ErrInvalidNotification`, `ErrPayloadTooLarge`) — caller bugs, dead on arrival.
+    `Schedule`/`List` are injectable so the unit tests need no database.
+  - **`Service.Handle`** (`NewService(ServiceConfig{Enabled,Sender,Store,MaxFailures,Logger})`, panicking
+    on a nil `Sender`/`Store`) maps every outcome: accepted → `RecordSuccess` and complete (a failed stamp
+    is only logged — failing would send twice); **`ErrGone` → the subscription is deleted and the job
+    completes** (the notification was fine, the device was not — this handler is the **only** place dead
+    subscriptions are pruned); `ErrPayloadTooLarge`/`ErrInvalidNotification` → `worker.Terminal`, the
+    device untouched; anything else is the device's failure: `RecordFailure`, and once the run of
+    consecutive failures reaches **`MaxFailures` (20)** the device is **retired** (deleted, job complete)
+    so a permanently broken endpoint stops feeding the queue retries; below it a transient failure
+    (`push.Retryable`: 429, 5xx, network) is an ordinary error the queue retries with backoff, and a
+    permanent one (`ErrRejected`, `ErrInvalidSubscription`) is terminal. **Completes without sending**
+    when push was switched off after the job was queued, and when the subscription is gone at claim time
+    (unsubscribed, or the account was deleted and the FK cascade took its devices). A payload that does
+    not decode or names no subscription (`ErrMissingSubscription`) is terminal.
+  - Wired in `cmd/kukatko` (`buildPushService`, over `push.New` + `push.Store`) and registered
+    **unconditionally** — with push off the no-op sender is wired and leftover jobs drain unsent rather
+    than wait forever for a claimant. The worker gives `push_send` its own **two-slot** pool. Nothing
+    enqueues yet: the callers (task events) are later work. Tests: the enqueue fan-out and refusals against
+    a fake scheduler, the handler's outcome table against an in-memory store and `push.Fake`, and over a
+    real database — delivery to each device once with the send recorded, 410 deletes, 500 records a
+    failure and requeues, the threshold retires, an oversized payload is terminal, the nothing-to-do
+    completions, and `Enqueue` queuing nothing with push off, without devices or in a rolled-back
+    transaction.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

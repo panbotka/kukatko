@@ -139,6 +139,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/processapi` — maintainer-only `/process/*` backfills (embeddings, faces, clusters, places)
 - `internal/processing` — what has already been computed about **one** photo (evidence first, queue second) + scheduling the one step it missed
 - `internal/push` — the only way to send a Web Push notification: the `Sender` interface + the VAPID sender (webpush-go), a no-op for when push is off and a network-free fake; gone (404/410) vs retryable (429/5xx) vs permanent, the `push_subscriptions` store keyed by endpoint
+- `internal/pushjob` — durable push delivery: the `push_send` job (one per subscribed device, payload = subscription id + notification), the `Enqueue` fan-out inside the caller's transaction that refuses while push is off or the account has no device, and the pruning of gone/hopeless subscriptions
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`; publishes its own key registry (`Keys`/`Aliases`) so nothing else keeps a copy
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)

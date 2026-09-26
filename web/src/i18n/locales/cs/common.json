@@ -3472,6 +3472,7 @@
         "hls_transcode": "Příprava videa pro přehrávání",
         "backup": "Záloha",
         "mail_send": "Odeslání e-mailu",
+        "push_send": "Odeslání oznámení do prohlížeče",
         "nameless_detach": "Odpojení osoby bez jména",
         "nameless_restore": "Obnovení osoby bez jména",
         "family_export": "Zápis rodokmenu do úložiště",

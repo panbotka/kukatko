@@ -177,6 +177,50 @@ func (s *Store) ListForUser(ctx context.Context, userUID string) ([]Subscription
 	return out, nil
 }
 
+// Get returns the subscription id, whoever it belongs to. It returns
+// ErrNotFound when no row has that id — the browser unsubscribed, or its
+// account was deleted and the cascade took its subscriptions along.
+func (s *Store) Get(ctx context.Context, id string) (Subscription, error) {
+	sub, err := scanSubscription(s.pool.QueryRow(ctx,
+		`SELECT `+subscriptionColumns+` FROM push_subscriptions WHERE id = $1`, id))
+	if errors.Is(err, ErrNotFound) {
+		return Subscription{}, ErrNotFound
+	}
+	if err != nil {
+		return Subscription{}, fmt.Errorf("push: reading subscription %s: %w", id, err)
+	}
+	return sub, nil
+}
+
+// Querier is the subset of pgx a multi-row read needs. Both *pgxpool.Pool and
+// pgx.Tx satisfy it, so a read can run on its own connection or inside a
+// caller's transaction.
+type Querier interface {
+	// Query runs sql with args and returns the rows it produced.
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// SubscriptionIDs returns the ids of every subscription of userUID, oldest
+// first, read through q. It is a package function rather than a Store method
+// because its caller fans a notification out inside the transaction of the
+// mutation that caused it, and wants the read to see exactly what that
+// transaction sees. An account with none yields an empty (non-nil) slice.
+func SubscriptionIDs(ctx context.Context, q Querier, userUID string) ([]string, error) {
+	rows, err := q.Query(ctx,
+		`SELECT id FROM push_subscriptions WHERE user_uid = $1 ORDER BY created_at, id`, userUID)
+	if err != nil {
+		return nil, fmt.Errorf("push: listing the subscription ids of %s: %w", userUID, err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("push: reading the subscription ids of %s: %w", userUID, err)
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	return ids, nil
+}
+
 // DeleteByEndpoint removes the subscription with the given endpoint, whoever it
 // belongs to — the endpoint is what a browser unsubscribing and a push service
 // answering ErrGone both name. It returns ErrNotFound when no row has it.

@@ -119,6 +119,13 @@ const (
 	// host that is briefly unreachable delays the message instead of losing it.
 	// See internal/mailjob.
 	TypeMailSend = "mail_send"
+	// TypePushSend delivers one Web Push notification to one subscribed browser.
+	// The payload names the subscription and carries the notification, so one
+	// notification for a person with a phone and a laptop is two jobs — a retry
+	// re-sends only to the device that failed. Like TypeMailSend it runs locally
+	// but talks to a remote host (the browser vendor's push service), which is why
+	// it is queued. See internal/pushjob.
+	TypePushSend = "push_send"
 	// TypeTaskDigest sends every person one e-mail a day listing the open tasks
 	// whose move is theirs — the "waiting on me" of the task queue, evaluated for
 	// everybody at once rather than for one reader. It runs locally and only
