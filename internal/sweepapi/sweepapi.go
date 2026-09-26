@@ -1,4 +1,4 @@
-// Package sweepapi exposes the recognition sweep over HTTP for editors and admins.
+// Package sweepapi exposes the recognition sweep over HTTP for curators and above.
 // GET /faces/sweep scans every named subject for confident matches among unnamed
 // faces and streams the result as newline-delimited JSON (application/x-ndjson): a
 // progress line per subject, a person line for each subject with actionable
@@ -7,7 +7,7 @@
 //
 // It is read-only and never auto-assigns: confirming a candidate still goes through
 // the existing POST /photos/{uid}/faces/assign path. It depends on a sweep behaviour
-// and a write guard, both injected, so it stays decoupled from the sweep package's
+// and a curator guard, both injected, so it stays decoupled from the sweep package's
 // wiring.
 package sweepapi
 
@@ -43,12 +43,12 @@ type Service interface {
 	Sweep(ctx context.Context, params sweep.Params, emit func(sweep.Event) error) error
 }
 
-// API exposes the recognition sweep over HTTP. The write guard is supplied by the
+// API exposes the recognition sweep over HTTP. The curator guard is supplied by the
 // caller (the auth subsystem) so this package depends on auth's behaviour, not its
 // wiring.
 type API struct {
-	service      Service
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoint answer
@@ -56,26 +56,26 @@ type API struct {
 type Config struct {
 	// Service backs the sweep.
 	Service Service
-	// RequireWrite guards the endpoint for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the endpoint for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
-// NewAPI returns an API from cfg. A nil RequireWrite is replaced with a pass-through,
+// NewAPI returns an API from cfg. A nil RequireCurator is replaced with a pass-through,
 // so the endpoint still mounts (unguarded) rather than panicking.
 func NewAPI(cfg Config) *API {
-	guard := cfg.RequireWrite
+	guard := cfg.RequireCurator
 	if guard == nil {
 		guard = func(next http.Handler) http.Handler { return next }
 	}
-	return &API{service: cfg.Service, requireWrite: guard}
+	return &API{service: cfg.Service, requireCurator: guard}
 }
 
 // RegisterRoutes mounts the sweep endpoint onto r, which the caller has scoped under
 // the API base path (for example /api/v1):
 //
-//	GET /faces/sweep  RequireWrite  streamed recognition sweep across all subjects
+//	GET /faces/sweep  RequireCurator  streamed recognition sweep across all subjects
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Get("/faces/sweep", a.handleSweep)
+	r.With(a.requireCurator).Get("/faces/sweep", a.handleSweep)
 }
 
 // handleSweep parses the confidence and per-person limit, then streams the sweep as

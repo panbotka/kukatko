@@ -214,6 +214,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Regeocoder:        rebuilders,
 		Rebuilds:          jobs.NewEnqueuer(jobStore),
 		RequireAuth:       authAPI.RequireAuth,
+		RequireCurator:    authAPI.RequireCurator,
 		RequireWrite:      authAPI.RequireWrite,
 		RequireAdmin:      authAPI.RequireAdmin,
 		RequireMaintainer: authAPI.RequireMaintainer,

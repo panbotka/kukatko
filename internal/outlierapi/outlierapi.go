@@ -1,11 +1,11 @@
 // Package outlierapi exposes per-subject face outlier detection over HTTP for
-// editors and admins. GET /subjects/{uid}/outliers returns the subject's assigned
+// curators and above. GET /subjects/{uid}/outliers returns the subject's assigned
 // faces ranked by cosine distance from their embedding centroid (most likely
 // misassigned first), so a curator can spot and unassign a wrong face through the
 // existing face-assignment API — this package adds no mutation. The optional
 // threshold and limit query parameters narrow the list for the review page; both
 // default to "everything, ranked". It depends on an outlier-service behaviour and
-// a write guard, both injected, so it stays decoupled from the outliers package's
+// a curator guard, both injected, so it stays decoupled from the outliers package's
 // wiring.
 package outlierapi
 
@@ -36,12 +36,12 @@ type Service interface {
 	Outliers(ctx context.Context, subjectUID string, opts outliers.Options) (outliers.Result, error)
 }
 
-// API exposes the outlier endpoint over HTTP. The write guard is supplied by the
+// API exposes the outlier endpoint over HTTP. The curator guard is supplied by the
 // caller (the auth subsystem) so this package depends on auth's behaviour, not its
 // wiring.
 type API struct {
-	service      Service
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoint
@@ -49,25 +49,25 @@ type API struct {
 type Config struct {
 	// Service backs the outlier endpoint.
 	Service Service
-	// RequireWrite guards the endpoint for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the endpoint for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite}
+	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator}
 }
 
 // RegisterRoutes mounts the outlier endpoint onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	GET /subjects/{uid}/outliers  RequireWrite  ranked outlier faces for a subject
+//	GET /subjects/{uid}/outliers  RequireCurator  ranked outlier faces for a subject
 //
 // Optional query parameters: threshold (minimum cosine distance from the
 // centroid, 0..2, default 0 = everything) and limit (maximum faces returned,
 // default 0 = all).
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Get("/subjects/{uid}/outliers", a.handleList)
+	r.With(a.requireCurator).Get("/subjects/{uid}/outliers", a.handleList)
 }
 
 // handleList returns the subject's assigned faces ranked by distance from their

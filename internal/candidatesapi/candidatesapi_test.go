@@ -30,14 +30,14 @@ func (f *fakeService) Find(_ context.Context, uid string, req candidates.Request
 	return f.result, f.err
 }
 
-// passthrough is a no-op write guard for tests: it authorises every request.
+// passthrough is a no-op curator guard for tests: it authorises every request.
 func passthrough(next http.Handler) http.Handler { return next }
 
 // newServer mounts an API backed by svc (which may be nil) and returns a test
 // server. A nil svc exercises the 503 path.
 func newServer(t *testing.T, svc Service) *httptest.Server {
 	t.Helper()
-	api := NewAPI(Config{Service: svc, RequireWrite: passthrough})
+	api := NewAPI(Config{Service: svc, RequireCurator: passthrough})
 	router := chi.NewRouter()
 	router.Route("/api/v1", api.RegisterRoutes)
 	server := httptest.NewServer(router)

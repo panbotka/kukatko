@@ -145,11 +145,11 @@ func newServerWithFamilyExport(
 	subjects peopleapi.SubjectStore, ps peopleapi.PhotoStore, familyExport peopleapi.FamilyExportEnqueuer,
 ) http.Handler {
 	api := peopleapi.NewAPI(peopleapi.Config{
-		Subjects:     subjects,
-		Photos:       ps,
-		FamilyExport: familyExport,
-		RequireAuth:  passThrough,
-		RequireWrite: passThrough,
+		Subjects:       subjects,
+		Photos:         ps,
+		FamilyExport:   familyExport,
+		RequireAuth:    passThrough,
+		RequireCurator: passThrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)

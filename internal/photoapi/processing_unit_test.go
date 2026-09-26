@@ -140,6 +140,7 @@ func TestRunProcessingStepRouteIsGuardedByMaintainer(t *testing.T) {
 	api := &API{
 		processing:        fake,
 		requireAuth:       regenPass,
+		requireCurator:    regenPass,
 		requireWrite:      regenPass,
 		requireAdmin:      regenPass,
 		requireMaintainer: regenDeny,

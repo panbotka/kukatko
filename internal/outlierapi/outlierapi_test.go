@@ -29,14 +29,14 @@ func (f *fakeService) Outliers(_ context.Context, _ string, opts outliers.Option
 	return f.result, f.err
 }
 
-// passThrough is a no-op write guard so handler behaviour is tested without auth.
+// passThrough is a no-op curator guard so handler behaviour is tested without auth.
 func passThrough(next http.Handler) http.Handler {
 	return next
 }
 
 // newServer mounts an API backed by svc behind the pass-through guard.
 func newServer(svc outlierapi.Service) http.Handler {
-	api := outlierapi.NewAPI(outlierapi.Config{Service: svc, RequireWrite: passThrough})
+	api := outlierapi.NewAPI(outlierapi.Config{Service: svc, RequireCurator: passThrough})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	return r
@@ -139,7 +139,7 @@ func TestHandleList_notFound(t *testing.T) {
 // TestHandleList_unavailable answers 503 when no backend is wired.
 func TestHandleList_unavailable(t *testing.T) {
 	t.Parallel()
-	api := outlierapi.NewAPI(outlierapi.Config{Service: nil, RequireWrite: passThrough})
+	api := outlierapi.NewAPI(outlierapi.Config{Service: nil, RequireCurator: passThrough})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
 	rec := httptest.NewRecorder()

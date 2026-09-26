@@ -32,7 +32,7 @@ import (
 // photo API's facematch service (matchSvc) so face confirmations go through
 // the one assign state machine, the organize store for label attaches and the
 // feedback store for rejections. The leaderboard aggregates the review-tagged
-// audit rows straight from the shared pool. The write and auth guards are
+// audit rows straight from the shared pool. The curator and auth guards are
 // supplied via authAPI so reviewapi stays decoupled from auth's wiring.
 func buildReviewAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
@@ -88,10 +88,10 @@ func buildReviewAPI(
 		SkipMuteCooldown:  cfg.Review.SkipMuteCooldown,
 	})
 	return reviewapi.NewAPI(reviewapi.Config{
-		Service:      svc,
-		Leaderboard:  review.NewLeaderboardStore(db.Pool()),
-		RequireWrite: authAPI.RequireWrite,
-		RequireAuth:  authAPI.RequireAuth,
+		Service:        svc,
+		Leaderboard:    review.NewLeaderboardStore(db.Pool()),
+		RequireCurator: authAPI.RequireCurator,
+		RequireAuth:    authAPI.RequireAuth,
 	})
 }
 

@@ -1,10 +1,10 @@
 // Package candidatesapi exposes the "find a person among untagged photos" search
-// over HTTP for editors and admins. POST /subjects/{uid}/candidates runs the
+// over HTTP for curators and above. POST /subjects/{uid}/candidates runs the
 // untagged-face candidate search for a subject and returns the resembling faces,
 // each tagged with the action confirming it would take. It is read-only: confirming
 // a candidate goes through the existing POST /photos/{uid}/faces/assign path, so
 // this package adds no second write path. It depends on a search behaviour and a
-// write guard, both injected, so it stays decoupled from the candidates package's
+// curator guard, both injected, so it stays decoupled from the candidates package's
 // wiring.
 package candidatesapi
 
@@ -35,12 +35,12 @@ type Service interface {
 	Find(ctx context.Context, subjectUID string, req candidates.Request) (candidates.Result, error)
 }
 
-// API exposes the candidate search over HTTP. The write guard is supplied by the
+// API exposes the candidate search over HTTP. The curator guard is supplied by the
 // caller (the auth subsystem) so this package depends on auth's behaviour, not its
 // wiring.
 type API struct {
-	service      Service
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service makes the endpoint
@@ -48,21 +48,21 @@ type API struct {
 type Config struct {
 	// Service backs the candidate search.
 	Service Service
-	// RequireWrite guards the endpoint for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the endpoint for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, requireWrite: cfg.RequireWrite}
+	return &API{service: cfg.Service, requireCurator: cfg.RequireCurator}
 }
 
 // RegisterRoutes mounts the candidate endpoint onto r, which the caller has scoped
 // under the API base path (for example /api/v1):
 //
-//	POST /subjects/{uid}/candidates  RequireWrite  untagged-face candidates for a subject
+//	POST /subjects/{uid}/candidates  RequireCurator  untagged-face candidates for a subject
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireWrite).Post("/subjects/{uid}/candidates", a.handleFind)
+	r.With(a.requireCurator).Post("/subjects/{uid}/candidates", a.handleFind)
 }
 
 // handleFind runs the candidate search for the path subject. An absent backend

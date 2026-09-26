@@ -69,6 +69,9 @@ type API struct {
 	retentionDays  int
 	videoTranscode bool
 	requireAuth    func(http.Handler) http.Handler
+	// requireCurator guards the people-and-faces writes on a photo, which are
+	// curation of the catalogue rather than of the photo's own metadata.
+	requireCurator func(http.Handler) http.Handler
 	requireWrite   func(http.Handler) http.Handler
 	requireAdmin   func(http.Handler) http.Handler
 	// requireMaintainer guards the per-photo processing repair, which schedules
@@ -205,6 +208,10 @@ type Config struct {
 	VideoTranscode bool
 	// RequireAuth guards read endpoints for any authenticated user.
 	RequireAuth func(http.Handler) http.Handler
+	// RequireCurator guards the people-and-faces endpoints — assigning a face
+	// marker, attaching and detaching a person by hand — for curators and above.
+	// They curate who is on a photo, not the photo itself.
+	RequireCurator func(http.Handler) http.Handler
 	// RequireWrite guards metadata and archive endpoints for editors and above.
 	// Archiving (a reversible soft delete) is a write operation, so it stays here.
 	RequireWrite func(http.Handler) http.Handler
@@ -257,6 +264,7 @@ func NewAPI(cfg Config) *API {
 		retentionDays:     cfg.RetentionDays,
 		videoTranscode:    cfg.VideoTranscode,
 		requireAuth:       cfg.RequireAuth,
+		requireCurator:    cfg.RequireCurator,
 		requireWrite:      cfg.RequireWrite,
 		requireAdmin:      cfg.RequireAdmin,
 		requireMaintainer: cfg.RequireMaintainer,
@@ -293,9 +301,9 @@ func passthroughMiddleware(next http.Handler) http.Handler {
 //	GET    /photos/{uid}              RequireAuth      full detail (+ people=true)
 //	GET    /photos/{uid}/similar      RequireAuth      visually similar photos
 //	GET    /photos/{uid}/faces        RequireAuth      faces + assignment + suggestions
-//	POST   /photos/{uid}/faces/assign RequireWrite     create/assign/unassign marker
-//	POST   /photos/{uid}/people       RequireWrite     attach a person by hand
-//	DELETE /photos/{uid}/people/{subjectUID}  RequireWrite  detach one again
+//	POST   /photos/{uid}/faces/assign RequireCurator   create/assign/unassign marker
+//	POST   /photos/{uid}/people       RequireCurator   attach a person by hand
+//	DELETE /photos/{uid}/people/{subjectUID}  RequireCurator  detach one again
 //	PATCH  /photos/{uid}              RequireWrite     update metadata
 //	GET    /photos/{uid}/edit         RequireAuth      stored non-destructive edit
 //	PUT    /photos/{uid}/edit         RequireWrite     save non-destructive edit
@@ -366,9 +374,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireAuth, a.commentThrottle()).Post("/{uid}/comments", a.handleCreateComment)
 		r.With(a.requireAuth).Patch("/{uid}/comments/{commentUID}", a.handleUpdateComment)
 		r.With(a.requireAuth).Delete("/{uid}/comments/{commentUID}", a.handleDeleteComment)
-		r.With(a.requireWrite).Post("/{uid}/faces/assign", a.handleFaceAssign)
-		r.With(a.requireWrite).Post("/{uid}/people", a.handleAttachPerson)
-		r.With(a.requireWrite).Delete("/{uid}/people/{subjectUID}", a.handleDetachPerson)
+		r.With(a.requireCurator).Post("/{uid}/faces/assign", a.handleFaceAssign)
+		r.With(a.requireCurator).Post("/{uid}/people", a.handleAttachPerson)
+		r.With(a.requireCurator).Delete("/{uid}/people/{subjectUID}", a.handleDetachPerson)
 		r.With(a.requireWrite).Patch("/{uid}", a.handleUpdate)
 		r.With(a.requireAuth).Get("/{uid}/edit", a.handleGetEdit)
 		r.With(a.requireWrite).Put("/{uid}/edit", a.handlePutEdit)

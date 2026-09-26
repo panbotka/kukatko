@@ -30,10 +30,10 @@ func buildDupMarkersAPI(
 		Dismissals: feedback.NewStore(db.Pool()),
 	})
 	return dupmarkersapi.NewAPI(dupmarkersapi.Config{
-		Service:      svc,
-		Markers:      people.NewStore(db.Pool()),
-		Assigner:     matchSvc,
-		RequireAuth:  authAPI.RequireAuth,
-		RequireWrite: authAPI.RequireWrite,
+		Service:        svc,
+		Markers:        people.NewStore(db.Pool()),
+		Assigner:       matchSvc,
+		RequireAuth:    authAPI.RequireAuth,
+		RequireCurator: authAPI.RequireCurator,
 	})
 }

@@ -307,7 +307,7 @@ func TestStoryboardRoutesAreGuarded(t *testing.T) {
 			name: "status behind RequireAuth",
 			path: "/photos/ph_1/storyboard",
 			api: &API{
-				requireAuth: regenDeny, requireWrite: regenPass,
+				requireAuth: regenDeny, requireCurator: regenPass, requireWrite: regenPass,
 				requireAdmin: regenPass, requireMaintainer: regenPass, requireDownload: regenPass,
 			},
 		},
@@ -315,7 +315,7 @@ func TestStoryboardRoutesAreGuarded(t *testing.T) {
 			name: "sprite behind the media guard",
 			path: "/photos/ph_1/storyboard/sprite",
 			api: &API{
-				requireAuth: regenPass, requireWrite: regenPass,
+				requireAuth: regenPass, requireCurator: regenPass, requireWrite: regenPass,
 				requireAdmin: regenPass, requireMaintainer: regenPass, requireDownload: regenDeny,
 			},
 		},

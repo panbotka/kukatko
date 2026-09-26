@@ -2,7 +2,7 @@
 // than once on the same photo" over HTTP.
 //
 // GET /duplicate-markers lists the findings (any authenticated user may look);
-// the two repairs behind it are editor/admin only. Neither repair is new
+// the two repairs behind it need a curator or above. Neither repair is new
 // behaviour: "keep this one" drives the existing face-assignment state machine
 // (internal/facematch) once per marker it detaches, and "no face here" flips the
 // existing marker invalid flag through its audited store method. Nothing is ever
@@ -71,11 +71,11 @@ type Assigner interface {
 
 // API exposes the repeated-marker endpoints over HTTP.
 type API struct {
-	service      Service
-	markers      MarkerStore
-	assigner     Assigner
-	requireAuth  func(http.Handler) http.Handler
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	markers        MarkerStore
+	assigner       Assigner
+	requireAuth    func(http.Handler) http.Handler
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service is valid (the listing
@@ -90,18 +90,18 @@ type Config struct {
 	Assigner Assigner
 	// RequireAuth guards the read-only listing for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
-	// RequireWrite guards the repairs for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the repairs for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		service:      cfg.Service,
-		markers:      cfg.Markers,
-		assigner:     cfg.Assigner,
-		requireAuth:  cfg.RequireAuth,
-		requireWrite: cfg.RequireWrite,
+		service:        cfg.Service,
+		markers:        cfg.Markers,
+		assigner:       cfg.Assigner,
+		requireAuth:    cfg.RequireAuth,
+		requireCurator: cfg.RequireCurator,
 	}
 }
 
@@ -109,15 +109,15 @@ func NewAPI(cfg Config) *API {
 // scoped under the API base path (for example /api/v1):
 //
 //	GET  /duplicate-markers          RequireAuth   list the findings (query: limit, offset)
-//	POST /duplicate-markers/keep     RequireWrite  keep one marker, detach the rest of the group
-//	POST /duplicate-markers/invalid  RequireWrite  flag one marker as "no face in this box"
+//	POST /duplicate-markers/keep     RequireCurator  keep one marker, detach the rest of the group
+//	POST /duplicate-markers/invalid  RequireCurator  flag one marker as "no face in this box"
 //
 // The third decision — "leave it be" — is a durable opinion and lives with the
 // other persisted feedback, at POST/DELETE /feedback/duplicate-marker-dismissals.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/duplicate-markers", a.handleList)
-	r.With(a.requireWrite).Post("/duplicate-markers/keep", a.handleKeep)
-	r.With(a.requireWrite).Post("/duplicate-markers/invalid", a.handleInvalid)
+	r.With(a.requireCurator).Post("/duplicate-markers/keep", a.handleKeep)
+	r.With(a.requireCurator).Post("/duplicate-markers/invalid", a.handleInvalid)
 }
 
 // handleList returns a page of findings. It answers 503 when the service is not

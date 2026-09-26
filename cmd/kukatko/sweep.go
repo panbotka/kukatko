@@ -15,7 +15,7 @@ import (
 // candidate service the per-subject search uses as its finder, so the two never
 // drift. Concurrency and the subject cap come from cfg.Sweep; a nil logger falls back
 // to slog.Default(), which obs.Setup has already pointed at the app's JSON logger.
-// The write guard is supplied via authAPI so sweepapi stays decoupled from auth.
+// The curator guard is supplied via authAPI so sweepapi stays decoupled from auth.
 func buildSweepAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 ) *sweepapi.API {
@@ -26,7 +26,7 @@ func buildSweepAPI(
 		MaxSubjects: cfg.Sweep.MaxSubjects,
 	})
 	return sweepapi.NewAPI(sweepapi.Config{
-		Service:      svc,
-		RequireWrite: authAPI.RequireWrite,
+		Service:        svc,
+		RequireCurator: authAPI.RequireCurator,
 	})
 }

@@ -51,9 +51,9 @@ func newEnv(t *testing.T) *env {
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
 	api := familyapi.NewAPI(familyapi.Config{
-		Store:        family.NewStore(db.Pool()),
-		RequireAuth:  authAPI.RequireAuth,
-		RequireWrite: authAPI.RequireWrite,
+		Store:          family.NewStore(db.Pool()),
+		RequireAuth:    authAPI.RequireAuth,
+		RequireCurator: authAPI.RequireCurator,
 	})
 
 	r := chi.NewRouter()
@@ -418,6 +418,28 @@ func TestUpdateFamily_roundTrip(t *testing.T) {
 	}
 	if n := env.countAudit(t, audit.ActionFamilyUpdate); n != 1 {
 		t.Errorf("audit entries = %d, want 1", n)
+	}
+}
+
+// TestRBAC_curatorMayWrite proves the wiring rather than the intent: all three
+// mutations hang on RequireCurator, so a curator records a relation (creating its
+// subject inline), edits the family and removes the relation again. The package
+// has no route that stays on RequireWrite, so there is no refusal to assert here.
+func TestRBAC_curatorMayWrite(t *testing.T) {
+	env := newEnv(t)
+	curator := env.login(t, "curator", auth.RoleCurator)
+	son := env.subject(t, "Syn")
+
+	result := env.addRelation(t, curator, son, `{"role":"parent","new_subject":{"name":"Otec"}}`)
+	father := result.Relative.UID
+
+	if got := env.status(t, curator, http.MethodPatch, "/api/v1/families/"+result.Family.UID,
+		[]byte(`{"kind":"marriage"}`)); got != http.StatusOK {
+		t.Errorf("curator PATCH family = %d, want 200", got)
+	}
+	if got := env.status(t, curator, http.MethodDelete,
+		"/api/v1/subjects/"+son+"/relations/"+father, nil); got >= http.StatusMultipleChoices {
+		t.Errorf("curator DELETE relation = %d, want 2xx", got)
 	}
 }
 

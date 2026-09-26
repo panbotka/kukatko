@@ -1138,8 +1138,9 @@ to `## Package map` in `CLAUDE.md`.
   as `failed` (no forever-"running" row); `--dry-run` only **hashes files and looks them up in the catalog**
   (new/duplicate) and **writes nothing at all** — not even `import_runs`), `internal/photoapi/`
   (a read/curation HTTP API over the catalog: `NewAPI(Config{Store,Storage,Thumbnailer,Similar,
-  Embedder,Faces,Attacher,Favorites,Ratings,RequireAuth,RequireWrite,RequireAdmin,RequireDownload})`
-  — **`RequireAdmin` guards only the irreversible trash operations** (`POST /trash/empty`, per-photo
+  Embedder,Faces,Attacher,Favorites,Ratings,RequireAuth,RequireCurator,RequireWrite,RequireAdmin,RequireDownload})`
+  — **`RequireCurator` guards the three people-and-faces writes** (`POST /photos/{uid}/faces/assign`,
+  `POST`/`DELETE /photos/{uid}/people…`, curator and above), **`RequireAdmin` guards only the irreversible trash operations** (`POST /trash/empty`, per-photo
   `POST /photos/{uid}/purge` delete originals, hence tightened from write to admin); archiving
   (reversible soft-delete) stays `RequireWrite`, `GET /trash/info` `RequireAuth` — `RegisterRoutes` mounts `/photos`
   **, `GET /photos/timeline`, **`GET /photos/years`**, `GET /search` and `GET /favorites`**; `parseListParams`
@@ -1839,7 +1840,7 @@ to `## Package map` in `CLAUDE.md`.
   `internal/familyapi/`
   (the HTTP surface over `internal/family`: `Store` (the interface the handlers depend on — `Relations`,
   `Tree`, `AddRelationAudited`, `RemoveRelationAudited`, `GetFamily`, `UpdateFamilyAudited`, satisfied by
-  `*family.Store` and fakeable in tests), `NewAPI(Config{Store,RequireAuth,RequireWrite})` + `RegisterRoutes`
+  `*family.Store` and fakeable in tests), `NewAPI(Config{Store,RequireAuth,RequireCurator})` + `RegisterRoutes`
   mounting five **flat** patterns — `GET|POST /subjects/{uid}/relations`,
   `DELETE /subjects/{uid}/relations/{uid2}`, `GET /subjects/{uid}/tree`, `PATCH /families/{uid}`. Flat rather
   than a `chi.Mount` for the same reason `peopleapi` is: `/subjects/{uid}` is shared with `peopleapi` and
@@ -2102,7 +2103,7 @@ to `## Package map` in `CLAUDE.md`.
   distance, `confidence = 1 − distance`, limit `faces.suggestion_limit`, primary threshold
   `faces.suggestion_max_distance` with a fallback to unbounded distance when there are few suggestions;
   **the assignment state machine** `Apply(ctx,AssignRequest,audit.Meta)` (backing
-  `POST /photos/{uid}/faces/assign`, editor/admin): `create_marker` (creates a face marker + assigns the
+  `POST /photos/{uid}/faces/assign`, curator and above): `create_marker` (creates a face marker + assigns the
   subject + links the face), `assign_person` (assigns a subject to an existing marker),
   `unassign_person` (detaches the subject), keeps the `faces` cache and `marker.reviewed` consistent
   (assign → reviewed, unassign → unreviewed), **auto-creates a subject by name** (find-or-create
@@ -2135,7 +2136,7 @@ to `## Package map` in `CLAUDE.md`.
   `faces.*` config; **attaching a person by hand** is the deliberate opposite and lives elsewhere —
   `internal/photoapi/people.go` over the `PeopleAttacher` interface (= `people.Store`), because it needs no
   face, no box and no vector search: `POST /photos/{uid}/people` and
-  `DELETE /photos/{uid}/people/{subject_uid}` (both `RequireWrite`, both idempotent, both answering the
+  `DELETE /photos/{uid}/people/{subject_uid}` (both `RequireCurator`, both idempotent, both answering the
   photo's resulting `{people:[…]}`) plus `resolveAttachedPeople`, the unconditional detail block — one
   indexed read joined to `subjects`, degrading to an empty array when the backend is missing or fails,
   because nobody should lose the photo over the list of who is on it), `internal/embedjob/`
@@ -2332,9 +2333,9 @@ to `## Package map` in `CLAUDE.md`.
   `GetCluster`/`DeleteCluster`/`RemoveFaceFromCluster`/`RefreshCluster`); sentinels
   `ErrClusterNotFound`/`ErrEmptyCluster`/`ErrMissingSubject`/`ErrFaceNotInCluster`; tunables in
   `cluster.*` config), `internal/clusterapi/`
-  (an editor/admin HTTP API over the clustering: the `Service` interface (satisfied by `cluster.Service`)
+  (a curator-and-above HTTP API over the clustering: the `Service` interface (satisfied by `cluster.Service`)
   and the optional `Preparer` (satisfied by `clusterjob.Service`),
-  `NewAPI(Config{Service,Preparer,RequireWrite})`+`RegisterRoutes` mounts `/faces/clusters`:
+  `NewAPI(Config{Service,Preparer,RequireCurator})`+`RegisterRoutes` mounts `/faces/clusters`:
   `GET /faces/clusters?limit&offset` (one **page** of prepared clusters + suggestions + the `pending`
   count + **`grouping`**; a bad `limit`/`offset` → 400; **every** listing calls
   `Preparer.EnsureGrouping` — the library that needs a pass most is exactly the one whose listing
@@ -2384,9 +2385,9 @@ to `## Package map` in `CLAUDE.md`.
   the client should acknowledge them; **small sets** (< `MinMeaningful`=3 faces) → `meaningful:false` (nothing
   is singled out), the faces are still returned sorted; no mutation — a wrong
   face is detached via the existing assign API), `internal/outlierapi/`
-  (an editor/admin HTTP API over outlier detection: the `Service` interface (satisfied by `outliers.Service`),
-  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mounts `GET /subjects/{uid}/outliers`
-  behind `RequireWrite`; 503 without a backend, 404 missing subject; mounted in `serve`
+  (a curator-and-above HTTP API over outlier detection: the `Service` interface (satisfied by `outliers.Service`),
+  `NewAPI(Config{Service,RequireCurator})`+`RegisterRoutes` mounts `GET /subjects/{uid}/outliers`
+  behind `RequireCurator`; 503 without a backend, 404 missing subject; mounted in `serve`
   (`buildOutlierAPI` in `cmd/kukatko/outliers.go`)), `internal/candidates/`
   (**"find a person among untagged photos"**: for a named subject finds **unassigned**
   faces that resemble it — the counterpart to `GET /photos?person=`, complementing clustering too, which
@@ -2430,9 +2431,9 @@ to `## Package map` in `CLAUDE.md`.
   `faces_without_embedding`; the box being offline doesn't matter — the vectors are read already in Postgres. **Read-only** —
   confirmation goes through the existing assign path; the sweep across all people can call `Find` per subject
   without reimplementation), `internal/candidatesapi/`
-  (an editor/admin HTTP API over the candidate search: the `Service` interface (satisfied by `candidates.Service`),
-  `NewAPI(Config{Service,RequireWrite})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
-  behind `RequireWrite`; the body `{threshold?,limit?}` is **optional** (empty → defaults),
+  (a curator-and-above HTTP API over the candidate search: the `Service` interface (satisfied by `candidates.Service`),
+  `NewAPI(Config{Service,RequireCurator})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
+  behind `RequireCurator`; the body `{threshold?,limit?}` is **optional** (empty → defaults),
   `DisallowUnknownFields` + 64 KiB, a negative `threshold`/`limit` → 400; 503 without a backend, 404 missing
   subject (`people.ErrSubjectNotFound`); mounted in `serve` (`buildCandidatesAPI` in
   `cmd/kukatko/candidates.go`, takes `mediaStore` for URL stamping)), `internal/sweep/`
@@ -2462,9 +2463,9 @@ to `## Package map` in `CLAUDE.md`.
   and the `Person` projection (`personOf`) and is otherwise unchanged — `GET /faces/sweep` still covers
   everyone. Unit tests in `scan_test.go` (budget bound, rotation without gaps, early stop, wrapping offset,
   skipped failures, collector error, empty library)), `internal/sweepapi/`
-  (an editor/admin HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
-  `NewAPI(Config{Service,RequireWrite})` (nil RequireWrite → pass-through) + `RegisterRoutes` mounts
-  `GET /faces/sweep` behind `RequireWrite`; `parseConfidence` (percent-or-distance → distance, floor
+  (a curator-and-above HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
+  `NewAPI(Config{Service,RequireCurator})` (nil RequireCurator → pass-through) + `RegisterRoutes` mounts
+  `GET /faces/sweep` behind `RequireCurator`; `parseConfidence` (percent-or-distance → distance, floor
   `0.01`, default 75 %) + `parseLimit`, errors → 400; streams **NDJSON** via the `stream` helper, which
   sets the headers (`application/x-ndjson`, `Cache-Control: no-store`) **lazily** at the first line and
   **flushes** after each one (`http.Flusher`, propagated through `internal/metrics` `statusRecorder.Flush`);
@@ -2871,9 +2872,9 @@ to `## Package map` in `CLAUDE.md`.
   split, ordering, NULL-actor/non-review exclusion; for the partial index see migration `0037`),
   `internal/reviewapi/`
   (an HTTP API over the review game: the `Service` interface (satisfied by `*review.Service`) and `Leaderboarder`
-  (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireWrite,RequireAuth})`
+  (satisfied by `*review.LeaderboardStore`), `NewAPI(Config{Service,Leaderboard,RequireCurator,RequireAuth})`
   (nil guards → pass-through) + `RegisterRoutes` mounts `GET /review/queue` and `POST /review/answer`
-  behind **`RequireWrite`** (editor/admin — they mutate the library) and `GET /review/leaderboard` behind **`RequireAuth`**
+  behind **`RequireCurator`** (curator and above — they mutate the library) and `GET /review/leaderboard` behind **`RequireAuth`**
   (only aggregates → any logged-in user, even a viewer); the queue reads `?source=` (empty → `both`,
   `review.ParseSource` → 400 on anything else) and `?limit=` (empty → default,
   non-numeric/negative → 400), answer decodes `{question_id,answer}` (`DisallowUnknownFields`, 64 KiB,
@@ -2892,13 +2893,13 @@ to `## Package map` in `CLAUDE.md`.
   name/type; `DELETE` first loads the subject for the details and a clean 404)) and `PhotoStore`
   (`photos.Store.ListByUIDs`)
   → unit-testable with fakes without a DB; `NewAPI(Config{Subjects,Photos,FamilyExport,RequireAuth,
-  RequireWrite})`+
+  RequireCurator})`+
   `RegisterRoutes` mounts **flat** paths (not a mounted subrouter, so they coexist with
   `outlierapi`'s `GET /subjects/{uid}/outliers` without a chi Mount conflict): `GET /subjects`
-  (RequireAuth, `{subjects:[SubjectCount]}` with marker **and** photo counts), `POST /subjects` (RequireWrite,
+  (RequireAuth, `{subjects:[SubjectCount]}` with marker **and** photo counts), `POST /subjects` (RequireCurator,
   create → 201, name/type validation), `GET /subjects/{uid}` (RequireAuth), `PATCH /subjects/{uid}`
-  (RequireWrite, editing name/type/favorite/private/notes/cover_photo_uid), `DELETE /subjects/{uid}`
-  (RequireWrite → 204), `POST /subjects/{uid}/merge` (RequireWrite, `{keeper_uid}` → `people.MergeResult`;
+  (RequireCurator, editing name/type/favorite/private/notes/cover_photo_uid), `DELETE /subjects/{uid}`
+  (RequireCurator → 204), `POST /subjects/{uid}/merge` (RequireCurator, `{keeper_uid}` → `people.MergeResult`;
   the **path** subject is the one merged away and deleted. `handleMerge` loads **both** subjects first, so a
   missing one is a 404 before any mutation and the audit details keep the source's name — the source is gone
   by the time anyone reads the trail, and a merge has no undo. Merging a subject into itself is refused here,
@@ -3220,8 +3221,10 @@ to `## Package map` in `CLAUDE.md`.
   clicking past it),
   `internal/feedbackapi/`
   (an HTTP API over rejections — the `Store` interface (a subset of `feedback.Store`) → unit-testable with fakes;
-  `NewAPI(Config{Store,RequireWrite})`+`RegisterRoutes` mounts the subrouter `/feedback`:
-  `POST /feedback/face-rejections` `{photo_uid,face_index,subject_uid}` (RequireWrite → 204),
+  `NewAPI(Config{Store,RequireCurator,RequireWrite})`+`RegisterRoutes` mounts the subrouter `/feedback`
+  (the face, label and repeated-marker routes behind `RequireCurator`, the four near-duplicate-photo ones —
+  `duplicate-dismissals`, `duplicate-confirmations` — behind `RequireWrite`):
+  `POST /feedback/face-rejections` `{photo_uid,face_index,subject_uid}` (RequireCurator → 204),
   `DELETE /feedback/face-rejections` (undo → 204), `POST /feedback/label-rejections`
   `{photo_uid,label_uid}` (→ 204), `DELETE /feedback/label-rejections` (→ 204) — DELETE carries a body too
   (like label-detach); body decode `DisallowUnknownFields` + 64 KiB, a missing id → 400, a negative
@@ -4670,8 +4673,8 @@ to `## Package map` in `CLAUDE.md`.
   (the HTTP surface of the repeated-marker review: `Service` (`FindGroups`, **nil → 503**)/`MarkerStore`
   (`ListMarkersByPhoto`/`GetMarkerByUID`/`SetMarkerInvalidAudited`, satisfied by `*people.Store`)/`Assigner`
   (`Apply`, satisfied by `*facematch.Service`); `NewAPI(Config{Service,Markers,Assigner,RequireAuth,
-  RequireWrite})`+`RegisterRoutes` mounts `GET /duplicate-markers` behind **RequireAuth** (reading is not a write)
-  and `POST /duplicate-markers/keep` + `POST /duplicate-markers/invalid` behind `RequireWrite`.
+  RequireCurator})`+`RegisterRoutes` mounts `GET /duplicate-markers` behind **RequireAuth** (reading is not a write)
+  and `POST /duplicate-markers/keep` + `POST /duplicate-markers/invalid` behind `RequireCurator`.
   **Neither repair is new behaviour**: `keep` resolves the group **server-side** from (photo, subject) —
   the losing markers are deliberately not in the body, so a stale client list cannot detach a marker that has
   meanwhile been re-tagged — and detaches each one through `facematch.Apply(unassign_person)`, the same

@@ -260,7 +260,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   authenticator, which is the fact an incident needs.
 - **Bearer authentication:** `authenticateRequest` accepts `Authorization: Bearer kkt_<id>_<secret>`
   **alongside** the session cookie (the cookie path is unchanged). A token **inherits its user's role**
-  → no second permission system, `RequireAuth`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer` apply
+  → no second permission system, `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer` apply
   unchanged (e.g. a maintainer-role token passes all guards; a plain admin hits 403 on operational
   `RequireMaintainer` surfaces). A bad
   bearer is **final** (the same request's cookie is not tried); a scheme other than Bearer falls through
@@ -423,7 +423,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and everyone else already on the photo, are excluded from the suggestions, so an assigned face without a
   close alternative gets an empty list; threshold widening without a cutoff runs only for unnamed ones).
   Face↔marker IoU matching, see `internal/facematch`; 503 when the face backend is not wired in;
-  `POST /photos/{uid}/faces/assign` (editor/admin) — an assignment
+  `POST /photos/{uid}/faces/assign` (curator and above, `RequireCurator`) — an assignment
   action `{action, face_index?, marker_uid?, subject_uid?, subject_name?, bbox?}`
   (`create_marker`/`assign_person`/`unassign_person`), auto-creates a subject by name, keeps the `faces`
   cache + `marker.reviewed` consistent (400 validation, 404 missing photo/marker/subject);
@@ -432,14 +432,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   otherwise linked to a media item only through a marker cut from a **detected** face, which covers less
   than it looks — **face detection does not run on a video at all**, so this is the only way a clip names
   anybody, and on a still the detector misses profiles, backs of heads and faces in a crowd. These two endpoints record who is there anyway, with **no bounding box, no detected face, no
-  embedding**: `POST /photos/{uid}/people` `{subject_uid}` (editor/admin) attaches and
-  `DELETE /photos/{uid}/people/{subject_uid}` (editor/admin) detaches. Both answer **200** with the photo's
+  embedding**: `POST /photos/{uid}/people` `{subject_uid}` (curator and above, `RequireCurator`) attaches and
+  `DELETE /photos/{uid}/people/{subject_uid}` (`RequireCurator`) detaches. Both answer **200** with the photo's
   resulting `{people:[{subject_uid,slug,name,type,marker_uid,attached_at}]}`, ordered by name — the same
   array `GET /photos/{uid}` carries — so a client renders the new state straight from the reply. **Both are
   idempotent**: attaching somebody already attached leaves exactly one link and answers the same body as the
   first attach (not a 409), and detaching somebody who is not attached is a success, because in each case
   the requested state already holds. 400 for a body naming no subject, **404** for a photo or a subject that
-  does not exist, 403 without write access. Each mutation writes its audit entry (`person.attach` /
+  does not exist, 403 for a viewer. Each mutation writes its audit entry (`person.attach` /
   `person.detach`) **in the same transaction** as the change and schedules the metadata sidecar rewrite
   afterwards, so the link survives losing the database. Under the hood it is a third kind of `markers` row
   (`type = 'person'`, migration 0071), which is what makes it behave like any other media of that person for
@@ -1035,7 +1035,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `places` (`placesjob.Service`, `buildPlacesServiceOrNil` in `cmd/kukatko/places.go`), and also
   builds — and `serve` starts — a **background worker** (`internal/worker`) for the whole life of the
   process (`startWorker`, stopped on shutdown via ctx).
-- **Clusters API (`/api/v1`, `internal/clusterapi`, editor/admin via `RequireWrite`):**
+- **Clusters API (`/api/v1`, `internal/clusterapi`, curator and above via `RequireCurator`):**
   `GET /faces/clusters?limit&offset` → `{clusters:[{uid,size,representative,examples,suggestion?}],
   total,pending,grouping,limit,offset,next_offset}` (one **page** of the clusters of unassigned faces
   from auto-clustering, newest first; `suggestion` = the nearest named subject). `limit` defaults to 24
@@ -1044,7 +1044,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `pending` the ones still being prepared. Every request **schedules the `face_cluster` pass the
   library is missing** (`clusterjob.EnsureGrouping`, deduped: at most one pass queued or running):
   grouping the unassigned faces of a library that has **no** clusters — nothing else ever starts that,
-  so this is what makes the feature reachable for an editor instead of only for a maintainer calling
+  so this is what makes the feature reachable for a curator instead of only for a maintainer calling
   `POST /process/clusters` — or preparing the summaries of the clusters that have none. It never
   regroups or reassigns a named face, an empty or already-grouped library schedules nothing, and
   `grouping` reports whether a pass is queued or running, so an empty page can say so. The page itself
@@ -1054,7 +1054,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` detaches a stray face before
   naming → the refreshed cluster (or `null` when it is orphaned); 503 without a backend, 400/404/409 per the
   sentinels. Mounted by the fourth `server.WithAPI` (`buildClusterAPI` in `cmd/kukatko/clusters.go`).
-- **Outliers API (`/api/v1`, `internal/outlierapi`, editor/admin via `RequireWrite`):**
+- **Outliers API (`/api/v1`, `internal/outlierapi`, curator and above via `RequireCurator`):**
   `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,avg_distance,no_embedding,
   faces:[{photo_uid,face_index,bbox,det_score,distance,marker_uid?,width,height,orientation}]}`
   (a person's faces sorted descending by cosine distance from the **trimmed** centroid of their
@@ -1072,7 +1072,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   user** (see Feedback API below) are excluded from the result, so repeated passes converge instead of
   offering the same false alarms over and over. Mounted by `server.WithAPI` (`buildOutlierAPI` in
   `cmd/kukatko/outliers.go`).
-- **Candidates API (`/api/v1`, `internal/candidatesapi`, editor/admin via `RequireWrite`):**
+- **Candidates API (`/api/v1`, `internal/candidatesapi`, curator and above via `RequireCurator`):**
   "find a person among untagged photos". `POST /subjects/{uid}/candidates` with an **optional** body
   `{threshold?,limit?}` (`threshold` = max cosine distance, default `candidates.max_distance`;
   `limit` 0 = as many as `candidates.max_candidates` allows; `DisallowUnknownFields` + 64 KiB, negative
@@ -1098,7 +1098,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   or `"no_embeddings"` (tagged, but the faces have no embedding — the box was offline); the box being offline
   otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject.
   Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
-- **Recognition sweep API (`/api/v1`, `internal/sweepapi`, editor/admin via `RequireWrite`):**
+- **Recognition sweep API (`/api/v1`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.
   `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>`. `confidence`: a value
@@ -1179,7 +1179,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   by retention), restore, backup, user management or admin surface; `bulk_edit_photos` therefore
   omits even `Archive` and `Location`, which the bulk service otherwise supports. Mounted by `server.WithAPI`
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`). In detail: [`docs/MCP.md`](MCP.md).
-- **Review game API (`/api/v1`, `internal/reviewapi`, editor/admin via `RequireWrite`):** a "game" for
+- **Review game API (`/api/v1`, `internal/reviewapi`, curator and above via `RequireCurator`):** a "game" for
   tidying up the library — one question at a time, answer yes/no/skip. There are **five kinds of question**:
   `face` ("Is this Tomáš?"), `label` ("Should this photo have the label Ostatky?"), `place` ("Was this photo
   taken in Brno?" over a location the geo-estimator guessed), `duplicate` ("Is this the same photo?" over a
@@ -1293,7 +1293,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   sweep and expand endpoints).
   **Leaderboard** `GET /review/leaderboard?window=all|7d|today` (default `all`, other value → 400)
   gated by **`RequireAuth`** — it returns only aggregated counts + names, so **every authenticated user**
-  sees it (even a viewer), not just an editor. It ranks players by the number of **decisions** in the review
+  sees it (even a viewer), not just a curator. It ranks players by the number of **decisions** in the review
   game, sourced from durable audit rows with `details.via = "review"`. Which actions those are is
   **`audit.ReviewYesActions()` / `ReviewNoActions()`** — one shared list, so a new question type becomes
   countable (here and in the admin decision view, `GET /audit?via=review&decision=yes|no`) the moment its write
@@ -1330,13 +1330,13 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   wants the picture does **not** crop either of them any more — it asks for `GET /subjects/{uid}/avatar`
   below; the two fields say whether a subject *has* a picture (so a tile with none fires no request) and are
   still what a client cropping for itself needs;
-  `POST /subjects` (RequireWrite) → 201 creates a subject from `{name,nickname,type,favorite,private,notes,
+  `POST /subjects` (RequireCurator) → 201 creates a subject from `{name,nickname,type,favorite,private,notes,
   cover_photo_uid?,birth_year?,death_year?}` (empty name / unknown type → 400; a name that identifies **nobody** — punctuation or
   symbols alone, no letter and no digit — is also 400 `subject name must contain a letter or a digit`: it has
   no slug of its own, would be stored under the shared fallback slug, read as unnamed everywhere and act as a
   magnet for find-or-create-by-name lookups, which is exactly the catch-all `docs/OPERATIONS.md` §
   `maintenance nameless-subjects` describes); `GET /subjects/{uid}` (RequireAuth) →
-  the subject (404); `PATCH /subjects/{uid}` (RequireWrite) → editing the same fields (404/400);
+  the subject (404); `PATCH /subjects/{uid}` (RequireCurator) → editing the same fields (404/400);
   **`nickname` is what people actually call the subject** — Bohumil Nečas („Bohouš") — `""` when nobody
   recorded one, which is the usual case. It is **searched like the name**: by the subject search behind
   `GET /search/global` (accent-insensitive), by `person:`/`subject:` and by the pickers built on
@@ -1356,8 +1356,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   would punish the reclassification. The `>= 1800` and `death >= birth` halves are also SQL CHECKs
   (migration `0051`); the "not in the future" half is Go-only, because a CHECK may not read the clock.
   Both appear in the `subject.update` audit entry's `changes` diff like any other edited field;
-  `DELETE /subjects/{uid}` (RequireWrite) → 204 (the markers are detached server-side);
-  `POST /subjects/{uid}/merge` (RequireWrite) `{keeper_uid}` → `{keeper_uid,source_uid,markers_moved,
+  `DELETE /subjects/{uid}` (RequireCurator) → 204 (the markers are detached server-side);
+  `POST /subjects/{uid}/merge` (RequireCurator) `{keeper_uid}` → `{keeper_uid,source_uid,markers_moved,
   faces_moved,confirmations_moved,rejections_moved,rejections_dropped,dismissals_moved,shared_photos}` —
   **the path subject is merged into the keeper and deleted**, in one transaction, with one `subject.merge`
   audit entry naming both (the source's name survives nowhere else: a merge cannot be undone). Everything
@@ -1396,7 +1396,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the same (it is where that person's children hang). A **sibling group** — a family with no partners at all —
   names nobody, so it shows up only as the `siblings` list of its children. A subject with nothing filled in
   gets four empty lists; an unknown subject 404.
-  `POST /subjects/{uid}/relations` (RequireWrite) → **201** records one relation on the path subject. The
+  `POST /subjects/{uid}/relations` (RequireCurator) → **201** records one relation on the path subject. The
   body names the role and **either** an existing subject **or** one to create inline:
   `{"role":"parent","subject_uid":"su_…"}` or
   `{"role":"parent","new_subject":{"name":"Marie Nečasová","birth_year":1921}}` (roles: `parent`, `child`,
@@ -1414,7 +1414,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   this call created them. **The inline half is one audited transaction:** subject and relation commit
   together, so a refused relation leaves **no orphan subject** behind. That affordance is what makes filling
   a tree bearable — otherwise every great-grandmother is a trip to another screen and back.
-  `DELETE /subjects/{uid}/relations/{uid2}` (RequireWrite) → 204 removes whatever ties the two together;
+  `DELETE /subjects/{uid}/relations/{uid2}` (RequireCurator) → 204 removes whatever ties the two together;
   **which relation that is follows from the rows, not from the request** (parent, child, partner, or a sibling
   link with nothing behind it). Two subjects that are not related answer 404, so a repeated click is never
   reported as a removal. A **sibling** relation is removable only when the family the two share records no
@@ -1436,7 +1436,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   is `generations=` in the address and 3 by default. An unrecognised `direction` or a negative/non-numeric
   `generations` is 400; an unknown subject 404. `families` lists only the child edges whose person is also in
   `members`, so the renderer is never handed an edge to a node it was not given.
-  `PATCH /families/{uid}` (RequireWrite) → edits the family row itself, as opposed to who is in it:
+  `PATCH /families/{uid}` (RequireCurator) → edits the family row itself, as opposed to who is in it:
   `{"kind":"marriage","from_year":1948,"to_year":null,"note":"oddáni v Křtinách"}` → the refreshed family.
   Like the subject body it **rewrites the whole editable set**, so an omitted year clears a stored one, and
   the `family.update` audit entry carries the old→new `changes` diff. `kind` is `marriage`|`partnership`
@@ -1658,7 +1658,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persisted feedback —
   a user's "no" (and now also "yes") to a face↔subject or photo↔label estimate, and its undo.
   **Feedback is an opinion — it never mutates** the underlying data (does not detach a marker, remove a label,
-  archive anything). Ten endpoints, all **RequireWrite** (editor/admin, viewer 403): `POST /feedback/face-rejections`
+  archive anything). Twelve endpoints, viewer 403 on all of them: the eight face, label and repeated-marker
+  ones (`face-rejections`, `face-confirmations`, `label-rejections`, `duplicate-marker-dismissals`, each
+  `POST` + `DELETE`) are **RequireCurator** (curator and above) — they are face and label curation — while the
+  four near-duplicate-photo ones (`duplicate-dismissals`, `duplicate-confirmations`) stay **RequireWrite**
+  (editor and above), with the duplicate merge they settle. `POST /feedback/face-rejections`
   `{photo_uid,face_index,subject_uid}` → 204 (rejects "this face is NOT this person"),
   `DELETE /feedback/face-rejections` (same body) → 204 (undo); `POST /feedback/label-rejections`
   `{photo_uid,label_uid}` → 204 (rejects "this photo should NOT have this label"),
@@ -2193,7 +2197,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   here would mix the two and neither figure would fall when either is fixed. Valid (`invalid=false`) `face`
   markers of **named** subjects only — the nameless catch-all holds thousands of untagged regions and would
   bury every real finding — and non-archived photos only.
-  The two repairs are `RequireWrite` and **neither is new behaviour**:
+  The two repairs are `RequireCurator` (curator and above) and **neither is new behaviour**:
   `POST /duplicate-markers/keep` `{photo_uid,subject_uid,keep_marker_uid}` →
   `{photo_uid,subject_uid,keep_marker_uid,detached[]}` keeps that one marker and clears the subject from every
   other valid face marker of that person on that photo, each through the existing

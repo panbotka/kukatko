@@ -1,8 +1,8 @@
 // Package familyapi exposes the genealogy over subjects — internal/family — over
 // HTTP: one subject's immediate relations, the tree walked up or down from them,
 // recording and removing a relation, and editing the family row itself. Reads are
-// open to any authenticated user; the three mutations require the editor/admin
-// write guard. Both guards are injected and the store is an interface, so this
+// open to any authenticated user; the three mutations require the curator
+// guard (curators and above). Both guards are injected and the store is an interface, so this
 // package stays decoupled from auth's wiring and testable with fakes.
 //
 // Its patterns are flat rather than a mounted subrouter, because the
@@ -61,10 +61,10 @@ type Store interface {
 // API exposes the family endpoints over HTTP. The auth middlewares are supplied
 // by the caller so this package depends on auth's behaviour, not its wiring.
 type API struct {
-	store        Store
-	export       ExportEnqueuer
-	requireAuth  func(http.Handler) http.Handler
-	requireWrite func(http.Handler) http.Handler
+	store          Store
+	export         ExportEnqueuer
+	requireAuth    func(http.Handler) http.Handler
+	requireCurator func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI.
@@ -77,17 +77,17 @@ type Config struct {
 	Export ExportEnqueuer
 	// RequireAuth guards the read endpoints for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
-	// RequireWrite guards the mutating endpoints for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the mutating endpoints for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		store:        cfg.Store,
-		export:       cfg.Export,
-		requireAuth:  cfg.RequireAuth,
-		requireWrite: cfg.RequireWrite,
+		store:          cfg.Store,
+		export:         cfg.Export,
+		requireAuth:    cfg.RequireAuth,
+		requireCurator: cfg.RequireCurator,
 	}
 }
 
@@ -95,10 +95,10 @@ func NewAPI(cfg Config) *API {
 // under the API base path (for example /api/v1):
 //
 //	GET    /subjects/{uid}/relations         RequireAuth   parents, siblings, partners, children
-//	POST   /subjects/{uid}/relations         RequireWrite  record a relation (parent/child/partner/sibling)
-//	DELETE /subjects/{uid}/relations/{uid2}  RequireWrite  remove the relation between two subjects
+//	POST   /subjects/{uid}/relations         RequireCurator  record a relation (parent/child/partner/sibling)
+//	DELETE /subjects/{uid}/relations/{uid2}  RequireCurator  remove the relation between two subjects
 //	GET    /subjects/{uid}/tree              RequireAuth   the tree walked from the subject
-//	PATCH  /families/{uid}                   RequireWrite  edit a family: kind, years, note
+//	PATCH  /families/{uid}                   RequireCurator  edit a family: kind, years, note
 //
 // The tree takes direction=descendants|ancestors (default descendants) and
 // generations=N (default: the whole bounded walk).
@@ -108,10 +108,10 @@ func NewAPI(cfg Config) *API {
 // without a chi Mount conflict.
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/subjects/{uid}/relations", a.handleRelations)
-	r.With(a.requireWrite).Post("/subjects/{uid}/relations", a.handleAddRelation)
-	r.With(a.requireWrite).Delete("/subjects/{uid}/relations/{uid2}", a.handleRemoveRelation)
+	r.With(a.requireCurator).Post("/subjects/{uid}/relations", a.handleAddRelation)
+	r.With(a.requireCurator).Delete("/subjects/{uid}/relations/{uid2}", a.handleRemoveRelation)
 	r.With(a.requireAuth).Get("/subjects/{uid}/tree", a.handleTree)
-	r.With(a.requireWrite).Patch("/families/{uid}", a.handleUpdateFamily)
+	r.With(a.requireCurator).Patch("/families/{uid}", a.handleUpdateFamily)
 }
 
 // auditEntry builds an audit entry for a family mutation, stamping the acting
@@ -119,7 +119,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // and User-Agent onto the given action, target and details. The store writes the
 // returned entry inside the mutation's transaction.
 //
-// The mutating routes are guarded by RequireWrite, so a principal is present in
+// The mutating routes are guarded by RequireCurator, so a principal is present in
 // production; an absent principal yields an empty actor UID (stored as NULL)
 // rather than failing, which keeps the handlers exercisable behind pass-through
 // guards in unit tests.

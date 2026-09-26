@@ -114,10 +114,10 @@ func newServer(store familyapi.Store) http.Handler {
 func newServerWithExport(store familyapi.Store, export familyapi.ExportEnqueuer) http.Handler {
 	r := chi.NewRouter()
 	familyapi.NewAPI(familyapi.Config{
-		Store:        store,
-		Export:       export,
-		RequireAuth:  passThrough,
-		RequireWrite: passThrough,
+		Store:          store,
+		Export:         export,
+		RequireAuth:    passThrough,
+		RequireCurator: passThrough,
 	}).RegisterRoutes(r)
 	return r
 }

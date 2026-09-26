@@ -9,13 +9,15 @@ import (
 
 // buildFeedbackAPI assembles the persisted-rejection HTTP API over the shared pool:
 // rejecting (and un-rejecting) a face↔subject or photo↔label guess. Every endpoint
-// mutates and is guarded by the write guard supplied via authAPI, so feedbackapi
-// stays decoupled from auth's wiring; each write is audited in the same transaction
-// as the rejection.
+// mutates: the face, label and repeated-marker opinions take the curator guard and
+// the near-duplicate-photo ones the write guard, both supplied via authAPI, so
+// feedbackapi stays decoupled from auth's wiring; each write is audited in the same
+// transaction as the rejection.
 func buildFeedbackAPI(db *database.DB, authAPI *auth.API) *feedbackapi.API {
 	store := feedback.NewStore(db.Pool())
 	return feedbackapi.NewAPI(feedbackapi.Config{
-		Store:        store,
-		RequireWrite: authAPI.RequireWrite,
+		Store:          store,
+		RequireCurator: authAPI.RequireCurator,
+		RequireWrite:   authAPI.RequireWrite,
 	})
 }

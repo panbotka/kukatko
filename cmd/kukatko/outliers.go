@@ -13,7 +13,7 @@ import (
 // buildOutlierAPI assembles the per-subject face outlier detection HTTP API over
 // the shared pool: the outlier service (subject's faces ranked by distance from
 // their trimmed embedding centroid, with user-confirmed faces excluded via the
-// feedback store) behind its editor/admin endpoint. The write guard is supplied
+// feedback store) behind its curator endpoint. The curator guard is supplied
 // via authAPI so the outlierapi package stays decoupled from auth's wiring.
 func buildOutlierAPI(db *database.DB, authAPI *auth.API) *outlierapi.API {
 	svc := outliers.New(outliers.Config{
@@ -22,7 +22,7 @@ func buildOutlierAPI(db *database.DB, authAPI *auth.API) *outlierapi.API {
 		Feedback: feedback.NewStore(db.Pool()),
 	})
 	return outlierapi.NewAPI(outlierapi.Config{
-		Service:      svc,
-		RequireWrite: authAPI.RequireWrite,
+		Service:        svc,
+		RequireCurator: authAPI.RequireCurator,
 	})
 }

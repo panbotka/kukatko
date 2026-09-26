@@ -1,8 +1,8 @@
-// Package clusterapi exposes the face auto-clustering HTTP API for editors and
-// admins: listing the clusters of unassigned faces (each with a representative
+// Package clusterapi exposes the face auto-clustering HTTP API for curators and
+// above: listing the clusters of unassigned faces (each with a representative
 // face, examples and a suggested existing subject), assigning a whole cluster to
 // a subject in one action, and removing a stray face from a cluster before it is
-// named. It depends on a cluster service behaviour and a write guard, both
+// named. It depends on a cluster service behaviour and a curator guard, both
 // injected, so it stays decoupled from the cluster package's wiring.
 //
 // The listing is paginated and reads only what has been prepared in the
@@ -53,16 +53,16 @@ type Preparer interface {
 	EnsureGrouping(ctx context.Context) (bool, error)
 }
 
-// API exposes the clustering endpoints over HTTP. The write guard is supplied by
+// API exposes the clustering endpoints over HTTP. The curator guard is supplied by
 // the caller (the auth subsystem) so this package depends on auth's behaviour,
 // not its wiring.
 type API struct {
-	service      Service
-	preparer     Preparer
-	requireWrite func(http.Handler) http.Handler
+	service        Service
+	preparer       Preparer
+	requireCurator func(http.Handler) http.Handler
 }
 
-// Config bundles the dependencies of NewAPI. Service and RequireWrite are
+// Config bundles the dependencies of NewAPI. Service and RequireCurator are
 // required (a nil Service makes every endpoint answer 503); Preparer is
 // optional.
 type Config struct {
@@ -70,26 +70,26 @@ type Config struct {
 	Service Service
 	// Preparer schedules the background preparation of pending clusters.
 	Preparer Preparer
-	// RequireWrite guards every endpoint for editors and admins.
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards every endpoint for curators and above.
+	RequireCurator func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{service: cfg.Service, preparer: cfg.Preparer, requireWrite: cfg.RequireWrite}
+	return &API{service: cfg.Service, preparer: cfg.Preparer, requireCurator: cfg.RequireCurator}
 }
 
 // RegisterRoutes mounts the clustering endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1):
 //
-//	GET  /faces/clusters?limit&offset      RequireWrite  one page of clusters + suggestions
-//	POST /faces/clusters/{id}/assign       RequireWrite  assign whole cluster to a subject
-//	POST /faces/clusters/{id}/remove-face  RequireWrite  drop a stray face from a cluster
+//	GET  /faces/clusters?limit&offset      RequireCurator  one page of clusters + suggestions
+//	POST /faces/clusters/{id}/assign       RequireCurator  assign whole cluster to a subject
+//	POST /faces/clusters/{id}/remove-face  RequireCurator  drop a stray face from a cluster
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/faces/clusters", func(r chi.Router) {
-		r.With(a.requireWrite).Get("/", a.handleList)
-		r.With(a.requireWrite).Post("/{id}/assign", a.handleAssign)
-		r.With(a.requireWrite).Post("/{id}/remove-face", a.handleRemoveFace)
+		r.With(a.requireCurator).Get("/", a.handleList)
+		r.With(a.requireCurator).Post("/{id}/assign", a.handleAssign)
+		r.With(a.requireCurator).Post("/{id}/remove-face", a.handleRemoveFace)
 	})
 }
 

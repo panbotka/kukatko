@@ -64,15 +64,16 @@ func newIntHarness(t *testing.T) intHarness {
 
 	r := chi.NewRouter()
 	dupmarkersapi.NewAPI(dupmarkersapi.Config{
-		Service:      svc,
-		Markers:      peopleStore,
-		Assigner:     matchSvc,
-		RequireAuth:  passthrough,
-		RequireWrite: passthrough,
+		Service:        svc,
+		Markers:        peopleStore,
+		Assigner:       matchSvc,
+		RequireAuth:    passthrough,
+		RequireCurator: passthrough,
 	}).RegisterRoutes(r)
 	feedbackapi.NewAPI(feedbackapi.Config{
-		Store:        feedbackStore,
-		RequireWrite: passthrough,
+		Store:          feedbackStore,
+		RequireCurator: passthrough,
+		RequireWrite:   passthrough,
 	}).RegisterRoutes(r)
 
 	return intHarness{

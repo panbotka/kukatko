@@ -199,9 +199,9 @@ func TestHandleSweep_preStreamErrorIs500(t *testing.T) {
 	}
 }
 
-// TestHandleSweep_writeGuardApplied checks the injected RequireWrite middleware guards
+// TestHandleSweep_curatorGuardApplied checks the injected RequireCurator middleware guards
 // the endpoint.
-func TestHandleSweep_writeGuardApplied(t *testing.T) {
+func TestHandleSweep_curatorGuardApplied(t *testing.T) {
 	t.Parallel()
 	svc := &fakeService{run: func(func(sweep.Event) error) error { return nil }}
 	guard := func(http.Handler) http.Handler {
@@ -209,7 +209,7 @@ func TestHandleSweep_writeGuardApplied(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 		})
 	}
-	h := newRouter(NewAPI(Config{Service: svc, RequireWrite: guard}))
+	h := newRouter(NewAPI(Config{Service: svc, RequireCurator: guard}))
 	if rec := doGet(t, h, "/api/v1/faces/sweep"); rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 (guard applied)", rec.Code)
 	}

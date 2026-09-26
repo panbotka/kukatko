@@ -125,7 +125,7 @@ func marker(uid, photoUID, subjectUID string) people.Marker {
 // newRouter mounts the API on a chi router with pass-through guards.
 func newRouter(cfg dupmarkersapi.Config) chi.Router {
 	cfg.RequireAuth = passthrough
-	cfg.RequireWrite = passthrough
+	cfg.RequireCurator = passthrough
 	r := chi.NewRouter()
 	dupmarkersapi.NewAPI(cfg).RegisterRoutes(r)
 	return r

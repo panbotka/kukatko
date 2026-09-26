@@ -122,6 +122,7 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 		api := &API{
 			regenerator:       fake,
 			requireAuth:       regenPass,
+			requireCurator:    regenPass,
 			requireWrite:      regenDeny,
 			requireAdmin:      regenPass,
 			requireMaintainer: regenPass,
@@ -146,6 +147,7 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 		api := &API{
 			regenerator:       fake,
 			requireAuth:       regenPass,
+			requireCurator:    regenPass,
 			requireWrite:      regenPass,
 			requireAdmin:      regenPass,
 			requireMaintainer: regenPass,

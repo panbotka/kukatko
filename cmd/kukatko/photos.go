@@ -73,8 +73,9 @@ func (r photoRebuilders) regeocoderOrNil() photoapi.PhotoRegeocoder {
 
 // buildPhotoAPI assembles the photo browse/curation subsystem: the configured
 // original store and thumbnailer (for media serving), the photo repository, and
-// the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard,
-// metadata and archive endpoints its RequireWrite guard, the permanent trash
+// the HTTP API. Read endpoints reuse the auth subsystem's RequireAuth guard, the
+// people-and-faces endpoints its RequireCurator guard, metadata and archive
+// endpoints its RequireWrite guard, the permanent trash
 // operations (purge one, empty the trash) its RequireAdmin guard (destroying
 // originals is tightened above write), and media endpoints its
 // RequireAuthOrDownloadToken guard (cookie or download token) — all supplied via
@@ -113,12 +114,6 @@ func buildPhotoAPI(
 		Thumbnailer: thumbnailer,
 		Decoder:     thumbjob.NewStorageDecoder(store),
 	})
-	// A nil interface (not a typed nil pointer) when stacking is disabled, so the
-	// photoapi nil check answers 503 on the manual stacking routes.
-	var stacker photoapi.Stacker
-	if s := buildStacksServiceOrNil(cfg, db); s != nil {
-		stacker = s
-	}
 	commentLimit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
 
 	return photoapi.NewAPI(photoapi.Config{
@@ -155,7 +150,7 @@ func buildPhotoAPI(
 		// geocodes, so opening a photo costs no mapy.com credit.
 		Places:  places.NewStore(db.Pool()),
 		Purger:  purger,
-		Stacker: stacker,
+		Stacker: photoStacker(cfg, db),
 		// Per-photo comment threads. Writing one is open to every authenticated
 		// role (viewers included), so the throttle keys on the user rather than
 		// the client IP — see photoapi.handleCreateComment.
@@ -181,11 +176,22 @@ func buildPhotoAPI(
 		RetentionDays:     cfg.Trash.RetentionDays,
 		VideoTranscode:    cfg.Video.Transcode,
 		RequireAuth:       authAPI.RequireAuth,
+		RequireCurator:    authAPI.RequireCurator,
 		RequireWrite:      authAPI.RequireWrite,
 		RequireAdmin:      authAPI.RequireAdmin,
 		RequireMaintainer: authAPI.RequireMaintainer,
 		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
 	})
+}
+
+// photoStacker is the stacking service as photoapi sees it: a nil interface (not
+// a typed nil pointer) when stacking is disabled, so the photoapi nil check
+// answers 503 on the manual stacking routes.
+func photoStacker(cfg *config.Config, db *database.DB) photoapi.Stacker {
+	if s := buildStacksServiceOrNil(cfg, db); s != nil {
+		return s
+	}
+	return nil
 }
 
 // buildProcessingService assembles the per-photo processing report and its

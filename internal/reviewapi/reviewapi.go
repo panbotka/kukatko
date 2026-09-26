@@ -2,8 +2,8 @@
 // the player a batch of one-at-a-time questions targeted at the uncertainty
 // band — drawn from people, labels or both, per the caller's ?source — and
 // POST /review/answer applies a yes/no/skip verdict through the existing
-// write paths. Both endpoints require the editor or admin role — answering
-// mutates the library — via the injected RequireWrite guard, so the package
+// write paths. Both endpoints require a curator or above — answering
+// mutates the library — via the injected RequireCurator guard, so the package
 // stays decoupled from auth's wiring. GET /review/leaderboard ranks players by
 // how many decisions they have made; it only exposes aggregate counts, so it is
 // gated by the lighter RequireAuth guard (any logged-in user).
@@ -58,8 +58,8 @@ type Config struct {
 	// Leaderboard aggregates the decision counts; nil makes the leaderboard
 	// endpoint answer 503.
 	Leaderboard Leaderboarder
-	// RequireWrite guards the mutating endpoints; nil means no guard (tests only).
-	RequireWrite func(http.Handler) http.Handler
+	// RequireCurator guards the mutating endpoints; nil means no guard (tests only).
+	RequireCurator func(http.Handler) http.Handler
 	// RequireAuth guards the read-only leaderboard endpoint; nil means no guard
 	// (tests only).
 	RequireAuth func(http.Handler) http.Handler
@@ -67,16 +67,16 @@ type Config struct {
 
 // API carries the handlers' dependencies.
 type API struct {
-	service      Service
-	leaderboard  Leaderboarder
-	requireWrite func(http.Handler) http.Handler
-	requireAuth  func(http.Handler) http.Handler
+	service        Service
+	leaderboard    Leaderboarder
+	requireCurator func(http.Handler) http.Handler
+	requireAuth    func(http.Handler) http.Handler
 }
 
 // NewAPI wires the review game endpoints from cfg.
 func NewAPI(cfg Config) *API {
 	passthrough := func(next http.Handler) http.Handler { return next }
-	write := cfg.RequireWrite
+	write := cfg.RequireCurator
 	if write == nil {
 		write = passthrough
 	}
@@ -85,18 +85,18 @@ func NewAPI(cfg Config) *API {
 		authn = passthrough
 	}
 	return &API{
-		service:      cfg.Service,
-		leaderboard:  cfg.Leaderboard,
-		requireWrite: write,
-		requireAuth:  authn,
+		service:        cfg.Service,
+		leaderboard:    cfg.Leaderboard,
+		requireCurator: write,
+		requireAuth:    authn,
 	}
 }
 
 // RegisterRoutes mounts the review game endpoints on r (already scoped to
-// /api/v1): the mutating queue/answer endpoints behind the write guard, the
+// /api/v1): the mutating queue/answer endpoints behind the curator guard, the
 // read-only leaderboard behind the lighter auth guard.
 func (a *API) RegisterRoutes(r chi.Router) {
-	guarded := r.With(a.requireWrite)
+	guarded := r.With(a.requireCurator)
 	guarded.Get("/review/queue", a.handleQueue)
 	guarded.Post("/review/answer", a.handleAnswer)
 	r.With(a.requireAuth).Get("/review/leaderboard", a.handleLeaderboard)

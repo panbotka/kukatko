@@ -67,7 +67,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/bulk` — bulk metadata editing, the whole batch in one transaction
 - `internal/bulkapi` — `POST /photos/bulk`
 - `internal/candidates` — "find a person among untagged photos": per-exemplar kNN over unassigned faces + voting, rejection/negative-exemplar/size filters, action classification; read-only
-- `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireWrite)
+- `internal/candidatesapi` — `POST /subjects/{uid}/candidates` (RequireCurator)
 - `internal/capabilitiesapi` — all-authenticated `GET /capabilities` (instance feature flags, e.g. `semantic_search`)
 - `internal/clientip` — who a request came from: a forwarding header is believed only from a configured trusted proxy, otherwise the socket peer wins; one address for the limiters, the audit trail and the access log
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors); the listing is a page of cached per-cluster summaries, built in the background
@@ -95,7 +95,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/familyexportjob` — the `family_export` job: one file for the whole library, rewritten whenever a relation (or a subject in one) changes, debounced by the queue's dedup
 - `internal/familyapi` — the five flat family routes (`/subjects/{uid}/relations`, `/subjects/{uid}/tree`, `PATCH /families/{uid}`); the `POST` takes an existing subject or creates one inline, in the store's one audited transaction
 - `internal/feedback` — persisted opinions: "not this person" / "not this label" / "not duplicates", idempotent, audited, never mutates; bulk exclusion lookups
-- `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireWrite)
+- `internal/feedbackapi` — `POST`/`DELETE /feedback/{face,label}-rejections` (RequireCurator; the duplicate-pair routes RequireWrite)
 - `internal/geoestimate` — estimate a missing location from photos taken near it in time; refuses unless the neighbours cluster tightly (a wrong location is worse than none), marks every result `estimate`
 - `internal/globalsearchapi` — `GET /search/global` (grouped cross-entity) + `GET /search/schema` (the query language's filter keys, straight from the parser's registry)
 - `internal/hls` — the pure half of streaming: where a video's segments live (`hls/<file_hash>/<rendition>/`), what may be named there, the rendition list + ffmpeg argument plan, and the playlists a player is served; never runs ffmpeg
@@ -143,7 +143,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates, mixed from a confident tier and the uncertainty band; answers reuse existing write paths
-- `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireWrite)
+- `internal/reviewapi` — `GET /review/queue`, `POST /review/answer` (RequireCurator)
 - `internal/savedsearch` — per-user saved searches ("smart albums")
 - `internal/savedsearchapi` — `/saved-searches`, everything scoped to the owner (foreign → 404)
 - `internal/searchhistory` — each user's recent search queries: upsert-on-record, capped ring of 20, strictly per-user
@@ -161,7 +161,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/storyboard` — a video's scrub-preview sprite: the grid layout (`Plan`/`Spec`) and its ffmpeg render into the local derived-media cache; cache-only, never published to the object store
 - `internal/storyboardjob` — worker handler `storyboard` + the read service: lazy, per-video generation scheduled on first playback, never for the library
 - `internal/sweep` — recognition sweep: the per-subject candidate search across **all** named subjects (`Sweep`, streamed) or a bounded rotating window of them (`Scan`, for one request), bounded worker pool; read-only, **never auto-assigns**
-- `internal/sweepapi` — `GET /faces/sweep` (RequireWrite) streaming NDJSON
+- `internal/sweepapi` — `GET /faces/sweep` (RequireCurator) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`
 - `internal/taskdigestjob` — the `task_digest` job + its daily scheduler: one mail per person listing the open tasks whose move is theirs, only when something changed since `users.task_digest_at`; sends through `mail_send`, never itself; on only with `tasks.digest.enabled` **and** mail

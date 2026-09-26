@@ -105,11 +105,17 @@ func getDetailPeople(t *testing.T, client *http.Client, base, uid string) []peop
 }
 
 // TestAttachPerson_guards verifies the two endpoints answer the codes the API
-// promises: 403 without write access, 404 for a photo or subject that does not
+// promises: 403 without curation rights, 404 for a photo or subject that does not
 // exist, 400 for a body naming nobody.
+//
+// The curator cases prove the wiring, not the intent: the people-and-faces
+// routes hang on RequireCurator, so a curator gets through them (face assignment
+// is unwired here, so reaching its handler answers 503), while the photo's own
+// metadata stays on RequireWrite and refuses the same curator.
 func TestAttachPerson_guards(t *testing.T) {
 	env := newEnv(t)
 	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	curator, _ := env.login(t, "curator", auth.RoleCurator)
 	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "Still"}, "still.jpg", 40, 50, 60)
 	subjectUID := env.seedSubject(t, "Bohumil")
@@ -132,6 +138,31 @@ func TestAttachPerson_guards(t *testing.T) {
 			name: "viewer may not detach", client: viewer, method: http.MethodDelete,
 			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people/" + subjectUID,
 			want: http.StatusForbidden,
+		},
+		{
+			name: "viewer may not assign a face", client: viewer, method: http.MethodPost,
+			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/faces/assign",
+			body: []byte(`{}`), want: http.StatusForbidden,
+		},
+		{
+			name: "curator may attach", client: curator, method: http.MethodPost,
+			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people",
+			body: body, want: http.StatusOK,
+		},
+		{
+			name: "curator may detach", client: curator, method: http.MethodDelete,
+			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people/" + subjectUID,
+			want: http.StatusOK,
+		},
+		{
+			name: "curator reaches face assignment", client: curator, method: http.MethodPost,
+			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/faces/assign",
+			body: []byte(`{}`), want: http.StatusServiceUnavailable,
+		},
+		{
+			name: "curator may not edit the photo's metadata", client: curator, method: http.MethodPatch,
+			url:  env.server.URL + "/api/v1/photos/" + photo.UID,
+			body: []byte(`{"title":"Renamed"}`), want: http.StatusForbidden,
 		},
 		{
 			name: "unknown photo", client: editor, method: http.MethodPost,

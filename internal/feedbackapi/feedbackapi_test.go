@@ -106,7 +106,7 @@ func (f *fakeStore) UndismissDuplicateMarkers(
 
 // serve routes one request through a fresh API over store and returns the recorder.
 func serve(store Store, method, target, body string) *httptest.ResponseRecorder {
-	api := NewAPI(Config{Store: store, RequireWrite: passthrough})
+	api := NewAPI(Config{Store: store, RequireCurator: passthrough, RequireWrite: passthrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	req := httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))

@@ -60,7 +60,7 @@ func (f *fakeLeaderboard) Leaderboard(
 	return f.entries, f.err
 }
 
-// newServer mounts the API over the fake with a pass-through write guard.
+// newServer mounts the API over the fake with a pass-through curator guard.
 func newServer(t *testing.T, svc Service) *httptest.Server {
 	t.Helper()
 	return serveConfig(t, Config{Service: svc})
@@ -356,17 +356,17 @@ func TestHandleLeaderboard_authGuard(t *testing.T) {
 		t.Errorf("unauthenticated status = %d, want 401", status)
 	}
 	// A viewer (no write permission) still reads the board: it is gated by auth,
-	// not the write guard, so a denying write guard does not block it.
+	// not the curator guard, so a denying curator guard does not block it.
 	viewer := serveConfig(t, Config{
-		Leaderboard:  &fakeLeaderboard{},
-		RequireWrite: deny(http.StatusForbidden),
+		Leaderboard:    &fakeLeaderboard{},
+		RequireCurator: deny(http.StatusForbidden),
 	})
 	if status := doJSON(t, http.MethodGet, viewer.URL+"/review/leaderboard", "", nil); status != http.StatusOK {
 		t.Errorf("viewer status = %d, want 200", status)
 	}
 }
 
-func TestRegisterRoutes_writeGuardApplied(t *testing.T) {
+func TestRegisterRoutes_curatorGuardApplied(t *testing.T) {
 	t.Parallel()
 	guarded := 0
 	deny := func(http.Handler) http.Handler {
@@ -375,7 +375,7 @@ func TestRegisterRoutes_writeGuardApplied(t *testing.T) {
 			w.WriteHeader(http.StatusForbidden)
 		})
 	}
-	api := NewAPI(Config{Service: &fakeService{}, RequireWrite: deny})
+	api := NewAPI(Config{Service: &fakeService{}, RequireCurator: deny})
 	router := chi.NewRouter()
 	api.RegisterRoutes(router)
 	server := httptest.NewServer(router)
@@ -384,7 +384,7 @@ func TestRegisterRoutes_writeGuardApplied(t *testing.T) {
 		t.Errorf("guarded queue status = %d, want 403", status)
 	}
 	if guarded == 0 {
-		t.Error("RequireWrite middleware was never applied")
+		t.Error("RequireCurator middleware was never applied")
 	}
 }
 

@@ -62,9 +62,9 @@ func newEnv(t *testing.T) *env {
 
 	jobStore := jobs.NewStore(db.Pool())
 	api := clusterapi.NewAPI(clusterapi.Config{
-		Service:      svc,
-		Preparer:     clusterjob.New(svc, jobStore, 0, nil),
-		RequireWrite: authAPI.RequireWrite,
+		Service:        svc,
+		Preparer:       clusterjob.New(svc, jobStore, 0, nil),
+		RequireCurator: authAPI.RequireCurator,
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
@@ -188,16 +188,54 @@ func TestListClusters_EditorSeesClusters(t *testing.T) {
 	}
 }
 
-// TestListClusters_ViewerForbidden verifies a viewer cannot reach the editor-only
-// clustering API.
+// TestListClusters_ViewerForbidden verifies a viewer cannot reach any of the
+// curator-only clustering routes.
 func TestListClusters_ViewerForbidden(t *testing.T) {
 	env := newEnv(t)
 	client := env.login(t, "viewer", auth.RoleViewer)
 
-	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("viewer GET clusters status = %d, want 403", resp.StatusCode)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/faces/clusters"},
+		{http.MethodPost, "/api/v1/faces/clusters/fcany/assign"},
+		{http.MethodPost, "/api/v1/faces/clusters/fcany/remove-face"},
+	} {
+		resp := mustDo(t, client, tc.method, env.server.URL+tc.path, []byte(`{}`))
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("viewer %s %s status = %d, want 403", tc.method, tc.path, resp.StatusCode)
+		}
+	}
+}
+
+// TestClusters_CuratorReachesEveryRoute proves the wiring rather than the intent:
+// all three routes hang on RequireCurator, so a curator lists the clusters, names
+// one, and gets past the guard of remove-face (its malformed body is refused by
+// the handler, not the guard). The package has no route that stays on
+// RequireWrite, so there is no refusal to assert here.
+func TestClusters_CuratorReachesEveryRoute(t *testing.T) {
+	env := newEnv(t)
+	uid := env.firstClusterUID(t)
+	client := env.login(t, "curator", auth.RoleCurator)
+
+	listResp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
+	_ = listResp.Body.Close()
+	if listResp.StatusCode != http.StatusOK {
+		t.Errorf("curator GET clusters status = %d, want 200", listResp.StatusCode)
+	}
+
+	removeResp := mustDo(t, client, http.MethodPost,
+		env.server.URL+"/api/v1/faces/clusters/"+uid+"/remove-face", []byte(`not json`))
+	_ = removeResp.Body.Close()
+	if removeResp.StatusCode != http.StatusBadRequest {
+		t.Errorf("curator remove-face status = %d, want 400 from the handler", removeResp.StatusCode)
+	}
+
+	body, _ := json.Marshal(map[string]string{"subject_name": "Dana"})
+	assignResp := mustDo(t, client, http.MethodPost,
+		env.server.URL+"/api/v1/faces/clusters/"+uid+"/assign", body)
+	_ = assignResp.Body.Close()
+	if assignResp.StatusCode != http.StatusOK {
+		t.Errorf("curator assign status = %d, want 200", assignResp.StatusCode)
 	}
 }
 

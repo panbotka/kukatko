@@ -58,7 +58,7 @@ func (f *fakePreparer) EnsureGrouping(context.Context) (bool, error) {
 	return f.grouping, f.err
 }
 
-// passthrough is a no-op middleware standing in for the write guard.
+// passthrough is a no-op middleware standing in for the curator guard.
 func passthrough(next http.Handler) http.Handler { return next }
 
 // newServer mounts the API with the given service behind a passthrough guard.
@@ -70,7 +70,7 @@ func newServer(t *testing.T, svc Service) *httptest.Server {
 // newServerWith mounts the API with the given service and preparer.
 func newServerWith(t *testing.T, svc Service, prep Preparer) *httptest.Server {
 	t.Helper()
-	api := NewAPI(Config{Service: svc, Preparer: prep, RequireWrite: passthrough})
+	api := NewAPI(Config{Service: svc, Preparer: prep, RequireCurator: passthrough})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	srv := httptest.NewServer(r)
