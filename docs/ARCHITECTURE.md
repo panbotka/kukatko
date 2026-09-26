@@ -465,6 +465,15 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   wipe while `photos` is truncated, and a dangling pick already has to mean the same as no pick (the
   resolver falls through to the next source), so the constraint would buy nothing and cost the reset a
   special case.
+- **`push_subscriptions`** — the browsers and devices an account receives **Web Push** notifications on
+  (migration `0086`, package `internal/push`): `endpoint` (TEXT, **UNIQUE** — it is the subscription's
+  identity, so the same browser subscribing again updates its row instead of adding a second), the two
+  client keys `p256dh` + `auth` the payload is encrypted to, an optional `user_agent` so a person can
+  tell their devices apart, `created_at`, nullable `last_used_at`, and failure bookkeeping
+  (`failure_count` since the last success, `last_failure_at`); `user_uid` → `users` `ON DELETE CASCADE`,
+  several rows per account. No secret lives here — the VAPID private key is in the environment.
+  Preserved by `kukatko maintenance reset`: it is account data, next to the password and the profile,
+  not library data.
 - **`photo_tasks` + `photo_task_photos` + `photo_task_participants`** — the **work queue**: a question
   about a group of photographs, its state (`question`/`working`/`review`/`done`/`rejected`), the
   resolution that closes it and the search that produced the group, plus the group itself as

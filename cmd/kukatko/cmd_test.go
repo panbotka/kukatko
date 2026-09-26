@@ -30,7 +30,7 @@ func TestRootCmd_subcommandsRegistered(t *testing.T) {
 	root := newRootCmd("kukatko")
 	want := map[string]bool{
 		"serve": false, "version": false, "import": false, "backup": false, "restore": false,
-		"ctl": false,
+		"ctl": false, "push": false,
 	}
 	for _, c := range root.Commands() {
 		if _, ok := want[c.Name()]; ok {

@@ -5302,6 +5302,65 @@ to `## Package map` in `CLAUDE.md`.
     with a fixed clock (one mail per person, none when nothing is due, none when mail is off, the skip, the
     partial run), and the scheduler's timing.
 
+- **Web Push (`internal/push`):** the one way Kukátko sends a push notification, the same shape as
+  `internal/mailer`. **Nothing calls it yet** — the delivery job, the HTTP surface and the frontend
+  service worker are later work; this is the foundation they build on. Everything goes through the
+  **`Sender`** interface (`Send(ctx, Subscription, Notification) error` — one notification to one
+  subscription): **`VAPIDSender`** in production, **`Noop`** when `push.enabled` is false (accepts
+  everything, encrypts and dials nothing), and **`Fake`** in tests (`Sent`/`Last`/`Reset`, `FailWith` for
+  every send, `FailEndpoint` for one dead device among live ones; **never opens a socket**, applies the
+  same guards as the real sender). `New(Config)` is the wiring decision: `Noop` when disabled without
+  reading a key, otherwise `NewVAPID`.
+  - **`Notification`** is `{Title, Body, URL, Kind, Tag}` marshalled as JSON with the field names
+    `title`/`body`/`url`/`kind`/`tag` — a **contract with the service worker**, its only reader, pinned by
+    a test. `URL` is a deeplink **path on this instance** (`/tasks/…`; empty = home) — `Encode` refuses an
+    absolute, `//host` or `/\host` URL with `ErrInvalidNotification`, so a notification can never link off
+    the instance; a blank title is refused too. `Tag` is the collapse key; one that is also a valid RFC
+    8030 `Topic` (≤ 32 base64url characters) is sent as that header, so the push service replaces a
+    message it still holds for an offline device.
+  - **The size limit is checked before anything is dialled.** webpush-go encrypts into one 4096-byte
+    `aes128gcm` record; less the 86-byte header, the 16-byte GCM tag and the padding delimiter that leaves
+    **`MaxPayloadSize` = 3993** bytes of JSON. `Encode` refuses more with **`ErrPayloadTooLarge`**
+    (permanent — retrying cannot make it fit); a test proves a payload of exactly that size goes through
+    the real library and decrypts intact.
+  - **Result classification** is the point of the typed errors: a push service's non-2xx answer is a
+    **`*StatusError{StatusCode, RetryAfter, Body}`** that unwraps to **`ErrGone`** for 404/410 (dead for
+    good — the **caller** deletes the row; the sender only reports, the lifecycle is the caller's),
+    **`ErrRetryable`** for 429 and 5xx (with `Retry-After` in seconds when sent), `ErrPayloadTooLarge` for
+    413 and **`ErrRejected`** for any other 4xx (typically a 403: the subscription was made for another
+    VAPID public key). An unreachable endpoint or an expired context is `ErrRetryable` too.
+    `Retryable(err)` is the caller's one-line test. An invalid subscription (`ValidateSubscription`: an
+    `https` endpoint ≤ 2048 characters, `p256dh` an uncompressed P-256 point, `auth` 16 bytes, any base64
+    flavour) is `ErrInvalidSubscription` before dialling.
+  - **VAPID.** `GenerateKeys` mints a pair with `crypto/ecdh` (unpadded base64url, the encoding browsers
+    use); `ValidateKeys` checks both decode, are P-256 **and form a pair** (a mismatched pair would sign
+    with a key no browser subscribed against); `ValidateSubject` wants `mailto:` or `https:`. Every error is
+    `ErrInvalidConfig` and names the problem, **never a key's value**. One library quirk is absorbed here:
+    webpush-go prefixes `mailto:` to any subscriber that is not `https:`, so `subscriberFor` hands it the
+    bare address — passed as configured, the JWT `sub` would read `mailto:mailto:…` (a test verifies the
+    signed claims). Requests use `Urgency: normal` and a TTL of `DefaultTTL` (24 h); the HTTP client
+    defaults to a 30 s timeout. The library (`github.com/SherClockHolmes/webpush-go` v1.4.0) is pure Go —
+    `golang-jwt/jwt/v5` + `golang.org/x/crypto` — so `CGO_ENABLED=0` still holds.
+  - **`Store`** over `push_subscriptions` (migration 0086: one row per browser, `user_uid` → `users`
+    `ON DELETE CASCADE`, **`endpoint` UNIQUE**, `p256dh`, `auth`, `user_agent`, `created_at`,
+    `last_used_at`, `failure_count`, `last_failure_at`; ids are `ps` + 24 base32). `Upsert` is keyed by
+    endpoint — the same browser subscribing again rewrites its row and keeps its id, and clears the failure
+    bookkeeping; an endpoint that changes hands (another person subscribed on the same browser) moves to
+    them with its created/last-used stamps started over. It validates first, so nothing unsendable is
+    stored. `ListForUser` (oldest first), `DeleteByEndpoint` (whoever owns it — what an unsubscribing
+    browser and an `ErrGone` both name), `DeleteByID(userUID, id)` (**owner-scoped**: a foreign id is
+    `ErrNotFound` like a missing one), `DeleteAllForUser`, `RecordSuccess` (stamps `last_used_at`, resets
+    the count) and `RecordFailure` (returns the failures since the last success, so the caller can retire a
+    subscription that keeps failing). The table is **account data**: `maintenance reset` keeps it
+    (`internal/reset` `preservedTables`).
+  - Configuration `push.*` (`internal/config` validates an enabled section through `ValidateKeys` +
+    `ValidateSubject`, so a bad pair fails startup), CLI `kukatko push generate-keys`
+    ([`OPERATIONS.md`](OPERATIONS.md)). Tests: payload encoding and limits; key/subject/subscription
+    validation; the VAPID sender against an `httptest` TLS push service that **decrypts the payload the way
+    a browser does** (RFC 8291) and **verifies the ES256 signature and claims**; every status class; the
+    fake; and the store over a real database (upsert by endpoint, moving hands, owner-scoped delete,
+    bookkeeping, the cascade).
+
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client

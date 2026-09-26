@@ -21,6 +21,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/hls"
+	"github.com/panbotka/kukatko/internal/push"
 )
 
 const (
@@ -93,6 +94,15 @@ var (
 	// ErrInvalidMailEncryption indicates mail.encryption is set to an unknown
 	// value (it must be empty, "starttls", "tls" or "none").
 	ErrInvalidMailEncryption = errors.New(`config: mail.encryption must be "starttls", "tls" or "none"`)
+	// ErrIncompletePushConfig indicates push.enabled is true but a VAPID key or
+	// the subject is missing. The error names the offending keys and never their
+	// values, so push.vapid.private_key can never reach a log.
+	ErrIncompletePushConfig = errors.New("config: push.enabled is true but its configuration is incomplete")
+	// ErrInvalidPushConfig indicates push.enabled is true and the VAPID keys are
+	// malformed or not a pair, or the subject is neither a mailto: nor an https:
+	// URL. An enabled sender that quietly dropped every notification would be
+	// worse than none, so it fails startup instead.
+	ErrInvalidPushConfig = errors.New("config: push.enabled is true but its VAPID configuration is invalid")
 	// ErrInvalidTaskDigestHour indicates tasks.digest.hour is not an hour of the
 	// day.
 	ErrInvalidTaskDigestHour = errors.New("config: tasks.digest.hour must be between 0 and 23")
@@ -114,6 +124,7 @@ type Config struct {
 	Auth       AuthConfig       `mapstructure:"auth"`
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Mail       MailConfig       `mapstructure:"mail"`
+	Push       PushConfig       `mapstructure:"push"`
 	Tasks      TasksConfig      `mapstructure:"tasks"`
 	Backup     BackupConfig     `mapstructure:"backup"`
 	Trash      TrashConfig      `mapstructure:"trash"`
@@ -735,6 +746,63 @@ type MailConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
+// PushConfig configures Web Push notifications (internal/push).
+//
+// Enabled is the master switch and defaults to false, exactly as mail's does:
+// with it off the no-op sender is wired, nothing is ever dialled and no key is
+// demanded. With it on, the VAPID key pair and subject are all required and
+// checked at startup — a missing or malformed pair fails the start rather than
+// letting a sender look configured while every notification is lost.
+type PushConfig struct {
+	Enabled bool            `mapstructure:"enabled"`
+	VAPID   PushVAPIDConfig `mapstructure:"vapid"`
+}
+
+// PushVAPIDConfig is the instance's VAPID identity (RFC 8292), minted once with
+// `kukatko push generate-keys`. The pair is for life: every browser subscribed
+// against PublicKey, so replacing it silently invalidates every subscription.
+type PushVAPIDConfig struct {
+	// PublicKey is the application server key the frontend subscribes with.
+	PublicKey string `mapstructure:"public_key"`
+	// PrivateKey signs every VAPID token. It is a secret: set it through
+	// KUKATKO_PUSH_VAPID_PRIVATE_KEY, never in a committed file.
+	PrivateKey string `mapstructure:"private_key"`
+	// Subject is how a push service reaches the operator: a mailto: or an
+	// https: URL.
+	Subject string `mapstructure:"subject"`
+}
+
+// validate checks the push settings. A disabled sender is always valid: it is
+// never consulted, so an instance without push need not mention a single key.
+// An enabled one must name all three VAPID keys — every missing one reported at
+// once, names only — and they must form a valid pair with a valid subject.
+func (p PushConfig) validate() error {
+	if !p.Enabled {
+		return nil
+	}
+	required := []struct{ key, value string }{
+		{"push.vapid.public_key", p.VAPID.PublicKey},
+		{"push.vapid.private_key", p.VAPID.PrivateKey},
+		{"push.vapid.subject", p.VAPID.Subject},
+	}
+	missing := make([]string, 0, len(required))
+	for _, field := range required {
+		if strings.TrimSpace(field.value) == "" {
+			missing = append(missing, field.key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: missing %s", ErrIncompletePushConfig, strings.Join(missing, ", "))
+	}
+	if err := push.ValidateKeys(p.VAPID.PublicKey, p.VAPID.PrivateKey); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidPushConfig, err)
+	}
+	if err := push.ValidateSubject(p.VAPID.Subject); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidPushConfig, err)
+	}
+	return nil
+}
+
 // TasksConfig configures the task queue's out-of-app side: the daily digest.
 type TasksConfig struct {
 	Digest TaskDigestConfig `mapstructure:"digest"`
@@ -1111,6 +1179,7 @@ func setDefaults(v *viper.Viper) {
 
 	setMapsDefaults(v)
 	setMailDefaults(v)
+	setPushDefaults(v)
 
 	v.SetDefault("log.level", "info")
 	v.SetDefault("metrics.enabled", true)
@@ -1226,6 +1295,17 @@ func setMailDefaults(v *viper.Viper) {
 	// somebody asks for it, and sent at 07:00 UTC when on.
 	v.SetDefault("tasks.digest.enabled", false)
 	v.SetDefault("tasks.digest.hour", 7)
+}
+
+// setPushDefaults registers the Web Push defaults. Push is off by default and the
+// VAPID keys have no default at all: a pair has to be minted for this instance
+// (`kukatko push generate-keys`), and a shared or guessed one would be worse
+// than none.
+func setPushDefaults(v *viper.Viper) {
+	v.SetDefault("push.enabled", false)
+	v.SetDefault("push.vapid.public_key", "")
+	v.SetDefault("push.vapid.private_key", "")
+	v.SetDefault("push.vapid.subject", "")
 }
 
 func setMapsDefaults(v *viper.Viper) {
@@ -1449,6 +1529,9 @@ func (c *Config) validateSections() error {
 		return err
 	}
 	if err := c.Mail.validate(); err != nil {
+		return err
+	}
+	if err := c.Push.validate(); err != nil {
 		return err
 	}
 	if err := c.Tasks.Digest.validate(); err != nil {

@@ -171,6 +171,14 @@ configuration key both here **and** into `config.example.yaml`.
   fails the same way when `sidecar.enabled: false`, and it has no HTTP counterpart,
   **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
   `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),
+  **`kukatko push generate-keys`** (mints a fresh **VAPID key pair** for Web Push — `internal/push`
+  `GenerateKeys`; reads no config, touches no DB, so it runs anywhere the binary does). It prints the two
+  environment assignments `KUKATKO_PUSH_VAPID_PUBLIC_KEY=…` and `KUKATKO_PUSH_VAPID_PRIVATE_KEY=…` on
+  **stdout** and a reminder on **stderr** — the private key belongs in the environment (1Password → the
+  deployment's env), **never in a committed file** — so `kukatko push generate-keys > vapid.env` captures the
+  keys and nothing else. Mint a pair **once per instance**: every browser subscribes against the public key,
+  so a new pair silently invalidates every stored subscription and everybody has to allow notifications
+  again,
   **`kukatko ctl`** (a remote client over the HTTP API of a running instance — `internal/ctl`; the only subcommand
   that **touches neither the DB nor disk**, see below),
   `kukatko version` (version + commit). The persistent `--config <path>` flag selects the YAML config.
@@ -2040,6 +2048,21 @@ other type; values ≤ 0 are ignored and a type
   recipient in the reserved `.invalid` domain (the placeholder addresses in the user table) is **refused,
   never dialled**. Env: `KUKATKO_MAIL_ENABLED`/`_HOST`/`_PORT`/`_USERNAME`/`_PASSWORD`/`_ENCRYPTION`/
   `_FROM_ADDRESS`/`_FROM_NAME`/`_BASE_URL`/`_TIMEOUT`.
+- **Push keys (`push.*`, `internal/push`):** Web Push notifications to the browsers people allowed to show
+  them (standard Web Push + VAPID, no FCM/Firebase). `enabled` (bool, **default false**) is the master switch,
+  exactly like `mail.enabled`: with push off the **no-op sender** is wired, nothing is ever encrypted or
+  dialled and **no key is demanded**. `vapid.public_key` and `vapid.private_key` (no default) are the
+  instance's VAPID pair, minted with `kukatko push generate-keys` — unpadded base64url of the uncompressed
+  P-256 point and of the private scalar; the public key is public (the frontend subscribes with it), the
+  **private key is a secret — set it only via `KUKATKO_PUSH_VAPID_PRIVATE_KEY`**. `vapid.subject` (no
+  default) is how a push service reaches the operator, a `mailto:` or an `https:` URL (RFC 8292 requires
+  one). **Validation at startup:** an *enabled* push section with any of the three empty fails with
+  `ErrIncompletePushConfig` naming **every** missing key (names only); keys that do not decode, are not
+  P-256, or are **not a matching pair**, and a subject that is neither `mailto:` nor `https:`, fail with
+  `ErrInvalidPushConfig` — a sender that looks configured while every notification is lost is worse than
+  none. A *disabled* section is never checked. **Never rotate the pair casually:** every stored subscription
+  was made for the public key. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
+  `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`.
 - **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
   outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's
   „Na mně"), up to 20 of them with a link each and „…a dalších M" for the rest, plus a link to

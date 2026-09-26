@@ -575,6 +575,23 @@ mail:
   # Bounds one delivery attempt: connect, negotiate and send.
   timeout: 15s
 
+# Web Push notifications (internal/push): standard Web Push with VAPID, no
+# FCM/Firebase. Off by default, and off is completely inert — the no-op sender
+# is wired, nothing is ever dialled and no key is required. Enabled, all three
+# vapid keys are required and must be a valid pair, or startup fails.
+push:
+  enabled: false
+  vapid:
+    # Mint the pair ONCE with `kukatko push generate-keys`. Every browser
+    # subscribes against the public key, so a new pair invalidates every
+    # existing subscription.
+    public_key: ""
+    # A secret: set it only via KUKATKO_PUSH_VAPID_PRIVATE_KEY, never here.
+    private_key: ""
+    # How a push service reaches the operator: a mailto: or an https: URL,
+    # e.g. "mailto:admin@example.org".
+    subject: ""
+
 # The task queue's one message that leaves the app: a daily e-mail to every
 # person listing the open tasks whose move is theirs (the listing's "Na mně").
 # It rides on mail.* above — with mail.enabled false nothing is ever scheduled,

@@ -13,6 +13,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/expand"
 	"github.com/panbotka/kukatko/internal/hls"
+	"github.com/panbotka/kukatko/internal/push"
 )
 
 // setMinimalEnv clears every variable Load reads and then sets just the required
@@ -216,6 +217,12 @@ func TestLoad_defaults(t *testing.T) {
 		{"mail.from_name", cfg.Mail.FromName, ""},
 		{"mail.base_url", cfg.Mail.BaseURL, ""},
 		{"mail.timeout", cfg.Mail.Timeout, 15 * time.Second},
+		// Push is off out of the box and no VAPID key has a default: a pair must
+		// be minted for this instance.
+		{"push.enabled", cfg.Push.Enabled, false},
+		{"push.vapid.public_key", cfg.Push.VAPID.PublicKey, ""},
+		{"push.vapid.private_key", cfg.Push.VAPID.PrivateKey, ""},
+		{"push.vapid.subject", cfg.Push.VAPID.Subject, ""},
 		// The daily tasks digest is off out of the box and, once on, goes out at
 		// 07:00 UTC.
 		{"tasks.digest.enabled", cfg.Tasks.Digest.Enabled, false},
@@ -1467,5 +1474,117 @@ func TestLoad_mailValidation_namesEveryMissingKey(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("error %q leaked the password", err)
+	}
+}
+
+// pushEnv returns the environment of a complete, valid push configuration with
+// a freshly minted key pair.
+func pushEnv(t *testing.T) map[string]string {
+	t.Helper()
+	keys, err := push.GenerateKeys()
+	if err != nil {
+		t.Fatalf("GenerateKeys: %v", err)
+	}
+	return map[string]string{
+		"KUKATKO_PUSH_ENABLED":           "true",
+		"KUKATKO_PUSH_VAPID_PUBLIC_KEY":  keys.PublicKey,
+		"KUKATKO_PUSH_VAPID_PRIVATE_KEY": keys.PrivateKey,
+		"KUKATKO_PUSH_VAPID_SUBJECT":     "mailto:ops@example.com",
+	}
+}
+
+// TestLoad_pushEnvOverride verifies every push key is settable from the
+// environment, the nested VAPID ones included.
+func TestLoad_pushEnvOverride(t *testing.T) {
+	env := pushEnv(t)
+	setMinimalEnv(t)
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.Push.Enabled ||
+		cfg.Push.VAPID.PublicKey != env["KUKATKO_PUSH_VAPID_PUBLIC_KEY"] ||
+		cfg.Push.VAPID.PrivateKey != env["KUKATKO_PUSH_VAPID_PRIVATE_KEY"] ||
+		cfg.Push.VAPID.Subject != "mailto:ops@example.com" {
+		t.Fatalf("push = %+v, want every key from the environment", cfg.Push)
+	}
+}
+
+// TestLoad_pushValidation verifies a disabled push section is never checked,
+// and an enabled one must carry a complete, well-formed VAPID identity — a
+// missing or malformed pair fails startup rather than dropping notifications.
+func TestLoad_pushValidation(t *testing.T) {
+	complete := pushEnv(t)
+	other, err := push.GenerateKeys()
+	if err != nil {
+		t.Fatalf("GenerateKeys: %v", err)
+	}
+	with := func(key, value string) map[string]string {
+		env := maps.Clone(complete)
+		env[key] = value
+		return env
+	}
+
+	tests := []struct {
+		name    string
+		env     map[string]string
+		wantErr error
+	}{
+		{name: "complete config", env: complete},
+		{name: "https subject", env: with("KUKATKO_PUSH_VAPID_SUBJECT", "https://kukatko.example.com")},
+		{
+			name:    "disabled ignores garbage keys",
+			env:     map[string]string{"KUKATKO_PUSH_ENABLED": "false", "KUKATKO_PUSH_VAPID_PRIVATE_KEY": "garbage"},
+			wantErr: nil,
+		},
+		{name: "missing public key", env: with("KUKATKO_PUSH_VAPID_PUBLIC_KEY", ""), wantErr: ErrIncompletePushConfig},
+		{name: "missing private key", env: with("KUKATKO_PUSH_VAPID_PRIVATE_KEY", ""), wantErr: ErrIncompletePushConfig},
+		{name: "missing subject", env: with("KUKATKO_PUSH_VAPID_SUBJECT", ""), wantErr: ErrIncompletePushConfig},
+		{name: "malformed private key", env: with("KUKATKO_PUSH_VAPID_PRIVATE_KEY", "AAAA"), wantErr: ErrInvalidPushConfig},
+		{
+			name:    "mismatched pair",
+			env:     with("KUKATKO_PUSH_VAPID_PUBLIC_KEY", other.PublicKey),
+			wantErr: ErrInvalidPushConfig,
+		},
+		{name: "bare address subject", env: with("KUKATKO_PUSH_VAPID_SUBJECT", "ops@example.com"), wantErr: ErrInvalidPushConfig},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			_, err := Load("")
+			if tt.wantErr != nil && !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Load error = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+			if err != nil && strings.Contains(err.Error(), complete["KUKATKO_PUSH_VAPID_PRIVATE_KEY"]) {
+				t.Fatalf("error %q leaked the private key", err)
+			}
+		})
+	}
+}
+
+// TestLoad_pushValidation_namesEveryMissingKey verifies an enabled push section
+// with nothing set is reported in one message naming all three keys.
+func TestLoad_pushValidation_namesEveryMissingKey(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("KUKATKO_PUSH_ENABLED", "true")
+
+	_, err := Load("")
+	if !errors.Is(err, ErrIncompletePushConfig) {
+		t.Fatalf("Load error = %v, want ErrIncompletePushConfig", err)
+	}
+	for _, key := range []string{"push.vapid.public_key", "push.vapid.private_key", "push.vapid.subject"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error %q does not name %s", err, key)
+		}
 	}
 }

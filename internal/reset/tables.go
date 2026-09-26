@@ -95,6 +95,11 @@ var catalogueTables = []string{
 // administrator had just mailed to somebody locked out would be an outage for
 // that person, and the links are short-lived anyway — the periodic cleanup takes
 // them, not the reset.
+// push_subscriptions stays for the same reason user_pictures does, below: a
+// browser somebody allowed to show Kukátko's notifications is part of their
+// account, next to their password and their profile, and has nothing to do with
+// the photos. Wiping it would silently stop every notification until each person
+// found out and granted permission again — an outage, not part of the wipe.
 // user_pictures stays, because it belongs to the accounts and not to the
 // library: a picture somebody uploaded of themselves is not a photograph of the
 // archive, and throwing it away would be an outage for that person rather than
@@ -112,6 +117,7 @@ var preservedTables = []string{
 	"instance_settings",
 	"passkey_credentials",
 	"password_reset_tokens",
+	"push_subscriptions",
 	"schema_migrations",
 	"sessions",
 	"user_pictures",

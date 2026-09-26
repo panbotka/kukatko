@@ -3,6 +3,7 @@ module github.com/panbotka/kukatko
 go 1.26
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/bbrks/go-blurhash v1.2.0
 	github.com/fxamacker/cbor/v2 v2.9.3
 	github.com/go-chi/chi/v5 v5.2.1
