@@ -4,9 +4,10 @@ import { type Coordinates } from './coordinates'
  * sessionStorage key holding the coordinate most recently picked in the location
  * picker. Session storage rather than local: it exists so the *next* photo in a
  * sitting of geotagging opens the map where the last one was set, and a week-old
- * pin is not where anybody wants to start.
+ * pin is not where anybody wants to start. Cleared at sign-out: where one
+ * account was geotagging is not where the next one starts.
  */
-const STORAGE_KEY = 'kukatko.lastPickedLocation'
+export const PICKED_LOCATION_KEY = 'kukatko.lastPickedLocation'
 
 /**
  * Zoom the map opens at when it is centred on a coordinate the user picked
@@ -23,7 +24,7 @@ export const NEARBY_ZOOM = 11
  */
 export function rememberPickedLocation(position: Coordinates): void {
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(position))
+    window.sessionStorage.setItem(PICKED_LOCATION_KEY, JSON.stringify(position))
   } catch {
     // Storage unavailable — the picker simply falls back to the library's region.
   }
@@ -38,7 +39,7 @@ export function rememberPickedLocation(position: Coordinates): void {
  */
 export function lastPickedLocation(): Coordinates | null {
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY)
+    const raw = window.sessionStorage.getItem(PICKED_LOCATION_KEY)
     if (raw === null) {
       return null
     }

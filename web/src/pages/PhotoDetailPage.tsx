@@ -376,11 +376,12 @@ export function PhotoDetailPage() {
     const back = new URL(backHref(view), window.location.origin)
     return gridScrollKey(back.pathname, back.search)
   }, [origin, detailQuery, view])
+  const readerUid = user?.uid ?? ''
   useEffect(() => {
     if (listScrollKey !== undefined) {
-      rememberGridPhoto(listScrollKey, uid)
+      rememberGridPhoto(readerUid, listScrollKey, uid)
     }
-  }, [listScrollKey, uid])
+  }, [readerUid, listScrollKey, uid])
   // The state paging carries forward: the game to return to and the list this
   // photo came from, so the next photograph is recorded against that list too.
   const pagingState = useMemo<(Partial<ReviewReturn> & Partial<GridOrigin>) | undefined>(

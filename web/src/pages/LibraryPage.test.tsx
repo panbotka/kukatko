@@ -1054,11 +1054,11 @@ describe('LibraryPage scroll position', () => {
     // Opening a photo unmounts the library; the position has to survive that.
     unmount()
 
-    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 0, snapshot: gridState(4000) })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 0, snapshot: gridState(4000) })
   })
 
   it('puts the grid back where it was on the way in', async () => {
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
     servePagesOf(20_000)
 
     renderLibrary()
@@ -1089,7 +1089,7 @@ describe('LibraryPage scroll position', () => {
   }
 
   it('puts the grid back when the reader comes back through history', async () => {
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
     servePagesOf(20_000)
     const user = userEvent.setup()
     renderLibraryFromAlbums()
@@ -1101,7 +1101,7 @@ describe('LibraryPage scroll position', () => {
   })
 
   it('opens at the top when the navigation leads to it', async () => {
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000), uid: 'p900' })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000), uid: 'p900' })
     servePagesOf(20_000)
     const user = userEvent.setup()
     renderLibraryFromAlbums()
@@ -1116,7 +1116,7 @@ describe('LibraryPage scroll position', () => {
   it('does not restore a position taken under different filters', async () => {
     // 4000px into a newest-first library is a different photo from 4000px into
     // the same library sorted oldest-first: the position belongs to the view.
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
     servePagesOf(20_000)
 
     renderLibrary('/?sort=oldest')
@@ -1128,7 +1128,7 @@ describe('LibraryPage scroll position', () => {
   it('restores across a timeline jump, which is the same view', async () => {
     // `at` records which month the scrubber is parked on — a position, not a
     // filter — so it must not split one view's memory in two.
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
     servePagesOf(20_000)
 
     renderLibrary('/?at=2013-05')

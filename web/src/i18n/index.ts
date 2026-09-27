@@ -1,5 +1,4 @@
 import i18n, { type i18n as I18n, type InitOptions } from 'i18next'
-import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
 
 import csCommon from './locales/cs/common.json'
@@ -19,10 +18,13 @@ export const resources = {
  * The i18next configuration, exported so tests can init a throwaway instance
  * with the exact options the app runs on.
  *
- * The only detector is `localStorage`, which the language switcher on the
- * account page writes to. Reading `navigator`/`htmlTag` too would hand an
- * English-locale browser an English UI on first visit; this instance is Czech,
- * so with no stored preference the `fallbackLng` decides and Czech wins.
+ * There is no language detector. The language belongs to the *account*, not
+ * the browser — two people share one — so it cannot be read before anybody has
+ * signed in: every page load starts in Czech, and once the session resolves
+ * `useAccountLanguage` (see `./accountLanguage`) switches to the signed-in
+ * account's own choice, kept per uid in localStorage. Reading
+ * `navigator`/`htmlTag` would hand an English-locale browser an English UI on
+ * first visit; this instance is Czech, so Czech is where every session starts.
  */
 export const initOptions: InitOptions = {
   resources,
@@ -30,14 +32,11 @@ export const initOptions: InitOptions = {
   // to. Silenced in every build, dev included: a console with nothing in it is
   // one where a real warning is visible at a glance.
   showSupportNotice: false,
+  lng: 'cs',
   fallbackLng: 'cs',
   supportedLngs: [...supportedLngs],
   defaultNS,
   ns: [defaultNS],
-  detection: {
-    order: ['localStorage'],
-    caches: ['localStorage'],
-  },
   interpolation: {
     escapeValue: false,
   },
@@ -54,7 +53,7 @@ export const initOptions: InitOptions = {
  * Subscribes to `languageChanged`, which i18next emits for the initial
  * resolution inside `init` as well as for every later switch, so calling this
  * before `init` covers first paint too. The resolved language wins over the
- * raw one: a stored `en-US` still renders the English resources and must be
+ * raw one: an `en-US` still renders the English resources and must be
  * announced as `en`. Returns the unsubscribe function.
  */
 export function syncDocumentLang(instance: I18n, root: HTMLElement = document.documentElement) {
@@ -73,6 +72,6 @@ syncDocumentLang(i18n)
 
 // Fire-and-forget init: i18next resolves synchronously for bundled resources,
 // so the app can render immediately while react-i18next subscribes to changes.
-void i18n.use(LanguageDetector).use(initReactI18next).init(initOptions)
+void i18n.use(initReactI18next).init(initOptions)
 
 export default i18n

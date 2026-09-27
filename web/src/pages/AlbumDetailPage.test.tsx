@@ -812,7 +812,7 @@ describe('AlbumDetailPage scroll position', () => {
     // The grid is a window over the album: it is 250 photos tall from the first
     // response, so the remembered offset has somewhere to land straight away and
     // nothing has to be walked back through to get there.
-    writeGridScroll('/albums/al_1', {
+    writeGridScroll('u1', '/albums/al_1', {
       count: 250,
       scrollY: 6000,
       snapshot: gridState(6000),

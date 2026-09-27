@@ -8,7 +8,7 @@ import {
   writeGridScroll,
 } from './gridScroll'
 
-const STORAGE_KEY = 'kukatko.gridScroll'
+const STORAGE_KEY = 'kukatko.gridScroll.u1'
 
 /** A plausible virtuoso snapshot at the given offset. */
 function snapshot(scrollTop: number): StateSnapshot {
@@ -51,9 +51,9 @@ describe('gridScrollKey', () => {
 
 describe('readGridScroll / writeGridScroll', () => {
   it('round-trips a remembered position', () => {
-    writeGridScroll('/', { count: 400, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 400, scrollY: 4000, snapshot: snapshot(3800) })
 
-    expect(readGridScroll('/')).toEqual({
+    expect(readGridScroll('u1', '/')).toEqual({
       count: 400,
       scrollY: 4000,
       snapshot: snapshot(3800),
@@ -61,55 +61,75 @@ describe('readGridScroll / writeGridScroll', () => {
   })
 
   it('keeps views apart', () => {
-    writeGridScroll('/', { count: 0, scrollY: 100, snapshot: snapshot(100) })
-    writeGridScroll('/albums/al_1', { count: 200, scrollY: 900, snapshot: snapshot(900) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 100, snapshot: snapshot(100) })
+    writeGridScroll('u1', '/albums/al_1', { count: 200, scrollY: 900, snapshot: snapshot(900) })
 
-    expect(readGridScroll('/')?.scrollY).toBe(100)
-    expect(readGridScroll('/albums/al_1')?.scrollY).toBe(900)
-    expect(readGridScroll('/labels/lb_1')).toBeNull()
+    expect(readGridScroll('u1', '/')?.scrollY).toBe(100)
+    expect(readGridScroll('u1', '/albums/al_1')?.scrollY).toBe(900)
+    expect(readGridScroll('u1', '/labels/lb_1')).toBeNull()
+  })
+
+  it('keeps accounts apart in one tab', () => {
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, uid: 'ph_9' })
+
+    expect(readGridScroll('u2', '/')).toBeNull()
+    // Neither the old build's global store nor another uid's is anybody's now.
+    window.sessionStorage.setItem(
+      'kukatko.gridScroll',
+      JSON.stringify({ '/': { count: 0, scrollY: 1 } }),
+    )
+    expect(readGridScroll('u2', '/')).toBeNull()
+    expect(readGridScroll('u1', '/')?.uid).toBe('ph_9')
+  })
+
+  it('reads and writes nothing without an account', () => {
+    writeGridScroll('', '/', { count: 0, scrollY: 4000 })
+
+    expect(window.sessionStorage.length).toBe(0)
+    expect(readGridScroll('', '/')).toBeNull()
   })
 
   it('remembers a position with no snapshot (a grid that is not virtualized)', () => {
-    writeGridScroll('/people/su_1', { count: 300, scrollY: 2400 })
+    writeGridScroll('u1', '/people/su_1', { count: 300, scrollY: 2400 })
 
-    expect(readGridScroll('/people/su_1')).toEqual({ count: 300, scrollY: 2400 })
+    expect(readGridScroll('u1', '/people/su_1')).toEqual({ count: 300, scrollY: 2400 })
   })
 
   it('reads and writes nothing under an empty key', () => {
-    writeGridScroll('', { count: 1, scrollY: 1 })
+    writeGridScroll('u1', '', { count: 1, scrollY: 1 })
 
-    expect(readGridScroll('')).toBeNull()
+    expect(readGridScroll('u1', '')).toBeNull()
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull()
   })
 
   it('drops the oldest views once there are too many', () => {
     for (let i = 0; i < GRID_SCROLL_MAX_ENTRIES + 2; i++) {
-      writeGridScroll(`/view-${String(i)}`, { count: 0, scrollY: i + 1 })
+      writeGridScroll('u1', `/view-${String(i)}`, { count: 0, scrollY: i + 1 })
     }
 
-    expect(readGridScroll('/view-0')).toBeNull()
-    expect(readGridScroll('/view-1')).toBeNull()
-    expect(readGridScroll('/view-2')?.scrollY).toBe(3)
-    expect(readGridScroll(`/view-${String(GRID_SCROLL_MAX_ENTRIES + 1)}`)).not.toBeNull()
+    expect(readGridScroll('u1', '/view-0')).toBeNull()
+    expect(readGridScroll('u1', '/view-1')).toBeNull()
+    expect(readGridScroll('u1', '/view-2')?.scrollY).toBe(3)
+    expect(readGridScroll('u1', `/view-${String(GRID_SCROLL_MAX_ENTRIES + 1)}`)).not.toBeNull()
   })
 
   it('keeps a view the reader keeps coming back to', () => {
-    writeGridScroll('/', { count: 0, scrollY: 10 })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 10 })
     for (let i = 0; i < GRID_SCROLL_MAX_ENTRIES - 1; i++) {
-      writeGridScroll(`/view-${String(i)}`, { count: 0, scrollY: 1 })
+      writeGridScroll('u1', `/view-${String(i)}`, { count: 0, scrollY: 1 })
     }
     // Re-visiting the library moves it back to the newest end, so the next few
     // views push out the ones that were not touched instead.
-    writeGridScroll('/', { count: 0, scrollY: 20 })
-    writeGridScroll('/fresh', { count: 0, scrollY: 1 })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 20 })
+    writeGridScroll('u1', '/fresh', { count: 0, scrollY: 1 })
 
-    expect(readGridScroll('/')?.scrollY).toBe(20)
-    expect(readGridScroll('/view-0')).toBeNull()
+    expect(readGridScroll('u1', '/')?.scrollY).toBe(20)
+    expect(readGridScroll('u1', '/view-0')).toBeNull()
   })
 
   it('ignores a stored value it cannot read', () => {
     window.sessionStorage.setItem(STORAGE_KEY, 'not json at all')
-    expect(readGridScroll('/')).toBeNull()
+    expect(readGridScroll('u1', '/')).toBeNull()
 
     // A snapshot missing its measurements would restore a nonsense layout, so it
     // is dropped while the plain offset beside it survives.
@@ -117,7 +137,7 @@ describe('readGridScroll / writeGridScroll', () => {
       STORAGE_KEY,
       JSON.stringify({ '/': { count: 5, scrollY: 300, snapshot: { scrollTop: 300 } } }),
     )
-    expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 5, scrollY: 300 })
 
     // Same for a range that is not a measurement, and for the shape the build
     // with a uniform square grid used to write.
@@ -127,7 +147,7 @@ describe('readGridScroll / writeGridScroll', () => {
         '/': { count: 5, scrollY: 300, snapshot: { scrollTop: 300, ranges: [{ size: 220 }] } },
       }),
     )
-    expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 5, scrollY: 300 })
 
     window.sessionStorage.setItem(
       STORAGE_KEY,
@@ -144,7 +164,7 @@ describe('readGridScroll / writeGridScroll', () => {
         },
       }),
     )
-    expect(readGridScroll('/')).toEqual({ count: 5, scrollY: 300 })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 5, scrollY: 300 })
   })
 
   // The measured shape of a real virtuoso snapshot: react-virtuoso closes the
@@ -160,13 +180,13 @@ describe('readGridScroll / writeGridScroll', () => {
       ],
       scrollTop: 3872,
     }
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: open })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: open })
 
-    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 4000, snapshot: open })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 4000, snapshot: open })
   })
 
   it('drops an entry with a nonsensical offset', () => {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ '/': { count: 1, scrollY: -5 } }))
-    expect(readGridScroll('/')).toBeNull()
+    expect(readGridScroll('u1', '/')).toBeNull()
   })
 })

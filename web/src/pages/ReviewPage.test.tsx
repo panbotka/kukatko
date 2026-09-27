@@ -15,7 +15,7 @@ import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { VERDICT_THRESHOLD } from '../lib/gestures'
 import { reviewReturnPath } from '../lib/reviewReturn'
-import { DAILY_STORAGE_KEY } from '../lib/reviewRounds'
+import { DAILY_STORAGE_PREFIX, localDayKey } from '../lib/reviewRounds'
 import { REVIEW_SNAPSHOT_KEY } from '../lib/reviewSnapshot'
 import { type Label } from '../services/organize'
 import { type Subject } from '../services/people'
@@ -268,7 +268,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   // The daily-mix flag lives in localStorage and outlives a test otherwise, so
   // every test starts on a day whose mix has not been played.
-  window.localStorage.removeItem(DAILY_STORAGE_KEY)
+  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u1`)
+  window.localStorage.removeItem(`${DAILY_STORAGE_PREFIX}.u2`)
   leaderboardMock.mockReset().mockResolvedValue(emptyBoard())
   queueMock.mockReset()
   answerMock.mockReset().mockResolvedValue({ result: 'assigned', answered: 1, remaining: 0 })
@@ -1009,7 +1010,7 @@ describe('ReviewPage rounds', () => {
     queueMock
       .mockResolvedValueOnce(makeQueue([faceQuestion('q1', 'Alice')]))
       .mockResolvedValue(makeQueue([faceQuestion('q2', 'Bob')], { round: nextRound(2) }))
-    renderPage()
+    renderSignedIn('u1')
     await screen.findByTestId('review-question')
 
     expect(screen.getByTestId('review-round-progress')).toHaveTextContent("Today's mix")
@@ -1019,7 +1020,18 @@ describe('ReviewPage rounds', () => {
     expect(within(summary).getByTestId('review-daily-done')).toHaveTextContent('Done for today')
     // „Splněno" is a fact about the day, not a locked door: the game goes on.
     expect(within(summary).getByTestId('review-next-round')).toHaveTextContent('One more round?')
-    expect(window.localStorage.getItem(DAILY_STORAGE_KEY)).not.toBeNull()
+    expect(window.localStorage.getItem(`${DAILY_STORAGE_PREFIX}.u1`)).not.toBeNull()
+  })
+
+  it('still offers today’s mix to the next player on a device where it was played', async () => {
+    // Somebody else finished today's mix in this browser; that is no reason to
+    // deny this player theirs.
+    window.localStorage.setItem(`${DAILY_STORAGE_PREFIX}.u1`, localDayKey(new Date()))
+    queueMock.mockResolvedValue(makeQueue([faceQuestion('q1', 'Alice')]))
+    renderSignedIn('u2')
+    await screen.findByTestId('review-question')
+
+    expect(screen.getByTestId('review-round-progress')).toHaveTextContent("Today's mix")
   })
 
   it('counts a combo of consecutive answers, which a skip breaks and an undo restores', async () => {

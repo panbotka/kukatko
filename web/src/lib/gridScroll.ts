@@ -1,5 +1,7 @@
 import { type ListRange, type StateSnapshot } from 'react-virtuoso'
 
+import { accountStorageKey } from './accountStorage'
+
 /**
  * How to reveal `row` given the rows currently on screen: `null` when it is
  * already comfortably visible (do not scroll at all), otherwise the alignment
@@ -20,13 +22,16 @@ export function revealAlign(row: number, visible: ListRange | null): 'start' | '
 }
 
 /**
- * sessionStorage key under which every remembered grid position lives. Session
+ * sessionStorage key prefix under which an account's remembered grid positions
+ * live; the account's uid completes it (see {@link accountStorageKey}). Session
  * storage rather than local: a position is worth restoring while the reader is
  * still in the tab they scrolled, and worth forgetting by the time they open the
  * app again tomorrow. It also keeps two tabs on the same library from dragging
- * each other around.
+ * each other around. Per account because a tab can change hands: whoever signs
+ * in next starts at the top of their own library, not at the photograph the
+ * previous reader left open. Cleared at sign-out.
  */
-const STORAGE_KEY = 'kukatko.gridScroll'
+export const GRID_SCROLL_PREFIX = 'kukatko.gridScroll'
 
 /**
  * How many views are remembered at once. A reader alternates between a handful
@@ -175,13 +180,17 @@ function parseState(value: unknown): GridScrollState | null {
 }
 
 /**
- * Reads the whole store. Failures (storage disabled, a half-written or foreign
- * value) yield an empty store: remembering a position is best-effort and must
- * never break a grid.
+ * Reads `user`'s whole store. Failures (storage disabled, a half-written or
+ * foreign value) and a missing user yield an empty store: remembering a
+ * position is best-effort and must never break a grid.
  */
-function readStore(): Store {
+function readStore(user: string): Store {
+  const storageKey = accountStorageKey(GRID_SCROLL_PREFIX, user)
+  if (storageKey === null) {
+    return {}
+  }
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY)
+    const raw = window.sessionStorage.getItem(storageKey)
     if (raw === null) {
       return {}
     }
@@ -203,24 +212,30 @@ function readStore(): Store {
   }
 }
 
-/** Reads the position remembered for one view, or null when there is none. */
-export function readGridScroll(key: string): GridScrollState | null {
+/**
+ * Reads the position `user` left in one view, or null when there is none —
+ * which is also the answer for no user at all, and for a position somebody else
+ * left in the same tab.
+ */
+export function readGridScroll(user: string, key: string): GridScrollState | null {
   if (key === '') {
     return null
   }
-  return readStore()[key] ?? null
+  return readStore(user)[key] ?? null
 }
 
 /**
- * Remembers a view's position, evicting the oldest entries once there are more
- * than {@link GRID_SCROLL_MAX_ENTRIES}. Re-writing a key moves it to the newest
- * end, so the views a reader keeps returning to are the ones that survive.
+ * Remembers `user`'s position in a view (nothing without a user), evicting the
+ * oldest entries once there are more than {@link GRID_SCROLL_MAX_ENTRIES}.
+ * Re-writing a key moves it to the newest end, so the views a reader keeps
+ * returning to are the ones that survive.
  */
-export function writeGridScroll(key: string, state: GridScrollState): void {
-  if (key === '') {
+export function writeGridScroll(user: string, key: string, state: GridScrollState): void {
+  const storageKey = accountStorageKey(GRID_SCROLL_PREFIX, user)
+  if (key === '' || storageKey === null) {
     return
   }
-  const store = readStore()
+  const store = readStore(user)
   // Object keys keep insertion order, so deleting before setting is what makes
   // the plain object an LRU list.
   // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -232,7 +247,7 @@ export function writeGridScroll(key: string, state: GridScrollState): void {
     delete store[stale]
   }
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+    window.sessionStorage.setItem(storageKey, JSON.stringify(store))
   } catch {
     // Best-effort: a full or disabled storage costs the reader their position,
     // nothing more.
@@ -250,12 +265,12 @@ export function writeGridScroll(key: string, state: GridScrollState): void {
  * position has no position for a photograph to sit in, and inventing an offset of
  * zero for it would send the reader to the top of a list they had scrolled.
  */
-export function rememberGridPhoto(key: string, uid: string): void {
-  const state = readGridScroll(key)
+export function rememberGridPhoto(user: string, key: string, uid: string): void {
+  const state = readGridScroll(user, key)
   if (state === null || uid === '' || state.uid === uid) {
     return
   }
-  writeGridScroll(key, { ...state, uid })
+  writeGridScroll(user, key, { ...state, uid })
 }
 
 /**
@@ -264,13 +279,13 @@ export function rememberGridPhoto(key: string, uid: string): void {
  * photograph as it lands, and a later visit — a reload, or the reader coming
  * back again having scrolled on since — must not be pulled to it a second time.
  */
-export function forgetGridPhoto(key: string): void {
-  const state = readGridScroll(key)
+export function forgetGridPhoto(user: string, key: string): void {
+  const state = readGridScroll(user, key)
   if (state?.uid === undefined) {
     return
   }
   const { uid: _forgotten, ...kept } = state
-  writeGridScroll(key, kept)
+  writeGridScroll(user, key, kept)
 }
 
 /**

@@ -5,7 +5,7 @@ import { type ReviewBreather, type ReviewQuestion } from '../services/review'
 
 import {
   buildRoundCards,
-  DAILY_STORAGE_KEY,
+  DAILY_STORAGE_PREFIX,
   dailyMixDone,
   localDayKey,
   markDailyMixDone,
@@ -97,11 +97,39 @@ describe('the daily mix flag', () => {
     } as unknown as Storage
     const today = new Date(2026, 7, 9, 10, 0)
 
-    expect(dailyMixDone(today, storage)).toBe(false)
-    markDailyMixDone(today, storage)
-    expect(store.get(DAILY_STORAGE_KEY)).toBe('2026-08-09')
-    expect(dailyMixDone(today, storage)).toBe(true)
-    expect(dailyMixDone(new Date(2026, 7, 10, 10, 0), storage)).toBe(false)
+    expect(dailyMixDone('u1', today, storage)).toBe(false)
+    markDailyMixDone('u1', today, storage)
+    expect(store.get(`${DAILY_STORAGE_PREFIX}.u1`)).toBe('2026-08-09')
+    expect(dailyMixDone('u1', today, storage)).toBe(true)
+    expect(dailyMixDone('u1', new Date(2026, 7, 10, 10, 0), storage)).toBe(false)
+  })
+
+  it('keeps one player’s finished mix from counting for another', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    } as unknown as Storage
+    const today = new Date(2026, 7, 9, 10, 0)
+
+    markDailyMixDone('u1', today, storage)
+    expect(dailyMixDone('u2', today, storage)).toBe(false)
+    // The global flag an older build wrote belongs to nobody in particular.
+    store.set(DAILY_STORAGE_PREFIX, '2026-08-09')
+    expect(dailyMixDone('u2', today, storage)).toBe(false)
+  })
+
+  it('neither reads nor writes without a player', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    } as unknown as Storage
+    const today = new Date(2026, 7, 9, 10, 0)
+
+    markDailyMixDone(undefined, today, storage)
+    expect(store.size).toBe(0)
+    expect(dailyMixDone(undefined, today, storage)).toBe(false)
   })
 
   it('survives storage that refuses to work', () => {
@@ -116,9 +144,9 @@ describe('the daily mix flag', () => {
       },
     } as unknown as Storage
     const now = new Date(2026, 7, 9)
-    expect(dailyMixDone(now, hostile)).toBe(false)
+    expect(dailyMixDone('u1', now, hostile)).toBe(false)
     expect(() => {
-      markDailyMixDone(now, hostile)
+      markDailyMixDone('u1', now, hostile)
     }).not.toThrow()
   })
 })

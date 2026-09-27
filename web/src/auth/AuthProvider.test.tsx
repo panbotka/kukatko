@@ -1,7 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { useTranslation } from 'react-i18next'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '../i18n'
+import { writeLanguagePreference } from '../i18n/accountLanguage'
 import { ApiError, NetworkError, type AuthSession } from '../services/auth'
 import { PasskeyError } from '../services/passkeys'
 
@@ -11,9 +14,11 @@ import { AuthProvider } from './AuthProvider'
 const fetchMe = vi.fn<() => Promise<AuthSession | null>>()
 const signIn = vi.fn<() => Promise<AuthSession>>()
 
+const signOut = vi.fn<() => Promise<void>>()
+
 vi.mock('../services/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/auth')>()
-  return { ...actual, fetchMe: () => fetchMe() }
+  return { ...actual, fetchMe: () => fetchMe(), logout: () => signOut() }
 })
 
 vi.mock('../services/passkeys', async (importOriginal) => {
@@ -187,5 +192,116 @@ describe('AuthProvider passkey sign-in', () => {
 
     expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
     expect(screen.getByTestId('user')).toHaveTextContent('-')
+  })
+})
+
+/** Signs out, and prints the status and the language the UI ended up in. */
+function SignOutProbe() {
+  const { status, logout } = useAuth()
+  // Through react-i18next, so a language switch re-renders the probe.
+  const { i18n: active } = useTranslation()
+  return (
+    <div>
+      <span data-testid="status">{status}</span>
+      <span data-testid="lang">{active.language}</span>
+      <button
+        onClick={() => {
+          void logout().catch(() => undefined)
+        }}
+      >
+        sign out
+      </button>
+    </div>
+  )
+}
+
+describe('AuthProvider browser state', () => {
+  beforeEach(async () => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    await i18n.changeLanguage('cs')
+  })
+
+  it('clears what the account left in storage on sign-out, and keeps the device preferences', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    window.localStorage.setItem('kukatko.announcement.dismissedAt.u1', 't1')
+    window.localStorage.setItem('kukatko.review.daily.u1', '2026-09-27')
+    window.sessionStorage.setItem('kukatko.gridScroll.u1', '{}')
+    window.localStorage.setItem('kukatko.grid.density', '"large"')
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(window.localStorage.getItem('kukatko.announcement.dismissedAt.u1')).toBeNull()
+    expect(window.localStorage.getItem('kukatko.review.daily.u1')).toBeNull()
+    expect(window.sessionStorage.getItem('kukatko.gridScroll.u1')).toBeNull()
+    expect(window.localStorage.getItem('kukatko.grid.density')).toBe('"large"')
+  })
+
+  it('clears it even when the server never heard the sign-out', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockRejectedValue(new NetworkError('Failed to fetch'))
+    window.localStorage.setItem('kukatko.announcement.dismissedAt.u1', 't1')
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    expect(window.localStorage.getItem('kukatko.announcement.dismissedAt.u1')).toBeNull()
+  })
+
+  it('opens in the signed-in account’s language and returns to Czech on sign-out', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue(SESSION)
+    signOut.mockResolvedValue(undefined)
+    writeLanguagePreference('u1', 'en')
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lang')).toHaveTextContent('en')
+    })
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('lang')).toHaveTextContent('cs')
+    })
+    // The choice is the account's and outlives the session.
+    expect(window.localStorage.getItem('kukatko.language.u1')).toBe('en')
+  })
+
+  it('does not hand one account’s language to the next', async () => {
+    fetchMe.mockResolvedValue(SESSION)
+    // Another account chose English in this browser, and the UI is still in it.
+    writeLanguagePreference('u2', 'en')
+    await i18n.changeLanguage('en')
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByTestId('status')).toHaveTextContent('authenticated')
+    await waitFor(() => {
+      expect(screen.getByTestId('lang')).toHaveTextContent('cs')
+    })
   })
 })

@@ -2734,19 +2734,19 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // The library was left scrolled, so there is a position for a photograph to
       // sit in; paging replaces the history entry, so only this keeps the way back
       // pointed at what is actually on stage.
-      writeGridScroll('/?sort=oldest', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/?sort=oldest', { count: 0, scrollY: 4000 })
 
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
-        expect(readGridScroll('/?sort=oldest')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/?sort=oldest')?.uid).toBe('b')
       })
       await screen.findByRole('link', { name: 'Next' })
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
 
       await waitFor(() => {
-        expect(readGridScroll('/?sort=oldest')?.uid).toBe('c')
+        expect(readGridScroll('u1', '/?sort=oldest')?.uid).toBe('c')
       })
     })
 
@@ -2756,7 +2756,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // pasted link or a push notification carries no view params, so its way back
       // names the bare library — but the reader never picked it from there, and a
       // later tap on "Knihovna" must not scroll to it.
-      writeGridScroll('/', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
 
       renderPage(true, '/photos/b')
       await screen.findByRole('heading', { name: 'Beach' })
@@ -2766,19 +2766,19 @@ describe('PhotoDetailPage — immersive viewer', () => {
         expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
       })
 
-      expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 4000 })
+      expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 4000 })
     })
 
     it('tells the library it was opened from, even with no view params', async () => {
       window.sessionStorage.clear()
       // The library at its defaults opens a photo at the bare URL; what says it
       // was opened from the library is the grid naming itself in the state.
-      writeGridScroll('/', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
 
       renderPage(true, { pathname: '/photos/b', state: { gridOrigin: '/' } })
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
-        expect(readGridScroll('/')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/')?.uid).toBe('b')
       })
       await screen.findByRole('link', { name: 'Next' })
 
@@ -2786,23 +2786,23 @@ describe('PhotoDetailPage — immersive viewer', () => {
       fireEvent.keyDown(document, { key: 'ArrowRight' })
 
       await waitFor(() => {
-        expect(readGridScroll('/')?.uid).toBe('c')
+        expect(readGridScroll('u1', '/')?.uid).toBe('c')
       })
     })
 
     it('tells the grid it came from, not the list its way back names', async () => {
       window.sessionStorage.clear()
-      writeGridScroll('/', { count: 0, scrollY: 4000 })
-      writeGridScroll('/notifications/nt_1', { count: 0, scrollY: 900 })
+      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/notifications/nt_1', { count: 0, scrollY: 900 })
 
       // A notification's grid opens its photographs at the bare URL too.
       renderPage(true, { pathname: '/photos/b', state: { gridOrigin: '/notifications/nt_1' } })
       await screen.findByRole('heading', { name: 'Beach' })
 
       await waitFor(() => {
-        expect(readGridScroll('/notifications/nt_1')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/notifications/nt_1')?.uid).toBe('b')
       })
-      expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 4000 })
+      expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 4000 })
     })
 
     it('pages on an arrow pressed before the list order has arrived', async () => {

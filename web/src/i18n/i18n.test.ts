@@ -1,18 +1,17 @@
 import { createInstance } from 'i18next'
-import LanguageDetector from 'i18next-browser-languagedetector'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import csCommon from './locales/cs/common.json'
 import enCommon from './locales/en/common.json'
 import appI18n, { initOptions, supportedLngs, syncDocumentLang } from './index'
 
-/** The localStorage key i18next-browser-languagedetector caches under. */
-const STORAGE_KEY = 'i18nextLng'
+/** The per-browser key an older build's language detector cached under. */
+const LEGACY_KEY = 'i18nextLng'
 
 /** Boots a throwaway i18next on the app's own options, as a first load would. */
 async function bootFreshInstance() {
   const instance = createInstance()
-  await instance.use(LanguageDetector).init(initOptions)
+  await instance.init(initOptions)
   return instance
 }
 
@@ -151,18 +150,20 @@ describe('i18n resource parity', () => {
 
 /**
  * Czech is the default of this instance, not merely its fallback string table:
- * a brand-new visitor with no stored preference must land on Czech regardless of
- * what their browser asks for. The language switcher (account page) is the only
- * thing that changes it, and it persists through localStorage.
+ * every page load lands on Czech regardless of what the browser asks for or what
+ * the browser remembers. The language is the signed-in *account's* choice (see
+ * `./accountLanguage`), applied once the session resolves — so nothing the
+ * i18next instance itself reads or writes may carry one person's choice to the
+ * next person on the same browser.
  */
 describe('default language', () => {
   beforeEach(() => {
-    window.localStorage.removeItem(STORAGE_KEY)
+    window.localStorage.clear()
   })
 
   it('resolves to Czech on a first visit, whatever the browser prefers', async () => {
     // Precondition: jsdom reports an English browser, so a `navigator` detector
-    // would win here. Without one, the Czech `fallbackLng` decides.
+    // would win here. Without one, Czech decides.
     expect(navigator.language.startsWith('cs')).toBe(false)
 
     const instance = await bootFreshInstance()
@@ -170,19 +171,22 @@ describe('default language', () => {
     expect(instance.resolvedLanguage).toBe('cs')
   })
 
-  it('restores a stored preference over the default', async () => {
-    window.localStorage.setItem(STORAGE_KEY, 'en')
+  it('ignores the language an older build cached for the whole browser', async () => {
+    // Whoever last switched to English under the old build is not necessarily
+    // who is opening the app now.
+    window.localStorage.setItem(LEGACY_KEY, 'en')
 
     const instance = await bootFreshInstance()
 
-    expect(instance.resolvedLanguage).toBe('en')
+    expect(instance.resolvedLanguage).toBe('cs')
   })
 
-  it('persists the chosen language so the next visit reopens in it', async () => {
+  it('leaves no per-browser trace of a switch', async () => {
     const instance = await bootFreshInstance()
     await instance.changeLanguage('en')
 
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('en')
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
+    expect(window.localStorage.length).toBe(0)
   })
 })
 
@@ -193,7 +197,7 @@ describe('default language', () => {
  */
 describe('document language', () => {
   beforeEach(() => {
-    window.localStorage.removeItem(STORAGE_KEY)
+    window.localStorage.clear()
   })
 
   /** Boots a fresh instance wired to a detached root, as the app wires its own. */
@@ -202,16 +206,19 @@ describe('document language', () => {
     root.lang = 'cs'
     const instance = createInstance()
     syncDocumentLang(instance, root)
-    await instance.use(LanguageDetector).init(initOptions)
+    await instance.init(initOptions)
     return { instance, root }
   }
 
-  it('is set on the initial resolution for a stored English preference', async () => {
-    window.localStorage.setItem(STORAGE_KEY, 'en')
+  it('is set on the initial resolution', async () => {
+    const root = document.createElement('html')
+    root.lang = 'en'
+    const instance = createInstance()
+    syncDocumentLang(instance, root)
 
-    const { root } = await bootSynced()
+    await instance.init(initOptions)
 
-    expect(root.lang).toBe('en')
+    expect(root.lang).toBe('cs')
   })
 
   it('follows every switch, cs → en → cs', async () => {
@@ -226,9 +233,9 @@ describe('document language', () => {
   })
 
   it('names the resolved language, not a regional variant', async () => {
-    window.localStorage.setItem(STORAGE_KEY, 'en-US')
+    const { instance, root } = await bootSynced()
 
-    const { root } = await bootSynced()
+    await instance.changeLanguage('en-US')
 
     expect(root.lang).toBe('en')
   })

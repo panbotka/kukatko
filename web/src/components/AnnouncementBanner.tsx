@@ -2,8 +2,13 @@ import { useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../auth/AuthContext'
 import { useAnnouncement } from '../hooks/useAnnouncement'
-import { readDismissedAnnouncement, writeDismissedAnnouncement } from '../lib/announcementDismissal'
+import {
+  announcementDismissalToken,
+  readDismissedAnnouncement,
+  writeDismissedAnnouncement,
+} from '../lib/announcementDismissal'
 
 import { Icon, type IconName } from './Icon'
 
@@ -22,9 +27,11 @@ const LEVEL_ICON: Record<'info' | 'warning', IconName> = {
  * and renders it as a dismissible {@link Alert} whose variant follows the level
  * (info / warning).
  *
- * Dismissal is keyed on the message's `updated_at`, persisted in localStorage: a
- * user who dismisses a message stops seeing *that* message, but a newly published
- * one (a fresh `updated_at`) reappears. The banner renders nothing while loading,
+ * Dismissal is keyed on the message's `updated_at` (or, lacking one, the message
+ * itself — see {@link announcementDismissalToken}), persisted in localStorage
+ * under the signed-in account: a user who dismisses a message stops seeing
+ * *that* message, but a newly published one reappears, and another account on
+ * the same browser still sees it. The banner renders nothing while loading,
  * when nothing is published, or once the current message has been dismissed.
  *
  * Note: routes rendered outside the app shell (the immersive photo viewer,
@@ -32,14 +39,22 @@ const LEVEL_ICON: Record<'info' | 'warning', IconName> = {
  */
 export function AnnouncementBanner() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const uid = user?.uid
   const announcement = useAnnouncement()
-  const [dismissedAt, setDismissedAt] = useState<string>(() => readDismissedAnnouncement())
+  // The dismissal made in this mount, so closing the banner sticks even where
+  // storage cannot remember it. Tagged with its account: it never hides the
+  // banner from whoever signs in next.
+  const [dismissed, setDismissed] = useState<{ user: string | undefined; token: string } | null>(
+    null,
+  )
 
   if (!announcement || announcement.message === '') {
     return null
   }
-  const updatedAt = announcement.updated_at ?? ''
-  if (updatedAt !== '' && dismissedAt === updatedAt) {
+  const token = announcementDismissalToken(announcement)
+  const dismissedHere = dismissed !== null && dismissed.user === uid && dismissed.token === token
+  if (dismissedHere || readDismissedAnnouncement(uid) === token) {
     return null
   }
 
@@ -52,8 +67,8 @@ export function AnnouncementBanner() {
       closeLabel={t('announcement.dismiss')}
       className="d-flex align-items-start gap-2"
       onClose={() => {
-        writeDismissedAnnouncement(updatedAt)
-        setDismissedAt(updatedAt)
+        writeDismissedAnnouncement(uid, token)
+        setDismissed({ user: uid, token })
       }}
     >
       <Icon name={LEVEL_ICON[level]} className="mt-1 flex-shrink-0" />

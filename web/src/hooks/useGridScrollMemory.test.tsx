@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 
 import {
@@ -26,9 +27,22 @@ function scrollWindowTo(y: number) {
   window.dispatchEvent(new Event('scroll'))
 }
 
+/** The signed-in reader whose positions the memory keeps; a test may switch it. */
+let reader = 'u1'
+
+/** Signs `reader` in: the memory is kept per account. */
+function SignedIn({ children }: { children: ReactNode }) {
+  const value = { user: { uid: reader } } as unknown as AuthContextValue
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
 /** A router's first entry, which it reports as a pop — as a load of the tab is. */
 function Router({ children }: { children: ReactNode }) {
-  return <MemoryRouter>{children}</MemoryRouter>
+  return (
+    <SignedIn>
+      <MemoryRouter>{children}</MemoryRouter>
+    </SignedIn>
+  )
 }
 
 /**
@@ -57,15 +71,18 @@ function renderNavigableGrid() {
     },
     {
       wrapper: ({ children }: { children: ReactNode }) => (
-        <MemoryRouter initialEntries={['/grid', '/elsewhere']} initialIndex={1}>
-          {children}
-        </MemoryRouter>
+        <SignedIn>
+          <MemoryRouter initialEntries={['/grid', '/elsewhere']} initialIndex={1}>
+            {children}
+          </MemoryRouter>
+        </SignedIn>
       ),
     },
   )
 }
 
 beforeEach(() => {
+  reader = 'u1'
   window.sessionStorage.clear()
   Object.defineProperty(window, 'scrollY', { value: 0, configurable: true, writable: true })
 })
@@ -82,11 +99,11 @@ describe('useGridScrollMemory', () => {
     // there and then, not on some later timer that never runs.
     unmount()
 
-    expect(readGridScroll('/')).toEqual({ count: 300, scrollY: 0, snapshot: snapshot(4000) })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 300, scrollY: 0, snapshot: snapshot(4000) })
   })
 
   it('hands back what a previous visit left', () => {
-    writeGridScroll('/', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
 
     const { result } = renderHook(() => useGridScrollMemory({ key: '/' }))
 
@@ -102,16 +119,16 @@ describe('useGridScrollMemory', () => {
   })
 
   it('leaves the remembered position alone when the reader touches nothing', () => {
-    writeGridScroll('/', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
 
     const { unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 300 }))
     unmount()
 
-    expect(readGridScroll('/')?.snapshot).toEqual(snapshot(3800))
+    expect(readGridScroll('u1', '/')?.snapshot).toEqual(snapshot(3800))
   })
 
   it('ignores the grid sitting at the top on its way to a deeper position', () => {
-    writeGridScroll('/', { count: 300, scrollY: 3800, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 300, scrollY: 3800, snapshot: snapshot(3800) })
 
     const { result, unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 300 }))
     // The grid reports itself at the top before the restore lands. Recording that
@@ -121,11 +138,11 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/')?.snapshot).toEqual(snapshot(3800))
+    expect(readGridScroll('u1', '/')?.snapshot).toEqual(snapshot(3800))
   })
 
   it('records the top once the grid has been seen away from it', () => {
-    writeGridScroll('/', { count: 300, scrollY: 3800, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 300, scrollY: 3800, snapshot: snapshot(3800) })
 
     const { result, unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 300 }))
     act(() => {
@@ -136,11 +153,11 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/')?.snapshot).toEqual(snapshot(0))
+    expect(readGridScroll('u1', '/')?.snapshot).toEqual(snapshot(0))
   })
 
   it('writes nothing while the caller is still restoring', () => {
-    writeGridScroll('/people/su_1', { count: 300, scrollY: 2400 })
+    writeGridScroll('u1', '/people/su_1', { count: 300, scrollY: 2400 })
 
     const { rerender, unmount } = renderHook(
       (props: UseGridScrollMemoryOptions) => useGridScrollMemory(props),
@@ -157,7 +174,7 @@ describe('useGridScrollMemory', () => {
     act(() => {
       scrollWindowTo(0)
     })
-    expect(readGridScroll('/people/su_1')?.scrollY).toBe(2400)
+    expect(readGridScroll('u1', '/people/su_1')?.scrollY).toBe(2400)
 
     rerender({ key: '/people/su_1', count: 300, restoring: false })
     act(() => {
@@ -165,7 +182,7 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/people/su_1')).toEqual({ count: 300, scrollY: 2400 })
+    expect(readGridScroll('u1', '/people/su_1')).toEqual({ count: 300, scrollY: 2400 })
   })
 
   it('records the window offset for a grid that reports no state of its own', () => {
@@ -176,7 +193,7 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/people/su_1')).toEqual({ count: 250, scrollY: 1800 })
+    expect(readGridScroll('u1', '/people/su_1')).toEqual({ count: 250, scrollY: 1800 })
   })
 
   it('records the window offset for a virtualized grid too', () => {
@@ -191,11 +208,11 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 1800, snapshot: snapshot(1800) })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 1800, snapshot: snapshot(1800) })
   })
 
   it('ignores the window sitting at the top on its way to a deeper position', () => {
-    writeGridScroll('/', { count: 0, scrollY: 3800, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 3800, snapshot: snapshot(3800) })
 
     const { unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 0 }))
     // The document is still filling and pinned to its top. Recording that would
@@ -205,11 +222,11 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(readGridScroll('/')).toEqual({ count: 0, scrollY: 3800, snapshot: snapshot(3800) })
+    expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 3800, snapshot: snapshot(3800) })
   })
 
   it('hands the photograph the viewer recorded to the grid, once', () => {
-    writeGridScroll('/', { count: 0, scrollY: 3800, snapshot: snapshot(3800), uid: 'ph_9' })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 3800, snapshot: snapshot(3800), uid: 'ph_9' })
 
     const first = renderHook(() => useGridScrollMemory({ key: '/' }))
     expect(first.result.current.restoreUid).toBe('ph_9')
@@ -235,8 +252,8 @@ describe('useGridScrollMemory', () => {
     rerender({ key: '/?sort=oldest', count: 0 })
     unmount()
 
-    expect(readGridScroll('/?sort=oldest')).toBeNull()
-    expect(readGridScroll('/')?.snapshot).toEqual(snapshot(4000))
+    expect(readGridScroll('u1', '/?sort=oldest')).toBeNull()
+    expect(readGridScroll('u1', '/')?.snapshot).toEqual(snapshot(4000))
   })
 
   it('stays inert without a key', () => {
@@ -247,11 +264,58 @@ describe('useGridScrollMemory', () => {
     })
     unmount()
 
-    expect(window.sessionStorage.getItem('kukatko.gridScroll')).toBeNull()
+    expect(window.sessionStorage.getItem('kukatko.gridScroll.u1')).toBeNull()
+  })
+
+  it('does not hand one reader the position another left in the same tab', () => {
+    writeGridScroll('u1', '/', { count: 300, scrollY: 4000, snapshot: snapshot(3800), uid: 'ph_9' })
+    reader = 'u2'
+
+    const { result } = renderHook(() => useGridScrollMemory({ key: '/' }))
+
+    expect(result.current.restoreFrom).toBeUndefined()
+    expect(result.current.restoreScrollY).toBe(0)
+    expect(result.current.restoreUid).toBeUndefined()
+    // …and the first reader's memory is theirs, still whole, when they are back.
+    expect(readGridScroll('u1', '/')?.uid).toBe('ph_9')
+  })
+
+  it('writes a reader’s position under their own account', () => {
+    reader = 'u2'
+    const { result, unmount } = renderHook(() => useGridScrollMemory({ key: '/', count: 300 }))
+
+    act(() => {
+      result.current.onStateChanged(snapshot(4000))
+    })
+    unmount()
+
+    expect(readGridScroll('u2', '/')?.snapshot).toEqual(snapshot(4000))
+    expect(readGridScroll('u1', '/')).toBeNull()
+  })
+
+  it('remembers nothing outside a signed-in session', () => {
+    const { result, unmount } = renderBareHook(
+      () => useGridScrollMemory({ key: '/', count: 300 }),
+      {
+        wrapper: ({ children }: { children: ReactNode }) => <MemoryRouter>{children}</MemoryRouter>,
+      },
+    )
+
+    act(() => {
+      result.current.onStateChanged(snapshot(4000))
+    })
+    unmount()
+
+    expect(window.sessionStorage.length).toBe(0)
   })
 
   it('restores on a pop back to the view', () => {
-    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800), uid: 'ph_9' })
+    writeGridScroll('u1', '/grid', {
+      count: 300,
+      scrollY: 4000,
+      snapshot: snapshot(3800),
+      uid: 'ph_9',
+    })
     const { result } = renderNavigableGrid()
 
     act(() => {
@@ -265,7 +329,12 @@ describe('useGridScrollMemory', () => {
   })
 
   it('starts a view pushed to at its top, however deep it was left', () => {
-    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800), uid: 'ph_9' })
+    writeGridScroll('u1', '/grid', {
+      count: 300,
+      scrollY: 4000,
+      snapshot: snapshot(3800),
+      uid: 'ph_9',
+    })
     const { result } = renderNavigableGrid()
 
     // A navigation link: the reader asked for this list, not for their place in it.
@@ -281,7 +350,7 @@ describe('useGridScrollMemory', () => {
   })
 
   it('does not restore a view replaced into either', () => {
-    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
     const { result } = renderNavigableGrid()
 
     act(() => {
@@ -293,7 +362,7 @@ describe('useGridScrollMemory', () => {
   })
 
   it('remembers the top of a view pushed to, so a later pop does not revive the old place', () => {
-    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
     const { result } = renderNavigableGrid()
     act(() => {
       void result.current.navigate('/grid')
@@ -306,13 +375,13 @@ describe('useGridScrollMemory', () => {
       void result.current.navigate('/photos/ph_1')
     })
 
-    const left = readGridScroll('/grid')
+    const left = readGridScroll('u1', '/grid')
     expect(left?.scrollY).toBe(0)
     expect(left?.snapshot).toBeUndefined()
   })
 
   it('keeps a restore in progress when the view is replaced in place', () => {
-    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    writeGridScroll('u1', '/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
     const { result } = renderNavigableGrid()
     act(() => {
       void result.current.navigate(-1)

@@ -253,10 +253,13 @@ here.
   (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) have no banner — immersive views,
   acceptable. Via `useAnnouncement` (fetch on-mount + **polling ~60 s**, so a freshly published message
   appears without a reload) + a dismissible `<Alert>` with a variant per `level` (`info`→`info-circle`
-  icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-user dismiss keyed on `updated_at`**
-  in localStorage (`lib/announcementDismissal.ts`: `readDismissedAnnouncement`/`writeDismissedAnnouncement`,
-  mirrors `viewerChromeHint.ts`) — dismissing hides the current message, but a newly published one (new `updated_at`)
-  **shows again** (not a plain boolean); empty message / loading / already dismissed → renders nothing; texts
+  icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-account dismiss keyed on `updated_at`**
+  in localStorage under `kukatko.announcement.dismissedAt.<uid>` (`lib/announcementDismissal.ts`:
+  `announcementDismissalToken`/`readDismissedAnnouncement`/`writeDismissedAnnouncement`, see **Browser storage**
+  below) — dismissing hides the current message for **this account only**, but a newly published one (new
+  `updated_at`) **shows again** (not a plain boolean); a message **without** `updated_at` is keyed on its level +
+  text instead, so it can still be dismissed and returns only when a different message is published; a dismissal
+  storage cannot hold still closes the banner for the mount; empty message / loading / already dismissed → renders nothing; texts
   `announcement.*` (cs/en)),
   `WhatsNewPanel` (`components/library/`, **"what's new since your last visit"** — the digest above the
   library grid, rendered by `LibraryPage` **before `FilterBar`** because it is about the library as a whole,
@@ -291,8 +294,8 @@ here.
   question asked a fortnight ago is still on the line and one they already answered is not. It goes quiet
   the moment they have replied, because it is an invitation rather than a tally, and it is how the work
   queue reaches a person who never opens the task list. **Dismiss is keyed on the digest's `since`** in localStorage
-  (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/`writeDismissedWhatsNew`, mirrors
-  `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
+  under `kukatko.whatsNew.dismissedSince.<uid>` (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/
+  `writeDismissedWhatsNew`, mirrors `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
   for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
   brings it back. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
   viewers included. Texts `whatsNew.*` (cs/en, with the Czech plural categories `_one/_few/_many/_other`
@@ -554,7 +557,9 @@ here.
   tap target on a coarse pointer; also used in the error alert of the same pages. Tests: `BackLink.test.tsx`),
   `LanguageSwitcher` (cs/en button group, `aria-pressed` on the active one; **it does not sit in the navbar** —
   it lives in the Jazyk section on `AccountPage`, because only Czechs use this instance and a permanent
-  spot in the bar would be a waste. The i18next language detector persists the choice to localStorage),
+  spot in the bar would be a waste. The choice is the **account's**: it writes `kukatko.language.<uid>`
+  (`i18n/accountLanguage.ts` `writeLanguagePreference`, null-safe outside a session, where the switch applies but
+  is remembered for nobody) and `AuthProvider` applies it at every sign-in, see **Browser storage** below),
   `MultiSelect` (**shared searchable multi-select** for collections that grow without limit —
   albums and labels: typing narrows the offering **case- and diacritic-insensitive** via `lib/text`
   `foldedIncludes`, each choice is **added** (not replaced), the selected item **disappears from the list**
@@ -5695,8 +5700,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   session's own bookkeeping: `round` (index/size/`played`/tallies/`daily`/`last`), `combo` (consecutive answers —
   a skip resets it, an undo restores what it was), `session` (the yes/no/skip split), `touched` (the photos
   decided about, capped at `TOUCHED_LIMIT = 24` for the closing mosaic), `milestone` (10/25/50, via
-  `milestoneCrossed`) and the **daily-mix flag** in `localStorage` (`dailyMixDone`/`markDailyMixDone`, keyed on
-  the **local** day — a UTC key would flip over mid-evening). `advance()` moves past a card that
+  `milestoneCrossed`) and the **daily-mix flag** in `localStorage` (`dailyMixDone`/`markDailyMixDone`, under
+  `kukatko.review.daily.<uid>` so the second family member to play today still gets their daily mix; without a
+  user it neither reads nor writes; the value is the **local** day — a UTC key would flip over mid-evening). `advance()` moves past a card that
   asks nothing and deliberately touches **no** counter — a pause that scored points would not be a pause.
   Answers stay **optimistic** (`answer` moves the UI
   immediately and the request finishes in the background; a failure falls into `failed` for an explicit retry — it never blocks
@@ -6025,7 +6031,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (`https://github.com/panbotka/kukatko/commit/<sha>`, or `null` unless the commit is 7–40 hex characters,
   which is what keeps a development build's `none` from becoming a dead link);
   `gridScroll.ts` = the **session store of grid positions** behind `useGridScrollMemory`: one
-  `sessionStorage` entry (`kukatko.gridScroll`) holding `{snapshot?,scrollY,count,uid?}` per view key — the
+  `sessionStorage` entry **per account** (`kukatko.gridScroll.<uid>`; every read/write/`rememberGridPhoto`/
+  `forgetGridPhoto` takes the user first, `useGridScrollMemory` reads it null-safely from `AuthContext` and
+  `PhotoDetailPage` passes its own — no user = nothing remembered, the grid starts at its top) holding `{snapshot?,scrollY,count,uid?}` per view key — the
   snapshot being virtuoso's `StateSnapshot` (`{ranges,scrollTop}`, the measured row sizes plus the offset),
   whose **last range is open-ended**: virtuoso closes its size tree with `endIndex: Infinity`, which `JSON`
   can only write as `null`, so a null end is the only end a *stored* snapshot ever has and reads back as the
@@ -7018,15 +7026,19 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   back to the stored string. The dictionary lives in TypeScript rather than in `common.json` because
   it is keyed by *stored data*, not by a UI key. Tests `countryNames.test.ts`);
   typed keys via `types/i18next.d.ts` — add new strings to **both** locale files;
-  **Czech is the default**, no hard-coded UI texts — everything through `t()`. The only detector is
-  `localStorage` (which `LanguageSwitcher` from `AccountPage` writes to); `navigator`/`htmlTag` are **deliberately
-  not** in `detection.order`, otherwise a browser set to English would get an English UI on the first visit —
-  without a stored choice it is `fallbackLng: 'cs'` that decides. **`showSupportNotice: false`** keeps
+  **Czech is the default**, no hard-coded UI texts — everything through `t()`. There is **no language
+  detector** (`i18next-browser-languagedetector` was dropped, and with it the per-browser `i18nextLng` key): the
+  language belongs to the *account*, not the browser, so every page load starts at `lng: 'cs'` and
+  `useAccountLanguage` (`i18n/accountLanguage.ts`, called from `AuthProvider`) switches to the signed-in account's
+  `kukatko.language.<uid>` once the session resolves — `cs` for an account that never chose, `cs` again once
+  nobody is signed in, untouched while the session is `loading`/`unreachable`. A signed-in English reader
+  therefore sees Czech for the moment `/auth/me` takes on a reload. `navigator`/`htmlTag` are never read either,
+  otherwise a browser set to English would get an English UI on the first visit. **`showSupportNotice: false`** keeps
   i18next's `console.info` ad for Locize out of the console — in every build, dev included, because a
   console with nothing in it is one where a real warning is visible at a glance (guarded by the
   `console noise` case in `i18n.test.ts`, which clears the once-per-page global flag first). **`<html lang>`
   follows the UI language**: `syncDocumentLang(i18n)` subscribes to `languageChanged` *before* `init`, so the
-  initial resolution (a stored `en` included — no flash of the `cs` that `index.html` ships) and every later
+  initial resolution and every later
   switch set `document.documentElement.lang` to the **resolved** language; a stale attribute would make a screen
   reader read English with Czech pronunciation. Nothing else assumes a static `lang` — `Intl` formatting takes
   `i18n.language` explicitly and there are no `:lang()`/hyphenation rules (the `document language` cases in
@@ -7039,8 +7051,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (`i18n.language`). **Drift-guard tests** `i18n.test.ts` (cs/en have identical *logical* keys after
   the plural suffix is stripped, no empty values, each language has all of its CLDR plural categories,
   the interpolation `{{var}}` variables match across languages; plus **default-language tests** over
-  a fresh instance from `initOptions`: an empty localStorage → `cs` even under an English browser,
-  a stored choice wins, a language change is stored) + `screens.test.tsx` (representative
+  a fresh instance from `initOptions`: `cs` even under an English browser, a legacy `i18nextLng` is ignored,
+  a language change leaves nothing in storage; the per-account half is `accountLanguage.test.ts`) +
+  `screens.test.tsx` (representative
   screens — the navbar + tiles — render without missing-key warnings in both cs and en via
   `cloneInstance({saveMissing})`, plural rendering 1/3/5, a language switch rewrites the visible text)),
   `styles/viewTransition.css` (**the grid ⇄ viewer morph's choreography** — imported last in `main.tsx`, and
@@ -7640,3 +7653,30 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   503/500/network rollback, unsubscribe with the server forgetful or unreachable, `isPushEnabled` over
   on/off/no key/5xx/network, `isIosOutsideInstalledApp` over iPhone tab, iPad-as-Mac, installed app,
   desktop Mac and Android).
+- **Browser storage:** what the app keeps in `localStorage`/`sessionStorage`, and whose it is. Two people share
+  one browser, so the rule is: anything that records what an **account** has seen, dismissed, played or
+  scrolled carries the account's uid in its key (`lib/accountStorage.ts` `accountStorageKey(prefix, user)` →
+  `prefix.<uid>`, null without a user — the pattern `pushPromptAnswer.ts` set), and **sign-out removes it**.
+  A key with another uid in it is simply never read, so another account's state reads as absent; storage that
+  is unreadable, foreign or corrupt fails the safe way (banner shown, panel shown, grid at its top, daily mix
+  offered). The one other pattern in the app — a stored value that records its user and is refused on a
+  mismatch — is `lib/reviewSnapshot.ts`, which keeps a single key because there is one game per tab.
+  **User-scoped, cleared at sign-out:** `kukatko.announcement.dismissedAt.<uid>` (local),
+  `kukatko.whatsNew.dismissedSince.<uid>` (local), `kukatko.review.daily.<uid>` (local),
+  `kukatko.gridScroll.<uid>` (session), plus `kukatko.review.run` (session, user recorded inside) and
+  `kukatko.lastPickedLocation` (session — where one account was geotagging is not where the next starts).
+  **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
+  find it) and `kukatko.pushPrompt.answered.<uid>` (a push subscription belongs to the browser and outlives the
+  session; forgetting the answer would only ask again). **Per device by design, never cleared:**
+  `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`
+  and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
+  `logout` calls `clearSignedOutState()` (`auth/signOutStorage.ts`) in its `finally`, so the storage is cleared
+  even when the server never heard the request; it walks both storages and removes every key equal to one of
+  `SIGN_OUT_CLEARED` or starting with it plus a dot — every account's copy, and the global keys older builds
+  wrote (`kukatko.announcement.dismissedAt`, `kukatko.review.daily`, `kukatko.gridScroll`, `i18nextLng`),
+  which are no longer read by anything. Nothing here has a server-side copy. A new stored key must be placed in
+  one of these three groups (and, if it is account state, added to `SIGN_OUT_CLEARED`). Tests:
+  `signOutStorage.test.ts` (every cleared key in both storages, every survivor, a storage that throws),
+  `AuthProvider.test.tsx` (sign-out clears, also on a network failure; the language follows the account), and a
+  "written as A, not honoured as B" case per key in `AnnouncementBanner`, `WhatsNewPanel`, `reviewRounds`,
+  `ReviewPage`, `gridScroll`, `useGridScrollMemory`, `accountLanguage` and `LanguageSwitcher` tests.

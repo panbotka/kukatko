@@ -1,5 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
+import i18n from '../i18n'
+import { useAccountLanguage } from '../i18n/accountLanguage'
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
 import {
@@ -13,6 +15,7 @@ import {
 } from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
+import { clearSignedOutState } from './signOutStorage'
 
 interface AuthState {
   status: AuthStatus
@@ -28,6 +31,11 @@ const INITIAL_STATE: AuthState = { status: 'loading', session: null }
  *
  * It publishes four statuses, not three: a backend it could not reach is
  * reported as `unreachable`, never as signed out. See {@link AuthStatus}.
+ *
+ * It also owns the browser state that belongs to a session: the UI language
+ * follows the signed-in account (see {@link useAccountLanguage}), and signing
+ * out removes what the account left in storage (see
+ * {@link clearSignedOutState}), so the next person on this browser starts clean.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(INITIAL_STATE)
@@ -89,13 +97,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applySession(await signInWithPasskey())
   }, [applySession])
 
+  // The storage is cleared whether or not the server heard the sign-out: the
+  // person clicking it is leaving this browser either way.
   const logout = useCallback(async () => {
     try {
       await authService.logout()
     } finally {
+      clearSignedOutState()
       applySession(null)
     }
   }, [applySession])
+
+  useAccountLanguage(i18n, state.status, state.session?.user.uid)
 
   const refresh = useCallback(() => loadSession(), [loadSession])
 

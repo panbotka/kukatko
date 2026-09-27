@@ -938,7 +938,7 @@ describe('SubjectPage scroll position', () => {
     // The gallery this person's photos were browsed in was 250 long and scrolled
     // to 2400px; coming back with one page would be a document too short to hold
     // that offset at all.
-    writeGridScroll('/people/sj_1', { count: 250, scrollY: 2400 })
+    writeGridScroll('u1', '/people/sj_1', { count: 250, scrollY: 2400 })
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     fetchPhotosMock.mockImplementation((_uid, params) => {
       const offset = params.offset ?? 0
@@ -975,7 +975,7 @@ describe('SubjectPage scroll position', () => {
   }
 
   it('starts at the top with one page when a link leads to it', async () => {
-    writeGridScroll('/people/sj_1', { count: 250, scrollY: 2400 })
+    writeGridScroll('u1', '/people/sj_1', { count: 250, scrollY: 2400 })
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     fetchPhotosMock.mockImplementation((_uid, params) => {
       const offset = params.offset ?? 0
@@ -1013,7 +1013,7 @@ describe('SubjectPage scroll position', () => {
     window.dispatchEvent(new Event('scroll'))
     unmount()
 
-    expect(readGridScroll('/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
+    expect(readGridScroll('u1', '/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
   })
 })
 

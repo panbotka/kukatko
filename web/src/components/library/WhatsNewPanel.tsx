@@ -86,9 +86,10 @@ function DigestLine({
  *
  * It renders nothing at all while loading, on a first-ever visit, when the visit
  * found nothing, or once the reader has closed it. Dismissal is keyed on the
- * digest's `since` (see {@link readDismissedWhatsNew}), which is constant for
- * the length of a visit: closing the panel closes it for this visit — through
- * every reload and every walk around the app — and the next visit brings its own.
+ * digest's `since` and stored under the reader's own account (see
+ * {@link readDismissedWhatsNew}); `since` is constant for the length of a visit:
+ * closing the panel closes it for this visit — through every reload and every
+ * walk around the app — and the next visit brings its own.
  *
  * Every role sees it, viewers included: learning what the family added is not a
  * curation power.
@@ -97,7 +98,9 @@ export function WhatsNewPanel() {
   const { t, i18n } = useTranslation()
   const summary = useWhatsNew()
   const { user } = useAuth()
-  const [dismissedSince, setDismissedSince] = useState<string>(() => readDismissedWhatsNew())
+  const [dismissedSince, setDismissedSince] = useState<string>(() =>
+    readDismissedWhatsNew(user?.uid),
+  )
   // Shut by default and not remembered: the resting state of the library is the
   // one that shows photographs, and a digest is read once and then acted on (or
   // not) rather than kept open across visits.
@@ -164,7 +167,7 @@ export function WhatsNewPanel() {
       dismissible
       closeLabel={t('whatsNew.dismiss')}
       onClose={() => {
-        writeDismissedWhatsNew(since)
+        writeDismissedWhatsNew(user?.uid, since)
         setDismissedSince(since)
       }}
     >

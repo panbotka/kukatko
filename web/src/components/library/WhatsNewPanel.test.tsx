@@ -21,8 +21,8 @@ vi.mock('../../services/whatsNew', async (importOriginal) => {
 const { fetchWhatsNew } = await import('../../services/whatsNew')
 const fetchMock = vi.mocked(fetchWhatsNew)
 
-/** The localStorage key the panel persists its dismissal under. */
-const DISMISS_KEY = 'kukatko.whatsNew.dismissedSince'
+/** The localStorage key the panel persists u1's dismissal under. */
+const DISMISS_KEY = 'kukatko.whatsNew.dismissedSince.u1'
 
 /** A digest with one of everything, for the render and link assertions. */
 const FULL_DIGEST: WhatsNew = {
@@ -40,19 +40,19 @@ const FULL_DIGEST: WhatsNew = {
  * A signed-in session, optionally linked to a person of the library — which is
  * what decides whether the "new photos of you" line can appear at all.
  */
-function auth(subjectUid: string | null = null): AuthContextValue {
+function auth(subjectUid: string | null = null, uid = 'u1'): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'User One', subject_uid: subjectUid },
+    user: { uid, username: 'u', display_name: 'User One', subject_uid: subjectUid },
     role: 'viewer',
   } as unknown as AuthContextValue
 }
 
 /** Renders the panel within the i18n provider and a router (it renders links). */
-function renderPanel(subjectUid: string | null = null) {
+function renderPanel(subjectUid: string | null = null, uid = 'u1') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(subjectUid)}>
+      <AuthContext.Provider value={auth(subjectUid, uid)}>
         <MemoryRouter>
           <WhatsNewPanel />
         </MemoryRouter>
@@ -199,6 +199,19 @@ describe('WhatsNewPanel', () => {
     renderPanel()
     expect(await screen.findByText("What's new")).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '9 new photos' })).toBeInTheDocument()
+  })
+
+  it('keeps showing the digest one account closed to the next account', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(FULL_DIGEST)
+
+    const first = renderPanel(null, 'u1')
+    expect(await screen.findByText("What's new")).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss the summary' }))
+    first.unmount()
+
+    renderPanel(null, 'u2')
+    expect(await screen.findByText("What's new")).toBeInTheDocument()
   })
 
   it('uses Czech plural forms for 1, 2 and 5 photos', async () => {

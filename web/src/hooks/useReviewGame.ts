@@ -349,7 +349,7 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
   /** The session's answer count, for the milestone comparison. */
   const answeredRef = useRef(restored?.answered ?? 0)
   /** Whether today's mix is already behind the player (read once, then tracked). */
-  const dailyDoneRef = useRef(dailyMixDone(new Date()))
+  const dailyDoneRef = useRef(dailyMixDone(user, new Date()))
 
   /** Replaces the queue in both the ref (truth) and state (render mirror). */
   const commitQueue = useCallback((next: ReviewCard[]) => {
@@ -586,18 +586,21 @@ export function useReviewGame(source: ReviewSource = 'both', user?: string): Rev
    * snapshot of what was just played, and — if this was the day's first round —
    * the daily flag is stamped so "Pro dnešek splněno" is told the truth.
    */
-  const closeRoundIfDone = useCallback((next: ReviewCard[]) => {
-    if (next.length > 0 || roundRef.current.size === 0) {
-      return
-    }
-    const finished = roundRef.current
-    const completedDaily = finished.daily && !dailyDoneRef.current
-    if (completedDaily) {
-      markDailyMixDone(new Date())
-      dailyDoneRef.current = true
-    }
-    setSummary({ ...finished, completedDaily })
-  }, [])
+  const closeRoundIfDone = useCallback(
+    (next: ReviewCard[]) => {
+      if (next.length > 0 || roundRef.current.size === 0) {
+        return
+      }
+      const finished = roundRef.current
+      const completedDaily = finished.daily && !dailyDoneRef.current
+      if (completedDaily) {
+        markDailyMixDone(user, new Date())
+        dailyDoneRef.current = true
+      }
+      setSummary({ ...finished, completedDaily })
+    },
+    [user],
+  )
 
   const answer = useCallback(
     (verdict: ReviewAnswer) => {

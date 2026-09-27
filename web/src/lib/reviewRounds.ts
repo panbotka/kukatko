@@ -1,6 +1,8 @@
 import { type Photo } from '../services/photos'
 import { type ReviewBreather, type ReviewQuestion } from '../services/review'
 
+import { accountStorageKey } from './accountStorage'
+
 /**
  * The round arithmetic of the review game, kept DOM-free so the decisions that
  * actually shape a session — where a breather lands, when a milestone fires,
@@ -104,8 +106,13 @@ export function milestoneCrossed(before: number, after: number): number | null {
   return reached
 }
 
-/** Where the "today's mix is done" flag lives; one key, one date string. */
-export const DAILY_STORAGE_KEY = 'kukatko.review.daily'
+/**
+ * Where the "today's mix is done" flag lives: a date string under this prefix
+ * completed by the player's uid (see {@link accountStorageKey}). Per account
+ * because the family shares devices, and the second person to play today is
+ * owed their own daily mix. Cleared at sign-out.
+ */
+export const DAILY_STORAGE_PREFIX = 'kukatko.review.daily'
 
 /**
  * The local calendar day as `YYYY-MM-DD`. Local, not UTC: "today" is the
@@ -132,19 +139,39 @@ function safeStorage(): Storage | undefined {
   }
 }
 
-/** Whether today's mix has already been finished on this device. */
-export function dailyMixDone(now: Date, storage: Storage | undefined = safeStorage()): boolean {
+/**
+ * Whether `user` has already finished today's mix on this device. False without
+ * a user and for a flag stamped by anybody else: an unknown answer offers the
+ * daily mix again, which is the harmless way to be wrong.
+ */
+export function dailyMixDone(
+  user: string | undefined,
+  now: Date,
+  storage: Storage | undefined = safeStorage(),
+): boolean {
+  const key = accountStorageKey(DAILY_STORAGE_PREFIX, user)
+  if (key === null) {
+    return false
+  }
   try {
-    return storage?.getItem(DAILY_STORAGE_KEY) === localDayKey(now)
+    return storage?.getItem(key) === localDayKey(now)
   } catch {
     return false
   }
 }
 
-/** Records that today's mix has been finished. */
-export function markDailyMixDone(now: Date, storage: Storage | undefined = safeStorage()): void {
+/** Records that `user` has finished today's mix; a no-op without a user. */
+export function markDailyMixDone(
+  user: string | undefined,
+  now: Date,
+  storage: Storage | undefined = safeStorage(),
+): void {
+  const key = accountStorageKey(DAILY_STORAGE_PREFIX, user)
+  if (key === null) {
+    return
+  }
   try {
-    storage?.setItem(DAILY_STORAGE_KEY, localDayKey(now))
+    storage?.setItem(key, localDayKey(now))
   } catch {
     // A device that cannot remember simply gets today's mix offered again.
   }

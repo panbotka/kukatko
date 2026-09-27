@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import { NavigationType, useNavigationType } from 'react-router-dom'
 import { type StateSnapshot } from 'react-virtuoso'
+
+import { AuthContext } from '../auth/AuthContext'
 
 import {
   forgetGridPhoto,
@@ -118,15 +120,26 @@ interface GridArrival {
   remembered: GridScrollState | null
 }
 
+/**
+ * The signed-in reader's uid, whose positions these are (see
+ * {@link import('../lib/gridScroll').GRID_SCROLL_PREFIX}). Read null-safely: a
+ * grid rendered outside an auth provider has nobody to remember for, and so
+ * simply starts at its top.
+ */
+function useScrollOwner(): string {
+  return useContext(AuthContext)?.user?.uid ?? ''
+}
+
 /** {@link useRememberedGridScroll}, plus whether the arrival was a pop at all. */
 function useGridArrival(key: string): GridArrival {
+  const user = useScrollOwner()
   const navigationType = useNavigationType()
   const navigationTypeRef = useRef(navigationType)
   navigationTypeRef.current = navigationType
   return useMemo(() => {
     const pop = navigationTypeRef.current === NavigationType.Pop
-    return { pop, remembered: pop ? readGridScroll(key) : null }
-  }, [key])
+    return { pop, remembered: pop ? readGridScroll(user, key) : null }
+  }, [user, key])
 }
 
 /**
@@ -150,12 +163,14 @@ export function useGridScrollMemory({
   count = 0,
   restoring = false,
 }: UseGridScrollMemoryOptions): GridScrollMemory {
+  const user = useScrollOwner()
   const arrival = useGridArrival(key)
   const remembered = arrival.remembered
 
   // Everything the writer needs lives in refs: recording a scroll offset must
   // never re-render the grid that is being scrolled.
   const keyRef = useRef(key)
+  const userRef = useRef(user)
   const countRef = useRef(count)
   countRef.current = count
   const restoringRef = useRef(restoring)
@@ -194,7 +209,7 @@ export function useGridScrollMemory({
     if (snapshotRef.current !== undefined) {
       state.snapshot = snapshotRef.current
     }
-    writeGridScroll(keyRef.current, state)
+    writeGridScroll(userRef.current, keyRef.current, state)
   }, [])
 
   const schedule = useCallback(() => {
@@ -235,14 +250,16 @@ export function useGridScrollMemory({
 
   // A new view starts with a memory of its own: write out whatever the previous
   // one still had pending, then drop it so it cannot be written under this key.
+  // A different reader is a different memory too, written out the same way.
   useEffect(() => {
-    if (keyRef.current !== key) {
+    if (keyRef.current !== key || userRef.current !== user) {
       persist(pendingCountRef.current)
     }
     keyRef.current = key
+    userRef.current = user
     // The photograph the viewer left against this view is consumed here: the grid
     // gets it once, through `restoreUid`, and the store keeps only the position.
-    forgetGridPhoto(key)
+    forgetGridPhoto(user, key)
     restoreTopRef.current = restoreTop(remembered)
     snapshotRef.current = undefined
     scrollYRef.current = 0
@@ -252,7 +269,7 @@ export function useGridScrollMemory({
     // *not* restored is showing its top, and the entry an earlier visit left is no
     // longer where the reader is — so the top is what gets written on the way out.
     dirtyRef.current = !arrival.pop
-  }, [key, arrival, remembered, persist])
+  }, [key, user, arrival, remembered, persist])
 
   // Every grid here scrolls the document — the virtualized wall runs virtuoso
   // with `useWindowScroll`, the person gallery renders its own tiles — so the

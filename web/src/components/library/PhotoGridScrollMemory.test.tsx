@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { type ListRange, type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import { useGridScrollMemory } from '../../hooks/useGridScrollMemory'
 import i18n from '../../i18n'
 import { readGridScroll, writeGridScroll } from '../../lib/gridScroll'
@@ -106,6 +107,9 @@ function virtuosoSnapshot(scrollTop: number): StateSnapshot {
   }
 }
 
+/** The signed-in reader the grid remembers positions for. */
+const READER = { user: { uid: 'u1' } } as unknown as AuthContextValue
+
 /** The memory hook wired to the grid, nothing else. */
 function GridWithMemory({ photos }: { photos: readonly Photo[] }) {
   const scroll = useGridScrollMemory({ key: '/', count: photos.length })
@@ -128,9 +132,11 @@ function GridWithMemory({ photos }: { photos: readonly Photo[] }) {
 function GridPage({ photos = PHOTOS }: { photos?: readonly Photo[] }) {
   return (
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter>
-        <GridWithMemory photos={photos} />
-      </MemoryRouter>
+      <AuthContext.Provider value={READER}>
+        <MemoryRouter>
+          <GridWithMemory photos={photos} />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>
   )
 }
@@ -158,14 +164,16 @@ function ViewerProbe() {
 function RoutedGridPage() {
   return (
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/', '/elsewhere']} initialIndex={1}>
-        <NavigateCapture />
-        <Routes>
-          <Route path="/" element={<GridWithMemory photos={PHOTOS} />} />
-          <Route path="/elsewhere" element={null} />
-          <Route path="/photos/:uid" element={<ViewerProbe />} />
-        </Routes>
-      </MemoryRouter>
+      <AuthContext.Provider value={READER}>
+        <MemoryRouter initialEntries={['/', '/elsewhere']} initialIndex={1}>
+          <NavigateCapture />
+          <Routes>
+            <Route path="/" element={<GridWithMemory photos={PHOTOS} />} />
+            <Route path="/elsewhere" element={null} />
+            <Route path="/photos/:uid" element={<ViewerProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>
   )
 }
@@ -223,11 +231,11 @@ describe('a grid page remembering where it was left', () => {
     reportRange(36, 42)
     unmount()
 
-    expect(readGridScroll('/')?.scrollY).toBe(4000)
+    expect(readGridScroll('u1', '/')?.scrollY).toBe(4000)
   })
 
   it('reveals the photograph the reader was last looking at', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: PHOTOS.length,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
@@ -245,7 +253,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('waits for the restore to land before revealing anything', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: PHOTOS.length,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
@@ -266,7 +274,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('does not move for a photograph that is already on screen', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: PHOTOS.length,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
@@ -282,7 +290,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('does not chase a photograph that is no longer in the list', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: PHOTOS.length,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
@@ -297,7 +305,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('gives up on the reveal once the reader has taken the wall over', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: PHOTOS.length,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
@@ -316,7 +324,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('restores the position when the reader comes back through history', () => {
-    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: virtuosoSnapshot(3872) })
+    writeGridScroll('u1', '/', { count: 0, scrollY: 4000, snapshot: virtuosoSnapshot(3872) })
     render(<RoutedGridPage />)
 
     act(() => {
@@ -327,7 +335,7 @@ describe('a grid page remembering where it was left', () => {
   })
 
   it('starts at the top when the reader navigates to it', () => {
-    writeGridScroll('/', {
+    writeGridScroll('u1', '/', {
       count: 0,
       scrollY: 4000,
       snapshot: virtuosoSnapshot(3872),
