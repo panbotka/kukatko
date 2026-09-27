@@ -1016,7 +1016,9 @@ here.
   **reveals `restoreUid`** — the photograph the reader last had open from this view — once the restore has
   landed (the first range a restored grid reports is its *pre-restore* layout, so the reveal waits for the
   window to have moved; `revealAlign` then leaves the wall alone when the tile is already on screen, and the
-  whole debt is dropped the moment the reader scrolls, keys or taps for themselves).
+  whole debt is dropped the moment the reader scrolls, keys or taps for themselves). Each tile gets
+  `scroll.key` as its `gridOrigin` prop and carries it into the viewer in the link's state, next to the
+  rendition handoff, so the viewer records paging against this grid and no other.
   The grid remembers nothing itself, the page does — see `useGridScrollMemory`),
   `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
   histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
@@ -2757,10 +2759,16 @@ here.
   the grid (the browser restores scroll), otherwise (a direct link/refresh — caught by `location.key === 'default'`
   at mount, or by the router state `{directEntry: true}` from `lib/directEntry` that a page forwarding here by
   *replacing* its own first entry attaches, since the replacement hands the viewer a fresh key: the
-  notification deeplink with one photograph) `backHref(view)` reconstructs the list URL. That same reconstructed URL names the list in the
-  terms its grid remembers itself under, and the viewer stamps the photograph on stage into that entry
-  (`rememberGridPhoto`) on every step: paging *replaces* the history entry, so without it the way back would
-  land on the photograph first clicked rather than the one being looked at. **Opened from the sorting game**
+  notification deeplink with one photograph) `backHref(view)` reconstructs the list URL. The viewer stamps the
+  photograph on stage into the entry of the list it **came from** (`rememberGridPhoto`) on every step: paging
+  *replaces* the history entry, so without it the way back would land on the photograph first clicked rather
+  than the one being looked at. Which list that is comes from the router state `{gridOrigin}` a grid's tile
+  (and the library's keyboard open) attaches — its own scroll key, forwarded through paging and panel changes —
+  and, without it, from the view params through the very URL `backHref` reconstructs. With neither (a pasted
+  link, a push notification, a „similar photos" hop: all the bare `/photos/{uid}`, whose way back names the
+  bare library) **nothing is stamped** — stamping the library's entry there is what later sent a tap on
+  „Knihovna" scrolling to a photo the reader never picked from it. The params alone cannot decide it: the
+  library at its defaults opens photographs at that same bare URL. **Opened from the sorting game**
   (router state `{reviewReturn}`, read through `lib/reviewReturn`, which accepts only the game's own `/review`
   route), the arrow gives way to a labelled pill **„Zpět k třídění"** (`photo.backToReview`,
   `.kk-viewer__return`) as the first item *in* the top bar's flow — so the name yields to it rather than
@@ -5427,9 +5435,17 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   until the grid has been seen away from its top. Nothing here re-renders the caller (refs + a 200 ms debounced write, flushed on unmount and on
   `pagehide`, so leaving for a photo always records the position), and an untouched view is never written, so
   opening a photo without scrolling keeps what the last visit left. The restore length (`count`) is read back
-  by the page itself (`readGridScroll(key)?.count`) because it feeds the list hook *above* this one.
-  Both ways back are the same history pop — the browser's Back button and the viewer's „Zpět na seznam"
-  (`PhotoDetailPage` closes with `navigate(-1)`) — so both restore. Wired into `LibraryPage` (windowed, so
+  by the page itself (`useRememberedGridScroll(key)?.count`) because it feeds the list hook *above* this one.
+  **Restoring is gated on a history `POP`** (`useNavigationType`, taken once per key so a same-view `REPLACE`
+  such as the `at` param moving cannot cancel a restore mid-flight): a remembered position answers „where was
+  I?", and only a pop asks it. Both ways back are the same pop — the browser's Back button and the viewer's
+  „Zpět na seznam" (`PhotoDetailPage` closes with `navigate(-1)`) — so both restore, and react-router reports a
+  load or reload of the tab as a pop too, so a refresh keeps the reader's place. A `PUSH` (a nav link, a link
+  from another page) asked for *the list*: it gets its top and the default page count — before the gate,
+  clicking „Knihovna" or „Oblíbené" landed mid-list after a burst of eagerly refetched pages. A view arrived at
+  without a pop counts as touched (its top is what the reader sees), so the entry an earlier visit left is
+  overwritten on the way out and a photo opened from it unscrolled comes back to the top, not to that older
+  position. `GridScrollMemory.key` is the key itself, which the grid hands to the viewer (see `GridOrigin`). Wired into `LibraryPage` (windowed, so
   `count` stays 0: the grid is as tall as the whole result from its first response), `AlbumDetailPage`,
   `LabelDetailPage`, `SubjectPage` (no `PhotoGrid`: it restores the window offset itself once the gallery is
   as long as it was), `FavoritesPage`, `SearchPage` and `PlacesPage`.
@@ -6021,7 +6037,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (`rememberGridPhoto(key,uid)` — it updates an existing entry and never invents one), consumed on the grid's
   next mount (`forgetGridPhoto`) so a reload is not pulled to it a second time; paging with the arrows
   *replaces* the history entry, so without it the way back would always land on the photograph first clicked.
-  Plus
+  `GridOrigin` (`{gridOrigin: key}`) is the navigation state a grid attaches to its link into the viewer, and
+  `gridOrigin(state)` reads it back (untrusted: undefined for anything else) — it is what tells a viewer opened
+  *from a list* apart from one that was not. Plus
   `gridScrollKey(pathname,search)` — the path and the query that defines the *result set*, sorted for
   stability and with the position-only params (`at`, `info`) dropped, so a timeline jump keys to the same
   view while a changed filter keys to a different one and can never restore an unrelated position. Session

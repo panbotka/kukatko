@@ -60,7 +60,7 @@ import { backHref, DETAIL_DEFAULTS, detailQueryString, detailToParams } from '..
 import { isDirectEntry } from '../lib/directEntry'
 import { displayFrame } from '../lib/faceGeometry'
 import { formatCaptureParts, formatDateTimeMinutes } from '../lib/format'
-import { gridScrollKey, rememberGridPhoto } from '../lib/gridScroll'
+import { type GridOrigin, gridOrigin, gridScrollKey, rememberGridPhoto } from '../lib/gridScroll'
 import {
   editDelta,
   editedFrame,
@@ -320,7 +320,13 @@ export function PhotoDetailPage() {
     if (next === panel && !searchParams.has(LEGACY_INFO_PARAM)) {
       return
     }
-    setSearchParams((prev) => writeViewerPanel(prev, next), { replace: true })
+    // The entry's state rides along: it names the list this photo was opened
+    // from and the game to return to, and a replacement without it would forget
+    // both for the rest of the browse.
+    setSearchParams((prev) => writeViewerPanel(prev, next), {
+      replace: true,
+      state: location.state as unknown,
+    })
   }
 
   // Whether we can step back through history to restore the grid's exact scroll
@@ -349,17 +355,41 @@ export function PhotoDetailPage() {
   // Tell the list this photo came from which photograph is on stage. Paging with
   // the arrows *replaces* the history entry rather than adding one, so without
   // this the way back would always land on the photograph first clicked, however
-  // far the reader has paged since. The list is named the way its own grid
-  // remembers itself — the very URL the Back link reconstructs — and the grid only
-  // ever *reveals* what it is told, so naming a list nobody scrolled costs
-  // nothing.
+  // far the reader has paged since.
+  //
+  // Only the list it *came from*, though — never one it merely names. A grid says
+  // which one it is in the navigation state (`GridOrigin`), and that is the list
+  // told. A viewer reached without that state is told nothing unless its view
+  // params scope it to a list (an album, a label, a search…), and then it is the
+  // very list the Back link reconstructs. With neither — a pasted link, a push
+  // notification, a "similar photos" hop — Back would name the bare library, and
+  // stamping the library's remembered entry with a photograph the reader never
+  // picked from it is what sent a later tap on "Knihovna" scrolling to it.
+  const origin = gridOrigin(location.state)
   const listScrollKey = useMemo(() => {
+    if (origin !== undefined) {
+      return origin
+    }
+    if (detailQuery === '') {
+      return undefined
+    }
     const back = new URL(backHref(view), window.location.origin)
     return gridScrollKey(back.pathname, back.search)
-  }, [view])
+  }, [origin, detailQuery, view])
   useEffect(() => {
-    rememberGridPhoto(listScrollKey, uid)
+    if (listScrollKey !== undefined) {
+      rememberGridPhoto(listScrollKey, uid)
+    }
   }, [listScrollKey, uid])
+  // The state paging carries forward: the game to return to and the list this
+  // photo came from, so the next photograph is recorded against that list too.
+  const pagingState = useMemo<(Partial<ReviewReturn> & Partial<GridOrigin>) | undefined>(
+    () =>
+      reviewReturnNav === undefined && origin === undefined
+        ? undefined
+        : { ...reviewReturnNav, ...(origin === undefined ? {} : { gridOrigin: origin }) },
+    [reviewReturnNav, origin],
+  )
 
   // The neighbour's detail URL, carrying the originating order/scope so prev/next
   // keeps paging the same list, plus the open panel so the very view being read
@@ -380,10 +410,10 @@ export function PhotoDetailPage() {
   const goToNeighbor = useCallback(
     (neighbor: NeighborPhoto | null): void => {
       if (neighbor !== null) {
-        void navigate(neighborTo(neighbor.uid), { replace: true, state: reviewReturnNav })
+        void navigate(neighborTo(neighbor.uid), { replace: true, state: pagingState })
       }
     },
-    [navigate, neighborTo, reviewReturnNav],
+    [navigate, neighborTo, pagingState],
   )
 
   // A direction pressed before the list order was known, kept until it lands. A
@@ -1594,7 +1624,7 @@ export function PhotoDetailPage() {
         <Link
           to={neighborTo(neighbors.prev.uid)}
           replace
-          state={reviewReturnNav}
+          state={pagingState}
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--prev"
           aria-label={t('photo.prev')}
           title={t('photo.prev')}
@@ -1606,7 +1636,7 @@ export function PhotoDetailPage() {
         <Link
           to={neighborTo(neighbors.next.uid)}
           replace
-          state={reviewReturnNav}
+          state={pagingState}
           className="kk-viewer__btn kk-viewer__btn--icon kk-viewer__nav kk-viewer__nav--next"
           aria-label={t('photo.next')}
           title={t('photo.next')}

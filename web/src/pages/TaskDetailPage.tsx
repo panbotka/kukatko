@@ -24,11 +24,11 @@ import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
 import { TaskViewToggle } from '../components/tasks/TaskViewToggle'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
+import { useGridScrollMemory, useRememberedGridScroll } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
 import { detailQueryString } from '../lib/detailView'
-import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
+import { gridScrollKey } from '../lib/gridScroll'
 import { isTaskListView, TASK_DEFAULTS, type TaskView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
@@ -141,7 +141,7 @@ export function TaskDetailPage() {
     [view, uid],
   )
   const scrollKey = gridScrollKey(location.pathname, location.search)
-  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
+  const restoreCount = useRememberedGridScroll(scrollKey)?.count ?? 0
   // A task about the library rather than about photographs has no wall at all:
   // the photo list is fetched only once the task is known to be over something
   // — a request for an empty group would only come back empty — and nothing

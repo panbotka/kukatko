@@ -272,3 +272,30 @@ export function forgetGridPhoto(key: string): void {
   const { uid: _forgotten, ...kept } = state
   writeGridScroll(key, kept)
 }
+
+/**
+ * The navigation state a grid attaches to the link into the viewer: the key it
+ * remembers itself under ({@link gridScrollKey}). It is what tells a viewer that
+ * was opened *from a list* apart from one that was not. The view params alone
+ * cannot: the library at its defaults opens a photograph at the bare
+ * `/photos/{uid}`, exactly the URL a pasted link, a push notification or a
+ * "similar photos" strip produces — and the viewer names the library as the list
+ * of every one of them.
+ */
+export interface GridOrigin {
+  /** Scroll key of the grid the photograph was opened from. */
+  gridOrigin: string
+}
+
+/**
+ * The grid key an opaque history state names as the viewer's origin, or
+ * undefined when it names none. History state is untrusted: it outlives the
+ * navigation that wrote it and is shared with other builds of the app.
+ */
+export function gridOrigin(state: unknown): string | undefined {
+  if (typeof state !== 'object' || state === null) {
+    return undefined
+  }
+  const origin = (state as Partial<Record<keyof GridOrigin, unknown>>).gridOrigin
+  return typeof origin === 'string' && origin !== '' ? origin : undefined
+}

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { formatDuration } from '../../lib/format'
+import { type GridOrigin } from '../../lib/gridScroll'
 import { isPlayableClip } from '../../lib/mediaKind'
 import { type PhotoHandoff } from '../../lib/photoHandoff'
 import { photoLabel } from '../../lib/photoTitle'
@@ -114,6 +115,13 @@ export interface PhotoTileProps {
    */
   detailQuery?: string
   /**
+   * Scroll key of the grid this tile sits in, handed to the viewer in the
+   * navigation state (see `lib/gridScroll`'s `GridOrigin`) so the photograph the
+   * reader pages to is recorded against this grid — and only a viewer opened from
+   * a grid records anything. Undefined for a grid that remembers no position.
+   */
+  gridOrigin?: string
+  /**
    * When true the tile shows the keyboard focus highlight — the target of the
    * grid's arrow/`hjkl` navigation. Purely visual; it does not steal DOM focus.
    */
@@ -156,6 +164,21 @@ function clipBadgeLabel(photo: Photo, pending: boolean, t: TFunction): string {
 }
 
 /**
+ * The navigation state the tile's link into the viewer carries: the rendition it
+ * painted, when that may be handed over, and the grid it sits in, when it has
+ * one. Undefined when there is neither, as the link always carried before.
+ */
+function openState(
+  handoff: PhotoHandoff | undefined,
+  gridOrigin: string | undefined,
+): (Partial<PhotoHandoff> & Partial<GridOrigin>) | undefined {
+  if (handoff === undefined && gridOrigin === undefined) {
+    return undefined
+  }
+  return { ...handoff, ...(gridOrigin === undefined ? {} : { gridOrigin }) }
+}
+
+/**
  * A single thumbnail tile in the library grid — square by default, or the shape
  * of its own photograph when the caller has laid the box out for it (`fill`,
  * which is what the justified wall does). By default the tile links to the
@@ -176,6 +199,7 @@ export function PhotoTile({
   favoritable = false,
   onFavoriteChange,
   detailQuery,
+  gridOrigin,
   focused = false,
   fill = false,
   tileWidth,
@@ -307,11 +331,12 @@ export function PhotoTile({
       // rather than let the viewer mint a second, differently-signed one for the
       // same rendition. A tile showing a square crop hands over nothing: that
       // crop is not the photograph (see `lib/photoHandoff`).
-      state={
-        source.aspect
-          ? ({ uid: photo.uid, previewUrl: thumb.src } satisfies PhotoHandoff)
-          : undefined
-      }
+      // The grid names itself too, so the viewer records the photograph it pages
+      // to against this list and no other.
+      state={openState(
+        source.aspect ? { uid: photo.uid, previewUrl: thumb.src } : undefined,
+        gridOrigin,
+      )}
       className="kk-tile__media d-block"
       // A justified tile is sized by its row (which has already applied the
       // photo's own proportions); every other grid squares it.

@@ -528,6 +528,7 @@ export function PhotoGrid({
                 favoritable={favoritable && !coarse}
                 onFavoriteChange={onFavoriteChange}
                 detailQuery={detailQuery}
+                gridOrigin={scroll?.key}
                 focused={tile.index === focusedIndex}
                 extras={tileExtras?.(photo)}
               />

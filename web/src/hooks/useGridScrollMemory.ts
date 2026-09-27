@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { NavigationType, useNavigationType } from 'react-router-dom'
 import { type StateSnapshot } from 'react-virtuoso'
 
 import {
@@ -28,8 +29,8 @@ export interface UseGridScrollMemoryOptions {
   /**
    * How many photos the grid currently holds, remembered alongside the position
    * so a list that grows by appending pages can load its way back to the same
-   * length before restoring. The page reads it back straight from
-   * {@link import('../lib/gridScroll').readGridScroll} — it needs the number
+   * length before restoring. The page reads it back through
+   * {@link useRememberedGridScroll} — it needs the number
    * *before* the list hook it feeds, which is upstream of this one. Leave at 0
    * for a windowed list (the library), which is as tall as the whole result from
    * its first response.
@@ -54,6 +55,13 @@ export interface UseGridScrollMemoryOptions {
  * neither mistake shows up in a test that exercises the hook by itself.
  */
 export interface GridScrollMemory {
+  /**
+   * The key this view is remembered under. The grid hands it to the viewer with
+   * every photograph it opens (see {@link import('../lib/gridScroll').GridOrigin}),
+   * which is how the viewer knows the list it came from — and that it came from
+   * one at all.
+   */
+  key: string
   /**
    * The remembered virtuoso state — the offset plus the row measurements that
    * give it meaning; undefined when this view has no remembered position.
@@ -83,6 +91,45 @@ function restoreTop(remembered: GridScrollState | null): number {
 }
 
 /**
+ * The position remembered for a view — but only when the reader is being taken
+ * *back* to it. A remembered position answers "where was I?", and only a history
+ * `POP` asks that: Back, the viewer's own "back to list" (which is the same pop),
+ * and a load or reload of the tab (which react-router also reports as a pop, so a
+ * refresh keeps the reader's place). Every other arrival — a navigation link, a
+ * link from another page — is a `PUSH` that asked for *this list*, and gets its
+ * top: restoring there landed the reader mid-list after a burst of fetching, the
+ * remembered length being refetched eagerly before the offset could be applied.
+ *
+ * The answer is taken once per view, as the view becomes current: a `REPLACE` that
+ * keeps the view (a transient param such as `at` changing as the grid scrolls)
+ * must not flip a restore already in progress into none. Pages that grow by
+ * appending pages read their `initialCount` from this too, so the eager refetch
+ * goes with the restore.
+ */
+export function useRememberedGridScroll(key: string): GridScrollState | null {
+  return useGridArrival(key).remembered
+}
+
+/** How a view became current: by a history pop, and what it may restore. */
+interface GridArrival {
+  /** Whether the view was reached by a history pop — the only restoring arrival. */
+  pop: boolean
+  /** The position to restore; always null for an arrival that is not a pop. */
+  remembered: GridScrollState | null
+}
+
+/** {@link useRememberedGridScroll}, plus whether the arrival was a pop at all. */
+function useGridArrival(key: string): GridArrival {
+  const navigationType = useNavigationType()
+  const navigationTypeRef = useRef(navigationType)
+  navigationTypeRef.current = navigationType
+  return useMemo(() => {
+    const pop = navigationTypeRef.current === NavigationType.Pop
+    return { pop, remembered: pop ? readGridScroll(key) : null }
+  }, [key])
+}
+
+/**
  * Remembers where a photo grid was scrolled to, per view, for the length of the
  * browser session — so stepping into a photo and coming back (with the browser's
  * Back button or the viewer's own "back to list", which is the same history pop)
@@ -92,14 +139,19 @@ function restoreTop(remembered: GridScrollState | null): number {
  * every position, so it must not restore one taken under a different result set.
  * Nothing here re-renders the caller — the position lives in refs and reaches
  * sessionStorage through a debounced write — and every step is best-effort: a
- * view with nothing remembered simply starts at the top, as before.
+ * view with nothing remembered simply starts at the top, as before. Restoring is
+ * gated on a history pop ({@link useRememberedGridScroll}); a view arrived at any
+ * other way starts at its top, and that top is what it remembers until the reader
+ * scrolls — so a photograph opened from it without scrolling comes back to the
+ * top, not to a position from an earlier visit the reader was not shown.
  */
 export function useGridScrollMemory({
   key,
   count = 0,
   restoring = false,
 }: UseGridScrollMemoryOptions): GridScrollMemory {
-  const remembered = useMemo(() => readGridScroll(key), [key])
+  const arrival = useGridArrival(key)
+  const remembered = arrival.remembered
 
   // Everything the writer needs lives in refs: recording a scroll offset must
   // never re-render the grid that is being scrolled.
@@ -195,8 +247,12 @@ export function useGridScrollMemory({
     snapshotRef.current = undefined
     scrollYRef.current = 0
     movedRef.current = false
-    dirtyRef.current = false
-  }, [key, remembered, persist])
+    // A view restored from memory keeps that memory until the reader moves: its
+    // untouched initial state is the restore still on its way. A view that was
+    // *not* restored is showing its top, and the entry an earlier visit left is no
+    // longer where the reader is — so the top is what gets written on the way out.
+    dirtyRef.current = !arrival.pop
+  }, [key, arrival, remembered, persist])
 
   // Every grid here scrolls the document — the virtualized wall runs virtuoso
   // with `useWindowScroll`, the person gallery renders its own tiles — so the
@@ -232,6 +288,7 @@ export function useGridScrollMemory({
   }, [persist])
 
   return {
+    key,
     restoreFrom: remembered?.snapshot,
     restoreScrollY: remembered?.scrollY ?? 0,
     restoreUid: remembered?.uid,

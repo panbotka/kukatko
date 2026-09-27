@@ -955,6 +955,43 @@ describe('SubjectPage scroll position', () => {
     expect(fetchPhotosMock.mock.calls.map((c) => c[1].offset)).toEqual([0, 100, 200])
   })
 
+  /**
+   * The person's page reached from another page by a link — a push, which asks
+   * for the gallery and not for a place in it — with Back to return to it by.
+   */
+  function renderReachedByLink() {
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth(true)}>
+          <MemoryRouter initialEntries={['/people']}>
+            <Routes>
+              <Route path="/people" element={<Link to="/people/sj_1">open person</Link>} />
+              <Route path="/people/:uid" element={<SubjectPage />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('starts at the top with one page when a link leads to it', async () => {
+    writeGridScroll('/people/sj_1', { count: 250, scrollY: 2400 })
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
+    fetchPhotosMock.mockImplementation((_uid, params) => {
+      const offset = params.offset ?? 0
+      return Promise.resolve(gallery(offset, 100, offset + 100 < 250 ? offset + 100 : null))
+    })
+    const user = userEvent.setup()
+    renderReachedByLink()
+
+    await user.click(screen.getByRole('link', { name: 'open person' }))
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    // No eager walk to the remembered length, and no jump into the middle of it.
+    expect(fetchPhotosMock.mock.calls.map((c) => c[1].offset)).toEqual([0])
+    expect(scrollTo).not.toHaveBeenCalled()
+  })
+
   it('starts at the top for a person it has never shown', async () => {
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))

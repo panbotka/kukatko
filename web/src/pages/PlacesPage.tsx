@@ -14,10 +14,10 @@ import { SelectionBar } from '../components/organize/SelectionBar'
 import { PlaceRow } from '../components/places/PlaceRow'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
+import { useGridScrollMemory, useRememberedGridScroll } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useScopedPhotos } from '../hooks/useScopedPhotos'
-import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
+import { gridScrollKey } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { resolvePlaceDrill } from '../lib/placeDrill'
 import { useUrlState } from '../lib/urlState'
@@ -102,7 +102,7 @@ export function PlacesPage() {
   // the tile it was opened from. This list only ever grew by appending pages, so
   // it also has to come back as long as it was before the offset means anything.
   const scrollKey = gridScrollKey(location.pathname, location.search)
-  const restoreCount = useMemo(() => readGridScroll(scrollKey)?.count ?? 0, [scrollKey])
+  const restoreCount = useRememberedGridScroll(scrollKey)?.count ?? 0
   const { photos, total, status, loadingMore, moreError, loadMore, retry } = useScopedPhotos(
     scope,
     params,

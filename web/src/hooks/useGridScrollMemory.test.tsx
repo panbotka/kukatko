@@ -1,10 +1,16 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook as renderBareHook } from '@testing-library/react'
+import { type ReactNode } from 'react'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 
-import { useGridScrollMemory, type UseGridScrollMemoryOptions } from './useGridScrollMemory'
+import {
+  useGridScrollMemory,
+  type UseGridScrollMemoryOptions,
+  useRememberedGridScroll,
+} from './useGridScrollMemory'
 
 /** A plausible virtuoso snapshot at the given offset. */
 function snapshot(scrollTop: number): StateSnapshot {
@@ -18,6 +24,45 @@ function snapshot(scrollTop: number): StateSnapshot {
 function scrollWindowTo(y: number) {
   Object.defineProperty(window, 'scrollY', { value: y, configurable: true, writable: true })
   window.dispatchEvent(new Event('scroll'))
+}
+
+/** A router's first entry, which it reports as a pop — as a load of the tab is. */
+function Router({ children }: { children: ReactNode }) {
+  return <MemoryRouter>{children}</MemoryRouter>
+}
+
+/**
+ * `renderHook` inside a freshly created router: the memory asks how the view was
+ * reached, and a router's first entry is a pop, the arrival that restores.
+ */
+const renderHook = ((callback: (props: unknown) => unknown, options?: object) =>
+  renderBareHook(callback, { wrapper: Router, ...options })) as typeof renderBareHook
+
+/**
+ * The memory of whatever grid sits at `/grid`, with the router's `navigate` to
+ * reach it by. The first entry is somewhere else, so the grid is only ever
+ * arrived at by an explicit navigation — a push, a replace or a pop back.
+ */
+function renderNavigableGrid() {
+  return renderBareHook(
+    () => {
+      const navigate = useNavigate()
+      const location = useLocation()
+      const key = location.pathname === '/grid' ? '/grid' : ''
+      return {
+        navigate,
+        memory: useGridScrollMemory({ key, count: 5 }),
+        remembered: useRememberedGridScroll(key),
+      }
+    },
+    {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <MemoryRouter initialEntries={['/grid', '/elsewhere']} initialIndex={1}>
+          {children}
+        </MemoryRouter>
+      ),
+    },
+  )
 }
 
 beforeEach(() => {
@@ -203,5 +248,82 @@ describe('useGridScrollMemory', () => {
     unmount()
 
     expect(window.sessionStorage.getItem('kukatko.gridScroll')).toBeNull()
+  })
+
+  it('restores on a pop back to the view', () => {
+    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800), uid: 'ph_9' })
+    const { result } = renderNavigableGrid()
+
+    act(() => {
+      void result.current.navigate(-1)
+    })
+
+    expect(result.current.memory.restoreFrom).toEqual(snapshot(3800))
+    expect(result.current.memory.restoreScrollY).toBe(4000)
+    expect(result.current.memory.restoreUid).toBe('ph_9')
+    expect(result.current.remembered?.count).toBe(300)
+  })
+
+  it('starts a view pushed to at its top, however deep it was left', () => {
+    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800), uid: 'ph_9' })
+    const { result } = renderNavigableGrid()
+
+    // A navigation link: the reader asked for this list, not for their place in it.
+    act(() => {
+      void result.current.navigate('/grid')
+    })
+
+    expect(result.current.memory.restoreFrom).toBeUndefined()
+    expect(result.current.memory.restoreScrollY).toBe(0)
+    expect(result.current.memory.restoreUid).toBeUndefined()
+    // Nor does the page re-fetch its way back to the remembered length.
+    expect(result.current.remembered).toBeNull()
+  })
+
+  it('does not restore a view replaced into either', () => {
+    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    const { result } = renderNavigableGrid()
+
+    act(() => {
+      void result.current.navigate('/grid', { replace: true })
+    })
+
+    expect(result.current.memory.restoreFrom).toBeUndefined()
+    expect(result.current.remembered).toBeNull()
+  })
+
+  it('remembers the top of a view pushed to, so a later pop does not revive the old place', () => {
+    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    const { result } = renderNavigableGrid()
+    act(() => {
+      void result.current.navigate('/grid')
+    })
+
+    // The reader opens a photograph without scrolling: the grid they were shown is
+    // its top, and coming back must land there — not on the position of a visit
+    // they were never returned to.
+    act(() => {
+      void result.current.navigate('/photos/ph_1')
+    })
+
+    const left = readGridScroll('/grid')
+    expect(left?.scrollY).toBe(0)
+    expect(left?.snapshot).toBeUndefined()
+  })
+
+  it('keeps a restore in progress when the view is replaced in place', () => {
+    writeGridScroll('/grid', { count: 300, scrollY: 4000, snapshot: snapshot(3800) })
+    const { result } = renderNavigableGrid()
+    act(() => {
+      void result.current.navigate(-1)
+    })
+
+    // A position-only param rewritten as the grid scrolls is a replace that keeps
+    // the view: it must not turn the restore it is part of into none.
+    act(() => {
+      void result.current.navigate('/grid?at=12', { replace: true })
+    })
+
+    expect(result.current.memory.restoreFrom).toEqual(snapshot(3800))
   })
 })

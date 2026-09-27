@@ -24,12 +24,12 @@ import { useToast } from '../components/toast/ToastContext'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
-import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
+import { useGridScrollMemory, useRememberedGridScroll } from '../hooks/useGridScrollMemory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useSubjectPhotos } from '../hooks/useSubjectPhotos'
 import { DETAIL_DEFAULTS, detailQueryString } from '../lib/detailView'
 import { GRID_GAP_PX, gridTemplateColumns } from '../lib/gridDensity'
-import { gridScrollKey, readGridScroll } from '../lib/gridScroll'
+import { gridScrollKey } from '../lib/gridScroll'
 import { approximateAge, formatLifeSpan } from '../lib/lifeYears'
 import { nicknameTag } from '../lib/nickname'
 import { decadeAnchorId, formatDecade, groupPhotosByDecade } from '../lib/photoDecades'
@@ -157,7 +157,7 @@ export function SubjectPage() {
   // it was opened from. The gallery grows a page at a time, so it also has to come
   // back as long as it was before the offset means anything.
   const scrollKey = gridScrollKey(location.pathname, location.search)
-  const remembered = useMemo(() => readGridScroll(scrollKey), [scrollKey])
+  const remembered = useRememberedGridScroll(scrollKey)
   const restoreCount = remembered?.count ?? 0
   const restoreScrollY = remembered?.scrollY ?? 0
   const { photos, status, hasMore, loadingMore, loadMore, retry } = useSubjectPhotos(uid, {

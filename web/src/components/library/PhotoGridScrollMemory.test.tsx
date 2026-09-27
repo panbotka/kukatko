@@ -1,7 +1,7 @@
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { forwardRef, type ReactNode, useImperativeHandle } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { type ListRange, type StateSnapshot } from 'react-virtuoso'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -106,19 +106,65 @@ function virtuosoSnapshot(scrollTop: number): StateSnapshot {
   }
 }
 
-/** A grid page in miniature: the memory hook wired to the grid, nothing else. */
-function GridPage({ photos = PHOTOS }: { photos?: readonly Photo[] }) {
+/** The memory hook wired to the grid, nothing else. */
+function GridWithMemory({ photos }: { photos: readonly Photo[] }) {
   const scroll = useGridScrollMemory({ key: '/', count: photos.length })
+  return (
+    <PhotoGrid
+      photos={photos}
+      loadingMore={false}
+      moreError={false}
+      onRetry={() => undefined}
+      scroll={scroll}
+    />
+  )
+}
+
+/**
+ * A grid page in miniature. The memory asks the router how the page was reached
+ * — only a history pop restores — so it lives inside one; a freshly created
+ * router reports its first entry as a pop, just as a load of the tab does.
+ */
+function GridPage({ photos = PHOTOS }: { photos?: readonly Photo[] }) {
   return (
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <PhotoGrid
-          photos={photos}
-          loadingMore={false}
-          moreError={false}
-          onRetry={() => undefined}
-          scroll={scroll}
-        />
+        <GridWithMemory photos={photos} />
+      </MemoryRouter>
+    </I18nextProvider>
+  )
+}
+
+/** The router's `navigate`, captured so a test can move between pages. */
+let navigateTo: ReturnType<typeof useNavigate> = () => undefined
+
+/** Captures the router's `navigate`; renders nothing. */
+function NavigateCapture() {
+  navigateTo = useNavigate()
+  return null
+}
+
+/** The viewer's stand-in: prints the navigation state it was opened with. */
+function ViewerProbe() {
+  const location = useLocation()
+  return <pre data-testid="viewer-state">{JSON.stringify(location.state)}</pre>
+}
+
+/**
+ * A grid page among others: the library at `/`, entered from `/elsewhere` (the
+ * first entry, so the grid is only reached by a navigation the test makes), and
+ * a viewer to open photographs into.
+ */
+function RoutedGridPage() {
+  return (
+    <I18nextProvider i18n={i18n}>
+      <MemoryRouter initialEntries={['/', '/elsewhere']} initialIndex={1}>
+        <NavigateCapture />
+        <Routes>
+          <Route path="/" element={<GridWithMemory photos={PHOTOS} />} />
+          <Route path="/elsewhere" element={null} />
+          <Route path="/photos/:uid" element={<ViewerProbe />} />
+        </Routes>
       </MemoryRouter>
     </I18nextProvider>
   )
@@ -267,5 +313,48 @@ describe('a grid page remembering where it was left', () => {
     reportRange(0, 2)
 
     expect(virtuoso.scrollToIndex).not.toHaveBeenCalled()
+  })
+
+  it('restores the position when the reader comes back through history', () => {
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: virtuosoSnapshot(3872) })
+    render(<RoutedGridPage />)
+
+    act(() => {
+      void navigateTo(-1)
+    })
+
+    expect(virtuoso.restoreStateFrom).toEqual(virtuosoSnapshot(3872))
+  })
+
+  it('starts at the top when the reader navigates to it', () => {
+    writeGridScroll('/', {
+      count: 0,
+      scrollY: 4000,
+      snapshot: virtuosoSnapshot(3872),
+      uid: 'p40',
+    })
+    render(<RoutedGridPage />)
+
+    // "Knihovna" in the navigation: a push, which asked for the list, not a place in it.
+    act(() => {
+      void navigateTo('/')
+    })
+    putWindowAt(0)
+    reportRange(0, 2)
+
+    expect(virtuoso.restoreStateFrom).toBeUndefined()
+    expect(virtuoso.scrollToIndex).not.toHaveBeenCalled()
+  })
+
+  it('names itself to the viewer a tile opens', () => {
+    render(<RoutedGridPage />)
+    act(() => {
+      void navigateTo('/')
+    })
+
+    fireEvent.click(screen.getAllByRole('link')[0])
+
+    const state = JSON.parse(screen.getByTestId('viewer-state').textContent) as unknown
+    expect(state).toMatchObject({ gridOrigin: '/' })
   })
 })

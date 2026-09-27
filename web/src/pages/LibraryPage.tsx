@@ -27,7 +27,7 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
-import { gridScrollKey } from '../lib/gridScroll'
+import { type GridOrigin, gridScrollKey } from '../lib/gridScroll'
 import {
   hasActiveFilters,
   LIBRARY_DEFAULTS,
@@ -221,9 +221,13 @@ export function LibraryPage() {
       if (!p) {
         return
       }
-      void navigate(detailQuery === '' ? `/photos/${p.uid}` : `/photos/${p.uid}?${detailQuery}`)
+      // Named as the tiles name it, so the viewer records against this grid.
+      const state: GridOrigin = { gridOrigin: gridScroll.key }
+      void navigate(detailQuery === '' ? `/photos/${p.uid}` : `/photos/${p.uid}?${detailQuery}`, {
+        state,
+      })
     },
-    [displayPhotos, detailQuery, navigate],
+    [displayPhotos, detailQuery, navigate, gridScroll.key],
   )
   const selectPhoto = useCallback(
     (index: number) => {

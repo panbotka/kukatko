@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { type ListRange, type StateSnapshot, type VirtuosoHandle } from 'react-virtuoso'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -1065,6 +1065,52 @@ describe('LibraryPage scroll position', () => {
     await screen.findByRole('link', { name: 'p0.jpg' })
 
     expect(grid.restoredFrom).toEqual(gridState(4000))
+  })
+
+  /**
+   * The library reached from another page — the reader is on `/albums` with the
+   * library behind them in history — so it is only ever arrived at by a
+   * navigation the test makes: the nav link (a push) or Back (a pop).
+   */
+  function renderLibraryFromAlbums() {
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={viewerAuth}>
+          <MemoryRouter initialEntries={['/', '/albums']} initialIndex={1}>
+            <Routes>
+              <Route path="/" element={<LibraryPage />} />
+              <Route path="/albums" element={<Link to="/">__nav_library</Link>} />
+            </Routes>
+            <LocationProbe />
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('puts the grid back when the reader comes back through history', async () => {
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000) })
+    servePagesOf(20_000)
+    const user = userEvent.setup()
+    renderLibraryFromAlbums()
+
+    await user.click(screen.getByRole('button', { name: '__back' }))
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    expect(grid.restoredFrom).toEqual(gridState(4000))
+  })
+
+  it('opens at the top when the navigation leads to it', async () => {
+    writeGridScroll('/', { count: 0, scrollY: 4000, snapshot: gridState(4000), uid: 'p900' })
+    servePagesOf(20_000)
+    const user = userEvent.setup()
+    renderLibraryFromAlbums()
+
+    // "Knihovna" in the navigation asks for the library, not for a place in it.
+    await user.click(screen.getByRole('link', { name: '__nav_library' }))
+    await screen.findByRole('link', { name: 'p0.jpg' })
+
+    expect(grid.restoredFrom).toBeNull()
   })
 
   it('does not restore a position taken under different filters', async () => {
