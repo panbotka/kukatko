@@ -374,10 +374,19 @@ here.
   clicks) + `lib/pushPromptAnswer.test.ts`),
   `JobStateLegend` (**shared legend of job-queue states**: a compact `dl` with a bold term + a quiet
   one-sentence explanation of each state, so an admin understands without hovering; both the labels and the explanations come from a
-  shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`, so the wording is identical on
-  `MaintenancePage` and `SystemStatusPage`; the `states` prop controls order and selection — Maintenance omits
-  `pending` and `done`, System adds both (its queue table has a `done` column, because without it a row's
-  states would not add up to its lifetime total). Tests: `JobStateLegend.test.tsx`),
+  shared i18n block `jobStates.labels.*`/`jobStates.descriptions.*`; the `states` prop controls order and
+  selection. Its one host is `JobQueuePanel` on `SystemStatusPage`, which shows `pending` and `done` too (its
+  queue table has a `done` column, because without it a row's states would not add up to its lifetime total).
+  Tests: `JobStateLegend.test.tsx`),
+  `BackgroundWorkLink` (**where an operations page sends you for the job queue**: a card with the page's own
+  title + one-sentence intro and a `btn btn-outline-primary btn-sm` `Link` to `/system`
+  („Otevřít Stav systému", `jobStates.systemLink`) — **no counts**. `MaintenancePage` and `ImportPage` used to
+  each render a reduced badge row of `GET /jobs/stats`: Maintenance's `Celkem` was the *lifetime* total (the
+  queue never deletes `done` jobs, so it grew far past the library's size and the badges beside it did not add
+  up), and both showed a „trvale se nepovedlo" count with no requeue anywhere near it. The queue is read and
+  acted on in one place, `JobQueuePanel` on System status (type × state, per-row and whole-dead-letter
+  requeue), and both hosts are maintainer-only, as `/system` is, so the link never leads somewhere the reader
+  cannot go. Tests: `BackgroundWorkLink.test.tsx` + a link-and-navigate test in each host page's own test),
   `TechnicalDetail` (**the one way an admin page shows a machine-readable fact**: a chevron + label
   `Button` that is itself the summary, `aria-expanded`/`aria-controls` onto a region that is **only
   mounted while open** — so a collapsed error is not findable by a page search and not read out by a
@@ -2446,8 +2455,10 @@ here.
   „the files did not come through" plus a link to the picker. It sits inside `RequireAuth` but **outside**
   the editor gate, so an unauthenticated sharer goes through login and comes back to this exact URL,
   which is what makes a share survive the round trip,
-  `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: the background queue
-  state (`GET /jobs/stats`), the recorded per-photo/per-file failures (`GET /import/failures`) and a
+  `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: a `BackgroundWorkLink`
+  card pointing at System status for the work an import leaves behind (the page no longer fetches
+  `GET /jobs/stats` — the queue is read and requeued only on `/system`), the recorded per-photo/per-file
+  failures (`GET /import/failures`) and a
   **run history** table (`import_runs`: source/start/end/status/counts/**„Co se stalo"**) — rendered through
   the shared `RecordTable` (`size="sm"`), so on a phone the six columns become **one stacked card per run**
   instead of a sideways scroll; the summary keeps its `text-danger small` on the *value* (a `cellClassName`
@@ -2458,9 +2469,7 @@ here.
   reads as a sentence keyed on how it ended (`import.history.errorSummary.failed`/`.partial`/`.generic`)
   and parks `run.last_error` verbatim in a `TechnicalDetail`; a failure row names its step in words
   (`import.failures.stages.*`) and hides the `importer.Stage` id, the extra detail and the server's message
-  behind the row's own disclosure. The queue badges read the shared `jobStates.labels.*` and carry the
-  `JobStateLegend`, so „mrtvé úlohy" is now „trvale se nepovedlo" with a sentence saying what to do about it.
-  Even the `kukatko import dir` command sits in a disclosure under the intro rather than in its prose.
+  behind the row's own disclosure. Even the `kukatko import dir` command sits in a disclosure under the intro rather than in its prose.
   There is **nothing to start from the page**: the only import left is `kukatko import dir`, which reads a
   directory on the server's disk and therefore runs from the CLI, and the one-off import
   closed in August 2026 and was removed together with its start buttons and its completeness-check card.
@@ -2485,11 +2494,12 @@ here.
   fills something in, that one **takes a value away** — the capture date of a photo dated to a year no
   photograph can have been taken in (a Facebook download whose asset id read as 9009-03-10) is withdrawn, never
   replaced, so the photo ends up without a date and is found with `dated:no`. That is why the card is „Co
-  opravit" rather than „Co doplnit" and its hint says which option removes rather than fills; plus the background queue state (`GET /jobs/stats` polls every 3 s) as progress; **every finding,
-  the summary „drift" row and every queue state carries a quiet plain-language explanation** (without hovering) —
-  `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint.*`, `maintenance.jobs.intro`
-  and the shared `JobStateLegend` (celkem/ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**) — so a
-  maintainer knows what a count means and whether action is needed. **Every name on the page is the family's,
+  opravit" rather than „Co doplnit" and its hint says which option removes rather than fills; plus a
+  `BackgroundWorkLink` card (**Práce na pozadí**, `maintenance.jobs.intro`) that sends the maintainer to System
+  status to watch the repairs' progress and requeue what failed — the page keeps **no copy of the queue
+  counts** and polls nothing; **every finding and the summary „drift" row carries a quiet plain-language
+  explanation** (without hovering) — `maintenance.findings.descriptions.*`, `maintenance.scan.summaryHint.*` —
+  so a maintainer knows what a count means and whether action is needed. **Every name on the page is the family's,
   not the pipeline's**: no „embedding", no „perceptuální hash", no „osiřelý soubor" and no „box" — a finding is
   „Fotky, které zatím nejdou najít podle obsahu", a repair is „Dohledat obličeje tam, kde se ještě nehledaly",
   and the sidecar is „rozpoznávací služba"; plus the destructive card **`AuditPurgeCard`** (**Vymazat audit log**)

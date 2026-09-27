@@ -3110,7 +3110,7 @@
     },
     "jobs": {
       "title": "Práce na pozadí",
-      "intro": "Co Kukátko po importu ještě dopočítává — náhledy, hledání podle obsahu, obličeje."
+      "intro": "Po importu Kukátko ještě na pozadí dopočítává náhledy, hledání podle obsahu a obličeje. Jak daleko je i opakování toho, co se nepovedlo, najdete na stránce Stav systému."
     },
     "history": {
       "title": "Proběhlé importy",
@@ -3264,7 +3264,7 @@
     },
     "jobs": {
       "title": "Práce na pozadí",
-      "intro": "Co Kukátko zpracovává na pozadí — náhledy, obsah fotek, obličeje. Odsud se pozná, jestli se doplňování hýbe."
+      "intro": "Většina oprav běží jako práce na pozadí — náhledy, obsah fotek, obličeje. Jestli se hýbe, co uvízlo, i tlačítko, které nepovedenou práci pošle zpátky do fronty, najdete na stránce Stav systému."
     },
     "auditPurge": {
       "title": "Vymazat starý audit log",
@@ -3471,6 +3471,7 @@
     }
   },
   "jobStates": {
+    "systemLink": "Otevřít Stav systému",
     "labels": {
       "total": "Celkem",
       "queued": "Ve frontě",

@@ -8,9 +8,9 @@ import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { BackgroundWorkLink } from '../components/BackgroundWorkLink'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
-import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -18,15 +18,13 @@ import { formatDateTime } from '../lib/format'
 import {
   fetchImportFailures,
   fetchImportRuns,
-  fetchJobStats,
   type ImportCounts,
   type ImportFailure,
   type ImportRun,
-  type JobStats,
   type RunStatus,
 } from '../services/import'
 
-/** How often the run history and job stats are re-polled while the page is open. */
+/** How often the run history and failures are re-polled while the page is open. */
 const POLL_INTERVAL_MS = 3000
 
 /** Bootstrap badge variant per run status. */
@@ -39,13 +37,6 @@ const STATUS_VARIANT: Record<RunStatus, string> = {
 
 /** How many failure rows to show at once. */
 const FAILURES_LIMIT = 100
-
-/**
- * The queue states explained under the badges, in display order. The import page
- * shows no `total` badge (it is not what an import is watched for) and no
- * `pending` one, so the legend explains exactly the four counts above it.
- */
-const IMPORT_JOB_STATES: readonly JobStateKey[] = ['queued', 'running', 'failed', 'dead']
 
 /**
  * The one-line summary of a run that recorded an error, keyed by what the run
@@ -95,39 +86,6 @@ function CountsBadges({ counts }: { counts: ImportCounts }) {
         {t('import.counts.failed')}: {counts.failed}
       </Badge>
     </span>
-  )
-}
-
-/**
- * What is still being worked out after an import — the queue counts as badges,
- * with the shared {@link JobStateLegend} spelling out what each of them means.
- * The badge labels come from the same `jobStates.*` block as the legend, so the
- * word above a number and the word explaining it can never drift apart.
- */
-function JobStatsBar({ stats }: { stats: JobStats }) {
-  const { t } = useTranslation()
-  return (
-    <Card className="mb-4">
-      <Card.Body>
-        <h2 className="kk-section-title mb-1">{t('import.jobs.title')}</h2>
-        <p className="text-secondary small">{t('import.jobs.intro')}</p>
-        <div className="d-flex gap-2 flex-wrap mb-3">
-          <Badge bg="secondary">
-            {t('jobStates.labels.queued')}: {stats.by_state.queued ?? 0}
-          </Badge>
-          <Badge bg="info">
-            {t('jobStates.labels.running')}: {stats.by_state.running ?? 0}
-          </Badge>
-          <Badge bg="warning" text="dark">
-            {t('jobStates.labels.failed')}: {stats.by_state.failed ?? 0}
-          </Badge>
-          <Badge bg="dark">
-            {t('jobStates.labels.dead')}: {stats.by_state.dead ?? 0}
-          </Badge>
-        </div>
-        <JobStateLegend states={IMPORT_JOB_STATES} />
-      </Card.Body>
-    </Card>
   )
 }
 
@@ -260,7 +218,8 @@ function FailuresPanel({ failures }: { failures: ImportFailure[] }) {
 
 /**
  * Admin-only import console: the history of import runs, the recorded
- * per-photo/per-file failures and the background job queue.
+ * per-photo/per-file failures, and a link to System status, where the background
+ * work an import leaves behind is read and requeued.
  *
  * It is read-only. The one import that still exists is `kukatko import dir`,
  * which reads a directory on the server's disk and is therefore driven from the
@@ -275,7 +234,6 @@ export function ImportPage() {
   // RequireImport); this in-page gate is a defensive fallback behind that guard.
   const { canImport } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
-  const [jobStats, setJobStats] = useState<JobStats | null>(null)
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const runsResp = await fetchImportRuns(signal)
@@ -288,11 +246,6 @@ export function ImportPage() {
       // The failures list is supplementary; ignore so the page still renders.
     }
     setState({ status: 'ready', runs: runsResp.runs, failures })
-    try {
-      setJobStats(await fetchJobStats(signal))
-    } catch {
-      // Job stats are supplementary; ignore failures so the page still renders.
-    }
   }, [])
 
   useEffect(() => {
@@ -355,7 +308,7 @@ export function ImportPage() {
 
       {state.status === 'ready' && (
         <>
-          {jobStats && <JobStatsBar stats={jobStats} />}
+          <BackgroundWorkLink title={t('import.jobs.title')} intro={t('import.jobs.intro')} />
 
           <FailuresPanel failures={state.failures} />
 

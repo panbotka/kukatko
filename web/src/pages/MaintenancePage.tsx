@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -8,13 +8,12 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
-import { JobStateLegend, type JobStateKey } from '../components/JobStateLegend'
+import { BackgroundWorkLink } from '../components/BackgroundWorkLink'
 import { NamelessSubjectsCard } from '../components/maintenance/NamelessSubjectsCard'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ApiError } from '../services/auth'
-import { fetchJobStats, type JobStats } from '../services/import'
 import {
   fetchMaintenanceScan,
   purgeAuditLog,
@@ -24,9 +23,6 @@ import {
   type RepairResult,
   type ScanReport,
 } from '../services/maintenance'
-
-/** How often the background job-queue stats are re-polled while the page is open. */
-const POLL_INTERVAL_MS = 3000
 
 /**
  * The integrity-problem classes rendered in the scan-result table, in display
@@ -65,13 +61,6 @@ const REPAIR_KEYS = [
 
 /** A repair key, used to index {@link RepairOptions} and toggle its selection. */
 type RepairKey = (typeof REPAIR_KEYS)[number]
-
-/**
- * The job-queue states explained beneath the queue badges, in display order.
- * `pending` is omitted here — the Maintenance page has no box-pending badge; the
- * System page adds it.
- */
-const MAINT_JOB_STATES: readonly JobStateKey[] = ['total', 'queued', 'running', 'failed', 'dead']
 
 /** Returns the {@link Finding} for a finding key from the scan report. */
 function findingOf(report: ScanReport, key: FindingKey): Finding {
@@ -311,42 +300,6 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
   )
 }
 
-/**
- * How the filling-in is progressing, as the queue counts with the shared
- * {@link JobStateLegend} beneath them. The badge labels come from the same
- * `jobStates.*` block as the legend, so a badge and its explanation cannot end
- * up calling the same state two different things.
- */
-function JobStatsBar({ stats }: { stats: JobStats }) {
-  const { t } = useTranslation()
-  return (
-    <Card className="mb-4">
-      <Card.Body>
-        <h2 className="kk-section-title mb-1">{t('maintenance.jobs.title')}</h2>
-        <p className="text-secondary small">{t('maintenance.jobs.intro')}</p>
-        <div className="d-flex gap-2 flex-wrap mb-3">
-          <Badge bg="primary">
-            {t('jobStates.labels.total')}: {stats.total}
-          </Badge>
-          <Badge bg="secondary">
-            {t('jobStates.labels.queued')}: {stats.by_state.queued ?? 0}
-          </Badge>
-          <Badge bg="info">
-            {t('jobStates.labels.running')}: {stats.by_state.running ?? 0}
-          </Badge>
-          <Badge bg="warning" text="dark">
-            {t('jobStates.labels.failed')}: {stats.by_state.failed ?? 0}
-          </Badge>
-          <Badge bg="dark">
-            {t('jobStates.labels.dead')}: {stats.by_state.dead ?? 0}
-          </Badge>
-        </div>
-        <JobStateLegend states={MAINT_JOB_STATES} />
-      </Card.Body>
-    </Card>
-  )
-}
-
 /** The empty selection, used to initialise and reset the repair checkboxes. */
 function emptySelection(): Record<RepairKey, boolean> {
   return {
@@ -520,8 +473,9 @@ function AuditPurgeCard() {
  * catalogue/store drift (missing originals, orphan files, missing thumbnails,
  * embeddings, faces, pHashes and places, plus the photos dated to a year no
  * photograph can have been taken in) with counts and samples, and triggers the
- * opt-in repairs. Most repairs run in the background through the job queue, so the
- * page polls the queue stats to show progress. Maintenance is an operations
+ * opt-in repairs. Most repairs run in the background through the job queue, whose
+ * progress is read on System status: the page links there rather than keep a copy
+ * of the counts it could not act on. Maintenance is an operations
  * capability, so every action is maintainer-only, safe and idempotent; originals
  * are never deleted, and the one repair that removes anything only withdraws an
  * impossible capture date — it never invents a replacement.
@@ -533,29 +487,6 @@ export function MaintenancePage() {
   const [scan, setScan] = useState<ScanState>({ status: 'idle' })
   const [repair, setRepair] = useState<RepairState>({ status: 'idle' })
   const [selection, setSelection] = useState<Record<RepairKey, boolean>>(emptySelection)
-  const [jobStats, setJobStats] = useState<JobStats | null>(null)
-
-  useEffect(() => {
-    if (!isMaintainer) {
-      return
-    }
-    let cancelled = false
-    const poll = () => {
-      fetchJobStats()
-        .then((stats) => {
-          if (!cancelled) {
-            setJobStats(stats)
-          }
-        })
-        .catch(() => undefined)
-    }
-    poll()
-    const id = window.setInterval(poll, POLL_INTERVAL_MS)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [isMaintainer])
 
   const handleScan = useCallback(async () => {
     setScan({ status: 'loading' })
@@ -648,7 +579,7 @@ export function MaintenancePage() {
 
       <AuditPurgeCard />
 
-      {jobStats && <JobStatsBar stats={jobStats} />}
+      <BackgroundWorkLink title={t('maintenance.jobs.title')} intro={t('maintenance.jobs.intro')} />
     </>
   )
 }

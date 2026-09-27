@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -276,5 +276,34 @@ describe('ImportPage', () => {
 
     expect(await screen.findByText('Imports that have run')).toBeInTheDocument()
     expect(runsMock).toHaveBeenCalled()
+  })
+
+  it('links to System status for the queue instead of keeping a copy of its counts', async () => {
+    runsMock.mockResolvedValue(runsResponse([run(2, 'folder', 'done')]))
+    statsMock.mockResolvedValue({ by_state: { queued: 7, dead: 3 }, by_type: {}, total: 900 })
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth({ isMaintainer: true })}>
+          <MemoryRouter initialEntries={['/import']}>
+            <Routes>
+              <Route path="/import" element={<ImportPage />} />
+              <Route path="/system" element={<div>system status page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+
+    const link = await screen.findByRole('link', { name: 'Open System status' })
+    expect(link).toHaveAttribute('href', '/system')
+    // No badge row: a dead count with no requeue beside it is gone, and the page
+    // no longer fetches the queue stats at all.
+    expect(screen.queryByText(/^Waiting:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Permanently failed:/)).not.toBeInTheDocument()
+    expect(statsMock).not.toHaveBeenCalled()
+
+    await user.click(link)
+    expect(await screen.findByText('system status page')).toBeInTheDocument()
   })
 })

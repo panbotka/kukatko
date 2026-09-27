@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -415,16 +415,32 @@ describe('MaintenancePage', () => {
     expect(await screen.findByText('The purge failed.')).toBeInTheDocument()
   })
 
-  it('polls and renders the background job-queue stats with a legend', async () => {
-    statsMock.mockResolvedValue({ by_state: { queued: 7, running: 2 }, by_type: {}, total: 9 })
-    renderPage()
+  it('links to System status for the queue instead of keeping a copy of its counts', async () => {
+    statsMock.mockResolvedValue({ by_state: { queued: 7, dead: 3 }, by_type: {}, total: 900 })
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth({ isMaintainer: true })}>
+          <MemoryRouter initialEntries={['/maintenance']}>
+            <Routes>
+              <Route path="/maintenance" element={<MaintenancePage />} />
+              <Route path="/system" element={<div>system status page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
 
-    expect(await screen.findByText('Total: 9')).toBeInTheDocument()
-    expect(screen.getByText('Waiting: 7')).toBeInTheDocument()
-    // The queue is introduced and every state is explained in plain language,
-    // including what the permanently-failed count means and that it needs a
-    // manual retry — with no "dead job" anywhere in the copy.
-    expect(screen.getByText(/works through in the background/)).toBeInTheDocument()
-    expect(screen.getByText(/went wrong even after several attempts/)).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: 'Open System status' })
+    expect(link).toHaveAttribute('href', '/system')
+    expect(screen.getByText(/button that sends failed work back to the queue/)).toBeInTheDocument()
+    // No badge row: neither the lifetime total nor a dead count with no requeue
+    // beside it, and the page no longer polls the queue at all.
+    expect(screen.queryByText(/^Total:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Permanently failed:/)).not.toBeInTheDocument()
+    expect(statsMock).not.toHaveBeenCalled()
+
+    await user.click(link)
+    expect(await screen.findByText('system status page')).toBeInTheDocument()
   })
 })

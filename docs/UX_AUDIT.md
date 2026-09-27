@@ -504,7 +504,9 @@ on unexplained jargon that even a non-developer admin will struggle with.
   click away. Jargon: "dead jobs", "embeddings", "the migration", "background processing queue"
   ✅ **Done** in the same pass — the queue badges read the shared plain-language `jobStates.*` labels
   and carry the `JobStateLegend`, and even the `kukatko import dir` command sits in a disclosure
-  rather than in the intro's prose.
+  rather than in the intro's prose. (Later superseded: the badge row is gone from both `/import` and
+  `/maintenance` in favour of a `BackgroundWorkLink` to System status, the one place the queue can be
+  acted on.)
 - **Consistency:** first-run confirmation used a native `window.confirm` with un-localized
   OK/Cancel, vs. Trash's styled modal. ✅ **Done:** now the shared `ConfirmModal`; its confirm
   button carries "Spustit import" (non-destructive, so `primary`, not `danger`).

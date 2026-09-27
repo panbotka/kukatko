@@ -2980,7 +2980,7 @@
     },
     "jobs": {
       "title": "Background work",
-      "intro": "What Kukátko still works out after an import — thumbnails, content search, faces."
+      "intro": "After an import Kukátko still works out thumbnails, content search and faces in the background. How far it has got, and the retry for anything that failed, are on the System status page."
     },
     "history": {
       "title": "Imports that have run",
@@ -3128,7 +3128,7 @@
     },
     "jobs": {
       "title": "Background work",
-      "intro": "What Kukátko works through in the background — thumbnails, photo content, faces. This is where you see whether the filling-in is moving."
+      "intro": "Most repairs run as background work — thumbnails, photo content, faces. Whether it is moving, what got stuck, and the button that sends failed work back to the queue are on the System status page."
     },
     "auditPurge": {
       "title": "Purge audit log",
@@ -3313,6 +3313,7 @@
     }
   },
   "jobStates": {
+    "systemLink": "Open System status",
     "labels": {
       "total": "Total",
       "queued": "Waiting",
