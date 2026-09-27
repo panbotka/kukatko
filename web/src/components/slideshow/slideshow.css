@@ -233,15 +233,22 @@
 
 .slideshow__settings {
   position: absolute;
-  bottom: 4.5rem;
+  /* Above the controls bar — which itself grows by the home-indicator inset, so
+     the offset grows with it; with a bare 4.5rem the bar (the later sibling)
+     painted over the panel's last rows on an iPhone and took their taps. */
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   min-width: 16rem;
   max-width: calc(100vw - 2rem);
   /* The panel now carries the whole settings form (transition, speed, repeat,
      shuffle, three caption toggles), which on a short viewport is taller than
-     the space above the controls. Scroll it rather than let it run off screen. */
-  max-height: calc(100vh - 8rem);
+     the space above the controls. Scroll it rather than let it run off screen.
+     Under `viewport-fit=cover` `100vh` is the whole screen, status bar and home
+     indicator included, so both insets come off: the bottom one pays for the
+     raised offset above, the top one keeps the panel's top edge (3.5rem below
+     the safe area) out from under the Dynamic Island. */
+  max-height: calc(100vh - 8rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   pointer-events: auto;
 }

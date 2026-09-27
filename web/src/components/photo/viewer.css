@@ -929,6 +929,18 @@
   .kk-viewer[data-panel='open'] .kk-viewer__nav--next {
     right: calc(var(--kk-viewer-panel-w) + 0.75rem + env(safe-area-inset-right, 0px));
   }
+
+  /* The side drawer touches the top and the right edge of the screen, and this
+     branch also serves a landscape iPhone Pro Max and every iPad — so without the
+     insets the head's ✕ sat on the status bar, or behind the notch column. The
+     head is the drawer's first row, so padding it is enough for the top; the
+     surface stays edge to edge beneath the padding. Only here: below 768px the
+     same element is a bottom sheet with no top or right screen edge, and padding
+     it for one would be dead space. `styles/safeArea.test.ts` holds both. */
+  .kk-viewer__panel-head {
+    padding-top: calc(var(--kk-space-3) + env(safe-area-inset-top, 0px));
+    padding-right: calc(var(--kk-space-4) + env(safe-area-inset-right, 0px));
+  }
 }
 
 /* ---- Comments: the conversation around the photo --------------------- */

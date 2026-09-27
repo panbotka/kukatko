@@ -519,6 +519,7 @@ export function FilterBar<T extends LibraryView>({
             setOpen(false)
           }}
           placement="end"
+          className="kukatko-filter-drawer"
           aria-label={t('library.filters.toggle')}
         >
           <Offcanvas.Header closeButton closeLabel={t('library.filters.close')}>

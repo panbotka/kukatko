@@ -173,6 +173,7 @@ export function MapFilterBar({
             setOpen(false)
           }}
           placement="end"
+          className="kukatko-filter-drawer"
           aria-label={t('map.filters.label')}
         >
           <Offcanvas.Header closeButton closeLabel={t('map.filters.close')}>

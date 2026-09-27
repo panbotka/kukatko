@@ -127,26 +127,51 @@
   --bs-backdrop-zindex: var(--kk-modal-backdrop-z);
 }
 
-/* ---- Fullscreen modals and the safe area ---------------------------------
+/* ---- Modals and the safe area ------------------------------------------
    `index.html` paints the page under the iOS status bar (`viewport-fit=cover`
-   + `black-translucent`), and a fullscreen modal starts at y=0 — so without
-   this its close button lands on the battery indicator, where the tap belongs
-   to the system, and its last row of buttons sits under the home indicator.
-   Insetting `.modal-content` by all four insets keeps the surface edge to edge
-   (the background lies under the padding) while every control moves inside the
-   safe area; left and right cover a notched phone in landscape. `env()` is 0
-   wherever there are no insets, so desktop and Android are unchanged. The
-   `-sm-down` variant takes it only inside Bootstrap's own breakpoint: above it
-   that class renders a windowed dialog nowhere near the status bar, which an
-   iPad in standalone would otherwise pad for nothing. Every fullscreen modal
-   inherits this — none needs a line of its own. `styles/safeArea.test.ts`
-   holds it. */
+   + `black-translucent`), so a dialog that reaches the top or bottom of the
+   screen puts its close button on the battery indicator (where the tap belongs
+   to the system) and its footer under the home indicator. Below `sm` that is
+   every `scrollable` modal, however short: `.modal-dialog-scrollable` is
+   `calc(100% - 2 * 0.5rem)` tall, so its ✕ sat at y≈24–48px under a 47–59px
+   inset — and `ConfirmModal` is `scrollable`, so that was every destructive
+   confirm in the app.
+
+   The inset goes on `.modal` itself, not on a dialog. `.modal` is
+   `position: fixed; inset: 0`, so its padding moves the dialog's whole margin
+   box inward, and a `scrollable` or `centered` dialog's `100%` then resolves
+   against the padded box — it shrinks by the insets instead of overflowing
+   them (a top margin alone would leave it too tall by exactly the inset). Left
+   and right cover a notched phone in landscape. `env()` is 0 wherever there are
+   no insets, so desktop and Android are unchanged. Every modal, today's and the
+   next one, inherits this; none needs a line of its own.
+
+   A fullscreen modal is the exception. Its surface should still paint edge to
+   edge, so it steps out of the `.modal` padding (`:has`) and takes the insets
+   on its `.modal-content` instead — inset exactly once, the background under
+   the padding, every control inside the safe area. The `-sm-down` variant is
+   fullscreen only inside Bootstrap's own breakpoint; above it that class is a
+   windowed dialog and takes the `.modal` rule like any other.
+   `styles/safeArea.test.ts` holds all of it. */
+.modal {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+.modal:has(> .modal-fullscreen) {
+  padding: 0;
+}
+
 .modal-fullscreen .modal-content {
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
     env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 
 @media (max-width: 575.98px) {
+  .modal:has(> .modal-fullscreen-sm-down) {
+    padding: 0;
+  }
+
   .modal-fullscreen-sm-down .modal-content {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
       env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
@@ -1823,6 +1848,22 @@ body {
 .kukatko-map-filter-panel .form-control,
 .kukatko-map-filter-panel .form-select {
   min-height: 2.75rem;
+}
+
+/*
+ * The phone filter drawers themselves — the library's and the map's, both an
+ * `end`-placed offcanvas with a close-button header (`.kukatko-filter-drawer`).
+ * Like the nav drawer (`.kk-navdrawer`) the panel meets the top and the right
+ * edge of the screen, so without these the ✕ — the only way out besides the
+ * backdrop — sat on the battery indicator, and in landscape behind the notch
+ * column. The left edge faces the middle of the screen and is left alone, as
+ * the nav drawer leaves it. The bottom inset is deliberately NOT here: the
+ * footer below owns the bottom edge and already adds it, so padding the panel
+ * too would inset that edge twice. `styles/safeArea.test.ts` holds it.
+ */
+.kukatko-filter-drawer {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /*

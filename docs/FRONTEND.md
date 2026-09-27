@@ -7181,14 +7181,35 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   inside it opens with, and a bare `env()` (0 where there is no notch) zeroed it, so every row hung half a
   gutter past the container — invisible on a desktop, where the bleed lands in the spare margin, but eight
   routes measuring 9–66px wider than a 393px phone, with the content flush against both screen edges.
-  **Every fullscreen modal inherits the insets from one rule** (`.modal-fullscreen .modal-content`, and
-  `.modal-fullscreen-sm-down .modal-content` only inside Bootstrap's own `max-width: 575.98px` query — above
-  it that class is a windowed dialog an iPad in standalone would pad for nothing): the content is padded by
-  all four `env(safe-area-inset-*)`, so its surface still paints edge to edge while the close button and the
-  last button row move inside the safe area. Without it the iOS PWA (which paints under the status bar
-  on purpose) put `ReviewLightbox`'s close button on the battery indicator (16–47px under a 47px inset;
-  63–94px with the rule) and its bottom row under the home indicator. A new fullscreen modal needs no line
-  of its own; `ReviewLightbox`'s `100cqh` stage remeasures against the inset box by itself.
+  **Every dialog inherits the insets; a new modal or offcanvas needs no fix of its own.** *Modals:* one rule
+  pads `.modal` itself by all four `env(safe-area-inset-*)`. `.modal` is `position: fixed; inset: 0`, so the
+  padding moves the dialog's whole margin box inward and a `scrollable`/`centered` dialog's `100%` height
+  resolves against the padded box — it shrinks by the insets instead of running into them (a top margin alone
+  would leave it too tall by exactly the inset). That matters because below `sm` a `scrollable` dialog is
+  forced to the full viewport height, and `ConfirmModal` is `centered scrollable` — every destructive confirm:
+  with long content its ✕ sat at 25–57px under a 47px inset (72–104px with the rule) and its last button
+  ended at 819px of 844, under the home bar (785px with it); a non-centered scrollable dialog's ✕ likewise.
+  A short centered confirm was never in the band and merely re-centres. **A fullscreen modal is inset exactly
+  once:** it steps out of the `.modal` padding (`.modal:has(> .modal-fullscreen)`) and pads its
+  `.modal-content` instead, so its surface still paints edge to edge while the close button and the last
+  button row move inside the safe area (`ReviewLightbox`'s ✕ 16–47px → 63–94px; its `100cqh` stage
+  remeasures against the inset box by itself). `.modal-fullscreen-sm-down` does both only inside Bootstrap's
+  own `max-width: 575.98px` query — above it that class is a windowed dialog and takes the `.modal` rule like
+  any other. *Offcanvas:* an `end`-placed drawer meets the top and right screen edges; the nav drawer
+  (`.kk-navdrawer`) pads top, right and bottom, the two phone filter drawers (`FilterBar`, `MapFilterBar`)
+  carry `.kukatko-filter-drawer` — top and right only, because their footer (`.kukatko-filter-footer`) owns
+  the bottom edge and already adds that inset. The left edge faces the middle of the screen and is left alone
+  in both. Without it the filter drawer's ✕ — the only way out besides the backdrop — sat at 15–47px (62–94px
+  with it), and in landscape its right edge at 836px of 844, behind the notch column (789px with it). A new
+  `end` drawer takes `.kukatko-filter-drawer` (or a bottom-owning rule of its own), never inline padding.
+  *Viewer and slideshow:* the viewer's side-drawer head (`.kk-viewer__panel-head`) adds the top and right
+  insets **inside the ≥768px branch only** — that branch is also a landscape iPhone Pro Max and every iPad,
+  while below 768px the same element is a bottom sheet with no top or right screen edge; the slideshow's
+  settings panel (`.slideshow__settings`) raises its `bottom` offset by the bottom inset so the controls bar,
+  which grows by that inset, cannot paint over its last rows, and subtracts both insets from its `100vh`
+  `max-height` (under `viewport-fit=cover` that is the whole screen) so its top edge stays 3.5rem below the
+  safe area. The iOS PWA paints under the status bar on purpose, so every one of these was a control in a band
+  iOS owns; `env()` is 0 elsewhere, so desktop and Android are unchanged.
   **`.table-responsive` is `position: relative`** for a related reason: `overflow: auto` clips only
   descendants whose containing block is the scroller itself, so the job queue's `visually-hidden` column
   label (Bootstrap positions it `absolute`) resolved against the `.card` outside it, kept its place beside
@@ -7347,7 +7368,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
   control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before;
-  it also pins the fullscreen-modal rule to all four insets, the `-sm-down` one inside the phone query —
+  it also pins the `.modal` rule to all four insets and a fullscreen modal to exactly one layer of them (the
+  `-sm-down` pair inside the phone query), the filter drawers' class (read out of both components' source) to
+  top and right with the bottom left to the footer, the viewer head's insets to the ≥768px branch with none on
+  the phone sheet, and the slideshow settings panel's offset and `max-height` to the insets they carry —
   `styles/pageGutter.test.ts`, which reads the shipped Bootstrap alongside `app.css` and checks the page
   shell's padding against the bleed it has to absorb (the `.row` margin, and the widest `g-*`/`gx-*` gutter
   the markup actually spends) rather than against a transcribed number,
