@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Button } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmModal } from '../../components/ConfirmModal'
 import { Icon } from '../../components/Icon'
 import { PersonAvatar } from '../../components/PersonAvatar'
 import { PersonPicker } from '../../components/tasks/PersonPicker'
@@ -33,6 +34,12 @@ export interface TaskParticipantsProps {
  * The two are told apart in the title of each chip, not by a second visual
  * language: they are the same fact (this person is involved) arrived at two ways,
  * and a reader scanning the row wants the faces, not the provenance.
+ *
+ * Taking somebody off is confirmed first rather than undone after. An undo would
+ * have to put them back through `assign`, which records the remover as having
+ * *asked* them — so a person who was on the task because they acted would come
+ * back with a different provenance than they left with. A confirm keeps the
+ * write faithful and costs one tap on a control that is rarely used.
  */
 export function TaskParticipants({
   taskUid,
@@ -44,6 +51,8 @@ export function TaskParticipants({
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  // Who the reader asked to take off, until they confirm or back out.
+  const [removing, setRemoving] = useState<Participant | null>(null)
 
   const remove = useCallback(
     async (userUid: string) => {
@@ -55,6 +64,7 @@ export function TaskParticipants({
         setFailed(true)
       } finally {
         setBusy(false)
+        setRemoving(null)
       }
     },
     [taskUid, onChange],
@@ -103,11 +113,13 @@ export function TaskParticipants({
             <Button
               variant="link"
               size="sm"
-              className="kk-task-person__remove"
+              className="kk-task-person__remove kukatko-tap-target-touch"
               disabled={busy}
               aria-label={t('taskDetail.people.remove', { name: person.name })}
+              title={t('taskDetail.people.remove', { name: person.name })}
               onClick={() => {
-                void remove(person.user_uid)
+                setFailed(false)
+                setRemoving(person)
               }}
             >
               <Icon name="x-lg" />
@@ -131,6 +143,23 @@ export function TaskParticipants({
       )}
 
       {failed && <span className="text-danger small">{t('taskDetail.controls.failed')}</span>}
+
+      <ConfirmModal
+        show={removing !== null}
+        title={t('taskDetail.people.removeConfirm.title', { name: removing?.name ?? '' })}
+        confirmLabel={t('taskDetail.people.removeConfirm.confirm')}
+        busy={busy}
+        onConfirm={() => {
+          if (removing !== null) {
+            void remove(removing.user_uid)
+          }
+        }}
+        onCancel={() => {
+          setRemoving(null)
+        }}
+      >
+        {t('taskDetail.people.removeConfirm.body', { name: removing?.name ?? '' })}
+      </ConfirmModal>
 
       <PersonPicker
         show={picking}

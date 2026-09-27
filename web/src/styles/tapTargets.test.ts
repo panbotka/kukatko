@@ -125,6 +125,20 @@ describe('coarse-pointer touch-target floor', () => {
     expect(ruleBody(css, /\.kk-face-box(?!::)/)).toBeUndefined()
   })
 
+  it('gives the opt-in helper a width, not only a height', () => {
+    // The shared list lifts a `.btn` to 44px *tall* only, so an icon-only
+    // `variant="link"` with `p-0` stays a ~16px-wide sliver. Width is opt-in
+    // through `kukatko-tap-target-touch` — the one convention the faces sheet's
+    // close, the edit panel's close, the location pencil, a task participant's
+    // remove and the comment row's actions all use (pinned per component).
+    const shared = declarations(ruleBody(coarse, /\.navbar-toggler,/) ?? '')
+    expect(shared.get('min-width')).toBeUndefined()
+
+    const helper = declarations(ruleBody(coarse, /\.kukatko-tap-target-touch\s*(?=\{)/) ?? '')
+    expect(lengthPx(helper.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(helper.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+
   it('exempts the close button inside a pill chip', () => {
     const chip = declarations(ruleBody(coarse, /\.badge\s+\.btn-close\s*(?=\{)/) ?? '')
     expect(lengthPx(chip.get('min-width'))).toBe(0)
@@ -142,6 +156,43 @@ describe('coarse-pointer touch-target floor', () => {
     expect(lengthPx(link.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
     const menu = declarations(ruleBody(block, /\.kk-label-chip__menu\s*(?=\{)/) ?? '')
     expect(lengthPx(menu.get('min-width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+  })
+})
+
+/**
+ * A task participant's remove ✕ used to sit at `opacity: 0.6` until the pill was
+ * hovered — and hover never fires on a phone, so a destructive control stayed
+ * permanently dimmed there. The dimming now lives behind a hover-capable fine
+ * pointer, and nothing outside that query takes the opacity away.
+ */
+describe('the task participant remove control', () => {
+  const css = readCss('src/styles/app.css')
+
+  it('is never dimmed outside a hover-capable fine pointer', () => {
+    const base = declarations(ruleBody(css, /\.kk-task-person__remove\s*(?=\{)/) ?? '')
+    expect(base.get('color')).toBeDefined()
+    expect(base.get('opacity')).toBeUndefined()
+
+    const mouse =
+      ruleBody(
+        css,
+        /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/,
+        /\.kk-task-person__remove/,
+      ) ?? ''
+    const dimmed = declarations(ruleBody(mouse, /\.kk-task-person__remove\s*(?=\{)/) ?? '')
+    expect(Number(dimmed.get('opacity'))).toBeLessThan(1)
+  })
+})
+
+/**
+ * A comment row's Edit and Delete square off at 44px each on touch; the gap
+ * between them has to keep those two boxes from reading as one target.
+ */
+describe('the comment row actions', () => {
+  it('sit further apart than the edit form’s pair', () => {
+    const viewer = readCss('src/components/photo/viewer.css')
+    const row = declarations(ruleBody(viewer, /\.kk-comment__actions\s*(?=\{)/) ?? '')
+    expect(row.get('gap')).toBe('var(--kk-space-3)')
   })
 })
 

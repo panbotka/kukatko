@@ -271,6 +271,20 @@ describe('CommentsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
+  it('keeps the row’s two actions separable by touch', async () => {
+    fetchCommentsMock.mockResolvedValue([comment()])
+    renderPanel()
+
+    // Delete gets a box of its own rather than being a second caption word told
+    // apart from Edit only by colour, and both square off at 44px on touch.
+    const edit = await screen.findByRole('button', { name: 'Edit' })
+    const remove = screen.getByRole('button', { name: 'Delete' })
+    expect(remove).toHaveClass('btn-outline-danger')
+    expect(remove).not.toHaveClass('btn-link')
+    expect(edit).toHaveClass('kukatko-tap-target-touch')
+    expect(remove).toHaveClass('kukatko-tap-target-touch')
+  })
+
   it('reports the thread length upwards, and again after a post', async () => {
     const user = userEvent.setup()
     const onCountChange = vi.fn()

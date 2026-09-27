@@ -69,13 +69,14 @@ describe('EditPanel rotation', () => {
     )
   })
 
-  it('gives both icon buttons a finger-sized hit area on touch', () => {
+  it('gives every icon button a finger-sized hit area on touch', () => {
     renderPanel()
 
     // An icon-only `btn-sm` is ~32px wide; the app-wide coarse-pointer floor lifts
     // a `.btn` to 44px tall but not wide (`app.css`, guarded by
     // `styles/tapTargets.test.ts`), and this panel is a bottom sheet on a phone.
-    for (const name of ['Rotate left', 'Rotate right']) {
+    // The header's X is the same bare glyph, so it carries the helper too.
+    for (const name of ['Rotate left', 'Rotate right', 'Close the edits panel']) {
       expect(screen.getByRole('button', { name })).toHaveClass('kukatko-tap-target-touch')
     }
   })

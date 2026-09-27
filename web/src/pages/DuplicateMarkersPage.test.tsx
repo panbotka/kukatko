@@ -240,7 +240,13 @@ it('records "leave it be" as durable feedback and hides the finding', async () =
     expect(cards()).toHaveLength(1)
   })
 
-  await user.click(screen.getByRole('button', { name: /Leave it be/ }))
+  // The card's only permanent verdict is drawn like the verdicts beside it — an
+  // outline button — not as a thin link.
+  const leave = screen.getByRole('button', { name: /Leave it be/ })
+  expect(leave).toHaveClass('btn-outline-secondary')
+  expect(leave).not.toHaveClass('btn-link')
+
+  await user.click(leave)
 
   await waitFor(() => {
     expect(screen.queryAllByTestId('dup-marker-group')).toHaveLength(0)

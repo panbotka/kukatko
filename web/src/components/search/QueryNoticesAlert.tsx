@@ -34,7 +34,13 @@ export function QueryNoticesAlert({ notices }: QueryNoticesAlertProps) {
   }
   return (
     <Alert variant="info" className="py-2">
-      {t('search.personMeUnlinked')} <Link to="/account">{t('search.personMeUnlinkedLink')}</Link>
+      {t('search.personMeUnlinked')}{' '}
+      {/* The alert's own text colour, underlined: the page's link blue (and
+          Bootstrap's `alert-link`) is barely legible on this filled background,
+          and this link is the only thing that fixes the query. */}
+      <Link to="/account" className="text-reset text-decoration-underline">
+        {t('search.personMeUnlinkedLink')}
+      </Link>
     </Alert>
   )
 }

@@ -29,6 +29,13 @@ describe('QueryNoticesAlert', () => {
     expect(screen.getByRole('link', { name: /My account/ })).toHaveAttribute('href', '/account')
   })
 
+  it('draws the fix in the alert’s own colour so it is legible on the filled background', () => {
+    renderAlert(['person_me_unlinked'])
+
+    const link = screen.getByRole('link', { name: /My account/ })
+    expect(link).toHaveClass('text-reset', 'text-decoration-underline')
+  })
+
   it('renders nothing when there is nothing to say', () => {
     const { container } = renderAlert([])
     expect(container).toBeEmptyDOMElement()

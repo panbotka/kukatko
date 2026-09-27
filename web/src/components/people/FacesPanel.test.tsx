@@ -114,6 +114,10 @@ describe('FacesPanel', () => {
       'title',
       'Close the faces panel',
     )
+    // …and, being the sheet's one way shut on a phone, a 44px square on touch.
+    expect(screen.getByRole('button', { name: 'Close the faces panel' })).toHaveClass(
+      'kukatko-tap-target-touch',
+    )
 
     const unnamed = screen.getByRole('button', { name: 'Select face #1: No name' })
     expect(unnamed).toHaveAttribute('data-face-state', 'unnamed')

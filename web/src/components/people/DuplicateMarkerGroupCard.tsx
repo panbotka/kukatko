@@ -275,17 +275,19 @@ export function DuplicateMarkerGroupCard({
 
       <Card.Footer className="d-flex flex-wrap align-items-center gap-2">
         <span className="small text-secondary">{t('duplicateMarkers.card.hint')}</span>
+        {/* The card's one permanent, unconfirmed decision, so it is drawn like the
+            per-crop verdicts above it — an outline button, not a thin link. */}
         <Button
-          variant="link"
+          variant="outline-secondary"
           size="sm"
-          className="ms-auto text-decoration-none"
+          className="ms-auto d-inline-flex align-items-center gap-1"
           disabled={busy}
           title={t('duplicateMarkers.card.dismissTitle')}
           onClick={() => {
             onDismiss(group)
           }}
         >
-          <Icon name="hand-thumbs-up" className="me-1" />
+          <Icon name="hand-thumbs-up" />
           {t('duplicateMarkers.card.dismiss')}
         </Button>
       </Card.Footer>

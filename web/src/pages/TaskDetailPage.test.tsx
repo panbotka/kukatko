@@ -411,18 +411,55 @@ describe('who is on the task', () => {
     expect(screen.queryByRole('button', { name: 'Anna' })).not.toBeInTheDocument()
   })
 
-  it('lets a writer take somebody off it', async () => {
+  it('lets a writer take somebody off it, once they confirm', async () => {
     const user = userEvent.setup()
     fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
     unassignMock.mockResolvedValue([])
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: 'Remove Anna' }))
+    // The write has no undo, so the dialog asks first and nothing has happened yet.
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Remove Anna from this task?')).toBeInTheDocument()
+    expect(unassignMock).not.toHaveBeenCalled()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }))
 
     await waitFor(() => {
       expect(unassignMock).toHaveBeenCalledWith('tk1', 'u2')
     })
     expect(await screen.findByText('nobody yet')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('keeps the person on it when the confirmation is backed out of', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Anna' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(unassignMock).not.toHaveBeenCalled()
+    expect(screen.getByText('Anna')).toBeInTheDocument()
+  })
+
+  it('gives the remove control its name and a 44px square on touch', async () => {
+    fetchTaskMock.mockResolvedValue(task({ participants: [acted] }))
+    renderPage()
+
+    // Icon-only, so the name lives on the button — for a hover as well as for a
+    // screen reader — and the helper squares it off on a coarse pointer, where
+    // it also is no longer dimmed (`styles/tapTargets.test.ts`).
+    const remove = await screen.findByRole('button', { name: 'Remove Anna' })
+    expect(remove).toHaveAttribute('title', 'Remove Anna')
+    expect(remove).toHaveClass('kukatko-tap-target-touch')
   })
 
   it('offers a viewer neither control', async () => {

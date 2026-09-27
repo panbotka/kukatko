@@ -283,6 +283,10 @@ describe('MetadataPanel location picker', () => {
       'title',
       'Edit Location',
     )
+    // A bare glyph beside a caption-size label: it squares off at 44px on touch.
+    expect(screen.getByRole('button', { name: 'Edit Location' })).toHaveClass(
+      'kukatko-tap-target-touch',
+    )
     await startEditing(user)
     expect(screen.getByLabelText('Coordinates')).toHaveValue('50.080000, 14.420000')
     expect(screen.getByTestId('marker')).toHaveTextContent('50.08,14.42')
@@ -1238,6 +1242,25 @@ describe('a capture date declared unknown', () => {
     })
 
     expect(screen.getByText('originally recorded: 1974')).toBeInTheDocument()
+  })
+
+  it('offers the restore as a button of its own, not a footnote in the sentence', () => {
+    // It writes the moment it is pressed, so it must not read as part of the
+    // muted explanatory note it used to sit inside.
+    renderPanel({
+      photo: photo({
+        taken_at: undefined,
+        taken_at_source: 'unknown',
+        taken_at_before_unknown: '1974-01-01T00:00:00Z',
+        taken_at_precision: 'year',
+      }),
+    })
+
+    const note = screen.getByText('originally recorded: 1974')
+    const restore = screen.getByRole('button', { name: 'Put it back as the date' })
+    expect(note).not.toContainElement(restore)
+    expect(restore).toHaveClass('btn-outline-secondary')
+    expect(restore).not.toHaveClass('btn-link')
   })
 
   it('says nothing extra about a photo that never carried a date', () => {

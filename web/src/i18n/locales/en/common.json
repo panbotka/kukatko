@@ -1503,6 +1503,11 @@
       "nobody": "nobody yet",
       "add": "Add",
       "remove": "Remove {{name}}",
+      "removeConfirm": {
+        "title": "Remove {{name}} from this task?",
+        "body": "{{name}} will no longer be listed among the people on this task. Anyone can be added again, but as asked by you.",
+        "confirm": "Remove"
+      },
       "pick": "Who should be on this task?",
       "loading": "Loading people…",
       "loadFailed": "The people could not be loaded.",

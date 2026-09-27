@@ -118,4 +118,14 @@ describe('PwaStatus', () => {
     expect(applyServiceWorkerUpdate).not.toHaveBeenCalled()
     expect(screen.queryByText(UPDATE_TEXT)).not.toBeInTheDocument()
   })
+
+  it('draws the postponement in the alert’s own colour, not a muted grey', () => {
+    renderStatus()
+
+    announceUpdate()
+    // Grey on the filled info alert was effectively invisible in this theme.
+    const later = screen.getByRole('button', { name: 'Not now' })
+    expect(later).toHaveClass('text-reset', 'text-decoration-underline')
+    expect(later).not.toHaveClass('text-body-secondary')
+  })
 })

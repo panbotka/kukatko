@@ -98,10 +98,12 @@ export function EditPanel({ uid, edit, onChange, onSaved, onClose }: EditPanelPr
     <Card>
       <Card.Header className="d-flex justify-content-between align-items-center">
         <span>{t('photo.edit.title')}</span>
+        {/* Squared off at 44px on a coarse pointer like the rotate pair below;
+            without it the `p-0` link was the one ~16px-wide control in the sheet. */}
         <Button
           variant="link"
           size="sm"
-          className="p-0 text-reset text-decoration-none"
+          className="p-0 text-reset text-decoration-none kukatko-tap-target-touch"
           aria-label={t('photo.edit.closePanel')}
           title={t('photo.edit.closePanel')}
           onClick={onClose}

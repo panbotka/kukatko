@@ -1058,6 +1058,13 @@
   align-items: center;
 }
 
+/* The row's two actions sit further apart than the edit form's pair: on a phone
+   each is a 44px box, and at 8px a thumb meant for Edit could still land on
+   Delete. */
+.kk-comment__actions {
+  gap: var(--kk-space-3);
+}
+
 .kk-comment__edit-actions {
   margin-top: var(--kk-space-2);
 }
@@ -1070,8 +1077,13 @@
   text-decoration: none;
 }
 
-.kk-comment__action--danger {
-  color: var(--bs-danger);
+/* …except delete, which gets a box: a hairline outline at the same caption size,
+   so it reads as a separate, weightier control without turning the thread into
+   a row of buttons. */
+.kk-comment__delete {
+  --bs-btn-padding-x: var(--kk-space-2);
+  --bs-btn-padding-y: 0;
+  --bs-btn-font-size: var(--kk-font-size-caption);
 }
 
 .kk-comments__state,

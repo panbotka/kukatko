@@ -1467,6 +1467,11 @@
       "nobody": "zatím nikdo",
       "add": "Přidat",
       "remove": "Odebrat {{name}}",
+      "removeConfirm": {
+        "title": "Odebrat z úkolu: {{name}}?",
+        "body": "{{name}} už nebude mezi lidmi na tomto úkolu. Znovu přidat se dá kdokoli, ale už jako přizvaný od vás.",
+        "confirm": "Odebrat"
+      },
       "pick": "Koho přidat k úkolu?",
       "loading": "Načítám lidi…",
       "loadFailed": "Seznam lidí se nepodařilo načíst.",

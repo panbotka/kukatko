@@ -311,29 +311,30 @@ interface PreservedDateProps {
  * the value is also the only way to answer "what did it claim before?" without
  * digging in the database.
  *
- * It is deliberately quiet — no badge, no border. This is not a claim about the
- * photo (the photo has no date, and that is the honest answer); it is the note
- * beside the answer saying what was crossed out.
+ * The note is deliberately quiet — no badge, no border. This is not a claim about
+ * the photo (the photo has no date, and that is the honest answer); it is the
+ * note beside the answer saying what was crossed out. The restore is not: it
+ * writes the date back the moment it is pressed, so it stands below the sentence
+ * as a small button of its own rather than reading as a footnote inside it.
  */
 function PreservedDate({ date, canWrite, busy, failed, onRestore }: PreservedDateProps) {
   const { t } = useTranslation()
   return (
     <div className="mb-2">
-      <div className="small text-secondary">
-        {t('photo.metadata.beforeUnknown', { date })}
-        {canWrite && (
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="p-0 ms-2 align-baseline"
-            disabled={busy}
-            onClick={onRestore}
-          >
-            {t('photo.metadata.restoreBeforeUnknown')}
-          </Button>
-        )}
-      </div>
+      <div className="small text-secondary">{t('photo.metadata.beforeUnknown', { date })}</div>
+      {canWrite && (
+        <Button
+          type="button"
+          variant="outline-secondary"
+          size="sm"
+          className="mt-1 d-inline-flex align-items-center gap-1"
+          disabled={busy}
+          onClick={onRestore}
+        >
+          <Icon name="arrow-counterclockwise" />
+          {t('photo.metadata.restoreBeforeUnknown')}
+        </Button>
+      )}
       {failed && (
         <div className="text-danger small">{t('photo.metadata.restoreBeforeUnknownFailed')}</div>
       )}
@@ -1002,14 +1003,15 @@ export function MetadataPanel({ photo, canWrite, onUpdated, footer }: MetadataPa
       <div className="mb-1">
         {/* The pencil sits against the label, like every field above it: at the
             right margin it was a glyph the width of the card away from the thing
-            it edits. */}
+            it edits. `kukatko-tap-target-touch` gives it a 44px square on a
+            coarse pointer, where the bare glyph was a ~16px-wide entry to a write. */}
         <div className="small text-secondary d-flex align-items-center gap-1">
           <span>{t('photo.metadata.location')}</span>
           {canWrite && (
             <Button
               variant="link"
               size="sm"
-              className="p-0 text-decoration-none lh-1"
+              className="p-0 text-decoration-none lh-1 kukatko-tap-target-touch"
               aria-label={editLocationLabel}
               title={editLocationLabel}
               onClick={startEditing}

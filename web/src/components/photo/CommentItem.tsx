@@ -151,6 +151,10 @@ export function CommentItem({
           <CommentBody body={comment.body} taskUid={comment.task_uid} />
         )}
 
+        {/* Edit stays a quiet link, delete gets a box: two caption words 8px apart
+            told apart only by colour were one target to a thumb. Both carry
+            `kukatko-tap-target-touch`, so each clears a 44px square on a coarse
+            pointer, and the wider gap keeps those squares from touching. */}
         {!editing && (canEdit || canDelete) && (
           <div className="kk-comment__actions">
             {canEdit && (
@@ -158,7 +162,7 @@ export function CommentItem({
                 type="button"
                 size="sm"
                 variant="link"
-                className="kk-comment__action"
+                className="kk-comment__action kukatko-tap-target-touch"
                 disabled={busy}
                 onClick={() => {
                   setDraft(comment.body)
@@ -171,8 +175,8 @@ export function CommentItem({
               <Button
                 type="button"
                 size="sm"
-                variant="link"
-                className="kk-comment__action kk-comment__action--danger"
+                variant="outline-danger"
+                className="kk-comment__delete kukatko-tap-target-touch"
                 disabled={busy}
                 onClick={onDelete}
               >

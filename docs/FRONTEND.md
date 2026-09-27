@@ -7272,7 +7272,17 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `pointer-events` are inherited, so a `readOnly` frame stays click-through),
   without touching the desktop (fine-pointer) layout and without per-component changes (a systemic fix for the
   ubiquitous `size="sm"` controls; the guards are in `styles/tapTargets.test.ts`, because jsdom doesn't evaluate media
-  queries);
+  queries). **The floor gives a `.btn` its height, not its width**: an icon-only `variant="link"` with `p-0` stays
+  a ~13–20px-wide sliver 44px tall. **Width is opt-in through `kukatko-tap-target-touch`** — the one convention, not
+  a per-component rule — and every icon-only (or caption-size) control that carries a write or closes a sheet on a
+  phone needs it: the faces sheet's ✕ (`FacesPanel`), the edit panel's ✕ and rotate pair (`EditPanel`), the location
+  pencil (`MetadataPanel`), a task participant's remove ✕ (`TaskParticipants`), a comment row's Edit and Delete
+  (`CommentItem`), the saved-search/passkey/token/notification row actions and the query `?`. Measured in a
+  standalone harness with the media features forced (2026-09-27, 390px): each of those is 44.0 × 44.0 on a coarse
+  pointer against 12.9–20.9 × 44.0 without the helper, and unchanged on a fine one. The labels cloud's „…" menu is
+  the one exception, sized by its own `.kk-label-chip__menu` coarse rule next to the chip it sits in. A control
+  that **dims until hovered** keeps the dimming behind `@media (hover: hover) and (pointer: fine)` — hover never
+  fires on a phone, so a dimmed control there stays dimmed for good (`.kk-task-person__remove`);
   **native form chrome** — Superhero bakes `.form-control`/`.form-select` white (`#fff`) regardless of the
   theme; instead of pinning them to a light scheme we give them a real dark surface `--kk-surface-sunken` with
   a hairline line and `color-scheme: dark` (the fill and the scheme agree, so the native glyphs — the `type=date`

@@ -177,10 +177,13 @@ export function FacesPanel({
     <Card>
       <Card.Header className="d-flex justify-content-between align-items-center">
         <span>{t('faces.count', { count: faces.faces.length })}</span>
+        {/* The sheet's one way shut on a phone: `kukatko-tap-target-touch` squares
+            the glyph off at 44px on a coarse pointer — the app-wide floor only
+            gives a `.btn` its height, and a `p-0` link is otherwise ~16px wide. */}
         <Button
           variant="link"
           size="sm"
-          className="p-0 text-reset text-decoration-none"
+          className="p-0 text-reset text-decoration-none kukatko-tap-target-touch"
           aria-label={t('faces.panel.closePanel')}
           title={t('faces.panel.closePanel')}
           onClick={onClose}

@@ -49,7 +49,15 @@ export function PwaStatus() {
           <Button variant="primary" size="sm" onClick={applyUpdate}>
             {t('pwa.update.action')}
           </Button>
-          <Button variant="link" size="sm" className="text-body-secondary" onClick={dismissUpdate}>
+          {/* Inside a filled alert neither `variant="link"` nor a muted colour is
+              legible in this theme, so the dismissal inherits the alert's own
+              colour and earns its underline instead (as `WhatsNewPanel` does). */}
+          <Button
+            variant="link"
+            size="sm"
+            className="text-reset text-decoration-underline"
+            onClick={dismissUpdate}
+          >
             {t('pwa.update.dismiss')}
           </Button>
         </Alert>

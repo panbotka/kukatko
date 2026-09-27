@@ -3236,20 +3236,28 @@ body {
 }
 
 /* The remove control is a quiet glyph until the pill is hovered or focused: it
-   is destructive-ish and permanently loud would make the row read as a form. */
+   is destructive and permanently loud would make the row read as a form. The
+   dimming is for a mouse only — hover never fires on a phone, where a dimmed
+   control would stay dimmed for good — so a coarse pointer always sees it at
+   full strength (and at 44px, through `kukatko-tap-target-touch`). */
 .kk-task-person__remove {
   --bs-btn-padding-x: 0.25rem;
   --bs-btn-padding-y: 0;
 
   line-height: 1;
   color: var(--kk-text-muted);
-  opacity: 0.6;
-  transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
 }
 
-.kk-task-person:hover .kk-task-person__remove,
-.kk-task-person__remove:focus-visible {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .kk-task-person__remove {
+    opacity: 0.6;
+    transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
+  }
+
+  .kk-task-person:hover .kk-task-person__remove,
+  .kk-task-person__remove:focus-visible {
+    opacity: 1;
+  }
 }
 
 /* ---------------------------------------------------------------------------
