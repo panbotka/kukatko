@@ -266,3 +266,52 @@ describe('filter drawer footer safe-area insets', () => {
     expect(paddingPx(LANDSCAPE, footer).bottom).toBeGreaterThanOrEqual(LANDSCAPE.bottom)
   })
 })
+
+/**
+ * Every fullscreen Bootstrap modal — the review lightbox, the query help on a
+ * phone, the `fullscreen="sm-down"` forms. `index.html` paints under the iOS
+ * status bar, and a fullscreen modal starts at y=0, so without these insets its
+ * close button sits on the battery indicator and its last row of buttons under
+ * the home indicator. One rule in `app.css` covers them all; the `-sm-down`
+ * variant only inside Bootstrap's phone breakpoint, because above it the class
+ * renders a windowed dialog that an iPad in standalone would pad for nothing.
+ */
+describe('fullscreen modal safe-area insets', () => {
+  const css = readCss('src/styles/app.css')
+  const fullscreen = rule(css, /\n\.modal-fullscreen \.modal-content\s*(?=\{)/, /safe-area-inset/)
+  const phone = ruleBody(
+    css,
+    /@media \(max-width: 575\.98px\)\s*(?=\{)/,
+    /\.modal-fullscreen-sm-down \.modal-content/,
+  )
+  const smDown = rule(phone ?? '', /\.modal-fullscreen-sm-down \.modal-content\s*(?=\{)/)
+
+  it('names all four insets on the always-fullscreen modal', () => {
+    const padding = fullscreen.get('padding') ?? ''
+    for (const side of SIDES) {
+      expect(padding).toContain(`env(safe-area-inset-${side}, 0px)`)
+    }
+  })
+
+  it('takes the -sm-down variant only inside the phone media query', () => {
+    expect(phone).toBeDefined()
+    // Not at the top level too: above the breakpoint the dialog is windowed.
+    expect(css).not.toMatch(/\n\.modal-fullscreen-sm-down \.modal-content\s*\{/)
+    const padding = smDown.get('padding') ?? ''
+    for (const side of SIDES) {
+      expect(padding).toContain(`env(safe-area-inset-${side}, 0px)`)
+    }
+  })
+
+  it('adds nothing where there is no notch', () => {
+    expect(paddingPx(DESKTOP, fullscreen)).toEqual(DESKTOP)
+    expect(paddingPx(DESKTOP, smDown)).toEqual(DESKTOP)
+  })
+
+  it('moves the controls clear of the status bar, home bar and a side notch', () => {
+    for (const modal of [fullscreen, smDown]) {
+      expect(paddingPx(PORTRAIT, modal)).toEqual(PORTRAIT)
+      expect(paddingPx(LANDSCAPE, modal)).toEqual(LANDSCAPE)
+    }
+  })
+})

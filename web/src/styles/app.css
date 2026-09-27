@@ -127,6 +127,32 @@
   --bs-backdrop-zindex: var(--kk-modal-backdrop-z);
 }
 
+/* ---- Fullscreen modals and the safe area ---------------------------------
+   `index.html` paints the page under the iOS status bar (`viewport-fit=cover`
+   + `black-translucent`), and a fullscreen modal starts at y=0 — so without
+   this its close button lands on the battery indicator, where the tap belongs
+   to the system, and its last row of buttons sits under the home indicator.
+   Insetting `.modal-content` by all four insets keeps the surface edge to edge
+   (the background lies under the padding) while every control moves inside the
+   safe area; left and right cover a notched phone in landscape. `env()` is 0
+   wherever there are no insets, so desktop and Android are unchanged. The
+   `-sm-down` variant takes it only inside Bootstrap's own breakpoint: above it
+   that class renders a windowed dialog nowhere near the status bar, which an
+   iPad in standalone would otherwise pad for nothing. Every fullscreen modal
+   inherits this — none needs a line of its own. `styles/safeArea.test.ts`
+   holds it. */
+.modal-fullscreen .modal-content {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+@media (max-width: 575.98px) {
+  .modal-fullscreen-sm-down .modal-content {
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+}
+
 .offcanvas,
 .offcanvas-sm,
 .offcanvas-md,

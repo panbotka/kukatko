@@ -7175,6 +7175,14 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   inside it opens with, and a bare `env()` (0 where there is no notch) zeroed it, so every row hung half a
   gutter past the container — invisible on a desktop, where the bleed lands in the spare margin, but eight
   routes measuring 9–66px wider than a 393px phone, with the content flush against both screen edges.
+  **Every fullscreen modal inherits the insets from one rule** (`.modal-fullscreen .modal-content`, and
+  `.modal-fullscreen-sm-down .modal-content` only inside Bootstrap's own `max-width: 575.98px` query — above
+  it that class is a windowed dialog an iPad in standalone would pad for nothing): the content is padded by
+  all four `env(safe-area-inset-*)`, so its surface still paints edge to edge while the close button and the
+  last button row move inside the safe area. Without it the iOS PWA (which paints under the status bar
+  on purpose) put `ReviewLightbox`'s close button on the battery indicator (16–47px under a 47px inset;
+  63–94px with the rule) and its bottom row under the home indicator. A new fullscreen modal needs no line
+  of its own; `ReviewLightbox`'s `100cqh` stage remeasures against the inset box by itself.
   **`.table-responsive` is `position: relative`** for a related reason: `overflow: auto` clips only
   descendants whose containing block is the scroller itself, so the job queue's `visually-hidden` column
   label (Bootstrap positions it `absolute`) resolved against the `.card` outside it, kept its place beside
@@ -7332,7 +7340,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the scoping under `.kukatko-map`, colors only from tokens, the compound selectors that beat the Leaflet
   stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
-  control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before —
+  control rows clear both the notch and the home bar — and that without the insets the spacing stays exactly as before;
+  it also pins the fullscreen-modal rule to all four insets, the `-sm-down` one inside the phone query —
   `styles/pageGutter.test.ts`, which reads the shipped Bootstrap alongside `app.css` and checks the page
   shell's padding against the bleed it has to absorb (the `.row` margin, and the widest `g-*`/`gx-*` gutter
   the markup actually spends) rather than against a transcribed number,
