@@ -506,9 +506,6 @@ beforeEach(async () => {
   // Every test but the phone ones runs at the desktop breakpoint, where the
   // curation controls ride the top action bar.
   mockViewport(false)
-  // The face-overlay toggle persists to localStorage; start every test from the
-  // shipped default (overlay off — the photo is the content).
-  window.localStorage.removeItem('kukatko.faces.overlay')
   fetchFacesMock.mockResolvedValue(facesResponse(0))
   fetchSubjectsMock.mockResolvedValue([subjectCount('su_a', 'Alice')])
   attachPersonMock.mockResolvedValue([attachedPerson('su_a', 'Alice')])
@@ -1818,6 +1815,79 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(location).not.toHaveTextContent('info=1')
     })
 
+    it('keeps the faces view on a photo with none instead of showing the metadata', async () => {
+      // The drawer shows the view its URL names and never a substitute: an empty
+      // face list is an honest answer, the metadata is not what was asked for.
+      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 0')).toBeInTheDocument()
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'false')
+      // Its toggle stays in the bar, pressed, so the view can be shut from there.
+      expect(screen.getByRole('button', { name: 'Hide faces' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+    })
+
+    it('shuts the drawer on the edits named for a viewer, rather than the metadata', async () => {
+      // A view the reader cannot have on this photo at all is no reason to show
+      // another one: the drawer stays shut on the plain photo.
+      const { container } = renderPage(false, '/photos/b?sort=oldest&panel=edits')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(drawer(container)).toHaveAttribute('inert')
+      expect(screen.queryByRole('button', { name: 'Rotate right' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('shuts the drawer on the faces named on a video', async () => {
+      fetchPhotoMock.mockResolvedValue(photo({ media_type: 'video' }))
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(screen.queryByText('Faces: 2')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Info' })).toHaveAttribute('aria-pressed', 'false')
+    })
+
+    it('keeps the faces view up across paging, with no metadata while the next loads', async () => {
+      // The open view travels in the URL; while the neighbour is on the wire the
+      // faces panel shows its own loading state rather than flashing the metadata
+      // for a moment and then flipping back.
+      let resolveNext!: (p: PhotoDetail) => void
+      const pendingNext = new Promise<PhotoDetail>((resolve) => {
+        resolveNext = resolve
+      })
+      fetchPhotoMock.mockImplementation((uid) =>
+        uid === 'c' ? pendingNext : Promise.resolve(photo({ uid: 'b', title: 'Beach' })),
+      )
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      await screen.findByRole('link', { name: 'Next' })
+
+      fireEvent.keyDown(document, { key: 'ArrowRight' })
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      expect(screen.getByRole('button', { name: 'Hide faces' })).toBeInTheDocument()
+      expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
+      // The boxes, unlike the view, stand down over the photo still on stage.
+      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
+
+      resolveNext(photo({ uid: 'c', title: 'Cliff' }))
+      expect(await screen.findByRole('heading', { name: 'Cliff' })).toBeInTheDocument()
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      expect(viewer(container)).toHaveAttribute('data-panel', 'open')
+      expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
+      expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
+    })
+
     it('carries the panel, not just "open", to the neighbour', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
       renderPage(true, '/photos/b?sort=oldest&panel=faces')
@@ -2014,37 +2084,24 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(previews).toHaveLength(1)
     })
 
-    it('opens the faces panel on load when the stored preference asks for faces', async () => {
-      // A remembered "show faces" must bring up the boxes AND their naming panel,
-      // not leave the boxes over a shut drawer: the drawer opens itself on the
-      // faces once they are known to be available, even without info in the URL.
-      window.localStorage.setItem('kukatko.faces.overlay', 'true')
+    it('never brings the faces up by itself — a fresh open is the plain photo', async () => {
+      // Faces come up on an explicit act or a URL naming them, nothing else: having
+      // had them on for the previous photo does not open them on the next one
+      // reached from the grid, a notification or a link — and nothing is kept
+      // behind in storage to do so.
+      const user = userEvent.setup()
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      const { container } = renderPage(true, '/photos/b?sort=oldest')
-
-      await screen.findByRole('heading', { name: 'Beach' })
-      await waitFor(() => {
-        expect(viewer(container)).toHaveAttribute('data-panel', 'open')
-      })
+      const first = renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Show faces' }))
       expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
-      expect(screen.getByText('Faces: 2')).toBeInTheDocument()
-      // Opening it pins the open panel into the URL — by name, so a reload comes
-      // back to the faces and not to the metadata.
-      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
-    })
+      first.unmount()
 
-    it('leaves the drawer shut when faces are preferred but the photo has none', async () => {
-      // The preference cannot conjure a panel out of nothing: with no faces to
-      // show, the drawer stays shut rather than opening on an empty face list.
-      window.localStorage.setItem('kukatko.faces.overlay', 'true')
-      fetchFacesMock.mockResolvedValue(facesResponse(0))
       const { container } = renderPage(true, '/photos/b?sort=oldest')
-
-      await screen.findByRole('heading', { name: 'Beach' })
-      // Give the faces fetch time to resolve before asserting the drawer is shut.
-      await screen.findByRole('button', { name: 'Info' })
+      await screen.findByRole('button', { name: 'Show faces' })
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
+      expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
       expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
+      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBeNull()
     })
 
     it('shows the faces on their own — activating them does not drag in the info panel', async () => {
@@ -2114,7 +2171,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
     })
 
-    it('toggles the faces with the m key and remembers the choice', async () => {
+    it('toggles the faces with the m key, in the URL and nowhere else', async () => {
       const user = userEvent.setup()
       fetchFacesMock.mockResolvedValue(facesResponse(1))
       renderPage()
@@ -2122,11 +2179,14 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       fireEvent.keyDown(document, { key: 'm' })
       expect(await screen.findByTestId('face-overlay')).toBeInTheDocument()
-      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('true')
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
 
       fireEvent.keyDown(document, { key: 'm' })
       expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
-      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBe('false')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
+      // The choice lives in the address only: no preference is stored to reopen
+      // the faces on the next photo opened.
+      expect(window.localStorage.getItem('kukatko.faces.overlay')).toBeNull()
 
       // And the button does the same thing.
       await user.click(screen.getByRole('button', { name: 'Show faces' }))

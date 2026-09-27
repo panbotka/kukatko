@@ -255,7 +255,7 @@ here.
   appears without a reload) + a dismissible `<Alert>` with a variant per `level` (`info`→`info-circle`
   icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-user dismiss keyed on `updated_at`**
   in localStorage (`lib/announcementDismissal.ts`: `readDismissedAnnouncement`/`writeDismissedAnnouncement`,
-  mirrors `faceOverlayPref.ts`) — dismissing hides the current message, but a newly published one (new `updated_at`)
+  mirrors `viewerChromeHint.ts`) — dismissing hides the current message, but a newly published one (new `updated_at`)
   **shows again** (not a plain boolean); empty message / loading / already dismissed → renders nothing; texts
   `announcement.*` (cs/en)),
   `WhatsNewPanel` (`components/library/`, **"what's new since your last visit"** — the digest above the
@@ -2909,17 +2909,24 @@ here.
   **The viewer carries
   exactly ONE image of the photo** — faces are a **toggleable overlay** over it (`FaceOverlay` over
   `useFaces`), never a second copy of the shot, and even the **Úpravy** panel edits this one shot.
-  **Faces are OFF by default** (`FACE_OVERLAY_DEFAULT = false` in `lib/faceOverlayPref`, the choice
-  is remembered in localStorage): the photo is content, the boxes are opt-in. They are turned on by the **Zobrazit/Skrýt
-  obličeje** button (only on a still with at least one face, `aria-pressed`) or the **`m`** key (in the shortcut
-  registry, so the `?` help shows it too). When localStorage remembers **faces on**, the drawer
-  **opens by itself on the faces panel** on load (an effect on the edge of `facesAvailable`, once), so
-  the saved choice shows the panel too, not just boxes over a closed drawer; a later manual close is respected
-  and the open panel continues to travel in the `panel` param — a URL that **names** a panel wins over the
-  remembered preference, so a link shared on the metadata opens the metadata. The drawer is **one panel with
-  three mutually exclusive views** — faces, edits, or metadata („Informace") — driven by the URL's
-  `ViewerPanel: 'info' | 'faces' | 'edits' | null` (`showInfo = !showFaces && !showEdit`, so a URL naming the
-  faces on a photo that has none falls through to the metadata rather than an empty drawer): **faces and edits are separate views, metadata
+  **Faces are OFF, and nothing but the URL opens the drawer**: the photo is content, the boxes are opt-in.
+  They come up only on an explicit act — the **Zobrazit/Skrýt obličeje** button (on a still with at least
+  one face, `aria-pressed`; it also stays while the faces view is up with no box to draw) or the **`m`** key
+  (in the shortcut registry, so the `?` help shows it too) — or because the URL names `panel=faces`. **No
+  preference is stored** (the old `lib/faceOverlayPref` / `kukatko.faces.overlay` and its auto-open effect were
+  removed 09/2026: a remembered "faces on" opened the drawer on every photo, from the grid, a notification or
+  a link). A photo opened with no `panel` is the plain photo, drawer shut; paging, reload and Back/Forward keep
+  the open view because it travels in the `panel` param (`neighborTo`). The drawer is **one panel with
+  three mutually exclusive views** — faces, edits, or metadata („Informace") — and it shows **exactly the view
+  the URL's `ViewerPanel: 'info' | 'faces' | 'edits' | null` names, never a substitute**: `drawerView` is the
+  named view if this photo can show it at all (`facesViewable` = a still without a crop; edits = `canWrite` on
+  a still), otherwise `null` — the drawer **shuts** (`panel=edits` for a viewer, faces/edits on a video or live
+  photo, faces over a crop) rather than falling through to the metadata, which opens only for `panel=info` (or
+  the legacy `info=1`). The URL keeps its `panel`, so the view comes back on the next still. The faces **view**
+  is decoupled from the **boxes**: `facesAvailable` (= `facesViewable` + this photo's own detections loaded and
+  non-empty, not while a neighbour loads) gates only the overlay, the toggle and `canOpenFaces`, so with
+  `panel=faces` the view stays up while a neighbour loads (`FacesPanel`'s own spinner) and on a photo with no
+  faces (an honest "0"), with no metadata flash in between. **Faces and edits are separate views, metadata
   belongs only to the info view**, so turning on faces/edits **doesn't drag the whole info panel along** (previously
   the metadata was drawn beneath them — a reported bug). The **Informace** button from faces/edits **switches** to
   metadata (discards the lead and the overlay/selection), from already-shown metadata it **closes** the drawer. **Turning off**
@@ -2933,7 +2940,7 @@ here.
   the catalogue. Who is in a clip is the flat list in `PeoplePanel` beside it (`canOpenFaces` is therefore
   false on a video, so its chips offer no click through to a panel that cannot open). A **live photo** is
   left out of the on-image UI for its own reason: its motion preview is not a photograph either. **A crop — and only a crop — stands the whole faces UI down**
-  (`!hasCrop(previewEdit)` in `facesAvailable`): it leaves a frame the boxes were never measured against, so every
+  (`!hasCrop(previewEdit)` in `facesViewable`): it leaves a frame the boxes were never measured against, so every
   frame would miss its face; the UI comes back the moment the crop is off again — and a crop still **baked into the
   rendition on stage** (`renditionEdit`, see the edit-preview contract under `EditPanel`) stands it down the same
   way. A **rotation no longer costs the reader their frames**: `FaceOverlay` takes the preview's `rotation` — the
@@ -3102,7 +3109,7 @@ here.
   server. **A chip offers the click only where the faces panel can actually open** — prop `canOpenFaces`,
   which the page feeds `facesAvailable`: on a photo whose boxes stand down (a saved crop leaves a frame they
   were never measured against) and on every video (no faces UI at all) the chips render as plain pills,
-  because a chip that silently falls back to the metadata view is worse than one that does not offer the
+  because a chip whose click opens nothing is worse than one that does not offer the
   click.
   **The block's second half is who was attached BY HAND** (prop `people` = `PhotoDetail.people`, prop
   `onPeopleChanged` handing the mutation's reply back to the page) — and **on a video it is the whole block**,
