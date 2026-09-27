@@ -10,7 +10,12 @@ import { GRID_COLUMNS_MAX } from '../lib/gridDensity'
 import { readGridScroll, writeGridScroll } from '../lib/gridScroll'
 import { ApiError } from '../services/auth'
 import { type Family, type Relations, type Relative } from '../services/family'
-import { type Subject, type SubjectCount } from '../services/people'
+import {
+  type OutlierFace,
+  type OutlierResult,
+  type Subject,
+  type SubjectCount,
+} from '../services/people'
 import { type Photo, type PhotoListResponse } from '../services/photos'
 
 import { albumOption, BATCH_ACTIONS } from '../test/batchBar'
@@ -363,7 +368,7 @@ describe('SubjectPage', () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage(true)
     // Editors get the on-page candidate search (a write action gated exactly like the
-    // outlier review below it); the expensive search waits for the button, not mount.
+    // outlier link below it); the expensive search waits for the button, not mount.
     expect(await screen.findByRole('button', { name: /Find suggestions/i })).toBeInTheDocument()
   })
 
@@ -1224,5 +1229,142 @@ describe('SubjectPage family strip', () => {
 
     await screen.findByRole('link', { name: 'Anna' })
     expect(screen.queryByRole('button', { name: /^Add a/ })).not.toBeInTheDocument()
+  })
+})
+
+function outlierFace(photoUid: string): OutlierFace {
+  return {
+    photo_uid: photoUid,
+    face_index: 0,
+    bbox: [0.1, 0.1, 0.2, 0.2],
+    det_score: 0.9,
+    distance: 0.4,
+    marker_uid: `mk_${photoUid}`,
+    width: 1000,
+    height: 800,
+    orientation: 1,
+  }
+}
+
+function outlierResult(faces: OutlierFace[], meaningful = true): OutlierResult {
+  return {
+    subject_uid: 'sj_1',
+    count: faces.length,
+    meaningful,
+    avg_distance: 0.3,
+    no_embedding: 0,
+    faces,
+  }
+}
+
+/** Waits until the page's outlier read has settled, whichever way it went. */
+async function outlierReadSettled() {
+  await waitFor(() => {
+    expect(outliersMock).toHaveBeenCalled()
+  })
+  await Promise.allSettled(outliersMock.mock.results.map((r) => r.value as Promise<unknown>))
+}
+
+describe('SubjectPage outliers link', () => {
+  it('points a curator at /outliers for this person, naming the faces on offer', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    outliersMock.mockResolvedValue(outlierResult([outlierFace('p1'), outlierFace('p2')]))
+    renderPage(true)
+
+    const link = await screen.findByRole('link', { name: '2 faces to check' })
+    expect(link).toHaveAttribute('href', '/outliers?subject=sj_1')
+    expect(outliersMock).toHaveBeenCalledWith('sj_1', undefined, expect.any(AbortSignal))
+    // The review itself is gone from this page: no verdicts, no heading.
+    expect(screen.queryByRole('button', { name: 'Not this person' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Is this still the same person?')).not.toBeInTheDocument()
+  })
+
+  it('is keyboard reachable', async () => {
+    fetchPhotosMock.mockResolvedValue(page([]))
+    outliersMock.mockResolvedValue(outlierResult([outlierFace('p1')]))
+    const user = userEvent.setup()
+    renderPage(true)
+
+    const link = await screen.findByRole('link', { name: '1 face to check' })
+    for (let i = 0; i < 30 && document.activeElement !== link; i++) {
+      await user.tab()
+    }
+    expect(link).toHaveFocus()
+  })
+
+  it('names the count in Czech with the right plural form', async () => {
+    await i18n.changeLanguage('cs')
+    fetchPhotosMock.mockResolvedValue(page([]))
+    outliersMock.mockResolvedValue(
+      outlierResult(['p1', 'p2', 'p3', 'p4', 'p5'].map((uid) => outlierFace(uid))),
+    )
+    renderPage(true)
+
+    expect(await screen.findByRole('link', { name: '5 obličejů ke kontrole' })).toHaveAttribute(
+      'href',
+      '/outliers?subject=sj_1',
+    )
+  })
+
+  it('renders nothing when the person has no faces to check', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    outliersMock.mockResolvedValue(outlierResult([]))
+    renderPage(true)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await outlierReadSettled()
+    expect(screen.queryByRole('link', { name: /to check/ })).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when the ranking is not meaningful', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    outliersMock.mockResolvedValue(outlierResult([outlierFace('p1')], false))
+    renderPage(true)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await outlierReadSettled()
+    expect(screen.queryByRole('link', { name: /to check/ })).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when the read fails', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    outliersMock.mockRejectedValue(new ApiError(500, 'boom'))
+    renderPage(true)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    await outlierReadSettled()
+    expect(screen.queryByRole('link', { name: /to check/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows a viewer no link and does not even ask', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    outliersMock.mockResolvedValue(outlierResult([outlierFace('p1')]))
+    renderPage(false)
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('link', { name: /to check/ })).not.toBeInTheDocument()
+    expect(outliersMock).not.toHaveBeenCalled()
+  })
+
+  it("never carries one person's count over to the next", async () => {
+    fetchPhotosMock.mockResolvedValue(page([]))
+    fetchSubjectMock.mockImplementation((uid) =>
+      Promise.resolve({ ...subject(), uid, name: uid === 'sj_1' ? 'Jana' : 'Jana K.' }),
+    )
+    outliersMock.mockImplementation((uid) =>
+      Promise.resolve(uid === 'sj_1' ? outlierResult([outlierFace('p1')]) : outlierResult([])),
+    )
+    const user = userEvent.setup()
+    renderPage(true)
+
+    await screen.findByRole('link', { name: '1 face to check' })
+    await user.click(screen.getByRole('link', { name: 'next person' }))
+
+    await waitFor(() => {
+      expect(outliersMock).toHaveBeenCalledWith('sj_2', undefined, expect.any(AbortSignal))
+    })
+    await outlierReadSettled()
+    expect(screen.queryByRole('link', { name: /to check/ })).not.toBeInTheDocument()
   })
 })

@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { GridDensityControl } from '../components/library/GridDensityControl'
+import { Icon } from '../components/Icon'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { Candidates } from '../components/people/Candidates'
 import { FamilyStrip } from '../components/people/FamilyStrip'
 import { MergeSubjectModal } from '../components/people/MergeSubjectModal'
 import { MoveFacesModal } from '../components/people/MoveFacesModal'
-import { Outliers } from '../components/people/Outliers'
 import { SubjectDecadeNav } from '../components/people/SubjectDecadeNav'
 import { SubjectEditModal } from '../components/people/SubjectEditModal'
 import { SubjectPhotoTile } from '../components/people/SubjectPhotoTile'
@@ -34,7 +34,7 @@ import { approximateAge, formatLifeSpan } from '../lib/lifeYears'
 import { nicknameTag } from '../lib/nickname'
 import { decadeAnchorId, formatDecade, groupPhotosByDecade } from '../lib/photoDecades'
 import { isNotFound } from '../services/auth'
-import { fetchSubject, type Subject, updateSubject } from '../services/people'
+import { fetchOutliers, fetchSubject, type Subject, updateSubject } from '../services/people'
 
 /**
  * Where the back link leads: the people index, opened on its defaults. The index
@@ -59,14 +59,67 @@ type State =
   | { status: 'missing' }
   | { status: 'ready'; subject: Subject }
 
+/** Props for {@link OutliersLink}. */
+interface OutliersLinkProps {
+  /** Subject whose ranked faces are counted. */
+  subjectUid: string
+}
+
+/**
+ * A curator's pointer to `/outliers`, opened on this person and naming how many
+ * of their faces are on offer there. The review itself belongs to that page
+ * (context crops, both verdicts, bulk, keyboard, threshold); what this page adds
+ * is only the signal that there is something to review for the person being
+ * looked at, which `/outliers` cannot give until the person has been picked.
+ *
+ * It is a pointer, not a report: nothing renders while the ranking is in flight,
+ * when it holds no face, when it is too thin to be meaningful, or when the read
+ * fails — a titled empty box or an error about a side feature would only get in
+ * the way of the gallery, and the linked page reports its own failures. The
+ * count is kept together with the uid it was read for, so navigating to another
+ * person never shows the previous person's number.
+ */
+function OutliersLink({ subjectUid }: OutliersLinkProps) {
+  const { t } = useTranslation()
+  const [found, setFound] = useState<{ uid: string; count: number } | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchOutliers(subjectUid, undefined, controller.signal)
+      .then((result) => {
+        setFound({ uid: subjectUid, count: result.meaningful ? result.faces.length : 0 })
+      })
+      .catch(() => {
+        // Aborted or failed alike: the link simply does not appear.
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [subjectUid])
+
+  if (found?.uid !== subjectUid || found.count === 0) {
+    return null
+  }
+  return (
+    <p className="mt-4 mb-0">
+      <Link
+        to={`/outliers?subject=${encodeURIComponent(subjectUid)}`}
+        className="btn btn-sm btn-outline-secondary"
+      >
+        <Icon name="exclamation-triangle" /> {t('subject.outliersLink', { count: found.count })}
+      </Link>
+    </p>
+  )
+}
+
 /**
  * A subject's page: header (name, type, edit, and the shared images-per-row
  * density control — a view preference open to everyone who can see the page),
  * the photo gallery (with a set-cover action for curators), and — for curators —
- * two review sections: the candidate search (untagged photos where this person
- * likely appears, to confirm/reject) and the outlier review (spot and detach
- * mis-assigned faces). The gallery pages through `GET /subjects/{uid}/photos`
- * with a load-more control.
+ * the candidate search (untagged photos where this person likely appears, to
+ * confirm/reject) and a link to the outlier review on `/outliers` when this
+ * person has faces to check there. The gallery pages through
+ * `GET /subjects/{uid}/photos` with a load-more control.
  *
  * Curators can also select photos in the gallery; picking one raises the
  * library's own floating batch bar, so the full set of batch actions (add to
@@ -376,7 +429,7 @@ export function SubjectPage() {
           of ten that is what a reader came for, and for a curator the row of +
           buttons is where a family tree actually gets filled in. The section
           draws itself only when it has something to show or somebody who can add
-          it, exactly as `Outliers` does further down. */}
+          it, exactly as the outliers link does further down. */}
       <FamilyStrip subjectUid={subject.uid} subjectName={subject.name} canCurate={canCurate} />
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
@@ -454,10 +507,10 @@ export function SubjectPage() {
         </section>
       )}
 
-      {/* The section brings its own heading and frame, and draws neither when it
-          has nothing to ask about — most people have no suspicious face at all,
-          and a titled empty box is worse than no box. */}
-      {canCurate && <Outliers subjectUid={subject.uid} />}
+      {/* Outlier review lives on `/outliers`; this is only the way there, drawn
+          when the person has faces to check — most have none, and a titled empty
+          box is worse than no box. */}
+      {canCurate && <OutliersLink subjectUid={subject.uid} />}
 
       {bulk.canBulkEdit && selecting && (
         <>

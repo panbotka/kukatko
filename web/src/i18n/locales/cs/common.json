@@ -2110,7 +2110,11 @@
       "failed_other": "{{count}} fotek se nepodařilo přesunout, zůstaly u původní osoby.",
       "cancel": "Zrušit",
       "close": "Zavřít"
-    }
+    },
+    "outliersLink_one": "{{count}} obličej ke kontrole",
+    "outliersLink_few": "{{count}} obličeje ke kontrole",
+    "outliersLink_many": "{{count}} obličeje ke kontrole",
+    "outliersLink_other": "{{count}} obličejů ke kontrole"
   },
   "family": {
     "title": "Rodina",
@@ -2419,21 +2423,6 @@
       "note": "Tenhle obličej nemá embedding — jméno mu jde dát jen tady a ručně. Návrhy, hledání podle podoby ani hra na třídění se k němu nikdy nedostanou."
     },
     "viewerNote": "Obličeje si můžete prohlédnout, ale na jejich pojmenování potřebujete roli kurátora — požádejte o ni správce."
-  },
-  "outliers": {
-    "title": "Je to pořád tato osoba?",
-    "subtitle": "Nejdřív obličeje nejméně podobné této osobě. Dokud neodpovíš, nic se nemění.",
-    "error": "Obličeje ke kontrole se nepodařilo načíst.",
-    "notMeaningful": "Příliš málo obličejů pro spolehlivé seřazení.",
-    "unassignError": "Obličej se nepodařilo odebrat. Zkus to prosím znovu.",
-    "restoreError": "Obličej se nepodařilo vrátit zpět. Zkus to prosím znovu.",
-    "openPhoto": "Otevřít fotku",
-    "unassign": "Není to tato osoba",
-    "removed": "Odebráno",
-    "undo": "Vrátit zpět",
-    "distanceTitle": "Odlišnost od této osoby: {{percent}} %",
-    "showMore": "Ukázat další ({{remaining}})",
-    "reviewAll": "Projít všechny"
   },
   "outliersPage": {
     "title": "Možné chyby",

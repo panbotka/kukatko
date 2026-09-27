@@ -2040,7 +2040,9 @@
       "failed_other": "{{count}} photos could not be moved; they stay with the current person.",
       "cancel": "Cancel",
       "close": "Close"
-    }
+    },
+    "outliersLink_one": "{{count}} face to check",
+    "outliersLink_other": "{{count}} faces to check"
   },
   "family": {
     "title": "Family",
@@ -2325,21 +2327,6 @@
       "note": "This face has no embedding — it can only ever be named here, by hand. Suggestions, similarity search and the review game will never reach it."
     },
     "viewerNote": "You can look through the faces, but naming them needs the curator role — ask an administrator for it."
-  },
-  "outliers": {
-    "title": "Is this still the same person?",
-    "subtitle": "The faces least like this person come first. Nothing changes until you answer.",
-    "error": "Could not load the faces to check.",
-    "notMeaningful": "Too few faces to rank reliably.",
-    "unassignError": "Could not remove the face. Please try again.",
-    "restoreError": "Could not put the face back. Please try again.",
-    "openPhoto": "Open photo",
-    "unassign": "Not this person",
-    "removed": "Removed",
-    "undo": "Undo",
-    "distanceTitle": "Difference from this person: {{percent}} %",
-    "showMore": "Show more ({{remaining}})",
-    "reviewAll": "Review all"
   },
   "outliersPage": {
     "title": "Possible mistakes",

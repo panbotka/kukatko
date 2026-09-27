@@ -3020,7 +3020,7 @@ here.
   stored a pair the frontend rotated a second time — the figure got the transposed aspect ratio, „contain"
   letterboxed the photo inside it, and every percentage box drifted off the faces (85 photos with a marker,
   orientations 6 and 8; ~8.6 % of the library carries the pair). The rows still want repairing — everything that
-  crops a **square tile** out of a photo (`subjectTile`, `Outliers`, `OutlierCard`, `DuplicateMarkerCrop`,
+  crops a **square tile** out of a photo (`subjectTile`, `OutlierCard`, `DuplicateMarkerCrop`,
   `useFaces`) scales a background instead of overlaying a box on a rendered image and so cannot measure its way
   out. The importers now de-orient on the way in (`internal/exif` `RawDimensions`) and
   already-imported rows are corrected by `kukatko maintenance repair --dimensions`, whose dry run is
@@ -3729,10 +3729,17 @@ here.
   corner, the **age** plate `age` = `approximateAge(photo.taken_at, subject.birth_year)`
   (`.kk-tile__age`, always visible and never a target — it is read, not pressed, and a fact shown only
   on hover is a fact no phone ever sees)), and
-  two review sections for editors only: `Candidates` („Možná je i zde" — untagged photos where the person
+  for editors only the review section `Candidates` („Možná je i zde" — untagged photos where the person
   is present by face resemblance, to confirm/reject; the search is **explicit** via a button, not
-  on-load) and below it `Outliers` (suspicious assignments — that one brings its **own** heading and
-  `<section>`, and renders nothing at all when it has no question to ask); the tiles carry a **person
+  on-load) and below it the page-local `OutliersLink`: a single `btn-outline-secondary` link to
+  `/outliers?subject={uid}` whose accessible name is the count („5 obličejů ke kontrole",
+  `subject.outliersLink_*`), read from `fetchOutliers` for this person. Outlier review itself lives only on
+  `/outliers` (`OutlierCard` — context crop, enlarge, both verdicts, bulk, keyboard, threshold); the person
+  page used to carry a poorer copy of it („Je to pořád tato osoba?", removed) and keeps only the one signal
+  `/outliers` cannot give — that *this* person has faces to check. The link renders **nothing** while the
+  read is in flight, when it returns no face, when it is not `meaningful`, or when it fails (the linked page
+  reports its own failures), and its count is stored with the uid it was read for, so moving to another
+  person never shows the previous one's number; the tiles carry a **person
   scope** in the detail link (`detailQuery` with `person=uid`, `DETAIL_DEFAULTS` + just that facet) → prev/next
   in the viewer pages this person's photos (`GET /photos?person=uid`), not the whole library; the gallery
   (`GET /subjects/:uid/photos`) and the person facet sort **identically** — `taken_at DESC NULLS LAST, uid DESC`
@@ -4946,10 +4953,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   hundreds of faces requests only the ones the reader reaches. A rendition that cannot be cut (no usable
   preview, a box naming nothing) drops the `<img>` on `onError`, leaving the caller's empty well rather
   than a torn-page glyph — and calls the optional **`onUnavailable`**, for the callers whose tile means
-  nothing without the picture: `Outliers` takes such a face out of its questions altogether.
+  nothing without the picture.
   It used to crop in the page — a whole-frame `fit_*` preview positioned with `cropImageStyle` — which is
-  why the outlier section of one person's page fetched **290 `fit_1280` previews, 1280×960 each, to paint
-  290 windows of 96 px**. `lib/faceSource.ts` still picks that source for the views that show a
+  why the (since removed) outlier section of one person's page fetched **290 `fit_1280` previews,
+  1280×960 each, to paint 290 windows of 96 px**. `lib/faceSource.ts` still picks that source for the views that show a
   **context crop with the face outlined inside it** (`OutlierCard`, `ReviewOutlier`,
   `DuplicateMarkerCrop`): those are large, non-square and judged rather than glanced at, and the marker
   drawn over them has to be placed against the same frame the image carries),
@@ -5077,31 +5084,14 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `GridDensityControl` in the section header, and a click on a photo opens `ReviewLightbox` with
   `CandidateDecisions` in the footer — so the density and the gesture are the same here as in the full
   workspace; `no_faces`/`no_embeddings`/empty have an explanation; an
-  **Otevřít celý nástroj** link to `/faces?subject={uid}`), `Outliers` (**a question, asked a few faces at
-  a time** — the person page's own ranking of suspicious assignments, model in `lib/outlierSection`, plus a
-  **Projít všechny** link to `/outliers?subject={uid}`, where the full sweep version lives. It owns its
-  heading („Je to pořád tato osoba?") and its `<section>`, so a person with nothing suspicious — the common
-  case — gets **no frame at all** rather than a titled empty box; it draws nothing while the ranking is in
-  flight either, for the same reason. One batch of `OUTLIER_SECTION_BATCH`=8 tiles at 112 px is on screen,
-  the rest behind **Ukázat další (n)**; the wall of ~30 tiles out of ~290 it used to be is what made the
-  section read as a fault report. The **raw cosine distance is out of the interface** — the ordering is
-  stated in words in the subtitle and the number survives only in the tile's `title` (`distancePercent`),
-  where it can still serve a diagnosis. The answer is one quiet `.kk-outlier-answer` link-button per face
-  (see `outliers.css`), not a row of red `outline-danger` buttons, and it is **undoable on the spot**: an
-  answered tile stays where it is, dimmed, with **Vrátit zpět** next to it → `assign_person` on the very
-  same marker (which survives the detach, so the undo is a real undo). Nothing is written until the reader
-  answers and the tile flips only once the server has taken the write — no optimism here, the panel would
-  otherwise claim a change the server refused. A face `FaceCrop` cannot picture (`onUnavailable`) is
-  **dropped from the questions** and the next ranked face slides into its place: a grey square is not
-  something a reader can answer. Each face is a `FaceCrop`, i.e. its own server-cut square of some 15 kB,
-  loaded lazily; this is the section the face rendition was built for, since it used to paint every tile by
-  fetching the whole photograph — **290 `fit_1280` previews on one measured page**, of which the reader saw
-  96×96 apiece),
+  **Otevřít celý nástroj** link to `/faces?subject={uid}`),
   `OutlierCard`/`OutlierControls`/`OutlierStats` (the building blocks of `/outliers`: a card with a **context
   crop** (30 % around the bbox, `padBbox`+`cropImageStyle`+`faceMarkerStyle`) wrapped in `EnlargeButton`
   (stretched over the frame with `position-absolute`, because the picture inside is absolutely positioned and
   a flow wrapper would have no height, and therefore nothing to click), the question „Je to chyba?"
-  and two opposite verdicts (✓ remove / ✗ confirm), a selection checkbox and a focus ring; a config
+  and two opposite verdicts (✓ remove / ✗ confirm) — full buttons side by side, since this page is a place
+  for answering and each card has both halves of the answer, which the person page's old single
+  „Není to tato osoba" link-button never had —, a selection checkbox and a focus ring; a config
   strip with a person picker and a percentage threshold; statistics including the **`no_embedding`** message).
   Two things the card does **not** hard-code: **which thumbnail the crop is cut from** — `lib/faceSource`
   `faceSourceSize(crop, frame, OUTLIER_TARGET_PX, FACE_SOURCE_REVIEW_MAX)` picks the smallest `fit_*` that
@@ -5114,12 +5104,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   It guarantees two things: a **minimum apparent size** (`--kk-face-min: 28px`, grown around the centre via
   `translate(-50%,-50%)` and clamped inside the crop, so it never drags off the face nor past the edge) and a ring
   built **only** of the element's own `border` + `inset` shadows (dark/warning/dark), which the card's
-  `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns).
-  That stylesheet holds one more rule, for the other outlier surface: **`.kk-outlier-answer`**, the
-  „Není to tato osoba"/„Vrátit zpět" control under a face in `Outliers`. It repaints a `btn-link` through
-  Bootstrap's own `--bs-btn-*` variables (muted body colour at rest, `--bs-danger` on hover/active), so a
-  section asking a question does not look like eight alarms in a row, and nothing has to fight `.btn` for
-  specificity);
+  `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns));
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/**`canCurate`**
   (curator+: people and faces, albums and labels, the review game, uploading — `canCurate()` in
@@ -6330,13 +6315,6 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the URL), `clampOutlierThresholdPercent` (default **0 = show everything**; a non-zero default would silently
   hide faces), `distancePercent` (deliberately **not** similarity — on this page a bigger number
   means „further from the person", which is the quantity being judged) and `OUTLIER_LIMIT`=200;
-  `outlierSection.ts` = the pure model of the **person page's** outlier panel (not `/outliers`; the two
-  share `outlierKey` and `canUnassign`): `OutlierQuestion` = a face plus the answer given so far
-  (`pending`/`removed` — a rejected face is **kept in the list**, which is what makes the undo possible
-  from the same spot), `toQuestions`, `answerQuestion`, `askableQuestions` (drops the faces whose picture
-  could not be produced, so the next ranked one takes the place they held), `revealedQuestions`/
-  `hiddenCount` (the batch counter the reader grows explicitly) and `OUTLIER_SECTION_BATCH`=8 — small
-  because each tile is a question to answer, not a thumbnail to skim;
   `moveFaces.ts` = the pure half of the split (`MoveFacesModal`): `moveRequests(faces, sourceUid, target)`
   → one `assign_person` request per marker the person holds on that photo. Only a face **carrying a
   marker** can move (a bare detection has nothing to reassign), and a marker no detection claimed — which
