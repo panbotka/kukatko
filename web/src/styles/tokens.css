@@ -1598,6 +1598,17 @@
 .kk-toast-stack {
   /* Above every layer of chrome, including the immersive viewer. */
   z-index: 1100;
+
+  /*
+   * The stack is fixed to the viewport (`containerPosition="fixed"`) and starts
+   * at its top edge, which the iOS PWA paints under (`viewport-fit=cover` +
+   * `black-translucent`). The insets are added to the spacing, never a
+   * replacement for it: the status bar in portrait, the notch column in
+   * landscape, and exactly the old 1rem where there is no notch.
+   */
+  padding: calc(var(--kk-space-4) + env(safe-area-inset-top, 0px))
+    calc(var(--kk-space-4) + env(safe-area-inset-right, 0px)) var(--kk-space-4)
+    calc(var(--kk-space-4) + env(safe-area-inset-left, 0px));
 }
 
 .kk-toast {

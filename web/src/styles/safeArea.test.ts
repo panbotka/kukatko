@@ -315,3 +315,32 @@ describe('fullscreen modal safe-area insets', () => {
     }
   })
 })
+
+/**
+ * The app-wide toast stack. It is fixed to the top of the viewport, which the iOS
+ * PWA paints under, so without the insets a toast's close button sits in the
+ * status-bar band (where a tap scrolls the page instead) and, in landscape,
+ * behind the notch column. The bottom edge is the toast's, not the screen's, so
+ * it keeps its plain spacing.
+ */
+describe('toast stack safe-area insets', () => {
+  const stack = rule(readCss('src/styles/tokens.css'), /\.kk-toast-stack\s*(?=\{)/)
+
+  it('names the top, left and right insets', () => {
+    const padding = stack.get('padding') ?? ''
+    for (const side of ['top', 'right', 'left'] as const) {
+      expect(padding).toContain(`env(safe-area-inset-${side}, 0px)`)
+    }
+  })
+
+  it('keeps the 1rem it always had where there is no notch', () => {
+    expect(paddingPx(DESKTOP, stack)).toEqual({ top: 16, right: 16, bottom: 16, left: 16 })
+  })
+
+  it('clears the status bar in portrait and the notch column in landscape', () => {
+    expect(paddingPx(PORTRAIT, stack).top).toBeGreaterThanOrEqual(PORTRAIT.top)
+    const side = paddingPx(LANDSCAPE, stack)
+    expect(side.left).toBeGreaterThanOrEqual(LANDSCAPE.left)
+    expect(side.right).toBeGreaterThanOrEqual(LANDSCAPE.right)
+  })
+})

@@ -527,8 +527,14 @@ here.
   of `web/src` on 2026-08-12 — from here the rule rides on review, not on a lint rule),
   `components/toast/` = **app-wide toast** (`ToastContext` holds the context + hook `useToast()` +
   types; `ToastProvider` is the component) — a single provider **in `App` around `AppRoutes`**, hosting
-  `ToastContainer` (react-bootstrap, `position="top-center"`, `.kk-toast-stack` `z-index:1100`
-  above chrome and the viewer) with auto-dismiss (5 s) + manual close (`toast.close`).
+  `ToastContainer` (react-bootstrap, `position="top-center"` **+ `containerPosition="fixed"`** —
+  without it Bootstrap's `.toast-container` stays `position:absolute`, resolves against the document
+  and paints every toast above the fold on a scrolled page, which is how it shipped until 2026-09-27;
+  `.kk-toast-stack` `z-index:1100` above chrome and the viewer, and its padding = `--kk-space-4` **plus
+  the top/left/right `env(safe-area-inset-*)`**, so the close button clears the iOS status bar and a
+  landscape notch — no `p-*` utility on the container, its `!important` would flatten the insets;
+  pinned by `ToastProvider.test` + `styles/safeArea.test`) with auto-dismiss (5 s) + manual close
+  (`toast.close`).
   `useToast().show({message, variant?})` (`success`/`danger`/`info`, an `Icon` glyph by tone);
   **one place for placement, duration, and style** — instead of Bootstrap `bg-*` (solid green/red)
   each toast carries **its own surface from tokens**: `.kk-toast` = `--kk-surface-overlay` + a subtle

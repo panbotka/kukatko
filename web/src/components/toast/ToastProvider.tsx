@@ -25,10 +25,11 @@ const ICONS: Record<ToastVariant, IconName> = {
 
 /**
  * Hosts the app-wide toast stack. Any descendant can raise a transient
- * success/failure message via `useToast`; the toasts render in a fixed,
- * top-centred container above the rest of the chrome (including the floating
- * batch bar and the immersive viewer) and auto-dismiss, with a manual close for
- * anyone who wants them gone sooner. There is exactly one provider, mounted at
+ * success/failure message via `useToast`; the toasts render in a
+ * viewport-fixed, top-centred container (so they show at any scroll offset,
+ * clear of the notch and status bar) above the rest of the chrome (including the
+ * floating batch bar and the immersive viewer) and auto-dismiss, with a manual
+ * close for anyone who wants them gone sooner. There is exactly one provider, mounted at
  * the app root.
  */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -55,7 +56,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ToastContainer className="p-3 kk-toast-stack" position="top-center">
+      {/* `containerPosition="fixed"` anchors the stack to the viewport: Bootstrap's
+          own `.toast-container` is `position: absolute`, and with no positioned
+          ancestor that resolves against the document, painting every toast above
+          the fold on a scrolled page. The padding (safe-area insets included)
+          lives on `.kk-toast-stack`, not a `p-*` utility, whose `!important`
+          would flatten the insets away. */}
+      <ToastContainer className="kk-toast-stack" position="top-center" containerPosition="fixed">
         {toasts.map((toast) => (
           <Toast
             key={toast.id}
