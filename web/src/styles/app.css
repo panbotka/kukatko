@@ -27,15 +27,23 @@
 
   /* Height of the mobile bottom tab bar, published live by `MobileTabBar` from a
      ResizeObserver — and `0px` whenever no bar is mounted, i.e. on every viewport
-     from `md` up. Everything that lives at the bottom edge reads this one value
-     to stay clear of the tabs: the page's own scroll clearance (`body` below), the
-     floating batch bar, and the timeline rail. The published height already
-     contains the bar's safe-area padding, so a `max()` against the raw inset — not
-     a sum — is what keeps the gap right in both states. */
+     from `lg` up (the bar is `.d-lg-none`). The published height already contains
+     the bar's safe-area padding, so a `max()` against the raw inset — not a sum —
+     is what keeps the gap right in both states. That `max()` is
+     `--kk-bottom-edge` below; no rule outside it reads this value. */
   --kk-tabbar-height: 0px;
 
   /* The room the bottom edge is already spoken for: the tab bar where there is
-     one, the home-indicator inset where there is not. */
+     one, the home-indicator inset where there is not. It is the only sanctioned
+     way to offset anything from the bottom edge — the page's scroll clearance
+     (`body`), the shell's minimum height, the batch dock, the upload rail, the
+     timeline rail and the PWA status all read it.
+
+     Never write the sum `var(--kk-tabbar-height) + env(safe-area-inset-bottom)`:
+     the measured bar height already holds the inset, so the sum counts it twice
+     (34px too high on an iPhone). And never read the tab-bar height alone: it is
+     `0px` on an iPad or a desktop-width standalone window, where the home
+     indicator is still there. Both have been written before; both were wrong. */
   --kk-bottom-edge: max(env(safe-area-inset-bottom, 0px), var(--kk-tabbar-height));
 
   /* The lane along the right edge that the timeline rail owns: the rail itself,
@@ -204,11 +212,14 @@ body {
      navbar's `position: sticky`. */
   overflow-x: clip;
 
-  /* Scroll clearance for the fixed mobile tab bar: the last of the content —
-     and the footer under it — has to be able to scroll out from behind the tabs.
-     Reserved on the document rather than per page, so no page can forget it; it
-     is exactly `0px` whenever no tab bar is mounted (desktop). */
-  padding-bottom: var(--kk-tabbar-height);
+  /* Scroll clearance for whatever owns the bottom edge: the last of the content —
+     and the footer under it — has to be able to scroll out from behind the fixed
+     mobile tab bar, or, where there is no bar (an iPad, a desktop-width installed
+     app), out of the home-indicator strip. Reserved on the document rather than
+     per page, so no page can forget it; it is exactly `0px` on a desktop with no
+     inset. The same `--kk-bottom-edge` `.kukatko-shell` subtracts from its
+     minimum height, so the two agree about the edge. */
+  padding-bottom: var(--kk-bottom-edge);
 }
 
 /*
@@ -865,8 +876,8 @@ body {
  * The bar owns the bottom edge: it carries the home-indicator inset itself
  * (`env(safe-area-inset-bottom)`, real because `index.html` opts into
  * `viewport-fit=cover`) and the side insets for a landscape notch, and it
- * publishes its resulting height as `--kk-tabbar-height` so everything else can
- * keep off it. Its z-index sits below the floating batch dock's (1030) and above
+ * publishes its resulting height as `--kk-tabbar-height`, which `--kk-bottom-edge`
+ * folds together with the bare inset so everything else can keep off it. Its z-index sits below the floating batch dock's (1030) and above
  * the timeline rail's (1018), but under Bootstrap's offcanvas/modal layers, so a
  * dialog still covers it.
  */
@@ -1392,9 +1403,12 @@ body {
   position: fixed;
   top: calc(var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + 1rem);
   right: env(safe-area-inset-right, 0px);
-  /* The rail runs to the bottom edge, so on a phone it has to stop above the
-     fixed tab bar — otherwise its oldest ticks sit behind the tabs, unreachable. */
-  bottom: calc(1rem + var(--kk-tabbar-height));
+  /* The rail runs to the bottom edge, so it has to stop above whatever owns it:
+     the fixed tab bar on a phone — otherwise its oldest ticks sit behind the tabs,
+     unreachable — and the home indicator where there is no bar (an iPad), where a
+     drag on this `touch-action: none` target would start the OS swipe-to-home
+     instead of scrubbing. */
+  bottom: calc(1rem + var(--kk-bottom-edge));
   width: var(--kk-timeline-rail-width);
   z-index: var(--kk-timeline-z);
   touch-action: none;
@@ -1713,7 +1727,9 @@ body {
 
 /* The heading the navigation lands on. `scroll-margin-top` clears the sticky
    navbar: without it a jump puts the heading exactly under the bar, and the
-   decade the reader asked for opens one row down and looks like the wrong one. */
+   decade the reader asked for opens one row down and looks like the wrong one.
+   The bar's rendered height grows by the top inset (its `padding-top`), so the
+   margin counts the inset too, like every other navbar-relative offset here. */
 .kk-decade-heading {
   display: flex;
   align-items: baseline;
@@ -1721,7 +1737,9 @@ body {
   margin: var(--kk-space-4) 0 var(--kk-space-2);
   font-size: var(--kk-font-size-body);
   font-weight: 600;
-  scroll-margin-top: calc(var(--kukatko-navbar-height) + var(--kk-space-3));
+  scroll-margin-top: calc(
+    var(--kukatko-navbar-height) + env(safe-area-inset-top, 0px) + var(--kk-space-3)
+  );
 }
 
 .kk-decade-heading:first-of-type {
@@ -2848,15 +2866,18 @@ body {
    component is mounted at the app root and therefore also renders over the
    shell-less routes (viewer, slideshow, review), where nothing must shift.
 
-   The bottom offset clears the phone tab bar the same way the timeline rail
-   does — `--kk-tabbar-height` is 0 wherever the bar is not mounted — and the
-   z-index sits just under the toast stack (1100), so a toast raised by the same
-   action still lands on top. `width: min(…)` keeps the stack readable on a
-   phone and from getting wider than a paragraph on a desktop. */
+   The bottom offset reads `--kk-bottom-edge`, like every bottom-anchored rule:
+   the tab bar where there is one, the home indicator where there is not. It
+   used to add the raw inset on top of the tab-bar height, which counted the
+   inset twice — the measured bar already holds it — and floated the note 34px
+   too high on an iPhone. The z-index sits just under the toast stack (1100), so
+   a toast raised by the same action still lands on top. `width: min(…)` keeps
+   the stack readable on a phone and from getting wider than a paragraph on a
+   desktop. */
 .kk-pwa-status {
   position: fixed;
   inset-inline: 0;
-  bottom: calc(1rem + var(--kk-tabbar-height) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(1rem + var(--kk-bottom-edge));
   z-index: var(--kk-pwa-status-z);
   display: flex;
   flex-direction: column;

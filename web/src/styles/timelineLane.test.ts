@@ -162,6 +162,16 @@ describe('timeline lane', () => {
     }
   })
 
+  it('ends the rail above whatever owns the bottom edge', () => {
+    // The rail is a `touch-action: none` drag target: its lowest ticks must stop
+    // above the tab bar on a phone and above the home indicator on an iPad, where
+    // no bar is mounted and a drag in the strip starts the OS swipe-to-home.
+    // `--kk-bottom-edge` is the one token that knows both; the bar's height alone
+    // is `0px` on the iPad.
+    const rail = declarations(ruleBody(css, /\.kukatko-timeline\s*(?=\{)/, /position/) ?? '')
+    expect(rail.get('bottom')).toBe('calc(1rem + var(--kk-bottom-edge))')
+  })
+
   it('leaves the phone layout alone', () => {
     // A phone reserves the lane on the grid instead — the rail there is narrower,
     // starts at the grid's own top edge, and the page cannot spare the width in

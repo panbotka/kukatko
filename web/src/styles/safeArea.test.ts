@@ -548,3 +548,64 @@ describe('toast stack safe-area insets', () => {
     expect(side.right).toBeGreaterThanOrEqual(LANDSCAPE.right)
   })
 })
+
+/**
+ * Everything anchored to the bottom of the screen. Two things can own that edge —
+ * the fixed mobile tab bar, and the home-indicator strip — and `--kk-bottom-edge`
+ * is the one place they are reconciled: the bar's *measured* height already holds
+ * its own safe-area padding, so the edge is the `max()` of the two, never their
+ * sum, and never the bar's height alone (which is `0px` on an iPad or a
+ * desktop-width installed app, where the home indicator is still there).
+ *
+ * Each rule below once computed the edge itself: the timeline rail and the page's
+ * scroll clearance read the bar alone, so on an iPad the rail's oldest ticks and
+ * the footer's last link sat in the swipe-to-home strip; the PWA status summed the
+ * two and floated 34px too high on an iPhone. The guards pin the reference, and a
+ * sweep keeps the next rule from writing either form again.
+ */
+describe('bottom edge resolved in one place', () => {
+  const css = readCss('src/styles/app.css')
+  const OFFSETS: readonly { name: string; prelude: RegExp; contains: RegExp; prop: string }[] = [
+    { name: 'body', prelude: /\bbody\s*(?=\{)/, contains: /overflow-x/, prop: 'padding-bottom' },
+    {
+      name: 'timeline rail',
+      prelude: /\.kukatko-timeline\s*(?=\{)/,
+      contains: /position:\s*fixed/,
+      prop: 'bottom',
+    },
+    {
+      name: 'PWA status',
+      prelude: /\.kk-pwa-status\s*(?=\{)/,
+      contains: /position:\s*fixed/,
+      prop: 'bottom',
+    },
+  ]
+
+  it.each(OFFSETS)('$name offsets from `--kk-bottom-edge`', ({ prelude, contains, prop }) => {
+    const value = rule(css, prelude, contains).get(prop) ?? ''
+    expect(value).toContain('var(--kk-bottom-edge)')
+    // Neither half of the edge on its own: the bar alone misses the iPad's home
+    // indicator, and the bar plus the inset counts the inset twice.
+    expect(value).not.toContain('--kk-tabbar-height')
+    expect(value).not.toContain('safe-area-inset-bottom')
+  })
+
+  it('reads the tab-bar height nowhere but in the bottom-edge token', () => {
+    // Comments may name the variable (the token's own explains the trap); a
+    // declaration may not.
+    const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    const readers = [...code.matchAll(/([\w-]+)\s*:[^;{}]*var\(--kk-tabbar-height\)/g)].map(
+      (match) => match[1],
+    )
+    expect(readers).toEqual(['--kk-bottom-edge'])
+  })
+
+  it('lands a decade jump below the navbar, notch included', () => {
+    // The bar's rendered height grows by the top inset, so a margin that counts
+    // only the bar's estimate parks the heading behind it on a notched phone —
+    // the same inset every other navbar-relative offset in the sheet adds.
+    const margin = rule(css, /\.kk-decade-heading\s*(?=\{)/).get('scroll-margin-top') ?? ''
+    expect(margin).toContain('var(--kukatko-navbar-height)')
+    expect(margin).toContain('env(safe-area-inset-top, 0px)')
+  })
+})

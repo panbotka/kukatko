@@ -203,12 +203,20 @@ here.
   (`useIsNavDrawerViewport`) — it renders `null` on `lg`+ rather than hiding via `d-lg-none`, so the desktop DOM
   carries no duplicate set of nav links (the class stays only as a guard for the frame between a resize and
   the re-render). It publishes its live rendered height (safe-area padding included) into `--kk-tabbar-height`
-  on the document root via a `ResizeObserver`, mirroring `BatchActionBar`'s `--kk-batch-bar-height`; that one
-  variable is what keeps everything else off it — `body`'s `padding-bottom` reserves the scroll clearance for
-  every page at once, `--kk-bottom-edge` (`max(env(safe-area-inset-bottom), --kk-tabbar-height)`) lifts the
-  floating `.kk-batch-dock` and `--kk-batch-clearance` so a selection **stacks above** the tabs instead of
-  colliding with them, and `.kukatko-timeline`'s `bottom` stops the scrubber rail short of them. The variable
-  is removed on unmount and at the desktop breakpoint, so all of that collapses to `0px` when there is no bar),
+  on the document root via a `ResizeObserver`, mirroring `BatchActionBar`'s `--kk-batch-bar-height`. Nothing
+  reads that variable directly: it is folded into **`--kk-bottom-edge`**
+  (`max(env(safe-area-inset-bottom), --kk-tabbar-height)` — the tab bar where there is one, the home
+  indicator where there is not), and **`--kk-bottom-edge` is the only sanctioned way to offset anything from
+  the bottom edge**. `body`'s `padding-bottom` reserves the scroll clearance for every page at once,
+  `.kukatko-shell` subtracts the same value from its minimum height, the floating `.kk-batch-dock` and
+  `--kk-batch-clearance` make a selection **stack above** the tabs instead of colliding with them, and
+  `.kukatko-timeline`, `.kk-upload-rail` and `.kk-pwa-status` stop short of it. Never write the sum
+  `--kk-tabbar-height + env(safe-area-inset-bottom)` — the measured height already holds the inset, so the
+  sum counts it twice (the PWA note floated 34px too high on an iPhone) — and never read the bar's height
+  alone: it is `0px` on an iPad or a desktop-width installed app, where the home indicator still is (the
+  rail's lowest ticks and the footer's last link used to sit in that strip). `styles/safeArea.test.ts` fails
+  on any declaration other than the token that reads `--kk-tabbar-height`. The variable is removed on
+  unmount and at the desktop breakpoint, so the bar's half collapses to `0px` when there is no bar),
   `Footer` (**global footer** below `<main>` on every page in `Layout` — the fullscreen
   `/slideshow` and the immersive `/photos/:uid` run outside the shell, so they don't have it: „Provozuje SDH Veselice“ + a link to the source code
   <https://github.com/panbotka/kukatko> in a new tab with `rel="noopener noreferrer"` and a decorative
@@ -3772,7 +3780,8 @@ here.
   The gallery is also read **by decade** (`lib/photoDecades` `groupPhotosByDecade` → one section per
   decade of `taken_at`, the undated ones last in a section of their own): `SubjectDecadeNav` above it is
   one tick per decade with its count, jumping to that section's heading (`decadeAnchorId`, whose
-  `scroll-margin-top` clears the sticky navbar). It wears the **library timeline rail's** vocabulary
+  `scroll-margin-top` clears the sticky navbar — its estimate plus `safe-area-inset-top`, since the bar's
+  rendered height grows by that inset). It wears the **library timeline rail's** vocabulary
   (short mark, dim text, the label at full strength, the current tick emphasised) but not its
   `position: fixed`: this belongs to one section of a page that also has a header and two review panels.
   Both the nav and the headings appear only from **two** decades up — one destination is furniture, not a
@@ -7517,8 +7526,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   foreground, and `applyServiceWorkerUpdate()` posts `SKIP_WAITING` and reloads once on
   `controllerchange`. `src/pwa/usePwaStatus.ts` wraps that plus `online`/`offline` events;
   `components/pwa/PwaStatus.tsx` renders the two ambient alerts (i18n `pwa.offline`,
-  `pwa.update.*`) in a fixed bottom stack (`.kk-pwa-status`, z-index 1090 = under the toasts, clears
-  `--kk-tabbar-height`). It is mounted in `App` **outside** `AuthProvider` and outside `Layout`, so
+  `pwa.update.*`) in a fixed bottom stack (`.kk-pwa-status`, z-index 1090 = under the toasts, 1rem above
+  `--kk-bottom-edge`). It is mounted in `App` **outside** `AuthProvider` and outside `Layout`, so
   it also reaches the login screen and the shell-less immersive routes — verified, not merely
   intended: `App.coldLaunch.test.tsx` mounts the real `App` at `/login` with the network down and
   asserts the banner is there. **`pwa.offline` is held to what the worker actually caches**, which is

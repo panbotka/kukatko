@@ -77,6 +77,15 @@ const PHONE: Screen = {
   insets: new Map([['safe-area-inset-bottom', 34]]),
   tabBar: 83,
 }
+/**
+ * An iPad (12.9", 1024x1366 portrait) running as an installed app: from `lg` up
+ * there is no tab bar, but the home indicator is still there.
+ */
+const IPAD: Screen = {
+  height: 1366,
+  insets: new Map([['safe-area-inset-bottom', 20]]),
+  tabBar: 0,
+}
 
 /** Splits `expr` on top-level `+`/`-`, keeping each term's sign. */
 function terms(expr: string): { sign: number; text: string }[] {
@@ -190,7 +199,7 @@ describe('the shell holds the footer at the bottom of a short page', () => {
   })
 
   it('never claims more than the viewport, so no short page starts scrolling', () => {
-    for (const screen of [DESKTOP, PHONE]) {
+    for (const screen of [DESKTOP, PHONE, IPAD]) {
       // The shell and the clearance `body` keeps below it have to fit the viewport
       // together; overshoot by a pixel and every empty state grows a scrollbar it
       // did not have before (the `--kukatko-navbar-height` estimate did exactly
@@ -206,6 +215,22 @@ describe('the shell holds the footer at the bottom of a short page', () => {
     // *taller* of the bar and the bare home-indicator inset that is kept clear,
     // never their sum — the published height already carries the inset.
     expect(shellMinHeightPx(PHONE)).toBe(PHONE.height - PHONE.tabBar)
+  })
+
+  it('lets a long page scroll its footer out of whatever owns the bottom edge', () => {
+    // `body`'s clearance is what a page taller than the viewport ends on: the
+    // footer's last link has to be able to scroll clear of the tabs on a phone
+    // and of the home-indicator strip on an iPad, where no tab bar is mounted.
+    // It used to read the bar alone and reserved nothing on the iPad.
+    const clearance = (screen: Screen): number => lengthPx(declared(body, 'padding-bottom'), screen)
+    expect(clearance(DESKTOP)).toBe(0)
+    expect(clearance(PHONE)).toBe(PHONE.tabBar)
+    expect(clearance(IPAD)).toBe(IPAD.insets.get('safe-area-inset-bottom'))
+    // And the shell subtracts exactly what `body` reserves, so the two rules
+    // agree about the edge on every screen.
+    for (const screen of [DESKTOP, PHONE, IPAD]) {
+      expect(shellMinHeightPx(screen) + clearance(screen)).toBe(screen.height)
+    }
   })
 
   it('is a minimum, not a height, so a long page still grows past it', () => {

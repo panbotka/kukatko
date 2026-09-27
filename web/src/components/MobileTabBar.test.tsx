@@ -270,9 +270,10 @@ describe('mobile tab bar stylesheet', () => {
   })
 
   it('reserves page scroll clearance for the bar, and none without it', () => {
-    // The document reserves the room, so no page can forget to…
+    // The document reserves the room, so no page can forget to — through the
+    // bottom-edge token, which is the bar's height wherever the bar is mounted…
     expect(rule(/\bbody\s*(?=\{)/, /overflow-x/).get('padding-bottom')).toBe(
-      'var(--kk-tabbar-height)',
+      'var(--kk-bottom-edge)',
     )
     // …and the variable is `0px` until a bar publishes its real height, which is
     // what makes the reservation collapse to nothing on desktop.
@@ -303,9 +304,10 @@ describe('mobile tab bar stylesheet', () => {
 
   it('stops the timeline rail above the tabs', () => {
     // The rail runs to the bottom edge; without this its oldest ticks would be
-    // unreachable behind the tabs.
+    // unreachable behind the tabs. The bottom-edge token is the bar's height
+    // wherever the bar is mounted.
     expect(rule(/\.kukatko-timeline\s*(?=\{)/, /position/).get('bottom')).toContain(
-      'var(--kk-tabbar-height)',
+      'var(--kk-bottom-edge)',
     )
   })
 })
