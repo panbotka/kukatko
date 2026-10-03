@@ -96,7 +96,8 @@
       "leaderboard": "Zobrazit žebříček třídění",
       "stats": "Zobrazit statistiky knihovny",
       "myPhotos": "Zobrazit fotky, na kterých jsem",
-      "tasks": "Úkoly"
+      "tasks": "Úkoly",
+      "uploadLinks": "Odkazy, přes které může kdokoli nahrát fotky do vybraných alb"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -113,7 +114,8 @@
     "stats": "Statistiky",
     "versionTitle": "Verze aplikace",
     "myPhotos": "Moje fotky",
-    "tasks": "Úkoly"
+    "tasks": "Úkoly",
+    "uploadLinks": "Odkazy pro nahrávání"
   },
   "help": {
     "title": "Nápověda",
@@ -463,7 +465,9 @@
     "errorClosed": "Registrace do tohoto Kukátka je teď zavřená.",
     "errorRateLimited": "Příliš mnoho pokusů o registraci. Zkuste to prosím za chvíli.",
     "errorOffline": "Kukátko se nedovolalo serveru, registraci tedy nikdo neposoudil. Zkontrolujte připojení a zkuste to znovu.",
-    "errorGeneric": "Registrace se nezdařila. Zkuste to prosím znovu."
+    "errorGeneric": "Registrace se nezdařila. Zkuste to prosím znovu.",
+    "introLink": "Registrujete se přes odkaz pro nahrávání, takže registrační slovo nepotřebujete. Fotky, které jste z tohoto prohlížeče právě nahráli, budou vedené pod vaším účtem. Účet ještě musí schválit správce.",
+    "errorLink": "Odkaz pro nahrávání už neplatí, takže přes něj se registrovat nejde. Zeptejte se na registrační slovo."
   },
   "passwordReset": {
     "title": "Nové heslo",
@@ -823,6 +827,12 @@
       },
       "stacks": {
         "detect": "Automatické hledání skupin"
+      },
+      "upload_link": {
+        "create": "Vytvoření odkazu pro nahrávání",
+        "extend": "Prodloužení odkazu pro nahrávání",
+        "revoke": "Zrušení odkazu pro nahrávání",
+        "upload": "Nahrání fotky přes odkaz"
       }
     },
     "targets": {
@@ -1294,7 +1304,8 @@
       "title": "Toto album nemá žádné fotky",
       "hint": "Přidej fotky z knihovny tak, že je vybereš a zvolíš toto album."
     },
-    "faces": "Obličeje ({{n}})"
+    "faces": "Obličeje ({{n}})",
+    "uploadLink": "Sdílet odkaz pro nahrávání"
   },
   "albumFaces": {
     "title": "Obličeje v albu",
@@ -4195,5 +4206,84 @@
   },
   "technicalDetails": {
     "label": "Technické podrobnosti"
+  },
+  "uploadLink": {
+    "title": "Nahrajte fotky",
+    "loading": "Načítám odkaz…",
+    "targets": "Fotky půjdou do:",
+    "validUntil": "Odkaz platí do {{date}}.",
+    "signedInAs": "Nahráváte jako {{name}}.",
+    "name": "Od koho?",
+    "namePlaceholder": "Vaše jméno",
+    "nameHint": "Nepovinné. Zapamatujeme si ho v tomto zařízení.",
+    "choose": "Vybrat fotky a videa",
+    "chooseMore": "Přidat další",
+    "progress": "Průběh nahrávání",
+    "summary": {
+      "created_one": "{{count}} nahrána",
+      "created_few": "{{count}} nahrány",
+      "created_other": "{{count}} nahráno",
+      "duplicate_one": "{{count}} duplicita",
+      "duplicate_few": "{{count}} duplicity",
+      "duplicate_other": "{{count}} duplicit",
+      "error_one": "{{count}} chyba",
+      "error_few": "{{count}} chyby",
+      "error_other": "{{count}} chyb"
+    },
+    "diedMidway": "Odkaz mezitím přestal platit, další soubory už nepřijme.",
+    "registerTitle": "Chcete vidět všechny fotky?",
+    "registerBody": "Zaregistrujte se. Přes tenhle odkaz nepotřebujete registrační slovo a fotky, které jste právě nahráli, budou vedené pod vaším účtem. Účet ještě schválí správce.",
+    "registerAction": "Zaregistrovat se",
+    "expired": "Platnost tohoto odkazu vypršela. Fotky přes něj už nahrát nejde.",
+    "revoked": "Tento odkaz byl zrušen. Fotky přes něj už nahrát nejde.",
+    "notFound": "Tento odkaz neexistuje. Zkontrolujte, že jste ho zkopírovali celý.",
+    "loadError": "Odkaz se nepodařilo načíst. Zkuste to prosím za chvíli znovu.",
+    "toLogin": "Přihlásit se"
+  },
+  "uploadLinks": {
+    "title": "Odkazy pro nahrávání",
+    "new": "Nový odkaz",
+    "lead": "Pošlete odkaz do skupiny a kdokoli, kdo ho otevře, nahraje fotky rovnou do vybraných alb a štítků — i bez účtu. Nahrané fotky jsou v albu hned; nechtěné archivujte jako obvykle.",
+    "loading": "Načítám odkazy…",
+    "loadError": "Odkazy se nepodařilo načíst.",
+    "empty": "Zatím tu není žádný odkaz.",
+    "untitled": "(bez názvu)",
+    "state": {
+      "active": "Platný",
+      "expired": "Vypršel",
+      "revoked": "Zrušený"
+    },
+    "validUntil": "Platí do {{date}}",
+    "expiredOn": "Vypršel {{date}}",
+    "revokedOn": "Zrušen {{date}}",
+    "uploads_one": "{{count}} nahrání",
+    "uploads_few": "{{count}} nahrání",
+    "uploads_other": "{{count}} nahrání",
+    "lastUsed": "naposledy {{date}}",
+    "createdBy": "vytvořil(a) {{name}}",
+    "extend": "Prodloužit",
+    "extendTitle": "Prodloužit platnost",
+    "extendDays": "Platí ještě dní (od dneška)",
+    "revoke": "Zrušit odkaz",
+    "revokeTitle": "Zrušit odkaz?",
+    "revokeBody": "Odkaz „{{title}}“ přestane fungovat natrvalo. Už nahrané fotky zůstanou v albech.",
+    "fieldTitle": "Název pro nahrávající",
+    "fieldTitlePlaceholder": "Pouť 2026 – fotky od vás",
+    "fieldNote": "Poznámka",
+    "fieldNoteHint": "Zobrazí se na stránce odkazu.",
+    "fieldTargets": "Kam fotky půjdou (aspoň jedno album nebo štítek):",
+    "fieldDays": "Platnost ve dnech",
+    "fieldDaysInvalid": "Zadejte počet dní od 1 do {{max}}.",
+    "cancel": "Zrušit",
+    "create": "Vytvořit odkaz",
+    "createTargetError": "Nové album nebo štítek se nepodařilo vytvořit. Zkuste to znovu.",
+    "createdTitle": "Odkaz je připravený",
+    "createdLead": "Pošlete tento odkaz lidem, od kterých chcete fotky:",
+    "linkLabel": "Odkaz pro nahrávání",
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno",
+    "share": "Sdílet",
+    "shownOnce": "Odkaz uvidíte jen teď — Kukátko si ho z bezpečnostních důvodů neukládá. Když ho ztratíte, vytvořte nový.",
+    "done": "Hotovo"
   }
 }

@@ -96,7 +96,8 @@
       "leaderboard": "Show the sorting leaderboard",
       "stats": "Show the library statistics",
       "myPhotos": "Show the photos I am on",
-      "tasks": "Tasks"
+      "tasks": "Tasks",
+      "uploadLinks": "Links anyone can use to upload photos into chosen albums"
     },
     "expand": "Expand",
     "review": "Review",
@@ -113,7 +114,8 @@
     "stats": "Statistics",
     "versionTitle": "App version",
     "myPhotos": "My photos",
-    "tasks": "Tasks"
+    "tasks": "Tasks",
+    "uploadLinks": "Upload links"
   },
   "help": {
     "title": "Help",
@@ -459,7 +461,9 @@
     "errorClosed": "Registration is closed on this Kukátko right now.",
     "errorRateLimited": "Too many registration attempts. Please try again in a moment.",
     "errorOffline": "Kukátko could not reach the server, so nobody judged the registration. Check your connection and try again.",
-    "errorGeneric": "Registration failed. Please try again."
+    "errorGeneric": "Registration failed. Please try again.",
+    "introLink": "You are registering through an upload link, so you do not need the registration word. The photos you just uploaded from this browser will be kept under your account. An administrator still has to approve the account.",
+    "errorLink": "The upload link is no longer valid, so you cannot register through it. Ask for the registration word."
   },
   "passwordReset": {
     "title": "New password",
@@ -819,6 +823,12 @@
       },
       "stacks": {
         "detect": "Stack detection run"
+      },
+      "upload_link": {
+        "create": "Upload link created",
+        "extend": "Upload link extended",
+        "revoke": "Upload link revoked",
+        "upload": "Photo uploaded through a link"
       }
     },
     "targets": {
@@ -1344,7 +1354,8 @@
       "title": "This album has no photos",
       "hint": "Add photos from the library by selecting them and choosing this album."
     },
-    "faces": "Faces ({{n}})"
+    "faces": "Faces ({{n}})",
+    "uploadLink": "Share an upload link"
   },
   "albumFaces": {
     "title": "Faces in the album",
@@ -4005,5 +4016,80 @@
   },
   "technicalDetails": {
     "label": "Technical details"
+  },
+  "uploadLink": {
+    "title": "Upload photos",
+    "loading": "Loading the link…",
+    "targets": "Photos will go to:",
+    "validUntil": "The link is valid until {{date}}.",
+    "signedInAs": "You are uploading as {{name}}.",
+    "name": "Who is it from?",
+    "namePlaceholder": "Your name",
+    "nameHint": "Optional. Remembered on this device.",
+    "choose": "Choose photos and videos",
+    "chooseMore": "Add more",
+    "progress": "Upload progress",
+    "summary": {
+      "created_one": "{{count}} uploaded",
+      "created_other": "{{count}} uploaded",
+      "duplicate_one": "{{count}} duplicate",
+      "duplicate_other": "{{count}} duplicates",
+      "error_one": "{{count}} error",
+      "error_other": "{{count}} errors"
+    },
+    "diedMidway": "The link stopped being valid meanwhile and accepts no more files.",
+    "registerTitle": "Want to see all the photos?",
+    "registerBody": "Register. Through this link you need no registration word, and the photos you just uploaded will be kept under your account. An administrator still approves the account.",
+    "registerAction": "Register",
+    "expired": "This link has expired. Photos can no longer be uploaded through it.",
+    "revoked": "This link was revoked. Photos can no longer be uploaded through it.",
+    "notFound": "This link does not exist. Check that you copied all of it.",
+    "loadError": "The link could not be loaded. Please try again in a moment.",
+    "toLogin": "Sign in"
+  },
+  "uploadLinks": {
+    "title": "Upload links",
+    "new": "New link",
+    "lead": "Post a link to a group and anyone who opens it uploads photos straight into the chosen albums and labels — no account needed. Uploaded photos are in the album at once; archive unwanted ones as usual.",
+    "loading": "Loading links…",
+    "loadError": "The links could not be loaded.",
+    "empty": "There are no links yet.",
+    "untitled": "(untitled)",
+    "state": {
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "validUntil": "Valid until {{date}}",
+    "expiredOn": "Expired {{date}}",
+    "revokedOn": "Revoked {{date}}",
+    "uploads_one": "{{count}} upload",
+    "uploads_other": "{{count}} uploads",
+    "lastUsed": "last {{date}}",
+    "createdBy": "created by {{name}}",
+    "extend": "Extend",
+    "extendTitle": "Extend validity",
+    "extendDays": "Valid for days (from today)",
+    "revoke": "Revoke link",
+    "revokeTitle": "Revoke the link?",
+    "revokeBody": "The link “{{title}}” stops working for good. Photos already uploaded stay in the albums.",
+    "fieldTitle": "Title shown to uploaders",
+    "fieldTitlePlaceholder": "Village fair 2026 – your photos",
+    "fieldNote": "Note",
+    "fieldNoteHint": "Shown on the link's page.",
+    "fieldTargets": "Where the photos go (at least one album or label):",
+    "fieldDays": "Validity in days",
+    "fieldDaysInvalid": "Enter a number of days from 1 to {{max}}.",
+    "cancel": "Cancel",
+    "create": "Create link",
+    "createTargetError": "The new album or label could not be created. Try again.",
+    "createdTitle": "The link is ready",
+    "createdLead": "Send this link to the people you want photos from:",
+    "linkLabel": "Upload link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "share": "Share",
+    "shownOnce": "You see the link only now — Kukátko does not store it, for security. If you lose it, create a new one.",
+    "done": "Done"
   }
 }

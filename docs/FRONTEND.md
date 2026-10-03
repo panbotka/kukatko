@@ -1727,6 +1727,32 @@ here.
   would never arrive. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
   submission, mismatched passwords, a wrong secret, a taken username, the closed state and both mail
   wordings,
+  `UploadLinkPage` (route **`/u/:code`**, **public** — whoever holds an upload link may upload without
+  an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`, shows the title, the
+  note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
+  an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
+  clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
+  `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in one is greeted by name and
+  uploads as themselves. `DropZone` + `PickFilesButton` (`multiple`, `PICKER_ACCEPT`: images, videos,
+  HEIC/RAW — the phone's library picker selects many at once), `useUploadQueue(linkUploader(...))`,
+  a progress bar, `UploadQueuePanel` (per-file progress, retry), the one-line summary
+  `uploadLinkSummary` ("12 nahráno, 1 duplicita, 1 chyba") with "retry the failed files", a notice when
+  the link died mid-batch, `useLeaveGuard` while uploading. Once an anonymous batch with a new photo
+  finishes and registration is open (`usePublicSettings`), it offers registration: a link to
+  **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands
+  in for it and posts `upload_link` (a dead link → `register.errorLink`). Texts in `uploadLink.*`;
+  `UploadLinkPage.test.tsx`.
+  `UploadLinksPage` (route **`/upload-links`**, **curator**, in the Tools menu as "Odkazy pro nahrávání"
+  with `link-45deg`): the links as cards (title, state badge, album/label `EntityChip`s, expiry or
+  revocation date, upload count, last use, the creator's name for an admin looking at somebody else's),
+  "Prodloužit" (a modal asking for days from today) and "Zrušit odkaz" (`ConfirmModal`). "Nový odkaz"
+  opens a modal: title, note, `UploadOrganize` (albums and labels, created inline through `resolvePending`
+  only when the form is submitted), validity in days (`default_days`, capped by `max_days`); the created
+  link is shown **once** in a read-only field with copy and — where `navigator.share` exists — share
+  buttons. `?album=<uid>` (`ALBUM_PARAM`, `newLinkForAlbum` in `lib/uploadLinks.ts`) opens the form with
+  that album chosen and is removed when the form closes; the album page's "Sdílet odkaz pro nahrávání"
+  (`AlbumDetailPage`, curator, in `HeaderActions.secondary`) links there. Texts in `uploadLinks.*`;
+  `UploadLinksPage.test.tsx`.
   `PasswordResetPage` (route **`/password-reset/:token`**, the landing page of the one-time link
   `POST /admin/users/{uid}/password-reset` mints — **public like sign-in and registration**, because
   whoever follows it is locked out of the very account it belongs to, and laid out as the same
@@ -5269,7 +5295,9 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   scanned tail **resumes** from the last offset instead of re-walking. A fresh walk reports `pending` rather than
   leaving the previous photo's pair standing — those uids belong to the photo before, not this one. In-flight
   requests abort on a `uid`/`params` change or unmount; `enabled: false` reports no neighbours without fetching;
-  `useUploadQueue` = the upload queue: `addFiles` (dedup on name+size+mtime)/`removeItem`/
+  `useUploadQueue(upload = uploadFile)` = the upload queue (the upload function is read through a ref when
+  each file starts, so the public upload-link page passes a fresh closure bound to its code every render):
+  `addFiles` (dedup on name+size+mtime)/`removeItem`/
   `retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
   per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by
   the partial progress of running files, terminal files = done → a smooth overall bar),
@@ -6747,6 +6775,13 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   they know, so neither can clobber the other's field; `LabelCount.cover_uid` is the photo standing for the
   label — its newest visible one, derived by the backend, absent for a label on no visible photo, and carried
   only by the *listing*: a label out of a global search brings its own cover pair instead);
+  `uploadLinks.ts` = the upload-links client: management `fetchUploadLinks` (`{links, default_days,
+  max_days}`)/`createUploadLink(input)` (→ `{link, code, path}`, the only answer carrying the code)/
+  `extendUploadLink(uid, days)`/`revokeUploadLink(uid)`, public `fetchPublicUploadLink(code)` (throws
+  `UploadLinkGoneError` with `state` `expired|revoked` on a 410, `ApiError(404)` for an unknown code),
+  `linkUploader(code, () => name)` (an `UploadFn` posting to `/api/v1/u/<code>/upload` with the name read
+  when each file starts) and `publicLinkURL(path)`; `RegisterInput` in `auth.ts` gained an optional
+  `upload_link` that replaces `secret`;
   `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
   `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
   `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
@@ -6798,7 +6833,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `POST /api/v1/duplicate-markers/invalid` (204); the types `DuplicateMarker`/`DuplicateMarkerGroup`/
   `DuplicateMarkersResponse`/`DuplicateMarkersParams`/`KeepMarkerResult`. The third decision („nechat být") is
   feedback, so it lives in `feedback.ts`; `upload.ts` =
-  `uploadFile(file,{onProgress,signal})`
+  `uploadFile(file,{onProgress,signal,url?,fields?})` (`url` defaults to `/api/v1/upload`; `fields` are plain
+  form fields appended **before** the file, because the backend reads the stream once — an upload link posts
+  its `name` that way; the `UploadFn` type is the shape `useUploadQueue` drives)
   over **`XMLHttpRequest`** (one file per request because of the upload-progress events, the FormData is
   streamed), `isAbortError`, the types `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `onload` is entirely inside `try`/`catch` and a 2xx body without a non-empty `results` array
@@ -7441,7 +7478,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   Routing in `App.tsx`: the route table lives in the exported `AppRoutes` (so that a test can mount it
   into a `MemoryRouter` and verify the wiring itself — `App.test.tsx`), `App` merely wraps it in
   `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (the capabilities provider sits inside the auth provider,
-  because `/capabilities` is behind `RequireAuth`). `/login` is public, the rest is under `RequireAuth`; `/slideshow` and
+  because `/capabilities` is behind `RequireAuth`). `/login`, `/register`, `/password-reset/:token` and the
+upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slideshow` and
   the immersive `/photos/:uid` are under `RequireAuth` but **outside `Layout`** (fullscreen without the navbar),
   the rest is under `Layout`
   (**`/` = `LibraryPage`** — the library is the home page; `/library/*` → `LibraryRedirect`
@@ -7687,8 +7725,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   **User-scoped, kept across sign-out:** `kukatko.language.<uid>` (a preference, and signing back in should
   find it) and `kukatko.pushPrompt.answered.<uid>` (a push subscription belongs to the browser and outlives the
   session; forgetting the answer would only ask again). **Per device by design, never cleared:**
-  `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`
-  and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
+  `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
+  `kukatko.uploadLink.uploaderName` (the "from whom" an anonymous uploader typed on the public upload-link
+  page — it belongs to the phone, and there is no account to scope it to) and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
   `logout` calls `clearSignedOutState()` (`auth/signOutStorage.ts`) in its `finally`, so the storage is cleared
   even when the server never heard the request; it walks both storages and removes every key equal to one of
   `SIGN_OUT_CLEARED` or starting with it plus a dot — every account's copy, and the global keys older builds

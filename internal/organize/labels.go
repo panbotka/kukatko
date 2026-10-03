@@ -252,6 +252,14 @@ func attachLabelRow(
 	return nil
 }
 
+// AttachLabelTx attaches labelUID to photoUID on tx, the caller's open
+// transaction, as a manual label with no uncertainty — the label a curator chose
+// for every photo an upload link brings in. It is idempotent like AttachLabel and
+// returns ErrLabelNotFound or ErrPhotoNotFound when either side does not exist.
+func AttachLabelTx(ctx context.Context, tx pgx.Tx, photoUID, labelUID string) error {
+	return attachLabelRow(ctx, tx, photoUID, labelUID, SourceManual, 0)
+}
+
 // AttachLabel attaches labelUID to photoUID with the given source and uncertainty,
 // updating both if the label is already attached (idempotent). An empty source
 // defaults to SourceManual; an unrecognised source returns ErrInvalidSource. It

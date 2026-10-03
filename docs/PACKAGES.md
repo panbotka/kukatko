@@ -102,7 +102,13 @@ to `## Package map` in `CLAUDE.md`.
   registration switched off answers too, so a client never has to tell a missing route from a closed
   door. `checkSecret` reads `settings.Settings`, refuses outright when registration is disabled **or**
   the stored secret is blank (an open door with no lock), and otherwise compares with
-  `crypto/subtle.ConstantTimeCompare` on both trimmed values → `ErrRegistrationSecret`. The account is
+  `crypto/subtle.ConstantTimeCompare` on both trimmed values → `ErrRegistrationSecret`.
+  `RegisterWithLink(ctx, in, LinkGrant, entry)` is the other gate: an upload link the handler admitted
+  through the optional `UploadLinkGate` (`APIConfig.UploadLinks`, implemented by
+  `uploadlinkapi.RegistrationGate`; `RegisterInput.UploadLink` / the body's `upload_link`) replaces the
+  secret — registration must still be enabled, a dead or unknown link is `ErrRegistrationLink` — and its
+  `Claim` runs inside the same `alongside` transaction (claiming the photos the browser uploaded), its
+  `Committed` after it. The account is
   built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
   `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
   transaction**, which is how the two mails are enqueued: a rolled-back registration schedules
@@ -1327,7 +1333,9 @@ to `## Package map` in `CLAUDE.md`.
   partial via raw-key presence (an omitted field unchanged, `null` clears a nullable one, coordinate
   validation); media `thumb/{size}`+`download` **stream** via `io.Copy` with `streamMedia`
   (`Cache-Control`/`ETag`/`304`, `Content-Length` from the DB, the thumbnail generated on-miss),
-  guard `RequireAuthOrDownloadToken` = a session cookie or `?t=download_token`; **video streaming**
+  guard `RequireAuthOrDownloadToken` = a session cookie or `?t=download_token`; `OptionalAuth` (auth
+package) puts a valid credential's principal on the context and lets an anonymous request through — the
+public upload-link upload uses it to attribute a signed-in uploader; **video streaming**
   (`video.go`): `GET /photos/{uid}/video` streams video **with HTTP Range** via `http.ServeContent`
   (206 partial, `Accept-Ranges`, seek, If-Range/If-None-Match, memory-bounded from `*os.File` via
   `storage.Materialize`, once per request — the transcode fallback shares it too) for inline HTML5
@@ -3159,7 +3167,9 @@ to `## Package map` in `CLAUDE.md`.
   column via the shared `translateUserPhotoFK` (`photo_uid` → photo, otherwise user;
   album/label via `translateMembershipFK`/`translateAttachFK`);
   **audited variants** of the mutations (`audit.go`): `CreateAlbumAudited`/`UpdateAlbumAudited`/`DeleteAlbumAudited`/
-  `AddPhotosAudited`/`RemovePhotosAudited` and `CreateLabelAudited`/`UpdateLabelAudited`/`DeleteLabelAudited`/
+  `AddPhotoTx`/`AttachLabelTx` (package functions on the caller's `pgx.Tx`, idempotent, the label manual —
+used by `uploadlink.RecordUpload` so filing an upload joins its audited transaction),
+`AddPhotosAudited`/`RemovePhotosAudited` and `CreateLabelAudited`/`UpdateLabelAudited`/`DeleteLabelAudited`/
   `AttachLabelAudited`/`DetachLabelAudited` run the change and `audit.Write` **in one transaction** (durable
   audit — when the mutation rolls back, no audit record is created; the shared `inAuditedTx` +
   `insertAuditedWithUniqueSlug`, which resolves a slug collision on create/update by retrying through separate transactions
@@ -3439,6 +3449,45 @@ to `## Package map` in `CLAUDE.md`.
   `ownedSearch` loads the row and compares `owner_uid` with the actor, a foreign one (even a non-existent one) → **404** (never
   reveals someone else's search); the body `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
   mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`)),
+  `internal/uploadlink/`
+  (the domain of **upload links** — a short link a curator posts to a group chat, through which anybody
+  uploads photos into preset albums and labels; owns the four tables of migration `0090_upload_links.sql`:
+  `upload_links` (`uid` prefix `ul`, `code_hash` UNIQUE — the SHA-256 of the short code, **never the code**,
+  title, note, `created_by` FK users `ON DELETE SET NULL`, `expires_at`, final `revoked_at`,
+  `upload_count`/`last_used_at`), `upload_link_albums`/`upload_link_labels` (targets, cascading from both
+  sides) and `upload_link_photos` (provenance per photo and link: `outcome` created|duplicate,
+  `uploader_name`, `uploaded_by` FK users SET NULL, `session_hash` of an anonymous browser session); all
+  four are catalogue tables for the wipe. `NewCode` draws 8 symbols from a 55-character alphabet with no
+  ambiguous glyphs (rejection sampling, no modulo bias), `ValidCode` refuses a malformed one before a
+  lookup, `HashSecret` is the plain SHA-256 used for codes and session tokens alike (high-entropy random
+  secrets, as for API tokens), `NewSessionToken`, `NormalizeUploaderName` (trim, collapse, cut to 100).
+  `Link.StateAt(now)` → `active|expired|revoked` (revoked wins). `Store` = `NewStore(pool)`:
+  `Create(ctx, NewLink, entry)` → the link **plus its plaintext code** (code collision → redraw via
+  `ON CONFLICT DO NOTHING`; `NewLink.Validate`: ≥ 1 target, ≤ 20 of each, title/note caps; a missing
+  album/label → `ErrTargetNotFound`), `Get`, `ByCode`, `List(ctx, creatorUID)` ("" = all; one query with
+  the creator name and both target lists as JSON), `Extend` (`ErrRevoked` for a revoked link),
+  `Revoke` (idempotent, a second revoke writes no audit), `RecordUpload(ctx, Upload, entry)` — provenance
+  row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label), counters and the
+  `upload_link.upload` audit entry in **one transaction** — `AttributeSessionTx(ctx, tx, sessionHash,
+  userUID)` (on the registration's transaction: hands the session's **created**, still unowned photos to
+  the new account, once) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo,
+  for the sidecar's `identity.upload_link`); every mutation audits in its own transaction)),
+  `internal/uploadlinkapi/`
+  (the HTTP half: `NewAPI(Config{Store, Ingest, Sidecar, RequireCurator, OptionalAuth, CurrentUser?,
+  IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts
+  `/upload-links` (curator management; a foreign link is 404 unless the caller is an admin) and the public
+  `/u/{code}` pair behind the per-IP limiter; the upload walks the multipart stream once (the `name`
+  field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415),
+  caps the size with a `cappedReader` that fails with `ingest.ErrFileTooLarge` (413) and the link's file
+  budget (429), runs `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or
+  duplicate — and reschedules its sidecar; an anonymous uploader is identified by the
+  `kukatko_upload_session` cookie (`SessionCookieName`, path `/api/v1`) whose hash marks their photos —
+  minted by the page's `GET /u/{code}`, not the first upload, since the page sends three files at once and
+  each would otherwise start a session of its own (only the last cookie would survive in the browser). `RegistrationGate`
+  implements `auth.UploadLinkGate`: a live link admits `POST /auth/register` without the secret and its
+  `Claim` runs `uploadlink.AttributeSessionTx` on the account's transaction, `Committed` reschedules the
+  claimed photos' sidecars. Built by `buildUploadLinkAPI` inside `buildIngest` (it shares the curator
+  upload's `ingest.Service`) and `uploadLinkGate` in `cmd/kukatko/auth.go`)),
   `internal/searchhistory/`
   (the DB layer for **each user's recent searches** — the short ordered list of what somebody actually
   searched for, kept server-side so a query composed on a laptop is offered on the phone; the
@@ -4175,7 +4224,7 @@ to `## Package map` in `CLAUDE.md`.
   [`docs/MIGRATION_PLAN.md`](MIGRATION_PLAN.md) had nothing to run before: it empties every catalogue table and
   every object the store owns so the library can be re-imported from scratch. The deployment has **no S3 backup**
   ([`READINESS_AUDIT.md`](READINESS_AUDIT.md) §4), so the guards *are* the package and the truncation is the easy
-  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (27, wiped, incl. `photoprism_aliases`
+  part. **Two explicit table lists** in `tables.go` — `catalogueTables` (44, wiped, incl. the four `upload_link*` tables from `0090`, `photoprism_aliases`
   from `0046` and `review_skips` from `0059`) and `preservedTables` (10: `users`/`sessions`/`api_tokens`/
   `passkey_credentials`/`password_reset_tokens`/`user_pictures`/`announcements`/`instance_settings`/
   `audit_log`/`schema_migrations`, never touched), exported as
@@ -4292,7 +4341,7 @@ to `## Package map` in `CLAUDE.md`.
   Not to be confused with `internal/sidecar`, which reads *foreign* sidecars (Google Takeout `.json`, Apple `.xmp`) during
   an import — this package only **writes**, and only its own format. `Document` = a versioned, grouped
   schema (`version`/`generated_at`/`identity`/`descriptive`/`temporal`/`spatial`/`technical`/
-  `curation`/`edit`), `Version = 5` (v2 added `curation.hidden_from_library` — additive, but still a bump,
+  `curation`/`edit`), `Version = 6` (v2 added `curation.hidden_from_library` — additive, but still a bump,
   because a reader that ignored the key would un-hide every hidden photo on restore; v3 added
   `temporal.precision`, omitted at the ordinary `day` grain, for the same reason: a reader that ignored it
   would restore "somewhere in the seventies" as a photo taken on 1 January 1970; v4 added
@@ -4300,7 +4349,10 @@ to `## Package map` in `CLAUDE.md`.
   a reader that dropped it would turn a reversible declaration into a permanent one, since after losing
   the database the sidecar is the only place that date still exists; v5 added `curation.people[].nickname`,
   what a village actually calls somebody — a fact only the database holds, so dropping the key would restore
-  the person under the name on their documents and lose the one everybody used);
+  the person under the name on their documents and lose the one everybody used; v6 added
+  `identity.upload_link` `{uid, title, uploader_name, uploaded_at}` — the upload link a photo came through
+  and the name its anonymous sender typed, filled by `sidecarjob`'s optional `UploadLinks` source
+  (`uploadlink.Store.Provenance`, best-effort like the uploader name));
   `Build(Input) Document` is a **pure function** (no I/O, no
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from

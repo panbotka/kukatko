@@ -203,6 +203,15 @@ describe('routing', () => {
     expect(screen.getByTestId('pathname')).toHaveTextContent('/register')
   })
 
+  it('renders the upload-link page at /u/:code without a session', async () => {
+    // Whoever holds an upload link may upload without an account, so the route
+    // must resolve outside RequireAuth rather than bouncing to /login.
+    renderRoutes(['/u/Ab3dEf7h'], 0, unauthenticated)
+
+    expect(await screen.findByTestId('upload-link-page')).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/u/Ab3dEf7h')
+  })
+
   it('renders the password-reset landing page at /password-reset/:token without a session', async () => {
     // Whoever follows a reset link is locked out of the very account it belongs
     // to, so the route must resolve outside RequireAuth like registration does.

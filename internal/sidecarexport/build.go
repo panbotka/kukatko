@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photoedit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
 // Input is everything Build needs to serialise one photo. The caller gathers it;
@@ -36,6 +37,8 @@ type Input struct {
 	Edit *photos.Edit
 	// UploadedBy is the username of the uploader, empty when unknown.
 	UploadedBy string
+	// UploadLink is the upload link the photo came in through, nil when none.
+	UploadLink *uploadlink.Provenance
 	// Now is the generation timestamp written into the document. A zero value reads
 	// the wall clock; tests pin it.
 	Now time.Time
@@ -80,6 +83,12 @@ func identityOf(in Input) Identity {
 	}
 	if ext := externalOf(p); ext != nil {
 		id.External = ext
+	}
+	if in.UploadLink != nil {
+		id.UploadLink = &UploadLink{
+			UID: in.UploadLink.LinkUID, Title: in.UploadLink.LinkTitle,
+			UploaderName: in.UploadLink.UploaderName, UploadedAt: in.UploadLink.UploadedAt.UTC(),
+		}
 	}
 	return id
 }

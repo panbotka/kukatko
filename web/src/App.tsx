@@ -54,13 +54,15 @@ import { SystemStatusPage } from './pages/SystemStatusPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TasksPage } from './pages/TasksPage'
 import { TrashPage } from './pages/TrashPage'
+import { UploadLinkPage } from './pages/UploadLinkPage'
+import { UploadLinksPage } from './pages/UploadLinksPage'
 import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
 import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
 
 /**
- * The app's route table. `/login`, `/register` and `/password-reset/:token` are
- * public; everything else is gated by {@link RequireAuth} and rendered under the
+ * The app's route table. `/login`, `/register`, `/password-reset/:token` and
+ * the upload-link page `/u/:code` are public; everything else is gated by {@link RequireAuth} and rendered under the
  * shared layout shell. Exported apart from {@link App} so tests can mount it
  * inside a `MemoryRouter` and assert on the wiring itself (which path renders
  * what, and where `/library` forwards to).
@@ -78,6 +80,10 @@ export function AppRoutes() {
           asks the backend whether the link is still usable before it shows a
           form, and never signs anybody in. */}
       <Route path="/password-reset/:token" element={<PasswordResetPage />} />
+      {/* The page behind an upload link a curator posted to a group chat: public,
+          because whoever holds the link may upload without an account. It shows
+          only where the photos go; a signed-in visitor uploads as themselves. */}
+      <Route path="/u/:code" element={<UploadLinkPage />} />
       <Route element={<RequireAuth />}>
         {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
         <Route path="/slideshow" element={<SlideshowPage />} />
@@ -143,6 +149,9 @@ export function AppRoutes() {
           {/* Uploading and cluster review are curation: curators and above. */}
           <Route element={<RequireRole role="curator" />}>
             <Route path="/upload" element={<UploadPage />} />
+            {/* Creating and managing upload links hands upload rights to anybody
+                holding one: curation, like uploading itself. */}
+            <Route path="/upload-links" element={<UploadLinksPage />} />
             <Route path="/people/clusters" element={<ClustersPage />} />
             {/* Finding a person among untagged photos assigns faces: curation. */}
             <Route path="/faces" element={<FacesPage />} />

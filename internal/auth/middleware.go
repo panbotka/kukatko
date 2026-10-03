@@ -48,6 +48,21 @@ func (a *API) RequireImport(next http.Handler) http.Handler {
 	return a.requireRole(requireImport, next)
 }
 
+// OptionalAuth wraps next so a request carrying a valid credential (an API
+// token or the session cookie) runs with its principal on the context, exactly
+// as RequireAuth would put it there, while a request with none — or with one
+// that does not validate — runs anonymously instead of being refused. It is for
+// the public routes that treat a signed-in caller differently (an upload link
+// attributes the upload to the account) but must work for everybody.
+func (a *API) OptionalAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p, err := a.authenticateRequest(r); err == nil {
+			r = r.WithContext(withPrincipal(r.Context(), p))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // downloadTokenParam is the query parameter carrying a session's media download
 // token on cookie-less media URLs (thumbnails, originals, video streams).
 const downloadTokenParam = "t"

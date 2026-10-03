@@ -11,10 +11,13 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/settings"
+	"github.com/panbotka/kukatko/internal/uploadlink"
+	"github.com/panbotka/kukatko/internal/uploadlinkapi"
 )
 
 // buildAuth assembles the auth subsystem from configuration and the database:
@@ -70,12 +73,22 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Service:       svc,
 		Limiter:       limiter,
 		Registration:  registration,
+		UploadLinks:   uploadLinkGate(cfg, db),
 		Approval:      approval,
 		PasswordReset: passwordReset,
 		Passkeys:      passkeys,
 		SecureCookies: cfg.Web.SecureCookies,
 	})
 	return api, svc, nil
+}
+
+// uploadLinkGate builds what lets a live upload link stand in for the shared
+// registration secret. It reschedules the sidecars of the photos a registration
+// claims through its own queue adapter over the shared pool — the auth subsystem
+// is built before the services and owns no enqueuer of its own.
+func uploadLinkGate(cfg *config.Config, db *database.DB) *uploadlinkapi.RegistrationGate {
+	sidecar := sidecarSchedulerFor(cfg, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
+	return uploadlinkapi.NewRegistrationGate(uploadlink.NewStore(db.Pool()), sidecar, nil)
 }
 
 // buildPasskeys assembles the WebAuthn sign-in flow for the resolved relying

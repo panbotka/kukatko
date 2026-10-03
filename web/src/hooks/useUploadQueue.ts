@@ -4,6 +4,7 @@ import {
   isAbortError,
   uploadFile,
   type UploadFileResult,
+  type UploadFn,
   type UploadWarning,
 } from '../services/upload'
 import { ApiError } from '../services/auth'
@@ -120,8 +121,14 @@ function statusFor(outcome: UploadFileResult['outcome']): QueueItemStatus {
  * Failures never abort the batch — each file's outcome is captured on its item
  * — mirroring the backend's per-file semantics.
  */
-export function useUploadQueue(): UseUploadQueueResult {
+export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueResult {
   const [items, setItems] = useState<UploadQueueItem[]>([])
+
+  // The upload function is read through a ref at the moment a file starts, so a
+  // caller may pass a fresh closure every render (an upload link binds its code
+  // and the uploader's name) without restarting anything.
+  const uploadRef = useRef(upload)
+  uploadRef.current = upload
 
   // A committed snapshot read synchronously by the pump (which runs from an
   // effect, after the matching render, so the ref is always up to date there).
@@ -165,12 +172,13 @@ export function useUploadQueue(): UseUploadQueueResult {
       controllers.current.set(item.id, controller)
       patch(item.id, { status: 'uploading', progress: 0, error: undefined })
 
-      uploadFile(item.file, {
-        signal: controller.signal,
-        onProgress: (fraction) => {
-          patch(item.id, { progress: fraction })
-        },
-      })
+      uploadRef
+        .current(item.file, {
+          signal: controller.signal,
+          onProgress: (fraction) => {
+            patch(item.id, { progress: fraction })
+          },
+        })
         .then((result) => {
           patch(item.id, {
             status: statusFor(result.outcome),

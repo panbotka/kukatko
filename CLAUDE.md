@@ -174,6 +174,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
+- `internal/uploadlink` — upload links: hashed short code (only the create response carries it), album/label targets, expiry/revoke, per-photo provenance (link, typed name, account or anonymous session), filing an upload into the targets and claiming a session's photos at registration, all audited in the mutation's transaction
+- `internal/uploadlinkapi` — curator `/upload-links` management + the public `/u/{code}` page/upload (no session, per-IP + per-link limits, ingest pipeline reused) + `RegistrationGate` (a live link replaces the registration secret)
 - `internal/userpic` — a user's profile picture: the chain (uploaded picture → picked library photo → the linked subject's face → nothing), the re-encode to a square JPEG kept in Postgres, and the refusal of a private/hidden photo
 - `internal/userpicapi` — `GET /users/{uid}/avatar` + the self-service `GET`/`PUT`/`DELETE /auth/picture`; not audited
 - `internal/vectors` — embeddings and faces directly in Postgres (`halfvec` + HNSW cosine)

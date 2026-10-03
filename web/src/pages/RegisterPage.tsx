@@ -7,7 +7,7 @@ import Form from 'react-bootstrap/Form'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -28,6 +28,7 @@ type RegisterErrorKey =
   | 'register.errorPasswordMismatch'
   | 'register.errorSecret'
   | 'register.errorClosed'
+  | 'register.errorLink'
   | 'register.errorRateLimited'
   | 'register.errorOffline'
   | 'register.errorGeneric'
@@ -73,6 +74,9 @@ function rejectionFor(error: unknown): Rejection {
       return { field: 'username', messageKey: 'register.errorUsernameTaken' }
     }
     if (error.status === 403) {
+      if (error.message.includes('upload link')) {
+        return { field: null, messageKey: 'register.errorLink' }
+      }
       return error.message.includes('secret')
         ? { field: 'secret', messageKey: 'register.errorSecret' }
         : { field: null, messageKey: 'register.errorClosed' }
@@ -202,6 +206,11 @@ export function RegisterPage() {
   const publicSettings = usePublicSettings()
   const registration = registrationOpenFrom(publicSettings)
   const mailEnabled = mailEnabledFrom(publicSettings)
+  // Arriving from an upload link (/register?link=<code>): the link stands in for
+  // the shared secret, so the secret field is not asked for at all.
+  const [searchParams] = useSearchParams()
+  const uploadLink = searchParams.get('link')?.trim() ?? ''
+  const viaLink = uploadLink !== ''
 
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -238,7 +247,7 @@ export function RegisterPage() {
       email.trim() === '' ||
       password === '' ||
       passwordRepeat === '' ||
-      secret.trim() === ''
+      (!viaLink && secret.trim() === '')
     ) {
       setValidated(true)
       return
@@ -259,7 +268,8 @@ export function RegisterPage() {
         display_name: displayName.trim(),
         email: email.trim(),
         password,
-        secret: secret.trim(),
+        secret: viaLink ? '' : secret.trim(),
+        ...(viaLink ? { upload_link: uploadLink } : {}),
       })
       setSubmit({ status: 'done', username: account.username })
     } catch (error: unknown) {
@@ -318,7 +328,9 @@ export function RegisterPage() {
                   </div>
                 ) : (
                   <>
-                    <p className="text-secondary">{t('register.intro')}</p>
+                    <p className="text-secondary">
+                      {viaLink ? t('register.introLink') : t('register.intro')}
+                    </p>
 
                     {rejection !== null && rejection.field === null && (
                       <Alert variant="danger" role="alert">
@@ -412,22 +424,24 @@ export function RegisterPage() {
                             : t('register.passwordRepeatRequired')
                         }
                       />
-                      <RegisterField
-                        id="register-secret"
-                        label={t('register.secret')}
-                        type="text"
-                        autoComplete="off"
-                        value={secret}
-                        onChange={change(setSecret)}
-                        disabled={submitting}
-                        invalid={rejection?.field === 'secret'}
-                        feedback={
-                          rejection?.field === 'secret'
-                            ? rejectionMessage
-                            : t('register.secretRequired')
-                        }
-                        hint={t('register.secretHint')}
-                      />
+                      {!viaLink && (
+                        <RegisterField
+                          id="register-secret"
+                          label={t('register.secret')}
+                          type="text"
+                          autoComplete="off"
+                          value={secret}
+                          onChange={change(setSecret)}
+                          disabled={submitting}
+                          invalid={rejection?.field === 'secret'}
+                          feedback={
+                            rejection?.field === 'secret'
+                              ? rejectionMessage
+                              : t('register.secretRequired')
+                          }
+                          hint={t('register.secretHint')}
+                        />
+                      )}
 
                       <div className="d-grid mt-4">
                         <Button type="submit" variant="primary" disabled={submitting}>

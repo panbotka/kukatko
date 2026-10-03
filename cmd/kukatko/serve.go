@@ -317,7 +317,7 @@ func buildServices(
 	registerJobQueueMetrics(reg, jobStore)
 	// The queue, or no-ops when an export is off (see exportSchedulersFor).
 	exports := exportSchedulersFor(cfg, enqueuer)
-	ingestAPI, err := buildIngest(cfg, db, authAPI, enqueuer, exports.sidecar, reg)
+	uploadRoutes, err := buildIngest(cfg, db, authAPI, enqueuer, exports.sidecar, reg)
 	if err != nil {
 		return nil, backgroundServices{}, err
 	}
@@ -364,7 +364,7 @@ func buildServices(
 	}
 	opts := slices.Concat([]server.Option{
 		server.WithAPI(authAPI.RegisterRoutes),
-		server.WithAPI(ingestAPI.RegisterRoutes),
+		server.WithAPI(uploadRoutes),
 		server.WithAPI(photoAPI.RegisterRoutes),
 		server.WithAPI(clusterAPI.RegisterRoutes),
 		server.WithAPI(buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes),

@@ -239,6 +239,7 @@ describe('MobileNavDrawer', () => {
       '/recognition',
       '/outliers',
       '/duplicate-markers',
+      '/upload-links',
       '/duplicates',
       '/trash',
       '/account',

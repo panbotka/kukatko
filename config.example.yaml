@@ -799,6 +799,21 @@ upload:
   # (uploads are streamed to disk and never buffered whole in memory regardless).
   max_file_size_mb: 0
 
+# Upload links: short links (/u/<code>) a curator posts to a group chat, through
+# which anybody — signed in or not — uploads photos into preset albums/labels.
+# Open to whoever holds a link, so they carry caps of their own (the per-IP and
+# per-link request rates live under ratelimit.upload_link*).
+upload_links:
+  # Maximum size of one file uploaded through a link, in mebibytes, on top of
+  # upload.max_file_size_mb (the smaller cap wins). 0 sets no cap of its own.
+  max_file_size_mb: 1024
+  # How many files one link accepts over its whole life. 0 means no cap.
+  max_uploads_per_link: 2000
+  # The validity the create form offers, in days.
+  default_days: 30
+  # The longest validity a link may be created or extended with, in days.
+  max_days: 365
+
 # Video playback/streaming. Videos are always served with HTTP range support so
 # browsers can seek without downloading the whole file.
 video:
@@ -916,3 +931,12 @@ ratelimit:
   tiles: # GET /map/tiles/... (mapy.com tile proxy)
     rate_per_sec: 50
     burst: 200
+  # The public upload-link routes (GET /u/{code} and its upload), per client IP.
+  # The page sends one file per request; the burst covers a camera roll.
+  upload_link:
+    rate_per_sec: 2
+    burst: 60
+  # Uploads through one link, whoever sends them — keyed by the link, not the IP.
+  upload_link_per_link:
+    rate_per_sec: 10
+    burst: 300

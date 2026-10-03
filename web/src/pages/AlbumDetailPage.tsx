@@ -32,6 +32,7 @@ import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey } from '../lib/gridScroll'
 import { ALBUM_DEFAULTS, ALBUM_SORTS, type LibraryView, viewToParams } from '../lib/libraryView'
+import { newLinkForAlbum } from '../lib/uploadLinks'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
 import {
@@ -382,6 +383,18 @@ export function AlbumDetailPage() {
                   name={album.title}
                   variant="outline-secondary"
                 />
+              ),
+              canCurate && (
+                /* A link, not a button: the create form has an address of its
+                   own (/upload-links?album=…), opened with this album chosen. */
+                <Link
+                  key="uploadLink"
+                  to={newLinkForAlbum(uid)}
+                  className="btn btn-outline-secondary btn-sm"
+                >
+                  <Icon name="link-45deg" className="me-1" />
+                  {t('albumDetail.uploadLink')}
+                </Link>
               ),
               canCurate && (
                 <Button

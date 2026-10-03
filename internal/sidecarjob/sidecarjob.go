@@ -33,6 +33,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
 // ErrMissingPhotoUID indicates a sidecar job whose payload carries no photo_uid.
@@ -88,6 +89,13 @@ type UserStore interface {
 	GetUserByUID(ctx context.Context, uid string) (auth.User, error)
 }
 
+// UploadLinkSource reads where a photo came from when it came in through an
+// upload link. It is satisfied by uploadlink.Store.
+type UploadLinkSource interface {
+	// Provenance returns the photo's upload-link provenance, nil when it has none.
+	Provenance(ctx context.Context, photoUID string) (*uploadlink.Provenance, error)
+}
+
 // SidecarWriter renders and stores a document. It is satisfied by
 // sidecarexport.Writer.
 type SidecarWriter interface {
@@ -128,6 +136,9 @@ type Config struct {
 	Places PlaceStore
 	// Users resolves the uploader's username.
 	Users UserStore
+	// UploadLinks reads the upload link a photo came through; nil omits the
+	// group.
+	UploadLinks UploadLinkSource
 	// Writer renders and stores the document.
 	Writer SidecarWriter
 	// Lister lists the photos the backfill schedules.
@@ -145,6 +156,7 @@ type Service struct {
 	people   PeopleStore
 	places   PlaceStore
 	users    UserStore
+	links    UploadLinkSource
 	writer   SidecarWriter
 	lister   PhotoLister
 	enqueuer Enqueuer
@@ -168,6 +180,7 @@ func New(cfg Config) *Service {
 		people:   cfg.People,
 		places:   cfg.Places,
 		users:    cfg.Users,
+		links:    cfg.UploadLinks,
 		writer:   cfg.Writer,
 		lister:   cfg.Lister,
 		enqueuer: cfg.Enqueuer,
@@ -265,6 +278,7 @@ func (s *Service) gather(ctx context.Context, photo photos.Photo) (sidecarexport
 		return sidecarexport.Input{}, err
 	}
 	in.UploadedBy = s.uploaderOf(ctx, photo)
+	in.UploadLink = s.uploadLinkOf(ctx, photo.UID)
 	return in, nil
 }
 
@@ -311,6 +325,21 @@ func (s *Service) uploaderOf(ctx context.Context, photo photos.Photo) string {
 		return ""
 	}
 	return user.Username
+}
+
+// uploadLinkOf reads the upload link the photo came through, best-effort like
+// uploaderOf: a failed read omits the group rather than failing the export.
+func (s *Service) uploadLinkOf(ctx context.Context, photoUID string) *uploadlink.Provenance {
+	if s.links == nil {
+		return nil
+	}
+	prov, err := s.links.Provenance(ctx, photoUID)
+	if err != nil {
+		s.log.WarnContext(ctx, "sidecar export: upload link not resolved",
+			slog.String("photo_uid", photoUID), slog.String("error", err.Error()))
+		return nil
+	}
+	return prov
 }
 
 // BackfillSidecars enqueues a sidecar job for every photo whose sidecar is

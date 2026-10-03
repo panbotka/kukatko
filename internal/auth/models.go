@@ -54,6 +54,10 @@ var (
 	// secret. It is separate from ErrRegistrationClosed only for the caller's
 	// message; both are answered with the same status.
 	ErrRegistrationSecret = errors.New("auth: wrong registration secret")
+	// ErrRegistrationLink indicates the registration named an upload link in
+	// place of the shared secret, and the link is unknown, expired or revoked —
+	// or this instance wires no upload links at all.
+	ErrRegistrationLink = errors.New("auth: the upload link is not valid")
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")

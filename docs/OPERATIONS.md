@@ -1699,15 +1699,25 @@ other type; values ≤ 0 are ignored and a type
   jobs, default 1), `cooldown` (min. spacing between packets, default 5m). `ErrInvalidWake` validation:
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
-  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`, each `{rate_per_sec, burst}`;
-  defaults 5/30, 2/10, 0.5/10, 50/200; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`, each
+  `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
   because one person is chatty would be wrong. The same `comment` settings, each in a bucket of its own and
   keyed the same way, also throttle a task's thread and `POST /push/subscriptions` (`internal/notificationapi`).
   Login has its own limiter (`auth.login_rate_*`), the geocode
-  proxy too (`maps.*`).
+  proxy too (`maps.*`). **`upload_link`** (default 2/60) throttles the public upload-link routes
+  (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**
+  (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
+  brake on a link that leaked to somebody with many addresses.
+- **Upload-link keys (`upload_links.*`, `internal/uploadlinkapi`):** `max_file_size_mb` (default
+  **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` — the
+  smaller wins; 0 = no cap of its own), `max_uploads_per_link` (default **2000** files over a link's life,
+  new photos and duplicates alike; 0 = no cap), `default_days` (default **30**, the validity the create
+  form offers) and `max_days` (default **365**, the longest validity a link may be created or extended
+  with). Env e.g. `KUKATKO_UPLOAD_LINKS_MAX_UPLOADS_PER_LINK`. The anonymous uploader's session cookie
+  follows `web.secure_cookies` like the sign-in cookie.
 - **Login keys (`auth.login_rate_limit`, `auth.login_rate_window`):** default **10 failed attempts per
   (username, client IP) within 15m**, then 429; a successful login clears the count. Every attempt is
   charged to a **second, IP-independent per-username budget** as well — `login_rate_limit × 3` over the same

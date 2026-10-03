@@ -19,6 +19,7 @@ describe('toolsGroup', () => {
       '/recognition',
       '/outliers',
       '/duplicate-markers',
+      '/upload-links',
     ])
   })
 

@@ -33,6 +33,7 @@ type API struct {
 	limiter         *Limiter
 	usernameLimiter *Limiter
 	registration    *Registration
+	uploadLinks     UploadLinkGate
 	approval        *Approval
 	passwordReset   *PasswordReset
 	registerLimit   *ratelimit.Limiter
@@ -63,6 +64,10 @@ type APIConfig struct {
 	// open", so an instance that does not wire it behaves exactly like one whose
 	// administrator switched registration off.
 	Registration *Registration
+	// UploadLinks lets a live upload link stand in for the registration secret.
+	// Optional: when nil, a registration naming a link is refused as if the link
+	// were unknown.
+	UploadLinks UploadLinkGate
 	// Approval is the administrator's half of that flow: letting a waiting
 	// account in. Optional: when nil, NewAPI derives one that approves accounts
 	// and sends no mail, so an instance that wires no mail still has the action.
@@ -96,6 +101,7 @@ func NewAPI(cfg APIConfig) *API {
 		limiter:            cfg.Limiter,
 		usernameLimiter:    usernameLimiterFor(cfg),
 		registration:       cfg.Registration,
+		uploadLinks:        cfg.UploadLinks,
 		approval:           approvalFor(cfg),
 		passwordReset:      passwordResetFor(cfg),
 		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),

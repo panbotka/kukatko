@@ -111,7 +111,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   credentials — the check runs after the bcrypt comparison — so it tells a guesser nothing. The
   client maps it to its own message (`login.errorPendingApproval`).
   **`POST /auth/register` (no authentication) — self-service registration.** Body:
-  `{username, display_name?, email, password, secret}`; unknown fields → 400. It creates the account
+  `{username, display_name?, email, password, secret, upload_link?}`; unknown fields → 400. It creates the account
   as a **viewer**, **not approved**, so it exists and cannot be used until an administrator fills
   `approved_at`; there is no session and no cookie in the answer. **201** returns
   `{username, display_name, email, pending_approval: true}` — the stored (normalised) values, and
@@ -140,6 +140,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   best-effort like the notices — a push that will not schedule is logged and the registration goes on —
   and turning the kind off stops only the push, never the mail. The response is unchanged. The
   audit entry names the new account as **both actor and target**: nobody else was involved.
+  **Registering through an upload link.** The body may carry `upload_link` (a link's short code) in
+  place of `secret`: a live link stands in for the shared secret — and only for it (registration must
+  still be switched on, the account is still an unapproved viewer, the same mails, pushes and audit
+  entry, whose details gain `upload_link: <link uid>`). An unknown, expired or revoked link is **403**
+  `auth: the upload link is not valid` (one answer for all three). In the account's transaction the
+  photos this browser's anonymous upload session (`kukatko_upload_session` cookie, see the Upload Links
+  API) **created** through any link are attributed to the new account (`photos.uploaded_by`, only where
+  still unowned); their sidecars are rescheduled after the commit. The gate is
+  `uploadlinkapi.RegistrationGate` behind the `auth.UploadLinkGate` interface.
   **`POST /admin/users/{uid}/approve` (admin) — letting a waiting account in.** No body; **200**
   returns the updated account (the admin view, `note` included) with `approved_at` filled from the
   server clock. It **does not change the role**: the account was registered on `viewer` and raising it
@@ -1748,6 +1757,44 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   context — a saved search of another owner is **always reported as 404** (never disclosed), the body
   `DisallowUnknownFields` + a 1 MiB limit. The `saved_searches` table (migration `0017_saved_searches.sql`).
   Mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`).
+- **Upload Links API (`/api/v1`, `internal/uploadlinkapi` + `internal/uploadlink`):** short links
+  (`/u/<code>`) through which anybody — signed in or not — uploads photos into preset albums and labels.
+  **Management (`RequireCurator`):** `GET /upload-links` → `{links:[…], default_days, max_days}`, the
+  caller's own links newest-first (an **admin/maintainer sees all**); each link is
+  `{uid,title,note,created_by,created_by_name,created_at,expires_at,revoked_at,upload_count,
+  last_used_at,albums:[{uid,name}],labels:[{uid,name}],state}` with `state` ∈ `active|expired|revoked`.
+  `POST /upload-links` `{title?,note?,album_uids,label_uids,valid_days?}` → **201**
+  `{link, code, path:"/u/<code>"}` — **the only response that ever carries the code**: it is stored as
+  its SHA-256 only (`upload_links.code_hash`), like an API token's secret, so a leaked listing cannot be
+  replayed and a lost link can only be replaced. At least one album or label (≤ 20 of each), title ≤ 200
+  and note ≤ 2000 characters, `valid_days` 1..`upload_links.max_days` (0/omitted =
+  `upload_links.default_days`); an unknown album/label → 400. `POST /upload-links/{uid}/extend`
+  `{valid_days}` → 200 `{link}` (valid that many days **from now**; a revoked link → 409);
+  `POST /upload-links/{uid}/revoke` → 200 `{link}` (final, idempotent). Somebody else's link is **404**
+  unless the caller is an admin. Every create/extend/revoke writes `upload_link.create|extend|revoke` in
+  its transaction (details: title, targets, expiry — never the code).
+  **Public (no session; per-IP `ratelimit.upload_link` ahead of everything):** the code is 8 characters
+  from a 55-symbol unambiguous alphabet (~46 bits); a malformed one is a 404 without a lookup.
+  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at}` — names only, no
+  UIDs, counts, creator or photos; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
+  session** (sets the `kukatko_upload_session` cookie when absent), because the page then uploads several
+  files at once and each would otherwise mint a session of its own; **410** `{error, state:"expired"|"revoked"}` for a dead link, **404**
+  for an unknown one. `POST /u/{code}/upload` (`OptionalAuth`, then the per-link
+  `ratelimit.upload_link_per_link` bucket → 429) — `multipart/form-data`, an optional `name` field
+  (the uploader's "from whom", trimmed/cut to 100 characters) **before** the files, one or more files,
+  streamed through the ordinary ingest pipeline (`ingest.Service.IngestFile`, SHA256 dedup) → 200
+  `{results:[…]}` exactly like `POST /upload`. Per file: an extension the pipeline does not ingest →
+  415, a file over `upload_links.max_file_size_mb` → 413, past `upload_links.max_uploads_per_link` →
+  429. Every file that resolved to a photo — **new or duplicate** — is filed into all the link's albums
+  and labels (manual labels) at once, its provenance recorded in `upload_link_photos` (link, typed name,
+  account or anonymous session hash, created/duplicate), the link's `upload_count`/`last_used_at`
+  bumped and an `upload_link.upload` audit entry written (target the photo, actor the signed-in uploader
+  or none), all in one transaction; its sidecar is rescheduled. A signed-in uploader owns the photo as
+  with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
+  SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
+  marks their photos for `POST /auth/register` with
+  `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the curator upload
+  (`buildIngest` → `buildUploadLinkAPI` in `cmd/kukatko/ingest.go`).
 - **Search History API (`/api/v1`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
   `RequireAuth`):** each user's **recent searches** — the short ordered list the search box offers back (whole
   while it is empty, as prefix matches once something is typed) and the command palette offers while empty. It

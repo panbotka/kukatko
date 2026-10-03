@@ -202,6 +202,16 @@ shared library is tidied by more than one person.
   chip that names it and clears in one click, whether you set it here or arrived from a shared link.
   The digest itself is about the others: what *you* uploaded, curated or wrote is never announced back
   to you, so a library where only you have been busy greets you with nothing at all.
+- **Everybody's photos from the fair, without an account each.** A curator creates an *upload link*
+  — pick the albums and labels, a title like "Pouť 2026 – fotky od vás", how many days it stays valid
+  — and posts the short `/u/…` address to the group chat. Whoever opens it, signed in or not, sees
+  exactly where the photos will go and nothing else of the library, picks a whole batch from the
+  phone's gallery (photos, videos, HEIC alike) or drags it onto the page, and watches each file land,
+  with a retry for the ones that did not and a one-line "12 nahráno, 1 duplicita, 1 chyba" at the end.
+  The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
+  they are, and is then offered an account — no registration word needed through the link, the photos
+  they just sent become theirs, and an administrator still approves it. Links can be extended or
+  revoked, and every link, change and upload is in the audit trail.
 - **The wall shows photographs, not squares.** The library, an album, a search result — every grid is
   justified: rows of photos at their own proportions, aligned to a common height and running edge to
   edge. A panorama is wide, a portrait is tall, and nothing is cropped down to a square to fit a

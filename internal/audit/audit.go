@@ -382,6 +382,21 @@ const (
 	// was moved to, so the trail answers "since when did this credential stop
 	// being throttled" without a second lookup.
 	ActionAPITokenUpdate = "api_token.update"
+	// ActionUploadLinkCreate records a curator creating an upload link. The
+	// details carry its title, target albums and labels and expiry; the code
+	// never is — it is the link's whole credential and the trail outlives it.
+	ActionUploadLinkCreate = "upload_link.create"
+	// ActionUploadLinkExtend records moving an upload link's expiry. The details
+	// carry the old and the new expiry.
+	ActionUploadLinkExtend = "upload_link.extend"
+	// ActionUploadLinkRevoke records revoking an upload link for good.
+	ActionUploadLinkRevoke = "upload_link.revoke"
+	// ActionUploadLinkUpload records one file arriving through an upload link.
+	// The target is the photo; the details carry the link, the uploader's typed
+	// name and whether the file was new or a duplicate filed into the link's
+	// targets. The actor is the uploader's account when they were signed in and
+	// empty for an anonymous upload.
+	ActionUploadLinkUpload = "upload_link.upload"
 	// ActionAnnouncementSet records a maintainer publishing (or replacing) the
 	// instance-wide announcement banner. The published message and level are
 	// recorded in the entry's details.
@@ -455,6 +470,8 @@ var knownActions = map[string]struct{}{
 	ActionUserApprove: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
 	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
 	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
+	ActionUploadLinkCreate: {}, ActionUploadLinkExtend: {}, ActionUploadLinkRevoke: {},
+	ActionUploadLinkUpload:  {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {},
 }

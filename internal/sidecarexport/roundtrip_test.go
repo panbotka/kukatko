@@ -34,6 +34,10 @@ func fullDocument() Document {
 			OriginalName: "DSC_0001.JPG",
 			MediaType:    "image",
 			UploadedBy:   "pan.botka",
+			UploadLink: &UploadLink{
+				UID: "ul000000000001", Title: "Pouť 2026", UploaderName: "Jana",
+				UploadedAt: time.Date(2026, 6, 20, 16, 30, 0, 0, time.UTC),
+			},
 			External: &External{
 				PhotoprismUID:      "ppuid123",
 				PhotoprismFileHash: strings.Repeat("cd", 20),

@@ -41,7 +41,23 @@ export interface UploadFileOptions {
   onProgress?: (fraction: number) => void
   /** Aborts the in-flight request when triggered. */
   signal?: AbortSignal
+  /**
+   * Where to post the file; defaults to the curator upload (`/api/v1/upload`).
+   * An upload link posts to `/api/v1/u/<code>/upload` instead.
+   */
+  url?: string
+  /**
+   * Plain form fields sent **before** the file — the backend reads the stream
+   * once, in order, so a field after the file would arrive too late to apply.
+   */
+  fields?: Record<string, string>
 }
+
+/**
+ * The shape of an upload function: {@link uploadFile} or anything bound to a
+ * different endpoint, so {@link useUploadQueue} can drive either.
+ */
+export type UploadFn = (file: File, options?: UploadFileOptions) => Promise<UploadFileResult>
 
 const API_BASE = '/api/v1'
 
@@ -132,7 +148,7 @@ function errorMessage(body: unknown): string | undefined {
  *   {@link isAbortError}).
  */
 export function uploadFile(file: File, options: UploadFileOptions = {}): Promise<UploadFileResult> {
-  const { onProgress, signal } = options
+  const { onProgress, signal, url = `${API_BASE}/upload`, fields = {} } = options
 
   return new Promise<UploadFileResult>((resolve, reject) => {
     if (signal?.aborted) {
@@ -141,10 +157,13 @@ export function uploadFile(file: File, options: UploadFileOptions = {}): Promise
     }
 
     const form = new FormData()
+    for (const [name, value] of Object.entries(fields)) {
+      form.append(name, value)
+    }
     form.append('files', file, file.name)
 
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${API_BASE}/upload`)
+    xhr.open('POST', url)
     xhr.responseType = 'json'
     // Same-origin cookies are sent regardless; explicit for clarity.
     xhr.withCredentials = true

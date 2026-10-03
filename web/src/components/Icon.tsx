@@ -60,6 +60,7 @@ export type IconName =
   | 'info-circle'
   | 'key'
   | 'lightning-charge-fill'
+  | 'link-45deg'
   | 'list-ul'
   | 'lock-fill'
   | 'magic'

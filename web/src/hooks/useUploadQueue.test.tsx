@@ -54,6 +54,22 @@ beforeEach(() => {
 })
 
 describe('useUploadQueue', () => {
+  it('drives a caller-supplied upload function instead of the curator upload', async () => {
+    const custom = vi.fn().mockResolvedValue(result('created', 'ph9'))
+    const { result: hook } = renderHook(() => useUploadQueue(custom))
+
+    act(() => {
+      hook.current.addFiles([file('a.jpg')])
+    })
+
+    await waitFor(() => {
+      expect(hook.current.summary.created).toBe(1)
+    })
+    expect(custom).toHaveBeenCalledTimes(1)
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(hook.current.createdUids).toEqual(['ph9'])
+  })
+
   it('adds files as items and skips duplicates', () => {
     const { result: hook } = renderHook(() => useUploadQueue())
 

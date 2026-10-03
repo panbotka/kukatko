@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -19,6 +20,9 @@ type registerRequest struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	Secret      string `json:"secret"`
+	// UploadLink is the short code of an upload link the person just uploaded
+	// through; when set it replaces Secret (see RegisterWithLink).
+	UploadLink string `json:"upload_link"`
 }
 
 // registerResponse is the body of a successful registration. It echoes the
@@ -43,7 +47,8 @@ type registerResponse struct {
 //
 // It responds 201 with the pending account, 400 for a bad body or input the
 // account store will not take (over-long username, malformed address, weak
-// password), 403 when registration is not open or the secret is wrong, 409 for a
+// password), 403 when registration is not open, the secret is wrong or the
+// upload link standing in for it is not live, 409 for a
 // username somebody already holds, 429 when the address has spent its budget, or
 // 500.
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +65,7 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// UID: the account registers itself, so there is nobody else to attribute it
 	// to. The address and User-Agent come from here, where the request is.
 	entry := audit.FromRequest(r, "").Entry(audit.ActionUserRegister, userTargetType, "", nil)
-	user, err := a.registration.Register(r.Context(), RegisterInput(req), entry)
+	user, err := a.register(r, RegisterInput(req), entry)
 	if err != nil {
 		writeRegisterError(w, err)
 		return
@@ -71,6 +76,24 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Email:           user.Email,
 		PendingApproval: true,
 	})
+}
+
+// register runs the registration path in asks for: through an upload link when
+// it names one — the gate resolves the link and the session cookie on r — and
+// through the shared secret otherwise. A link on an instance that wires no gate
+// is ErrRegistrationLink, the same answer an unknown link gets.
+func (a *API) register(r *http.Request, in RegisterInput, entry audit.Entry) (User, error) {
+	if in.UploadLink == "" {
+		return a.registration.Register(r.Context(), in, entry)
+	}
+	if a.uploadLinks == nil {
+		return User{}, ErrRegistrationLink
+	}
+	grant, err := a.uploadLinks.AdmitRegistration(r.Context(), r, in.UploadLink)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: admitting the upload link: %w", err)
+	}
+	return a.registration.RegisterWithLink(r.Context(), in, grant, entry)
 }
 
 // writeRegisterError maps a failed registration onto its response. The two
@@ -89,6 +112,8 @@ func writeRegisterError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, ErrRegistrationClosed.Error())
 	case errors.Is(err, ErrRegistrationSecret):
 		writeError(w, http.StatusForbidden, ErrRegistrationSecret.Error())
+	case errors.Is(err, ErrRegistrationLink):
+		writeError(w, http.StatusForbidden, ErrRegistrationLink.Error())
 	default:
 		if !isCreateUserInputError(err) {
 			log.Printf("auth: registration failed unexpectedly: %v", err)

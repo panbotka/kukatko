@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
 // buildSidecarServiceOrNil assembles the metadata sidecar export service — the
@@ -37,14 +38,15 @@ func buildSidecarServiceOrNil(
 	}
 	photoStore := photos.NewStore(db.Pool())
 	return sidecarjob.New(sidecarjob.Config{
-		Photos:   photoStore,
-		Organize: organize.NewStore(db.Pool()),
-		People:   people.NewStore(db.Pool()),
-		Places:   places.NewStore(db.Pool()),
-		Users:    auth.NewStore(db.Pool()),
-		Writer:   sidecarexport.NewWriter(store),
-		Lister:   photoStore,
-		Enqueuer: enqueuer,
+		Photos:      photoStore,
+		Organize:    organize.NewStore(db.Pool()),
+		People:      people.NewStore(db.Pool()),
+		Places:      places.NewStore(db.Pool()),
+		Users:       auth.NewStore(db.Pool()),
+		UploadLinks: uploadlink.NewStore(db.Pool()),
+		Writer:      sidecarexport.NewWriter(store),
+		Lister:      photoStore,
+		Enqueuer:    enqueuer,
 	}), nil
 }
 

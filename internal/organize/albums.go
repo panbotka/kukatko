@@ -325,6 +325,19 @@ func (s *Store) AddPhoto(ctx context.Context, albumUID, photoUID string) error {
 	return nil
 }
 
+// AddPhotoTx adds photoUID to the album identified by albumUID on tx, the
+// caller's open transaction, so the membership commits or rolls back with the
+// change that caused it (an upload through an upload link files its photo into
+// the link's albums this way, in the transaction that records the upload). It
+// is idempotent like AddPhoto and returns ErrAlbumNotFound or ErrPhotoNotFound
+// when either side does not exist.
+func AddPhotoTx(ctx context.Context, tx pgx.Tx, albumUID, photoUID string) error {
+	if _, err := tx.Exec(ctx, addPhotoSQL, albumUID, photoUID); err != nil {
+		return translateMembershipFK(err)
+	}
+	return nil
+}
+
 // removePhotoSQL removes one photo from an album's membership. It is idempotent:
 // removing a photo that is not a member affects no rows.
 const removePhotoSQL = "DELETE FROM album_photos WHERE album_uid = $1 AND photo_uid = $2"

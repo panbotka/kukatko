@@ -33,10 +33,10 @@ function created(overrides: Partial<RegisteredAccount> = {}): RegisteredAccount 
 }
 
 /** Mounts the page with a sign-in route behind it, so its link resolves. */
-function renderRegister() {
+function renderRegister(url = '/register') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/register']}>
+      <MemoryRouter initialEntries={[url]}>
         <Routes>
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/login" element={<div>sign-in page</div>} />
@@ -107,6 +107,47 @@ describe('RegisterPage', () => {
     // The form is gone and nobody is signed in: the account exists but is not
     // usable yet, so there is no session to hand out.
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+  })
+
+  it('takes an upload link in place of the registration word', async () => {
+    const user = userEvent.setup()
+    registerMock.mockResolvedValue(created())
+    renderRegister('/register?link=Ab3dEf7h')
+
+    await user.type(await screen.findByLabelText('Username'), 'newcomer')
+    await user.type(screen.getByLabelText('Display name'), 'New Comer')
+    await user.type(screen.getByLabelText('E-mail'), 'newcomer@example.com')
+    await user.type(screen.getByLabelText('Password'), 'hunter2hunter2')
+    await user.type(screen.getByLabelText('Password again'), 'hunter2hunter2')
+    // The link is the key: the word is not asked for at all.
+    expect(screen.queryByLabelText('Registration word')).not.toBeInTheDocument()
+    expect(screen.getByText(/registering through an upload link/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+
+    expect(registerMock).toHaveBeenCalledWith({
+      username: 'newcomer',
+      display_name: 'New Comer',
+      email: 'newcomer@example.com',
+      password: 'hunter2hunter2',
+      secret: '',
+      upload_link: 'Ab3dEf7h',
+    })
+    expect(await screen.findByTestId('register-done')).toBeInTheDocument()
+  })
+
+  it('says a dead upload link cannot be registered through', async () => {
+    const user = userEvent.setup()
+    registerMock.mockRejectedValue(new ApiError(403, 'auth: the upload link is not valid'))
+    renderRegister('/register?link=Ab3dEf7h')
+
+    await user.type(await screen.findByLabelText('Username'), 'newcomer')
+    await user.type(screen.getByLabelText('Display name'), 'New Comer')
+    await user.type(screen.getByLabelText('E-mail'), 'newcomer@example.com')
+    await user.type(screen.getByLabelText('Password'), 'hunter2hunter2')
+    await user.type(screen.getByLabelText('Password again'), 'hunter2hunter2')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+
+    expect(await screen.findByText(/upload link is no longer valid/i)).toBeInTheDocument()
   })
 
   it('refuses to submit when the two passwords differ', async () => {

@@ -139,13 +139,14 @@ type Config struct {
 
 	LocationEstimate LocationEstimateConfig `mapstructure:"location_estimate"`
 
-	Upload    UploadConfig    `mapstructure:"upload"`
-	Video     VideoConfig     `mapstructure:"video"`
-	Worker    WorkerConfig    `mapstructure:"worker"`
-	Bulk      BulkConfig      `mapstructure:"bulk"`
-	Log       LogConfig       `mapstructure:"log"`
-	Metrics   MetricsConfig   `mapstructure:"metrics"`
-	RateLimit RateLimitConfig `mapstructure:"ratelimit"`
+	Upload      UploadConfig      `mapstructure:"upload"`
+	UploadLinks UploadLinksConfig `mapstructure:"upload_links"`
+	Video       VideoConfig       `mapstructure:"video"`
+	Worker      WorkerConfig      `mapstructure:"worker"`
+	Bulk        BulkConfig        `mapstructure:"bulk"`
+	Log         LogConfig         `mapstructure:"log"`
+	Metrics     MetricsConfig     `mapstructure:"metrics"`
+	RateLimit   RateLimitConfig   `mapstructure:"ratelimit"`
 }
 
 // RateLimitConfig configures per-client-IP rate limiting on resource-intensive
@@ -164,6 +165,14 @@ type RateLimitConfig struct {
 	// Tiles caps GET /map/tiles/... (the mapy.com tile proxy). The geocode
 	// proxy has its own credit-protecting limiter under maps.*.
 	Tiles RateLimitRule `mapstructure:"tiles"`
+	// UploadLink caps the public upload-link routes (GET /u/{code} and its
+	// one-file-per-request upload) per client IP. They are open to anybody who
+	// holds a link, so this is the per-person brake.
+	UploadLink RateLimitRule `mapstructure:"upload_link"`
+	// UploadLinkPerLink caps the uploads through one link, whoever sends them —
+	// the brake on a link that leaked to somebody with a script and many
+	// addresses. It is keyed by the link, not the client IP.
+	UploadLinkPerLink RateLimitRule `mapstructure:"upload_link_per_link"`
 }
 
 // RateLimitRule is one per-client-IP token bucket: RatePerSec tokens replenish
@@ -1052,6 +1061,30 @@ type UploadConfig struct {
 	MaxFileSizeMB int `mapstructure:"max_file_size_mb"`
 }
 
+// UploadLinksConfig limits the upload links: short links through which anybody
+// uploads photos into preset albums and labels without signing in.
+type UploadLinksConfig struct {
+	// MaxFileSizeMB caps one file uploaded through a link, in mebibytes, on top
+	// of upload.max_file_size_mb (the smaller cap wins). 0 sets no cap of its own.
+	MaxFileSizeMB int `mapstructure:"max_file_size_mb"`
+	// MaxUploadsPerLink caps how many files one link accepts over its life (new
+	// photos and duplicates alike). 0 means no cap.
+	MaxUploadsPerLink int `mapstructure:"max_uploads_per_link"`
+	// DefaultDays is the validity the create form offers, in days.
+	DefaultDays int `mapstructure:"default_days"`
+	// MaxDays caps the validity a link may be created or extended with, in days.
+	MaxDays int `mapstructure:"max_days"`
+}
+
+// MaxFileSizeBytes returns the per-file upload-link cap in bytes, or 0 for no
+// cap of its own.
+func (u UploadLinksConfig) MaxFileSizeBytes() int64 {
+	if u.MaxFileSizeMB <= 0 {
+		return 0
+	}
+	return int64(u.MaxFileSizeMB) * 1024 * 1024
+}
+
 // WorkerConfig tunes the in-process background worker that drains the job queue.
 type WorkerConfig struct {
 	// Count is the number of jobs processed in parallel by the shared pool, which
@@ -1482,6 +1515,8 @@ func setOpsDefaults(v *viper.Viper) {
 
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 
+	setUploadLinkDefaults(v)
+
 	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
 
 	// Pre-generated HLS renditions of uploaded videos. Off by default: an encode is
@@ -1510,6 +1545,24 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("ratelimit.comment.burst", 10)
 	v.SetDefault("ratelimit.tiles.rate_per_sec", 50)
 	v.SetDefault("ratelimit.tiles.burst", 200)
+}
+
+// setUploadLinkDefaults registers the upload links' caps and their two request
+// rates. Upload links are open to anybody holding one, so they get limits of
+// their own: a phone video is rarely above 1 GiB, and one event rarely brings
+// more than a couple of thousand files.
+func setUploadLinkDefaults(v *viper.Viper) {
+	v.SetDefault("upload_links.max_file_size_mb", 1024)
+	v.SetDefault("upload_links.max_uploads_per_link", 2000)
+	v.SetDefault("upload_links.default_days", 30)
+	v.SetDefault("upload_links.max_days", 365)
+	// The public upload page sends one file per request, three at a time; the
+	// burst lets somebody drop a whole camera roll, the rate keeps a script slow.
+	v.SetDefault("ratelimit.upload_link.rate_per_sec", 2)
+	v.SetDefault("ratelimit.upload_link.burst", 60)
+	// Twenty people uploading at once after an event is the case to allow.
+	v.SetDefault("ratelimit.upload_link_per_link.rate_per_sec", 10)
+	v.SetDefault("ratelimit.upload_link_per_link.burst", 300)
 }
 
 // Validate checks that required fields are present and inter-field invariants

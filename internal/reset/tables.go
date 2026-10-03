@@ -68,6 +68,10 @@ var catalogueTables = []string{
 	"subject_family_children",
 	"subjects",
 	"tag_notices",
+	"upload_link_albums",
+	"upload_link_labels",
+	"upload_link_photos",
+	"upload_links",
 	"user_favorites",
 	"user_ratings",
 }

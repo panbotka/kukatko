@@ -153,6 +153,13 @@ export const TOOL_ITEMS: ToolEntry[] = [
     gate: 'curator',
   },
   {
+    to: '/upload-links',
+    labelKey: 'nav.uploadLinks',
+    titleKey: 'nav.titles.uploadLinks',
+    icon: 'link-45deg',
+    gate: 'curator',
+  },
+  {
     to: '/duplicates',
     labelKey: 'nav.duplicates',
     titleKey: 'nav.titles.duplicates',

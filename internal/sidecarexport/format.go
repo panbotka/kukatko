@@ -54,7 +54,11 @@ import (
 // the database is the only holder of, so a reader that dropped the key would
 // restore the person under the name on their documents and lose the one everybody
 // actually used.
-const Version = 5
+// Version 6 adds identity.upload_link (see UploadLink): the upload link a photo
+// came in through and the name its uploader typed. Additive, and a bump for the
+// same reason: "who sent this photo from the village fair" is recorded nowhere
+// but the database, so a reader that dropped the key would lose it for good.
+const Version = 6
 
 // Document is one photo's sidecar: everything a human created or a machine
 // derived that would be expensive or impossible to recompute from the original
@@ -116,10 +120,23 @@ type Identity struct {
 	// UploadedBy is the username of whoever uploaded the photo, empty when unknown
 	// or when the uploading account is gone.
 	UploadedBy string `yaml:"uploaded_by,omitempty"`
+	// UploadLink is the upload link the photo came in through, nil when it did
+	// not come through one.
+	UploadLink *UploadLink `yaml:"upload_link,omitempty"`
 	// External carries the identifiers of the systems this photo was imported
 	// from, so a re-import can recognise what it already has instead of
 	// duplicating it.
 	External *External `yaml:"external,omitempty"`
+}
+
+// UploadLink records how a photo uploaded through an upload link arrived: the
+// link (its UID and title at export time), the name the uploader typed — often
+// the only trace of an anonymous sender — and when it arrived.
+type UploadLink struct {
+	UID          string    `yaml:"uid"`
+	Title        string    `yaml:"title,omitempty"`
+	UploaderName string    `yaml:"uploader_name,omitempty"`
+	UploadedAt   time.Time `yaml:"uploaded_at"`
 }
 
 // External holds the source-system identifiers of an imported photo.

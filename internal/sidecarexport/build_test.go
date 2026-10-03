@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
 // fixedNow is the pinned generation time used by the build tests.
@@ -51,6 +52,30 @@ func TestBuild_externalOmittedWhenNotImported(t *testing.T) {
 	doc := Build(Input{Photo: photos.Photo{UID: "pht1"}, Now: fixedNow})
 	if doc.Identity.External != nil {
 		t.Errorf("External = %+v, want nil for a photo that was not imported", doc.Identity.External)
+	}
+}
+
+// TestBuild_uploadLink carries the upload link a photo came through, and leaves
+// the block out for a photo that did not.
+func TestBuild_uploadLink(t *testing.T) {
+	t.Parallel()
+
+	arrived := time.Date(2026, 6, 20, 18, 30, 0, 0, time.FixedZone("CEST", 2*3600))
+	doc := Build(Input{
+		Photo: photos.Photo{UID: "pht1"},
+		UploadLink: &uploadlink.Provenance{
+			LinkUID: "ul1", LinkTitle: "Pouť 2026", UploaderName: "Jana", UploadedAt: arrived,
+		},
+		Now: fixedNow,
+	})
+	want := UploadLink{UID: "ul1", Title: "Pouť 2026", UploaderName: "Jana", UploadedAt: arrived.UTC()}
+	if doc.Identity.UploadLink == nil || *doc.Identity.UploadLink != want {
+		t.Errorf("UploadLink = %+v, want %+v", doc.Identity.UploadLink, want)
+	}
+
+	plain := Build(Input{Photo: photos.Photo{UID: "pht2"}, Now: fixedNow})
+	if plain.Identity.UploadLink != nil {
+		t.Errorf("UploadLink = %+v, want nil for a photo that came through no link", plain.Identity.UploadLink)
 	}
 }
 

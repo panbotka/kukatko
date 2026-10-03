@@ -181,7 +181,14 @@ export interface RegisterInput {
   display_name: string
   email: string
   password: string
+  /** The instance's shared registration secret; empty when `upload_link` stands in for it. */
   secret: string
+  /**
+   * The short code of an upload link the person just uploaded through. When set
+   * it replaces the secret, and the photos this browser uploaded anonymously
+   * become the new account's (the backend reads its upload-session cookie).
+   */
+  upload_link?: string
 }
 
 /**

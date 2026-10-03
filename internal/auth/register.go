@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -78,6 +79,37 @@ type RegisterInput struct {
 	// Secret is the shared registration secret as typed. Surrounding whitespace
 	// is ignored, because the stored secret is trimmed too.
 	Secret string
+	// UploadLink is the short code of an upload link the person uploaded
+	// through. When set it stands in for Secret (see RegisterWithLink); the
+	// handler resolves it, the service never reads it.
+	UploadLink string
+}
+
+// UploadLinkGate lets a live upload link stand in for the shared registration
+// secret: somebody who just uploaded through a link a curator posted is somebody
+// the community told. It is an interface so auth stays ignorant of upload links
+// (internal/uploadlinkapi implements it).
+type UploadLinkGate interface {
+	// AdmitRegistration resolves code, read from r's body by the caller, to a
+	// live link and returns the grant; it returns ErrRegistrationLink when code
+	// names no live link. r is passed so the gate can read the anonymous
+	// uploader's session cookie, which is what decides the photos to claim.
+	AdmitRegistration(ctx context.Context, r *http.Request, code string) (LinkGrant, error)
+}
+
+// LinkGrant is an upload link admitted in place of the secret.
+type LinkGrant struct {
+	// LinkUID names the link, for the audit entry.
+	LinkUID string
+	// Claim runs on the account's transaction once the account row exists: it
+	// hands the photos the registering browser uploaded through links to the new
+	// account, so they are claimed if and only if the account commits. Nil claims
+	// nothing.
+	Claim func(ctx context.Context, tx pgx.Tx, userUID string) error
+	// Committed runs after the account committed — the place for follow-up work
+	// that must not join the transaction (rescheduling the claimed photos'
+	// sidecars). Nil does nothing.
+	Committed func(ctx context.Context)
 }
 
 // RegistrationConfig bundles what NewRegistration needs.
@@ -149,6 +181,50 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 	if err := rg.checkSecret(ctx, in.Secret); err != nil {
 		return User{}, err
 	}
+	return rg.register(ctx, in, entry, nil)
+}
+
+// RegisterWithLink creates the account described by in exactly as Register
+// does — viewer role, unapproved, the same mails, pushes and audit entry — but
+// with grant, an upload link the caller already admitted, in place of the
+// shared secret. Only the secret check is replaced: registration must still be
+// switched on, though it may be on without a secret, because the link is the
+// lock. The entry's details name the link, and grant.Claim runs on the account's
+// transaction so the photos the person uploaded become theirs atomically.
+//
+// It returns ErrRegistrationClosed when registration is switched off, and the
+// same account errors as Register.
+func (rg *Registration) RegisterWithLink(
+	ctx context.Context, in RegisterInput, grant LinkGrant, entry audit.Entry,
+) (User, error) {
+	stored, err := rg.settings.Get(ctx)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: reading the registration settings: %w", err)
+	}
+	if !stored.RegistrationEnabled {
+		return User{}, ErrRegistrationClosed
+	}
+	if entry.Details == nil {
+		entry.Details = map[string]any{}
+	}
+	entry.Details["upload_link"] = grant.LinkUID
+	user, err := rg.register(ctx, in, entry, grant.Claim)
+	if err != nil {
+		return User{}, err
+	}
+	if grant.Committed != nil {
+		grant.Committed(ctx)
+	}
+	return user, nil
+}
+
+// register is the account creation both registration paths share once their
+// gate let the request through. claim, when not nil, runs on the account's
+// transaction after the account row exists.
+func (rg *Registration) register(
+	ctx context.Context, in RegisterInput, entry audit.Entry,
+	claim func(ctx context.Context, tx pgx.Tx, userUID string) error,
+) (User, error) {
 	user, err := rg.svc.prepareRegistration(CreateUserInput{
 		Username:    in.Username,
 		Password:    in.Password,
@@ -178,6 +254,11 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 
 	if err := rg.svc.store.CreateUserAuditedWith(ctx, user, entry,
 		func(ctx context.Context, tx pgx.Tx) error {
+			if claim != nil {
+				if err := claim(ctx, tx, user.UID); err != nil {
+					return fmt.Errorf("auth: claiming the uploaded photos: %w", err)
+				}
+			}
 			if err := rg.scheduleMail(ctx, tx, user, recipients); err != nil {
 				return err
 			}

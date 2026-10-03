@@ -204,6 +204,14 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.comment.burst", cfg.RateLimit.Comment.Burst, 10},
 		{"ratelimit.tiles.rate_per_sec", cfg.RateLimit.Tiles.RatePerSec, 50.0},
 		{"ratelimit.tiles.burst", cfg.RateLimit.Tiles.Burst, 200},
+		{"ratelimit.upload_link.rate_per_sec", cfg.RateLimit.UploadLink.RatePerSec, 2.0},
+		{"ratelimit.upload_link.burst", cfg.RateLimit.UploadLink.Burst, 60},
+		{"ratelimit.upload_link_per_link.rate_per_sec", cfg.RateLimit.UploadLinkPerLink.RatePerSec, 10.0},
+		{"ratelimit.upload_link_per_link.burst", cfg.RateLimit.UploadLinkPerLink.Burst, 300},
+		{"upload_links.max_file_size_mb", cfg.UploadLinks.MaxFileSizeMB, 1024},
+		{"upload_links.max_uploads_per_link", cfg.UploadLinks.MaxUploadsPerLink, 2000},
+		{"upload_links.default_days", cfg.UploadLinks.DefaultDays, 30},
+		{"upload_links.max_days", cfg.UploadLinks.MaxDays, 365},
 		// Mail is off out of the box: an instance nobody gave an SMTP server to must
 		// still work, and the three keys an enabled mailer needs have no default at
 		// all — a guessed host or public URL would fail silently.
@@ -426,6 +434,11 @@ func TestMaxFileSizeBytes(t *testing.T) {
 			got := UploadConfig{MaxFileSizeMB: tt.mb}.MaxFileSizeBytes()
 			if got != tt.want {
 				t.Errorf("MaxFileSizeBytes(%d) = %d, want %d", tt.mb, got, tt.want)
+			}
+			// The upload-link cap converts the same way.
+			got = UploadLinksConfig{MaxFileSizeMB: tt.mb}.MaxFileSizeBytes()
+			if got != tt.want {
+				t.Errorf("UploadLinksConfig.MaxFileSizeBytes(%d) = %d, want %d", tt.mb, got, tt.want)
 			}
 		})
 	}

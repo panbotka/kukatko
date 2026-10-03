@@ -378,6 +378,7 @@ describe('AlbumDetailPage', () => {
 
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Share an upload link' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
@@ -391,6 +392,11 @@ describe('AlbumDetailPage', () => {
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    // Sharing an upload link opens the create form with this album chosen.
+    expect(screen.getByRole('link', { name: 'Share an upload link' })).toHaveAttribute(
+      'href',
+      `/upload-links?album=${album().uid}`,
+    )
     // The tiles are selectable, so photos can be put into and out of albums.
     expect(screen.getByRole('button', { name: 'Select a.jpg' })).toBeInTheDocument()
   })

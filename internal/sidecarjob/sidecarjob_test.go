@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
 // fakePhotos is a PhotoStore over an in-memory photo.
@@ -424,6 +425,58 @@ func TestExport_uploaderFailureIsNotFatal(t *testing.T) {
 	}
 	if doc, ok := writer.written["2024/05/a.jpg"]; !ok || doc.Identity.UploadedBy != "" {
 		t.Errorf("want the sidecar written with an empty uploader, got %+v (present=%v)", doc, ok)
+	}
+}
+
+// fakeLinks is an UploadLinkSource with a fixed answer.
+type fakeLinks struct {
+	prov *uploadlink.Provenance
+	err  error
+}
+
+// Provenance returns the fixed provenance (or failure).
+func (f fakeLinks) Provenance(context.Context, string) (*uploadlink.Provenance, error) {
+	return f.prov, f.err
+}
+
+// TestExport_uploadLink asserts the upload link a photo came through lands in
+// the identity group, and that a failed read costs only that group.
+func TestExport_uploadLink(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		links fakeLinks
+		want  string
+	}{
+		{"recorded", fakeLinks{prov: &uploadlink.Provenance{LinkUID: "ul1", UploaderName: "Jana"}}, "ul1"},
+		{"read failure is not fatal", fakeLinks{err: errors.New("db down")}, ""},
+		{"none", fakeLinks{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			writer := newFakeWriter()
+			svc := newTestService(t, Config{
+				Photos:      &fakePhotos{photo: photos.Photo{UID: "pht1", FilePath: "2024/05/a.jpg"}},
+				UploadLinks: tt.links,
+				Writer:      writer,
+			})
+			if err := svc.Export(context.Background(), "pht1"); err != nil {
+				t.Fatalf("Export returned error: %v", err)
+			}
+			doc, ok := writer.written["2024/05/a.jpg"]
+			if !ok {
+				t.Fatal("no sidecar written")
+			}
+			got := ""
+			if doc.Identity.UploadLink != nil {
+				got = doc.Identity.UploadLink.UID
+			}
+			if got != tt.want {
+				t.Errorf("upload link = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

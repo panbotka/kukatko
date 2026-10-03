@@ -97,6 +97,24 @@ describe('uploadFile', () => {
     await expect(promise).resolves.toMatchObject({ outcome: 'created', photo_uid: 'ph1' })
   })
 
+  it('posts to another endpoint with plain fields ahead of the file', async () => {
+    const xhrs = installFakeXHR()
+    const promise = uploadFile(file('a.jpg'), {
+      url: '/api/v1/u/Ab3dEf7h/upload',
+      fields: { name: 'Jana' },
+    })
+
+    const xhr = xhrs.instances[0]
+    expect(xhr.url).toBe('/api/v1/u/Ab3dEf7h/upload')
+    const form = xhr.sent as FormData
+    // The backend reads the stream once, in order: the name must precede the file.
+    expect([...form.keys()]).toEqual(['name', 'files'])
+    expect(form.get('name')).toBe('Jana')
+
+    xhr.respond(200, created('a.jpg'))
+    await expect(promise).resolves.toMatchObject({ outcome: 'created' })
+  })
+
   it('reports upload progress as a fraction', async () => {
     const xhrs = installFakeXHR()
     const onProgress = vi.fn()
