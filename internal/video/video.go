@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -124,6 +125,17 @@ type Metadata struct {
 // over a catalogued clip (internal/metajob).
 func (m Metadata) HasContainerMetadata() bool {
 	return m.DurationMs != nil || m.VideoCodec != "" || (m.Width > 0 && m.Height > 0)
+}
+
+// Extensions returns every video extension Kukátko ingests, lowercased, without
+// the leading dot and sorted — the set IsVideoExt accepts.
+func Extensions() []string {
+	out := make([]string, 0, len(videoExts))
+	for ext := range videoExts {
+		out = append(out, strings.TrimPrefix(ext, "."))
+	}
+	slices.Sort(out)
+	return out
 }
 
 // IsVideoExt reports whether ext names a video format Kukátko ingests. The

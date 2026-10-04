@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"slices"
 	"strings"
 
@@ -25,6 +26,18 @@ var ErrNotMedia = errors.New("ingest: not a photo or video")
 // CodeNotMedia is the stable FileResult.Code of a file refused as ErrNotMedia,
 // for a client to translate (and to know a retry would fail again).
 const CodeNotMedia = "not_media"
+
+// ErrUnsupportedType indicates a file of a type Kukátko recognises but does not
+// take. Today that is AVIF: no decoder a CGO-free binary can reach opens it, so
+// an AVIF original would never get a thumbnail, a pHash or any of the sidecar's
+// ML, and its jobs would fail until they died. It is refused on every path —
+// the signed-in upload, the upload link, `import dir` — by content as well as
+// by name, so an AVIF renamed .jpg is refused the same way.
+var ErrUnsupportedType = errors.New("ingest: this type of file is not supported")
+
+// CodeUnsupportedType is the stable FileResult.Code of a file refused for its
+// type — ErrUnsupportedType here, and the upload link's own extension check.
+const CodeUnsupportedType = "unsupported_type"
 
 // sniffLen is how many leading bytes are read to recognise a file. 512 covers
 // every signature below, the MPEG transport stream's second sync byte (offset
@@ -49,11 +62,15 @@ const isoBMFFOffset = 4
 // the metadata tools read it as an image or a video — so a format with a
 // signature this list does not know (an exotic camera RAW, say) still gets in as
 // long as exiftool or ffprobe understands it. It returns ErrNotMedia for a file
-// that passes neither test.
+// that passes neither test, and ErrUnsupportedType for an AVIF (see isAVIF),
+// which would pass both.
 func admit(ctx context.Context, path, filename string) error {
 	head, err := readHead(path)
 	if err != nil {
 		return err
+	}
+	if isAVIF(head, filename) {
+		return fmt.Errorf("%w: %s", ErrUnsupportedType, originalName(filename))
 	}
 	if looksLikeMedia(head) {
 		return nil
@@ -62,6 +79,15 @@ func admit(ctx context.Context, path, filename string) error {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrNotMedia, originalName(filename))
+}
+
+// isAVIF reports whether a file is an AVIF by its content or by its name. The
+// content alone would do for a real one, but a ".avif" whose bytes say nothing
+// recognisable is still not something the pipeline should probe its way into
+// taking.
+func isAVIF(head []byte, filename string) bool {
+	return imgconvert.MagicFormat(head) == imgconvert.FormatAVIF ||
+		strings.EqualFold(path.Ext(filename), ".avif")
 }
 
 // readHead returns up to sniffLen leading bytes of the file at path.

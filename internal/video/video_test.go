@@ -1,6 +1,8 @@
 package video
 
 import (
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,5 +80,20 @@ func TestMetadata_HasContainerMetadata(t *testing.T) {
 				t.Errorf("HasContainerMetadata() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestExtensions verifies the listed set is sorted, dotless and exactly what
+// IsVideoExt accepts.
+func TestExtensions(t *testing.T) {
+	t.Parallel()
+	exts := Extensions()
+	if len(exts) != len(videoExts) || !slices.IsSorted(exts) {
+		t.Fatalf("Extensions() = %v, want all %d sorted", exts, len(videoExts))
+	}
+	for _, ext := range exts {
+		if strings.HasPrefix(ext, ".") || !IsVideoExt(ext) {
+			t.Errorf("Extensions() entry %q is not a dotless video extension", ext)
+		}
 	}
 }

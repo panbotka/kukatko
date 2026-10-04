@@ -17,8 +17,10 @@ package imgconvert
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -54,6 +56,7 @@ const (
 	FormatGIF     = "gif"
 	FormatTIFF    = "tiff"
 	FormatHEIC    = "heic"
+	FormatAVIF    = "avif"
 	FormatRAW     = "raw"
 	FormatVideo   = "video"
 	FormatUnknown = "unknown"
@@ -127,9 +130,30 @@ func IsRAWName(name string) bool {
 	return formatByExt(name) == FormatRAW
 }
 
+// SupportedExtensions returns every extension the pipeline ingests — the
+// directly decodable rasters, HEIC/HEIF, the camera RAWs and the videos —
+// lowercased, without the leading dot and sorted. It is exactly the set
+// IsSupportedFormat accepts, spelled out for the callers that must agree with
+// it: the web client's file pickers keep the same list in
+// web/src/lib/mediaFormats.json, and a test pins the two together.
+//
+// AVIF is deliberately not in it: no decoder reachable from a CGO-free binary
+// opens it, so an AVIF original could never get a thumbnail, a pHash or any of
+// the sidecar's ML. The pipeline refuses it on every path instead.
+func SupportedExtensions() []string {
+	out := make([]string, 0, len(extFormats))
+	for ext := range extFormats {
+		out = append(out, strings.TrimPrefix(ext, "."))
+	}
+	out = append(out, video.Extensions()...)
+	slices.Sort(out)
+	return out
+}
+
 // IsSupportedFormat reports whether the pipeline can ingest a file with this
 // extension — a directly decodable image, a convertible HEIC/RAW, or a video.
 // The extension may include or omit the leading dot and is case-insensitive.
+// It is the membership test of SupportedExtensions.
 func IsSupportedFormat(ext string) bool {
 	if ext == "" {
 		return false
@@ -144,7 +168,7 @@ func IsSupportedFormat(ext string) bool {
 }
 
 // DetectFormat returns one of "jpeg", "png", "webp", "bmp", "gif", "tiff",
-// "heic", "raw", "video", or "unknown" for the file at path. Video is decided on
+// "heic", "avif", "raw", "video", or "unknown" for the file at path. Video is decided on
 // extension alone (the many container brands have no single magic to match).
 // Otherwise the magic bytes are authoritative whenever they recognise a directly
 // decodable format: a file whose content is JPEG/PNG/WebP/BMP/GIF/TIFF/HEIC is
@@ -161,10 +185,18 @@ func IsSupportedFormat(ext string) bool {
 // Only when the magic bytes match nothing we recognise (a RAW whose header is
 // not TIFF, or a genuinely invalid file) does the extension decide on its own.
 func DetectFormat(path string) string {
-	if video.IsVideoPath(path) {
+	return DetectFormatNamed(path, path)
+}
+
+// DetectFormatNamed is DetectFormat for a file whose content lives at path but
+// whose extension is carried by name — an upload staged under a temp name, say,
+// which still has to be told a TIFF-based RAW from a plain TIFF and a video
+// from a still by the name it arrived under. The rules are DetectFormat's.
+func DetectFormatNamed(path, name string) string {
+	if video.IsVideoPath(name) {
 		return FormatVideo
 	}
-	extFmt := formatByExt(path)
+	extFmt := formatByExt(name)
 	magic := magicFormat(path)
 	if magic == FormatUnknown {
 		// Magic bytes told us nothing — a non-TIFF RAW container, or a genuinely
@@ -243,8 +275,11 @@ func magicFormat(path string) string {
 	}
 	defer func() { _ = f.Close() }()
 
-	var head [16]byte
-	n, _ := f.Read(head[:])
+	// 64 bytes hold the ftyp box of a HEIF-family still far enough to read its
+	// compatible brands (see isAVIFMagic), and every other signature with room
+	// to spare.
+	var head [64]byte
+	n, _ := io.ReadFull(f, head[:])
 	if n < 4 {
 		return FormatUnknown
 	}
@@ -255,7 +290,8 @@ func magicFormat(path string) string {
 // alone, returning one of the image Format constants or FormatUnknown. Unlike
 // DetectFormat it never consults a name, so it answers "what do these bytes
 // look like", which is what a caller deciding whether an upload is media at all
-// needs. It recognises no RAW-only and no video signature.
+// needs. It recognises no RAW-only and no video signature. AVIF is recognised
+// (as FormatAVIF) precisely so such a caller can refuse it.
 func MagicFormat(head []byte) string {
 	if len(head) < 4 {
 		return FormatUnknown
@@ -265,7 +301,8 @@ func MagicFormat(head []byte) string {
 
 // classifyMagic identifies common image formats from their leading bytes:
 // JPEG (FF D8 FF), PNG (89 50 4E 47 ...), WebP (RIFF....WEBP), HEIC (an ISO Base
-// Media file with "ftyp" at offset 4 and a HEIC/HEIF major brand), BMP ("BM"),
+// Media file with "ftyp" at offset 4 and a HEIC/HEIF major brand), AVIF (the
+// same container carrying AV1 — see isAVIFMagic), BMP ("BM"),
 // GIF ("GIF87a"/"GIF89a"), and TIFF (II*\0 little-endian or MM\0* big-endian).
 // TIFF is reported as such even though most camera RAW containers share the
 // header; DetectFormat resolves that ambiguity in favour of a RAW extension.
@@ -277,6 +314,9 @@ func classifyMagic(b []byte) string {
 		return FormatPNG
 	case isWebPMagic(b):
 		return FormatWebP
+	case isAVIFMagic(b):
+		// Before HEIC: an AVIF may open with the generic HEIF brand "mif1".
+		return FormatAVIF
 	case isHEICMagic(b):
 		return FormatHEIC
 	case isBMPMagic(b):
@@ -320,6 +360,48 @@ func isHEIFBrand(brand string) bool {
 		return true
 	}
 	return false
+}
+
+// avifBrands and heicCodecBrands are the ISO Base Media brands that name the
+// codec of a HEIF-family still: AV1 for the former, HEVC for the latter.
+var (
+	avifBrands      = []string{"avif", "avis"}
+	heicCodecBrands = []string{"heic", "heix", "heim", "heis", "hevc", "hevx"}
+)
+
+// isAVIFMagic reports whether b is an AVIF still or sequence: an ISO Base Media
+// file ("ftyp" at offset 4) whose major brand is "avif"/"avis", or whose major
+// brand is the codec-neutral HEIF "mif1"/"msf1" with an AV1 brand — and no HEVC
+// one — among the compatible brands that fit in b. A HEIF naming both codecs is
+// left to heif-convert as a HEIC.
+func isAVIFMagic(b []byte) bool {
+	if len(b) < 12 || string(b[4:8]) != "ftyp" {
+		return false
+	}
+	major := string(b[8:12])
+	if slices.Contains(avifBrands, major) {
+		return true
+	}
+	if major != "mif1" && major != "msf1" {
+		return false
+	}
+	brands := compatibleBrands(b)
+	hasAV1 := slices.ContainsFunc(brands, func(brand string) bool { return slices.Contains(avifBrands, brand) })
+	hasHEVC := slices.ContainsFunc(brands, func(brand string) bool { return slices.Contains(heicCodecBrands, brand) })
+	return hasAV1 && !hasHEVC
+}
+
+// compatibleBrands lists the compatible brands of the ftyp box b opens with —
+// the four-character codes after the major brand and minor version, up to the
+// box's declared size or the end of b, whichever comes first.
+func compatibleBrands(b []byte) []string {
+	const firstBrand = 16
+	end := min(int(binary.BigEndian.Uint32(b[:4])), len(b))
+	var out []string
+	for at := firstBrand; at+4 <= end; at += 4 {
+		out = append(out, string(b[at:at+4]))
+	}
+	return out
 }
 
 // isBMPMagic reports whether b begins with the 2-byte BMP signature "BM".

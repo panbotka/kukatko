@@ -1,0 +1,41 @@
+{
+  "browserImage": ["jpg", "jpeg", "png", "gif", "webp", "bmp"],
+  "decodedImage": ["tif", "tiff", "heic", "heif"],
+  "raw": [
+    "cr2",
+    "cr3",
+    "nef",
+    "nrw",
+    "arw",
+    "srf",
+    "dng",
+    "raf",
+    "orf",
+    "rw2",
+    "pef",
+    "srw",
+    "3fr",
+    "iiq",
+    "x3f",
+    "kdc",
+    "mrw",
+    "mef"
+  ],
+  "video": [
+    "mp4",
+    "m4v",
+    "mov",
+    "avi",
+    "mkv",
+    "webm",
+    "mpg",
+    "mpeg",
+    "mts",
+    "m2ts",
+    "3gp",
+    "wmv",
+    "flv",
+    "hevc",
+    "h264"
+  ]
+}

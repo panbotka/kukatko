@@ -913,7 +913,13 @@ to `## Package map` in `CLAUDE.md`.
   embedded preview); **exception: TIFF magic doesn't carry RAW** — most RAW containers are TIFF-based
   (`II*`/`MM*`), so the RAW **extension** takes precedence over TIFF magic and the file goes through embedded-preview,
   not as a flat TIFF; otherwise RAW is chosen only when magic recognizes nothing (other RAW headers) → falls back to
-  the extension; `IsSupportedFormat`; `RAWExtensions()` exports that RAW set (lowercase, no dot, sorted) —
+  the extension; `DetectFormatNamed(path,name)` = the same rules with the extension read from `name` (an
+  upload staged under a temp name); **AVIF** is recognised by its `ftyp` brand (`avif`/`avis`, or `mif1`/`msf1`
+  with an AV1 and no HEVC compatible brand, checked before HEIC) as `FormatAVIF` — only so it can be refused:
+  `EnsureDecodable` reports `ErrUnsupportedFormat`, `.avif` is not in `IsSupportedFormat`;
+  `IsSupportedFormat`; `SupportedExtensions()` lists that whole set (images + `video.Extensions()`, dotless,
+  sorted) and `TestSupportedExtensions_matchWebList` pins `web/src/lib/mediaFormats.json` — the web pickers'
+  `accept` list — to it; `RAWExtensions()` exports that RAW set (lowercase, no dot, sorted) —
   because an upload is gated on `IsSupportedFormat` it is exactly the set of RAW files that can be in the
   catalogue, which is how `internal/system` splits the library's storage by media type without keeping a second
   list that would drift; `IsRAWName(name)` answers the same question **for a name alone** (a bare file name or a
@@ -945,7 +951,7 @@ to `## Package map` in `CLAUDE.md`.
   rebuild and `image_embed` each re-derive the poster independently and must land on the same frame
   (`face_detect` was in that list until it stopped running on a video at all). Cost and the measurements
   behind the thresholds: `docs/PERF.md` §2;
-  `IsVideoPath`/`IsVideoExt`/`FFmpegAvailable`/`FFprobeAvailable`;
+  `IsVideoPath`/`IsVideoExt`/`Extensions()` (the set, dotless, sorted)/`FFmpegAvailable`/`FFprobeAvailable`;
   **`Metadata.HasContainerMetadata()`** — the difference between a reading and a failure: a real clip always
   yields at least one of a duration, a codec name and a full frame size, so a `Metadata` with none of the
   three came from a probe that read **nothing** (ffprobe failed and the exiftool fallback happily described a
@@ -1061,7 +1067,15 @@ to `## Package map` in `CLAUDE.md`.
   `exif.ExtractNamed` (otherwise) and passes only with dimensions/a duration/a codec or an image/video MIME.
   Anything else is **`ErrNotMedia`** → per-file **415** `Code: CodeNotMedia` (`"not_media"`, the new
   `FileResult.Code`) **before** the dedup lookup, the store and the insert, so junk never becomes a row, an
-  original or a job), exact-dup check, metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
+  original or a job; an **AVIF** — `imgconvert.MagicFormat` = `FormatAVIF`, or a `.avif` name — is
+  **`ErrUnsupportedType`** → 415 `CodeUnsupportedType` (`"unsupported_type"`, the code the upload link's
+  extension check uses too), checked first because it would pass both sniff and probe), exact-dup check,
+  **`verifyPixels`** (`pixels.go`: the staged still is decoded **before it is stored** when its
+  `imgconvert.DetectFormatNamed` format is JPEG/PNG/GIF — decoders complete for every real file; a decode
+  error that is not a `jpeg`/`png` `UnsupportedError` is **`ErrDamaged`** → 415 `CodeDamaged`
+  (`"damaged"`); HEIC/RAW/video/TIFF/BMP/WebP and an image over `MaxPixels` are not judged. The decoded
+  image rides along in `stagedPixels` into `postProcess` → `hashPixels`, so the pHash/blurhash reuse it
+  instead of decoding the original a second time), metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
   → `media_type=video` + `video.Probe`, requires `ffmpeg` otherwise a per-file error `ErrFFmpegMissing`,
   `taken_at` falls back to the original name via `exif.FilenameTakenAt`; **a probe that fails is non-fatal but
   no longer invisible** — the clip is still catalogued, and the failure is **logged with the file name**

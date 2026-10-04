@@ -6,66 +6,35 @@
  * (see `pwa/shareTarget.ts`), which arrive with whatever type the sending app
  * chose to label them with.
  *
- * The list is deliberately generous. It is never the last word — the backend
- * decides what it can ingest, and drag-and-drop bypasses it entirely — so a
- * missing entry can only hide a file the user meant to add, while a superfluous
- * one costs nothing.
+ * It is never the last word — the backend decides what it can ingest, and
+ * drag-and-drop bypasses the picker entirely — but it must say the same thing as
+ * the backend: a missing entry hides a file the user meant to add, and a
+ * superfluous one invites a pick every upload of which is then refused.
  */
+
+import mediaFormats from './mediaFormats.json'
 
 /**
- * Images an `<img>` paints on its own, with no decoder and no server round trip
- * — which is exactly the set the upload queue can preview locally from the
- * picked `File` (see {@link previewKind}).
+ * The extensions themselves live in `mediaFormats.json`, the one list the
+ * client shares with the server: a Go test (`internal/imgconvert`) pins it to
+ * the set the backend ingests, so the picker can neither offer a type every
+ * upload of which is refused (AVIF once was) nor hide one that is taken.
+ *
+ * - `browserImage` — images an `<img>` paints on its own, with no decoder and
+ *   no server round trip, which is exactly the set the upload queue can preview
+ *   locally from the picked `File` (see {@link previewKind}).
+ * - `decodedImage` — images the library ingests but a browser will not
+ *   display: TIFF, which only Safari paints, and the HEIC/HEIF an iPhone
+ *   produces. The backend converts them (`internal/imgconvert`); the client
+ *   cannot.
+ * - `raw` — RAW, by vendor, never previewable in a browser either.
+ * - `video` — the video containers (and bare streams) a phone or a camcorder
+ *   writes.
  */
-const BROWSER_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp'] as const
-
-/**
- * Images the library ingests but a browser will not display: TIFF, which only
- * Safari paints, and the HEIC/HEIF an iPhone produces, which nothing but Safari
- * decodes. The backend converts them (`internal/imgconvert`); the client cannot.
- */
-const DECODED_IMAGE_EXTENSIONS = ['tif', 'tiff', 'heic', 'heif'] as const
-
-/** RAW, by vendor — never previewable in a browser either. */
-const RAW_EXTENSIONS = [
-  'cr2',
-  'cr3',
-  'nef',
-  'nrw',
-  'arw',
-  'srf',
-  'sr2',
-  'dng',
-  'raf',
-  'orf',
-  'rw2',
-  'pef',
-  'srw',
-  '3fr',
-  'iiq',
-  'x3f',
-  'kdc',
-  'mrw',
-  'mef',
-] as const
-
-/** The video containers a phone or a camcorder writes. */
-const VIDEO_EXTENSIONS = [
-  'mp4',
-  'm4v',
-  'mov',
-  'avi',
-  'mkv',
-  'webm',
-  'mpg',
-  'mpeg',
-  'mts',
-  'm2ts',
-  '3gp',
-  '3g2',
-  'wmv',
-  'flv',
-] as const
+const BROWSER_IMAGE_EXTENSIONS: readonly string[] = mediaFormats.browserImage
+const DECODED_IMAGE_EXTENSIONS: readonly string[] = mediaFormats.decodedImage
+const RAW_EXTENSIONS: readonly string[] = mediaFormats.raw
+const VIDEO_EXTENSIONS: readonly string[] = mediaFormats.video
 
 /**
  * Extensions (lower case, no dot) of the media kinds Kukátko ingests: common
@@ -77,15 +46,15 @@ const VIDEO_EXTENSIONS = [
  * cloud-drive share routinely labels the very same photo `application/octet-stream`
  * — and RAW and HEIC are commonly typed as nothing at all.
  */
-export const MEDIA_EXTENSIONS = [
+export const MEDIA_EXTENSIONS: readonly string[] = [
   ...BROWSER_IMAGE_EXTENSIONS,
   ...DECODED_IMAGE_EXTENSIONS,
   ...RAW_EXTENSIONS,
   ...VIDEO_EXTENSIONS,
-] as const
+]
 
 /** The extensions as a set, for a cheap membership test. */
-const EXTENSION_SET: ReadonlySet<string> = new Set<string>(MEDIA_EXTENSIONS)
+const EXTENSION_SET: ReadonlySet<string> = new Set(MEDIA_EXTENSIONS)
 
 /**
  * The `accept` attribute for a media file input. `image/*,video/*` is what

@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
+import { PICKER_ACCEPT } from '../lib/mediaFiles'
 import { UPLOADER_NAME_KEY } from '../lib/uploadLinks'
 import { ApiError } from '../services/auth'
 import { type UploadFileResult } from '../services/upload'
@@ -224,6 +225,36 @@ describe('UploadLinkPage', () => {
       expect(uploadMock).toHaveBeenCalledTimes(3)
     })
     expect(uploadMock.mock.calls[2][0].name).toBe('b.jpg')
+  })
+
+  it('offers the pickers exactly the formats the server takes, AVIF not among them', async () => {
+    const { container } = renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'))
+    expect(inputs.length).toBeGreaterThan(0)
+    for (const input of inputs) {
+      expect(input.accept).toBe(PICKER_ACCEPT)
+      expect(input.accept.split(',')).not.toContain('.avif')
+    }
+  })
+
+  it('says a damaged image is damaged, and offers no retry for it', async () => {
+    uploadMock.mockResolvedValueOnce({
+      filename: 'cut.jpg',
+      status: 415,
+      outcome: 'error',
+      code: 'damaged',
+      error: 'ingest: damaged or incomplete image: cut.jpg',
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [new File(['cut'], 'cut.jpg', { type: 'image/jpeg' })])
+
+    expect(await screen.findByText('This file is damaged or incomplete')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 
   it('remembers a typed name on the device', async () => {

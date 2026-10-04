@@ -451,3 +451,53 @@ func TestJunkThroughALiveLinkIsRefused(t *testing.T) {
 		t.Error("control: a real photo scheduled no jobs; the junk assertion above proves nothing")
 	}
 }
+
+// TestAVIFAndTruncatedImagesThroughALinkAreRefused verifies the link refuses an
+// AVIF by its name and by its bytes alike with the same unsupported_type code
+// (one renamed .jpg gets past the extension check, not past the pipeline), and a
+// truncated JPEG as damaged — with nothing created, filed or queued.
+func TestAVIFAndTruncatedImagesThroughALinkAreRefused(t *testing.T) {
+	e := newIntegrationEnvWith(t, realPipeline(t))
+	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	code, _ := e.createLink(t, curator)
+	photosBefore := e.count(t, "SELECT count(*) FROM photos")
+
+	avif := append([]byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"), make([]byte, 600)...)
+	var whole bytes.Buffer
+	if err := jpeg.Encode(&whole, image.NewRGBA(image.Rect(0, 0, 32, 24)), nil); err != nil {
+		t.Fatalf("encoding jpeg: %v", err)
+	}
+	cases := []struct {
+		name string
+		data []byte
+		code string
+	}{
+		{"f.avif", avif, ingest.CodeUnsupportedType},
+		{"renamed.jpg", avif, ingest.CodeUnsupportedType},
+		{"trunc.jpg", whole.Bytes()[:whole.Len()/2], ingest.CodeDamaged},
+	}
+	for _, tc := range cases {
+		resp := e.uploadContent(t, code, tc.name, "Jana", tc.data, nil)
+		var body struct {
+			Results []ingest.FileResult `json:"results"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decoding upload of %s: %v", tc.name, err)
+		}
+		if len(body.Results) != 1 {
+			t.Fatalf("%s: results = %+v, want one", tc.name, body.Results)
+		}
+		if res := body.Results[0]; res.Status != http.StatusUnsupportedMediaType || res.Code != tc.code || res.PhotoUID != "" {
+			t.Errorf("%s = %+v, want a 415 %q refusal", tc.name, res, tc.code)
+		}
+	}
+	if got := e.count(t, "SELECT count(*) FROM photos"); got != photosBefore {
+		t.Errorf("photos rows = %d, want %d (nothing created)", got, photosBefore)
+	}
+	if got := e.count(t, "SELECT count(*) FROM upload_link_photos"); got != 0 {
+		t.Errorf("upload_link_photos rows = %d, want 0", got)
+	}
+	if got := e.count(t, "SELECT count(*) FROM jobs"); got != 0 {
+		t.Errorf("jobs = %d, want 0", got)
+	}
+}

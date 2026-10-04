@@ -214,6 +214,35 @@ func TestHTTPUpload_refusesFilesThatAreNotMedia(t *testing.T) {
 	}
 }
 
+// TestHTTPUpload_refusesAVIFAndTruncatedImages verifies the signed-in upload
+// refuses an AVIF as unsupported_type — it used to be created and then fail
+// every thumbnail and job — and a truncated JPEG as damaged, beside a real photo
+// in the same batch that is still created.
+func TestHTTPUpload_refusesAVIFAndTruncatedImages(t *testing.T) {
+	env := newHTTPEnv(t)
+	client := env.loginClient(t, "editor", auth.RoleEditor)
+
+	whole := jpegBytes(t, 60, 160, 30, 90)
+	status, results := env.uploadFiles(t, client, map[string][]byte{
+		"f.avif":    append([]byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"), make([]byte, 600)...),
+		"trunc.jpg": whole[:len(whole)/2],
+		"fine.jpg":  jpegBytes(t, 120, 30, 200, 90),
+	})
+	if status != http.StatusOK || len(results) != 3 {
+		t.Fatalf("upload = %d with %d results, want 200 with 3", status, len(results))
+	}
+	want := map[string]string{"f.avif": ingest.CodeUnsupportedType, "trunc.jpg": ingest.CodeDamaged}
+	for _, res := range results {
+		code, refused := want[res.Filename]
+		switch {
+		case refused && (res.Status != http.StatusUnsupportedMediaType || res.Code != code || res.PhotoUID != ""):
+			t.Errorf("%s = %+v, want a 415 %q refusal", res.Filename, res, code)
+		case !refused && res.Outcome != ingest.OutcomeCreated:
+			t.Errorf("%s = %+v, want created", res.Filename, res)
+		}
+	}
+}
+
 // TestHTTPUpload_viewerForbidden verifies a viewer (below curator) is rejected
 // with 403 by the RequireCurator guard before any ingest happens.
 func TestHTTPUpload_viewerForbidden(t *testing.T) {

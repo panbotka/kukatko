@@ -7,7 +7,10 @@ import (
 	"context"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
+	"image/png"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -16,6 +19,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/image/bmp"
+	"golang.org/x/image/tiff"
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/config"
@@ -543,4 +549,93 @@ func storedFiles(t *testing.T, root string) []string {
 		t.Fatalf("walking storage: %v", err)
 	}
 	return out
+}
+
+// TestIngest_refusesAVIFAndDamagedImages verifies the two kinds of file that
+// pass the content sniff yet could never get a thumbnail are refused before
+// anything about them is stored: an AVIF (by its bytes, under any name) as a
+// 415 unsupported_type, and a JPEG or PNG cut short as a 415 damaged. No photos
+// row, no original in storage, no job. The intact rasters through the same
+// service are the control — each is created with its pHash and placeholder,
+// which the pre-store decode now feeds.
+func TestIngest_refusesAVIFAndDamagedImages(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{})
+	ctx := t.Context()
+
+	avif := append([]byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"), make([]byte, 600)...)
+	refusals := []struct {
+		name string
+		data []byte
+		code string
+	}{
+		{"f.avif", avif, ingest.CodeUnsupportedType},
+		{"renamed.jpg", avif, ingest.CodeUnsupportedType},
+		{"cut.jpg", halve(jpegBytes(t, 10, 120, 200, 90)), ingest.CodeDamaged},
+		{"cut.png", halve(encodeWith(t, png.Encode)), ingest.CodeDamaged},
+	}
+	for _, tt := range refusals {
+		res := env.ingest(ctx, tt.data, tt.name)
+		if res.Outcome != ingest.OutcomeError || res.Status != http.StatusUnsupportedMediaType ||
+			res.Code != tt.code || res.PhotoUID != "" {
+			t.Errorf("ingest(%s) = %+v, want a 415 %q refusal", tt.name, res, tt.code)
+		}
+	}
+	var rows int
+	if err := env.db.Pool().QueryRow(ctx, "SELECT count(*) FROM photos").Scan(&rows); err != nil {
+		t.Fatalf("counting photos: %v", err)
+	}
+	if rows != 0 {
+		t.Errorf("photos rows = %d after refusals, want 0", rows)
+	}
+	if stored := storedFiles(t, env.root); len(stored) != 0 {
+		t.Errorf("refused files left originals in storage: %v", stored)
+	}
+	env.enq.mu.Lock()
+	scheduled := len(env.enq.embeds) + len(env.enq.faces)
+	env.enq.mu.Unlock()
+	if scheduled != 0 {
+		t.Errorf("refused files scheduled %d jobs, want 0", scheduled)
+	}
+
+	controls := map[string][]byte{
+		"intact.png":  encodeWith(t, png.Encode),
+		"intact.gif":  encodeWith(t, func(w io.Writer, m image.Image) error { return gif.Encode(w, m, nil) }),
+		"intact.bmp":  encodeWith(t, bmp.Encode),
+		"intact.tiff": encodeWith(t, func(w io.Writer, m image.Image) error { return tiff.Encode(w, m, nil) }),
+	}
+	for name, data := range controls {
+		res := env.ingest(ctx, data, name)
+		if res.Outcome != ingest.OutcomeCreated || len(res.Warnings) != 0 {
+			t.Errorf("control %s = %+v, want created with no warning", name, res)
+			continue
+		}
+		if _, err := env.store.GetPhash(ctx, res.PhotoUID); err != nil {
+			t.Errorf("control %s has no pHash: %v", name, err)
+		}
+		if again := env.ingest(ctx, data, name); again.Outcome != ingest.OutcomeDuplicate {
+			t.Errorf("re-uploading %s = %+v, want duplicate", name, again)
+		}
+	}
+}
+
+// encodeWith renders a small ramp image with encode — png.Encode, bmp.Encode
+// and the like — and returns the bytes.
+func encodeWith(t *testing.T, encode func(io.Writer, image.Image) error) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 40, 30))
+	for y := range 30 {
+		for x := range 40 {
+			img.Set(x, y, color.RGBA{R: uint8(x * 6), G: uint8(y * 8), B: 90, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := encode(&buf, img); err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// halve returns the first half of data — `head -c` of a real file.
+func halve(data []byte) []byte {
+	return data[:len(data)/2]
 }

@@ -20,7 +20,7 @@ export type UploadOutcome = 'created' | 'duplicate' | 'error'
  * `ingest.FileResult`. `status` carries HTTP-style per-file semantics (201
  * created, 409 duplicate, 413/415/500 error) so a single multi-file upload can
  * report mixed outcomes. `code` is the stable identifier of a refusal the UI can
- * translate (`not_media`, `unsupported_type`); `error` is the server's raw text.
+ * translate (`not_media`, `unsupported_type`, `damaged`); `error` is the server's raw text.
  */
 export interface UploadFileResult {
   filename: string

@@ -436,6 +436,15 @@ sentence leads with and retrying them is the button. The per-file list is still 
 its remove and its errors-only filter — folded away, and it unfolds itself the moment something
 fails.
 
+**What goes in:** JPEG, PNG, GIF, WebP, BMP and TIFF; HEIC/HEIF from an iPhone; the camera RAW of
+every usual vendor (CR2, CR3, NEF, NRW, ARW, SRF, DNG, RAF, ORF, RW2, PEF, SRW, 3FR, IIQ, X3F, KDC,
+MRW, MEF); and video — MP4, M4V, MOV, AVI, MKV, WebM, MPG/MPEG, MTS/M2TS, 3GP, WMV, FLV and bare
+H.264/HEVC streams. **AVIF is not taken**, on any path: nothing the server can run opens it, so it
+would never get a thumbnail or a face — it is refused up front ("Tento typ souboru se nenahrává")
+instead of becoming a blank tile, and the file pickers do not offer it. A photo whose data is cut
+short or corrupt (an interrupted copy) is refused too ("Soubor je poškozený nebo neúplný"), before it
+is stored.
+
 It works the other way round too: **somebody else uploaded the photos and you want yours in your own
 phone**. Filter, select, tap Share, and the originals go to the phone's share sheet — iOS offers
 "Save Images" into Apple Photos, Android offers Google Photos. A big selection is handed over in

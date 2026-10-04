@@ -7,6 +7,7 @@ import {
   PICKER_ACCEPT,
   previewKind,
 } from './mediaFiles'
+import mediaFormats from './mediaFormats.json'
 
 describe('fileExtension', () => {
   it.each([
@@ -80,5 +81,29 @@ describe('PICKER_ACCEPT', () => {
       expect(entries).toContain(`.${extension}`)
     }
     expect(entries).toHaveLength(MEDIA_EXTENSIONS.length + 2)
+  })
+
+  // mediaFormats.json is the set the server ingests — a Go test
+  // (imgconvert.TestSupportedExtensions_matchWebList) pins it to
+  // imgconvert.SupportedExtensions — so the picker must name exactly its
+  // extensions: no more (a type every upload of which is refused) and no fewer.
+  it('names exactly the extensions the server ingests', () => {
+    const serverSet = [
+      ...mediaFormats.browserImage,
+      ...mediaFormats.decodedImage,
+      ...mediaFormats.raw,
+      ...mediaFormats.video,
+    ]
+    const pickerSet = PICKER_ACCEPT.split(',')
+      .filter((entry) => entry.startsWith('.'))
+      .map((entry) => entry.slice(1))
+
+    expect([...pickerSet].sort()).toEqual([...serverSet].sort())
+    expect(new Set(pickerSet).size).toBe(pickerSet.length)
+  })
+
+  it('does not offer AVIF, which the server refuses on every path', () => {
+    expect(PICKER_ACCEPT.split(',')).not.toContain('.avif')
+    expect(MEDIA_EXTENSIONS).not.toContain('avif')
   })
 })

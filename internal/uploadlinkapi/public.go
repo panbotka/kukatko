@@ -46,11 +46,6 @@ var (
 	errNotFiled = errors.New("the photo could not be added to the album")
 )
 
-// codeUnsupportedType is the stable FileResult.Code of a file refused for its
-// type (by name), alongside ingest.CodeNotMedia for one refused by content.
-// Neither is worth a retry: the same file would be refused again.
-const codeUnsupportedType = "unsupported_type"
-
 // publicLink is what anybody holding a link learns: the curator's title and
 // note, the names of the albums and labels the photos go to, and the expiry.
 // Nothing else — no UIDs, no counts, no creator, no photos.
@@ -258,7 +253,9 @@ func (a *API) ingestOne(
 ) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
-		return refused(filename, http.StatusUnsupportedMediaType, codeUnsupportedType, errUnsupportedType)
+		// ingest.CodeUnsupportedType: the code the pipeline gives a type it refuses by
+		// content (an AVIF under any name), so both refusals read the same.
+		return refused(filename, http.StatusUnsupportedMediaType, ingest.CodeUnsupportedType, errUnsupportedType)
 	}
 	if a.maxUploads > 0 && accepted >= a.maxUploads {
 		return refused(filename, http.StatusTooManyRequests, "", errLinkFull)

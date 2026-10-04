@@ -2775,7 +2775,8 @@
     },
     "error": {
       "not_media": "This is not a photo or a video",
-      "unsupported_type": "This type of file cannot be uploaded"
+      "unsupported_type": "This type of file cannot be uploaded",
+      "damaged": "This file is damaged or incomplete"
     },
     "progress": {
       "barLabel": "Overall upload progress",

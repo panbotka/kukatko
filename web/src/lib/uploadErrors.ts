@@ -13,11 +13,12 @@ interface FailedUpload {
 /**
  * The per-file refusal codes the backend sends (`ingest.FileResult.code`) whose
  * reason is the file itself: its bytes are not a photo or a video
- * (`not_media`), or its type is one Kukátko does not take (`unsupported_type`).
+ * (`not_media`), its type is one Kukátko does not take (`unsupported_type`),
+ * or it is an image whose data is cut short or corrupt (`damaged`).
  * Sending the same file again would be refused the same way, so no retry is
  * offered for them.
  */
-const PERMANENT_CODES: ReadonlySet<string> = new Set(['not_media', 'unsupported_type'])
+const PERMANENT_CODES: ReadonlySet<string> = new Set(['not_media', 'unsupported_type', 'damaged'])
 
 /** True when `code` names a refusal a retry cannot change. */
 export function isPermanentUploadError(code: string | undefined): boolean {
@@ -40,6 +41,9 @@ export function uploadErrorMessage(item: FailedUpload, t: TFunction): string | u
   }
   if (item.errorCode === 'unsupported_type') {
     return t('upload.error.unsupported_type')
+  }
+  if (item.errorCode === 'damaged') {
+    return t('upload.error.damaged')
   }
   return item.error !== undefined && item.error !== '' ? item.error : undefined
 }

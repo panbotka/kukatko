@@ -247,6 +247,12 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return dup
 	}
 
+	// After the dedup lookup: a byte-identical copy needs no decode to be named.
+	pixels, err := s.verifyPixels(staged.path, req.Filename)
+	if err != nil {
+		return errorResult(req.Filename, err)
+	}
+
 	media, err := s.extractMedia(ctx, staged.path, req.Filename)
 	if err != nil {
 		return errorResult(req.Filename, err)
@@ -266,7 +272,7 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return *dup
 	}
 
-	return createdResult(req.Filename, photo.UID, s.postProcess(ctx, photo))
+	return createdResult(req.Filename, photo.UID, s.postProcess(ctx, photo, pixels))
 }
 
 // applySidecar folds the file's sidecar (when it has one) into the metadata read
@@ -426,9 +432,9 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // thumbnail generation and job enqueue — collecting any non-fatal failures as
 // warnings. None of these undo the create: a photo with a missing thumbnail or
 // unqueued job is a degraded but valid, repairable state.
-func (s *Service) postProcess(ctx context.Context, photo photos.Photo) []Warning {
+func (s *Service) postProcess(ctx context.Context, photo photos.Photo, pixels stagedPixels) []Warning {
 	warnings := slices.Concat(
-		s.hashPixels(ctx, photo),
+		s.hashPixels(ctx, photo, pixels),
 		s.generateThumbnails(ctx, photo),
 		s.enqueueJobs(ctx, photo),
 	)
@@ -444,12 +450,19 @@ func (s *Service) postProcess(ctx context.Context, photo photos.Photo) []Warning
 // the whole reason they live in one step — it is by far the most expensive part,
 // and a second one for a value the size of a tweet would be absurd. A decode or
 // store failure is reported as a warning, not an error.
-func (s *Service) hashPixels(ctx context.Context, photo photos.Photo) []Warning {
-	img, cleanup, err := s.decodeOriginal(ctx, photo)
-	if err != nil {
-		return []Warning{{Code: warnPhashFailed, Message: err.Error()}}
+//
+// When the pre-store check (verifyPixels) already decoded the very same bytes,
+// that image is used and the original is not decoded a second time.
+func (s *Service) hashPixels(ctx context.Context, photo photos.Photo, pixels stagedPixels) []Warning {
+	img := pixels.img
+	if img == nil {
+		decoded, cleanup, err := s.decodeOriginal(ctx, photo)
+		if err != nil {
+			return []Warning{{Code: warnPhashFailed, Message: err.Error()}}
+		}
+		defer cleanup()
+		img = decoded
 	}
-	defer cleanup()
 
 	return append(s.storePhash(ctx, photo, img), s.storeBlurhash(ctx, photo, img)...)
 }
@@ -927,8 +940,9 @@ func duplicateResult(filename, uid string) FileResult {
 }
 
 // errorResult builds the result for a file that could not be ingested, mapping
-// the oversize case to 413, a file that is not media to 415 with CodeNotMedia,
-// and everything else to 500.
+// the oversize case to 413; a file that is not media, of a refused type or
+// damaged to 415 with CodeNotMedia, CodeUnsupportedType or CodeDamaged; and
+// everything else to 500.
 func errorResult(filename string, err error) FileResult {
 	status, code := http.StatusInternalServerError, ""
 	switch {
@@ -936,6 +950,10 @@ func errorResult(filename string, err error) FileResult {
 		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, ErrNotMedia):
 		status, code = http.StatusUnsupportedMediaType, CodeNotMedia
+	case errors.Is(err, ErrUnsupportedType):
+		status, code = http.StatusUnsupportedMediaType, CodeUnsupportedType
+	case errors.Is(err, ErrDamaged):
+		status, code = http.StatusUnsupportedMediaType, CodeDamaged
 	}
 	return FileResult{
 		Filename: filename,

@@ -917,8 +917,9 @@ here.
   a standalone `kk-surface` card: **a local `UploadThumb` preview**, name+size, progress bar, status badge,
   near-duplicate warning, remove/retry actions; a failed row has `border-danger`. The failure line and the
   Retry go through **`lib/uploadErrors.ts`**: a refusal the backend names with a `code` is translated
-  (`upload.error.not_media` "Tohle není fotka ani video", `upload.error.unsupported_type`) instead of the raw
-  server string, and the two permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
+  (`upload.error.not_media` "Tohle není fotka ani video", `upload.error.unsupported_type`,
+  `upload.error.damaged` "Soubor je poškozený nebo neúplný") instead of the raw server string, and the three
+  permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
   refused again; `useUploadQueue` keeps the code as `item.errorCode` and its `retry`/`retryFailed` skip
   them, and `UploadStageDone`/`UploadLinkPage` offer "retry the failed files" only while some failure is
   retryable),
@@ -6427,12 +6428,16 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   format — `16.7083583333333` → `16.708358`, which is why an unchanged coordinate isn't sent in the PATCH
   at all) — shared with the `MetadataPanel` picker;
   `mediaFiles.ts` = the one place the app decides „this is a photo or a video": `MEDIA_EXTENSIONS` (the
-  browser-native images, HEIC/HEIF, the RAW of every usual vendor, the phone/camcorder video containers),
+  browser-native images, HEIC/HEIF, the RAW of every usual vendor, the phone/camcorder video containers —
+  read from **`mediaFormats.json`**, the list the client shares with the server: the Go test
+  `imgconvert.TestSupportedExtensions_matchWebList` pins it to `SupportedExtensions()`, and
+  `mediaFiles.test.ts` checks `PICKER_ACCEPT` names exactly it, so no AVIF),
   `PICKER_ACCEPT` (`image/*,video/*` + all of them as `.ext`, the `accept` a picker gets) and the pure
   `isMediaFile({name,type})` (the MIME type when it says image/video, **otherwise the extension** — a file
   manager, a messenger or a cloud drive routinely hands a photo over as `application/octet-stream`, and
-  RAW/HEIC usually as nothing at all). Deliberately generous: the backend has the last word and
-  drag-and-drop bypasses the list entirely, so a missing entry can only hide a file the user meant to add.
+  RAW/HEIC usually as nothing at all). The backend has the last word and drag-and-drop bypasses the list
+  entirely, but the list must match it: a missing entry hides a file the user meant to add, a superfluous
+  one (AVIF once was) invites a pick every upload of which is refused.
   Shared by `DropZone` (the picker) and `pwa/shareTarget` (the triage of a share);
   `mediaKind.ts` = what a **catalogue row** is, asked of `media_type` alone (never of `file_mime` — a live
   photo's file is an `image/heic` still that nevertheless carries a clip, and a row with no `media_type` at

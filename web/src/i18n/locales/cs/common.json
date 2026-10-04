@@ -2889,7 +2889,8 @@
     },
     "error": {
       "not_media": "Tohle není fotka ani video",
-      "unsupported_type": "Tento typ souboru se nenahrává"
+      "unsupported_type": "Tento typ souboru se nenahrává",
+      "damaged": "Soubor je poškozený nebo neúplný"
     },
     "progress": {
       "barLabel": "Celkový průběh nahrávání",

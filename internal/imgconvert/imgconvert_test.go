@@ -3,6 +3,7 @@ package imgconvert
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
@@ -10,10 +11,14 @@ import (
 	"image/jpeg"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
+
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // magic byte prefixes for the formats DetectFormat classifies.
@@ -60,6 +65,8 @@ func TestIsSupportedFormat(t *testing.T) {
 		{".mp4", true},
 		{".mov", true},
 		{".MKV", true},
+		{".avif", false},
+		{"AVIF", false},
 		{".txt", false},
 		{"", false},
 	}
@@ -389,6 +396,12 @@ func TestMagicFormat(t *testing.T) {
 		{"png", "\x89PNG\r\n\x1a\n\x00\x00", FormatPNG},
 		{"webp", "RIFF\x10\x00\x00\x00WEBPVP8 ", FormatWebP},
 		{"heic", "\x00\x00\x00\x18ftypheic", FormatHEIC},
+		{"avif", "\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf", FormatAVIF},
+		{"avif sequence", "\x00\x00\x00\x18ftypavis\x00\x00\x00\x00avis", FormatAVIF},
+		{"avif under mif1", "\x00\x00\x00\x1cftypmif1\x00\x00\x00\x00mif1avifmiaf", FormatAVIF},
+		{"heic under mif1", "\x00\x00\x00\x1cftypmif1\x00\x00\x00\x00mif1heicmiaf", FormatHEIC},
+		{"mif1 naming both codecs", "\x00\x00\x00\x20ftypmif1\x00\x00\x00\x00mif1avifheicmiaf", FormatHEIC},
+		{"bare mif1", "\x00\x00\x00\x10ftypmif1\x00\x00\x00\x00", FormatHEIC},
 		{"tiff", "II*\x00\x08\x00\x00\x00", FormatTIFF},
 		{"too short", "\xff\xd8", FormatUnknown},
 		{"text", "hello world, no picture here", FormatUnknown},
@@ -403,4 +416,114 @@ func TestMagicFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDetectFormatNamed verifies the name and the bytes are read from separate
+// places: a staged temp file with no extension is still told a TIFF-based RAW
+// from a plain TIFF, and a video from a still, by the name it arrived under.
+func TestDetectFormatNamed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	staged := writeFile(t, dir, "kukatko-ingest-1", tiffMagic)
+	avif := writeFile(t, dir, "kukatko-ingest-2", []byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"))
+	tests := []struct {
+		path, name, want string
+	}{
+		{staged, "IMG_0001.CR2", FormatRAW},
+		{staged, "scan.tif", FormatTIFF},
+		{staged, "no-extension", FormatTIFF},
+		{staged, "clip.mov", FormatVideo},
+		{avif, "f.jpg", FormatAVIF},
+	}
+	for _, tt := range tests {
+		if got := DetectFormatNamed(tt.path, tt.name); got != tt.want {
+			t.Errorf("DetectFormatNamed(%s, %q) = %q, want %q", filepath.Base(tt.path), tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestEnsureDecodable_refusesAVIF verifies an AVIF is reported as unsupported
+// rather than sent down any decode path: nothing CGO-free opens it.
+func TestEnsureDecodable_refusesAVIF(t *testing.T) {
+	t.Parallel()
+	path := writeFile(t, t.TempDir(), "f.avif", []byte("\x00\x00\x00\x1cftypavif\x00\x00\x00\x00avifmif1miaf"))
+	_, cleanup, err := EnsureDecodable(t.Context(), path)
+	if cleanup != nil {
+		cleanup()
+	}
+	if !errors.Is(err, ErrUnsupportedFormat) {
+		t.Errorf("EnsureDecodable(avif) = %v, want ErrUnsupportedFormat", err)
+	}
+}
+
+// webMediaFormats is web/src/lib/mediaFormats.json: the extensions the web
+// client's file pickers offer, by the kind of preview the client can draw.
+type webMediaFormats struct {
+	BrowserImage []string `json:"browserImage"`
+	DecodedImage []string `json:"decodedImage"`
+	RAW          []string `json:"raw"`
+	Video        []string `json:"video"`
+}
+
+// TestSupportedExtensions_matchWebList pins the web client's picker list to
+// the set the pipeline ingests, so the two cannot drift again (the picker once
+// offered AVIF, which every upload path then refused or failed on). Fixing a
+// failure means editing both: SupportedExtensions' sources here, and the JSON
+// file the client derives its `accept` attribute from.
+func TestSupportedExtensions_matchWebList(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "lib", "mediaFormats.json"))
+	if err != nil {
+		t.Fatalf("reading the web list: %v", err)
+	}
+	var web webMediaFormats
+	if err := json.Unmarshal(raw, &web); err != nil {
+		t.Fatalf("parsing the web list: %v", err)
+	}
+	all := slices.Concat(web.BrowserImage, web.DecodedImage, web.RAW, web.Video)
+	slices.Sort(all)
+	if want := SupportedExtensions(); !slices.Equal(all, want) {
+		t.Errorf("web list = %v\nserver set = %v", all, want)
+	}
+	if got, want := sorted(web.RAW), RAWExtensions(); !slices.Equal(got, want) {
+		t.Errorf("web raw = %v, want %v", got, want)
+	}
+	if got, want := sorted(web.Video), video.Extensions(); !slices.Equal(got, want) {
+		t.Errorf("web video = %v, want %v", got, want)
+	}
+	for _, ext := range slices.Concat(web.BrowserImage, web.DecodedImage) {
+		if format := formatByExt("x." + ext); format == FormatRAW || format == FormatUnknown {
+			t.Errorf("web image extension %q is %q on the server", ext, format)
+		}
+	}
+}
+
+// TestSupportedExtensions verifies the set is sorted, dotless, lowercase and
+// agrees with IsSupportedFormat, with AVIF deliberately out of it.
+func TestSupportedExtensions(t *testing.T) {
+	t.Parallel()
+	exts := SupportedExtensions()
+	if !slices.IsSorted(exts) {
+		t.Errorf("SupportedExtensions() is not sorted: %v", exts)
+	}
+	for _, ext := range exts {
+		if ext != strings.ToLower(ext) || strings.HasPrefix(ext, ".") || !IsSupportedFormat(ext) {
+			t.Errorf("SupportedExtensions() entry %q is not a dotless, lowercase, supported extension", ext)
+		}
+	}
+	for _, want := range []string{"jpg", "heic", "cr2", "mp4"} {
+		if !slices.Contains(exts, want) {
+			t.Errorf("SupportedExtensions() lacks %q", want)
+		}
+	}
+	if slices.Contains(exts, "avif") {
+		t.Error("SupportedExtensions() contains avif, which the pipeline refuses")
+	}
+}
+
+// sorted returns a sorted copy of s.
+func sorted(s []string) []string {
+	out := slices.Clone(s)
+	slices.Sort(out)
+	return out
 }

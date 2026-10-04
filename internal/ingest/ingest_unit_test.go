@@ -228,10 +228,13 @@ func TestResultConstructors(t *testing.T) {
 	if r := errorResult("a.jpg", errors.New("boom")); r.Status != http.StatusInternalServerError || r.Code != "" {
 		t.Errorf("errorResult(generic) = %+v, want 500 with no code", r)
 	}
-	notMedia := errorResult("a.jpg", fmt.Errorf("%w: a.jpg", ErrNotMedia))
-	if notMedia.Status != http.StatusUnsupportedMediaType || notMedia.Code != CodeNotMedia ||
-		notMedia.Outcome != OutcomeError {
-		t.Errorf("errorResult(not media) = %+v, want 415 %q", notMedia, CodeNotMedia)
+	for sentinel, code := range map[error]string{
+		ErrNotMedia: CodeNotMedia, ErrUnsupportedType: CodeUnsupportedType, ErrDamaged: CodeDamaged,
+	} {
+		r := errorResult("a.jpg", fmt.Errorf("%w: a.jpg", sentinel))
+		if r.Status != http.StatusUnsupportedMediaType || r.Code != code || r.Outcome != OutcomeError {
+			t.Errorf("errorResult(%v) = %+v, want 415 %q", sentinel, r, code)
+		}
 	}
 }
 

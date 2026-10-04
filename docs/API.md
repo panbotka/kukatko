@@ -307,6 +307,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   the sniff does not know). `code` is present only on a refusal that has one; `error` stays the raw
   server text. The same check guards `POST /u/{code}/upload` and `kukatko import dir` (they all go
   through `ingest.Service.IngestFile`): a 0×0 `application/octet-stream` "photo" is never useful.
+  **AVIF is refused** with **415** `code: "unsupported_type"` — by its bytes (an ISO-BMFF `ftyp` with an
+  `avif`/`avis` brand, so one renamed `.jpg` too) or by its `.avif` name — on every path (`/upload`,
+  `/u/{code}/upload`, `import dir`, which skips the extension outright): no decoder a CGO-free binary
+  reaches opens it, so it could never get a thumbnail, a pHash or a face/embed/OCR job. **A still whose
+  data is damaged** (cut short or corrupt beyond the header — `head -c 2000 photo.jpg`) is refused with
+  **415** `code: "damaged"`, again before any row, original or job exists. That is judged only where
+  Kukátko decodes in-process and completely — JPEG, PNG and GIF (a decoder's "unsupported feature",
+  e.g. an arithmetic-coded JPEG, is not damage); HEIC, RAW, TIFF, BMP, WebP and video are never refused
+  for failing a decode. A byte-identical duplicate is answered before that decode. The accepted
+  extensions are `imgconvert.SupportedExtensions()`; the web pickers' `accept` list is
+  `web/src/lib/mediaFormats.json`, pinned to it by a test.
 - **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (authenticated) — list with filters/
   sorting/pagination (query params, invalid → 400) → `{photos,total,limit,offset,next_offset}`;
   **`video_total`** rides beside `total` on every page response (list and search alike): how many of
@@ -1799,9 +1810,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `ratelimit.upload_link_per_link` bucket → 429) — `multipart/form-data`, an optional `name` field
   (the uploader's "from whom", trimmed/cut to 100 characters) **before** the files, one or more files,
   streamed through the ordinary ingest pipeline (`ingest.Service.IngestFile`, SHA256 dedup) → 200
-  `{results:[…]}` exactly like `POST /upload`. Per file: an extension the pipeline does not ingest →
-  415 `code:"unsupported_type"`, content that is not a photo or a video (random bytes named `.jpg`) →
-  415 `code:"not_media"` with nothing stored, filed or audited, a file over `upload_links.max_file_size_mb` → 413, past `upload_links.max_uploads_per_link` →
+  `{results:[…]}` exactly like `POST /upload`. Per file: an extension the pipeline does not ingest
+  (`.avif` among them) or AVIF content under any name → 415 `code:"unsupported_type"`, content that is
+  not a photo or a video (random bytes named `.jpg`) → 415 `code:"not_media"`, a truncated/corrupt
+  JPEG/PNG/GIF → 415 `code:"damaged"`, each with nothing stored, filed or audited, a file over `upload_links.max_file_size_mb` → 413, past `upload_links.max_uploads_per_link` →
   429. Every file that resolved to a photo — **new or duplicate** — is filed into all the link's albums
   and labels (manual labels) at once, its provenance recorded in `upload_link_photos` (link, typed name,
   account or anonymous session hash, created/duplicate), the link's `upload_count`/`last_used_at`
