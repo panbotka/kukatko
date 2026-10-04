@@ -18,14 +18,16 @@ export type UploadOutcome = 'created' | 'duplicate' | 'error'
 /**
  * Per-file result returned by `POST /api/v1/upload`, mirroring the backend
  * `ingest.FileResult`. `status` carries HTTP-style per-file semantics (201
- * created, 409 duplicate, 413/500 error) so a single multi-file upload can
- * report mixed outcomes.
+ * created, 409 duplicate, 413/415/500 error) so a single multi-file upload can
+ * report mixed outcomes. `code` is the stable identifier of a refusal the UI can
+ * translate (`not_media`, `unsupported_type`); `error` is the server's raw text.
  */
 export interface UploadFileResult {
   filename: string
   status: number
   outcome: UploadOutcome
   photo_uid?: string
+  code?: string
   error?: string
   warnings?: UploadWarning[]
 }

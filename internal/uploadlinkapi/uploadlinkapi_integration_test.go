@@ -5,7 +5,10 @@ package uploadlinkapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"image"
+	"image/jpeg"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -22,10 +25,13 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/ingest"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/settings"
+	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
 )
@@ -61,8 +67,16 @@ type integrationEnv struct {
 }
 
 // newIntegrationEnv truncates the database, seeds an album, a label and two
-// photos, and serves the auth and upload-link routes.
+// photos, and serves the auth and upload-link routes over the seeded fake
+// pipeline.
 func newIntegrationEnv(t *testing.T) *integrationEnv {
+	t.Helper()
+	return newIntegrationEnvWith(t, nil)
+}
+
+// newIntegrationEnvWith is newIntegrationEnv with the pipeline chosen by the
+// caller: pipeline builds one over the database, nil keeps the seeded fake.
+func newIntegrationEnvWith(t *testing.T, pipeline func(*database.DB) uploadlinkapi.Ingester) *integrationEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -94,8 +108,12 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 		}),
 		UploadLinks: uploadlinkapi.NewRegistrationGate(store, nil, nil),
 	})
+	var ingester uploadlinkapi.Ingester = seededIngest{photos: e.photos}
+	if pipeline != nil {
+		ingester = pipeline(db)
+	}
 	api := uploadlinkapi.NewAPI(uploadlinkapi.Config{
-		Store: store, Ingest: seededIngest{photos: e.photos},
+		Store: store, Ingest: ingester,
 		RequireCurator: authAPI.RequireCurator, OptionalAuth: authAPI.OptionalAuth,
 	})
 	r := chi.NewRouter()
@@ -178,11 +196,19 @@ func (e *integrationEnv) createLink(t *testing.T, cookies []*http.Cookie) (strin
 // uploadFile uploads one file through code with name, as cookies.
 func (e *integrationEnv) uploadFile(t *testing.T, code, filename, name string, cookies []*http.Cookie) *http.Response {
 	t.Helper()
+	return e.uploadContent(t, code, filename, name, []byte("bytes"), cookies)
+}
+
+// uploadContent uploads one file of content through code with name, as cookies.
+func (e *integrationEnv) uploadContent(
+	t *testing.T, code, filename, name string, content []byte, cookies []*http.Cookie,
+) *http.Response {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("name", name)
 	w, _ := mw.CreateFormFile("files", filename)
-	_, _ = io.WriteString(w, "bytes")
+	_, _ = w.Write(content)
 	_ = mw.Close()
 	return e.send(t, http.MethodPost, "/api/v1/u/"+code+"/upload", mw.FormDataContentType(), &buf, cookies)
 }
@@ -331,5 +357,97 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 	}
 	if resp := e.send(t, http.MethodGet, "/api/v1/upload-links", "", nil, nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous management list = %d, want 401", resp.StatusCode)
+	}
+}
+
+// realPipeline builds the real ingest pipeline over db — temp-dir storage and
+// cache, the real job queue — so a test sees exactly what an upload stores and
+// schedules.
+func realPipeline(t *testing.T) func(*database.DB) uploadlinkapi.Ingester {
+	t.Helper()
+	return func(db *database.DB) uploadlinkapi.Ingester {
+		fs, err := storage.NewFS(t.TempDir())
+		if err != nil {
+			t.Fatalf("storage.NewFS: %v", err)
+		}
+		enqueuer := jobs.NewEnqueuer(jobs.NewStore(db.Pool()))
+		return ingest.New(ingest.Config{
+			Storage: fs, Photos: photos.NewStore(db.Pool()), Thumbnailer: thumb.New(fs, t.TempDir()),
+			Enqueuer: enqueuer, OCR: enqueuer, TempDir: t.TempDir(),
+		})
+	}
+}
+
+// count runs a count(*) query and returns its result.
+func (e *integrationEnv) count(t *testing.T, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := e.db.Pool().QueryRow(t.Context(), query, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return n
+}
+
+// TestJunkThroughALiveLinkIsRefused is the prerelease repro: 5 KB of random
+// bytes named broken.jpg, uploaded anonymously through a live link. It must come
+// back as a per-file 415 with the stable not_media code, and leave nothing
+// behind — no photos row, no upload_link_photos row, no job, no audit entry
+// (the link audits only what it accepted). A real JPEG through the same link
+// and pipeline is the control: it is created, filed and scheduled.
+func TestJunkThroughALiveLinkIsRefused(t *testing.T) {
+	e := newIntegrationEnvWith(t, realPipeline(t))
+	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	code, _ := e.createLink(t, curator)
+	photosBefore := e.count(t, "SELECT count(*) FROM photos")
+
+	junk := make([]byte, 5000)
+	if _, err := rand.Read(junk); err != nil {
+		t.Fatalf("reading random bytes: %v", err)
+	}
+	// Pin the head off every signature the sniffer knows, so the one-in-millions
+	// random stream that starts with a start code cannot flake the test.
+	copy(junk, "junk")
+	resp := e.uploadContent(t, code, "broken.jpg", "Jana", junk, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload = %d, want 200 with a per-file result", resp.StatusCode)
+	}
+	var body struct {
+		Results []ingest.FileResult `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decoding upload: %v", err)
+	}
+	if len(body.Results) != 1 {
+		t.Fatalf("results = %+v, want one", body.Results)
+	}
+	if res := body.Results[0]; res.Status != http.StatusUnsupportedMediaType ||
+		res.Code != ingest.CodeNotMedia || res.Outcome != ingest.OutcomeError || res.PhotoUID != "" {
+		t.Errorf("result = %+v, want a 415 %q refusal", res, ingest.CodeNotMedia)
+	}
+	if got := e.count(t, "SELECT count(*) FROM photos"); got != photosBefore {
+		t.Errorf("photos rows = %d, want %d (nothing created)", got, photosBefore)
+	}
+	if got := e.count(t, "SELECT count(*) FROM upload_link_photos"); got != 0 {
+		t.Errorf("upload_link_photos rows = %d, want 0", got)
+	}
+	if got := e.count(t, "SELECT count(*) FROM jobs"); got != 0 {
+		t.Errorf("jobs = %d, want 0", got)
+	}
+	if got := e.count(t, "SELECT count(*) FROM audit_log WHERE action = $1", audit.ActionUploadLinkUpload); got != 0 {
+		t.Errorf("upload audit entries = %d, want 0", got)
+	}
+
+	var real bytes.Buffer
+	if err := jpeg.Encode(&real, image.NewRGBA(image.Rect(0, 0, 32, 24)), nil); err != nil {
+		t.Fatalf("encoding jpeg: %v", err)
+	}
+	if resp := e.uploadContent(t, code, "real.jpg", "Jana", real.Bytes(), nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("control upload = %d", resp.StatusCode)
+	}
+	if got := e.count(t, "SELECT count(*) FROM upload_link_photos"); got != 1 {
+		t.Errorf("control: upload_link_photos rows = %d, want 1", got)
+	}
+	if got := e.count(t, "SELECT count(*) FROM jobs"); got == 0 {
+		t.Error("control: a real photo scheduled no jobs; the junk assertion above proves nothing")
 	}
 }

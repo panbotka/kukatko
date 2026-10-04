@@ -46,6 +46,11 @@ var (
 	errNotFiled = errors.New("the photo could not be added to the album")
 )
 
+// codeUnsupportedType is the stable FileResult.Code of a file refused for its
+// type (by name), alongside ingest.CodeNotMedia for one refused by content.
+// Neither is worth a retry: the same file would be refused again.
+const codeUnsupportedType = "unsupported_type"
+
 // publicLink is what anybody holding a link learns: the curator's title and
 // note, the names of the albums and labels the photos go to, and the expiry.
 // Nothing else — no UIDs, no counts, no creator, no photos.
@@ -253,10 +258,10 @@ func (a *API) ingestOne(
 ) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
-		return refused(filename, http.StatusUnsupportedMediaType, errUnsupportedType)
+		return refused(filename, http.StatusUnsupportedMediaType, codeUnsupportedType, errUnsupportedType)
 	}
 	if a.maxUploads > 0 && accepted >= a.maxUploads {
-		return refused(filename, http.StatusTooManyRequests, errLinkFull)
+		return refused(filename, http.StatusTooManyRequests, "", errLinkFull)
 	}
 	var src io.Reader = part
 	if a.maxFileSize > 0 {
@@ -270,7 +275,7 @@ func (a *API) ingestOne(
 		a.log.ErrorContext(r.Context(), "uploadlinkapi: filing an uploaded photo",
 			slog.String("link_uid", link.UID), slog.String("photo_uid", res.PhotoUID),
 			slog.String("error", err.Error()))
-		return refused(filename, http.StatusInternalServerError, errNotFiled)
+		return refused(filename, http.StatusInternalServerError, "", errNotFiled)
 	}
 	return res
 }
@@ -305,9 +310,11 @@ func (a *API) enqueueSidecar(ctx context.Context, photoUID string) {
 }
 
 // refused builds the per-file error result of a file the link turned away
-// before (or after) the pipeline.
-func refused(filename string, status int, err error) ingest.FileResult {
-	return ingest.FileResult{Filename: filename, Status: status, Outcome: ingest.OutcomeError, Error: err.Error()}
+// before (or after) the pipeline; code is its stable identifier, "" for none.
+func refused(filename string, status int, code string, err error) ingest.FileResult {
+	return ingest.FileResult{
+		Filename: filename, Status: status, Outcome: ingest.OutcomeError, Code: code, Error: err.Error(),
+	}
 }
 
 // names returns the names of targets, in order.

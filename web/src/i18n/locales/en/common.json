@@ -2767,6 +2767,10 @@
       "duplicate": "Already in library",
       "error": "Failed"
     },
+    "error": {
+      "not_media": "This is not a photo or a video",
+      "unsupported_type": "This type of file cannot be uploaded"
+    },
     "progress": {
       "barLabel": "Overall upload progress",
       "count": "{{done}} / {{total}}",

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +182,35 @@ func TestHTTPUpload_curatorCreatesPhotos(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Outcome != ingest.OutcomeCreated || results[0].PhotoUID == "" {
 		t.Errorf("results = %+v, want one created photo with a UID", results)
+	}
+}
+
+// TestHTTPUpload_refusesFilesThatAreNotMedia verifies the signed-in upload
+// applies the same content check as the public upload link: a file that only
+// names itself a photo comes back as a per-file 415 not_media beside a real
+// photo in the same batch, which is still created.
+func TestHTTPUpload_refusesFilesThatAreNotMedia(t *testing.T) {
+	env := newHTTPEnv(t)
+	client := env.loginClient(t, "editor", auth.RoleEditor)
+
+	status, results := env.uploadFiles(t, client, map[string][]byte{
+		"broken.jpg": []byte(strings.Repeat("definitely not a jpeg ", 200)),
+		"fine.jpg":   jpegBytes(t, 120, 30, 200, 90),
+	})
+	if status != http.StatusOK || len(results) != 2 {
+		t.Fatalf("upload = %d with %d results, want 200 with 2", status, len(results))
+	}
+	for _, res := range results {
+		switch res.Filename {
+		case "broken.jpg":
+			if res.Status != http.StatusUnsupportedMediaType || res.Code != ingest.CodeNotMedia || res.PhotoUID != "" {
+				t.Errorf("broken.jpg = %+v, want a 415 %q refusal", res, ingest.CodeNotMedia)
+			}
+		case "fine.jpg":
+			if res.Outcome != ingest.OutcomeCreated {
+				t.Errorf("fine.jpg = %+v, want created", res)
+			}
+		}
 	}
 }
 

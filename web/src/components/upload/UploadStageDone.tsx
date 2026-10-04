@@ -12,6 +12,7 @@ import {
   type UploadSummary,
 } from '../../hooks/useUploadQueue'
 import { LIBRARY_PATH } from '../../lib/libraryView'
+import { canRetryUpload } from '../../lib/uploadErrors'
 
 import { batchMedia } from './batchMedia'
 import { UploadActionBar } from './UploadActionBar'
@@ -94,6 +95,9 @@ export function UploadStageDone({
   const { t } = useTranslation()
 
   const failed = summary.error > 0
+  // Retrying is the primary action only while a retry can change something: a
+  // file refused for what it is (not a photo at all) fails the same way again.
+  const retryable = items.some(canRetryUpload)
   const landed = summary.created + summary.duplicate
   const assigned = assign.status === 'done' && organizeNames.length > 0
 
@@ -152,7 +156,7 @@ export function UploadStageDone({
   const libraryLink = (
     <Link
       to={`${LIBRARY_PATH}?sort=added`}
-      className={`btn btn-lg ${failed ? 'btn-outline-secondary' : 'btn-primary'}`}
+      className={`btn btn-lg ${failed && retryable ? 'btn-outline-secondary' : 'btn-primary'}`}
     >
       {t('upload.done.viewLibrary')}
     </Link>
@@ -166,7 +170,7 @@ export function UploadStageDone({
         </h2>
         {/* Only where it is true: with nothing at all through, "everything else
             is in your library" names a set that does not exist. */}
-        {failed && landed > 0 && (
+        {failed && retryable && landed > 0 && (
           <p className="text-secondary mb-0">{t('upload.done.failedHint')}</p>
         )}
         {!failed && summary.created > 0 && summary.duplicate > 0 && (
@@ -226,7 +230,7 @@ export function UploadStageDone({
       )}
 
       <UploadActionBar>
-        {failed ? (
+        {failed && retryable ? (
           <>
             {landed > 0 && libraryLink}
             <Button type="button" size="lg" variant="primary" onClick={onRetryFailed}>

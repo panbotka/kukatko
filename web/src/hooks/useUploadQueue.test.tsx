@@ -244,6 +244,39 @@ describe('useUploadQueue', () => {
     expect(hook.current.items[0].status).toBe('uploading')
   })
 
+  it('keeps a refusal a retry cannot change out of every retry', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([file('broken.jpg'), file('b.jpg')])
+    })
+    await settle(0, {
+      filename: 'broken.jpg',
+      status: 415,
+      outcome: 'error',
+      code: 'not_media',
+      error: 'ingest: not a photo or video: broken.jpg',
+    })
+    await settle(1, { filename: 'b.jpg', status: 500, outcome: 'error', error: 'boom' })
+    await waitFor(() => {
+      expect(hook.current.summary.error).toBe(2)
+    })
+    expect(hook.current.items[0].errorCode).toBe('not_media')
+    expect(hook.current.items[1].errorCode).toBeUndefined()
+
+    act(() => {
+      hook.current.retry(hook.current.items[0].id)
+    })
+    act(() => {
+      hook.current.retryFailed()
+    })
+
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(3)
+    })
+    expect(hook.current.items[0].status).toBe('error')
+    expect(hook.current.items[1].status).toBe('uploading')
+  })
+
   it('surfaces near-duplicate warnings without failing the file', async () => {
     const { result: hook } = renderHook(() => useUploadQueue())
     act(() => {

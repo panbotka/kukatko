@@ -208,7 +208,8 @@ shared library is tidied by more than one person.
   exactly where the photos will go and nothing else of the library, picks a whole batch from the
   phone's gallery (photos, videos, HEIC alike) or drags it onto the page, and watches each file land,
   with a retry for the ones that did not and a one-line "12 nahráno, 1 duplicita, 1 chyba" at the end.
-  The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
+  A file that is not a photo or a video at all — whatever it is called — is turned away as just that
+  ("Tohle není fotka ani video") and never reaches the album. The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
   they are, and is then offered an account — no registration word needed through the link, the photos
   they just sent become theirs, and an administrator still approves it. Links can be extended or
   revoked, and every link, change and upload is in the audit trail.

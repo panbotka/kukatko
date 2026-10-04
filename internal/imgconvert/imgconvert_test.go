@@ -374,3 +374,33 @@ func TestEnsureDecodable_tiffRawRoutesToConverter(t *testing.T) {
 		t.Error("cleanup must be nil on error")
 	}
 }
+
+// TestMagicFormat verifies the name-blind classification of a file head: the
+// image signatures are recognised, and anything else — a too-short head, text,
+// a video container, a non-TIFF RAW — is FormatUnknown.
+func TestMagicFormat(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		head string
+		want string
+	}{
+		{"jpeg", "\xff\xd8\xff\xe0\x00\x10JFIF", FormatJPEG},
+		{"png", "\x89PNG\r\n\x1a\n\x00\x00", FormatPNG},
+		{"webp", "RIFF\x10\x00\x00\x00WEBPVP8 ", FormatWebP},
+		{"heic", "\x00\x00\x00\x18ftypheic", FormatHEIC},
+		{"tiff", "II*\x00\x08\x00\x00\x00", FormatTIFF},
+		{"too short", "\xff\xd8", FormatUnknown},
+		{"text", "hello world, no picture here", FormatUnknown},
+		{"mp4", "\x00\x00\x00\x20ftypisom", FormatUnknown},
+		{"orf", "IIRO\x08\x00\x00\x00", FormatUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := MagicFormat([]byte(tt.head)); got != tt.want {
+				t.Errorf("MagicFormat(%q) = %q, want %q", tt.head, got, tt.want)
+			}
+		})
+	}
+}

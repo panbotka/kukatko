@@ -4,6 +4,7 @@ import ProgressBar from 'react-bootstrap/ProgressBar'
 import { useTranslation } from 'react-i18next'
 
 import { type QueueItemStatus, type UploadQueueItem } from '../../hooks/useUploadQueue'
+import { canRetryUpload, uploadErrorMessage } from '../../lib/uploadErrors'
 import { type UploadWarning } from '../../services/upload'
 
 import { UploadThumb } from './UploadThumb'
@@ -76,7 +77,9 @@ function WarningLine({ warning }: { warning: UploadWarning }) {
  * {@link UploadThumb} — the browser paints it from the `File` itself, nothing is
  * uploaded to get it), its name and size, a live progress bar while uploading, a
  * status badge, any non-fatal warnings, and contextual actions (remove a file
- * that has not started or finished; retry a failed one). Touch targets are
+ * that has not started or finished; retry a failed one — unless the backend
+ * refused the file itself, say as not a photo at all, which a retry cannot
+ * change: that row shows the translated reason and no Retry). Touch targets are
  * full-size buttons for mobile use.
  *
  * The preview is what turns the queue from a list of file names into something a
@@ -92,6 +95,7 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
   const { t } = useTranslation()
   const percent = Math.round(item.progress * 100)
   const errored = item.status === 'error'
+  const errorText = errored ? uploadErrorMessage(item, t) : undefined
 
   return (
     <div
@@ -119,16 +123,14 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
           />
         )}
 
-        {item.status === 'error' && item.error !== undefined && item.error !== '' && (
-          <div className="small text-danger">{item.error}</div>
-        )}
+        {errorText !== undefined && <div className="small text-danger">{errorText}</div>}
 
         {item.warnings?.map((warning, index) => (
           <WarningLine key={`${warning.code}-${String(index)}`} warning={warning} />
         ))}
 
         <div className="d-flex gap-2">
-          {item.status === 'error' && (
+          {canRetryUpload(item) && (
             <Button
               type="button"
               size="sm"

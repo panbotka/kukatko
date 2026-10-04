@@ -7,6 +7,7 @@ import {
   type UploadFn,
   type UploadWarning,
 } from '../services/upload'
+import { canRetryUpload } from '../lib/uploadErrors'
 import { ApiError } from '../services/auth'
 
 /**
@@ -31,6 +32,11 @@ export interface UploadQueueItem {
   photoUid?: string
   /** Human-readable failure detail when `status` is `error`. */
   error?: string
+  /**
+   * The backend's stable refusal code when `status` is `error` and it sent one
+   * (for example `not_media`); see `lib/uploadErrors` for what the UI makes of it.
+   */
+  errorCode?: string
   /** Non-fatal backend warnings (for example a near-duplicate match). */
   warnings?: UploadWarning[]
 }
@@ -78,9 +84,9 @@ export interface UseUploadQueueResult {
   addFiles: (files: FileList | File[]) => void
   /** Removes a file from the queue, aborting it first if it is uploading. */
   removeItem: (id: string) => void
-  /** Re-queues a single failed file. */
+  /** Re-queues a single failed file, unless a retry could not change its refusal. */
   retry: (id: string) => void
-  /** Re-queues every failed file. */
+  /** Re-queues every failed file a retry might fix (see `canRetryUpload`). */
   retryFailed: () => void
   /** Aborts in-flight uploads and empties the queue. */
   clear: () => void
@@ -170,7 +176,7 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
     (item: UploadQueueItem): void => {
       const controller = new AbortController()
       controllers.current.set(item.id, controller)
-      patch(item.id, { status: 'uploading', progress: 0, error: undefined })
+      patch(item.id, { status: 'uploading', progress: 0, error: undefined, errorCode: undefined })
 
       uploadRef
         .current(item.file, {
@@ -186,6 +192,7 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
             photoUid: result.photo_uid,
             warnings: result.warnings,
             error: result.outcome === 'error' ? (result.error ?? '') : undefined,
+            errorCode: result.outcome === 'error' ? result.code : undefined,
           })
         })
         .catch((error: unknown) => {
@@ -241,8 +248,8 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
   const retry = useCallback((id: string): void => {
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id && item.status === 'error'
-          ? { ...item, status: 'queued', progress: 0, error: undefined }
+        item.id === id && canRetryUpload(item)
+          ? { ...item, status: 'queued', progress: 0, error: undefined, errorCode: undefined }
           : item,
       ),
     )
@@ -251,8 +258,8 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
   const retryFailed = useCallback((): void => {
     setItems((prev) =>
       prev.map((item) =>
-        item.status === 'error'
-          ? { ...item, status: 'queued', progress: 0, error: undefined }
+        canRetryUpload(item)
+          ? { ...item, status: 'queued', progress: 0, error: undefined, errorCode: undefined }
           : item,
       ),
     )

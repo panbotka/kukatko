@@ -8,6 +8,8 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,6 +42,8 @@ type testEnv struct {
 	places   *recordingPlaces
 	db       *database.DB
 	uploader string
+	// root is the storage root originals are published under.
+	root string
 }
 
 // recordingEnqueuer is a JobEnqueuer that records the photo UIDs jobs were
@@ -130,7 +134,8 @@ func newEnvWithPlaces(t *testing.T, dup config.DuplicateConfig, places *recordin
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	fs, err := storage.NewFS(t.TempDir())
+	root := t.TempDir()
+	fs, err := storage.NewFS(root)
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
@@ -153,7 +158,7 @@ func newEnvWithPlaces(t *testing.T, dup config.DuplicateConfig, places *recordin
 	svc := ingest.New(cfg)
 	return &testEnv{
 		svc: svc, store: store, thumbs: thumbs, enq: enq, places: places,
-		db: db, uploader: uploader.UID,
+		db: db, uploader: uploader.UID, root: root,
 	}
 }
 
@@ -477,4 +482,65 @@ func TestIngest_placeholderDescribesThePhoto(t *testing.T) {
 	if red.Blurhash == blue.Blurhash {
 		t.Errorf("a red and a blue photo share the placeholder %q", red.Blurhash)
 	}
+}
+
+// TestIngest_refusesFilesThatAreNotMedia verifies a file whose bytes are neither
+// an image nor a video is refused before anything about it is stored, whatever
+// its name: a 415 with the stable not_media code, no photos row, no original in
+// storage, no job scheduled. A real JPEG through the same service is the control
+// that proves the refusal is about the content.
+func TestIngest_refusesFilesThatAreNotMedia(t *testing.T) {
+	env := newEnv(t, config.DuplicateConfig{})
+	ctx := t.Context()
+
+	junk := make([]byte, 5000)
+	for i := range junk {
+		junk[i] = byte(i*131 + i/7 + 13)
+	}
+	for _, name := range []string{"broken.jpg", "broken.mp4", "broken.png", "broken.CR2"} {
+		res := env.ingest(ctx, junk, name)
+		if res.Outcome != ingest.OutcomeError || res.Status != http.StatusUnsupportedMediaType ||
+			res.Code != ingest.CodeNotMedia || res.PhotoUID != "" {
+			t.Errorf("ingest(%s) = %+v, want a 415 %q refusal", name, res, ingest.CodeNotMedia)
+		}
+	}
+	var rows int
+	if err := env.db.Pool().QueryRow(ctx, "SELECT count(*) FROM photos").Scan(&rows); err != nil {
+		t.Fatalf("counting photos: %v", err)
+	}
+	if rows != 0 {
+		t.Errorf("photos rows = %d after refusals, want 0", rows)
+	}
+	if stored := storedFiles(t, env.root); len(stored) != 0 {
+		t.Errorf("refused files left originals in storage: %v", stored)
+	}
+	env.enq.mu.Lock()
+	scheduled := len(env.enq.embeds) + len(env.enq.faces)
+	env.enq.mu.Unlock()
+	if scheduled != 0 {
+		t.Errorf("refused files scheduled %d jobs, want 0", scheduled)
+	}
+
+	if res := env.ingest(ctx, jpegBytes(t, 90, 140, 200, 90), "real.jpg"); res.Outcome != ingest.OutcomeCreated {
+		t.Errorf("control JPEG = %+v, want created", res)
+	}
+}
+
+// storedFiles lists every regular file under root.
+func storedFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking storage: %v", err)
+	}
+	return out
 }

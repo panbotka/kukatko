@@ -462,7 +462,7 @@ func TestUpload_anonymous(t *testing.T) {
 	}
 	got := results(t, rec)
 	if len(got) != 3 || got[0].Outcome != ingest.OutcomeCreated || got[1].Outcome != ingest.OutcomeDuplicate ||
-		got[2].Status != http.StatusUnsupportedMediaType {
+		got[2].Status != http.StatusUnsupportedMediaType || got[2].Code != "unsupported_type" {
 		t.Fatalf("results = %+v", got)
 	}
 	if len(h.ingest.requests) != 2 || h.ingest.requests[0].UploadedBy != "" {

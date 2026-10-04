@@ -1054,7 +1054,14 @@ to `## Package map` in `CLAUDE.md`.
   `phash_failed` warning, the photo is still catalogued) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
-  SHA256, exact-dup check, metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
+  SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
+  every signature the pipeline ingests — `imgconvert.MagicFormat`'s rasters/HEIC/TIFF, the non-TIFF RAW
+  headers (ORF/RW2/RAF/X3F/MRW), ISO-BMFF/QuickTime boxes (MP4/MOV/3GP/CR3/AVIF), EBML, AVI, ASF, FLV,
+  MPEG-PS/TS/M2TS, Annex-B; a file matching none is asked `video.Probe` (named as video) or
+  `exif.ExtractNamed` (otherwise) and passes only with dimensions/a duration/a codec or an image/video MIME.
+  Anything else is **`ErrNotMedia`** → per-file **415** `Code: CodeNotMedia` (`"not_media"`, the new
+  `FileResult.Code`) **before** the dedup lookup, the store and the insert, so junk never becomes a row, an
+  original or a job), exact-dup check, metadata (`mediaMeta`: **photo** → EXIF; **video** per `video.IsVideoPath`
   → `media_type=video` + `video.Probe`, requires `ffmpeg` otherwise a per-file error `ErrFFmpegMissing`,
   `taken_at` falls back to the original name via `exif.FilenameTakenAt`; **a probe that fails is non-fatal but
   no longer invisible** — the clip is still catalogued, and the failure is **logged with the file name**
@@ -3477,7 +3484,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts
   `/upload-links` (curator management; a foreign link is 404 unless the caller is an admin) and the public
   `/u/{code}` pair behind the per-IP limiter; the upload walks the multipart stream once (the `name`
-  field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415),
+  field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
+  `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
   caps the size with a `cappedReader` that fails with `ingest.ErrFileTooLarge` (413) and the link's file
   budget (429), runs `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or
   duplicate — and reschedules its sidecar; an anonymous uploader is identified by the

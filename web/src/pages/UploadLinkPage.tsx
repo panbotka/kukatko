@@ -23,6 +23,7 @@ import { usePasteFiles } from '../hooks/usePasteFiles'
 import { usePublicSettings } from '../hooks/usePublicSettings'
 import { registrationOpenFrom } from '../hooks/useRegistrationOpen'
 import { useUploadQueue } from '../hooks/useUploadQueue'
+import { canRetryUpload } from '../lib/uploadErrors'
 import { UPLOADER_NAME_KEY, uploadLinkSummary } from '../lib/uploadLinks'
 import { ApiError, type User } from '../services/auth'
 import {
@@ -149,6 +150,9 @@ export function UploadLinkPage() {
   const linkDied = items.some(
     (item) => item.status === 'error' && item.error?.includes('no longer'),
   )
+  // A file refused for what it is (not a photo at all) fails the same way
+  // again: retry is offered only while some failure might go differently.
+  const retryable = items.some(canRetryUpload)
 
   function changeName(value: string) {
     setName(value)
@@ -254,7 +258,7 @@ export function UploadLinkPage() {
                     )}
                     {/* Outside the alert: a button on the filled warning
                         background has no contrast on this theme. */}
-                    {isComplete && summary.error > 0 && (
+                    {isComplete && retryable && (
                       <Button
                         variant="outline-warning"
                         size="sm"

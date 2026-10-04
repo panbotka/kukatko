@@ -915,7 +915,13 @@ here.
   fails** — that is where the reason, the per-file **Opakovat** and the **jen neúspěšné** filter are —
   and wraps `UploadList`), `UploadItem` (a queue row as
   a standalone `kk-surface` card: **a local `UploadThumb` preview**, name+size, progress bar, status badge,
-  near-duplicate warning, remove/retry actions; a failed row has `border-danger`),
+  near-duplicate warning, remove/retry actions; a failed row has `border-danger`. The failure line and the
+  Retry go through **`lib/uploadErrors.ts`**: a refusal the backend names with a `code` is translated
+  (`upload.error.not_media` "Tohle není fotka ani video", `upload.error.unsupported_type`) instead of the raw
+  server string, and the two permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
+  refused again; `useUploadQueue` keeps the code as `item.errorCode` and its `retry`/`retryFailed` skip
+  them, and `UploadStageDone`/`UploadLinkPage` offer "retry the failed files" only while some failure is
+  retryable),
   `UploadThumb` (the row's preview, painted by the browser from the picked `File` — **no upload, no server**:
   a fixed square (3.5rem, 4.5rem from `sm`) so virtuoso measures a stable row height, the object URL created
   on mount and **revoked on unmount**, so only the rows on screen hold one and clearing the queue hands them
@@ -1736,7 +1742,8 @@ here.
   uploads as themselves. `DropZone` + `PickFilesButton` (`multiple`, `PICKER_ACCEPT`: images, videos,
   HEIC/RAW — the phone's library picker selects many at once), `useUploadQueue(linkUploader(...))`,
   a progress bar, `UploadQueuePanel` (per-file progress, retry), the one-line summary
-  `uploadLinkSummary` ("12 nahráno, 1 duplicita, 1 chyba") with "retry the failed files", a notice when
+  `uploadLinkSummary` ("12 nahráno, 1 duplicita, 1 chyba") with "retry the failed files" (only while a
+  failure is retryable — a `not_media` refusal is not), a notice when
   the link died mid-batch, `useLeaveGuard` while uploading. Once an anonymous batch with a new photo
   finishes and registration is open (`usePublicSettings`), it offers registration: a link to
   **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"net/http"
@@ -224,8 +225,13 @@ func TestResultConstructors(t *testing.T) {
 	if r := errorResult("a.jpg", ErrFileTooLarge); r.Status != http.StatusRequestEntityTooLarge {
 		t.Errorf("errorResult(too large) status = %d, want 413", r.Status)
 	}
-	if r := errorResult("a.jpg", errors.New("boom")); r.Status != http.StatusInternalServerError {
-		t.Errorf("errorResult(generic) status = %d, want 500", r.Status)
+	if r := errorResult("a.jpg", errors.New("boom")); r.Status != http.StatusInternalServerError || r.Code != "" {
+		t.Errorf("errorResult(generic) = %+v, want 500 with no code", r)
+	}
+	notMedia := errorResult("a.jpg", fmt.Errorf("%w: a.jpg", ErrNotMedia))
+	if notMedia.Status != http.StatusUnsupportedMediaType || notMedia.Code != CodeNotMedia ||
+		notMedia.Outcome != OutcomeError {
+		t.Errorf("errorResult(not media) = %+v, want 415 %q", notMedia, CodeNotMedia)
 	}
 }
 

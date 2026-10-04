@@ -251,6 +251,18 @@ func magicFormat(path string) string {
 	return classifyMagic(head[:n])
 }
 
+// MagicFormat classifies head — the first bytes of a file — by its magic bytes
+// alone, returning one of the image Format constants or FormatUnknown. Unlike
+// DetectFormat it never consults a name, so it answers "what do these bytes
+// look like", which is what a caller deciding whether an upload is media at all
+// needs. It recognises no RAW-only and no video signature.
+func MagicFormat(head []byte) string {
+	if len(head) < 4 {
+		return FormatUnknown
+	}
+	return classifyMagic(head)
+}
+
 // classifyMagic identifies common image formats from their leading bytes:
 // JPEG (FF D8 FF), PNG (89 50 4E 47 ...), WebP (RIFF....WEBP), HEIC (an ISO Base
 // Media file with "ftyp" at offset 4 and a HEIC/HEIF major brand), BMP ("BM"),

@@ -2881,6 +2881,10 @@
       "duplicate": "Již v knihovně",
       "error": "Selhalo"
     },
+    "error": {
+      "not_media": "Tohle není fotka ani video",
+      "unsupported_type": "Tento typ souboru se nenahrává"
+    },
     "progress": {
       "barLabel": "Celkový průběh nahrávání",
       "count": "{{done}} / {{total}}",

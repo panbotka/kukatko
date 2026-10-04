@@ -175,6 +175,57 @@ describe('UploadLinkPage', () => {
     expect(screen.getByRole('button', { name: 'Retry the failed files' })).toBeInTheDocument()
   })
 
+  it('says a refused non-photo is not a photo, in words, and offers no retry for it', async () => {
+    uploadMock.mockResolvedValueOnce({
+      filename: 'broken.jpg',
+      status: 415,
+      outcome: 'error',
+      code: 'not_media',
+      error: 'ingest: not a photo or video: broken.jpg',
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [new File(['junk'], 'broken.jpg', { type: 'image/jpeg' })])
+
+    expect(await screen.findByTestId('upload-link-summary')).toHaveTextContent(
+      '0 uploaded, 1 error',
+    )
+    expect(screen.getByText('This is not a photo or a video')).toBeInTheDocument()
+    expect(screen.queryByText(/ingest: not a photo/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry the failed files' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('still offers a retry for the failures beside a refused non-photo that might go differently', async () => {
+    uploadMock
+      .mockResolvedValueOnce({
+        filename: 'broken.jpg',
+        status: 415,
+        outcome: 'error',
+        code: 'not_media',
+      })
+      .mockResolvedValueOnce({ filename: 'b.jpg', status: 500, outcome: 'error', error: 'boom' })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [
+      new File(['junk'], 'broken.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ])
+
+    await screen.findByTestId('upload-link-summary')
+    expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(1)
+    uploadMock.mockResolvedValueOnce(result('created'))
+    await user.click(screen.getByRole('button', { name: 'Retry the failed files' }))
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(3)
+    })
+    expect(uploadMock.mock.calls[2][0].name).toBe('b.jpg')
+  })
+
   it('remembers a typed name on the device', async () => {
     const user = userEvent.setup()
     renderPage()

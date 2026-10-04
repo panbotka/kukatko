@@ -101,13 +101,17 @@ type Warning struct {
 }
 
 // FileResult is the outcome of ingesting one uploaded file. Status carries
-// HTTP-style per-file semantics (201 created, 409 duplicate, 413/500 error) so
-// a batch upload reports each file's fate without failing the whole request.
+// HTTP-style per-file semantics (201 created, 409 duplicate, 413/415/500 error)
+// so a batch upload reports each file's fate without failing the whole request.
+// Code is a stable machine identifier of a refusal a client can translate (e.g.
+// CodeNotMedia); it is empty for a failure that has none, whose Error is the
+// only description.
 type FileResult struct {
 	Filename string    `json:"filename"`
 	Status   int       `json:"status"`
 	Outcome  Outcome   `json:"outcome"`
 	PhotoUID string    `json:"photo_uid,omitempty"`
+	Code     string    `json:"code,omitempty"`
 	Error    string    `json:"error,omitempty"`
 	Warnings []Warning `json:"warnings,omitempty"`
 }
@@ -232,6 +236,12 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return errorResult(req.Filename, err)
 	}
 	defer staged.cleanup()
+
+	// Before the dedup lookup too: a file that is not media must not resolve to
+	// a photo by any route, an existing one included.
+	if err := admit(ctx, staged.path, req.Filename); err != nil {
+		return errorResult(req.Filename, err)
+	}
 
 	if dup, ok := s.existingDuplicate(ctx, req.Filename, staged.hash); ok {
 		return dup
@@ -917,16 +927,21 @@ func duplicateResult(filename, uid string) FileResult {
 }
 
 // errorResult builds the result for a file that could not be ingested, mapping
-// the oversize case to 413 and everything else to 500.
+// the oversize case to 413, a file that is not media to 415 with CodeNotMedia,
+// and everything else to 500.
 func errorResult(filename string, err error) FileResult {
-	status := http.StatusInternalServerError
-	if errors.Is(err, ErrFileTooLarge) {
+	status, code := http.StatusInternalServerError, ""
+	switch {
+	case errors.Is(err, ErrFileTooLarge):
 		status = http.StatusRequestEntityTooLarge
+	case errors.Is(err, ErrNotMedia):
+		status, code = http.StatusUnsupportedMediaType, CodeNotMedia
 	}
 	return FileResult{
 		Filename: filename,
 		Status:   status,
 		Outcome:  OutcomeError,
+		Code:     code,
 		Error:    err.Error(),
 	}
 }
