@@ -8,6 +8,7 @@ import {
   auditDetailLinks,
   auditTargetHref,
   pickFilters,
+  uploadLinkActor,
   viewToParams,
 } from './auditView'
 
@@ -204,5 +205,43 @@ describe('auditDetailLinks', () => {
 
     expect(groups[0].links).toHaveLength(AUDIT_DETAIL_LINK_LIMIT)
     expect(hidden).toBe(5)
+  })
+})
+
+describe('uploadLinkActor', () => {
+  const upload = {
+    actor_uid: null,
+    action: 'upload_link.upload',
+    details: {
+      link_uid: 'ul1',
+      link_title: 'Pouť 2026',
+      uploader_name: 'Jana',
+      outcome: 'created',
+    },
+  }
+
+  it('reads the link title and the typed name of an anonymous upload', () => {
+    expect(uploadLinkActor(record(upload))).toEqual({ title: 'Pouť 2026', name: 'Jana' })
+  })
+
+  it('reports an empty name when the guest typed none', () => {
+    const details = { ...upload.details, uploader_name: '' }
+    expect(uploadLinkActor(record({ ...upload, details }))).toEqual({
+      title: 'Pouť 2026',
+      name: '',
+    })
+  })
+
+  it('tolerates an entry written before the title was recorded', () => {
+    expect(uploadLinkActor(record({ ...upload, details: { link_uid: 'ul1' } }))).toEqual({
+      title: '',
+      name: '',
+    })
+    expect(uploadLinkActor(record({ ...upload, details: null }))).toEqual({ title: '', name: '' })
+  })
+
+  it('leaves a signed-in upload and every other action alone', () => {
+    expect(uploadLinkActor(record({ ...upload, actor_uid: 'us1' }))).toBeUndefined()
+    expect(uploadLinkActor(record({ actor_uid: null, action: 'photo.update' }))).toBeUndefined()
   })
 })

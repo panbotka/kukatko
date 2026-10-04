@@ -2844,7 +2844,13 @@
       "runError": "Krok se nepodařilo naplánovat.",
       "runNotApplicable": "Tenhle krok se tady neprovádí."
     },
-    "openTask": "Otevřený úkol: {{title}}"
+    "openTask": "Otevřený úkol: {{title}}",
+    "uploadLink": {
+      "via": "Nahráno přes odkaz <page>„{{title}}“</page>",
+      "viaUntitled": "Nahráno přes <page>odkaz bez názvu</page>",
+      "from": "od: {{name}}",
+      "nameless": "bez jména"
+    }
   },
   "upload": {
     "title": "Nahrát",
@@ -3895,6 +3901,12 @@
       "range": "Zobrazeno {{from}}–{{to}} z {{total}}",
       "prev": "Předchozí",
       "next": "Další"
+    },
+    "uploadLinkActor": {
+      "named": "Odkaz „{{title}}“ · {{name}}",
+      "anonymous": "Odkaz „{{title}}“",
+      "untitledNamed": "Odkaz bez názvu · {{name}}",
+      "untitled": "Odkaz bez názvu"
     }
   },
   "expand": {

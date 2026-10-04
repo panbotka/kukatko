@@ -210,7 +210,8 @@ shared library is tidied by more than one person.
   with a retry for the ones that did not and a one-line "12 nahráno, 1 duplicita, 1 chyba" at the end.
   A file that is not a photo or a video at all — whatever it is called — is turned away as just that
   ("Tohle není fotka ani video") and never reaches the album. The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
-  they are, and is then offered an account — no registration word needed through the link, the photos
+  they are — curators then see "Nahráno přes odkaz „Pouť 2026“ · od: Jana" on the photo, and the audit
+  trail names the link and the name — and is then offered an account — no registration word needed through the link, the photos
   they just sent become theirs, and an administrator still approves it. Links can be extended or
   revoked, and every link, change and upload is in the audit trail.
 - **The wall shows photographs, not squares.** The library, an album, a search result — every grid is

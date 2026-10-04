@@ -146,11 +146,19 @@ type Upload struct {
 	SessionHash string
 }
 
-// Provenance is where a photo came from when it came through a link: the link
-// and the name its uploader typed. It feeds the photo's metadata sidecar.
+// Provenance is where a photo came from when it came through a link: the link,
+// the name its uploader typed and the account the upload is attributed to. It
+// feeds the photo's metadata sidecar and the photo detail.
 type Provenance struct {
-	LinkUID      string
-	LinkTitle    string
+	LinkUID   string
+	LinkTitle string
+	// UploaderName is the name the uploader typed; empty when they typed none.
 	UploaderName string
 	UploadedAt   time.Time
+	// AccountUID is the account the upload is attributed to — the signed-in
+	// uploader, or whoever claimed the anonymous session at registration — and
+	// AccountName its display name (or username). Both are nil/empty for an
+	// anonymous upload nobody claimed, and once the account is deleted.
+	AccountUID  *string
+	AccountName string
 }

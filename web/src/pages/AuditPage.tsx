@@ -1,3 +1,4 @@
+import { type TFunction } from 'i18next'
 import { type SyntheticEvent, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
@@ -22,6 +23,7 @@ import {
   auditDetailLinks,
   auditTargetHref,
   pickFilters,
+  uploadLinkActor,
   viewToParams,
 } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
@@ -75,13 +77,29 @@ function detailsId(record: AuditRecord): string {
 }
 
 /**
- * Resolves an actor UID to a display name using the loaded roster, falling back
- * to the raw UID when the user is unknown (e.g. deleted or not yet loaded) and
- * to an em dash for a system action with no actor.
+ * Resolves an entry's actor to a display name using the loaded roster, falling
+ * back to the raw UID when the user is unknown (e.g. deleted or not yet loaded)
+ * and to an em dash for a system action with no actor. An anonymous upload
+ * through an upload link has no actor either, but it has somebody behind it: it
+ * is named by its link and the name the guest typed (just the link when they
+ * typed none).
  */
-function actorLabel(actorUid: string | null, users: Map<string, AdminUser>): string {
+function actorLabel(record: AuditRecord, users: Map<string, AdminUser>, t: TFunction): string {
+  const actorUid = record.actor_uid
   if (actorUid === null) {
-    return '—'
+    const guest = uploadLinkActor(record)
+    if (guest === undefined) {
+      return '—'
+    }
+    const { title, name } = guest
+    if (title === '') {
+      return name === ''
+        ? t('audit.uploadLinkActor.untitled')
+        : t('audit.uploadLinkActor.untitledNamed', { name })
+    }
+    return name === ''
+      ? t('audit.uploadLinkActor.anonymous', { title })
+      : t('audit.uploadLinkActor.named', { title, name })
   }
   const user = users.get(actorUid)
   return user ? user.display_name || user.username : actorUid
@@ -208,7 +226,7 @@ export function AuditPage() {
       key: 'actor',
       header: t('audit.columns.actor'),
       cellClassName: 'text-break',
-      cell: (record) => actorLabel(record.actor_uid, users),
+      cell: (record) => actorLabel(record, users, t),
     },
     {
       key: 'action',

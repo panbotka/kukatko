@@ -1355,7 +1355,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   interface (satisfied by `auth.Store.GetUserByUID`, wired by `buildPhotoAPI`): `handleDetail`
   resolves `photo.UploadedBy` → `uploader{uid,name}` (`name` = `display_name`, fallback `username`),
   nil-safe (not wired / no uploader / an unresolvable user → `uploader` omitted, only on the
-  detail, no N+1 in the list); **the detail's place** (`place.go`) via the `PlaceResolver` interface
+  detail, no N+1 in the list); **the detail's upload link** (`uploadlink.go`) via the
+  `UploadLinkProvenance` interface (satisfied by `uploadlink.Store.Provenance`): `resolveUploadLink`
+  attaches `upload_link{uid,title,uploader_name?,account?,uploaded_at}` **for curators and above only**
+  (the caller's role from the request context), nil-safe and best-effort (a failed lookup is logged and
+  omitted); **the detail's place** (`place.go`) via the `PlaceResolver` interface
   (satisfied by `places.Store.GetPlace`): `writeDetail` attaches `place{country,region,city,place_name}`
   from the `photo_places` cache — **cache-read only, the detail never geocodes** (mapy.com credits are
   metered; the on-demand lookup stays in `mapsapi`), nil-safe just like the uploader and also omitted for a
@@ -3477,8 +3481,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label), counters and the
   `upload_link.upload` audit entry in **one transaction** — `AttributeSessionTx(ctx, tx, sessionHash,
   userUID)` (on the registration's transaction: hands the session's **created**, still unowned photos to
-  the new account, once) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo,
-  for the sidecar's `identity.upload_link`); every mutation audits in its own transaction)),
+  the new account, once) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo
+  — link uid/title, typed name, when, and the attributed account `AccountUID`/`AccountName` (display
+  name, fallback username; nil once deleted) — for the sidecar's `identity.upload_link` and the photo
+  detail's `upload_link`); `RecordUpload`'s audit details carry the link's `link_title` (read by the
+  counter `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
   (the HTTP half: `NewAPI(Config{Store, Ingest, Sidecar, RequireCurator, OptionalAuth, CurrentUser?,
   IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts

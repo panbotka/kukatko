@@ -479,6 +479,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `username`); omitted (`omitempty`) for photos without `uploaded_by` (the one-off imports),
   and also when the user cannot be resolved — resolution is **only on the detail**, list/search do not
   resolve a per-photo uploader (no N+1);
+  **`upload_link`** `{uid, title, uploader_name?, account?: {uid,name}, uploaded_at}` — the upload link
+  that **created** the photo (`uploadlink.Store.Provenance` via the `UploadLinkProvenance` interface):
+  the link (`title` may be `""`), the "Od koho?" name the guest typed (`uploader_name`, omitted when none
+  was typed — the field stays optional on the public page), the account the upload is attributed to
+  (signed in, or claimed at registration; omitted for an unclaimed anonymous upload and once the account
+  is deleted) and when. **Curators and above only** — a viewer's detail never carries it: the name is
+  personal data a guest offered to the people running the event, and the link is managed on a curator
+  page. Omitted for a photo no link created; a photo a link merely re-filed as a **duplicate** came from
+  elsewhere and carries none, and a photo created through one link and re-filed by others reports the
+  **creating** (earliest) one. Best-effort like the uploader (a failed lookup omits it);
   and **`place`** `{country,region,city,place_name}` — the photo's **cached** reverse geocoding from
   `photo_places` (filled by the background job `places`), read via the `PlaceResolver` interface
   (`places.Store.GetPlace`). **The detail never geocodes**: mapy.com credits are metered, so
@@ -1796,7 +1806,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and labels (manual labels) at once, its provenance recorded in `upload_link_photos` (link, typed name,
   account or anonymous session hash, created/duplicate), the link's `upload_count`/`last_used_at`
   bumped and an `upload_link.upload` audit entry written (target the photo, actor the signed-in uploader
-  or none), all in one transaction; its sidecar is rescheduled. A signed-in uploader owns the photo as
+  or none; details `link_uid`, `link_title`, `uploader_name`, `outcome` — the title so the audit list can
+  name an anonymous upload by its link), all in one transaction; its sidecar is rescheduled. A signed-in uploader owns the photo as
   with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
   SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
   marks their photos for `POST /auth/register` with

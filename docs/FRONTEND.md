@@ -1749,6 +1749,15 @@ here.
   **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands
   in for it and posts `upload_link` (a dead link → `register.errorLink`). Texts in `uploadLink.*`;
   `UploadLinkPage.test.tsx`.
+  `UploadLinkLine` (`components/photo/`, the photo detail's info view, its own section right under the
+  caption — visible, not folded into the closed technical card): one line naming who sent a photo
+  through an upload link — „Nahráno přes odkaz „Pouť 2026“ · od: Jana", with neither name nor account
+  „… · bez jména" (never an empty „od:" or a dangling separator), an untitled link „Nahráno přes odkaz
+  bez názvu". The sender is `uploadLinkSender` (`lib/uploadLinks.ts`): the typed name, else the
+  attributed account's name, else nobody — the typed name wins because it is what the guest chose to
+  sign with (the account is the photo's uploader in Technické údaje anyway). The link part goes to
+  `/upload-links`; it is rendered only when the detail carries `upload_link`, which the backend serves to
+  curators and above only. Texts in `photo.uploadLink.*`; `UploadLinkLine.test.tsx`.
   `UploadLinksPage` (route **`/upload-links`**, **curator**, in the Tools menu as "Odkazy pro nahrávání"
   with `link-45deg`): the links as cards (title, state badge, album/label `EntityChip`s, expiry or
   revocation date, upload count, last use, the creator's name for an admin looking at somebody else's),
@@ -2699,7 +2708,10 @@ here.
   `formatDateTime(updated_at)`. Tests: `SettingsPage.test.tsx`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
-  card per entry** —, the `details` JSON via an expandable block (`AuditEntryDetails`, `aria-expanded` +
+  card per entry** —; an entry with no actor is a dash, **except an anonymous `upload_link.upload`**, which
+  `uploadLinkActor` (`lib/auditView.ts`) names by its link and the typed name from the details
+  („Link “Pouť 2026” · Jana", just the link without a name, „Untitled link" without a title —
+  `audit.uploadLinkActor.*`) —, the `details` JSON via an expandable block (`AuditEntryDetails`, `aria-expanded` +
   `aria-controls` → `detailsId(record)`: a `colSpan` row under the table row, the foot of the card on a phone;
   also shows `user_agent`). The raw payload wraps inside its own box (`.kk-audit-payload`:
   `pre-wrap` + `overflow-wrap: anywhere`, `overflow-x: auto` for an unbreakable token) — unwrapped JSON used to

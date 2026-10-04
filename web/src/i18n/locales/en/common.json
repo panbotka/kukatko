@@ -2730,7 +2730,13 @@
       "runError": "Could not schedule the step.",
       "runNotApplicable": "This step does not apply here."
     },
-    "openTask": "Open task: {{title}}"
+    "openTask": "Open task: {{title}}",
+    "uploadLink": {
+      "via": "Uploaded via link <page>“{{title}}”</page>",
+      "viaUntitled": "Uploaded via an <page>untitled link</page>",
+      "from": "from: {{name}}",
+      "nameless": "no name"
+    }
   },
   "upload": {
     "title": "Upload",
@@ -3735,6 +3741,12 @@
       "range": "Showing {{from}}–{{to}} of {{total}}",
       "prev": "Previous",
       "next": "Next"
+    },
+    "uploadLinkActor": {
+      "named": "Link “{{title}}” · {{name}}",
+      "anonymous": "Link “{{title}}”",
+      "untitledNamed": "Untitled link · {{name}}",
+      "untitled": "Untitled link"
     }
   },
   "expand": {

@@ -32,6 +32,7 @@ import { PeoplePanel } from '../components/photo/PeoplePanel'
 import { ProcessingPanel } from '../components/photo/ProcessingPanel'
 import { StackStrip } from '../components/photo/StackStrip'
 import { TechnicalDetails } from '../components/photo/TechnicalDetails'
+import { UploadLinkLine } from '../components/photo/UploadLinkLine'
 import { VideoPlayer, type VideoKeyboardScope } from '../components/photo/VideoPlayer'
 import './../components/photo/viewer.css'
 import { SharePhotosButton } from '../components/organize/SharePhotosButton'
@@ -1774,6 +1775,16 @@ export function PhotoDetailPage() {
                   footer={panelFoot}
                 />
               </section>
+
+              {/* Who sent it, when it came through an upload link — visible, not
+                  folded into the technical card: a curator sorting a link's event
+                  photos asks "who took this?" first. Curators and above only; the
+                  backend omits the block for everybody else. */}
+              {photo.upload_link !== undefined && (
+                <section className="kk-viewer__section">
+                  <UploadLinkLine link={photo.upload_link} />
+                </section>
+              )}
 
               <section className="kk-viewer__section">
                 <p className="kk-text-eyebrow mb-2">{t('photo.sections.organize')}</p>

@@ -626,6 +626,23 @@ export interface PhotoUploaderRef {
 }
 
 /**
+ * The upload link that created a photo, on a detail response
+ * (`photoapi.uploadLinkRef`): the link's `uid` and `title` (which may be empty),
+ * the name the guest typed on the public page (`uploader_name`, absent when they
+ * typed none) and the account the upload is attributed to (`account`, absent for
+ * an anonymous upload nobody claimed at registration). The whole block is served
+ * to curators and above only, and is absent for a photo that did not come
+ * through a link.
+ */
+export interface PhotoUploadLinkRef {
+  uid: string
+  title: string
+  uploader_name?: string
+  account?: PhotoUploaderRef
+  uploaded_at: string
+}
+
+/**
  * The photo's cached reverse-geocoded place on a detail response — the hierarchy
  * the background `places` job resolved its coordinate into. It is a *cache* read:
  * the detail endpoint never geocodes on demand (mapy.com credits are metered), so
@@ -722,6 +739,8 @@ export interface PhotoDetail extends Photo {
    */
   people?: PhotoSubject[]
   uploader?: PhotoUploaderRef
+  /** Which upload link created the photo and who sent it; curators and above only. */
+  upload_link?: PhotoUploadLinkRef
   place?: PhotoPlace
   /**
    * What the library has already computed about the photo — one entry per step,

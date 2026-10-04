@@ -28,6 +28,7 @@ import (
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -177,6 +178,7 @@ func buildPhotoAPI(
 		Rebuilds:          enqueuer,
 		CommentRateLimit:  commentLimit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
 		Tasks:             phototask.NewStore(db.Pool()),
+		UploadLinks:       uploadlink.NewStore(db.Pool()),
 		RetentionDays:     cfg.Trash.RetentionDays,
 		VideoTranscode:    cfg.Video.Transcode,
 		RequireAuth:       authAPI.RequireAuth,

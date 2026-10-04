@@ -183,6 +183,33 @@ describe('AuditPage', () => {
     )
   })
 
+  it('names an anonymous upload-link upload by its link and the typed name', async () => {
+    const upload = { actor_uid: null, action: 'upload_link.upload' }
+    fetchAuditMock.mockResolvedValue(
+      response([
+        record({
+          ...upload,
+          id: 1,
+          details: { link_uid: 'ul1', link_title: 'Pouť 2026', uploader_name: 'Jana' },
+        }),
+        record({
+          ...upload,
+          id: 2,
+          details: { link_uid: 'ul1', link_title: 'Pouť 2026', uploader_name: '' },
+        }),
+        record({ ...upload, id: 3, details: { link_uid: 'ul2', link_title: '' } }),
+        record({ actor_uid: null, action: 'trash.purge', id: 4 }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('cell', { name: 'Link “Pouť 2026” · Jana' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Link “Pouť 2026”' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Untitled link' })).toBeInTheDocument()
+    // A system action with no actor and no link keeps its dash.
+    expect(screen.getAllByRole('cell', { name: '—' }).length).toBeGreaterThan(0)
+  })
+
   it('leaves a target with no page of its own as plain text', async () => {
     fetchAuditMock.mockResolvedValue(
       response([record({ action: 'user.update', target_type: 'users', target_uid: 'us7' })]),

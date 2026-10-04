@@ -272,3 +272,24 @@ export function auditDetailLinks(
   }
   return { groups, hidden }
 }
+
+/** The audit action of one file uploaded through an upload link. */
+export const UPLOAD_LINK_UPLOAD_ACTION = 'upload_link.upload'
+
+/**
+ * Who stands behind an anonymous upload-link upload, read from its audit
+ * details: the link's title (`''` for an untitled link, and for an entry written
+ * before the title was recorded) and the name the guest typed (`''` when they
+ * typed none). `undefined` for every other entry — one with an actor names its
+ * account instead, and nothing else has a link to name.
+ */
+export function uploadLinkActor(record: AuditRecord): { title: string; name: string } | undefined {
+  if (record.actor_uid !== null || record.action !== UPLOAD_LINK_UPLOAD_ACTION) {
+    return undefined
+  }
+  const text = (key: string): string => {
+    const value = record.details?.[key]
+    return typeof value === 'string' ? value.trim() : ''
+  }
+  return { title: text('link_title'), name: text('uploader_name') }
+}

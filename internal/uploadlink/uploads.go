@@ -27,25 +27,31 @@ INSERT INTO upload_link_photos (link_uid, photo_uid, outcome, uploader_name, upl
 VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
 ON CONFLICT (link_uid, photo_uid) DO NOTHING`
 
+// countUploadSQL bumps a link's counters for one more upload and returns its
+// title, which the upload's audit entry carries.
+const countUploadSQL = `
+UPDATE upload_links SET upload_count = upload_count + 1, last_used_at = now()
+WHERE uid = $1
+RETURNING title`
+
 // RecordUpload records up — one file that came in through a link — and files its
 // photo into every album and label of the link, so it is visible there at once.
 // The provenance row, the memberships, the link's counters and entry (stamped
-// with the photo as its target and the link, the typed name and the outcome in
-// its details) commit together. It returns ErrNotFound when the link is gone.
+// with the photo as its target and the link, its title, the typed name and the
+// outcome in its details) commit together. It returns ErrNotFound when the link is gone.
 func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) error {
 	outcome := outcomeDuplicate
 	if up.Created {
 		outcome = outcomeCreated
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx,
-			"UPDATE upload_links SET upload_count = upload_count + 1, last_used_at = now() WHERE uid = $1",
-			up.LinkUID)
+		var title string
+		err := tx.QueryRow(ctx, countUploadSQL, up.LinkUID).Scan(&title)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
 		if err != nil {
 			return fmt.Errorf("uploadlink: counting upload: %w", err)
-		}
-		if tag.RowsAffected() == 0 {
-			return ErrNotFound
 		}
 		if _, err := tx.Exec(ctx, insertUploadSQL, up.LinkUID, up.PhotoUID, outcome,
 			up.UploaderName, up.UploadedBy, up.SessionHash); err != nil {
@@ -55,8 +61,11 @@ func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) 
 			return err
 		}
 		entry.TargetType, entry.TargetUID = photoTargetType, up.PhotoUID
+		// The title rides along so the audit list can name an anonymous upload by
+		// its link without a second lookup, and keeps naming it after the link is
+		// renamed or deleted.
 		entry.Details = withDetails(entry.Details, map[string]any{
-			"link_uid": up.LinkUID, "uploader_name": up.UploaderName, "outcome": outcome,
+			"link_uid": up.LinkUID, "link_title": title, "uploader_name": up.UploaderName, "outcome": outcome,
 		})
 		return audit.Write(ctx, tx, entry)
 	})
@@ -134,21 +143,27 @@ func AttributeSessionTx(ctx context.Context, tx pgx.Tx, sessionHash, userUID str
 	return uids, nil
 }
 
-// provenanceSQL reads the earliest link upload that created the photo.
+// provenanceSQL reads the earliest link upload that created the photo, with the
+// account it is attributed to (the signed-in uploader, or the one that claimed
+// the anonymous session at registration) when that account still exists.
 const provenanceSQL = `
-SELECT l.uid, l.title, p.uploader_name, p.created_at
+SELECT l.uid, l.title, p.uploader_name, p.created_at, u.uid,
+       COALESCE(NULLIF(u.display_name, ''), u.username, '')
 FROM upload_link_photos p
 JOIN upload_links l ON l.uid = p.link_uid
+LEFT JOIN users u ON u.uid = p.uploaded_by
 WHERE p.photo_uid = $1 AND p.outcome = 'created'
 ORDER BY p.created_at, l.uid
 LIMIT 1`
 
 // Provenance returns where photoUID came from when an upload link created it,
 // or nil when it did not (a photo merely filed into a link's targets as a
-// duplicate came from elsewhere).
+// duplicate came from elsewhere). A photo created through one link and later
+// re-filed by others as a duplicate reports the link that created it.
 func (s *Store) Provenance(ctx context.Context, photoUID string) (*Provenance, error) {
 	var p Provenance
-	err := s.pool.QueryRow(ctx, provenanceSQL, photoUID).Scan(&p.LinkUID, &p.LinkTitle, &p.UploaderName, &p.UploadedAt)
+	err := s.pool.QueryRow(ctx, provenanceSQL, photoUID).Scan(&p.LinkUID, &p.LinkTitle, &p.UploaderName, &p.UploadedAt,
+		&p.AccountUID, &p.AccountName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil //nolint:nilnil // "no provenance" is a normal answer, not an error.
 	}

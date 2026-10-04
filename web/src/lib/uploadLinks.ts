@@ -1,6 +1,7 @@
 import { type TFunction } from 'i18next'
 
 import { type UploadSummary } from '../hooks/useUploadQueue'
+import { type PhotoUploadLinkRef } from '../services/photos'
 
 /** The curators' management page of upload links. */
 export const UPLOAD_LINKS_PATH = '/upload-links'
@@ -33,4 +34,20 @@ export function uploadLinkSummary(summary: UploadSummary, t: TFunction): string 
     parts.push(t('uploadLink.summary.error', { count: summary.error }))
   }
   return parts.join(', ')
+}
+
+/**
+ * Who sent a photo through an upload link, as one name: the name the guest typed
+ * on the public page, otherwise the account the upload is attributed to (signed
+ * in, or claimed at registration), otherwise `undefined` — nobody said. The typed
+ * name wins over the account because it is what the sender chose to sign with;
+ * the account is shown anyway as the photo's uploader in the technical details.
+ */
+export function uploadLinkSender(link: PhotoUploadLinkRef): string | undefined {
+  const typed = link.uploader_name?.trim() ?? ''
+  if (typed !== '') {
+    return typed
+  }
+  const account = link.account?.name.trim() ?? ''
+  return account !== '' ? account : undefined
 }

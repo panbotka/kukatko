@@ -66,6 +66,7 @@ type API struct {
 	storyboards    StoryboardService
 	hls            HLSRenditions
 	processing     ProcessingService
+	uploadLinks    UploadLinkProvenance
 	retentionDays  int
 	videoTranscode bool
 	requireAuth    func(http.Handler) http.Handler
@@ -193,6 +194,11 @@ type Config struct {
 	// about the photo and the maintainer's per-step "run now". When nil the detail
 	// omits the block and that endpoint answers 503.
 	Processing ProcessingService
+	// UploadLinks backs the detail response's upload-link provenance: which link a
+	// photo came through and the name its uploader typed (curators and above
+	// only). When nil the detail omits the block, which is also what a photo that
+	// did not come through a link looks like.
+	UploadLinks UploadLinkProvenance
 	// CommentRateLimit throttles comment creation. It is mounted inside the auth
 	// guard so it can key on the acting user rather than the client IP — a
 	// household behind one address is many people — and, for the same reason, so
@@ -261,6 +267,7 @@ func NewAPI(cfg Config) *API {
 		storyboards:       cfg.Storyboards,
 		hls:               cfg.HLS,
 		processing:        cfg.Processing,
+		uploadLinks:       cfg.UploadLinks,
 		retentionDays:     cfg.RetentionDays,
 		videoTranscode:    cfg.VideoTranscode,
 		requireAuth:       cfg.RequireAuth,
@@ -692,6 +699,11 @@ type photoDetail struct {
 	Labels   []labelRef         `json:"labels"`
 	Uploader *uploaderRef       `json:"uploader,omitempty"`
 	Place    *placeRef          `json:"place,omitempty"`
+	// UploadLink is the upload link that created the photo — the link, the name
+	// the uploader typed and the account the upload is attributed to. It is shown
+	// to curators and above only (see resolveUploadLink) and omitted for a photo
+	// that did not come through a link.
+	UploadLink *uploadLinkRef `json:"upload_link,omitempty"`
 	// StackMembers is the variants strip: every file of this photo's stack (this
 	// photo among them), the primary first. It is omitted for an unstacked photo.
 	StackMembers []stackMember `json:"stack_members,omitempty"`
@@ -793,6 +805,7 @@ func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string
 	writeJSON(w, http.StatusOK, photoDetail{
 		photoView: views[0], Files: files, Albums: albums, Labels: labels,
 		Uploader:     a.resolveUploader(r.Context(), photo.UploadedBy),
+		UploadLink:   a.resolveUploadLink(r, photo.UID),
 		Place:        a.resolvePlace(r.Context(), photo.UID),
 		StackMembers: members,
 		CommentCount: commentCount,

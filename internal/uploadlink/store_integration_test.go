@@ -235,11 +235,18 @@ func TestRecordUpload_filesIntoTargets(t *testing.T) {
 		t.Errorf("counters = %d / %v, %v", got.UploadCount, got.LastUsedAt, err)
 	}
 	prov, err := f.store.Provenance(ctx, f.photo)
-	if err != nil || prov == nil || prov.LinkUID != link.UID || prov.UploaderName != "Jana" {
+	if err != nil || prov == nil || prov.LinkUID != link.UID || prov.UploaderName != "Jana" ||
+		prov.LinkTitle != link.Title || prov.AccountUID != nil || prov.AccountName != "" {
 		t.Errorf("Provenance = %+v, %v", prov, err)
 	}
 	if n := f.auditCount(t, audit.ActionUploadLinkUpload, f.photo); n != 1 {
 		t.Errorf("upload audit entries = %d, want 1", n)
+	}
+	var title, name string
+	if err := f.db.Pool().QueryRow(ctx,
+		"SELECT details->>'link_title', details->>'uploader_name' FROM audit_log WHERE action = $1 AND target_uid = $2",
+		audit.ActionUploadLinkUpload, f.photo).Scan(&title, &name); err != nil || title != link.Title || name != "Jana" {
+		t.Errorf("audit details title/name = %q/%q, %v; want %q/Jana", title, name, err, link.Title)
 	}
 	if err := f.store.RecordUpload(ctx, uploadlink.Upload{LinkUID: "ul_missing", PhotoUID: f.photo},
 		audit.Entry{Action: audit.ActionUploadLinkUpload}); !errors.Is(err, uploadlink.ErrNotFound) {
@@ -260,6 +267,38 @@ func TestProvenance_duplicateIsNotProvenance(t *testing.T) {
 	prov, err := f.store.Provenance(ctx, f.photo)
 	if err != nil || prov != nil {
 		t.Errorf("Provenance = %+v, %v; want nil for a duplicate", prov, err)
+	}
+}
+
+// TestProvenance_account verifies the provenance names the account an upload is
+// attributed to — a signed-in uploader, or the one that claimed the anonymous
+// session — and reports none for an unclaimed anonymous upload.
+func TestProvenance_account(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	link, _ := f.createLink(t)
+	anon := f.makePhoto(t, "ulhash5")
+	for _, up := range []uploadlink.Upload{
+		{LinkUID: link.UID, PhotoUID: f.photo, Created: true, UploadedBy: f.curator},
+		{LinkUID: link.UID, PhotoUID: anon, Created: true, SessionHash: "anon"},
+	} {
+		if err := f.store.RecordUpload(ctx, up, audit.Entry{Action: audit.ActionUploadLinkUpload}); err != nil {
+			t.Fatalf("RecordUpload: %v", err)
+		}
+	}
+	prov, err := f.store.Provenance(ctx, f.photo)
+	if err != nil || prov == nil || prov.AccountUID == nil || *prov.AccountUID != f.curator ||
+		prov.AccountName != "curator" || prov.UploaderName != "" {
+		t.Errorf("Provenance(signed in) = %+v, %v", prov, err)
+	}
+	prov, err = f.store.Provenance(ctx, anon)
+	if err != nil || prov == nil || prov.AccountUID != nil || prov.AccountName != "" {
+		t.Errorf("Provenance(anonymous) = %+v, %v", prov, err)
+	}
+	attribute(t, f.db, "anon", f.curator)
+	prov, err = f.store.Provenance(ctx, anon)
+	if err != nil || prov == nil || prov.AccountUID == nil || *prov.AccountUID != f.curator {
+		t.Errorf("Provenance(claimed) = %+v, %v", prov, err)
 	}
 }
 

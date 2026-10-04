@@ -42,6 +42,7 @@ import (
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
+	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -213,6 +214,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Redetector:        rebuilders,
 		Regeocoder:        rebuilders,
 		Rebuilds:          jobs.NewEnqueuer(jobStore),
+		UploadLinks:       uploadlink.NewStore(db.Pool()),
 		RequireAuth:       authAPI.RequireAuth,
 		RequireCurator:    authAPI.RequireCurator,
 		RequireWrite:      authAPI.RequireWrite,
