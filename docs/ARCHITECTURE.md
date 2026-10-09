@@ -1064,6 +1064,8 @@ is the primary system and imports from nothing but the disk.
     (`password_reset_tokens`, 7 days, only the hash stored, the newest link supersedes the previous),
     the person behind it chooses their own password, and every session of that account is deleted.
     Both public halves of it are rate-limited per client address.
+  - **Recovery revokes sessions, nothing else** — none of the three paths (own change, admin set, reset
+    link) revokes an `api_tokens` row or deletes a `passkey_credentials` row (SEC-021, open).
   - **Rate-limit on `/auth/login`** (brute-force protection).
 - **Passkeys (WebAuthn)** — a second, phishing-resistant way in beside the password
   (`internal/auth`, `passkey_credentials`, `github.com/go-webauthn/webauthn`). The private half never

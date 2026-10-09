@@ -29,6 +29,8 @@ uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fi
 and so was **SEC-018** (in-process image decodes had no memory bound across concurrent uploads), and
 **SEC-019** (concurrent requests overshot an upload link's file cap; a revoke did not stop a running request),
 and **SEC-020** (a Web Push subscription endpoint made the server POST to internal hosts).
+**SEC-021** (account recovery revokes sessions but not API tokens or passkeys) was confirmed on
+**2026-10-09** and is open: it waits on a product decision, and behaviour is unchanged.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -616,6 +618,90 @@ Everything else below is open as written.
   **maintainer** can read other accounts' endpoints through `/jobs`. Maintainers already hold the database
   and the backups, so this is not a new capability.
 - **Fix commit:** `be84566` (2026-10-09).
+
+---
+
+### SEC-021 — MEDIUM — **OPEN (decision pending)** — Account recovery revokes sessions only: a planted API token or passkey survives it
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), confirmed on
+  **2026-10-09** against commit `f8b7bc0`. This entry only documents and evaluates. Auth behaviour is
+  **unchanged**.
+- **Where:** there are three ways to replace a password, and all three delete only `sessions` rows:
+  - `Service.ChangePassword` (`internal/auth/service.go`, `POST /auth/password`) deletes every session
+    except the caller's.
+  - `Service.ResetPasswordAudited` (`internal/auth/service_admin.go`,
+    `POST /admin/users/{uid}/password`) deletes every session.
+  - `consumePasswordReset` (`internal/auth/store_passwordreset.go`, `POST /auth/password-reset/{token}`)
+    deletes every session in the link's transaction.
+
+  None of them touches `api_tokens` or `passkey_credentials`. A token keeps passing
+  `AuthenticateAPIToken`, which checks only the token's own expiry/revocation and `users.disabled`. A
+  passkey keeps minting fresh sessions through `/auth/passkeys/login/*`.
+- **Why a planted credential is cheap:** `POST /auth/tokens` needs only `RequireAuth`. It asks for no
+  password, and a token without `expires_at` never expires. `RequireAuth` accepts a bearer token as well as
+  a session, so **a token alone mints further tokens and registers a passkey**: the ceremony state rides in
+  a cookie, which any HTTP client keeps. That passkey then produces an ordinary session cookie.
+- **What the victim and an admin can do today:**
+  - The account owner lists and revokes their own tokens (`GET`/`DELETE /auth/tokens`) and passkeys
+    (`GET`/`DELETE /auth/passkeys`).
+  - An admin can revoke **any** token by id (`RevokeAPIToken`), but no route lists another user's tokens, so
+    the id is unknown in practice.
+  - An admin cannot delete another user's passkey: `Passkeys.Delete` answers `ErrPasskeyNotFound` to a
+    foreign owner.
+  - Disabling the account stops both credentials (`users.disabled` is checked on both), but it also locks
+    out the rightful owner.
+- **Attack scenario (persistence after account recovery):**
+  1. Someone holds the victim's principal briefly: a stolen session cookie, an unattended signed-in
+     browser, or a leaked API token.
+  2. In one request they mint a non-expiring token. In two more they register a passkey on their own
+     authenticator.
+  3. The victim notices and recovers the account the documented way: they change their password, or an
+     admin sets one or issues a reset link.
+  4. Every session dies, and the account looks recovered. The token still answers `GET /auth/me` with
+     200, and the passkey still signs in. Access keeps the victim's role (an admin's, for an admin
+     account) indefinitely, until somebody thinks to open the token and passkey lists.
+
+  The precondition is a prior compromise, which is why this is MEDIUM and not HIGH. The impact is that the
+  recovery control fails silently: it reports success and leaves the intruder in.
+- **Confirmed by:** `internal/auth/recovery_revocation_integration_test.go`. The tests are kept and pin the
+  current behaviour, so a fix has to change them deliberately.
+  - `TestRecovery_leavesAPITokensAlive`, for each of the three paths: mint a token from a second
+    ("stolen") session, recover, then call `GET /auth/me`. The stolen session gets **401**, and the token
+    gets **200**, with its row still unrevoked.
+  - `TestRecovery_leavesPasskeysAlive`, for each path: register a passkey (virtual authenticator) from the
+    stolen session, recover, then sign in with the passkey from an empty browser. The sign-in returns
+    **200**, and the new session gets **200** on `/auth/me`.
+  - `TestRecovery_bearerTokenAloneMintsTokenAndPasskey`: with every session deleted and only a bearer
+    secret, the holder mints a second working token and registers a passkey whose login yields a session.
+- **Fix options:**
+  1. **Revoke everything on recovery, in the same transaction.** All three paths stamp `revoked_at` on
+     every live token and delete every passkey, audited with the counts. This is the simplest option and
+     cannot be forgotten. Its cost: the self-service change also kills legitimate automation (every
+     `kukatko ctl` context, the curating agent's included) and the owner's own passkeys, so people learn to avoid changing their password. On the admin and reset-link paths that
+     cost is right, because those are the paths used when control was lost.
+  2. **Make the credentials visible instead of revoking them.** After a self-service change, show the
+     account's tokens and passkeys with last-used times and a "revoke all" button. Add admin routes that
+     list and delete **another user's** tokens and passkeys (`GET /admin/users/{uid}/tokens`,
+     `…/passkeys`, plus `DELETE`), audited, so an admin can clean up selectively. Nothing legitimate breaks,
+     but it relies on a person noticing an unfamiliar row. The admin routes are needed anyway, because
+     today an admin cannot remove a passkey at all.
+  3. **Make planting harder: re-authentication before minting.** Require the current password (or a fresh
+     passkey assertion) on `POST /auth/tokens` and `/auth/passkeys/register/*`, or at least refuse both to
+     a **bearer** principal. This closes step 2 of the scenario for a stolen cookie or token, and costs
+     one password prompt for a rare action. Nothing in the repo mints tokens or registers passkeys with a
+     bearer token: `kukatko ctl` only uses a token that was created in the browser. It does not help when
+     the planting already happened, so it complements 1 or 2 and does not replace them.
+- **Recommendation:**
+  - **1** for the two "lost control" paths: an admin set and a consumed reset link revoke all tokens and
+    delete all passkeys in their existing transaction, and the response or audit entry reports the counts.
+  - For the self-service change, a **"also revoke all API tokens and passkeys"** choice, defaulting
+    **on**, so a deliberate owner can keep their automation.
+  - **3** for bearer principals (no token minting or passkey registration from a token), which is
+    cheap.
+  - The **admin list and delete routes from 2** as follow-up work.
+
+  The decision belongs to the product owner. Until it is made, `docs/ARCHITECTURE.md` §11 states that
+  recovery revokes sessions only.
 
 ---
 
