@@ -33,6 +33,9 @@ and **SEC-020** (a Web Push subscription endpoint made the server POST to intern
 **2026-10-09** and is open: it waits on a product decision, and behaviour is unchanged.
 **SEC-022** (an expiring API token mints a non-expiring token and registers a passkey) was confirmed on
 **2026-10-09** and is open on the same terms; its recommended fix is the bearer half of SEC-021's.
+**SEC-023** (CSRF defence rests solely on `SameSite=Strict`; a `text/plain` JSON body is accepted on every
+cookie-authenticated write) was confirmed on **2026-10-09** and is open: it is safe only while every host
+under the registrable domain is trusted, and behaviour is unchanged pending a product decision.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -833,6 +836,136 @@ Everything else below is open as written.
 
 ---
 
+### SEC-023 — MEDIUM — **OPEN (decision pending)** — CSRF protection rests solely on `SameSite=Strict`; a `text/plain` JSON body is accepted on every cookie-authenticated write
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), confirmed on
+  **2026-10-09** against commit `5c75192`. This entry only documents and evaluates. Behaviour is **unchanged**.
+- **Confirmed behaviour:**
+  - The `/api/v1` router (`internal/server/server.go:107-124,150`) installs only `RequestID`, the client-IP
+    resolver, the observability middlewares and `Recoverer`. No middleware on any unsafe method inspects
+    `Origin`, `Referer`, `Sec-Fetch-Site` or `Content-Type`. The per-route guards are RBAC only
+    (`requireAuth`/`requireWrite`/`requireCurator`/`requireAdmin`/`requireMaintainer`).
+  - Every JSON decoder on the write path ignores `Content-Type`. `auth.decodeJSON`
+    (`internal/auth/handlers_auth.go:45-53`) and the identical per-package `decodeJSON` helpers (see the list
+    below) all construct a `json.Decoder` straight off `r.Body` and never look at the header. A body declared
+    `text/plain` is decoded exactly like `application/json`.
+  - The session cookie is `HttpOnly` + `SameSite=Strict` (`internal/auth/cookie.go:12-24`). A *truly
+    cross-site* request therefore carries no cookie, which is what has protected these writes so far. A request
+    from a **same-site** origin — another host under the same registrable domain, or script injected into one —
+    *does* carry it, because `SameSite` is defined per registrable domain, not per origin.
+  - Such a request needs no CORS preflight: a `text/plain` body is a CORS-"simple" request, so the browser
+    sends it with cookies and the attacker never has to read the response (a blind write is enough). It can be
+    sent from script (`fetch(url, {method:"POST", mode:"no-cors", credentials:"include", body: json})`) or
+    from a scriptless HTML `<form enctype="text/plain">` whose single field name is the opening of a JSON
+    document and whose value closes it — the `name=value\r\n` serialisation then *is* that JSON document plus a
+    trailing CRLF the decoder never reads.
+  - The strongest blind write is **`POST /api/v1/admin/users`** (`internal/auth/handlers_admin.go:126`) against
+    a logged-in admin victim: an account with an attacker-chosen username, password and role (`admin`),
+    created without reading any response. The attacker then signs in as that account.
+- **Confirmed by:** `internal/auth/csrf_content_type_integration_test.go` (kept, pins current behaviour, a fix
+  must flip them):
+  - `TestCSRF_textPlainJSONCreatesAdmin`: a logged-in admin's client sends `POST /admin/users` with
+    `Content-Type: text/plain;charset=UTF-8`, `Origin: https://sibling.example.test`,
+    `Sec-Fetch-Site: same-site` — the `fetch(..., {mode:"no-cors"})` shape. It is **201**; the created account
+    is a working admin sign-in.
+  - `TestCSRF_textPlainFormCreatesAdmin`: the same account created from an `enctype="text/plain"` form body
+    (no script), the JSON split at a `=` inside the `note` value. Also **201**.
+  - `TestCSRF_textPlainFormLogsIn`: `POST /auth/login` (public) decodes a `text/plain` form body and answers
+    **200** with a session cookie — the *request* half of login CSRF. Whether a browser **stores** a
+    `SameSite=Strict` `Set-Cookie` returned to a cross-site *top-level* POST is a browser fact, not shown here;
+    modern Chrome and Firefox do not, so login CSRF is not currently a practical write. It is listed for
+    completeness, not as a live hole.
+- **The precondition — a same-site sibling origin.** The whole finding turns on the attacker controlling, or
+  injecting script into, a page served from a host that shares the instance's registrable domain. In
+  production the instance answers on `fotky.kotrzina.cz` and `kukatko.kotrzina.cz`, so the registrable domain
+  is **`kotrzina.cz`**. Every host under it is same-site to the cookie. From the DNS zone
+  (`panbotka/infra:kotrzina.cz.tf`) and the Traefik labels (`panbotka/vps` docker-compose), the hosts the owner
+  must check are:
+  - `kotrzina.cz` and `hriste.kotrzina.cz` — Cloudflare Pages static sites (`kotrzina`, `kotrzina/kotrzina`).
+  - `pub.kotrzina.cz`, `hospoda.kotrzina.cz` — other VPS-hosted apps on the same box.
+  - `fotky.kotrzina.cz`, `kukatko.kotrzina.cz` — the instance itself (same-origin, not a concern).
+  - `sorter.kotrzina.cz` — the legacy photo-sorter (archived upstream, see the projects index).
+  - `photos-cdn.kotrzina.cz` — the R2 media worker (serves attacker-influenced *content* — user uploads — but
+    as `Content-Disposition: attachment` with a sniffed MIME; it runs no first-party script, yet a stored-XSS
+    there would be same-site to the cookie).
+  - **Any future subdomain of `kotrzina.cz`** inherits the same trust. The passkey relying-party id is already
+    `kotrzina.cz` (whole registrable domain), so the blast radius of a same-site XSS is domain-wide by design.
+  The owner should confirm that **no** host under `kotrzina.cz` either is attacker-controllable or carries an
+  XSS, and treat adding one as a decision that widens this surface.
+- **Scope — every cookie-authenticated unsafe route that decodes JSON without a `Content-Type` gate.** All of
+  them are reachable this way; the RBAC guard only decides *which victim role* is needed.
+  - `internal/auth` — `POST /auth/login` (public), `/auth/register` (public, gated), `/auth/logout`,
+    `/auth/password`, `PUT /auth/subject`, `/auth/welcome-seen`, the passkey begin/finish and API-token
+    create/update routes, and the admin surface `POST /admin/users`, `PATCH /admin/users/{uid}`,
+    `PUT …/username`, `POST …/approve|disable|password|password-reset`.
+  - Catalog & curation (each has its own `decodeJSON` off `r.Body`): `internal/photoapi` (update, edit,
+    ratings, comments, faces/assign, people attach, stack/archive/hide, process/reembed/redetect/regeocode,
+    download-zip, share-manifest, purge), `internal/organizeapi`, `internal/bulkapi`, `internal/peopleapi`,
+    `internal/familyapi`, `internal/feedbackapi`, `internal/dupmarkersapi`, `internal/duplicatesapi`,
+    `internal/clusterapi`, `internal/candidatesapi`, `internal/reviewapi`, `internal/phototaskapi`,
+    `internal/savedsearchapi`, `internal/searchhistoryapi`, `internal/notificationapi`,
+    `internal/announcementapi`, `internal/settingsapi`, `internal/maintenanceapi`, `internal/processapi`,
+    `internal/backupapi`, `internal/jobsapi`, `internal/userpicapi` (the "pick a photo" JSON branch),
+    `internal/uploadlinkapi` (management routes). `clusterapi` and `photoapi/{faces,stacks,zip,share}` and
+    `userpicapi` decode straight with `json.NewDecoder(r.Body)` — the rest wrap `io.LimitReader` — but none
+    checks `Content-Type`, so all behave identically for this finding.
+  - **Shared decoders outside `internal/auth` behave the same.** There is no central request decoder; every
+    package copied the same pattern (size limit + `DisallowUnknownFields`, no header check). `grep -rn
+    'DisallowUnknownFields' internal --include='*.go'` lists them all; none gates on `Content-Type`.
+  - **Routes that accept form / multipart bodies:** `internal/ingest` (`POST /photos/upload`, multipart),
+    `internal/uploadlinkapi` (`POST /u/{code}` public upload, multipart) and `internal/userpicapi`
+    (`PUT /auth/picture`, multipart branch) read `r.MultipartReader()`/`r.FormFile`. `multipart/form-data` is
+    itself a CORS-simple content type, so these are reachable the same way; the upload surface is lower-value
+    (it stores a file, it does not grant a role), and the public `/u/{code}` route is not cookie-authenticated
+    at all (a per-IP + per-link rate-limited anonymous route), so it is out of the cookie-CSRF scope — listed
+    for completeness.
+  - **Bearer (`Authorization`) endpoints — `kukatko ctl` and MCP — are unaffected.** A cross-site or
+    same-site page cannot set an `Authorization` header on a credentialed simple request, and `ctl`/MCP do not
+    use the cookie. No change proposed here touches them.
+- **`web.allowed_origins` / `web.session_secret` are dead (restates SEC-011/SEC-012).** `AllowedOrigins`
+  (`internal/config/config.go:337`) is parsed and set from `KUKATKO_WEB_ALLOWED_ORIGINS` in production
+  (`https://fotky.kotrzina.cz,https://kukatko.kotrzina.cz`) but read by nothing — the docker-compose comment
+  says so outright ("Kukátko only reads this into config today — nothing enforces it yet"). `SessionSecret`
+  (`:336`) is read by nothing and, since cookies carry a raw random token, protects nothing. Either is the
+  natural home of the Origin fallback below, or both should be removed.
+- **Fix options** (none applied in this task):
+  1. **An unsafe-method CSRF middleware on `/api/v1`.** For `POST`/`PUT`/`PATCH`/`DELETE` it decides by
+     `Sec-Fetch-Site`: `same-origin` and `none` pass, anything else (`same-site`, `cross-site`) is **403**.
+     Browsers that predate Fetch Metadata send no `Sec-Fetch-Site`; for them fall back to comparing the
+     `Origin` header against the configured host set — this is where the dead `web.allowed_origins` finally
+     earns its keep (wire it, or add `web.host`). A request with neither header (a non-browser client that is
+     not sending a bearer) is a judgement call: pass it, since `ctl`/MCP send bearers and the SPA always sends
+     `Sec-Fetch-Site`, and failing closed would break any curl-with-cookie admin habit — but document the
+     choice. *For:* closes the whole class in one place, including the multipart upload routes, with no
+     per-handler change; the SPA is same-origin so it is unaffected; `ctl`/MCP are bearer so unaffected; the
+     public `/u/{code}` page is a top-level navigation (`Sec-Fetch-Site: none` on the GET, and the POST is
+     same-origin from that page) so it keeps working. *Against:* a hand-rolled `curl` against the cookie API
+     from another origin stops working (the intended effect); needs the origin set configured, so it ties into
+     wiring `web.allowed_origins`.
+  2. **Require `Content-Type: application/json` on JSON routes.** Reject a JSON decode unless the base media
+     type is `application/json`, which removes the `text/plain`/form-encoding trick and forces any
+     browser-driven write to a non-simple content type, hence a CORS preflight the server never answers. *For:*
+     tiny, local to the decoders (one shared helper), defeats the specific vector proven above. *Against:* it
+     is **not** a complete CSRF fix — a same-site page can still send `application/json` via `fetch` with
+     `credentials:"include"` once it is same-site (the preflight is same-site too and there is no CORS layer to
+     fail it); it does nothing for the multipart routes; and it risks breaking any lax client that posts JSON
+     without the header. Best as defence-in-depth *under* option 1, not instead of it.
+  3. **Wire or remove `web.allowed_origins` + `web.session_secret`.** If option 1 lands, `allowed_origins`
+     becomes the Origin-fallback allow-list (wire it; keep `session_secret` only if a signed-cookie scheme is
+     ever adopted, else drop it). If nothing lands, remove both keys and their docs/compose entries so no
+     operator believes an unused knob protects them (this is SEC-011/SEC-012's own recommendation).
+- **Recommendation:** **option 1 as the control, with option 2 as defence-in-depth, and option 3 wired to
+  feed option 1's Origin fallback.** The Fetch-Metadata gate is the only one of the three that actually closes
+  the same-site vector (the precondition of this whole finding) rather than just the `text/plain` dressing of
+  it, it is a single middleware with no per-handler churn, and it leaves the SPA, `kukatko ctl`, MCP and the
+  public upload page working as they do today. Requiring `application/json` is cheap insurance layered beneath
+  it. Until a decision is made, behaviour is unchanged and `SameSite=Strict` remains the sole defence, which is
+  sound **only for as long as every host under `kotrzina.cz` is trusted and XSS-free** — so the "Session
+  lifecycle & CSRF — clean" note below is qualified by this entry. The decision belongs to the product owner.
+
+---
+
+
 ## Areas checked — no finding ("reviewed, no findings")
 
 Silence is not evidence; these areas were examined and are clean.
@@ -894,7 +1027,9 @@ Silence is not evidence; these areas were examined and are clean.
   relevant sessions (`internal/auth/service.go:214`, `internal/auth/service_admin.go:240-285`);
   a disabled user is rejected and their sessions purged on next `Authenticate`; sliding expiry
   is capped by an absolute `MaxLifetime`. CSRF is covered by `SameSite=Strict` + `HttpOnly` for
-  cookie auth, and Bearer endpoints are inherently CSRF-immune.
+  cookie auth, and Bearer endpoints are inherently CSRF-immune. **Qualified by SEC-023:** `SameSite=Strict`
+  treats every host under the registrable domain as same-site, so a sibling subdomain (or XSS on one) can
+  still drive a cookie-authenticated write, and no `Origin`/`Content-Type` gate backs the cookie up today.
 - **Audit trail — clean.** Verified atomic: `internal/organize/audit.go`,
   `internal/people/audit.go`, and `internal/bulk/apply.go` all `Begin` → mutate →
   `audit.Write(ctx, tx, entry)` → `Commit`, so the audit row commits/rolls back with the
