@@ -1732,11 +1732,14 @@ other type; values ≤ 0 are ignored and a type
   proxy too (`maps.*`). **`upload_link`** (default 2/60) throttles the public upload-link routes
   (`GET /u/{code}` and its upload) per client IP, ahead of the code lookup; **`upload_link_per_link`**
   (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
-  brake on a link that leaked to somebody with many addresses.
+  brake on a link that leaked to somebody with many addresses. Both count **requests**, not files: the
+  page sends one file per request, a script up to 50 (the upload's per-request cap); the files are bounded
+  by `upload_links.max_uploads_per_link`.
 - **Upload-link keys (`upload_links.*`, `internal/uploadlinkapi`):** `max_file_size_mb` (default
   **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` — the
   smaller wins; 0 = no cap of its own), `max_uploads_per_link` (default **2000** files over a link's life,
-  new photos and duplicates alike; 0 = no cap), `default_days` (default **30**, the validity the create
+  new photos and duplicates alike, taken per file in the database together with the link's liveness, so
+  concurrent requests cannot overshoot it; 0 = no cap), `default_days` (default **30**, the validity the create
   form offers) and `max_days` (default **365**, the longest validity a link may be created or extended
   with). Env e.g. `KUKATKO_UPLOAD_LINKS_MAX_UPLOADS_PER_LINK`. The anonymous uploader's session cookie
   follows `web.secure_cookies` like the sign-in cookie.

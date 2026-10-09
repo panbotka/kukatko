@@ -46,6 +46,12 @@ type Store interface {
 	RestoreCode(ctx context.Context, uid, code string, entry audit.Entry) (uploadlink.Link, error)
 	// RotateCode replaces a link's code with a fresh one.
 	RotateCode(ctx context.Context, uid string, entry audit.Entry) (uploadlink.Link, error)
+	// ReserveUpload takes one slot of a link's file cap while the link is live,
+	// atomically; it refuses with uploadlink.ErrFull, ErrRevoked, ErrExpired or
+	// ErrNotFound.
+	ReserveUpload(ctx context.Context, uid string, maxUploads int, now time.Time) error
+	// ReleaseUpload gives back a slot whose file was not recorded.
+	ReleaseUpload(ctx context.Context, uid string) error
 	// RecordUpload records one file that came through a link and files its photo.
 	RecordUpload(ctx context.Context, up uploadlink.Upload, entry audit.Entry) error
 }
@@ -89,7 +95,8 @@ type Config struct {
 	// MaxFileSize caps one uploaded file in bytes on top of the pipeline's own
 	// cap; 0 sets none.
 	MaxFileSize int64
-	// MaxUploadsPerLink caps the files one link accepts; 0 sets none.
+	// MaxUploadsPerLink caps the files one link accepts over its life, enforced
+	// per file in the database; 0 sets none.
 	MaxUploadsPerLink int
 	// DefaultDays and MaxDays are the validity the create form offers and the
 	// longest one a link may have, in days. Non-positive values fall back to 30

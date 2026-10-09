@@ -1849,10 +1849,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`.avif` among them) or AVIF content under any name → 415 `code:"unsupported_type"`, content that is
   not a photo or a video (random bytes named `.jpg`) → 415 `code:"not_media"`, a truncated/corrupt
   JPEG/PNG/GIF → 415 `code:"damaged"`, each with nothing stored, filed or audited, a file over `upload_links.max_file_size_mb` → 413, past `upload_links.max_uploads_per_link` →
-  429. Every file that resolved to a photo — **new or duplicate** — is filed into all the link's albums
+  429 `"this link accepts no more uploads"`. The cap is taken **per file, in the database, before the
+  pipeline reads it**: one `UPDATE` bumps `upload_count` only while the link is not revoked, not expired and
+  under the cap, so concurrent requests cannot overshoot it, and a link revoked or expired **while a request
+  runs** refuses its remaining files with a per-file **410** `"upload link is no longer valid"` (the text
+  of the dead link's whole-request 410). A file that then fails or is not filed gives its slot back. A
+  request carries at most **50 file parts**, refused ones included: the 51st gets a per-file 413
+  `"too many files in one upload"` and nothing after it is read. Every file that resolved to a photo — **new or duplicate** — is filed into all the link's albums
   and labels (manual labels) at once, its provenance recorded in `upload_link_photos` (link, typed name,
-  account or anonymous session hash, created/duplicate), the link's `upload_count`/`last_used_at`
-  bumped and an `upload_link.upload` audit entry written (target the photo, actor the signed-in uploader
+  account or anonymous session hash, created/duplicate), the link's `last_used_at`
+  stamped (the count was the reservation's) and an `upload_link.upload` audit entry written (target the photo, actor the signed-in uploader
   or none; details `link_uid`, `link_title`, `uploader_name`, `outcome` — the title so the audit list can
   name an anonymous upload by its link), all in one transaction; its sidecar is rescheduled. A signed-in uploader owns the photo as
   with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,

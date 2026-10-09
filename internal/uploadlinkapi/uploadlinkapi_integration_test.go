@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -66,17 +68,21 @@ type integrationEnv struct {
 	photos   map[string]string
 }
 
-// newIntegrationEnv truncates the database, seeds an album, a label and two
+// envOption adjusts the upload-link API's configuration before it is built,
+// with the database at hand: a real pipeline, a cap, a wrapped store.
+type envOption func(db *database.DB, cfg *uploadlinkapi.Config)
+
+// newIntegrationEnv truncates the database, seeds an album, a label and four
 // photos, and serves the auth and upload-link routes over the seeded fake
 // pipeline.
 func newIntegrationEnv(t *testing.T) *integrationEnv {
 	t.Helper()
-	return newIntegrationEnvWith(t, nil)
+	return newIntegrationEnvWith(t)
 }
 
-// newIntegrationEnvWith is newIntegrationEnv with the pipeline chosen by the
-// caller: pipeline builds one over the database, nil keeps the seeded fake.
-func newIntegrationEnvWith(t *testing.T, pipeline func(*database.DB) uploadlinkapi.Ingester) *integrationEnv {
+// newIntegrationEnvWith is newIntegrationEnv with opts applied to the API's
+// configuration, in order.
+func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -91,7 +97,7 @@ func newIntegrationEnvWith(t *testing.T, pipeline func(*database.DB) uploadlinka
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	photoStore := photos.NewStore(db.Pool())
-	for _, name := range []string{"a.jpg", "b.jpg"} {
+	for _, name := range []string{"a.jpg", "b.jpg", "c.jpg", "d.jpg"} {
 		created, err := photoStore.Create(ctx, photos.Photo{FileHash: "h-" + name, FilePath: "2026/06/" + name, FileName: name})
 		if err != nil {
 			t.Fatalf("creating photo: %v", err)
@@ -108,14 +114,14 @@ func newIntegrationEnvWith(t *testing.T, pipeline func(*database.DB) uploadlinka
 		}),
 		UploadLinks: uploadlinkapi.NewRegistrationGate(store, nil, nil),
 	})
-	var ingester uploadlinkapi.Ingester = seededIngest{photos: e.photos}
-	if pipeline != nil {
-		ingester = pipeline(db)
-	}
-	api := uploadlinkapi.NewAPI(uploadlinkapi.Config{
-		Store: store, Ingest: ingester,
+	cfg := uploadlinkapi.Config{
+		Store: store, Ingest: seededIngest{photos: e.photos},
 		RequireCurator: authAPI.RequireCurator, OptionalAuth: authAPI.OptionalAuth,
-	})
+	}
+	for _, opt := range opts {
+		opt(db, &cfg)
+	}
+	api := uploadlinkapi.NewAPI(cfg)
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
@@ -447,15 +453,15 @@ func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
 // realPipeline builds the real ingest pipeline over db — temp-dir storage and
 // cache, the real job queue — so a test sees exactly what an upload stores and
 // schedules.
-func realPipeline(t *testing.T) func(*database.DB) uploadlinkapi.Ingester {
+func realPipeline(t *testing.T) envOption {
 	t.Helper()
-	return func(db *database.DB) uploadlinkapi.Ingester {
+	return func(db *database.DB, cfg *uploadlinkapi.Config) {
 		fs, err := storage.NewFS(t.TempDir())
 		if err != nil {
 			t.Fatalf("storage.NewFS: %v", err)
 		}
 		enqueuer := jobs.NewEnqueuer(jobs.NewStore(db.Pool()))
-		return ingest.New(ingest.Config{
+		cfg.Ingest = ingest.New(ingest.Config{
 			Storage: fs, Photos: photos.NewStore(db.Pool()), Thumbnailer: thumb.New(fs, t.TempDir()),
 			Enqueuer: enqueuer, OCR: enqueuer, TempDir: t.TempDir(),
 		})
@@ -583,5 +589,197 @@ func TestAVIFAndTruncatedImagesThroughALinkAreRefused(t *testing.T) {
 	}
 	if got := e.count(t, "SELECT count(*) FROM jobs"); got != 0 {
 		t.Errorf("jobs = %d, want 0", got)
+	}
+}
+
+// barrierIngest is seededIngest with a barrier in front: the first parties
+// files wait until all of them have arrived, so every request holding one has
+// passed the link lookup before any of them records anything. A party that waits
+// in vain gives up after a few seconds rather than hang the suite.
+type barrierIngest struct {
+	seededIngest
+	parties int
+
+	mu      sync.Mutex
+	arrived int
+	open    chan struct{}
+}
+
+// IngestFile waits at the barrier (first parties calls only), then ingests.
+func (b *barrierIngest) IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
+	b.mu.Lock()
+	b.arrived++
+	wait := b.arrived <= b.parties
+	if b.arrived == b.parties {
+		close(b.open)
+	}
+	b.mu.Unlock()
+	if wait {
+		select {
+		case <-b.open:
+		case <-time.After(5 * time.Second):
+		}
+	}
+	return b.seededIngest.IngestFile(ctx, src, req)
+}
+
+// filesBody builds a multipart upload of filenames, each a few bytes.
+func filesBody(filenames ...string) (string, []byte) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for _, name := range filenames {
+		w, _ := mw.CreateFormFile("files", name)
+		_, _ = w.Write([]byte("bytes of " + name))
+	}
+	_ = mw.Close()
+	return mw.FormDataContentType(), buf.Bytes()
+}
+
+// postFiles uploads filenames through code in one request and decodes the
+// per-file results. It reports failures as an error, not through t, so it may
+// run on a goroutine of its own.
+func (e *integrationEnv) postFiles(ctx context.Context, code string, filenames ...string) ([]ingest.FileResult, error) {
+	contentType, body := filesBody(filenames...)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.server.URL+"/api/v1/u/"+code+"/upload",
+		bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentType)
+	resp, err := apitest.Client().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("upload: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upload = %d", resp.StatusCode)
+	}
+	var out struct {
+		Results []ingest.FileResult `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding upload: %w", err)
+	}
+	return out.Results, nil
+}
+
+// TestConcurrentRequestsCannotOvershootTheFileCap is the SEC-019 repro: a link
+// capped at two files, two requests of two distinct photos each, both past the
+// link lookup before either records a file. Each request used to seed its own
+// count from the lookup and let both of its files through — four photos filed
+// into the album of a link that allows two. The cap is now one atomic slot per
+// file in the database: exactly two are accepted and filed, the other two are
+// refused as over the cap without reaching the pipeline.
+func TestConcurrentRequestsCannotOvershootTheFileCap(t *testing.T) {
+	barrier := &barrierIngest{parties: 2, open: make(chan struct{})}
+	e := newIntegrationEnvWith(t, func(_ *database.DB, cfg *uploadlinkapi.Config) {
+		cfg.MaxUploadsPerLink = 2
+		cfg.Ingest = barrier
+	})
+	barrier.photos = e.photos
+	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	code, linkUID := e.createLink(t, curator)
+
+	batches := [][]string{{"a.jpg", "b.jpg"}, {"c.jpg", "d.jpg"}}
+	got := make([][]ingest.FileResult, len(batches))
+	errs := make([]error, len(batches))
+	var wg sync.WaitGroup
+	for i, batch := range batches {
+		wg.Go(func() { got[i], errs[i] = e.postFiles(t.Context(), code, batch...) })
+	}
+	wg.Wait()
+
+	accepted, full := 0, 0
+	for i, results := range got {
+		if errs[i] != nil {
+			t.Fatalf("request %d: %v", i, errs[i])
+		}
+		for _, res := range results {
+			switch {
+			case res.Outcome == ingest.OutcomeCreated:
+				accepted++
+			case res.Status == http.StatusTooManyRequests:
+				full++
+			default:
+				t.Errorf("request %d: unexpected result %+v", i, res)
+			}
+		}
+	}
+	if accepted != 2 || full != 2 {
+		t.Errorf("accepted %d, refused as full %d; want 2 and 2", accepted, full)
+	}
+	if n := e.count(t, "SELECT upload_count FROM upload_links WHERE uid = $1", linkUID); n != 2 {
+		t.Errorf("upload_count = %d, want the cap of 2", n)
+	}
+	if n := e.count(t, "SELECT count(*) FROM upload_link_photos WHERE link_uid = $1", linkUID); n != 2 {
+		t.Errorf("upload_link_photos rows = %d, want 2", n)
+	}
+	if n := e.count(t, "SELECT count(*) FROM album_photos WHERE album_uid = $1", e.album.UID); n != 2 {
+		t.Errorf("photos filed into the album = %d, want 2", n)
+	}
+}
+
+// revokingStore is the real link store, except that the first recorded upload
+// is followed by kill — a curator revoking the link, or its expiry passing —
+// while the request that sent it still has files to go.
+type revokingStore struct {
+	uploadlinkapi.Store
+	once sync.Once
+	kill func()
+}
+
+// RecordUpload records up, then kills the link (once).
+func (s *revokingStore) RecordUpload(ctx context.Context, up uploadlink.Upload, entry audit.Entry) error {
+	err := s.Store.RecordUpload(ctx, up, entry)
+	s.once.Do(s.kill)
+	return err
+}
+
+// TestLinkDyingMidRequestStopsItsFiles is the second half of the SEC-019
+// repro: one request of two files, the link revoked (or expired) between them.
+// Liveness used to be checked once, when the request began, so the second file
+// was still stored and filed into the dead link's album. Now every file
+// re-checks it with its cap slot: the first is filed, the second gets the dead
+// link's 410 and is neither counted nor filed.
+func TestLinkDyingMidRequestStopsItsFiles(t *testing.T) {
+	kills := map[string]string{
+		"revoked": "UPDATE upload_links SET revoked_at = now()",
+		"expired": "UPDATE upload_links SET expires_at = now() - interval '1 second'",
+	}
+	for name, kill := range kills {
+		t.Run(name, func(t *testing.T) {
+			e := newIntegrationEnvWith(t, func(db *database.DB, cfg *uploadlinkapi.Config) {
+				cfg.Store = &revokingStore{Store: cfg.Store, kill: func() {
+					if _, err := db.Pool().Exec(context.WithoutCancel(t.Context()), kill); err != nil {
+						t.Errorf("killing the link: %v", err)
+					}
+				}}
+			})
+			_, curator := e.login(t, "kurator", auth.RoleCurator)
+			code, linkUID := e.createLink(t, curator)
+
+			got, err := e.postFiles(t.Context(), code, "a.jpg", "b.jpg")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 2 {
+				t.Fatalf("results = %+v, want two", got)
+			}
+			if got[0].Outcome != ingest.OutcomeCreated {
+				t.Errorf("first file = %+v, want created", got[0])
+			}
+			if got[1].Status != http.StatusGone || got[1].Error != "upload link is no longer valid" {
+				t.Errorf("second file = %+v, want the dead link's 410", got[1])
+			}
+			if n := e.count(t, "SELECT upload_count FROM upload_links WHERE uid = $1", linkUID); n != 1 {
+				t.Errorf("upload_count = %d, want 1", n)
+			}
+			if n := e.count(t, "SELECT count(*) FROM album_photos WHERE album_uid = $1", e.album.UID); n != 1 {
+				t.Errorf("photos filed into the album = %d, want 1", n)
+			}
+			if n := e.count(t, "SELECT count(*) FROM album_photos WHERE photo_uid = $1", e.photos["b.jpg"]); n != 0 {
+				t.Error("the file sent after the link died was filed into its album")
+			}
+		})
 	}
 }

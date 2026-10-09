@@ -37,11 +37,12 @@ const (
 // fakeStore is an in-memory uploadlinkapi.Store holding at most one link, with
 // the inputs of the mutations recorded.
 type fakeStore struct {
-	mu        sync.Mutex
-	link      uploadlink.Link
-	hasLink   bool
-	createErr error
-	recordErr error
+	mu         sync.Mutex
+	link       uploadlink.Link
+	hasLink    bool
+	createErr  error
+	recordErr  error
+	reserveErr error
 
 	listedFor *string
 	created   *uploadlink.NewLink
@@ -49,6 +50,7 @@ type fakeStore struct {
 	revoked   bool
 	recorded  []uploadlink.Upload
 	entries   []audit.Entry
+	released  int
 }
 
 // Create records in and returns the link with the test code.
@@ -140,6 +142,34 @@ func (f *fakeStore) RotateCode(_ context.Context, _ string, entry audit.Entry) (
 	}
 	f.link.Code, f.entries = rotatedCode, append(f.entries, entry)
 	return f.link, nil
+}
+
+// ReserveUpload mimics the store's atomic reservation: reserveErr when set,
+// else the link's state at now, else the cap, else one more on the counter.
+func (f *fakeStore) ReserveUpload(_ context.Context, _ string, maxUploads int, at time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case f.reserveErr != nil:
+		return f.reserveErr
+	case f.link.RevokedAt != nil:
+		return uploadlink.ErrRevoked
+	case !at.Before(f.link.ExpiresAt):
+		return uploadlink.ErrExpired
+	case maxUploads > 0 && f.link.UploadCount >= maxUploads:
+		return uploadlink.ErrFull
+	}
+	f.link.UploadCount++
+	return nil
+}
+
+// ReleaseUpload gives a slot back.
+func (f *fakeStore) ReleaseUpload(_ context.Context, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.released++
+	f.link.UploadCount--
+	return nil
 }
 
 // RecordUpload records up.
@@ -564,6 +594,9 @@ func TestUpload_limits(t *testing.T) {
 		if got[0].Status != http.StatusRequestEntityTooLarge || got[1].Outcome != ingest.OutcomeCreated {
 			t.Errorf("results = %+v", got)
 		}
+		if h.store.link.UploadCount != 1 || h.store.released != 1 {
+			t.Errorf("count %d, released %d; want the refused file's slot given back", h.store.link.UploadCount, h.store.released)
+		}
 	})
 	t.Run("file cap", func(t *testing.T) {
 		t.Parallel()
@@ -572,8 +605,32 @@ func TestUpload_limits(t *testing.T) {
 		got := results(t, h.upload(t, "", nil,
 			part{field: "files", filename: "a.jpg", content: "a"},
 			part{field: "files", filename: "b.jpg", content: "b"}))
-		if got[0].Outcome != ingest.OutcomeCreated || got[1].Status != http.StatusTooManyRequests {
+		if got[0].Outcome != ingest.OutcomeCreated || got[1].Status != http.StatusTooManyRequests ||
+			got[1].Error != "this link accepts no more uploads" {
 			t.Errorf("results = %+v", got)
+		}
+		if len(h.ingest.requests) != 1 {
+			t.Errorf("pipeline saw %d files, want only the one under the cap", len(h.ingest.requests))
+		}
+	})
+	t.Run("files per request", func(t *testing.T) {
+		t.Parallel()
+		h := newHarness(t, nil)
+		// Refused parts count too: a stream of junk is cut off like one of photos.
+		parts := make([]part, 0, 52)
+		for range 51 {
+			parts = append(parts, part{field: "files", filename: "junk.txt", content: "x"})
+		}
+		parts = append(parts, part{field: "files", filename: "a.jpg", content: "a"})
+		got := results(t, h.upload(t, "", nil, parts...))
+		if len(got) != 51 {
+			t.Fatalf("results = %d, want 50 refused + 1 over the cap", len(got))
+		}
+		if last := got[50]; last.Status != http.StatusRequestEntityTooLarge || last.Outcome != ingest.OutcomeError {
+			t.Errorf("part past the cap = %+v, want a 413 refusal", last)
+		}
+		if len(h.ingest.requests) != 0 {
+			t.Errorf("pipeline saw %d files past the cap", len(h.ingest.requests))
 		}
 	})
 	t.Run("link rate", func(t *testing.T) {
@@ -603,6 +660,28 @@ func TestUpload_refusals(t *testing.T) {
 	if got[0].Outcome != ingest.OutcomeError || got[0].Status != http.StatusInternalServerError {
 		t.Errorf("unfiled result = %+v", got[0])
 	}
+	if h.store.link.UploadCount != 0 || h.store.released != 1 {
+		t.Errorf("unfiled: count %d, released %d; want the slot given back", h.store.link.UploadCount, h.store.released)
+	}
+	h.store.recordErr = nil
+	// The link dies between the request's lookup and a file's reservation: the
+	// file gets the dead link's refusal and never reaches the pipeline.
+	for _, died := range []error{uploadlink.ErrRevoked, uploadlink.ErrExpired, uploadlink.ErrNotFound} {
+		h.store.reserveErr = died
+		got = results(t, h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}))
+		if got[0].Status != http.StatusGone || got[0].Error != "upload link is no longer valid" {
+			t.Errorf("%v: result = %+v, want the dead link's 410", died, got[0])
+		}
+	}
+	h.store.reserveErr = errors.New("db down")
+	got = results(t, h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}))
+	if got[0].Status != http.StatusInternalServerError {
+		t.Errorf("failed reservation result = %+v, want 500", got[0])
+	}
+	if n := len(h.ingest.requests); n != 1 {
+		t.Errorf("pipeline saw %d files, want only the unfiled one", n)
+	}
+	h.store.reserveErr = nil
 	h.store.link.ExpiresAt = now
 	if rec := h.upload(t, "", nil, part{field: "files", filename: "a.jpg", content: "a"}); rec.Code != http.StatusGone {
 		t.Errorf("expired: status = %d, want 410", rec.Code)

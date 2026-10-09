@@ -26,7 +26,8 @@ per-username login budget) and **SEC-006** (the login timing oracle) on **2026-0
 the only two reachable *anonymously*, and they composed into one working online password-guessing
 chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. **SEC-017** (an
 uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fixed on **2026-10-09**,
-and so was **SEC-018** (in-process image decodes had no memory bound across concurrent uploads).
+and so was **SEC-018** (in-process image decodes had no memory bound across concurrent uploads), and
+**SEC-019** (concurrent requests overshot an upload link's file cap; a revoke did not stop a running request).
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -485,6 +486,59 @@ Everything else below is open as written.
   the `vps` repo and are still not applied. `thumb.max_pixels` is unchanged (200 MP): the byte budget now
   prices bit depth, and lowering the cap would refuse real panoramas. HEIC/RAW/video conversions run in
   external processes (`heif-convert`, `exiftool`, `ffmpeg`) and are outside the in-process budget.
+
+### SEC-019 — MEDIUM — **FIXED** — Concurrent requests overshot an upload link's lifetime file cap, and a link revoked or expired mid-request kept taking files
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), reproduced and
+  confirmed on **2026-10-09** against commit `543b958`.
+- **Where (before the fix):** `POST /api/v1/u/{code}/upload` (`internal/uploadlinkapi/public.go`).
+  `ingestParts` seeded an in-memory counter from `link.UploadCount`, read **once** by the link lookup when the
+  request began, and `ingestOne` compared only that counter with `upload_links.max_uploads_per_link`
+  (default 2000). The authoritative increment in `RecordUpload` (`internal/uploadlink/uploads.go`,
+  `countUploadSQL`) carried no cap, `revoked_at` or `expires_at` predicate. Liveness was checked only by
+  that same lookup (`liveLink`). The rate limiters take one token per **request**, not per file (per-IP
+  burst 60, per-link burst 300), and a request could carry any number of file parts; parts the pipeline
+  refused did not count toward anything, so one request could stream junk parts for ever.
+- **Attack scenario:** an **anonymous upload-link holder** — the link is posted to a group chat and may
+  leak — opens N requests at once, each with many file parts. Every request passes the cap against the
+  same stale count, so the link takes up to N × the cap (the per-IP burst alone admits 60 requests: 120 000
+  files on a 2000-file link) into the library and the link's albums. And when a curator revokes a leaked
+  link, a request already running keeps storing and filing files into its albums and labels until its body
+  ends.
+- **Reproduced:** `internal/uploadlinkapi/uploadlinkapi_integration_test.go`. With the cap at 2 and a barrier
+  in a fake pipeline holding both requests' first files until both requests had passed the lookup, two
+  concurrent requests of two distinct photos each ended with `upload_count = 4`, 4 provenance rows and **4
+  photos in the album** (`TestConcurrentRequestsCannotOvershootTheFileCap`, run against the pre-fix
+  `public.go`/`uploadlinkapi.go`/`uploads.go`). A store wrapper that revokes — or expires — the link right
+  after the first of a request's two files is recorded saw the second file created and filed into the dead
+  link's album (`TestLinkDyingMidRequestStopsItsFiles`). Lead **confirmed** on both counts.
+- **Fix:**
+  1. `uploadlink.Store.ReserveUpload(ctx, uid, maxUploads, now)` takes one file's slot in a **single
+     `UPDATE`**: `upload_count + 1` only `WHERE revoked_at IS NULL AND expires_at > now AND (cap = 0 OR
+     upload_count < cap)`. Concurrent requests serialise on the row, so no interleaving takes more slots than
+     the cap holds. No row updated is a refusal, named afterwards as `ErrFull`, `ErrRevoked`, `ErrExpired` or
+     `ErrNotFound`.
+  2. The handler reserves **before the pipeline reads a byte** of the file, so no photo is stored outside
+     the cap. A file the pipeline refuses, or one that cannot be filed, gives its slot back
+     (`ReleaseUpload`, on a context that outlives the request). `RecordUpload` no longer counts; it only
+     stamps `last_used_at`. The reservation is the moment a file is accepted, so a revoke that lands while
+     one file is streaming lets that one file finish. Every later file is refused.
+  3. Refusals stay what the handler already answered: a full link → per-file 429 `"this link accepts no
+     more uploads"`. A link that died mid-request → per-file 410 with the dead link's own text `"upload link
+     is no longer valid"`, which the upload page already recognises as "the link died". A link dead at the
+     start of a request is still the whole-request 410.
+  4. A request now carries at most **50 file parts** (`maxFilesPerRequest`), refused ones included. The 51st
+     gets a per-file 413 and nothing after it is read.
+  5. The misleading comment on `ratelimit.upload_link*` (`internal/config/config.go`, `config.example.yaml`)
+     now says those buckets count requests, not files, and that the file cap is what bounds the files.
+- **Regression tests:** the two integration tests above (now: 2 accepted + 2 refused with 429, count 2, 2
+  photos in the album; the second file of the dying-link request is a 410, count 1, one photo filed).
+  `internal/uploadlink/store_integration_test.go` `TestReserveUpload_capAndLiveness` covers the cap, 0 =
+  unlimited, release and re-reserve, expiry, revoke, a missing link, and the floor at 0. The `TestUpload_limits`
+  and `TestUpload_refusals` unit tests cover the slot release, the per-file 410, the failed reservation and
+  the per-request part cap.
+- **Not addressed here:** a server crash between a reservation and its release leaves the link one slot
+  short. That fails safe (fewer uploads, never more), and a curator can always create a new link.
 
 ---
 

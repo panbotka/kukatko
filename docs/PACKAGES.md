@@ -3553,15 +3553,20 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (`recode.go`: stores `code` only when its hash equals `code_hash` — constant-time compare — else
   `ErrCodeMismatch` with nothing changed; already readable = no-op without audit), `RotateCode(ctx, uid,
   entry)` (a fresh code replaces `code_hash` and `code`, redrawn on a collision; the old URL dies) — both
-  lock the row and refuse a revoked link with `ErrRevoked` (an expired one is accepted), `RecordUpload(ctx, Upload, entry)` — provenance
-  row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label), counters and the
-  `upload_link.upload` audit entry in **one transaction** — `AttributeSessionTx(ctx, tx, sessionHash,
+  lock the row and refuse a revoked link with `ErrRevoked` (an expired one is accepted),
+  `ReserveUpload(ctx, uid, maxUploads, now)` — one file's slot of the lifetime cap, a single `UPDATE`
+  bumping `upload_count` only while the link is not revoked, not expired at `now` and (unless 0) under the
+  cap, so concurrent requests serialise on the row; a refusal is named `ErrFull`/`ErrRevoked`/`ErrExpired`/
+  `ErrNotFound` — `ReleaseUpload(ctx, uid)` (gives a slot back, floored at 0), `RecordUpload(ctx, Upload,
+  entry)` — provenance row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label),
+  `last_used_at` and the `upload_link.upload` audit entry in **one transaction** (it does not count: the
+  reservation did) — `AttributeSessionTx(ctx, tx, sessionHash,
   userUID)` (on the registration's transaction: hands the session's **created**, still unowned photos to
   the new account, once) and `Provenance(ctx, photoUID)` (the earliest link upload that created the photo
   — link uid/title, typed name, when, and the attributed account `AccountUID`/`AccountName` (display
   name, fallback username; nil once deleted) — for the sidecar's `identity.upload_link` and the photo
   detail's `upload_link`); `RecordUpload`'s audit details carry the link's `link_title` (read by the
-  counter `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
+  `last_used_at` `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
   (the HTTP half: `NewAPI(Config{Store, Ingest, Sidecar, RequireCurator, OptionalAuth, CurrentUser?,
   IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts
@@ -3571,9 +3576,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `/u/{code}` pair behind the per-IP limiter; the upload walks the multipart stream once (the `name`
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
-  caps the size with a `cappedReader` that fails with `ingest.ErrFileTooLarge` (413) and the link's file
-  budget (429), runs `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or
-  duplicate — and reschedules its sidecar; an anonymous uploader is identified by the
+  caps a request at `maxFilesPerRequest` = 50 file parts (refused ones count; the 51st is a 413 and ends
+  the walk), caps the size with a `cappedReader` that fails with `ingest.ErrFileTooLarge` (413), takes the
+  file's slot with `Store.ReserveUpload` **before** the pipeline reads it (`ErrFull` → 429, a link revoked/
+  expired/deleted since the request began → per-file 410 with the dead link's text, SEC-019), runs
+  `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or duplicate — and
+  reschedules its sidecar; a file that errs or is not filed gets `ReleaseUpload` (on a context that
+  outlives the request); an anonymous uploader is identified by the
   `kukatko_upload_session` cookie (`SessionCookieName`, path `/api/v1`) whose hash marks their photos —
   minted by the page's `GET /u/{code}`, not the first upload, since the page sends three files at once and
   each would otherwise start a session of its own (only the last cookie would survive in the browser). `RegistrationGate`

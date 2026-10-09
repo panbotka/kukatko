@@ -38,6 +38,11 @@ var (
 	// ErrRevoked means the link was revoked; it can no longer be extended, nor
 	// have its code restored or replaced.
 	ErrRevoked = errors.New("uploadlink: link is revoked")
+	// ErrExpired means the link's expiry passed; it takes no uploads until it is
+	// extended.
+	ErrExpired = errors.New("uploadlink: link is expired")
+	// ErrFull means the link already took as many files as its lifetime cap allows.
+	ErrFull = errors.New("uploadlink: link accepts no more uploads")
 	// ErrNoTargets means a link was created without any album or label.
 	ErrNoTargets = errors.New("uploadlink: a link needs at least one album or label")
 	// ErrTooManyTargets means a link names more albums or labels than MaxTargets.

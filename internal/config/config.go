@@ -1088,7 +1088,8 @@ type UploadLinksConfig struct {
 	// of upload.max_file_size_mb (the smaller cap wins). 0 sets no cap of its own.
 	MaxFileSizeMB int `mapstructure:"max_file_size_mb"`
 	// MaxUploadsPerLink caps how many files one link accepts over its life (new
-	// photos and duplicates alike). 0 means no cap.
+	// photos and duplicates alike), enforced per file in the database however
+	// many requests run at once. 0 means no cap.
 	MaxUploadsPerLink int `mapstructure:"max_uploads_per_link"`
 	// DefaultDays is the validity the create form offers, in days.
 	DefaultDays int `mapstructure:"default_days"`
@@ -1577,8 +1578,11 @@ func setUploadLinkDefaults(v *viper.Viper) {
 	v.SetDefault("upload_links.max_uploads_per_link", 2000)
 	v.SetDefault("upload_links.default_days", 30)
 	v.SetDefault("upload_links.max_days", 365)
-	// The public upload page sends one file per request, three at a time; the
-	// burst lets somebody drop a whole camera roll, the rate keeps a script slow.
+	// These count requests, not files. The public upload page sends one file per
+	// request, three at a time, so for it a token is a file and the burst lets
+	// somebody drop a whole camera roll; a script may pack up to 50 file parts
+	// into one request (internal/uploadlinkapi's per-request cap). What bounds the
+	// files is upload_links.max_uploads_per_link, taken per file in the database.
 	v.SetDefault("ratelimit.upload_link.rate_per_sec", 2)
 	v.SetDefault("ratelimit.upload_link.burst", 60)
 	// Twenty people uploading at once after an event is the case to allow.

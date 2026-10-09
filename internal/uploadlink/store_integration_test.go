@@ -216,12 +216,16 @@ func TestExtendAndRevoke(t *testing.T) {
 }
 
 // TestRecordUpload_filesIntoTargets verifies an upload puts the photo into the
-// link's album and label, counts it, records its provenance and audits it.
+// link's album and label, stamps the link's last use (the count is the
+// reservation's), records its provenance and audits it.
 func TestRecordUpload_filesIntoTargets(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	link, _ := f.createLink(t)
 
+	if err := f.store.ReserveUpload(ctx, link.UID, 0, time.Now()); err != nil {
+		t.Fatalf("ReserveUpload: %v", err)
+	}
 	err := f.store.RecordUpload(ctx, uploadlink.Upload{
 		LinkUID: link.UID, PhotoUID: f.photo, Created: true, UploaderName: "Jana", SessionHash: "sess",
 	}, audit.Entry{Action: audit.ActionUploadLinkUpload})
@@ -257,6 +261,65 @@ func TestRecordUpload_filesIntoTargets(t *testing.T) {
 	if err := f.store.RecordUpload(ctx, uploadlink.Upload{LinkUID: "ul_missing", PhotoUID: f.photo},
 		audit.Entry{Action: audit.ActionUploadLinkUpload}); !errors.Is(err, uploadlink.ErrNotFound) {
 		t.Errorf("RecordUpload(missing link) error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestReserveUpload_capAndLiveness verifies a reservation takes a slot only
+// while the link is live and under its cap (0 = none), names why it refused, and
+// that a released slot can be taken again.
+func TestReserveUpload_capAndLiveness(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	link, _ := f.createLink(t)
+	now := time.Now()
+	count := func() int {
+		t.Helper()
+		got, err := f.store.Get(ctx, link.UID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		return got.UploadCount
+	}
+
+	for i := range 2 {
+		if err := f.store.ReserveUpload(ctx, link.UID, 2, now); err != nil {
+			t.Fatalf("reservation %d: %v", i, err)
+		}
+	}
+	if err := f.store.ReserveUpload(ctx, link.UID, 2, now); !errors.Is(err, uploadlink.ErrFull) {
+		t.Errorf("reservation past the cap error = %v, want ErrFull", err)
+	}
+	if err := f.store.ReleaseUpload(ctx, link.UID); err != nil {
+		t.Fatalf("ReleaseUpload: %v", err)
+	}
+	if err := f.store.ReserveUpload(ctx, link.UID, 2, now); err != nil {
+		t.Errorf("reservation after a release: %v", err)
+	}
+	if err := f.store.ReserveUpload(ctx, link.UID, 0, now); err != nil || count() != 3 {
+		t.Errorf("uncapped reservation: %v, count %d; want 3", err, count())
+	}
+	if err := f.store.ReserveUpload(ctx, link.UID, 0, link.ExpiresAt); !errors.Is(err, uploadlink.ErrExpired) {
+		t.Errorf("reservation at the expiry error = %v, want ErrExpired", err)
+	}
+	if err := f.store.ReserveUpload(ctx, "ul_missing", 0, now); !errors.Is(err, uploadlink.ErrNotFound) {
+		t.Errorf("reservation on a missing link error = %v, want ErrNotFound", err)
+	}
+	if _, err := f.store.Revoke(ctx, link.UID, audit.Entry{ActorUID: f.curator, Action: audit.ActionUploadLinkRevoke}); err != nil {
+		t.Fatalf("Revoke: %v", err)
+	}
+	if err := f.store.ReserveUpload(ctx, link.UID, 0, now); !errors.Is(err, uploadlink.ErrRevoked) {
+		t.Errorf("reservation on a revoked link error = %v, want ErrRevoked", err)
+	}
+	if got := count(); got != 3 {
+		t.Errorf("count after refusals = %d, want 3", got)
+	}
+	for range 5 {
+		if err := f.store.ReleaseUpload(ctx, link.UID); err != nil {
+			t.Fatalf("ReleaseUpload: %v", err)
+		}
+	}
+	if got := count(); got != 0 {
+		t.Errorf("count after over-releasing = %d, want it floored at 0", got)
 	}
 }
 

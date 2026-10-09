@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -27,18 +28,80 @@ INSERT INTO upload_link_photos (link_uid, photo_uid, outcome, uploader_name, upl
 VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
 ON CONFLICT (link_uid, photo_uid) DO NOTHING`
 
-// countUploadSQL bumps a link's counters for one more upload and returns its
-// title, which the upload's audit entry carries.
-const countUploadSQL = `
-UPDATE upload_links SET upload_count = upload_count + 1, last_used_at = now()
+// reserveUploadSQL takes one slot of a link's lifetime file cap: it bumps the
+// counter only while the link is neither revoked nor expired at $2 and, unless $3
+// is 0, still under the cap $3. One statement, so concurrent requests serialise
+// on the row and can never take more slots than the cap holds.
+const reserveUploadSQL = `
+UPDATE upload_links SET upload_count = upload_count + 1
+WHERE uid = $1 AND revoked_at IS NULL AND expires_at > $2 AND ($3 = 0 OR upload_count < $3)
+RETURNING upload_count`
+
+// reservationRefusalSQL reads what a refused reservation found: whether the
+// link is revoked and when it expires.
+const reservationRefusalSQL = `SELECT revoked_at IS NOT NULL, expires_at FROM upload_links WHERE uid = $1`
+
+// releaseUploadSQL hands a reserved slot back.
+const releaseUploadSQL = `UPDATE upload_links SET upload_count = upload_count - 1 WHERE uid = $1 AND upload_count > 0`
+
+// stampUploadSQL marks a link used and returns its title, which the upload's
+// audit entry carries.
+const stampUploadSQL = `
+UPDATE upload_links SET last_used_at = now()
 WHERE uid = $1
 RETURNING title`
 
-// RecordUpload records up — one file that came in through a link — and files its
-// photo into every album and label of the link, so it is visible there at once.
-// The provenance row, the memberships, the link's counters and entry (stamped
-// with the photo as its target and the link, its title, the typed name and the
-// outcome in its details) commit together. It returns ErrNotFound when the link is gone.
+// ReserveUpload takes one slot of the link uid's lifetime file cap for a file
+// about to be ingested, atomically with checking the link is live at now: the
+// counter moves only while the link is not revoked, not expired and — unless
+// maxUploads is 0 — under maxUploads. It is the point a file is accepted: a link
+// revoked or filled after it does not take the slot back. A refusal returns
+// ErrFull, ErrRevoked, ErrExpired or ErrNotFound. A file that then fails, or is
+// not recorded, gives the slot back with ReleaseUpload.
+func (s *Store) ReserveUpload(ctx context.Context, uid string, maxUploads int, now time.Time) error {
+	var count int
+	err := s.pool.QueryRow(ctx, reserveUploadSQL, uid, now, max(maxUploads, 0)).Scan(&count)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("uploadlink: reserving upload: %w", err)
+	}
+	// The refusal was decided atomically above; this read only names it.
+	var revoked bool
+	var expiresAt time.Time
+	err = s.pool.QueryRow(ctx, reservationRefusalSQL, uid).Scan(&revoked, &expiresAt)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return ErrNotFound
+	case err != nil:
+		return fmt.Errorf("uploadlink: reading refused reservation: %w", err)
+	case revoked:
+		return ErrRevoked
+	case !now.Before(expiresAt):
+		return ErrExpired
+	default:
+		return ErrFull
+	}
+}
+
+// ReleaseUpload gives back a slot ReserveUpload took for a file that did not end
+// up recorded — refused by the pipeline, or not filed. Releasing a link that is
+// gone, or whose counter is already 0, changes nothing.
+func (s *Store) ReleaseUpload(ctx context.Context, uid string) error {
+	if _, err := s.pool.Exec(ctx, releaseUploadSQL, uid); err != nil {
+		return fmt.Errorf("uploadlink: releasing upload: %w", err)
+	}
+	return nil
+}
+
+// RecordUpload records up — one file that came in through a link, whose slot
+// ReserveUpload already took — and files its photo into every album and label
+// of the link, so it is visible there at once. The provenance row, the
+// memberships, the link's last use and entry (stamped with the photo as its
+// target and the link, its title, the typed name and the outcome in its details)
+// commit together. It does not count the file: the reservation did. It returns
+// ErrNotFound when the link is gone.
 func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) error {
 	outcome := outcomeDuplicate
 	if up.Created {
@@ -46,12 +109,12 @@ func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) 
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var title string
-		err := tx.QueryRow(ctx, countUploadSQL, up.LinkUID).Scan(&title)
+		err := tx.QueryRow(ctx, stampUploadSQL, up.LinkUID).Scan(&title)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
-			return fmt.Errorf("uploadlink: counting upload: %w", err)
+			return fmt.Errorf("uploadlink: stamping upload: %w", err)
 		}
 		if _, err := tx.Exec(ctx, insertUploadSQL, up.LinkUID, up.PhotoUID, outcome,
 			up.UploaderName, up.UploadedBy, up.SessionHash); err != nil {

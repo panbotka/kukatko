@@ -816,7 +816,8 @@ upload_links:
   # Maximum size of one file uploaded through a link, in mebibytes, on top of
   # upload.max_file_size_mb (the smaller cap wins). 0 sets no cap of its own.
   max_file_size_mb: 1024
-  # How many files one link accepts over its whole life. 0 means no cap.
+  # How many files one link accepts over its whole life, counted per file in the
+  # database however many requests run at once. 0 means no cap.
   max_uploads_per_link: 2000
   # The validity the create form offers, in days.
   default_days: 30
@@ -941,7 +942,8 @@ ratelimit:
     rate_per_sec: 50
     burst: 200
   # The public upload-link routes (GET /u/{code} and its upload), per client IP.
-  # The page sends one file per request; the burst covers a camera roll.
+  # These count requests, not files: the page sends one file per request (the
+  # burst covers a camera roll), a script up to 50. max_uploads_per_link bounds files.
   upload_link:
     rate_per_sec: 2
     burst: 60

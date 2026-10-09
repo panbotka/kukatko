@@ -35,16 +35,36 @@ const nameField = "name"
 // maxNameFieldBytes caps how much of the name field is read.
 const maxNameFieldBytes = 1024
 
+// maxFilesPerRequest caps the file parts one upload request may carry, refused
+// ones included. The page sends one file per request; the cap keeps a script from
+// streaming an endless body of parts — junk ones too — through the single token
+// a request takes from the rate limiters.
+const maxFilesPerRequest = 50
+
 // Per-file refusals the upload reports inside its result list.
 var (
 	// errUnsupportedType is a file whose type the pipeline does not ingest.
 	errUnsupportedType = errors.New("unsupported file type")
 	// errLinkFull is a file past the link's lifetime upload cap.
 	errLinkFull = errors.New("this link accepts no more uploads")
+	// errLinkGone is a file sent after the link was revoked or expired while its
+	// request was still running; the text is the 410 a dead link answers with,
+	// which the page recognises.
+	errLinkGone = errors.New(linkGoneMessage)
+	// errTooManyFiles is a file part past maxFilesPerRequest; the request stops
+	// there.
+	errTooManyFiles = errors.New("too many files in one upload")
+	// errNotAccepted is a file whose cap slot could not be taken for a reason
+	// other than the link's state; sending it again may work.
+	errNotAccepted = errors.New("the file could not be accepted")
 	// errNotFiled is a photo that was ingested but could not be filed into the
 	// link's targets; sending it again files it.
 	errNotFiled = errors.New("the photo could not be added to the album")
 )
+
+// linkGoneMessage is the error of a link that no longer accepts uploads, for the
+// whole request and for a single file alike.
+const linkGoneMessage = "upload link is no longer valid"
 
 // publicLink is what anybody holding a link learns: the curator's title and
 // note, the names of the albums and labels the photos go to, and the expiry.
@@ -153,7 +173,7 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (uploadlink.Link,
 		return uploadlink.Link{}, false
 	}
 	if state := link.StateAt(a.now()); state != uploadlink.StateActive {
-		writeJSON(w, http.StatusGone, goneBody{Error: "upload link is no longer valid", State: state})
+		writeJSON(w, http.StatusGone, goneBody{Error: linkGoneMessage, State: state})
 		return uploadlink.Link{}, false
 	}
 	return link, true
@@ -206,12 +226,12 @@ func SessionHash(r *http.Request) string {
 // ingestParts walks the multipart stream: the name field sets the uploader's
 // name, every part carrying a filename is ingested and filed, other fields are
 // skipped. It returns the per-file results in order, or an error for a
-// malformed stream.
+// malformed stream. A file part past maxFilesPerRequest is refused and ends the
+// walk: nothing after it is read.
 func (a *API) ingestParts(
 	r *http.Request, reader *multipart.Reader, link uploadlink.Link, who uploader,
 ) ([]ingest.FileResult, error) {
 	var results []ingest.FileResult
-	accepted := link.UploadCount
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -227,11 +247,11 @@ func (a *API) ingestParts(
 			_ = part.Close()
 			continue
 		}
-		res := a.ingestOne(r, part, link, who, accepted)
-		if res.Outcome != ingest.OutcomeError {
-			accepted++
+		if len(results) >= maxFilesPerRequest {
+			return append(results,
+				refused(part.FileName(), http.StatusRequestEntityTooLarge, "", errTooManyFiles)), nil
 		}
-		results = append(results, res)
+		results = append(results, a.ingestOne(r, part, link, who))
 		_ = part.Close()
 	}
 }
@@ -247,18 +267,20 @@ func readName(part io.Reader) string {
 
 // ingestOne runs one file through the pipeline and, when it resolved to a
 // photo, records it against the link — which files it into the link's targets
-// and audits it. accepted is how many files the link has taken so far.
-func (a *API) ingestOne(
-	r *http.Request, part *multipart.Part, link uploadlink.Link, who uploader, accepted int,
-) ingest.FileResult {
+// and audits it. Before the pipeline sees a byte it takes the file's slot of the
+// link's cap in the database, atomically with checking the link is still live,
+// so neither concurrent requests nor a revoke or expiry mid-request let a file
+// past the cap or the link's end; a file that is then not recorded gives its
+// slot back.
+func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.Link, who uploader) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
 		// ingest.CodeUnsupportedType: the code the pipeline gives a type it refuses by
 		// content (an AVIF under any name), so both refusals read the same.
 		return refused(filename, http.StatusUnsupportedMediaType, ingest.CodeUnsupportedType, errUnsupportedType)
 	}
-	if a.maxUploads > 0 && accepted >= a.maxUploads {
-		return refused(filename, http.StatusTooManyRequests, "", errLinkFull)
+	if err := a.store.ReserveUpload(r.Context(), link.UID, a.maxUploads, a.now()); err != nil {
+		return a.reservationRefused(r, link, filename, err)
 	}
 	var src io.Reader = part
 	if a.maxFileSize > 0 {
@@ -266,15 +288,45 @@ func (a *API) ingestOne(
 	}
 	res := a.ingest.IngestFile(r.Context(), src, ingest.Request{Filename: filename, UploadedBy: who.userUID})
 	if res.Outcome == ingest.OutcomeError || res.PhotoUID == "" {
+		a.release(r, link)
 		return res
 	}
 	if err := a.record(r, link, who, res); err != nil {
 		a.log.ErrorContext(r.Context(), "uploadlinkapi: filing an uploaded photo",
 			slog.String("link_uid", link.UID), slog.String("photo_uid", res.PhotoUID),
 			slog.String("error", err.Error()))
+		a.release(r, link)
 		return refused(filename, http.StatusInternalServerError, "", errNotFiled)
 	}
 	return res
+}
+
+// reservationRefused is the per-file result of a file whose cap slot the store
+// refused: 429 for a full link, the dead link's 410 for one revoked, expired or
+// deleted since the request began, 500 for a failed reservation.
+func (a *API) reservationRefused(r *http.Request, link uploadlink.Link, filename string, err error) ingest.FileResult {
+	switch {
+	case errors.Is(err, uploadlink.ErrFull):
+		return refused(filename, http.StatusTooManyRequests, "", errLinkFull)
+	case errors.Is(err, uploadlink.ErrRevoked), errors.Is(err, uploadlink.ErrExpired),
+		errors.Is(err, uploadlink.ErrNotFound):
+		return refused(filename, http.StatusGone, "", errLinkGone)
+	default:
+		a.log.ErrorContext(r.Context(), "uploadlinkapi: reserving an upload",
+			slog.String("link_uid", link.UID), slog.String("error", err.Error()))
+		return refused(filename, http.StatusInternalServerError, "", errNotAccepted)
+	}
+}
+
+// release gives back the cap slot of a file that was not recorded. It outlives
+// the request's context — a client that hung up mid-file must not cost the link
+// a slot — and a failure only overcounts, so it is logged, not reported.
+func (a *API) release(r *http.Request, link uploadlink.Link) {
+	ctx := context.WithoutCancel(r.Context())
+	if err := a.store.ReleaseUpload(ctx, link.UID); err != nil {
+		a.log.WarnContext(ctx, "uploadlinkapi: releasing an upload slot",
+			slog.String("link_uid", link.UID), slog.String("error", err.Error()))
+	}
 }
 
 // record stores the provenance of res, files its photo into the link's targets
