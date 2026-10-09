@@ -1772,7 +1772,8 @@ here.
   an **active** link with a known `path` shows its absolute address in `LinkAddress` (read-only field,
   copy → "Zkopírováno", share where `navigator.share` exists — the same control the create flow uses);
   revoked and expired links show none. A non-revoked link **without** a known code (created before the
-  backend kept codes) says so (`upload-link-code-unknown`) and offers "Obnovit původní kód" as its
+  backend kept codes) says so (`upload-link-code-unknown`; an expired one says it has expired and
+  that "Prodloužit" revives the same address, never that it still works) and offers "Obnovit původní kód" as its
   **primary** button: `RestoreCodeModal` takes the code or the whole pasted link (`codeFromInput`) and
   answers a 422 with `uploadLinks.restoreMismatch`. Every non-revoked link has a secondary
   "Vygenerovat nový kód" (`outline-warning`) behind a `ConfirmModal` whose warning alert says the

@@ -4311,6 +4311,7 @@
     "share": "Sdílet",
     "copyLater": "Odkaz můžete kdykoli znovu zkopírovat ze seznamu odkazů.",
     "codeUnknown": "Odkaz vznikl dřív, než si Kukátko adresy odkazů pamatovalo, proto ji nelze zobrazit. Odkaz dál funguje — zadejte jeho původní kód a půjde tu znovu zkopírovat.",
+    "codeUnknownExpired": "Odkaz vznikl dřív, než si Kukátko adresy odkazů pamatovalo, proto ji nelze zobrazit. Platnost odkazu vypršela a nahrávat přes něj nejde — tlačítkem „Prodloužit“ ožije na stejné adrese. Původní kód můžete i tak zadat a půjde tu znovu zkopírovat.",
     "restoreCode": "Obnovit původní kód",
     "restoreTitle": "Obnovit původní kód",
     "restoreLead": "Zadejte kód odkazu „{{title}}“ tak, jak jste ho rozeslali — část za /u/ v odkazu, nebo celý odkaz. Adresa odkazu zůstane stejná, Kukátko si ji jen znovu zapamatuje.",

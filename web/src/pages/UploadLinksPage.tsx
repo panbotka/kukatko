@@ -361,7 +361,11 @@ function LinkCard({
         )}
         {link.state !== 'revoked' && link.path === undefined && (
           <p className="small text-warning mb-2" data-testid="upload-link-code-unknown">
-            {t('uploadLinks.codeUnknown')}
+            {t(
+              link.state === 'expired'
+                ? 'uploadLinks.codeUnknownExpired'
+                : 'uploadLinks.codeUnknown',
+            )}
           </p>
         )}
         {link.state !== 'revoked' && (

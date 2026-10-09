@@ -4117,6 +4117,7 @@
     "share": "Share",
     "copyLater": "You can copy the link again any time from the list of links.",
     "codeUnknown": "This link was created before Kukátko kept link addresses, so its address cannot be shown. It still works — enter its original code to copy it here again.",
+    "codeUnknownExpired": "This link was created before Kukátko kept link addresses, so its address cannot be shown. The link has expired and accepts no uploads — “Extend” revives it at the same address. You can still enter its original code to copy it here again.",
     "restoreCode": "Restore original code",
     "restoreTitle": "Restore the original code",
     "restoreLead": "Enter the code of “{{title}}” as you sent it out — the part after /u/ in the link, or the whole link. The link keeps its address; Kukátko only remembers it again.",

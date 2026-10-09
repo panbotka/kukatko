@@ -299,6 +299,39 @@ describe('UploadLinksPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('never claims an expired link without a known code still works', async () => {
+    listMock.mockResolvedValue(
+      list(
+        link({ uid: 'ul1', code: undefined, path: undefined }),
+        link({ uid: 'ul2', state: 'expired', code: undefined, path: undefined }),
+      ),
+    )
+    renderPage()
+    const [active, expired] = await screen.findAllByTestId('upload-link-card')
+    expect(within(active).getByTestId('upload-link-code-unknown')).toHaveTextContent(
+      /It still works/,
+    )
+    const notice = within(expired).getByTestId('upload-link-code-unknown')
+    expect(notice).toHaveTextContent(/has expired/)
+    expect(notice).toHaveTextContent(/“Extend” revives it at the same address/)
+    expect(notice).not.toHaveTextContent(/still works/)
+    expect(
+      within(expired).getByRole('button', { name: 'Restore original code' }),
+    ).toBeInTheDocument()
+    expect(within(expired).getByRole('button', { name: 'Generate new code' })).toBeInTheDocument()
+    expect(within(expired).getByRole('button', { name: 'Extend' })).toBeInTheDocument()
+  })
+
+  it('says an expired link has expired in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    listMock.mockResolvedValue(list(link({ state: 'expired', code: undefined, path: undefined })))
+    renderPage()
+    const card = await screen.findByTestId('upload-link-card')
+    const notice = within(card).getByTestId('upload-link-code-unknown')
+    expect(notice).toHaveTextContent(/Platnost odkazu vypršela/)
+    expect(notice).not.toHaveTextContent(/dál funguje/)
+  })
+
   it('restores the original code, and says so plainly on a mismatch', async () => {
     listMock.mockResolvedValue(list(link({ code: undefined, path: undefined })))
     restoreMock
