@@ -615,6 +615,7 @@ Everything else below is open as written.
 - **Not addressed here:** a failed send's transport error names the endpoint URL in `last_error`, so a
   **maintainer** can read other accounts' endpoints through `/jobs`. Maintainers already hold the database
   and the backups, so this is not a new capability.
+- **Fix commit:** `be84566` (2026-10-09).
 
 ---
 
