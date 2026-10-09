@@ -299,6 +299,28 @@ describe('ExpandPage', () => {
     expect(screen.queryByText('No similar photos')).toBeNull()
   })
 
+  it('renders the chosen source as the checked toggle option, and moves it on a click', async () => {
+    const user = userEvent.setup()
+    renderPage('/expand')
+
+    const album = await screen.findByRole('radio', { name: 'Album' })
+    const label = screen.getByRole('radio', { name: 'Label' })
+    expect(album).toBeChecked()
+    expect(label).not.toBeChecked()
+    // The chosen state is painted by `.btn-check:checked + .btn-outline-secondary`
+    // (bootstrapBridge.css), so the checked radio must sit directly before its
+    // quiet-button label for the accent fill to land on the right option.
+    for (const radio of [album, label]) {
+      expect(radio).toHaveClass('btn-check')
+      expect(radio.nextElementSibling).toHaveClass('btn', 'btn-outline-secondary')
+    }
+
+    await user.click(screen.getByText('Label', { selector: 'label' }))
+    expect(label).toBeChecked()
+    expect(album).not.toBeChecked()
+    expect(screen.getByRole('combobox', { name: /label/i })).toBeInTheDocument()
+  })
+
   it('suggests lowering the threshold when the search finds nothing', async () => {
     searchMock.mockResolvedValue(makeResult('album', 'al1', []))
     renderPage('/expand?type=album&source=al1')

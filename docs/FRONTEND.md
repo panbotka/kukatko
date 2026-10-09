@@ -4098,7 +4098,8 @@ here.
   **it never auto-confirms**,
   `ExpandPage` = `/expand` (editor/admin, a top-level link **Rozšířit** by albums/labels) „rozšiř album
   nebo štítek o vizuálně podobné fotky": the config panel `ExpandSearchForm` (an **Album|Štítek** toggle
-  (`ToggleButtonGroup`), collection selection via `AddAutocomplete` — options from `lib/expandSearch`
+  (`ToggleButtonGroup`, full-size buttons with a centred label, so it matches the 44px picker beside it;
+  the chosen kind is the accent-filled option), collection selection via `AddAutocomplete` — options from `lib/expandSearch`
   `expandSources` **sorted by photo count descending, empty collections omitted**, the count in `hint` —,
   a threshold in **percent** 65–90 % step 5 **default 80 %** with bookends „Více výsledků"↔„Lepší shody"
   (the range is `lib/expandSearch`'s own — the photo and face embedding spaces have different scales, see
@@ -7441,7 +7442,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   tables and **alerts** — a tinted surface with ink text and a rail in the variant's text tone instead of
   Superhero's solid fill (which put white on cyan at ~2:1). **The quiet action** `.btn-outline-secondary`
   (85 call sites) keeps the ink label with a `--kk-control-border` outline and a translucent shade on
-  hover/active, so it reads on every surface;
+  hover/active, so it reads on every surface — except **the chosen option of a toggle**
+  (`.btn-check:checked + .btn-outline-secondary`, `.btn-outline-secondary.active`: every
+  `ToggleButtonGroup` of quiet buttons), which fills with `--kk-accent-solid` and carries `--kk-on-accent`,
+  because the shade press is near-black on the near-black page and the chosen option looked like the rest
+  (fill and edge ≥ 3:1 against a resting option on every surface, `styles/contrast.test.ts`);
   **a slim translucent navbar** `.kukatko-navbar` (it sits ABOVE the scrolling content: the fill `--kk-header-bg`
   = the page's tone at 72 % + `backdrop-filter: blur(--kk-header-blur)` frosts whatever scrolls beneath it,
   a hairline bottom line `--kk-header-border`; an `@supports not (backdrop-filter…)` fallback to the full

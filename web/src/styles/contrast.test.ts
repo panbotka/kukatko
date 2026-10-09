@@ -216,6 +216,46 @@ describe('edges a user has to find', () => {
   })
 })
 
+describe('the chosen option of a toggle', () => {
+  // A `ToggleButtonGroup` of quiet (`outline-secondary`) buttons: the resting
+  // options are transparent over whatever surface the group sits on, so the
+  // chosen one is told apart only by its own fill and edge. Both must clear 3:1
+  // against a resting option (WCAG 1.4.11), and the label on it must read.
+  const bridge = stripCssComments(readCss('src/styles/bootstrapBridge.css'))
+  const body = ruleBody(
+    bridge,
+    /\.btn-check:checked \+ \.btn-outline-secondary,\s*\.btn-outline-secondary\.active\s*(?=\{)/,
+  )
+  const chosen = declarations(body ?? '')
+
+  it('overrides the quiet button’s near-black shade press for the chosen state only', () => {
+    expect(body).toBeDefined()
+    expect(chosen.get('--bs-btn-active-bg')).toBe('var(--kk-accent-solid)')
+    expect(chosen.get('--bs-btn-active-border-color')).toBe('var(--kk-accent-solid)')
+    expect(chosen.get('--bs-btn-active-color')).toBe('var(--kk-on-accent)')
+  })
+
+  it.each(SURFACES)('stands 3:1 clear of a resting option on %s', (surface) => {
+    const resting = colour(token(surface))
+    for (const name of ['--bs-btn-active-bg', '--bs-btn-active-border-color']) {
+      const chosenColour = colour(chosen.get(name) ?? '')
+      const ratio = contrastRatio(chosenColour, resting)
+      expect(
+        ratio,
+        `${name} ${toHex(chosenColour)} on ${toHex(resting)} is ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(NON_TEXT)
+    }
+  })
+
+  it('keeps its label legible on the fill', () => {
+    expectContrast(
+      chosen.get('--bs-btn-active-color') ?? '',
+      chosen.get('--bs-btn-active-bg') ?? '',
+      TEXT,
+    )
+  })
+})
+
 describe('an unchecked checkbox and switch', () => {
   // Since the palette swap an unchecked control is a dark well on a dark panel,
   // so what makes it findable is its edge and — for a switch — its knob. Both

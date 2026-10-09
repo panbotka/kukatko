@@ -305,6 +305,21 @@
   --bs-btn-disabled-border-color: color-mix(in srgb, var(--kk-palette-ink) 30%, transparent);
 }
 
+/* The CHOSEN option of a toggle built from quiet buttons — a `ToggleButtonGroup`
+   radio (`/expand`'s Album/Label, the relation kind) or a `.active` one. The
+   pressed fill above is a translucent shade, i.e. near-black on the near-black
+   page, so the chosen option looked exactly like the others. It fills with the
+   accent and carries the base instead — the colour the active nav item, the
+   chosen map style and the selection outline already speak — which stands
+   3:1 clear of a resting option on every surface (the contrast test measures
+   it). Scoped to the chosen state: a plain quiet button keeps its shade press. */
+.btn-check:checked + .btn-outline-secondary,
+.btn-outline-secondary.active {
+  --bs-btn-active-color: var(--kk-on-accent);
+  --bs-btn-active-bg: var(--kk-accent-solid);
+  --bs-btn-active-border-color: var(--kk-accent-solid);
+}
+
 .btn-outline-info {
   --bs-btn-color: var(--kk-info-text);
   --bs-btn-border-color: var(--kk-info-text);

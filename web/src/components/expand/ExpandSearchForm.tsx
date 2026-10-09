@@ -94,6 +94,9 @@ export function ExpandSearchForm({
             {t('expand.form.sourceHeading')}
           </span>
           <div className="d-flex gap-2 align-items-start flex-wrap">
+            {/* Full-size buttons with a centred label: the group stands beside
+                the picker's 44px field at the field's own font size, so the two
+                read as one row rather than a short pill next to a tall box. */}
             <ToggleButtonGroup
               type="radio"
               name="expand-kind"
@@ -107,8 +110,7 @@ export function ExpandSearchForm({
                 id="expand-kind-album"
                 value="album"
                 variant="outline-secondary"
-                size="sm"
-                className="kukatko-tap-target"
+                className="kukatko-tap-target d-inline-flex align-items-center"
               >
                 {t('expand.form.kindAlbum')}
               </ToggleButton>
@@ -116,8 +118,7 @@ export function ExpandSearchForm({
                 id="expand-kind-label"
                 value="label"
                 variant="outline-secondary"
-                size="sm"
-                className="kukatko-tap-target"
+                className="kukatko-tap-target d-inline-flex align-items-center"
               >
                 {t('expand.form.kindLabel')}
               </ToggleButton>
