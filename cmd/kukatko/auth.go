@@ -54,6 +54,11 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Mail:      mail,
 		SignInURL: signInURL(cfg.Mail.BaseURL),
 	})
+	rename := auth.NewRename(auth.RenameConfig{
+		Service:   svc,
+		Mail:      mail,
+		SignInURL: signInURL(cfg.Mail.BaseURL),
+	})
 	passwordReset := auth.NewPasswordReset(auth.PasswordResetConfig{
 		Service:  svc,
 		Mail:     mail,
@@ -75,6 +80,7 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Registration:  registration,
 		UploadLinks:   uploadLinkGate(cfg, db),
 		Approval:      approval,
+		Rename:        rename,
 		PasswordReset: passwordReset,
 		Passkeys:      passkeys,
 		SecureCookies: cfg.Web.SecureCookies,

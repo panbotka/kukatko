@@ -128,6 +128,7 @@ func writeRegisterError(w http.ResponseWriter, err error) {
 func isCreateUserInputError(err error) bool {
 	return errors.Is(err, ErrUsernameTaken) ||
 		errors.Is(err, ErrUsernameTooLong) ||
+		errors.Is(err, ErrUsernameRequired) ||
 		errors.Is(err, ErrInvalidEmail) ||
 		errors.Is(err, ErrPasswordTooShort) ||
 		errors.Is(err, ErrNoteTooLong)

@@ -175,3 +175,32 @@ func TestValidateUserUpdate(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateAccountUsername pins the rule every stored username meets —
+// creation, registration and rename alike: not empty, and within the length
+// limit validateUsername already enforces for login.
+func TestValidateAccountUsername(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		username string
+		wantErr  error
+	}{
+		{name: "ordinary name is allowed", username: "jan.novak", wantErr: nil},
+		{name: "empty name is rejected", username: "", wantErr: ErrUsernameRequired},
+		{name: "name at the rune limit is allowed", username: strings.Repeat("ř", MaxUsernameLen), wantErr: nil},
+		{
+			name: "name over the rune limit is rejected", username: strings.Repeat("a", MaxUsernameLen+1),
+			wantErr: ErrUsernameTooLong,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := validateAccountUsername(tt.username); !errors.Is(err, tt.wantErr) {
+				t.Errorf("validateAccountUsername(%q) error = %v, want %v", tt.username, err, tt.wantErr)
+			}
+		})
+	}
+}

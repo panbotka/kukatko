@@ -106,6 +106,13 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 			}),
 			wantBody: "- Rok svatby (čeká na odpověď)\n  https://kukatko.example/tasks/tk-1",
 		},
+		{
+			name: "username changed",
+			mail: UsernameChanged("jan@example.com", mailer.UsernameChangedData{
+				Username: "jan.novak", SignInURL: "https://kukatko.example/login",
+			}),
+			wantBody: "jménem „jan.novak“",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

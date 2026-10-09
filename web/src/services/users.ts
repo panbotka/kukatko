@@ -111,6 +111,9 @@ export interface UpdateUserBody {
  */
 export const ROLES: readonly Role[] = ['viewer', 'curator', 'editor', 'admin', 'maintainer']
 
+/** Maximum length of a username in characters (`auth.MaxUsernameLen`). */
+export const MAX_USERNAME_LENGTH = 64
+
 /** Maximum length of a user note in characters (`auth.MaxNoteLen`). */
 export const MAX_NOTE_LENGTH = 1000
 
@@ -147,6 +150,26 @@ export async function updateUser(
   signal?: AbortSignal,
 ): Promise<AdminUser> {
   const res = await request('PATCH', `/admin/users/${uid}`, body, signal)
+  return (await res.json()) as AdminUser
+}
+
+/**
+ * Gives an account a new username (`PUT /admin/users/{uid}/username`),
+ * returning the refreshed row. The backend normalises the name exactly as on
+ * creation (trimmed, lower-cased), keeps the account's sessions, tokens and
+ * passkeys — they are keyed on the uid — and mails the person the new name when
+ * mail is on. Sending the name the account already has is a no-op 200.
+ *
+ * @throws ApiError with `status` 400 (empty or over-length username), 403 (the
+ *   account is a maintainer's and the actor is not), 404, or 409 (another
+ *   account holds the name, in any letter case).
+ */
+export async function renameUser(
+  uid: string,
+  username: string,
+  signal?: AbortSignal,
+): Promise<AdminUser> {
+  const res = await request('PUT', `/admin/users/${uid}/username`, { username }, signal)
   return (await res.json()) as AdminUser
 }
 

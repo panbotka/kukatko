@@ -11,7 +11,7 @@ import { type AdminUser } from '../services/users'
 import { installRule } from '../test/css'
 import { expectLive, expectOff } from '../test/reasoned'
 
-import { UsersPage } from './UsersPage'
+import { UserFormModal, UsersPage } from './UsersPage'
 
 vi.mock('../services/users', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/users')>()
@@ -24,6 +24,7 @@ vi.mock('../services/users', async (importOriginal) => {
     resetUserPassword: vi.fn(),
     approveUser: vi.fn(),
     issuePasswordReset: vi.fn(),
+    renameUser: vi.fn(),
   }
 })
 
@@ -36,8 +37,15 @@ vi.mock('../services/people', async (importOriginal) => {
 // all, so the dialogs can say what actually happens.
 vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
 
-const { approveUser, createUser, fetchUsers, issuePasswordReset, setUserDisabled, updateUser } =
-  await import('../services/users')
+const {
+  approveUser,
+  createUser,
+  fetchUsers,
+  issuePasswordReset,
+  renameUser,
+  setUserDisabled,
+  updateUser,
+} = await import('../services/users')
 const { fetchSubjects } = await import('../services/people')
 const { fetchPublicSettings } = await import('../services/settings')
 const fetchPublicSettingsMock = vi.mocked(fetchPublicSettings)
@@ -48,6 +56,7 @@ const setUserDisabledMock = vi.mocked(setUserDisabled)
 const updateUserMock = vi.mocked(updateUser)
 const approveUserMock = vi.mocked(approveUser)
 const issuePasswordResetMock = vi.mocked(issuePasswordReset)
+const renameUserMock = vi.mocked(renameUser)
 
 /**
  * What the backend answers when a change would take away the instance's last
@@ -145,6 +154,7 @@ beforeEach(async () => {
   updateUserMock.mockReset()
   approveUserMock.mockReset()
   issuePasswordResetMock.mockReset()
+  renameUserMock.mockReset()
   fetchPublicSettingsMock.mockReset()
   fetchPublicSettingsMock.mockResolvedValue({
     registration_enabled: false,
@@ -571,7 +581,7 @@ describe('UsersPage', () => {
     })
   })
 
-  it('renders the username read-only when editing an existing user', async () => {
+  it('offers the username for editing on an account the admin may manage', async () => {
     fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
     const actor = userEvent.setup()
     renderPage()
@@ -580,9 +590,152 @@ describe('UsersPage', () => {
     await actor.click(screen.getByRole('button', { name: 'Edit' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByLabelText('Username')).toHaveAttribute('readonly')
+    const username = within(dialog).getByLabelText('Username')
+    expect(username).not.toHaveAttribute('readonly')
+    expect(username).toHaveValue('ada')
+    expect(within(dialog).getByText(/signs in with the new name/)).toBeInTheDocument()
     // Editing offers no password field; that is a separate dialog.
     expect(within(dialog).queryByLabelText('Password')).not.toBeInTheDocument()
+  })
+
+  it('renames before saving the profile and updates the roster row in order', async () => {
+    const ada = user({ uid: 'u1', username: 'ada' })
+    const bob = user({ uid: 'u2', username: 'bob', display_name: 'Bob', email: 'bob@example.com' })
+    fetchUsersMock.mockResolvedValue([ada, bob])
+    renameUserMock.mockResolvedValue({ ...ada, username: 'zoe' })
+    updateUserMock.mockResolvedValue({ ...ada, username: 'zoe' })
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    const adaRow = screen.getByText('ada').closest('tr') as HTMLElement
+    await actor.click(within(adaRow).getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    const username = within(dialog).getByLabelText('Username')
+    await actor.clear(username)
+    await actor.type(username, 'Zoe')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(renameUserMock).toHaveBeenCalledWith('u1', 'Zoe')
+    expect(renameUserMock.mock.invocationCallOrder[0]).toBeLessThan(
+      updateUserMock.mock.invocationCallOrder[0] ?? 0,
+    )
+    expect(screen.queryByText('ada')).not.toBeInTheDocument()
+    // The renamed row moves to where its new name sorts: after bob.
+    const names = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0]?.textContent)
+    expect(names).toEqual(['bob', 'zoe'])
+  })
+
+  it('does not send a rename when only the letter case or spacing differs', async () => {
+    const ada = user({ uid: 'u1', username: 'ada' })
+    fetchUsersMock.mockResolvedValue([ada])
+    updateUserMock.mockResolvedValue(ada)
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    const username = within(dialog).getByLabelText('Username')
+    await actor.clear(username)
+    await actor.type(username, ' ADA ')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateUserMock).toHaveBeenCalled()
+    })
+    expect(renameUserMock).not.toHaveBeenCalled()
+  })
+
+  it('leaves an untouched legacy mixed-case username alone on save', async () => {
+    const petr = user({ uid: 'u1', username: 'Petr' })
+    fetchUsersMock.mockResolvedValue([petr])
+    updateUserMock.mockResolvedValue(petr)
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('Petr')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(updateUserMock).toHaveBeenCalled()
+    })
+    expect(renameUserMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a taken username inline on the field and saves nothing else', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
+    renameUserMock.mockRejectedValue(new ApiError(409, 'username already taken'))
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    const username = within(dialog).getByLabelText('Username')
+    await actor.clear(username)
+    await actor.type(username, 'bob')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(username).toHaveClass('is-invalid')
+    })
+    expect(within(dialog).getByText('That username is already taken.')).toBeInTheDocument()
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
+    expect(updateUserMock).not.toHaveBeenCalled()
+  })
+
+  it('shows an over-long username refusal inline with the limit', async () => {
+    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
+    renameUserMock.mockRejectedValue(
+      new ApiError(400, 'auth: username must be at most 64 characters'),
+    )
+    const actor = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    await actor.click(screen.getByRole('button', { name: 'Edit' }))
+    const dialog = await screen.findByRole('dialog')
+    const username = within(dialog).getByLabelText('Username')
+    await actor.clear(username)
+    await actor.type(username, 'someone')
+    await actor.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+    expect(
+      await within(dialog).findByText('A username can be at most 64 characters long.'),
+    ).toBeInTheDocument()
+    expect(username).toHaveClass('is-invalid')
+  })
+
+  it('keeps the username read-only on an account the actor may not manage', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <UserFormModal
+          user={user({ uid: 'u9', username: 'ops', role: 'maintainer' })}
+          isMaintainer={false}
+          canManage={false}
+          onHide={vi.fn()}
+          onSaved={vi.fn()}
+          onRenamed={vi.fn()}
+        />
+      </I18nextProvider>,
+    )
+
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByLabelText('Username')).toHaveAttribute('readonly')
+    expect(
+      within(dialog).getByText(
+        "Only another system maintainer can change a system maintainer's username.",
+      ),
+    ).toBeInTheDocument()
   })
 
   it('gives the create/edit dialog the whole phone screen with its actions pinned', async () => {

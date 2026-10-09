@@ -201,16 +201,17 @@ func (s *Service) CreateUserAudited(
 
 // prepareNewUser validates in and builds the User to insert, hashing the password
 // and assigning a fresh UID. It is shared by CreateUser and CreateUserAudited and
-// returns ErrInvalidRole, ErrUsernameTooLong, ErrPasswordTooShort,
+// returns ErrInvalidRole, ErrUsernameRequired, ErrUsernameTooLong, ErrPasswordTooShort,
 // ErrNoteTooLong or ErrInvalidEmail on invalid input.
 func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
 	username := normalizeUsername(in.Username)
-	// Login rejects an over-long username outright, so an account with one
-	// could never be used; refuse to create it in the first place.
-	if err := validateUsername(username); err != nil {
+	// Login rejects an over-long username outright and nobody can type an
+	// empty one, so an account with either could never be used; refuse to
+	// create it in the first place.
+	if err := validateAccountUsername(username); err != nil {
 		return User{}, err
 	}
 	if err := validateNote(in.Note); err != nil {

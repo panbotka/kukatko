@@ -536,6 +536,10 @@ registration is waiting"; nobody else sees a setting for a message they could ne
   nobody has to be found by reading the whole list. Approving hands out no rights beyond reading —
   raising a role stays a separate, deliberate edit — approving twice is harmless, and a blocked
   account is not approved but unblocked, which is its own action.
+- **An administrator can rename an account.** Somebody who registered as a joke name gets a proper
+  one from the edit dialog on the user list. They stay signed in on every device, their tokens,
+  passkeys, photos and comments stay theirs, and they are e-mailed the name to sign in with from now
+  on. A name somebody else holds is refused, letter case notwithstanding.
 - **The instance's own settings have a screen.** An administrator opens *Nastavení* and decides
   there whether self-service registration is open, what the shared secret is — shown as readable
   text, because the whole job with it is to read it back and tell people what it is — and what

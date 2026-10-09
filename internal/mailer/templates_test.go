@@ -60,6 +60,50 @@ func TestRenderAccountApproved(t *testing.T) {
 	}
 }
 
+// TestRenderUsernameChanged pins the text of the rename message: it names the
+// new username, says the password is unchanged, and carries the sign-in link —
+// or leaves the link paragraph out when no public URL is configured.
+func TestRenderUsernameChanged(t *testing.T) {
+	t.Parallel()
+
+	intro := "správce změnil uživatelské jméno vašeho účtu v Kukátku. Od teď se\n" +
+		"přihlašujete jménem „jan.novak“; heslo zůstává stejné.\n"
+	tests := []struct {
+		name string
+		data UsernameChangedData
+		want string
+	}{
+		{
+			name: "with a sign-in link",
+			data: UsernameChangedData{
+				DisplayName: "Jan", Username: "jan.novak", SignInURL: "https://kukatko.example.com/login",
+			},
+			want: "Dobrý den, Jan,\n\n" + intro +
+				"\nPřihlásit se můžete tady:\n\nhttps://kukatko.example.com/login\n\nKukátko\n",
+		},
+		{
+			name: "without a sign-in link or a display name",
+			data: UsernameChangedData{Username: "jan.novak", SignInURL: "  "},
+			want: "Dobrý den,\n\n" + intro + "\nKukátko\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := RenderUsernameChanged(tt.data)
+			if got.Template != TemplateUsernameChanged {
+				t.Errorf("Template = %q, want %q", got.Template, TemplateUsernameChanged)
+			}
+			if want := "Vaše uživatelské jméno v Kukátku je teď jan.novak"; got.Subject != want {
+				t.Errorf("Subject = %q, want %q", got.Subject, want)
+			}
+			if got.Body != tt.want {
+				t.Errorf("Body =\n%q\nwant\n%q", got.Body, tt.want)
+			}
+		})
+	}
+}
+
 // TestRenderNewRegistrationPending pins the administrator's message, which must
 // name the username, the display name and the e-mail address.
 func TestRenderNewRegistrationPending(t *testing.T) {

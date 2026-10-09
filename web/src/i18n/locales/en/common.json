@@ -814,6 +814,7 @@
         "password_reset": "Password-reset link issued",
         "password_reset_use": "Password reset through a link",
         "register": "User registered",
+        "rename": "Username changed",
         "update": "User edited"
       },
       "stack": {
@@ -3614,7 +3615,8 @@
       "createTitle": "New user",
       "editTitle": "Edit user",
       "username": "Username",
-      "usernameImmutable": "The username cannot be changed.",
+      "usernameRenameHint": "The user then signs in with the new name; they stay signed in and get an e-mail about the change. Stored in lower case.",
+      "usernameLocked": "Only another system maintainer can change a system maintainer's username.",
       "usernameRequired": "Enter a username.",
       "password": "Password",
       "passwordHint": "At least {{min}} characters.",
@@ -3651,6 +3653,8 @@
     },
     "errors": {
       "usernameTaken": "That username is already taken.",
+      "usernameRequired": "Enter a username.",
+      "usernameTooLong": "A username can be at most {{max}} characters long.",
       "passwordTooShort": "The password must be at least {{min}} characters.",
       "invalidEmail": "Enter a valid e-mail address.",
       "invalidRole": "Invalid role.",

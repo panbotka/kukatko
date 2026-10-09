@@ -29,6 +29,7 @@ import "github.com/go-chi/chi/v5"
 //	GET    /admin/users           RequireAdmin
 //	POST   /admin/users           RequireAdmin
 //	PATCH  /admin/users/{uid}     RequireAdmin
+//	PUT    /admin/users/{uid}/username   RequireAdmin
 //	POST   /admin/users/{uid}/approve    RequireAdmin
 //	POST   /admin/users/{uid}/disable    RequireAdmin
 //	POST   /admin/users/{uid}/password   RequireAdmin
@@ -103,6 +104,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Get("/", a.handleListUsers)
 		r.Post("/", a.handleCreateUser)
 		r.Patch("/{uid}", a.handleUpdateUser)
+		r.Put("/{uid}/username", a.handleRenameUser)
 		r.Post("/{uid}/approve", a.handleApproveUser)
 		r.Post("/{uid}/disable", a.handleDisableUser)
 		r.Post("/{uid}/password", a.handleResetPassword)

@@ -6,6 +6,8 @@ export type FormField = 'username' | 'password' | 'email' | 'role' | 'note'
 /** The i18n keys for the validation messages the backend can produce. */
 export type ErrorKey =
   | 'users.errors.usernameTaken'
+  | 'users.errors.usernameRequired'
+  | 'users.errors.usernameTooLong'
   | 'users.errors.passwordTooShort'
   | 'users.errors.invalidEmail'
   | 'users.errors.invalidRole'
@@ -31,7 +33,7 @@ export interface FormError {
  * The admin user handlers answer with a plain `{"error": "..."}` envelope rather
  * than a per-field structure, so the status plus a keyword from the message is
  * all there is to go on: 409 is either a duplicate username or the
- * last-maintainer guard (told apart by the message), and the four possible 400s
+ * last-maintainer guard (told apart by the message), and the possible 400s
  * each name their own field (`internal/auth/handlers_admin.go`). Anything
  * unrecognised degrades to a form-level message.
  *
@@ -49,6 +51,16 @@ export function fieldErrorFor(error: unknown): FormError {
     }
     if (error.status === 400) {
       const message = error.message.toLowerCase()
+      // First: a username message would otherwise be taken for none of the
+      // others, and the rename sends nothing but the name.
+      if (message.includes('username')) {
+        return {
+          field: 'username',
+          messageKey: message.includes('required')
+            ? 'users.errors.usernameRequired'
+            : 'users.errors.usernameTooLong',
+        }
+      }
       if (message.includes('password')) {
         return { field: 'password', messageKey: 'users.errors.passwordTooShort' }
       }

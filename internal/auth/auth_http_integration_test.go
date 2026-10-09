@@ -80,6 +80,11 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 		// Password resets go through the same queue, so a test reads the link
 		// off a real `mail_send` job — and the base is a real absolute URL, so
 		// the link an administrator is handed is the one that was mailed.
+		Rename: auth.NewRename(auth.RenameConfig{
+			Service:   svc,
+			Mail:      mail,
+			SignInURL: testSignInURL,
+		}),
 		PasswordReset: auth.NewPasswordReset(auth.PasswordResetConfig{
 			Service:  svc,
 			Mail:     mail,

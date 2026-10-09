@@ -18,8 +18,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   administrative record never leave the database, because the query selects two of them. It sits beside
   `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
   Admin-only: `GET|POST /admin/users`,
-  `PATCH /admin/users/{uid}`, `POST /admin/users/{uid}/approve`,
-  `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
+  `PATCH /admin/users/{uid}`, `PUT /admin/users/{uid}/username` (rename, see below),
+  `POST /admin/users/{uid}/approve`, `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
   Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
@@ -164,6 +164,26 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   approval one mail is enqueued on the job queue (`account_approved`, `mail_send`) **in the same
   transaction** as the stamp and the `user.approve` audit entry, so a rolled-back approval promises
   nobody anything; its sign-in link is `mail.base_url` + `/login`.
+  **`PUT /admin/users/{uid}/username` (admin) — renaming an account.** Body `{"username": "…"}`; **200**
+  returns the account (the admin view). It is a route of its own rather than a field of `PATCH`, because
+  that endpoint replaces the profile and is resent whole by every save, while a rename has its own audit
+  action, its own mail and its own conflict. The name goes through **the same normalisation and validation as
+  creation and registration** (`normalizeUsername` — trimmed, lower-cased — then `validateAccountUsername`): an
+  empty name → **400** (`auth: username is required`), over **64 runes** → **400**
+  (`auth: username must be at most 64 characters`), a name another account holds → **409**
+  (`username already taken`) — compared **case-insensitively**, so a legacy mixed-case row cannot be duplicated
+  either. Renaming to the name the account already has is **200 with the account unchanged** — no audit entry,
+  no mail. Who may: exactly the rest of `/admin/users` — admin and maintainer (viewer/curator/editor → **403**
+  from the route guard), with the **maintainer boundary** (an admin renaming a maintainer account → **403**);
+  renaming one's own account is not special. A UID naming nobody → **404**. **Nothing keyed on the account
+  moves:** sessions, API tokens, passkeys, the linked subject, comments, uploads and the audit trail all
+  reference `users.uid` (every foreign key into `users` does — pinned by an integration test), so the person
+  stays signed in and every credential keeps working; only the password sign-in now wants the new name. A
+  `.invalid` placeholder address (`<name>-<uid>@kukatko.invalid`) is **not** rewritten — it only has to be
+  unique and undeliverable. The rename, its audit entry (`user.rename`, `details.old_username`/`new_username`)
+  and the mail telling the person (`username_changed`, Czech, with the `mail.base_url` + `/login` link) are
+  written **in one transaction**; with mail off or a `.invalid` address no mail is enqueued and the rename
+  still succeeds.
   **Password reset by link — three endpoints.** They exist because `POST /admin/users/{uid}/password`
   works but means the administrator learns a password its owner may use elsewhere; a link moves the
   choice back to that owner.

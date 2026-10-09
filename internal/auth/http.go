@@ -35,6 +35,7 @@ type API struct {
 	registration    *Registration
 	uploadLinks     UploadLinkGate
 	approval        *Approval
+	rename          *Rename
 	passwordReset   *PasswordReset
 	registerLimit   *ratelimit.Limiter
 	// passwordResetLimit caps the two public halves of a password reset per
@@ -72,6 +73,9 @@ type APIConfig struct {
 	// account in. Optional: when nil, NewAPI derives one that approves accounts
 	// and sends no mail, so an instance that wires no mail still has the action.
 	Approval *Approval
+	// Rename is the administrator's change of an account's username. Optional:
+	// when nil, NewAPI derives one that renames accounts and sends no mail.
+	Rename *Rename
 	// PasswordReset is the "somebody forgot their password" flow. Optional: when
 	// nil, NewAPI derives one that issues links and sends no mail, so an instance
 	// that wires no mail can still hand an administrator a link to pass on.
@@ -103,6 +107,7 @@ func NewAPI(cfg APIConfig) *API {
 		registration:       cfg.Registration,
 		uploadLinks:        cfg.UploadLinks,
 		approval:           approvalFor(cfg),
+		rename:             renameFor(cfg),
 		passwordReset:      passwordResetFor(cfg),
 		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),
 		passwordResetLimit: perAddressLimiter(cfg.PasswordResetLimiter, cfg.Limiter),
@@ -134,6 +139,17 @@ func approvalFor(cfg APIConfig) *Approval {
 		return cfg.Approval
 	}
 	return NewApproval(ApprovalConfig{Service: cfg.Service})
+}
+
+// renameFor returns the rename flow cfg asks for, deriving a mail-less one from
+// the service when the caller supplied none — for the reason approvalFor does:
+// an administrator must be able to rename an account on an instance that sends
+// no mail too.
+func renameFor(cfg APIConfig) *Rename {
+	if cfg.Rename != nil {
+		return cfg.Rename
+	}
+	return NewRename(RenameConfig{Service: cfg.Service})
 }
 
 // passwordResetFor returns the password-reset flow cfg asks for, deriving a

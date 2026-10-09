@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-// Template names. Each names one of the five messages Kukátko can send and is
+// Template names. Each names one of the six messages Kukátko can send and is
 // carried on the Rendered value, so a log line or an audit entry can say which
 // message went out without repeating its subject.
 const (
@@ -24,6 +24,9 @@ const (
 	// TemplateTasksWaitingDigest lists the tasks whose move is the recipient's,
 	// once a day.
 	TemplateTasksWaitingDigest = "tasks_waiting_digest"
+	// TemplateUsernameChanged tells somebody an administrator renamed their
+	// account, so they know which name to sign in with.
+	TemplateUsernameChanged = "username_changed"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.
@@ -93,6 +96,38 @@ func RenderAccountApproved(d AccountApprovedData) Rendered {
 			"",
 			signature,
 		),
+	}
+}
+
+// UsernameChangedData is what the "username changed" message needs: whom to
+// greet, the name the account now signs in with and where to sign in.
+type UsernameChangedData struct {
+	DisplayName string
+	Username    string
+	SignInURL   string
+}
+
+// RenderUsernameChanged builds the message telling somebody their account was
+// renamed by an administrator. Without it the person would type the old name,
+// be refused and not know why. The password is untouched, so the message says
+// so — the one question it would otherwise raise. An empty SignInURL leaves the
+// link out rather than printing a blank line where an address should be. It is a
+// pure function of d.
+func RenderUsernameChanged(d UsernameChangedData) Rendered {
+	lines := []string{
+		greeting(d.DisplayName),
+		"",
+		"správce změnil uživatelské jméno vašeho účtu v Kukátku. Od teď se",
+		"přihlašujete jménem „" + d.Username + "“; heslo zůstává stejné.",
+	}
+	if url := strings.TrimSpace(d.SignInURL); url != "" {
+		lines = append(lines, "", "Přihlásit se můžete tady:", "", url)
+	}
+	lines = append(lines, "", signature)
+	return Rendered{
+		Template: TemplateUsernameChanged,
+		Subject:  "Vaše uživatelské jméno v Kukátku je teď " + d.Username,
+		Body:     body(lines...),
 	}
 }
 

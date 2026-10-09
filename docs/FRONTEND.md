@@ -2621,8 +2621,15 @@ here.
   disagree — and the count is always of the whole roster, never of what is on screen. Both predicates live in
   `components/users/account.ts` (component-free, so the page can count and filter with them and Fast Refresh
   survives). The dialogs are **Nový uživatel**
-  (username/password/**e-mail**/role/name/**person**/note) and **Upravit** (**e-mail**/role/name/**person**/note;
-  username is `readOnly` `plaintext` — the backend cannot change it), **Změnit heslo** for another user (logs them out of all
+  (username/password/**e-mail**/role/name/**person**/note) and **Upravit** (**username**/**e-mail**/role/name/**person**/note).
+  In Upravit the username is editable where the actor may manage the account (`canManage` — the same per-row
+  boundary as the action buttons) and `readOnly` `plaintext` with `users.form.usernameLocked` under it otherwise. A
+  name that differs from the stored one after trim + lower-case (what the backend stores) is sent **first** through
+  `renameUser` (`PUT /admin/users/{uid}/username`), then the profile `PATCH`; a 409/400 lands inline on the username
+  field (`fieldErrorFor` maps `username` messages to `usernameTooLong`/`usernameRequired`) and nothing else is
+  saved. If the rename went through but the `PATCH` failed, `onRenamed` already updated the row and the dialog
+  remembers the new name, so a second Save does not rename again. `upsert` re-sorts the roster only when a row is
+  new or its username changed, **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
   (`setUserDisabled`). A waiting row additionally offers **Schválit** → a `ConfirmModal` (`variant="primary"`) →
   `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) and reports through the page's

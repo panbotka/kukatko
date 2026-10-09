@@ -69,6 +69,11 @@ var (
 	// characters. Its message names the offending field so it can be surfaced
 	// verbatim in a 400.
 	ErrUsernameTooLong = errors.New("auth: username must be at most 64 characters")
+	// ErrUsernameRequired indicates an account was given a username that is
+	// empty once normalized (nothing but whitespace). Nobody could sign in with
+	// it, so creating or renaming an account to it is refused. Its message names
+	// the offending field so it can be surfaced verbatim in a 400.
+	ErrUsernameRequired = errors.New("auth: username is required")
 	// ErrInvalidEmail indicates the account was given no e-mail address, or one
 	// that is not a syntactically valid mailbox. Every account receives mail —
 	// registration, approval, password reset — so an address is not optional.

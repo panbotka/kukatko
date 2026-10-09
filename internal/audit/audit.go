@@ -352,6 +352,12 @@ const (
 	// becomes usable — and it is written only when the stamp really changes, so a
 	// second click on an already approved account leaves no second entry.
 	ActionUserApprove = "user.approve"
+	// ActionUserRename records an administrator changing an account's username.
+	// The old and new names are in details.old_username/new_username: the name is
+	// what a person signs in with and what the rest of the trail's readers know
+	// the account by, so the trail is where "who was this before" is answered.
+	// It is written only when the name really changes.
+	ActionUserRename = "user.rename"
 	// ActionUserRegister records somebody creating their own account through
 	// self-service registration. The new account is both the actor and the
 	// target — nobody else was involved — and it is not usable until an
@@ -474,7 +480,7 @@ var knownActions = map[string]struct{}{
 	ActionSubjectRelationAdd: {}, ActionSubjectRelationRemove: {}, ActionFamilyUpdate: {},
 	ActionUserCreate: {}, ActionUserUpdate: {}, ActionUserDisable: {},
 	ActionUserPassword: {}, ActionUserPasswordReset: {}, ActionUserPasswordResetUse: {},
-	ActionUserApprove: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
+	ActionUserApprove: {}, ActionUserRename: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
 	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
 	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
 	ActionUploadLinkCreate: {}, ActionUploadLinkExtend: {}, ActionUploadLinkRevoke: {},

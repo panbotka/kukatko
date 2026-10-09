@@ -60,6 +60,12 @@ func TasksWaitingDigest(to string, data mailer.TasksWaitingDigestData) Mail {
 	return Mail{Template: mailer.TemplateTasksWaitingDigest, To: to, Data: data}
 }
 
+// UsernameChanged is the mail telling somebody an administrator renamed their
+// account.
+func UsernameChanged(to string, data mailer.UsernameChangedData) Mail {
+	return Mail{Template: mailer.TemplateUsernameChanged, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.
@@ -184,7 +190,7 @@ func knownTemplate(name string) bool {
 	switch name {
 	case mailer.TemplateRegistrationReceived, mailer.TemplateAccountApproved,
 		mailer.TemplateNewRegistrationPending, mailer.TemplatePasswordReset,
-		mailer.TemplateTasksWaitingDigest:
+		mailer.TemplateTasksWaitingDigest, mailer.TemplateUsernameChanged:
 		return true
 	default:
 		return false

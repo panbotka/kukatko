@@ -39,6 +39,8 @@ import {
   createUser,
   fetchUsers,
   MAX_NOTE_LENGTH,
+  MAX_USERNAME_LENGTH,
+  renameUser,
   resetUserPassword,
   ROLES,
   setUserDisabled,
@@ -204,14 +206,31 @@ interface UserFormModalProps {
    * `maintainer` role, so a non-maintainer's role selector omits that option.
    */
   isMaintainer: boolean
+  /**
+   * Whether the actor may manage the edited account at all — false only for an
+   * admin facing a maintainer's account (the backend's maintainer boundary).
+   * Where it is false the username stays read-only; it is ignored on create.
+   */
+  canManage: boolean
   onHide: () => void
+  /** Called with the final row once everything the dialog sent was saved. */
   onSaved: (user: AdminUser) => void
+  /**
+   * Called with the renamed row when a rename succeeded but the profile update
+   * after it did not, so the roster shows the name the account really has while
+   * the dialog stays open on the error.
+   */
+  onRenamed: (user: AdminUser) => void
 }
 
 /**
  * The create/edit dialog. Creating asks for a username and password on top of
- * the shared profile fields; editing renders the username read-only, because the
- * backend has no way to change it and pretending otherwise would be a lie.
+ * the shared profile fields. Editing offers the username too, for an account the
+ * actor may manage: a changed name goes to its own endpoint
+ * (`PUT /admin/users/{uid}/username`) before the profile update, so a taken name
+ * stops the save with the message under the field and nothing else changes.
+ * Where the actor may not manage the account the name is shown read-only, with
+ * the reason under it.
  *
  * Validation errors from the API land next to the input that caused them rather
  * than in a banner, so the reader does not have to guess which field to fix.
@@ -221,9 +240,17 @@ interface UserFormModalProps {
  * above the on-screen keyboard rather than under it; on a wider screen it is the
  * same centred card as before. Its wrapping form carries {@link MODAL_FORM_CLASS}.
  */
-function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalProps) {
+export function UserFormModal({
+  user,
+  isMaintainer,
+  canManage,
+  onHide,
+  onSaved,
+  onRenamed,
+}: UserFormModalProps) {
   const { t } = useTranslation()
   const creating = user === null
+  const usernameEditable = creating || canManage
 
   // Granting the top-of-ladder maintainer role is a maintainer-only power
   // (mirrors the backend `authorizeUserManagement`); everyone else is offered
@@ -241,6 +268,10 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
   const [validated, setValidated] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<FormError | null>(null)
+  // The name the account holds right now. It starts as the row's and moves when
+  // a rename went through but the profile update after it failed, so a second
+  // Save does not send the rename again.
+  const [storedUsername, setStoredUsername] = useState(user?.username ?? '')
 
   const usernameMissing = username.trim() === ''
   const passwordTooShort = password.length < MIN_PASSWORD_LENGTH
@@ -250,13 +281,24 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
 
   async function handleSubmit(event: SyntheticEvent) {
     event.preventDefault()
-    if (emailMissing || (creating && (usernameMissing || passwordTooShort))) {
+    if (emailMissing || (usernameEditable && usernameMissing) || (creating && passwordTooShort)) {
       setValidated(true)
       return
     }
     setError(null)
     setSubmitting(true)
     try {
+      // The backend lower-cases and trims the name; comparing in that form
+      // keeps "Jan " from being sent as a rename of "jan". The untouched-field
+      // check comes first so a legacy mixed-case name nobody edited is never
+      // quietly lower-cased by an unrelated save.
+      const renaming =
+        username !== storedUsername && username.trim().toLowerCase() !== storedUsername
+      if (!creating && usernameEditable && renaming) {
+        const renamed = await renameUser(user.uid, username)
+        setStoredUsername(renamed.username)
+        onRenamed(renamed)
+      }
       const saved = creating
         ? await createUser({
             username: username.trim(),
@@ -287,7 +329,10 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
   /** Renders the inline message for `field`, or the client-side fallback. */
   function feedbackFor(field: FormField, fallback: string) {
     if (error?.field === field) {
-      return t(error.messageKey, { min: MIN_PASSWORD_LENGTH, max: MAX_NOTE_LENGTH })
+      return t(error.messageKey, {
+        min: MIN_PASSWORD_LENGTH,
+        max: field === 'username' ? MAX_USERNAME_LENGTH : MAX_NOTE_LENGTH,
+      })
     }
     return fallback
   }
@@ -320,8 +365,9 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
               type="text"
               autoComplete="off"
               required
-              readOnly={!creating}
-              plaintext={!creating}
+              maxLength={MAX_USERNAME_LENGTH}
+              readOnly={!usernameEditable}
+              plaintext={!usernameEditable}
               isInvalid={error?.field === 'username' || (validated && usernameMissing)}
               value={username}
               onChange={(event) => {
@@ -330,7 +376,11 @@ function UserFormModal({ user, isMaintainer, onHide, onSaved }: UserFormModalPro
               disabled={submitting}
             />
             {!creating && (
-              <Form.Text className="text-secondary">{t('users.form.usernameImmutable')}</Form.Text>
+              <Form.Text className="text-secondary">
+                {usernameEditable
+                  ? t('users.form.usernameRenameHint')
+                  : t('users.form.usernameLocked')}
+              </Form.Text>
             )}
             <Form.Control.Feedback type="invalid">
               {feedbackFor('username', t('users.form.usernameRequired'))}
@@ -867,10 +917,17 @@ export function UsersPage() {
       if (prev.status !== 'ready') {
         return prev
       }
-      const known = prev.users.some((u) => u.uid === saved.uid)
-      const users = known
-        ? prev.users.map((u) => (u.uid === saved.uid ? saved : u))
-        : [...prev.users, saved].sort((a, b) => a.username.localeCompare(b.username))
+      const previous = prev.users.find((u) => u.uid === saved.uid)
+      const merged =
+        previous === undefined
+          ? [...prev.users, saved]
+          : prev.users.map((u) => (u.uid === saved.uid ? saved : u))
+      // Re-sorted only when the order can have changed — a new row or a renamed
+      // one — so an ordinary edit never reshuffles the roster under the reader.
+      const users =
+        previous?.username === saved.username
+          ? merged
+          : merged.sort((a, b) => a.username.localeCompare(b.username))
       return { status: 'ready', users }
     })
   }, [])
@@ -1108,11 +1165,13 @@ export function UsersPage() {
         <UserFormModal
           user={dialog.kind === 'edit' ? dialog.user : null}
           isMaintainer={isMaintainer}
+          canManage={dialog.kind !== 'edit' || isMaintainer || dialog.user.role !== 'maintainer'}
           onHide={close}
           onSaved={(saved) => {
             upsert(saved)
             close()
           }}
+          onRenamed={upsert}
         />
       )}
 

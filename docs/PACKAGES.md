@@ -150,6 +150,18 @@ to `## Package map` in `CLAUDE.md`.
   mail's link comes from `ApprovalConfig.SignInURL`, built in `cmd/kukatko` by `signInURL(cfg.Mail.BaseURL)`
   (`mail.base_url` + `/login`; empty when no public URL is configured — the instances that reach that
   case send nothing anyway).
+  **Renaming an account** (`rename.go`, `store_user_rename.go`) is behind `PUT /admin/users/{uid}/username`.
+  Another mail-sending type beside `Approval`, `Rename` (built with `NewRename(RenameConfig{Service,Mail,SignInURL})`,
+  wired into `APIConfig.Rename`, derived mail-less by `renameFor`). `Rename.Rename` applies
+  `guardMaintainerBoundary`, normalises and validates the name with `validateAccountUsername` (the rule creation
+  and registration share: not empty → `ErrUsernameRequired`, at most `MaxUsernameLen` runes → `ErrUsernameTooLong`;
+  login keeps the length-only `validateUsername`), then `Store.RenameUserAudited` locks the row, returns it
+  unchanged through `errNoAuditableChange` when the name is the same, refuses a name another row holds
+  **case-insensitively** (`lower(username)`, then the unique violation for a concurrent taker) with
+  `ErrUsernameTaken`, updates `username`/`updated_at`, runs the `alongside` hook that enqueues the
+  `username_changed` mail, and writes `user.rename` with `old_username`/`new_username` stamped into the entry's
+  details map (shared with `inAuditedTx`'s copy of the entry, which is why the map is created before the call).
+  Nothing else is touched: every foreign key into `users` references `uid`.
   **Password reset by link** (`passwordreset.go`, `store_passwordreset.go`, `handlers_passwordreset.go`,
   migration `0065_password_reset_tokens.sql`) lets an administrator start a reset for somebody without
   ever learning the password that comes out of it. It is its own type, `PasswordReset` (built with
@@ -5335,7 +5347,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the long lines
     the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl schválen`
     survive a server that only takes ASCII headers.
-  - **Five Czech templates**, each a **pure function of its own data struct** returning
+  - **Six Czech templates**, each a **pure function of its own data struct** returning
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
     expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
     account exists and waits for an administrator), `RenderAccountApproved`
@@ -5353,6 +5365,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     state in the queue's own words (`čeká na odpověď`/`pracuje se`/`ke schválení`, an unknown state printed
     as it is) and its absolute link, `…a dalších M úkolů.` when the list was cut, and the link to
     `/tasks?waiting=1`. It is **informal** (`Ahoj, …`) like the queue in the app, unlike the account mails.
+    The sixth, `RenderUsernameChanged` (`UsernameChangedData{DisplayName,Username,SignInURL}`), tells somebody an
+    administrator renamed their account: the new name in the subject and the body, that the password stays the
+    same, and the sign-in link — left out entirely when `SignInURL` is blank.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5370,7 +5385,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     touching the queue: `Enqueue(ctx, exec, Mail)`, where `exec` is a `jobs.Execer` — pass **the transaction of
     the mutation that caused the mail** and the message is scheduled if and only if that mutation commits, the
     way `audit.Write` joins its mutation. Build the `Mail` with `RegistrationReceived`/`AccountApproved`/
-    `NewRegistrationPending`/`PasswordReset`, which pair each template with the data it expects.
+    `NewRegistrationPending`/`PasswordReset`/`TasksWaitingDigest`/`UsernameChanged`, which pair each template with the data it expects.
   - **Two silent refusals, both logged, both returning nil** (they must not fail the mutation that asked):
     `mail.enabled` is false → nothing is enqueued, because an instance nobody gave an SMTP server to must not
     grow a queue that can only fail (`Enabled()` lets a caller skip minting a reset token for it); and a

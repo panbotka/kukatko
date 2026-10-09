@@ -58,6 +58,19 @@ func validateUsername(username string) error {
 	return nil
 }
 
+// validateAccountUsername is the rule an account's stored username must meet,
+// shared by every path that writes one — creation, registration and the
+// administrator's rename: not empty (ErrUsernameRequired) and not over-long
+// (ErrUsernameTooLong, see validateUsername). The caller passes an already
+// normalized username. Login deliberately checks only the length: an empty name
+// there is simply a failed sign-in, not a malformed account.
+func validateAccountUsername(username string) error {
+	if username == "" {
+		return ErrUsernameRequired
+	}
+	return validateUsername(username)
+}
+
 // placeholderDomain is the domain every generated placeholder address lives in.
 // ".invalid" is reserved by RFC 2606 and guaranteed never to resolve, so a
 // placeholder that slipped into a real send bounces at the resolver rather than

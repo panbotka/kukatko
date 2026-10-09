@@ -229,6 +229,7 @@ func TestMailConstructors_pairATemplateWithItsData(t *testing.T) {
 		NewRegistrationPending("admin@example.com", mailer.NewRegistrationPendingData{}),
 		PasswordReset("jan@example.com", mailer.PasswordResetData{}),
 		TasksWaitingDigest("jan@example.com", mailer.TasksWaitingDigestData{}),
+		UsernameChanged("jan@example.com", mailer.UsernameChangedData{}),
 	}
 	for _, m := range mails {
 		if !knownTemplate(m.Template) {

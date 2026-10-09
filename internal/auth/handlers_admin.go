@@ -76,6 +76,11 @@ func adminUserList(users []User) []adminUserResponse {
 	return out
 }
 
+// renameUserRequest is the JSON body of PUT /admin/users/{uid}/username.
+type renameUserRequest struct {
+	Username string `json:"username"`
+}
+
 // resetPasswordRequest is the JSON body of POST /admin/users/{uid}/password.
 type resetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
@@ -146,19 +151,32 @@ func writeCreateUserError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, ErrMaintainerRequired.Error())
 	case errors.Is(err, ErrInvalidRole):
 		writeError(w, http.StatusBadRequest, "invalid role (want viewer, curator, editor, admin, or maintainer)")
-	case errors.Is(err, ErrPasswordTooShort):
-		writeError(w, http.StatusBadRequest, ErrPasswordTooShort.Error())
-	case errors.Is(err, ErrNoteTooLong):
-		writeError(w, http.StatusBadRequest, ErrNoteTooLong.Error())
-	case errors.Is(err, ErrUsernameTooLong):
-		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
-	case errors.Is(err, ErrInvalidEmail):
-		writeError(w, http.StatusBadRequest, ErrInvalidEmail.Error())
-	case errors.Is(err, ErrSubjectNotFound):
-		writeError(w, http.StatusBadRequest, ErrSubjectNotFound.Error())
 	default:
+		if verbatim, ok := verbatimInputError(err); ok {
+			writeError(w, http.StatusBadRequest, verbatim.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "could not create user")
 	}
+}
+
+// verbatimInputErrors are the refusals of account input whose message already
+// names the offending field, so a handler answers them with a 400 carrying that
+// message unchanged and the client can put it under the right field.
+var verbatimInputErrors = []error{
+	ErrPasswordTooShort, ErrNoteTooLong, ErrUsernameTooLong, ErrUsernameRequired,
+	ErrInvalidEmail, ErrSubjectNotFound,
+}
+
+// verbatimInputError returns the member of verbatimInputErrors that err is (or
+// wraps), and false when it is none of them.
+func verbatimInputError(err error) (error, bool) {
+	for _, known := range verbatimInputErrors {
+		if errors.Is(err, known) {
+			return known, true
+		}
+	}
+	return nil, false
 }
 
 // handleUpdateUser replaces a user's profile fields (admin only). It responds 200
@@ -190,6 +208,52 @@ func (a *API) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUser(user))
+}
+
+// handleRenameUser gives an account a new username (admin only), normalized and
+// validated as on creation, and mails the person the new name when mail is on
+// and their address is real.
+//
+// It is its own route rather than a field of PATCH /admin/users/{uid}: that
+// endpoint replaces the profile and is resent whole by every save, while a
+// rename has its own audit action, its own mail and its own conflict, and a
+// client should have to mean it.
+//
+// It responds 200 with the account (unchanged when the name is the one it
+// already has), 400 for a bad body or an empty or over-long username, 403 when
+// the maintainer boundary forbids the actor this account, 404 if the account
+// does not exist, 409 when another account holds the name, or 500.
+func (a *API) handleRenameUser(w http.ResponseWriter, r *http.Request) {
+	uid := chi.URLParam(r, "uid")
+	var req renameUserRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	actor, _ := UserFromContext(r.Context())
+	entry := adminAuditMeta(r).Entry(audit.ActionUserRename, userTargetType, uid, nil)
+	user, err := a.rename.Rename(r.Context(), uid, req.Username, actor.Role, entry)
+	if err != nil {
+		writeRenameUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminUser(user))
+}
+
+// writeRenameUserError maps a failed rename onto its response: the name's own
+// refusals here, the boundary and the missing account through
+// writeUserMutationError.
+func writeRenameUserError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrUsernameTaken):
+		writeError(w, http.StatusConflict, "username already taken")
+	case errors.Is(err, ErrUsernameRequired):
+		writeError(w, http.StatusBadRequest, ErrUsernameRequired.Error())
+	case errors.Is(err, ErrUsernameTooLong):
+		writeError(w, http.StatusBadRequest, ErrUsernameTooLong.Error())
+	default:
+		writeUserMutationError(w, err, "could not rename user")
+	}
 }
 
 // handleDisableUser disables a user and invalidates their sessions (admin only).
