@@ -532,8 +532,10 @@ registration is waiting"; nobody else sees a setting for a message they could ne
   opens the user list (unless they turned that kind off; the mail comes either way) — and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.
 - **An administrator lets them in.** Approving a waiting account activates it and e-mails that
-  person the link to sign in. The roster can be narrowed to just the accounts that are waiting, so
-  nobody has to be found by reading the whole list. Approving hands out no rights beyond reading —
+  person the link to sign in. The user list opens on just the accounts that are waiting (one switch,
+  kept in the address, shows everybody), so nobody has to be found by reading the whole list, and
+  approving is one tap — on a phone each waiting person is a short card with one big „Schválit", the
+  rarer actions folded behind „Další akce". Approving hands out no rights beyond reading —
   raising a role stays a separate, deliberate edit — approving twice is harmless, and a blocked
   account is not approved but unblocked, which is its own action.
 - **An administrator can rename an account.** Somebody who registered as a joke name gets a proper

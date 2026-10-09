@@ -1,10 +1,11 @@
 import { getDefaultNormalizer, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { ToastProvider } from '../components/toast/ToastProvider'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
 import { type AdminUser } from '../services/users'
@@ -131,16 +132,62 @@ function mockViewport(narrow: boolean): void {
   }))
 }
 
-function renderPage(value: AuthContextValue = auth({ isAdmin: true })) {
+/** Prints the router's current path + query, so a test can read the URL state. */
+function LocationProbe() {
+  const location = useLocation()
+  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+}
+
+/** The browser's Back button, as far as the router is concerned. */
+function BackProbe() {
+  const navigate = useNavigate()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigate(-1)
+      }}
+    >
+      History back
+    </button>
+  )
+}
+
+/** The URL the probe currently reports. */
+function currentUrl(): string {
+  return screen.getByTestId('location').textContent
+}
+
+/**
+ * Renders the page at `path`. The default is `?all=1` — the whole roster —
+ * because most tests are about accounts that were let in long ago; the tests of
+ * the waiting-only default pass the bare `/users`.
+ */
+function renderPage(value: AuthContextValue = auth({ isAdmin: true }), path = '/users?all=1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter>
-          <UsersPage />
-        </MemoryRouter>
+        <ToastProvider>
+          <MemoryRouter initialEntries={[path]}>
+            <UsersPage />
+            <LocationProbe />
+            <BackProbe />
+          </MemoryRouter>
+        </ToastProvider>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/** A promise whose settling the test controls, to observe the in-flight state. */
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined
+  let reject: (reason: unknown) => void = () => undefined
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 beforeEach(async () => {
@@ -314,7 +361,7 @@ describe('UsersPage', () => {
     expect(screen.queryByRole('listitem')).toBeNull()
   })
 
-  it('reflows the roster into stacked cards with a full-width action row on a phone', async () => {
+  it('shows an approved account on a phone as a compact card with its actions folded', async () => {
     mockViewport(true)
     fetchUsersMock.mockResolvedValue([
       user({
@@ -326,68 +373,76 @@ describe('UsersPage', () => {
         last_login_at: '2026-06-30T08:15:00Z',
       }),
     ])
+    const actor = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
     // The wide table is gone entirely — nothing left to drag sideways.
     expect(screen.queryByRole('table')).toBeNull()
 
-    // One record, one card, every profile column kept as a "label: value" line.
+    // One record, one card: who it is, then a short list of what matters.
     const card = screen.getByRole('listitem')
-    for (const label of [
-      'Username',
-      'Real name',
-      'E-mail',
-      'Role',
-      'State',
-      'Note',
-      'Last login',
-      'Created',
-    ]) {
-      expect(within(card).getByText(label)).toBeInTheDocument()
-    }
     expect(within(card).getByText('Ada Lovelace')).toBeInTheDocument()
     expect(within(card).getByText('Editor')).toBeInTheDocument()
     expect(within(card).getByText('Enabled')).toBeInTheDocument()
+    expect(within(card).getByText('ada@example.com')).toBeInTheDocument()
+    expect(within(card).getByText('Last login')).toBeInTheDocument()
     expect(within(card).getByText('On loan from the analytical engine')).toBeInTheDocument()
+    // No Approve on an account that was already let in.
+    expect(within(card).queryByRole('button', { name: 'Approve' })).toBeNull()
 
-    // The three row actions sit on the card itself, in the full-width action row,
-    // instead of trailing off the right edge of eight columns.
-    const edit = within(card).getByRole('button', { name: 'Edit' })
-    expect(edit.parentElement).toHaveClass('kk-record-card__actions', 'd-grid')
-    expectLive(within(card).getByRole('button', { name: 'Change password' }))
-    expectLive(within(card).getByRole('button', { name: 'Disable' }))
-    // The actions column header is not repeated as a field label.
+    // The secondary actions are folded, not a stack of buttons under every person.
+    const more = within(card).getByRole('button', { name: 'More actions' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    expect(within(card).queryByRole('button', { name: 'Edit' })).toBeNull()
+
+    await actor.click(more)
+    expect(more).toHaveAttribute('aria-expanded', 'true')
+    const foldId = more.getAttribute('aria-controls')
+    const fold = screen.getAllByRole('button', { name: 'Edit' })[0].closest(`[id="${foldId}"]`)
+    if (!(fold instanceof HTMLElement)) {
+      throw new Error('the fold does not hold the secondary actions')
+    }
+    expect(card).toContainElement(fold)
+    for (const name of ['Edit', 'Change password', 'Reset link', 'Disable']) {
+      expectLive(within(fold).getByRole('button', { name }))
+    }
+    // The action column header is not repeated as a field label.
     expect(within(card).queryByText('Actions')).toBeNull()
   })
 
-  it('keeps the maintainer boundary and the self-disable guard on a phone card', async () => {
+  it('keeps the maintainer boundary and the self-disable guard inside the fold', async () => {
     mockViewport(true)
     fetchUsersMock.mockResolvedValue([
       user({ uid: ME, username: 'root', display_name: 'Root', role: 'admin' }),
       user({ uid: 'u9', username: 'ops', role: 'maintainer' }),
     ])
+    const actor = userEvent.setup()
     renderPage(auth({ isAdmin: true }))
 
     expect(await screen.findByText('ops')).toBeInTheDocument()
     const [own, maintainer] = screen.getAllByRole('listitem')
+    await actor.click(within(own).getByRole('button', { name: 'More actions' }))
+    await actor.click(within(maintainer).getByRole('button', { name: 'More actions' }))
 
     // Own account: disabling is refused, with the reason spelled out on the card.
-    expectOff(within(own).getByRole('button', { name: 'Disable' }))
+    const ownDisable = within(own).getByRole('button', { name: 'Disable' })
+    expectOff(ownDisable)
     // The sentence is on the card itself, and the button points at it — one
     // copy, reachable by hover, by focus and by eye on a phone alike.
     const ownHint = within(own).getByText('You cannot disable your own account.')
-    expect(within(own).getByRole('button', { name: 'Disable' })).toHaveAttribute(
-      'aria-describedby',
-      ownHint.id,
-    )
+    expect(ownDisable).toHaveAttribute('aria-describedby', ownHint.id)
+    expectLive(within(own).getByRole('button', { name: 'Edit' }))
     // A maintainer's account is untouchable for a plain admin, same as on the table.
-    expectOff(within(maintainer).getByRole('button', { name: 'Edit' }))
-    expectOff(within(maintainer).getByRole('button', { name: 'Change password' }))
-    expectOff(within(maintainer).getByRole('button', { name: 'Disable' }))
+    const locked = within(maintainer).getByText('Only a system maintainer can manage this account.')
+    for (const name of ['Edit', 'Change password', 'Reset link', 'Disable']) {
+      const button = within(maintainer).getByRole('button', { name })
+      expectOff(button)
+      expect(button).toHaveAttribute('aria-describedby', locked.id)
+    }
   })
 
-  it('opens the confirmation dialog from a phone card’s action row', async () => {
+  it('opens the confirmation dialog from a phone card’s folded actions', async () => {
     mockViewport(true)
     const ada = user({ uid: 'u1', username: 'ada' })
     fetchUsersMock.mockResolvedValue([ada])
@@ -397,6 +452,7 @@ describe('UsersPage', () => {
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
     const card = screen.getByRole('listitem')
+    await actor.click(within(card).getByRole('button', { name: 'More actions' }))
     await actor.click(within(card).getByRole('button', { name: 'Disable' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -405,6 +461,117 @@ describe('UsersPage', () => {
       expect(setUserDisabledMock).toHaveBeenCalledWith(ada, true)
     })
     expect(await screen.findByText('Disabled')).toBeInTheDocument()
+  })
+
+  it('shows a waiting account on a phone as a compact card with one big Approve', async () => {
+    mockViewport(true)
+    fetchUsersMock.mockResolvedValue([
+      user({
+        uid: 'u1',
+        username: 'jana',
+        display_name: 'Jana Nováková',
+        email: 'jana@example.com',
+        approved_at: null,
+        note: 'Admin-only remark',
+        created_at: '2026-10-08T18:30:00Z',
+      }),
+    ])
+    renderPage(auth({ isAdmin: true }), '/users')
+
+    const card = await screen.findByRole('listitem')
+    expect(within(card).getByText('Jana Nováková')).toBeInTheDocument()
+    expect(within(card).getByText('jana')).toBeInTheDocument()
+    expect(within(card).getByText('jana@example.com')).toBeInTheDocument()
+    expect(within(card).getByText('Registered')).toBeInTheDocument()
+    expect(within(card).getByText('Waiting for approval')).toBeInTheDocument()
+    // Compact: the roster's other columns are not on a waiting card.
+    expect(within(card).queryByText('Admin-only remark')).toBeNull()
+    expect(within(card).queryByText('Last login')).toBeNull()
+
+    const approve = within(card).getByRole('button', { name: 'Approve' })
+    expectLive(approve)
+    expect(approve).toHaveClass('btn-success', 'btn-lg', 'w-100')
+    // Only Approve and the fold toggle are on the folded card.
+    expect(
+      within(card)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Approve', 'More actions'])
+  })
+
+  it('approves from a phone card in one tap and takes the card off the waiting list', async () => {
+    mockViewport(true)
+    const jana = user({ uid: 'u1', username: 'jana', display_name: 'Jana', approved_at: null })
+    const petr = user({ uid: 'u2', username: 'petr', display_name: 'Petr', approved_at: null })
+    fetchUsersMock.mockResolvedValue([jana, petr])
+    const request = deferred<AdminUser>()
+    approveUserMock.mockReturnValue(request.promise)
+    const actor = userEvent.setup()
+    renderPage(auth({ isAdmin: true }), '/users')
+
+    expect(await screen.findByText('Jana')).toBeInTheDocument()
+    const card = screen.getAllByRole('listitem')[0]
+    await actor.click(within(card).getByRole('button', { name: 'Approve' }))
+
+    // No confirmation step: the request is already out.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(approveUserMock).toHaveBeenCalledWith('u1')
+    // While it runs the button is disabled, so a second tap cannot fire twice.
+    const busy = within(card).getByRole('button', { name: 'Approve' })
+    expect(busy).toBeDisabled()
+    await actor.click(busy)
+    expect(approveUserMock).toHaveBeenCalledTimes(1)
+    // The other waiting person's card is unaffected.
+    expectLive(within(screen.getAllByRole('listitem')[1]).getByRole('button', { name: 'Approve' }))
+
+    request.resolve({ ...jana, approved_at: '2026-10-09T09:00:00Z' })
+
+    // The card leaves the waiting list straight away; the next person stays.
+    await waitFor(() => {
+      expect(screen.queryByText('Jana')).toBeNull()
+    })
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByText('Petr')).toBeInTheDocument()
+    expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Jana was approved and will get an e-mail about it.'),
+    ).toBeVisible()
+    expect(fetchUsersMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a refused approval on the card it belongs to', async () => {
+    mockViewport(true)
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'jana', approved_at: null }),
+      user({ uid: 'u2', username: 'petr', approved_at: null }),
+    ])
+    approveUserMock.mockRejectedValue(new ApiError(409, 'auth: user is disabled'))
+    const actor = userEvent.setup()
+    renderPage(auth({ isAdmin: true }), '/users')
+
+    expect(await screen.findByText('jana')).toBeInTheDocument()
+    const [jana, petr] = screen.getAllByRole('listitem')
+    await actor.click(within(jana).getByRole('button', { name: 'Approve' }))
+
+    expect(await within(jana).findByRole('alert')).toHaveTextContent('The account is blocked.')
+    expect(within(petr).queryByRole('alert')).toBeNull()
+    // Nothing moved: the account is still waiting, and Approve is live again.
+    expect(within(jana).getByText('Waiting for approval')).toBeInTheDocument()
+    expectLive(within(jana).getByRole('button', { name: 'Approve' }))
+  })
+
+  it('says why Approve is off on a phone card, outside the fold', async () => {
+    mockViewport(true)
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'jana', approved_at: null, disabled: true }),
+    ])
+    renderPage(auth({ isAdmin: true }), '/users')
+
+    const card = await screen.findByRole('listitem')
+    expectOff(
+      within(card).getByRole('button', { name: 'Approve' }),
+      'A blocked account cannot be approved. Enable it first.',
+    )
   })
 
   it('shows a retry button when the fetch fails, and reloads on click', async () => {
@@ -900,7 +1067,7 @@ describe('UsersPage', () => {
     )
   })
 
-  it('approves a waiting account after confirming, and updates the row in place', async () => {
+  it('approves a waiting account on the table in one click, and updates the row in place', async () => {
     const ada = user({ uid: 'u1', username: 'ada', approved_at: null })
     fetchUsersMock.mockResolvedValue([ada])
     approveUserMock.mockResolvedValue({ ...ada, approved_at: '2026-08-24T09:00:00Z' })
@@ -911,44 +1078,45 @@ describe('UsersPage', () => {
     const row = screen.getByText('ada').closest('tr') as HTMLElement
     await actor.click(within(row).getByRole('button', { name: 'Approve' }))
 
-    // The click alone changes nothing: the dialog asks first.
-    expect(approveUserMock).not.toHaveBeenCalled()
-    const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/will get an e-mail about it/)).toBeInTheDocument()
-
-    await actor.click(within(dialog).getByRole('button', { name: 'Approve' }))
-    await waitFor(() => {
-      expect(approveUserMock).toHaveBeenCalledWith('u1')
-    })
+    // No dialog on the desktop either: one rule for both layouts.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(approveUserMock).toHaveBeenCalledWith('u1')
 
     // The row is the approved one — no second fetch of the whole roster.
     expect(await screen.findByText('Enabled')).toBeInTheDocument()
     expect(screen.queryByText('Waiting for approval')).toBeNull()
-    expect(screen.getByRole('alert')).toHaveTextContent('The account was approved.')
+    expect(
+      screen.getByText('Ada Lovelace was approved and will get an e-mail about it.'),
+    ).toBeVisible()
     expect(fetchUsersMock).toHaveBeenCalledTimes(1)
   })
 
   it('does not promise an approval e-mail on an instance that sends none', async () => {
-    // Mail off means the no-op sender: the account hears nothing, so the dialog
-    // tells the administrator to say it themselves.
+    // Mail off means the no-op sender: the account hears nothing, so the
+    // confirmation tells the administrator to say it themselves.
     fetchPublicSettingsMock.mockResolvedValue({
       registration_enabled: false,
       passkeys_enabled: false,
       mail_enabled: false,
     })
-    fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada', approved_at: null })])
+    const ada = user({ uid: 'u1', username: 'ada', approved_at: null })
+    fetchUsersMock.mockResolvedValue([ada])
+    approveUserMock.mockResolvedValue({ ...ada, approved_at: '2026-08-24T09:00:00Z' })
     const actor = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
+    // The mail setting arrives on its own request; wait for it before acting.
+    await waitFor(() => {
+      expect(fetchPublicSettingsMock).toHaveBeenCalled()
+    })
     await actor.click(screen.getByRole('button', { name: 'Approve' }))
 
-    const dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByText(/mail is switched off/i)).toBeInTheDocument()
-    expect(within(dialog).queryByText(/will get an e-mail about it/)).toBeNull()
+    expect(await screen.findByText(/Mail is switched off, so tell them yourself/)).toBeVisible()
+    expect(screen.queryByText(/will get an e-mail about it/)).toBeNull()
   })
 
-  it('leaves the row waiting when the approval is refused, and explains', async () => {
+  it('leaves the row waiting when the approval is refused, and explains on the row', async () => {
     fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada', approved_at: null })])
     approveUserMock.mockRejectedValue(new ApiError(409, 'auth: user is disabled'))
     const actor = userEvent.setup()
@@ -956,51 +1124,84 @@ describe('UsersPage', () => {
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
     await actor.click(screen.getByRole('button', { name: 'Approve' }))
-    const dialog = await screen.findByRole('dialog')
-    await actor.click(within(dialog).getByRole('button', { name: 'Approve' }))
 
     // A 409 on a row action is the blocked account, never a taken username.
-    expect(await screen.findByRole('alert')).toHaveTextContent('The account is blocked.')
+    const row = screen.getByText('ada').closest('tr') as HTMLElement
+    expect(await within(row).findByRole('alert')).toHaveTextContent('The account is blocked.')
     expect(screen.queryByText('That username is already taken.')).toBeNull()
     // Nothing moved: the account is still waiting to be let in.
     expect(screen.getByText('Waiting for approval')).toBeInTheDocument()
   })
 
-  it('narrows the roster to the accounts waiting for approval', async () => {
+  it('shows only the waiting accounts when the URL says nothing', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', approved_at: null }),
+      user({ uid: 'u2', username: 'bob' }),
+    ])
+    renderPage(auth({ isAdmin: true }), '/users')
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    expect(screen.queryByText('bob')).toBeNull()
+    expect(screen.getByRole('checkbox', { name: 'Only waiting for approval' })).toBeChecked()
+    expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
+  })
+
+  it('shows everybody under ?all=1', async () => {
+    fetchUsersMock.mockResolvedValue([
+      user({ uid: 'u1', username: 'ada', approved_at: null }),
+      user({ uid: 'u2', username: 'bob' }),
+    ])
+    renderPage(auth({ isAdmin: true }), '/users?all=1')
+
+    expect(await screen.findByText('ada')).toBeInTheDocument()
+    expect(screen.getByText('bob')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Only waiting for approval' })).not.toBeChecked()
+  })
+
+  it('writes the filter into the URL, and Back restores the previous view', async () => {
     fetchUsersMock.mockResolvedValue([
       user({ uid: 'u1', username: 'ada', approved_at: null }),
       user({ uid: 'u2', username: 'bob' }),
     ])
     const actor = userEvent.setup()
-    renderPage()
+    renderPage(auth({ isAdmin: true }), '/users')
 
     expect(await screen.findByText('ada')).toBeInTheDocument()
-    // The count is on the page before anything is filtered, so an administrator
+    expect(currentUrl()).toBe('/users')
+    // The count is on the page whatever the filter says, so an administrator
     // who came for something else still notices the errand.
     expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
 
     await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
-
-    expect(screen.getByText('ada')).toBeInTheDocument()
-    expect(screen.queryByText('bob')).toBeNull()
+    expect(currentUrl()).toBe('/users?all=1')
+    expect(screen.getByText('bob')).toBeInTheDocument()
     // Still the count of the whole roster, and no second request for it.
     expect(screen.getByText('Waiting for approval: 1')).toBeInTheDocument()
-    expect(fetchUsersMock).toHaveBeenCalledTimes(1)
 
     await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
+    expect(currentUrl()).toBe('/users')
+    expect(screen.queryByText('bob')).toBeNull()
+
+    // Each switch was a history entry: Back walks them in reverse.
+    await actor.click(screen.getByRole('button', { name: 'History back' }))
+    expect(currentUrl()).toBe('/users?all=1')
     expect(screen.getByText('bob')).toBeInTheDocument()
+    expect(fetchUsersMock).toHaveBeenCalledTimes(1)
   })
 
-  it('says so when the waiting-only filter leaves nothing', async () => {
+  it('reads as "all done" when nobody is waiting, with the way to everybody', async () => {
     fetchUsersMock.mockResolvedValue([user({ uid: 'u1', username: 'ada' })])
     const actor = userEvent.setup()
-    renderPage()
+    renderPage(auth({ isAdmin: true }), '/users')
 
-    expect(await screen.findByText('ada')).toBeInTheDocument()
-    await actor.click(screen.getByRole('checkbox', { name: 'Only waiting for approval' }))
-
-    expect(screen.getByText('Nobody is waiting')).toBeInTheDocument()
+    expect(await screen.findByText('Nobody is waiting for approval')).toBeInTheDocument()
     expect(screen.queryByText('ada')).toBeNull()
+    expect(screen.getByText('Waiting for approval: 0')).toBeInTheDocument()
+
+    await actor.click(screen.getByRole('button', { name: 'Show all users' }))
+    expect(screen.getByText('ada')).toBeInTheDocument()
+    expect(currentUrl()).toBe('/users?all=1')
+    expect(screen.queryByText('Nobody is waiting for approval')).toBeNull()
   })
 
   it('issues a reset link from the row and forgets it when the dialog closes', async () => {

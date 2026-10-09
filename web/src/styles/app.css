@@ -2822,6 +2822,33 @@ body {
   min-height: 2.75rem;
 }
 
+/* The user roster's phone card (`components/users/UserCard.tsx`). Every control
+   on it — the big Approve, the "More actions" toggle and the folded buttons —
+   clears the finger-target floor unconditionally, for the same reason as the
+   record cards above. The folded actions are a two-column grid rather than a
+   stack of full-width buttons, so opening the fold does not push the next
+   person three screens down; `minmax(0, 1fr)` and a wrapping label keep a long
+   translation inside its cell at 360px instead of widening the page. */
+.kk-user-card .btn {
+  min-height: 2.75rem;
+}
+
+/* The name block of the card's header claims ~10rem before the state badges may
+   share its line; below that they wrap under it rather than break the name. */
+.kk-user-card__name {
+  flex: 1 1 10rem;
+}
+
+.kk-user-card__more {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.kk-user-card__more .btn {
+  white-space: normal;
+}
+
 /* The audit log's raw `details` payload. Pretty-printed JSON has no soft break
    opportunities, so an unwrapped `<pre>` sets the width of everything around it:
    inside `.table-responsive` one long line dragged the summary columns sideways

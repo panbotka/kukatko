@@ -3591,8 +3591,9 @@
     "empty": {
       "title": "No users",
       "hint": "Create the first account with the “New user” button.",
-      "noPendingTitle": "Nobody is waiting",
-      "noPendingHint": "No account is waiting for approval right now. Turn the filter off to see them all."
+      "noPendingTitle": "Nobody is waiting for approval",
+      "noPendingHint": "Every registration has been dealt with.",
+      "showAll": "Show all users"
     },
     "columns": {
       "username": "Username",
@@ -3673,13 +3674,15 @@
       "pendingOnly": "Only waiting for approval",
       "waiting": "Waiting for approval: {{pending}}"
     },
+    "card": {
+      "more": "More actions",
+      "registered": "Registered"
+    },
     "approve": {
       "action": "Approve",
-      "title": "Approve the account?",
-      "body": "{{username}} will be able to sign in and will get an e-mail about it. The role does not change — you set that separately.",
-      "bodyNoMail": "{{username}} will be able to sign in but will get no e-mail about it — mail is switched off, so tell them yourself. The role does not change — you set that separately.",
-      "success": "The account was approved.",
-      "blockedHint": "A blocked account cannot be approved. Enable it first."
+      "success": "{{username}} was approved and will get an e-mail about it.",
+      "blockedHint": "A blocked account cannot be approved. Enable it first.",
+      "successNoMail": "{{username}} was approved. Mail is switched off, so tell them yourself."
     },
     "resetLink": {
       "action": "Reset link",

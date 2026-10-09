@@ -847,7 +847,7 @@ here.
   reason already printed on screen — prop `reasonId`, which points `aria-describedby` at that visible
   line instead of hiding a second copy (one sentence for a screen reader, and a phone, which never gets
   a `title`, can read it at all). Used by `BulkEditControl`, `StackSelectedControl`, `PhotoLocation`
-  and `UserActions` in `UsersPage`. Test helpers `expectOff`/`expectLive` live in `test/reasoned.ts` —
+  and `UserActions`/`UserCard` in `components/users/`. Test helpers `expectOff`/`expectLive` live in `test/reasoned.ts` —
   jest-dom's `toBeDisabled()` only looks at the attribute and would report such a button as live.
   Tests: `ReasonedButton.test.tsx`),
   `RecordTable` (**the shared „wide admin table → stacked cards" reflow.** A many-column roster only
@@ -871,8 +871,8 @@ here.
   first column already names the record — the maintenance findings; the cards keep every `header` as their
   `<dt>`, because a card has no header row to read across from). A value that must look the same in both
   layouts (`text-danger small`, `font-monospace`) belongs **in the `cell`, not in `cellClassName`** — the
-  latter reaches the `<td>` only. Adopted by `UsersPage`, `AuditPage`, `ImportPage` (run history) and
-  `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
+  latter reaches the `<td>` only. Adopted by `UsersPage` (its desktop table only — the phone gets its own
+  `UserCard`), `AuditPage`, `ImportPage` (run history) and `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
   `HeaderActions` (**the shared „page-header actions → „…" overflow" collapse.** A detail header packs its
   actions next to the title, and on a phone a row of four or five ≥44px buttons wrapped into two or three rows
   — with the destructive one sitting inline among the neutral ones, a mis-tap away. Props are ready-made nodes,
@@ -2599,15 +2599,27 @@ here.
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
   `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name,
-  **e-mail**, role, status, **person**, note, last login, created) over `GET /admin/users` — rendered through the shared
-  `RecordTable`, so on a phone the ten columns become **one stacked card per account** and the row actions
-  a full-width button row on the card instead of a sideways scroll away; the note column is `multiline`
-  (it is written in a `<textarea>`, so its line breaks survive both layouts); the actions column is
-  `cardHidden` and comes back through `cardActions` (`UserActions`, prop `stacked` = the card's grid items
-  vs. the table cell's inline cluster); the **person** column prints the name of the subject the account is
-  linked to, resolved through **one** `useSubjects` fetch for the whole roster (`linkedPersonLabel` is a plain
-  function of that map, not a component with a hook, so thirty rows still cost one request) and an em dash
-  when there is no link. The **e-mail** column goes through **`UserEmail`** (`components/users/`), which prints a real
+  **e-mail**, role, status, **person**, note, last login, created) over `GET /admin/users` — on a tablet/desktop
+  the shared `RecordTable` (the note column is `multiline`: it is written in a `<textarea>`, so its line breaks
+  survive), the actions column the inline cluster **`UserActions`** (`components/users/UserActions.tsx`). **On a
+  phone** (`useIsNarrowViewport`, the page decides) the roster is instead a `<ul>` of **`UserCard`**s
+  (`components/users/UserCard.tsx`), shaped around the errand the admin usually opens the page for — letting newly
+  registered people in, from a phone: the name (display name, the username under it), the state badges (they
+  wrap under a long name instead of breaking it — `.kk-user-card__name` claims ~10rem first) and a compact
+  `dl` — a **waiting** card shows only e-mail + **Registrace** (`created_at`) and then one large full-width
+  **Schválit** (`btn-success btn-lg w-100`); an approved card shows e-mail, role, person (if linked), last
+  login and note (if any), and no Approve. **Everything else is folded behind one „Další akce" per card** — a
+  disclosure button (`aria-expanded`, `aria-controls` while open) whose content is mounted only while open:
+  `SecondaryActions` (Upravit / Změnit heslo / Odkaz na heslo / Zakázat·Povolit) in a **two-column grid**
+  (`.kk-user-card__more`, `minmax(0, 1fr)` cells with wrapping labels, so 360px never scrolls sideways) plus the
+  shared reason line; every control on the card clears the 44px floor unconditionally (`.kk-user-card .btn`,
+  guarded by `styles/recordCards.test.ts`). Approve's own reason (blocked, maintainer boundary) stays under
+  Approve, outside the fold. Both layouts take their reasons from one derivation, **`useActionReasons`**
+  (`components/users/actionReasons.ts`: `outOfReach`, `toggleOff`, `approveOff`), so a row and a card can never
+  disagree. The **person** column prints the name of the subject the account is linked to, resolved through
+  **one** `useSubjects` fetch for the whole roster (`linkedPersonName` is a plain function of that map, not a
+  component with a hook, so thirty rows still cost one request) and an em dash when there is no link (a card
+  leaves the line out). The **e-mail** column goes through **`UserEmail`** (`components/users/`), which prints a real
   address as it stands but renders a **`.invalid` placeholder as „Bez adresy" + the line asking for a real one**
   (`isPlaceholderEmail`, the same last-label test the backend refuses to dial on — see `mailer.invalidTLD`): every
   message the app sends goes to this field, so "there is something in the column" and "this person can be reached"
@@ -2616,7 +2628,9 @@ here.
   an account can be both, and a waiting one is never painted the reassuring green of an active one, because it cannot
   sign in at all. Above the list sits **`PendingFilter`** (`components/users/`): a switch narrowing the roster to the
   waiting accounts plus **the count of them**, so an administrator who came for something else still notices that
-  self-service registration left somebody standing at the door. It filters the **already loaded** list (the backend's
+  self-service registration left somebody standing at the door. **The filter is on by default** and lives in the
+  URL („back always works"): no parameter = waiting only, **`?all=1`** = everybody; each switch is a history entry
+  (`setSearchParams` push), so Back restores the previous view and a reload keeps it. It filters the **already loaded** list (the backend's
   `?pending=true` stays unused): the count needs every account anyway, so a second request could only make the two
   disagree — and the count is always of the whole roster, never of what is on screen. Both predicates live in
   `components/users/account.ts` (component-free, so the page can count and filter with them and Fast Refresh
@@ -2631,13 +2645,18 @@ here.
   remembers the new name, so a second Save does not rename again. `upsert` re-sorts the roster only when a row is
   new or its username changed, **Změnit heslo** for another user (logs them out of all
   devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
-  (`setUserDisabled`). A waiting row additionally offers **Schválit** → a `ConfirmModal` (`variant="primary"`) →
-  `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) and reports through the page's
-  own success alert; a blocked account's Schválit is off with `users.approve.blockedHint` on its **own** hint line
-  (the backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision). The
-  confirm question says the account will get an e-mail about it only where one is sent: `UsersPage` reads
-  `useMailEnabled()` and picks `users.approve.body`/`bodyNoMail`, the latter telling the administrator to say
-  so themselves.
+  (`setUserDisabled`). A waiting row/card additionally offers **Schválit**, which acts on **one press — no
+  confirmation dialog, on the table or the card** (approving is the errand the page exists for, a wrong approval is
+  cheap to undo by blocking, and one rule for both layouts beats a modal only the desktop keeps):
+  `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) — under the default filter the
+  account thereby leaves the waiting list at once. While it runs **that** account's button is natively `disabled`
+  with a spinner (`ApproveButton`; the in-flight set is per account, `approvingRef` guards a double tap that lands
+  before the re-render), so other cards stay tappable. A refusal (`actionErrorFor`) is printed **on that row/card**
+  (`ApproveError`, `role="alert"`), not in a page banner. Success is a **toast** (`useToast`), visible wherever the
+  reader has scrolled to, and carries what the old confirm question said: whether the person gets an e-mail
+  (`useMailEnabled()` → `users.approve.success`/`successNoMail`, the latter telling the administrator to say so
+  themselves). A blocked account's Schválit is off with `users.approve.blockedHint` on its **own** hint line (the
+  backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision).
   **Změnit heslo gained a sibling, „Odkaz na heslo"** → **`ResetLinkModal`** (`components/users/`): it asks first
   (issuing kills the account's earlier unused link), then `issuePasswordReset`, then shows the whole link in a
   **read-only, select-on-focus field with a Kopírovat button** (the same disclosure shape as `ApiTokensCard`'s
@@ -2678,7 +2697,7 @@ here.
   `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). This is the one place
   the app keeps the buttons on screen instead of hiding them — and rightly so: it is **not** a role gate but a
   per-row boundary (this administrator may manage users, just not *this* one), which is exactly what the
-  printed line beside the row says. `UserActions` renders all three via `ReasonedButton` with `reasonId`
+  printed line beside the row says. `SecondaryActions` (table and card fold alike) renders them via `ReasonedButton` with `reasonId`
   pointing at that visible line, so the sentence exists once and is reachable by hover, by focus and by eye
   on a phone; before, the `title` on a natively disabled Bootstrap button could be read by neither a mouse
   (`pointer-events: none`) nor a keyboard (out of the tab order). API validation errors map to a specific field
@@ -2696,7 +2715,8 @@ here.
   **Zakázat** shows that explanation instead of the generic “action could not be completed”. States: a **skeleton** (`Placeholder` in the table) while loading,
   an error alert with **Zkusit znovu**, an empty state (`EmptyState`, practically unreachable — the bootstrap
   admin always exists, but must not crash) and a second one for a **filter that leaves nothing**
-  („Nikdo nečeká"), which is a normal answer rather than an empty library; self-gated on `isAdmin`.
+  („Nikdo nečeká na schválení" + a **Zobrazit všechny uživatele** button that writes `?all=1`) — the default view
+  when everybody has been let in, so it has to read as "all done", not as a broken page; self-gated on `isAdmin`.
   Tests: `UsersPage.test.tsx` plus `components/users/{account,UserEmail,UserStateBadges,PendingFilter,ResetLinkModal}.test.tsx`,
   `SettingsPage` = `/settings` (admin **or** maintainer, `isAdmin`) **the instance's own settings** —
   the three values behind `GET`/`PUT /settings`: whether self-service registration is open, the shared

@@ -3751,8 +3751,9 @@
     "empty": {
       "title": "Žádní uživatelé",
       "hint": "Vytvořte první účet tlačítkem „Nový uživatel“.",
-      "noPendingTitle": "Nikdo nečeká",
-      "noPendingHint": "Žádný účet teď nečeká na schválení. Vypněte filtr a uvidíte všechny."
+      "noPendingTitle": "Nikdo nečeká na schválení",
+      "noPendingHint": "Všechny registrace jsou vyřízené.",
+      "showAll": "Zobrazit všechny uživatele"
     },
     "columns": {
       "username": "Uživatelské jméno",
@@ -3833,13 +3834,15 @@
       "pendingOnly": "Jen čekající na schválení",
       "waiting": "Čeká na schválení: {{pending}}"
     },
+    "card": {
+      "more": "Další akce",
+      "registered": "Registrace"
+    },
     "approve": {
       "action": "Schválit",
-      "title": "Schválit účet?",
-      "body": "Uživatel {{username}} se bude moci přihlásit a přijde mu o tom e-mail. Role se nemění — tu nastavíte zvlášť.",
-      "bodyNoMail": "Uživatel {{username}} se bude moci přihlásit; nedostane o tom e-mail, mail není zapnutý — dejte mu vědět sami. Role se nemění — tu nastavíte zvlášť.",
-      "success": "Účet byl schválen.",
-      "blockedHint": "Zakázaný účet nejde schválit. Nejdřív ho povolte."
+      "success": "Účet {{username}} je schválený a přijde mu o tom e-mail.",
+      "blockedHint": "Zakázaný účet nejde schválit. Nejdřív ho povolte.",
+      "successNoMail": "Účet {{username}} je schválený. Mail není zapnutý — dejte mu vědět sami."
     },
     "resetLink": {
       "action": "Odkaz na heslo",

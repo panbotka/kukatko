@@ -40,6 +40,20 @@ describe('stacked record cards', () => {
     expect(lengthPx(actions.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
   })
 
+  it('lifts every control of the user roster card to the finger-target floor', () => {
+    // Approve, the "More actions" toggle and the folded buttons alike: the card
+    // is the phone form of the roster, where the approving actually happens.
+    const buttons = declarations(ruleBody(css, /\.kk-user-card\s+\.btn\s*(?=\{)/) ?? '')
+    expect(lengthPx(buttons.get('min-height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    // The folded actions are a two-column grid whose cells may shrink, so a long
+    // label wraps inside its cell instead of widening a 360px page.
+    const fold = declarations(ruleBody(css, /\.kk-user-card__more\s*(?=\{)/) ?? '')
+    expect(fold.get('display')).toBe('grid')
+    expect(fold.get('grid-template-columns')).toBe('repeat(2, minmax(0, 1fr))')
+    const folded = declarations(ruleBody(css, /\.kk-user-card__more\s+\.btn\s*(?=\{)/) ?? '')
+    expect(folded.get('white-space')).toBe('normal')
+  })
+
   it('confines the audit payload to its own box', () => {
     const payload = declarations(ruleBody(css, /\.kk-audit-payload\s*(?=\{)/) ?? '')
     // Pretty-printed JSON has no soft break opportunities, so an unwrapped <pre>

@@ -1,4 +1,4 @@
-import { type SyntheticEvent, useCallback, useEffect, useId, useMemo, useState } from 'react'
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
@@ -8,17 +8,18 @@ import Placeholder from 'react-bootstrap/Placeholder'
 import Spinner from 'react-bootstrap/Spinner'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
-import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import Modal from '../components/Modal'
-import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { AddAutocomplete } from '../components/photo/AddAutocomplete'
 import { PendingFilter } from '../components/users/PendingFilter'
 import { ResetLinkModal } from '../components/users/ResetLinkModal'
+import { UserActions, type UserActionsProps } from '../components/users/UserActions'
+import { UserCard } from '../components/users/UserCard'
 import { UserEmail } from '../components/users/UserEmail'
 import { UserStateBadges } from '../components/users/UserStateBadges'
 import { isWaitingForApproval } from '../components/users/account'
@@ -29,7 +30,9 @@ import {
   type FormError,
   type FormField,
 } from '../components/users/errors'
+import { useToast } from '../components/toast/ToastContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useMailEnabled } from '../hooks/useMailEnabled'
 import { useSubjects } from '../hooks/useSubjects'
 import { formatDate, formatDateTime } from '../lib/format'
@@ -58,7 +61,6 @@ type Dialog =
   | { kind: 'edit'; user: AdminUser }
   | { kind: 'password'; user: AdminUser }
   | { kind: 'resetLink'; user: AdminUser }
-  | { kind: 'approve'; user: AdminUser }
   | { kind: 'toggle'; user: AdminUser }
 
 /** The skeleton's three placeholder rows. */
@@ -180,8 +182,9 @@ function SubjectField({
 }
 
 /**
- * Renders one account's linked person for the roster: the person's name, an em
- * dash when there is no link, and the bare UID in the moment between the roster
+ * Names one account's linked person for the roster: the person's name, null
+ * when there is no link (the table prints an em dash, a card leaves the line
+ * out), and the bare UID in the moment between the roster
  * arriving and the people list arriving (or if that list failed) — a raw id is
  * ugly, but claiming "nobody" would be wrong.
  *
@@ -190,9 +193,12 @@ function SubjectField({
  * with a hook, so a roster of thirty accounts still costs exactly one request
  * for the people.
  */
-function linkedPersonLabel(subjectUid: string | null | undefined, names: Map<string, string>) {
+function linkedPersonName(
+  subjectUid: string | null | undefined,
+  names: Map<string, string>,
+): string | null {
   if (subjectUid === null || subjectUid === undefined || subjectUid === '') {
-    return '—'
+    return null
   }
   return names.get(subjectUid) ?? subjectUid
 }
@@ -694,152 +700,6 @@ function ToggleModal({ user, onHide, onConfirm, busy }: ToggleModalProps) {
   )
 }
 
-/** Props for the per-user action cluster. */
-interface UserActionsProps {
-  user: AdminUser
-  /** True when the row is the signed-in administrator's own account. */
-  self: boolean
-  /**
-   * True when the signed-in actor may manage this account. A non-maintainer
-   * cannot touch a maintainer's account (edit, reset the password of, approve or
-   * disable), so its actions are disabled — mirroring the backend
-   * `guardMaintainerBoundary`.
-   */
-  canManage: boolean
-  /**
-   * True on a phone card, where the actions are the whole point of the
-   * reflow: they become one full-width button per line at the finger-friendly
-   * height instead of a `size="sm"` cluster the reader would have to scroll to.
-   */
-  stacked: boolean
-  onApprove: () => void
-  onEdit: () => void
-  onPassword: () => void
-  onResetLink: () => void
-  onToggle: () => void
-}
-
-/**
- * The things an administrator does to an account, plus the one-line reason when a
- * control is disabled. Shared by both layouts so the table cell and the card's
- * action row can never offer different powers.
- *
- * **Approve appears only on a waiting row.** It is not a power an administrator
- * has over every account but the answer to a question one particular account is
- * asking, so on an account that was already let in there is nothing to press and
- * nothing to grey out.
- */
-function UserActions({
-  user,
-  self,
-  canManage,
-  stacked,
-  onApprove,
-  onEdit,
-  onPassword,
-  onResetLink,
-  onToggle,
-}: UserActionsProps) {
-  const { t } = useTranslation()
-  const size = stacked ? undefined : 'sm'
-  const hintId = useId()
-  const approveHintId = useId()
-  // Not a role gate but a per-row boundary: this administrator may manage users,
-  // just not *this* one. That is why the buttons stay on the row instead of
-  // vanishing — and why, per the app-wide rule, they have to say why they are
-  // off. `ReasonedButton` is what makes that sentence actually reachable: a
-  // natively disabled Bootstrap button takes no focus and shows no `title`.
-  const outOfReach = canManage ? undefined : t('users.maintainerManageHint')
-  // Why a control is dead, in one line under it: the reason belongs next to the
-  // button, not only in a `title` a touch device never shows. Every reason a
-  // button in this cluster can have is the one printed there, so they all
-  // describe themselves by that line rather than each carrying a hidden copy of
-  // the same sentence for a screen reader to repeat.
-  const hint = self
-    ? t('users.selfDisableHint')
-    : canManage
-      ? null
-      : t('users.maintainerManageHint')
-  const waiting = isWaitingForApproval(user)
-  // Approving a blocked account is refused by the backend (409) and would be a
-  // half-measure anyway: the person still could not sign in. The row says so
-  // instead of offering a button that fails — on its own hint line, because it
-  // is a different sentence from the one the rest of the cluster shares.
-  const blocked = user.disabled ? t('users.approve.blockedHint') : undefined
-  const approveOff = outOfReach ?? blocked
-  const buttons = (
-    <>
-      {waiting && (
-        <ReasonedButton
-          variant="outline-success"
-          size={size}
-          disabledReason={approveOff}
-          reasonId={outOfReach === undefined ? approveHintId : hintId}
-          onClick={onApprove}
-        >
-          {t('users.approve.action')}
-        </ReasonedButton>
-      )}
-      <ReasonedButton
-        variant="outline-secondary"
-        size={size}
-        disabledReason={outOfReach}
-        reasonId={hintId}
-        onClick={onEdit}
-      >
-        {t('users.edit')}
-      </ReasonedButton>
-      <ReasonedButton
-        variant="outline-secondary"
-        size={size}
-        disabledReason={outOfReach}
-        reasonId={hintId}
-        onClick={onPassword}
-      >
-        {t('users.changePassword')}
-      </ReasonedButton>
-      <ReasonedButton
-        variant="outline-secondary"
-        size={size}
-        disabledReason={outOfReach}
-        reasonId={hintId}
-        onClick={onResetLink}
-      >
-        {t('users.resetLink.action')}
-      </ReasonedButton>
-      <ReasonedButton
-        variant={user.disabled ? 'outline-success' : 'outline-danger'}
-        size={size}
-        disabledReason={self ? t('users.selfDisableHint') : outOfReach}
-        reasonId={hintId}
-        onClick={onToggle}
-      >
-        {user.disabled ? t('users.enable') : t('users.disable')}
-      </ReasonedButton>
-    </>
-  )
-  return (
-    <>
-      {/* On a card the buttons are the grid items of the card's own full-width
-          action row, so they must not be boxed in a second wrapper; in a table
-          cell they need their own inline cluster. */}
-      {stacked ? buttons : <div className="d-flex gap-1 flex-wrap">{buttons}</div>}
-      {hint !== null && (
-        <div id={hintId} className="text-secondary small mt-1">
-          {hint}
-        </div>
-      )}
-      {/* Only when Approve is the one control that is off: the shared line above
-          already covers the case where nothing on the row may be pressed. */}
-      {waiting && outOfReach === undefined && blocked !== undefined && (
-        <div id={approveHintId} className="text-secondary small mt-1">
-          {blocked}
-        </div>
-      )}
-    </>
-  )
-}
-
 /**
  * Admin-only user administration: the roster of local accounts and the things an
  * administrator does to them — create one, edit its role/name/note, let a waiting
@@ -857,9 +717,12 @@ export function UsersPage() {
   useDocumentTitle(t('users.title'))
   const { isAdmin, isMaintainer, user: me } = useAuth()
   // Whether an approval is followed by an e-mail at all. On an instance with
-  // mail off nothing is sent, and the confirm dialog says so rather than telling
-  // an administrator the account will hear from Kukátko by itself.
+  // mail off nothing is sent, and the approval's confirmation says so rather than
+  // telling an administrator the account will hear from Kukátko by itself.
   const mailEnabled = useMailEnabled()
+  const toast = useToast()
+  // A phone gets the approval-shaped cards instead of the ten-column table.
+  const narrow = useIsNarrowViewport()
   // The people, once for the whole roster, so the "linked person" column can
   // print a name instead of a UID without costing a request per row.
   const { subjects } = useSubjects()
@@ -870,17 +733,42 @@ export function UsersPage() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [dialog, setDialog] = useState<Dialog>({ kind: 'none' })
   const [toggling, setToggling] = useState(false)
-  const [approving, setApproving] = useState(false)
-  // Narrows the roster to the accounts waiting to be let in. It is view state of
-  // the already-loaded list, not a query: switching it re-renders and never
-  // re-fetches, so the filter cannot fail and cannot empty the page.
-  const [pendingOnly, setPendingOnly] = useState(false)
+  // The accounts whose approval is in flight, and why the last approval of an
+  // account was refused. Per account rather than one flag for the page, because
+  // approving is one tap and nothing stops the next card being tapped while the
+  // first request still runs. The ref is the synchronous guard against a double
+  // tap landing before React has re-rendered the button as disabled.
+  const [approving, setApproving] = useState<ReadonlySet<string>>(() => new Set())
+  const approvingRef = useRef(new Set<string>())
+  const [approveErrors, setApproveErrors] = useState<Readonly<Record<string, ErrorKey>>>({})
+  // Narrows the roster to the accounts waiting to be let in — on by default,
+  // because letting newly registered people in is what an administrator usually
+  // opens this page for. It lives in the URL ("back always works"): no parameter
+  // is the waiting list, `?all=1` is everybody, and each switch is a history
+  // entry. It is view state of the already-loaded list, not a query: switching
+  // it re-renders and never re-fetches, so the filter cannot fail.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const pendingOnly = searchParams.get('all') !== '1'
+  const setPendingOnly = useCallback(
+    (next: boolean) => {
+      setSearchParams((prev) => {
+        const params = new URLSearchParams(prev)
+        if (next) {
+          params.delete('all')
+        } else {
+          params.set('all', '1')
+        }
+        return params
+      })
+    },
+    [setSearchParams],
+  )
   // The enable/disable action has no form to hang a field error on, so it keeps
   // just the message key. It is a real message rather than a boolean because the
   // backend refuses disabling the last maintainer, and "the action could not be
   // completed" would leave the reader with no idea what to do about it.
   const [actionError, setActionError] = useState<ErrorKey | null>(null)
-  const [notice, setNotice] = useState<'passwordChanged' | 'approved' | null>(null)
+  const [notice, setNotice] = useState<'passwordChanged' | null>(null)
 
   const load = useCallback((signal?: AbortSignal) => {
     setState({ status: 'loading' })
@@ -932,21 +820,46 @@ export function UsersPage() {
     })
   }, [])
 
-  /** Lets a waiting account in, replacing its row with the approved one. */
-  async function confirmApprove(user: AdminUser) {
-    setActionError(null)
-    setApproving(true)
+  /** Marks `uid`'s approval as running (or no longer running). */
+  const markApproving = useCallback((uid: string, running: boolean) => {
+    if (running) {
+      approvingRef.current.add(uid)
+    } else {
+      approvingRef.current.delete(uid)
+    }
+    setApproving(new Set(approvingRef.current))
+  }, [])
+
+  /**
+   * Lets a waiting account in on one press, replacing its row with the approved
+   * one — which, under the default waiting-only filter, takes it off the list.
+   *
+   * There is no confirmation step, on a phone or on the table: approving is the
+   * errand this page exists for, and a wrong approval is cheap to undo by
+   * blocking the account. What the dialog used to say — whether the person will
+   * get an e-mail — moves into the success toast.
+   */
+  async function approve(user: AdminUser) {
+    if (approvingRef.current.has(user.uid)) {
+      return
+    }
+    markApproving(user.uid, true)
+    setApproveErrors(({ [user.uid]: _dropped, ...rest }) => rest)
     try {
       upsert(await approveUser(user.uid))
-      setNotice('approved')
+      toast.show({
+        variant: 'success',
+        message: t(mailEnabled ? 'users.approve.success' : 'users.approve.successNoMail', {
+          username: user.display_name || user.username,
+        }),
+      })
     } catch (err) {
-      // The roster is untouched: the row still reads "waiting", so the same
-      // button is still there once the reader has dealt with the reason.
-      setActionError(actionErrorFor(err))
+      // The roster is untouched: the account still reads "waiting", so the same
+      // button is still there once the reader has dealt with the reason printed
+      // under it.
+      setApproveErrors((prev) => ({ ...prev, [user.uid]: actionErrorFor(err) }))
     } finally {
-      setApproving(false)
-      // Either way the dialog closes: a modal backdrop would hide the alert.
-      close()
+      markApproving(user.uid, false)
     }
   }
 
@@ -968,14 +881,16 @@ export function UsersPage() {
     return <Alert variant="danger">{t('users.adminOnly')}</Alert>
   }
 
-  /** The action-cluster props for one account — the same on a row and on a card. */
-  function actionsFor(user: AdminUser) {
+  /** The action props for one account — the same on a row and on a card. */
+  function actionsFor(user: AdminUser): UserActionsProps {
     return {
       user,
       self: user.uid === me?.uid,
       canManage: isMaintainer || user.role !== 'maintainer',
+      approving: approving.has(user.uid),
+      approveError: approveErrors[user.uid] ?? null,
       onApprove: () => {
-        setDialog({ kind: 'approve', user })
+        void approve(user)
       },
       onEdit: () => {
         setDialog({ kind: 'edit', user })
@@ -1037,7 +952,7 @@ export function UsersPage() {
       key: 'subject',
       header: t('users.columns.subject'),
       cellClassName: 'text-break',
-      cell: (user) => linkedPersonLabel(user.subject_uid, subjectNames),
+      cell: (user) => linkedPersonName(user.subject_uid, subjectNames) ?? '—',
     },
     {
       key: 'note',
@@ -1072,7 +987,7 @@ export function UsersPage() {
       // On a card the same cluster is the full-width action row instead, so it is
       // not squeezed into the label/value grid.
       cardHidden: true,
-      cell: (user) => <UserActions {...actionsFor(user)} stacked={false} />,
+      cell: (user) => <UserActions {...actionsFor(user)} />,
     },
   ]
 
@@ -1112,7 +1027,7 @@ export function UsersPage() {
             setNotice(null)
           }}
         >
-          {notice === 'passwordChanged' ? t('users.password.success') : t('users.approve.success')}
+          {t('users.password.success')}
         </Alert>
       )}
 
@@ -1143,16 +1058,40 @@ export function UsersPage() {
                 onChange={setPendingOnly}
               />
               {visible.length === 0 ? (
+                // Only the waiting-only filter can leave nothing (the roster
+                // itself is not empty here). It is the default view, so it must
+                // read as "all done", not as a broken page — with the way to
+                // everybody else one press away.
                 <EmptyState
                   title={t('users.empty.noPendingTitle')}
                   hint={t('users.empty.noPendingHint')}
+                  action={
+                    <Button
+                      variant="outline-primary"
+                      onClick={() => {
+                        setPendingOnly(false)
+                      }}
+                    >
+                      {t('users.empty.showAll')}
+                    </Button>
+                  }
                 />
+              ) : narrow ? (
+                <ul className="list-unstyled d-grid gap-3 mb-0">
+                  {visible.map((user) => (
+                    <li key={user.uid}>
+                      <UserCard
+                        {...actionsFor(user)}
+                        person={linkedPersonName(user.subject_uid, subjectNames)}
+                      />
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <RecordTable
                   records={visible}
                   columns={columns}
                   rowKey={(user) => user.uid}
-                  cardActions={(user) => <UserActions {...actionsFor(user)} stacked />}
                   className="mb-0 align-middle"
                 />
               )}
@@ -1188,24 +1127,6 @@ export function UsersPage() {
 
       {dialog.kind === 'resetLink' && (
         <ResetLinkModal user={dialog.user} mailEnabled={mailEnabled} onHide={close} />
-      )}
-
-      {dialog.kind === 'approve' && (
-        <ConfirmModal
-          show
-          variant="primary"
-          busy={approving}
-          title={t('users.approve.title')}
-          confirmLabel={t('users.approve.action')}
-          onCancel={close}
-          onConfirm={() => {
-            void confirmApprove(dialog.user)
-          }}
-        >
-          {t(mailEnabled ? 'users.approve.body' : 'users.approve.bodyNoMail', {
-            username: dialog.user.username,
-          })}
-        </ConfirmModal>
       )}
 
       {dialog.kind === 'toggle' && (
