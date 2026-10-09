@@ -31,6 +31,8 @@ and so was **SEC-018** (in-process image decodes had no memory bound across conc
 and **SEC-020** (a Web Push subscription endpoint made the server POST to internal hosts).
 **SEC-021** (account recovery revokes sessions but not API tokens or passkeys) was confirmed on
 **2026-10-09** and is open: it waits on a product decision, and behaviour is unchanged.
+**SEC-022** (an expiring API token mints a non-expiring token and registers a passkey) was confirmed on
+**2026-10-09** and is open on the same terms; its recommended fix is the bearer half of SEC-021's.
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -702,6 +704,132 @@ Everything else below is open as written.
 
   The decision belongs to the product owner. Until it is made, `docs/ARCHITECTURE.md` §11 states that
   recovery revokes sessions only.
+
+---
+
+### SEC-022 — MEDIUM — **OPEN (decision pending)** — An expiring API token mints a non-expiring token and registers a passkey
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), confirmed on
+  **2026-10-09** against commit `656a774`. This entry only documents and evaluates. Auth behaviour is
+  **unchanged**. It shares its cause and one fix with SEC-021, which covers the same writes from the angle of
+  account recovery.
+- **Where:**
+  - `authenticateRequest` (`internal/auth/middleware.go`) turns a valid bearer token into a `principal` that
+    holds the owner's `User`, no `Session`, and the token's `unlimited` flag. It does not keep the token's id
+    or its `expires_at`. Downstream, a token principal is the owner in full; only the missing session tells it
+    apart from a browser.
+  - The credential-management routes need only `RequireAuth` (`internal/auth/routes.go`): `POST /auth/tokens`,
+    `PATCH /auth/tokens/{id}`, `POST /auth/passkeys/register/begin` and `…/register/finish`.
+  - `handleCreateAPIToken` (`internal/auth/handlers_apitoken.go`) passes the body to `Service.CreateAPIToken`
+    (`internal/auth/service_apitoken.go`). That accepts a nil `ExpiresAt` ("never") from any principal and
+    checks a given expiry only against *now*, never against the presenting credential. `unlimited` is checked
+    against the owner's role, not against the presenting token.
+  - Tokens have no parent: the `api_tokens` row records nobody but the owner, so revoking or expiring a token
+    reaches no token it minted.
+- **Confirmed behaviour:**
+  - Token A with `expires_at = now + 1 h` mints token B with no `expires_at`, or with one a year after A's.
+    Both are 201.
+  - Once A has expired (clock moved past it) or been revoked by the owner, A gets **401** and B still gets
+    **200** on `GET /auth/me`. B is the only live token left.
+  - A alone completes a passkey registration. The ceremony cookie rides in any HTTP client's jar. After A
+    expires, that passkey signs in from an empty browser and yields an ordinary session cookie.
+  - An admin's **throttled**, expiring token mints an **unlimited**, never-expiring child.
+  - The role never grows. What is lost is the presenting credential's **bounded lifetime** and its
+    **single point of revocation**: an expiry or a revoke on A no longer ends what A's holder can do.
+- **Realistic threat:**
+  - **A leaked agent token.** The documented MCP setup (`docs/MCP.md`) and every `kukatko ctl` context
+    keep a bearer secret in a config file, an MCP client entry, or an environment variable. An owner who
+    deliberately gives such a token a short life ("one hour for this job"), or revokes it when it shows up in
+    a log, a paste, or a backup, reasonably believes the exposure is now over.
+  - Whoever read the secret in that window makes one request to `POST /auth/tokens` with no `expires_at`, or
+    three to plant a passkey, and keeps the owner's role indefinitely. For an `ai`, `editor` or `admin`
+    account that means write access, and for an admin account also user management.
+  - **A prompt-injected or otherwise misbehaving agent** holding its own token can do the same thing without
+    anyone leaking anything. The token is meant to be the agent's leash, and it can lengthen the leash itself.
+    MCP exposes no credential tool, but `kukatko ctl` is driven through a shell, and an agent with a shell
+    can call `curl` with the token it already holds.
+  - The owner can still find the child: it appears in their own `GET /auth/tokens`, the passkey appears in
+    `GET /auth/passkeys`, and each mint writes an `api_token.create` or `passkey.register` audit row.
+    Nothing prompts them to look, and an admin cannot list another user's tokens or delete their passkeys
+    (see SEC-021).
+  - The precondition is a leaked or misused token, and the role does not increase, so this is MEDIUM, in line
+    with SEC-021.
+- **Confirmed by:** `internal/auth/token_minting_integration_test.go`. The tests are kept and pin the current
+  behaviour, so a fix has to change them deliberately.
+  - `TestTokenMinting_expiringTokenMintsLongerLivedToken`: a 1 h token mints a child stored with
+    `expires_at IS NULL`, and another that outlives it by a year.
+  - `TestTokenMinting_childOutlivesExpiredParent`: after the frozen clock passes the parent's expiry, the
+    parent gets 401 and the child 200.
+  - `TestTokenMinting_childOutlivesRevokedParent`: the owner revokes the parent from their browser; the parent
+    gets 401, the child 200, and one unrevoked token is left.
+  - `TestTokenMinting_expiringTokenRegistersPasskey`: a 1 h token registers a passkey (virtual
+    authenticator). After the token expires, the passkey signs in and its session gets 200.
+  - `TestTokenMinting_adminTokenMintsUnlimitedChild`: an admin's throttled 1 h token mints an unlimited,
+    never-expiring child.
+  - `TestRecovery_bearerTokenAloneMintsTokenAndPasskey` (SEC-021) shows the same writes with a non-expiring
+    token and no session at all.
+- **Who mints tokens or registers passkeys today, and how:**
+  - **`kukatko ctl`** never calls `/auth/tokens` or `/auth/passkeys/*`. It only presents a token. Its 401
+    message (`internal/ctl/client.go`, `UnauthorizedError`) tells the user to create a new one "while logged
+    in", which means from a session.
+  - **The MCP agent token** (`docs/MCP.md`, "A token for the agent"; `docs/OPERATIONS.md`, `mcp.*`) is minted
+    by logging the agent user in with a password (`POST /auth/login`, cookie jar) and then calling
+    `POST /auth/tokens` with that cookie. That is a session principal.
+  - **The web UI** (`components/account/ApiTokensCard.tsx` and `PasskeysCard.tsx` on the account page, over
+    `web/src/services/auth.ts` and `passkeys.ts`) runs on the session cookie.
+  - **`docs/API.md`** describes tokens as "long-lived bearer credentials for non-interactive clients" and
+    documents no flow that mints a token with a token. Nothing in the repo, and nothing in the curating
+    agent's workspace (`~/projects/fotky`), does so.
+  - Passkey registration from a token has **no legitimate use at all**: a passkey is created by an
+    authenticator in a browser, which already has a session.
+- **Fix options:**
+  1. **Session only for credential management.** `POST /auth/tokens`, `PATCH /auth/tokens/{id}` and
+     `/auth/passkeys/register/*` answer **403** to a token principal (`session == nil`, which the principal
+     already reveals; a small `requireSession` middleware beside `RequireAuth`). Revocation
+     (`DELETE /auth/tokens/{id}`) stays open to tokens, because it only ever reduces access and a script that
+     retires its own token is legitimate. `DELETE /auth/passkeys/{id}` has no non-interactive use either and
+     can go session-only with the rest.
+     - *For:* small, needs no schema change, and closes the whole class: no child token, no passkey, no
+       unlimited flag from a bearer. It is exactly the bearer half of SEC-021's option 3, so one change fixes
+       both. It breaks nothing in the repo or in any documented workflow.
+     - *Against:* there is no programmatic rotation. A headless client that wants a fresh token has to log in
+       with a password. That is what the documentation already prescribes, and a client that can log in with a
+       password is not bounded by its token anyway.
+  2. **Cap a child at its parent.** The principal carries the token's id and `expires_at`. A child minted by
+     a token gets at most the parent's expiry: a nil or later value is clamped, or refused with 400. It may be
+     unlimited only if the parent is. To make revocation reach it as well, `api_tokens` gains a
+     `parent_id` (FK, `ON DELETE CASCADE`), and revoking a token revokes its descendants in the same
+     transaction.
+     - *For:* keeps self-rotation and short-lived child tokens for sub-tasks, with the parent's bounds
+       inherited.
+     - *Against:* a migration, a recursive revoke, and clamp-or-refuse semantics to document. It still leaves
+       passkey registration open, because a passkey has no expiry to cap, so registration must be refused to
+       tokens anyway (option 1's passkey half). A never-expiring parent caps nothing. That covers the common
+       agent token minted without `expires_at` (as `docs/MCP.md` shows), so the leaked-agent case is not
+       improved.
+  3. **Let the token's creator opt in.** A per-token flag such as `can_manage_credentials` (default off, set
+     only from a session at mint time, shown in the token list, audited). Without it the token is refused as
+     in option 1; with it, today's behaviour.
+     - *For:* the most flexible, and the default is safe.
+     - *Against:* a column, a UI control, API and audit surface, and a decision every token creator has to
+       understand. The tokens most likely to get the flag are the agent tokens, which are the most likely to
+       leak, and for them the flag restores exactly the behaviour this entry describes. No current workflow
+       needs it.
+- **Impact on `kukatko ctl` and documented workflows:** none for option 1. `ctl` mints nothing, the MCP setup
+  and the web UI mint from a session, and `ctl`'s 401 hint already says "while logged in". The only docs to
+  touch are `docs/API.md` (the 403 for a token principal on the three routes) and the `UnauthorizedError` text,
+  which could say "from the web UI or a password login" more explicitly. Option 2 adds a `parent_id` field to
+  the token JSON and a revocation cascade to describe. Option 3 adds a create-time field and a UI toggle.
+- **Recommendation:** **option 1**, landed together with SEC-021's option 3, since it is the same change:
+  - Token minting, the unlimited toggle, passkey registration and passkey deletion become session-only, and
+    answer 403 to a bearer principal.
+  - Token revocation stays open to tokens.
+  - The tests above flip to assert 403 and the parent's bounds.
+
+  Option 2 is worth building only if a real need for programmatic rotation appears, and then on top of option
+  1's passkey refusal, not instead of it. Option 3 is not recommended: it adds surface whose only effect, when
+  switched on, is to restore the risk. The decision belongs to the product owner. Until it is made,
+  `docs/ARCHITECTURE.md` §11 states that a token principal is the owner, not the token.
 
 ---
 

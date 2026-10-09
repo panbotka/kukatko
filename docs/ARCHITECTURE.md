@@ -1066,6 +1066,8 @@ is the primary system and imports from nothing but the disk.
     Both public halves of it are rate-limited per client address.
   - **Recovery revokes sessions, nothing else** — none of the three paths (own change, admin set, reset
     link) revokes an `api_tokens` row or deletes a `passkey_credentials` row (SEC-021, open).
+  - **A token principal is the owner, not the token** — a bearer token may mint tokens (any expiry, none
+    included) and register a passkey, and neither is bound by its expiry or revocation (SEC-022, open).
   - **Rate-limit on `/auth/login`** (brute-force protection).
 - **Passkeys (WebAuthn)** — a second, phishing-resistant way in beside the password
   (`internal/auth`, `passkey_credentials`, `github.com/go-webauthn/webauthn`). The private half never
