@@ -41,11 +41,13 @@ func IsWebFriendlyCodec(codec string) bool {
 // downloaded first. The fragmented flags (frag_keyframe+empty_moov) make the MP4
 // streamable to a pipe without seeking back to write the moov atom, so the output
 // can be copied straight to an HTTP response. Audio is mapped optionally (0:a?)
-// so silent clips still transcode. It is a standalone function so the command
+// so silent clips still transcode. src is opened through InputArgs' allowlists,
+// whose protocol half follows what src is: the local file alone, or the HTTP(S)
+// stack for a signed URL. It is a standalone function so the command
 // construction can be unit-tested without executing ffmpeg.
 func TranscodeArgs(src string) []string {
-	return []string{
-		"-nostdin",
+	args := append([]string{"-nostdin"}, InputArgs(src)...)
+	return append(args,
 		"-i", src,
 		"-map", "0:v:0",
 		"-map", "0:a?",
@@ -58,7 +60,7 @@ func TranscodeArgs(src string) []string {
 		"-movflags", "frag_keyframe+empty_moov+default_base_moof",
 		"-f", "mp4",
 		"pipe:1",
-	}
+	)
 }
 
 // TranscodeStream is a running ffmpeg transcode whose H.264/MP4 output is read

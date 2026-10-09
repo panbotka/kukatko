@@ -190,17 +190,14 @@ func FFmpegArgs(src, dst string, spec Spec) []string {
 		"fps=1000/%d,scale=%d:%d,tile=%dx%d",
 		spec.IntervalMs, spec.TileWidth, spec.TileHeight, spec.Columns, spec.Rows,
 	)
-	return []string{
-		"-nostdin",
-		"-y",
-		"-an",
-		"-sn",
+	args := append([]string{"-nostdin", "-y", "-an", "-sn"}, video.InputArgs(src)...)
+	return append(args,
 		"-i", src,
 		"-vf", filter,
 		"-frames:v", "1",
 		"-q:v", strconv.Itoa(spriteQuality),
 		dst,
-	}
+	)
 }
 
 // runFFmpeg executes the sprite render and reports ErrGenerateFailed when the

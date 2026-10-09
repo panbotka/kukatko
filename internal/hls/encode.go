@@ -3,6 +3,8 @@ package hls
 import (
 	"path/filepath"
 	"strconv"
+
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // DefaultSegmentSeconds is the length one media segment is cut to unless the
@@ -142,7 +144,8 @@ func (r Rendition) ScaleFilter() string {
 // this rendition's HLS output inside outDir: the media playlist
 // EncodePlaylistName, the initialisation segment InitName and the media segments
 // 00000.m4s, 00001.m4s, … src is either a local path or a URL — ffmpeg opens
-// both — and outDir must exist.
+// both, through video.InputArgs' demuxer and protocol allowlists, so a manifest
+// posing as a video is refused rather than followed — and outDir must exist.
 //
 //	args := hls.EncodeArgs(src, dir, rendition, hls.DefaultSegmentSeconds)
 //	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
@@ -159,9 +162,8 @@ func (r Rendition) ScaleFilter() string {
 // the encoder happened to emit.
 func EncodeArgs(src, outDir string, r Rendition, segmentSeconds int) []string {
 	segmentSeconds = SegmentLength(segmentSeconds)
-	return []string{
-		"-nostdin",
-		"-y",
+	args := append([]string{"-nostdin", "-y"}, video.InputArgs(src)...)
+	return append(args,
 		"-i", src,
 		"-map", "0:v:0",
 		"-map", "0:a?",
@@ -171,7 +173,7 @@ func EncodeArgs(src, outDir string, r Rendition, segmentSeconds int) []string {
 		"-preset", videoPreset,
 		"-crf", videoCRF,
 		"-maxrate", kbits(r.VideoBitrate),
-		"-bufsize", kbits(r.VideoBitrate * bufsizeFactor),
+		"-bufsize", kbits(r.VideoBitrate*bufsizeFactor),
 		"-pix_fmt", pixelFormat,
 		"-force_key_frames", keyframeExpr(segmentSeconds),
 		"-c:a", audioCodec,
@@ -186,7 +188,7 @@ func EncodeArgs(src, outDir string, r Rendition, segmentSeconds int) []string {
 		"-hls_fmp4_init_filename", InitName,
 		"-hls_segment_filename", filepath.Join(outDir, segmentPattern),
 		filepath.Join(outDir, EncodePlaylistName),
-	}
+	)
 }
 
 // keyframeExpr returns ffmpeg's -force_key_frames expression placing a keyframe

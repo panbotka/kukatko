@@ -182,17 +182,16 @@ func extractFrame(ctx context.Context, srcPath, dstPath string, offsets []float6
 // posterArgs builds the ffmpeg argument list that writes a single JPEG frame of
 // src, seeked to at seconds, to dst. It is standalone so the command
 // construction can be unit-tested without executing ffmpeg. The input seek
-// (-ss before -i) is the fast, keyframe-accurate form.
+// (-ss before -i) is the fast, keyframe-accurate form, and src is opened through
+// InputArgs' allowlists.
 func posterArgs(src, dst string, at float64) []string {
-	return []string{
-		"-nostdin",
-		"-y",
-		"-ss", formatSeek(at),
+	args := append([]string{"-nostdin", "-y", "-ss", formatSeek(at)}, InputArgs(src)...)
+	return append(args,
 		"-i", src,
 		"-frames:v", "1",
 		"-q:v", strconv.Itoa(posterQuality),
 		dst,
-	}
+	)
 }
 
 // sampleArgs builds the ffmpeg argument list for a candidate frame: the same
@@ -200,16 +199,14 @@ func posterArgs(src, dst string, at float64) []string {
 // up — a clip narrower than that is left alone) and coarsely encoded, because
 // the frame is only ever measured.
 func sampleArgs(src, dst string, at float64) []string {
-	return []string{
-		"-nostdin",
-		"-y",
-		"-ss", formatSeek(at),
+	args := append([]string{"-nostdin", "-y", "-ss", formatSeek(at)}, InputArgs(src)...)
+	return append(args,
 		"-i", src,
 		"-frames:v", "1",
 		"-vf", fmt.Sprintf("scale='min(%d,iw)':-2", posterSampleWidth),
 		"-q:v", strconv.Itoa(posterSampleQuality),
 		dst,
-	}
+	)
 }
 
 // formatSeek renders a seek offset for ffmpeg's -ss in whole milliseconds, the

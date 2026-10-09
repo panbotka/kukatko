@@ -7,13 +7,15 @@ import (
 )
 
 // TestFFprobeArgs verifies the ffprobe command is constructed with the JSON
-// format/stream flags and the path terminated after "--".
+// format/stream flags, the input guard and the path terminated after "--".
 func TestFFprobeArgs(t *testing.T) {
 	t.Parallel()
 	got := ffprobeArgs("/tmp/clip.mp4")
 	want := []string{
 		"-v", "error", "-print_format", "json",
-		"-show_format", "-show_streams", "--", "/tmp/clip.mp4",
+		"-show_format", "-show_streams",
+		"-format_whitelist", DemuxerAllowlist, "-protocol_whitelist", "file",
+		"--", "/tmp/clip.mp4",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ffprobeArgs = %v, want %v", got, want)

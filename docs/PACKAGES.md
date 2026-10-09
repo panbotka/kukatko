@@ -964,6 +964,14 @@ to `## Package map` in `CLAUDE.md`.
   (`face_detect` was in that list until it stopped running on a video at all). Cost and the measurements
   behind the thresholds: `docs/PERF.md` §2;
   `IsVideoPath`/`IsVideoExt`/`Extensions()` (the set, dotless, sorted)/`FFmpegAvailable`/`FFprobeAvailable`;
+  **the input guard** (`input.go`, SEC-017): `InputArgs(src)` = `-format_whitelist DemuxerAllowlist
+  -protocol_whitelist <file | http,https,tls,tcp>`, which **every** ffprobe/ffmpeg argv over a user's file puts
+  before its input — `ffprobeArgs`, `posterArgs`/`sampleArgs`, `TranscodeArgs`, `hls.EncodeArgs`,
+  `storyboard.FFmpegArgs`. `DemuxerAllowlist` (`mov,matroska,avi,asf,flv,mpeg,mpegvideo,mpegts,h264,hevc`) is
+  exactly the containers behind `videoExts`; leaving out dash/hls/concat is the point — they fetch the URLs a
+  manifest names. The protocol half follows `src`: the local file alone for a path, the HTTP(S) stack for a
+  signed object-store URL (transcode/encode read a remote original straight from it). A new video extension
+  whose container is not on the list is refused by ffprobe — extend both together;
   **`Metadata.HasContainerMetadata()`** — the difference between a reading and a failure: a real clip always
   yields at least one of a duration, a codec name and a full frame size, so a `Metadata` with none of the
   three came from a probe that read **nothing** (ffprobe failed and the exiftool fallback happily described a
@@ -1075,7 +1083,9 @@ to `## Package map` in `CLAUDE.md`.
   SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
   every signature the pipeline ingests — `imgconvert.MagicFormat`'s rasters/HEIC/TIFF, the non-TIFF RAW
   headers (ORF/RW2/RAF/X3F/MRW), ISO-BMFF/QuickTime boxes (MP4/MOV/3GP/CR3/AVIF), EBML, AVI, ASF, FLV,
-  MPEG-PS/TS/M2TS, Annex-B; a file matching none is asked `video.Probe` (named as video) or
+  MPEG-PS/TS/M2TS, Annex-B; a **streaming manifest** — `#EXTM3U`, `ffconcat`, `<MPD`, or `<?xml` with an
+  `<MPD` behind it, after an optional BOM/whitespace (`isStreamingManifest`) — is `ErrNotMedia` before any
+  tool reads it (SEC-017); a file matching none is asked `video.Probe` (named as video) or
   `exif.ExtractNamed` (otherwise) and passes only with dimensions/a duration/a codec or an image/video MIME.
   Anything else is **`ErrNotMedia`** → per-file **415** `Code: CodeNotMedia` (`"not_media"`, the new
   `FileResult.Code`) **before** the dedup lookup, the store and the insert, so junk never becomes a row, an

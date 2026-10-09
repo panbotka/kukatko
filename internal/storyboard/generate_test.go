@@ -114,6 +114,13 @@ func TestFFmpegArgs(t *testing.T) {
 			t.Errorf("FFmpegArgs = %v, want %s", args, flag)
 		}
 	}
+	// The source is opened through the input guard, placed before -i so it
+	// applies: a manifest posing as a video must not be followed (SEC-017).
+	guard := video.InputArgs("/src.mp4")
+	at, input := slices.Index(args, guard[0]), slices.Index(args, "-i")
+	if at == -1 || at > input || !slices.Equal(args[at:at+len(guard)], guard) {
+		t.Errorf("FFmpegArgs = %v, want %v before -i", args, guard)
+	}
 }
 
 // TestGenerator_Exists covers the three answers the status path branches on: no

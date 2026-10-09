@@ -190,6 +190,9 @@ func TestAdmit(t *testing.T) {
 		{"random bytes named heic", "broken.heic", junkBytes(5000), ErrNotMedia},
 		{"text named png", "notes.png", []byte("not a picture\n"), ErrNotMedia},
 		{"empty file", "empty.jpg", nil, ErrNotMedia},
+		{"dash manifest named mp4", "clip.mp4", []byte(dashManifest), ErrNotMedia},
+		{"hls playlist named mp4", "clip.mp4", []byte(hlsPlaylist), ErrNotMedia},
+		{"ffconcat script named mov", "clip.mov", []byte(concatScript), ErrNotMedia},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -201,6 +204,50 @@ func TestAdmit(t *testing.T) {
 			err := admit(t.Context(), path, tt.filename)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("admit(%s) = %v, want %v", tt.filename, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// dashManifest, hlsPlaylist and concatScript are the manifests libavformat
+// follows: each names a URL that ffprobe would fetch if it took the file for a
+// video (SEC-017). The address is TEST-NET-1, never contacted — admit refuses
+// them before any tool reads them.
+const (
+	dashManifest = `<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT10S">
+  <BaseURL>http://192.0.2.1/dash/</BaseURL>
+</MPD>
+`
+	hlsPlaylist  = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://192.0.2.1/seg.ts\n#EXT-X-ENDLIST\n"
+	concatScript = "ffconcat version 1.0\nfile http://192.0.2.1/clip.mp4\n"
+)
+
+// TestIsStreamingManifest verifies the manifest shapes are recognised — also
+// behind a byte-order mark or leading whitespace — and that other text and XML
+// are not: an XML declaration counts only with an MPD root behind it.
+func TestIsStreamingManifest(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		head string
+		want bool
+	}{
+		{"dash", dashManifest, true},
+		{"dash without declaration", "<MPD type=\"static\"></MPD>", true},
+		{"dash behind a bom", "\xEF\xBB\xBF" + dashManifest, true},
+		{"hls", hlsPlaylist, true},
+		{"hls behind whitespace", "\r\n  " + hlsPlaylist, true},
+		{"ffconcat", concatScript, true},
+		{"other xml", `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>`, false},
+		{"plain text", "not a video\n", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isStreamingManifest([]byte(tt.head)); got != tt.want {
+				t.Errorf("isStreamingManifest(%q) = %v, want %v", tt.head, got, tt.want)
 			}
 		})
 	}

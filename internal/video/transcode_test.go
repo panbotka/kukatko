@@ -73,6 +73,29 @@ func TestTranscodeArgs(t *testing.T) {
 	}
 }
 
+// TestTranscodeArgs_inputGuard verifies the source is opened through the input
+// guard placed before -i, with the protocol half following the source: the local
+// file alone for a stored original, the HTTP(S) stack for a signed URL — the
+// transcode must keep reading a remote original straight from its URL.
+func TestTranscodeArgs_inputGuard(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		src       string
+		protocols string
+	}{
+		{"/originals/2024/05/clip.mov", "file"},
+		{"https://bucket.example/2024/05/clip.mov?X-Amz-Signature=abc", "http,https,tls,tcp"},
+	}
+	for _, tt := range tests {
+		args := TranscodeArgs(tt.src)
+		guard := []string{"-format_whitelist", DemuxerAllowlist, "-protocol_whitelist", tt.protocols}
+		at, input := slices.Index(args, guard[0]), slices.Index(args, "-i")
+		if at == -1 || at > input || !slices.Equal(args[at:at+len(guard)], guard) {
+			t.Errorf("TranscodeArgs(%q) = %v, want %v before -i", tt.src, args, guard)
+		}
+	}
+}
+
 // TestTranscode_missingFFmpeg verifies Transcode reports ErrFFmpegMissing when
 // ffmpeg is not installed. It is skipped on hosts that have ffmpeg, where the
 // missing-binary branch cannot be exercised without altering PATH.

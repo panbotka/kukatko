@@ -9,13 +9,15 @@ import (
 	"testing"
 )
 
-// TestPosterArgs verifies the ffmpeg poster command: fast input seek, a single
-// frame, the quality flag and the destination last.
+// TestPosterArgs verifies the ffmpeg poster command: fast input seek, the input
+// guard, a single frame, the quality flag and the destination last.
 func TestPosterArgs(t *testing.T) {
 	t.Parallel()
 	got := posterArgs("/tmp/in.mp4", "/tmp/out.jpg", 1)
 	want := []string{
-		"-nostdin", "-y", "-ss", "1.000", "-i", "/tmp/in.mp4",
+		"-nostdin", "-y", "-ss", "1.000",
+		"-format_whitelist", DemuxerAllowlist, "-protocol_whitelist", "file",
+		"-i", "/tmp/in.mp4",
 		"-frames:v", "1", "-q:v", "3", "/tmp/out.jpg",
 	}
 	if !reflect.DeepEqual(got, want) {

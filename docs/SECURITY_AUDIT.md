@@ -24,8 +24,9 @@ vulnerabilities). Nothing here required a code change — this report only docum
 section is authoritative). Fixed: **SEC-001** (HIGH, the trusted-proxy allow-list + the
 per-username login budget) and **SEC-006** (the login timing oracle) on **2026-08-12** — they were
 the only two reachable *anonymously*, and they composed into one working online password-guessing
-chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. Everything else
-below is open as written.
+chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. **SEC-017** (an
+uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fixed on **2026-10-09**.
+Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
 > reachable from the HTTP layer with attacker input is rated **info** unless a concrete,
@@ -363,6 +364,57 @@ below is open as written.
 - **Not addressed here:** a maintainer may still lock *themselves* out individually (demote
   or disable their own account) as long as another enabled maintainer remains — that is
   recoverable by the other maintainer and therefore intentionally allowed.
+
+### SEC-017 — MEDIUM — **FIXED** — A DASH manifest uploaded as `clip.mp4` made ffprobe/ffmpeg fetch its URLs (SSRF)
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), evaluated and
+  reproduced on **2026-10-09** against commit `d8fe125`.
+- **Where (before the fix):** `internal/uploadlinkapi/public.go` checks only the filename extension; the
+  bytes are staged extensionless (`kukatko-ingest-*`, `internal/ingest/ingest.go`) and handed to `admit`
+  (`internal/ingest/sniff.go`). A text file matches no media signature, so for a video-named file
+  `probedAsMedia` ran `video.Probe` → `ffprobeArgs` (`internal/video/probe.go`), which passed no
+  `-format_whitelist`/`-protocol_whitelist`/`-f`. libavformat auto-detected the demuxer, and the **dash**
+  demuxer fetched the `BaseURL` the manifest names. Every later ffmpeg run on a stored copy had the same
+  argv shape: poster + candidate samples (`internal/video/poster.go`), HLS encode
+  (`internal/hls/encode.go`), storyboard (`internal/storyboard/generate.go`), on-the-fly transcode
+  (`internal/video/transcode.go`), metadata re-probe (`internal/metajob/extractor.go`, via `video.Probe`).
+- **Attack scenario:** an **anonymous upload-link holder** (`POST /api/v1/u/{code}/upload`) or any curator
+  uploads `clip.mp4` whose bytes are a static DASH MPD with `<BaseURL>http://<internal-host>/…</BaseURL>`.
+  During admission — before anything is stored — the server sends a GET to that host (a blind SSRF into
+  the tailnet/loopback, e.g. an unauthenticated internal admin GET). If the target answers with a real
+  media file (an attacker host does), ffprobe reports a codec, the "video" is catalogued, and every
+  poster/encode/storyboard/transcode/re-probe repeats the fetch.
+- **What was tested** (locally only; no deployed host was contacted): a loopback listener and two
+  extensionless fixtures naming it — a minimal static DASH MPD and an HLS media playlist — run through the
+  exact `ffprobeArgs`, then through `posterArgs` on a copy named `clip.mp4`. Local build: **ffmpeg
+  6.1.1-3ubuntu5** (Ubuntu 24.04, aarch64), `-demuxers` lists `dash`, `hls`, `concat`,
+  `webm_dash_manifest`; `-buildconf` has `--enable-libxml2`.
+- **Result — confirmed for DASH:** the listener received `GET /dash/v.mp4` from both the ffprobe argv and
+  the poster argv. **HLS was not followed** on this build: `hls_probe` refuses a playlist whose name is not
+  `.m3u8`/`.m3u` ("Not detecting m3u8/hls with non standard extension"). Both outcomes depend on the
+  ffmpeg build — dash exists only with libxml2, the hls name check only in FFmpeg ≥ 6. Production runs
+  the unpinned `alpine:3` ffmpeg package (`Dockerfile`), whose build was not checked; the fix does not
+  rely on it.
+- **Fix:**
+  1. `internal/video/input.go` — `InputArgs(src)` puts `-format_whitelist DemuxerAllowlist` (exactly
+     the containers behind the ingested extensions: `mov,matroska,avi,asf,flv,mpeg,mpegvideo,mpegts,h264,hevc`)
+     and a `-protocol_whitelist` before the input of **every** ffprobe/ffmpeg argv that reads user media:
+     `ffprobeArgs`, `posterArgs`, `sampleArgs`, `TranscodeArgs`, `hls.EncodeArgs`, `storyboard.FFmpegArgs`.
+     The protocol half follows the input: `file` alone for a local path, `http,https,tls,tcp` for an
+     http(s) URL — the transcode and the encode still read a remote original straight from its signed
+     R2 URL (or a dev MinIO's plain-HTTP one). ffmpeg now answers the manifest with "Format not on
+     whitelist".
+  2. `internal/ingest/sniff.go` — `admit` refuses a streaming manifest (`#EXTM3U`, `ffconcat`, `<MPD`,
+     or `<?xml` with an `<MPD` behind it, after an optional BOM/whitespace) as **`ErrNotMedia`** before
+     any tool is asked, whatever the file's name.
+- **Regression test:** `internal/video/input_test.go` `TestManifestUpload_fetchesNothing` runs the DASH
+  and HLS fixtures through every argv builder in `internal/video` (staged extensionless and as
+  `clip.mp4`) against a counting loopback listener and fails on any request — verified to fail with the
+  guard stubbed out. `TestManifestUpload_unguardedControl` logs what the unguarded argv does on the
+  installed build; `TestInputArgs_remoteClipStillOpens` probes and transcodes a real clip served over HTTP.
+  Every container behind `videoExts` (mp4, m4v, mov, 3gp, mkv, webm, avi, wmv, flv, mpg, mts, m2ts, h264,
+  hevc) was rendered and still probes with the guard in place.
+- **Fix commit:** the commit that adds this entry (hash recorded in the follow-up below).
 
 ---
 

@@ -202,7 +202,9 @@ func TestSampleArgs(t *testing.T) {
 	t.Parallel()
 	got := sampleArgs("/tmp/in.mp4", "/tmp/out.jpg", 1.5)
 	want := []string{
-		"-nostdin", "-y", "-ss", "1.500", "-i", "/tmp/in.mp4",
+		"-nostdin", "-y", "-ss", "1.500",
+		"-format_whitelist", DemuxerAllowlist, "-protocol_whitelist", "file",
+		"-i", "/tmp/in.mp4",
 		"-frames:v", "1", "-vf", "scale='min(160,iw)':-2", "-q:v", "5", "/tmp/out.jpg",
 	}
 	if !reflect.DeepEqual(got, want) {

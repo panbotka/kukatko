@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/video"
 )
 
 // wantScaleFilter is the scale filter the 1080p rendition must ask for: fit
@@ -128,6 +130,23 @@ func TestEncodeArgs(t *testing.T) {
 	}
 	if !slices.Contains(args, "-nostdin") {
 		t.Error("EncodeArgs: -nostdin missing; ffmpeg would compete for the process's stdin")
+	}
+}
+
+// TestEncodeArgs_inputGuard verifies the source is opened through the demuxer and
+// protocol allowlists, placed before -i so they apply to it — a manifest posing
+// as a video must not make the encode fetch the URLs it names (SEC-017), while a
+// signed URL keeps its HTTP(S) protocols.
+func TestEncodeArgs_inputGuard(t *testing.T) {
+	t.Parallel()
+	for _, src := range []string{"/tmp/src.mov", "https://bucket.example/src.mov?sig=1"} {
+		args := EncodeArgs(src, "/tmp/out", rendition1080p(t), DefaultSegmentSeconds)
+		input := slices.Index(args, "-i")
+		guard := video.InputArgs(src)
+		at := slices.Index(args, guard[0])
+		if at == -1 || input == -1 || at > input || !slices.Equal(args[at:at+len(guard)], guard) {
+			t.Errorf("EncodeArgs(%q) = %v, want %v before -i", src, args, guard)
+		}
 	}
 }
 

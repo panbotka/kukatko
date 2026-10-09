@@ -63,7 +63,8 @@ const isoBMFFOffset = 4
 // signature this list does not know (an exotic camera RAW, say) still gets in as
 // long as exiftool or ffprobe understands it. It returns ErrNotMedia for a file
 // that passes neither test, and ErrUnsupportedType for an AVIF (see isAVIF),
-// which would pass both.
+// which would pass both. A streaming manifest (see isStreamingManifest) is
+// ErrNotMedia before any tool is asked about it, whatever its name.
 func admit(ctx context.Context, path, filename string) error {
 	head, err := readHead(path)
 	if err != nil {
@@ -74,6 +75,9 @@ func admit(ctx context.Context, path, filename string) error {
 	}
 	if looksLikeMedia(head) {
 		return nil
+	}
+	if isStreamingManifest(head) {
+		return fmt.Errorf("%w: %s", ErrNotMedia, originalName(filename))
 	}
 	if probedAsMedia(ctx, path, filename) {
 		return nil
@@ -176,6 +180,30 @@ func isVideoMagic(head []byte) bool {
 func isTransportStream(head []byte, offset, packet int) bool {
 	const syncByte = 0x47
 	return len(head) > offset+packet && head[offset] == syncByte && head[offset+packet] == syncByte
+}
+
+// manifestPrefixes open the text files libavformat reads as a list of other
+// inputs to fetch: an HLS playlist, an ffconcat script, and the XML declaration
+// or root element a DASH MPD starts with.
+var manifestPrefixes = []string{"#EXTM3U", "ffconcat", "<?xml", "<MPD"}
+
+// isStreamingManifest reports whether head is the start of a streaming manifest
+// rather than media: one of manifestPrefixes after an optional UTF-8 byte-order
+// mark and leading whitespace, where an XML declaration only counts when an MPD
+// root element follows within head. None of these is media in itself, and
+// handing one to ffprobe as a "video" is how a manifest's URLs used to get
+// fetched (SEC-017 in docs/SECURITY_AUDIT.md); the demuxer allowlist in
+// internal/video is the defence that holds on every ffmpeg run, this just says
+// no before any tool is asked.
+func isStreamingManifest(head []byte) bool {
+	text := bytes.TrimLeft(bytes.TrimPrefix(head, []byte("\xEF\xBB\xBF")), " \t\r\n")
+	for _, prefix := range manifestPrefixes {
+		if !bytes.HasPrefix(text, []byte(prefix)) {
+			continue
+		}
+		return prefix != "<?xml" || bytes.Contains(text, []byte("<MPD"))
+	}
+	return false
 }
 
 // probedAsMedia asks the metadata tools whether a file with no recognised

@@ -51,16 +51,19 @@ func Probe(ctx context.Context, path string) (Metadata, error) {
 }
 
 // ffprobeArgs builds the ffprobe argument list that prints the format and stream
-// metadata of path as a single JSON document. It is a standalone function so the
-// command construction can be unit-tested without executing ffprobe.
+// metadata of path as a single JSON document. path is opened through InputArgs'
+// demuxer and protocol allowlists, so a manifest posing as a video is refused
+// rather than followed. It is a standalone function so the command construction
+// can be unit-tested without executing ffprobe.
 func ffprobeArgs(path string) []string {
-	return []string{
+	args := []string{
 		"-v", "error",
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",
-		"--", path,
 	}
+	args = append(args, InputArgs(path)...)
+	return append(args, "--", path)
 }
 
 // probeWithFFprobe runs ffprobe against path and parses its JSON output into
