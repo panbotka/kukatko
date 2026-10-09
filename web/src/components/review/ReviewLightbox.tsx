@@ -110,7 +110,7 @@ export function ReviewLightbox({
         <div className="d-flex flex-wrap align-items-center justify-content-center gap-2">
           <Button
             // `outline-light`, not `outline-secondary`: measured against the
-            // overlay's own dark surface, secondary renders at rgb(78, 93, 108)
+            // overlay's own dark surface, Superhero's secondary rendered its slate grey
             // — present in the DOM and invisible to the eye.
             variant="outline-light"
             size="sm"
@@ -124,7 +124,7 @@ export function ReviewLightbox({
           {children}
           <Button
             // `outline-light`, not `outline-secondary`: measured against the
-            // overlay's own dark surface, secondary renders at rgb(78, 93, 108)
+            // overlay's own dark surface, Superhero's secondary rendered its slate grey
             // — present in the DOM and invisible to the eye.
             variant="outline-light"
             size="sm"

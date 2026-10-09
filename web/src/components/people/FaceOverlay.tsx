@@ -96,14 +96,14 @@ const EDGE_MARGIN = 0.06
  * A thicker border on its own is not an answer to "which of these eighteen is
  * row 12?": at the minimum size that is a one-pixel difference nobody can find
  * on a crowded photograph. The selected marker keeps the primary tint it has
- * always had, and the merely-pointed-at one takes a white ring, which reads over
+ * always had, and the merely-pointed-at one takes an ink ring, which reads over
  * a dark coat and a bright sky alike.
  */
 function halo(isSelected: boolean, isHovered: boolean): string | undefined {
   if (isSelected) {
-    return '0 0 0 3px rgba(var(--bs-primary-rgb), 0.35)'
+    return '0 0 0 3px color-mix(in srgb, var(--kk-accent) 35%, transparent)'
   }
-  return isHovered ? '0 0 0 2px rgba(255, 255, 255, 0.7)' : undefined
+  return isHovered ? '0 0 0 2px color-mix(in srgb, var(--kk-on-photo) 70%, transparent)' : undefined
 }
 
 /**

@@ -112,6 +112,6 @@
   transform: translate(-50%, -50%);
   border-radius: 0.125rem;
   box-shadow:
-    0 0 0 1px rgb(0 0 0 / 55%),
-    0 0 0 9999px rgb(0 0 0 / 35%);
+    0 0 0 1px color-mix(in srgb, var(--kk-shade) 55%, transparent),
+    0 0 0 9999px color-mix(in srgb, var(--kk-shade) 35%, transparent);
 }

@@ -222,224 +222,9 @@ body {
   padding-bottom: var(--kk-bottom-edge);
 }
 
-/*
- * Form controls on the dark theme.
- *
- * Bootswatch Superhero compiles `.form-control`/`.form-select` with a hardcoded
- * white fill and near-black text (`background-color: #fff; color: #212529`) plus a
- * dark select-arrow SVG — values baked into its stylesheet, not `--bs-*` variables.
- * Left alone, every field renders as a blinding white rectangle punched into the
- * near-black page; on the library the four empty filter selects become the loudest
- * thing on a page whose whole job is showing photographs.
- *
- * A previous attempt pinned the controls to `color-scheme: light` (recorded as a
- * deliberate rejection in `docs/UX_AUDIT.md`): with the fill still white, the
- * page-level `color-scheme: dark` made the browser draw the NATIVE bits — a
- * `type=date` field's calendar glyph, an unstyled `<select>`'s list — light-on-white,
- * i.e. invisible. Pinning to light kept them dark-on-white. That fix was correct
- * *given a white fill*.
- *
- * Here we remove the white fill instead. Each control gets a real dark surface —
- * `--kk-surface-sunken`, the same warm well a thumbnail loads into, so a field sits
- * BELOW the photographs in weight — with a subtle warm hairline so it still reads
- * as a control rather than a hole. Because the fill is now dark we can,
- * and must, put the controls back on `color-scheme: dark`: fill and scheme finally
- * agree, so every native glyph renders light-on-dark and stays visible. The single
- * non-native affordance, the `.form-select` chevron, is a Bootstrap background image
- * (untouched by `color-scheme`), so we opt in narrowly at the `--bs-*` level and
- * swap `--bs-form-select-bg-img` for a light-stroked copy of the same chevron. */
-.form-control,
-.form-select {
-  color-scheme: dark;
-  color: var(--bs-body-color);
-  background-color: var(--kk-surface-sunken);
-  /* A hairline in the token spirit (the navy background lightened toward white) so
-     the field's edge reads on both the navy page and its own sunken fill. */
-  border-color: color-mix(in srgb, var(--bs-body-bg) 76%, #fff 24%);
-}
-
-.form-select {
-  --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23eceae5' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
-}
-
-/* Placeholder text: clearly dimmer than a real value so an empty field reads as
-   empty, yet kept readable — a shade lighter than Superhero's #868e96, not muddier
-   (the audit already flags muted-text contrast as an open gap; do not widen it). */
-.form-control::placeholder {
-  color: color-mix(in srgb, var(--bs-body-color) 62%, transparent);
-  opacity: 1;
-}
-
-/* Focus keeps the field dark — Superhero's `:focus` rule would otherwise flip it
-   back to white — and trades Superhero's orange box-shadow glow for the app-wide
-   focus ring: the info-cyan `outline` (never a box-shadow, so it survives an
-   ancestor's `overflow: hidden`) already shared by tiles and links. */
-.form-control:focus,
-.form-select:focus {
-  color: var(--bs-body-color);
-  background-color: var(--kk-surface-sunken);
-  border-color: color-mix(in srgb, var(--bs-body-bg) 60%, #fff 40%);
-  box-shadow: none;
-}
-
-.form-control:focus-visible,
-.form-select:focus-visible {
-  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
-  outline-offset: var(--kk-focus-ring-offset);
-}
-
-/* Autofilled fields: browsers paint their own light chip over the control. Repaint
-   it with the field's own surface (the inset box-shadow trick — the only handle on
-   the UA autofill layer) and force the text/caret colour, so an autofilled login
-   field matches an empty one instead of flashing white. */
-.form-control:-webkit-autofill,
-.form-control:-webkit-autofill:hover,
-.form-control:-webkit-autofill:focus {
-  -webkit-text-fill-color: var(--bs-body-color);
-  -webkit-box-shadow: 0 0 0 100rem var(--kk-surface-sunken) inset;
-  caret-color: var(--bs-body-color);
-}
-
-/* Disabled controls read as inert: Superhero paints them light-grey (#ebebeb) —
-   another pale block on the navy page. Give them a flatter, translucent dark fill
-   and muted text so they recede clearly below the active fields. */
-.form-control:disabled,
-.form-select:disabled {
-  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
-  background-color: color-mix(in srgb, var(--kk-surface-sunken) 55%, transparent);
-  border-color: transparent;
-}
-
-/*
- * Accent — the azure identity applied to every control Bootswatch bakes with a
- * literal orange fill. Its compiled CSS hardcodes `#df6919` here instead of
- * reading `--bs-primary`, so the theme-root re-pin in `tokens.css` cannot reach
- * these; we point each control back at the accent tokens. The solid deep tone
- * (`--kk-accent-solid`) carries white text at AA on its fill; the light tone
- * (`--kk-accent`) reads as text/border on the dark surfaces. Base-style re-point
- * only — no component markup changes.
- */
-
-/* The primary action: filled azure with a white label; hover/active step darker.
-   Bootswatch flattens the resting fill with a direct `.btn-primary{background-
-   color:#df6919}` rule (not the `--bs-btn-bg` var), so the fill is set directly
-   too; hover/active/border still resolve from the `--bs-btn-*` vars below. */
-.btn-primary {
-  background-color: var(--kk-accent-solid);
-  --bs-btn-bg: var(--kk-accent-solid);
-  --bs-btn-border-color: var(--kk-accent-solid);
-  --bs-btn-hover-bg: var(--kk-accent-solid-hover);
-  --bs-btn-hover-border-color: var(--kk-accent-solid-hover);
-  --bs-btn-active-bg: var(--kk-accent-solid-hover);
-  --bs-btn-active-border-color: var(--kk-accent-solid-hover);
-  --bs-btn-disabled-bg: var(--kk-accent-solid);
-  --bs-btn-disabled-border-color: var(--kk-accent-solid);
-  --bs-btn-focus-shadow-rgb: 95, 176, 242;
-}
-
-/* The secondary action as an outline: azure text + border at rest, filling solid
-   azure with a white label on hover/active. */
-.btn-outline-primary {
-  --bs-btn-color: var(--kk-accent);
-  --bs-btn-border-color: var(--kk-accent);
-  --bs-btn-hover-bg: var(--kk-accent-solid);
-  --bs-btn-hover-border-color: var(--kk-accent-solid);
-  --bs-btn-active-bg: var(--kk-accent-solid);
-  --bs-btn-active-border-color: var(--kk-accent-solid);
-  --bs-btn-disabled-color: var(--kk-accent);
-  --bs-btn-disabled-border-color: var(--kk-accent);
-  --bs-btn-focus-shadow-rgb: 95, 176, 242;
-}
-
-/* The quiet action — the app's commonest button (rotate, cancel, "show more").
-   Bootswatch bakes BOTH its label and its border as the theme's grey-blue #4e5d6c,
-   which is the very colour it also bakes into `--bs-card-bg`: inside a card the
-   label sits at contrast 1.00 on its own background — the reported "the text is
-   the same colour as its background", and an invisible control rather than a
-   merely dim one. Re-point the label at the body text and the border at a
-   translucent tint of it, measured to clear 4.5:1 for the text and 3:1 for the
-   outline on the navy card as well as on the near-black page, and deepen it on
-   hover so it reads as pressable. The hover/active fill is a translucent scrim
-   rather than a surface token on purpose: it has to work on both of those very
-   different backgrounds, and a *lighter* fill would push the white label back under
-   4.5:1 on the card it is lightening. The disabled state keeps the muted text so an
-   inert control still recedes. */
-.btn-outline-secondary {
-  --bs-btn-color: var(--bs-body-color);
-  --bs-btn-border-color: color-mix(in srgb, var(--kk-text) 60%, transparent);
-  --bs-btn-hover-color: var(--bs-body-color);
-  --bs-btn-hover-bg: rgb(0 0 0 / 22%);
-  --bs-btn-hover-border-color: color-mix(in srgb, var(--kk-text) 80%, transparent);
-  --bs-btn-active-color: var(--bs-body-color);
-  --bs-btn-active-bg: rgb(0 0 0 / 34%);
-  --bs-btn-active-border-color: color-mix(in srgb, var(--kk-text) 80%, transparent);
-  --bs-btn-disabled-color: var(--bs-secondary-color);
-  --bs-btn-disabled-border-color: color-mix(in srgb, var(--kk-text) 30%, transparent);
-  --bs-btn-focus-shadow-rgb: 95, 176, 242;
-}
-
-/* Checkbox / radio in the checked state (and checkbox indeterminate) — baked
-   literals, so set the fill and border directly. The white glyph stays legible. */
-.form-check-input:checked,
-.form-check-input[type='checkbox']:indeterminate {
-  background-color: var(--kk-accent-solid);
-  border-color: var(--kk-accent-solid);
-}
-
-/* Range slider thumb (photo-edit sliders): baked-literal fill on both engines,
-   plus the lighter pressed state. */
-.form-range::-webkit-slider-thumb {
-  background-color: var(--kk-accent-solid);
-}
-
-.form-range::-moz-range-thumb {
-  background-color: var(--kk-accent-solid);
-}
-
-.form-range::-webkit-slider-thumb:active {
-  background-color: var(--kk-accent);
-}
-
-.form-range::-moz-range-thumb:active {
-  background-color: var(--kk-accent);
-}
-
-/* Progress bar (upload): the bar takes the accent, the track reads as a well. */
-.progress,
-.progress-stacked {
-  --bs-progress-bg: var(--kk-surface-sunken);
-  --bs-progress-bar-bg: var(--kk-accent-solid);
-}
-
-/* Dropdown menu: a warm overlay surface with the active item on the accent. */
-.dropdown-menu {
-  --bs-dropdown-bg: var(--kk-surface-overlay);
-  --bs-dropdown-link-active-bg: var(--kk-accent-solid);
-}
-
-/* The build version at the foot of the user menu. Bootstrap gives
-   `.dropdown-item-text` the same weight as a real item; this pulls it back to a
-   quiet caption, because it is a fact to glance at, not something to act on. */
-.kk-menu-version {
-  color: var(--kk-text-muted);
-  font-size: var(--kk-font-size-caption);
-}
-
-/* The „Správa" heading inside the user menu. It wears the phone drawer's section
-   label — quiet, uppercase, small — so the one menu the two widths share names
-   its blocks the same way. */
-.kk-menu-section {
-  font-size: var(--kk-font-size-caption);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-/* The selected list-group row takes the accent fill (its white label stays AA). */
-.list-group {
-  --bs-list-group-active-bg: var(--kk-accent-solid);
-  --bs-list-group-active-border-color: var(--kk-accent-solid);
-}
+/* Form controls, buttons, checkboxes, sliders, progress, dropdowns and list
+   groups take their colours in `bootstrapBridge.css`, with every other
+   component whose colours Superhero bakes as literals. */
 
 /* The slim, translucent top bar. It sits OVER the scrolling photo wall rather
    than on an opaque plate: the page tone at reduced alpha (`--kk-header-bg`) plus
@@ -464,7 +249,7 @@ body {
 
 /* Where `backdrop-filter` is unsupported, a see-through bar with no frosting
    would let sharp photo detail read straight through the chrome, so fall back to
-   the solid warm plate (`--kk-surface-1`) — the bar Superhero-minus-navy tone it
+   the solid plate (`--kk-surface-1`) — the bar's own surface tone it
    had before translucency. Guard on both the prefixed and unprefixed properties
    so Safari (WebKit-only support) still gets the blurred bar. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -575,7 +360,7 @@ body {
    sets `--bs-navbar-active-color` on the navbar itself — and `.navbar[data-bs-
    theme=dark]` (specificity 0,2,0) pins it to white — so the match here is
    `.navbar.kukatko-navbar` (also 0,2,0) to win on source order, and it covers
-   the `.navbar-dark` variant too. The filled CTA keeps its white label via its
+   the `.navbar-dark` variant too. The filled CTA keeps its base-toned label via its
    own, more specific rule below. */
 .navbar.kukatko-navbar {
   --bs-navbar-active-color: var(--kk-accent);
@@ -614,7 +399,7 @@ body {
   width: 1px;
   margin-block: var(--kk-space-2);
   margin-inline: var(--kk-space-1);
-  background-color: var(--bs-border-color, rgb(255 255 255 / 15%));
+  background-color: var(--bs-border-color);
 }
 
 /* ---- The tight desktop band (`lg`, 992-1199px) --------------------------
@@ -707,7 +492,7 @@ body {
 }
 
 /* Where the browser can frost the backdrop, do; otherwise fall back to the
-   solid warm plate so the bar is never see-through without the blur that makes
+   solid plate so the bar is never see-through without the blur that makes
    translucency legible over an arbitrary photo. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .kk-batch-bar {
@@ -901,7 +686,7 @@ body {
 }
 
 /* Same treatment as the top bar: frost the backdrop where the browser can, fall
-   back to the solid warm plate where it cannot — the tabs sit over photos, and a
+   back to the solid plate where it cannot — the tabs sit over photos, and a
    see-through bar without the blur is illegible over an arbitrary one. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .kk-tabbar {
@@ -1426,7 +1211,7 @@ body {
   padding: 0.1rem var(--kk-space-1);
   background: none;
   border: 0;
-  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  color: var(--bs-secondary-color);
   font-size: var(--kk-font-size-caption);
   line-height: 1;
   white-space: nowrap;
@@ -1450,7 +1235,7 @@ body {
    stay dim texture. Declared before the hover/active rules so those still win at
    equal specificity. */
 .kukatko-timeline-tick.has-year {
-  color: var(--bs-emphasis-color, #fff);
+  color: var(--bs-emphasis-color);
 }
 
 .kukatko-timeline-tick.has-year .kukatko-timeline-mark {
@@ -1459,7 +1244,7 @@ body {
 
 .kukatko-timeline-tick:hover,
 .kukatko-timeline-tick.active {
-  color: var(--bs-emphasis-color, #fff);
+  color: var(--bs-emphasis-color);
 }
 
 .kukatko-timeline-tick.active .kukatko-timeline-mark {
@@ -1561,7 +1346,7 @@ body {
 
   .kukatko-timeline.is-active {
     opacity: 1;
-    background-color: rgb(0 0 0 / 32%);
+    background-color: color-mix(in srgb, var(--kk-shade) 32%, transparent);
     backdrop-filter: blur(var(--kk-header-blur));
     -webkit-backdrop-filter: blur(var(--kk-header-blur));
   }
@@ -1579,7 +1364,7 @@ body {
   .kukatko-timeline-tick.has-year .kukatko-timeline-year {
     padding: 0.1rem 0.3rem;
     border-radius: var(--kk-radius-sm);
-    background-color: rgb(0 0 0 / 55%);
+    background-color: color-mix(in srgb, var(--kk-shade) 55%, transparent);
   }
 
   .kukatko-timeline-tick.has-year .kukatko-timeline-mark {
@@ -1684,7 +1469,7 @@ body {
   border: 0;
   border-radius: var(--kk-radius-pill);
   background: none;
-  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  color: var(--bs-secondary-color);
   font-size: var(--kk-font-size-caption);
   line-height: 1;
   white-space: nowrap;
@@ -1705,7 +1490,7 @@ body {
 /* The range is the reading; the count beside it is context, so it stays dim even
    while the tick is lit. */
 .kk-decade-tick__label {
-  color: var(--bs-emphasis-color, #fff);
+  color: var(--bs-emphasis-color);
   font-weight: 600;
 }
 
@@ -1716,8 +1501,8 @@ body {
 .kk-decade-tick:hover,
 .kk-decade-tick:focus-visible,
 .kk-decade-tick.active {
-  color: var(--bs-emphasis-color, #fff);
-  background-color: var(--bs-secondary-bg, rgb(255 255 255 / 8%));
+  color: var(--bs-emphasis-color);
+  background-color: var(--bs-secondary-bg);
 }
 
 .kk-decade-tick.active .kk-decade-tick__mark {
@@ -1747,7 +1532,7 @@ body {
 }
 
 .kk-decade-heading__count {
-  color: var(--bs-secondary-color, rgba(255, 255, 255, 0.6));
+  color: var(--bs-secondary-color);
   font-size: var(--kk-font-size-caption);
   font-weight: 400;
 }
@@ -2195,7 +1980,7 @@ body {
 
 /*
  * The command palette dialog. Anchored high on the viewport (Spotlight-style)
- * rather than vertically centred, on the warm overlay surface with the lifted
+ * rather than vertically centred, on the overlay surface with the lifted
  * shadow, so it reads as a floating console over the dimmed library.
  */
 .kukatko-search-dialog {
@@ -2445,15 +2230,15 @@ body {
 }
 
 .kk-medal--gold {
-  color: #f4c430;
+  color: var(--kk-semantic-gold);
 }
 
 .kk-medal--silver {
-  color: #c0c7d0;
+  color: var(--kk-semantic-silver);
 }
 
 .kk-medal--bronze {
-  color: #cd7f32;
+  color: var(--kk-semantic-bronze);
 }
 
 /* ── Map (Leaflet) ───────────────────────────────────────────────────────────
@@ -2527,8 +2312,8 @@ body {
   max-width: 100%;
   padding: var(--kk-space-2) var(--kk-space-4);
   border-radius: var(--kk-radius-pill);
-  color: #fff;
-  background-color: rgb(0 0 0 / 72%);
+  color: var(--kk-on-photo);
+  background-color: color-mix(in srgb, var(--kk-shade) 72%, transparent);
   box-shadow: var(--kk-shadow-2);
   text-align: center;
 }
@@ -2627,7 +2412,7 @@ body {
 
 /* The plate the tiles are laid on: visible past the edge of the world, while
    tiles load, and wherever one fails to. Leaflet's `#ddd` is a light-grey flash
-   in the middle of a near-black page; the sunken well is the tone the app
+   in the middle of a dark page; the sunken well is the tone the app
    already uses behind imagery. */
 .kukatko-map.leaflet-container {
   background-color: var(--kk-surface-sunken);
@@ -2635,7 +2420,7 @@ body {
 
 /* Tiles toned down for the dark page. mapy.com publishes no dark mapset — the
    drawn ones (Základní, Turistická) are white paper — so the only way to stop a
-   70dvh panel of it glaring out of a near-black page is to dim it here. The
+   70dvh panel of it glaring out of a dark page is to dim it here. The
    component decides which mapsets get the class (`mapsetNeedsDimming`); the
    aerial imagery never does, because it is photography and the rest of the app
    shows photographs at full strength.
@@ -2660,7 +2445,7 @@ body {
 }
 
 /* Zoom control. The touch variant is spelled out beside the plain one because
-   `.leaflet-touch .leaflet-bar` re-borders the bar in its own `rgba(0,0,0,.2)`
+   `.leaflet-touch .leaflet-bar` re-borders the bar in its own translucent black
    the moment the browser reports a touchscreen. */
 .kukatko-map .leaflet-bar,
 .kukatko-map.leaflet-touch .leaflet-bar {
@@ -2681,6 +2466,48 @@ body {
 .kukatko-map .leaflet-bar a:focus {
   color: var(--kk-text);
   background-color: color-mix(in srgb, var(--kk-surface-overlay) 82%, var(--kk-accent) 18%);
+}
+
+/* Photo clusters. Leaflet.markercluster's default sheet paints them in its own
+   green / yellow / orange at 60 % with no text colour of its own, so the count
+   inherited whatever the map's text was. Here they grade by size through the
+   palette — the surface accent for a handful, the warm rust for a medium
+   heap, the accent for a big one — each a solid disc carrying its own label
+   colour, with a translucent ring of the same hue as the halo. */
+.kukatko-map .marker-cluster {
+  font-weight: 700;
+}
+
+.kukatko-map .marker-cluster div {
+  font: inherit;
+  font-size: var(--kk-font-size-caption);
+}
+
+.kukatko-map .marker-cluster-small {
+  background-color: color-mix(in srgb, var(--kk-secondary) 55%, transparent);
+}
+
+.kukatko-map .marker-cluster-small div {
+  color: var(--kk-on-secondary);
+  background-color: var(--kk-secondary);
+}
+
+.kukatko-map .marker-cluster-medium {
+  background-color: color-mix(in srgb, var(--kk-warm) 55%, transparent);
+}
+
+.kukatko-map .marker-cluster-medium div {
+  color: var(--kk-on-warm);
+  background-color: var(--kk-warm);
+}
+
+.kukatko-map .marker-cluster-large {
+  background-color: color-mix(in srgb, var(--kk-accent) 45%, transparent);
+}
+
+.kukatko-map .marker-cluster-large div {
+  color: var(--kk-on-accent);
+  background-color: var(--kk-accent-solid);
 }
 
 /* A button at the end of its zoom range: still readable, plainly inert. Listed
@@ -3129,8 +2956,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgb(0 0 0 / 55%);
-  color: #fff;
+  background-color: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   font-size: var(--kk-font-size-caption);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -3372,7 +3199,7 @@ body {
 .kk-ledger-row__check--on {
   border-color: var(--bs-primary);
   background-color: var(--bs-primary);
-  color: #fff;
+  color: var(--kk-on-accent);
 }
 
 .kk-ledger-row__thumb {

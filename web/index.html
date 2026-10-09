@@ -6,8 +6,8 @@
   Without it, .bg-body-tertiary panels and skeleton placeholders paint near-white
   while the body text stays near-white too → invisible labels (see the library
   filter panel). Setting it at the document root applies Bootstrap's dark surface
-  tokens everywhere. tokens.css then re-pins --bs-body-bg back to Superhero's navy
-  so the app keeps its signature page colour. `color-scheme: dark` (below, and set
+  tokens everywhere. tokens.css then re-pins --bs-body-bg and friends to colours
+  derived from the palette (styles/palette.css). `color-scheme: dark` (below, and set
   by the dark theme block) keeps native chrome dark-appropriate.
 -->
 <html lang="cs" data-bs-theme="dark">
@@ -30,11 +30,12 @@
 
     <!--
       Installable PWA. theme-color matches the manifest's and the app's page
-      surface (--kk-surface-page in web/src/styles/tokens.css), so the system UI
-      around a standalone window is the same near-black as the app itself.
+      surface (--kk-palette-base in web/src/styles/palette.css), so the system UI
+      around a standalone window is the same navy as the app itself. A literal
+      here cannot read the stylesheet, so src/theme.test.ts holds the two equal.
     -->
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#15130f" />
+    <meta name="theme-color" content="#001524" />
     <meta name="application-name" content="Kukátko" />
 
     <!--

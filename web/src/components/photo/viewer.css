@@ -1,5 +1,5 @@
 /* Immersive full-bleed photo viewer. The detail route IS the viewer: a single
-   image owns the whole viewport over a warm near-black backdrop, the chrome
+   image owns the whole viewport over a navy-black backdrop, the chrome
    (top bar + prev/next arrows) melts away after a short idle — all but the way
    back and the photo's name, which stay — and returns on any pointer move or
    tap, and a metadata drawer opens on demand: from the side on a wide screen, as
@@ -265,7 +265,7 @@
 /* With most of the wash gone the name leans on its own shadow to stay readable —
    measured over a blown-out sky, which is the case that decides this number. */
 .kk-viewer[data-chrome='hidden'] .kk-viewer__title {
-  text-shadow: 0 1px 4px rgb(0 0 0 / 85%);
+  text-shadow: 0 1px 4px color-mix(in srgb, var(--kk-shade) 85%, transparent);
 }
 
 .kk-viewer[data-chrome='hidden'] .kk-viewer__actions {
@@ -339,7 +339,7 @@
   line-height: 1.3;
   overflow: hidden;
   white-space: nowrap;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 55%);
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--kk-shade) 55%, transparent);
 }
 
 /* Every part clips with an ellipsis on its own account: a flex container's own
@@ -407,12 +407,10 @@
 }
 
 /* The same deepened `danger` fill the toggle's on-state wears, so the two read
-   as one signal — and so white text clears AA on it: Bootstrap's own
-   `.text-bg-danger` puts white on the bare token, which measures 3.96:1 and
-   fails at this size. */
+   as one signal; deepening it only widens the margin of the ink text on it. */
 .kk-viewer__flag-badge {
-  background: color-mix(in srgb, var(--bs-danger) 85%, #000);
-  color: #fff;
+  background: color-mix(in srgb, var(--bs-danger) 85%, var(--kk-shade));
+  color: var(--kk-on-photo);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -449,7 +447,7 @@
   align-self: center;
   width: 1px;
   height: 1.5rem;
-  background: rgb(255 255 255 / 18%);
+  background: color-mix(in srgb, var(--kk-on-photo) 18%, transparent);
 }
 
 /* Round control buttons on the stage (close, prev/next, chrome toggles). Solid
@@ -461,9 +459,9 @@
   min-width: 2.75rem;
   min-height: 2.75rem;
   padding: 0 0.6rem;
-  border: 1px solid rgb(255 255 255 / 14%);
+  border: 1px solid color-mix(in srgb, var(--kk-on-photo) 14%, transparent);
   border-radius: var(--kk-radius-pill);
-  background: rgb(0 0 0 / 42%);
+  background: color-mix(in srgb, var(--kk-shade) 42%, transparent);
   color: var(--kk-text);
   font-size: 1.05rem;
   line-height: 1;
@@ -474,8 +472,8 @@
 }
 
 .kk-viewer__btn:hover {
-  background: rgb(0 0 0 / 62%);
-  border-color: rgb(255 255 255 / 24%);
+  background: color-mix(in srgb, var(--kk-shade) 62%, transparent);
+  border-color: color-mix(in srgb, var(--kk-on-photo) 24%, transparent);
   color: var(--kk-text);
 }
 
@@ -487,7 +485,7 @@
 .kk-viewer__btn[aria-pressed='true'] {
   background: var(--kk-accent-solid);
   border-color: var(--kk-accent);
-  color: var(--kk-on-accent, #fff);
+  color: var(--kk-on-accent);
 }
 
 .kk-viewer__btn--icon {
@@ -518,7 +516,7 @@
   border-radius: var(--kk-radius-pill);
   background: var(--kk-accent-solid);
   border: 1px solid var(--kk-surface-page);
-  color: var(--kk-on-accent, #fff);
+  color: var(--kk-on-accent);
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1;
@@ -676,7 +674,7 @@
     calc(var(--kk-space-2) + env(safe-area-inset-bottom, 0px))
     calc(var(--kk-space-2) + env(safe-area-inset-left, 0px));
   background: var(--kk-viewer-dock-scrim);
-  border-top: 1px solid rgb(255 255 255 / 10%);
+  border-top: 1px solid color-mix(in srgb, var(--kk-on-photo) 10%, transparent);
   transition:
     opacity var(--kk-duration-base) var(--kk-ease-standard),
     transform var(--kk-duration-base) var(--kk-ease-standard);
@@ -773,8 +771,8 @@
   margin: 0;
   padding: var(--kk-space-2) var(--kk-space-3);
   border-radius: var(--kk-radius-pill);
-  background: rgb(0 0 0 / 72%);
-  color: #fff;
+  background: color-mix(in srgb, var(--kk-shade) 72%, transparent);
+  color: var(--kk-on-photo);
   font-size: 0.875rem;
   line-height: 1.3;
   text-align: center;
@@ -1222,7 +1220,7 @@
   min-height: 0;
   object-fit: contain;
   cursor: pointer;
-  background: #000;
+  background: var(--kk-shade);
 }
 
 /* Fullscreen puts the container itself in the top layer, so the picture has to
@@ -1230,7 +1228,7 @@
    a 70vh cap that no longer means anything. */
 .kk-video:fullscreen {
   justify-content: center;
-  background: #000;
+  background: var(--kk-shade);
 }
 
 .kk-video:fullscreen .kk-video__media {
@@ -1243,7 +1241,7 @@
   flex-direction: column;
   gap: var(--kk-space-1);
   padding: var(--kk-space-2) var(--kk-space-2) var(--kk-space-1);
-  background: rgb(0 0 0 / 55%);
+  background: color-mix(in srgb, var(--kk-shade) 55%, transparent);
 }
 
 .kk-video__buttons {
@@ -1267,33 +1265,33 @@
   align-items: center;
   gap: var(--kk-space-2);
   padding: var(--kk-space-3) var(--kk-space-2);
-  background: rgb(0 0 0 / 55%);
-  color: rgb(255 255 255 / 90%);
+  background: var(--kk-photo-plate);
+  color: color-mix(in srgb, var(--kk-on-photo) 90%, transparent);
 }
 
 /* The one control of a clip that is not playing, so it has to read as one. The
    theme's `.btn-light` is white on pale grey (#fff on #abb6c2 — 1.9 : 1) and
    Superhero bakes that as literal declarations rather than through the
    `--bs-btn-*` properties, so this out-specifies it exactly as the slideshow's
-   play button does: a near-white face with a near-black label, about 16 : 1. */
+   play button does: an ink face with a base label, about 16 : 1. */
 .kk-video__download,
 .kk-video__download:hover,
 .kk-video__download:focus-visible,
 .kk-video__download:active {
-  color: #10161c;
-  background-color: #eef2f6;
-  border-color: #eef2f6;
+  color: var(--kk-on-light);
+  background-color: var(--kk-light);
+  border-color: var(--kk-light);
 }
 
 .kk-video__download:hover,
 .kk-video__download:focus-visible {
-  background-color: #fff;
-  border-color: #fff;
+  background-color: var(--kk-light-hover);
+  border-color: var(--kk-light-hover);
 }
 
 .kk-video__prepare-icon {
   font-size: 1.5rem;
-  color: rgb(255 255 255 / 75%);
+  color: color-mix(in srgb, var(--kk-on-photo) 75%, transparent);
 }
 
 /* "A better version of this clip is being prepared." One line under the bar,
@@ -1301,8 +1299,8 @@
 .kk-video__notice {
   padding: var(--kk-space-1) var(--kk-space-2);
   font-size: var(--kk-font-size-caption);
-  color: rgb(255 255 255 / 75%);
-  background: rgb(0 0 0 / 40%);
+  color: color-mix(in srgb, var(--kk-on-photo) 75%, transparent);
+  background: var(--kk-photo-plate);
   text-align: center;
 }
 
@@ -1313,7 +1311,7 @@
   border: 0;
   border-radius: var(--kk-radius-sm);
   background: transparent;
-  color: #fff;
+  color: var(--kk-on-photo);
   font-size: 1.1rem;
   line-height: 1;
   padding: 0.25rem 0.5rem;
@@ -1321,11 +1319,11 @@
 
 .kk-video__button:hover,
 .kk-video__button:focus-visible {
-  background: rgb(255 255 255 / 15%);
+  background: color-mix(in srgb, var(--kk-on-photo) 15%, transparent);
 }
 
 .kk-video__time {
-  color: rgb(255 255 255 / 85%);
+  color: color-mix(in srgb, var(--kk-on-photo) 85%, transparent);
   font-variant-numeric: tabular-nums;
   font-size: 0.875rem;
   padding-inline: var(--kk-space-1);
@@ -1335,7 +1333,7 @@
 /* The speed control reads as a value, not a link: no underline, no link colour,
    and a fixed-width numeric so switching 1× → 1.25× does not shift the bar. */
 .kk-video__speed.btn.btn-link {
-  color: #fff;
+  color: var(--kk-on-photo);
   text-decoration: none;
   font-variant-numeric: tabular-nums;
   padding-inline: var(--kk-space-2);
@@ -1355,13 +1353,13 @@
   position: relative;
   height: 4px;
   border-radius: var(--kk-radius-pill);
-  background: rgb(255 255 255 / 30%);
+  background: color-mix(in srgb, var(--kk-on-photo) 30%, transparent);
   cursor: pointer;
   touch-action: none;
 }
 
 .kk-video__track:focus-visible {
-  outline: 2px solid var(--kk-accent, #fff);
+  outline: 2px solid var(--kk-accent);
   outline-offset: 4px;
 }
 
@@ -1369,7 +1367,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--kk-accent, #fff);
+  background: var(--kk-accent);
 }
 
 /* The scrub preview: a frame from the storyboard sprite with its timestamp,
@@ -1385,7 +1383,7 @@
   gap: 2px;
   padding: 3px;
   border-radius: var(--kk-radius-sm);
-  background: rgb(0 0 0 / 80%);
+  background: color-mix(in srgb, var(--kk-shade) 80%, transparent);
   pointer-events: none;
   z-index: 2;
 }
@@ -1397,7 +1395,7 @@
 }
 
 .kk-video__preview-time {
-  color: #fff;
+  color: var(--kk-on-photo);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;

@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #000;
+  background: var(--kk-shade);
   overflow: hidden;
   touch-action: pan-y;
 }
@@ -166,8 +166,12 @@
      outside the app shell, so it owns its own insets). */
   padding: calc(1rem + env(safe-area-inset-top, 0px)) calc(3.5rem + env(safe-area-inset-right, 0px))
     1rem calc(1.25rem + env(safe-area-inset-left, 0px));
-  color: #fff;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  color: var(--kk-on-photo);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--kk-shade) 55%, transparent),
+    color-mix(in srgb, var(--kk-shade) 0%, transparent)
+  );
   pointer-events: none;
   display: flex;
   justify-content: space-between;
@@ -186,7 +190,11 @@
   justify-content: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--kk-shade) 60%, transparent),
+    color-mix(in srgb, var(--kk-shade) 0%, transparent)
+  );
   pointer-events: auto;
 }
 
@@ -200,7 +208,7 @@
 /* Play/pause is the control the reader reaches for first, and the theme's
    `.btn-light` renders it white on pale grey (#fff on #abb6c2 — 1.9 : 1, the
    least legible control in the player). Give it what every other player gives
-   it: a near-white face with a near-black glyph (about 16 : 1), which also makes
+   it: an ink face with a base glyph (about 16 : 1), which also makes
    it the one control that reads as primary in a row of dark ones. Superhero
    bakes those colours as literal declarations rather than through the
    `--bs-btn-*` properties, so this has to out-specify `.btn-light` rather than
@@ -209,15 +217,15 @@
 .slideshow__controls .slideshow__play:hover,
 .slideshow__controls .slideshow__play:focus-visible,
 .slideshow__controls .slideshow__play:active {
-  color: #10161c;
-  background-color: #eef2f6;
-  border-color: #eef2f6;
+  color: var(--kk-on-light);
+  background-color: var(--kk-light);
+  border-color: var(--kk-light);
 }
 
 .slideshow__controls .slideshow__play:hover,
 .slideshow__controls .slideshow__play:focus-visible {
-  background-color: #fff;
-  border-color: #fff;
+  background-color: var(--kk-light-hover);
+  border-color: var(--kk-light-hover);
 }
 
 /* Every control here is a bare glyph, and the app-wide touch floor only gives
@@ -273,10 +281,10 @@
   max-width: min(36rem, 55%);
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.5);
+  color: var(--kk-on-photo);
+  background: var(--kk-photo-plate);
   backdrop-filter: blur(4px);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  text-shadow: 0 1px 3px color-mix(in srgb, var(--kk-shade) 90%, transparent);
   pointer-events: none;
 }
 
@@ -327,7 +335,7 @@
   justify-content: center;
   gap: 0.75rem;
   padding: 1.5rem;
-  color: #fff;
+  color: var(--kk-on-photo);
   text-align: center;
 }
 

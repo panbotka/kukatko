@@ -76,7 +76,7 @@ export function CandidateFaceImage({
     borderWidth: 3,
     borderColor: `var(--bs-${variant})`,
     // A faint dark halo keeps the box visible over a light patch of photo.
-    boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.55)',
+    boxShadow: '0 0 0 1px color-mix(in srgb, var(--kk-shade) 55%, transparent)',
   }
 
   return (

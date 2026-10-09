@@ -70,7 +70,7 @@ export function FavoriteToggle({ favorite, pending, onToggle, className }: Favor
       className={`btn btn-sm p-1 lh-1 border-0 rounded-circle d-inline-flex align-items-center justify-content-center kukatko-tap-target ${
         favorite ? 'text-danger' : 'text-white'
       } ${className ?? ''}`}
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
+      style={{ backgroundColor: 'color-mix(in srgb, var(--kk-shade) 45%, transparent)' }}
     >
       <HeartIcon filled={favorite} />
     </button>

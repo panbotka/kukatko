@@ -1,0 +1,94 @@
+/*
+ * The palette — the only file in the app allowed to spell out a colour.
+ *
+ * Five colours, named by the ROLE they play rather than by their hue, so a
+ * future palette is swapped by pasting five new values over these and nothing
+ * else (coolors.co/palette/001524-15616d-ffecd1-ff7d00-78290f today):
+ *
+ *   base            the page and every surface stepped up from it; also the
+ *                   dark text that sits on a bright fill (the accent, a
+ *                   warning), because light text on a bright fill fails AA
+ *   surface-accent  secondary/info fills and the chrome's quiet accents; a
+ *                   FILL that carries ink text, never text on base itself
+ *   ink             body text and every light glyph on a dark surface
+ *   accent          the one interaction colour: primary action, active nav,
+ *                   links, the selection outline, the focus ring
+ *   warm            warm surfaces and danger-ish emphasis; a fill, never text
+ *
+ * Everything else — surfaces, borders, hovers, muted text, the `--bs-*`
+ * variables Bootstrap reads — is derived from these in `tokens.css`
+ * (`color-mix()`), so it follows a swap on its own. `styles/contrast.test.ts`
+ * measures every text/background pair the tokens define against WCAG AA and
+ * fails the gate when a new palette breaks one; `styles/colourLiterals.test.ts`
+ * fails it when a colour literal appears anywhere outside this file.
+ *
+ * Each colour also exists as an `r, g, b` triplet: Bootstrap builds its alpha
+ * utilities as `rgba(var(--bs-*-rgb), α)` and cannot take a channel out of a
+ * hex value. The contrast test asserts every triplet still matches its hex, so
+ * a swap that forgets one fails instead of drifting.
+ *
+ * Imported first of the app's own stylesheets (`main.tsx`), before the tokens
+ * that consume it.
+ */
+:root {
+  --kk-palette-base: #001524;
+  --kk-palette-base-rgb: 0, 21, 36;
+  --kk-palette-surface-accent: #15616d;
+  --kk-palette-surface-accent-rgb: 21, 97, 109;
+  --kk-palette-ink: #ffecd1;
+  --kk-palette-ink-rgb: 255, 236, 209;
+  --kk-palette-accent: #ff7d00;
+  --kk-palette-accent-rgb: 255, 125, 0;
+  --kk-palette-warm: #78290f;
+  --kk-palette-warm-rgb: 120, 41, 15;
+
+  /* ---- Semantic block ---------------------------------------------------
+     Meanings a palette does not carry and must not lose in a swap. Success
+     needs a green the five colours do not have; warning a yellow kept clearly
+     apart from the orange accent; danger a crimson that cannot be mistaken
+     for that accent either (it is a deep fill carrying ink, where the accent
+     is a bright fill carrying base). `tokens.css` derives their text tones
+     and tints exactly as it does the palette's. */
+  --kk-semantic-success: #4cc38a;
+  --kk-semantic-success-rgb: 76, 195, 138;
+  --kk-semantic-warning: #ffd34e;
+  --kk-semantic-warning-rgb: 255, 211, 78;
+  --kk-semantic-danger: #b8213a;
+  --kk-semantic-danger-rgb: 184, 33, 58;
+
+  /* The darkness a photograph is shown on (the viewer, the slideshow, the
+     comparison stage) and that scrims and shadows are made of. Not a theme
+     colour: a photo is judged against black whatever the chrome around it is. */
+  --kk-semantic-shade: #000;
+
+  /* Categorical hues: things told apart by colour at a glance — the three
+     entity kinds (album / tag / person), the task states, the initial-circle
+     avatars. They need to be many and mutually distinct, which five palette
+     colours cannot be, so they live here; each is deep enough to carry ink
+     text (the contrast test holds them to it). */
+  --kk-semantic-violet: #6244c5;
+  --kk-semantic-pine: #0a6b58;
+  --kk-semantic-rose: #b2345f;
+  --kk-semantic-azure: #2a66a5;
+  --kk-semantic-forest: #3a721d;
+  --kk-semantic-magenta: #a03c8f;
+  --kk-semantic-cyan: #0f6a86;
+
+  /* Podium medals on the stats leaderboard — metals, so not palette hues. */
+  --kk-semantic-gold: #f4c430;
+  --kk-semantic-silver: #c0c7d0;
+  --kk-semantic-bronze: #cd7f32;
+
+  /* Bootstrap draws a few glyphs as data-URI images, which cannot read a
+     custom property, so their colour is repeated here (`%23` = `#`): the
+     `.form-select` chevron in ink; the checked checkbox / radio / switch glyphs
+     in base, because they sit on the bright accent fill; the focused switch's
+     knob in the accent. The contrast test asserts each still equals its
+     palette colour, so a swap that forgets one fails. */
+  --kk-select-chevron: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ffecd1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  --kk-check-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23001524' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+  --kk-radio-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23001524'/%3e%3c/svg%3e");
+  --kk-indeterminate-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23001524' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10h8'/%3e%3c/svg%3e");
+  --kk-switch-on-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23001524'/%3e%3c/svg%3e");
+  --kk-switch-focus-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23ff7d00'/%3e%3c/svg%3e");
+}

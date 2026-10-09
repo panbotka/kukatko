@@ -9,8 +9,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#15130f",
-  "background_color": "#15130f",
+  "theme_color": "#001524",
+  "background_color": "#001524",
   "categories": ["photo", "productivity", "utilities"],
   "share_target": {
     "action": "/share-target",

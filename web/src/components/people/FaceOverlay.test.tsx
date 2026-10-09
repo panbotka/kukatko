@@ -198,18 +198,18 @@ describe('FaceOverlay', () => {
     // eighteen markers, so the pointed-at one takes a ring of its own.
     const { unmount } = renderOverlay(false, null, faces(), 1)
     expect(screen.getByRole('button', { name: 'Alice' })).toHaveStyle({
-      boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.7)',
+      boxShadow: '0 0 0 2px color-mix(in srgb, var(--kk-on-photo) 70%, transparent)',
     })
     // And the ones nobody is pointing at stay plain.
     expect(screen.getByRole('button', { name: 'Unnamed face 1' })).not.toHaveStyle({
-      boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.7)',
+      boxShadow: '0 0 0 2px color-mix(in srgb, var(--kk-on-photo) 70%, transparent)',
     })
     unmount()
 
     // The selected one keeps its own primary tint instead.
     renderOverlay(false, 1)
     expect(screen.getByRole('button', { name: 'Alice' })).toHaveStyle({
-      boxShadow: '0 0 0 3px rgba(var(--bs-primary-rgb), 0.35)',
+      boxShadow: '0 0 0 3px color-mix(in srgb, var(--kk-accent) 35%, transparent)',
     })
   })
 

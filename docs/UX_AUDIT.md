@@ -538,6 +538,50 @@ on unexplained jargon that even a non-developer admin will struggle with.
 
 ---
 
+## Palette (2026-10-09)
+
+**Decision:** the UI stays dark but moves from the warm near-black + single azure accent to a ready-made,
+livelier palette — coolors [`001524-15616d-ffecd1-ff7d00-78290f`](https://coolors.co/palette/001524-15616d-ffecd1-ff7d00-78290f):
+navy base, teal surface accent, cream ink, orange accent, rust warm. The user expects to change it again, so the
+deliverable is the structure as much as the colours: the five live as role-named `--kk-palette-*` variables in
+`web/src/styles/palette.css` and **everything else is derived** (`color-mix()` in `tokens.css`; Superhero's
+baked literals answered in `bootstrapBridge.css`). How to swap it: `docs/FRONTEND.md`, "Theming / changing the
+palette".
+
+- **The orange carries the base, not ink.** Cream (or white) on `#ff7d00` measures ~2.2:1 (2.6:1 for white), so
+  every accent fill — primary buttons, the Upload CTA, active pills, checked boxes, the selected-tile check, text
+  selection — puts the navy on it (7.2:1). The same orange is legible *as text* on every navy surface (≥ 5.9:1),
+  so links, the active nav item and the focus ring use it directly.
+- **Teal is a fill, never text on the navy** (2.6:1): secondary/info buttons and badges are teal with cream
+  (6.1:1); where the meaning is text (`.text-info`, a queued count, the review game's name) it takes a lifted
+  tone mixed towards the ink.
+- **Rust is never text either**; it tints the danger surfaces (error alerts) so they read warm-red.
+- **Danger is a deep crimson with cream on it**, kept apart from the bright orange-with-navy accent so a
+  destructive button is never mistaken for the primary one; its text tone is lifted towards the ink. Success
+  (a green) and warning (a yellow, well away from the orange) are bright fills with navy, defined next to the
+  palette as a semantic block because the palette has neither.
+- **Alerts became tinted surfaces** (variant over the page + cream text + a rail in the variant's text tone)
+  instead of Superhero's solid fills with white text — the old info alert measured about 2:1.
+- **Cards, modals, toasts, popovers, list groups and dropdowns lost Superhero's slate grey** (`#4e5d6c`, baked
+  on the component selectors, so the old token re-pin never reached them): they now sit on the navy ramp.
+
+**Verification.** `styles/contrast.test.ts` holds every token pair to WCAG AA in `make check` (text 4.5:1;
+input borders, focus ring, selection outline 3:1); `styles/colourLiterals.test.ts` fails on a colour literal
+outside the palette. In a real browser, axe-core 4.14's `color-contrast` rule was run over the working-tree
+frontend (Vite, proxied to production data; viewer, maintainer and signed-out sessions) at 1440×900 and 390×844:
+**82 axe runs, 0 violations at the end.** Desktop: 23 signed-in routes as a viewer (library, albums, labels,
+people, a person + family tree, map, search, places, saved, favourites, tasks + a task, review, upload, account,
+stats, leaderboard, help, settings, the viewer), 4 signed-out (sign-in, registration, password reset, the public
+`/u/{code}` page), 17 maintainer routes (users, system, faces, audit + reviews, maintenance, duplicates, duplicate
+markers, trash, import, upload links, recognition, outliers, expand, clusters, review, album faces) and 7
+interactive states (filter panel, user and tools menus, the shortcuts dialog, the command palette with results,
+the viewer's info drawer, the map with clusters), plus 5 re-checks. Phone (390×844): 11 viewer routes, 3
+signed-out, 10 maintainer routes + searches, and the navigation drawer. The first pass found two real problems,
+both fixed in the same change: the task-state badges lost their own label colour to the bridge's filled-badge
+rule (now wrapped in `:where()`), and a birth year dimmed with `opacity-75` on a rose person chip measured 3.5:1
+(the dimming went; the year is set in normal weight instead). axe reports text over photographs as "incomplete"
+(it cannot see the image), which is what the photo-plate tokens and their contrast test cover.
+
 ## Cross-cutting patterns
 
 1. **Touch targets — systemic.** Almost every page defaulted to `size="sm"` with no

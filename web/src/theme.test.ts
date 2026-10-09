@@ -3,6 +3,9 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { rootCustomProperties } from './test/colour'
+import { readCss } from './test/css'
+
 /**
  * Locates `index.html` relative to the working directory. Vitest runs with the
  * `web/` package as its cwd, but resolve from the repo root too so the guard holds
@@ -39,5 +42,18 @@ describe('index.html theme attributes', () => {
 
   it('declares a dark color-scheme so native controls render dark-appropriately', () => {
     expect(html).toMatch(/<meta[^>]*name="color-scheme"[^>]*content="dark"/i)
+  })
+
+  it('paints the browser chrome in the palette base, here and in the manifest', () => {
+    // A <meta> and a JSON file cannot read a custom property, so the colour is
+    // repeated in both; a palette swap that forgets them leaves a standalone
+    // window framed in the old page colour.
+    const base = rootCustomProperties().get('--kk-palette-base')?.toLowerCase()
+    expect(base).toMatch(/^#[0-9a-f]{6}$/)
+    const meta = /<meta[^>]*name="theme-color"[^>]*content="([^"]+)"/i.exec(html)?.[1]
+    expect(meta?.toLowerCase()).toBe(base)
+    const manifest = JSON.parse(readCss('public/manifest.webmanifest')) as Record<string, unknown>
+    expect(String(manifest.theme_color).toLowerCase()).toBe(base)
+    expect(String(manifest.background_color).toLowerCase()).toBe(base)
   })
 })

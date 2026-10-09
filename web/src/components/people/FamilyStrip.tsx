@@ -51,7 +51,7 @@ function RelativeChip({ relative }: { relative: Relative }) {
     >
       <SubjectAvatar uid={relative.uid} name={relative.name} photoCount={relative.photo_count} />
       {relative.name}
-      {lifeSpan !== null && <span className="opacity-75">{lifeSpan}</span>}
+      {lifeSpan !== null && <span className="fw-normal">{lifeSpan}</span>}
     </Link>
   )
 }

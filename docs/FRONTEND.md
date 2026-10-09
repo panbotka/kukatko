@@ -2153,7 +2153,7 @@ here.
   reload key it was chosen under (`Paging`), so a new filter starts from the top without an effect
   resetting it (and without a wasted request at the old offset). A closed row also drops to
   75 % opacity until hovered: it is the record of a decision, not work. **Nová odpověď** takes the app's
-  azure accent rather than a sixth state hue, because it sits beside a state badge and must not read as
+  accent rather than a sixth state hue, because it sits beside a state badge and must not read as
   another state of the work. The row **wraps** below ~12rem of text: the badges do not shrink, so on a
   phone a long question was being squeezed into a column one word wide with the badges painted over it;
   they now drop to a line of their own, still ranged right. A chip row filters by state (`Otevřené` = the
@@ -7251,27 +7251,28 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the `.bg-body-tertiary` panels (the library's advanced filter, `SelectionBar`, an audit row's detail) and
   the skeletons (`.bg-secondary-subtle`) were painted almost white under an almost white `--bs-body-color` =
   invisible labels (white-on-white). Superhero also colors the whole chrome a saturated navy; a photo app
-  must do the opposite — the only saturated thing on the screen should be the photo. `:root[data-bs-theme='dark']` in `tokens.css`
-  therefore **re-pins a handful of `--bs-*` variables to an identity of our own**: a warm-neutral **near-black**
-  ramp (`--bs-body-bg`/`-color`, `--bs-tertiary-`/`secondary-bg`, `--bs-card-bg`, `--bs-border-color`
-  and `--bs-dark` for the navbar) and **one cool azure accent** (`--bs-primary`, `--bs-link-color`,
-  `--bs-navbar-active-color` + `--bs-primary-*-subtle/emphasis`). Every re-pin points at a `--kk-*` token,
-  so the palette lives in one place. Contents: the **accent** `--kk-accent` (light — text/link/focus on
-  dark surfaces), `--kk-accent-hover`, `--kk-accent-solid` (darker — a fill with white text at AA),
-  `--kk-accent-solid-hover`, `--kk-accent-subtle`, `--kk-on-accent` (the azure is a deliberate choice, not
-  orange: the three entity hues are taken, `danger` is red, so one unoccupied hue is left, and
-  a cool accent on warm chrome doesn't fight the photos); **surfaces + elevation** — a warm-near-black ramp
-  `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (a well) and `--kk-surface-border`
-  (a hairline); a **translucent header** `--kk-header-bg` (the page's tone at 72 %), `--kk-header-blur`
+  must do the opposite. `:root[data-bs-theme='dark']` in `tokens.css` therefore **re-pins every colour
+  variable Bootstrap reads** — surfaces, text, the eight contextual variants with their `-text-emphasis`/
+  `-bg-subtle`/`-border-subtle` tints, links, focus, form validation, `--bs-white`/`--bs-black` — to `--kk-*`
+  tokens, and **every `--kk-*` colour is derived** (`color-mix()`) from the five palette colours in
+  `styles/palette.css`; see **Theming / changing the palette** at the end of this document. Contents: the
+  **accent** `--kk-accent` (the palette's orange — text/link/focus on dark surfaces), `--kk-accent-hover`,
+  `--kk-accent-solid` (the fill), `--kk-accent-solid-hover`, `--kk-accent-subtle`, `--kk-on-accent` (the
+  **base** — the orange is too light to carry ink); the **contextual variants** `--kk-<variant>` (fill),
+  `--kk-on-<variant>` (its label) and `--kk-<variant>-text` (the same meaning as text on a dark surface);
+  **surfaces + elevation** — a deep-navy ramp (the base stepped up with its surface accent)
+  `--kk-surface-page`/`-1`/`-raised`/`-overlay` + `--kk-surface-sunken` (a well), `--kk-surface-border`
+  (a hairline) and `--kk-control-border`/`-strong` (a form field's edge, ≥ 3:1); a **translucent header** `--kk-header-bg` (the page's tone at 72 %), `--kk-header-blur`
   (14px) and `--kk-header-border` — for the slim navbar sitting above a scrolling photo wall (see `app.css`,
   with an `@supports` fallback to the full `--kk-surface-1`); elevation is read from **the surface level + a hairline
   line**, not from a heavy shadow
   (`--kk-shadow-0..3` are therefore light — just a gentle anchoring + an `inset 0 1px 0` top highlight; `3` is
-  the exception for a lifted tile/overlay); **text** `--kk-text`/`--kk-text-muted` (a warm white, the muted one
-  above the Superhero baseline contrast); **spacing** `--kk-space-1..7` (a 4px scale), **radii**
+  the exception for a lifted tile/overlay); **text** `--kk-text`/`--kk-text-muted`/`--kk-text-subtle` (the palette's ink at 100/72/60 %, all AA on
+  every surface); **shade** `--kk-shade` + `--kk-on-photo` + `--kk-photo-plate(-strong)` (the dark that
+  scrims/shadows are made of, the light glyph over a photo, and a plate dense enough for that glyph over a white photo); **spacing** `--kk-space-1..7` (a 4px scale), **radii**
   `--kk-radius-sm/md/lg/pill` (one continuous corner, an 8/12/16 rhythm; `md` is the canonical one), **motion**
   `--kk-duration-fast/base/slow` + `--kk-ease-standard`, a **focus ring** `--kk-focus-ring-*` (the color =
-  the azure accent, one visible ring everywhere), **typography** a modular scale (a ~1.2–1.25 step)
+  the accent, one visible ring everywhere), **typography** a modular scale (a ~1.2–1.25 step)
   `--kk-font-size-display`/`-page-title`/`-section-title`/`-body`/`-caption` + `--kk-line-height-*`/
   `--kk-tracking-*`.
   Semantic classes: the **typographic scale** `.kk-display` (the largest step — a hero number/statistic),
@@ -7299,8 +7300,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   so that a long album name is truncated instead of stretching the row; used by `MultiSelect`);
   **entity colors** — an album/tag/person each get their own hue, so that they can be told apart at a glance
   (previously an album and a label were both the same primary orange = indistinguishable). The tokens
-  `--kk-entity-album-bg` (violet) / `--kk-entity-tag-bg` (turquoise) / `--kk-entity-person-bg`
-  (pink) + `--kk-entity-fg` (white); the modifiers `.kk-entity-album/-tag/-person` on a `.badge`
+  `--kk-entity-album-bg` (violet) / `--kk-entity-tag-bg` (pine) / `--kk-entity-person-bg`
+  (rose) + `--kk-entity-fg` (the ink) — the hues come from the palette file's semantic block; the modifiers `.kk-entity-album/-tag/-person` on a `.badge`
   (the color has `!important`, so as to beat the Bootstrap `.bg-*`/`.text-bg-*`, which are `!important` too,
   so the class fits a plain `.badge` as well as a `<Badge>` and a link pill). The kind→class+icon mapping is
   **once** in `components/entityStyle.ts` (`ENTITY_STYLE`) and it is read by every place where an entity
@@ -7422,24 +7423,20 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the one exception, sized by its own `.kk-label-chip__menu` coarse rule next to the chip it sits in. A control
   that **dims until hovered** keeps the dimming behind `@media (hover: hover) and (pointer: fine)` — hover never
   fires on a phone, so a dimmed control there stays dimmed for good (`.kk-task-person__remove`);
-  **native form chrome** — Superhero bakes `.form-control`/`.form-select` white (`#fff`) regardless of the
-  theme; instead of pinning them to a light scheme we give them a real dark surface `--kk-surface-sunken` with
-  a hairline line and `color-scheme: dark` (the fill and the scheme agree, so the native glyphs — the `type=date`
-  calendar, a select's list — are light-on-dark and visible); the select's chevron is a light-drawn
-  copy via `--bs-form-select-bg-img`; **the accent on baked-in controls** — Bootswatch bakes the
-  orange fill in directly (not through `--bs-primary`), so `app.css` overrides it to azure:
-  `.btn-primary`/`.btn-outline-primary`, `.form-check-input:checked`/indeterminate, the `.form-range`
-  thumb, `.progress-bar` (+ the track as a well), `.dropdown-menu` (a warm overlay + the active item),
-  the `.list-group` active row and the `.navbar.kukatko-navbar` active link;
-  **the quiet action** `.btn-outline-secondary` (the app's commonest button — rotate, cancel, „zobrazit více",
-  85 call sites): Bootswatch bakes its label *and* its border as the theme grey-blue `#4e5d6c`, which it also bakes
-  into `--bs-card-bg` **on the `.card` selector itself** — so the tokens' `--bs-card-bg` re-pin never applies, cards
-  really are that navy, and inside one the button's label sat at contrast **1.00** on its own background: the
-  reported „the text is the same colour as its background". The label is re-pointed at `--bs-body-color` and the
-  border at a 60 % tint of `--kk-text`, with a translucent **dark** scrim on hover/active — a *lighter* fill would
-  push the white label back under 4.5:1 on the card it lightens. Measured in the browser (blended, incl. alpha):
-  5.6:1 text / 3.2:1 outline on the card and 15.4:1 / 6.1:1 on the page, so both clear AA for text and the 3:1 for
-  the control's own boundary;
+  **Superhero's baked colours** live in `styles/bootstrapBridge.css` (imported between `tokens.css` and
+  `app.css`): Bootswatch compiles many colours as literals *inside component rules* (`.card { --bs-card-bg:
+  #4e5d6c }`, `.btn-primary { background-color: … }`, white form fields, solid-fill alerts with white text), where
+  a `:root` re-pin cannot reach them. The bridge answers each with a token: every `.btn-*`/`.btn-outline-*`
+  variant (fill + its `--kk-on-*` label; outline = the variant's text tone at rest), `.text-*`/`.text-bg-*`/
+  filled badges (the badge half under `:where()`, so a component class such as a task state still wins),
+  `.bg-body-tertiary`/`-secondary` (a mixed surface has no `-rgb` triplet, so the utility reads the colour
+  itself), form controls (a `--kk-surface-sunken` well with a `--kk-control-border` edge, `color-scheme: dark`,
+  the ink-stroked select chevron and the base-toned check/radio/switch glyphs kept with the palette), cards,
+  modals, offcanvas, popovers, tooltips, toasts, dropdowns, list groups, progress, pagination, nav tabs/pills,
+  tables and **alerts** — a tinted surface with ink text and a rail in the variant's text tone instead of
+  Superhero's solid fill (which put white on cyan at ~2:1). **The quiet action** `.btn-outline-secondary`
+  (85 call sites) keeps the ink label with a `--kk-control-border` outline and a translucent shade on
+  hover/active, so it reads on every surface;
   **a slim translucent navbar** `.kukatko-navbar` (it sits ABOVE the scrolling content: the fill `--kk-header-bg`
   = the page's tone at 72 % + `backdrop-filter: blur(--kk-header-blur)` frosts whatever scrolls beneath it,
   a hairline bottom line `--kk-header-border`; an `@supports not (backdrop-filter…)` fallback to the full
@@ -7808,3 +7805,48 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   `AuthProvider.test.tsx` (sign-out clears, also on a network failure; the language follows the account), and a
   "written as A, not honoured as B" case per key in `AnnouncementBanner`, `WhatsNewPanel`, `reviewRounds`,
   `ReviewPage`, `gridScroll`, `useGridScrollMemory`, `accountLanguage` and `LanguageSwitcher` tests.
+
+## Theming / changing the palette
+
+The whole colour scheme hangs off **five role-named custom properties** at the top of
+`web/src/styles/palette.css` (imported first, `main.tsx`). Today they are coolors
+[`001524-15616d-ffecd1-ff7d00-78290f`](https://coolors.co/palette/001524-15616d-ffecd1-ff7d00-78290f):
+
+| Variable | Today | Drives |
+| --- | --- | --- |
+| `--kk-palette-base` | `#001524` navy | the page and the whole surface ramp (`--kk-surface-*`, stepped up with the surface accent), scrims and shadows (with the semantic shade), and the **dark label on every bright fill** (`--kk-on-accent`, `--kk-on-warning`, …) |
+| `--kk-palette-surface-accent` | `#15616d` teal | secondary/info fills (`.btn-secondary`, `bg="secondary"`, the working task state), the surface steps and hairlines; never text on the base (it is a fill carrying ink) |
+| `--kk-palette-ink` | `#ffecd1` cream | body/muted/subtle text, light glyphs over photos, the light label on every deep fill, `--bs-white` |
+| `--kk-palette-accent` | `#ff7d00` orange | the one interaction colour: primary buttons, active nav, links, the selection outline, the focus ring, text selection — with the **base** on it, since light text on it fails AA |
+| `--kk-palette-warm` | `#78290f` rust | warm surfaces and danger-ish emphasis (`--bs-danger-bg-subtle`, an avatar tone); a fill, never text |
+
+Each also has an `-rgb` triplet beside it (Bootstrap's `rgba(var(--bs-*-rgb), α)` utilities cannot read a hex var).
+Next to the five sits a **semantic block**: success/warning/danger (a green, a yellow kept apart from the orange,
+a deep crimson that cannot be mistaken for it), the shade photos are shown on, the categorical hues (entity chips,
+task states, avatars — many mutually distinct hues five colours cannot provide), the podium metals, and the few
+**data-URI glyphs** that cannot read a custom property (select chevron, check/radio/switch glyphs) with the palette
+colour baked into them.
+
+Everything else is derived in `styles/tokens.css` with `color-mix(in srgb, …)` — surfaces, borders, hovers, muted
+text, links, focus, selection, badges and every `--bs-*` variable — and `styles/bootstrapBridge.css` points
+Superhero's baked component colours at those tokens. **To swap the palette:** paste five new hex values (and their
+triplets) into `palette.css`, update the hex inside the glyph data URIs, the `theme-color` in `web/index.html` and
+`theme_color`/`background_color` in `web/public/manifest.webmanifest` (all four are asserted equal to the palette
+by tests), then run `make check`. If the new colours swap roles (e.g. a light base), the `on-*` choices in
+`tokens.css` are the place to change.
+
+**The swap is guarded, not eyeballed:**
+
+- `styles/contrast.test.ts` resolves the tokens exactly as the browser would (`test/colour.ts`: `var()` chains,
+  nested premultiplied `color-mix`, alpha compositing) and holds every text/background pair the tokens define to
+  WCAG AA — 4.5:1 for text on every surface (page, 1, raised, overlay, sunken), every label on its fill (variants,
+  hovers, entity/task/avatar hues), body text on every tinted surface, the accent on its subtle pill, and the
+  light glyph on a photo plate over a white photo; 3:1 for form-field borders, the focus ring and the selection
+  outline. It also asserts the triplets and the data-URI glyphs still match their hex.
+- `styles/colourLiterals.test.ts` fails on any colour literal (hex, `rgb()`/`hsl()`/…, `white`/`black`, a
+  `%23` hex in a data URI, a bare `r, g, b` triplet) in any stylesheet or component under `src/` other than
+  `palette.css` — comments and tests exempt — so no corner of the app is left out of the next swap.
+- `src/theme.test.ts` keeps the `<meta name="theme-color">` and the manifest colours equal to the palette base.
+
+Beyond the unit tests, the 2026-10-09 swap was checked with axe-core's `color-contrast` rule in Chromium over the
+working-tree frontend, desktop and phone (see `docs/UX_AUDIT.md`, "Palette").

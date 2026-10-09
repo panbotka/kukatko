@@ -103,7 +103,7 @@
   overflow: hidden;
   border: 1px solid var(--bs-border-color);
   border-radius: var(--bs-border-radius);
-  background-color: #000;
+  background-color: var(--kk-shade);
   touch-action: none;
 }
 
@@ -121,7 +121,7 @@
 /* A differing row is marked by border, weight and (in the label) an icon — never
    by colour alone. */
 .kk-diff-table__row--differs > * {
-  background-color: rgba(var(--bs-warning-rgb), 0.08);
+  background-color: color-mix(in srgb, var(--kk-warning) 8%, transparent);
 }
 
 .kk-diff-table__row--differs > :first-child {

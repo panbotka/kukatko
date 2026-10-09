@@ -45,7 +45,7 @@ const GESTURE_HINT_MS = 2000
 /** A small CSS-only marker pin, avoiding bundler issues with Leaflet's default image icon. */
 const markerIcon = L.divIcon({
   className: 'kukatko-map-pin',
-  html: '<span style="display:block;width:14px;height:14px;border-radius:50%;background:#0d6efd;border:2px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.6)"></span>',
+  html: '<span style="display:block;width:14px;height:14px;border-radius:50%;background:var(--kk-accent);border:2px solid var(--kk-on-photo);box-shadow:0 0 2px color-mix(in srgb,var(--kk-shade) 60%,transparent)"></span>',
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 })
@@ -63,7 +63,8 @@ const estimatedMarkerIcon = L.divIcon({
   className: 'kukatko-map-pin kukatko-map-pin-estimated',
   html:
     '<span style="display:block;width:14px;height:14px;border-radius:50%;' +
-    'background:transparent;border:2px dashed #0d6efd;box-shadow:0 0 2px rgba(0,0,0,.6)"></span>',
+    'background:transparent;border:2px dashed var(--kk-accent);' +
+    'box-shadow:0 0 2px color-mix(in srgb,var(--kk-shade) 60%,transparent)"></span>',
   iconSize: [18, 18],
   iconAnchor: [9, 9],
 })
@@ -74,7 +75,7 @@ const estimatedMarkerIcon = L.divIcon({
  */
 const pickerIcon = L.divIcon({
   className: 'kukatko-map-picker-pin',
-  html: '<span style="display:block;width:24px;height:24px;border-radius:50%;background:#dc3545;border:3px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.7)"></span>',
+  html: '<span style="display:block;width:24px;height:24px;border-radius:50%;background:var(--kk-danger);border:3px solid var(--kk-on-photo);box-shadow:0 0 4px color-mix(in srgb,var(--kk-shade) 70%,transparent)"></span>',
   iconSize: [30, 30],
   iconAnchor: [15, 15],
 })

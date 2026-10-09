@@ -1,0 +1,878 @@
+/*
+ * Bootstrap bridge — Superhero's baked colours, re-pointed at the tokens.
+ *
+ * Bootswatch compiles a good share of its colours as LITERALS inside component
+ * rules — `.card { --bs-card-bg: #4e5d6c }`, `.btn-primary { background-color:
+ * #df6919 }`, `.alert { color: #fff }`, white form fields — where the `:root`
+ * re-pin in `tokens.css` cannot reach them (a variable declared on the element
+ * itself beats one inherited from the root). Every such rule the app can show is
+ * answered here, once, with a token; nothing in this file names a colour.
+ *
+ * The contract for a filled control is the one the theme root states: a fill
+ * (`--kk-<variant>`), the label on it (`--kk-on-<variant>`), and a text tone
+ * for the same meaning on a dark surface (`--kk-<variant>-text`). Each pair is
+ * measured by `styles/contrast.test.ts`.
+ *
+ * Imported after `tokens.css` and before `app.css` (`main.tsx`), so the polish
+ * layer can still specialise a component on top of this baseline.
+ */
+
+/* ---- Text selection --------------------------------------------------- */
+
+::selection {
+  color: var(--kk-selection-color);
+  background-color: var(--kk-selection-bg);
+}
+
+/* ---- Utilities that read a mixed surface ------------------------------
+   Bootstrap paints these as `rgba(var(--bs-*-bg-rgb), var(--bs-bg-opacity))`,
+   and a surface mixed from the palette has no triplet. Same `!important` as the
+   utilities themselves; the opacity modifier keeps working through the mix. */
+
+.bg-body-tertiary {
+  background-color: color-mix(
+    in srgb,
+    var(--bs-tertiary-bg) calc(var(--bs-bg-opacity, 1) * 100%),
+    transparent
+  ) !important;
+}
+
+.bg-body-secondary {
+  background-color: color-mix(
+    in srgb,
+    var(--bs-secondary-bg) calc(var(--bs-bg-opacity, 1) * 100%),
+    transparent
+  ) !important;
+}
+
+/* ---- Contextual text, fills and links ---------------------------------
+   `.text-<variant>` paints the fill colour as text, which for a deep fill
+   (secondary, info, danger) on the navy page is unreadable; it takes the
+   variant's text tone instead. `.text-bg-<variant>` and a filled badge put the
+   variant's own label on the fill — Bootstrap hard-codes white or black there.
+   The badge half is wrapped in `:where()` (no specificity), so a component
+   class that paints its own badge — a task state, an entity chip — still wins.
+   `.text-dark` survives only on a bright fill (a warning or light badge), where
+   it is the base. */
+
+.text-primary {
+  color: var(--kk-accent) !important;
+}
+
+.text-info {
+  color: var(--kk-info-text) !important;
+}
+
+.text-success {
+  color: var(--kk-success-text) !important;
+}
+
+.text-warning {
+  color: var(--kk-warning-text) !important;
+}
+
+.text-danger {
+  color: var(--kk-danger-text) !important;
+}
+
+.text-light,
+.text-white {
+  color: var(--kk-text) !important;
+}
+
+.text-dark,
+.text-black {
+  color: var(--kk-on-light) !important;
+}
+
+.link-secondary {
+  color: var(--kk-secondary-text) !important;
+  text-decoration-color: currentcolor !important;
+}
+
+.text-bg-primary,
+:where(.badge.bg-primary) {
+  color: var(--kk-on-accent) !important;
+}
+
+.text-bg-secondary,
+:where(.badge.bg-secondary) {
+  color: var(--kk-on-secondary) !important;
+}
+
+.text-bg-success,
+:where(.badge.bg-success) {
+  color: var(--kk-on-success) !important;
+}
+
+.text-bg-info,
+:where(.badge.bg-info) {
+  color: var(--kk-on-info) !important;
+}
+
+.text-bg-warning,
+:where(.badge.bg-warning) {
+  color: var(--kk-on-warning) !important;
+}
+
+.text-bg-danger,
+:where(.badge.bg-danger) {
+  color: var(--kk-on-danger) !important;
+}
+
+.text-bg-light,
+:where(.badge.bg-light) {
+  color: var(--kk-on-light) !important;
+}
+
+.text-bg-dark,
+:where(.badge.bg-dark) {
+  color: var(--kk-on-dark) !important;
+}
+
+.badge {
+  --bs-badge-color: var(--kk-text);
+}
+
+/* ---- Buttons ----------------------------------------------------------
+   Superhero sets each variant's `--bs-btn-*` properties to literals on the
+   variant's own selector, then flattens the resting fill with a second
+   `.btn-<variant> { background-color: … }` rule — so both are answered here:
+   the properties, and the resting `background-color` read back from them. Hover
+   and active still come from Bootstrap's `.btn:hover` (which outranks the flat
+   rule). Focus is the app-wide outline ring, so the box-shadow glow is the
+   accent too. */
+
+.btn {
+  --bs-btn-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+  --bs-btn-box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--kk-palette-ink) 15%, transparent),
+    0 1px 1px color-mix(in srgb, var(--kk-shade) 8%, transparent);
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-success,
+.btn-info,
+.btn-warning,
+.btn-danger,
+.btn-light,
+.btn-dark {
+  background-color: var(--bs-btn-bg);
+}
+
+/* The primary action: the bright accent with the dark base on it (ink on the
+   orange would measure ~2.2:1). Hover lightens it, which only helps the label. */
+.btn-primary {
+  --bs-btn-color: var(--kk-on-accent);
+  --bs-btn-bg: var(--kk-accent-solid);
+  --bs-btn-border-color: var(--kk-accent-solid);
+  --bs-btn-hover-color: var(--kk-on-accent);
+  --bs-btn-hover-bg: var(--kk-accent-solid-hover);
+  --bs-btn-hover-border-color: var(--kk-accent-solid-hover);
+  --bs-btn-active-color: var(--kk-on-accent);
+  --bs-btn-active-bg: var(--kk-accent-solid-hover);
+  --bs-btn-active-border-color: var(--kk-accent-solid-hover);
+  --bs-btn-disabled-color: var(--kk-on-accent);
+  --bs-btn-disabled-bg: var(--kk-accent-solid);
+  --bs-btn-disabled-border-color: var(--kk-accent-solid);
+}
+
+.btn-secondary,
+.btn-info {
+  --bs-btn-color: var(--kk-on-secondary);
+  --bs-btn-bg: var(--kk-secondary);
+  --bs-btn-border-color: var(--kk-secondary);
+  --bs-btn-hover-color: var(--kk-on-secondary);
+  --bs-btn-hover-bg: var(--kk-secondary-hover);
+  --bs-btn-hover-border-color: var(--kk-secondary-hover);
+  --bs-btn-active-color: var(--kk-on-secondary);
+  --bs-btn-active-bg: var(--kk-secondary-hover);
+  --bs-btn-active-border-color: var(--kk-secondary-hover);
+  --bs-btn-disabled-color: var(--kk-on-secondary);
+  --bs-btn-disabled-bg: var(--kk-secondary);
+  --bs-btn-disabled-border-color: var(--kk-secondary);
+}
+
+.btn-success {
+  --bs-btn-color: var(--kk-on-success);
+  --bs-btn-bg: var(--kk-success);
+  --bs-btn-border-color: var(--kk-success);
+  --bs-btn-hover-color: var(--kk-on-success);
+  --bs-btn-hover-bg: var(--kk-success-hover);
+  --bs-btn-hover-border-color: var(--kk-success-hover);
+  --bs-btn-active-color: var(--kk-on-success);
+  --bs-btn-active-bg: var(--kk-success-hover);
+  --bs-btn-active-border-color: var(--kk-success-hover);
+  --bs-btn-disabled-color: var(--kk-on-success);
+  --bs-btn-disabled-bg: var(--kk-success);
+  --bs-btn-disabled-border-color: var(--kk-success);
+}
+
+.btn-warning {
+  --bs-btn-color: var(--kk-on-warning);
+  --bs-btn-bg: var(--kk-warning);
+  --bs-btn-border-color: var(--kk-warning);
+  --bs-btn-hover-color: var(--kk-on-warning);
+  --bs-btn-hover-bg: var(--kk-warning-hover);
+  --bs-btn-hover-border-color: var(--kk-warning-hover);
+  --bs-btn-active-color: var(--kk-on-warning);
+  --bs-btn-active-bg: var(--kk-warning-hover);
+  --bs-btn-active-border-color: var(--kk-warning-hover);
+  --bs-btn-disabled-color: var(--kk-on-warning);
+  --bs-btn-disabled-bg: var(--kk-warning);
+  --bs-btn-disabled-border-color: var(--kk-warning);
+}
+
+.btn-danger {
+  --bs-btn-color: var(--kk-on-danger);
+  --bs-btn-bg: var(--kk-danger);
+  --bs-btn-border-color: var(--kk-danger);
+  --bs-btn-hover-color: var(--kk-on-danger);
+  --bs-btn-hover-bg: var(--kk-danger-hover);
+  --bs-btn-hover-border-color: var(--kk-danger-hover);
+  --bs-btn-active-color: var(--kk-on-danger);
+  --bs-btn-active-bg: var(--kk-danger-hover);
+  --bs-btn-active-border-color: var(--kk-danger-hover);
+  --bs-btn-disabled-color: var(--kk-on-danger);
+  --bs-btn-disabled-bg: var(--kk-danger);
+  --bs-btn-disabled-border-color: var(--kk-danger);
+}
+
+.btn-light {
+  --bs-btn-color: var(--kk-on-light);
+  --bs-btn-bg: var(--kk-light);
+  --bs-btn-border-color: var(--kk-light);
+  --bs-btn-hover-color: var(--kk-on-light);
+  --bs-btn-hover-bg: var(--kk-light-hover);
+  --bs-btn-hover-border-color: var(--kk-light-hover);
+  --bs-btn-active-color: var(--kk-on-light);
+  --bs-btn-active-bg: var(--kk-light-hover);
+  --bs-btn-active-border-color: var(--kk-light-hover);
+  --bs-btn-disabled-color: var(--kk-on-light);
+  --bs-btn-disabled-bg: var(--kk-light);
+  --bs-btn-disabled-border-color: var(--kk-light);
+}
+
+.btn-dark {
+  --bs-btn-color: var(--kk-on-dark);
+  --bs-btn-bg: var(--kk-dark);
+  --bs-btn-border-color: var(--kk-surface-border);
+  --bs-btn-hover-color: var(--kk-on-dark);
+  --bs-btn-hover-bg: var(--kk-dark-hover);
+  --bs-btn-hover-border-color: var(--kk-surface-border);
+  --bs-btn-active-color: var(--kk-on-dark);
+  --bs-btn-active-bg: var(--kk-dark-hover);
+  --bs-btn-active-border-color: var(--kk-surface-border);
+  --bs-btn-disabled-color: var(--kk-on-dark);
+  --bs-btn-disabled-bg: var(--kk-dark);
+  --bs-btn-disabled-border-color: var(--kk-surface-border);
+}
+
+/* Outline variants: the variant's TEXT tone as label and border at rest (that
+   is what reads on the dark surface), filling with the variant and its own label
+   on hover/active. */
+.btn-outline-primary {
+  --bs-btn-color: var(--kk-accent);
+  --bs-btn-border-color: var(--kk-accent);
+  --bs-btn-hover-color: var(--kk-on-accent);
+  --bs-btn-hover-bg: var(--kk-accent-solid);
+  --bs-btn-hover-border-color: var(--kk-accent-solid);
+  --bs-btn-active-color: var(--kk-on-accent);
+  --bs-btn-active-bg: var(--kk-accent-solid);
+  --bs-btn-active-border-color: var(--kk-accent-solid);
+  --bs-btn-disabled-color: var(--kk-accent);
+  --bs-btn-disabled-border-color: var(--kk-accent);
+}
+
+/* The quiet action — the app's commonest button (rotate, cancel, "show more").
+   Superhero bakes BOTH its label and its border as its grey-blue, which was the
+   very colour it also baked into the card fill: contrast 1.00 inside a card. The
+   label is the body text and the border a translucent ink (3:1 on every surface,
+   measured by the contrast test); the hover/active fill is a translucent shade
+   rather than a surface token, so it darkens whichever surface it sits on and
+   never lifts the ink label towards it. */
+.btn-outline-secondary {
+  --bs-btn-color: var(--kk-text);
+  --bs-btn-border-color: var(--kk-control-border);
+  --bs-btn-hover-color: var(--kk-text);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--kk-shade) 22%, transparent);
+  --bs-btn-hover-border-color: var(--kk-control-border-strong);
+  --bs-btn-active-color: var(--kk-text);
+  --bs-btn-active-bg: color-mix(in srgb, var(--kk-shade) 34%, transparent);
+  --bs-btn-active-border-color: var(--kk-control-border-strong);
+  --bs-btn-disabled-color: var(--kk-text-subtle);
+  --bs-btn-disabled-border-color: color-mix(in srgb, var(--kk-palette-ink) 30%, transparent);
+}
+
+.btn-outline-info {
+  --bs-btn-color: var(--kk-info-text);
+  --bs-btn-border-color: var(--kk-info-text);
+  --bs-btn-hover-color: var(--kk-on-info);
+  --bs-btn-hover-bg: var(--kk-info);
+  --bs-btn-hover-border-color: var(--kk-info);
+  --bs-btn-active-color: var(--kk-on-info);
+  --bs-btn-active-bg: var(--kk-info);
+  --bs-btn-active-border-color: var(--kk-info);
+  --bs-btn-disabled-color: var(--kk-info-text);
+  --bs-btn-disabled-border-color: var(--kk-info-text);
+}
+
+.btn-outline-success {
+  --bs-btn-color: var(--kk-success-text);
+  --bs-btn-border-color: var(--kk-success-text);
+  --bs-btn-hover-color: var(--kk-on-success);
+  --bs-btn-hover-bg: var(--kk-success);
+  --bs-btn-hover-border-color: var(--kk-success);
+  --bs-btn-active-color: var(--kk-on-success);
+  --bs-btn-active-bg: var(--kk-success);
+  --bs-btn-active-border-color: var(--kk-success);
+  --bs-btn-disabled-color: var(--kk-success-text);
+  --bs-btn-disabled-border-color: var(--kk-success-text);
+}
+
+.btn-outline-warning {
+  --bs-btn-color: var(--kk-warning-text);
+  --bs-btn-border-color: var(--kk-warning-text);
+  --bs-btn-hover-color: var(--kk-on-warning);
+  --bs-btn-hover-bg: var(--kk-warning);
+  --bs-btn-hover-border-color: var(--kk-warning);
+  --bs-btn-active-color: var(--kk-on-warning);
+  --bs-btn-active-bg: var(--kk-warning);
+  --bs-btn-active-border-color: var(--kk-warning);
+  --bs-btn-disabled-color: var(--kk-warning-text);
+  --bs-btn-disabled-border-color: var(--kk-warning-text);
+}
+
+.btn-outline-danger {
+  --bs-btn-color: var(--kk-danger-text);
+  --bs-btn-border-color: var(--kk-danger-text);
+  --bs-btn-hover-color: var(--kk-on-danger);
+  --bs-btn-hover-bg: var(--kk-danger);
+  --bs-btn-hover-border-color: var(--kk-danger);
+  --bs-btn-active-color: var(--kk-on-danger);
+  --bs-btn-active-bg: var(--kk-danger);
+  --bs-btn-active-border-color: var(--kk-danger);
+  --bs-btn-disabled-color: var(--kk-danger-text);
+  --bs-btn-disabled-border-color: var(--kk-danger-text);
+}
+
+.btn-outline-light {
+  --bs-btn-color: var(--kk-text);
+  --bs-btn-border-color: var(--kk-text);
+  --bs-btn-hover-color: var(--kk-on-light);
+  --bs-btn-hover-bg: var(--kk-light);
+  --bs-btn-hover-border-color: var(--kk-light);
+  --bs-btn-active-color: var(--kk-on-light);
+  --bs-btn-active-bg: var(--kk-light);
+  --bs-btn-active-border-color: var(--kk-light);
+  --bs-btn-disabled-color: var(--kk-text-subtle);
+  --bs-btn-disabled-border-color: var(--kk-text-subtle);
+}
+
+/* `outline-dark` lives on light surfaces in stock Bootstrap; here every surface
+   is dark, so it is the quiet outline with ink, like `outline-secondary`. */
+.btn-outline-dark {
+  --bs-btn-color: var(--kk-text);
+  --bs-btn-border-color: var(--kk-control-border);
+  --bs-btn-hover-color: var(--kk-on-dark);
+  --bs-btn-hover-bg: var(--kk-dark-hover);
+  --bs-btn-hover-border-color: var(--kk-control-border-strong);
+  --bs-btn-active-color: var(--kk-on-dark);
+  --bs-btn-active-bg: var(--kk-dark-hover);
+  --bs-btn-active-border-color: var(--kk-control-border-strong);
+  --bs-btn-disabled-color: var(--kk-text-subtle);
+  --bs-btn-disabled-border-color: var(--kk-surface-border);
+}
+
+.btn-link {
+  --bs-btn-color: var(--kk-accent);
+  --bs-btn-hover-color: var(--kk-accent-hover);
+  --bs-btn-active-color: var(--kk-accent-hover);
+  --bs-btn-disabled-color: var(--kk-text-subtle);
+}
+
+/* ---- Form controls ----------------------------------------------------
+ *
+ * Superhero compiles `.form-control`/`.form-select` with a hardcoded white fill
+ * and near-black text plus a dark select-arrow SVG — values baked into its
+ * stylesheet, not `--bs-*` variables. Left alone, every field renders as a
+ * blinding white rectangle punched into the dark page.
+ *
+ * A previous attempt pinned the controls to `color-scheme: light` (recorded as a
+ * deliberate rejection in `docs/UX_AUDIT.md`): with the fill still white, the
+ * page-level `color-scheme: dark` made the browser draw the NATIVE bits — a
+ * `type=date` field's calendar glyph, an unstyled `<select>`'s list —
+ * light-on-white, i.e. invisible.
+ *
+ * Here the white fill is gone instead. Each control gets a real dark surface —
+ * `--kk-surface-sunken`, the same well a thumbnail loads into, so a field sits
+ * BELOW the photographs in weight — with a `--kk-control-border` edge that clears
+ * 3:1 against both that fill and the surface around it, so it reads as a control
+ * rather than a hole. Fill and scheme agree (`color-scheme: dark`), so every
+ * native glyph renders light-on-dark. The one non-native affordance, the
+ * `.form-select` chevron, is a background image untouched by `color-scheme`, so
+ * it is swapped for the ink-stroked copy kept with the palette.
+ */
+.form-control,
+.form-select {
+  color-scheme: dark;
+  color: var(--bs-body-color);
+  background-color: var(--kk-surface-sunken);
+  border-color: var(--kk-control-border);
+}
+
+.form-select {
+  --bs-form-select-bg-img: var(--kk-select-chevron);
+}
+
+/* Placeholder text: clearly dimmer than a real value so an empty field reads as
+   empty, yet kept above AA on the sunken fill. */
+.form-control::placeholder {
+  color: var(--kk-text-subtle);
+  opacity: 1;
+}
+
+/* Focus keeps the field dark — Superhero's `:focus` rule would otherwise flip it
+   back to white — and trades Superhero's box-shadow glow for the app-wide focus
+   ring: an `outline` (never a box-shadow, so it survives an ancestor's
+   `overflow: hidden`) shared by tiles and links. */
+.form-control:focus,
+.form-select:focus {
+  color: var(--bs-body-color);
+  background-color: var(--kk-surface-sunken);
+  border-color: var(--kk-control-border-strong);
+  box-shadow: none;
+}
+
+.form-control:focus-visible,
+.form-select:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+/* Autofilled fields: browsers paint their own light chip over the control. Repaint
+   it with the field's own surface (the inset box-shadow trick — the only handle on
+   the UA autofill layer) and force the text/caret colour, so an autofilled login
+   field matches an empty one instead of flashing light. */
+.form-control:-webkit-autofill,
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--bs-body-color);
+  -webkit-box-shadow: 0 0 0 100rem var(--kk-surface-sunken) inset;
+  caret-color: var(--bs-body-color);
+}
+
+/* Disabled controls read as inert: Superhero paints them light grey — another
+   pale block on the page. Give them a flatter, translucent dark fill and the
+   subtle text so they recede clearly below the active fields. */
+.form-control:disabled,
+.form-select:disabled {
+  color: var(--kk-text-subtle);
+  background-color: color-mix(in srgb, var(--kk-surface-sunken) 55%, transparent);
+  border-color: transparent;
+}
+
+/* The file input's "Choose file" button and an input group's addon. */
+.form-control::file-selector-button {
+  color: var(--kk-on-secondary);
+  background-color: var(--kk-secondary);
+}
+
+.form-control:hover:not(:disabled, [readonly])::file-selector-button {
+  background-color: var(--kk-secondary-hover);
+}
+
+.input-group-text {
+  color: var(--kk-text);
+  background-color: var(--kk-surface-raised);
+  border-color: var(--kk-control-border);
+}
+
+.form-floating > label,
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label {
+  color: var(--kk-text-muted);
+}
+
+.form-floating > .form-control:focus ~ label::after,
+.form-floating > .form-control:not(:placeholder-shown) ~ label::after {
+  background-color: var(--kk-surface-sunken);
+}
+
+/* Checkbox / radio / switch: an unchecked box is a well with the control
+   border (3:1, so the box itself is findable); checked fills with the accent and
+   its glyph — Bootstrap draws it white — is swapped for the base-toned copy kept
+   with the palette, so it reads on the bright fill. */
+.form-check-input {
+  --bs-form-check-bg: var(--kk-surface-sunken);
+
+  border-color: var(--kk-control-border);
+}
+
+.form-check-input:focus {
+  border-color: var(--kk-control-border-strong);
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.form-check-input:checked,
+.form-check-input[type='checkbox']:indeterminate {
+  background-color: var(--kk-accent-solid);
+  border-color: var(--kk-accent-solid);
+}
+
+.form-check-input:checked[type='checkbox'] {
+  --bs-form-check-bg-image: var(--kk-check-glyph);
+}
+
+.form-check-input:checked[type='radio'] {
+  --bs-form-check-bg-image: var(--kk-radio-glyph);
+}
+
+.form-check-input[type='checkbox']:indeterminate {
+  --bs-form-check-bg-image: var(--kk-indeterminate-glyph);
+}
+
+.form-switch .form-check-input:focus {
+  --bs-form-switch-bg: var(--kk-switch-focus-glyph);
+}
+
+.form-switch .form-check-input:checked {
+  --bs-form-switch-bg: var(--kk-switch-on-glyph);
+}
+
+/* Range slider thumb (photo-edit sliders): baked-literal fill on both engines,
+   plus the lighter pressed state. */
+.form-range::-webkit-slider-thumb {
+  background-color: var(--kk-accent-solid);
+}
+
+.form-range::-moz-range-thumb {
+  background-color: var(--kk-accent-solid);
+}
+
+.form-range::-webkit-slider-thumb:active {
+  background-color: var(--kk-accent-hover);
+}
+
+.form-range::-moz-range-thumb:active {
+  background-color: var(--kk-accent-hover);
+}
+
+/* One engine's pseudo-element per rule: a selector list naming the other
+   engine's would be dropped whole by both. */
+.form-range::-webkit-slider-runnable-track {
+  background-color: var(--kk-surface-overlay);
+}
+
+.form-range::-moz-range-track {
+  background-color: var(--kk-surface-overlay);
+}
+
+.form-range:focus::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 1px var(--kk-surface-page),
+    0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.form-range:focus::-moz-range-thumb {
+  box-shadow:
+    0 0 0 1px var(--kk-surface-page),
+    0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.valid-tooltip {
+  color: var(--kk-on-success);
+}
+
+.invalid-tooltip {
+  color: var(--kk-on-danger);
+}
+
+/* ---- Surfaces Superhero paints its slate grey --------------------------- */
+
+.card {
+  --bs-card-bg: var(--kk-surface-raised);
+  --bs-card-cap-bg: color-mix(in srgb, var(--kk-palette-ink) 5%, transparent);
+}
+
+.accordion {
+  --bs-accordion-bg: var(--kk-surface-raised);
+  --bs-accordion-color: var(--kk-text);
+  --bs-accordion-border-color: var(--kk-surface-border);
+  --bs-accordion-btn-color: var(--kk-text);
+  --bs-accordion-btn-bg: color-mix(in srgb, var(--kk-palette-ink) 5%, transparent);
+  --bs-accordion-btn-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+  --bs-accordion-active-color: var(--kk-text);
+  --bs-accordion-active-bg: var(--kk-accent-subtle);
+}
+
+.modal {
+  --bs-modal-bg: var(--kk-surface-overlay);
+  --bs-modal-color: var(--kk-text);
+  --bs-modal-border-color: var(--kk-surface-border);
+  --bs-modal-header-border-color: var(--kk-surface-border);
+  --bs-modal-footer-border-color: var(--kk-surface-border);
+}
+
+.modal-header,
+.modal-footer {
+  background-color: color-mix(in srgb, var(--kk-palette-ink) 4%, transparent);
+}
+
+.modal-backdrop {
+  --bs-backdrop-bg: var(--kk-shade);
+}
+
+.offcanvas,
+.offcanvas-lg,
+.offcanvas-md,
+.offcanvas-sm,
+.offcanvas-xl,
+.offcanvas-xxl {
+  --bs-offcanvas-bg: var(--kk-surface-1);
+  --bs-offcanvas-color: var(--kk-text);
+  --bs-offcanvas-border-color: var(--kk-surface-border);
+}
+
+.offcanvas-backdrop {
+  background-color: var(--kk-shade);
+}
+
+.popover {
+  --bs-popover-bg: var(--kk-surface-overlay);
+  --bs-popover-border-color: var(--kk-surface-border);
+  --bs-popover-header-bg: color-mix(in srgb, var(--kk-palette-ink) 5%, transparent);
+  --bs-popover-header-color: var(--kk-text);
+  --bs-popover-body-color: var(--kk-text);
+}
+
+.tooltip {
+  --bs-tooltip-bg: var(--kk-surface-overlay);
+  --bs-tooltip-color: var(--kk-text);
+}
+
+.toast {
+  --bs-toast-bg: var(--kk-surface-overlay);
+  --bs-toast-color: var(--kk-text);
+  --bs-toast-border-color: var(--kk-surface-border);
+  --bs-toast-header-color: var(--kk-text);
+  --bs-toast-header-bg: var(--kk-surface-raised);
+  --bs-toast-header-border-color: var(--kk-surface-border);
+}
+
+/* Dropdown menu: an overlay surface with the active item on the accent. */
+.dropdown-menu {
+  --bs-dropdown-bg: var(--kk-surface-overlay);
+  --bs-dropdown-color: var(--kk-text);
+  --bs-dropdown-border-color: var(--kk-surface-border);
+  --bs-dropdown-divider-bg: var(--kk-surface-border);
+  --bs-dropdown-link-color: var(--kk-text);
+  --bs-dropdown-link-hover-color: var(--kk-text);
+  --bs-dropdown-link-hover-bg: color-mix(in srgb, var(--kk-palette-ink) 8%, transparent);
+  --bs-dropdown-link-active-color: var(--kk-on-accent);
+  --bs-dropdown-link-active-bg: var(--kk-accent-solid);
+  --bs-dropdown-link-disabled-color: var(--kk-text-subtle);
+  --bs-dropdown-header-color: var(--kk-text-muted);
+}
+
+/* The selected list-group row takes the accent fill with the base label. */
+.list-group {
+  --bs-list-group-color: var(--kk-text);
+  --bs-list-group-bg: var(--kk-surface-raised);
+  --bs-list-group-border-color: var(--kk-surface-border);
+  --bs-list-group-action-color: var(--kk-text);
+  --bs-list-group-action-hover-color: var(--kk-text);
+  --bs-list-group-action-hover-bg: color-mix(in srgb, var(--kk-palette-ink) 8%, transparent);
+  --bs-list-group-action-active-color: var(--kk-text);
+  --bs-list-group-action-active-bg: color-mix(in srgb, var(--kk-palette-ink) 12%, transparent);
+  --bs-list-group-disabled-color: var(--kk-text-subtle);
+  --bs-list-group-disabled-bg: var(--kk-surface-raised);
+  --bs-list-group-active-color: var(--kk-on-accent);
+  --bs-list-group-active-bg: var(--kk-accent-solid);
+  --bs-list-group-active-border-color: var(--kk-accent-solid);
+}
+
+/* Progress bar (upload): the bar takes the accent, the track reads as a well. */
+.progress,
+.progress-stacked {
+  --bs-progress-bg: var(--kk-surface-sunken);
+  --bs-progress-bar-color: var(--kk-on-accent);
+  --bs-progress-bar-bg: var(--kk-accent-solid);
+}
+
+.pagination {
+  --bs-pagination-color: var(--kk-text);
+  --bs-pagination-bg: var(--kk-surface-raised);
+  --bs-pagination-border-color: var(--kk-surface-border);
+  --bs-pagination-hover-color: var(--kk-text);
+  --bs-pagination-hover-bg: var(--kk-surface-overlay);
+  --bs-pagination-hover-border-color: var(--kk-surface-border);
+  --bs-pagination-focus-color: var(--kk-text);
+  --bs-pagination-focus-bg: var(--kk-surface-overlay);
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+  --bs-pagination-active-color: var(--kk-on-accent);
+  --bs-pagination-active-bg: var(--kk-accent-solid);
+  --bs-pagination-active-border-color: var(--kk-accent-solid);
+  --bs-pagination-disabled-color: var(--kk-text-subtle);
+  --bs-pagination-disabled-bg: var(--kk-surface-1);
+  --bs-pagination-disabled-border-color: var(--kk-surface-border);
+}
+
+.page-link:hover,
+.page-link:focus {
+  color: var(--kk-text);
+}
+
+.breadcrumb {
+  --bs-breadcrumb-bg: transparent;
+  --bs-breadcrumb-divider-color: var(--kk-text-muted);
+  --bs-breadcrumb-item-active-color: var(--kk-text-muted);
+}
+
+/* ---- Navigation -------------------------------------------------------- */
+
+.nav {
+  --bs-nav-link-color: var(--kk-accent);
+  --bs-nav-link-hover-color: var(--kk-accent-hover);
+  --bs-nav-link-disabled-color: var(--kk-text-subtle);
+}
+
+.nav-link:focus-visible {
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+.nav-tabs {
+  --bs-nav-tabs-border-color: var(--kk-surface-border);
+  --bs-nav-tabs-link-hover-border-color: var(--kk-surface-border);
+  --bs-nav-tabs-link-active-color: var(--kk-text);
+  --bs-nav-tabs-link-active-bg: var(--kk-surface-raised);
+  --bs-nav-tabs-link-active-border-color: var(--kk-surface-border);
+}
+
+.nav-tabs .nav-link,
+.nav-tabs .nav-link:hover,
+.nav-pills .nav-link,
+.nav-pills .nav-link:hover {
+  color: var(--kk-text);
+}
+
+.nav-tabs .nav-link.disabled,
+.nav-pills .nav-link.disabled {
+  color: var(--kk-text-subtle);
+}
+
+.nav-pills {
+  --bs-nav-pills-link-active-color: var(--kk-on-accent);
+  --bs-nav-pills-link-active-bg: var(--kk-accent-solid);
+}
+
+.nav-pills .nav-link.active,
+.nav-pills .show > .nav-link {
+  color: var(--kk-on-accent);
+}
+
+.nav-underline {
+  --bs-nav-underline-link-active-color: var(--kk-text);
+}
+
+.navbar-dark,
+.navbar[data-bs-theme='dark'] {
+  --bs-navbar-color: var(--kk-text-muted);
+  --bs-navbar-hover-color: var(--kk-text);
+  --bs-navbar-disabled-color: var(--kk-text-subtle);
+  --bs-navbar-brand-color: var(--kk-text);
+  --bs-navbar-brand-hover-color: var(--kk-text);
+  --bs-navbar-toggler-border-color: var(--kk-surface-border);
+}
+
+/* ---- Tables ------------------------------------------------------------ */
+
+.table {
+  --bs-table-color: var(--kk-text);
+  --bs-table-bg: var(--kk-surface-page);
+  --bs-table-border-color: var(--kk-surface-border);
+  --bs-table-accent-bg: color-mix(in srgb, var(--kk-palette-ink) 5%, transparent);
+  --bs-table-striped-color: var(--kk-text);
+  --bs-table-striped-bg: color-mix(in srgb, var(--kk-palette-ink) 5%, transparent);
+  --bs-table-active-color: var(--kk-text);
+  --bs-table-active-bg: color-mix(in srgb, var(--kk-palette-ink) 10%, transparent);
+  --bs-table-hover-color: var(--kk-text);
+  --bs-table-hover-bg: color-mix(in srgb, var(--kk-palette-ink) 7.5%, transparent);
+}
+
+.table .thead-dark th {
+  color: var(--kk-text);
+}
+
+.table a:not(.btn) {
+  color: var(--kk-accent);
+}
+
+.table .text-muted {
+  color: var(--kk-text-muted);
+}
+
+.blockquote-footer {
+  color: var(--kk-text-muted);
+}
+
+/* ---- Alerts -------------------------------------------------------------
+   Superhero paints an alert as a SOLID variant fill with white text — on the
+   info cyan that measured ~2:1, and on warning yellow worse. Here an alert is
+   one of the app's own tinted surfaces: the variant laid thinly over the page,
+   body ink on it, and a rail in the variant's text tone carrying the meaning.
+   Links inside inherit the ink and keep their underline (Bootstrap's own
+   `alert-link` is just bolder body text). */
+.alert {
+  color: var(--kk-text);
+  background-color: var(--bs-alert-bg);
+  border: 1px solid var(--bs-alert-border-color);
+  border-inline-start: 3px solid var(--kk-alert-rail, var(--bs-alert-border-color));
+}
+
+.alert a,
+.alert .alert-link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.alert-primary {
+  --kk-alert-rail: var(--kk-accent);
+}
+
+.alert-secondary {
+  --kk-alert-rail: var(--kk-secondary-text);
+}
+
+.alert-success {
+  --kk-alert-rail: var(--kk-success-text);
+}
+
+.alert-info {
+  --kk-alert-rail: var(--kk-info-text);
+}
+
+.alert-warning {
+  --kk-alert-rail: var(--kk-warning-text);
+}
+
+.alert-danger {
+  --kk-alert-rail: var(--kk-danger-text);
+}
+
+.alert-light,
+.alert-dark {
+  --kk-alert-rail: var(--kk-control-border);
+}
+
+.alert-primary,
+.alert-secondary,
+.alert-success,
+.alert-info,
+.alert-warning,
+.alert-danger,
+.alert-light,
+.alert-dark {
+  background-color: var(--bs-alert-bg);
+}

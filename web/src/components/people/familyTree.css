@@ -107,7 +107,7 @@
 }
 
 .kk-tree-person__letter {
-  fill: #fff;
+  fill: var(--kk-avatar-fg);
   font-size: 17px;
   font-weight: 600;
   text-anchor: middle;

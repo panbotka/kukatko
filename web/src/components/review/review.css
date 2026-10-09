@@ -95,22 +95,22 @@
 }
 
 .review-game__combo {
-  color: var(--bs-warning);
+  color: var(--kk-warning-text);
 }
 
 .review-game__streak {
-  color: var(--bs-orange, #fd7e14);
+  color: var(--kk-accent);
 }
 
 /* The hairline round progress under the header: present, not loud. */
 .review-game__progressbar {
   height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--kk-on-photo) 8%, transparent);
 }
 
 .review-game__progressbar > div {
   height: 100%;
-  background: var(--bs-info);
+  background: var(--kk-info-text);
   transition: width var(--kk-duration-base) var(--kk-ease-standard);
 }
 
@@ -162,7 +162,7 @@
   padding: 0.35rem 1.1rem;
   border-radius: 999px;
   border: 2px solid currentcolor;
-  background: rgba(0, 0, 0, 0.55);
+  background: color-mix(in srgb, var(--kk-shade) 55%, transparent);
   font-size: 1.1rem;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -170,11 +170,11 @@
 }
 
 .review-game__verdict--yes {
-  color: var(--bs-success);
+  color: var(--kk-success-text);
 }
 
 .review-game__verdict--no {
-  color: var(--bs-danger);
+  color: var(--kk-danger-text);
 }
 
 .review-game__verdict--skip {
@@ -206,7 +206,7 @@
   margin-inline: auto;
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--kk-shade) 25%, transparent);
 }
 
 .review-photo__img {
@@ -222,11 +222,11 @@
    (clipped by the frame's overflow: hidden). */
 .review-photo__box {
   position: absolute;
-  border: 3px solid var(--bs-info);
+  border: 3px solid var(--kk-info-text);
   border-radius: 0.25rem;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.55),
-    0 0 0 9999px rgba(0, 0, 0, 0.35);
+    0 0 0 1px color-mix(in srgb, var(--kk-shade) 55%, transparent),
+    0 0 0 9999px color-mix(in srgb, var(--kk-shade) 35%, transparent);
 }
 
 /* The anchor out to the photo's own page, in the frame's top-right corner: an
@@ -246,8 +246,8 @@
   justify-content: center;
   padding: 0.3rem 0.5rem;
   border-radius: 0.375rem;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  background: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   line-height: 1;
   text-decoration: none;
   opacity: 0.7;
@@ -258,8 +258,8 @@
 
 .review-photo__open:hover,
 .review-photo__open:focus-visible {
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
+  background: color-mix(in srgb, var(--kk-shade) 80%, transparent);
+  color: var(--kk-on-photo);
   opacity: 1;
 }
 
@@ -289,7 +289,7 @@
 }
 
 .review-game__name {
-  color: var(--bs-info);
+  color: var(--kk-info-text);
 }
 
 .review-game__face-hint {
@@ -314,14 +314,14 @@
   width: 7.5rem;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--kk-on-photo) 15%, transparent);
   overflow: hidden;
 }
 
 .review-game__confidence-bar > span {
   display: block;
   height: 100%;
-  background: var(--bs-info);
+  background: var(--kk-info-text);
 }
 
 /* The answer row is the whole interaction, and it sits on the screen's bottom
@@ -453,7 +453,7 @@
   width: 100%;
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--kk-shade) 25%, transparent);
 }
 
 .review-duplicate__img {
@@ -507,7 +507,7 @@
   max-width: 55%;
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--kk-shade) 25%, transparent);
 }
 
 .review-outlier__face > img {
@@ -587,7 +587,7 @@
   height: var(--kk-review-face-size);
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--kk-shade) 25%, transparent);
 }
 
 .review-face-pair__caption {
@@ -670,7 +670,7 @@
   inset: 0;
   padding: 0;
   border: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: color-mix(in srgb, var(--kk-shade) 85%, transparent);
   cursor: zoom-out;
 }
 
@@ -693,7 +693,7 @@
   margin-inline: auto;
   border-radius: 0.5rem;
   overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
+  background: color-mix(in srgb, var(--kk-shade) 25%, transparent);
 }
 
 .review-face-zoom__caption {
@@ -712,15 +712,15 @@
   padding: 0.4rem 0.6rem;
   border: 0;
   border-radius: 0.375rem;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
+  background: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   line-height: 1;
 }
 
 .review-face-zoom__close:hover,
 .review-face-zoom__close:focus-visible {
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
+  background: color-mix(in srgb, var(--kk-shade) 80%, transparent);
+  color: var(--kk-on-photo);
 }
 
 /* ---------------------------------------------------------------------------
@@ -882,7 +882,7 @@
   color: var(--kk-accent);
   font-size: 1.2rem;
   font-weight: 600;
-  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0.5rem 2rem color-mix(in srgb, var(--kk-shade) 50%, transparent);
   animation: review-milestone-in var(--kk-duration-slow) var(--kk-ease-standard);
 }
 

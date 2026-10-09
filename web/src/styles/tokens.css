@@ -3,131 +3,251 @@
  * accent, spacing, radii, elevation, motion and the typography scale.
  *
  * Bootswatch Superhero is still the base stylesheet we compile against, but the
- * visual identity here is deliberately NOT stock Superhero. Superhero paints its
- * whole chrome in a saturated navy; a photo library must do the opposite — the
- * only saturated thing on screen should be a photograph. So this layer repaints
- * the app chrome as a calm, slightly-warm near-black ramp and reserves a single
- * cool accent for interaction, so photos pop against a desaturated frame. Every
- * value is exposed as a `--kk-*` custom property (or a semantic class below);
- * components consume the tokens, never raw colours or pixels.
+ * visual identity here is the app's own: every colour below is DERIVED from the
+ * five role-named palette colours in `palette.css` (`--kk-palette-*`) and its
+ * small semantic block, with `color-mix()` — never spelled out. Swapping the
+ * palette is therefore an edit to that one file; `styles/contrast.test.ts`
+ * measures the pairs defined here so a swap that breaks legibility fails the
+ * gate. Every value is exposed as a `--kk-*` custom property (or a semantic
+ * class below); components consume the tokens, never raw colours or pixels.
  *
  * The layer sits ON TOP of Bootstrap: it never redefines `--bs-*` variables
  * globally, with one sanctioned exception — the *theme root* below, where the
- * app's colour identity (page / surface tokens + the accent) is pinned. Imported
- * once, at the app root (`main.tsx`), before `app.css` so the polish layer can
- * consume the tokens.
+ * app's colour identity is pinned. Imported once, at the app root (`main.tsx`),
+ * after `palette.css` and before `bootstrapBridge.css`/`app.css`, which consume
+ * the tokens.
  */
 
 /*
- * Theme root — the app's colour identity.
+ * Theme root — the app's colour identity, as Bootstrap sees it.
  *
  * The app runs with `data-bs-theme="dark"` on <html> (set in index.html) so
  * Bootstrap's *dark* surface tokens apply everywhere — without it Superhero
  * leaves `--bs-tertiary-bg`, `--bs-secondary-bg(-subtle)` and
  * `--bs-emphasis-color` at light values on `:root`, painting `.bg-body-tertiary`
  * panels and skeletons near-white under near-white text (invisible labels; the
- * library filter-panel bug). But Superhero's own dark block is a cool charcoal
- * and its light block a saturated navy — neither is the neutral, photo-first
- * surface we want. So this block re-pins the handful of Bootstrap surface +
- * accent variables that carry the identity to the warm near-black ramp and cool
- * accent defined as `--kk-*` tokens below. Specificity (`:root[...]`) beats
- * Bootstrap's own `[data-bs-theme=dark]`. Every re-pin points at a token so the
- * palette lives in exactly one place; the `-rgb` triples (which Bootstrap needs
- * for its `rgba(var(--…-rgb), α)` utilities and cannot read from a hex var)
- * mirror the matching hex token by hand.
+ * library filter-panel bug). This block re-pins every colour variable Bootstrap
+ * reads — surfaces, text, the eight contextual variants with their tints, links,
+ * focus, form validation — to the `--kk-*` tokens below. Specificity
+ * (`:root[...]`) beats Bootstrap's own `[data-bs-theme=dark]`.
+ *
+ * The `-rgb` triplets (Bootstrap's `rgba(var(--…-rgb), α)` utilities cannot
+ * read a hex var) point at the palette's own triplets. A surface that is a mix
+ * has no triplet to point at, so the few utilities that read one
+ * (`.bg-body-tertiary`, `.bg-body-secondary`) are re-pointed at the colour
+ * itself in `bootstrapBridge.css` instead.
+ *
+ * Superhero also bakes many colours as literals inside component rules (`.card`,
+ * `.modal`, `.btn-*`, `.alert`, …), out of reach of a `:root` re-pin; those are
+ * re-pointed in `bootstrapBridge.css`.
  */
 :root[data-bs-theme='dark'] {
   /* Page background + body text. */
   --bs-body-bg: var(--kk-surface-page);
-  --bs-body-bg-rgb: 21, 19, 15;
+  --bs-body-bg-rgb: var(--kk-palette-base-rgb);
   --bs-body-color: var(--kk-text);
-  --bs-body-color-rgb: 236, 234, 229;
+  --bs-body-color-rgb: var(--kk-palette-ink-rgb);
+  --bs-emphasis-color: var(--kk-text);
+  --bs-emphasis-color-rgb: var(--kk-palette-ink-rgb);
   --bs-secondary-color: var(--kk-text-muted);
+  --bs-secondary-color-rgb: var(--kk-palette-ink-rgb);
+  --bs-tertiary-color: var(--kk-text-subtle);
+  --bs-tertiary-color-rgb: var(--kk-palette-ink-rgb);
+  --bs-heading-color: inherit;
 
-  /* Surface roles → the warm elevation ramp. `.bg-body-tertiary` panels take
+  /* Bootstrap's own "white" and "black" (`.text-white`, `.bg-black`, the
+     `--bs-white` a few components read) are the palette's ink and base, so not
+     even a utility class can paint a colour from outside the palette. */
+  --bs-white: var(--kk-palette-ink);
+  --bs-white-rgb: var(--kk-palette-ink-rgb);
+  --bs-black: var(--kk-palette-base);
+  --bs-black-rgb: var(--kk-palette-base-rgb);
+
+  /* Surface roles → the elevation ramp. `.bg-body-tertiary` panels take
      surface-1; `.bg-body-secondary`, cards and popovers the raised level;
      skeletons the deepest sunken tone. */
   --bs-tertiary-bg: var(--kk-surface-1);
-  --bs-tertiary-bg-rgb: 31, 27, 22;
   --bs-secondary-bg: var(--kk-surface-raised);
-  --bs-secondary-bg-subtle: #1a1712;
   --bs-card-bg: var(--kk-surface-raised);
   --bs-border-color: var(--kk-surface-border);
-  --bs-border-color-rgb: 66, 59, 49;
+  --bs-border-color-translucent: color-mix(in srgb, var(--kk-palette-ink) 15%, transparent);
 
-  /* The navbar renders `bg="dark"` (i.e. `--bs-dark`); point it at surface-1 so
-     the bar reads as warm chrome resting just above the page rather than
-     Superhero's stray navy. */
-  --bs-dark: var(--kk-surface-1);
-  --bs-dark-rgb: 31, 27, 22;
-
-  /* The one accent. Links, active nav and the focus ring use the light tint
-     (`--kk-accent`, legible as text on the near-black surfaces); solid fills
-     (`.btn-primary`, `.bg-primary`/`.text-bg-primary`, the nav CTA) use the
-     deeper `--kk-accent-solid`, which carries white text at AA. Bootswatch bakes
-     `.btn-primary`'s colours in as literals, so that one control is re-pointed
-     in `app.css`; everything else follows these variables. */
+  /* The eight contextual variants. Each has a FILL (`--bs-*`, a button, a
+     badge, `.text-bg-*`), the text that sits on that fill (`--kk-on-*`, wired
+     in `bootstrapBridge.css`), and a TEXT TONE (`--bs-*-text-emphasis`) that
+     is legible on every dark surface — the colour `.text-*`, an alert and a
+     dashboard count use. A bright fill (primary, success, warning, light)
+     carries the dark base; a deep one (secondary, info, danger, dark) ink. */
   --bs-primary: var(--kk-accent-solid);
-  --bs-primary-rgb: 44, 111, 178;
-  --bs-link-color: var(--kk-accent);
-  --bs-link-color-rgb: 95, 176, 242;
-  --bs-link-hover-color: var(--kk-accent-hover);
-  --bs-link-hover-color-rgb: 134, 196, 245;
-  --bs-navbar-active-color: var(--kk-accent);
+  --bs-primary-rgb: var(--kk-palette-accent-rgb);
+  --bs-secondary: var(--kk-secondary);
+  --bs-secondary-rgb: var(--kk-palette-surface-accent-rgb);
+  --bs-success: var(--kk-success);
+  --bs-success-rgb: var(--kk-semantic-success-rgb);
+  --bs-info: var(--kk-info);
+  --bs-info-rgb: var(--kk-palette-surface-accent-rgb);
+  --bs-warning: var(--kk-warning);
+  --bs-warning-rgb: var(--kk-semantic-warning-rgb);
+  --bs-danger: var(--kk-danger);
+  --bs-danger-rgb: var(--kk-semantic-danger-rgb);
+  --bs-light: var(--kk-palette-ink);
+  --bs-light-rgb: var(--kk-palette-ink-rgb);
+  --bs-dark: var(--kk-palette-base);
+  --bs-dark-rgb: var(--kk-palette-base-rgb);
 
-  /* Bootstrap's derived primary tints (`.text-primary-emphasis`,
-     `.bg-primary-subtle`, `.alert-primary`, …). Superhero derives these from
-     orange; re-point them at the azure family so no primary-tinted surface
-     leaks the old hue. */
   --bs-primary-text-emphasis: var(--kk-accent);
+  --bs-secondary-text-emphasis: var(--kk-secondary-text);
+  --bs-success-text-emphasis: var(--kk-success-text);
+  --bs-info-text-emphasis: var(--kk-info-text);
+  --bs-warning-text-emphasis: var(--kk-warning-text);
+  --bs-danger-text-emphasis: var(--kk-danger-text);
+  --bs-light-text-emphasis: var(--kk-text);
+  --bs-dark-text-emphasis: var(--kk-text);
+
+  /* The tinted surfaces (`.bg-*-subtle`, alerts) are the variant laid over the
+     page at a low strength — light enough that body text stays well above AA
+     on them — and their borders the same at a higher one. Danger tints with the
+     warm rust, so an error panel reads warm-red rather than as a pink wash. */
   --bs-primary-bg-subtle: var(--kk-accent-subtle);
-  --bs-primary-border-subtle: color-mix(
+  --bs-secondary-bg-subtle: color-mix(in srgb, var(--kk-secondary) 22%, var(--kk-surface-page));
+  --bs-success-bg-subtle: color-mix(in srgb, var(--kk-success) 14%, var(--kk-surface-page));
+  --bs-info-bg-subtle: color-mix(in srgb, var(--kk-info) 30%, var(--kk-surface-page));
+  --bs-warning-bg-subtle: color-mix(in srgb, var(--kk-warning) 12%, var(--kk-surface-page));
+  --bs-danger-bg-subtle: color-mix(in srgb, var(--kk-palette-warm) 38%, var(--kk-surface-page));
+  --bs-light-bg-subtle: var(--kk-surface-raised);
+  --bs-dark-bg-subtle: var(--kk-surface-sunken);
+  --bs-primary-border-subtle: color-mix(in srgb, var(--kk-accent) 50%, var(--kk-surface-page));
+  --bs-secondary-border-subtle: color-mix(
     in srgb,
-    var(--kk-accent-solid) 55%,
+    var(--kk-secondary-text) 40%,
     var(--kk-surface-page)
   );
+  --bs-success-border-subtle: color-mix(in srgb, var(--kk-success) 45%, var(--kk-surface-page));
+  --bs-info-border-subtle: color-mix(in srgb, var(--kk-info-text) 40%, var(--kk-surface-page));
+  --bs-warning-border-subtle: color-mix(in srgb, var(--kk-warning) 45%, var(--kk-surface-page));
+  --bs-danger-border-subtle: color-mix(in srgb, var(--kk-danger-text) 45%, var(--kk-surface-page));
+  --bs-light-border-subtle: var(--kk-surface-border);
+  --bs-dark-border-subtle: var(--kk-surface-border);
+
+  /* Links, the active nav item and focus all wear the accent. The hover colour
+     Bootstrap reads is a triplet too, so a hovered link keeps the accent and
+     signals the hover with its underline. */
+  --bs-link-color: var(--kk-accent);
+  --bs-link-color-rgb: var(--kk-palette-accent-rgb);
+  --bs-link-hover-color: var(--kk-accent-hover);
+  --bs-link-hover-color-rgb: var(--kk-palette-accent-rgb);
+  --bs-navbar-active-color: var(--kk-accent);
+  --bs-focus-ring-color: color-mix(in srgb, var(--kk-accent) 35%, transparent);
+
+  --bs-code-color: var(--kk-accent-hover);
+  --bs-highlight-color: var(--kk-text);
+  --bs-highlight-bg: color-mix(in srgb, var(--kk-warning) 30%, var(--kk-surface-page));
+
+  --bs-form-valid-color: var(--kk-success-text);
+  --bs-form-valid-border-color: var(--kk-success);
+  --bs-form-invalid-color: var(--kk-danger-text);
+  --bs-form-invalid-border-color: var(--kk-danger-text);
+
+  /* Native scrollbars (Chromium/Firefox): a quiet ink thumb on the page tone. */
+  scrollbar-color: var(--kk-scrollbar-thumb) var(--kk-surface-page);
 }
 
 :root {
   /* ---- Accent ---------------------------------------------------------
-     One cool azure, spent sparingly — links, active nav, the primary action —
-     and nowhere else, so photographs stay the only saturated thing on screen.
-     Azure is a deliberate pick, not Superhero's orange and not a default acid
-     hue: the three entity hues are already spoken for (violet = album,
-     teal = tag, rose = person), red is `danger`, orange is the rejected
-     default — azure is the one clear, unclaimed hue. A *cool* accent on *warm*
-     chrome also reads unmistakably as "interface" and never blends into
-     (warm-leaning) photo content.
+     One accent (the palette's), spent on interaction — links, active nav, the
+     primary action, the selection outline, the focus ring — and nowhere else,
+     so photographs stay the most saturated thing on screen.
 
-     Two tones keep both roles at WCAG AA: `--kk-accent` (light) is legible as
-     text on the near-black surfaces; `--kk-accent-solid` (deep) carries white
-     text as a fill. `--kk-accent-subtle` is a barely-there tint for a resting
-     accent surface (an active nav pill). */
-  --kk-accent: #5fb0f2;
-  --kk-accent-hover: #86c4f5;
-  --kk-accent-solid: #2c6fb2;
-  --kk-accent-solid-hover: #255f99;
-  --kk-accent-subtle: color-mix(in srgb, var(--kk-accent-solid) 18%, var(--kk-surface-page));
-  --kk-on-accent: #fff;
+     The accent is a BRIGHT colour: legible as text on every dark surface, but
+     too light to carry ink — light text on it measures ~2.2:1 — so a filled
+     accent control carries the dark base instead (`--kk-on-accent`). Hover
+     lightens it a step towards ink, which only raises that label's contrast.
+     `--kk-accent-subtle` is a barely-there tint for a resting accent surface
+     (an active nav pill), dark enough that accent text on it stays AA. */
+  --kk-accent: var(--kk-palette-accent);
+  --kk-accent-hover: color-mix(in srgb, var(--kk-palette-accent) 78%, var(--kk-palette-ink));
+  --kk-accent-solid: var(--kk-palette-accent);
+  --kk-accent-solid-hover: color-mix(in srgb, var(--kk-palette-accent) 82%, var(--kk-palette-ink));
+  --kk-accent-subtle: color-mix(in srgb, var(--kk-palette-accent) 16%, var(--kk-surface-page));
+  --kk-on-accent: var(--kk-palette-base);
+
+  /* ---- Contextual variants -------------------------------------------
+     The fills, their labels and their text tones (see the theme root above).
+     Secondary and info are the palette's surface accent: a deep fill with ink
+     on it, whose text tone is that hue lifted towards ink until it reads on
+     the page. Success and warning are bright (base on them); danger is a deep
+     crimson (ink on it) with a lifted text tone, so it is never confused with
+     the bright orange accent. `warm` is the rust, a fill for warm emphasis. */
+  --kk-secondary: var(--kk-palette-surface-accent);
+  --kk-secondary-hover: color-mix(
+    in srgb,
+    var(--kk-palette-surface-accent) 82%,
+    var(--kk-palette-base)
+  );
+  --kk-on-secondary: var(--kk-palette-ink);
+  --kk-secondary-text: color-mix(
+    in srgb,
+    var(--kk-palette-surface-accent) 50%,
+    var(--kk-palette-ink)
+  );
+  --kk-info: var(--kk-palette-surface-accent);
+  --kk-on-info: var(--kk-palette-ink);
+  --kk-info-text: var(--kk-secondary-text);
+  --kk-success: var(--kk-semantic-success);
+  --kk-success-hover: color-mix(in srgb, var(--kk-semantic-success) 80%, var(--kk-palette-ink));
+  --kk-on-success: var(--kk-palette-base);
+  --kk-success-text: var(--kk-semantic-success);
+  --kk-warning: var(--kk-semantic-warning);
+  --kk-warning-hover: color-mix(in srgb, var(--kk-semantic-warning) 75%, var(--kk-palette-ink));
+  --kk-on-warning: var(--kk-palette-base);
+  --kk-warning-text: var(--kk-semantic-warning);
+  --kk-danger: var(--kk-semantic-danger);
+  --kk-danger-hover: color-mix(in srgb, var(--kk-semantic-danger) 82%, var(--kk-palette-base));
+  --kk-on-danger: var(--kk-palette-ink);
+  --kk-danger-text: color-mix(in srgb, var(--kk-semantic-danger) 50%, var(--kk-palette-ink));
+  --kk-light: var(--kk-palette-ink);
+  --kk-light-hover: color-mix(in srgb, var(--kk-palette-ink) 85%, var(--kk-palette-base));
+  --kk-on-light: var(--kk-palette-base);
+  --kk-dark: var(--kk-surface-overlay);
+  --kk-dark-hover: color-mix(in srgb, var(--kk-palette-surface-accent) 40%, var(--kk-palette-base));
+  --kk-on-dark: var(--kk-palette-ink);
+  --kk-warm: var(--kk-palette-warm);
+  --kk-on-warm: var(--kk-palette-ink);
 
   /* ---- Surfaces & elevation ------------------------------------------
-     A slightly-warm near-black ramp. Elevation is expressed as a background
-     LEVEL plus a hairline border — not a heavy drop shadow, which is nearly
-     invisible on near-black anyway. Four levels above a sunken well:
+     A deep-navy ramp: the palette's base, stepped up by mixing in more of its
+     surface accent. Elevation is expressed as a background LEVEL plus a
+     hairline border — not a heavy drop shadow, which is nearly invisible on a
+     dark page anyway. Four levels above a sunken well:
        page     — the app background                         (elevation 0)
        1        — a panel resting on the page                (elevation 1)
        raised   — a card or row above a panel; the card fill (elevation 2)
-       overlay  — a popover / menu / lightbox chrome         (elevation 3)
+       overlay  — a popover / menu / modal / lightbox chrome (elevation 3)
        sunken   — below the page: a thumbnail well, a field
-     The warmth is a whisper of amber (R > G > B by a hair) — enough to keep the
-     black off a dead-LCD blue-grey, not enough to read as brown. `border` is the
-     hairline that separates one level from the next. */
-  --kk-surface-page: #15130f;
-  --kk-surface-1: #1f1b16;
-  --kk-surface-raised: #2a251e;
-  --kk-surface-overlay: #363028;
-  --kk-surface-sunken: #100e0b;
-  --kk-surface-border: #423b31;
+     `border` is the hairline that separates one level from the next;
+     `control-border` the stronger edge of a form field, which (unlike a
+     decorative hairline) must clear 3:1 against both its fill and the surface
+     it sits on. */
+  --kk-surface-page: var(--kk-palette-base);
+  --kk-surface-1: color-mix(in srgb, var(--kk-palette-surface-accent) 10%, var(--kk-palette-base));
+  --kk-surface-raised: color-mix(
+    in srgb,
+    var(--kk-palette-surface-accent) 18%,
+    var(--kk-palette-base)
+  );
+  --kk-surface-overlay: color-mix(
+    in srgb,
+    var(--kk-palette-surface-accent) 26%,
+    var(--kk-palette-base)
+  );
+  --kk-surface-sunken: color-mix(in srgb, var(--kk-palette-base) 60%, var(--kk-semantic-shade));
+  --kk-surface-border: color-mix(
+    in srgb,
+    var(--kk-palette-surface-accent) 55%,
+    var(--kk-palette-base)
+  );
+  --kk-control-border: color-mix(in srgb, var(--kk-palette-ink) 48%, var(--kk-palette-base));
+  --kk-control-border-strong: color-mix(in srgb, var(--kk-palette-ink) 64%, var(--kk-palette-base));
 
   /* ---- Translucent header --------------------------------------------
      The sticky top bar sits OVER scrolling photographs rather than on an
@@ -138,16 +258,37 @@
      arbitrary photo. Where `backdrop-filter` is unsupported the bar falls back
      to the solid `--kk-surface-1` plate (see `app.css`), so it is never
      see-through without the blur that makes translucency legible. */
-  --kk-header-bg: rgb(21 19 15 / 72%);
+  --kk-header-bg: color-mix(in srgb, var(--kk-surface-page) 72%, transparent);
   --kk-header-blur: 14px;
-  --kk-header-border: rgb(66 59 49 / 70%);
+  --kk-header-border: color-mix(in srgb, var(--kk-surface-border) 70%, transparent);
 
   /* ---- Text -----------------------------------------------------------
-     A warm off-white, kept in the same temperature family as the chrome.
-     `muted` is that colour at reduced alpha; it stays above the Superhero muted
-     baseline for contrast (the audit's open muted-text gap must not widen). */
-  --kk-text: #eceae5;
-  --kk-text-muted: rgb(236 234 229 / 72%);
+     The palette's ink. `muted` is that colour at reduced alpha (secondary
+     text, captions); `subtle` lower still, for text that only has to be
+     findable — a placeholder, a disabled label — and still clears AA on every
+     surface. `selection` is highlighted text: the accent with the base on it. */
+  --kk-text: var(--kk-palette-ink);
+  --kk-text-muted: color-mix(in srgb, var(--kk-palette-ink) 72%, transparent);
+  --kk-text-subtle: color-mix(in srgb, var(--kk-palette-ink) 60%, transparent);
+  --kk-selection-bg: var(--kk-accent);
+  --kk-selection-color: var(--kk-on-accent);
+  --kk-scrollbar-thumb: color-mix(in srgb, var(--kk-palette-ink) 28%, var(--kk-palette-base));
+
+  /* ---- Shade -----------------------------------------------------------
+     The darkness scrims and shadows are made of: the semantic shade with a
+     breath of the base in it, so a wash over a photograph leans the same way
+     as the chrome. Translucent steps are written at the call site as
+     `color-mix(in srgb, var(--kk-shade) N%, transparent)`. `on-photo` is the
+     light glyph colour of controls floating over a photograph on such a scrim;
+     its translucent steps are written the same way. */
+  --kk-shade: color-mix(in srgb, var(--kk-palette-base) 40%, var(--kk-semantic-shade));
+  --kk-on-photo: var(--kk-palette-ink);
+  /* The plate a label or glyph sits on when it floats over a photograph (a
+     tile badge, a viewer button, a face's name tag). The photo under it is
+     unknown, so the plate is dense enough that `on-photo` clears AA even over a
+     white one; `strong` is for a plate that also carries small text. */
+  --kk-photo-plate: color-mix(in srgb, var(--kk-shade) 62%, transparent);
+  --kk-photo-plate-strong: color-mix(in srgb, var(--kk-shade) 78%, transparent);
 
   /* ---- Spacing scale -------------------------------------------------
      A 4px-based scale. Use these for gaps, padding and margins that
@@ -182,24 +323,30 @@
      `1` a card at rest, `2` a card under the pointer; `3` is the exception — a
      lifted tile or a floating overlay earns a real cast shadow. */
   --kk-shadow-0: none;
-  --kk-shadow-1: 0 1px 2px rgb(0 0 0 / 30%), inset 0 1px 0 rgb(255 255 255 / 4%);
-  --kk-shadow-2: 0 2px 6px rgb(0 0 0 / 34%), inset 0 1px 0 rgb(255 255 255 / 6%);
-  --kk-shadow-3: 0 10px 28px rgb(0 0 0 / 46%), inset 0 1px 0 rgb(255 255 255 / 8%);
+  --kk-shadow-1:
+    0 1px 2px color-mix(in srgb, var(--kk-shade) 30%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--kk-palette-ink) 4%, transparent);
+  --kk-shadow-2:
+    0 2px 6px color-mix(in srgb, var(--kk-shade) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--kk-palette-ink) 6%, transparent);
+  --kk-shadow-3:
+    0 10px 28px color-mix(in srgb, var(--kk-shade) 46%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--kk-palette-ink) 8%, transparent);
 
   /* ---- Scrim ----------------------------------------------------------
      A bottom-up wash that floats caption text over an unknown photograph. It
-     is a darkening layer, not a theme colour, so it stays black regardless of
+     is a darkening layer, not a theme colour, so it is the shade regardless of
      the surface ramp — anchored opaque at the base, gone by the upper third so
      it never dims the image itself. Used under the library tile's hover date. */
   --kk-tile-scrim: linear-gradient(
     to top,
-    rgb(0 0 0 / 72%) 0%,
-    rgb(0 0 0 / 40%) 26%,
-    rgb(0 0 0 / 0%) 62%
+    color-mix(in srgb, var(--kk-shade) 72%, transparent) 0%,
+    color-mix(in srgb, var(--kk-shade) 40%, transparent) 26%,
+    color-mix(in srgb, var(--kk-shade) 0%, transparent) 62%
   );
 
   /* ---- Immersive viewer ----------------------------------------------
-     The full-bleed photo viewer floats one image over a warm near-black — a
+     The full-bleed photo viewer floats one image over a navy-black — a
      step past `sunken`, so the darkest UI surface still reads as a surface and
      the viewer reads as "the room lights off, the photo lit". The chrome scrim
      is a top-down darkening wash that lets white controls sit legibly over an
@@ -211,18 +358,18 @@
      thing the sheet exists to keep — a visible, still-pannable photograph.
      `z` layers the viewer above the app shell (Bootstrap's modal backdrop is
      1040/1050, so this clears them). */
-  --kk-viewer-backdrop: #0a0806;
+  --kk-viewer-backdrop: color-mix(in srgb, var(--kk-palette-base) 45%, var(--kk-semantic-shade));
   --kk-viewer-chrome-scrim: linear-gradient(
     to bottom,
-    rgb(0 0 0 / 62%) 0%,
-    rgb(0 0 0 / 24%) 55%,
-    rgb(0 0 0 / 0%) 100%
+    color-mix(in srgb, var(--kk-shade) 62%, transparent) 0%,
+    color-mix(in srgb, var(--kk-shade) 24%, transparent) 55%,
+    color-mix(in srgb, var(--kk-shade) 0%, transparent) 100%
   );
   --kk-viewer-dock-scrim: linear-gradient(
     to top,
-    rgb(0 0 0 / 74%) 0%,
-    rgb(0 0 0 / 58%) 60%,
-    rgb(0 0 0 / 34%) 100%
+    color-mix(in srgb, var(--kk-shade) 74%, transparent) 0%,
+    color-mix(in srgb, var(--kk-shade) 58%, transparent) 60%,
+    color-mix(in srgb, var(--kk-shade) 34%, transparent) 100%
   );
   --kk-viewer-z: 1080;
 
@@ -245,9 +392,9 @@
   --kk-ease-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- Focus ring -----------------------------------------------------
-     One ring, used everywhere a control takes keyboard focus. It is the accent
-     azure: bright enough to read against both the near-black chrome and an
-     arbitrary photo thumbnail, and the offset keeps a clear gap so the ring
+     One ring, used everywhere a control takes keyboard focus. It is the accent:
+     bright enough to clear 3:1 against every surface of the navy chrome and to
+     stand out on an arbitrary photo thumbnail, and the offset keeps a clear gap so the ring
      survives even on an element that is already accent-coloured (active nav). */
   --kk-focus-ring-color: var(--kk-accent);
   --kk-focus-ring-width: 3px;
@@ -261,16 +408,16 @@
      of painting every album/label chip in Superhero's primary orange, which
      made albums and tags indistinguishable ("it just adds orange boxes").
 
-     The three hues — violet / teal / rose — are clearly apart from one another,
-     from the cool azure accent, and from `danger` red (a chip's close
-     affordance). Each background carries white text at ≥ 5:1 on the near-black
-     page. Colour is only ever an aid: every entity chip also keeps its text
+     The three hues — violet / pine / rose (the semantic block's categorical
+     hues) — are clearly apart from one another, from the orange accent, and
+     from `danger` crimson (a chip's close affordance). Each carries ink text at
+     AA (held by `styles/contrast.test.ts`). Colour is only ever an aid: every entity chip also keeps its text
      label and a leading icon (see `components/entityStyle.ts`), so the
      distinction survives for colour-blind readers. */
-  --kk-entity-album-bg: #6244c5; /* violet — albums */
-  --kk-entity-tag-bg: #0b7a64; /* teal   — tags (labels) */
-  --kk-entity-person-bg: #c23b6b; /* rose   — people */
-  --kk-entity-fg: #fff;
+  --kk-entity-album-bg: var(--kk-semantic-violet); /* albums */
+  --kk-entity-tag-bg: var(--kk-semantic-pine); /* tags (labels) */
+  --kk-entity-person-bg: var(--kk-semantic-rose); /* people */
+  --kk-entity-fg: var(--kk-palette-ink);
 
   /* ---- Task states ----------------------------------------------------
      A task is a question about a group of photographs, and its state is the
@@ -279,22 +426,26 @@
      warning colour — a page where every row looks alike has to be read word
      by word.
 
-     They run in the order work moves: amber is waiting on a person (the
-     loudest, because it is the only one asking something of the reader),
-     cyan means somebody is on it, violet is waiting for a yes, green is
-     finished. `rejected` is slate rather than red: closing a question with
-     "no, and here is why" is a full result, not a failure.
+     They run in the order work moves: the warning yellow is waiting on a
+     person (the loudest, because it is the only one asking something of the
+     reader), the palette's teal means somebody is on it, violet is waiting
+     for a yes, green is finished. `rejected` is slate rather than red: closing
+     a question with "no, and here is why" is a full result, not a failure.
 
-     Amber carries the page's near-black text (≈ 9:1); the other four carry
-     white at ≥ 4.5:1. The hue is never the only signal — every badge also
+     The yellow carries the dark base; the other four carry ink, all at AA
+     (held by `styles/contrast.test.ts`). The hue is never the only signal — every badge also
      states its name and carries a glyph (see `components/tasks/taskState.ts`). */
-  --kk-task-question-bg: #e0a800; /* amber  — waiting on a person */
-  --kk-task-question-fg: #15130f;
-  --kk-task-working-bg: #0f6f8c; /* cyan   — somebody is on it */
-  --kk-task-review-bg: #6244c5; /* violet — waiting for a yes */
-  --kk-task-done-bg: #3f7d20; /* green  — finished */
-  --kk-task-rejected-bg: #4a443a; /* slate  — a result, not a failure */
-  --kk-task-fg: #fff;
+  --kk-task-question-bg: var(--kk-warning); /* waiting on a person */
+  --kk-task-question-fg: var(--kk-on-warning);
+  --kk-task-working-bg: var(--kk-palette-surface-accent); /* somebody is on it */
+  --kk-task-review-bg: var(--kk-semantic-violet); /* waiting for a yes */
+  --kk-task-done-bg: var(--kk-semantic-forest); /* finished */
+  --kk-task-rejected-bg: color-mix(
+    in srgb,
+    var(--kk-palette-ink) 24%,
+    var(--kk-palette-base)
+  ); /* slate — a result, not a failure */
+  --kk-task-fg: var(--kk-palette-ink);
 
   /* ---- Avatar tones ---------------------------------------------------
      The palette an initial-circle avatar picks from. Kukátko stores no
@@ -305,18 +456,18 @@
      anywhere, which is what turns the colour into recognition rather than
      decoration.
 
-     Eight hues, well apart from one another, each carrying white text at
-     ≥ 5:1. The colour is never the only signal: the name is always written
+     Eight hues, well apart from one another — the palette's surface accent and
+     warm rust plus six categorical hues — each carrying ink text at AA. The colour is never the only signal: the name is always written
      out beside the disc, and the disc itself is `aria-hidden`. */
-  --kk-avatar-0-bg: #6244c5; /* violet */
-  --kk-avatar-1-bg: #0b7a64; /* teal   */
-  --kk-avatar-2-bg: #c23b6b; /* rose   */
-  --kk-avatar-3-bg: #2c6fb2; /* azure  */
-  --kk-avatar-4-bg: #8a5a2b; /* amber  */
-  --kk-avatar-5-bg: #3f7d20; /* green  */
-  --kk-avatar-6-bg: #a03c8f; /* magenta */
-  --kk-avatar-7-bg: #0f6f8c; /* cyan   */
-  --kk-avatar-fg: #fff;
+  --kk-avatar-0-bg: var(--kk-semantic-violet);
+  --kk-avatar-1-bg: var(--kk-semantic-pine);
+  --kk-avatar-2-bg: var(--kk-semantic-rose);
+  --kk-avatar-3-bg: var(--kk-semantic-azure);
+  --kk-avatar-4-bg: var(--kk-palette-warm);
+  --kk-avatar-5-bg: var(--kk-semantic-forest);
+  --kk-avatar-6-bg: var(--kk-semantic-magenta);
+  --kk-avatar-7-bg: var(--kk-semantic-cyan);
+  --kk-avatar-fg: var(--kk-palette-ink);
 
   /* ---- Typography scale -----------------------------------------------
      A small modular scale (~1.2–1.25 per step): display / page-title /
@@ -570,7 +721,7 @@
 
 /* The placeholder shown inside a tile whose cover thumbnail is missing. */
 .kk-tile__placeholder {
-  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  color: var(--bs-secondary-color);
 }
 
 /*
@@ -742,10 +893,10 @@
   width: 1.65rem;
   height: 1.65rem;
   padding: 0;
-  border: 2px solid rgb(255 255 255 / 92%);
+  border: 2px solid color-mix(in srgb, var(--kk-on-photo) 92%, transparent);
   border-radius: 50%;
-  background-color: rgb(0 0 0 / 38%);
-  color: #fff;
+  background-color: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   line-height: 1;
   opacity: 0;
   transition:
@@ -785,6 +936,7 @@
   opacity: 1;
   border-color: var(--kk-accent);
   background-color: var(--kk-accent-solid);
+  color: var(--kk-on-accent);
 }
 
 /* The accent ring hugs the inside of the thumbnail via an overlay layer, so it
@@ -974,10 +1126,10 @@
   width: 1.65rem;
   height: 1.65rem;
   padding: 0;
-  border: 2px solid rgb(255 255 255 / 92%);
+  border: 2px solid color-mix(in srgb, var(--kk-on-photo) 92%, transparent);
   border-radius: 50%;
-  background-color: rgb(0 0 0 / 38%);
-  color: #fff;
+  background-color: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   line-height: 1;
   opacity: 0;
   transition:
@@ -999,7 +1151,7 @@
 
 .kk-cover-btn:not(:disabled):hover {
   transform: scale(1.08);
-  background-color: rgb(0 0 0 / 55%);
+  background-color: color-mix(in srgb, var(--kk-shade) 55%, transparent);
 }
 
 .kk-cover-btn:focus-visible {
@@ -1050,8 +1202,8 @@
   z-index: 2;
   padding: 0.05rem 0.4rem;
   border-radius: var(--kk-radius-sm);
-  background-color: rgb(0 0 0 / 55%);
-  color: #fff;
+  background-color: var(--kk-photo-plate);
+  color: var(--kk-on-photo);
   font-size: var(--kk-font-size-caption);
   line-height: 1.4;
   white-space: nowrap;
@@ -1074,7 +1226,7 @@
 
   /* Body size, not caption: the label is the page's primary way out, so it must
      not read as a footnote beside the title. Colour keeps it quiet instead. */
-  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  color: var(--bs-secondary-color);
   font-size: var(--kk-font-size-body);
   line-height: var(--kk-line-height-body);
   text-decoration: none;
@@ -1139,7 +1291,7 @@
 
 /*
  * The album / tag / person colour convention: a modifier on a Bootstrap
- * `.badge` (or any pill) that paints it in the entity's hue with white text.
+ * `.badge` (or any pill) that paints it in the entity's hue with ink text.
  * The hues live as tokens above so the mapping is defined once; these three
  * classes are what components reach for (via `ENTITY_STYLE` in
  * `components/entityStyle.ts`).
@@ -1213,7 +1365,7 @@
 /*
  * "Somebody has replied since the state last moved" — the one thing the queue
  * is actually scanned for. It sits next to a state badge, so it takes the
- * app's own azure accent rather than a sixth state hue: the colour reads as
+ * app's own accent rather than a sixth state hue: the colour reads as
  * the application pointing at a row, not as another state of the work.
  */
 .kk-task-answered {
@@ -1401,7 +1553,7 @@
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgb(255 255 255 / 6%) 50%,
+    color-mix(in srgb, var(--kk-on-photo) 6%, transparent) 50%,
     transparent 100%
   );
   transform: translateX(-100%);
@@ -1425,49 +1577,30 @@
 /*
  * The one colour scale the `/system` page reads its numbers by: waiting, in
  * progress, failed. `lib/jobStateTone` decides which of them a number wears;
- * this is where each one is actually painted, and where the awkward part lives.
+ * this is where each one is actually painted.
  *
- * The page paints numbers on TWO plates. A table cell sits on the page tone
- * (`--bs-table-bg`, the near-black `--kk-surface-page`), where Bootstrap's
- * dark-theme text-emphasis colours measure 7.9:1 (accent), 8.3:1 (danger) and
- * 11.9:1 (info) — comfortably AA for the 14 px text they carry. A tile's
- * `.kk-display` number sits on the `.card` fill, and Superhero bakes that as a
- * mid slate (#4e5d6c) inside the `.card` rule itself, out of reach of the
- * `--bs-card-bg` re-pin at the top of this file. The very same colours drop to
- * 2.9:1 / 3.0:1 / 4.4:1 there. At 30 px / 600 the bar is WCAG's large-text 3:1,
- * so "running" misses it outright and "failed" clears it by nothing at all.
- *
- * Hence the second set below: on the lighter plate the same hue is mixed towards
- * the body text until it clears 3:1 with room to spare (3.8 / 3.8 / 3.5:1). Same
- * three meanings, same three hues, no new colour literals — only the amount of
- * white under them changes.
+ * The page paints numbers on two plates: a table cell on the page tone
+ * (`--bs-table-bg`) and a tile's `.kk-display` number on the `.card` fill (the
+ * raised surface, re-pinned in `bootstrapBridge.css`). Each tone is a text tone
+ * — the colour the variant's meaning takes as TEXT on a dark surface — and those
+ * clear AA on every surface of the ramp, so one set serves both plates.
+ * (Superhero baked the card as a mid slate, which once needed a second, lighter
+ * set for the tiles; the bridge retired that plate.) `styles/countTones.test.ts`
+ * measures both.
  */
 .kk-count--queued {
   /* `!important`, like Bootstrap's own `.text-*` utilities and for the same
      reason: half of these numbers are table cells, and `.table > :not(caption) >
-     * > *` sets a colour at a specificity a bare class cannot reach. The
-     `.kk-display` pair below wins over this one on specificity, not weight. */
-  color: var(--bs-info-text-emphasis) !important;
+     * > *` sets a colour at a specificity a bare class cannot reach. */
+  color: var(--kk-info-text) !important;
 }
 
 .kk-count--running {
-  color: var(--bs-primary-text-emphasis) !important;
+  color: var(--kk-accent) !important;
 }
 
 .kk-count--failed {
-  color: var(--bs-danger-text-emphasis) !important;
-}
-
-.kk-display.kk-count--queued {
-  color: color-mix(in srgb, var(--bs-info) 70%, var(--kk-text)) !important;
-}
-
-.kk-display.kk-count--running {
-  color: color-mix(in srgb, var(--kk-accent) 60%, var(--kk-text)) !important;
-}
-
-.kk-display.kk-count--failed {
-  color: color-mix(in srgb, var(--bs-danger) 40%, var(--kk-text)) !important;
+  color: var(--kk-danger-text) !important;
 }
 
 /*
@@ -1477,7 +1610,8 @@
  * The floor is deliberately shallow (85%, not the usual pulse's fade to
  * near-nothing): the number underneath has to stay legible through the whole
  * cycle, and at that trough both renditions still clear their bar — 6.4:1 on the
- * near-black cell, 3.4:1 on the tile's lighter plate. It is decoration over a
+ * page-tone cell and on the tile's raised plate (measured in
+ * `styles/countTones.test.ts`). It is decoration over a
  * number that is already coloured and already named by its column header, so it
  * is dropped entirely under `prefers-reduced-motion`.
  */
@@ -1525,23 +1659,23 @@
   border-radius: var(--kk-radius-pill);
   background-color: var(--kk-surface-raised);
   box-shadow: var(--kk-shadow-1);
-  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  color: var(--bs-secondary-color);
 }
 
 /*
  * `--bs-emphasis-color` is `#000` at Superhero's root (the theme only flips it
  * inside `[data-bs-theme="dark"]`), so the title takes the body colour instead
- * — otherwise it renders black on the near-black page.
+ * — otherwise it renders black on the dark page.
  */
 .kk-empty-state__title {
   margin: 0;
-  color: var(--bs-body-color, #fff);
+  color: var(--bs-body-color);
 }
 
 .kk-empty-state__hint {
   max-width: 42ch;
   margin: 0;
-  color: var(--bs-secondary-color, rgb(255 255 255 / 60%));
+  color: var(--bs-secondary-color);
 }
 
 .kk-empty-state__action {
@@ -1577,13 +1711,13 @@
 .kk-empty-state--error .kk-empty-state__icon {
   border-color: color-mix(in srgb, var(--bs-danger) 40%, var(--kk-surface-border));
   background-color: color-mix(in srgb, var(--bs-danger) 14%, var(--kk-surface-raised));
-  color: var(--bs-danger);
+  color: var(--kk-danger-text);
 }
 
 .kk-empty-state--error.kk-empty-state--sm .kk-empty-state__icon {
   /* The compact medallion drops its surface, so tint the glyph alone. */
   background-color: transparent;
-  color: var(--bs-danger);
+  color: var(--kk-danger-text);
 }
 
 /* ---- Toasts ------------------------------------------------------------ */
@@ -1614,7 +1748,7 @@
 .kk-toast {
   --kk-toast-accent: var(--kk-accent);
 
-  color: var(--bs-body-color, #fff);
+  color: var(--bs-body-color);
   background-color: var(--kk-surface-overlay);
   border: 1px solid var(--kk-surface-border);
   border-inline-start: 3px solid var(--kk-toast-accent);
@@ -1623,11 +1757,11 @@
 }
 
 .kk-toast--success {
-  --kk-toast-accent: var(--bs-success);
+  --kk-toast-accent: var(--kk-success-text);
 }
 
 .kk-toast--danger {
-  --kk-toast-accent: var(--bs-danger);
+  --kk-toast-accent: var(--kk-danger-text);
 }
 
 .kk-toast--info {

@@ -161,7 +161,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
                     {person.name}
                   </span>
                   {nickname !== null && (
-                    <span className="text-truncate opacity-75" style={{ maxWidth: '8rem' }}>
+                    <span className="text-truncate fst-italic" style={{ maxWidth: '8rem' }}>
                       {nickname}
                     </span>
                   )}
@@ -188,7 +188,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
                 className="fw-normal"
               >
                 {label.name}
-                <span className="ms-1 opacity-75">{label.photo_count}</span>
+                <span className="ms-1">{label.photo_count}</span>
               </EntityChip>
             ))}
           </div>
