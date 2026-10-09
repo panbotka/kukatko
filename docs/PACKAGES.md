@@ -5514,7 +5514,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     good — the **caller** deletes the row; the sender only reports, the lifecycle is the caller's),
     **`ErrRetryable`** for 429 and 5xx (with `Retry-After` in seconds when sent), `ErrPayloadTooLarge` for
     413 and **`ErrRejected`** for any other 4xx (typically a 403: the subscription was made for another
-    VAPID public key). An unreachable endpoint or an expired context is `ErrRetryable` too.
+    VAPID public key) **and for a 3xx, which is never followed**. `Body` is the start of the answer as one
+    line of plain text (`plainText`: control/format runes → spaces, ≤ 200 runes), because it lands in a
+    job's `last_error`. An unreachable endpoint or an expired context is `ErrRetryable` too.
     `Retryable(err)` is the caller's one-line test. An invalid subscription (`ValidateSubscription`: an
     `https` endpoint ≤ 2048 characters, `p256dh` an uncompressed P-256 point, `auth` 16 bytes, any base64
     flavour) is `ErrInvalidSubscription` before dialling.
@@ -5524,16 +5526,25 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ErrInvalidConfig` and names the problem, **never a key's value**. One library quirk is absorbed here:
     webpush-go prefixes `mailto:` to any subscriber that is not `https:`, so `subscriberFor` hands it the
     bare address — passed as configured, the JWT `sub` would read `mailto:mailto:…` (a test verifies the
-    signed claims). Requests use `Urgency: normal` and a TTL of `DefaultTTL` (24 h); the HTTP client
-    defaults to a 30 s timeout. The library (`github.com/SherClockHolmes/webpush-go` v1.4.0) is pure Go —
+    signed claims). Requests use `Urgency: normal` and a TTL of `DefaultTTL` (24 h).
+  - **Destination policy** (`destination.go`, SEC-020 in [`SECURITY_AUDIT.md`](SECURITY_AUDIT.md)): the
+    endpoint is chosen by whoever subscribed, so the production client (`HTTPClient` nil) has a 30 s
+    timeout, **no redirects, no environment proxy, and a dialer `Control` hook that refuses every
+    non-public address after DNS resolution** (loopback, private/ULA, link-local, unspecified, multicast,
+    CGNAT/tailnet and a few reserved ranges; mapped and NAT64 addresses judged by their IPv4) — a refused
+    dial is a permanent `ErrRejected`. An injected `HTTPClient` (the tests' `httptest` client) keeps its
+    transport but is copied with redirects off. `Store.Upsert` also refuses visibly internal endpoints
+    (non-public IP literals, single-label hosts, `*.localhost`) as `ErrInvalidSubscription`; there is
+    deliberately no allowlist of push-service hosts. The library (`github.com/SherClockHolmes/webpush-go` v1.4.0) is pure Go —
     `golang-jwt/jwt/v5` + `golang.org/x/crypto` — so `CGO_ENABLED=0` still holds.
   - **`Store`** over `push_subscriptions` (migration 0086: one row per browser, `user_uid` → `users`
     `ON DELETE CASCADE`, **`endpoint` UNIQUE**, `p256dh`, `auth`, `user_agent`, `created_at`,
     `last_used_at`, `failure_count`, `last_failure_at`; ids are `ps` + 24 base32). `Upsert` is keyed by
     endpoint — the same browser subscribing again rewrites its row and keeps its id, and clears the failure
     bookkeeping; an endpoint that changes hands (another person subscribed on the same browser) moves to
-    them with its created/last-used stamps started over. It validates first, so nothing unsendable is
-    stored. `Get(id)` (whoever owns it; `ErrNotFound` once it is gone), `ListForUser` (oldest first),
+    them with its created/last-used stamps started over (kept on purpose: the endpoint is an unguessable
+    capability no API hands to another account). It validates first, so nothing unsendable or visibly
+    internal is stored. `Get(id)` (whoever owns it; `ErrNotFound` once it is gone), `ListForUser` (oldest first),
     **`SubscriptionIDs(ctx, Querier, userUID)`** (a package function over any `Query`-er, pool or
     `pgx.Tx`, so the push fan-out reads the devices **inside the caller's transaction**),
     `DeleteByEndpoint` (whoever owns it — what an unsubscribing
@@ -5546,7 +5557,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ValidateSubject`, so a bad pair fails startup), CLI `kukatko push generate-keys`
     ([`OPERATIONS.md`](OPERATIONS.md)). Tests: payload encoding and limits; key/subject/subscription
     validation; the VAPID sender against an `httptest` TLS push service that **decrypts the payload the way
-    a browser does** (RFC 8291) and **verifies the ES256 signature and claims**; every status class; the
+    a browser does** (RFC 8291) and **verifies the ES256 signature and claims**; every status class; no
+    redirect followed, a loopback endpoint refused at dial time, the address/host policy; the
     fake; and the store over a real database (upsert by endpoint, moving hands, owner-scoped delete,
     bookkeeping, the cascade, `Get` and `SubscriptionIDs` inside a transaction).
 

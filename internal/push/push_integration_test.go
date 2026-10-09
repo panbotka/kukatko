@@ -152,6 +152,18 @@ func TestStore_upsertRefusesInvalid(t *testing.T) {
 	if _, err := store.Upsert(ctx, orphan); !errors.Is(err, push.ErrInvalidSubscription) {
 		t.Fatalf("no account: error = %v", err)
 	}
+	for _, endpoint := range []string{
+		"https://127.0.0.1:8443/x", "https://169.254.169.254/latest", "https://10.0.0.1/x", "https://localhost/x",
+	} {
+		internal := subscription(t, owner, endpoint, "")
+		if _, err := store.Upsert(ctx, internal); !errors.Is(err, push.ErrInvalidSubscription) {
+			t.Fatalf("internal endpoint %s: error = %v", endpoint, err)
+		}
+	}
+	subs, err := store.ListForUser(ctx, owner)
+	if err != nil || len(subs) != 0 {
+		t.Fatalf("ListForUser = %d rows, %v; want none stored", len(subs), err)
+	}
 }
 
 // TestStore_listAndDelete covers listing per account and the three deletes,

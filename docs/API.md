@@ -1974,8 +1974,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
     optional `user_agent` (default: the request's `User-Agent`, cut to 512 bytes). **Upsert by endpoint,
     always bound to the caller** (`push.Store.Upsert`): the same browser subscribing again keeps its row;
     an endpoint another account held moves to the caller. → `200` with the subscription view. A missing
-    field, an unknown field, a non-https endpoint or keys that do not decode to a P-256 point and a 16-byte
-    secret → `400`. **Push off instance-wide → `503`** and nothing is stored — a subscription nothing will
+    field, an unknown field, a non-https endpoint, an endpoint that is visibly not on the public internet
+    (a loopback/private/link-local/tailnet IP literal, a single-label host such as `localhost`, a
+    `*.localhost` name) or keys that do not decode to a P-256 point and a 16-byte secret → `400`. A
+    hostname resolving to an internal address is stored but never dialled (SEC-020). **Push off instance-wide → `503`** and nothing is stored — a subscription nothing will
     ever deliver to is worse than none. **Rate-limited** per account (`ratelimit.comment` settings, a bucket
     of its own; `429`); an API token flagged unlimited is exempt. A browser whose push service rotated its
     endpoint arrives as a new endpoint and a new row; the stale one is pruned by the `push_send` job when

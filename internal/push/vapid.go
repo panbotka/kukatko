@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
@@ -25,6 +26,8 @@ const (
 	// maxErrorBody is how much of a push service's error answer is kept in a
 	// StatusError; the rest is drained and discarded.
 	maxErrorBody = 512
+	// maxErrorText caps, in runes, the explanation a StatusError keeps.
+	maxErrorText = 200
 	// maxDrain bounds how much of any answer is read before the connection is
 	// given back, so a misbehaving endpoint cannot stream into the process.
 	maxDrain = 64 << 10
@@ -48,8 +51,11 @@ type Config struct {
 	// TTL is how long a push service keeps an undelivered message; <= 0 means
 	// DefaultTTL.
 	TTL time.Duration
-	// HTTPClient sends the requests; nil means a client with DefaultTimeout.
-	// Tests hand in the client of an httptest TLS server.
+	// HTTPClient sends the requests; nil means the production client, which
+	// times out after DefaultTimeout and refuses to dial any non-public address.
+	// Tests hand in the client of an httptest TLS server. Either way the sender
+	// never follows a redirect: an injected client is copied with its redirect
+	// policy replaced.
 	HTTPClient *http.Client
 }
 
@@ -91,9 +97,9 @@ func NewVAPID(cfg Config) (*VAPIDSender, error) {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
-	client := cfg.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: DefaultTimeout}
+	client := newDefaultClient()
+	if cfg.HTTPClient != nil {
+		client = withoutRedirects(cfg.HTTPClient)
 	}
 	return &VAPIDSender{
 		publicKey:  strings.TrimSpace(cfg.PublicKey),
@@ -134,6 +140,10 @@ func (s *VAPIDSender) Send(ctx context.Context, sub Subscription, n Notification
 		if errors.Is(err, webpush.ErrMaxPadExceeded) {
 			return fmt.Errorf("%w: %w", ErrPayloadTooLarge, err)
 		}
+		// The endpoint resolves to an internal address; it will next time too.
+		if errors.Is(err, errNonPublicDestination) {
+			return fmt.Errorf("%w: %w", ErrRejected, err)
+		}
 		return fmt.Errorf("%w: posting to the push service: %w", ErrRetryable, err)
 	}
 	defer func() {
@@ -164,7 +174,8 @@ type StatusError struct {
 	// RetryAfter is the push service's Retry-After in seconds form, zero when it
 	// sent none (or sent a date, which no push service does in practice).
 	RetryAfter time.Duration
-	// Body is the start of the push service's explanation, trimmed.
+	// Body is the start of the push service's explanation as plain text (see
+	// plainText): it ends up in a job's last_error, read by maintainers.
 	Body string
 	kind error
 }
@@ -185,8 +196,9 @@ func (e *StatusError) Unwrap() error {
 // classify turns resp's status into the send's result: nil for any 2xx,
 // otherwise a *StatusError whose sentinel is ErrGone for 404 and 410,
 // ErrRetryable for 429 and every 5xx, ErrPayloadTooLarge for 413 and
-// ErrRejected for the rest. It reads at most maxErrorBody of the body and leaves
-// closing it to the caller.
+// ErrRejected for the rest — an unfollowed 3xx included. It reads at most
+// maxErrorBody of the body, keeps it only as plainText, and leaves closing it to
+// the caller.
 func classify(resp *http.Response) error {
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		return nil
@@ -195,7 +207,7 @@ func classify(resp *http.Response) error {
 	return &StatusError{
 		StatusCode: resp.StatusCode,
 		RetryAfter: retryAfter(resp.Header.Get("Retry-After")),
-		Body:       strings.TrimSpace(string(body)),
+		Body:       plainText(body),
 		kind:       kindOf(resp.StatusCode),
 	}
 }
@@ -222,4 +234,25 @@ func retryAfter(header string) time.Duration {
 		return 0
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// plainText turns the start of a push service's answer into one line of plain
+// text for an error message: invalid UTF-8 is replaced, every control or
+// formatting character (escape sequences, bidi overrides, newlines) becomes a
+// space, runs of spaces collapse, and anything past maxErrorText runes is cut
+// off with an ellipsis. The endpoint is chosen by whoever subscribed, so the
+// answer is untrusted text that would otherwise reach a maintainer's terminal
+// through `ctl jobs` or a log line.
+func plainText(raw []byte) string {
+	text := strings.Map(func(r rune) rune {
+		if !unicode.IsPrint(r) {
+			return ' '
+		}
+		return r
+	}, strings.ToValidUTF8(string(raw), "\uFFFD"))
+	text = strings.Join(strings.Fields(text), " ")
+	if runes := []rune(text); len(runes) > maxErrorText {
+		return string(runes[:maxErrorText]) + "…"
+	}
+	return text
 }

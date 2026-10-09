@@ -27,7 +27,8 @@ the only two reachable *anonymously*, and they composed into one working online 
 chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. **SEC-017** (an
 uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fixed on **2026-10-09**,
 and so was **SEC-018** (in-process image decodes had no memory bound across concurrent uploads), and
-**SEC-019** (concurrent requests overshot an upload link's file cap; a revoke did not stop a running request).
+**SEC-019** (concurrent requests overshot an upload link's file cap; a revoke did not stop a running request),
+and **SEC-020** (a Web Push subscription endpoint made the server POST to internal hosts).
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -539,6 +540,81 @@ Everything else below is open as written.
   the per-request part cap.
 - **Not addressed here:** a server crash between a reservation and its release leaves the link one slot
   short. That fails safe (fewer uploads, never more), and a curator can always create a new link.
+
+---
+
+### SEC-020 — MEDIUM — **FIXED** — A Web Push subscription endpoint made the server POST to internal hosts (blind SSRF)
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), reproduced and
+  confirmed on **2026-10-09** against commit `c374238`.
+- **Where (before the fix):** `POST /api/v1/push/subscriptions` (`internal/notificationapi/push.go`) stores
+  any endpoint `push.ValidateSubscription` (`internal/push/keys.go`) accepts. That check is format only:
+  length ≤ 2048, scheme `https`, a non-empty host. Production built the sender without an `HTTPClient`
+  (`cmd/kukatko/push.go`), so `push.NewVAPID` fell back to `&http.Client{Timeout: 30s}`. That client has no
+  redirect policy, no address policy and honours an environment proxy. webpush-go POSTs through it.
+- **Attack scenario:** with `push.enabled` on, **any signed-in account, viewer included,** subscribes an
+  endpoint of its choice: an IP literal (`https://127.0.0.1:…`, `https://10.…`, `https://169.254.169.254/…`,
+  a tailnet `100.x` address), a hostname that resolves to one, or a public https server that answers `302`
+  to `http://127.0.0.1:<port>/…`. Another account tagging the attacker's linked subject, or a registration
+  notice to approvers, triggers a delivery, and the server's `push_send` job sends the request from inside
+  its own network. A `301`/`302`/`303` is followed as a GET, a `307`/`308` replays the POST, and plain
+  `http` is followed too. The body is never shown, but two status bits are: a 2xx stamps the subscription's
+  `last_used_at` (visible in `GET /push/subscriptions`), and a 404/410 deletes it. That is enough to probe
+  which internal ports and paths exist.
+- **Reproduced:** `internal/push` test (run against the pre-fix `vapid.go`). A TLS `httptest` server
+  answering `302 → http://127.0.0.1:<B>/probe`, a client trusting its certificate with the default redirect
+  policy: `Send` returned **nil** and the plain-http recorder B received **one request**.
+  `ValidateSubscription` accepted `https://127.0.0.1:1/x`, `https://10.0.0.1/x` and
+  `https://169.254.169.254/x`. Lead **confirmed**.
+- **Fix** (`internal/push/destination.go`):
+  1. **No redirects.** Every sender client returns a 3xx to `Send` unfollowed (`CheckRedirect` →
+     `http.ErrUseLastResponse`). `classify` reports it as a permanent `ErrRejected`, so the job fails without
+     retrying. An injected client is **copied** with that policy, so the test seam cannot reintroduce it.
+  2. **Public addresses only, at dial time.** The production client's `net.Dialer` has a `Control` hook
+     (`refuseNonPublic`). It runs after DNS resolution on the exact address being connected to, so DNS
+     rebinding is covered too. It refuses loopback, RFC 1918/ULA, link-local, unspecified and multicast
+     addresses, CGNAT `100.64.0.0/10` (the tailnet), `0/8`, `192.0.0.0/24`, `198.18.0.0/15`, `240/4` and
+     `fec0::/10`. IPv4-mapped and NAT64 (`64:ff9b::/96`) addresses are judged by the IPv4 inside, and
+     `64:ff9b:1::/48` is refused. A refusal is a permanent `ErrRejected`, and nothing is sent. The client
+     also takes **no proxy from the environment**, because a proxy would dial the endpoint itself, past the
+     check.
+  3. **Subscribe-time courtesy check.** `Store.Upsert` refuses visibly internal endpoints with
+     `ErrInvalidSubscription` (→ 400): non-public IP literals, single-label hosts (`localhost`, `box`) and
+     `*.localhost`. It resolves nothing, so the dialer stays the guard.
+  4. **The test seam stays.** `push.Config.HTTPClient` still injects an `httptest` client, which keeps its
+     transport and so reaches loopback. Only production (`HTTPClient` nil) gets the guarded dialer.
+- **No allowlist of push-service hosts (decision).** The known services (FCM, Mozilla autopush, Windows
+  `*.notify.windows.com`, Apple `web.push.apple.com`) were considered as an allowlist, with a config override.
+  Rejected for now. Once nothing internal can be dialled and no redirect is followed, all an attacker has
+  left is making the server POST an encrypted, VAPID-signed body to a **public** https host of their
+  choosing, which they can do from their own machine. An allowlist would break silently for any browser
+  whose push service is not on it, and every such breakage would need an operator to edit config.
+- **Hardening done with it:**
+  - **Push service answers as plain text.** The endpoint's error body (read up to 512 bytes) goes into the
+    job's `last_error`, which maintainers read through `/jobs` and `kukatko ctl`. It is untrusted text from
+    an endpoint the subscriber chose. `plainText` now replaces invalid UTF-8, turns every non-printable rune
+    (escape sequences, newlines, bidi overrides) into a space, collapses whitespace and cuts the text at 200
+    runes with `…`.
+  - **Re-subscribing a known endpoint still moves it to the caller (decision, kept).** The endpoint is an
+    unguessable capability URL. Only the browser, its push service and this table know it, and no API
+    returns another account's endpoint (`GET /push/subscriptions` lists the caller's own rows), so whoever
+    presents it is that browser. Refusing the move would keep delivering the previous account's
+    notifications to a shared browser that someone else is now signed in on. The reasoning is in
+    `upsertSubscriptionSQL`'s comment.
+- **Regression tests:** `internal/push/destination_test.go`:
+  - `TestVAPIDSender_doesNotFollowRedirects`: 301/302/303/307/308 → `ErrRejected`, the internal recorder
+    gets 0 requests, and the caller's client is left unchanged.
+  - `TestVAPIDSender_defaultClientRefusesNonPublic`: the production client to loopback by IP literal and by
+    `localhost` → permanent `ErrRejected`, and the server receives nothing.
+  - `TestIsPublicAddr`, `TestRefuseNonPublic`, `TestCheckEndpointHost`, `TestNewDefaultClient` and
+    `TestPlainText`.
+  - `TestValidateSubscription_formatOnly` pins that the format check alone still accepts the internal
+    endpoints.
+  - `TestVAPIDSender_roundTrip` still shows a normal endpoint working.
+  - `TestStore_upsertRefusesInvalid` (integration) stores none of the internal endpoints.
+- **Not addressed here:** a failed send's transport error names the endpoint URL in `last_error`, so a
+  **maintainer** can read other accounts' endpoints through `/jobs`. Maintainers already hold the database
+  and the backups, so this is not a new capability.
 
 ---
 

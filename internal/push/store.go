@@ -105,6 +105,12 @@ func scanSubscription(r row) (Subscription, error) {
 // the failure bookkeeping is cleared; when the endpoint changes hands (another
 // person signed in on the same browser and subscribed) it is a new subscription
 // for that person, so its created and last-used stamps start over too.
+//
+// Moving an endpoint to the caller is deliberate (SEC-020): the endpoint is an
+// unguessable capability URL that only the browser holding it, its push service
+// and this table know — no API returns another account's endpoint — so whoever
+// presents it is that browser. Refusing the move would keep delivering the
+// previous account's notifications to a browser somebody else now uses.
 const upsertSubscriptionSQL = `
 INSERT INTO push_subscriptions (id, user_uid, endpoint, p256dh, auth, user_agent)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -125,13 +131,18 @@ RETURNING ` + subscriptionColumns
 // a row, a known one is updated in place and keeps its id, so the same browser
 // subscribing twice never ends up with two rows. It returns the stored row.
 // sub.ID and the bookkeeping fields are ignored. A subscription that could not
-// be sent to is refused with ErrInvalidSubscription before it reaches the table;
-// a missing sub.UserUID is refused the same way.
+// be sent to is refused with ErrInvalidSubscription before it reaches the table,
+// and so is one whose endpoint is visibly not on the public internet (an
+// internal IP literal, a single-label host); a missing sub.UserUID is refused
+// the same way.
 func (s *Store) Upsert(ctx context.Context, sub Subscription) (Subscription, error) {
 	if strings.TrimSpace(sub.UserUID) == "" {
 		return Subscription{}, fmt.Errorf("%w: no account", ErrInvalidSubscription)
 	}
 	if err := ValidateSubscription(sub); err != nil {
+		return Subscription{}, err
+	}
+	if err := checkEndpointHost(sub.Endpoint); err != nil {
 		return Subscription{}, err
 	}
 	id, err := newSubscriptionID()
