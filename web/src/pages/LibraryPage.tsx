@@ -11,7 +11,11 @@ import { FilterBar } from '../components/library/FilterBar'
 import { buildChips } from '../components/library/filterChips'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid, type PhotoGridHandle } from '../components/library/PhotoGrid'
-import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
+import {
+  TIMELINE_SCRUBBER_ENABLED,
+  type TimelineJump,
+  TimelineScrubber,
+} from '../components/library/TimelineScrubber'
 import { WhatsNewPanel } from '../components/library/WhatsNewPanel'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
@@ -170,7 +174,9 @@ export function LibraryPage() {
     },
     [ensureRange],
   )
-  const showScrubber = view.sort === LIBRARY_DEFAULTS.sort && selection.count === 0
+  // Off for now (see TIMELINE_SCRUBBER_ENABLED): no rail, no lane, no timeline fetch.
+  const showScrubber =
+    TIMELINE_SCRUBBER_ENABLED && view.sort === LIBRARY_DEFAULTS.sort && selection.count === 0
 
   // The month the view is positioned at, kept in the URL so Back, a reload and a
   // shared link all land where the reader was — the project's "Back always

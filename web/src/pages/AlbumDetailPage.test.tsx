@@ -24,6 +24,20 @@ const grid = vi.hoisted(() => ({
   restoredFrom: null as StateSnapshot | null,
 }))
 
+// The timeline rail ships switched off (TIMELINE_SCRUBBER_ENABLED). The tests of
+// its wiring into this page force it back on through this override, so they stay
+// honest for the day it is re-enabled; null means "as shipped".
+const scrubberSwitch = vi.hoisted(() => ({ enabled: null as boolean | null }))
+vi.mock('../components/library/TimelineScrubber', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/library/TimelineScrubber')>()
+  return {
+    ...actual,
+    get TIMELINE_SCRUBBER_ENABLED() {
+      return scrubberSwitch.enabled ?? actual.TIMELINE_SCRUBBER_ENABLED
+    },
+  }
+})
+
 /**
  * How many photos the mock list keeps "on screen". The album hands the grid an
  * array as long as the whole album, so a mock rendering all of it would mount
@@ -921,7 +935,31 @@ describe('AlbumDetailPage order', () => {
   })
 })
 
-describe('AlbumDetailPage timeline', () => {
+describe('AlbumDetailPage with the timeline rail switched off', () => {
+  // Shipped state: the rail is hidden until it is reworked. Even an album
+  // spanning a lifetime gets no rail, no lane reserved for one, and no request
+  // for the histogram that would feed it.
+  it('renders no rail, reserves no lane and never fetches the timeline', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    timelineMock.mockResolvedValue(spanningTimeline(1910, 2026))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
+    expect(document.querySelector('.kukatko-grid-timeline-lane')).toBeNull()
+    expect(timelineMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('AlbumDetailPage timeline (rail forced on)', () => {
+  beforeEach(() => {
+    scrubberSwitch.enabled = true
+  })
+  afterEach(() => {
+    scrubberSwitch.enabled = null
+  })
+
   it('gives an album spanning a lifetime the library’s own timeline rail', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))

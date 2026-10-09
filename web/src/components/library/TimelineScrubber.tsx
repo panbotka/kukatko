@@ -184,6 +184,21 @@ function usePageScrollable(revision: number): boolean {
   return scrollable
 }
 
+/**
+ * The one switch for the rail on the pages that host it (the library and an
+ * album). **Temporarily off**: the rail failed more often than it worked, and it
+ * stays hidden until it is reworked. Off, a page renders no rail, reserves no
+ * lane for it (`kukatko-grid-timeline-lane`) and never asks for the timeline —
+ * the fetch lives inside this component. The `?at=` month anchor is written and
+ * resolved only by the rail, so an old link carrying one simply opens at the top.
+ * Re-enabling is flipping this to `true`; the component, `useTimeline`, the
+ * endpoint and their tests are all kept.
+ *
+ * Widened to `boolean` rather than the literal, so the pages' `X && …` gates are
+ * not flagged as constant conditions.
+ */
+export const TIMELINE_SCRUBBER_ENABLED = false as boolean
+
 /** A month the rail asks the grid to jump to. */
 export interface TimelineJump {
   /**

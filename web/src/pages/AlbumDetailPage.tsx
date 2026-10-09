@@ -17,7 +17,11 @@ import { Icon } from '../components/Icon'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid, type PhotoGridHandle } from '../components/library/PhotoGrid'
-import { type TimelineJump, TimelineScrubber } from '../components/library/TimelineScrubber'
+import {
+  TIMELINE_SCRUBBER_ENABLED,
+  type TimelineJump,
+  TimelineScrubber,
+} from '../components/library/TimelineScrubber'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
@@ -99,7 +103,9 @@ const TIMELINE_MIN_MONTHS = 24
  * over the album (`useWindowedPhotos`), not a growing prefix of it: it is as tall
  * as the whole album from the first response and fetches the pages under the
  * viewport, so jumping to 1936 in an album of 781 photos costs one scroll and one
- * request instead of paging through everything in between.
+ * request instead of paging through everything in between. The rail itself is
+ * switched off for now ({@link TIMELINE_SCRUBBER_ENABLED}); the windowed grid
+ * stays, it costs nothing without it.
  *
  * A curator's tiles offer the corner checkmark from the outset (hover-select, as
  * on the library), and picking the first photo raises the same floating batch
@@ -287,7 +293,8 @@ export function AlbumDetailPage() {
   )
   const [searchParams, setSearchParams] = useSearchParams()
   const anchor = searchParams.get(ANCHOR_PARAM) ?? ''
-  const showScrubber = !selecting
+  // Off for now (see TIMELINE_SCRUBBER_ENABLED): no rail, no lane, no timeline fetch.
+  const showScrubber = TIMELINE_SCRUBBER_ENABLED && !selecting
   const jumpTo = useCallback(
     (jump: TimelineJump) => {
       // Start the fetch before the scroll: both are one request/one frame, and

@@ -28,6 +28,25 @@ const grid = vi.hoisted(() => ({
   reportState: null as ((state: StateSnapshot) => void) | null,
 }))
 
+// The timeline rail ships switched off (TIMELINE_SCRUBBER_ENABLED). The tests of
+// its wiring into this page force it back on through this override, so they stay
+// honest for the day it is re-enabled; null means "as shipped".
+const scrubberSwitch = vi.hoisted(() => ({ enabled: null as boolean | null }))
+vi.mock('../components/library/TimelineScrubber', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/library/TimelineScrubber')>()
+  return {
+    ...actual,
+    get TIMELINE_SCRUBBER_ENABLED() {
+      return scrubberSwitch.enabled ?? actual.TIMELINE_SCRUBBER_ENABLED
+    },
+  }
+})
+
+/** Turns the shipped-off timeline rail on for one test (reset in `afterEach`). */
+function forceRailOn(): void {
+  scrubberSwitch.enabled = true
+}
+
 /**
  * How many photos the mock list keeps "on screen". The library hands the grid an
  * array as long as the whole result, so a mock that rendered all of it would
@@ -390,6 +409,10 @@ beforeEach(async () => {
   window.sessionStorage.clear()
 })
 
+afterEach(() => {
+  scrubberSwitch.enabled = null
+})
+
 describe('LibraryPage', () => {
   it('names the browser tab after the library, never leaving it a bare app name', () => {
     fetchMock.mockReturnValue(new Promise<PhotoListResponse>(() => undefined))
@@ -742,6 +765,7 @@ describe('LibraryPage', () => {
   })
 
   it('records the jumped-to month in the URL so Back returns to the prior view', async () => {
+    forceRailOn()
     servePagesOf(3)
     timelineMock.mockResolvedValue({
       buckets: [
@@ -765,6 +789,7 @@ describe('LibraryPage', () => {
   })
 
   it('restores the anchored month from the URL on load', async () => {
+    forceRailOn()
     servePagesOf(3)
     timelineMock.mockResolvedValue({
       buckets: [
@@ -972,6 +997,7 @@ describe('LibraryPage', () => {
   })
 
   it('clicking a timeline month scrolls the grid to that month’s index', async () => {
+    forceRailOn()
     // Three loaded photos spanning two months; the scrubber's January bucket
     // starts at grid index 2 (its cumulative), which is already loaded.
     fetchMock.mockResolvedValue(
@@ -994,6 +1020,40 @@ describe('LibraryPage', () => {
       expect(grid.scrollToIndex).toHaveBeenCalled()
     })
     expectJumpedTo(2)
+  })
+})
+
+describe('LibraryPage with the timeline rail switched off', () => {
+  // Shipped state: the rail is hidden until it is reworked. Even a library with a
+  // timeline to show gets no rail, no lane reserved for one, and no request for
+  // the histogram that would feed it.
+  const spanning = {
+    buckets: [
+      { year: 2026, month: 2, count: 2, cumulative: 0 },
+      { year: 2026, month: 1, count: 1, cumulative: 2 },
+    ],
+    total: 3,
+  }
+
+  it('renders no rail, reserves no lane and never fetches the timeline', async () => {
+    servePagesOf(3)
+    timelineMock.mockResolvedValue(spanning)
+    renderLibrary()
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
+    expect(document.querySelector('.kukatko-grid-timeline-lane')).toBeNull()
+    expect(timelineMock).not.toHaveBeenCalled()
+  })
+
+  it('opens a link carrying a month anchor at the top, without the rail', async () => {
+    servePagesOf(3)
+    timelineMock.mockResolvedValue(spanning)
+    renderLibrary('/?at=2026-01')
+
+    await screen.findByRole('link', { name: 'p0.jpg' })
+    expect(grid.scrollToIndex).not.toHaveBeenCalled()
+    expect(timelineMock).not.toHaveBeenCalled()
   })
 })
 

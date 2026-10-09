@@ -1049,7 +1049,14 @@ here.
   `scroll.key` as its `gridOrigin` prop and carries it into the viewer in the link's state, next to the
   rendition handoff, so the viewer records paging against this grid and no other.
   The grid remembers nothing itself, the page does — see `useGridScrollMemory`),
-  `TimelineScrubber` (**the timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
+  `TimelineScrubber` (**temporarily disabled** — it failed more often than it worked and waits for a rework.
+  The one switch is `TIMELINE_SCRUBBER_ENABLED` exported next to the component; off, `LibraryPage` and
+  `AlbumDetailPage` render no rail, apply no `.kukatko-grid-timeline-lane` and never call `useTimeline`, so
+  the timeline endpoint is not requested. `at=YYYY-MM` is written and resolved only by the rail, so an old
+  link carrying it opens at the top; grid scroll memory is unaffected. The component, `useTimeline`, the
+  endpoint and their tests stay; the page tests force the switch on through a mock to keep the wiring
+  covered. Re-enabling is flipping the constant. What follows describes it when on.
+  **The timeline** — a thin fixed vertical date rail beside the grid: it fetches a monthly
   histogram via `useTimeline(params)` (refetch on filter change) and lays it out through
   `components/library/timelineRail`. **Every month bucket owns an equal slice of the rail**
   (`fractionForRank`), not a slice proportional to its photo count: positions used to be `cumulative/total`,
@@ -1959,7 +1966,8 @@ here.
   inherited from the **previous instance** whose domain this one took over — it kept its
   entire UI under `/library/…`, so `/library/login` and friends used to hit the 404 page, and did so
   *after* a successful sign-in (the guard returns the visitor to the address they asked for),
-  plus **the timeline** (`TimelineScrubber`) beside the grid for quick jumps to a month — the grid
+  plus **the timeline** (`TimelineScrubber`, **currently switched off** — see `TIMELINE_SCRUBBER_ENABLED`
+  under `TimelineScrubber` above) beside the grid for quick jumps to a month — the grid
   is a **window** over the whole result (`useWindowedPhotos`; `gridRef`+`onRangeChanged` drive both the
   highlighted month and `ensureRange`), so a jump is `scrollToIndex({index,align:'start'})` to the month's
   absolute index plus the one page that lands there — **the cost does not depend on how far it jumps**.
@@ -2045,7 +2053,8 @@ here.
   and nothing else, the view rests on `ALBUM_DEFAULTS` (oldest first, so only the reversal shows in the
   URL), and a sort key from elsewhere (a stale link) is read back as the album's own default so the grid
   and the selector cannot disagree. There is no manual reordering. An album spanning **≥ 24 months**
-  also gets the library's own **`TimelineScrubber`** beside the grid (`minSpanMonths`, hidden while a
+  also gets the library's own **`TimelineScrubber`** (**currently switched off**, same switch as the
+  library) beside the grid (`minSpanMonths`, hidden while a
   selection is being gathered), with the position in the same `at=YYYY-MM` URL param the library uses —
   which is why the grid is a *window* over the album rather than a growing prefix of it: a jump to 1936
   in an album of 781 photos costs one scroll and one page fetch;
