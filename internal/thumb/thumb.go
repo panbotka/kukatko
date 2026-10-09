@@ -37,6 +37,7 @@
 package thumb
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -52,6 +53,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photoedit"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -113,6 +115,10 @@ type Thumbnailer struct {
 	// decompression bomb cannot OOM a worker. 0 disables the cap. See
 	// WithMaxPixels.
 	maxPixels int64
+	// budget is the process-wide decode budget the pure-Go engine reserves the
+	// bitmap and its rendering scratch from before decoding; nil is unbounded.
+	// See WithDecodeBudget.
+	budget *imgconvert.DecodeBudget
 	// edits reads the photo's stored non-destructive edit so the thumbnail is
 	// rendered the way the library shows the photo, or nil when the thumbnailer
 	// renders originals verbatim. See WithEdits.
@@ -176,6 +182,18 @@ func WithConcurrency(n int) Option {
 func WithMaxPixels(n int64) Option {
 	return func(t *Thumbnailer) {
 		t.maxPixels = n
+	}
+}
+
+// WithDecodeBudget makes the pure-Go engine reserve, before decoding a source,
+// the bytes its bitmap and the rendering derived from it will hold (see
+// imgconvert.DecodeBudget): it then waits while the process-wide budget is
+// spent, and refuses (imgconvert.ErrImageTooLarge) a source that alone would
+// exceed it. Share the one instance the upload pipeline uses. A nil budget is
+// unbounded, the default.
+func WithDecodeBudget(b *imgconvert.DecodeBudget) Option {
+	return func(t *Thumbnailer) {
+		t.budget = b
 	}
 }
 
@@ -452,32 +470,59 @@ func (t *Thumbnailer) generate(
 
 // encodePureGo is the pure-Go engine: it decodes the materialized original once,
 // orients it, renders the photo's non-destructive edit into it, and writes every
-// needed size in parallel (bounded by the configured concurrency) to the paths
-// result already holds. The edit is applied after the orientation and before any
-// resize, exactly as the edited download composes them, so a thumbnail is a
-// scaled-down copy of what the viewer shows rather than a second interpretation of
-// the edit.
+// needed size to the paths result already holds. The edit is applied after the
+// orientation and before any resize, exactly as the edited download composes
+// them, so a thumbnail is a scaled-down copy of what the viewer shows rather than
+// a second interpretation of the edit.
+//
+// The decode reserves its bitmap plus everything rendered from it (pureGoCost)
+// from the decode budget, held until every size is written.
 func (t *Thumbnailer) encodePureGo(
 	ctx context.Context, photo photos.Photo, src string,
 	edit photos.Edit, needed []string, result map[string]string,
 ) error {
-	img, err := decodeAndOrient(ctx, src, photo.FileOrientation, t.maxPixels)
+	extra := func(cfg image.Config) int64 { return pureGoCost(cfg, photo.FileOrientation, edit, needed) }
+	img, release, err := decodeAndOrient(ctx, src, photo.FileOrientation, t.maxPixels, t.budget, extra)
 	if err != nil {
 		return err
 	}
-	img = photoedit.Apply(img, edit)
+	defer release()
+	return t.renderCascade(ctx, photoedit.Apply(img, edit), photo.FileHash, needed, result)
+}
+
+// renderCascade renders the needed sizes of img largest first, each from the
+// smallest image already at hand that covers it (see cascade.go), and hands each
+// rendition to a bounded pool of goroutines that encode, write and publish it —
+// so the resampling, the memory-heavy part, runs one size at a time while the
+// encodes and uploads still overlap.
+func (t *Thumbnailer) renderCascade(
+	ctx context.Context, img image.Image, hash string, needed []string, result map[string]string,
+) error {
+	b := img.Bounds()
+	base := boxReduce(img, boxFactor(b.Dx(), b.Dy(), needed))
+	var rendered []image.Image
 
 	group, gctx := errgroup.WithContext(ctx)
 	group.SetLimit(t.workers)
-	for _, name := range needed {
+	for _, name := range renderOrder(needed) {
+		if gctx.Err() != nil {
+			break
+		}
+		start := time.Now()
+		spec := sizes[name]
+		resized, err := renderSpec(pickSource(base, rendered, spec), spec, b.Dx(), b.Dy())
+		if err != nil {
+			_ = group.Wait()
+			return err
+		}
+		if spec.Mode == modeFit {
+			rendered = append(rendered, resized)
+		}
 		group.Go(func() error {
-			if gctx.Err() != nil {
-				return gctx.Err()
-			}
-			return t.writeSize(gctx, img, photo.FileHash, name, result[name])
+			return t.writeSize(gctx, resized, start, hash, name, result[name])
 		})
 	}
-	if err := group.Wait(); err != nil {
+	if err := cmp.Or(group.Wait(), ctx.Err()); err != nil {
 		return fmt.Errorf("thumb: generate sizes: %w", err)
 	}
 	return nil
@@ -630,15 +675,16 @@ func objectPrefix(hash string) (string, error) {
 	return dir + "/" + hash + "_", nil
 }
 
-// writeSize resizes the already-decoded image for the named size, JPEG-encodes
-// it, writes it atomically to absPath (the local cache), and publishes it to the
-// storage backend when that backend serves thumbnails from object URLs. hash is
-// the photo's file hash, which keys the published object.
-func (t *Thumbnailer) writeSize(ctx context.Context, img image.Image, hash, name, absPath string) error {
-	start := time.Now()
-	resized, err := resizeForSpec(img, sizes[name])
-	if err != nil {
-		return err
+// writeSize JPEG-encodes resized — the image already rendered for the named
+// size — writes it atomically to absPath (the local cache), and publishes it to
+// the storage backend when that backend serves thumbnails from object URLs. hash
+// is the photo's file hash, which keys the published object; start is when the
+// size's rendering began, for the observer's timing.
+func (t *Thumbnailer) writeSize(
+	ctx context.Context, resized image.Image, start time.Time, hash, name, absPath string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("thumb: %s: %w", name, err)
 	}
 	data, err := encodeJPEG(resized, sizes[name].Quality)
 	if err != nil {

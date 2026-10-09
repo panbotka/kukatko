@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -71,6 +72,7 @@ type Service struct {
 	users    Users
 	subjects Subjects
 	photos   Photos
+	budget   *imgconvert.DecodeBudget
 }
 
 // Config bundles the dependencies of NewService.
@@ -83,6 +85,9 @@ type Config struct {
 	Subjects Subjects
 	// Photos decides whether a picked photo is still showable.
 	Photos Photos
+	// DecodeBudget is the process-wide decode budget an upload's decode reserves
+	// from (see imgconvert.DecodeBudget); nil is unbounded.
+	DecodeBudget *imgconvert.DecodeBudget
 }
 
 // NewService returns a Service from cfg.
@@ -92,6 +97,7 @@ func NewService(cfg Config) *Service {
 		users:    cfg.Users,
 		subjects: cfg.Subjects,
 		photos:   cfg.Photos,
+		budget:   cfg.DecodeBudget,
 	}
 }
 
@@ -217,8 +223,23 @@ func (s *Service) Describe(ctx context.Context, userUID string) (State, error) {
 // as the account's picture, replacing whatever it had. The submitted original is
 // not kept. It returns ErrUnsupportedFormat or ErrTooLarge for bytes that cannot
 // become a picture.
+//
+// The decode reserves its bytes from the decode budget first, waiting while it
+// is spent; an upload that alone exceeds the budget is ErrTooLarge.
 func (s *Service) SetUpload(ctx context.Context, userUID string, data []byte) error {
+	release := func() {}
+	if cfg, ok := peekUpload(data); ok {
+		var err error
+		release, err = imgconvert.ReserveConfig(ctx, cfg, 0, s.budget, normalizeCost)
+		if errors.Is(err, imgconvert.ErrImageTooLarge) {
+			return fmt.Errorf("%w: %w", ErrTooLarge, err)
+		}
+		if err != nil {
+			return fmt.Errorf("userpic: decoding the uploaded picture of %s: %w", userUID, err)
+		}
+	}
 	normalized, err := Normalize(data)
+	release()
 	if err != nil {
 		return err
 	}

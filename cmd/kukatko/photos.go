@@ -116,7 +116,7 @@ func buildPhotoAPI(
 	regenerator := thumbjob.New(thumbjob.Config{
 		Photos:      photoStore,
 		Thumbnailer: thumbnailer,
-		Decoder:     thumbjob.NewStorageDecoder(store),
+		Decoder:     thumbjob.NewStorageDecoder(store, cfg.Thumb.MaxPixels, processDecodeBudget(cfg)),
 	})
 	commentLimit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
 
@@ -124,6 +124,10 @@ func buildPhotoAPI(
 		Store:       photoStore,
 		Storage:     store,
 		Thumbnailer: thumbnailer,
+		// The edited download decodes the original in-process, under the same
+		// pixel cap and the process's one decode budget as everything else.
+		MaxPixels:    cfg.Thumb.MaxPixels,
+		DecodeBudget: processDecodeBudget(cfg),
 		// One face as a small square, cut from the smallest preview that carries
 		// it — the same renderer (and the same cache) the subject avatar uses, so
 		// the cropping geometry exists once. See internal/avatar.

@@ -25,16 +25,24 @@ import (
 // out via imgconvert for HEIC/RAW and decoding pure-Go formats directly. It
 // mirrors the upload pipeline's decode path so a regenerated pHash matches the
 // one ingest would have produced.
+//
+// Like ingest's decode it is gated by the pixel cap and the process-wide decode
+// budget (imgconvert.ReserveDecode): an original over either fails with
+// imgconvert.ErrImageTooLarge instead of being rasterized.
 type StorageDecoder struct {
-	storage storage.Storage
+	storage   storage.Storage
+	maxPixels int64
+	budget    *imgconvert.DecodeBudget
 }
 
 // compile-time assertion that *StorageDecoder satisfies Decoder.
 var _ Decoder = (*StorageDecoder)(nil)
 
-// NewStorageDecoder returns a StorageDecoder reading originals through store.
-func NewStorageDecoder(store storage.Storage) *StorageDecoder {
-	return &StorageDecoder{storage: store}
+// NewStorageDecoder returns a StorageDecoder reading originals through store,
+// refusing an original over maxPixels (non-positive: no cap) and reserving each
+// decode from budget (nil: unbounded).
+func NewStorageDecoder(store storage.Storage, maxPixels int64, budget *imgconvert.DecodeBudget) *StorageDecoder {
+	return &StorageDecoder{storage: store, maxPixels: maxPixels, budget: budget}
 }
 
 // DecodeOriginal resolves the photo's stored original to a decodable image and
@@ -56,6 +64,13 @@ func (d *StorageDecoder) DecodeOriginal(
 	}
 	// The decoded file may be derived from the original, so drop it first.
 	cleanup := func() { releaseDecoded(); releaseOriginal() }
+
+	release, err := imgconvert.ReserveDecode(ctx, decPath, d.maxPixels, d.budget, nil)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("thumbjob: %w", err)
+	}
+	cleanup = func() { release(); releaseDecoded(); releaseOriginal() }
 
 	file, err := os.Open(decPath) //nolint:gosec // G304: decPath comes from storage/imgconvert, not user input.
 	if err != nil {

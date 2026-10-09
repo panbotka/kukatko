@@ -65,6 +65,17 @@ var ErrEmptyImage = errors.New("blurhash: empty image")
 // It returns ErrEmptyImage for a nil or zero-sized image and a wrapped encoder
 // error otherwise; a returned hash is always non-empty.
 func Encode(img image.Image) (string, error) {
+	return EncodeOriented(img, nil)
+}
+
+// EncodeOriented is Encode for an image still in its stored orientation: img is
+// scaled down to the working size first and only that small copy is passed
+// through orient (typically imgconvert.Orient bound to the photo's EXIF
+// orientation) before encoding. The result is the placeholder of the upright
+// picture, as Encode(orient(img)) would give, without ever allocating an
+// oriented copy of the full-size bitmap — for a 200-megapixel decode that copy
+// alone is 800 MB. A nil orient encodes img as it is. Errors are Encode's.
+func EncodeOriented(img image.Image, orient func(image.Image) image.Image) (string, error) {
 	if img == nil {
 		return "", ErrEmptyImage
 	}
@@ -72,8 +83,13 @@ func Encode(img image.Image) (string, error) {
 	if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
 		return "", ErrEmptyImage
 	}
-	x, y := componentsFor(bounds.Dx(), bounds.Dy())
-	hash, err := goblurhash.Encode(x, y, downscale(img))
+	var working image.Image = downscale(img)
+	if orient != nil {
+		working = orient(working)
+	}
+	size := working.Bounds()
+	x, y := componentsFor(size.Dx(), size.Dy())
+	hash, err := goblurhash.Encode(x, y, working)
 	if err != nil {
 		return "", fmt.Errorf("blurhash: encoding %dx%d image: %w", bounds.Dx(), bounds.Dy(), err)
 	}

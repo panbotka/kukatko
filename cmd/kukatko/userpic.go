@@ -35,6 +35,8 @@ func buildUserPicAPI(
 			Users:    auth.NewStore(pool),
 			Subjects: people.NewStore(pool),
 			Photos:   photoStore,
+			// An uploaded picture is decoded in-process like any other image.
+			DecodeBudget: processDecodeBudget(cfg),
 		}),
 		Photos:      photoStore,
 		Renderer:    avatar.New(thumbnailer, cfg.Storage.CachePath),

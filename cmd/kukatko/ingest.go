@@ -44,17 +44,18 @@ func buildIngest(
 	photoStore := photos.NewStore(db.Pool())
 
 	svc := ingest.New(ingest.Config{
-		Storage:     store,
-		Photos:      photoStore,
-		Thumbnailer: thumbnailer,
-		Enqueuer:    enqueuer,
-		Sidecar:     sidecar,
-		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
-		Places:      placesEnqueuerOrNil(cfg, enqueuer),
-		HLS:         hlsEnqueuerOrNil(cfg, enqueuer),
-		Duplicate:   cfg.Duplicate,
-		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
-		MaxPixels:   cfg.Thumb.MaxPixels,
+		Storage:      store,
+		Photos:       photoStore,
+		Thumbnailer:  thumbnailer,
+		Enqueuer:     enqueuer,
+		Sidecar:      sidecar,
+		OCR:          ocrEnqueuerOrNil(cfg, enqueuer),
+		Places:       placesEnqueuerOrNil(cfg, enqueuer),
+		HLS:          hlsEnqueuerOrNil(cfg, enqueuer),
+		Duplicate:    cfg.Duplicate,
+		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
+		MaxPixels:    cfg.Thumb.MaxPixels,
+		DecodeBudget: processDecodeBudget(cfg),
 	})
 	uploadLimit := ratelimit.New(cfg.RateLimit.Upload.RatePerSec, cfg.RateLimit.Upload.Burst)
 	// Throttled by client IP, except for a request bearing an API token an admin

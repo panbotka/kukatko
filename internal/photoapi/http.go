@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facematch"
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -38,8 +39,12 @@ type API struct {
 	storage storage.Storage
 	// media mints the client-facing thumb/download addresses stamped onto every
 	// photo payload, and tells the media routes whether to redirect or stream.
-	media          *mediaurl.Builder
-	thumbnailer    *thumb.Thumbnailer
+	media       *mediaurl.Builder
+	thumbnailer *thumb.Thumbnailer
+	// maxPixels and budget gate the in-process decode of an edited download
+	// (see renderEdited).
+	maxPixels      int64
+	budget         *imgconvert.DecodeBudget
 	faceCrops      FaceCropRenderer
 	regenerator    ThumbnailRegenerator
 	audit          AuditRecorder
@@ -95,6 +100,12 @@ type Config struct {
 	Storage storage.Storage
 	// Thumbnailer serves (and generates on miss) cached thumbnails.
 	Thumbnailer *thumb.Thumbnailer
+	// MaxPixels caps the original an edited download decodes in-process
+	// (thumb.max_pixels); 0 disables the cap.
+	MaxPixels int64
+	// DecodeBudget is the process-wide decode budget that decode reserves from;
+	// nil is unbounded. An original over either is served unedited.
+	DecodeBudget *imgconvert.DecodeBudget
 	// FaceCrops cuts the small square rendition of a single detected face, so a
 	// page showing faces stops downloading whole photographs to crop them in the
 	// browser. When nil that endpoint answers 503.
@@ -241,6 +252,8 @@ func NewAPI(cfg Config) *API {
 		storage:           cfg.Storage,
 		media:             mediaurl.NewBuilder(cfg.Storage),
 		thumbnailer:       cfg.Thumbnailer,
+		maxPixels:         cfg.MaxPixels,
+		budget:            cfg.DecodeBudget,
 		faceCrops:         cfg.FaceCrops,
 		regenerator:       cfg.Regenerator,
 		audit:             cfg.Audit,

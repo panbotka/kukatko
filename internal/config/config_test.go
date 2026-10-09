@@ -82,6 +82,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"thumb.vips_binary", cfg.Thumb.VipsBinary, "vipsthumbnail"},
 		{"thumb.concurrency", cfg.Thumb.Concurrency, 0},
 		{"thumb.max_pixels", cfg.Thumb.MaxPixels, int64(200_000_000)},
+		{"thumb.decode_budget_mb", cfg.Thumb.DecodeBudgetMB, int64(1536)},
 		{"web.host", cfg.Web.Host, "0.0.0.0"},
 		{"web.port", cfg.Web.Port, 8080},
 		{"embedding.url", cfg.Embedding.URL, "http://localhost:8000"},
@@ -337,6 +338,7 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	t.Setenv("KUKATKO_MCP_ENABLED", "true")
 	t.Setenv("KUKATKO_MCP_PAGE_SIZE", "5")
 	t.Setenv("KUKATKO_THUMB_MAX_PIXELS", "500000000")
+	t.Setenv("KUKATKO_THUMB_DECODE_BUDGET_MB", "768")
 	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET", "250")
 	t.Setenv("KUKATKO_MAPS_GEOCODE_BUDGET_WINDOW", "6h")
 	t.Setenv("KUKATKO_EMBEDDING_OCR_ENABLED", "false")
@@ -403,6 +405,9 @@ func TestLoad_envOverridesDefaults(t *testing.T) {
 	if cfg.Thumb.MaxPixels != 500_000_000 {
 		t.Errorf("thumb.max_pixels = %d, want 500000000", cfg.Thumb.MaxPixels)
 	}
+	if cfg.Thumb.DecodeBudgetMB != 768 {
+		t.Errorf("thumb.decode_budget_mb = %d, want 768", cfg.Thumb.DecodeBudgetMB)
+	}
 	// The geocode budget is the guard on metered mapy.com credits: an operator
 	// tightens it from the environment before a big import, so both halves of it
 	// must actually decode.
@@ -434,6 +439,10 @@ func TestMaxFileSizeBytes(t *testing.T) {
 			got := UploadConfig{MaxFileSizeMB: tt.mb}.MaxFileSizeBytes()
 			if got != tt.want {
 				t.Errorf("MaxFileSizeBytes(%d) = %d, want %d", tt.mb, got, tt.want)
+			}
+			// The decode budget converts the same way.
+			if got := (ThumbConfig{DecodeBudgetMB: int64(tt.mb)}).DecodeBudgetBytes(); got != tt.want {
+				t.Errorf("DecodeBudgetBytes(%d) = %d, want %d", tt.mb, got, tt.want)
 			}
 			// The upload-link cap converts the same way.
 			got = UploadLinksConfig{MaxFileSizeMB: tt.mb}.MaxFileSizeBytes()

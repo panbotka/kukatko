@@ -819,7 +819,7 @@ to `## Package map` in `CLAUDE.md`.
   `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout under `storage.cache_path`
   `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard from the hex SHA256), regenerable +
   **idempotent** (skips existing ones) + atomic write temp+rename; `Thumbnailer` =
-  `New(store,cacheDir,WithConcurrency(n),WithMaxPixels(px))` with the API `Generate(ctx,photo,sizes...)`/
+  `New(store,cacheDir,WithConcurrency(n),WithMaxPixels(px),WithDecodeBudget(b))` with the API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (a size→abs-path map, skips existing)/
   `RegenerateAll(ctx,photo)` (**force** — overwrites all sizes in-place with an atomic
   temp+rename, and republishes to object store; the basis of the "regenerate thumbnail" service action)/
@@ -885,7 +885,20 @@ to `## Package map` in `CLAUDE.md`.
   **decompression-bomb guard**: `WithMaxPixels(px)` (config `thumb.max_pixels`, default 200 MP) makes
   `decodeAndOrient` call `imgconvert.EnforcePixelBound` before the full decode, so a source whose
   `width×height` exceeds the cap fails with `imgconvert.ErrImageTooLarge` instead of allocating a
-  multi-GB bitmap; `0` disables it;
+  multi-GB bitmap; `0` disables it; **decode budget** (SEC-018): `WithDecodeBudget(b)` (the process's one
+  `imgconvert.DecodeBudget`, config `thumb.decode_budget_mb`) makes `encodePureGo` reserve, before the decode,
+  the bitmap (bit-depth-aware) **plus** everything rendered from it — `pureGoCost`: a full-size copy for an
+  orientation that turns/flips, two for a non-destructive edit, the cascade below — so it waits while the
+  budget is spent and a source that alone exceeds it fails with `ErrImageTooLarge`/`ErrOverBudget`;
+  **the resize cascade** (`cascade.go`): `x/image/draw`'s kernel scaler allocates a `dstW×srcH×32`-byte scratch
+  (fit_3840 of a 14142² source = 1.7 GB), so the sizes are no longer each scaled from the source in parallel.
+  The source is first **box-reduced** by the largest integer `k` that still covers every needed size
+  (`boxFactor`/`boxReduce`, an exact `k×k` average streamed a band at a time — libvips' shrink-on-load), then
+  the sizes are rendered **largest first, one at a time**, each from the smallest rendition already made that
+  is ≥ `cascadeMargin` (2) times it, else from that base (`renderOrder`/`pickSource`); the encode/write/publish
+  of each rendition still runs in the `WithConcurrency` pool. A size's geometry always comes from the
+  full-size picture (`renderSpec(src,spec,w,h)`/`centredSquare`), so it is pixel-identical in size to a
+  direct resize and within a level on average in content (`TestGenerateAll_cascadeMatchesDirectResize`);
   **EXIF orientation** (1–8) automatically; pure-Go JPEG/PNG/WebP + `golang.org/x/image`
   (`draw.CatmullRom` resize); **an optional vips engine** (`WithVips(bin)`, config `thumb.engine:
   vips`, `vips.go`): pure-Go decoding of large JPEGs is slow/memory-heavy on the Pi (~1 s / ~90 MB
@@ -942,9 +955,18 @@ to `## Package map` in `CLAUDE.md`.
   **decompression-bomb guard** `EnforcePixelBound(path,maxPixels)` peeks `image.DecodeConfig` and
   returns `ErrImageTooLarge` when `width×height` exceeds the cap (before the caller's full decode
   allocates the bitmap); `maxPixels<=0` disables it and an unreadable header is left to the caller's
-  decode — used by `thumb` and `ingest`; sentinels
-  `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`/`ErrImageTooLarge`; a missing tool = a clear
-  error), `internal/video/`
+  decode — used by `thumb` and `ingest`; **process-wide decode budget** (`budget.go`, SEC-018):
+  `DecodeBudget` = a byte-weighted semaphore (`NewDecodeBudget(bytes)`, `nil` = unbounded;
+  `Reserve(ctx,cost) (release,error)` waits while the budget is spent, refuses a cost over the whole budget
+  with `ErrImageTooLarge`+`ErrOverBudget`, and releasing ≥ 64 MiB runs a GC first so the next decode does not
+  stack on the garbage of the last); `ReserveDecode(ctx,path,maxPixels,budget,extra)` /
+  `ReserveConfig(ctx,cfg,…)` are the gate every in-process decoder calls before `image.Decode` — pixel cap +
+  reserve `DecodedBytes(cfg)` (= `w×h×BytesPerPixel(cfg.ColorModel)`, **bit depth included**: 16-bit PNG = 8 B,
+  8-bit RGBA = 4, YCbCr charged 3, gray 1) plus the caller's `extra(cfg)` (`RGBABytes` copies, resize scratch);
+  `PeekConfig(path)` reads the header only. Callers sharing the one budget: `ingest`, `thumb`, `thumbjob`'s
+  decoder, `facejob`'s rotation, `photoapi`'s edited download, `userpic`'s upload; sentinels
+  `ErrConverterMissing`/`ErrUnsupportedFormat`/`ErrNoEmbeddedPreview`/`ErrImageTooLarge`/`ErrOverBudget`; a missing
+  tool = a clear error), `internal/video/`
   (video without CGO, a **shell-out** to the FFmpeg suite: `Probe(ctx,path) (Metadata,error)` via
   `ffprobe -print_format json -show_format -show_streams` → `DurationMs`/`VideoCodec`/`AudioCodec`/
   `HasAudio`/`FPS` (rational parsing)/dimensions/`TakenAt` (creation_time)/GPS (ISO 6709), **fallback
@@ -1071,13 +1093,17 @@ to `## Package map` in `CLAUDE.md`.
   portrait, 4×4 within 20 % of square → 28 or 36 bytes, small enough to ride along in every photo of every
   list payload. **(3) Refuse an empty image** (`ErrEmptyImage` for nil or zero-sized bounds) rather than
   encode nothing. The image is expected **in display orientation** — the placeholder stands in for the
-  rendition the user sees, so a caller holding an untouched original orients it (`imgconvert.Orient`) first,
-  which is exactly what `internal/ingest` does and what `internal/thumbjob` gets for free by reading a
-  preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
+  rendition the user sees, so a caller holding an untouched original orients it first — or, cheaper, passes
+  the orientation to `EncodeOriented(img, orient)`, which scales down first and orients only the 64-px working
+  copy (the same hash, without an 800 MB oriented copy of a 200 MP decode; what `internal/ingest` does).
+  `internal/thumbjob` gets display orientation for free by reading a preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
   (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Sidecar,OCR,
-  Places,Duplicate,MaxFileSize,MaxPixels,TempDir,Logger?})` (`Logger` defaults to `slog.Default()`) (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
-  applied to the pHash decode via `imgconvert.EnforcePixelBound`; a rejected oversize source becomes a
-  `phash_failed` warning, the photo is still catalogued) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
+  Places,Duplicate,MaxFileSize,MaxPixels,DecodeBudget,TempDir,Logger?})` (`Logger` defaults to `slog.Default()`) (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
+  and `DecodeBudget` the process's one `imgconvert.DecodeBudget`, both applied through
+  `imgconvert.ReserveDecode` to the pre-store decode (`verifyPixels`, whose reservation rides in `stagedPixels`
+  and is released by `done()` right after the hashes — before the thumbnailer decodes again) and to the pHash
+  decode; a rejected source becomes a `phash_failed` warning, the photo is still catalogued; the blurhash is
+  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,Sidecar})`** (the full form;
   `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
   SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
@@ -1408,7 +1434,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   the hierarchy; best-effort and after the commit, exactly like `enqueueSidecar` (the job re-reads the row,
   so enqueuing earlier would have it compare against the old coordinates and skip);
   `EditService`/`edit.go`+`media_edit.go`
-  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit`; a saved edit also
+  (`GET`/`PUT /photos/{uid}/edit`, download honours the edit via `internal/photoedit` — the render decodes the
+  original in-process, so it is gated by `Config.MaxPixels`/`Config.DecodeBudget` (`imgconvert.ReserveDecode`,
+  bitmap + three full-size copies); an original over either is served unedited; a saved edit also
   **audits** `photo.edit` through the same `AuditRecorder` as the thumbnail action — after the write, because
   `Store.SetEdit` exposes no transaction to join — and **enqueues a forced thumbnail rebuild** through the
   `ThumbnailEnqueuer` interface (`jobs.Enqueuer.EnqueueThumbnailRebuild`, nil-safe), so the grid stops showing
@@ -2284,9 +2312,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   with `orientation=6` returned 2 misshapen boxes as it lay and 6 face-shaped ones pre-rotated, a second
   returned 0 against 2 — so **this package owns the rotation**: `OpenUpright` reads the orientation of
   **the file it is about to send** (`exif.FileOrientation`), and for a tag > 1 decodes, applies
-  `imgconvert.Orient` and re-encodes a JPEG with no EXIF at all (`NewStorageSource(storage, maxPixels)`,
-  cap = `thumb.max_pixels` via `imgconvert.EnforcePixelBound`, over the cap = a visible job failure, not a
-  sideways send); a file with no tag is streamed byte-for-byte, so the common case pays nothing.
+  `imgconvert.Orient` and re-encodes a JPEG with no EXIF at all (`NewStorageSource(storage, maxPixels, budget)`,
+  cap = `thumb.max_pixels` and the decode budget via `imgconvert.ReserveDecode` (bitmap + the oriented copy),
+  over either = a visible job failure, not a sideways send); a file with no tag is streamed byte-for-byte, so the common case pays nothing.
   **Two orientation readers, one hazard:** this one reads the file being sent, ingest's (`exiftool`) read
   the original and wrote `photos.file_orientation`, and they can disagree — so the catalogue is the
   fallback **only** when the file says nothing **and** the bytes are the untouched original, which
@@ -3085,7 +3113,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   (a phone writes an upright picture and a tag; without this a portrait selfie would be stored on its side
   for good), centre-crop square, scale to at most `MaxSide` = 512 **never upscaling**, re-encode JPEG q85 —
   so the stored picture carries no metadata, no GPS and no 40 Mpx panorama, and the submitted original is
-  never kept. `ReadUpload(r)` bounds a body at `MaxUploadBytes` = 8 MiB by reading one byte past it.
+  never kept. `ReadUpload(r)` bounds a body at `MaxUploadBytes` = 8 MiB by reading one byte past it — which
+  bounds nothing once decoded (8 MB of single-colour PNG can name 30000×30000), so `Normalize` also refuses,
+  from the header alone, a picture whose bitmap exceeds `MaxDecodedBytes` = 256 MiB (`ErrTooLarge`), and
+  `SetUpload` reserves the decode from `Config.DecodeBudget` (the process's one `imgconvert.DecodeBudget`;
+  over the whole budget = `ErrTooLarge`).
   `Store` over table **`user_pictures`** (migration `0078`: `user_uid` PK → `users` `ON DELETE CASCADE`,
   `kind IN (upload|photo)`, `image BYTEA`, `photo_uid`, `updated_at`, plus a CHECK that exactly one source is
   set and that it is the one `kind` names) — `Get`/`SetUpload`/`SetPhoto`/`Clear`, the set an upsert so
@@ -4348,7 +4380,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   they are missing, `phash.Compute` over the decoded original) and the **blurred placeholder**
   (`ensureBlurhash`, only when missing: `Thumbnailer.OpenOrGenerate` the `PlaceholderSize` = `fit_720`
   preview → `image.Decode` → `blurhash.Encode` → `PhotoStore.SaveBlurhash`), all behind the interfaces `PhotoStore`/`Thumbnailer`/
-  `Decoder` (`StorageDecoder` = `storage.Materialize`+`imgconvert.EnsureDecodable`, fakeable) →
+  `Decoder` (`StorageDecoder` = `NewStorageDecoder(store, maxPixels, budget)`: `storage.Materialize`+
+  `imgconvert.EnsureDecodable`, then the pixel cap and the decode budget via `imgconvert.ReserveDecode` — the
+  reservation is given back by the returned cleanup; fakeable) →
   unit-testable without a disk; `Service` = `New(Config{Photos,Thumbnailer,Decoder,Lister?,Enqueuer?})`
   (panics on a nil mandatory collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid,force?}`, empty uid → `ErrMissingPhotoUID` dead-letter),

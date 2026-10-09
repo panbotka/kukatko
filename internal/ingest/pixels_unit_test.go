@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
 	"image/gif"
@@ -9,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/image/webp"
+
+	"github.com/panbotka/kukatko/internal/imgconvert"
 )
 
 // avifHead is the leading ftyp box of an AVIF still as ffmpeg/libavif write it,
@@ -74,7 +78,7 @@ func TestVerifyPixels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			pixels, err := svc.verifyPixels(stageFile(t, tt.data), tt.filename)
+			pixels, err := svc.verifyPixels(t.Context(), stageFile(t, tt.data), tt.filename)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("verifyPixels(%s) error = %v, want %v", tt.filename, err, tt.wantErr)
 			}
@@ -90,7 +94,7 @@ func TestVerifyPixels(t *testing.T) {
 // safely, which says nothing about whether it is damaged.
 func TestVerifyPixels_overThePixelCapIsNotChecked(t *testing.T) {
 	t.Parallel()
-	pixels, err := New(Config{MaxPixels: 1}).verifyPixels(stageFile(t, encodedJPEG(t)), "big.jpg")
+	pixels, err := New(Config{MaxPixels: 1}).verifyPixels(t.Context(), stageFile(t, encodedJPEG(t)), "big.jpg")
 	if err != nil || pixels.img != nil {
 		t.Errorf("verifyPixels(over cap) = (%v, %v), want not checked", pixels.img, err)
 	}
@@ -112,7 +116,7 @@ func TestVerifyPixels_unsupportedFeatureIsNotDamage(t *testing.T) {
 	}
 	data[sof+1] = 0xC9 // SOF9: arithmetic coding, which image/jpeg does not implement.
 
-	pixels, err := New(Config{}).verifyPixels(stageFile(t, data), "arith.jpg")
+	pixels, err := New(Config{}).verifyPixels(t.Context(), stageFile(t, data), "arith.jpg")
 	if err != nil || pixels.img != nil {
 		t.Errorf("verifyPixels(arithmetic JPEG) = (%v, %v), want admitted undecoded", pixels.img, err)
 	}
@@ -165,4 +169,44 @@ func TestAdmit_refusesAVIF(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVerifyPixels_overTheDecodeBudgetIsNotChecked verifies an image whose
+// bitmap alone exceeds the whole decode budget is neither decoded nor refused:
+// like one over the pixel cap, it is too large to decode here, not damaged.
+func TestVerifyPixels_overTheDecodeBudgetIsNotChecked(t *testing.T) {
+	t.Parallel()
+	svc := New(Config{DecodeBudget: imgconvert.NewDecodeBudget(1)})
+	pixels, err := svc.verifyPixels(t.Context(), stageFile(t, encodedJPEG(t)), "big.jpg")
+	if err != nil || pixels.img != nil {
+		t.Errorf("verifyPixels(over budget) = (%v, %v), want not checked", pixels.img, err)
+	}
+}
+
+// TestVerifyPixels_holdsTheBudgetUntilDone verifies the decoded image keeps its
+// bytes reserved from the shared budget until done() releases them: a second
+// upload of the same size waits (here: times out) while the first image is
+// alive, and gets through once it is done with.
+func TestVerifyPixels_holdsTheBudgetUntilDone(t *testing.T) {
+	t.Parallel()
+	data := encodedPNG(t) // 8×6 RGBA: 192 decoded bytes
+	svc := New(Config{DecodeBudget: imgconvert.NewDecodeBudget(200)})
+	first, err := svc.verifyPixels(t.Context(), stageFile(t, data), "a.png")
+	if err != nil || first.img == nil {
+		t.Fatalf("first verifyPixels = (%v, %v), want decoded", first.img, err)
+	}
+
+	waiting, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := svc.verifyPixels(waiting, stageFile(t, data), "b.png"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second verifyPixels while the first is alive: error = %v, want it to wait", err)
+	}
+
+	first.done()
+	first.done() // idempotent
+	second, err := svc.verifyPixels(t.Context(), stageFile(t, data), "b.png")
+	if err != nil || second.img == nil {
+		t.Fatalf("second verifyPixels after done = (%v, %v), want decoded", second.img, err)
+	}
+	second.done()
 }

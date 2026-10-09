@@ -25,7 +25,8 @@ section is authoritative). Fixed: **SEC-001** (HIGH, the trusted-proxy allow-lis
 per-username login budget) and **SEC-006** (the login timing oracle) on **2026-08-12** — they were
 the only two reachable *anonymously*, and they composed into one working online password-guessing
 chain, so they were closed together. **SEC-015** and **SEC-016** were fixed earlier. **SEC-017** (an
-uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fixed on **2026-10-09**.
+uploaded DASH manifest made ffprobe/ffmpeg fetch its URLs) was reproduced and fixed on **2026-10-09**,
+and so was **SEC-018** (in-process image decodes had no memory bound across concurrent uploads).
 Everything else below is open as written.
 
 > **Severity scale:** critical / high / medium / low / info. A weakness that is not
@@ -415,6 +416,75 @@ Everything else below is open as written.
   Every container behind `videoExts` (mp4, m4v, mov, 3gp, mkv, webm, avi, wmv, flv, mpg, mts, m2ts, h264,
   hevc) was rendered and still probes with the guard in place.
 - **Fix commit:** `65a3954` (2026-10-09).
+
+### SEC-018 — MEDIUM — **FIXED** — In-process image decodes had no memory bound: ~1 MB uploads cost GBs, with no limit on concurrent decodes
+
+- **Origin:** an unconfirmed lead from a source-only audit (2026-10-06, commit `3792f7c`), measured and
+  confirmed on **2026-10-09** against commit `5c74033`.
+- **Where (before the fix):** each uploaded file is ingested synchronously in its request goroutine
+  (`internal/uploadlinkapi/public.go` → `internal/ingest/ingest.go` `IngestFile`). `verifyPixels`
+  (`internal/ingest/pixels.go`) fully decoded every JPEG/PNG/GIF whose `width×height` was under
+  `thumb.max_pixels` (200 MP default). That check (`imgconvert.EnforcePixelBound`) ignores bit depth, so a
+  200 MP 16-bit PNG decodes to 1.6 GB. The image was then kept for the pHash, and the blurhash took a full-size
+  `Orient` copy of it. `generateThumbnails` → `internal/thumb` `decodeAndOrient` decoded the stored original a
+  **second** time and scaled all eight sizes **from the source in parallel**. Each scale is
+  `x/image/draw` `CatmullRom`, whose two-pass scratch is `dstWidth × srcHeight × 32 bytes` (1.7 GB for
+  `fit_3840` of a 14142² image). Nothing in `ingest`, `uploadlinkapi` or `thumb` limited concurrency or memory.
+  The public route has only request-rate buckets (per-IP burst 60, per-link burst 300). Production runs
+  with no container memory limit on a 15 GB VPS (`docs/PERF.md`, the candidate-search OOM).
+- **Attack scenario:** an **anonymous upload-link holder** (`POST /api/v1/u/{code}/upload`) or any curator
+  posts a few single-colour 14142×14142 PNGs: 0.8 MB at 8 bits, 1.6 MB at 16. Each takes the server past
+  3 GB, and the request-rate buckets admit dozens at once. That is a global OOM of the shared host, not one
+  dead container. The same pattern, smaller, sat behind every ordinary upload: one 24 MP camera JPEG
+  peaked at 1.48 GB, so even three honest concurrent uploads exceeded 3 GB.
+- **Measured** (locally only, never against production): `internal/ingest/pixelbomb_test.go` (build tag
+  `pixelbomb`; `go test -tags pixelbomb -run TestPixelBombMemory -v ./internal/ingest/`). It generates the
+  bombs without ever holding their bitmap, then runs ingest's decode sequence (`verifyPixels` → pHash +
+  blurhash → the thumbnailer's decode) for one upload and for three concurrent ones. Each scenario runs in its
+  own process, the peak is read from `VmHWM`, and a scenario stops itself at 3 GiB. Before the fix:
+
+  | Upload | ×1 | ×3 |
+  |---|---|---|
+  | 14142² 8-bit RGBA PNG, 0.81 MB | > 3 GiB (stopped) | > 3 GiB (stopped) |
+  | 14142² 16-bit RGBA PNG, 1.59 MB | > 3 GiB (stopped) | > 3 GiB (stopped) |
+  | 24 MP JPEG, 10.4 MB (control) | 1 481 MiB | > 3 GiB (stopped) |
+
+  Lead **confirmed**. Peak per upload was in the GB range and grew with concurrency. It was worse than the lead
+  estimated: most of it was resize scratch, not the bitmap.
+- **Fix:**
+  1. `internal/imgconvert/budget.go` adds a **process-wide byte budget**, `DecodeBudget` (config
+     `thumb.decode_budget_mb`, default **1536**; one instance per process, built by
+     `cmd/kukatko` `processDecodeBudget`). Before any `image.Decode`, every in-process decoder calls
+     `ReserveDecode`/`ReserveConfig`. That applies the pixel cap and then reserves `w×h×BytesPerPixel(colour model)`,
+     **bit depth included**, plus the caller's working copies. It waits while the budget is spent and refuses
+     (`ErrImageTooLarge` + `ErrOverBudget`) a decode that alone exceeds the budget. A refused upload degrades
+     exactly as an over-cap one always did: it is catalogued with a warning and has no thumbnail or pHash.
+     Releasing ≥ 64 MiB runs a GC first, so the next admitted decode does not stack on the previous one's
+     garbage. Callers covered: `ingest` (both decodes; the pre-store image is released right after the hashes,
+     before the thumbnail decode), `thumb` (bitmap + `pureGoCost`: orientation copy, edit copies, the cascade),
+     `thumbjob`'s pHash decoder (it had **no pixel cap at all**), `facejob`'s rotation, `photoapi`'s edited
+     download (no pixel cap either; over budget it serves the original unedited), and `userpic`'s upload.
+  2. `internal/thumb/cascade.go` adds the **resize cascade**: an integer box pre-shrink, then sizes rendered
+     largest first, one at a time, each from a rendition at least twice its size. This takes the scratch from
+     the sum of eight source-sized scales down to the largest single one (`docs/PERF.md` §2).
+  3. `blurhash.EncodeOriented` orients the 64-px working copy instead of the full bitmap. The hashes are
+     identical (`TestEncodeOriented_matchesEncodingTheOrientedImage`).
+  4. `internal/userpic` (profile picture, **any signed-in role**, 8 MB body) had no pixel bound at all; 8 MB of
+     PNG names a 30000×30000 image. `Normalize` now refuses a header whose bitmap exceeds `MaxDecodedBytes` =
+     256 MiB, and `SetUpload` reserves from the budget.
+- **After the fix** (same harness, default budget): 8-bit bomb 1 876 MiB ×1, **2 294 MiB ×3**. 16-bit bomb
+  1 587 MiB ×1, 1 592 MiB ×3; its 2.38 GB thumbnail decode is refused. 24 MP JPEG 1 135 MiB ×1, **1 833 MiB ×3**.
+  An end-to-end `serve` with a 512 MiB budget catalogued the 8-bit bomb with `phash_failed`/`thumbnail_failed`
+  warnings, and the whole process peaked at 413 MiB.
+- **Regression tests:** `internal/imgconvert/budget_test.go` `TestDecodeBudget_concurrentDecodesStayWithinBudget`
+  (12 concurrent decodes never hold more than the budget, and decodes that fit do overlap),
+  `TestReserveDecode_bitDepth` (the same dimensions are admitted at 8 bits and refused at 16), plus per-caller
+  tests in `ingest`, `thumb`, `thumbjob`, `facejob` and `userpic`.
+- **Not addressed here:** the budget bounds *live* bytes; resident memory runs ~1.2–1.5× it by Go's GC
+  slack. The container memory limit proposed in `docs/PERF.md` and a `GOMEMLIMIT` are deployment changes in
+  the `vps` repo and are still not applied. `thumb.max_pixels` is unchanged (200 MP): the byte budget now
+  prices bit depth, and lowering the cap would refuse real panoramas. HEIC/RAW/video conversions run in
+  external processes (`heif-convert`, `exiftool`, `ffmpeg`) and are outside the in-process budget.
 
 ---
 

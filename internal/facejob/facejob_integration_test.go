@@ -156,7 +156,7 @@ func (h *harness) newService(client embedding.Client) *facejob.Service {
 		Photos:            h.photos,
 		Vectors:           h.vectors,
 		Client:            client,
-		Source:            facejob.NewStorageSource(h.storage, 0),
+		Source:            facejob.NewStorageSource(h.storage, 0, nil),
 		Enqueuer:          jobs.NewEnqueuer(h.jobs),
 		OfflineRetryDelay: 5 * time.Minute,
 		MinDetScore:       0.5,

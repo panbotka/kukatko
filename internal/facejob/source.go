@@ -50,14 +50,19 @@ type StorageSource struct {
 	storage   Materializer
 	decode    Decoder
 	maxPixels int64
+	budget    *imgconvert.DecodeBudget
 }
 
 // NewStorageSource builds a StorageSource over storage, using
 // imgconvert.EnsureDecodable as its decoder. maxPixels caps the pixel count of an
 // image it will fully rasterize in order to rotate it (a non-positive value
-// disables the cap); nothing else is decoded.
-func NewStorageSource(storage Materializer, maxPixels int64) *StorageSource {
-	return &StorageSource{storage: storage, decode: imgconvert.EnsureDecodable, maxPixels: maxPixels}
+// disables the cap); nothing else is decoded. That rotation reserves its bitmap
+// and the oriented copy from budget, the process-wide decode budget (nil:
+// unbounded).
+func NewStorageSource(storage Materializer, maxPixels int64, budget *imgconvert.DecodeBudget) *StorageSource {
+	return &StorageSource{
+		storage: storage, decode: imgconvert.EnsureDecodable, maxPixels: maxPixels, budget: budget,
+	}
 }
 
 // cleanupReadCloser wraps an open file with the cleanup that releases the
@@ -108,7 +113,7 @@ func (s *StorageSource) OpenUpright(ctx context.Context, photo photos.Photo) (Up
 	if err != nil {
 		return UprightImage{}, err
 	}
-	upright, err := s.uprightFrom(decodable, photo, untouched)
+	upright, err := s.uprightFrom(ctx, decodable, photo, untouched)
 	if err != nil {
 		cleanup()
 		return UprightImage{}, err
@@ -170,7 +175,9 @@ func (s *StorageSource) materializeDecodable(
 // its orientation exclusively in XMP read as 0 here, was streamed as it lay, and
 // the detector got a picture on its side. The fallback stays conditional so the
 // converted case keeps behaving exactly as it did.
-func (s *StorageSource) uprightFrom(path string, photo photos.Photo, untouched bool) (UprightImage, error) {
+func (s *StorageSource) uprightFrom(
+	ctx context.Context, path string, photo photos.Photo, untouched bool,
+) (UprightImage, error) {
 	orientation := exif.FileOrientation(path)
 	if orientation == 0 && untouched {
 		orientation = photo.FileOrientation
@@ -186,7 +193,7 @@ func (s *StorageSource) uprightFrom(path string, photo photos.Photo, untouched b
 		// already turned.
 		return UprightImage{Width: width, Height: height, Orientation: photo.FileOrientation}, nil
 	}
-	return s.rotate(path, photo.UID, orientation)
+	return s.rotate(ctx, path, photo.UID, orientation)
 }
 
 // rotate decodes the file, applies the given orientation and re-encodes it as a
@@ -194,10 +201,12 @@ func (s *StorageSource) uprightFrom(path string, photo photos.Photo, untouched b
 // receiver treats metadata. The frame reported is measured on the rotated image,
 // not derived from the tag, and the orientation reported is the one that was
 // applied — the two describe the same picture by construction.
-func (s *StorageSource) rotate(path, photoUID string, orientation int) (UprightImage, error) {
-	if err := imgconvert.EnforcePixelBound(path, s.maxPixels); err != nil {
+func (s *StorageSource) rotate(ctx context.Context, path, photoUID string, orientation int) (UprightImage, error) {
+	release, err := imgconvert.ReserveDecode(ctx, path, s.maxPixels, s.budget, orientedCopyCost)
+	if err != nil {
 		return UprightImage{}, fmt.Errorf("facejob: rotating image for %s: %w", photoUID, err)
 	}
+	defer release()
 	file, err := os.Open(path) //nolint:gosec // G304: path derived from the storage-confined original.
 	if err != nil {
 		return UprightImage{}, fmt.Errorf("facejob: opening image for %s: %w", photoUID, err)
@@ -236,4 +245,10 @@ func imageFrame(path string) (width, height int, err error) {
 		return 0, 0, fmt.Errorf("decoding header of %s: %w", path, err)
 	}
 	return cfg.Width, cfg.Height, nil
+}
+
+// orientedCopyCost is what rotate holds beyond the decoded bitmap of an image
+// with header cfg: the full-size oriented copy it encodes.
+func orientedCopyCost(cfg image.Config) int64 {
+	return imgconvert.RGBABytes(cfg.Width, cfg.Height)
 }

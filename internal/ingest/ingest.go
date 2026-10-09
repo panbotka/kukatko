@@ -149,6 +149,10 @@ type Config struct {
 	// bitmap is allocated so a decompression bomb cannot OOM the request. 0
 	// disables the cap.
 	MaxPixels int64
+	// DecodeBudget is the process-wide byte budget every in-process decode
+	// reserves from before allocating its bitmap (see imgconvert.DecodeBudget);
+	// share one instance with the thumbnailer. nil is unbounded.
+	DecodeBudget *imgconvert.DecodeBudget
 	// TempDir is where uploads are streamed before publishing; "" uses the OS
 	// temp directory.
 	TempDir string
@@ -173,6 +177,7 @@ type Service struct {
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	maxPixels   int64
+	budget      *imgconvert.DecodeBudget
 	tempDir     string
 	log         *slog.Logger
 }
@@ -200,6 +205,7 @@ func New(cfg Config) *Service {
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
+		budget:      cfg.DecodeBudget,
 		tempDir:     cfg.TempDir,
 		log:         logger,
 	}
@@ -248,10 +254,13 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 	}
 
 	// After the dedup lookup: a byte-identical copy needs no decode to be named.
-	pixels, err := s.verifyPixels(staged.path, req.Filename)
+	pixels, err := s.verifyPixels(ctx, staged.path, req.Filename)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
+	// postProcess releases it as soon as the pixels are hashed; this covers the
+	// paths that never get that far.
+	defer pixels.done()
 
 	media, err := s.extractMedia(ctx, staged.path, req.Filename)
 	if err != nil {
@@ -272,7 +281,7 @@ func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) Fi
 		return *dup
 	}
 
-	return createdResult(req.Filename, photo.UID, s.postProcess(ctx, photo, pixels))
+	return createdResult(req.Filename, photo.UID, s.postProcess(ctx, photo, &pixels))
 }
 
 // applySidecar folds the file's sidecar (when it has one) into the metadata read
@@ -432,7 +441,11 @@ func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, sto
 // thumbnail generation and job enqueue — collecting any non-fatal failures as
 // warnings. None of these undo the create: a photo with a missing thumbnail or
 // unqueued job is a degraded but valid, repairable state.
-func (s *Service) postProcess(ctx context.Context, photo photos.Photo, pixels stagedPixels) []Warning {
+//
+// The staged image is released (bitmap and decode-budget reservation) right
+// after the hashes, before the thumbnailer decodes the original again, so one
+// upload never holds two full bitmaps.
+func (s *Service) postProcess(ctx context.Context, photo photos.Photo, pixels *stagedPixels) []Warning {
 	warnings := slices.Concat(
 		s.hashPixels(ctx, photo, pixels),
 		s.generateThumbnails(ctx, photo),
@@ -453,8 +466,9 @@ func (s *Service) postProcess(ctx context.Context, photo photos.Photo, pixels st
 //
 // When the pre-store check (verifyPixels) already decoded the very same bytes,
 // that image is used and the original is not decoded a second time.
-func (s *Service) hashPixels(ctx context.Context, photo photos.Photo, pixels stagedPixels) []Warning {
+func (s *Service) hashPixels(ctx context.Context, photo photos.Photo, pixels *stagedPixels) []Warning {
 	img := pixels.img
+	defer pixels.done()
 	if img == nil {
 		decoded, cleanup, err := s.decodeOriginal(ctx, photo)
 		if err != nil {
@@ -489,7 +503,11 @@ func (s *Service) storePhash(ctx context.Context, photo photos.Photo, img image.
 // same shot regardless of how either is turned. Same pixels, two different
 // questions.
 func (s *Service) storeBlurhash(ctx context.Context, photo photos.Photo, img image.Image) []Warning {
-	hash, err := blurhash.Encode(imgconvert.Orient(img, photo.FileOrientation))
+	// Orient the placeholder's small working copy, not the original: a full-size
+	// oriented copy of a 200 MP decode is another 800 MB for a 32-character result.
+	hash, err := blurhash.EncodeOriented(img, func(small image.Image) image.Image {
+		return imgconvert.Orient(small, photo.FileOrientation)
+	})
 	if err != nil {
 		return []Warning{{Code: warnBlurhashFailed, Message: err.Error()}}
 	}
@@ -516,10 +534,12 @@ func (s *Service) decodeOriginal(ctx context.Context, photo photos.Photo) (image
 	// The decoded file may be derived from the original, so drop it first.
 	cleanup := func() { releaseDecoded(); releaseOriginal() }
 
-	if err := imgconvert.EnforcePixelBound(decPath, s.maxPixels); err != nil {
+	release, err := imgconvert.ReserveDecode(ctx, decPath, s.maxPixels, s.budget, nil)
+	if err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("ingest: %w", err)
 	}
+	cleanup = func() { release(); releaseDecoded(); releaseOriginal() }
 
 	file, err := os.Open(decPath) //nolint:gosec // G304: decPath comes from storage/imgconvert, not user input.
 	if err != nil {

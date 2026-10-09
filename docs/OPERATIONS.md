@@ -1578,7 +1578,8 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   an unknown value → `ErrInvalidThumbEngine` at startup) — `vips` switches JPEG/PNG/WebP thumbnails to a
   shell-out to `vipsthumbnail` (faster/leaner on large images, **still no CGO**),
   pure-Go stays the default and the per-photo fallback; `vips_binary` (the executable on PATH, default
-  `vipsthumbnail`, `vips` only); `concurrency` (max sizes encoded in parallel per photo,
+  `vipsthumbnail`, `vips` only); `concurrency` (max sizes JPEG-encoded and published in parallel per photo —
+  the resampling itself runs one size at a time since SEC-018,
   `0`=GOMAXPROCS — lower it on a memory-constrained host); `max_pixels` (`int64`, **default
   `200000000`** = 200 MP) — the decode-pipeline cap: a source whose `width×height` exceeds it is
   rejected (`imgconvert.ErrImageTooLarge`) before its RGBA bitmap is allocated, so a decompression
@@ -1586,8 +1587,18 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   box (a 30000×30000 image is ~3.6 GB; 200 MP is ~800 MB peak at ~4 bytes/pixel). The same cap guards
   thumbnail generation, the ingest-time perceptual-hash decode **and** the face detector's upright rotation
   (`facejob` rasterizes an original that still carries an EXIF orientation in order to turn it before sending it
-  to the sidecar, which reads no EXIF); `0`/negative disables it.
-  `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/`_CONCURRENCY`/`_MAX_PIXELS`. `serve` logs the active engine +
+  to the sidecar, which reads no EXIF); `0`/negative disables it. `decode_budget_mb` (`int64`, **default
+  `1536`**) — the **process-wide memory budget** of in-process image decodes (`imgconvert.DecodeBudget`, one
+  instance per process): the upload pipeline's two decodes, every pure-Go thumbnail render (bitmap + the
+  resize cascade's working memory), the pHash re-decode, the face job's rotation, the edited download and the
+  profile-picture upload each reserve `width×height×bytes-per-pixel` (**bit depth counts**: a 16-bit PNG is twice
+  an 8-bit one) plus their working copies before allocating, **wait** while the budget is spent, and are
+  **refused** (`ErrImageTooLarge`, degrading exactly like an image over `max_pixels`: no thumbnail/pHash,
+  a warning, the photo still catalogued) when they alone exceed it. It is what stops N concurrent uploads
+  from each taking a `max_pixels`' worth of RAM (SEC-018 in `docs/SECURITY_AUDIT.md`, measurements in
+  `docs/PERF.md` §2). It bounds *live* bytes; resident memory still runs above it by Go's GC slack (set
+  `GOMEMLIMIT` to tighten). `0`/negative disables it.
+  `KUKATKO_THUMB_ENGINE`/`_VIPS_BINARY`/`_CONCURRENCY`/`_MAX_PIXELS`/`_DECODE_BUDGET_MB`. `serve` logs the active engine +
   warns when `vips` is missing on PATH. See `docs/PERF.md`.
 - **Video keys (`video.*`, `internal/config`):** `transcode` (bool, **default false**) — enables
   on-the-fly transcode of non-web-friendly codecs (HEVC/H.265 …) to H.264/MP4 via ffmpeg for playback

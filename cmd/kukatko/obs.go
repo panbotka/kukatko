@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/config"
@@ -10,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/hlsjob"
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/metrics"
@@ -24,7 +26,8 @@ import (
 // thumbOptions returns the thumbnailer options shared by every thumb.New call
 // site: generation-timing instrumentation when reg is non-nil, the configured
 // per-photo encode concurrency, the decode pixel cap that rejects a
-// decompression bomb before it can OOM a worker, the photo's saved
+// decompression bomb before it can OOM a worker, the process's one decode
+// budget, the photo's saved
 // non-destructive edit (so every size renders what the viewer shows), and the
 // vips engine when thumb.engine is "vips" (resolved on PATH; a no-op when the
 // binary is missing). It keeps the engine selection and instrumentation
@@ -46,11 +49,31 @@ func thumbOptions(cfg *config.Config, reg *metrics.Registry, db *database.DB) []
 	if cfg.Thumb.Concurrency > 0 {
 		opts = append(opts, thumb.WithConcurrency(cfg.Thumb.Concurrency))
 	}
-	opts = append(opts, thumb.WithMaxPixels(cfg.Thumb.MaxPixels))
+	opts = append(opts, thumb.WithMaxPixels(cfg.Thumb.MaxPixels), thumb.WithDecodeBudget(processDecodeBudget(cfg)))
 	if cfg.Thumb.VipsEnabled() {
 		opts = append(opts, thumb.WithVips(cfg.Thumb.VipsBinary))
 	}
 	return opts
+}
+
+// decodeBudget is the process's one decode budget, built on first use by
+// processDecodeBudget.
+var (
+	decodeBudgetOnce sync.Once
+	decodeBudget     *imgconvert.DecodeBudget
+)
+
+// processDecodeBudget returns the process-wide decode budget sized by
+// thumb.decode_budget_mb (nil — unbounded — when that is not positive). Every
+// in-process decoder of the process — the upload pipeline, every thumbnailer,
+// the thumbnail and face jobs, the edited download, the profile picture — must
+// share this one instance: a budget per call site would bound nothing. A
+// process loads one configuration, so the first cfg it is called with sizes it.
+func processDecodeBudget(cfg *config.Config) *imgconvert.DecodeBudget {
+	decodeBudgetOnce.Do(func() {
+		decodeBudget = imgconvert.NewDecodeBudget(cfg.Thumb.DecodeBudgetBytes())
+	})
+	return decodeBudget
 }
 
 // instrumentEmbedding wraps c so its calls report latency and availability to

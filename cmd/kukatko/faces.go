@@ -34,7 +34,7 @@ func buildFaceService(
 		Photos:      photos.NewStore(db.Pool()),
 		Vectors:     vectorStore,
 		Client:      client,
-		Source:      facejob.NewStorageSource(store, cfg.Thumb.MaxPixels),
+		Source:      facejob.NewStorageSource(store, cfg.Thumb.MaxPixels, processDecodeBudget(cfg)),
 		Enqueuer:    enqueuer,
 		MinDetScore: cfg.Faces.MinDetScore,
 	})

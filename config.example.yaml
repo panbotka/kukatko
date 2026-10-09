@@ -109,6 +109,15 @@ thumb:
   # ~4 bytes/pixel) admits every current camera and moderate panoramas.
   # KUKATKO_THUMB_MAX_PIXELS.
   max_pixels: 200000000
+  # Process-wide memory budget (MiB) of in-process image decodes: the upload
+  # pipeline's decodes and the pure-Go thumbnailer's decode plus its rendering.
+  # Each reserves width×height×bytes-per-pixel (bit depth counts: a 16-bit PNG is
+  # twice an 8-bit one) plus its working memory before allocating, waits while the
+  # budget is spent, and is refused — degrading like an image over max_pixels —
+  # when it alone exceeds the budget. Keeps N concurrent uploads from each taking
+  # a max_pixels' worth of RAM. 0 (or negative) disables it. Default 1536 = two
+  # ordinary 24 MP thumbnails at once. KUKATKO_THUMB_DECODE_BUDGET_MB.
+  decode_budget_mb: 1536
 
 web:
   # Listen host. Use 0.0.0.0 to bind all interfaces.

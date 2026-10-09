@@ -137,7 +137,7 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 	})
 	faceSvc := facejob.New(facejob.Config{
 		Photos: photoStore, Vectors: vectorStore, Client: stubClient{},
-		Source: facejob.NewStorageSource(store, 0), Enqueuer: enqueuer,
+		Source: facejob.NewStorageSource(store, 0, nil), Enqueuer: enqueuer,
 	})
 
 	placeStore := places.NewStore(db.Pool())
@@ -168,7 +168,7 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 	}
 	svc := maintenance.New(cfg)
 	tj := thumbjob.New(thumbjob.Config{
-		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store),
+		Photos: photoStore, Thumbnailer: thumbnailer, Decoder: thumbjob.NewStorageDecoder(store, 0, nil),
 	})
 	return &harness{
 		db: db, svc: svc, cfg: cfg, photos: photoStore, vectors: vectorStore, people: peopleStore,

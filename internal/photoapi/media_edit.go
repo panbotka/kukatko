@@ -67,7 +67,9 @@ func (a *API) maybeServeEdited(w http.ResponseWriter, r *http.Request, photo pho
 // renderEdited decodes the photo's original, orients it per its EXIF orientation,
 // applies the non-destructive edit and re-encodes the result as a JPEG byte
 // slice. HEIC/RAW originals are converted to a decodable form first. The whole
-// image is held in memory, which is unavoidable for a transform.
+// image is held in memory, which is unavoidable for a transform — so it is gated
+// by the pixel cap and the decode budget first (imgconvert.ReserveDecode); an
+// original over either fails here and the caller serves it unedited.
 func (a *API) renderEdited(ctx context.Context, photo photos.Photo, edit photos.Edit) ([]byte, error) {
 	absPath, releaseOriginal, err := a.storage.Materialize(ctx, photo.FilePath)
 	if err != nil {
@@ -82,6 +84,14 @@ func (a *API) renderEdited(ctx context.Context, photo photos.Photo, edit photos.
 		return nil, fmt.Errorf("photoapi: ensuring decodable: %w", err)
 	}
 	defer releaseDecoded()
+
+	// The original, its oriented copy and the edit's copies are all alive at
+	// once; reserve them before the first is allocated.
+	release, err := imgconvert.ReserveDecode(ctx, decodable, a.maxPixels, a.budget, editedRenderCost)
+	if err != nil {
+		return nil, fmt.Errorf("photoapi: %w", err)
+	}
+	defer release()
 
 	file, err := os.Open(decodable) //nolint:gosec // path is confined to the storage root.
 	if err != nil {
@@ -102,4 +112,13 @@ func (a *API) renderEdited(ctx context.Context, photo photos.Photo, edit photos.
 		return nil, fmt.Errorf("photoapi: encoding edited image: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// editedRenderCost is what renderEdited holds beyond the decoded original with
+// header cfg: the full-size oriented copy and up to two copies made by the edit
+// (crop, rotate and colour each allocate one, the previous staying referenced
+// until the next exists).
+func editedRenderCost(cfg image.Config) int64 {
+	const fullCopies = 3
+	return fullCopies * imgconvert.RGBABytes(cfg.Width, cfg.Height)
 }

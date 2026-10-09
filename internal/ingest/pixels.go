@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -29,8 +30,23 @@ const CodeDamaged = "damaged"
 // incomplete, an image over the pixel cap). A nil img is "not checked here", not
 // a verdict: the post-processing decodes the original itself and degrades to a
 // warning, as it always did.
+//
+// While img is set, the bytes it holds are reserved from the process-wide decode
+// budget; release gives them back and must run once the image is done with (it
+// is safe to call more than once, and on the zero value).
 type stagedPixels struct {
-	img image.Image
+	img     image.Image
+	release func()
+}
+
+// done drops the decoded image and gives its decode-budget reservation back.
+// Safe on the zero value and to call more than once.
+func (p *stagedPixels) done() {
+	release := p.release
+	*p = stagedPixels{} // drop the image before the release collects it
+	if release != nil {
+		release()
+	}
 }
 
 // verifyPixels decodes the staged still at path — named filename on arrival —
@@ -46,18 +62,28 @@ type stagedPixels struct {
 // compressed TIFF or an RLE BMP fail to decode although nothing is wrong with
 // them — so those formats, like HEIC and RAW, are never refused for failing a
 // decode here.
-func (s *Service) verifyPixels(path, filename string) (stagedPixels, error) {
+//
+// The decode is gated by the pixel cap and the process-wide decode budget
+// (imgconvert.ReserveDecode): an image over either is not decoded here — the
+// post-processing then meets the same gate and degrades to a warning — and one
+// that merely has to wait for the budget waits, bounded by ctx.
+func (s *Service) verifyPixels(ctx context.Context, path, filename string) (stagedPixels, error) {
 	switch imgconvert.DetectFormatNamed(path, filename) {
 	case imgconvert.FormatJPEG, imgconvert.FormatPNG, imgconvert.FormatGIF:
 	default:
 		return stagedPixels{}, nil
 	}
-	if err := imgconvert.EnforcePixelBound(path, s.maxPixels); err != nil {
+	release, err := imgconvert.ReserveDecode(ctx, path, s.maxPixels, s.budget, nil)
+	if err != nil {
+		if ctx.Err() != nil {
+			return stagedPixels{}, fmt.Errorf("ingest: %w", err)
+		}
 		// Too large to decode safely; hashPixels reports the cap as it always has.
 		return stagedPixels{}, nil
 	}
 	file, err := os.Open(path) //nolint:gosec // G304: path is the pipeline's own staged temp file.
 	if err != nil {
+		release()
 		return stagedPixels{}, fmt.Errorf("ingest: reopening staged file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
@@ -65,10 +91,12 @@ func (s *Service) verifyPixels(path, filename string) (stagedPixels, error) {
 	img, _, err := image.Decode(file)
 	switch {
 	case err == nil:
-		return stagedPixels{img: img}, nil
+		return stagedPixels{img: img, release: release}, nil
 	case isUnsupportedFeature(err):
+		release()
 		return stagedPixels{}, nil
 	default:
+		release()
 		return stagedPixels{}, fmt.Errorf("%w: %s: %w", ErrDamaged, originalName(filename), err)
 	}
 }

@@ -645,3 +645,35 @@ func TestOpenUpright_untouchedOriginalFallsBackToCatalogue(t *testing.T) {
 		t.Errorf("top-left pixel = %v, want green — the catalogue's orientation was not applied", got)
 	}
 }
+
+// TestOpenUpright_rotationReservesFromTheDecodeBudget verifies the rotation —
+// the one place the face job rasterizes an original — reserves the bitmap and
+// its oriented copy from the shared decode budget: over the whole budget it is
+// refused like an image over the pixel cap, within it the bytes come back after.
+func TestOpenUpright_rotationReservesFromTheDecodeBudget(t *testing.T) {
+	t.Parallel()
+
+	path := writeJPEG(t, t.TempDir(), quadrantImage(120, 80), 6)
+	tiny := sourceOver(&staticMaterializer{abs: path}, path, nil)
+	tiny.budget = imgconvert.NewDecodeBudget(1024) // 120x80 is ~29 KB decoded plus a 38 KB copy
+	if _, err := tiny.OpenUpright(t.Context(), photos.Photo{UID: "ph1"}); !errors.Is(err, imgconvert.ErrOverBudget) {
+		t.Fatalf("OpenUpright over the budget = %v, want ErrOverBudget", err)
+	}
+
+	budget := imgconvert.NewDecodeBudget(1 << 20)
+	src := sourceOver(&staticMaterializer{abs: path}, path, nil)
+	src.budget = budget
+	upright, err := src.OpenUpright(t.Context(), photos.Photo{UID: "ph1"})
+	if err != nil {
+		t.Fatalf("OpenUpright within the budget: %v", err)
+	}
+	_ = upright.Reader.Close()
+	release, err := budget.Reserve(t.Context(), budget.Capacity())
+	if err != nil {
+		t.Fatalf("the budget is not whole again after the rotation: %v", err)
+	}
+	release()
+	if got := orientedCopyCost(image.Config{Width: 120, Height: 80}); got != 120*80*4 {
+		t.Errorf("orientedCopyCost(120x80) = %d, want %d", got, 120*80*4)
+	}
+}

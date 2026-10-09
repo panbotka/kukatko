@@ -302,11 +302,31 @@ type ThumbConfig struct {
 	// every current camera and moderate panoramas while blocking pathological
 	// input; ~4 bytes/pixel decoded, so 200 MP is ~800 MB peak per decode.
 	MaxPixels int64 `mapstructure:"max_pixels"`
+	// DecodeBudgetMB is the process-wide memory budget, in MiB, of in-process
+	// image decodes: the upload pipeline's pre-store decode and pHash decode, and
+	// the pure-Go thumbnailer's decode plus everything it renders from the bitmap.
+	// Each reserves its estimated bytes — width×height×bytes-per-pixel, so a
+	// 16-bit PNG costs twice an 8-bit one — before allocating, waits while the
+	// budget is spent, and is refused (degrading like an image over max_pixels)
+	// when it alone exceeds the budget. It is what keeps N concurrent uploads from
+	// each taking a max_pixels' worth of memory. A non-positive value disables it.
+	// Default 1536 MiB: two ordinary 24 MP thumbnails at once, measured in
+	// docs/SECURITY_AUDIT.md (SEC-018).
+	DecodeBudgetMB int64 `mapstructure:"decode_budget_mb"`
 }
 
 // VipsEnabled reports whether the vips engine is requested.
 func (t ThumbConfig) VipsEnabled() bool {
 	return t.Engine == ThumbEngineVips
+}
+
+// DecodeBudgetBytes returns DecodeBudgetMB in bytes, or 0 (no budget) when it is
+// not positive.
+func (t ThumbConfig) DecodeBudgetBytes() int64 {
+	if t.DecodeBudgetMB <= 0 {
+		return 0
+	}
+	return t.DecodeBudgetMB << 20
 }
 
 // WebConfig holds the HTTP listener and session/CORS settings.
@@ -1408,6 +1428,7 @@ func setThumbDefaults(v *viper.Viper) {
 	v.SetDefault("thumb.vips_binary", "vipsthumbnail")
 	v.SetDefault("thumb.concurrency", 0)          // non-positive falls back to GOMAXPROCS
 	v.SetDefault("thumb.max_pixels", 200_000_000) // 200 MP; <= 0 disables the cap
+	v.SetDefault("thumb.decode_budget_mb", 1536)  // 1.5 GiB of live decodes; <= 0 disables it
 }
 
 // setEmbeddingDefaults registers the embedding-sidecar defaults: where the box

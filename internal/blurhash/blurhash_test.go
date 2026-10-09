@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	goblurhash "github.com/bbrks/go-blurhash"
+
+	"github.com/panbotka/kukatko/internal/imgconvert"
 )
 
 // solid returns an opaque w by h image filled with c.
@@ -233,5 +235,32 @@ func TestEncode_offsetBoundsAreHandled(t *testing.T) {
 	r, _, b := decodedAverage(t, hash)
 	if b <= r {
 		t.Errorf("decoded average = (r %.0f, b %.0f), want the blue half only", r, b)
+	}
+}
+
+// TestEncodeOriented_matchesEncodingTheOrientedImage verifies orienting the
+// small working copy gives the placeholder of orienting the original first —
+// for a quarter turn, a flip and no orientation at all — so ingest can skip the
+// full-size oriented copy without changing a single hash.
+func TestEncodeOriented_matchesEncodingTheOrientedImage(t *testing.T) {
+	t.Parallel()
+	src := halves(400, 200, color.RGBA{R: 200, A: 255}, color.RGBA{B: 220, G: 40, A: 255})
+	for _, orientation := range []int{1, 2, 3, 6, 8} {
+		want, err := Encode(imgconvert.Orient(src, orientation))
+		if err != nil {
+			t.Fatalf("Encode(orientation %d): %v", orientation, err)
+		}
+		got, err := EncodeOriented(src, func(small image.Image) image.Image {
+			return imgconvert.Orient(small, orientation)
+		})
+		if err != nil {
+			t.Fatalf("EncodeOriented(orientation %d): %v", orientation, err)
+		}
+		if got != want {
+			t.Errorf("orientation %d: EncodeOriented = %q, Encode(Orient) = %q", orientation, got, want)
+		}
+	}
+	if _, err := EncodeOriented(nil, nil); !errors.Is(err, ErrEmptyImage) {
+		t.Errorf("EncodeOriented(nil) = %v, want ErrEmptyImage", err)
 	}
 }

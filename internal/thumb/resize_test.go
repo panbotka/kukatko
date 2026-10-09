@@ -23,7 +23,7 @@ func TestResizeFit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := resizeFit(image.NewRGBA(image.Rect(0, 0, tc.srcW, tc.srcH)), tc.max)
+			got := resizeFit(image.NewRGBA(image.Rect(0, 0, tc.srcW, tc.srcH)), tc.srcW, tc.srcH, tc.max)
 			b := got.Bounds()
 			if b.Dx() != tc.wantW || b.Dy() != tc.wantH {
 				t.Errorf("resizeFit(%dx%d, %d) = %dx%d, want %dx%d",
@@ -45,7 +45,7 @@ func TestResizeCropSquare(t *testing.T) {
 		{500, 500, 500},
 	}
 	for _, tc := range tests {
-		got := resizeCropSquare(image.NewRGBA(image.Rect(0, 0, tc.srcW, tc.srcH)), tc.side)
+		got := resizeCropSquare(image.NewRGBA(image.Rect(0, 0, tc.srcW, tc.srcH)), tc.srcW, tc.srcH, tc.side)
 		b := got.Bounds()
 		if b.Dx() != tc.side || b.Dy() != tc.side {
 			t.Errorf("resizeCropSquare(%dx%d, %d) = %dx%d, want square %d",
@@ -85,5 +85,33 @@ func TestValidateHash(t *testing.T) {
 		if err != nil && !errors.Is(err, ErrInvalidHash) {
 			t.Errorf("validateHash(%q) err = %v, want ErrInvalidHash", tc.hash, err)
 		}
+	}
+}
+
+// TestCentredSquare verifies the crop of a tile: the exact centred square when
+// the source is the picture itself, and the same square rounded to the pixels
+// of a smaller copy (here half size, offset bounds) when it is not.
+func TestCentredSquare(t *testing.T) {
+	t.Parallel()
+	if got, want := centredSquare(image.Rect(0, 0, 1000, 600), 1000, 600), image.Rect(200, 0, 800, 600); got != want {
+		t.Errorf("full-size square = %v, want %v", got, want)
+	}
+	if got, want := centredSquare(image.Rect(10, 10, 510, 310), 1000, 600), image.Rect(110, 10, 410, 310); got != want {
+		t.Errorf("half-size square = %v, want %v", got, want)
+	}
+}
+
+// TestRenderSpec_geometryFromFullSize verifies a size's dimensions come from the
+// picture's full size, not from the copy it is scaled from: a fit rendered from
+// a slightly smaller rendition has the pixel size a direct resize would have.
+func TestRenderSpec_geometryFromFullSize(t *testing.T) {
+	t.Parallel()
+	// 2600×1700 → fit_1920 is 1920×1255; from a 2560×1673 copy it would be 1254.
+	got, err := renderSpec(image.NewRGBA(image.Rect(0, 0, 2560, 1673)), sizes["fit_1920"], 2600, 1700)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := got.Bounds(); b.Dx() != 1920 || b.Dy() != 1255 {
+		t.Errorf("renderSpec = %dx%d, want 1920x1255", b.Dx(), b.Dy())
 	}
 }

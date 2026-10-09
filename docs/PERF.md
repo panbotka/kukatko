@@ -78,13 +78,67 @@ Source: a 4000×3000 (12-megapixel) JPEG — representative of a camera original
 
 | Benchmark | Time/op | Allocated/op |
 |---|---|---|
-| `BenchmarkGenerateFit720` (one `fit_720` preview) | **~0.98 s** | **~90 MB** |
-| `BenchmarkGenerateAll` (all 8 registered sizes, one decode) | **~4.1 s** | **~1.18 GB** |
+| `BenchmarkGenerateFit720` (one `fit_720` preview) | **~0.40 s** (was ~0.98 s) | **~36 MB** (was ~90 MB) |
+| `BenchmarkGenerateAll` (all 8 registered sizes, one decode) | **~6.6 s** (was ~5.0 s) | **~1.04 GB** (was ~1.18 GB) |
 
-A single large-image preview takes ~1 s and ~90 MB; generating the full size set
-for one photo allocates well over a gigabyte. On a multi-photo import this is the
-dominant per-photo cost and a real memory concern on a 16 GB box shared with
-other stacks — exactly the risk flagged in `ARCHITECTURE.md` §16.
+(Re-measured 2026-10-09 with the resize cascade below; the "was" column is the same
+benchmark on the previous engine, same Pi, same day.) A single preview is now cheap;
+generating the full size set still allocates about a gigabyte *in total*, but no longer
+holds it at once. On a multi-photo import this is the dominant per-photo cost and a real
+memory concern on a box shared with other stacks — exactly the risk flagged in
+`ARCHITECTURE.md` §16.
+
+### Memory: the resize scratch, the cascade and the decode budget (SEC-018)
+
+**Where the memory goes.** The decoded bitmap is the smaller half. `golang.org/x/image/draw`'s
+two-pass kernel scaler (`CatmullRom`) allocates a `dstWidth × srcHeight` scratch of four
+`float64`s per cell — **32 bytes**. `fit_3840` of a 24 MP (6000×4000) photo needs
+3840×4000×32 = **491 MB** of it; of a 14142×14142 PNG, **1.7 GB**. The engine used to scale
+all eight sizes *from the source* in parallel, so an ordinary 24 MP upload peaked at
+**1.48 GB** resident, and three at once passed 3 GB.
+
+**The cascade** (`internal/thumb/cascade.go`). The source is first shrunk by the largest
+integer `k` that still covers every needed size, with an exact `k×k` box average streamed a
+band at a time (libvips' shrink-on-load). The sizes are then rendered **largest first, one at
+a time**, each from the smallest rendition already made that is at least twice its size, else
+from that base; JPEG encoding and publishing still overlap in the `thumb.concurrency` pool.
+Geometry always comes from the full-size picture, so every size has exactly the pixel size it
+had before, and its content is within 0.8 of a level on average
+(`TestGenerateAll_cascadeMatchesDirectResize`). The cost is wall time: `GenerateAll` of a 12 MP
+photo is ~30 % slower, because the two big resamples no longer run side by side.
+
+**The budget** (`thumb.decode_budget_mb`, default **1536**, `imgconvert.DecodeBudget`). Every
+in-process decode reserves `width×height×bytes-per-pixel` (bit depth counts: 8 B/px for a
+16-bit RGBA PNG) plus its working memory before allocating, and waits while the process-wide
+budget is spent; one that alone exceeds the budget is refused like an image over
+`thumb.max_pixels`. **What the budget does not cover:** it bounds *live* bytes. Garbage is
+freed only at the next GC, which with the default `GOGC` can come after the heap has doubled.
+Releasing a reservation of 64 MiB or more runs a GC first, but resident memory still runs
+roughly 1.2–1.5× the budget. `GOMEMLIMIT` would tighten that; it is not set in production.
+
+**Measured** (2026-10-09, this Pi, `internal/ingest/pixelbomb_test.go` — build tag `pixelbomb`,
+never in `make check`; each scenario in its own process, peak = `VmHWM`, stopped at 3 GiB).
+The pipeline is ingest's pre-store decode, then the pHash + blurhash, then the thumbnailer's
+own decode of the stored original:
+
+| Upload | old engine, ×1 | old, ×3 | new, no budget, ×1 | new + 1536 MiB budget, ×1 | ×3 |
+|---|---|---|---|---|---|
+| 24 MP JPEG (6000×4000, 10.4 MB) | 1 481 MiB | > 3 GiB | 1 135 MiB | 1 135 MiB | 1 833 MiB |
+| 14142² 8-bit RGBA PNG (0.81 MB) | > 3 GiB | > 3 GiB | 1 938 MiB | 1 876 MiB | 2 294 MiB |
+| 14142² 16-bit RGBA PNG (1.59 MB) | > 3 GiB | > 3 GiB | > 3 GiB | 1 587 MiB¹ | 1 592 MiB¹ |
+
+¹ The thumbnail decode needs 2.38 GB, more than the whole budget, so it is refused. The
+upload is catalogued with a `thumbnail_failed` warning. The pre-store decode (1.6 GB, inside
+the budget) still runs, so the photo has its pHash and placeholder.
+
+An earlier revision of the cascade was also measured with a 1 GiB budget. There the three
+24 MP uploads peaked at 994 MiB, but they were serialised (23 s instead of 14 s), and both
+bombs were refused before any thumbnail decode. That is why the default is
+1536: two ordinary photos can render at once.
+
+**`thumb.max_pixels` stays at 200 MP.** With bit depth now counted in bytes, the pixel cap is
+only the coarse first guard. Lowering it would refuse real panoramas, which the byte budget
+already prices correctly.
 
 ### Optional `vipsthumbnail` engine (config-gated, opt-in)
 

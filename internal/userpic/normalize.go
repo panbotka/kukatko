@@ -50,10 +50,15 @@ var decodableFormats = map[string]bool{"jpeg": true, "png": true, "webp": true}
 // since inventing pixels would only cost bytes.
 //
 // It returns ErrUnsupportedFormat for bytes that are not a decodable JPEG, PNG
-// or WebP, and ErrTooLarge for more than MaxUploadBytes of them.
+// or WebP, and ErrTooLarge for more than MaxUploadBytes of them or for a header
+// whose bitmap would exceed MaxDecodedBytes.
 func Normalize(data []byte) ([]byte, error) {
 	if int64(len(data)) > MaxUploadBytes {
 		return nil, ErrTooLarge
+	}
+	if cfg, ok := peekUpload(data); ok && imgconvert.DecodedBytes(cfg) > MaxDecodedBytes {
+		return nil, fmt.Errorf("%w: %dx%d decodes to %d bytes", ErrTooLarge,
+			cfg.Width, cfg.Height, imgconvert.DecodedBytes(cfg))
 	}
 	img, format, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
@@ -74,6 +79,31 @@ func Normalize(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("userpic: encoding picture: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// MaxDecodedBytes caps the bitmap an upload may decode to, judged from its
+// header before any pixel is allocated. MaxUploadBytes alone bounds nothing
+// here: a single-colour PNG compresses about a thousand to one, so 8 MB of it
+// can name a 30000×30000 image — 3.6 GB decoded, 7.2 GB at 16 bits. 256 MiB is
+// a 64-megapixel RGBA PNG or an ~85-megapixel JPEG, beyond anything a phone
+// sends under MaxUploadBytes.
+const MaxDecodedBytes int64 = 256 << 20
+
+// peekUpload reads the image header of an upload — dimensions and colour
+// model, no pixels. ok is false when it cannot be read, which leaves the full
+// decode to report why.
+func peekUpload(data []byte) (image.Config, bool) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	return cfg, err == nil
+}
+
+// normalizeCost is what Normalize holds beyond the decoded bitmap of an upload
+// with header cfg: a full-size oriented copy and the resampler's scratch
+// (MaxSide × the square's side × 32 bytes).
+func normalizeCost(cfg image.Config) int64 {
+	const scratchBytesPerPixel = 32
+	side := int64(min(cfg.Width, cfg.Height))
+	return imgconvert.RGBABytes(cfg.Width, cfg.Height) + MaxSide*side*scratchBytesPerPixel
 }
 
 // uploadOrientation reads the EXIF orientation tag out of the submitted bytes,

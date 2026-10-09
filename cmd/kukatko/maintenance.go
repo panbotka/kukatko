@@ -97,7 +97,7 @@ func buildThumbService(
 	svc := thumbjob.New(thumbjob.Config{
 		Photos:      photoStore,
 		Thumbnailer: thumbnailer,
-		Decoder:     thumbjob.NewStorageDecoder(store),
+		Decoder:     thumbjob.NewStorageDecoder(store, cfg.Thumb.MaxPixels, processDecodeBudget(cfg)),
 		Lister:      photoStore,
 		Enqueuer:    enqueuer,
 	})
@@ -148,15 +148,16 @@ func buildMaintenanceService(
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	ingestSvc := ingest.New(ingest.Config{
-		Storage:     store,
-		Photos:      photoStore,
-		Thumbnailer: thumbnailer,
-		Enqueuer:    enqueuer,
-		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
-		Places:      placesEnqueuerOrNil(cfg, enqueuer),
-		Duplicate:   cfg.Duplicate,
-		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
-		MaxPixels:   cfg.Thumb.MaxPixels,
+		Storage:      store,
+		Photos:       photoStore,
+		Thumbnailer:  thumbnailer,
+		Enqueuer:     enqueuer,
+		OCR:          ocrEnqueuerOrNil(cfg, enqueuer),
+		Places:       placesEnqueuerOrNil(cfg, enqueuer),
+		Duplicate:    cfg.Duplicate,
+		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
+		MaxPixels:    cfg.Thumb.MaxPixels,
+		DecodeBudget: processDecodeBudget(cfg),
 	})
 	storeScanner, err := maintenanceStore(cfg, store)
 	if err != nil {

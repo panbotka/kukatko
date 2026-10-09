@@ -66,7 +66,7 @@ func (h *harness) newService() *thumbjob.Service {
 	return thumbjob.New(thumbjob.Config{
 		Photos:      h.photos,
 		Thumbnailer: h.thumbnailer,
-		Decoder:     thumbjob.NewStorageDecoder(h.storage),
+		Decoder:     thumbjob.NewStorageDecoder(h.storage, 0, nil),
 		Lister:      h.photos,
 		Enqueuer:    jobs.NewEnqueuer(h.jobs),
 	})

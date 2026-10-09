@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/userpic"
@@ -317,6 +318,35 @@ func TestSetUpload_storesTheReEncodedSquareAndNotTheSubmittedBytes(t *testing.T)
 	if bounds := decode(t, stored.Image).Bounds(); bounds.Dx() != bounds.Dy() {
 		t.Errorf("stored picture is %v, want a square", bounds)
 	}
+}
+
+// TestSetUpload_reservesFromTheDecodeBudget verifies the upload's decode
+// reserves from the shared decode budget: a picture that alone exceeds it is
+// ErrTooLarge and stores nothing, and one that fits is stored and gives every
+// byte back.
+func TestSetUpload_reservesFromTheDecodeBudget(t *testing.T) {
+	t.Parallel()
+
+	submitted := encodeJPEG(t, gradient(1200, 800))
+	pictures := newFakePictures()
+	tiny := userpic.NewService(userpic.Config{Pictures: pictures, DecodeBudget: imgconvert.NewDecodeBudget(1024)})
+	if err := tiny.SetUpload(t.Context(), "u1", submitted); !errors.Is(err, userpic.ErrTooLarge) {
+		t.Fatalf("SetUpload under a 1 KiB budget = %v, want ErrTooLarge", err)
+	}
+	if _, ok := pictures.stored["u1"]; ok {
+		t.Error("a refused upload was stored")
+	}
+
+	budget := imgconvert.NewDecodeBudget(64 << 20)
+	svc := userpic.NewService(userpic.Config{Pictures: pictures, DecodeBudget: budget})
+	if err := svc.SetUpload(t.Context(), "u1", submitted); err != nil {
+		t.Fatalf("SetUpload under a 64 MiB budget = %v", err)
+	}
+	release, err := budget.Reserve(t.Context(), budget.Capacity())
+	if err != nil {
+		t.Fatalf("the budget is not whole again after SetUpload: %v", err)
+	}
+	release()
 }
 
 // bytesEqual reports whether two byte slices hold the same bytes.

@@ -2,7 +2,9 @@ package userpic_test
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -146,5 +148,36 @@ func TestReadUpload_acceptsExactlyTheLimit(t *testing.T) {
 	}
 	if int64(len(data)) != userpic.MaxUploadBytes {
 		t.Errorf("read %d bytes, want %d", len(data), userpic.MaxUploadBytes)
+	}
+}
+
+// pngHeader returns the first bytes of a PNG naming a w×h 8-bit RGBA image —
+// signature and IHDR, no pixel data. image.DecodeConfig reads it, which is all
+// a header check needs, so a test can name a 30000×30000 image in 33 bytes.
+func pngHeader(w, h int) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("\x89PNG\r\n\x1a\n")
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:], uint32(w))
+	binary.BigEndian.PutUint32(ihdr[4:], uint32(h))
+	ihdr[8], ihdr[9] = 8, 6
+	var word [4]byte
+	binary.BigEndian.PutUint32(word[:], uint32(len(ihdr)))
+	buf.Write(word[:])
+	buf.WriteString("IHDR")
+	buf.Write(ihdr)
+	binary.BigEndian.PutUint32(word[:], crc32.ChecksumIEEE(append([]byte("IHDR"), ihdr...)))
+	buf.Write(word[:])
+	return buf.Bytes()
+}
+
+// TestNormalize_refusesAHeaderThatDecodesTooLarge verifies a small upload whose
+// header names an enormous bitmap — the pixel bomb a few kilobytes of
+// single-colour PNG can be — is refused from its header, before any decode.
+func TestNormalize_refusesAHeaderThatDecodesTooLarge(t *testing.T) {
+	t.Parallel()
+
+	if _, err := userpic.Normalize(pngHeader(30000, 30000)); !errors.Is(err, userpic.ErrTooLarge) {
+		t.Errorf("error = %v, want ErrTooLarge", err)
 	}
 }
