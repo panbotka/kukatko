@@ -1192,6 +1192,17 @@ were rendered through the previous edit and are cached against the original's ha
 neutral edit actually puts the photo back the way the file has it. `get` says `NEUTRAL yes` outright, because
 a table of zeroes cannot otherwise be told from "nobody has edited this photo".
 
+#### `ctl upload-links` — hand a link out again
+
+Upload links (`internal/uploadlinkapi`), curator token. A link is visible only to its creator or an admin.
+Creating, extending and revoking stay in the web UI; the CLI covers handing a link out again.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl upload-links list` | `GET /upload-links` — `{"links":[…]}`; the table's `URL` column is the absolute `/u/<code>` address on the context's server, or `unknown (restore-code)` for a link created before codes were stored |
+| `ctl upload-links restore-code <uid> <code-or-url>` | `POST /upload-links/{uid}/restore-code` — stores the original code only when it matches the link's hash, so the URL never changes; a wrong code is the server's 422 |
+| `ctl upload-links new-code <uid>` | `POST /upload-links/{uid}/new-code` — a fresh code; **the old URL stops working at once**, so it sits behind `--yes` (`--dry-run` names the link) |
+
 #### `ctl saved-searches` — smart albums
 
 Named library views, stored per user (`internal/savedsearchapi`). Alias: `smart-albums`. Any signed-in role

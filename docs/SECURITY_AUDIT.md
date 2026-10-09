@@ -504,6 +504,17 @@ Silence is not evidence; these areas were examined and are clean.
   `X-Mapy-Api-Key` header; it never appears in a returned URL, error, or the
   tile/rgeocode/geojson response bodies. `statusError` deliberately drops the upstream body
   (which mapy.com sometimes echoes the key into).
+- **Upload-link codes are stored readable — accepted decision (2026-10).** Migration `0091` keeps an
+  upload link's short code in `upload_links.code` next to its SHA-256 (`code_hash`), dropping the
+  original "plaintext only in the create response" rule so a curator can copy the URL again. Same
+  trade as the registration secret in `instance_settings`: the code opens one time-boxed upload
+  drop-box into preset albums/labels — no read access to the library, no account — and is shown only
+  to whoever manages the link (creator or admin; the listing omits the key for anybody else, and only
+  lists a curator's own links anyway). A database or backup leak therefore exposes live links' codes;
+  the remedy is revoke or "new code", which replaces both columns and kills the old URL. Lookup still
+  goes through the hash. "Restore code" for pre-0091 rows stores a code only when it hashes to the
+  stored `code_hash` (constant-time compare), so it cannot be used to plant a chosen code, and it is
+  open only to the link's manager, who could rotate the link anyway — no extra rate limit.
 - **Logging — clean.** `internal/obs`: the access log records `slog.String("path", r.URL.Path)`
   only — **not** `RawQuery` — so the `?t=<download_token>` media tokens never reach the log, and
   a redacting `ReplaceAttr` hook scrubs any attr keyed `password/token/secret/dsn/authorization/cookie`.

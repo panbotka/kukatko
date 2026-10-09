@@ -360,6 +360,90 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 	}
 }
 
+// listedCodes lists the upload links as cookies and returns each link's code
+// by UID — "" for a link listed without one.
+func (e *integrationEnv) listedCodes(t *testing.T, cookies []*http.Cookie) map[string]string {
+	t.Helper()
+	resp := e.send(t, http.MethodGet, "/api/v1/upload-links", "", nil, cookies)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list = %d", resp.StatusCode)
+	}
+	var out struct {
+		Links []struct {
+			UID  string `json:"uid"`
+			Code string `json:"code"`
+		} `json:"links"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decoding list: %v", err)
+	}
+	codes := make(map[string]string, len(out.Links))
+	for _, link := range out.Links {
+		codes[link.UID] = link.Code
+	}
+	return codes
+}
+
+// TestLinkCodeCanBeCopiedRestoredAndReplaced walks the whole code life of a
+// link over the real stack: the creator lists it with its code, another curator
+// neither lists nor rotates it, a pre-0091 (hash-only) row is restored by its
+// original code while the public page keeps answering, and a new code kills the
+// old URL.
+func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
+	e := newIntegrationEnv(t)
+	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, other := e.login(t, "jiny", auth.RoleCurator)
+	code, linkUID := e.createLink(t, curator)
+
+	if got := e.listedCodes(t, curator)[linkUID]; got != code {
+		t.Errorf("creator lists code %q, want %q", got, code)
+	}
+	if _, listed := e.listedCodes(t, other)[linkUID]; listed {
+		t.Error("another curator lists the link")
+	}
+	if resp := e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/new-code", "", nil, other); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("other curator new-code = %d, want 404", resp.StatusCode)
+	}
+
+	if _, err := e.db.Pool().Exec(t.Context(), "UPDATE upload_links SET code = NULL WHERE uid = $1", linkUID); err != nil {
+		t.Fatalf("making the row pre-0091: %v", err)
+	}
+	if got := e.listedCodes(t, curator)[linkUID]; got != "" {
+		t.Errorf("hash-only link lists code %q, want none", got)
+	}
+	if resp := e.send(t, http.MethodGet, "/api/v1/u/"+code, "", nil, nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("hash-only link page = %d, want 200", resp.StatusCode)
+	}
+	restore := func(c string) int {
+		body := strings.NewReader(`{"code":"` + c + `"}`)
+		return e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/restore-code", "application/json",
+			body, curator).StatusCode
+	}
+	if status := restore("Zz9Zz9Zz"); status != http.StatusUnprocessableEntity {
+		t.Errorf("wrong code restore = %d, want 422", status)
+	}
+	if status := restore(code); status != http.StatusOK {
+		t.Fatalf("restore = %d, want 200", status)
+	}
+	if got := e.listedCodes(t, curator)[linkUID]; got != code {
+		t.Errorf("restored link lists code %q, want %q", got, code)
+	}
+
+	if resp := e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/new-code", "", nil, curator); resp.StatusCode != http.StatusOK {
+		t.Fatalf("new-code = %d", resp.StatusCode)
+	}
+	fresh := e.listedCodes(t, curator)[linkUID]
+	if fresh == "" || fresh == code {
+		t.Fatalf("code after new-code = %q, want a fresh one", fresh)
+	}
+	if resp := e.send(t, http.MethodGet, "/api/v1/u/"+code, "", nil, nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("old URL = %d, want 404", resp.StatusCode)
+	}
+	if resp := e.send(t, http.MethodGet, "/api/v1/u/"+fresh, "", nil, nil); resp.StatusCode != http.StatusOK {
+		t.Errorf("new URL = %d, want 200", resp.StatusCode)
+	}
+}
+
 // realPipeline builds the real ingest pipeline over db — temp-dir storage and
 // cache, the real job queue — so a test sees exactly what an upload stores and
 // schedules.

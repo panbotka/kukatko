@@ -37,6 +37,14 @@ export interface UploadLink {
   albums: UploadLinkTarget[]
   labels: UploadLinkTarget[]
   state: UploadLinkState
+  /**
+   * The short code, present only when the caller manages the link (its creator
+   * or an administrator) and the code is known. A link created before codes
+   * were stored readably has none until its original code is restored.
+   */
+  code?: string
+  /** The frontend path of the public page, `/u/<code>`; present exactly when `code` is. */
+  path?: string
 }
 
 /** `GET /upload-links`: the links plus the validity bounds the forms offer. */
@@ -56,9 +64,8 @@ export interface UploadLinkInput {
 }
 
 /**
- * A freshly created link: the only response that ever carries the code — the
- * backend stores just its hash, so a lost link cannot be shown again, only
- * replaced by a new one.
+ * A freshly created link with its code. The link stays copyable from the list
+ * afterwards; `code` and `path` merely repeat what `link` carries.
  */
 export interface CreatedUploadLink {
   link: UploadLink
@@ -172,6 +179,52 @@ export async function revokeUploadLink(uid: string, signal?: AbortSignal): Promi
     signal,
   )
   return body.link
+}
+
+/**
+ * Makes the original code of a link created before codes were stored readably
+ * known again. The backend stores it only when it matches the link's hash, so
+ * the URL does not change; any other code is refused with a 422 {@link ApiError}.
+ */
+export async function restoreUploadLinkCode(
+  uid: string,
+  code: string,
+  signal?: AbortSignal,
+): Promise<UploadLink> {
+  const body = await sendJSON<{ link: UploadLink }>(
+    'POST',
+    `/upload-links/${encodeURIComponent(uid)}/restore-code`,
+    { code },
+    signal,
+  )
+  return body.link
+}
+
+/** Gives a link a fresh code; its old URL stops working at once. */
+export async function newUploadLinkCode(uid: string, signal?: AbortSignal): Promise<UploadLink> {
+  const body = await sendJSON<{ link: UploadLink }>(
+    'POST',
+    `/upload-links/${encodeURIComponent(uid)}/new-code`,
+    undefined,
+    signal,
+  )
+  return body.link
+}
+
+/**
+ * Reads a code out of what somebody pasted: the bare code, or a whole link whose
+ * path holds `/u/<code>` (query, fragment and a trailing slash dropped).
+ */
+export function codeFromInput(input: string): string {
+  const value = input.trim()
+  const at = value.indexOf('/u/')
+  if (at < 0) {
+    return value
+  }
+  return value
+    .slice(at + 3)
+    .split(/[?#]/)[0]
+    .replace(/\/$/, '')
 }
 
 /**

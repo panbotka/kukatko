@@ -2,12 +2,19 @@
 // creates and posts to a group chat, through which anybody — signed in or not —
 // uploads photos straight into preset albums and labels.
 //
-// The short code in the URL (/u/<code>) is the link's whole credential, so it is
-// stored only as its SHA-256, like an API token's secret: the plaintext exists in
-// the create response and nowhere else. A link is live until it expires or is
-// revoked; revocation is final, expiry can be moved.
+// The short code in the URL (/u/<code>) is the link's whole credential. It is
+// looked up through its SHA-256 (code_hash, the indexed column) but also kept
+// readable (code, migration 0091), so whoever may manage the link — its creator
+// or an administrator — can copy the URL again long after creating it. That
+// deliberately drops the earlier "plaintext only in the create response" rule,
+// the same trade the registration secret in internal/settings makes: the code
+// guards one upload drop-box, not an account, and a leaked one is answered by
+// RotateCode. Links created before 0091 hold only the hash until RestoreCode
+// stores the code a manager types, and only once it hashes to code_hash — their
+// URL never changes on its own. A link is live until it expires or is revoked;
+// revocation is final, expiry can be moved.
 //
-// The package owns four tables (migration 0090): the links, their album and
+// The package owns four tables (migrations 0090, 0091): the links, their album and
 // label targets, and the provenance of every photo that came in through one —
 // which link, the name the uploader typed, and either their account or the hash
 // of their anonymous browser session, which is what lets a person who registers
@@ -28,7 +35,8 @@ import (
 var (
 	// ErrNotFound means no link has this UID or code.
 	ErrNotFound = errors.New("uploadlink: link not found")
-	// ErrRevoked means the link was revoked; it can no longer be extended.
+	// ErrRevoked means the link was revoked; it can no longer be extended, nor
+	// have its code restored or replaced.
 	ErrRevoked = errors.New("uploadlink: link is revoked")
 	// ErrNoTargets means a link was created without any album or label.
 	ErrNoTargets = errors.New("uploadlink: a link needs at least one album or label")
@@ -40,6 +48,9 @@ var (
 	ErrTitleTooLong = errors.New("uploadlink: title is too long")
 	// ErrNoteTooLong means the note exceeds MaxNoteLen characters.
 	ErrNoteTooLong = errors.New("uploadlink: note is too long")
+	// ErrCodeMismatch means a code offered to RestoreCode does not hash to the
+	// link's code_hash; nothing was stored.
+	ErrCodeMismatch = errors.New("uploadlink: the code does not match this link")
 )
 
 // Limits on what a link may carry. They are characters (runes), not bytes.
@@ -89,6 +100,10 @@ type Link struct {
 	CreatorName string    `json:"created_by_name"`
 	CreatedAt   time.Time `json:"created_at"`
 	ExpiresAt   time.Time `json:"expires_at"`
+	// Code is the readable short code, empty for a link created before
+	// migration 0091 until its code is restored. It is never serialised from
+	// here: the HTTP layer decides per caller whether the code may be shown.
+	Code string `json:"-"`
 	// RevokedAt is when the link was revoked, nil while it is not.
 	RevokedAt *time.Time `json:"revoked_at"`
 	// UploadCount is how many files came in through the link (new photos and

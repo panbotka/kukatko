@@ -391,6 +391,13 @@ const (
 	ActionUploadLinkExtend = "upload_link.extend"
 	// ActionUploadLinkRevoke records revoking an upload link for good.
 	ActionUploadLinkRevoke = "upload_link.revoke"
+	// ActionUploadLinkRestoreCode records a manager making a pre-0091 link's
+	// code readable again by typing the code whose hash the link already held.
+	// The URL does not change; the code itself is never in the details.
+	ActionUploadLinkRestoreCode = "upload_link.restore_code"
+	// ActionUploadLinkRotateCode records replacing an upload link's code with a
+	// fresh one, which kills the old URL. The codes are never in the details.
+	ActionUploadLinkRotateCode = "upload_link.rotate_code"
 	// ActionUploadLinkUpload records one file arriving through an upload link.
 	// The target is the photo; the details carry the link, the uploader's typed
 	// name and whether the file was new or a duplicate filed into the link's
@@ -471,7 +478,7 @@ var knownActions = map[string]struct{}{
 	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
 	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
 	ActionUploadLinkCreate: {}, ActionUploadLinkExtend: {}, ActionUploadLinkRevoke: {},
-	ActionUploadLinkUpload:  {},
+	ActionUploadLinkUpload: {}, ActionUploadLinkRestoreCode: {}, ActionUploadLinkRotateCode: {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {},
 }

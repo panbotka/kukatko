@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './auth'
 import {
+  codeFromInput,
   createUploadLink,
   extendUploadLink,
   fetchPublicUploadLink,
   linkUploader,
   publicLinkURL,
+  newUploadLinkCode,
+  restoreUploadLinkCode,
   revokeUploadLink,
   UploadLinkGoneError,
 } from './uploadLinks'
@@ -82,6 +85,22 @@ describe('management calls', () => {
     expect(revokeFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/revoke')
   })
 
+  it('restores a code and draws a new one through the code routes', async () => {
+    const restoreFetch = stubFetch(200, {
+      link: { uid: 'ul1', code: 'Ab3dEf7h', path: '/u/Ab3dEf7h' },
+    })
+    await expect(restoreUploadLinkCode('ul1', 'Ab3dEf7h')).resolves.toMatchObject({
+      path: '/u/Ab3dEf7h',
+    })
+    expect(restoreFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/restore-code')
+    const init = restoreFetch.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(init.body as string)).toEqual({ code: 'Ab3dEf7h' })
+
+    const newFetch = stubFetch(200, { link: { uid: 'ul1', code: 'Nw5cDe9k', path: '/u/Nw5cDe9k' } })
+    await expect(newUploadLinkCode('ul1')).resolves.toMatchObject({ code: 'Nw5cDe9k' })
+    expect(newFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/new-code')
+  })
+
   it('surfaces the backend message as an ApiError', async () => {
     stubFetch(400, { error: 'uploadlink: a link needs at least one album or label' })
     await expect(
@@ -110,5 +129,17 @@ describe('linkUploader', () => {
 describe('publicLinkURL', () => {
   it('resolves a path against this origin', () => {
     expect(publicLinkURL('/u/Ab3dEf7h')).toBe(`${window.location.origin}/u/Ab3dEf7h`)
+  })
+})
+
+describe('codeFromInput', () => {
+  it.each([
+    ['Ab3dEf7h', 'Ab3dEf7h'],
+    ['  Ab3dEf7h ', 'Ab3dEf7h'],
+    ['https://fotky.example/u/Ab3dEf7h', 'Ab3dEf7h'],
+    ['https://fotky.example/u/Ab3dEf7h/?x=1#top', 'Ab3dEf7h'],
+    ['', ''],
+  ])('reads %j as %j', (input, want) => {
+    expect(codeFromInput(input)).toBe(want)
   })
 })

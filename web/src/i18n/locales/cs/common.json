@@ -832,7 +832,9 @@
         "create": "Vytvoření odkazu pro nahrávání",
         "extend": "Prodloužení odkazu pro nahrávání",
         "revoke": "Zrušení odkazu pro nahrávání",
-        "upload": "Nahrání fotky přes odkaz"
+        "upload": "Nahrání fotky přes odkaz",
+        "restore_code": "Obnovení kódu odkazu pro nahrávání",
+        "rotate_code": "Nový kód odkazu pro nahrávání"
       }
     },
     "targets": {
@@ -4300,7 +4302,17 @@
     "copy": "Kopírovat",
     "copied": "Zkopírováno",
     "share": "Sdílet",
-    "shownOnce": "Odkaz uvidíte jen teď — Kukátko si ho z bezpečnostních důvodů neukládá. Když ho ztratíte, vytvořte nový.",
+    "copyLater": "Odkaz můžete kdykoli znovu zkopírovat ze seznamu odkazů.",
+    "codeUnknown": "Odkaz vznikl dřív, než si Kukátko adresy odkazů pamatovalo, proto ji nelze zobrazit. Odkaz dál funguje — zadejte jeho původní kód a půjde tu znovu zkopírovat.",
+    "restoreCode": "Obnovit původní kód",
+    "restoreTitle": "Obnovit původní kód",
+    "restoreLead": "Zadejte kód odkazu „{{title}}“ tak, jak jste ho rozeslali — část za /u/ v odkazu, nebo celý odkaz. Adresa odkazu zůstane stejná, Kukátko si ji jen znovu zapamatuje.",
+    "restoreField": "Původní kód nebo odkaz",
+    "restorePlaceholder": "např. Ab3dEf7h",
+    "restoreMismatch": "Tohle není kód tohoto odkazu. Porovnejte ho s odkazem, který jste rozeslali — nic se nezměnilo.",
+    "newCode": "Vygenerovat nový kód",
+    "newCodeTitle": "Vygenerovat nový kód?",
+    "newCodeBody": "Současná adresa odkazu „{{title}}“ okamžitě přestane fungovat: kdo ji má, už přes ni nic nenahraje, a nový odkaz budete muset rozeslat znovu. Alba, štítky, platnost i už nahrané fotky zůstanou beze změny.",
     "done": "Hotovo"
   }
 }

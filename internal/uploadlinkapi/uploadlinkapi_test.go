@@ -27,8 +27,12 @@ import (
 // now is the pinned clock of every test.
 var now = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 
-// testCode is the short code of the fake store's link.
-const testCode = "Ab3dEf7h"
+// testCode is the short code of the fake store's link, and rotatedCode the one
+// its RotateCode draws.
+const (
+	testCode    = "Ab3dEf7h"
+	rotatedCode = "Nw5cDe9k"
+)
 
 // fakeStore is an in-memory uploadlinkapi.Store holding at most one link, with
 // the inputs of the mutations recorded.
@@ -109,6 +113,32 @@ func (f *fakeStore) Revoke(_ context.Context, _ string, entry audit.Entry) (uplo
 	f.revoked, f.entries = true, append(f.entries, entry)
 	at := now
 	f.link.RevokedAt = &at
+	return f.link, nil
+}
+
+// RestoreCode stores code when it is the test code, as the real store does
+// when the hash matches.
+func (f *fakeStore) RestoreCode(_ context.Context, _, code string, entry audit.Entry) (uploadlink.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.link.RevokedAt != nil {
+		return uploadlink.Link{}, uploadlink.ErrRevoked
+	}
+	if code != testCode {
+		return uploadlink.Link{}, uploadlink.ErrCodeMismatch
+	}
+	f.link.Code, f.entries = code, append(f.entries, entry)
+	return f.link, nil
+}
+
+// RotateCode replaces the code with rotatedCode.
+func (f *fakeStore) RotateCode(_ context.Context, _ string, entry audit.Entry) (uploadlink.Link, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.link.RevokedAt != nil {
+		return uploadlink.Link{}, uploadlink.ErrRevoked
+	}
+	f.link.Code, f.entries = rotatedCode, append(f.entries, entry)
 	return f.link, nil
 }
 
@@ -607,5 +637,137 @@ func TestRegistrationGate(t *testing.T) {
 	store.link.ExpiresAt = now
 	if _, err := gate.AdmitRegistration(context.Background(), req, testCode); !errors.Is(err, auth.ErrRegistrationLink) {
 		t.Errorf("expired: %v, want ErrRegistrationLink", err)
+	}
+}
+
+// linkField returns the first listed link's field key as user sees it, and
+// whether it is present at all.
+func linkField(t *testing.T, h *harness, user, key string) (any, bool) {
+	t.Helper()
+	rec := h.do(t, http.MethodGet, "/upload-links", user, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list as %s: status = %d", user, rec.Code)
+	}
+	links, _ := decode(t, rec)["links"].([]any)
+	if len(links) != 1 {
+		t.Fatalf("list as %s: links = %v", user, links)
+	}
+	value, ok := links[0].(map[string]any)[key]
+	return value, ok
+}
+
+// TestList_codeOnlyForManagers verifies the code and path are listed for the
+// creator and an admin, absent (not empty) for any other curator, and absent
+// for everybody while the code is unknown.
+func TestList_codeOnlyForManagers(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil)
+	h.store.link.Code = testCode
+	for _, user := range []string{"us_owner:curator", "us_a:admin"} {
+		if code, _ := linkField(t, h, user, "code"); code != testCode {
+			t.Errorf("%s: code = %v, want %s", user, code, testCode)
+		}
+		if path, _ := linkField(t, h, user, "path"); path != "/u/"+testCode {
+			t.Errorf("%s: path = %v, want /u/%s", user, path, testCode)
+		}
+	}
+	for _, key := range []string{"code", "path"} {
+		if value, ok := linkField(t, h, "us_x:curator", key); ok {
+			t.Errorf("stranger: %s = %v, want it absent", key, value)
+		}
+	}
+	h.store.link.Code = ""
+	if value, ok := linkField(t, h, "us_owner:curator", "code"); ok {
+		t.Errorf("unknown code listed as %v, want it absent", value)
+	}
+}
+
+// TestRestoreCode verifies the permission matrix of revoke/extend, a mismatch
+// as 422 with nothing stored, a match answering the code and path, and a
+// revoked link as 409.
+func TestRestoreCode(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil)
+	const target = "/upload-links/ul1/restore-code"
+	body := `{"code":"` + testCode + `"}`
+	if rec := h.do(t, http.MethodPost, target, "us_x:curator", body); rec.Code != http.StatusNotFound {
+		t.Errorf("stranger: status = %d, want 404", rec.Code)
+	}
+	if rec := h.do(t, http.MethodPost, target, "us_owner:curator", `{"code":"Zz9Zz9Zz"}`); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("mismatch: status = %d, want 422", rec.Code)
+	}
+	if h.store.link.Code != "" || len(h.store.entries) != 0 {
+		t.Errorf("mismatch changed the link: code %q, entries %v", h.store.link.Code, h.store.entries)
+	}
+	if rec := h.do(t, http.MethodPost, target, "us_owner:curator", `{`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad body: status = %d, want 400", rec.Code)
+	}
+	rec := h.do(t, http.MethodPost, target, "us_owner:curator", `{"code":" `+testCode+` "}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("restore: status = %d: %s", rec.Code, rec.Body)
+	}
+	link, _ := decode(t, rec)["link"].(map[string]any)
+	if link["code"] != testCode || link["path"] != "/u/"+testCode {
+		t.Errorf("restored link = %v, want the code and path", link)
+	}
+	if len(h.store.entries) != 1 || h.store.entries[0].Action != audit.ActionUploadLinkRestoreCode {
+		t.Errorf("entries = %+v", h.store.entries)
+	}
+	at := now
+	h.store.link.RevokedAt = &at
+	if rec := h.do(t, http.MethodPost, target, "us_a:admin", body); rec.Code != http.StatusConflict {
+		t.Errorf("revoked: status = %d, want 409", rec.Code)
+	}
+}
+
+// TestNewCode verifies the permission matrix of revoke/extend (creator or
+// admin; anybody else 404), the fresh code in the answer, its audit entry, and
+// a revoked link as 409.
+func TestNewCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		user string
+		want int
+	}{
+		{"creator", "us_owner:curator", http.StatusOK},
+		{"admin", "us_a:admin", http.StatusOK},
+		{"other curator", "us_x:curator", http.StatusNotFound},
+		{"other editor", "us_x:editor", http.StatusNotFound},
+		{"anonymous", "", http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, nil)
+			h.store.link.Code = testCode
+			rec := h.do(t, http.MethodPost, "/upload-links/ul1/new-code", tt.user, "")
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body)
+			}
+			if tt.want != http.StatusOK {
+				if h.store.link.Code != testCode {
+					t.Errorf("refused request replaced the code")
+				}
+				return
+			}
+			link, _ := decode(t, rec)["link"].(map[string]any)
+			if link["code"] != rotatedCode || link["path"] != "/u/"+rotatedCode {
+				t.Errorf("link = %v, want the new code and path", link)
+			}
+			if len(h.store.entries) != 1 || h.store.entries[0].Action != audit.ActionUploadLinkRotateCode {
+				t.Errorf("entries = %+v", h.store.entries)
+			}
+		})
+	}
+
+	h := newHarness(t, nil)
+	at := now
+	h.store.link.RevokedAt = &at
+	if rec := h.do(t, http.MethodPost, "/upload-links/ul1/new-code", "us_owner:curator", ""); rec.Code != http.StatusConflict {
+		t.Errorf("revoked: status = %d, want 409", rec.Code)
 	}
 }

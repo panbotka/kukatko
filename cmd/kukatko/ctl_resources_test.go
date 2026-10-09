@@ -630,3 +630,49 @@ func TestCtlTasksLedger(t *testing.T) {
 		t.Errorf("llm output kept an empty last_comment:\n%s", out)
 	}
 }
+
+// TestCtlUploadLinks verifies the listing prints absolute URLs, restore-code
+// posts the code, and new-code refuses without --yes, names the link on a dry
+// run and replaces the code with it.
+func TestCtlUploadLinks(t *testing.T) {
+	var posts []string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts = append(posts, r.URL.Path)
+			w.Write([]byte(`{"link":{"uid":"ul1","title":"Pouť","state":"active","path":"/u/Nw5cDe9k"}}`))
+			return
+		}
+		w.Write([]byte(`{"links":[{"uid":"ul1","title":"Pouť","state":"active","path":"/u/Ab3dEf7h"}]}`))
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "upload-links", "list")
+	if err != nil {
+		t.Fatalf("upload-links list returned %v", err)
+	}
+	if !strings.Contains(out, "/u/Ab3dEf7h") || !strings.Contains(out, "http") {
+		t.Errorf("listing lacks the absolute URL:\n%s", out)
+	}
+
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "upload-links", "new-code", "ul1"); err == nil {
+		t.Error("new-code without --yes succeeded, want a refusal")
+	}
+	out, err = runCtl(t, "", "ctl", "--ctl-config", configPath, "upload-links", "new-code", "ul1", "--dry-run")
+	if err != nil || !strings.Contains(out, "dry run") || !strings.Contains(out, "Pouť") {
+		t.Errorf("dry run = %q, %v, want it to name the link", out, err)
+	}
+	if len(posts) != 0 {
+		t.Fatalf("posts before confirmation = %v, want none", posts)
+	}
+	out, err = runCtl(t, "", "ctl", "--ctl-config", configPath, "upload-links", "new-code", "ul1", "--yes")
+	if err != nil || !strings.Contains(out, "/u/Nw5cDe9k") {
+		t.Errorf("new-code --yes = %q, %v, want the new URL", out, err)
+	}
+	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"upload-links", "restore-code", "ul1", "Ab3dEf7h"); err != nil {
+		t.Errorf("restore-code returned %v", err)
+	}
+	want := []string{"/api/v1/upload-links/ul1/new-code", "/api/v1/upload-links/ul1/restore-code"}
+	if strings.Join(posts, ",") != strings.Join(want, ",") {
+		t.Errorf("posts = %v, want %v", posts, want)
+	}
+}

@@ -50,7 +50,7 @@ type row interface {
 const selectLinkSQL = `
 SELECT l.uid, l.title, l.note, l.created_by,
        COALESCE(NULLIF(u.display_name, ''), u.username, ''),
-       l.created_at, l.expires_at, l.revoked_at, l.upload_count, l.last_used_at,
+       l.created_at, l.expires_at, COALESCE(l.code, ''), l.revoked_at, l.upload_count, l.last_used_at,
        COALESCE((SELECT json_agg(json_build_object('uid', a.uid, 'name', a.title) ORDER BY a.title, a.uid)
                  FROM upload_link_albums la JOIN albums a ON a.uid = la.album_uid
                  WHERE la.link_uid = l.uid), '[]'::json),
@@ -68,7 +68,7 @@ func scanLink(r row) (Link, error) {
 		albums, labels []byte
 	)
 	err := r.Scan(&link.UID, &link.Title, &link.Note, &link.CreatedBy, &link.CreatorName,
-		&link.CreatedAt, &link.ExpiresAt, &link.RevokedAt, &link.UploadCount, &link.LastUsedAt,
+		&link.CreatedAt, &link.ExpiresAt, &link.Code, &link.RevokedAt, &link.UploadCount, &link.LastUsedAt,
 		&albums, &labels)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Link{}, ErrNotFound
@@ -91,7 +91,9 @@ func (s *Store) Get(ctx context.Context, uid string) (Link, error) {
 }
 
 // ByCode returns the link whose short code is code, whatever its state, or
-// ErrNotFound. A code of the wrong shape is ErrNotFound without a query.
+// ErrNotFound. A code of the wrong shape is ErrNotFound without a query. The
+// lookup goes through code_hash, so a pre-0091 link whose code was never
+// restored resolves exactly like one whose code is stored.
 func (s *Store) ByCode(ctx context.Context, code string) (Link, error) {
 	if !ValidCode(code) {
 		return Link{}, ErrNotFound
@@ -143,16 +145,16 @@ func (in NewLink) Validate() error {
 // insertLinkSQL inserts a link unless its code hash collides, in which case it
 // returns no row and Create draws another code.
 const insertLinkSQL = `
-INSERT INTO upload_links (uid, code_hash, title, note, created_by, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO upload_links (uid, code_hash, code, title, note, created_by, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (code_hash) DO NOTHING
 RETURNING uid`
 
 // Create stores the link in describes and returns it together with its
-// plaintext code — the only time the code exists outside the creator's hands.
-// The link, its targets and entry (whose TargetUID is stamped with the new
-// link's UID) commit together. It returns the Validate errors and
-// ErrTargetNotFound for an album or label that does not exist.
+// plaintext code, which the link also keeps readable (Link.Code). The link, its
+// targets and entry (whose TargetUID is stamped with the new link's UID) commit
+// together. It returns the Validate errors and ErrTargetNotFound for an album or
+// label that does not exist.
 func (s *Store) Create(ctx context.Context, in NewLink, entry audit.Entry) (Link, string, error) {
 	if err := in.Validate(); err != nil {
 		return Link{}, "", err
@@ -192,7 +194,7 @@ func insertLink(ctx context.Context, tx pgx.Tx, uid string, in NewLink) (string,
 			return "", err
 		}
 		var got string
-		err = tx.QueryRow(ctx, insertLinkSQL, uid, HashSecret(code), in.Title, in.Note,
+		err = tx.QueryRow(ctx, insertLinkSQL, uid, HashSecret(code), code, in.Title, in.Note,
 			in.CreatedBy, in.ExpiresAt).Scan(&got)
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue

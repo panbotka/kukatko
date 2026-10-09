@@ -828,7 +828,9 @@
         "create": "Upload link created",
         "extend": "Upload link extended",
         "revoke": "Upload link revoked",
-        "upload": "Photo uploaded through a link"
+        "upload": "Photo uploaded through a link",
+        "restore_code": "Upload link code restored",
+        "rotate_code": "Upload link given a new code"
       }
     },
     "targets": {
@@ -4106,7 +4108,17 @@
     "copy": "Copy",
     "copied": "Copied",
     "share": "Share",
-    "shownOnce": "You see the link only now — Kukátko does not store it, for security. If you lose it, create a new one.",
+    "copyLater": "You can copy the link again any time from the list of links.",
+    "codeUnknown": "This link was created before Kukátko kept link addresses, so its address cannot be shown. It still works — enter its original code to copy it here again.",
+    "restoreCode": "Restore original code",
+    "restoreTitle": "Restore the original code",
+    "restoreLead": "Enter the code of “{{title}}” as you sent it out — the part after /u/ in the link, or the whole link. The link keeps its address; Kukátko only remembers it again.",
+    "restoreField": "Original code or link",
+    "restorePlaceholder": "e.g. Ab3dEf7h",
+    "restoreMismatch": "That is not this link's code. Check it against the link you sent out — nothing was changed.",
+    "newCode": "Generate new code",
+    "newCodeTitle": "Generate a new code?",
+    "newCodeBody": "The current address of “{{title}}” stops working immediately: anyone who has it can no longer upload, and you will have to send the new link again. Albums, labels, validity and the photos already uploaded stay as they are.",
     "done": "Done"
   }
 }

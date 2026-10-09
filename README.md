@@ -212,8 +212,10 @@ shared library is tidied by more than one person.
   ("Tohle není fotka ani video") and never reaches the album. The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
   they are — curators then see "Nahráno přes odkaz „Pouť 2026“ · od: Jana" on the photo, and the audit
   trail names the link and the name — and is then offered an account — no registration word needed through the link, the photos
-  they just sent become theirs, and an administrator still approves it. Links can be extended or
-  revoked, and every link, change and upload is in the audit trail.
+  they just sent become theirs, and an administrator still approves it. The link's address can be
+  copied again from the list of links at any time — by whoever created it, or an admin — and a link
+  that leaked gets a new code (after a warning that the old address stops working). Links can be
+  extended or revoked, and every link, change and upload is in the audit trail.
 - **The wall shows photographs, not squares.** The library, an album, a search result — every grid is
   justified: rows of photos at their own proportions, aligned to a common height and running edge to
   edge. A panorama is wide, a portrait is tall, and nothing is cropped down to a square to fit a

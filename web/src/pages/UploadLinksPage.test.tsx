@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { ApiError } from '../services/auth'
 import { type AlbumSummary } from '../services/organize'
 import { type UploadLink, type UploadLinkList } from '../services/uploadLinks'
 
@@ -19,6 +20,8 @@ vi.mock('../services/uploadLinks', async (importOriginal) => {
     createUploadLink: vi.fn(),
     extendUploadLink: vi.fn(),
     revokeUploadLink: vi.fn(),
+    restoreUploadLinkCode: vi.fn(),
+    newUploadLinkCode: vi.fn(),
   }
 })
 vi.mock('../services/organize', async (importOriginal) => {
@@ -32,13 +35,21 @@ vi.mock('../services/organize', async (importOriginal) => {
   }
 })
 
-const { fetchUploadLinks, createUploadLink, extendUploadLink, revokeUploadLink } =
-  await import('../services/uploadLinks')
+const {
+  fetchUploadLinks,
+  createUploadLink,
+  extendUploadLink,
+  revokeUploadLink,
+  restoreUploadLinkCode,
+  newUploadLinkCode,
+} = await import('../services/uploadLinks')
 const { fetchAlbums, fetchLabels } = await import('../services/organize')
 const listMock = vi.mocked(fetchUploadLinks)
 const createMock = vi.mocked(createUploadLink)
 const extendMock = vi.mocked(extendUploadLink)
 const revokeMock = vi.mocked(revokeUploadLink)
+const restoreMock = vi.mocked(restoreUploadLinkCode)
+const newCodeMock = vi.mocked(newUploadLinkCode)
 
 /** A link record with overrides. */
 function link(overrides: Partial<UploadLink> = {}): UploadLink {
@@ -56,6 +67,8 @@ function link(overrides: Partial<UploadLink> = {}): UploadLink {
     albums: [{ uid: 'al1', name: 'Pouť' }],
     labels: [{ uid: 'lb1', name: 'pouť' }],
     state: 'active',
+    code: 'Ab3dEf7h',
+    path: '/u/Ab3dEf7h',
     ...overrides,
   }
 }
@@ -125,6 +138,8 @@ beforeEach(async () => {
   createMock.mockReset()
   extendMock.mockReset()
   revokeMock.mockReset()
+  restoreMock.mockReset()
+  newCodeMock.mockReset()
   vi.mocked(fetchAlbums)
     .mockReset()
     .mockResolvedValue([album('al1', 'Pouť'), album('al2', 'Hody')])
@@ -222,5 +237,96 @@ describe('UploadLinksPage', () => {
     expect(revokeMock).toHaveBeenCalledWith('ul1')
     expect(await screen.findByText('Revoked')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Extend' })).not.toBeInTheDocument()
+  })
+
+  it('copies a live link’s absolute address from its card', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const user = userEvent.setup()
+    renderPage()
+    const card = await screen.findByTestId('upload-link-card')
+    const url = `${window.location.origin}/u/Ab3dEf7h`
+    expect(within(card).getByRole('textbox', { name: 'Upload link' })).toHaveValue(url)
+    // userEvent.setup() installs its own clipboard stub; put ours back.
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await user.click(within(card).getByRole('button', { name: 'Copy' }))
+    expect(writeText).toHaveBeenCalledWith(url)
+    expect(await within(card).findByRole('button', { name: 'Copied' })).toBeInTheDocument()
+    expect(
+      within(card).queryByRole('button', { name: 'Restore original code' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers no copy on a revoked or an expired link', async () => {
+    listMock.mockResolvedValue(
+      list(
+        link({ uid: 'ul1', state: 'revoked', revoked_at: '2026-10-03T10:00:00Z' }),
+        link({ uid: 'ul2', state: 'expired' }),
+      ),
+    )
+    renderPage()
+    const cards = await screen.findAllByTestId('upload-link-card')
+    expect(cards).toHaveLength(2)
+    for (const card of cards) {
+      expect(within(card).queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument()
+      expect(within(card).queryByRole('textbox')).not.toBeInTheDocument()
+    }
+  })
+
+  it('offers restore first and a warned new code second on a link without a known code', async () => {
+    listMock.mockResolvedValue(list(link({ code: undefined, path: undefined })))
+    newCodeMock.mockResolvedValue(link({ code: 'Nw5cDe9k', path: '/u/Nw5cDe9k' }))
+    const user = userEvent.setup()
+    renderPage()
+    const card = await screen.findByTestId('upload-link-card')
+    expect(within(card).getByTestId('upload-link-code-unknown')).toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument()
+    const restore = within(card).getByRole('button', { name: 'Restore original code' })
+    expect(restore).toHaveClass('btn-primary')
+    const renew = within(card).getByRole('button', { name: 'Generate new code' })
+    expect(renew).not.toHaveClass('btn-primary')
+
+    await user.click(renew)
+    const confirm = await screen.findByRole('dialog')
+    expect(within(confirm).getByTestId('upload-link-new-code-warning')).toHaveTextContent(
+      /stops working immediately/,
+    )
+    expect(newCodeMock).not.toHaveBeenCalled()
+    await user.click(within(confirm).getByRole('button', { name: 'Generate new code' }))
+    expect(newCodeMock).toHaveBeenCalledWith('ul1')
+    expect(
+      await screen.findByDisplayValue(`${window.location.origin}/u/Nw5cDe9k`),
+    ).toBeInTheDocument()
+  })
+
+  it('restores the original code, and says so plainly on a mismatch', async () => {
+    listMock.mockResolvedValue(list(link({ code: undefined, path: undefined })))
+    restoreMock
+      .mockRejectedValueOnce(new ApiError(422, 'uploadlink: the code does not match this link'))
+      .mockResolvedValueOnce(link())
+    const user = userEvent.setup()
+    renderPage()
+    const card = await screen.findByTestId('upload-link-card')
+    await user.click(within(card).getByRole('button', { name: 'Restore original code' }))
+    const dialog = await screen.findByRole('dialog')
+    const field = within(dialog).getByLabelText('Original code or link')
+
+    await user.type(field, 'Zz9Zz9Zz')
+    await user.click(within(dialog).getByRole('button', { name: 'Restore original code' }))
+    expect(await within(dialog).findByTestId('upload-link-restore-error')).toHaveTextContent(
+      /not this link's code/,
+    )
+    expect(restoreMock).toHaveBeenLastCalledWith('ul1', 'Zz9Zz9Zz')
+
+    await user.clear(field)
+    await user.type(field, 'https://fotky.example/u/Ab3dEf7h')
+    await user.click(within(dialog).getByRole('button', { name: 'Restore original code' }))
+    expect(restoreMock).toHaveBeenLastCalledWith('ul1', 'Ab3dEf7h')
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(
+      within(screen.getByTestId('upload-link-card')).getByRole('button', { name: 'Copy' }),
+    ).toBeInTheDocument()
   })
 })

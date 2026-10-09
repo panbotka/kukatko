@@ -3477,7 +3477,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/uploadlink/`
   (the domain of **upload links** — a short link a curator posts to a group chat, through which anybody
   uploads photos into preset albums and labels; owns the four tables of migration `0090_upload_links.sql`:
-  `upload_links` (`uid` prefix `ul`, `code_hash` UNIQUE — the SHA-256 of the short code, **never the code**,
+  `upload_links` (`uid` prefix `ul`, `code_hash` UNIQUE — the SHA-256 of the short code, which every
+  lookup goes through — and, since `0091_upload_links_code.sql`, the nullable readable `code`: kept so a
+  manager can copy the URL again, NULL for a link created before 0091 until it is restored,
   title, note, `created_by` FK users `ON DELETE SET NULL`, `expires_at`, final `revoked_at`,
   `upload_count`/`last_used_at`), `upload_link_albums`/`upload_link_labels` (targets, cascading from both
   sides) and `upload_link_photos` (provenance per photo and link: `outcome` created|duplicate,
@@ -3486,12 +3488,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   ambiguous glyphs (rejection sampling, no modulo bias), `ValidCode` refuses a malformed one before a
   lookup, `HashSecret` is the plain SHA-256 used for codes and session tokens alike (high-entropy random
   secrets, as for API tokens), `NewSessionToken`, `NormalizeUploaderName` (trim, collapse, cut to 100).
-  `Link.StateAt(now)` → `active|expired|revoked` (revoked wins). `Store` = `NewStore(pool)`:
-  `Create(ctx, NewLink, entry)` → the link **plus its plaintext code** (code collision → redraw via
+  `Link.StateAt(now)` → `active|expired|revoked` (revoked wins); `Link.Code` is the readable code (`""`
+  when unknown) and is tagged `json:"-"` — the HTTP layer decides per caller whether to show it.
+  `Store` = `NewStore(pool)`:
+  `Create(ctx, NewLink, entry)` → the link **plus its plaintext code**, stored readably too (code collision → redraw via
   `ON CONFLICT DO NOTHING`; `NewLink.Validate`: ≥ 1 target, ≤ 20 of each, title/note caps; a missing
   album/label → `ErrTargetNotFound`), `Get`, `ByCode`, `List(ctx, creatorUID)` ("" = all; one query with
   the creator name and both target lists as JSON), `Extend` (`ErrRevoked` for a revoked link),
-  `Revoke` (idempotent, a second revoke writes no audit), `RecordUpload(ctx, Upload, entry)` — provenance
+  `Revoke` (idempotent, a second revoke writes no audit), `RestoreCode(ctx, uid, code, entry)`
+  (`recode.go`: stores `code` only when its hash equals `code_hash` — constant-time compare — else
+  `ErrCodeMismatch` with nothing changed; already readable = no-op without audit), `RotateCode(ctx, uid,
+  entry)` (a fresh code replaces `code_hash` and `code`, redrawn on a collision; the old URL dies) — both
+  lock the row and refuse a revoked link with `ErrRevoked` (an expired one is accepted), `RecordUpload(ctx, Upload, entry)` — provenance
   row, `organize.AddPhotoTx`/`AttachLabelTx` into every target (manual label), counters and the
   `upload_link.upload` audit entry in **one transaction** — `AttributeSessionTx(ctx, tx, sessionHash,
   userUID)` (on the registration's transaction: hands the session's **created**, still unowned photos to
@@ -3503,7 +3511,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/uploadlinkapi/`
   (the HTTP half: `NewAPI(Config{Store, Ingest, Sidecar, RequireCurator, OptionalAuth, CurrentUser?,
   IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink, DefaultDays, MaxDays, SecureCookies, Now?})` mounts
-  `/upload-links` (curator management; a foreign link is 404 unless the caller is an admin) and the public
+  `/upload-links` (curator management incl. `restore-code` (422 on `ErrCodeMismatch`) and `new-code`; a
+  foreign link is 404 unless the caller is an admin, and the listing's `code`/`path` are set only by
+  `view(user, link)` for a link `canManage` allows) and the public
   `/u/{code}` pair behind the per-IP limiter; the upload walks the multipart stream once (the `name`
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
@@ -5805,6 +5815,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `internal/photoapi` so a typo costs neither a round trip nor an audit entry (`ErrInvalidRotation`,
     `ErrInvalidAdjustment`, `ErrInvalidCrop`, `ErrNoImageEdits`). `WriteImageEdit` says outright when an edit
     is neutral, since a table of zeroes cannot otherwise be told from "nobody has edited this".
+  - `uploadlinks.go` — upload links for `ctl upload-links`: `ListUploadLinks`/`RestoreUploadLinkCode`/
+    `NewUploadLinkCode` + `DecodeUploadLinks` (`{"links":[…]}`)/`DecodeUploadLink` (`{"link":…}`) and
+    `WriteUploadLinks`/`WriteUploadLink`, which take the context's server so the `URL` column is the absolute
+    `/u/<code>` address (`UploadLinkURL`; `unknown (restore-code)` for a link whose code is not stored).
+    `ParseUploadLinkCode` reads the bare code out of a pasted code or whole link; a blank one is
+    `ErrEmptyLinkCode` without a round trip. `cmd/kukatko/ctl_uploadlinks.go` puts `new-code` behind the
+    irreversible `--yes`/`--dry-run` gate, naming the link from the listing.
   - `savedsearch.go` — the per-user "smart albums": `ListSavedSearches`/`GetSavedSearch`/`CreateSavedSearch`/
     `UpdateSavedSearch`/`DeleteSavedSearch` + `DecodeSavedSearches`/`DecodeSavedSearch` and
     `WriteSavedSearches`/`WriteSavedSearch`. A fifth envelope, `{"saved_searches":[…]}`. **This is the one

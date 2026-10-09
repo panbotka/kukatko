@@ -100,10 +100,10 @@ func (f fixture) auditCount(t *testing.T, action, targetUID string) int {
 	return n
 }
 
-// TestCreate_storesHashOnlyAndResolvesByCode verifies a created link carries its
-// targets and creator, is found by its code (and only by it), and keeps no
-// plaintext code in the table.
-func TestCreate_storesHashOnlyAndResolvesByCode(t *testing.T) {
+// TestCreate_storesCodeAndResolvesByCode verifies a created link carries its
+// targets and creator, is found by its code (and only by it) through the hash,
+// and keeps its code readable so it round-trips through Get.
+func TestCreate_storesCodeAndResolvesByCode(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	link, code := f.createLink(t)
@@ -125,6 +125,12 @@ func TestCreate_storesHashOnlyAndResolvesByCode(t *testing.T) {
 	}
 	if stored == code || stored != uploadlink.HashSecret(code) {
 		t.Errorf("code_hash = %q, want the hash of the code and never the code", stored)
+	}
+	if link.Code != code {
+		t.Errorf("created link Code = %q, want %q", link.Code, code)
+	}
+	if got, err := f.store.Get(ctx, link.UID); err != nil || got.Code != code {
+		t.Errorf("Get Code = %q, %v, want the readable code %q", got.Code, err, code)
 	}
 	byCode, err := f.store.ByCode(ctx, code)
 	if err != nil || byCode.UID != link.UID {

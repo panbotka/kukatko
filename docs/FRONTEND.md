@@ -1762,11 +1762,18 @@ here.
   `UploadLinksPage` (route **`/upload-links`**, **curator**, in the Tools menu as "Odkazy pro nahrávání"
   with `link-45deg`): the links as cards (title, state badge, album/label `EntityChip`s, expiry or
   revocation date, upload count, last use, the creator's name for an admin looking at somebody else's),
-  "Prodloužit" (a modal asking for days from today) and "Zrušit odkaz" (`ConfirmModal`). "Nový odkaz"
+  an **active** link with a known `path` shows its absolute address in `LinkAddress` (read-only field,
+  copy → "Zkopírováno", share where `navigator.share` exists — the same control the create flow uses);
+  revoked and expired links show none. A non-revoked link **without** a known code (created before the
+  backend kept codes) says so (`upload-link-code-unknown`) and offers "Obnovit původní kód" as its
+  **primary** button: `RestoreCodeModal` takes the code or the whole pasted link (`codeFromInput`) and
+  answers a 422 with `uploadLinks.restoreMismatch`. Every non-revoked link has a secondary
+  "Vygenerovat nový kód" (`outline-warning`) behind a `ConfirmModal` whose warning alert says the
+  current address stops working at once. Then "Prodloužit" (a modal asking for days from today) and
+  "Zrušit odkaz" (`ConfirmModal`). "Nový odkaz"
   opens a modal: title, note, `UploadOrganize` (albums and labels, created inline through `resolvePending`
   only when the form is submitted), validity in days (`default_days`, capped by `max_days`); the created
-  link is shown **once** in a read-only field with copy and — where `navigator.share` exists — share
-  buttons. `?album=<uid>` (`ALBUM_PARAM`, `newLinkForAlbum` in `lib/uploadLinks.ts`) opens the form with
+  link is shown in `LinkAddress` with a note that it stays copyable from the list. `?album=<uid>` (`ALBUM_PARAM`, `newLinkForAlbum` in `lib/uploadLinks.ts`) opens the form with
   that album chosen and is removed when the form closes; the album page's "Sdílet odkaz pro nahrávání"
   (`AlbumDetailPage`, curator, in `HeaderActions.secondary`) links there. Texts in `uploadLinks.*`;
   `UploadLinksPage.test.tsx`.
@@ -6800,8 +6807,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   label — its newest visible one, derived by the backend, absent for a label on no visible photo, and carried
   only by the *listing*: a label out of a global search brings its own cover pair instead);
   `uploadLinks.ts` = the upload-links client: management `fetchUploadLinks` (`{links, default_days,
-  max_days}`)/`createUploadLink(input)` (→ `{link, code, path}`, the only answer carrying the code)/
-  `extendUploadLink(uid, days)`/`revokeUploadLink(uid)`, public `fetchPublicUploadLink(code)` (throws
+  max_days}`; each `UploadLink` carries optional `code`/`path`, present only for a link the caller
+  manages and whose code is known)/`createUploadLink(input)` (→ `{link, code, path}`)/
+  `extendUploadLink(uid, days)`/`revokeUploadLink(uid)`/`restoreUploadLinkCode(uid, code)` (422 on a
+  mismatch)/`newUploadLinkCode(uid)`, `codeFromInput(pasted)` (the bare code out of a code or a whole
+  `/u/<code>` link), public `fetchPublicUploadLink(code)` (throws
   `UploadLinkGoneError` with `state` `expired|revoked` on a 410, `ApiError(404)` for an unknown code),
   `linkUploader(code, () => name)` (an `UploadFn` posting to `/api/v1/u/<code>/upload` with the name read
   when each file starts) and `publicLinkURL(path)`; `RegisterInput` in `auth.ts` gained an optional

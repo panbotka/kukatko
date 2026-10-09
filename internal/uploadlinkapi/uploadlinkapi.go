@@ -1,5 +1,5 @@
 // Package uploadlinkapi exposes upload links over HTTP: the curator's management
-// routes (create, list, extend, revoke) and the two public routes behind a short
+// routes (create, list, extend, revoke, restore or replace the code) and the two public routes behind a short
 // link — the page's description of where the photos go, and the upload itself,
 // which runs every file through the ordinary ingest pipeline and files the
 // resulting photo into the link's albums and labels.
@@ -42,6 +42,10 @@ type Store interface {
 	Extend(ctx context.Context, uid string, expiresAt time.Time, entry audit.Entry) (uploadlink.Link, error)
 	// Revoke revokes a link for good.
 	Revoke(ctx context.Context, uid string, entry audit.Entry) (uploadlink.Link, error)
+	// RestoreCode stores a pre-0091 link's code once it matches the stored hash.
+	RestoreCode(ctx context.Context, uid, code string, entry audit.Entry) (uploadlink.Link, error)
+	// RotateCode replaces a link's code with a fresh one.
+	RotateCode(ctx context.Context, uid string, entry audit.Entry) (uploadlink.Link, error)
 	// RecordUpload records one file that came through a link and files its photo.
 	RecordUpload(ctx context.Context, up uploadlink.Upload, entry audit.Entry) error
 }
@@ -164,10 +168,12 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the routes onto r, which the caller has scoped under the
 // API base path (for example /api/v1):
 //
-//	GET  /upload-links               RequireCurator   own links (an admin's: all)
-//	POST /upload-links               RequireCurator   create; the code is in this response only
-//	POST /upload-links/{uid}/extend  RequireCurator   creator or admin
-//	POST /upload-links/{uid}/revoke  RequireCurator   creator or admin
+//	GET  /upload-links                     RequireCurator   own links (an admin's: all), with their codes
+//	POST /upload-links                     RequireCurator   create
+//	POST /upload-links/{uid}/extend        RequireCurator   creator or admin
+//	POST /upload-links/{uid}/revoke        RequireCurator   creator or admin
+//	POST /upload-links/{uid}/restore-code  RequireCurator   creator or admin; the original code only
+//	POST /upload-links/{uid}/new-code      RequireCurator   creator or admin; the old URL dies
 //	GET  /u/{code}                   public           title, note, target names, expiry; starts the anonymous session
 //	POST /u/{code}/upload            public           multipart upload into the targets
 //
@@ -181,6 +187,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/", a.handleCreate)
 		r.Post("/{uid}/extend", a.handleExtend)
 		r.Post("/{uid}/revoke", a.handleRevoke)
+		r.Post("/{uid}/restore-code", a.handleRestoreCode)
+		r.Post("/{uid}/new-code", a.handleNewCode)
 	})
 	r.Route("/u/{code}", func(r chi.Router) {
 		r.Use(a.ipLimit.Middleware)

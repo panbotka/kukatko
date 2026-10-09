@@ -22,11 +22,14 @@ import { ALBUM_PARAM } from '../lib/uploadLinks'
 import { ApiError } from '../services/auth'
 import { createAlbum, createLabel, fetchAlbums, fetchLabels } from '../services/organize'
 import {
+  codeFromInput,
   type CreatedUploadLink,
   createUploadLink,
   extendUploadLink,
   fetchUploadLinks,
+  newUploadLinkCode,
   publicLinkURL,
+  restoreUploadLinkCode,
   revokeUploadLink,
   type UploadLink,
   type UploadLinkList,
@@ -52,7 +55,12 @@ function formatDate(iso: string, language: string): string {
  * The curators' page for upload links (`/upload-links`): create a link that
  * files every upload into chosen albums and labels, see the links (an
  * administrator sees everybody's) with their targets, expiry, upload count and
- * last use, extend one or revoke it for good.
+ * last use, copy a live link's address again, extend one or revoke it for good.
+ *
+ * A link created before codes were stored readably has no address to copy: its
+ * card offers "restore original code" (the manager types the code they sent out;
+ * the backend keeps it only when it matches) and, behind a warning, a new code,
+ * which kills the old address. Any live link can get a new code that way.
  *
  * `?album=<uid>` opens the create form with that album already chosen — the
  * album page's "share an upload link" action lands here.
@@ -67,6 +75,8 @@ export function UploadLinksPage() {
   const [creating, setCreating] = useState(presetAlbum !== null)
   const [extending, setExtending] = useState<UploadLink | null>(null)
   const [revoking, setRevoking] = useState<UploadLink | null>(null)
+  const [restoring, setRestoring] = useState<UploadLink | null>(null)
+  const [renewing, setRenewing] = useState<UploadLink | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
@@ -131,6 +141,21 @@ export function UploadLinksPage() {
     }
   }
 
+  async function confirmNewCode() {
+    if (renewing === null) {
+      return
+    }
+    setBusy(true)
+    try {
+      replace(await newUploadLinkCode(renewing.uid))
+    } catch (error: unknown) {
+      setActionError(errorMessage(error))
+    } finally {
+      setRenewing(null)
+      setBusy(false)
+    }
+  }
+
   const defaults =
     state.status === 'ready'
       ? { days: state.list.default_days, max: state.list.max_days }
@@ -191,6 +216,12 @@ export function UploadLinksPage() {
               onRevoke={() => {
                 setRevoking(link)
               }}
+              onRestoreCode={() => {
+                setRestoring(link)
+              }}
+              onNewCode={() => {
+                setRenewing(link)
+              }}
             />
           ))}
         </div>
@@ -218,6 +249,34 @@ export function UploadLinksPage() {
           }}
         />
       )}
+      {restoring !== null && (
+        <RestoreCodeModal
+          link={restoring}
+          onDone={(updated) => {
+            replace(updated)
+            setRestoring(null)
+          }}
+          onCancel={() => {
+            setRestoring(null)
+          }}
+        />
+      )}
+      <ConfirmModal
+        show={renewing !== null}
+        title={t('uploadLinks.newCodeTitle')}
+        confirmLabel={t('uploadLinks.newCode')}
+        busy={busy}
+        onConfirm={() => {
+          void confirmNewCode()
+        }}
+        onCancel={() => {
+          setRenewing(null)
+        }}
+      >
+        <Alert variant="warning" className="mb-0" data-testid="upload-link-new-code-warning">
+          {t('uploadLinks.newCodeBody', { title: renewing?.title ?? '' })}
+        </Alert>
+      </ConfirmModal>
       <ConfirmModal
         show={revoking !== null}
         title={t('uploadLinks.revokeTitle')}
@@ -244,10 +303,24 @@ interface LinkCardProps {
   showCreator: boolean
   onExtend: () => void
   onRevoke: () => void
+  onRestoreCode: () => void
+  onNewCode: () => void
 }
 
-/** One link in the list: title, state, targets, expiry, use and its actions. */
-function LinkCard({ link, language, showCreator, onExtend, onRevoke }: LinkCardProps) {
+/**
+ * One link in the list: title, state, targets, expiry, use and its actions. A
+ * live link whose code is known shows its address with copy (and share); one
+ * whose code is not known offers to restore it first, a new code second.
+ */
+function LinkCard({
+  link,
+  language,
+  showCreator,
+  onExtend,
+  onRevoke,
+  onRestoreCode,
+  onNewCode,
+}: LinkCardProps) {
   const { t } = useTranslation()
   const variant = { active: 'success', expired: 'secondary', revoked: 'danger' }[link.state]
   return (
@@ -283,11 +356,29 @@ function LinkCard({ link, language, showCreator, onExtend, onRevoke }: LinkCardP
             link.created_by_name !== '' &&
             ` · ${t('uploadLinks.createdBy', { name: link.created_by_name })}`}
         </p>
+        {link.state === 'active' && link.path !== undefined && (
+          <LinkAddress url={publicLinkURL(link.path)} title={link.title} size="sm" />
+        )}
+        {link.state !== 'revoked' && link.path === undefined && (
+          <p className="small text-warning mb-2" data-testid="upload-link-code-unknown">
+            {t('uploadLinks.codeUnknown')}
+          </p>
+        )}
         {link.state !== 'revoked' && (
           <div className="d-flex flex-wrap gap-2">
+            {link.path === undefined && (
+              <Button variant="primary" size="sm" onClick={onRestoreCode}>
+                <Icon name="key" className="me-1" />
+                {t('uploadLinks.restoreCode')}
+              </Button>
+            )}
             <Button variant="outline-secondary" size="sm" onClick={onExtend}>
               <Icon name="hourglass-split" className="me-1" />
               {t('uploadLinks.extend')}
+            </Button>
+            <Button variant="outline-warning" size="sm" onClick={onNewCode}>
+              <Icon name="arrow-clockwise" className="me-1" />
+              {t('uploadLinks.newCode')}
             </Button>
             <Button variant="outline-danger" size="sm" onClick={onRevoke}>
               <Icon name="slash-circle" className="me-1" />
@@ -479,13 +570,37 @@ function CreateLinkModal({ presetAlbum, defaultDays, maxDays, onClose }: CreateL
 }
 
 /**
- * A freshly created link: its address in a read-only field, a copy button and —
- * where the device offers it — the system share sheet. The code is shown this
- * once; the backend keeps only its hash.
+ * A freshly created link: its address with copy and share, and a word that it
+ * stays copyable from the list.
  */
 function CreatedLink({ created }: { created: CreatedUploadLink }) {
   const { t } = useTranslation()
-  const url = publicLinkURL(created.path)
+  return (
+    <div data-testid="upload-link-created">
+      <p>{t('uploadLinks.createdLead')}</p>
+      <LinkAddress url={publicLinkURL(created.path)} title={created.link.title} />
+      <p className="small text-secondary mb-0">{t('uploadLinks.copyLater')}</p>
+    </div>
+  )
+}
+
+/** Props of {@link LinkAddress}. */
+interface LinkAddressProps {
+  /** The absolute address of the public page. */
+  url: string
+  /** The link's title, offered to the share sheet. */
+  title: string
+  /** `sm` for the compact list cards. */
+  size?: 'sm'
+}
+
+/**
+ * A link's address in a read-only field, a copy button that confirms with
+ * "Copied" and — where the device offers it — the system share sheet. The create
+ * flow and every live card in the list use this one control.
+ */
+function LinkAddress({ url, title, size }: LinkAddressProps) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const canShare = typeof navigator.share === 'function'
 
@@ -500,47 +615,125 @@ function CreatedLink({ created }: { created: CreatedUploadLink }) {
 
   async function share() {
     try {
-      await navigator.share({ title: created.link.title, url })
+      await navigator.share({ title, url })
     } catch {
       // Dismissed, or the share sheet failed: the field and copy button remain.
     }
   }
 
   return (
-    <div data-testid="upload-link-created">
-      <p>{t('uploadLinks.createdLead')}</p>
-      <InputGroup className="mb-2">
-        <Form.Control
-          readOnly
-          value={url}
-          aria-label={t('uploadLinks.linkLabel')}
-          onFocus={(e) => {
-            e.target.select()
-          }}
-        />
+    <InputGroup className="mb-2" size={size}>
+      <Form.Control
+        readOnly
+        value={url}
+        aria-label={t('uploadLinks.linkLabel')}
+        onFocus={(e) => {
+          e.target.select()
+        }}
+      />
+      <Button
+        variant="outline-secondary"
+        onClick={() => {
+          void copy()
+        }}
+      >
+        <Icon name={copied ? 'check-lg' : 'clipboard'} className="me-1" />
+        {copied ? t('uploadLinks.copied') : t('uploadLinks.copy')}
+      </Button>
+      {canShare && (
         <Button
           variant="outline-secondary"
           onClick={() => {
-            void copy()
+            void share()
           }}
         >
-          <Icon name={copied ? 'check-lg' : 'clipboard'} className="me-1" />
-          {copied ? t('uploadLinks.copied') : t('uploadLinks.copy')}
+          <Icon name="share" className="me-1" />
+          {t('uploadLinks.share')}
         </Button>
-        {canShare && (
-          <Button
-            variant="outline-secondary"
-            onClick={() => {
-              void share()
-            }}
-          >
-            <Icon name="share" className="me-1" />
-            {t('uploadLinks.share')}
+      )}
+    </InputGroup>
+  )
+}
+
+/** Props of {@link RestoreCodeModal}. */
+interface RestoreCodeModalProps {
+  link: UploadLink
+  onDone: (updated: UploadLink) => void
+  onCancel: () => void
+}
+
+/**
+ * Asks for the original code of a link whose code is not stored — the code
+ * itself or the whole link that was sent out. The backend keeps it only when it
+ * matches, so a typo is refused and changes nothing.
+ */
+function RestoreCodeModal({ link, onDone, onCancel }: RestoreCodeModalProps) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const code = codeFromInput(value)
+
+  async function submit(event: SyntheticEvent) {
+    event.preventDefault()
+    if (code === '') {
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    try {
+      onDone(await restoreUploadLinkCode(link.uid, code))
+    } catch (err: unknown) {
+      setError(
+        err instanceof ApiError && err.status === 422
+          ? t('uploadLinks.restoreMismatch')
+          : errorMessage(err),
+      )
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal show onHide={onCancel} aria-labelledby="upload-link-restore-title">
+      <Form
+        onSubmit={(event) => {
+          void submit(event)
+        }}
+      >
+        <Modal.Header closeButton>
+          <Modal.Title id="upload-link-restore-title">{t('uploadLinks.restoreTitle')}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {error !== null && (
+            <Alert variant="danger" data-testid="upload-link-restore-error">
+              {error}
+            </Alert>
+          )}
+          <p>{t('uploadLinks.restoreLead', { title: link.title })}</p>
+          <Form.Group controlId="upload-link-restore-code">
+            <Form.Label>{t('uploadLinks.restoreField')}</Form.Label>
+            <Form.Control
+              value={value}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={t('uploadLinks.restorePlaceholder')}
+              onChange={(e) => {
+                setValue(e.target.value)
+              }}
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={onCancel} disabled={submitting}>
+            {t('uploadLinks.cancel')}
           </Button>
-        )}
-      </InputGroup>
-      <p className="small text-secondary mb-0">{t('uploadLinks.shownOnce')}</p>
-    </div>
+          <Button type="submit" variant="primary" disabled={submitting || code === ''}>
+            {submitting && <Spinner animation="border" size="sm" className="me-2" />}
+            {t('uploadLinks.restoreCode')}
+          </Button>
+        </Modal.Footer>
+      </Form>
+    </Modal>
   )
 }
 

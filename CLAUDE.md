@@ -76,7 +76,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/clusterjob` — the `face_cluster` job: reclustering and the preparation of the cluster summaries, off the request path
 - `internal/comments` — comment threads on a photo **or a task**: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi` and `internal/phototaskapi`
 - `internal/config` — typed configuration, Viper, `Load()`
-- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments, upload-link codes), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only, and never across the still/video boundary (a clip is judged by one poster frame)
@@ -174,7 +174,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
-- `internal/uploadlink` — upload links: hashed short code (only the create response carries it), album/label targets, expiry/revoke, per-photo provenance (link, typed name, account or anonymous session), filing an upload into the targets and claiming a session's photos at registration, all audited in the mutation's transaction
+- `internal/uploadlink` — upload links: short code looked up by hash, kept readable for its manager (pre-0091 links: restore only a hash-matching code; rotate on leak), album/label targets, expiry/revoke, per-photo provenance (link, typed name, account or anonymous session), filing an upload into the targets and claiming a session's photos at registration, all audited in the mutation's transaction
 - `internal/uploadlinkapi` — curator `/upload-links` management + the public `/u/{code}` page/upload (no session, per-IP + per-link limits, ingest pipeline reused) + `RegistrationGate` (a live link replaces the registration secret)
 - `internal/userpic` — a user's profile picture: the chain (uploaded picture → picked library photo → the linked subject's face → nothing), the re-encode to a square JPEG kept in Postgres, and the refusal of a private/hidden photo
 - `internal/userpicapi` — `GET /users/{uid}/avatar` + the self-service `GET`/`PUT`/`DELETE /auth/picture`; not audited

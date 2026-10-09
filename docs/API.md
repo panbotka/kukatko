@@ -1789,17 +1789,32 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **Management (`RequireCurator`):** `GET /upload-links` → `{links:[…], default_days, max_days}`, the
   caller's own links newest-first (an **admin/maintainer sees all**); each link is
   `{uid,title,note,created_by,created_by_name,created_at,expires_at,revoked_at,upload_count,
-  last_used_at,albums:[{uid,name}],labels:[{uid,name}],state}` with `state` ∈ `active|expired|revoked`.
+  last_used_at,albums:[{uid,name}],labels:[{uid,name}],state,code?,path?}` with `state` ∈
+  `active|expired|revoked`. **`code`/`path`** (`"/u/<code>"`) are present only on a link the caller
+  **manages** (its creator, or an admin) **and** whose code is known — for anybody else, and for a link
+  created before migration `0091` whose code was never restored, both keys are **absent**, never `""`.
+  Every management answer below carries the same view, so `extend`/`revoke`/`restore-code`/`new-code`
+  return the code too. The code is kept readable in `upload_links.code` next to its SHA-256
+  (`code_hash`, which every lookup still goes through) — the same trade as the registration secret in
+  `instance_settings`; see `SECURITY_AUDIT.md` → *Data at rest & secrets*.
   `POST /upload-links` `{title?,note?,album_uids,label_uids,valid_days?}` → **201**
-  `{link, code, path:"/u/<code>"}` — **the only response that ever carries the code**: it is stored as
-  its SHA-256 only (`upload_links.code_hash`), like an API token's secret, so a leaked listing cannot be
-  replayed and a lost link can only be replaced. At least one album or label (≤ 20 of each), title ≤ 200
+  `{link, code, path:"/u/<code>"}` (the top-level pair repeats the link's own). At least one album or label (≤ 20 of each), title ≤ 200
   and note ≤ 2000 characters, `valid_days` 1..`upload_links.max_days` (0/omitted =
   `upload_links.default_days`); an unknown album/label → 400. `POST /upload-links/{uid}/extend`
   `{valid_days}` → 200 `{link}` (valid that many days **from now**; a revoked link → 409);
-  `POST /upload-links/{uid}/revoke` → 200 `{link}` (final, idempotent). Somebody else's link is **404**
-  unless the caller is an admin. Every create/extend/revoke writes `upload_link.create|extend|revoke` in
-  its transaction (details: title, targets, expiry — never the code).
+  `POST /upload-links/{uid}/revoke` → 200 `{link}` (final, idempotent).
+  `POST /upload-links/{uid}/restore-code` `{code}` → 200 `{link}` — for a link created before `0091`
+  (hash only): the code (whitespace trimmed) is stored **only when its SHA-256 equals the link's
+  `code_hash`**, so the URL never changes and nothing but the original code can be stored; any other code
+  → **422** `uploadlink: the code does not match this link` with nothing changed; restoring an already
+  readable code is a no-op without an audit entry. `POST /upload-links/{uid}/new-code` (no body) → 200
+  `{link}` with a **fresh** code: `code_hash` and `code` are replaced, **the old URL stops working at
+  once** (its `/u/<old>` is 404), albums/labels/expiry/uploads stay. Both refuse a **revoked** link with
+  the 409 extend gives; an **expired** link is accepted by both (it can be extended back to life, and its
+  address is worth having — or replacing — before that). Somebody else's link is **404** for every
+  `{uid}` route unless the caller is an admin. Every create/extend/revoke/restore/new code writes
+  `upload_link.create|extend|revoke|restore_code|rotate_code` in its transaction (details: title,
+  targets, expiry, `had_code` for a new code — never a code).
   **Public (no session; per-IP `ratelimit.upload_link` ahead of everything):** the code is 8 characters
   from a 55-symbol unambiguous alphabet (~46 bits); a malformed one is a 404 without a lookup.
   `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at}` — names only, no
