@@ -414,7 +414,7 @@ Everything else below is open as written.
   installed build; `TestInputArgs_remoteClipStillOpens` probes and transcodes a real clip served over HTTP.
   Every container behind `videoExts` (mp4, m4v, mov, 3gp, mkv, webm, avi, wmv, flv, mpg, mts, m2ts, h264,
   hevc) was rendered and still probes with the guard in place.
-- **Fix commit:** the commit that adds this entry (hash recorded in the follow-up below).
+- **Fix commit:** `65a3954` (2026-10-09).
 
 ---
 
