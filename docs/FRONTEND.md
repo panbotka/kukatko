@@ -7431,7 +7431,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   filled badges (the badge half under `:where()`, so a component class such as a task state still wins),
   `.bg-body-tertiary`/`-secondary` (a mixed surface has no `-rgb` triplet, so the utility reads the colour
   itself), form controls (a `--kk-surface-sunken` well with a `--kk-control-border` edge, `color-scheme: dark`,
-  the ink-stroked select chevron and the base-toned check/radio/switch glyphs kept with the palette), cards,
+  the ink-stroked select chevron and the base-toned check/radio/switch glyphs kept with the palette; an unchecked
+  `.form-check-input` gets a whole `border` because Superhero compiles it `border: none`, the off switch knob is
+  the palette's `--kk-switch-off-glyph` (ink at 64 %) instead of the dark theme's 25 % white, and a disabled one
+  fades to `--kk-control-disabled-opacity` with the strong edge — all ≥ 3:1 on every surface, measured in
+  `styles/contrast.test.ts`), cards,
   modals, offcanvas, popovers, tooltips, toasts, dropdowns, list groups, progress, pagination, nav tabs/pills,
   tables and **alerts** — a tinted surface with ink text and a rail in the variant's text tone instead of
   Superhero's solid fill (which put white on cyan at ~2:1). **The quiet action** `.btn-outline-secondary`

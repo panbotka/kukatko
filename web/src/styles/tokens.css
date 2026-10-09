@@ -248,6 +248,11 @@
   );
   --kk-control-border: color-mix(in srgb, var(--kk-palette-ink) 48%, var(--kk-palette-base));
   --kk-control-border-strong: color-mix(in srgb, var(--kk-palette-ink) 64%, var(--kk-palette-base));
+  /* A disabled checkbox / radio / switch fades to this opacity — Superhero's
+     0.5 dropped an unchecked control's edge below 3:1 on every surface. At this
+     strength (and with the strong border, see `bootstrapBridge.css`) it still
+     reads as a control, just a quieter one; the contrast test measures it. */
+  --kk-control-disabled-opacity: 0.7;
 
   /* ---- Translucent header --------------------------------------------
      The sticky top bar sits OVER scrolling photographs rather than on an

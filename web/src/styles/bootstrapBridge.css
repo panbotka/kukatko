@@ -503,11 +503,25 @@
 /* Checkbox / radio / switch: an unchecked box is a well with the control
    border (3:1, so the box itself is findable); checked fills with the accent and
    its glyph — Bootstrap draws it white — is swapped for the base-toned copy kept
-   with the palette, so it reads on the bright fill. */
+   with the palette, so it reads on the bright fill.
+
+   Superhero compiles `.form-check-input` with `border: none` (it relied on a
+   white fill to stand out), so a mere `border-color` paints nothing: the whole
+   border is declared here. Disabled, Superhero halves the opacity, which drops
+   the edge below 3:1; the bridge fades it less and strengthens the edge, so a
+   disabled control stays readable. */
 .form-check-input {
   --bs-form-check-bg: var(--kk-surface-sunken);
 
-  border-color: var(--kk-control-border);
+  border: var(--bs-border-width) solid var(--kk-control-border);
+}
+
+.form-check-input:disabled {
+  opacity: var(--kk-control-disabled-opacity);
+}
+
+.form-check-input:disabled:not(:checked, :indeterminate) {
+  border-color: var(--kk-control-border-strong);
 }
 
 .form-check-input:focus {
@@ -531,6 +545,14 @@
 
 .form-check-input[type='checkbox']:indeterminate {
   --bs-form-check-bg-image: var(--kk-indeterminate-glyph);
+}
+
+/* The unchecked knob: Bootstrap's dark theme draws it as a 25 % white circle
+   that vanishes on the dark track. The second selector mirrors Superhero's own
+   dark-theme rule exactly, so it wins on specificity and source order. */
+.form-switch .form-check-input,
+[data-bs-theme='dark'] .form-switch .form-check-input:not(:checked):not(:focus) {
+  --bs-form-switch-bg: var(--kk-switch-off-glyph);
 }
 
 .form-switch .form-check-input:focus {

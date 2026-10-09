@@ -83,12 +83,16 @@
      custom property, so their colour is repeated here (`%23` = `#`): the
      `.form-select` chevron in ink; the checked checkbox / radio / switch glyphs
      in base, because they sit on the bright accent fill; the focused switch's
-     knob in the accent. The contrast test asserts each still equals its
-     palette colour, so a swap that forgets one fails. */
+     knob in the accent; the unchecked switch's knob in the ink at the same
+     strength as `--kk-control-border-strong` (64 %, as `fill-opacity`), so the
+     "off" knob reads as clearly on the dark track as a field's edge does. The
+     contrast test asserts each still equals its palette colour, so a swap that
+     forgets one fails, and measures the off knob against its track. */
   --kk-select-chevron: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ffecd1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
   --kk-check-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23001524' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
   --kk-radio-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23001524'/%3e%3c/svg%3e");
   --kk-indeterminate-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23001524' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10h8'/%3e%3c/svg%3e");
   --kk-switch-on-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23001524'/%3e%3c/svg%3e");
+  --kk-switch-off-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23ffecd1' fill-opacity='.64'/%3e%3c/svg%3e");
   --kk-switch-focus-glyph: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23ff7d00'/%3e%3c/svg%3e");
 }

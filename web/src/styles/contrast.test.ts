@@ -6,10 +6,11 @@ import {
   parseHex,
   resolveColour,
   rootCustomProperties,
+  stripCssComments,
   toHex,
   type Rgba,
 } from '../test/colour'
-import { readCss } from '../test/css'
+import { declarations, readCss, ruleBody } from '../test/css'
 
 /**
  * The palette, measured.
@@ -84,6 +85,7 @@ describe('the palette file', () => {
       ['--kk-radio-glyph', '--kk-palette-base'],
       ['--kk-indeterminate-glyph', '--kk-palette-base'],
       ['--kk-switch-on-glyph', '--kk-palette-base'],
+      ['--kk-switch-off-glyph', '--kk-palette-ink'],
       ['--kk-switch-focus-glyph', '--kk-palette-accent'],
     ]
     for (const [glyph, source] of glyphs) {
@@ -211,6 +213,81 @@ describe('edges a user has to find', () => {
 
   it('draws a form field’s border apart from its own sunken fill', () => {
     expectContrast('--kk-control-border', '--kk-surface-sunken', NON_TEXT)
+  })
+})
+
+describe('an unchecked checkbox and switch', () => {
+  // Since the palette swap an unchecked control is a dark well on a dark panel,
+  // so what makes it findable is its edge and — for a switch — its knob. Both
+  // are non-text UI components (WCAG 1.4.11): 3:1 against what they sit on, on
+  // every surface a form appears on (page, card, modal, offcanvas), both enabled
+  // and disabled. A disabled control fades as a whole (`opacity`), so its edge,
+  // track and knob are measured as the browser composites them over the surface.
+  const bridge = stripCssComments(readCss('src/styles/bootstrapBridge.css'))
+  const opacity = Number(tokens.get('--kk-control-disabled-opacity'))
+  const track = colour(token('--kk-surface-sunken'))
+
+  /** The off knob as painted on its (opaque) track: the glyph's ink at its `fill-opacity`. */
+  function knob(): Rgba {
+    const glyph = tokens.get('--kk-switch-off-glyph') ?? ''
+    const alpha = Number(/fill-opacity='([\d.]+)'/.exec(glyph)?.[1])
+    expect(alpha, 'the off knob declares a fill-opacity').toBeGreaterThan(0)
+    return composite({ ...colour(token('--kk-palette-ink')), a: alpha }, track)
+  }
+
+  /** `c` faded to the disabled opacity over the opaque `under`. */
+  function faded(c: Rgba, under: Rgba): Rgba {
+    return composite({ ...c, a: opacity }, under)
+  }
+
+  it('paints a real border — Superhero compiles the control with `border: none`', () => {
+    const body = ruleBody(bridge, /(^|\})\s*\.form-check-input\s*(?=\{)/)
+    expect(body).toBeDefined()
+    expect(declarations(body ?? '').get('border')).toBe(
+      'var(--bs-border-width) solid var(--kk-control-border)',
+    )
+  })
+
+  it('replaces the dark theme’s 25 % white off knob with the palette glyph', () => {
+    const body = ruleBody(
+      bridge,
+      /\[data-bs-theme='dark'\] \.form-switch \.form-check-input:not\(:checked\):not\(:focus\)\s*(?=\{)/,
+    )
+    expect(declarations(body ?? '').get('--bs-form-switch-bg')).toBe('var(--kk-switch-off-glyph)')
+  })
+
+  it('fades a disabled control less than Superhero’s 0.5 and strengthens its edge', () => {
+    expect(opacity).toBeGreaterThan(0.5)
+    expect(opacity).toBeLessThan(1)
+    const body = ruleBody(bridge, /\.form-check-input:disabled\s*(?=\{)/)
+    expect(declarations(body ?? '').get('opacity')).toBe('var(--kk-control-disabled-opacity)')
+    const unchecked = ruleBody(
+      bridge,
+      /\.form-check-input:disabled:not\(:checked, :indeterminate\)\s*(?=\{)/,
+    )
+    expect(declarations(unchecked ?? '').get('border-color')).toBe(
+      'var(--kk-control-border-strong)',
+    )
+  })
+
+  it.each(SURFACES)('the edge and the off knob clear 3:1 on %s', (surface) => {
+    expectContrast('--kk-control-border', surface, NON_TEXT)
+    expect(contrastRatio(knob(), track)).toBeGreaterThanOrEqual(NON_TEXT)
+  })
+
+  it.each(SURFACES)('a disabled one still clears 3:1 on %s', (surface) => {
+    const under = colour(token(surface))
+    const edge = faded(colour(token('--kk-control-border-strong')), under)
+    expect(
+      contrastRatio(edge, under),
+      `disabled edge ${toHex(edge)} on ${toHex(under)}`,
+    ).toBeGreaterThanOrEqual(NON_TEXT)
+    const knobFaded = faded(knob(), under)
+    const trackFaded = faded(track, under)
+    expect(
+      contrastRatio(knobFaded, trackFaded),
+      `disabled knob ${toHex(knobFaded)} on ${toHex(trackFaded)}`,
+    ).toBeGreaterThanOrEqual(NON_TEXT)
   })
 })
 
