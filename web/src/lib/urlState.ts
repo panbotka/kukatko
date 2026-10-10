@@ -56,8 +56,9 @@ export type SetUrlState<T extends UrlState> = (
  * Reads and writes view state to the URL query string via react-router (which
  * drives the History API). Pushing (the default) makes Back/Forward restore
  * prior state — the project's "Zpět vždy funguje" convention; pass
- * `{ replace: true }` for updates that should not create a history entry
- * (e.g. live-typed search input).
+ * `{ replace: true }` for updates that should not create a history entry.
+ * A query box does neither blindly: `useQueryHistory` hands it the options
+ * that give one edit one entry, so a submitted query is a step Back can undo.
  *
  * `defaults` MUST be stable across renders (declare it at module scope or wrap
  * it in `useMemo`) so the returned setter keeps a stable identity.
@@ -66,7 +67,7 @@ export type SetUrlState<T extends UrlState> = (
  *   const DEFAULTS = { q: '', sort: 'newest', page: '1' }
  *   const [view, setView] = useUrlState(DEFAULTS)
  *   setView({ page: '2' })          // pushes ?page=2 — Back returns to page 1
- *   setView({ q: 'cat' }, { replace: true })
+ *   setView({ camera: 'Canon' }, { replace: true }) // rewrites the current entry
  */
 export function useUrlState<T extends UrlState>(defaults: T): [T, SetUrlState<T>] {
   const [searchParams, setSearchParams] = useSearchParams()

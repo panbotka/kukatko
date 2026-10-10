@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, RouterProvider, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -147,6 +147,32 @@ function renderSearch(initialEntry = '/search', canWrite = true, semanticSearch 
       </CapabilitiesContext.Provider>
     </I18nextProvider>,
   )
+}
+
+/**
+ * Renders the page behind a real memory router whose history starts on a page
+ * outside it, so a test can press Back and see where it lands.
+ */
+function renderSearchWithHistory() {
+  const router = createMemoryRouter(
+    [
+      { path: '/search', element: <SearchPage /> },
+      { path: '/elsewhere', element: <p>Elsewhere</p> },
+    ],
+    { initialEntries: ['/elsewhere', '/search'], initialIndex: 1 },
+  )
+  render(
+    <I18nextProvider i18n={i18n}>
+      <CapabilitiesContext.Provider
+        value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
+      >
+        <AuthContext.Provider value={auth(true)}>
+          <RouterProvider router={router} />
+        </AuthContext.Provider>
+      </CapabilitiesContext.Provider>
+    </I18nextProvider>,
+  )
+  return router
 }
 
 /**
@@ -520,6 +546,44 @@ describe('SearchPage', () => {
       expect(screen.getByTestId('search')).toHaveTextContent('q=svatba')
     })
     expect(recordMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns to the previous query when Back follows a submitted one', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    const router = renderSearchWithHistory()
+    const query = () => new URLSearchParams(router.state.location.search).get('q')
+    const back = async () => {
+      await act(async () => {
+        await router.navigate(-1)
+      })
+    }
+
+    const input = screen.getByLabelText('Search term')
+    await user.type(input, 'svatba{Enter}')
+    await waitFor(() => {
+      expect(query()).toBe('svatba')
+    })
+    await user.clear(input)
+    await user.type(input, 'hory{Enter}')
+    await waitFor(() => {
+      expect(query()).toBe('hory')
+    })
+
+    // Each submitted query is a view of its own…
+    await back()
+    expect(query()).toBe('svatba')
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search term')).toHaveValue('svatba')
+    })
+    // …and the first one steps back to the empty page, not out of the app.
+    await back()
+    expect(router.state.location.pathname).toBe('/search')
+    expect(query()).toBeNull()
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search term')).toHaveValue('')
+    })
+    expect(screen.getByText('Enter a search term.')).toBeInTheDocument()
   })
 
   it('remembers a recent search picked from the box, moving it back to the front', async () => {

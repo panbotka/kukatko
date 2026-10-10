@@ -376,9 +376,10 @@ describe('FilterBar header', () => {
     expect(search).toHaveValue('svatba')
     // ...but the view is written once. Every write refetches the grid and resets
     // the count the bar states, so six of them walked that number through five
-    // answers nobody asked for.
+    // answers nobody asked for. That one write is the edit's own history entry,
+    // so it pushes rather than overwriting the view the reader came from.
     await waitFor(() => {
-      expect(onChange).toHaveBeenCalledWith({ q: 'svatba' }, { replace: true })
+      expect(onChange).toHaveBeenCalledWith({ q: 'svatba' }, { replace: false })
     })
     expect(onChange).toHaveBeenCalledTimes(1)
   })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
@@ -24,6 +24,7 @@ import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory, useRememberedGridScroll } from '../hooks/useGridScrollMemory'
 import { usePhotoSearch } from '../hooks/usePhotoSearch'
+import { useQueryHistory } from '../hooks/useQueryHistory'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useRecordSearch } from '../hooks/useSearchHistory'
 import { useSearchMode } from '../hooks/useSearchMode'
@@ -167,17 +168,35 @@ export function SearchPage() {
   }, [photos, selection])
 
   // Debounce committing the typed query to the URL; an unchanged value is a no-op.
+  // A query is a view, so an edit gets one history entry: its first pause
+  // pushes, later pauses rewrite it, and a submit closes it — Back then returns
+  // to the previous query rather than out of the page ({@link useQueryHistory}).
+  const queryHistory = useQueryHistory()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
     if (text === view.q) {
       return
     }
     const id = setTimeout(() => {
-      setView({ q: text }, { replace: true })
+      setView({ q: text }, queryHistory.typed())
     }, SEARCH_DEBOUNCE_MS)
+    debounceRef.current = id
     return () => {
       clearTimeout(id)
     }
-  }, [text, view.q, setView])
+  }, [text, view.q, setView, queryHistory])
+  // Writes a submitted query (Enter, a picked recent search) at once, bypassing
+  // the debounce; one the URL already holds only closes the edit. The pending
+  // pause is cancelled first: firing after the submit it would write the same
+  // query again, as a second entry.
+  const submitQuery = (next: string) => {
+    clearTimeout(debounceRef.current)
+    if (next === view.q) {
+      queryHistory.end()
+      return
+    }
+    setView({ q: next }, queryHistory.submitted())
+  }
 
   return (
     <>
@@ -209,8 +228,7 @@ export function SearchPage() {
         className="mb-3"
         onSubmit={(e) => {
           e.preventDefault()
-          // Commit immediately on submit, bypassing the debounce.
-          setView({ q: text }, { replace: true })
+          submitQuery(text)
           // Enter is the reader saying this is the query they meant — the one
           // act worth remembering, out of the several searches their typing ran.
           recordSearch(text)
@@ -234,7 +252,7 @@ export function SearchPage() {
               // Picking a recent search runs it at once: it is a whole query, so
               // waiting out the typing debounce would only feel slow. It is also
               // a submit, so it moves back to the front of the ring.
-              setView({ q: next }, { replace: true })
+              submitQuery(next)
               recordSearch(next)
             }}
           />

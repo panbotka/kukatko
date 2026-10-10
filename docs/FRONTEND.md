@@ -1251,7 +1251,15 @@ here.
   vs. `.kk-entity-tag` + a guide icon from `ENTITY_STYLE`, so an album and a label are distinct at a glance
   (see *entity colors* in `tokens.css`); the other filters stay a neutral `text-bg-primary`)
   + one **„zrušit filtry"** + the photo count; **no behavior change** — everything
-  runs through `viewToParams`/`useUrlState`/`LibraryView`, the query replaces history, the rest push;
+  runs through `viewToParams`/`useUrlState`/`LibraryView`; the facets, sort and chips push, the camera
+  field replaces, and the **query gets one history entry per edit** (`useQueryHistory`): its first
+  debounced pause pushes, later pauses rewrite that entry, and **Enter** (caught on the field's
+  `onKeyDown` — the bar holds several text fields and no submit button, so the browser's implicit
+  submission never fires; the form's `onSubmit` only `preventDefault`s) commits at once via
+  `takeUnsent` and closes the edit. So Back from a submitted query returns to the previous query or the
+  unfiltered view — before this it replaced, and Back from `/?q=…` left the app. The same holds on the
+  album, label, task, favourites, places and trash pages, which all mount this bar
+  (`FilterBarHistory.test.tsx` drives the real router);
   generic over `LibraryView`+a superset, props `showSearch`/`showSort` hide the query/sort
   on the search page, **`sortOptions`** narrows the sort list to given values **in the given order**
   (the album page passes `ALBUM_SORTS` = oldest/newest, its sort key being pinned server-side; omitted =
@@ -2518,6 +2526,11 @@ here.
   the page **remembers a query only when it is submitted** — the form's `onSubmit` (Enter) and `onRun`
   (a recent search picked from the box) both call `recordSearch` from `useRecordSearch`, while the searches
   the 350 ms debounce runs along the way are not submissions and are not remembered;
+  the box moves through history like `FilterBar`'s quick filter (`useQueryHistory`): one entry per edit,
+  pushed on its first pause and rewritten by the later ones, and a submit (Enter, a picked recent search)
+  cancels the pending pause, writes at once and closes the edit — so Back returns to the previous query
+  and finally to the empty page, never out of the app. Only the unknown-filter fix still replaces: it
+  corrects the query in place, and the broken one is not a view worth stepping back to;
   plus for editors **hover-select** over the results → the shared **`BatchActionBar`** (the library's
   full set of actions, `onSelectAll`; on success the search
   replays via `reloadKey`); changing `q`/`mode` is a different result set, so it **leaves selection mode**
@@ -5473,14 +5486,25 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   tenth), `fileCompletion`, `batchCompletion(items, 'bytes' | 'files')` (1 only once every file has a
   verdict), `awaitingVerdicts` and `progressPercent` (rounded **down**, so one verdict short reads 99 %).
   Tests: `uploadProgress.test.ts`;
-  `useDebouncedText(value, commit, delayMs = TEXT_FILTER_DEBOUNCE_MS)` → `[draft, setDraft]` = a text field
+  `useDebouncedText(value, commit, delayMs = TEXT_FILTER_DEBOUNCE_MS)` → `[draft, setDraft, takeUnsent]` = a text field
   that keeps up with the keyboard but writes on a pause. A filter field wired straight to the URL costs a
   request per keystroke and, with each one, a reset of the count `FilterBar` states; the draft is local, so
   typing stays instant, and `commit` runs 300 ms after the last change. It remembers the last value passed
   in either direction, so an outside change (clear-all, a removed chip, Back) replaces the draft while a
   `commit` the caller ignores leaves the field alone rather than snapping it back mid-word; `commit` is
-  read from a ref, so a caller's inline arrow neither restarts the timer nor fires stale. Used by
+  read from a ref, so a caller's inline arrow neither restarts the timer nor fires stale. `takeUnsent()` is
+  for a submit that must not wait out the pause: it returns the draft if it was not committed yet (and
+  marks it committed, so the timer writes nothing) or `undefined` if it was — the caller writes it its own
+  way, since a submit is a different history step from a pause. Used by
   `FilterBar`'s quick filter and its **Fotoaparát** field. Tests: `useDebouncedText.test.tsx`;
+  `useQueryHistory()` → `{typed, submitted, end}` (stable) = how a query box moves through browser history,
+  each returning the `SetUrlStateOptions` to write with. **One edit owns one entry**: the first `typed()`
+  write pushes and the entry it lands on is remembered by `location.key`; later `typed()` writes replace
+  that entry while the reader is still on it; `submitted()` writes into it (or pushes, if typing made none)
+  and ends the edit; `end()` ends it without a write (a submit the URL already holds). Any navigation the
+  box did not make — Back, a sort, a chip — ends the edit too, so typing afterwards pushes instead of
+  overwriting a view the reader can step back to. Used by `FilterBar`'s quick filter and `SearchPage`'s
+  box. Tests: `FilterBarHistory.test.tsx`, `SearchPage.test.tsx`;
   `useLeaveGuard(active)` = holds a navigation back while a page has unsaved browser-only work, and
   asks the browser to warn on a tab close. Two mechanisms, because the browser owns only one of them:
   a `beforeunload` listener (bare `preventDefault()` — the deprecated `returnValue` adds nothing and the

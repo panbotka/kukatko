@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * How long a text filter waits after the last keystroke before it commits. Long
@@ -8,8 +8,18 @@ import { useEffect, useRef, useState } from 'react'
  */
 export const TEXT_FILTER_DEBOUNCE_MS = 300
 
-/** The draft value and the setter a debounced text field is driven by. */
-export type UseDebouncedTextResult = readonly [draft: string, setDraft: (next: string) => void]
+/**
+ * The draft value and the setter a debounced text field is driven by, plus
+ * `takeUnsent`: for a submit (Enter) that must not wait out the pause. It
+ * cancels the pending commit and returns the draft when it had not been
+ * committed yet, `undefined` when it had — the caller then writes it its own
+ * way (a submit is a different history step from a pause).
+ */
+export type UseDebouncedTextResult = readonly [
+  draft: string,
+  setDraft: (next: string) => void,
+  takeUnsent: () => string | undefined,
+]
 
 /**
  * A text field that keeps up with the keyboard but commits on a pause.
@@ -57,6 +67,10 @@ export function useDebouncedText(
       return
     }
     const timer = setTimeout(() => {
+      // Taken by a submit in the meantime: it has been written already.
+      if (draft === syncedRef.current) {
+        return
+      }
       syncedRef.current = draft
       commitRef.current(draft)
     }, delayMs)
@@ -65,5 +79,16 @@ export function useDebouncedText(
     }
   }, [draft, delayMs])
 
-  return [draft, setDraft]
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const takeUnsent = useCallback(() => {
+    const current = draftRef.current
+    if (current === syncedRef.current) {
+      return undefined
+    }
+    syncedRef.current = current
+    return current
+  }, [])
+
+  return [draft, setDraft, takeUnsent]
 }

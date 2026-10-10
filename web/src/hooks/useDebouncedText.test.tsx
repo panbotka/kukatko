@@ -128,4 +128,32 @@ describe('useDebouncedText', () => {
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledWith('Canon')
   })
+
+  it('hands an unsent draft to a submit and drops the pending pause', () => {
+    const commit = vi.fn()
+    const { result } = renderHook(() => useDebouncedText('', commit))
+
+    act(() => {
+      result.current[1]('svatba')
+    })
+    // Enter before the pause: the submit takes the draft and writes it its own
+    // way, so the timer must not write it a second time.
+    expect(result.current[2]()).toBe('svatba')
+    settle()
+    expect(commit).not.toHaveBeenCalled()
+    // Taken once: a second submit of the same draft has nothing left to send.
+    expect(result.current[2]()).toBeUndefined()
+  })
+
+  it('has nothing to hand a submit once the pause has committed', () => {
+    const commit = vi.fn()
+    const { result } = renderHook(() => useDebouncedText('', commit))
+
+    act(() => {
+      result.current[1]('svatba')
+    })
+    settle()
+    expect(commit).toHaveBeenCalledWith('svatba')
+    expect(result.current[2]()).toBeUndefined()
+  })
 })

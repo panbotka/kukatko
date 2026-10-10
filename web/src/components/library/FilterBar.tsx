@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom'
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useDebouncedText } from '../../hooks/useDebouncedText'
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
+import { useQueryHistory } from '../../hooks/useQueryHistory'
 import { type LibraryFacets } from '../../hooks/useLibraryFacets'
 import {
   addToFilterList,
@@ -235,8 +236,12 @@ export interface FilterBarProps<T extends LibraryView> {
  * `/search` adds is *ranking* — full-text relevance and semantic similarity —
  * which is what `searchHref` links to when the embeddings box is reachable.
  *
- * Facet and enum filters push a history entry (so Back steps through views) while
- * the free-text inputs replace it (so live typing does not flood history). All
+ * Facet and enum filters push a history entry (so Back steps through views). The
+ * quick filter's query does too, once per edit: its first pause pushes, later
+ * pauses rewrite that entry, and Enter commits at once and closes the edit — so
+ * Back from a submitted query returns to the previous one or the unfiltered
+ * list, and live typing does not flood history ({@link useQueryHistory}). The
+ * camera field only ever replaces: it is a refinement, not a view. All
  * state lives in the URL via `onChange`; the bar is fully controlled by `view`.
  * Generic over the view type so it serves both the library ({@link LibraryView})
  * and the search page (a superset adding `mode`); only the library fields are
@@ -281,9 +286,22 @@ export function FilterBar<T extends LibraryView>({
   // typing `svatba` straight into the URL made the reader watch six wrong
   // numbers on the way to the one they asked for — and, on a phone, six of them
   // on the drawer's own button.
-  const [queryDraft, setQueryDraft] = useDebouncedText(view.q, (q) => {
-    replace({ q })
+  //
+  // A query is a view, so it gets a history entry Back can step over: the
+  // first pause of an edit pushes, the later ones rewrite that same entry, and
+  // Enter commits at once and closes the edit ({@link useQueryHistory}).
+  const queryHistory = useQueryHistory()
+  const [queryDraft, setQueryDraft, takeUnsentQuery] = useDebouncedText(view.q, (q) => {
+    onChange({ q } as Partial<T>, queryHistory.typed())
   })
+  const submitQuery = () => {
+    const q = takeUnsentQuery()
+    if (q === undefined) {
+      queryHistory.end()
+      return
+    }
+    onChange({ q } as Partial<T>, queryHistory.submitted())
+  }
 
   const chips = buildChips(view, t, i18n.language, { facets, uploaders })
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
@@ -398,7 +416,16 @@ export function FilterBar<T extends LibraryView>({
   )
 
   return (
-    <Form className="kukatko-filter-bar" role="search" aria-label={t('library.filters.barLabel')}>
+    <Form
+      className="kukatko-filter-bar"
+      role="search"
+      aria-label={t('library.filters.barLabel')}
+      onSubmit={(e) => {
+        // Never the browser's own GET submit: the view goes to the URL through
+        // the router, and Enter in the query field is handled on the field.
+        e.preventDefault()
+      }}
+    >
       <div className="d-flex flex-wrap align-items-center gap-2">
         {showSearch && (
           <>
@@ -414,6 +441,17 @@ export function FilterBar<T extends LibraryView>({
                 placeholder={t('library.filters.searchPlaceholder')}
                 onChange={(e) => {
                   setQueryDraft(e.target.value)
+                }}
+                onKeyDown={(e) => {
+                  // Enter is the reader settling on the query. Caught here, not
+                  // on the form's submit: the bar holds more than one text
+                  // field and no submit button, so the browser's implicit
+                  // submission never fires. A key confirming an IME
+                  // composition is not a submit.
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    submitQuery()
+                  }
                 }}
               />
             </InputGroup>
