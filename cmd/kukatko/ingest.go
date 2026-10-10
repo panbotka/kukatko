@@ -32,6 +32,10 @@ import (
 // streaming encode of a freshly uploaded video (never a still). Each is a nil
 // interface when its feature is off, so nothing is queued for a handler that is
 // not registered.
+//
+// The processing service is what a re-upload of an already-catalogued file
+// schedules the photo's missing steps through, so a photo whose first upload was
+// cut short is completed by sending it again.
 func buildIngest(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	sidecar ingest.SidecarEnqueuer, reg *metrics.Registry,
@@ -52,6 +56,7 @@ func buildIngest(
 		OCR:          ocrEnqueuerOrNil(cfg, enqueuer),
 		Places:       placesEnqueuerOrNil(cfg, enqueuer),
 		HLS:          hlsEnqueuerOrNil(cfg, enqueuer),
+		Pending:      buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
 		Duplicate:    cfg.Duplicate,
 		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:    cfg.Thumb.MaxPixels,

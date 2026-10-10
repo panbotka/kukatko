@@ -1,6 +1,10 @@
 package ingest
 
-import "context"
+import (
+	"context"
+
+	"github.com/panbotka/kukatko/internal/processing"
+)
 
 // JobEnqueuer schedules the asynchronous post-ingest work for a freshly created
 // photo: the image embedding (image_embed) and face detection
@@ -71,6 +75,18 @@ type PlacesEnqueuer interface {
 type HLSEnqueuer interface {
 	// EnqueueHLSTranscode schedules the HLS encode of photoUID.
 	EnqueueHLSTranscode(ctx context.Context, photoUID string) error
+}
+
+// PendingScheduler schedules every processing step an already-catalogued photo
+// is owed and nothing has scheduled. A re-upload of a photo's bytes calls it, so
+// a photo whose first upload was cut short after its original was stored gets
+// the rest of its processing from the second one instead of a bare `duplicate`.
+//
+// It is satisfied by *processing.Service, whose notion of "pending" is the very
+// one the per-photo processing report shows.
+type PendingScheduler interface {
+	// SchedulePending enqueues the photo's pending steps and returns them.
+	SchedulePending(ctx context.Context, photoUID string) ([]processing.Step, error)
 }
 
 // NopEnqueuer is the no-op JobEnqueuer used until the persistent job queue

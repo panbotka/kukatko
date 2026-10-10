@@ -438,6 +438,12 @@ sentence leads with and retrying them is the button. The per-file list is still 
 its remove and its errors-only filter — folded away, and it unfolds itself the moment something
 fails.
 
+**Closing the tab early loses nothing.** Once a file's last byte has arrived, the server finishes it
+on its own — thumbnails, the queued face and search work, and for an upload link the filing into the
+link's album — whether or not the browser is still there. And sending a file the library already has
+is a repair: the photo's missing thumbnails are generated and any processing it never got is
+scheduled, and the answer is still "already in the library".
+
 **What goes in:** JPEG, PNG, GIF, WebP, BMP and TIFF; HEIC/HEIF from an iPhone; the camera RAW of
 every usual vendor (CR2, CR3, NEF, NRW, ARW, SRF, DNG, RAF, ORF, RW2, PEF, SRW, 3FR, IIQ, X3F, KDC,
 MRW, MEF); and video — MP4, M4V, MOV, AVI, MKV, WebM, MPG/MPEG, MTS/M2TS, 3GP, WMV, FLV and bare

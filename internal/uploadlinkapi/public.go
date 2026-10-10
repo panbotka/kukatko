@@ -62,6 +62,11 @@ var (
 	errNotFiled = errors.New("the photo could not be added to the album")
 )
 
+// recordTimeout bounds the bookkeeping that follows a file's ingest — the
+// upload's provenance, its filing into the link's targets, its audit entry and
+// the sidecar reschedule — which runs detached from the request (see ingestOne).
+const recordTimeout = time.Minute
+
 // linkGoneMessage is the error of a link that no longer accepts uploads, for the
 // whole request and for a single file alike.
 const linkGoneMessage = "upload link is no longer valid"
@@ -272,6 +277,13 @@ func readName(part io.Reader) string {
 // so neither concurrent requests nor a revoke or expiry mid-request let a file
 // past the cap or the link's end; a file that is then not recorded gives its
 // slot back.
+//
+// Once the pipeline has the file, the client's disconnect no longer cancels
+// anything: the pipeline itself detaches after staging, and the recording runs
+// on a context detached from the request too. A browser that hung up after its
+// last byte used to leave a photo with no record of the upload — no provenance,
+// not filed into the link's album, no audit entry — and a slot that was neither
+// used nor given back.
 func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.Link, who uploader) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
@@ -291,8 +303,10 @@ func (a *API) ingestOne(r *http.Request, part *multipart.Part, link uploadlink.L
 		a.release(r, link)
 		return res
 	}
-	if err := a.record(r, link, who, res); err != nil {
-		a.log.ErrorContext(r.Context(), "uploadlinkapi: filing an uploaded photo",
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), recordTimeout)
+	defer cancel()
+	if err := a.record(ctx, r, link, who, res); err != nil {
+		a.log.ErrorContext(ctx, "uploadlinkapi: filing an uploaded photo",
 			slog.String("link_uid", link.UID), slog.String("photo_uid", res.PhotoUID),
 			slog.String("error", err.Error()))
 		a.release(r, link)
@@ -331,18 +345,21 @@ func (a *API) release(r *http.Request, link uploadlink.Link) {
 
 // record stores the provenance of res, files its photo into the link's targets
 // and audits the upload, then reschedules the photo's sidecar, which now names
-// new albums and labels.
-func (a *API) record(r *http.Request, link uploadlink.Link, who uploader, res ingest.FileResult) error {
+// new albums and labels. It runs on ctx — detached from the request by the
+// caller — and reads only the request's metadata (who, from where) off r.
+func (a *API) record(
+	ctx context.Context, r *http.Request, link uploadlink.Link, who uploader, res ingest.FileResult,
+) error {
 	entry := audit.FromRequest(r, who.userUID).Entry(audit.ActionUploadLinkUpload, "", "",
 		map[string]any{"filename": res.Filename})
-	err := a.store.RecordUpload(r.Context(), uploadlink.Upload{
+	err := a.store.RecordUpload(ctx, uploadlink.Upload{
 		LinkUID: link.UID, PhotoUID: res.PhotoUID, Created: res.Outcome == ingest.OutcomeCreated,
 		UploaderName: who.name, UploadedBy: who.userUID, SessionHash: who.sessionHash,
 	}, entry)
 	if err != nil {
 		return fmt.Errorf("uploadlinkapi: recording upload: %w", err)
 	}
-	a.enqueueSidecar(r.Context(), res.PhotoUID)
+	a.enqueueSidecar(ctx, res.PhotoUID)
 	return nil
 }
 

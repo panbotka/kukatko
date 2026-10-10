@@ -76,13 +76,13 @@ func (s *Store) ListFiles(ctx context.Context, photoUID string) ([]PhotoFile, er
 }
 
 // SetPhash upserts the perceptual hashes for p.PhotoUID, replacing any existing
-// row and stamping created_at with the time of THIS write. The stamp is the
-// row's whole meaning to the processing report: the thumbnail job writes the
-// hashes right after the renditions, so "when were the thumbnails last built"
-// is this timestamp — and a forced rebuild after a saved edit has to move it,
-// or a client waiting for the rebuilt rendition could never tell it has landed
-// (the thumbnail route's ETag is keyed on the original's hash and cannot). It
-// returns a wrapped error on failure.
+// row and stamping created_at with the time of THIS write. It returns a wrapped
+// error on failure.
+//
+// The stamp says when the hashes were computed and nothing more. It used to
+// stand in for "when were the thumbnails built", which the upload pipeline
+// writes the hashes *before* — so a client hanging up in between left a photo
+// that claimed thumbnails it never got. That question is MarkThumbnailsBuilt's.
 func (s *Store) SetPhash(ctx context.Context, p Phash) error {
 	const q = `INSERT INTO photo_phashes (photo_uid, phash, dhash)
 		VALUES ($1, $2, $3)
@@ -90,6 +90,34 @@ func (s *Store) SetPhash(ctx context.Context, p Phash) error {
 			phash = EXCLUDED.phash, dhash = EXCLUDED.dhash, created_at = now()`
 	if _, err := s.pool.Exec(ctx, q, p.PhotoUID, p.Phash, p.Dhash); err != nil {
 		return fmt.Errorf("photos: upserting phash: %w", err)
+	}
+	return nil
+}
+
+// MarkThumbnailsBuilt stamps photos.thumbnails_at with the time of THIS write:
+// every thumbnail size of the photo has just been generated. Call it only after
+// the renditions are in place — the stamp is the processing report's evidence for
+// the `thumbnail` step, and a forced rebuild after a saved edit has to move it, or
+// a client waiting for the rebuilt rendition could never tell it has landed (the
+// thumbnail route's ETag is keyed on the original's hash and cannot). An unknown
+// uid is not an error: there is simply nothing to stamp.
+func (s *Store) MarkThumbnailsBuilt(ctx context.Context, uid string) error {
+	const q = `UPDATE photos SET thumbnails_at = now() WHERE uid = $1`
+	if _, err := s.pool.Exec(ctx, q, uid); err != nil {
+		return fmt.Errorf("photos: stamping thumbnails of %s: %w", uid, err)
+	}
+	return nil
+}
+
+// MarkThumbnailsPresent is MarkThumbnailsBuilt for a run that only *checked*
+// the thumbnails and filled in what was missing: it stamps a photo that has no
+// stamp yet and leaves an existing one alone. A repair pass is not a rebuild, and
+// moving the stamp there would tell a client waiting for a forced rebuild that it
+// has landed when it has not.
+func (s *Store) MarkThumbnailsPresent(ctx context.Context, uid string) error {
+	const q = `UPDATE photos SET thumbnails_at = now() WHERE uid = $1 AND thumbnails_at IS NULL`
+	if _, err := s.pool.Exec(ctx, q, uid); err != nil {
+		return fmt.Errorf("photos: stamping thumbnails of %s: %w", uid, err)
 	}
 	return nil
 }

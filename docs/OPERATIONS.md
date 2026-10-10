@@ -57,7 +57,8 @@ configuration key both here **and** into `config.example.yaml`.
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
-  `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`
+  `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`/
+  `--unscheduled-steps`
   (each opt-in; thumbnails/phashes enqueue `thumbnail` jobs drained by a running server's worker,
   embeddings/faces backfill, orphan import synchronously via the upload pipeline. `--faces` prints the
   videos it passed over on its own line (`videos skipped by face detection=N`): detection does not run on
@@ -102,6 +103,12 @@ configuration key both here **and** into `config.example.yaml`.
   (and the scan reports no backlog), because no `places` handler is registered there and the jobs would wait
   for ever. Since photos now earn a `places` job **at upload** (`internal/ingest`), this is a catch-up for the
   library that predates that, not routine work.
+  `--unscheduled-steps` enqueues every processing step a live photo is owed and nothing has scheduled — the
+  steps its processing report (the photo detail's `processing` block) calls `pending`, one job per (photo,
+  step), never a step switched off on this instance. The scan's `unscheduled steps` line is its dry run,
+  sampled as `<photo_uid>/<step>`. It is the catch-up for an upload cut short after its original was stored
+  (2026-10-05: no thumbnails, no jobs); since the pipeline now finishes regardless of the client and a
+  re-upload of the same file completes its photo, a non-zero count is worth a look rather than routine.
   `--impossible-dates` is the fourth flag that writes the catalogue directly, and the only one that **removes**
   something: it withdraws the capture date of every photo dated to a year no photograph can have been taken in
   — before 1826 or further ahead than next year, the same range `internal/exif` enforces on an incoming

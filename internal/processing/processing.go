@@ -147,11 +147,14 @@ type Evidence struct {
 
 	// MetadataAt is photos.metadata_extracted_at.
 	MetadataAt *time.Time
-	// ThumbnailAt is the photo_phashes row's created_at: the thumbnail job
-	// computes the perceptual hashes alongside the thumbnails, so that row is the
-	// durable record that it ran (a thumbnail itself is only a cache file). The
-	// stamp is refreshed by every write (photos.SetPhash), so it says when the
-	// thumbnails were LAST built — which is what lets the viewer wait for the
+	// ThumbnailAt is photos.thumbnails_at, but only for a photo that also has its
+	// photo_phashes row: the thumbnail step produces both, so it is done once both
+	// have landed. thumbnails_at is written only after every size was generated
+	// (photos.Store.MarkThumbnailsBuilt), never before — reading the step from the
+	// pHash row alone, which the upload pipeline writes *ahead* of the
+	// thumbnails, is how an interrupted upload came to report `done` for a photo
+	// with no thumbnail at all. A forced rebuild moves the stamp, so it says when
+	// the thumbnails were LAST built — which is what lets the viewer wait for the
 	// rebuild a saved edit enqueues and only then refetch the rendition.
 	ThumbnailAt *time.Time
 	// EmbeddingAt is the embeddings row's created_at.
@@ -294,4 +297,19 @@ func (e Evidence) report(byType map[string]jobs.Job, skip func(Step) bool) []Sta
 		list = append(list, e.status(step, job, skip(step)))
 	}
 	return list
+}
+
+// pending returns the steps this photo is owed and nothing will deliver: no
+// evidence, no unfinished job of the step's type (unfinished says which types
+// have one) and not skipped. It is exactly the steps report marks StatePending,
+// asked without building a Status per step — the library-wide gap scan asks it
+// once per photo.
+func (e Evidence) pending(unfinished map[Step]bool, skip func(Step) bool) []Step {
+	var gaps []Step
+	for _, step := range Steps {
+		if e.doneAt(step) == nil && !unfinished[step] && !skip(step) {
+			gaps = append(gaps, step)
+		}
+	}
+	return gaps
 }

@@ -93,6 +93,10 @@ func newMaintenanceRepairCmd() *cobra.Command {
 		"withdraw the capture date of photos dated to a year no photograph can have "+
 			"been taken in; the date is cleared, never replaced, and the photos become "+
 			"findable as dated:no; 'maintenance scan' is its dry run")
+	cmd.Flags().Bool("unscheduled-steps", false,
+		"enqueue every processing step a live photo is owed and nothing has scheduled "+
+			"(the steps its processing report calls pending — what an interrupted upload "+
+			"leaves behind); 'maintenance scan' is its dry run")
 	return cmd
 }
 
@@ -232,6 +236,12 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	if len(report.OrphanSegments.Samples) > 0 {
 		cmd.Printf("    e.g. %v\n", report.OrphanSegments.Samples)
 	}
+	// The dry run of `repair --unscheduled-steps`: steps no job will ever deliver,
+	// counted per (photo, step) and sampled as <photo_uid>/<step>.
+	cmd.Printf("  unscheduled steps:  %d\n", report.UnscheduledSteps.Count)
+	if len(report.UnscheduledSteps.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.UnscheduledSteps.Samples)
+	}
 	if report.Clean() {
 		cmd.Println("library is consistent")
 	}
@@ -247,7 +257,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 	if !opts.Any() {
 		cmd.Println("no repair selected; pass --thumbnails, --embeddings, --faces, --phashes, " +
 			"--import-orphans, --places, --dimensions, --face-markers, --sideways-faces, " +
-			"--impossible-dates, --missing-renditions or --delete-orphan-segments")
+			"--impossible-dates, --missing-renditions, --delete-orphan-segments or --unscheduled-steps")
 		return nil
 	}
 	svc, cleanup, err := openMaintenanceService(cmd)
@@ -280,6 +290,7 @@ func runMaintenanceRepair(cmd *cobra.Command) error {
 		result.RenditionsDropped)
 	cmd.Printf("orphan segments deleted=%d kept=%d (kept = an unfinished encode is still writing them)\n",
 		result.OrphanSegmentsDeleted, result.OrphanSegmentsKept)
+	cmd.Printf("unscheduled steps scheduled=%d\n", result.StepsScheduled)
 	return nil
 }
 
@@ -300,6 +311,7 @@ func repairOptionsFromFlags(cmd *cobra.Command) (maintenance.RepairOptions, erro
 		"impossible-dates":       &opts.ImpossibleDates,
 		"missing-renditions":     &opts.MissingRenditions,
 		"delete-orphan-segments": &opts.DeleteOrphanSegments,
+		"unscheduled-steps":      &opts.UnscheduledSteps,
 	} {
 		val, err := flags.GetBool(name)
 		if err != nil {

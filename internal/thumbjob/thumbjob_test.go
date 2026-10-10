@@ -31,6 +31,20 @@ type fakePhotos struct {
 	savedBlurhash string
 	blurCalls     int
 	blurErr       error
+	// built and present count the two thumbnail stamps; stampErr fails both.
+	built    int
+	present  int
+	stampErr error
+}
+
+func (f *fakePhotos) MarkThumbnailsBuilt(context.Context, string) error {
+	f.built++
+	return f.stampErr
+}
+
+func (f *fakePhotos) MarkThumbnailsPresent(context.Context, string) error {
+	f.present++
+	return f.stampErr
 }
 
 func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
@@ -221,6 +235,56 @@ func TestForceRegenerateRefreshesEvenWhenPhashPresent(t *testing.T) {
 	}
 	if len(sizes) != 1 || sizes[0] != "tile_500" {
 		t.Errorf("regenerated sizes = %v, want [tile_500]", sizes)
+	}
+}
+
+// TestThumbnailStamps verifies which stamp each path writes, and that only a
+// successful generation writes one: the repair (Regenerate) fills a missing stamp
+// without moving an existing one, the rebuild (ForceRegenerate) always moves it,
+// and a failed generation leaves the photo reading as not thumbnailed.
+func TestThumbnailStamps(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		force       bool
+		thumbs      *fakeThumbs
+		wantBuilt   int
+		wantPresent int
+	}{
+		{name: "repair fills a missing stamp", thumbs: &fakeThumbs{}, wantPresent: 1},
+		{name: "rebuild moves the stamp", force: true, thumbs: &fakeThumbs{}, wantBuilt: 1},
+		{name: "failed repair stamps nothing", thumbs: &fakeThumbs{err: errors.New("boom")}},
+		{name: "failed rebuild stamps nothing", force: true, thumbs: &fakeThumbs{regenErr: errors.New("boom")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p := &fakePhotos{hasPhash: true}
+			svc := newService(p, tt.thumbs, &fakeDecoder{})
+			if tt.force {
+				_, _ = svc.ForceRegenerate(context.Background(), "ph1")
+			} else {
+				_ = svc.Regenerate(context.Background(), "ph1")
+			}
+			if p.built != tt.wantBuilt || p.present != tt.wantPresent {
+				t.Errorf("stamps built=%d present=%d, want built=%d present=%d",
+					p.built, p.present, tt.wantBuilt, tt.wantPresent)
+			}
+		})
+	}
+}
+
+// TestThumbnailStampError verifies a failed stamp fails the job, so it is retried
+// rather than leaving thumbnails the report cannot see.
+func TestThumbnailStampError(t *testing.T) {
+	t.Parallel()
+	p := &fakePhotos{hasPhash: true, stampErr: errors.New("db down")}
+	svc := newService(p, &fakeThumbs{}, &fakeDecoder{})
+	if err := svc.Regenerate(context.Background(), "ph1"); err == nil {
+		t.Error("Regenerate swallowed a failed stamp")
+	}
+	if _, err := svc.ForceRegenerate(context.Background(), "ph1"); err == nil {
+		t.Error("ForceRegenerate swallowed a failed stamp")
 	}
 }
 

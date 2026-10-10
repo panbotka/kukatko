@@ -51,6 +51,9 @@ type fakeStore struct {
 	recorded  []uploadlink.Upload
 	entries   []audit.Entry
 	released  int
+	// recordCtxErrs is the state of the context each RecordUpload ran on: nil
+	// for a live one.
+	recordCtxErrs []error
 }
 
 // Create records in and returns the link with the test code.
@@ -173,9 +176,13 @@ func (f *fakeStore) ReleaseUpload(_ context.Context, _ string) error {
 }
 
 // RecordUpload records up.
-func (f *fakeStore) RecordUpload(_ context.Context, up uploadlink.Upload, entry audit.Entry) error {
+func (f *fakeStore) RecordUpload(ctx context.Context, up uploadlink.Upload, entry audit.Entry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.recordCtxErrs = append(f.recordCtxErrs, ctx.Err())
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if f.recordErr != nil {
 		return f.recordErr
 	}
@@ -188,6 +195,9 @@ func (f *fakeStore) RecordUpload(_ context.Context, up uploadlink.Upload, entry 
 type fakeIngest struct {
 	mu       sync.Mutex
 	requests []ingest.Request
+	// hangUp, when set, runs once the file has been read: the client
+	// disconnecting right after its last byte.
+	hangUp func()
 }
 
 // IngestFile mimics the pipeline closely enough for the handler.
@@ -196,6 +206,9 @@ func (f *fakeIngest) IngestFile(_ context.Context, src io.Reader, req ingest.Req
 	f.requests = append(f.requests, req)
 	f.mu.Unlock()
 	body, err := io.ReadAll(src)
+	if f.hangUp != nil {
+		f.hangUp()
+	}
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, ingest.ErrFileTooLarge) {
@@ -245,6 +258,8 @@ type harness struct {
 	ingest  *fakeIngest
 	sidecar *fakeSidecar
 	handler http.Handler
+	// reqCtx is the context upload sends its request with; nil is Background.
+	reqCtx context.Context //nolint:containedctx // The test client's request context.
 }
 
 // newHarness mounts an API over fresh fakes; tweak adjusts the config.
@@ -479,7 +494,11 @@ func (h *harness) upload(t *testing.T, user string, cookies []*http.Cookie, part
 	if err := mw.Close(); err != nil {
 		t.Fatalf("multipart: %v", err)
 	}
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/u/"+testCode+"/upload", &buf)
+	ctx := h.reqCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/u/"+testCode+"/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	if user != "" {
 		req.Header.Set(userHeader, user)
@@ -558,6 +577,39 @@ func TestUpload_anonymous(t *testing.T) {
 	h.upload(t, "", []*http.Cookie{cookie}, part{field: "files", filename: "c.jpg", content: "ccc"})
 	if last := h.store.recorded[len(h.store.recorded)-1]; last.SessionHash != first.SessionHash {
 		t.Errorf("second request session = %q, want %q", last.SessionHash, first.SessionHash)
+	}
+}
+
+// TestUpload_clientHangsUpAfterSending is the 2026-10-05 upload through a link:
+// the browser disconnects once its file is in. The upload must still be
+// recorded — provenance, filing into the link's targets, audit entry — on a live
+// context, and the photo's sidecar still scheduled.
+func TestUpload_clientHangsUpAfterSending(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t, nil)
+	ctx, hangUp := context.WithCancel(context.Background())
+	defer hangUp()
+	h.reqCtx, h.ingest.hangUp = ctx, hangUp
+
+	rec := h.upload(t, "", nil, part{field: "files", filename: "les.jpg", content: "les"})
+	if ctx.Err() == nil {
+		t.Fatal("the client never hung up — the test proves nothing")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	if len(h.store.recorded) != 1 || h.store.recorded[0].PhotoUID != "ph_les.jpg" {
+		t.Fatalf("recorded = %+v (contexts %v), want the photo recorded", h.store.recorded, h.store.recordCtxErrs)
+	}
+	if len(h.store.entries) != 1 || h.store.entries[0].Action != audit.ActionUploadLinkUpload {
+		t.Errorf("audit entries = %+v, want the upload's", h.store.entries)
+	}
+	if h.store.released != 0 {
+		t.Errorf("released %d slots for a recorded upload", h.store.released)
+	}
+	if len(h.sidecar.uids) != 1 {
+		t.Errorf("sidecars scheduled = %v, want the photo's", h.sidecar.uids)
 	}
 }
 

@@ -14,6 +14,14 @@
 // Everything streams — files are never buffered whole in memory — and every
 // per-file failure is captured in a FileResult rather than aborting the batch,
 // so a multi-file upload reports mixed created/duplicate/error outcomes cleanly.
+//
+// The client is needed only until its bytes have arrived. Everything after the
+// staging copy runs on a context detached from the caller's (see
+// processTimeout): a browser that hangs up after sending the whole file must not
+// leave a photo catalogued without its thumbnails or its queued jobs. And a
+// re-upload of bytes already catalogued completes whatever the earlier upload
+// did not — it fills in missing thumbnails and schedules the steps nothing has
+// scheduled — before answering `duplicate`.
 package ingest
 
 import (
@@ -54,6 +62,15 @@ import (
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/video"
 )
+
+// processTimeout bounds the part of an upload that runs after its bytes have
+// all been staged — dedup, metadata, publishing the original, cataloguing,
+// hashing, thumbnails and the job enqueue — which no longer listens to the
+// caller's cancellation. It is generous on purpose: publishing a multi-gigabyte
+// video to the object store is the slowest step, and cutting a legitimate upload
+// short is the failure this whole detachment exists to prevent. It only stops a
+// step that has genuinely hung.
+const processTimeout = 30 * time.Minute
 
 // ErrFileTooLarge indicates an uploaded file exceeded the configured maximum
 // size and was rejected without being catalogued.
@@ -140,6 +157,10 @@ type Config struct {
 	// HLS schedules the streaming encode of a freshly catalogued video. A nil HLS —
 	// the feature switched off — schedules none, and the upload still succeeds.
 	HLS HLSEnqueuer
+	// Pending schedules the processing steps an already-catalogued photo is owed
+	// when a re-upload names it (see completeDuplicate). A nil Pending still fills
+	// in missing thumbnails but schedules nothing.
+	Pending PendingScheduler
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
 	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
@@ -174,6 +195,7 @@ type Service struct {
 	ocr         OCREnqueuer
 	places      PlacesEnqueuer
 	hls         HLSEnqueuer
+	pending     PendingScheduler
 	dup         config.DuplicateConfig
 	maxFileSize int64
 	maxPixels   int64
@@ -202,6 +224,7 @@ func New(cfg Config) *Service {
 		ocr:         cfg.OCR,
 		places:      cfg.Places,
 		hls:         cfg.HLS,
+		pending:     cfg.Pending,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
 		maxPixels:   cfg.MaxPixels,
@@ -236,12 +259,25 @@ func (s *Service) Ingest(ctx context.Context, src io.Reader, filename, uploadedB
 // IngestFile runs the full pipeline for one file read from src and returns a
 // per-file result. It never returns an error: every failure is captured in the
 // FileResult so batch callers can report mixed outcomes.
+//
+// ctx governs the read of src and nothing after it. Once the file is staged the
+// rest runs on a context detached from ctx (bounded by processTimeout): a client
+// that disconnects after its last byte would otherwise cancel the pipeline
+// somewhere between publishing the original and enqueueing its jobs, leaving a
+// photo with no thumbnails, no jobs and — for an upload link — no record of the
+// upload (2026-10-05). Detaching right after staging rather than after the
+// original is stored is deliberate: from that point the client contributes
+// nothing more, and stopping half-way only ever produces a worse state than
+// finishing — an orphaned original, or a photo row without its processing.
 func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) FileResult {
 	staged, err := s.stage(ctx, src)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
 	defer staged.cleanup()
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), processTimeout)
+	defer cancel()
 
 	// Before the dedup lookup too: a file that is not media must not resolve to
 	// a photo by any route, an existing one included.
@@ -343,15 +379,54 @@ func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error)
 }
 
 // existingDuplicate reports whether a photo with this content hash is already
-// catalogued, returning a ready duplicate result if so. It is an optimisation:
-// the authoritative dedup is the file_hash unique constraint at insert time,
-// which also covers the concurrent-upload race this check cannot see.
+// catalogued, returning a ready duplicate result if so — after completing
+// whatever processing the existing photo is missing (see completeDuplicate). It
+// is an optimisation: the authoritative dedup is the file_hash unique constraint
+// at insert time, which also covers the concurrent-upload race this check cannot
+// see.
 func (s *Service) existingDuplicate(ctx context.Context, filename, hash string) (FileResult, bool) {
 	existing, err := s.photos.GetByFileHash(ctx, hash)
 	if err != nil {
 		return FileResult{}, false
 	}
+	s.completeDuplicate(ctx, existing)
 	return duplicateResult(filename, existing.UID), true
+}
+
+// completeDuplicate finishes the processing of an already-catalogued photo that
+// a re-upload just named: it generates every thumbnail size the photo is missing
+// and schedules every processing step that is pending — never done and with
+// nothing in the queue. An earlier upload interrupted after its original was
+// stored leaves exactly that photo behind, and sending the same file again is the
+// first thing anybody tries; it used to answer `duplicate` and change nothing.
+//
+// It is cheap for a complete photo: the thumbnailer skips every size already in
+// place (one stat per size, or one listing on an object store) and the scheduler
+// enqueues nothing when nothing is pending. Every failure is logged, not
+// returned — the answer to a re-upload stays `duplicate` whatever this managed.
+// An archived photo is left alone, as every backfill leaves it.
+func (s *Service) completeDuplicate(ctx context.Context, photo photos.Photo) {
+	if photo.ArchivedAt != nil {
+		return
+	}
+	log := s.log.With(slog.String("photo_uid", photo.UID))
+	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
+		// Not fatal: the thumbnail step stays pending and is scheduled below.
+		log.WarnContext(ctx, "ingest: completing a duplicate's thumbnails", slog.String("error", err.Error()))
+	} else if err := s.photos.MarkThumbnailsPresent(ctx, photo.UID); err != nil {
+		log.WarnContext(ctx, "ingest: stamping a duplicate's thumbnails", slog.String("error", err.Error()))
+	}
+	if s.pending == nil {
+		return
+	}
+	scheduled, err := s.pending.SchedulePending(ctx, photo.UID)
+	if err != nil {
+		log.WarnContext(ctx, "ingest: scheduling a duplicate's pending steps", slog.String("error", err.Error()))
+	}
+	if len(scheduled) > 0 {
+		log.InfoContext(ctx, "ingest: a re-upload scheduled the processing its photo was missing",
+			slog.Any("steps", scheduled))
+	}
 }
 
 // storeOriginal publishes the staged temp file into the storage layout under
@@ -415,6 +490,7 @@ func (s *Service) resolveRace(ctx context.Context, filename string, stored stora
 	if existing.FilePath != stored.RelPath {
 		_ = s.storage.Delete(ctx, stored.RelPath)
 	}
+	s.completeDuplicate(ctx, existing)
 	return duplicateResult(filename, existing.UID)
 }
 
@@ -574,10 +650,16 @@ func (s *Service) nearDuplicateWarning(ctx context.Context, ph int64) []Warning 
 	}}
 }
 
-// generateThumbnails renders every registered thumbnail size for the photo,
-// reporting a single warning if generation fails.
+// generateThumbnails renders every registered thumbnail size for the photo and
+// then stamps them as built, reporting a single warning if either fails. The
+// stamp comes strictly after the renditions: it is the processing report's
+// evidence that they exist, so a photo whose generation failed (or never ran)
+// reads as owing its thumbnails instead of claiming them.
 func (s *Service) generateThumbnails(ctx context.Context, photo photos.Photo) []Warning {
 	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
+		return []Warning{{Code: warnThumbnailFailed, Message: err.Error()}}
+	}
+	if err := s.photos.MarkThumbnailsBuilt(ctx, photo.UID); err != nil {
 		return []Warning{{Code: warnThumbnailFailed, Message: err.Error()}}
 	}
 	return nil

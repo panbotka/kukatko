@@ -181,6 +181,9 @@ func buildMaintenanceService(
 		Places:    maintenancePlaceBackfillerOrNil(placesSvc),
 		Sidecar:   maintenanceSidecarOrNil(cfg, enqueuer),
 		Streaming: streaming,
+		// The same service a photo's processing report runs on, so the scan's
+		// unscheduled steps are exactly the steps the report calls pending.
+		Processing: buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
 	}), nil
 }
 

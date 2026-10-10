@@ -71,6 +71,13 @@ type PhotoStore interface {
 	// SaveBlurhash stores the photo's blurred placeholder, or clears it when the
 	// hash is empty.
 	SaveBlurhash(ctx context.Context, uid, hash string) error
+	// MarkThumbnailsBuilt stamps the photo's thumbnails as built now — the
+	// processing report's evidence for the step, and the signal a viewer waiting
+	// for a forced rebuild watches.
+	MarkThumbnailsBuilt(ctx context.Context, uid string) error
+	// MarkThumbnailsPresent stamps the photo's thumbnails as built only when no
+	// stamp exists yet, so a repair pass never passes for a rebuild.
+	MarkThumbnailsPresent(ctx context.Context, uid string) error
 }
 
 // Thumbnailer renders a photo's derived images. It is satisfied by
@@ -223,8 +230,10 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // photoUID: it (re)generates any missing thumbnail sizes and, when the photo has
 // no perceptual hashes or no blurred placeholder, recomputes and stores them. It
 // is idempotent — cached sizes, an existing pHash and an existing placeholder are
-// left untouched. A missing photo is returned as an error so the job dead-letters
-// rather than looping on a uid that will never resolve.
+// left untouched, and so is an existing thumbnails stamp (a repair is not a
+// rebuild; see photos.Store.MarkThumbnailsPresent). A missing photo is returned
+// as an error so the job dead-letters rather than looping on a uid that will
+// never resolve.
 func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 	photo, err := s.photos.GetByUID(ctx, photoUID)
 	if err != nil {
@@ -232,6 +241,9 @@ func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 	}
 	if _, err := s.thumbs.GenerateAll(ctx, photo); err != nil {
 		return fmt.Errorf("thumbjob: generating thumbnails for %s: %w", photoUID, err)
+	}
+	if err := s.photos.MarkThumbnailsPresent(ctx, photoUID); err != nil {
+		return fmt.Errorf("thumbjob: stamping thumbnails of %s: %w", photoUID, err)
 	}
 	if err := s.ensurePhash(ctx, photo); err != nil {
 		return err
@@ -260,6 +272,11 @@ func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]strin
 	sizes, err := s.thumbs.RegenerateAll(ctx, photo)
 	if err != nil {
 		return nil, fmt.Errorf("%w: regenerating thumbnails for %s: %w", ErrRegenerateFailed, photoUID, err)
+	}
+	// Moved on every rebuild: it is what a viewer waiting for the rendition a
+	// saved edit enqueued watches for.
+	if err := s.photos.MarkThumbnailsBuilt(ctx, photoUID); err != nil {
+		return nil, fmt.Errorf("thumbjob: stamping thumbnails of %s: %w", photoUID, err)
 	}
 	if err := s.recomputePhash(ctx, photo); err != nil {
 		return nil, err

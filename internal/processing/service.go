@@ -17,6 +17,9 @@ var (
 	// a place for a photo with no coordinate, text recognition for a video, a
 	// streaming encode for a still — so there is nothing to schedule.
 	ErrStepNotApplicable = errors.New("processing: step does not apply to this photo")
+	// ErrLibraryUnavailable indicates Unscheduled was called on a Service built
+	// without a LibraryReader.
+	ErrLibraryUnavailable = errors.New("processing: library gap scan not configured")
 )
 
 // EvidenceReader reads the persisted evidence of the work already done on a
@@ -31,6 +34,25 @@ type EvidenceReader interface {
 type JobLister interface {
 	// UnfinishedForPhoto returns the newest unfinished job per type for photoUID.
 	UnfinishedForPhoto(ctx context.Context, photoUID string) ([]jobs.Job, error)
+}
+
+// LibraryReader reads the library-wide half of the gap scan: the evidence of
+// every live photo and the job types each has unfinished work of. It is satisfied
+// by *Store.
+type LibraryReader interface {
+	// EachLiveEvidence calls fn with the evidence of every live photo.
+	EachLiveEvidence(ctx context.Context, fn func(photoUID string, ev Evidence) error) error
+	// UnfinishedSteps returns, per photo uid, the job types it has an unfinished
+	// job of.
+	UnfinishedSteps(ctx context.Context) (map[string]map[Step]bool, error)
+}
+
+// Gap is one step one live photo is owed and that nothing is going to deliver:
+// no evidence it ran and no job of its type in the queue. It is the state the
+// report calls StatePending, found across the whole library.
+type Gap struct {
+	PhotoUID string `json:"photo_uid"`
+	Step     Step   `json:"step"`
 }
 
 // StepEnqueuer schedules one step for one photo. It is satisfied by
@@ -63,6 +85,9 @@ type Config struct {
 	Jobs JobLister
 	// Enqueuer schedules a single step.
 	Enqueuer StepEnqueuer
+	// Library reads the whole library for Unscheduled. It is optional: a Service
+	// without one reports and schedules per photo only.
+	Library LibraryReader
 	// Disabled lists the steps whose feature is switched off on this instance
 	// (`ocr` without OCR enabled, `sidecar` without the export, `places` without a
 	// mapy.com key, `hls_transcode` without streaming). No worker handler is registered for those, so a job of that
@@ -78,6 +103,7 @@ type Service struct {
 	evidence EvidenceReader
 	jobs     JobLister
 	enqueuer StepEnqueuer
+	library  LibraryReader
 	disabled map[Step]bool
 }
 
@@ -93,7 +119,8 @@ func New(cfg Config) *Service {
 		disabled[step] = true
 	}
 	return &Service{
-		evidence: cfg.Evidence, jobs: cfg.Jobs, enqueuer: cfg.Enqueuer, disabled: disabled,
+		evidence: cfg.Evidence, jobs: cfg.Jobs, enqueuer: cfg.Enqueuer, library: cfg.Library,
+		disabled: disabled,
 	}
 }
 
@@ -152,6 +179,66 @@ func (s *Service) Run(ctx context.Context, photoUID string, step Step) (Status, 
 		job = &j
 	}
 	return ev.status(step, job, false), nil
+}
+
+// SchedulePending enqueues every step of the photo identified by photoUID that
+// the report would call pending — owed, never done, nothing queued — and returns
+// the steps it scheduled, in report order. A step that is done, queued, running,
+// failed or skipped is left exactly as it is, so calling it on a fully processed
+// photo costs the two reads of Report and enqueues nothing.
+//
+// It is how a photo whose processing was cut short is completed without anybody
+// having to know which steps it missed: a re-upload of the same bytes calls it
+// (see internal/ingest). An enqueue failure does not stop the others; the
+// failures are joined into the returned error. It returns
+// photos.ErrPhotoNotFound for an unknown photo.
+func (s *Service) SchedulePending(ctx context.Context, photoUID string) ([]Step, error) {
+	report, err := s.Report(ctx, photoUID)
+	if err != nil {
+		return nil, err
+	}
+	var scheduled []Step
+	var errs []error
+	for _, st := range report {
+		if st.State != StatePending {
+			continue
+		}
+		if err := s.enqueue(ctx, photoUID, st.Step); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		scheduled = append(scheduled, st.Step)
+	}
+	return scheduled, errors.Join(errs...)
+}
+
+// Unscheduled returns every gap in the live library — each (photo, step) the
+// report would call pending — ordered by photo uid and then by the report's step
+// order. Steps switched off on this instance are never gaps, exactly as they are
+// never pending in the report. It costs two queries however large the library
+// is: one walk over the evidence, one scan of the unfinished jobs.
+//
+// It returns ErrLibraryUnavailable on a Service built without a LibraryReader.
+func (s *Service) Unscheduled(ctx context.Context) ([]Gap, error) {
+	if s.library == nil {
+		return nil, ErrLibraryUnavailable
+	}
+	unfinished, err := s.library.UnfinishedSteps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("processing: library gap scan: %w", err)
+	}
+	gaps := make([]Gap, 0)
+	err = s.library.EachLiveEvidence(ctx, func(photoUID string, ev Evidence) error {
+		skip := func(step Step) bool { return s.skips(ev, step) }
+		for _, step := range ev.pending(unfinished[photoUID], skip) {
+			gaps = append(gaps, Gap{PhotoUID: photoUID, Step: step})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("processing: library gap scan: %w", err)
+	}
+	return gaps, nil
 }
 
 // unfinishedByType reads the photo's unfinished jobs and indexes them by job

@@ -125,6 +125,7 @@ func TestRepairOptionsFromFlags(t *testing.T) {
 		"delete-orphan-segments": func(o maintenance.RepairOptions) bool {
 			return o.DeleteOrphanSegments
 		},
+		"unscheduled-steps": func(o maintenance.RepairOptions) bool { return o.UnscheduledSteps },
 	}
 	for flag, selected := range tests {
 		t.Run(flag, func(t *testing.T) {

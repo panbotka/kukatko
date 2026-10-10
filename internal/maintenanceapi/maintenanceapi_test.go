@@ -190,6 +190,17 @@ func TestRepairStreamingUnavailable(t *testing.T) {
 	}
 }
 
+// TestRepairProcessingUnavailable verifies ErrProcessingUnavailable maps to 503:
+// a service wired without the processing collaborator cannot schedule gaps.
+func TestRepairProcessingUnavailable(t *testing.T) {
+	t.Parallel()
+	svc := &fakeService{repairErr: maintenance.ErrProcessingUnavailable}
+	rec := do(newRouter(svc), http.MethodPost, "/maintenance/repair", `{"unscheduled_steps":true}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rec.Code)
+	}
+}
+
 // TestRepairUnavailable verifies a nil service answers 503.
 func TestRepairUnavailable(t *testing.T) {
 	t.Parallel()

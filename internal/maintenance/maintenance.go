@@ -206,8 +206,9 @@ type OrphanImporter interface {
 // Config bundles the collaborators and tunables of a Service. Every interface is
 // required except OrphanImporter (nil disables orphan import), Places (nil
 // disables the reverse-geocode backfill), Sidecar (nil means the sidecar export
-// is off) and Streaming (a zero value means this instance does not stream). A
-// non-positive SampleLimit uses defaultSampleLimit.
+// is off), Streaming (a zero value means this instance does not stream) and
+// Processing (nil leaves the unscheduled-steps finding empty and its repair
+// unavailable). A non-positive SampleLimit uses defaultSampleLimit.
 type Config struct {
 	Photos      PhotoCatalog
 	Vectors     VectorCatalog
@@ -222,6 +223,7 @@ type Config struct {
 	Places      PlaceBackfiller
 	Sidecar     SidecarScheduler
 	Streaming   Streaming
+	Processing  ProcessingGaps
 	SampleLimit int
 }
 
@@ -241,6 +243,7 @@ type Service struct {
 	places      PlaceBackfiller
 	sidecar     SidecarScheduler
 	streaming   Streaming
+	processing  ProcessingGaps
 	sampleLimit int
 }
 
@@ -269,6 +272,7 @@ func New(cfg Config) *Service {
 		places:      cfg.Places,
 		sidecar:     cfg.Sidecar,
 		streaming:   cfg.Streaming,
+		processing:  cfg.Processing,
 		sampleLimit: limit,
 	}
 }
@@ -356,6 +360,7 @@ func (s *Service) scanFindings(ctx context.Context, report *Report) error {
 		{s.scanFaceMarkers, &report.DuplicateFaceMarkers},
 		{s.scanSidewaysDetections, &report.SidewaysFaceDetections},
 		{s.scanImpossibleDates, &report.ImpossibleDates},
+		{s.scanUnscheduledSteps, &report.UnscheduledSteps},
 	}
 	for _, step := range steps {
 		finding, err := step.run(ctx)

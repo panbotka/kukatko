@@ -228,10 +228,12 @@ func buildProcessingService(
 	if !cfg.Video.HLS.Enabled {
 		disabled = append(disabled, processing.StepHLS)
 	}
+	evidence := processing.NewStore(db.Pool())
 	return processing.New(processing.Config{
-		Evidence: processing.NewStore(db.Pool()),
+		Evidence: evidence,
 		Jobs:     jobStore,
 		Enqueuer: enqueuer,
+		Library:  evidence,
 		Disabled: disabled,
 	})
 }

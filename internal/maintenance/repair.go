@@ -69,6 +69,10 @@ type RepairOptions struct {
 	// photo becomes one without a date (findable as `dated:no`), because a made-up
 	// date would be a second wrong answer on top of the first.
 	ImpossibleDates bool `json:"impossible_dates"`
+	// UnscheduledSteps schedules every processing step a live photo is owed and
+	// that nothing has scheduled — the `pending` steps of its processing report —
+	// one job per (photo, step).
+	UnscheduledSteps bool `json:"unscheduled_steps"`
 }
 
 // Any reports whether at least one repair is selected.
@@ -88,7 +92,7 @@ func (o RepairOptions) flags() []bool {
 	return []bool{
 		o.Thumbnails, o.Embeddings, o.Faces, o.Phashes, o.ImportOrphans,
 		o.Places, o.Dimensions, o.FaceMarkers, o.SidewaysFaces,
-		o.ImpossibleDates, o.MissingRenditions, o.DeleteOrphanSegments,
+		o.ImpossibleDates, o.MissingRenditions, o.DeleteOrphanSegments, o.UnscheduledSteps,
 	}
 }
 
@@ -153,6 +157,10 @@ type RepairResult struct {
 	// was withdrawn. Each one is now a photo without a date, reachable as
 	// `dated:no`, and each cleared date is one audit entry.
 	ImpossibleDatesCleared int `json:"impossible_dates_cleared"`
+	// StepsScheduled is the number of (photo, step) jobs the unscheduled-steps
+	// repair enqueued. It counts work scheduled, not done: the embedding and face
+	// jobs among them wait for the box like any other.
+	StepsScheduled int `json:"steps_scheduled"`
 }
 
 // Repair runs the selected repairs and returns what each scheduled or did. It is
@@ -178,6 +186,7 @@ func (s *Service) Repair(ctx context.Context, opts RepairOptions, meta audit.Met
 		s.repairSidewaysFaces,
 		s.repairMissingRenditions,
 		s.repairOrphanSegments,
+		s.repairUnscheduledSteps,
 		func(ctx context.Context, opts RepairOptions, res *RepairResult) error {
 			return s.repairImpossibleDates(ctx, opts, meta, res)
 		},

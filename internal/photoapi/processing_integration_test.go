@@ -111,6 +111,10 @@ func TestDetailProcessing_evidenceReadsDone(t *testing.T) {
 		photos.Phash{PhotoUID: photo.UID, Phash: 1, Dhash: 2}); err != nil {
 		t.Fatalf("SetPhash: %v", err)
 	}
+	// The thumbnail step needs its thumbnails as well as its hashes.
+	if err := env.store.MarkThumbnailsBuilt(t.Context(), photo.UID); err != nil {
+		t.Fatalf("MarkThumbnailsBuilt: %v", err)
+	}
 	if _, err := env.vectors.SaveEmbedding(t.Context(), vectors.Embedding{
 		PhotoUID: photo.UID, Vector: imageVecAt(map[int]float32{0: 1}), Model: "m",
 	}); err != nil {

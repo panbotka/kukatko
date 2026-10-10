@@ -371,6 +371,7 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		Enqueuer:     enqueuer,
 		OCR:          ocrEnqueuerOrNil(cfg, enqueuer),
 		Places:       placesEnqueuerOrNil(cfg, enqueuer),
+		Pending:      buildProcessingService(cfg, db, jobs.NewStore(pool), enqueuer),
 		Duplicate:    cfg.Duplicate,
 		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
 		MaxPixels:    cfg.Thumb.MaxPixels,

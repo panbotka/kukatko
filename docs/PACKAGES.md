@@ -1165,6 +1165,16 @@ to `## Package map` in `CLAUDE.md`.
   for the maintenance backfill; the credit budget in `internal/placesjob` still bounds the spend, deferring a
   job rather than failing it when the window is empty. A failed enqueue is a `enqueue_failed` **warning**, not
   a failed upload — every one of these jobs is re-schedulable by a backfill;
+  the thumbnails are stamped `photos.thumbnails_at` (`MarkThumbnailsBuilt`) only **after** every size was
+  generated, so the processing report reads them from the thumbnails rather than from the pHash written ahead
+  of them; **the caller's context governs only the staging read** — everything after it runs on
+  `context.WithoutCancel` bounded by `processTimeout` (30 min), because a client that hangs up after its last
+  byte used to cancel the pipeline between the stored original and its thumbnails/jobs (2026-10-05); **a
+  duplicate completes its photo** (`completeDuplicate`, on both the pre-insert lookup and the lost insert
+  race, live photos only): `GenerateAll` fills any missing size (a stat per size, or one listing on an object
+  store, when nothing is missing), `MarkThumbnailsPresent` stamps it without moving an existing stamp, and the
+  optional `Config.Pending` (`PendingScheduler`, satisfied by `processing.Service`) schedules every `pending`
+  step; failures are logged, the result stays `duplicate`;
   `API` = `NewAPI(svc, requireCurator, rateLimit)` + `RegisterRoutes` mounts `POST /upload` behind
   `RequireCurator` (curator and above);
   multipart is streamed part-by-part, never the whole file in RAM),
@@ -2394,9 +2404,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   persisted evidence, so it has no honest state to report and nothing a button could usefully schedule ahead
   of a viewer pressing play. `Store` = `NewStore(pool)`: `Evidence(photoUID)` reads the whole evidence in
   **one** query — `photos.media_type`/`lat`/`lng`/`metadata_extracted_at`/`ocr_at`/`ocr_text`/
-  `sidecar_written_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes` (its `created_at` is the
-  thumbnail step's `at`; `photos.SetPhash` restamps it on every write, so it moves when a saved edit's forced
-  rebuild lands — the viewer's only way to know the rebuilt renditions exist), `embeddings`,
+  `sidecar_written_at`/`thumbnails_at` plus four LEFT JOINs on the PK-keyed side tables `photo_phashes` (the
+  thumbnail step's `at` is `photos.thumbnails_at`, but **only** when the pHash row exists too — the step
+  produces both; the stamp is written after every size was generated (`photos.MarkThumbnailsBuilt`, moved
+  by every forced rebuild — the viewer's only way to know the rebuilt renditions exist), never before, so an
+  upload interrupted between its pHash and its thumbnails reads as `pending`, not `done`), `embeddings`,
   `face_detections` (also the `face_count`) and `photo_places`, plus a lateral
   `max(photo_hls_renditions.encoded_at)` for the streaming step — an aggregate rather than a fifth join,
   because that table holds one row per rendition and a plain join would multiply the whole report by however
@@ -2420,7 +2432,14 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   refuses them. `Run(photoUID,step)` validates, refuses an inapplicable step (`ErrStepNotApplicable`) and an
   unknown one (`ErrUnknownStep`), then dispatches to the step's own `jobs.Enqueuer` method (keeping the
   sidecar's debounce) and answers with the step's new state; the queue's dedup index makes a double click
-  harmless. Read-only apart from that one enqueue — it never runs the work itself), `internal/cluster/`
+  harmless. `SchedulePending(photoUID)` enqueues every step `Report` calls `pending` (and nothing else) and
+  returns them — what a re-upload of an already-catalogued file calls through `ingest.PendingScheduler`.
+  With the optional `Config.Library` (`LibraryReader`, satisfied by `Store`: `EachLiveEvidence` streams the
+  same evidence columns for every non-archived photo, `UnfinishedSteps` reads every photo's unfinished job
+  types in one scan of `jobs`), `Unscheduled()` returns every `Gap{photo_uid,step}` in the live library —
+  the `pending` predicate (`Evidence.pending`, kept equal to the report's by test) asked once per photo, two
+  queries in all; without one it is `ErrLibraryUnavailable`. It backs the maintenance scan's
+  `unscheduled_steps`. Read-only apart from those enqueues — it never runs the work itself), `internal/cluster/`
   (face auto-clustering: groups **not-yet-assigned faces** (without a subject) into clusters of the same
   person, so a whole cluster can be named in one go (a key UX improvement over naming faces one at a time);
   the `face_clusters` table (migration `0010_face_clusters.sql`: `uid` PK prefix `fc`,
@@ -4218,7 +4237,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
   `Report{Photos,FilesInDB,Store,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
-  DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates,MissingRenditions,OrphanSegments}` — each class is a
+  DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates,MissingRenditions,OrphanSegments,
+  UnscheduledSteps}` — each class is a
   `Finding{Count,Samples}` (`OrphanSegments` is a `SegmentOrphans`, a `Finding` plus `Bytes`)
   (a count + a limited sample of identifiers); `representativeThumbSize`=`tile_224` is the proxy for the presence of
   thumbnails, an orphan = an original **in the store** with no `photo_files.file_path`, `Report.Clean()`;
@@ -4235,11 +4255,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the UI shows the failure instead of a green verdict — a store nobody could read must not pass for an empty one.
   The orphan *import* does abort on that failure, since importing nothing is not success;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
-  SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments},meta audit.Meta)`** (each opt-in,
+  SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments,UnscheduledSteps},meta audit.Meta)`**
+  (each opt-in,
   idempotent, in a fixed order) → `RepairResult` with the scheduling counts: thumbnails/phashes enqueue
   `thumbnail` jobs (`EnqueueThumbnail`), embeddings/faces call the backfill, the orphan import goes through the
   upload pipeline (a per-orphan failure is counted without aborting); `ErrOrphanImportUnavailable` when the
   import is selected without an importer.
+  **`UnscheduledSteps`** (`unscheduled.go`) is the finding nothing else ever resolves: the optional
+  `Config.Processing` (`ProcessingGaps`, satisfied by `processing.Service`) lists every (live photo, step)
+  whose processing report would read `pending` — no evidence, no unfinished job, not switched off — sampled as
+  `<photo_uid>/<step>`, which is exactly what an upload cut short after its original was stored leaves behind;
+  the repair schedules each through `processing.Service.Run` (`StepsScheduled`; a step that stopped applying in
+  the meantime is skipped). Unwired → an empty finding and `ErrProcessingUnavailable` for the repair.
   **`Places`** is the reverse-geocode backfill: `MissingPlaces` is its dry run (`MissingPlaces` finding —
   live photos carrying coordinates with no `photo_places` row, the same predicate as
   `system.LibrarySummary.PhotosPendingGeocode` and the dashboard's `PhotosWithoutPlace`) and the repair calls
@@ -4396,6 +4423,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (panics on a nil mandatory collaborator; `Lister`/`Enqueuer` optional — they turn the backfill on),
   `Handle`=`worker.HandlerFunc` (payload `{photo_uid,force?}`, empty uid → `ErrMissingPhotoUID` dead-letter),
   `Regenerate(uid)`/`ensurePhash`/`ensureBlurhash` idempotent; registered in `serve` on `jobs.TypeThumbnail`.
+  After the thumbnails are in place it stamps `photos.thumbnails_at` — the processing report's evidence for
+  the step: the repair through `MarkThumbnailsPresent` (only an unstamped photo, so a repair never passes for
+  a rebuild), `ForceRegenerate` through `MarkThumbnailsBuilt` (always moved — what a viewer waiting for a
+  saved edit's rebuild watches); a failed stamp fails the job, so it is retried.
   **The placeholder lives here rather than in a job of its own** because it is derived from the *rendering*,
   not from the original: it is read back out of the preview this job has just written, so a photo whose
   rendering changed (a saved crop or rotation, which forces a rebuild) gets a matching placeholder in the

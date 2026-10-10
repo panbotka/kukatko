@@ -128,6 +128,16 @@ type Report struct {
 	// `maintenance repair --impossible-dates`, which withdraws the date rather than
 	// inventing a replacement.
 	ImpossibleDates Finding `json:"impossible_dates"`
+	// UnscheduledSteps are the processing steps live photos are owed and nothing
+	// is going to deliver — the step never ran, and no job of its type is queued,
+	// running or failed — counted per (photo, step) and sampled as
+	// <photo_uid>/<step>. A step is owed exactly when the photo's processing report
+	// calls it `pending`; a step switched off on this instance never is. An upload
+	// cut short after its original was stored leaves precisely this behind, and
+	// unlike a job waiting for the box it never resolves on its own. Listing them
+	// is the dry run of `maintenance repair --unscheduled-steps`. Empty when the
+	// scan is wired without the processing service.
+	UnscheduledSteps Finding `json:"unscheduled_steps"`
 }
 
 // findings returns every Finding in the report, so an aggregate over all of them
@@ -138,7 +148,7 @@ func (r Report) findings() []Finding {
 		r.MissingOriginals, r.OrphanFiles, r.MissingThumbnails, r.MissingEmbeddings,
 		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
 		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
-		r.ImpossibleDates, r.MissingRenditions, r.OrphanSegments.Finding,
+		r.ImpossibleDates, r.MissingRenditions, r.OrphanSegments.Finding, r.UnscheduledSteps,
 	}
 }
 

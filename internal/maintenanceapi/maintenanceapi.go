@@ -149,7 +149,7 @@ func (a *API) handleRepair(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// writeRepairError maps a repair failure onto its response: the three
+// writeRepairError maps a repair failure onto its response: the four
 // "this instance has no such feature" sentinels answer 503 with what is missing,
 // anything else is an opaque 500.
 func writeRepairError(w http.ResponseWriter, err error) {
@@ -160,6 +160,8 @@ func writeRepairError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusServiceUnavailable, "place geocoding not configured")
 	case errors.Is(err, maintenance.ErrStreamingUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "video streaming not configured")
+	case errors.Is(err, maintenance.ErrProcessingUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "processing gap repair not configured")
 	default:
 		writeError(w, http.StatusInternalServerError, "repair failed")
 	}

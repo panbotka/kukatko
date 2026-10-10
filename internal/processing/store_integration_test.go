@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/hlsjob"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
 )
@@ -108,5 +109,128 @@ func TestEvidence_hlsIsTheNewestRendition(t *testing.T) {
 	}
 	if after.HLSAt == nil {
 		t.Fatal("HLSAt = none for a video with two recorded renditions")
+	}
+}
+
+// TestEvidence_thumbnailNeedsTheThumbnails is the regression of the interrupted
+// upload (2026-10-05): the pHash row alone — which the upload pipeline writes
+// before it renders anything — must not read as thumbnails, and the thumbnails
+// stamp alone is not the whole step either. Only both together are done.
+func TestEvidence_thumbnailNeedsTheThumbnails(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	photoStore := photos.NewStore(db.Pool())
+	store := processing.NewStore(db.Pool())
+
+	photo, err := photoStore.Create(t.Context(), photos.Photo{
+		FileHash: "hash-thumb", FilePath: "2026/10/thumb.jpg", FileName: "thumb.jpg",
+		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	thumbnailAt := func(stage string) bool {
+		t.Helper()
+		ev, err := store.Evidence(t.Context(), photo.UID)
+		if err != nil {
+			t.Fatalf("Evidence %s: %v", stage, err)
+		}
+		return ev.ThumbnailAt != nil
+	}
+
+	if err := photoStore.MarkThumbnailsBuilt(t.Context(), photo.UID); err != nil {
+		t.Fatalf("MarkThumbnailsBuilt: %v", err)
+	}
+	if thumbnailAt("with thumbnails but no pHash") {
+		t.Error("thumbnail step done without its perceptual hashes")
+	}
+
+	other, err := photoStore.Create(t.Context(), photos.Photo{
+		FileHash: "hash-thumb-2", FilePath: "2026/10/thumb2.jpg", FileName: "thumb2.jpg",
+		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := photoStore.SetPhash(t.Context(), photos.Phash{PhotoUID: other.UID, Phash: 1, Dhash: 2}); err != nil {
+		t.Fatalf("SetPhash: %v", err)
+	}
+	ev, err := store.Evidence(t.Context(), other.UID)
+	if err != nil {
+		t.Fatalf("Evidence: %v", err)
+	}
+	if ev.ThumbnailAt != nil {
+		t.Error("thumbnail step done on a pHash alone — the interrupted-upload lie")
+	}
+
+	if err := photoStore.SetPhash(t.Context(), photos.Phash{PhotoUID: photo.UID, Phash: 1, Dhash: 2}); err != nil {
+		t.Fatalf("SetPhash: %v", err)
+	}
+	if !thumbnailAt("with thumbnails and pHash") {
+		t.Error("thumbnail step not done with both thumbnails and pHash in place")
+	}
+}
+
+// TestLibraryReads checks the two library-wide reads of the gap scan against the
+// real schema: the evidence walk covers live photos only, and the unfinished
+// steps name a photo's queued job types and ignore completed ones.
+func TestLibraryReads(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	photoStore := photos.NewStore(db.Pool())
+	store := processing.NewStore(db.Pool())
+	ctx := t.Context()
+
+	live, err := photoStore.Create(ctx, photos.Photo{
+		FileHash: "hash-live", FilePath: "2026/10/live.jpg", FileName: "live.jpg",
+		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
+	})
+	if err != nil {
+		t.Fatalf("Create live: %v", err)
+	}
+	archived, err := photoStore.Create(ctx, photos.Photo{
+		FileHash: "hash-archived", FilePath: "2026/10/archived.jpg", FileName: "archived.jpg",
+		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
+	})
+	if err != nil {
+		t.Fatalf("Create archived: %v", err)
+	}
+	if _, err := db.Pool().Exec(ctx, `UPDATE photos SET archived_at = now() WHERE uid = $1`, archived.UID); err != nil {
+		t.Fatalf("archiving: %v", err)
+	}
+
+	var walked []string
+	if err := store.EachLiveEvidence(ctx, func(uid string, ev processing.Evidence) error {
+		walked = append(walked, uid)
+		if ev.MediaType != photos.MediaImage {
+			t.Errorf("%s media = %q, want image", uid, ev.MediaType)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("EachLiveEvidence: %v", err)
+	}
+	if len(walked) != 1 || walked[0] != live.UID {
+		t.Errorf("walked %v, want only the live photo %s", walked, live.UID)
+	}
+
+	enq := jobs.NewEnqueuer(jobs.NewStore(db.Pool()))
+	if err := enq.EnqueueImageEmbed(ctx, live.UID); err != nil {
+		t.Fatalf("EnqueueImageEmbed: %v", err)
+	}
+	if err := enq.EnqueueFaceDetect(ctx, live.UID); err != nil {
+		t.Fatalf("EnqueueFaceDetect: %v", err)
+	}
+	if _, err := db.Pool().Exec(ctx,
+		`UPDATE jobs SET state = 'done' WHERE type = 'face_detect' AND payload ->> 'photo_uid' = $1`,
+		live.UID); err != nil {
+		t.Fatalf("completing the face job: %v", err)
+	}
+	unfinished, err := store.UnfinishedSteps(ctx)
+	if err != nil {
+		t.Fatalf("UnfinishedSteps: %v", err)
+	}
+	got := unfinished[live.UID]
+	if !got[processing.StepImageEmbed] || got[processing.StepFaceDetect] || len(got) != 1 {
+		t.Errorf("unfinished steps of %s = %v, want only image_embed", live.UID, got)
 	}
 }

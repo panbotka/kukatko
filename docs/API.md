@@ -321,6 +321,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   with one+ files, **streamed**. Returns `{"results":[{filename,status,outcome,photo_uid?,code?,error?,
   warnings?}]}` (200 overall, per-file 409 duplicate semantics). Mounted by the second `server.WithAPI`
   in `serve` (`buildIngest` in `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = no limit).
+  **The client is needed only until its bytes have arrived:** everything after the staging copy runs
+  detached from the request (`context.WithoutCancel`, bounded at 30 min), so a browser that hangs up after
+  its last byte still gets a photo with its thumbnails and its queued jobs. **A duplicate completes its
+  photo:** a re-upload of bytes already catalogued (live photos only) first generates any thumbnail size the
+  photo is missing and schedules every step its `processing` block calls `pending`, then answers the same
+  409 `duplicate` — so sending the file again repairs an upload that was cut short.
   **A file whose content is not a photo or a video** is refused per file with **415** and the stable
   `code: "not_media"` before anything about it is stored — no `photos` row, no original, no job; the
   name does not matter, the bytes do (magic-byte sniff, then an exiftool/ffprobe probe for a signature
@@ -858,10 +864,11 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `metadata`, `thumbnail`, `hls_transcode`, `image_embed`, `face_detect`, `ocr`, `places`, `sidecar`
   (`storyboard` is deliberately absent: it is rendered lazily on first playback and leaves no persisted
   evidence). Each entry is `{step, state, at?, error?, face_count?, text_found?}`. The state is decided by
-  **persisted evidence first** (`photos.metadata_extracted_at`, a `photo_phashes` row — whose `created_at`
-  is restamped by every thumbnail (re)build, so the `thumbnail` step's `at` is when the renditions were
-  **last** built and a client can wait for a saved edit's rebuild by comparing it with the edit's
-  `updated_at` —, an `embeddings` row,
+  **persisted evidence first** (`photos.metadata_extracted_at`, `photos.thumbnails_at` **together with** a
+  `photo_phashes` row — the stamp is written only after every size was generated and restamped by every
+  forced rebuild, so the `thumbnail` step's `at` is when the renditions were **last** built and a client can
+  wait for a saved edit's rebuild by comparing it with the edit's `updated_at`; the pHash row alone, which the
+  upload pipeline writes *before* the thumbnails, no longer reads as done —, an `embeddings` row,
   a `face_detections` row, `photos.ocr_at`, a `photo_places` row **with coordinates**,
   `photos.sidecar_written_at`, the newest `photo_hls_renditions.encoded_at` — one rendition is enough, since
   the master playlist advertises whatever was produced) → `done` with `at`; then by the **queue** (`jobs` for this `photo_uid` and
@@ -1860,7 +1867,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   account or anonymous session hash, created/duplicate), the link's `last_used_at`
   stamped (the count was the reservation's) and an `upload_link.upload` audit entry written (target the photo, actor the signed-in uploader
   or none; details `link_uid`, `link_title`, `uploader_name`, `outcome` — the title so the audit list can
-  name an anonymous upload by its link), all in one transaction; its sidecar is rescheduled. A signed-in uploader owns the photo as
+  name an anonymous upload by its link), all in one transaction; its sidecar is rescheduled. That recording
+  runs on a context detached from the request (bounded at 1 min), so a client that hangs up once its file is
+  in still has the upload filed and audited. A signed-in uploader owns the photo as
   with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
   SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
   marks their photos for `POST /auth/register` with
@@ -2239,7 +2248,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `missing_originals`/`orphan_files`/`missing_thumbnails`/`missing_embeddings`/`missing_faces`/
   `missing_phashes`/`missing_places`/`transposed_dimensions`/`transposed_face_boxes`/
   `duplicate_face_markers`/`sideways_face_detections`/`impossible_dates`/`missing_renditions`/
-  `orphan_segments` + the totals
+  `orphan_segments`/`unscheduled_steps` + the totals
   `photos`/`files_in_db`/`store`). **`store`** is the inventory of whichever store the instance keeps its
   originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
   bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
@@ -2247,18 +2256,24 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   instead of a clean verdict.
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces,`
-  `impossible_dates,missing_renditions,delete_orphan_segments}`
+  `impossible_dates,missing_renditions,delete_orphan_segments,unscheduled_steps}`
   (each opt-in)
   → `RepairResult`
   with scheduling counts (`*_enqueued` + `orphans_imported/skipped/failed` +
   `dimensions_fixed`/`face_boxes_fixed`/`face_boxes_skipped`/`face_links_cleared`/
   `faces_skipped_videos` (the clips the face repair passed over — detection does not run on footage)/
   `sideways_faces_enqueued`/`impossible_dates_cleared`/`renditions_dropped`/
-  `orphan_segments_deleted`/`orphan_segments_kept`);
+  `orphan_segments_deleted`/`orphan_segments_kept`/`steps_scheduled`);
   `DisallowUnknownFields`, an empty selection →
   400, an orphan import without an importer → 503 (`ErrOrphanImportUnavailable`), a place backfill with no
   mapy.com key → 503 (`ErrPlaceBackfillUnavailable`), a streaming repair on an instance with
-  `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`). The repairs are idempotent and
+  `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`), a gap repair on a service wired without the
+  processing service → 503 (`ErrProcessingUnavailable`). `unscheduled_steps` counts, per (photo, step) and
+  sampled as `<photo_uid>/<step>`, every step a **live** photo is owed that nothing will deliver — exactly the
+  steps its `processing` block calls `pending` (no evidence, no unfinished job, not switched off). An upload
+  cut short after its original was stored leaves precisely that, and unlike a job waiting for the box it never
+  resolves by itself; the repair schedules each one through `processing.Service.Run` (`steps_scheduled`).
+  The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
   delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It
   rewrites the pixel dimensions of quarter-turned photos whose columns hold the **displayed** frame instead of
