@@ -1,6 +1,7 @@
 import { notifyTaskChanged } from '../lib/taskChanges'
 
 import { ApiError } from './auth'
+import { type TaskState } from './tasks'
 
 /**
  * Comments client, mirroring the backend JSON shapes of `internal/comments` and
@@ -156,18 +157,32 @@ export async function fetchComments(
   return body.comments
 }
 
+/** Options for {@link createComment}. */
+export interface CreateCommentOptions {
+  signal?: AbortSignal
+  /**
+   * On a task thread only: the state the task moves to with the comment, in the
+   * same server-side transaction — "here is my answer, your move" as one action
+   * that lands whole or not at all. A writer's move: a viewer gets 403 and
+   * nothing is written.
+   */
+  state?: TaskState
+}
+
 /**
  * Appends a comment to a subject's thread and returns the created record.
  *
- * @throws ApiError 400 (blank or over-long body), 404 (no such photo) or 429 (the
+ * @throws ApiError 400 (blank or over-long body, or a state the task refuses),
+ *   403 (a state sent by a viewer), 404 (no such photo or task) or 429 (the
  *   per-user rate limit — the caller should say "slow down", not "it failed").
  */
 export async function createComment(
   subject: CommentSubject,
   body: string,
-  signal?: AbortSignal,
+  { signal, state }: CreateCommentOptions = {},
 ): Promise<Comment> {
-  const created = await send<Comment>('POST', threadPath(subject), { body }, signal)
+  const payload = state === undefined ? { body } : { body, state }
+  const created = await send<Comment>('POST', threadPath(subject), payload, signal)
   announceTaskWrite(subject)
   return created
 }

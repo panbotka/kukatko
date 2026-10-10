@@ -81,6 +81,7 @@ export type IconName =
   | 'play-fill'
   | 'plus-lg'
   | 'question-circle'
+  | 'robot'
   | 'search'
   | 'send'
   | 'share'

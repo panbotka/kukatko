@@ -9,6 +9,7 @@ import { ConfirmModal } from '../ConfirmModal'
 import { Icon } from '../Icon'
 import { type CommentFailure, useComments } from '../../hooks/useComments'
 import { type Comment, type CommentSubject, MAX_COMMENT_LENGTH } from '../../services/comments'
+import { type TaskState } from '../../services/tasks'
 
 import { CommentItem } from './CommentItem'
 
@@ -44,6 +45,37 @@ export interface CommentsPanelProps {
    * "Diskuse") passes false, so the reader is not told twice.
    */
   heading?: boolean
+  /**
+   * A second, primary send button that posts the comment *and* moves the task on
+   * — "Odeslat a předat agentovi". Only the task page passes it, and only for a
+   * writer on a task that is not already with the agent and not closed: the
+   * panel draws it whenever it is given and decides nothing about who may.
+   */
+  handOver?: CommentHandOver
+}
+
+/** The task page's "send and hand over" action; see `CommentsPanelProps.handOver`. */
+export interface CommentHandOver {
+  /** The state the comment moves the task to, in the same transaction. */
+  state: TaskState
+  /** The button's visible label. */
+  label: string
+  /** Called once the comment and the move have both landed. */
+  onDone: () => void
+}
+
+/**
+ * Whether a key press in the composer is the hand-over shortcut,
+ * Ctrl/Cmd+Shift+Enter. Plain Enter and Ctrl/Cmd+Enter send; Shift+Enter alone
+ * breaks the line, so the hand-over needs both modifiers to be unmistakable.
+ */
+function isHandOverKey(event: {
+  key: string
+  shiftKey: boolean
+  ctrlKey: boolean
+  metaKey: boolean
+}) {
+  return event.key === 'Enter' && event.shiftKey && (event.ctrlKey || event.metaKey)
 }
 
 /**
@@ -80,6 +112,7 @@ export function CommentsPanel({
   onThreadChange,
   reloadKey,
   heading = true,
+  handOver,
 }: CommentsPanelProps) {
   const { t } = useTranslation()
   const { status, comments, count, busy, failure, post, edit, remove } = useComments(subject, {
@@ -92,14 +125,18 @@ export function CommentsPanel({
   // whole thread — a modal per row would be a modal per comment in the DOM.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
-  const submit = async (event: SyntheticEvent): Promise<void> => {
+  // One send for both buttons. The hand-over is a single request — the comment
+  // and the move commit together server-side — so a failure leaves the draft in
+  // the box with nothing posted, and pressing the button again cannot double it.
+  const submit = async (event: SyntheticEvent, moveTo?: CommentHandOver): Promise<void> => {
     event.preventDefault()
     const body = draft.trim()
     if (body === '' || busy) {
       return
     }
-    if (await post(body)) {
+    if (await post(body, moveTo?.state)) {
       setDraft('')
+      moveTo?.onDone()
     }
   }
 
@@ -169,7 +206,11 @@ export function CommentsPanel({
           the read-only rule — and is the reason the sheet lifts with the on-screen
           keyboard on a phone (see `--kk-keyboard-inset` in viewer.css). */}
       <form
-        className="kk-comments__composer"
+        className={
+          handOver
+            ? 'kk-comments__composer kk-comments__composer--stacked'
+            : 'kk-comments__composer'
+        }
         onSubmit={(event) => {
           void submit(event)
         }}
@@ -189,8 +230,12 @@ export function CommentsPanel({
             setDraft(event.target.value)
           }}
           onKeyDown={(event) => {
-            // Enter sends, Shift+Enter breaks the line: the convention every chat
-            // has already taught the reader, so nobody has to be told.
+            if (handOver && isHandOverKey(event)) {
+              void submit(event, handOver)
+              return
+            }
+            // Enter (and Ctrl/Cmd+Enter) sends, Shift+Enter breaks the line: the
+            // convention every chat has already taught the reader.
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
               void submit(event)
@@ -203,17 +248,47 @@ export function CommentsPanel({
             event.currentTarget.scrollIntoView({ block: 'nearest' })
           }}
         />
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          className="kk-comments__send"
-          disabled={busy || draft.trim() === ''}
-          aria-label={t('photo.comments.submit')}
-          title={t('photo.comments.submitHint')}
-        >
-          <Icon name="send" />
-        </Button>
+        {handOver ? (
+          // Two labelled buttons rather than an icon: the hand-over is the
+          // primary action here and has to say what it does, and the plain send
+          // beside it has to read as the lesser of the two. They wrap onto
+          // separate lines on a narrow phone rather than squeezing.
+          <div className="kk-comments__actions">
+            <Button
+              type="submit"
+              variant="outline-primary"
+              className="kk-comments__action"
+              disabled={busy || draft.trim() === ''}
+              title={t('photo.comments.submitHint')}
+            >
+              <Icon name="send" /> {t('photo.comments.send')}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              className="kk-comments__action"
+              disabled={busy || draft.trim() === ''}
+              title={t('photo.comments.handOverHint')}
+              onClick={(event) => {
+                void submit(event, handOver)
+              }}
+            >
+              <Icon name="robot" /> {handOver.label}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            className="kk-comments__send"
+            disabled={busy || draft.trim() === ''}
+            aria-label={t('photo.comments.submit')}
+            title={t('photo.comments.submitHint')}
+          >
+            <Icon name="send" />
+          </Button>
+        )}
       </form>
 
       <ConfirmModal

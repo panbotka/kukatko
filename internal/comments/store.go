@@ -266,6 +266,25 @@ func (s *Store) Get(ctx context.Context, uid string) (Comment, error) {
 func (s *Store) Create(
 	ctx context.Context, subj Subject, authorUID, body string, entry audit.Entry,
 ) (Comment, error) {
+	return s.CreateAlong(ctx, subj, authorUID, body, entry, nil)
+}
+
+// Along is a further write a caller wants committed together with a comment: it
+// runs on the comment's own transaction, after the comment and its audit entry
+// are written and before the commit. Its error rolls the whole transaction back
+// — the comment included — and reaches the caller unwrapped, so the caller's own
+// sentinel errors stay classifiable.
+type Along func(ctx context.Context, tx pgx.Tx) error
+
+// CreateAlong is Create with along run on the same transaction, so a comment and
+// a write it belongs with (a task's thread answer handing the task on to its
+// next state) land together or not at all. A nil along makes it exactly Create.
+//
+// The comment is written first: a subject that does not exist fails it with
+// ErrSubjectNotFound before along is asked to do anything.
+func (s *Store) CreateAlong(
+	ctx context.Context, subj Subject, authorUID, body string, entry audit.Entry, along Along,
+) (Comment, error) {
 	stmts, err := statementsFor(subj)
 	if err != nil {
 		return Comment{}, err
@@ -278,7 +297,7 @@ func (s *Store) Create(
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "creating comment", stmts.create,
+	return s.mutateAudited(ctx, entry, "creating comment", along, stmts.create,
 		uid, subj.UID, nullableUID(authorUID), trimmed)
 }
 
@@ -305,7 +324,7 @@ func (s *Store) Update(ctx context.Context, uid, body string, entry audit.Entry)
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "updating comment", updateSQL, uid, trimmed)
+	return s.mutateAudited(ctx, entry, "updating comment", nil, updateSQL, uid, trimmed)
 }
 
 // deleteSQL soft-deletes a live comment, returning the row it stamped so the
@@ -328,7 +347,7 @@ FROM removed c` + authorJoin
 // Who may delete (the author, or an admin removing anyone's) is the caller's
 // decision.
 func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error {
-	_, err := s.mutateAudited(ctx, entry, "deleting comment", deleteSQL, uid)
+	_, err := s.mutateAudited(ctx, entry, "deleting comment", nil, deleteSQL, uid)
 	return err
 }
 
@@ -336,9 +355,10 @@ func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error
 // back — writes entry (stamped with that comment's UID) on the same transaction
 // and commits, so the change and its audit record are atomic: if either fails the
 // transaction rolls back and neither persists. op names the operation for error
-// context.
+// context. A non-nil along runs on the same transaction before the commit (see
+// Along); its error is returned as it came.
 func (s *Store) mutateAudited(
-	ctx context.Context, entry audit.Entry, op, query string, args ...any,
+	ctx context.Context, entry audit.Entry, op string, along Along, query string, args ...any,
 ) (Comment, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -352,6 +372,11 @@ func (s *Store) mutateAudited(
 	}
 	if err := audit.Write(ctx, tx, entryWithComment(entry, c.UID)); err != nil {
 		return Comment{}, fmt.Errorf("comments: %s: writing audit entry: %w", op, err)
+	}
+	if along != nil {
+		if err := along(ctx, tx); err != nil {
+			return Comment{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Comment{}, fmt.Errorf("comments: commit %s transaction: %w", op, err)

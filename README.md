@@ -356,6 +356,13 @@ rebuilt? — and the only person who knows is usually not the person editing the
   z náboru?" is agenda about the library rather than about particular pictures, and the **Nový úkol**
   button with nothing selected opens exactly that — a task with no photographs, which says „Bez fotek"
   in place of a group and can still get one later. Everything else about it is the same task.
+- **Answering and handing back is one tap.** Under a task's discussion a curator has two buttons: the
+  plain „Odeslat" and the primary **„Odeslat a předat agentovi"**, which posts the comment and moves the
+  task to *in progress* in one go — both land or neither does (Ctrl/Cmd+Shift+Enter from the keyboard).
+  Above the full state picker a row of **quick moves** offers only what fits the current state —
+  „Schválit a uzavřít" and „Vrátit agentovi" for a batch in review, „Potřebuji odpověď" while it is being
+  worked on — and a closing one opens the resolution field ready to type. From the terminal:
+  `kukatko ctl tasks comment <uid> "…" --state working`.
 - **Pointing at pictures from the discussion.** The usual objection to a batch is "these three are
   wrong": on a task's page select them and choose **Do diskuse**, and one comment lists them — a
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and

@@ -18,7 +18,7 @@ import {
   BatchActionBar,
 } from '../components/organize/BatchActionBar'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
-import { CommentsPanel } from '../components/photo/CommentsPanel'
+import { type CommentHandOver, CommentsPanel } from '../components/photo/CommentsPanel'
 import { TaskLedger } from '../components/tasks/TaskLedger'
 import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
 import { TaskViewToggle } from '../components/tasks/TaskViewToggle'
@@ -36,6 +36,7 @@ import { type Comment, taskSubject } from '../services/comments'
 import {
   deleteTask,
   fetchTask,
+  isClosedState,
   type Participant,
   removeTaskPhotos,
   type Task,
@@ -268,6 +269,33 @@ export function TaskDetailPage() {
     [uid],
   )
 
+  // A move made from the discussion ("send and hand to the agent") changed the
+  // task behind the page's back. Refetch it quietly — the badge, the controls
+  // and the people redraw in place, while the wall and the thread stay put
+  // (the panel has already appended the comment itself). A failed refresh only
+  // leaves the badge stale until the next load: the move itself has landed.
+  const refreshTask = useCallback(() => {
+    fetchTask(uid)
+      .then((task) => {
+        setState({ status: 'ready', task })
+        setPeople(task.participants)
+      })
+      .catch(() => undefined)
+  }, [uid])
+
+  // "Odeslat a předat agentovi": a writer's move, offered while the task is not
+  // already with the agent and not closed. A viewer only ever sees plain send.
+  const handOver = useMemo<CommentHandOver | undefined>(() => {
+    if (!canWrite || state.status !== 'ready') {
+      return undefined
+    }
+    const current = state.task.state
+    if (current === 'working' || isClosedState(current)) {
+      return undefined
+    }
+    return { state: 'working', label: t('taskDetail.handOver'), onDone: refreshTask }
+  }, [canWrite, state, t, refreshTask])
+
   const remove = useCallback(() => {
     setBusy(true)
     deleteTask(uid)
@@ -433,12 +461,16 @@ export function TaskDetailPage() {
             onCountChange={setCommentCount}
             onThreadChange={setThread}
             reloadKey={threadKey}
+            handOver={handOver}
           />
         </Card.Body>
       </Card>
 
       {canWrite && (
         <TaskControls
+          // Reset the picker whenever the task moved under it (a hand-over from
+          // the discussion, a quick move), so it never offers a stale state.
+          key={`${task.state}|${task.resolution}|${task.query}`}
           task={task}
           busy={busy}
           onSave={save}

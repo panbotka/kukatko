@@ -104,13 +104,24 @@ func (c *Client) ListTaskComments(ctx context.Context, taskUID string) (json.Raw
 	return c.get(ctx, commentsPath("tasks", taskUID), nil)
 }
 
+// taskCommentBody is the JSON body of a task answer: the comment and, when
+// given, the state the task moves to in the same transaction.
+type taskCommentBody struct {
+	Body  string `json:"body"`
+	State string `json:"state,omitempty"`
+}
+
 // AddTaskComment answers a task and returns the created comment as raw JSON.
 //
 // The author is the token's owner, on the same terms as AddComment: an agent
 // answers under its own account, never a person's. Every role may write, which
 // on a task is the point rather than an allowance — the person who knows the
 // answer is rarely the person who edits the library.
-func (c *Client) AddTaskComment(ctx context.Context, taskUID, body string) (json.RawMessage, error) {
+//
+// A non-empty state moves the task with the answer, in one transaction: both
+// land or neither does. Moving is a writer's act, so a viewer's token gets 403
+// for it and nothing is written; the state is validated by the server.
+func (c *Client) AddTaskComment(ctx context.Context, taskUID, body, state string) (json.RawMessage, error) {
 	if err := requireUID("task", taskUID); err != nil {
 		return nil, err
 	}
@@ -118,7 +129,8 @@ func (c *Client) AddTaskComment(ctx context.Context, taskUID, body string) (json
 	if err != nil {
 		return nil, err
 	}
-	return c.send(ctx, http.MethodPost, commentsPath("tasks", taskUID), commentBody{Body: body})
+	return c.send(ctx, http.MethodPost, commentsPath("tasks", taskUID),
+		taskCommentBody{Body: body, State: strings.TrimSpace(state)})
 }
 
 // normalizeCommentBody trims a body and refuses a blank or over-long one, so a

@@ -503,14 +503,17 @@ func newCtlTasksCommentsCmd(opts *ctlOptions) *cobra.Command {
 
 // newCtlTasksCommentCmd answers a task.
 func newCtlTasksCommentCmd(opts *ctlOptions) *cobra.Command {
-	var bodyFile string
+	var bodyFile, state string
 	cmd := &cobra.Command{
 		Use:   "comment <uid> [<text>]",
 		Short: "Answer a task, or add a note to its thread",
 		Long: "Write in a task's thread.\n\n" +
 			"The comment is attributed to the token's own account, always — so an agent\n" +
 			"answers as itself and never puts words in a person's mouth, in a thread\n" +
-			"whose whole value is that it records who remembered what.",
+			"whose whole value is that it records who remembered what.\n\n" +
+			"--state moves the task with the comment, in one transaction: \"here is the\n" +
+			"answer, your move\" lands whole or not at all. Moving needs write access, and\n" +
+			"closing still needs a resolution (use `tasks update` for that).",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := commentBodyFromArgs(args, bodyFile)
@@ -521,7 +524,7 @@ func newCtlTasksCommentCmd(opts *ctlOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			raw, err := client.AddTaskComment(cmd.Context(), args[0], body)
+			raw, err := client.AddTaskComment(cmd.Context(), args[0], body, state)
 			if err != nil {
 				return fmt.Errorf("commenting on task %s: %w", args[0], err)
 			}
@@ -529,6 +532,8 @@ func newCtlTasksCommentCmd(opts *ctlOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&bodyFile, "body-file", "", "read the comment from this file")
+	cmd.Flags().StringVar(&state, "state", "",
+		"move the task to this state with the comment (question, working, review)")
 	return cmd
 }
 

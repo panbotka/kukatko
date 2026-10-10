@@ -89,6 +89,12 @@ type CommentStore interface {
 	Create(
 		ctx context.Context, subj comments.Subject, authorUID, body string, entry audit.Entry,
 	) (comments.Comment, error)
+	// CreateAlong is Create with along run on the comment's own transaction, so
+	// an answer and the state move it carries commit together or not at all.
+	CreateAlong(
+		ctx context.Context, subj comments.Subject, authorUID, body string, entry audit.Entry,
+		along comments.Along,
+	) (comments.Comment, error)
 	// Update rewrites a live comment's body, auditing it in the same transaction.
 	Update(ctx context.Context, uid, body string, entry audit.Entry) (comments.Comment, error)
 	// Delete soft-deletes a live comment, auditing it in the same transaction.
@@ -145,7 +151,7 @@ func NewAPI(cfg Config) *API {
 //	POST   /tasks/{uid}/participants       put somebody on it
 //	DELETE /tasks/{uid}/participants/{u}   take somebody off it
 //	GET    /tasks/{uid}/comments           read the thread (any role)
-//	POST   /tasks/{uid}/comments           answer (any role, including viewers)
+//	POST   /tasks/{uid}/comments           answer (any role; moving the state with it: writers)
 //	PATCH  /tasks/{uid}/comments/{cuid}    edit one's own answer
 //	DELETE /tasks/{uid}/comments/{cuid}    delete one's own answer (admins: any)
 func (a *API) RegisterRoutes(r chi.Router) {

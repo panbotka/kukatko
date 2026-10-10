@@ -127,28 +127,50 @@ FROM photo_tasks WHERE uid = $1 FOR UPDATE`
 // leaves the state alone deliberately does neither.
 func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.Entry) (Task, error) {
 	err := s.inTx(ctx, "updating task", func(tx pgx.Tx) error {
-		cur, err := scanCurrent(tx.QueryRow(ctx, currentSQL, uid))
-		if err != nil {
-			return err
-		}
-		next, changes, err := applyUpdate(cur, upd, entry.ActorUID, time.Now().UTC())
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, updateTaskSQL, uid, next.Title, next.Body, string(next.State),
-			next.Resolution, next.Query, next.StateAt, nullableUID(next.StateBy), next.ClosedAt,
-			nullableUID(next.ClosedBy), next.Options); err != nil {
-			return fmt.Errorf("updating task row: %w", err)
-		}
-		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, withChanges(entry, uid, changes))
+		return updateIn(ctx, tx, uid, upd, entry)
 	})
 	if err != nil {
 		return Task{}, err
 	}
 	return s.Get(ctx, uid, entry.ActorUID)
+}
+
+// UpdateTx is Update on the caller's transaction: the same rules, the same
+// participation and the same audit entry, committed (or rolled back) with
+// whatever else the caller writes there. It is how an answer in a task's thread
+// hands the task on in one action — the comment and the move are one commit, so
+// neither can land without the other. It returns only an error, with the
+// package's sentinels unwrapped; read the task back with Get after the commit.
+func UpdateTx(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audit.Entry) error {
+	if err := updateIn(ctx, tx, uid, upd, entry); err != nil {
+		return translate(err, "updating task")
+	}
+	return nil
+}
+
+// updateIn is the body of an update on tx: it locks and reads the row, folds
+// upd onto it, writes it back, puts the actor on the task and audits the diff.
+func updateIn(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audit.Entry) error {
+	cur, err := scanCurrent(tx.QueryRow(ctx, currentSQL, uid))
+	if err != nil {
+		return err
+	}
+	next, changes, err := applyUpdate(cur, upd, entry.ActorUID, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, updateTaskSQL, uid, next.Title, next.Body, string(next.State),
+		next.Resolution, next.Query, next.StateAt, nullableUID(next.StateBy), next.ClosedAt,
+		nullableUID(next.ClosedBy), next.Options); err != nil {
+		return fmt.Errorf("updating task row: %w", err)
+	}
+	if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
+		return err
+	}
+	if err := audit.Write(ctx, tx, withChanges(entry, uid, changes)); err != nil {
+		return fmt.Errorf("writing task audit entry: %w", err)
+	}
+	return nil
 }
 
 // Delete removes a task outright — with its membership and its thread, which

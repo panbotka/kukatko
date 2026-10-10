@@ -3349,3 +3349,14 @@ body {
     height: 4rem;
   }
 }
+
+/* ---- Task page: quick state moves ----------------------------------------
+   The one-tap moves above a task's state picker ("Schválit", "Vrátit
+   agentovi", …) are thumb-sized targets (48 px) on every pointer: they are the
+   main way a task changes hands from a phone. */
+.kk-task-quick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+}

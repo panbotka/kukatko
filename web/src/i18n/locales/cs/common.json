@@ -1510,6 +1510,17 @@
       "body": "Fotky zůstanou, ale zmizí otázka, seznam fotek, kterých se dávka týkala, i všechny odpovědi. Hotovou práci je lepší zavřít než smazat.",
       "confirm": "Smazat"
     },
+    "handOver": "Odeslat a předat agentovi",
+    "quick": {
+      "label": "Rychlý přesun",
+      "handOver": "Předat agentovi",
+      "needAnswer": "Potřebuji odpověď",
+      "toReview": "K revizi",
+      "sendBack": "Vrátit agentovi",
+      "approve": "Schválit a uzavřít",
+      "reject": "Zamítnout",
+      "reopen": "Znovu otevřít"
+    },
     "controls": {
       "title": "Správa úkolu",
       "state": "Stav",
@@ -2561,6 +2572,8 @@
       "inputLabel": "Nový komentář",
       "submit": "Odeslat komentář",
       "submitHint": "Enter odešle, Shift+Enter odřádkuje",
+      "send": "Odeslat",
+      "handOverHint": "Odešle komentář a předá úkol agentovi (Ctrl/Cmd+Shift+Enter)",
       "edit": "Upravit",
       "editLabel": "Úprava komentáře",
       "save": "Uložit",

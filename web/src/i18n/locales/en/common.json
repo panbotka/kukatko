@@ -1546,6 +1546,17 @@
       "body": "The photos survive, but the question goes, along with the list of photos the batch was about and every answer written under it. Finished work is better closed than deleted.",
       "confirm": "Delete"
     },
+    "handOver": "Send and hand to the agent",
+    "quick": {
+      "label": "Quick move",
+      "handOver": "Hand to the agent",
+      "needAnswer": "Need an answer",
+      "toReview": "To review",
+      "sendBack": "Send back to the agent",
+      "approve": "Approve and close",
+      "reject": "Reject",
+      "reopen": "Reopen"
+    },
     "controls": {
       "title": "Manage the task",
       "state": "State",
@@ -2453,6 +2464,8 @@
       "inputLabel": "New comment",
       "submit": "Post comment",
       "submitHint": "Enter posts, Shift+Enter adds a line",
+      "send": "Send",
+      "handOverHint": "Posts the comment and hands the task to the agent (Ctrl/Cmd+Shift+Enter)",
       "edit": "Edit",
       "editLabel": "Edit comment",
       "save": "Save",

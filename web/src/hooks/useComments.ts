@@ -8,6 +8,7 @@ import {
   fetchComments,
   updateComment,
 } from '../services/comments'
+import { type TaskState } from '../services/tasks'
 
 /** Fetch lifecycle of one thread. */
 export type CommentsStatus = 'loading' | 'ready' | 'error'
@@ -32,8 +33,11 @@ export interface UseCommentsResult {
   busy: boolean
   /** The last write failure, or null. Cleared when the next write starts. */
   failure: CommentFailure | null
-  /** Posts a new comment; resolves true when it landed. */
-  post: (body: string) => Promise<boolean>
+  /**
+   * Posts a new comment; resolves true when it landed. On a task thread a state
+   * moves the task in the same transaction, so either both landed or neither.
+   */
+  post: (body: string, state?: TaskState) => Promise<boolean>
   /** Rewrites one of the caller's own comments; resolves true when it landed. */
   edit: (uid: string, body: string) => Promise<boolean>
   /** Removes a comment (own, or anyone's for an admin); resolves true when it landed. */
@@ -158,9 +162,12 @@ export function useComments(
   )
 
   const post = useCallback(
-    (body: string): Promise<boolean> =>
+    (body: string, state?: TaskState): Promise<boolean> =>
       run(async () => {
-        const created = await createComment(target, body)
+        // A plain answer keeps the plain call; only a hand-over carries a state.
+        const created = await (state === undefined
+          ? createComment(target, body)
+          : createComment(target, body, { state }))
         // Appended, not prepended: the thread reads oldest first, like a conversation.
         return [...comments, created]
       }),

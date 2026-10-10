@@ -279,6 +279,178 @@ describe('TaskDetailPage', () => {
   })
 })
 
+describe('send and hand to the agent', () => {
+  const HAND_OVER = 'Send and hand to the agent'
+
+  /** A posted comment, as the server would answer the create. */
+  function posted(body: string) {
+    return {
+      uid: 'cm1',
+      task_uid: 'tk1',
+      author_uid: 'u1',
+      author_name: 'U',
+      body,
+      created_at: '2026-09-18T11:00:00Z',
+    }
+  }
+
+  it.each(['question', 'review'] as const)(
+    'offers a writer both buttons on a task in %s',
+    async (state) => {
+      fetchTaskMock.mockResolvedValue(task({ state }))
+      renderPage()
+      await screen.findByText('Manage the task')
+
+      expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument()
+      // An empty comment has nothing to hand over with.
+      expect(screen.getByRole('button', { name: HAND_OVER })).toBeDisabled()
+    },
+  )
+
+  it.each(['working', 'done', 'rejected'] as const)(
+    'offers no hand-over on a task already %s',
+    async (state) => {
+      fetchTaskMock.mockResolvedValue(task({ state, resolution: state === 'working' ? '' : 'x' }))
+      renderPage()
+      await screen.findByText('Manage the task')
+
+      expect(screen.queryByRole('button', { name: HAND_OVER })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Post comment' })).toBeInTheDocument()
+    },
+  )
+
+  it('gives a viewer only the plain send', async () => {
+    renderPage(false)
+    await screen.findByRole('heading', { name: /In which year/ })
+
+    expect(screen.queryByRole('button', { name: HAND_OVER })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Post comment' })).toBeInTheDocument()
+  })
+
+  it('posts the comment with the move and redraws the task in place', async () => {
+    const user = userEvent.setup()
+    createCommentMock.mockResolvedValue(posted('Uncle Karel, fix the name.'))
+    renderPage()
+    await screen.findByText('Manage the task')
+    fetchTaskMock.mockResolvedValue(task({ state: 'working' }))
+
+    await user.type(screen.getByLabelText('New comment'), 'Uncle Karel, fix the name.')
+    await user.click(screen.getByRole('button', { name: HAND_OVER }))
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith(
+        { kind: 'task', uid: 'tk1' },
+        'Uncle Karel, fix the name.',
+        { state: 'working' },
+      )
+    })
+    // The thread, the badge and the controls update without reloading the page.
+    expect(await screen.findByText('Uncle Karel, fix the name.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByLabelText('State')).toHaveValue('working')
+    })
+    expect(screen.queryByRole('button', { name: HAND_OVER })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('New comment')).toHaveValue('')
+  })
+
+  it('hands over on Ctrl+Shift+Enter, and Ctrl+Enter is the plain send', async () => {
+    const user = userEvent.setup()
+    createCommentMock.mockResolvedValue(posted('one'))
+    renderPage()
+    await screen.findByText('Manage the task')
+
+    await user.click(screen.getByLabelText('New comment'))
+    await user.keyboard('one{Control>}{Enter}{/Control}')
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenLastCalledWith({ kind: 'task', uid: 'tk1' }, 'one')
+    })
+
+    await user.keyboard('two{Control>}{Shift>}{Enter}{/Shift}{/Control}')
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenLastCalledWith({ kind: 'task', uid: 'tk1' }, 'two', {
+        state: 'working',
+      })
+    })
+  })
+
+  it('keeps the draft and moves nothing when the hand-over fails', async () => {
+    const user = userEvent.setup()
+    createCommentMock.mockRejectedValue(new ApiError(500, 'boom'))
+    renderPage()
+    await screen.findByText('Manage the task')
+    const loads = fetchTaskMock.mock.calls.length
+
+    await user.type(screen.getByLabelText('New comment'), '1987')
+    await user.click(screen.getByRole('button', { name: HAND_OVER }))
+
+    expect(
+      await screen.findByText('The comment could not be saved. Please try again.'),
+    ).toBeInTheDocument()
+    // One request carries both, so a failure means neither landed: the text
+    // stays to be sent again and the task is not refetched as if it had moved.
+    expect(screen.getByLabelText('New comment')).toHaveValue('1987')
+    expect(fetchTaskMock.mock.calls.length).toBe(loads)
+    expect(screen.getByRole('button', { name: HAND_OVER })).toBeEnabled()
+  })
+})
+
+describe('quick state moves', () => {
+  it('offers the moves that fit the state and applies one in a tap', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ state: 'review' }))
+    updateTaskMock.mockResolvedValue(task({ state: 'working' }))
+    renderPage()
+    await screen.findByText('Manage the task')
+
+    const row = screen.getByRole('region', { name: 'Quick move' })
+    // "Approve and close" closes the task; the answer row's plain "Approve" only
+    // posts a comment, which is why the two read differently.
+    expect(
+      within(row)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Approve and close', 'Send back to the agent'])
+
+    await user.click(within(row).getByRole('button', { name: 'Send back to the agent' }))
+    await waitFor(() => {
+      expect(updateTaskMock).toHaveBeenCalledWith('tk1', { state: 'working' })
+    })
+    await waitFor(() => {
+      expect(screen.getByLabelText('State')).toHaveValue('working')
+    })
+    expect(
+      within(screen.getByRole('region', { name: 'Quick move' }))
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Need an answer', 'To review'])
+  })
+
+  it('opens the resolution, focused, for a closing move instead of failing', async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ state: 'review' }))
+    updateTaskMock.mockResolvedValue(task({ state: 'done', resolution: 'Looks right.' }))
+    renderPage()
+    await screen.findByText('Manage the task')
+
+    await user.click(screen.getByRole('button', { name: 'Approve and close' }))
+
+    const resolution = await screen.findByLabelText('How it ended')
+    expect(resolution).toHaveFocus()
+    expect(updateTaskMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('State')).toHaveValue('done')
+
+    await user.type(resolution, 'Looks right.')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => {
+      expect(updateTaskMock).toHaveBeenCalledWith('tk1', {
+        state: 'done',
+        resolution: 'Looks right.',
+        query: 'camera:Olympus',
+      })
+    })
+  })
+})
+
 describe('the question block', () => {
   it('puts the byline above the question, not under it', async () => {
     renderPage()

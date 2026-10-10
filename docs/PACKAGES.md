@@ -1487,6 +1487,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `Create`/`Update`/`Delete` — each a CTE that mutates and reads the row back with its author in one
   round-trip, run through the shared `mutateAudited`: begin → mutate → `audit.Write` on the **same
   transaction** → commit, so a comment that exists always has a record of who wrote it;
+  **`CreateAlong(…, along Along)`** is `Create` with a caller's further write (`Along func(ctx, pgx.Tx)
+  error`) run on the same transaction after the comment and its audit row and before the commit — its error
+  rolls the comment back and reaches the caller **unwrapped** (so a `phototask` sentinel stays
+  classifiable); `Create` is `CreateAlong` with `nil`. It exists for the task answer that moves the task
+  ("Odeslat a předat agentovi"), so the package still knows nothing about tasks;
   `entryWithComment` stamps the affected comment's UID into `details.comment_uid` (the audit target stays the
   **photo**) on a **copy** of the caller's details map. **Delete is soft** — `deleted_at` is stamped, the row
   stays, every read filters it out — so deleting twice, or editing a deleted comment, is `ErrNotFound` rather
@@ -3439,6 +3444,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `Delete`/`AddPhotos`/`RemovePhotos` (each in one transaction with its `audit.Write`, via `inTx`;
   membership writes `touch` the task so a batch counts as activity) and `OpenForPhotos` (the reverse
   lookup the photo detail draws its chip from, bulk-shaped so it can never become an N+1);
+  **`UpdateTx(ctx, tx, uid, upd, entry)`** is `Update` on the **caller's** transaction (same rules, same
+  participation join, same audit entry, sentinels unwrapped, nothing read back) — how a thread answer moves
+  the task in one commit: `phototaskapi` runs it as the `comments.Along` of `CreateAlong`;
   **what a task is opened with** beyond its own text is one struct, `Opening{PhotoUIDs,AskedUIDs}`, the
   second argument of `Create` — two lists that may each be empty and are both written in the opening's
   transaction. `PhotoUIDs` is the frozen group and **zero is allowed**: a task about the library rather
@@ -3513,11 +3521,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   same `ratelimit.Comment` configuration as the photo threads but in its own bucket, so a burst of
   answers cannot use up somebody's allowance for commenting on photographs; `resolveComment` answers
   **404** for a comment that belongs to a different task, `canEditComment`/`canDeleteComment` are the
-  same predicates the photo thread uses;
+  same predicates the photo thread uses; the answer's optional **`state`** (`answerRequest`) is turned by
+  `stateMove` into a `comments.Along` running `phototask.UpdateTx`, so the comment and the move commit
+  together — refused **before anything is written** for a caller without `Role.CanWrite` (403) or an
+  unknown state (400), and `writeAnswerError` maps a move the task refuses (`ErrClosedNeedsResolution`)
+  to 400 with the comment rolled back;
   **the people on a task** are `GET /tasks/{uid}/participants` (RequireAuth — knowing who else is on a
   question is part of deciding whether to answer it) plus `POST`/`DELETE …/participants[/{userUID}]`
   behind `RequireWrite`, both answering with the list as it now stands so a caller never follows a write
-  with a read. `handleCreateComment` calls `joinAuthor` **after** the comment lands rather than with it:
+  with a read. A plain answer's `handleCreateComment` calls `joinAuthor` **after** the comment lands
+  rather than with it (an answer that moves the state is joined inside `UpdateTx` instead):
   the thread belongs to `internal/comments`, which knows nothing about tasks, and threading a task store
   through it to save one statement would couple the two for no gain — so a failure there is logged and
   swallowed, because the answer *is* written and must not be reported as failed over its bookkeeping;

@@ -238,12 +238,17 @@ func TestTaskUIDRequired(t *testing.T) {
 func TestAddTaskComment(t *testing.T) {
 	t.Parallel()
 
-	var gotPath string
+	var (
+		gotPath string
+		gotBody map[string]any
+	)
 	client := testClient(t, "tok", func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		gotBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		_, _ = w.Write([]byte(`{"uid":"cm1","task_uid":"tk1","body":"1987","created_at":"2026-09-18T12:00:00Z"}`))
 	})
-	raw, err := client.AddTaskComment(t.Context(), "tk1", "  1987  ")
+	raw, err := client.AddTaskComment(t.Context(), "tk1", "  1987  ", "")
 	if err != nil {
 		t.Fatalf("AddTaskComment: %v", err)
 	}
@@ -257,11 +262,20 @@ func TestAddTaskComment(t *testing.T) {
 	if comment.TaskUID != "tk1" || comment.PhotoUID != "" {
 		t.Errorf("comment = %+v, want it hung off the task alone", comment)
 	}
-	if _, err := client.AddTaskComment(t.Context(), "tk1", "   "); !errors.Is(err, ErrEmptyComment) {
+	if _, sent := gotBody["state"]; sent || gotBody["body"] != "1987" {
+		t.Errorf("body = %v, want the trimmed comment and no state", gotBody)
+	}
+	if _, err := client.AddTaskComment(t.Context(), "tk1", "Hotovo, předávám.", "working"); err != nil {
+		t.Fatalf("AddTaskComment with a state: %v", err)
+	}
+	if gotBody["state"] != "working" {
+		t.Errorf("body = %v, want the state sent along", gotBody)
+	}
+	if _, err := client.AddTaskComment(t.Context(), "tk1", "   ", ""); !errors.Is(err, ErrEmptyComment) {
 		t.Errorf("empty body error = %v, want ErrEmptyComment", err)
 	}
 	if _, err := client.AddTaskComment(t.Context(), "tk1",
-		strings.Repeat("a", MaxCommentLen+1)); !errors.Is(err, ErrCommentTooLong) {
+		strings.Repeat("a", MaxCommentLen+1), ""); !errors.Is(err, ErrCommentTooLong) {
 		t.Errorf("over-long body error = %v, want ErrCommentTooLong", err)
 	}
 }

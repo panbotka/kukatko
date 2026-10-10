@@ -1100,6 +1100,37 @@
   flex: 0 0 auto;
 }
 
+/* The task page's composer: the box full width, then a row of two labelled
+   buttons — plain send and the primary "send and hand to the agent". Each is a
+   thumb-sized target (48 px), and on a narrow phone the row wraps so the two
+   stack instead of squeezing their labels. */
+.kk-comments__composer--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.kk-comments__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kk-space-2);
+  justify-content: flex-end;
+}
+
+.kk-comments__action {
+  display: inline-flex;
+  flex: 1 1 auto;
+  gap: var(--kk-space-2);
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+}
+
+@media (min-width: 576px) {
+  .kk-comments__action {
+    flex: 0 0 auto;
+  }
+}
+
 /* ---- Phone: the drawer is a bottom sheet ----------------------------- */
 
 /* Below `md` there is no room *beside* a photo — a 26rem drawer on a 393px phone

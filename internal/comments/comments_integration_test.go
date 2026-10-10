@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
@@ -501,5 +503,46 @@ func TestAuthorPhoto_clearedWithTheSubject(t *testing.T) {
 	}
 	if list[0].AuthorPhotoUID != nil {
 		t.Errorf("author photo = %q, want none once the person is gone", *list[0].AuthorPhotoUID)
+	}
+}
+
+// TestCreateAlong verifies a write run along with a comment shares its
+// transaction: it sees the new comment, a failing one rolls the comment and its
+// audit entry back and reaches the caller unwrapped.
+func TestCreateAlong(t *testing.T) {
+	f := newFixture(t)
+	alice := f.makeUser(t, "us_alice", "alice", "")
+	photo := f.makePhoto(t, "one")
+	subj := comments.PhotoSubject(photo.UID)
+	ctx := context.Background()
+
+	refused := errors.New("refused")
+	_, err := f.comments.CreateAlong(ctx, subj, alice, "zahodit",
+		entry(audit.ActionCommentCreate, alice, photo.UID), func(ctx context.Context, tx pgx.Tx) error {
+			return refused
+		})
+	if !errors.Is(err, refused) {
+		t.Fatalf("CreateAlong error = %v, want the along's own error", err)
+	}
+	if n := f.rawCount(t, "photo_uid = $1", photo.UID); n != 0 {
+		t.Errorf("comments after a failed along = %d, want 0", n)
+	}
+	if n := len(f.auditRows(t, audit.ActionCommentCreate)); n != 0 {
+		t.Errorf("audit rows after a failed along = %d, want 0", n)
+	}
+
+	var seen int
+	created, err := f.comments.CreateAlong(ctx, subj, alice, "ponechat",
+		entry(audit.ActionCommentCreate, alice, photo.UID), func(ctx context.Context, tx pgx.Tx) error {
+			return tx.QueryRow(ctx, "SELECT count(*) FROM comments WHERE photo_uid = $1", photo.UID).Scan(&seen)
+		})
+	if err != nil {
+		t.Fatalf("CreateAlong: %v", err)
+	}
+	if seen != 1 {
+		t.Errorf("along saw %d comments, want the new one on its transaction", seen)
+	}
+	if created.Body != "ponechat" || f.rawCount(t, "uid = $1", created.UID) != 1 {
+		t.Errorf("created = %+v, want it committed", created)
 	}
 }

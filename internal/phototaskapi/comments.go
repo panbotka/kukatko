@@ -1,21 +1,32 @@
 package phototaskapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/phototask"
 )
 
 // commentRequest is the JSON body of the answer and edit endpoints: the
 // plain-text body, trimmed and length-checked by the store.
 type commentRequest struct {
 	Body string `json:"body"`
+}
+
+// answerRequest is the JSON body of the answer endpoint: a comment and,
+// optionally, the state the task moves to with it ("send and hand to the
+// agent"). The state part is a writer's move exactly as it is on PATCH.
+type answerRequest struct {
+	Body  string  `json:"body"`
+	State *string `json:"state,omitempty"`
 }
 
 // commentListResponse is the JSON body of the thread endpoint. Comments is
@@ -44,6 +55,12 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 // It is guarded by RequireAuth rather than RequireWrite on purpose: answering is
 // exactly what a viewer account is for here. The person who remembers the year a
 // house was rebuilt is not the person who edits the library.
+//
+// An optional state moves the task in the same transaction as the comment, both
+// audited, so "here is my answer, your move" is one action that either lands
+// whole or not at all. Moving a task is still a writer's act: a viewer who sends
+// a state gets 403 and nothing is written, and an unknown state is a 400 before
+// anything is.
 func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	if !a.commentsAvailable(w) {
 		return
@@ -52,22 +69,70 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var body commentRequest
+	var body answerRequest
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	uid := taskUID(r)
-	created, err := a.comments.Create(r.Context(), comments.TaskSubject(uid), user.UID, body.Body,
-		commentEntry(r, user.UID, audit.ActionCommentCreate, uid))
-	if err != nil {
-		writeCommentError(w, err, "creating comment failed")
+	along, ok := a.stateMove(w, r, user, uid, body.State)
+	if !ok {
 		return
 	}
-	// Answering a question is what puts somebody on it — for a viewer it is the
-	// only thing they can do to a task, so it has to be what counts.
-	a.joinAuthor(r, uid, user.UID)
+	created, err := a.comments.CreateAlong(r.Context(), comments.TaskSubject(uid), user.UID, body.Body,
+		commentEntry(r, user.UID, audit.ActionCommentCreate, uid), along)
+	if err != nil {
+		writeAnswerError(w, err)
+		return
+	}
+	if along == nil {
+		// Answering a question is what puts somebody on it — for a viewer it is
+		// the only thing they can do to a task, so it has to be what counts. A
+		// state move has already done it inside its own transaction.
+		a.joinAuthor(r, uid, user.UID)
+	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// stateMove turns an answer's optional state into the write that moves the task
+// along with the comment, or nil when the answer moves nothing. It refuses —
+// writing the response and reporting ok=false — a caller without write access
+// (403) and a state outside phototask.States (400), both before anything is
+// written.
+func (a *API) stateMove(
+	w http.ResponseWriter, r *http.Request, user auth.User, uid string, raw *string,
+) (comments.Along, bool) {
+	if raw == nil {
+		return nil, true
+	}
+	if !user.Role.CanWrite() {
+		writeError(w, http.StatusForbidden, "moving a task needs write access")
+		return nil, false
+	}
+	state := phototask.State(*raw)
+	if !state.Valid() {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("%v: %q", phototask.ErrInvalidState, *raw))
+		return nil, false
+	}
+	entry := taskEntry(r, user.UID, audit.ActionTaskUpdate, uid)
+	return func(ctx context.Context, tx pgx.Tx) error {
+		return phototask.UpdateTx(ctx, tx, uid, phototask.Update{State: &state}, entry)
+	}, true
+}
+
+// writeAnswerError maps a failed answer to an HTTP response: the task's own
+// errors (a move the task's rules refuse) as on PATCH, everything else as any
+// other comment failure.
+func writeAnswerError(w http.ResponseWriter, err error) {
+	const failMsg = "creating comment failed"
+	switch {
+	case errors.Is(err, phototask.ErrNotFound),
+		errors.Is(err, phototask.ErrInvalidState),
+		errors.Is(err, phototask.ErrClosedNeedsResolution):
+		writeTaskError(w, err, failMsg)
+	default:
+		writeCommentError(w, err, failMsg)
+	}
 }
 
 // handleUpdateComment rewrites the caller's own comment.

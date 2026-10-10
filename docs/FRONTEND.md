@@ -2267,7 +2267,18 @@ here.
   need a search box between it and its pictures, a batch of forty does. The bulk selection is untouched.
   The page also owns the thread's state for the answers: `CommentsPanel` reports the whole thread up
   (`onThreadChange`) so the option equal to the **reader's latest comment** is drawn as chosen, and a
-  `reloadKey` from `useReloadKey` makes the panel refetch after a button posted a comment behind its back,
+  `reloadKey` from `useReloadKey` makes the panel refetch after a button posted a comment behind its back.
+  **Send and hand over:** for a writer on a task that is neither `working` nor closed, the page passes the
+  panel a `handOver` (`CommentHandOver` `{state:'working', label, onDone}`), and the composer turns into the
+  box over a row of **two labelled buttons** — "Odeslat" (outline) and the primary **"Odeslat a předat
+  agentovi"** — each ≥ 48 px and wrapping into a stack on a narrow phone (`.kk-comments__composer--stacked`).
+  The hand-over is **one request** (`createComment(subject, body, {state:'working'})`, comment and move in
+  one server transaction), so a failure is the ordinary composer failure with the draft kept and nothing
+  posted, and a retry cannot double the comment. On success the panel appends the comment and `onDone`
+  refetches the task quietly (no skeleton), so the badge, the controls and the participants redraw in
+  place. An empty draft disables both; a viewer only ever gets the plain send. Keys: Enter and
+  Ctrl/Cmd+Enter send, Shift+Enter breaks the line, **Ctrl/Cmd+Shift+Enter** hands over. A state change
+  without a comment goes through `TaskControls`' quick moves,
   `pages/task/TaskAnswers` (the question's answers as a row of **large buttons** — `btn-lg`, wrapping on a
   phone — for every signed-in role, viewers included: the task's own `options`, or for a `review` task
   with none the built-in pair with localised labels ("Schvaluji" / "Vrátit k přepracování", en "Approve"
@@ -2294,11 +2305,21 @@ here.
   the card at the foot of the page, which meant scrolling past the whole conversation to fix a word and
   scrolling back to see whether it had taken; an editor now edits the thing they are looking at. A failed
   save keeps the editor open and says so),
-  `pages/task/TaskControls` (the **bookkeeping** half — no longer the wording: a `<select>` of the five
-  states, the **resolution textarea that appears as soon as a closing state is picked** — with Save disabled
+  `pages/task/TaskControls` (the **bookkeeping** half — no longer the wording: first a row of **quick
+  moves** (`Rychlý přesun`, ≥ 48 px buttons, `.kk-task-quick`) offering only the moves that fit the current
+  state, from `lib/taskTransitions` `quickTransitions(state)`: `question` → **Předat agentovi** (working),
+  **Zamítnout** (rejected); `working` → **Potřebuji odpověď** (question), **K revizi** (review); `review` →
+  **Schválit a uzavřít** (done), **Vrátit agentovi** (working); `done`/`rejected` → **Znovu otevřít**
+  (question). The first is the filled primary. An open-to-open move saves at once and redraws the badge
+  and the participants from the saved task without a page refetch; a **closing** one does not save — it
+  picks the closed state and opens the resolution field **already focused**, because the server refuses a
+  silent close. ("Schválit a uzavřít" is worded apart from the answer row's "Schvaluji", which only posts a
+  comment.) Below the row the full `<select>` of the five states stays for the rare jump, the
+  **resolution textarea that appears as soon as a closing state is picked** — with Save disabled
   until it has text, because the server refuses a task that is closed and silent and discovering that as a
   failed save would be worse than being asked up front — the remembered query, all three saved together, a
-  link that runs that query in `/search`, and Delete behind `ConfirmModal`),
+  link that runs that query in `/search`, and Delete behind `ConfirmModal`. The page **keys** the card on
+  the task's state, resolution and query, so a move made elsewhere resets the picker to it),
   `pages/task/TaskParticipants` (**who is on this question**: a pill per person — `PersonAvatar` plus the
   name — and, for a writer, an × on each and an **Přidat** button opening `PersonPicker` (shared with
   the create dialog). Almost everybody here arrived by *acting*: opening a task, answering it or moving

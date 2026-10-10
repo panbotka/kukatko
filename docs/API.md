@@ -1062,6 +1062,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   viewer account is for here. The create route carries the same per-user throttle (429), built from the
   same `ratelimit.comment` configuration in its own bucket, so a burst of answers cannot use up somebody's
   allowance for commenting on photographs. A comment addressed through the wrong task answers **404**.
+  **Answer and move in one action:** the create body takes an optional **`state`** —
+  `{"body":"…","state":"working"}` is the task page's "Odeslat a předat agentovi". The comment and the
+  state move run in **one transaction** (`comments.Store.CreateAlong` + `phototask.UpdateTx`), each with
+  its own audit entry (`comment.create` and `task.update` with the state diff), so either both land or
+  neither does. The state part keeps the **write guard**: a viewer who sends `state` gets **403** and nothing
+  is written (a viewer's plain answer stays 201); an unknown state is **400** before anything is written; a
+  move the task's rules refuse — closing without a resolution (`done`/`rejected` on a task that has none) —
+  is **400** with the comment rolled back too. The response is the created comment, as without `state`;
+  the writer is put on the task inside the same transaction.
   **The people on a task** (`GET /tasks/{uid}/participants` RequireAuth → `{participants}`;
   `POST /tasks/{uid}/participants` `{user_uid}` and `DELETE /tasks/{uid}/participants/{userUID}`, both
   **`RequireWrite`**, both answering with the list as it now stands so a caller never follows a write with a
