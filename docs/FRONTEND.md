@@ -2541,6 +2541,17 @@ here.
   per-file list back (that is where the reason, the per-file retry and the errors-only filter are). A batch
   that landed in no album says so and offers the picker rather than leaving the photos untagged; with
   *nothing* landed there is no picker and no „everything else is in your library" — neither would be true.
+  „Tyhle fotky zatím nejsou v žádném albu ani pod štítkem" (`done.noAlbum`) is a claim about the photos, and
+  a **duplicate** may already be filed from its first upload (an upload link's album, say), so it is made
+  **only** once `useBatchMembership` has answered that none of the batch is in an album or under a label.
+  The page asks that **once** per settled batch with nothing chosen — one
+  `POST /photos/bulk/membership-summary` over the landed uids (duplicates first), never a request per
+  photo — and asks afresh whenever the selection empties again (a pick made and cleared has filed the batch
+  in between). Until the answer arrives, after a failed request, or over a batch longer than one question
+  (`partial`), the line is the neutral `done.addToAlbum` („Chcete je přidat do alba nebo pod štítek?“); when
+  some are filed it is prefixed by where they already are — `done.alreadyInAll` („Všechny už jsou v:
+  Panorama.“) or `done.alreadyInSome`, at most three album/label names and then `done.moreNames`
+  („a 2 další“).
   **The whole flow counts stills and clips apart** (`batchMedia` over the picked files — no backend help, the
   per-file result carries no media type): the closing sentence names both by count („Nahráli jsme 3 fotky a
   1 video.“, with `photosPart`/`videosPart` carrying the Czech plurals into the joined sentence), a clips-only
@@ -5495,6 +5506,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   → a selection made **after** the batch finished really does get applied (it used to be silently dropped
   while the green message reported success); an internal rewrite of a `create:` marker to a real UID during
   a running assignment does **not** return the state to `idle`;
+  `useBatchMembership(uids, enabled)` → `idle`/`loading`/`error`/`{ready, summary, partial}` = where a settled
+  upload batch already is: one `fetchBulkMembershipSummary` over the uids while `enabled` (the page enables it
+  once the batch settles with no album/label chosen and no assignment running), asked afresh on every
+  re-enable or change of the photo set (a fresh array with the same uids does not re-ask), aborted on change;
+  a batch longer than `MEMBERSHIP_MAX_UIDS` (1000, the default bulk limit) is asked about its head only and
+  the answer is `partial`, so `UploadStageDone` never reads a zero `filed` from it as „nowhere“;
   `useSubjectPhotos(uid,{reloadKey?,initialCount?})` = a wrapper over `usePaginatedPhotos` over
   `GET /subjects/{uid}/photos` (a person's gallery, `uid` goes into `key` → a reset with a skeleton when the
   person changes, `reloadKey` is a background refetch after a mutation); `useScopedPhotos` = a wrapper over `usePaginatedPhotos`
@@ -6979,7 +6996,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   fills only the photos with no coordinates and leaves the rest, reported `skipped`)/`BulkResult`, plus
   `fetchBulkLocationSummary(uids,signal)` over `POST /photos/bulk/location-summary` →
   `BulkLocationSummary{total,with_location}` (a POST for a read: the argument is the whole selection),
-  which is what lets a set-location dialog say what an overwrite would replace **before** it writes; `duplicates.ts` =
+  which is what lets a set-location dialog say what an overwrite would replace **before** it writes, and
+  `fetchBulkMembershipSummary(uids,signal)` over `POST /photos/bulk/membership-summary` →
+  `BulkMembershipSummary{total,filed,albums:[{uid,title,photo_count}],labels:[{uid,name,photo_count}]}`, which
+  is what lets the upload page's done stage say truthfully whether a batch is already filed; `duplicates.ts` =
   `fetchDuplicates(params,signal)` over `GET /api/v1/duplicates` (duplicate groups →
   `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` over
   `POST /api/v1/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,

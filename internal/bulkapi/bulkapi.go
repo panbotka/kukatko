@@ -5,7 +5,8 @@
 // is guarded by the curator guard and then limited on its fields inside the
 // handler — a curator may change album and label membership and its own
 // favorite/rating/flag, only an editor anything beyond (bulk.Operations.
-// BeyondCuration). The location summary keeps the editor/admin write guard. Both
+// BeyondCuration). The location summary keeps the editor/admin write guard; the
+// membership summary takes the curator guard, like the upload it follows. Both
 // guards are injected so the package stays decoupled from auth's wiring and is
 // unit-testable with fakes.
 package bulkapi
@@ -38,6 +39,9 @@ type Service interface {
 	// LocationSummary counts how many of the target photos already have
 	// coordinates. See bulk.Service.LocationSummary.
 	LocationSummary(ctx context.Context, photoUIDs []string) (bulk.LocationSummary, error)
+	// MembershipSummary counts how many of the target photos are already in an
+	// album or under a label, and names them. See bulk.Service.MembershipSummary.
+	MembershipSummary(ctx context.Context, photoUIDs []string) (bulk.MembershipSummary, error)
 }
 
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
@@ -84,8 +88,9 @@ type Config struct {
 	Places PlacesEnqueuer
 	// RequireWrite guards the location summary for editors and above.
 	RequireWrite func(http.Handler) http.Handler
-	// RequireCurator guards the bulk apply for curators and above; the handler
-	// then refuses a curator any operation beyond curation.
+	// RequireCurator guards the bulk apply and the membership summary for
+	// curators and above; the apply's handler then refuses a curator any
+	// operation beyond curation.
 	RequireCurator func(http.Handler) http.Handler
 	// RateLimit is an optional per-client-IP throttle applied *behind* the auth
 	// check, so it can read who the caller is. A nil value disables throttling.
@@ -116,12 +121,15 @@ func passthroughMiddleware(next http.Handler) http.Handler { return next }
 //
 //	POST /photos/bulk                   RequireCurator + rate limit   apply metadata operations to many photos
 //	POST /photos/bulk/location-summary   RequireWrite + rate limit     count the targets that already have a location
+//	POST /photos/bulk/membership-summary RequireCurator + rate limit   name the albums/labels the targets are in
 //
-// The summary is a POST despite reading nothing but counts: its argument is the
-// selection itself, up to a full batch of UIDs, which belongs in a body rather
-// than in a query string. It stays on RequireWrite although the apply moved to
-// RequireCurator: it exists only to feed the bulk location operation, which a
-// curator may not use.
+// The summaries are POSTs despite reading nothing but counts: their argument is
+// the selection itself, up to a full batch of UIDs, which belongs in a body
+// rather than in a query string. The location summary stays on RequireWrite
+// although the apply moved to RequireCurator: it exists only to feed the bulk
+// location operation, which a curator may not use. The membership summary is a
+// curator's: it feeds the upload page (POST /upload is RequireCurator), which
+// must not tell its reader a batch is in no album when it already is.
 //
 // The apply's guard admits a curator, but the handler refuses one any batch
 // beyond album/label membership and the per-user operations, with 403 before a
@@ -138,6 +146,8 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireCurator, a.rateLimit).Post("/photos/bulk", a.handleBulk)
 	r.With(a.requireWrite, a.rateLimit).
 		Post("/photos/bulk/location-summary", a.handleLocationSummary)
+	r.With(a.requireCurator, a.rateLimit).
+		Post("/photos/bulk/membership-summary", a.handleMembershipSummary)
 }
 
 // handleLocationSummary answers how many of the posted photos already have
@@ -151,6 +161,25 @@ func (a *API) handleLocationSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	summary, err := a.service.LocationSummary(r.Context(), req.PhotoUIDs)
+	if err != nil {
+		status, msg := bulkStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+// handleMembershipSummary answers how many of the posted photos are already in
+// an album or under a label, and which ones, so the upload page states the
+// batch's filing truthfully. Validation failures return 400, an oversized batch
+// 413.
+func (a *API) handleMembershipSummary(w http.ResponseWriter, r *http.Request) {
+	var req locationSummaryRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	summary, err := a.service.MembershipSummary(r.Context(), req.PhotoUIDs)
 	if err != nil {
 		status, msg := bulkStatus(err)
 		writeError(w, status, msg)

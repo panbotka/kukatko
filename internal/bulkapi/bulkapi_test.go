@@ -381,6 +381,12 @@ func (stubService) LocationSummary(_ context.Context, _ []string) (bulk.Location
 	return bulk.LocationSummary{}, nil
 }
 
+// MembershipSummary returns an empty summary, satisfying the Service interface
+// for tests that never reach it.
+func (stubService) MembershipSummary(_ context.Context, _ []string) (bulk.MembershipSummary, error) {
+	return bulk.MembershipSummary{}, nil
+}
+
 // TestResolveTakenAt verifies that each precision parses its own value shape and
 // resolves to the first instant of the period it names, in UTC — the anchor the
 // year facets and the period filter both read.

@@ -3933,12 +3933,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   later is an editor's until somebody decides otherwise; `LocationSummary(ctx, photoUIDs) (LocationSummary{Total,WithLocation},
   error)` is the read-only preview behind the dialog: how many of the selection exist (a repeated uid
   counts once) and how many already carry a full coordinate, validated against the same batch limits as
-  `Apply`), `internal/bulkapi/`
-  (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary) — fakeable; `NewAPI(Config{Service,
+  `Apply`; `MembershipSummary(ctx, photoUIDs) (MembershipSummary{Total,Filed,Albums,Labels}, error)` is the
+  read-only "where is this batch already" behind the upload page's done stage: how many exist, how many are in
+  an album or under a label, and the albums/labels (`AlbumRef`/`LabelRef` with a per-selection `PhotoCount`),
+  same batch limits; the lists are skipped — and returned empty, never nil — when nothing is filed),
+  `internal/bulkapi/`
+  (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary + MembershipSummary) — fakeable; `NewAPI(Config{Service,
   Sidecar, Places, RequireWrite, RequireCurator, RateLimit})`+`RegisterRoutes` mounts `POST /photos/bulk` behind
   `RequireCurator` and the read-only `POST /photos/bulk/location-summary` (a POST because its argument is the
   whole selection) behind `RequireWrite` — it only feeds the bulk location operation, which a curator may not
-  use; `handleBulk` then authorizes **on the fields**: a caller whose role is not `CanWrite()` and whose batch
+  use — and the read-only `POST /photos/bulk/membership-summary` behind `RequireCurator`, the guard of the
+  upload whose done stage it feeds; `handleBulk` then authorizes **on the fields**: a caller whose role is not `CanWrite()` and whose batch
   is `bulk.Operations.BeyondCuration()` gets **403 before `Apply` runs**, so nothing of the batch is written; after a committed batch `enqueueSidecars` schedules one sidecar rewrite per updated photo
   and `enqueueGeocodes` one `places` job per photo in `LocationChanged` — the same derived work a
   single-photo location edit owes (`photoapi.PlacesEnqueuer`), both best-effort: a queue failure is logged,

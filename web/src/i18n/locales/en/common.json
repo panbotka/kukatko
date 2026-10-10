@@ -2836,6 +2836,12 @@
       "failedHint": "Everything else is in your library. Retry the ones that failed.",
       "noAlbum": "These photos are not in any album or label yet. Choose one and we will add them.",
       "noAlbumWithVideo": "These files are not in any album or label yet. Choose one and we will add them.",
+      "addToAlbum": "Would you like to add them to an album or label?",
+      "alreadyInAll_one": "It is already in {{names}}.",
+      "alreadyInAll_other": "All of them are already in {{names}}.",
+      "alreadyInSome": "Some of them are already in {{names}}.",
+      "moreNames_one": "and {{count}} more",
+      "moreNames_other": "and {{count}} more",
       "viewLibrary": "Show them in the library",
       "uploadMore": "Upload more"
     },

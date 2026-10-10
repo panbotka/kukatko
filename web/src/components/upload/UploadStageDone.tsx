@@ -5,6 +5,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { type BatchMembershipState } from '../../hooks/useBatchMembership'
 import { type OrganizeAssignState } from '../../hooks/useUploadOrganize'
 import {
   type QueueItemStatus,
@@ -18,6 +19,9 @@ import { batchMedia } from './batchMedia'
 import { UploadActionBar } from './UploadActionBar'
 import { UploadOrganize, type UploadOrganizeProps } from './UploadOrganize'
 import { UploadQueuePanel } from './UploadQueuePanel'
+
+/** How many album/label names the "already in" sentence spells out before "and N more". */
+const SHOWN_NAMES = 3
 
 /** The picked files behind every item of the batch in one of the given states. */
 function filesIn(items: UploadQueueItem[], statuses: readonly QueueItemStatus[]): File[] {
@@ -36,6 +40,11 @@ export interface UploadStageDoneProps {
   organizeNames: string[]
   /** Lifecycle of the album/label assignment that runs once the batch settles. */
   assign: OrganizeAssignState
+  /**
+   * Where the batch's photos already are, asked once the batch settles with
+   * nothing chosen. Only an answer of "nowhere" lets the stage say so.
+   */
+  membership: BatchMembershipState
   /** Re-queues every failed file. */
   onRetryFailed: () => void
   /** Drops one file from the batch. */
@@ -70,7 +79,12 @@ export interface UploadStageDoneProps {
  * The picker stays on the page. Finishing with no album chosen is the case worth
  * catching — those photos are otherwise quietly untagged — so the stage says so
  * and offers the field right there; `useUploadOrganize` re-arms on a change, so
- * choosing now assigns the batch that has already finished.
+ * choosing now assigns the batch that has already finished. "Not in any album
+ * or label yet" is a claim about the photos, though, and a duplicate may well
+ * be filed already — so it is made only once `membership` has answered that
+ * none of them is. Until then, after a failed question, or when some are filed,
+ * the stage asks a neutral question instead, prefixed by where they already are
+ * when that is known.
  *
  * The per-file list comes back only when something failed — that is where the
  * reason, the per-file **Retry** and the errors-only filter live, and a batch
@@ -86,6 +100,7 @@ export function UploadStageDone({
   organize,
   organizeNames,
   assign,
+  membership,
   onRetryFailed,
   onRemove,
   onRetry,
@@ -153,6 +168,44 @@ export function UploadStageDone({
     return uploadedSentence()
   }
 
+  /**
+   * Where the batch already is, when some of it is filed: "Some of them are
+   * already in Panorama." Null when nothing is known to be filed, or nothing
+   * filed has a name to show.
+   */
+  function alreadyInSentence(): string | null {
+    if (membership.status !== 'ready' || membership.summary.filed === 0) {
+      return null
+    }
+    const { summary } = membership
+    const all = [
+      ...summary.albums.map((album) => album.title),
+      ...summary.labels.map((label) => label.name),
+    ].filter((name) => name.trim() !== '')
+    if (all.length === 0) {
+      return null
+    }
+    let names = all.slice(0, SHOWN_NAMES).join(', ')
+    if (all.length > SHOWN_NAMES) {
+      names = `${names} ${t('upload.done.moreNames', { count: all.length - SHOWN_NAMES })}`
+    }
+    return !membership.partial && summary.filed === summary.total
+      ? t('upload.done.alreadyInAll', { count: summary.total, names })
+      : t('upload.done.alreadyInSome', { names })
+  }
+
+  /** The line above the picker while nothing is chosen. */
+  function unchosenCaption(): string {
+    const nowhere =
+      membership.status === 'ready' && membership.summary.filed === 0 && !membership.partial
+    if (nowhere) {
+      return t(filed.kind === 'photos' ? 'upload.done.noAlbum' : 'upload.done.noAlbumWithVideo')
+    }
+    const already = alreadyInSentence()
+    const ask = t('upload.done.addToAlbum')
+    return already === null ? ask : `${already} ${ask}`
+  }
+
   const libraryLink = (
     <Link
       to={`${LIBRARY_PATH}?sort=added`}
@@ -214,7 +267,7 @@ export function UploadStageDone({
               the wording that covers both rather than one about photographs. */}
           <p className="kk-text-caption text-secondary mb-2">
             {organizeNames.length === 0
-              ? t(filed.kind === 'photos' ? 'upload.done.noAlbum' : 'upload.done.noAlbumWithVideo')
+              ? unchosenCaption()
               : t(
                   filed.kind === 'photos'
                     ? 'upload.organize.hint'

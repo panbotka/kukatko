@@ -3,9 +3,10 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { type BatchMembershipState } from '../../hooks/useBatchMembership'
 import { type QueueItemStatus, type UploadQueueItem } from '../../hooks/useUploadQueue'
 import i18n from '../../i18n'
-import { type BulkResult } from '../../services/bulk'
+import { type BulkMembershipSummary, type BulkResult } from '../../services/bulk'
 
 import { UploadStageDone } from './UploadStageDone'
 
@@ -38,15 +39,34 @@ function bulkResult(): BulkResult {
   return { results: [], counts: { total: 0, updated: 0, skipped: 0, errored: 0 } }
 }
 
+/** A membership answer over `total` photos of which `filed` are in an album or label. */
+function membershipOf(
+  total: number,
+  filed: number,
+  albums: string[] = [],
+  labels: string[] = [],
+  partial = false,
+): BatchMembershipState {
+  const summary: BulkMembershipSummary = {
+    total,
+    filed,
+    albums: albums.map((title, i) => ({ uid: `al${i}`, title, photo_count: 1 })),
+    labels: labels.map((name, i) => ({ uid: `lb${i}`, name, photo_count: 1 })),
+  }
+  return { status: 'ready', summary, partial }
+}
+
 /**
  * Renders the finished stage over a settled batch, in the given language. The
  * album/label catalogs are `ready` and empty: this stage's copy is about the
- * batch, not about the picker's options.
+ * batch, not about the picker's options. Unless told otherwise, the membership
+ * question has answered that none of the batch is filed anywhere.
  */
 async function renderDone(
   language: 'cs' | 'en',
   items: UploadQueueItem[],
   organizeNames: string[] = [],
+  membership: BatchMembershipState = membershipOf(items.length, 0),
 ) {
   // One test asserts the same sentence in both languages, so the previous
   // render is taken down first — otherwise the second `getByText` finds two.
@@ -73,6 +93,7 @@ async function renderDone(
           assign={
             organizeNames.length > 0 ? { status: 'done', result: bulkResult() } : { status: 'idle' }
           }
+          membership={membership}
           onRetryFailed={vi.fn()}
           onRemove={vi.fn()}
           onRetry={vi.fn()}
@@ -218,6 +239,116 @@ describe('UploadStageDone — the copy around it', () => {
     expect(
       screen.getByText(
         'These files are not in any album or label yet. Choose one and we will add them.',
+      ),
+    ).toBeInTheDocument()
+  })
+})
+
+/**
+ * "Not in any album or label yet" is a claim about the photos, and a duplicate
+ * may have been filed by its first upload. The stage makes the claim only when
+ * the membership question answered "nowhere"; otherwise it asks neutrally and,
+ * when it knows, says where they already are.
+ */
+describe('UploadStageDone — where the batch already is', () => {
+  const duplicates = [item('1', 'a.jpg', 'duplicate'), item('2', 'b.jpg', 'duplicate')]
+
+  it('names the album duplicates already sit in instead of calling them unfiled', async () => {
+    await renderDone('cs', duplicates, [], membershipOf(2, 2, ['Panorama']))
+    expect(screen.getByText('Všechny 2 soubory už v knihovně byly.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Všechny už jsou v: Panorama. Chcete je přidat do alba nebo pod štítek?'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/v žádném albu/)).not.toBeInTheDocument()
+
+    await renderDone('en', duplicates, [], membershipOf(2, 2, ['Panorama']))
+    expect(
+      screen.getByText(
+        'All of them are already in Panorama. Would you like to add them to an album or label?',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/not in any album/)).not.toBeInTheDocument()
+  })
+
+  it('says "some" when only part of the batch is filed, labels included', async () => {
+    const mixed = [item('1', 'a.jpg'), item('2', 'b.jpg', 'duplicate')]
+    await renderDone('cs', mixed, [], membershipOf(2, 1, ['Panorama'], ['moře']))
+    expect(
+      screen.getByText(
+        'Některé už jsou v: Panorama, moře. Chcete je přidat do alba nebo pod štítek?',
+      ),
+    ).toBeInTheDocument()
+
+    await renderDone('en', mixed, [], membershipOf(2, 1, ['Panorama'], ['sea']))
+    expect(
+      screen.getByText(
+        'Some of them are already in Panorama, sea. Would you like to add them to an album or label?',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('names at most three places and counts the rest', async () => {
+    await renderDone('cs', duplicates, [], membershipOf(2, 2, ['A', 'B', 'C', 'D', 'E']))
+    expect(
+      screen.getByText(
+        'Všechny už jsou v: A, B, C a 2 další. Chcete je přidat do alba nebo pod štítek?',
+      ),
+    ).toBeInTheDocument()
+
+    await renderDone('en', duplicates, [], membershipOf(2, 2, ['A', 'B', 'C', 'D']))
+    expect(
+      screen.getByText(
+        'All of them are already in A, B, C and 1 more. Would you like to add them to an album or label?',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('still says "not in any album" when the answer is nowhere', async () => {
+    await renderDone('cs', duplicates, [], membershipOf(2, 0))
+    expect(
+      screen.getByText(
+        'Tyhle fotky zatím nejsou v žádném albu ani pod štítkem. Vyberte je a přidáme je tam.',
+      ),
+    ).toBeInTheDocument()
+
+    await renderDone('en', duplicates, [], membershipOf(2, 0))
+    expect(
+      screen.getByText(
+        'These photos are not in any album or label yet. Choose one and we will add them.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('asks neutrally until it knows, after a failed question, and over a partial answer', async () => {
+    const states: BatchMembershipState[] = [
+      { status: 'loading' },
+      { status: 'error' },
+      { status: 'idle' },
+      membershipOf(2, 0, [], [], true),
+    ]
+    for (const membership of states) {
+      await renderDone('cs', duplicates, [], membership)
+      expect(screen.getByText('Chcete je přidat do alba nebo pod štítek?')).toBeInTheDocument()
+      expect(screen.queryByText(/v žádném albu/)).not.toBeInTheDocument()
+
+      await renderDone('en', duplicates, [], membership)
+      expect(
+        screen.getByText('Would you like to add them to an album or label?'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/not in any album/)).not.toBeInTheDocument()
+    }
+  })
+
+  it('keeps a single photo singular', async () => {
+    await renderDone('cs', [item('1', 'a.jpg', 'duplicate')], [], membershipOf(1, 1, ['Panorama']))
+    expect(
+      screen.getByText('Už je v: Panorama. Chcete je přidat do alba nebo pod štítek?'),
+    ).toBeInTheDocument()
+
+    await renderDone('en', [item('1', 'a.jpg', 'duplicate')], [], membershipOf(1, 1, ['Panorama']))
+    expect(
+      screen.getByText(
+        'It is already in Panorama. Would you like to add them to an album or label?',
       ),
     ).toBeInTheDocument()
   })

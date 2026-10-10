@@ -2078,7 +2078,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   fetches it once and keeps it; the command palette completes filter keys and values from it, which is how
   it can never offer a filter the parser would reject.
 - **Bulk metadata API (`/api/v1`, `internal/bulkapi`, the apply curator and above via `RequireCurator`
-  **limited on its fields** (below), the location summary editor/admin via `RequireWrite`; each **then** the
+  **limited on its fields** (below), the location summary editor/admin via `RequireWrite`, the membership
+  summary curator and above via `RequireCurator`; each **then** the
   per-IP `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly
   as `POST /upload` above):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
@@ -2126,6 +2127,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   and how many of those already have a full coordinate, so the dialog can state what an overwrite would
   replace **before** writing. Read-only and rate-limited like the apply, same 400/413 rules, but it stays on
   **`RequireWrite`**: it exists only to feed the bulk location operation, which a curator may not use.
+  `POST /photos/bulk/membership-summary` `{photo_uids:[…]}` → `{total, filed, albums:[{uid,title,photo_count}],
+  labels:[{uid,name,photo_count}]}` answers where a selection already is: how many of it exist (same
+  counting as the location summary), how many of those are in **at least one album or carry at least one
+  label** (any label source), and every album (by title) and label (by priority, then name) holding any of
+  them, each with how many of the selection it covers. `albums`/`labels` are always arrays, empty when
+  `filed` is 0. Three indexed queries whatever the batch size. The upload page asks it once a batch settles
+  with nothing chosen, so it never tells its reader that duplicates already in an album are "in none".
+  Read-only and rate-limited like the apply, same 400/413 rules, behind **`RequireCurator`** — the guard of
+  `POST /upload`, whose page it feeds.
   `clear_taken_at` (bool) is the opposite statement — **the date is unknown** — and the bulk twin of a
   `PATCH` with `taken_at: null`: it wipes `taken_at`, stamps `taken_at_source = unknown`, resets
   `taken_at_precision` to `day` and **moves the outgoing date into `taken_at_before_unknown`** so the

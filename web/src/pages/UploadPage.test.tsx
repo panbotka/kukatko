@@ -40,7 +40,7 @@ vi.mock('react-virtuoso', () => ({
 }))
 vi.mock('../services/bulk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/bulk')>()
-  return { ...actual, bulkUpdatePhotos: vi.fn() }
+  return { ...actual, bulkUpdatePhotos: vi.fn(), fetchBulkMembershipSummary: vi.fn() }
 })
 vi.mock('../services/organize', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/organize')>()
@@ -60,11 +60,12 @@ vi.mock('../pwa/shareTarget', async (importOriginal) => {
 })
 
 const { uploadFile } = await import('../services/upload')
-const { bulkUpdatePhotos } = await import('../services/bulk')
+const { bulkUpdatePhotos, fetchBulkMembershipSummary } = await import('../services/bulk')
 const { fetchAlbums, fetchLabels, createAlbum } = await import('../services/organize')
 const { collectSharedFiles } = await import('../pwa/shareTarget')
 const uploadMock = vi.mocked(uploadFile)
 const bulkMock = vi.mocked(bulkUpdatePhotos)
+const membershipMock = vi.mocked(fetchBulkMembershipSummary)
 const albumsMock = vi.mocked(fetchAlbums)
 const labelsMock = vi.mocked(fetchLabels)
 const createAlbumMock = vi.mocked(createAlbum)
@@ -188,6 +189,12 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   uploadMock.mockReset()
   bulkMock.mockReset()
+  // Unless a test says otherwise, nothing in a batch is filed anywhere yet.
+  membershipMock
+    .mockReset()
+    .mockImplementation((uids) =>
+      Promise.resolve({ total: uids.length, filed: 0, albums: [], labels: [] }),
+    )
   createAlbumMock.mockReset()
   albumsMock.mockReset().mockResolvedValue([albumSummary('al1', 'Trip')])
   labelsMock.mockReset().mockResolvedValue([labelCount('lb1', 'Sunset')])
@@ -419,6 +426,31 @@ describe('UploadPage — stage 3, done', () => {
     expect(screen.getByText('1 file was already in your library.')).toBeInTheDocument()
   })
 
+  it('does not call duplicates already in an album unfiled', async () => {
+    membershipMock.mockResolvedValue({
+      total: 2,
+      filed: 2,
+      albums: [{ uid: 'al9', title: 'Panorama', photo_count: 2 }],
+      labels: [],
+    })
+    uploadMock.mockResolvedValueOnce(duplicate('ph8')).mockResolvedValueOnce(duplicate('ph9'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('pr030_8.jpg'), file('pr030_9.jpg')])
+
+    expect(await screen.findByText('All 2 files were already in your library.')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'All of them are already in Panorama. Would you like to add them to an album or label?',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/not in any album/)).not.toBeInTheDocument()
+    // One question for the whole batch, never one per photo.
+    expect(membershipMock).toHaveBeenCalledTimes(1)
+    expect(membershipMock).toHaveBeenCalledWith(['ph8', 'ph9'], expect.any(AbortSignal))
+  })
+
   it('says so when the batch ended up in no album, and offers the picker', async () => {
     bulkMock.mockResolvedValue(bulkResult())
     uploadMock.mockResolvedValue(created('ph1'))
@@ -429,7 +461,7 @@ describe('UploadPage — stage 3, done', () => {
 
     expect(await screen.findByText('1 photo uploaded.')).toBeInTheDocument()
     expect(
-      screen.getByText(
+      await screen.findByText(
         'These photos are not in any album or label yet. Choose one and we will add them.',
       ),
     ).toBeInTheDocument()

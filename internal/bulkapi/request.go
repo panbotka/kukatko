@@ -24,8 +24,8 @@ type bulkRequest struct {
 	Operations operationsInput `json:"operations"`
 }
 
-// locationSummaryRequest is the JSON body of POST /photos/bulk/location-summary:
-// the selection to describe. It is the bulk request without its operations —
+// locationSummaryRequest is the JSON body of POST /photos/bulk/location-summary
+// and POST /photos/bulk/membership-summary: the selection to describe. It is the bulk request without its operations —
 // the question is about the photos as they stand, not about a change.
 type locationSummaryRequest struct {
 	PhotoUIDs []string `json:"photo_uids"`

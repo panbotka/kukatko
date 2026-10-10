@@ -59,6 +59,36 @@ export interface BulkLocationSummary {
   with_location: number
 }
 
+/** An album named in a {@link BulkMembershipSummary} (`bulk.AlbumRef`). */
+export interface BulkMembershipAlbum {
+  uid: string
+  title: string
+  /** How many of the asked-about photos the album holds. */
+  photo_count: number
+}
+
+/** A label named in a {@link BulkMembershipSummary} (`bulk.LabelRef`). */
+export interface BulkMembershipLabel {
+  uid: string
+  name: string
+  /** How many of the asked-about photos carry the label. */
+  photo_count: number
+}
+
+/**
+ * What `POST /photos/bulk/membership-summary` answers about a selection: how
+ * many of its photos exist, how many of those are already in an album or under a
+ * label (`filed`), and which albums (by title) and labels (by priority, then
+ * name) those are. The upload page asks it once a batch settles with nothing
+ * chosen, so it only claims "not in any album or label yet" when that is true.
+ */
+export interface BulkMembershipSummary {
+  total: number
+  filed: number
+  albums: BulkMembershipAlbum[]
+  labels: BulkMembershipLabel[]
+}
+
 /**
  * The bulk operations the grid-selection toolbar can apply to many photos at
  * once, mirroring `internal/bulkapi` (`operationsInput`). Every field is
@@ -169,6 +199,29 @@ export async function fetchBulkLocationSummary(
     throw new ApiError(res.status, await readErrorMessage(res))
   }
   return (await res.json()) as BulkLocationSummary
+}
+
+/**
+ * Reads how many of `photoUids` are already in an album or under a label, and
+ * where, via `POST /photos/bulk/membership-summary` — one request for the whole
+ * batch, whatever its size (up to the bulk batch limit, 413 beyond it).
+ * Throws {@link ApiError} on a rejected or failed request.
+ */
+export async function fetchBulkMembershipSummary(
+  photoUids: string[],
+  signal?: AbortSignal,
+): Promise<BulkMembershipSummary> {
+  const res = await fetch(`${API_BASE}/photos/bulk/membership-summary`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photo_uids: photoUids }),
+    signal,
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, await readErrorMessage(res))
+  }
+  return (await res.json()) as BulkMembershipSummary
 }
 
 /**

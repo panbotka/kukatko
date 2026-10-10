@@ -10,6 +10,7 @@ import { type UploadOrganizeProps } from '../components/upload/UploadOrganize'
 import { UploadStageDone } from '../components/upload/UploadStageDone'
 import { UploadStagePick } from '../components/upload/UploadStagePick'
 import { UploadStageUploading } from '../components/upload/UploadStageUploading'
+import { useBatchMembership } from '../hooks/useBatchMembership'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { usePasteFiles } from '../hooks/usePasteFiles'
@@ -157,6 +158,26 @@ export function UploadPage() {
     [organizeLoad, albums, labels],
   )
 
+  // Where the batch already is, asked once it settles with nothing chosen: a
+  // duplicate may sit in an album since its first upload, and the done stage
+  // must not call it "not in any album yet". Duplicates go first, so a batch
+  // longer than one question still asks about the photos most likely filed.
+  const membershipUids = useMemo(
+    () =>
+      ['duplicate', 'created'].flatMap((status) =>
+        items.flatMap((item) =>
+          item.status === status && item.photoUid !== undefined && item.photoUid !== ''
+            ? [item.photoUid]
+            : [],
+        ),
+      ),
+    [items],
+  )
+  const membership = useBatchMembership(
+    membershipUids,
+    isComplete && !hasSelection && assign.status !== 'assigning',
+  )
+
   // The picker is the same control in both of the stages that show it, so it is
   // wired once here and handed over whole.
   const organize: UploadOrganizeProps = {
@@ -214,6 +235,7 @@ export function UploadPage() {
           organize={organize}
           organizeNames={organizeNames}
           assign={assign}
+          membership={membership}
           onRetryFailed={retryFailed}
           onRemove={removeItem}
           onRetry={retry}
