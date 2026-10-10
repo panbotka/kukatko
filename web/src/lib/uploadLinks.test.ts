@@ -11,11 +11,12 @@ function summary(created: number, duplicate: number, error: number): UploadSumma
 }
 
 describe('uploadLinkSummary', () => {
-  it('names only the parts that happened, the uploaded count always', async () => {
+  it('names only the parts that happened, leaving every zero count out', async () => {
     await i18n.changeLanguage('en')
     expect(uploadLinkSummary(summary(12, 1, 1), i18n.t)).toBe('12 uploaded, 1 duplicate, 1 error')
     expect(uploadLinkSummary(summary(3, 0, 0), i18n.t)).toBe('3 uploaded')
-    expect(uploadLinkSummary(summary(0, 2, 0), i18n.t)).toBe('0 uploaded, 2 duplicates')
+    expect(uploadLinkSummary(summary(0, 2, 0), i18n.t)).toBe('2 duplicates')
+    expect(uploadLinkSummary(summary(0, 0, 1), i18n.t)).toBe('1 error')
   })
 
   it('declines Czech counts', async () => {

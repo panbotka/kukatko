@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -27,11 +28,16 @@ vi.mock('../../pwa/register', () => ({
   },
 }))
 
-/** Renders the component with the app's own i18n instance, as the app mounts it. */
-function renderStatus() {
+/**
+ * Renders the component with the app's own i18n instance, as the app mounts it:
+ * inside the router, on `path`.
+ */
+function renderStatus(path = '/') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <PwaStatus />
+      <MemoryRouter initialEntries={[path]}>
+        <PwaStatus />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -91,6 +97,25 @@ describe('PwaStatus', () => {
     setOnline(false)
 
     renderStatus()
+
+    expect(screen.getByText(OFFLINE_TEXT)).toBeInTheDocument()
+  })
+
+  it('leaves the offline notice to the public upload-link page, which shows its own', () => {
+    setOnline(false)
+
+    renderStatus('/u/Ab3dEf7h')
+
+    expect(screen.queryByText(OFFLINE_TEXT)).not.toBeInTheDocument()
+    announceUpdate()
+    // Only the offline line is the page's business: a waiting update still shows.
+    expect(screen.getByText(UPDATE_TEXT)).toBeInTheDocument()
+  })
+
+  it('still announces offline on the other routes outside the shell', () => {
+    setOnline(false)
+
+    renderStatus('/login')
 
     expect(screen.getByText(OFFLINE_TEXT)).toBeInTheDocument()
   })

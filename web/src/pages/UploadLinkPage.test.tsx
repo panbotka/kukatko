@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { PwaStatus } from '../components/pwa/PwaStatus'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
 import { PICKER_ACCEPT } from '../lib/mediaFiles'
@@ -27,6 +28,12 @@ vi.mock('../services/uploadLinks', async (importOriginal) => {
   return { ...actual, fetchPublicUploadLink: vi.fn() }
 })
 vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
+// The app-wide banner is mounted beside the page in one case; its service
+// worker registration is beside the point there.
+vi.mock('../pwa/register', () => ({
+  registerServiceWorker: () => Promise.resolve(null),
+  applyServiceWorkerUpdate: () => undefined,
+}))
 // jsdom has no layout, so the real virtualized list renders nothing.
 vi.mock('react-virtuoso', () => ({
   Virtuoso: ({
@@ -80,8 +87,11 @@ function viewer(): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-/** Renders the page at /u/Ab3dEf7h with a stand-in registration route. */
-function renderPage(auth: AuthContextValue = anonymous()) {
+/**
+ * Renders the page at /u/Ab3dEf7h with a stand-in registration route; with
+ * `withAppBanner`, also the app-wide PWA banner beside it, as App.tsx mounts it.
+ */
+function renderPage(auth: AuthContextValue = anonymous(), withAppBanner = false) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
@@ -90,6 +100,7 @@ function renderPage(auth: AuthContextValue = anonymous()) {
             <Route path="/u/:code" element={<UploadLinkPage />} />
             <Route path="/register" element={<h1>Register here</h1>} />
           </Routes>
+          {withAppBanner && <PwaStatus />}
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -227,9 +238,7 @@ describe('UploadLinkPage', () => {
 
     await pick(user, [new File(['junk'], 'broken.jpg', { type: 'image/jpeg' })])
 
-    expect(await screen.findByTestId('upload-link-summary')).toHaveTextContent(
-      '0 uploaded, 1 error',
-    )
+    expect(await screen.findByTestId('upload-link-summary')).toHaveTextContent('1 error')
     expect(screen.getByText('This is not a photo or a video')).toBeInTheDocument()
     expect(screen.queryByText(/ingest: not a photo/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry the failed files' })).not.toBeInTheDocument()
@@ -371,6 +380,8 @@ describe('UploadLinkPage', () => {
     expect(screen.getByText(/keep this page open/i)).toBeInTheDocument()
     expect(screen.queryByLabelText('Who is it from?')).not.toBeInTheDocument()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    // Nothing has an outcome yet, so there is no count badge — no red "0 failed".
+    expect(screen.queryByTestId('upload-queue-counts')).not.toBeInTheDocument()
 
     // The details are closed, and opening them offers no Remove for the waiting file.
     const toggle = screen.getByRole('button', { name: 'Details' })
@@ -385,6 +396,8 @@ describe('UploadLinkPage', () => {
     })
     expect(await screen.findByText('1 of 4 photos')).toBeInTheDocument()
     expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('25%')
+    // Only the outcome that happened gets a badge.
+    expect(screen.getByTestId('upload-queue-counts')).toHaveTextContent(/^1 uploaded$/)
   })
 
   it('keeps the bar below 100 % and says it is processing while verdicts are pending', async () => {
@@ -446,6 +459,80 @@ describe('UploadLinkPage', () => {
     expect(screen.queryByTestId('upload-link-done')).not.toBeInTheDocument()
   })
 
+  it('says plainly when every photo was already in the library', async () => {
+    uploadMock.mockResolvedValue(result('duplicate'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+      new File(['c'], 'c.jpg', { type: 'image/jpeg' }),
+    ])
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Done — all 3 photos were already in the library',
+      }),
+    ).toBeInTheDocument()
+    // The heading says it all: no "0 uploaded, 3 duplicates" under it.
+    expect(screen.queryByTestId('upload-link-summary')).not.toBeInTheDocument()
+    expect(screen.getByTestId('upload-queue-counts')).toHaveTextContent(/^3 duplicates$/)
+  })
+
+  it('reads an all-duplicate batch in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    uploadMock.mockResolvedValue(result('duplicate'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Od koho?')
+    await user.upload(
+      screen.getAllByLabelText('Vyberte fotky nebo videa k nahrání')[0],
+      Array.from({ length: 8 }, (_, i) => new File([`${i}`], `${i}.jpg`, { type: 'image/jpeg' })),
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Hotovo — všech 8 fotek už v knihovně bylo' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('upload-queue-counts')).toHaveTextContent(/^8 duplikátů$/)
+  })
+
+  it('breaks a mixed batch down without a zero count', async () => {
+    uploadMock.mockResolvedValueOnce(result('created')).mockResolvedValueOnce(result('duplicate'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ])
+
+    expect(await screen.findByTestId('upload-link-summary')).toHaveTextContent(
+      /^1 uploaded, 1 duplicate$/,
+    )
+    const counts = screen.getByTestId('upload-queue-counts')
+    expect(counts).toHaveTextContent('1 uploaded')
+    expect(counts).toHaveTextContent('1 duplicate')
+    expect(counts).not.toHaveTextContent('failed')
+  })
+
+  it('shows one offline banner — its own — and not the app-wide one', async () => {
+    renderPage(anonymous(), true)
+    await screen.findByLabelText('Who is it from?')
+
+    setOnline(false)
+
+    // Even before a batch: the app-wide banner leaves this route to the page.
+    expect(await screen.findByTestId('upload-link-offline')).toHaveTextContent(
+      'You are offline — waiting for a connection.',
+    )
+    expect(screen.getAllByText(/offline/i)).toHaveLength(1)
+    expect(screen.queryByText(/photos and the library need a connection/)).not.toBeInTheDocument()
+
+    setOnline(true)
+    expect(screen.queryByTestId('upload-link-offline')).not.toBeInTheDocument()
+  })
+
   it('carries on by itself after a dropped connection, without an error', async () => {
     const pending = holdUploads()
     const user = userEvent.setup()
@@ -462,7 +549,8 @@ describe('UploadLinkPage', () => {
     })
     expect(await screen.findByText('Connection lost, carrying on…')).toBeInTheDocument()
     expect(screen.queryByTestId('upload-link-summary')).not.toBeInTheDocument()
-    expect(screen.getByText('0 failed')).toBeInTheDocument()
+    // Not even a "0 failed": a zero count has no badge.
+    expect(screen.queryByTestId('upload-queue-counts')).not.toBeInTheDocument()
 
     // The network comes back: the file goes again with no tap.
     setOnline(true)

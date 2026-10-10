@@ -2799,7 +2799,8 @@
       "barLabel": "Overall upload progress",
       "count": "{{done}} / {{total}}",
       "uploaded": "{{count}} uploaded",
-      "duplicate": "{{count}} duplicate",
+      "duplicate_one": "{{count}} duplicate",
+      "duplicate_other": "{{count}} duplicates",
       "failed": "{{count}} failed",
       "processing": "processing…",
       "remaining": "{{count}} left"
@@ -4112,7 +4113,9 @@
       "title_one": "Done, {{count}} photo uploaded",
       "title_other": "Done, {{count}} photos uploaded",
       "partial_one": "{{done}} of {{count}} photo uploaded",
-      "partial_other": "{{done}} of {{count}} photos uploaded"
+      "partial_other": "{{done}} of {{count}} photos uploaded",
+      "allDuplicate_one": "Done — this photo was already in the library",
+      "allDuplicate_other": "Done — all {{count}} photos were already in the library"
     }
   },
   "uploadLinks": {

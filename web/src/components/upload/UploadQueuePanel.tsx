@@ -33,8 +33,9 @@ export interface UploadQueuePanelProps {
  * A batch of fifty files is fifty rows nobody reads, and letting them push the
  * things that matter — the progress and the album picker — off a phone screen is
  * what made the old page unusable. So the list is closed by default and the
- * outcome counts stand in for it: three badges saying how many landed, how many
- * were already in the library and how many failed.
+ * outcome counts stand in for it: badges saying how many landed, how many were
+ * already in the library and how many failed — each only once it is above zero,
+ * so a batch that is still starting shows none and a clean one never shows red.
  *
  * It opens itself the moment a file fails, because that is the one time the rows
  * are worth reading: a failed row is where the reason and the per-file **Retry**
@@ -93,13 +94,25 @@ export function UploadQueuePanel({
           {toggleLabel ?? t('upload.queue.heading', { total: items.length })}
         </Button>
 
-        <div className="d-flex flex-wrap gap-2 ms-auto">
-          <Badge bg="success">{t('upload.progress.uploaded', { count: summary.created })}</Badge>
-          <Badge bg="warning" text="dark">
-            {t('upload.progress.duplicate', { count: summary.duplicate })}
-          </Badge>
-          <Badge bg="danger">{t('upload.progress.failed', { count: summary.error })}</Badge>
-        </div>
+        {/* Only the outcomes that happened: a red "0 failed" reads as an error
+            at a glance, so a zero count has no badge at all. */}
+        {(summary.created > 0 || summary.duplicate > 0 || summary.error > 0) && (
+          <div className="d-flex flex-wrap gap-2 ms-auto" data-testid="upload-queue-counts">
+            {summary.created > 0 && (
+              <Badge bg="success">
+                {t('upload.progress.uploaded', { count: summary.created })}
+              </Badge>
+            )}
+            {summary.duplicate > 0 && (
+              <Badge bg="warning" text="dark">
+                {t('upload.progress.duplicate', { count: summary.duplicate })}
+              </Badge>
+            )}
+            {hasFailed && (
+              <Badge bg="danger">{t('upload.progress.failed', { count: summary.error })}</Badge>
+            )}
+          </div>
+        )}
       </div>
 
       {open && (

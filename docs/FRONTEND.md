@@ -910,7 +910,9 @@ here.
   a phone, rightmost in a row from `sm` up. Guarded by `styles/uploadRail.test.ts`),
   `UploadStagePick` / `UploadStageUploading` / `UploadStageDone` (the three stages, see `UploadPage`),
   `UploadQueuePanel` (**the per-file list, demoted**: a disclosure closed by default with the
-  uploaded/duplicate/failed badges standing in for it, since fifty rows nobody reads are exactly what
+  uploaded/duplicate/failed badges standing in for it — **each only once its count is above zero**, so a
+  batch still starting shows none and a clean one never a red "0 selhalo" (on `/upload` and `/u/:code`
+  alike) — since fifty rows nobody reads are exactly what
   used to push the progress and the picker off a phone screen. It **opens itself the moment a file
   fails** — that is where the reason, the per-file **Opakovat** and the **jen neúspěšné** filter are —
   and wraps `UploadList`; optional `toggleLabel` replaces the file-count label and `autoOpen` narrows when
@@ -1763,12 +1765,16 @@ here.
   ahead of the count — plus "Nechte prosím stránku otevřenou"; the per-file
   `UploadQueuePanel` closed behind **Podrobnosti**, **no Remove** on any row while the batch runs unless
   something failed, no link out of the page) and *done* (a big check mark — a warning triangle when some
-  file failed —, "Hotovo, nahráno N fotek" / "Nahráno X z Y fotek", the `uploadLinkSummary` breakdown
-  only when it says more (duplicates or errors), "retry the failed files" only while a failure is
+  file failed —, "Hotovo, nahráno N fotek" / "Nahráno X z Y fotek" / **"Hotovo — všech N fotek už v
+  knihovně bylo"** when every file was a duplicate (`uploadLink.done.allDuplicate`), the
+  `uploadLinkSummary` breakdown — zero counts left out — only when it says more than the heading
+  (an error, or new photos mixed with duplicates), "retry the failed files" only while a failure is
   retryable — a `not_media` refusal is not —, the notice when the link died mid-batch, a full-width
   **Nahrát další** that clears the queue back to *pick*). Every control in `.kk-upload-link` is at least
   48 px tall (the primary 56 px). **Resilience**: `useOnline` pauses the queue while offline (`paused`
-  option of `useUploadQueue`) with a "Jste offline — počkám na připojení" banner; a file whose request was
+  option of `useUploadQueue`) with a "Jste offline — počkám na připojení" banner — in every phase, under
+  the progress while uploading, and the **only** offline banner on the route (`PwaStatus` leaves it
+  alone); a file whose request was
   interrupted (`item.interrupted`) keeps the batch in *uploading* under "Spojení přerušeno, pokračuji…"
   and is re-sent by `useUploadResilience` (on return to the foreground, on `online`, and on a backing-off
   timer) — the server's SHA256 dedup makes that safe — while the panel's badges count it as waiting, not
@@ -1782,7 +1788,9 @@ here.
   **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands
   in for it and posts `upload_link` (a dead link → `register.errorLink`). Texts in `uploadLink.*`;
   `UploadLinkPage.test.tsx` (the three screens, no Remove while running, auto-resume after a dropped
-  connection, the offline pause, the remembered batch, the estimate after a few seconds).
+  connection, the offline pause, the remembered batch, the estimate after a few seconds, no zero-count
+  badge, the all-duplicate heading in both languages, and exactly one offline banner with the real
+  `PwaStatus` mounted beside the page).
   `UploadLinkLine` (`components/photo/`, the photo detail's info view, its own section right under the
   caption — visible, not folded into the closed technical card): one line naming who sent a photo
   through an upload link — „Nahráno přes odkaz „Pouť 2026“ · od: Jana", with neither name nor account
@@ -7741,7 +7749,12 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   the app shell and nothing else — it never touches `/api/`, so no photo, album or search result
   survives the connection. It used to read "shows only what it has stored", which promised an offline
   library; every page under the banner then failed to load. It now says the app opens and the library
-  needs a connection. One thing to know before debugging this banner: **`Network.emulateNetworkConditions`
+  needs a connection. **The offline line skips the public upload-link page** (`/u/:code`, the
+  module-private `ownsOfflineNotice`): that page says "Jste offline — počkám na připojení" itself, in
+  its formal voice and in terms of the upload waiting, and the app-wide line (informal, about a library
+  an anonymous uploader cannot open) was a second, contradicting banner there. The rule is "routes with
+  their own notice", not "routes outside `Layout`" — `/login` and the immersive routes are outside it
+  too and have nothing of their own. The update line still shows there. One thing to know before debugging this banner: **`Network.emulateNetworkConditions`
   is scoped to the CDP target it was issued on**, so a document created in a *new* target after the
   network was "cut" loads normally and reads `navigator.onLine === true`. Measured on 2026-08-12 with
   `agent-browser`: same tab → `false`, a tab opened afterwards → `true`, page fully loaded. So a report

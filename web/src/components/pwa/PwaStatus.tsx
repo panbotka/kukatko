@@ -1,6 +1,7 @@
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
 
 import { usePwaStatus } from '../../pwa/usePwaStatus'
 import { Icon } from '../Icon'
@@ -25,10 +26,21 @@ import { Icon } from '../Icon'
  * promise "only what it has stored", which read as an offline library; every
  * page under it then failed to load. It now says the app opens and the library
  * does not.
+ *
+ * The one exception is the public upload-link page (`/u/:code`, see
+ * {@link ownsOfflineNotice}): it says "you are offline" itself, in the formal
+ * voice it uses throughout and in terms of the upload waiting, so the app-wide
+ * line — informal, and about a library an anonymous uploader cannot even open —
+ * would only be a second, contradicting banner there. Skipping "routes outside
+ * the layout" would not do: the login screen and the immersive routes are
+ * outside it too, and they have no notice of their own.
  */
 export function PwaStatus() {
   const { t } = useTranslation()
-  const { offline, updateReady, applyUpdate, dismissUpdate } = usePwaStatus()
+  const { pathname } = useLocation()
+  const pwa = usePwaStatus()
+  const { updateReady, applyUpdate, dismissUpdate } = pwa
+  const offline = pwa.offline && !ownsOfflineNotice(pathname)
 
   if (!offline && !updateReady) {
     return null
@@ -64,4 +76,12 @@ export function PwaStatus() {
       )}
     </div>
   )
+}
+
+/**
+ * Whether the route at `pathname` shows its own offline notice, so the app-wide
+ * one stays away from it. Only the public upload-link page does.
+ */
+function ownsOfflineNotice(pathname: string): boolean {
+  return pathname.startsWith('/u/')
 }

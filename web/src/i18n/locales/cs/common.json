@@ -2913,7 +2913,10 @@
       "barLabel": "Celkový průběh nahrávání",
       "count": "{{done}} / {{total}}",
       "uploaded": "{{count}} nahráno",
-      "duplicate": "{{count}} duplikát",
+      "duplicate_one": "{{count}} duplikát",
+      "duplicate_few": "{{count}} duplikáty",
+      "duplicate_many": "{{count}} duplikátu",
+      "duplicate_other": "{{count}} duplikátů",
       "failed": "{{count}} selhalo",
       "processing": "zpracovávám…",
       "remaining_one": "zbývá {{count}}",
@@ -4315,7 +4318,11 @@
       "partial_one": "Nahráno {{done}} z {{count}} fotky",
       "partial_few": "Nahráno {{done}} z {{count}} fotek",
       "partial_many": "Nahráno {{done}} z {{count}} fotky",
-      "partial_other": "Nahráno {{done}} z {{count}} fotek"
+      "partial_other": "Nahráno {{done}} z {{count}} fotek",
+      "allDuplicate_one": "Hotovo — tahle fotka už v knihovně byla",
+      "allDuplicate_few": "Hotovo — všechny {{count}} fotky už v knihovně byly",
+      "allDuplicate_many": "Hotovo — všech {{count}} fotky už v knihovně bylo",
+      "allDuplicate_other": "Hotovo — všech {{count}} fotek už v knihovně bylo"
     }
   },
   "uploadLinks": {

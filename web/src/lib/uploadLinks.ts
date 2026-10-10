@@ -23,10 +23,14 @@ export function newLinkForAlbum(albumUid: string): string {
 
 /**
  * The one-line outcome of a finished batch — "12 nahráno, 1 duplicita, 1 chyba"
- * — naming only the parts that happened (the uploaded count always).
+ * — naming only the parts that happened; a zero count is left out, the
+ * uploaded one included ("1 chyba", never "0 nahráno, 1 chyba").
  */
 export function uploadLinkSummary(summary: UploadSummary, t: TFunction): string {
-  const parts = [t('uploadLink.summary.created', { count: summary.created })]
+  const parts: string[] = []
+  if (summary.created > 0) {
+    parts.push(t('uploadLink.summary.created', { count: summary.created }))
+  }
   if (summary.duplicate > 0) {
     parts.push(t('uploadLink.summary.duplicate', { count: summary.duplicate }))
   }

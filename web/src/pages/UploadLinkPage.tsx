@@ -249,11 +249,46 @@ export function UploadLinkPage() {
     </div>
   )
 
+  // The only "you are offline" on this page: the app-wide banner leaves this
+  // route alone (components/pwa/PwaStatus), so it is shown in every phase.
+  function offlineNotice(className: string) {
+    if (online) {
+      return null
+    }
+    return (
+      <Alert
+        variant="warning"
+        role="status"
+        className={className}
+        data-testid="upload-link-offline"
+      >
+        <Icon name="wifi-off" className="me-2" />
+        {t('uploadLink.offline')}
+      </Alert>
+    )
+  }
+
+  // Every file already in the library is still "done", but "uploaded 8 photos"
+  // over a breakdown of "0 uploaded, 8 duplicates" contradicts itself.
+  const allDuplicate = summary.error === 0 && summary.created === 0 && summary.duplicate > 0
+  const doneHeading =
+    summary.error > 0
+      ? t('uploadLink.done.partial', {
+          done: summary.created + summary.duplicate,
+          count: summary.total,
+        })
+      : allDuplicate
+        ? t('uploadLink.done.allDuplicate', { count: summary.total })
+        : t('uploadLink.done.title', { count: summary.total })
+
   return (
     <Row className="justify-content-center kk-upload-link">
       <Col xs={12} sm={11} md={9} lg={7} xl={6}>
         <Card text="light" className="mt-3 mt-md-5" data-testid="upload-link-page">
           <Card.Body>
+            {/* While uploading the notice sits under the progress it pauses. */}
+            {phase !== 'uploading' && offlineNotice('mb-3')}
+
             {load.status === 'loading' && (
               <div className="text-center py-4">
                 <Spinner animation="border" role="status">
@@ -353,17 +388,7 @@ export function UploadLinkPage() {
                     seconds={online ? eta.seconds : null}
                     processing={eta.processing}
                   />
-                  {!online && (
-                    <Alert
-                      variant="warning"
-                      role="status"
-                      className="mt-3 mb-0"
-                      data-testid="upload-link-offline"
-                    >
-                      <Icon name="wifi-off" className="me-2" />
-                      {t('uploadLink.offline')}
-                    </Alert>
-                  )}
+                  {offlineNotice('mt-3 mb-0')}
                   {online && interrupted && (
                     <Alert
                       variant="info"
@@ -391,17 +416,11 @@ export function UploadLinkPage() {
                     name={summary.error > 0 ? 'exclamation-triangle' : 'check-circle-fill'}
                     className={`kk-upload-link__mark ${summary.error > 0 ? 'text-warning' : 'text-success'}`}
                   />
-                  <h1 className="kk-page-title mt-2 mb-3">
-                    {summary.error > 0
-                      ? t('uploadLink.done.partial', {
-                          done: summary.created + summary.duplicate,
-                          count: summary.total,
-                        })
-                      : t('uploadLink.done.title', { count: summary.total })}
-                  </h1>
+                  <h1 className="kk-page-title mt-2 mb-3">{doneHeading}</h1>
                 </div>
-                {/* The breakdown only when it says more than the heading. */}
-                {(summary.duplicate > 0 || summary.error > 0) && (
+                {/* The breakdown only when it says more than the heading: a
+                    failure, or new photos mixed with ones already there. */}
+                {(summary.error > 0 || (summary.duplicate > 0 && summary.created > 0)) && (
                   <Alert
                     variant={summary.error > 0 ? 'warning' : 'success'}
                     role="status"
