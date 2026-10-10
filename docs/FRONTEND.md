@@ -1757,7 +1757,10 @@ here.
   `PICKER_ACCEPT`: images, videos, HEIC/RAW; the `DropZone` sits under it only from `md` up, a phone has
   nothing to drag), *uploading* (nothing else: a sticky `kk-upload-link__progress` block — a tall bar
   weighted by **bytes**, its percentage, "X z Y fotek" and the remaining time from `useUploadEta`,
-  "počítám…" until there is data — plus "Nechte prosím stránku otevřenou"; the per-file
+  "počítám…" until there is data and "zpracovávám…" once every byte is sent but verdicts are pending —
+  sending fills only 90 % of a file's share and its verdict the rest (`lib/uploadProgress`), so the
+  bar and the percentage (rounded down) reach 100 % only together with the done screen and never run
+  ahead of the count — plus "Nechte prosím stránku otevřenou"; the per-file
   `UploadQueuePanel` closed behind **Podrobnosti**, **no Remove** on any row while the batch runs unless
   something failed, no link out of the page) and *done* (a big check mark — a warning triangle when some
   file failed —, "Hotovo, nahráno N fotek" / "Nahráno X z Y fotek", the `uploadLinkSummary` breakdown
@@ -2519,7 +2522,8 @@ here.
   **Vybrat fotky**. No album fields, no queue, no empty third step explaining itself.
   ② `UploadStageUploading` = the album/label picker (`UploadOrganize`) as the body — the one useful thing
   to do while the bytes go up — with the demoted `UploadQueuePanel` under it, and the batch's progress in
-  the action bar together with **Přidat další soubory**.
+  the action bar together with **Přidat další soubory** (below 100 % until every file has a verdict; with
+  all bytes sent the "zbývá N" line reads "zpracovávám…").
   ③ `UploadStageDone` = **one sentence** of outcome („Nahráno 20 fotek, přidáno do: Pouť 2026.“) and one
   primary action, **Zobrazit je v knihovně** (`/?sort=added`, via `LIBRARY_PATH`), with **Nahrát další**
   beside it. The sentence only claims the album once the assignment has actually come back; a batch with
@@ -5408,8 +5412,10 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   each file starts, so the public upload-link page passes a fresh closure bound to its code every render):
   `addFiles` (dedup on name+size+mtime)/`removeItem`/
   `retry`/`retryFailed`/`clear`, a concurrency ceiling `MAX_CONCURRENT_UPLOADS` (3),
-  per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1 weighted by
-  the partial progress of running files, terminal files = done → a smooth overall bar),
+  per-file status+progress, a summary of counts + `progress` (the **overall** fraction of the batch 0–1,
+  `batchCompletion(items, 'files')`: a file with a verdict = done, a running one fills `SEND_SHARE` (90 %)
+  of its share by its sent fraction, an interrupted one 0 → a smooth bar that stays **below 1 until the
+  server has answered for every file**, a sent last byte is not "done"),
   `createdUids` (new ones only) for the link into the library
   and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment.
   **The queue starts itself** — there is no `start`: an effect tops the in-flight uploads up to the cap
@@ -5429,13 +5435,20 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   the foreground, on `online` and on a timer backing off 3 s → 6 s → … → 60 s (the count starts over after
   two quiet maximum delays), and never while offline. Tests: `useUploadResilience.test.tsx` (stubbed
   `navigator.wakeLock`, fake timers with `shouldAdvanceTime`);
-  `useUploadEta(items, active)` → `{fraction, seconds}` = the batch's byte progress (live) and the remaining
+  `useUploadEta(items, active)` → `{fraction, processing, seconds}` = the batch's completion weighted by bytes
+  (live, `batchCompletion(items, 'bytes')`), `processing` (`awaitingVerdicts`: every byte sent, verdicts
+  pending — the page then says "zpracovávám…" instead of an estimate) and the remaining
   time, sampled once a second while `active` through the pure `lib/uploadEta.ts`: `batchBytes` (a settled
   file counts whole, a running one by its progress, an interrupted one not at all), `sampleThroughput`
   (a 20 s sliding window believed only after 4 s, blended into an exponential moving average α = 0.2; a
   count that goes down restarts the window but keeps the rate), `remainingSeconds` (`null` while nothing
   moves) and `etaPhrase` (under a minute, whole minutes to 10, steps of 5 to 90, then hours — the coarser
-  the figure the coarser the step, so the wording changes rarely). Tests: `uploadEta.test.ts`;
+  the figure the coarser the step, so the wording changes rarely). Tests: `uploadEta.test.ts`.
+  The bar's weighting is the pure `lib/uploadProgress.ts`: `SEND_SHARE` = 0.9 (sending fills nine tenths
+  of a file's share, the server's verdict — hashing, thumbnails, created/duplicate/refused — the last
+  tenth), `fileCompletion`, `batchCompletion(items, 'bytes' | 'files')` (1 only once every file has a
+  verdict), `awaitingVerdicts` and `progressPercent` (rounded **down**, so one verdict short reads 99 %).
+  Tests: `uploadProgress.test.ts`;
   `useDebouncedText(value, commit, delayMs = TEXT_FILTER_DEBOUNCE_MS)` → `[draft, setDraft]` = a text field
   that keeps up with the keyboard but writes on a pause. A filter field wired straight to the URL costs a
   request per keystroke and, with each one, a reset of the count `FilterBar` states; the draft is local, so

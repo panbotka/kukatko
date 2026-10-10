@@ -28,6 +28,7 @@ import { type UploadQueueItem, useUploadQueue } from '../hooks/useUploadQueue'
 import { useUploadResilience } from '../hooks/useUploadResilience'
 import { canRetryUpload } from '../lib/uploadErrors'
 import { etaPhrase } from '../lib/uploadEta'
+import { progressPercent } from '../lib/uploadProgress'
 import { forgetBatch, readInterruptedBatch, rememberBatch } from '../lib/uploadLinkBatch'
 import { UPLOADER_NAME_KEY, uploadLinkSummary } from '../lib/uploadLinks'
 import { ApiError, type User } from '../services/auth'
@@ -350,6 +351,7 @@ export function UploadLinkPage() {
                     done={summary.created + summary.duplicate + panelSummary.error}
                     total={summary.total}
                     seconds={online ? eta.seconds : null}
+                    processing={eta.processing}
                   />
                   {!online && (
                     <Alert
@@ -485,11 +487,20 @@ interface BatchProgressProps {
   total: number
   /** Seconds left, `null` while there is no estimate yet. */
   seconds: number | null
+  /** Every byte is sent and the batch only waits for the server's verdicts. */
+  processing: boolean
 }
 
-/** The remaining time as a short phrase: "zbývá asi 3 min", or "počítám…". */
-function useEtaText(seconds: number | null): string {
+/**
+ * The remaining time as a short phrase: "zbývá asi 3 min", "počítám…", or
+ * "zpracovávám…" once every byte is sent — the estimate counts bytes, so at that
+ * point it would only ever say "under a minute" while the server is still busy.
+ */
+function useEtaText(seconds: number | null, processing: boolean): string {
   const { t } = useTranslation()
+  if (processing) {
+    return t('uploadLink.eta.processing')
+  }
   if (seconds === null) {
     return t('uploadLink.eta.calculating')
   }
@@ -507,13 +518,15 @@ function useEtaText(seconds: number | null): string {
 /**
  * The batch's one progress readout: a tall bar weighted by bytes (a video is not
  * one small step like a photo), its percentage, "X z Y fotek" and the remaining
- * time. The live region carries only the file count and the time — the
+ * time. Sending fills nine tenths of a file's share and its verdict the rest
+ * (`lib/uploadProgress`), so the bar reaches 100 % only with the done screen and
+ * the percentage never runs ahead of the count. The live region carries only the file count and the time — the
  * percentage changes every moment and would chatter in a screen reader.
  */
-function BatchProgress({ fraction, done, total, seconds }: BatchProgressProps) {
+function BatchProgress({ fraction, done, total, seconds, processing }: BatchProgressProps) {
   const { t } = useTranslation()
-  const percent = Math.floor(fraction * 100)
-  const etaText = useEtaText(seconds)
+  const percent = progressPercent(fraction)
+  const etaText = useEtaText(seconds, processing)
   return (
     <div>
       <ProgressBar

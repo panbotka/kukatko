@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../services/auth'
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 
+import { SEND_SHARE } from '../lib/uploadProgress'
+
 import { MAX_CONCURRENT_UPLOADS, useUploadQueue } from './useUploadQueue'
 
 // Mock the upload service: the queue is the unit under test, not the network.
@@ -211,13 +213,13 @@ describe('useUploadQueue', () => {
     // Both uploading at 0% — nothing completed yet.
     expect(hook.current.progress).toBe(0)
 
-    // One file half-sent contributes its fraction: (0.5 + 0) / 2 = 0.25.
+    // One file half-sent fills half its sending share: (0.9 × 0.5 + 0) / 2.
     act(() => {
       pending[0].options.onProgress?.(0.5)
     })
-    expect(hook.current.progress).toBeCloseTo(0.25)
+    expect(hook.current.progress).toBeCloseTo((SEND_SHARE * 0.5) / 2)
 
-    // Settling it counts the file as fully done: (1 + 0) / 2 = 0.5.
+    // Its verdict counts the file as fully done: (1 + 0) / 2 = 0.5.
     await settle(0, result('created', 'ph1'))
     expect(hook.current.progress).toBeCloseTo(0.5)
 
@@ -226,6 +228,25 @@ describe('useUploadQueue', () => {
     await waitFor(() => {
       expect(hook.current.isComplete).toBe(true)
     })
+    expect(hook.current.progress).toBe(1)
+  })
+
+  it('stays below 1 with every byte sent until the server has answered for each file', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([file('a.jpg'), file('b.jpg')])
+    })
+    act(() => {
+      pending[0].options.onProgress?.(1)
+      pending[1].options.onProgress?.(1)
+    })
+    expect(hook.current.progress).toBeCloseTo(SEND_SHARE)
+    expect(hook.current.isComplete).toBe(false)
+
+    await settle(0, result('created', 'ph1'))
+    expect(hook.current.progress).toBeLessThan(1)
+
+    await settle(1, result('created', 'ph2'))
     expect(hook.current.progress).toBe(1)
   })
 

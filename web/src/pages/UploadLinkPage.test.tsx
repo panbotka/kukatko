@@ -387,6 +387,45 @@ describe('UploadLinkPage', () => {
     expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('25%')
   })
 
+  it('keeps the bar below 100 % and says it is processing while verdicts are pending', async () => {
+    const pending = holdUploads()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['aaaa'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['bbbb'], 'b.jpg', { type: 'image/jpeg' }),
+    ])
+    await waitFor(() => {
+      expect(pending).toHaveLength(2)
+    })
+
+    // Every byte sent, no file answered yet: the server is still processing.
+    act(() => {
+      pending[0].options.onProgress?.(1)
+      pending[1].options.onProgress?.(1)
+    })
+    expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('90%')
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '90')
+    expect(screen.getByTestId('upload-link-count')).toHaveTextContent('0 of 2 photos')
+    expect(screen.getByTestId('upload-link-eta')).toHaveTextContent('processing…')
+
+    // One verdict in: still not full, since the other file has none.
+    await act(async () => {
+      pending[0].resolve(result('created'))
+      await Promise.resolve()
+    })
+    expect(await screen.findByText('1 of 2 photos')).toBeInTheDocument()
+    expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('95%')
+
+    // The last verdict ends the batch on the done screen.
+    await act(async () => {
+      pending[1].resolve(result('created'))
+      await Promise.resolve()
+    })
+    expect(await screen.findByTestId('upload-link-done')).toBeInTheDocument()
+  })
+
   it('ends on an unmistakable done screen that can start another batch', async () => {
     uploadMock.mockResolvedValue(result('created'))
     const user = userEvent.setup()

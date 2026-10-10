@@ -325,12 +325,13 @@ describe('UploadPage — stage 2, uploading', () => {
     await pickFiles(user, [file('a.jpg'), file('b.jpg')])
 
     // Half of one file sent: the aggregate bar reflects the partial fraction,
-    // (0.5 + 0) / 2 = 25%, rather than jumping only in whole-file steps.
+    // sending filling 90 % of a file's share: (0.9 × 0.5 + 0) / 2 = 22.5 → 22%,
+    // rather than jumping only in whole-file steps.
     await act(async () => {
       pending[0].options.onProgress?.(0.5)
       await Promise.resolve()
     })
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25')
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '22')
 
     await act(async () => {
       pending[0].resolve(created('ph1'))
@@ -338,6 +339,29 @@ describe('UploadPage — stage 2, uploading', () => {
     })
     expect(await screen.findByText('1 / 2')).toBeInTheDocument()
     expect(screen.getByText('1 left')).toBeInTheDocument()
+  })
+
+  it('holds the bar below 100 % and says it is processing once every byte is sent', async () => {
+    const pending: { options: UploadFileOptions; resolve: (r: UploadFileResult) => void }[] = []
+    uploadMock.mockImplementation(
+      (_file: File, options: UploadFileOptions = {}) =>
+        new Promise<UploadFileResult>((resolve) => {
+          pending.push({ options, resolve })
+        }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+    await act(async () => {
+      pending[0].options.onProgress?.(1)
+      pending[1].options.onProgress?.(1)
+      await Promise.resolve()
+    })
+    // All bytes are out, no verdict yet: not a full bar, and no "2 left".
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '90')
+    expect(screen.getByText('processing…')).toBeInTheDocument()
+    expect(screen.getByText('0 / 2')).toBeInTheDocument()
   })
 
   it('keeps per-file remove in the demoted list, for a file still waiting its turn', async () => {

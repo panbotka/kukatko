@@ -8,6 +8,7 @@ import {
   type UploadWarning,
 } from '../services/upload'
 import { canRetryUpload } from '../lib/uploadErrors'
+import { batchCompletion } from '../lib/uploadProgress'
 import { ApiError } from '../services/auth'
 
 /**
@@ -74,10 +75,13 @@ export interface UseUploadQueueResult {
   items: UploadQueueItem[]
   summary: UploadSummary
   /**
-   * Overall batch completion as a fraction in `[0, 1]`. A settled file (created,
-   * duplicate, or error) counts as fully done; an in-flight file contributes its
-   * live upload fraction, so the aggregate bar advances smoothly rather than only
-   * in whole-file steps. Zero for an empty queue.
+   * Overall batch completion as a fraction in `[0, 1]`, every file weighing the
+   * same (`batchCompletion(items, 'files')` from `lib/uploadProgress`). A file
+   * with a verdict (created, duplicate, or a refusal) counts as fully done; an
+   * in-flight one fills `SEND_SHARE` (90 %) of its share by its live upload
+   * fraction, so the bar advances smoothly but stays below 1 until the server
+   * has answered for every file — a sent last byte is not "done". Zero for an
+   * empty queue.
    */
   progress: number
   /** True while any file is uploading. */
@@ -382,22 +386,8 @@ export function useUploadQueue(
 
   // Overall completion fraction, weighting in-flight files by their live upload
   // progress so the aggregate bar moves continuously rather than in file-sized
-  // jumps. Read from `status` (not `progress`) so a failed file — whose progress
-  // is never forced to 1 — still counts as done.
-  const progress = useMemo<number>(() => {
-    if (items.length === 0) {
-      return 0
-    }
-    let completed = 0
-    for (const item of items) {
-      if (item.status === 'created' || item.status === 'duplicate' || item.status === 'error') {
-        completed += 1
-      } else if (item.status === 'uploading') {
-        completed += item.progress
-      }
-    }
-    return completed / items.length
-  }, [items])
+  // jumps, and holding back each file's last tenth for its verdict.
+  const progress = useMemo<number>(() => batchCompletion(items, 'files'), [items])
 
   const isUploading = summary.uploading > 0
   const isComplete = summary.total > 0 && summary.queued === 0 && summary.uploading === 0

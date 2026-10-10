@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   batchBytes,
-  bytesFraction,
   INITIAL_THROUGHPUT,
   remainingSeconds,
   sampleThroughput,
 } from '../lib/uploadEta'
+import { awaitingVerdicts, batchCompletion } from '../lib/uploadProgress'
 
 import { type UploadQueueItem } from './useUploadQueue'
 
@@ -15,15 +15,22 @@ export const ETA_SAMPLE_MS = 1_000
 
 /** What {@link useUploadEta} reports. */
 export interface UploadEta {
-  /** The batch's bytes sent as a fraction in `[0, 1]`, live with every progress event. */
+  /**
+   * The batch's completion as a fraction in `[0, 1]`, weighted by bytes and live
+   * with every progress event; sending fills 90 % of a file's share and its
+   * verdict the rest (`lib/uploadProgress`), so it is 1 only once every file has
+   * one.
+   */
   fraction: number
+  /** True once every byte has gone and the batch only waits for the server's verdicts. */
+  processing: boolean
   /** Seconds left at the measured rate, `null` while there is no honest estimate yet. */
   seconds: number | null
 }
 
 /**
- * The batch's byte progress and its remaining time. The fraction follows the
- * queue directly; the estimate is sampled once a second while `active` through
+ * The batch's progress and its remaining time. The fraction follows the queue
+ * directly; the estimate is sampled once a second while `active` through
  * the pure estimator in `lib/uploadEta` (sliding window + moving average), and
  * forgotten when the batch stops, so the next one starts at "calculating".
  */
@@ -49,5 +56,7 @@ export function useUploadEta(items: readonly UploadQueueItem[], active: boolean)
     }
   }, [active])
 
-  return { fraction: bytesFraction(bytes), seconds }
+  const fraction = useMemo(() => batchCompletion(items, 'bytes'), [items])
+  const processing = useMemo(() => awaitingVerdicts(items), [items])
+  return { fraction, processing, seconds }
 }

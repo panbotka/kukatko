@@ -2801,6 +2801,7 @@
       "uploaded": "{{count}} uploaded",
       "duplicate": "{{count}} duplicate",
       "failed": "{{count}} failed",
+      "processing": "processing…",
       "remaining": "{{count}} left"
     },
     "filter": {
@@ -4092,6 +4093,7 @@
     "count_other": "{{done}} of {{count}} photos",
     "eta": {
       "calculating": "calculating…",
+      "processing": "processing…",
       "lessThanMinute": "less than a minute left",
       "minutes": "about {{n}} min left",
       "hours_one": "about {{count}} hour left",

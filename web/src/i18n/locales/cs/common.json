@@ -2915,6 +2915,7 @@
       "uploaded": "{{count}} nahráno",
       "duplicate": "{{count}} duplikát",
       "failed": "{{count}} selhalo",
+      "processing": "zpracovávám…",
       "remaining_one": "zbývá {{count}}",
       "remaining_few": "zbývají {{count}}",
       "remaining_other": "zbývá {{count}}"
@@ -4287,6 +4288,7 @@
     "count_other": "{{done}} z {{count}} fotek",
     "eta": {
       "calculating": "počítám…",
+      "processing": "zpracovávám…",
       "lessThanMinute": "zbývá necelá minuta",
       "minutes": "zbývá asi {{n}} min",
       "hours_one": "zbývá asi {{count}} hodina",

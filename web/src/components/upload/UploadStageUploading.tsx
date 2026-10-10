@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { type UploadQueueItem, type UploadSummary } from '../../hooks/useUploadQueue'
+import { awaitingVerdicts, progressPercent } from '../../lib/uploadProgress'
 
 import { batchMedia } from './batchMedia'
 import { PickFilesButton } from './PickFilesButton'
@@ -66,6 +67,9 @@ export function UploadStageUploading({
   // Nothing has settled yet, so the whole queue is what the copy is about.
   const media = useMemo(() => batchMedia(items.map((item) => item.file)), [items])
   const stills = media.kind === 'photos'
+  // Every byte is out and only the server's verdicts are pending: "zbývá 2"
+  // would read as files still to send.
+  const processing = awaitingVerdicts(items)
 
   return (
     <section className="kk-upload-stage" aria-labelledby="upload-stage-title">
@@ -90,9 +94,11 @@ export function UploadStageUploading({
 
       <UploadActionBar
         progress={{
-          percent: Math.round(progress * 100),
+          percent: progressPercent(progress),
           count: t('upload.progress.count', { done, total: summary.total }),
-          remaining: t('upload.progress.remaining', { count: remaining }),
+          remaining: processing
+            ? t('upload.progress.processing')
+            : t('upload.progress.remaining', { count: remaining }),
         }}
       >
         <PickFilesButton
