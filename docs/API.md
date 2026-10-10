@@ -2279,9 +2279,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `video.hls.enabled: false` → 503 (`ErrStreamingUnavailable`), a gap repair on a service wired without the
   processing service → 503 (`ErrProcessingUnavailable`). `unscheduled_steps` counts, per (photo, step) and
   sampled as `<photo_uid>/<step>`, every step a **live** photo is owed that nothing will deliver — exactly the
-  steps its `processing` block calls `pending` (no evidence, no unfinished job, not switched off). An upload
-  cut short after its original was stored leaves precisely that, and unlike a job waiting for the box it never
-  resolves by itself; the repair schedules each one through `processing.Service.Run` (`steps_scheduled`).
+  steps its `processing` block calls `pending` (no evidence, no unfinished job, not switched off) — **except
+  `places`**, whose pending backlog is deliberately deferred (geocoding is paid, worked off in batches) and is
+  already `missing_places` with its own `places` repair; counting it here would double-count it and let this
+  repair queue the whole paid backlog. An upload cut short after its original was stored leaves precisely
+  that, and unlike a job waiting for the box it never resolves by itself; the repair schedules each one
+  through `processing.Service.Run` (`steps_scheduled`).
   The repairs are idempotent and
   run through the job queue (thumbnail/pHash via the `thumbnail` job, embeddings/faces backfill), and **never
   delete originals**. `dimensions` is the exception that writes the catalogue directly, in two halves. It

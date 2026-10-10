@@ -2596,7 +2596,10 @@ here.
   the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
   rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans/
   **nemožná data pořízení** — annotated with the remaining count from the last check; „Určit místo u fotek se
-  souřadnicemi (N)" is where the **Bez místa** tile on Stav systému leads, and N is the same number) →
+  souřadnicemi (N)" is where the **Bez místa** tile on Stav systému leads, and N is the same number;
+  **„Naplánovat chybějící zpracování (N)"** (`unscheduled_steps`) pairs with the finding row **„Zpracování,
+  které nikdo nenaplánoval"**, whose samples read `<photo_uid>/<step>` — the steps an interrupted upload left
+  with no job, places excluded because they have their own row) →
   **Spustit opravu** (`POST /maintenance/repair`) with a result
   summary. „Zrušit nemožná data pořízení (N)" is the odd one out and therefore listed last: every other option
   fills something in, that one **takes a value away** — the capture date of a photo dated to a year no

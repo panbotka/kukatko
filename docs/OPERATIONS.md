@@ -105,7 +105,9 @@ configuration key both here **and** into `config.example.yaml`.
   library that predates that, not routine work.
   `--unscheduled-steps` enqueues every processing step a live photo is owed and nothing has scheduled — the
   steps its processing report (the photo detail's `processing` block) calls `pending`, one job per (photo,
-  step), never a step switched off on this instance. The scan's `unscheduled steps` line is its dry run,
+  step), never a step switched off on this instance, and **never `places`**: a pending reverse geocode is the
+  deliberately deferred, paid backlog `--places` owns (the scan's `missing places` line), not a gap, so it
+  is neither counted nor queued here. The scan's `unscheduled steps` line is its dry run,
   sampled as `<photo_uid>/<step>`. It is the catch-up for an upload cut short after its original was stored
   (2026-10-05: no thumbnails, no jobs); since the pipeline now finishes regardless of the client and a
   re-upload of the same file completes its photo, a non-zero count is worth a look rather than routine.

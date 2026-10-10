@@ -132,7 +132,9 @@ type Report struct {
 	// is going to deliver — the step never ran, and no job of its type is queued,
 	// running or failed — counted per (photo, step) and sampled as
 	// <photo_uid>/<step>. A step is owed exactly when the photo's processing report
-	// calls it `pending`; a step switched off on this instance never is. An upload
+	// calls it `pending`; a step switched off on this instance never is. `places`
+	// is left out: its backlog is deliberately deferred (geocoding is paid) and is
+	// MissingPlaces' to report and `repair --places`' to work off. An upload
 	// cut short after its original was stored leaves precisely this behind, and
 	// unlike a job waiting for the box it never resolves on its own. Listing them
 	// is the dry run of `maintenance repair --unscheduled-steps`. Empty when the

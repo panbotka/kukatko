@@ -130,3 +130,47 @@ func TestRepairUnscheduledSteps(t *testing.T) {
 		t.Errorf("the repair ran without being selected: %v", untouched.ran)
 	}
 }
+
+// TestUnscheduledSteps_leaveDeferredPlacesOut verifies a pending `places` step is
+// neither counted nor scheduled: it is the reverse-geocode backlog missing_places
+// and `repair --places` own, not a gap an interrupted upload left.
+func TestUnscheduledSteps_leaveDeferredPlacesOut(t *testing.T) {
+	t.Parallel()
+	gaps := &fakeGaps{gaps: []processing.Gap{
+		{PhotoUID: "ph4egajk", Step: processing.StepImageEmbed},
+		{PhotoUID: "ph4egajk", Step: processing.StepPlaces},
+		{PhotoUID: "ph9mxq2r", Step: processing.StepPlaces},
+	}}
+	svc := gapScenario(gaps)
+
+	report, err := svc.Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	want := []string{"ph4egajk/image_embed"}
+	if report.UnscheduledSteps.Count != 1 || !slices.Equal(report.UnscheduledSteps.Samples, want) {
+		t.Errorf("finding = %+v, want 1 with samples %v", report.UnscheduledSteps, want)
+	}
+
+	res, err := svc.Repair(context.Background(), RepairOptions{UnscheduledSteps: true}, audit.Meta{})
+	if err != nil {
+		t.Fatalf("Repair: %v", err)
+	}
+	if res.StepsScheduled != 1 || !slices.Equal(gaps.ran, want) {
+		t.Errorf("scheduled %d: %v, want only %v", res.StepsScheduled, gaps.ran, want)
+	}
+}
+
+// TestUnscheduledSteps_placesOnlyIsClean verifies a library whose only gaps are
+// deferred places reports an empty finding, so it does not keep the scan dirty.
+func TestUnscheduledSteps_placesOnlyIsClean(t *testing.T) {
+	t.Parallel()
+	gaps := &fakeGaps{gaps: []processing.Gap{{PhotoUID: "ph4egajk", Step: processing.StepPlaces}}}
+	report, err := gapScenario(gaps).Scan(context.Background())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if report.UnscheduledSteps.Count != 0 || len(report.UnscheduledSteps.Samples) != 0 {
+		t.Errorf("finding = %+v, want empty", report.UnscheduledSteps)
+	}
+}

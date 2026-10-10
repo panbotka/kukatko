@@ -49,6 +49,7 @@ function report(overrides: Partial<ScanReport> = {}): ScanReport {
     missing_phashes: empty,
     missing_places: empty,
     impossible_dates: empty,
+    unscheduled_steps: empty,
     ...overrides,
   }
 }
@@ -65,6 +66,7 @@ function repairResult(overrides: Partial<RepairResult> = {}): RepairResult {
     orphans_skipped: 0,
     orphans_failed: 0,
     impossible_dates_cleared: 0,
+    steps_scheduled: 0,
     ...overrides,
   }
 }
@@ -189,7 +191,7 @@ describe('MaintenancePage', () => {
     // the problem, so there is nothing for a header row to add.
     const table = screen.getByRole('table')
     expect(within(table).queryAllByRole('columnheader')).toHaveLength(0)
-    expect(within(table).getAllByRole('row')).toHaveLength(8)
+    expect(within(table).getAllByRole('row')).toHaveLength(9)
   })
 
   it('reflows each finding into a stacked card on a phone', async () => {
@@ -207,7 +209,7 @@ describe('MaintenancePage', () => {
     expect(screen.queryByRole('table')).toBeNull()
 
     const cards = screen.getAllByRole('listitem')
-    expect(cards).toHaveLength(8)
+    expect(cards).toHaveLength(9)
     // The headerless table's columns still carry their labels onto the card —
     // a card has no header row to read the values across from.
     const thumbnails = cards[2]
@@ -336,6 +338,48 @@ describe('MaintenancePage', () => {
     // It is a scan finding in its own right, with its explanation.
     expect(screen.getByText('Photos with an impossible capture date')).toBeInTheDocument()
     expect(screen.getByText(/no photograph can have been taken in/)).toBeInTheDocument()
+  })
+
+  it('shows the unscheduled processing steps and schedules them', async () => {
+    // What an upload cut short leaves behind: steps nothing will ever deliver.
+    // The row explains it, its samples read <photo_uid>/<step> behind the
+    // technical-details disclosure, and the repair schedules exactly that.
+    scanMock.mockResolvedValue(
+      report({
+        unscheduled_steps: { count: 2, samples: ['ph4egajk/thumbnail', 'ph4egajk/image_embed'] },
+      }),
+    )
+    repairMock.mockResolvedValue(repairResult({ steps_scheduled: 2 }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+    expect(await screen.findByText('Processing nobody has scheduled')).toBeInTheDocument()
+    expect(screen.getByText(/it will never be filled in on its own/)).toBeInTheDocument()
+    expect(screen.queryByText('ph4egajk/thumbnail, ph4egajk/image_embed')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Technical details' }))
+    expect(screen.getByText('ph4egajk/thumbnail, ph4egajk/image_embed')).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Schedule the missing processing (2)'))
+    await user.click(screen.getByRole('button', { name: 'Start the repair' }))
+
+    await waitFor(() => {
+      expect(repairMock).toHaveBeenCalledWith({ unscheduled_steps: true })
+    })
+    expect(await screen.findByText(/2 missing processing steps scheduled/)).toBeInTheDocument()
+  })
+
+  it('names the unscheduled-steps row and repair in Czech', async () => {
+    await i18n.changeLanguage('cs')
+    scanMock.mockResolvedValue(
+      report({ unscheduled_steps: { count: 4, samples: ['ph4egajk/ocr'] } }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Spustit kontrolu' }))
+    expect(await screen.findByText('Zpracování, které nikdo nenaplánoval')).toBeInTheDocument()
+    expect(screen.getByLabelText('Naplánovat chybějící zpracování (4)')).toBeInTheDocument()
   })
 
   it('shows an error when the repair fails', async () => {

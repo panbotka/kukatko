@@ -37,6 +37,7 @@ const FINDING_KEYS = [
   'missing_faces',
   'missing_phashes',
   'missing_places',
+  'unscheduled_steps',
   'impossible_dates',
 ] as const
 
@@ -46,8 +47,10 @@ type FindingKey = (typeof FINDING_KEYS)[number]
 /**
  * The opt-in repairs rendered as checkboxes, in display order. Each name is both
  * the i18n suffix (`maintenance.repair.<key>`) and a boolean field of
- * {@link RepairOptions}. `impossible_dates` comes last because it is the odd one
- * out: every other repair fills something in, that one withdraws a capture date.
+ * {@link RepairOptions}. `unscheduled_steps` follows the per-kind repairs it
+ * complements: it schedules whatever single step an interrupted upload never got.
+ * `impossible_dates` comes last because it is the odd one out: every other repair
+ * fills something in, that one withdraws a capture date.
  */
 const REPAIR_KEYS = [
   'thumbnails',
@@ -55,6 +58,7 @@ const REPAIR_KEYS = [
   'faces',
   'phashes',
   'places',
+  'unscheduled_steps',
   'import_orphans',
   'impossible_dates',
 ] as const
@@ -76,6 +80,7 @@ const REPAIR_FOR_FINDING: Record<FindingKey, RepairKey | null> = {
   missing_faces: 'faces',
   missing_phashes: 'phashes',
   missing_places: 'places',
+  unscheduled_steps: 'unscheduled_steps',
   impossible_dates: 'impossible_dates',
 }
 
@@ -292,6 +297,7 @@ function RepairForm({ report, selection, onToggle, onRun, state }: RepairFormPro
               skipped: state.result.orphans_skipped,
               failed: state.result.orphans_failed,
               datesCleared: state.result.impossible_dates_cleared,
+              steps: state.result.steps_scheduled,
             })}
           </Alert>
         )}
@@ -308,6 +314,7 @@ function emptySelection(): Record<RepairKey, boolean> {
     faces: false,
     phashes: false,
     places: false,
+    unscheduled_steps: false,
     import_orphans: false,
     impossible_dates: false,
   }
@@ -471,8 +478,9 @@ function AuditPurgeCard() {
 /**
  * Admin-only library-maintenance console: runs an integrity scan that reports
  * catalogue/store drift (missing originals, orphan files, missing thumbnails,
- * embeddings, faces, pHashes and places, plus the photos dated to a year no
- * photograph can have been taken in) with counts and samples, and triggers the
+ * embeddings, faces, pHashes and places, the processing steps an interrupted
+ * upload left without anything scheduled to deliver them, plus the photos dated
+ * to a year no photograph can have been taken in) with counts and samples, and triggers the
  * opt-in repairs. Most repairs run in the background through the job queue, whose
  * progress is read on System status: the page links there rather than keep a copy
  * of the counts it could not act on. Maintenance is an operations

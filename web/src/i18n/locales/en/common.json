@@ -3135,6 +3135,7 @@
       "missing_faces": "Photos where faces have not been looked for yet",
       "missing_phashes": "Photos with no fingerprint for finding duplicates",
       "missing_places": "Photos with coordinates but no place",
+      "unscheduled_steps": "Processing nobody has scheduled",
       "impossible_dates": "Photos with an impossible capture date",
       "problem": "What drifted",
       "count": "How many",
@@ -3147,6 +3148,7 @@
         "missing_faces": "Nobody has looked for faces in this photo yet, so it will not show up under people. It is filled in once the recognition service is available.",
         "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by.",
         "missing_places": "The photo knows where it was taken but has no place name yet, so it is missing from the places overview. It is filled in in the background; turning coordinates into a name costs credits, so it runs in batches and the rest waits.",
+        "unscheduled_steps": "The photo is missing a processing step (thumbnails, photo content, faces, text…) and nothing has it planned — it will never be filled in on its own. An upload interrupted after the file was already stored leaves exactly this behind. The examples read photo/step. The “Schedule the missing processing” repair fixes it. Missing places are not counted here; they have their own row above.",
         "impossible_dates": "The photo claims a year no photograph can have been taken in — before 1826, or further ahead than next year. It comes from reading a date out of a Facebook or WhatsApp download name, where the long number is only an identifier. Such a photo sorts ahead of the whole library and stretches the year axis. The “Clear impossible capture dates” repair withdraws the date — the photo then has none and you find it with dated:no."
       }
     },
@@ -3158,12 +3160,13 @@
       "faces": "Look for faces where nobody has looked yet",
       "phashes": "Work out the missing duplicate-finding fingerprints",
       "places": "Work out the place for photos that have coordinates",
+      "unscheduled_steps": "Schedule the missing processing",
       "import_orphans": "Add the files the catalogue is missing",
       "run": "Start the repair",
       "running": "Starting…",
       "none": "Pick at least one.",
       "error": "It could not be started.",
-      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}, places {{places}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed; {{datesCleared}} impossible capture dates cleared.",
+      "result": "Scheduled: thumbnails {{thumbnails}}, fingerprints {{phashes}}, photo content {{embeddings}}, faces {{faces}}, places {{places}}; of the files outside the catalogue {{imported}} added, {{skipped}} skipped, {{failed}} failed; {{datesCleared}} impossible capture dates cleared; {{steps}} missing processing steps scheduled.",
       "impossible_dates": "Clear impossible capture dates"
     },
     "jobs": {

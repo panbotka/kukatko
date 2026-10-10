@@ -4277,7 +4277,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **`UnscheduledSteps`** (`unscheduled.go`) is the finding nothing else ever resolves: the optional
   `Config.Processing` (`ProcessingGaps`, satisfied by `processing.Service`) lists every (live photo, step)
   whose processing report would read `pending` — no evidence, no unfinished job, not switched off — sampled as
-  `<photo_uid>/<step>`, which is exactly what an upload cut short after its original was stored leaves behind;
+  `<photo_uid>/<step>`, which is exactly what an upload cut short after its original was stored leaves behind.
+  `deferredSteps` drops `places` from both the finding and the repair: its pending backlog is deferred on
+  purpose (paid geocoding) and already the `MissingPlaces` finding with its own repair, so it would only be
+  double-counted and queued behind the curator's back;
   the repair schedules each through `processing.Service.Run` (`StepsScheduled`; a step that stopped applying in
   the meantime is skipped). Unwired → an empty finding and `ErrProcessingUnavailable` for the repair.
   **`Places`** is the reverse-geocode backfill: `MissingPlaces` is its dry run (`MissingPlaces` finding —

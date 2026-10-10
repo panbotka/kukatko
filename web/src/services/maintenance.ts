@@ -62,6 +62,7 @@ export interface ScanReport {
   missing_phashes: Finding
   missing_places: Finding
   impossible_dates: Finding
+  unscheduled_steps: Finding
 }
 
 /** The opt-in repairs (`maintenance.RepairOptions`). */
@@ -73,6 +74,7 @@ export interface RepairOptions {
   import_orphans?: boolean
   places?: boolean
   impossible_dates?: boolean
+  unscheduled_steps?: boolean
 }
 
 /** What each selected repair scheduled or did (`maintenance.RepairResult`). */
@@ -86,6 +88,7 @@ export interface RepairResult {
   orphans_skipped: number
   orphans_failed: number
   impossible_dates_cleared: number
+  steps_scheduled: number
 }
 
 /** Runs an integrity scan and returns the report. */

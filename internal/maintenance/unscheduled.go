@@ -26,6 +26,44 @@ type ProcessingGaps interface {
 	Run(ctx context.Context, photoUID string, step processing.Step) (processing.Status, error)
 }
 
+// deferredSteps are the processing steps the unscheduled-steps finding leaves
+// out because they have a backlog finding and repair of their own, and are
+// deliberately left pending until somebody runs it.
+//
+// `places` is the one: reverse geocoding is paid per lookup, so the backlog of
+// photos with coordinates but no place is normal and is worked off in batches
+// through `missing_places` / `repair --places`. Counting it here would report the
+// same photos twice and make the "nothing will ever do this by itself" count
+// meaningless, and repairing unscheduled steps would queue the whole paid backlog
+// behind the curator's back.
+//
+// Every other step stays in. The upload itself schedules each of them (metadata
+// is read inline, the thumbnail, embedding, faces, OCR, sidecar and HLS encode
+// are enqueued), so one with no evidence and no job is exactly what an upload cut
+// short leaves behind. That missing_thumbnails, missing_embeddings, missing_faces
+// and missing_phashes overlap with it is no reason to drop them: those count
+// photos whose work is merely late (its job is waiting for the box) as well,
+// while this finding counts only the ones nothing is going to fix.
+var deferredSteps = map[processing.Step]bool{
+	processing.StepPlaces: true,
+}
+
+// unscheduledGaps lists the library's processing gaps without the deferred
+// steps, the one list both the scan and the repair act on.
+func (s *Service) unscheduledGaps(ctx context.Context) ([]processing.Gap, error) {
+	gaps, err := s.processing.Unscheduled(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("maintenance: listing unscheduled processing steps: %w", err)
+	}
+	kept := make([]processing.Gap, 0, len(gaps))
+	for _, gap := range gaps {
+		if !deferredSteps[gap.Step] {
+			kept = append(kept, gap)
+		}
+	}
+	return kept, nil
+}
+
 // gapSample is how a gap is named in the finding's samples: photo uid and step,
 // the same <photo_uid>/<what> shape the missing renditions use.
 func gapSample(gap processing.Gap) string {
@@ -40,14 +78,15 @@ func gapSample(gap processing.Gap) string {
 // These are the photos nothing else will ever fix on its own. A missing
 // embedding with its job waiting for the box is merely late; a missing embedding
 // with no job is what an upload cut short after its original was stored leaves
-// behind (2026-10-05), and it stays missing until somebody schedules it.
+// behind (2026-10-05), and it stays missing until somebody schedules it. The
+// deferred steps (see deferredSteps) are left out.
 func (s *Service) scanUnscheduledSteps(ctx context.Context) (Finding, error) {
 	if s.processing == nil {
 		return Finding{Samples: []string{}}, nil
 	}
-	gaps, err := s.processing.Unscheduled(ctx)
+	gaps, err := s.unscheduledGaps(ctx)
 	if err != nil {
-		return Finding{}, fmt.Errorf("maintenance: listing unscheduled processing steps: %w", err)
+		return Finding{}, err
 	}
 	ids := make([]string, len(gaps))
 	for i, gap := range gaps {
@@ -68,9 +107,9 @@ func (s *Service) repairUnscheduledSteps(ctx context.Context, opts RepairOptions
 	if s.processing == nil {
 		return ErrProcessingUnavailable
 	}
-	gaps, err := s.processing.Unscheduled(ctx)
+	gaps, err := s.unscheduledGaps(ctx)
 	if err != nil {
-		return fmt.Errorf("maintenance: listing unscheduled processing steps: %w", err)
+		return err
 	}
 	for _, gap := range gaps {
 		if ctxErr := ctx.Err(); ctxErr != nil {

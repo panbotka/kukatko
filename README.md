@@ -454,7 +454,10 @@ fails.
 on its own — thumbnails, the queued face and search work, and for an upload link the filing into the
 link's album — whether or not the browser is still there. And sending a file the library already has
 is a repair: the photo's missing thumbnails are generated and any processing it never got is
-scheduled, and the answer is still "already in the library".
+scheduled, and the answer is still "already in the library". The maintenance page lists any
+processing a photo is owed that nothing has scheduled ("Processing nobody has scheduled") and
+schedules it with one checkbox; places are left to their own row, since geocoding is paid and runs
+in batches.
 
 **What goes in:** JPEG, PNG, GIF, WebP, BMP and TIFF; HEIC/HEIF from an iPhone; the camera RAW of
 every usual vendor (CR2, CR3, NEF, NRW, ARW, SRF, DNG, RAF, ORF, RW2, PEF, SRW, 3FR, IIQ, X3F, KDC,
