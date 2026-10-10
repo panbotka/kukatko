@@ -282,200 +282,202 @@ export function UploadLinkPage() {
         : t('uploadLink.done.title', { count: summary.total })
 
   return (
-    <Row className="justify-content-center kk-upload-link">
-      <Col xs={12} sm={11} md={9} lg={7} xl={6}>
-        <Card text="light" className="mt-3 mt-md-5" data-testid="upload-link-page">
-          <Card.Body>
-            {/* While uploading the notice sits under the progress it pauses. */}
-            {phase !== 'uploading' && offlineNotice('mb-3')}
+    <div className="kk-upload-link">
+      <Row className="justify-content-center">
+        <Col xs={12} sm={11} md={9} lg={7} xl={6}>
+          <Card text="light" className="mt-3 mt-md-5" data-testid="upload-link-page">
+            <Card.Body>
+              {/* While uploading the notice sits under the progress it pauses. */}
+              {phase !== 'uploading' && offlineNotice('mb-3')}
 
-            {load.status === 'loading' && (
-              <div className="text-center py-4">
-                <Spinner animation="border" role="status">
-                  <span className="visually-hidden">{t('uploadLink.loading')}</span>
-                </Spinner>
-              </div>
-            )}
-
-            {load.status !== 'loading' && load.status !== 'ready' && <Unavailable load={load} />}
-
-            {load.status === 'ready' && phase === 'pick' && (
-              <>
-                <h1 className="kk-page-title mb-2">{title}</h1>
-                {load.link.note !== '' && (
-                  <p className="mb-3" style={{ whiteSpace: 'pre-line' }}>
-                    {load.link.note}
-                  </p>
-                )}
-
-                <section aria-labelledby="upload-link-targets" className="mb-3">
-                  <h2 id="upload-link-targets" className="h6 text-secondary mb-2">
-                    {t('uploadLink.targets')}
-                  </h2>
-                  <div className="d-flex flex-wrap gap-2">
-                    {load.link.albums.map((album) => (
-                      <TargetChip key={`a-${album}`} kind="album">
-                        {album}
-                      </TargetChip>
-                    ))}
-                    {load.link.labels.map((label) => (
-                      <TargetChip key={`l-${label}`} kind="tag">
-                        {label}
-                      </TargetChip>
-                    ))}
-                  </div>
-                  <p className="small text-secondary mt-2 mb-0">
-                    <Icon name="hourglass-split" className="me-1" />
-                    {t('uploadLink.validUntil', {
-                      date: new Date(load.link.expires_at).toLocaleDateString(i18n.language),
-                    })}
-                  </p>
-                </section>
-
-                {lostBatch !== null && (
-                  <Alert variant="info" role="status" data-testid="upload-link-lost-batch">
-                    <Icon name="info-circle" className="me-2" />
-                    {t('uploadLink.interruptedBatch', { count: lostBatch.count })}
-                  </Alert>
-                )}
-
-                {signedIn ? (
-                  <p className="text-secondary" data-testid="upload-link-signed-in">
-                    <Icon name="person-circle" className="me-1" />
-                    {t('uploadLink.signedInAs', { name: accountName(user) })}
-                  </p>
-                ) : (
-                  <Form.Group controlId="upload-link-name" className="mb-3">
-                    <Form.Label>{t('uploadLink.name')}</Form.Label>
-                    <Form.Control
-                      type="text"
-                      size="lg"
-                      autoComplete="name"
-                      maxLength={100}
-                      value={name}
-                      placeholder={t('uploadLink.namePlaceholder')}
-                      onChange={(event) => {
-                        changeName(event.target.value)
-                      }}
-                    />
-                    <Form.Text className="text-secondary">{t('uploadLink.nameHint')}</Form.Text>
-                  </Form.Group>
-                )}
-
-                <div className="d-grid">
-                  <PickFilesButton
-                    onFiles={addFiles}
-                    label={t('uploadLink.choose')}
-                    inputLabel={t('upload.pick.ariaInput')}
-                    className="kk-upload-link__primary"
-                  />
+              {load.status === 'loading' && (
+                <div className="text-center py-4">
+                  <Spinner animation="border" role="status">
+                    <span className="visually-hidden">{t('uploadLink.loading')}</span>
+                  </Spinner>
                 </div>
-                {/* A phone has nothing to drag: the drop zone is a desktop extra. */}
-                <div className="d-none d-md-block mt-3">
-                  <DropZone onFiles={addFiles} />
-                </div>
-              </>
-            )}
+              )}
 
-            {load.status === 'ready' && phase === 'uploading' && (
-              <div data-testid="upload-link-uploading">
-                <div className="kk-upload-link__progress" data-testid="upload-link-progress">
-                  <h1 className="kk-section-title mb-3">{t('uploadLink.uploadingTitle')}</h1>
-                  <BatchProgress
-                    fraction={eta.fraction}
-                    done={summary.created + summary.duplicate + panelSummary.error}
-                    total={summary.total}
-                    seconds={online ? eta.seconds : null}
-                    processing={eta.processing}
-                  />
-                  {offlineNotice('mt-3 mb-0')}
-                  {online && interrupted && (
-                    <Alert
-                      variant="info"
-                      role="status"
-                      className="mt-3 mb-0"
-                      data-testid="upload-link-reconnecting"
-                    >
-                      <Icon name="arrow-repeat" className="me-2" />
-                      {t('uploadLink.reconnecting')}
+              {load.status !== 'loading' && load.status !== 'ready' && <Unavailable load={load} />}
+
+              {load.status === 'ready' && phase === 'pick' && (
+                <>
+                  <h1 className="kk-page-title mb-2">{title}</h1>
+                  {load.link.note !== '' && (
+                    <p className="mb-3" style={{ whiteSpace: 'pre-line' }}>
+                      {load.link.note}
+                    </p>
+                  )}
+
+                  <section aria-labelledby="upload-link-targets" className="mb-3">
+                    <h2 id="upload-link-targets" className="h6 text-secondary mb-2">
+                      {t('uploadLink.targets')}
+                    </h2>
+                    <div className="d-flex flex-wrap gap-2">
+                      {load.link.albums.map((album) => (
+                        <TargetChip key={`a-${album}`} kind="album">
+                          {album}
+                        </TargetChip>
+                      ))}
+                      {load.link.labels.map((label) => (
+                        <TargetChip key={`l-${label}`} kind="tag">
+                          {label}
+                        </TargetChip>
+                      ))}
+                    </div>
+                    <p className="small text-secondary mt-2 mb-0">
+                      <Icon name="hourglass-split" className="me-1" />
+                      {t('uploadLink.validUntil', {
+                        date: new Date(load.link.expires_at).toLocaleDateString(i18n.language),
+                      })}
+                    </p>
+                  </section>
+
+                  {lostBatch !== null && (
+                    <Alert variant="info" role="status" data-testid="upload-link-lost-batch">
+                      <Icon name="info-circle" className="me-2" />
+                      {t('uploadLink.interruptedBatch', { count: lostBatch.count })}
                     </Alert>
                   )}
-                  <p className="mt-3 mb-0 fw-semibold">
-                    <Icon name="phone" className="me-2" />
-                    {t('uploadLink.keepOpen')}
-                  </p>
-                </div>
-                {details}
-              </div>
-            )}
 
-            {load.status === 'ready' && phase === 'done' && (
-              <div data-testid="upload-link-done">
-                <div className="text-center">
-                  <Icon
-                    name={summary.error > 0 ? 'exclamation-triangle' : 'check-circle-fill'}
-                    className={`kk-upload-link__mark ${summary.error > 0 ? 'text-warning' : 'text-success'}`}
-                  />
-                  <h1 className="kk-page-title mt-2 mb-3">{doneHeading}</h1>
-                </div>
-                {/* The breakdown only when it says more than the heading: a
-                    failure, or new photos mixed with ones already there. */}
-                {(summary.error > 0 || (summary.duplicate > 0 && summary.created > 0)) && (
-                  <Alert
-                    variant={summary.error > 0 ? 'warning' : 'success'}
-                    role="status"
-                    className="mb-3"
-                    data-testid="upload-link-summary"
-                  >
-                    {uploadLinkSummary(summary, t)}
-                  </Alert>
-                )}
-                {linkDied && (
-                  <Alert variant="danger" role="alert">
-                    {t('uploadLink.diedMidway')}
-                  </Alert>
-                )}
-                <div className="d-grid gap-2">
-                  {/* Outside the alert: a button on the filled warning
-                      background has no contrast on this theme. */}
-                  {retryable && (
-                    <Button variant="outline-warning" size="lg" onClick={queue.retryFailed}>
-                      <Icon name="arrow-clockwise" className="me-1" />
-                      {t('upload.actions.retryFailed')}
-                    </Button>
+                  {signedIn ? (
+                    <p className="text-secondary" data-testid="upload-link-signed-in">
+                      <Icon name="person-circle" className="me-1" />
+                      {t('uploadLink.signedInAs', { name: accountName(user) })}
+                    </p>
+                  ) : (
+                    <Form.Group controlId="upload-link-name" className="mb-3">
+                      <Form.Label>{t('uploadLink.name')}</Form.Label>
+                      <Form.Control
+                        type="text"
+                        size="lg"
+                        autoComplete="name"
+                        maxLength={100}
+                        value={name}
+                        placeholder={t('uploadLink.namePlaceholder')}
+                        onChange={(event) => {
+                          changeName(event.target.value)
+                        }}
+                      />
+                      <Form.Text className="text-secondary">{t('uploadLink.nameHint')}</Form.Text>
+                    </Form.Group>
                   )}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    className="kk-upload-link__primary"
-                    onClick={queue.clear}
-                  >
-                    <Icon name="plus-lg" className="me-2" />
-                    {t('uploadLink.uploadMore')}
-                  </Button>
-                </div>
-                {details}
 
-                {!signedIn && summary.created > 0 && registration === 'open' && (
-                  <Alert variant="info" className="mt-4" data-testid="upload-link-register">
-                    <Alert.Heading as="h2" className="h5">
-                      <Icon name="person-plus" className="me-2" />
-                      {t('uploadLink.registerTitle')}
-                    </Alert.Heading>
-                    <p>{t('uploadLink.registerBody')}</p>
-                    <Link
-                      to={`/register?link=${encodeURIComponent(code)}`}
-                      className="btn btn-primary"
+                  <div className="d-grid">
+                    <PickFilesButton
+                      onFiles={addFiles}
+                      label={t('uploadLink.choose')}
+                      inputLabel={t('upload.pick.ariaInput')}
+                      className="kk-upload-link__primary"
+                    />
+                  </div>
+                  {/* A phone has nothing to drag: the drop zone is a desktop extra. */}
+                  <div className="d-none d-md-block mt-3">
+                    <DropZone onFiles={addFiles} />
+                  </div>
+                </>
+              )}
+
+              {load.status === 'ready' && phase === 'uploading' && (
+                <div data-testid="upload-link-uploading">
+                  <div className="kk-upload-link__progress" data-testid="upload-link-progress">
+                    <h1 className="kk-section-title mb-3">{t('uploadLink.uploadingTitle')}</h1>
+                    <BatchProgress
+                      fraction={eta.fraction}
+                      done={summary.created + summary.duplicate + panelSummary.error}
+                      total={summary.total}
+                      seconds={online ? eta.seconds : null}
+                      processing={eta.processing}
+                    />
+                    {offlineNotice('mt-3 mb-0')}
+                    {online && interrupted && (
+                      <Alert
+                        variant="info"
+                        role="status"
+                        className="mt-3 mb-0"
+                        data-testid="upload-link-reconnecting"
+                      >
+                        <Icon name="arrow-repeat" className="me-2" />
+                        {t('uploadLink.reconnecting')}
+                      </Alert>
+                    )}
+                    <p className="mt-3 mb-0 fw-semibold">
+                      <Icon name="phone" className="me-2" />
+                      {t('uploadLink.keepOpen')}
+                    </p>
+                  </div>
+                  {details}
+                </div>
+              )}
+
+              {load.status === 'ready' && phase === 'done' && (
+                <div data-testid="upload-link-done">
+                  <div className="text-center">
+                    <Icon
+                      name={summary.error > 0 ? 'exclamation-triangle' : 'check-circle-fill'}
+                      className={`kk-upload-link__mark ${summary.error > 0 ? 'text-warning' : 'text-success'}`}
+                    />
+                    <h1 className="kk-page-title mt-2 mb-3">{doneHeading}</h1>
+                  </div>
+                  {/* The breakdown only when it says more than the heading: a
+                    failure, or new photos mixed with ones already there. */}
+                  {(summary.error > 0 || (summary.duplicate > 0 && summary.created > 0)) && (
+                    <Alert
+                      variant={summary.error > 0 ? 'warning' : 'success'}
+                      role="status"
+                      className="mb-3"
+                      data-testid="upload-link-summary"
                     >
-                      {t('uploadLink.registerAction')}
-                    </Link>
-                  </Alert>
-                )}
-              </div>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
+                      {uploadLinkSummary(summary, t)}
+                    </Alert>
+                  )}
+                  {linkDied && (
+                    <Alert variant="danger" role="alert">
+                      {t('uploadLink.diedMidway')}
+                    </Alert>
+                  )}
+                  <div className="d-grid gap-2">
+                    {/* Outside the alert: a button on the filled warning
+                      background has no contrast on this theme. */}
+                    {retryable && (
+                      <Button variant="outline-warning" size="lg" onClick={queue.retryFailed}>
+                        <Icon name="arrow-clockwise" className="me-1" />
+                        {t('upload.actions.retryFailed')}
+                      </Button>
+                    )}
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      className="kk-upload-link__primary"
+                      onClick={queue.clear}
+                    >
+                      <Icon name="plus-lg" className="me-2" />
+                      {t('uploadLink.uploadMore')}
+                    </Button>
+                  </div>
+                  {details}
+
+                  {!signedIn && summary.created > 0 && registration === 'open' && (
+                    <Alert variant="info" className="mt-4" data-testid="upload-link-register">
+                      <Alert.Heading as="h2" className="h5">
+                        <Icon name="person-plus" className="me-2" />
+                        {t('uploadLink.registerTitle')}
+                      </Alert.Heading>
+                      <p>{t('uploadLink.registerBody')}</p>
+                      <Link
+                        to={`/register?link=${encodeURIComponent(code)}`}
+                        className="btn btn-primary"
+                      >
+                        {t('uploadLink.registerAction')}
+                      </Link>
+                    </Alert>
+                  )}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
 
       <ConfirmModal
         show={leaving.asking}
@@ -487,7 +489,7 @@ export function UploadLinkPage() {
       >
         {t('upload.leave.body', { count: summary.queued + summary.uploading })}
       </ConfirmModal>
-    </Row>
+    </div>
   )
 }
 

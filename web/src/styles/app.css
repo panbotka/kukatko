@@ -2907,7 +2907,15 @@ body {
    every control on it is a thumb-sized target (48 px at least) and the one
    action of each screen is taller still. The progress block pins to the top
    while the per-file list below it scrolls, on the card's own surface so the
-   rows slide under it rather than through it. */
+   rows slide under it rather than through it.
+   The route has no layout shell, so the page is its own container: a 16 px
+   gutter on each side keeps the card's border and rounded corners off the
+   screen edge on a phone (the row's negative margins stay inside it, so there
+   is no sideways scroll either). */
+.kk-upload-link {
+  padding-inline: var(--kk-space-4);
+}
+
 .kk-upload-link .btn,
 .kk-upload-link .form-control {
   min-height: 3rem;
@@ -2919,7 +2927,8 @@ body {
   justify-content: center;
 }
 
-.kk-upload-link__primary {
+/* Scoped like the rule above so the taller minimum outranks it. */
+.kk-upload-link .kk-upload-link__primary {
   min-height: 3.5rem;
   font-weight: 600;
 }

@@ -1771,7 +1771,9 @@ here.
   (an error, or new photos mixed with duplicates), "retry the failed files" only while a failure is
   retryable — a `not_media` refusal is not —, the notice when the link died mid-batch, a full-width
   **Nahrát další** that clears the queue back to *pick*). Every control in `.kk-upload-link` is at least
-  48 px tall (the primary 56 px). **Resilience**: `useOnline` pauses the queue while offline (`paused`
+  48 px tall (the primary 56 px). The route has no layout shell, so `.kk-upload-link` is the page's own
+  container with a 16 px side gutter: on a phone the card's border and corners never touch the screen
+  edge and nothing scrolls sideways. **Resilience**: `useOnline` pauses the queue while offline (`paused`
   option of `useUploadQueue`) with a "Jste offline — počkám na připojení" banner — in every phase, under
   the progress while uploading, and the **only** offline banner on the route (`PwaStatus` leaves it
   alone); a file whose request was
