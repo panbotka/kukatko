@@ -306,7 +306,10 @@
 }
 
 /* The CHOSEN option of a toggle built from quiet buttons — a `ToggleButtonGroup`
-   radio (`/expand`'s Album/Label, the relation kind) or a `.active` one. The
+   radio (`/expand`'s Album/Label, the relation kind) or a `.active` one (the
+   /leaderboard window, the /review source, the decision filter, the task layout,
+   the language switch). Every pressed-state toggle uses this variant rather than
+   swapping in its own for the chosen option, so the choice looks the same app-wide. The
    pressed fill above is a translucent shade, i.e. near-black on the near-black
    page, so the chosen option looked exactly like the others. It fills with the
    accent and carries the base instead — the colour the active nav item, the

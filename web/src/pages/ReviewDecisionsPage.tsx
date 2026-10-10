@@ -226,7 +226,7 @@ export function ReviewDecisionsPage() {
             return (
               <Button
                 key={filter.value || 'all'}
-                variant={isActive ? 'light' : 'outline-light'}
+                variant="outline-secondary"
                 active={isActive}
                 aria-pressed={isActive}
                 onClick={() => {

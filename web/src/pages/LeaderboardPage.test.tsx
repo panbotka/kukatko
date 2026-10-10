@@ -9,6 +9,7 @@ import i18n from '../i18n'
 import { type Role } from '../services/auth'
 import { type Leaderboard, type LeaderboardEntry } from '../services/review'
 
+import { expectChosenToggle } from '../test/toggle'
 import { LeaderboardPage } from './LeaderboardPage'
 
 vi.mock('../services/review', async (importOriginal) => {
@@ -140,6 +141,11 @@ describe('LeaderboardPage', () => {
 
     await screen.findByText('Bob')
     expect(screen.getByTestId('window-probe')).toHaveTextContent('')
+    // The chosen window wears the accent fill every toggle in the app shares.
+    const windows = within(screen.getByRole('group', { name: 'Time window' })).getAllByRole(
+      'button',
+    )
+    expectChosenToggle(windows, screen.getByRole('button', { name: 'All time' }))
 
     await user.click(screen.getByRole('button', { name: 'Today' }))
 
@@ -147,6 +153,7 @@ describe('LeaderboardPage', () => {
       expect(fetchMock).toHaveBeenLastCalledWith('today', expect.any(AbortSignal))
     })
     expect(screen.getByTestId('window-probe')).toHaveTextContent('today')
+    expectChosenToggle(windows, screen.getByRole('button', { name: 'Today' }))
   })
 
   it('shows the empty state when no one has sorted yet', async () => {

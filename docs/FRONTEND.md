@@ -7444,7 +7444,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   (85 call sites) keeps the ink label with a `--kk-control-border` outline and a translucent shade on
   hover/active, so it reads on every surface — except **the chosen option of a toggle**
   (`.btn-check:checked + .btn-outline-secondary`, `.btn-outline-secondary.active`: every
-  `ToggleButtonGroup` of quiet buttons), which fills with `--kk-accent-solid` and carries `--kk-on-accent`,
+  `ToggleButtonGroup` of quiet buttons, and every pressed-state `ButtonGroup` — the /leaderboard window,
+  the /review source, the /review/decisions filter, `TaskViewToggle`, `LanguageSwitcher` — which all render
+  `variant="outline-secondary"` + `active` + `aria-pressed` instead of swapping a variant for the chosen
+  option; `test/toggle.ts` `expectChosenToggle` asserts it), which fills with `--kk-accent-solid` and carries `--kk-on-accent`,
   because the shade press is near-black on the near-black page and the chosen option looked like the rest
   (fill and edge ≥ 3:1 against a resting option on every surface, `styles/contrast.test.ts`);
   **a slim translucent navbar** `.kukatko-navbar` (it sits ABOVE the scrolling content: the fill `--kk-header-bg`

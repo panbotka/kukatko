@@ -126,7 +126,7 @@ function SourceToggle({
         return (
           <Button
             key={candidate}
-            variant={isActive ? 'secondary' : 'outline-secondary'}
+            variant="outline-secondary"
             active={isActive}
             aria-pressed={isActive}
             // The label is the button's only text on a phone (it is hidden

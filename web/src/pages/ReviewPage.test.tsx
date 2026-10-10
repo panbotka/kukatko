@@ -34,6 +34,7 @@ import {
 } from '../services/review'
 import { declarations, readCss, ruleBody } from '../test/css'
 import { frameRatio, loadImageAs } from '../test/imageFrame'
+import { expectChosenToggle } from '../test/toggle'
 
 import { ReviewPage } from './ReviewPage'
 
@@ -652,9 +653,12 @@ describe('ReviewPage', () => {
 
     await screen.findByTestId('review-question')
     expect(queueMock).toHaveBeenCalledWith('labels')
-    // The toggle reflects what is being asked, so the state is never invisible.
-    expect(screen.getByTestId('review-source-labels')).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByTestId('review-source-both')).toHaveAttribute('aria-pressed', 'false')
+    // The toggle reflects what is being asked, so the state is never invisible —
+    // and in the accent fill every toggle in the app shares.
+    const sources = ['people', 'labels', 'both'].map((s) =>
+      screen.getByTestId(`review-source-${s}`),
+    )
+    expectChosenToggle(sources, screen.getByTestId('review-source-labels'))
   })
 
   it('rebuilds the game from the chosen source and puts the choice in the URL', async () => {

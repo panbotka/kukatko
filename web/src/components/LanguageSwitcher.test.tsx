@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { readLanguagePreference } from '../i18n/accountLanguage'
+import { expectChosenToggle } from '../test/toggle'
 import { LanguageSwitcher } from './LanguageSwitcher'
 
 /** Probe component that renders a translated string so we can observe switches. */
@@ -40,11 +41,14 @@ describe('LanguageSwitcher', () => {
 
     expect(i18n.language).toBe('cs')
     expect(screen.getByTestId('nav-home-label')).toHaveTextContent('Domů')
+    const languages = screen.getAllByRole('button')
+    expectChosenToggle(languages, screen.getByRole('button', { name: 'Čeština' }))
 
     await user.click(screen.getByRole('button', { name: 'English' }))
 
     expect(i18n.language).toBe('en')
     expect(screen.getByTestId('nav-home-label')).toHaveTextContent('Home')
+    expectChosenToggle(languages, screen.getByRole('button', { name: 'English' }))
   })
 
   it('remembers the choice for the signed-in account only', async () => {

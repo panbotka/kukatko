@@ -32,7 +32,8 @@ export function TaskViewToggle({ value, onChange, size = 'lg' }: TaskViewToggleP
     <ButtonGroup size={size} aria-label={t('taskDetail.view.label')}>
       <Button
         type="button"
-        variant={list ? 'outline-secondary' : 'secondary'}
+        variant="outline-secondary"
+        active={!list}
         aria-pressed={!list}
         aria-label={t('taskDetail.view.grid')}
         title={t('taskDetail.view.grid')}
@@ -46,7 +47,8 @@ export function TaskViewToggle({ value, onChange, size = 'lg' }: TaskViewToggleP
       </Button>
       <Button
         type="button"
-        variant={list ? 'secondary' : 'outline-secondary'}
+        variant="outline-secondary"
+        active={list}
         aria-pressed={list}
         aria-label={t('taskDetail.view.list')}
         title={t('taskDetail.view.list')}

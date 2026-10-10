@@ -36,7 +36,7 @@ export function LanguageSwitcher() {
         return (
           <Button
             key={lng}
-            variant={isActive ? 'light' : 'outline-light'}
+            variant="outline-secondary"
             active={isActive}
             aria-pressed={isActive}
             onClick={() => {

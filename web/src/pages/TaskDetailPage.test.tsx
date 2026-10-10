@@ -9,6 +9,7 @@ import { ApiError } from '../services/auth'
 import i18n from '../i18n'
 import { type Task } from '../services/tasks'
 
+import { expectChosenToggle } from '../test/toggle'
 import { SMALL_GROUP_MAX, TaskDetailPage } from './TaskDetailPage'
 
 // jsdom lays nothing out, so the real virtualizer mounts nothing: render it all
@@ -896,10 +897,15 @@ describe('the review ledger', () => {
     await user.click(screen.getByRole('button', { name: 'List' }))
     expect(currentLocation()).toBe('/tasks/tk1?view=list')
     expect(document.querySelector('.kk-ledger-row')).not.toBeNull()
-    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true')
+    // The chosen layout wears the accent fill every toggle in the app shares.
+    const layouts = within(screen.getByRole('group', { name: 'Group layout' })).getAllByRole(
+      'button',
+    )
+    expectChosenToggle(layouts, screen.getByRole('button', { name: 'List' }))
 
     await user.click(screen.getByRole('button', { name: 'Grid' }))
     expect(currentLocation()).toBe('/tasks/tk1')
+    expectChosenToggle(layouts, screen.getByRole('button', { name: 'Grid' }))
     expect(document.querySelector('.kk-ledger-row')).toBeNull()
   })
 

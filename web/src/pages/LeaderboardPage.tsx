@@ -256,7 +256,7 @@ export function LeaderboardPage() {
           return (
             <Button
               key={candidate}
-              variant={isActive ? 'light' : 'outline-light'}
+              variant="outline-secondary"
               active={isActive}
               aria-pressed={isActive}
               onClick={() => {

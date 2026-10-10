@@ -9,6 +9,7 @@ import i18n from '../i18n'
 import { type AuditListResponse, type AuditRecord } from '../services/audit'
 import { type Leaderboard } from '../services/review'
 
+import { expectChosenToggle } from '../test/toggle'
 import { ReviewDecisionsPage } from './ReviewDecisionsPage'
 
 vi.mock('../services/audit', async (importOriginal) => {
@@ -231,6 +232,10 @@ describe('ReviewDecisionsPage', () => {
     renderPage()
 
     await screen.findByTestId('decision-row-2')
+    const filters = within(screen.getByRole('group', { name: 'Filter decisions' })).getAllByRole(
+      'button',
+    )
+    expectChosenToggle(filters, screen.getByRole('button', { name: 'All' }))
     await user.click(screen.getByRole('button', { name: 'No' }))
 
     await waitFor(() => {
@@ -240,6 +245,7 @@ describe('ReviewDecisionsPage', () => {
       )
     })
     expect(screen.getByTestId('location')).toHaveTextContent('decision=no')
+    expectChosenToggle(filters, screen.getByRole('button', { name: 'No' }))
   })
 
   it('prompts to pick a player when no user is selected', async () => {
