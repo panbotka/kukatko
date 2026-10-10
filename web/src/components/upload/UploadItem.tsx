@@ -12,7 +12,8 @@ import { UploadThumb } from './UploadThumb'
 /** Props for {@link UploadItem}. */
 export interface UploadItemProps {
   item: UploadQueueItem
-  onRemove: (id: string) => void
+  /** Removes the file; without it the row offers no Remove (a batch that must not be cancelled). */
+  onRemove?: (id: string) => void
   onRetry: (id: string) => void
 }
 
@@ -142,7 +143,7 @@ export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
               {t('upload.actions.retry')}
             </Button>
           )}
-          {item.status !== 'uploading' && (
+          {onRemove !== undefined && item.status !== 'uploading' && (
             <Button
               type="button"
               size="sm"

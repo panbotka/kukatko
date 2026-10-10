@@ -139,4 +139,20 @@ describe('UploadList', () => {
     await user.click(screen.getByRole('button', { name: 'Remove' }))
     expect(onRemove).toHaveBeenCalledWith('u1')
   })
+
+  it('offers no Remove when the page withholds it, while a batch must not be cancelled', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <UploadList
+          items={[
+            item('u1', 'a.jpg', 'image/jpeg', 'queued'),
+            item('u2', 'b.jpg', 'image/jpeg', 'error', { error: 'boom' }),
+          ]}
+          onRetry={vi.fn()}
+        />
+      </I18nextProvider>,
+    )
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
 })

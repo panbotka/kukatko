@@ -913,12 +913,16 @@ here.
   uploaded/duplicate/failed badges standing in for it, since fifty rows nobody reads are exactly what
   used to push the progress and the picker off a phone screen. It **opens itself the moment a file
   fails** — that is where the reason, the per-file **Opakovat** and the **jen neúspěšné** filter are —
-  and wraps `UploadList`), `UploadItem` (a queue row as
+  and wraps `UploadList`; optional `toggleLabel` replaces the file-count label and `autoOpen` narrows when
+  it opens itself, both used by `UploadLinkPage`), `UploadItem` (a queue row as
   a standalone `kk-surface` card: **a local `UploadThumb` preview**, name+size, progress bar, status badge,
-  near-duplicate warning, remove/retry actions; a failed row has `border-danger`. The failure line and the
+  near-duplicate warning, remove/retry actions — `onRemove` is optional through `UploadList`/`UploadQueuePanel`,
+  and without it no row offers Remove; a failed row has `border-danger`. The failure line and the
   Retry go through **`lib/uploadErrors.ts`**: a refusal the backend names with a `code` is translated
   (`upload.error.not_media` "Tohle není fotka ani video", `upload.error.unsupported_type`,
-  `upload.error.damaged` "Soubor je poškozený nebo neúplný") instead of the raw server string, and the three
+  `upload.error.damaged` "Soubor je poškozený nebo neúplný"; an interrupted request — `item.interrupted`,
+  see `useUploadQueue` — reads `upload.error.interrupted` "Spojení se přerušilo" instead of the transport's
+  "network error") instead of the raw server string, and the three
   permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
   refused again; `useUploadQueue` keeps the code as `item.errorCode` and its `retry`/`retryFailed` skip
   them, and `UploadStageDone`/`UploadLinkPage` offer "retry the failed files" only while some failure is
@@ -1747,16 +1751,35 @@ here.
   an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
   clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
   `kukatko.uploadLink.uploaderName`, see **Browser storage**); a signed-in one is greeted by name and
-  uploads as themselves. `DropZone` + `PickFilesButton` (`multiple`, `PICKER_ACCEPT`: images, videos,
-  HEIC/RAW — the phone's library picker selects many at once), `useUploadQueue(linkUploader(...))`,
-  a progress bar, `UploadQueuePanel` (per-file progress, retry), the one-line summary
-  `uploadLinkSummary` ("12 nahráno, 1 duplicita, 1 chyba") with "retry the failed files" (only while a
-  failure is retryable — a `not_media` refusal is not), a notice when
-  the link died mid-batch, `useLeaveGuard` while uploading. Once an anonymous batch with a new photo
+  uploads as themselves. **Foolproof on a phone** — almost everyone opens it there, often someone who
+  has never seen the app — so it is **three screens, one action each**: *pick* (the header, "Od koho?"
+  as an optional `lg` field, then **one full-width "Vybrat fotky"** `PickFilesButton` — `multiple`,
+  `PICKER_ACCEPT`: images, videos, HEIC/RAW; the `DropZone` sits under it only from `md` up, a phone has
+  nothing to drag), *uploading* (nothing else: a sticky `kk-upload-link__progress` block — a tall bar
+  weighted by **bytes**, its percentage, "X z Y fotek" and the remaining time from `useUploadEta`,
+  "počítám…" until there is data — plus "Nechte prosím stránku otevřenou"; the per-file
+  `UploadQueuePanel` closed behind **Podrobnosti**, **no Remove** on any row while the batch runs unless
+  something failed, no link out of the page) and *done* (a big check mark — a warning triangle when some
+  file failed —, "Hotovo, nahráno N fotek" / "Nahráno X z Y fotek", the `uploadLinkSummary` breakdown
+  only when it says more (duplicates or errors), "retry the failed files" only while a failure is
+  retryable — a `not_media` refusal is not —, the notice when the link died mid-batch, a full-width
+  **Nahrát další** that clears the queue back to *pick*). Every control in `.kk-upload-link` is at least
+  48 px tall (the primary 56 px). **Resilience**: `useOnline` pauses the queue while offline (`paused`
+  option of `useUploadQueue`) with a "Jste offline — počkám na připojení" banner; a file whose request was
+  interrupted (`item.interrupted`) keeps the batch in *uploading* under "Spojení přerušeno, pokračuji…"
+  and is re-sent by `useUploadResilience` (on return to the foreground, on `online`, and on a backing-off
+  timer) — the server's SHA256 dedup makes that safe — while the panel's badges count it as waiting, not
+  failed; the same hook holds a **Screen Wake Lock** while uploading. `useLeaveGuard` holds navigation
+  while the batch runs. A reload loses the picked files, so a running batch is remembered on the device
+  (`lib/uploadLinkBatch.ts`, key `kukatko.uploadLink.batch` = `{code, count, startedAt}`, see **Browser
+  storage**; written while uploading, removed when done, ignored for another link or after 3 days) and the
+  next visit says "Nahrávání N fotek bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí" until
+  files are picked. Once an anonymous batch with a new photo
   finishes and registration is open (`usePublicSettings`), it offers registration: a link to
   **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands
   in for it and posts `upload_link` (a dead link → `register.errorLink`). Texts in `uploadLink.*`;
-  `UploadLinkPage.test.tsx`.
+  `UploadLinkPage.test.tsx` (the three screens, no Remove while running, auto-resume after a dropped
+  connection, the offline pause, the remembered batch, the estimate after a few seconds).
   `UploadLinkLine` (`components/photo/`, the photo detail's info view, its own section right under the
   caption — visible, not folded into the closed technical card): one line naming who sent a photo
   through an upload link — „Nahráno přes odkaz „Pouť 2026“ · od: Jana", with neither name nor account
@@ -5372,7 +5395,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   whenever the queue changes, so a file is uploading the moment it is added, retried, or freed by
   another one finishing, and adding files to a running batch appends to it rather than restarting it.
   That is what lets `/upload` put the album picker *in* the wait instead of in front of it. Running
-  uploads are cancelled on unmount;
+  uploads are cancelled on unmount. Options: `{ paused }` starts no further file while true (the files in
+  flight run on; the upload-link page pauses while offline). A failed request that never reached a verdict
+  — status 0, an abort nobody asked for (the browser cutting a backgrounded page's connection), or a
+  proxy's 502/503/504 — marks the item **`interrupted`**, safe to re-send because the server deduplicates
+  on the content hash; `retryInterrupted()` re-queues only those;
+  `useOnline()` = `navigator.onLine` kept current by the `online`/`offline` events (`useSyncExternalStore`);
+  `useUploadResilience({active, interrupted, online, onResume})` = keeps a batch going through what a phone
+  does to a page left alone: holds a **Screen Wake Lock** while `active`, takes it again on every return
+  to the foreground (the browser drops it on hide) and releases it when the batch ends — a browser without
+  the API or one refusing it gets none, silently; while `interrupted` it calls `onResume` on the return to
+  the foreground, on `online` and on a timer backing off 3 s → 6 s → … → 60 s (the count starts over after
+  two quiet maximum delays), and never while offline. Tests: `useUploadResilience.test.tsx` (stubbed
+  `navigator.wakeLock`, fake timers with `shouldAdvanceTime`);
+  `useUploadEta(items, active)` → `{fraction, seconds}` = the batch's byte progress (live) and the remaining
+  time, sampled once a second while `active` through the pure `lib/uploadEta.ts`: `batchBytes` (a settled
+  file counts whole, a running one by its progress, an interrupted one not at all), `sampleThroughput`
+  (a 20 s sliding window believed only after 4 s, blended into an exponential moving average α = 0.2; a
+  count that goes down restarts the window but keeps the rate), `remainingSeconds` (`null` while nothing
+  moves) and `etaPhrase` (under a minute, whole minutes to 10, steps of 5 to 90, then hours — the coarser
+  the figure the coarser the step, so the wording changes rarely). Tests: `uploadEta.test.ts`;
   `useDebouncedText(value, commit, delayMs = TEXT_FILTER_DEBOUNCE_MS)` → `[draft, setDraft]` = a text field
   that keeps up with the keyboard but writes on a pause. A filter field wired straight to the URL costs a
   request per keystroke and, with each one, a reset of the count `FilterBar` states; the draft is local, so
@@ -7807,7 +7849,9 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   session; forgetting the answer would only ask again). **Per device by design, never cleared:**
   `kukatko.grid.density`, `kukatko.review.density`, `kukatko.slideshow.settings`, `kukatko.viewer.chromeHintSeen`,
   `kukatko.uploadLink.uploaderName` (the "from whom" an anonymous uploader typed on the public upload-link
-  page — it belongs to the phone, and there is no account to scope it to) and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
+  page — it belongs to the phone, and there is no account to scope it to), `kukatko.uploadLink.batch` (the
+  link, file count and start of a batch still running on that page, so a reload can say what was lost —
+  the phone's, for the same reason) and `kukatko.video.rate` (session) — they describe the screen, not the person. **Sign-out** = `AuthProvider`
   `logout` calls `clearSignedOutState()` (`auth/signOutStorage.ts`) in its `finally`, so the storage is cleared
   even when the server never heard the request; it walks both storages and removes every key equal to one of
   `SIGN_OUT_CLEARED` or starting with it plus a dot — every account's copy, and the global keys older builds

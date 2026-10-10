@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../services/auth'
 import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 
 import { MAX_CONCURRENT_UPLOADS, useUploadQueue } from './useUploadQueue'
@@ -38,6 +39,14 @@ function result(outcome: UploadFileResult['outcome'], uid?: string): UploadFileR
 async function settle(index: number, value: UploadFileResult): Promise<void> {
   await act(async () => {
     pending[index].resolve(value)
+    await Promise.resolve()
+  })
+}
+
+/** Rejects the n-th captured upload and flushes the resulting state updates. */
+async function fail(index: number, error: unknown): Promise<void> {
+  await act(async () => {
+    pending[index].reject(error)
     await Promise.resolve()
   })
 }
@@ -303,5 +312,89 @@ describe('useUploadQueue', () => {
       hook.current.clear()
     })
     expect(hook.current.items).toHaveLength(0)
+  })
+
+  it('marks a request that never got an answer as interrupted, and only that', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([
+        file('a.jpg'),
+        file('b.jpg'),
+        file('c.jpg'),
+        file('d.jpg'),
+        file('e.jpg'),
+      ])
+    })
+    await waitFor(() => {
+      expect(pending).toHaveLength(3)
+    })
+    await fail(0, new ApiError(0, 'network error'))
+    // The browser cutting the connection, not a removal: the signal is not aborted.
+    await fail(1, new DOMException('upload aborted', 'AbortError'))
+    await fail(2, new ApiError(410, 'this upload link is no longer valid'))
+    await waitFor(() => {
+      expect(pending).toHaveLength(5)
+    })
+    // The reverse proxy saying the server is away, and the server's own failure.
+    await fail(3, new ApiError(502, 'Bad Gateway'))
+    await fail(4, new ApiError(500, 'Internal Server Error'))
+
+    await waitFor(() => {
+      expect(hook.current.summary.error).toBe(5)
+    })
+    expect(hook.current.items.map((item) => item.interrupted)).toEqual([
+      true,
+      true,
+      undefined,
+      true,
+      undefined,
+    ])
+  })
+
+  it('re-sends only the interrupted files on retryInterrupted', async () => {
+    const { result: hook } = renderHook(() => useUploadQueue())
+    act(() => {
+      hook.current.addFiles([file('a.jpg'), file('b.jpg')])
+    })
+    await waitFor(() => {
+      expect(pending).toHaveLength(2)
+    })
+    await fail(0, new ApiError(0, 'network error'))
+    await fail(1, new ApiError(500, 'boom'))
+    await waitFor(() => {
+      expect(hook.current.summary.error).toBe(2)
+    })
+
+    act(() => {
+      hook.current.retryInterrupted()
+    })
+
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(3)
+    })
+    expect(uploadMock.mock.calls[2][0].name).toBe('a.jpg')
+    expect(hook.current.items[0]).toMatchObject({ status: 'uploading', interrupted: undefined })
+    expect(hook.current.items[1].status).toBe('error')
+  })
+
+  it('starts nothing while paused and resumes where it stopped', async () => {
+    const { result: hook, rerender } = renderHook(
+      ({ paused }: { paused: boolean }) => useUploadQueue(undefined, { paused }),
+      { initialProps: { paused: true } },
+    )
+    act(() => {
+      hook.current.addFiles([file('a.jpg'), file('b.jpg')])
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(uploadMock).not.toHaveBeenCalled()
+    expect(hook.current.summary.queued).toBe(2)
+
+    rerender({ paused: false })
+
+    await waitFor(() => {
+      expect(uploadMock).toHaveBeenCalledTimes(2)
+    })
   })
 })

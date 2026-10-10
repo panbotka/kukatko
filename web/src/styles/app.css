@@ -2902,6 +2902,52 @@ body {
   }
 }
 
+/* ---- Public upload-link page ---------------------------------------------
+   `/u/:code` is opened on a phone by people who have never seen the app, so
+   every control on it is a thumb-sized target (48 px at least) and the one
+   action of each screen is taller still. The progress block pins to the top
+   while the per-file list below it scrolls, on the card's own surface so the
+   rows slide under it rather than through it. */
+.kk-upload-link .btn,
+.kk-upload-link .form-control {
+  min-height: 3rem;
+}
+
+.kk-upload-link .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kk-upload-link__primary {
+  min-height: 3.5rem;
+  font-weight: 600;
+}
+
+.kk-upload-link__progress {
+  position: sticky;
+  top: 0;
+  z-index: var(--kk-sticky-toolbar-z);
+  padding-block: var(--kk-space-3);
+  background-color: var(--bs-card-bg);
+}
+
+.kk-upload-link__bar {
+  height: 1.5rem;
+}
+
+.kk-upload-link__percent {
+  font-size: var(--kk-font-size-page-title);
+  line-height: var(--kk-line-height-page-title);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kk-upload-link__mark {
+  font-size: 4.5rem;
+  line-height: 1;
+}
+
 /* ---- Upload queue thumbnail --------------------------------------------
    The local preview of a picked file: a fixed square so react-virtuoso measures
    a stable row height (an image of unknown aspect ratio would otherwise resize

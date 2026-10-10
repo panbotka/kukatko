@@ -8,8 +8,8 @@ import { UploadItem } from './UploadItem'
 export interface UploadListProps {
   /** The files to render (already filtered by the page when needed). */
   items: UploadQueueItem[]
-  /** Removes a file from the queue. */
-  onRemove: (id: string) => void
+  /** Removes a file from the queue; omitted, no row offers a Remove. */
+  onRemove?: (id: string) => void
   /** Re-queues a single failed file. */
   onRetry: (id: string) => void
 }

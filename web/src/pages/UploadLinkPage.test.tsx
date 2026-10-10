@@ -1,17 +1,18 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
 import { PICKER_ACCEPT } from '../lib/mediaFiles'
+import { UPLOAD_BATCH_KEY } from '../lib/uploadLinkBatch'
 import { UPLOADER_NAME_KEY } from '../lib/uploadLinks'
 import { ApiError } from '../services/auth'
-import { type UploadFileResult } from '../services/upload'
+import { type UploadFileOptions, type UploadFileResult } from '../services/upload'
 import { type PublicUploadLink, UploadLinkGoneError } from '../services/uploadLinks'
 
 import { UploadLinkPage } from './UploadLinkPage'
@@ -106,7 +107,43 @@ async function pick(user: ReturnType<typeof userEvent.setup>, files: File[]) {
   await user.upload(inputs[0], files)
 }
 
+/** One captured in-flight upload, settled from the test. */
+interface Pending {
+  file: File
+  options: UploadFileOptions
+  resolve: (value: UploadFileResult) => void
+  reject: (error: unknown) => void
+}
+
+/** Makes every upload wait for the test, collecting them in the returned list. */
+function holdUploads(): Pending[] {
+  const pending: Pending[] = []
+  uploadMock.mockImplementation(
+    (file: File, options: UploadFileOptions = {}) =>
+      new Promise<UploadFileResult>((resolve, reject) => {
+        pending.push({ file, options, resolve, reject })
+      }),
+  )
+  return pending
+}
+
+let onLine = true
+
+/** Flips the connectivity and fires the matching window event. */
+function setOnline(next: boolean) {
+  onLine = next
+  act(() => {
+    window.dispatchEvent(new Event(next ? 'online' : 'offline'))
+  })
+}
+
+afterEach(() => {
+  Reflect.deleteProperty(navigator, 'onLine')
+})
+
 beforeEach(async () => {
+  onLine = true
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => onLine })
   await i18n.changeLanguage('en')
   localStorage.clear()
   uploadMock.mockReset()
@@ -289,7 +326,7 @@ describe('UploadLinkPage', () => {
     renderPage()
     await screen.findByLabelText('Who is it from?')
     await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
-    await screen.findByTestId('upload-link-summary')
+    await screen.findByTestId('upload-link-done')
     expect(screen.queryByTestId('upload-link-register')).not.toBeInTheDocument()
   })
 
@@ -300,9 +337,202 @@ describe('UploadLinkPage', () => {
     expect(await screen.findByTestId('upload-link-signed-in')).toHaveTextContent('Jana')
     expect(screen.queryByLabelText('Who is it from?')).not.toBeInTheDocument()
     await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
-    await waitFor(() => {
-      expect(screen.getByTestId('upload-link-summary')).toBeInTheDocument()
-    })
+    await screen.findByTestId('upload-link-done')
     expect(screen.queryByTestId('upload-link-register')).not.toBeInTheDocument()
+  })
+
+  it('puts one large picker first and keeps the drop zone for wider screens', async () => {
+    const { container } = renderPage()
+    await screen.findByLabelText('Who is it from?')
+    const buttons = screen.getAllByRole('button')
+    expect(buttons[0]).toHaveTextContent('Choose photos')
+    expect(buttons[0]).toHaveClass('kk-upload-link__primary')
+    const drop = container.querySelector('.kk-upload-drop')
+    expect(drop?.closest('.d-none.d-md-block')).not.toBeNull()
+  })
+
+  it('shows only the progress while uploading — nothing to cancel, nowhere to leave', async () => {
+    const pending = holdUploads()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [
+      new File(['aaaa'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['bbbb'], 'b.jpg', { type: 'image/jpeg' }),
+      new File(['cccc'], 'c.jpg', { type: 'image/jpeg' }),
+      new File(['dddd'], 'd.jpg', { type: 'image/jpeg' }),
+    ])
+
+    expect(await screen.findByTestId('upload-link-uploading')).toBeInTheDocument()
+    expect(screen.getByTestId('upload-link-count')).toHaveTextContent('0 of 4 photos')
+    expect(screen.getByTestId('upload-link-eta')).toHaveTextContent('calculating…')
+    expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('0%')
+    expect(screen.getByText(/keep this page open/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Who is it from?')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+
+    // The details are closed, and opening them offers no Remove for the waiting file.
+    const toggle = screen.getByRole('button', { name: 'Details' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(toggle)
+    expect(screen.getByText('d.jpg')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+
+    await act(async () => {
+      pending[0].resolve(result('created'))
+      await Promise.resolve()
+    })
+    expect(await screen.findByText('1 of 4 photos')).toBeInTheDocument()
+    expect(screen.getByTestId('upload-link-percent')).toHaveTextContent('25%')
+  })
+
+  it('ends on an unmistakable done screen that can start another batch', async () => {
+    uploadMock.mockResolvedValue(result('created'))
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ])
+
+    expect(
+      await screen.findByRole('heading', { name: 'Done, 2 photos uploaded' }),
+    ).toBeInTheDocument()
+    // Nothing more to say than the heading: no breakdown line under it.
+    expect(screen.queryByTestId('upload-link-summary')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Upload more' }))
+    expect(screen.getByRole('button', { name: 'Choose photos' })).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-link-done')).not.toBeInTheDocument()
+  })
+
+  it('carries on by itself after a dropped connection, without an error', async () => {
+    const pending = holdUploads()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
+    await waitFor(() => {
+      expect(pending).toHaveLength(1)
+    })
+
+    await act(async () => {
+      pending[0].reject(new ApiError(0, 'network error'))
+      await Promise.resolve()
+    })
+    expect(await screen.findByText('Connection lost, carrying on…')).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-link-summary')).not.toBeInTheDocument()
+    expect(screen.getByText('0 failed')).toBeInTheDocument()
+
+    // The network comes back: the file goes again with no tap.
+    setOnline(true)
+    await waitFor(() => {
+      expect(pending).toHaveLength(2)
+    })
+    expect(pending[1].file.name).toBe('a.jpg')
+    await act(async () => {
+      pending[1].resolve(result('created'))
+      await Promise.resolve()
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Done, 1 photo uploaded' }),
+    ).toBeInTheDocument()
+  })
+
+  it('waits for the network while offline instead of failing the waiting files', async () => {
+    const pending = holdUploads()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+      new File(['c'], 'c.jpg', { type: 'image/jpeg' }),
+      new File(['d'], 'd.jpg', { type: 'image/jpeg' }),
+    ])
+    await waitFor(() => {
+      expect(pending).toHaveLength(3)
+    })
+
+    setOnline(false)
+    expect(await screen.findByTestId('upload-link-offline')).toHaveTextContent(
+      'You are offline — waiting for a connection.',
+    )
+    await act(async () => {
+      pending[0].resolve(result('created'))
+      await Promise.resolve()
+    })
+    // The freed slot is not used while offline.
+    expect(pending).toHaveLength(3)
+
+    setOnline(true)
+    await waitFor(() => {
+      expect(pending).toHaveLength(4)
+    })
+    expect(screen.queryByTestId('upload-link-offline')).not.toBeInTheDocument()
+  })
+
+  it('explains a batch a reload interrupted, and forgets it once a batch finishes', async () => {
+    localStorage.setItem(
+      UPLOAD_BATCH_KEY,
+      JSON.stringify({ code: 'Ab3dEf7h', count: 12, startedAt: Date.now() - 60_000 }),
+    )
+    uploadMock.mockResolvedValue(result('duplicate'))
+    const user = userEvent.setup()
+    renderPage()
+    expect(await screen.findByTestId('upload-link-lost-batch')).toHaveTextContent(
+      'Uploading 12 photos was interrupted',
+    )
+
+    await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
+    await screen.findByTestId('upload-link-done')
+    expect(localStorage.getItem(UPLOAD_BATCH_KEY)).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Upload more' }))
+    expect(screen.queryByTestId('upload-link-lost-batch')).not.toBeInTheDocument()
+  })
+
+  it('remembers a running batch on the device', async () => {
+    holdUploads()
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+    await pick(user, [
+      new File(['a'], 'a.jpg', { type: 'image/jpeg' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ])
+    await screen.findByTestId('upload-link-uploading')
+    expect(JSON.parse(localStorage.getItem(UPLOAD_BATCH_KEY) ?? '{}')).toMatchObject({
+      code: 'Ab3dEf7h',
+      count: 2,
+    })
+  })
+
+  it('estimates the remaining time once a few seconds of progress are in', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const pending = holdUploads()
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      renderPage()
+      await screen.findByLabelText('Who is it from?')
+      await pick(user, [new File(['x'.repeat(100_000)], 'big.mp4', { type: 'video/mp4' })])
+      await waitFor(() => {
+        expect(pending).toHaveLength(1)
+      })
+      const { onProgress } = pending[0].options
+      for (let second = 1; second <= 6; second += 1) {
+        // Two steps, as in a browser: the progress renders before the next sample.
+        act(() => {
+          onProgress?.(second / 600)
+        })
+        act(() => {
+          vi.advanceTimersByTime(1000)
+        })
+      }
+      // ~1/600 of the file a second: some nine minutes to go.
+      expect(screen.getByTestId('upload-link-eta')).toHaveTextContent(/^about (9|10) min left$/)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

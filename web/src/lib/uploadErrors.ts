@@ -8,6 +8,7 @@ interface FailedUpload {
   status?: string
   error?: string
   errorCode?: string
+  interrupted?: boolean
 }
 
 /**
@@ -44,6 +45,9 @@ export function uploadErrorMessage(item: FailedUpload, t: TFunction): string | u
   }
   if (item.errorCode === 'damaged') {
     return t('upload.error.damaged')
+  }
+  if (item.interrupted === true) {
+    return t('upload.error.interrupted')
   }
   return item.error !== undefined && item.error !== '' ? item.error : undefined
 }

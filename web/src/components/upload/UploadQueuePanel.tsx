@@ -13,10 +13,18 @@ export interface UploadQueuePanelProps {
   items: UploadQueueItem[]
   /** Aggregate counts, for the badges and the errors-only filter. */
   summary: UploadSummary
-  /** Removes a file from the queue. */
-  onRemove: (id: string) => void
+  /** Removes a file from the queue; omitted, no row offers a Remove. */
+  onRemove?: (id: string) => void
   /** Re-queues a single failed file. */
   onRetry: (id: string) => void
+  /** The disclosure's label; the file count ("Soubory (12)") by default. */
+  toggleLabel?: string
+  /**
+   * Opens the panel as it turns true; by default whenever some file failed. The
+   * public upload-link page narrows it to failures a person must look at, so a
+   * dropped connection that resumes by itself does not unfold a wall of rows.
+   */
+  autoOpen?: boolean
 }
 
 /**
@@ -34,18 +42,30 @@ export interface UploadQueuePanelProps {
  * Removing a queued file and retrying one are unchanged — this panel only moves
  * them out of the way of everything else.
  */
-export function UploadQueuePanel({ items, summary, onRemove, onRetry }: UploadQueuePanelProps) {
+export function UploadQueuePanel({
+  items,
+  summary,
+  onRemove,
+  onRetry,
+  toggleLabel,
+  autoOpen,
+}: UploadQueuePanelProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [showErrorsOnly, setShowErrorsOnly] = useState(false)
   const hasFailed = summary.error > 0
+  const openItself = autoOpen ?? hasFailed
 
   // A failure is the reason to look at the rows, so surface them unasked. The
   // reader can still close the panel again; this only fires as failures appear.
   useEffect(() => {
-    if (hasFailed) {
+    if (openItself) {
       setOpen(true)
-    } else {
+    }
+  }, [openItself])
+
+  useEffect(() => {
+    if (!hasFailed) {
       setShowErrorsOnly(false)
     }
   }, [hasFailed])
@@ -70,7 +90,7 @@ export function UploadQueuePanel({ items, summary, onRemove, onRetry }: UploadQu
             setOpen((value) => !value)
           }}
         >
-          {t('upload.queue.heading', { total: items.length })}
+          {toggleLabel ?? t('upload.queue.heading', { total: items.length })}
         </Button>
 
         <div className="d-flex flex-wrap gap-2 ms-auto">

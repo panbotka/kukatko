@@ -39,6 +39,24 @@ export interface UploadQueueItem {
   errorCode?: string
   /** Non-fatal backend warnings (for example a near-duplicate match). */
   warnings?: UploadWarning[]
+  /**
+   * True when `status` is `error` because the request never got an answer: the
+   * network dropped, the browser cut the connection (a phone that locked or sent
+   * the page to the background), or the reverse proxy answered 502/503/504. Sending the file again is safe — the
+   * server deduplicates on the content hash — so {@link
+   * UseUploadQueueResult.retryInterrupted} may do it without asking.
+   */
+  interrupted?: boolean
+}
+
+/** Options for {@link useUploadQueue}. */
+export interface UseUploadQueueOptions {
+  /**
+   * Holds the queue: no further file starts while true (the ones in flight run
+   * on). The public upload-link page pauses while the device is offline, so the
+   * waiting files are not burned through as instant failures.
+   */
+  paused?: boolean
 }
 
 /** Aggregate counts across the queue, feeding the overall-progress header. */
@@ -88,6 +106,8 @@ export interface UseUploadQueueResult {
   retry: (id: string) => void
   /** Re-queues every failed file a retry might fix (see `canRetryUpload`). */
   retryFailed: () => void
+  /** Re-queues only the files whose request was interrupted (see `UploadQueueItem.interrupted`). */
+  retryInterrupted: () => void
   /** Aborts in-flight uploads and empties the queue. */
   clear: () => void
 }
@@ -104,6 +124,22 @@ function nextId(): string {
 function fileKey(file: File): string {
   return `${file.name}:${String(file.size)}:${String(file.lastModified)}`
 }
+
+/**
+ * The HTTP statuses that mean the request never reached a verdict: no answer at
+ * all (0), or the reverse proxy reporting the server behind it unreachable,
+ * restarting or too slow (502/503/504).
+ */
+const INTERRUPTED_STATUSES: ReadonlySet<number> = new Set([0, 502, 503, 504])
+
+/** The fields a re-queued file starts again from. */
+const REQUEUED = {
+  status: 'queued',
+  progress: 0,
+  error: undefined,
+  errorCode: undefined,
+  interrupted: undefined,
+} as const satisfies Partial<UploadQueueItem>
 
 /** Maps a successful per-file result to the matching terminal queue status. */
 function statusFor(outcome: UploadFileResult['outcome']): QueueItemStatus {
@@ -127,8 +163,13 @@ function statusFor(outcome: UploadFileResult['outcome']): QueueItemStatus {
  * Failures never abort the batch — each file's outcome is captured on its item
  * — mirroring the backend's per-file semantics.
  */
-export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueResult {
+export function useUploadQueue(
+  upload: UploadFn = uploadFile,
+  { paused = false }: UseUploadQueueOptions = {},
+): UseUploadQueueResult {
   const [items, setItems] = useState<UploadQueueItem[]>([])
+  const pausedRef = useRef(paused)
+  pausedRef.current = paused
 
   // The upload function is read through a ref at the moment a file starts, so a
   // caller may pass a fresh closure every render (an upload link binds its code
@@ -154,6 +195,9 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
   const startUploadRef = useRef<(item: UploadQueueItem) => void>(() => undefined)
 
   const pump = useCallback((): void => {
+    if (pausedRef.current) {
+      return
+    }
     const current = itemsRef.current
     const active = current.filter((item) => item.status === 'uploading').length
     let free = MAX_CONCURRENT_UPLOADS - active
@@ -176,7 +220,13 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
     (item: UploadQueueItem): void => {
       const controller = new AbortController()
       controllers.current.set(item.id, controller)
-      patch(item.id, { status: 'uploading', progress: 0, error: undefined, errorCode: undefined })
+      patch(item.id, {
+        status: 'uploading',
+        progress: 0,
+        error: undefined,
+        errorCode: undefined,
+        interrupted: undefined,
+      })
 
       uploadRef
         .current(item.file, {
@@ -196,12 +246,19 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
           })
         })
         .catch((error: unknown) => {
-          if (isAbortError(error)) {
+          if (isAbortError(error) && controller.signal.aborted) {
             // The item was removed/cleared mid-flight; nothing to record.
             return
           }
+          // An abort nobody asked for is the browser cutting the connection,
+          // status 0 is a request that never got an answer, and a gateway status
+          // is the reverse proxy saying the same about the server behind it: all
+          // are the way there, not the file, so the item is safe to send again.
+          const interrupted =
+            isAbortError(error) ||
+            (error instanceof ApiError && INTERRUPTED_STATUSES.has(error.status))
           const message = error instanceof ApiError ? error.message : String(error)
-          patch(item.id, { status: 'error', error: message })
+          patch(item.id, { status: 'error', error: message, interrupted: interrupted || undefined })
         })
         .finally(() => {
           controllers.current.delete(item.id)
@@ -217,7 +274,7 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
   // is also why nothing else has to "start" the batch.
   useEffect(() => {
     pump()
-  }, [items, pump])
+  }, [items, paused, pump])
 
   const addFiles = useCallback((files: FileList | File[]): void => {
     const incoming = Array.from(files)
@@ -248,20 +305,22 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
   const retry = useCallback((id: string): void => {
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id && canRetryUpload(item)
-          ? { ...item, status: 'queued', progress: 0, error: undefined, errorCode: undefined }
-          : item,
+        item.id === id && canRetryUpload(item) ? { ...item, ...REQUEUED } : item,
       ),
     )
   }, [])
 
   const retryFailed = useCallback((): void => {
+    setItems((prev) => prev.map((item) => (canRetryUpload(item) ? { ...item, ...REQUEUED } : item)))
+  }, [])
+
+  const retryInterrupted = useCallback((): void => {
     setItems((prev) =>
-      prev.map((item) =>
-        canRetryUpload(item)
-          ? { ...item, status: 'queued', progress: 0, error: undefined, errorCode: undefined }
-          : item,
-      ),
+      prev.some((item) => item.status === 'error' && item.interrupted === true)
+        ? prev.map((item) =>
+            item.status === 'error' && item.interrupted === true ? { ...item, ...REQUEUED } : item,
+          )
+        : prev,
     )
   }, [])
 
@@ -355,6 +414,7 @@ export function useUploadQueue(upload: UploadFn = uploadFile): UseUploadQueueRes
     removeItem,
     retry,
     retryFailed,
+    retryInterrupted,
     clear,
   }
 }

@@ -205,9 +205,14 @@ shared library is tidied by more than one person.
 - **Everybody's photos from the fair, without an account each.** A curator creates an *upload link*
   — pick the albums and labels, a title like "Pouť 2026 – fotky od vás", how many days it stays valid
   — and posts the short `/u/…` address to the group chat. Whoever opens it, signed in or not, sees
-  exactly where the photos will go and nothing else of the library, picks a whole batch from the
-  phone's gallery (photos, videos, HEIC alike) or drags it onto the page, and watches each file land,
-  with a retry for the ones that did not and a one-line "12 nahráno, 1 duplicita, 1 chyba" at the end.
+  exactly where the photos will go and nothing else of the library, taps one big "Vybrat fotky" and
+  picks a whole batch from the phone's gallery (photos, videos, HEIC alike) — or drags it onto the page
+  on a computer. While it uploads the page shows nothing but a large progress bar, "X z Y fotek" and
+  "zbývá asi 3 min", keeps the screen awake, and has nothing on it that could cancel the batch; a
+  dropped connection or a trip to another app carries on by itself ("Spojení přerušeno, pokračuji…"),
+  being offline just waits, and a reload says kindly which batch was cut short (picking the photos again
+  never doubles them). It ends with a big check mark, "Hotovo, nahráno 12 fotek", a retry for any file
+  that did not make it and **Nahrát další**.
   A file that is not a photo or a video at all — whatever it is called — is turned away as just that
   ("Tohle není fotka ani video") and never reaches the album. The photos are in the album at once; an unwanted one is archived as usual. The sender may say who
   they are — curators then see "Nahráno přes odkaz „Pouť 2026“ · od: Jana" on the photo, and the audit

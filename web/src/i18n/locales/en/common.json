@@ -2779,7 +2779,8 @@
     "error": {
       "not_media": "This is not a photo or a video",
       "unsupported_type": "This type of file cannot be uploaded",
-      "damaged": "This file is damaged or incomplete"
+      "damaged": "This file is damaged or incomplete",
+      "interrupted": "The connection dropped"
     },
     "progress": {
       "barLabel": "Overall upload progress",
@@ -4052,8 +4053,7 @@
     "name": "Who is it from?",
     "namePlaceholder": "Your name",
     "nameHint": "Optional. Remembered on this device.",
-    "choose": "Choose photos and videos",
-    "chooseMore": "Add more",
+    "choose": "Choose photos",
     "progress": "Upload progress",
     "summary": {
       "created_one": "{{count}} uploaded",
@@ -4071,7 +4071,31 @@
     "revoked": "This link was revoked. Photos can no longer be uploaded through it.",
     "notFound": "This link does not exist. Check that you copied all of it.",
     "loadError": "The link could not be loaded. Please try again in a moment.",
-    "toLogin": "Sign in"
+    "toLogin": "Sign in",
+    "uploadingTitle": "Uploading your photos…",
+    "keepOpen": "Please keep this page open until everything is uploaded.",
+    "percent": "{{value}}%",
+    "count_one": "{{done}} of {{count}} photo",
+    "count_other": "{{done}} of {{count}} photos",
+    "eta": {
+      "calculating": "calculating…",
+      "lessThanMinute": "less than a minute left",
+      "minutes": "about {{n}} min left",
+      "hours_one": "about {{count}} hour left",
+      "hours_other": "about {{count}} hours left"
+    },
+    "offline": "You are offline — waiting for a connection.",
+    "reconnecting": "Connection lost, carrying on…",
+    "interruptedBatch_one": "Uploading {{count}} photo was interrupted — choose the photos again; the ones already uploaded will not be doubled.",
+    "interruptedBatch_other": "Uploading {{count}} photos was interrupted — choose the photos again; the ones already uploaded will not be doubled.",
+    "details": "Details",
+    "uploadMore": "Upload more",
+    "done": {
+      "title_one": "Done, {{count}} photo uploaded",
+      "title_other": "Done, {{count}} photos uploaded",
+      "partial_one": "{{done}} of {{count}} photo uploaded",
+      "partial_other": "{{done}} of {{count}} photos uploaded"
+    }
   },
   "uploadLinks": {
     "title": "Upload links",

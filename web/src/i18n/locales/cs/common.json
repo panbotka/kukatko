@@ -2893,7 +2893,8 @@
     "error": {
       "not_media": "Tohle není fotka ani video",
       "unsupported_type": "Tento typ souboru se nenahrává",
-      "damaged": "Soubor je poškozený nebo neúplný"
+      "damaged": "Soubor je poškozený nebo neúplný",
+      "interrupted": "Spojení se přerušilo"
     },
     "progress": {
       "barLabel": "Celkový průběh nahrávání",
@@ -4242,8 +4243,7 @@
     "name": "Od koho?",
     "namePlaceholder": "Vaše jméno",
     "nameHint": "Nepovinné. Zapamatujeme si ho v tomto zařízení.",
-    "choose": "Vybrat fotky a videa",
-    "chooseMore": "Přidat další",
+    "choose": "Vybrat fotky",
     "progress": "Průběh nahrávání",
     "summary": {
       "created_one": "{{count}} nahrána",
@@ -4264,7 +4264,41 @@
     "revoked": "Tento odkaz byl zrušen. Fotky přes něj už nahrát nejde.",
     "notFound": "Tento odkaz neexistuje. Zkontrolujte, že jste ho zkopírovali celý.",
     "loadError": "Odkaz se nepodařilo načíst. Zkuste to prosím za chvíli znovu.",
-    "toLogin": "Přihlásit se"
+    "toLogin": "Přihlásit se",
+    "uploadingTitle": "Nahrávám fotky…",
+    "keepOpen": "Nechte prosím stránku otevřenou, dokud se vše nenahraje.",
+    "percent": "{{value}} %",
+    "count_one": "{{done}} z {{count}} fotky",
+    "count_few": "{{done}} z {{count}} fotek",
+    "count_many": "{{done}} z {{count}} fotky",
+    "count_other": "{{done}} z {{count}} fotek",
+    "eta": {
+      "calculating": "počítám…",
+      "lessThanMinute": "zbývá necelá minuta",
+      "minutes": "zbývá asi {{n}} min",
+      "hours_one": "zbývá asi {{count}} hodina",
+      "hours_few": "zbývají asi {{count}} hodiny",
+      "hours_many": "zbývá asi {{count}} hodiny",
+      "hours_other": "zbývá asi {{count}} hodin"
+    },
+    "offline": "Jste offline — počkám na připojení.",
+    "reconnecting": "Spojení přerušeno, pokračuji…",
+    "interruptedBatch_one": "Nahrávání {{count}} fotky bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí.",
+    "interruptedBatch_few": "Nahrávání {{count}} fotek bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí.",
+    "interruptedBatch_many": "Nahrávání {{count}} fotky bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí.",
+    "interruptedBatch_other": "Nahrávání {{count}} fotek bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí.",
+    "details": "Podrobnosti",
+    "uploadMore": "Nahrát další",
+    "done": {
+      "title_one": "Hotovo, nahrána {{count}} fotka",
+      "title_few": "Hotovo, nahrány {{count}} fotky",
+      "title_many": "Hotovo, nahráno {{count}} fotky",
+      "title_other": "Hotovo, nahráno {{count}} fotek",
+      "partial_one": "Nahráno {{done}} z {{count}} fotky",
+      "partial_few": "Nahráno {{done}} z {{count}} fotek",
+      "partial_many": "Nahráno {{done}} z {{count}} fotky",
+      "partial_other": "Nahráno {{done}} z {{count}} fotek"
+    }
   },
   "uploadLinks": {
     "title": "Odkazy pro nahrávání",

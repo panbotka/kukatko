@@ -40,6 +40,16 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage(item, i18n.t)).toBe('This file is damaged or incomplete')
   })
 
+  it('says a dropped connection in words instead of the transport error', async () => {
+    const item = { status: 'error', error: 'network error', interrupted: true }
+    await i18n.changeLanguage('cs')
+    expect(uploadErrorMessage(item, i18n.t)).toBe('Spojení se přerušilo')
+    await i18n.changeLanguage('en')
+    expect(uploadErrorMessage(item, i18n.t)).toBe('The connection dropped')
+    // Still a failure a retry can fix.
+    expect(canRetryUpload(item)).toBe(true)
+  })
+
   it('falls back to the server message, and to nothing for an empty one', () => {
     expect(uploadErrorMessage({ error: 'network error' }, i18n.t)).toBe('network error')
     expect(uploadErrorMessage({ error: '' }, i18n.t)).toBeUndefined()
