@@ -44,7 +44,9 @@ Decisions taken with the owner (2026-10-11):
 | `max_total_bytes` | NULL = no limit; cap on `sum(photos.file_size)` of the project |
 | `created_at`, `updated_at` | |
 
-The bootstrap migration inserts `v` / "Veselice" / `storage_prefix = ''` / no limits / active.
+The bootstrap migration inserts `v` / "Veselice" / `storage_prefix = ''` / no limits / active with
+the fixed uid **`pj0000000000000000veselice`** (`project.BootstrapUID`); every `project_id` column
+carries that value as a transitional `DEFAULT` until the alias-removal step drops it.
 
 ### 2.2 `project_members`
 
@@ -288,6 +290,13 @@ by a config key `storage.rekey.per_second` (default 10 photos/s).
 4. **Features**: project management, members and invitations, per-project settings and
    registration, limits, storage prefix, the rekey job and its progress page, ctl/MCP, mail/push,
    metrics/audit, the guard test, removal of the aliases, docs.
+
+The programme is split into 40 Botka tasks ("Multi-tenancy NN/40", priorities 1000 → 610). Two of
+them are **safety gates** that add no feature: 05 (after the schema steps) and 40 (after everything)
+rehearse the migration from the deployed tag to `main` on a copy of production data, build and use
+`kukatko maintenance inventory` / `inventory-diff`, and write the verdict into
+`docs/MIGRATION_SAFETY.md`. The owner re-queues a gate before any release that ships further
+tenancy migrations.
 
 ## 8. Out of scope
 
