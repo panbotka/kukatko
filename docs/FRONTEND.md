@@ -7814,6 +7814,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   that **dims until hovered** keeps the dimming behind `@media (hover: hover) and (pointer: fine)` — hover never
   fires on a phone, so a dimmed control there stays dimmed for good (`.kk-task-person__remove`,
   `.kk-comment__actions`);
+  **no small field on a phone** — a `@media (max-width: 767.98px), (pointer: coarse)` block lifts
+  `.form-control-sm`/`.form-select-sm` and a field inside `.input-group-sm` to `1rem`: iOS Safari zooms the page
+  into a focused field under 16px, and Bootstrap's `size="sm"` renders 14px (UI/UX review #34, 2026-10-11: the task
+  search and the upload link's address field were the two left). Desktop keeps the compact size; guarded by
+  `styles/inputFontSize.test.ts`, which also fails if another app rule sets a small field's font size;
   **Superhero's baked colours** live in `styles/bootstrapBridge.css` (imported between `tokens.css` and
   `app.css`): Bootswatch compiles many colours as literals *inside component rules* (`.card { --bs-card-bg:
   #4e5d6c }`, `.btn-primary { background-color: … }`, white form fields, solid-fill alerts with white text), where

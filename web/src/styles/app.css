@@ -1167,6 +1167,22 @@ body {
   }
 }
 
+/* No field a phone zooms into. iOS Safari zooms the whole page when a focused
+   text field is under 16px, and Bootstrap's `size="sm"` (`form-control-sm`,
+   `form-select-sm`, or the same field inside an `input-group-sm`) sets it to
+   14px — the task search and the upload link's address field both were. Below
+   `md`, and on any touch device whatever its width, every small field reads at
+   the body's 16px; desktop keeps the compact size. Guarded by
+   `styles/inputFontSize.test.ts`. */
+@media (max-width: 767.98px), (pointer: coarse) {
+  .form-control-sm,
+  .form-select-sm,
+  .input-group-sm > .form-control,
+  .input-group-sm > .form-select {
+    font-size: 1rem;
+  }
+}
+
 /* Keyboard focus highlight for the photo grid: a clearly visible ring around the
    tile currently targeted by arrow / hjkl navigation. Distinct from the selection
    outline (primary) so both can be shown at once, and inset slightly so it hugs
