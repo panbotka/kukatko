@@ -1156,6 +1156,30 @@ body {
   border-radius: var(--kk-radius-tile);
 }
 
+/* ---- Tool search forms -------------------------------------------------
+ *
+ * The person, expand and recognition tools share one config row
+ * (`ToolSearchForm`). Each field is a label row, a control one tap target tall,
+ * then its helper text. Every label row in the form — a plain `Form.Label`, the
+ * picker's own `small mb-1` label, the expand heading span and the submit
+ * column's empty spacer — gets one size, line height and gap here, so on desktop
+ * the labels line up at the top and the controls at the bottom. The slider is
+ * centred in a control-tall slot so its track sits level with the inputs.
+ * Block-level, because an inline-block `<label>` sits on its parent's taller
+ * line box and lands 2px lower than a block (or flex) label row beside it. */
+.kk-tool-form .form-label {
+  display: block;
+  margin-bottom: var(--kk-space-1);
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.kk-tool-range {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
 /* ---- Media load-in -----------------------------------------------------
  *
  * A thumbnail / cover <img> that fades and subtly settles in once the browser

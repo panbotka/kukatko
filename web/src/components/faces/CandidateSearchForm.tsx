@@ -1,7 +1,4 @@
-import Button from 'react-bootstrap/Button'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
@@ -13,6 +10,13 @@ import {
 import { type SubjectCount } from '../../services/people'
 import { type SelectOption, SearchableSelect } from '../library/SearchableSelect'
 import { Icon } from '../Icon'
+import {
+  ToolField,
+  ToolLimitField,
+  ToolRangeField,
+  ToolSearchForm,
+  ToolSubmit,
+} from '../tools/ToolSearchForm'
 
 /** Props for {@link CandidateSearchForm}. */
 export interface CandidateSearchFormProps {
@@ -90,89 +94,61 @@ export function CandidateSearchForm({
   const selected = options.find((option) => option.value === subjectUid)
 
   return (
-    <Form
-      className="mb-4"
-      onSubmit={(event) => {
-        event.preventDefault()
-        onSearch()
-      }}
-    >
-      <Row className="g-3">
-        <Col md={6} lg={5}>
-          <SearchableSelect
-            id="face-search-subject"
-            label={t('faceSearch.form.subjectHeading')}
-            value={selected === undefined ? '' : selected.value}
-            options={options}
-            anyLabel={t('faceSearch.form.subjectLabel')}
-            disabled={subjectsLoading}
-            onChange={(value) => {
-              onSubjectChange(value === '' ? null : value)
-            }}
-          />
-          <Form.Text>
-            {selected === undefined
-              ? t('faceSearch.form.subjectNone')
-              : t('faceSearch.form.subjectSelected', { name: selected.label })}
-          </Form.Text>
-        </Col>
+    <ToolSearchForm onSubmit={onSearch}>
+      <ToolField md={6} lg={5}>
+        <SearchableSelect
+          id="face-search-subject"
+          label={t('faceSearch.form.subjectHeading')}
+          value={selected === undefined ? '' : selected.value}
+          options={options}
+          anyLabel={t('faceSearch.form.subjectLabel')}
+          disabled={subjectsLoading}
+          onChange={(value) => {
+            onSubjectChange(value === '' ? null : value)
+          }}
+        />
+        <Form.Text>
+          {selected === undefined
+            ? t('faceSearch.form.subjectNone')
+            : t('faceSearch.form.subjectSelected', { name: selected.label })}
+        </Form.Text>
+      </ToolField>
 
-        <Col md={6} lg={4}>
-          <Form.Label
-            htmlFor="face-search-threshold"
-            className="d-flex justify-content-between mb-1"
-          >
-            <span>{t('faceSearch.form.thresholdLabel')}</span>
-            <span className="fw-semibold">
-              {t('faceSearch.form.thresholdValue', { percent: thresholdPercent })}
-            </span>
-          </Form.Label>
-          <Form.Range
-            id="face-search-threshold"
-            min={THRESHOLD_MIN_PERCENT}
-            max={THRESHOLD_MAX_PERCENT}
-            step={THRESHOLD_STEP_PERCENT}
-            value={thresholdPercent}
-            onChange={(event) => {
-              onThresholdChange(Number(event.target.value))
-            }}
-          />
-          <div className="d-flex justify-content-between small text-secondary">
-            <span>{t('faceSearch.form.thresholdMore')}</span>
-            <span>{t('faceSearch.form.thresholdBetter')}</span>
-          </div>
-        </Col>
+      <ToolRangeField
+        md={6}
+        lg={4}
+        id="face-search-threshold"
+        label={t('faceSearch.form.thresholdLabel')}
+        valueText={t('faceSearch.form.thresholdValue', { percent: thresholdPercent })}
+        min={THRESHOLD_MIN_PERCENT}
+        max={THRESHOLD_MAX_PERCENT}
+        step={THRESHOLD_STEP_PERCENT}
+        value={thresholdPercent}
+        onChange={onThresholdChange}
+        lowHint={t('faceSearch.form.thresholdMore')}
+        highHint={t('faceSearch.form.thresholdBetter')}
+      />
 
-        <Col xs={6} md={4} lg={2}>
-          <Form.Label htmlFor="face-search-limit">{t('faceSearch.form.limitLabel')}</Form.Label>
-          <Form.Control
-            id="face-search-limit"
-            type="number"
-            min={0}
-            value={limit}
-            onChange={(event) => {
-              onLimitChange(Math.max(0, Math.trunc(Number(event.target.value)) || 0))
-            }}
-          />
-          <Form.Text>{t('faceSearch.form.limitHint')}</Form.Text>
-        </Col>
+      <ToolLimitField
+        md
+        id="face-search-limit"
+        label={t('faceSearch.form.limitLabel')}
+        hint={t('faceSearch.form.limitHint')}
+        min={0}
+        value={limit}
+        onChange={(value) => {
+          onLimitChange(Math.max(0, Math.trunc(value) || 0))
+        }}
+      />
 
-        <Col xs={6} md={2} lg={1} className="d-flex align-items-start">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={subjectUid === null || loading}
-            className="mt-md-4 d-flex align-items-center gap-2"
-          >
-            {loading ? (
-              <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
-            ) : (
-              <Icon name="search" />
-            )}
-            {t('faceSearch.form.search')}
-          </Button>
-        </Col>
-      </Row>
-    </Form>
+      <ToolSubmit disabled={subjectUid === null || loading}>
+        {loading ? (
+          <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
+        ) : (
+          <Icon name="search" />
+        )}
+        {t('faceSearch.form.search')}
+      </ToolSubmit>
+    </ToolSearchForm>
   )
 }

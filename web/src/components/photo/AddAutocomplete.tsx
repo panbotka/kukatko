@@ -62,6 +62,11 @@ export interface AddAutocompleteProps {
    * selected face), not where it is one control among many.
    */
   autoFocus?: boolean
+  /**
+   * Spacing classes for the wrapper. Defaults to `mb-3`, the gap a field stacked
+   * in a panel wants; a form row that lays out its own gaps passes `mb-0`.
+   */
+  className?: string
 }
 
 /** Cap on rendered suggestions so hundreds of albums/labels stay responsive. */
@@ -108,6 +113,7 @@ export function AddAutocomplete({
   id,
   disabled,
   autoFocus = false,
+  className = 'mb-3',
 }: AddAutocompleteProps) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
@@ -211,7 +217,7 @@ export function AddAutocomplete({
   return (
     <div
       ref={containerRef}
-      className="position-relative mb-3"
+      className={`position-relative ${className}`}
       onBlur={(event) => {
         // Close only when focus leaves the whole widget (not on inner moves).
         if (!containerRef.current?.contains(event.relatedTarget)) {

@@ -259,3 +259,21 @@ describe('RecognitionPage', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
+
+describe('RecognitionPage form layout', () => {
+  it('puts the full-width scan button after the limit input and its hint', () => {
+    renderPage()
+    const limit = screen.getByLabelText('Per person')
+    const button = screen.getByRole('button', { name: 'Scan' })
+
+    expect(limit.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const hint = limit.nextElementSibling
+    expect(hint).toHaveClass('form-text')
+    // Below `md` every column is full-width and the button fills its own.
+    expect(button).toHaveClass('w-100')
+    expect(button.closest('.col-12')).not.toBeNull()
+    expect(limit.closest('.col-12')).not.toBeNull()
+    // The slider shares the label line every other field has, not a lower one.
+    expect(screen.getByLabelText(/Confidence/).parentElement).toHaveClass('kk-tool-range')
+  })
+})

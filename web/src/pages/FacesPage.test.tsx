@@ -501,3 +501,19 @@ describe('FacesPage person picker', () => {
     expect(screen.getByText('Pick a person and search')).toBeInTheDocument()
   })
 })
+
+describe('FacesPage form layout', () => {
+  it('puts the full-width search button after the limit input and its hint', () => {
+    renderPage()
+    const limit = screen.getByLabelText('Limit')
+    const button = screen.getByRole('button', { name: 'Search' })
+
+    expect(limit.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const hint = screen.getByText('0 = no limit')
+    expect(hint.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Below `md` every column is full-width and the button fills its own.
+    expect(button).toHaveClass('w-100')
+    expect(button.closest('.col-12')).not.toBeNull()
+    expect(limit.closest('.col-12')).not.toBeNull()
+  })
+})

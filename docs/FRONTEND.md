@@ -5028,6 +5028,19 @@ so Zpět and the Ponechat levou/obě/pravou buttons never hide under a notch or 
   `REVIEW_GRID_SCOPE`; per-tile overlays via `tileExtras`: a % similarity badge (`pe-none`), a match-count badge
   at `match_count > 1`, a corner **⤢** that calls `onEnlarge(index)`, and a ✗ button only when
   the caller supplies `onReject`; after the user empties the grid, a „vše zpracováno" message);
+  `components/tools/` = `ToolSearchForm` (the **one** config-row layout of `/faces`
+  (`CandidateSearchForm`), `/expand` (`ExpandSearchForm`) and `/recognition`, so the three cannot drift:
+  `ToolSearchForm` = the `<Form>` + a `g-3 kk-tool-form` row, `ToolField` = a free column for a picker
+  that brings its own label, `ToolRangeField` = the percent slider (label + live value in the label row,
+  the slider centred in a 44px `kk-tool-range` slot, the trade-off bookends under it), `ToolLimitField` =
+  the 44px number input + its hint, `ToolSubmit` = the last column, `md="auto"` with an empty label-row
+  spacer so the button sits level with the controls, `w-100` so on a phone it is the full-width last row.
+  Every column is `xs={12}`: below `md` the fields stack picker → slider → limit → button with each hint
+  directly under its control. The `kk-tool-form` rules in `app.css` give every label row in the form —
+  `Form.Label`, `SearchableSelect`'s own label, the expand heading span, the spacer — one block-level size
+  and gap, so on desktop labels align at the top and controls at the bottom (an inline-block `<label>` sat
+  2px lower than a flex one); `AddAutocomplete` takes a `className` (default `mb-3`) so the expand picker
+  passes `mb-0` and its hint stays under it);
   `components/review/` = `ReviewStage` (the photo stage shared by the sorting game **and the review
   tools' lightbox**, so the two cannot drift; `ReviewPhoto` is the game's thin adapter over it, mapping a
   `Photo` row to the stage's uid + dimensions and pinning

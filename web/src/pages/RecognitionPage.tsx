@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
-import Button from 'react-bootstrap/Button'
-import Col from 'react-bootstrap/Col'
-import Form from 'react-bootstrap/Form'
 import ProgressBar from 'react-bootstrap/ProgressBar'
-import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 
@@ -15,6 +11,12 @@ import { PersonSweepCard } from '../components/recognition/PersonSweepCard'
 import { CandidateDecisions } from '../components/review/CandidateDecisions'
 import { candidateStage } from '../components/review/candidateStage'
 import { ReviewLightbox } from '../components/review/ReviewLightbox'
+import {
+  ToolLimitField,
+  ToolRangeField,
+  ToolSearchForm,
+  ToolSubmit,
+} from '../components/tools/ToolSearchForm'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridDensity } from '../hooks/useGridDensity'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
@@ -169,75 +171,57 @@ export function RecognitionPage() {
       <h1 className="kk-page-title mb-1">{t('recognition.title')}</h1>
       <p className="text-secondary">{t('recognition.subtitle')}</p>
 
-      <Form
-        className="mb-4"
-        onSubmit={(event) => {
-          event.preventDefault()
+      <ToolSearchForm
+        onSubmit={() => {
           if (!scanning) {
             startScan()
           }
         }}
       >
-        <Row className="g-3 align-items-end">
-          <Col md={6} lg={5}>
-            <Form.Label htmlFor="sweep-confidence" className="d-flex justify-content-between mb-1">
-              <span>{t('recognition.form.confidenceLabel')}</span>
-              <span className="fw-semibold">
-                {t('recognition.form.confidenceValue', { percent: confidence })}
-              </span>
-            </Form.Label>
-            <Form.Range
-              id="sweep-confidence"
-              min={SWEEP_MIN_PERCENT}
-              max={SWEEP_MAX_PERCENT}
-              step={SWEEP_STEP_PERCENT}
-              value={confidence}
-              disabled={scanning}
-              onChange={(event) => {
-                setConfidence(clampConfidencePercent(Number(event.target.value)))
-              }}
-            />
-            <div className="d-flex justify-content-between small text-secondary">
-              <span>{t('recognition.form.confidenceMore')}</span>
-              <span>{t('recognition.form.confidenceBetter')}</span>
-            </div>
-          </Col>
+        <ToolRangeField
+          md={6}
+          lg={5}
+          id="sweep-confidence"
+          label={t('recognition.form.confidenceLabel')}
+          valueText={t('recognition.form.confidenceValue', { percent: confidence })}
+          min={SWEEP_MIN_PERCENT}
+          max={SWEEP_MAX_PERCENT}
+          step={SWEEP_STEP_PERCENT}
+          value={confidence}
+          disabled={scanning}
+          onChange={(value) => {
+            setConfidence(clampConfidencePercent(value))
+          }}
+          lowHint={t('recognition.form.confidenceMore')}
+          highHint={t('recognition.form.confidenceBetter')}
+        />
 
-          <Col xs={6} md={3} lg={2}>
-            <Form.Label htmlFor="sweep-limit">{t('recognition.form.limitLabel')}</Form.Label>
-            <Form.Control
-              id="sweep-limit"
-              type="number"
-              min={0}
-              value={limit}
-              disabled={scanning}
-              onChange={(event) => {
-                setLimit(Math.max(0, Math.trunc(Number(event.target.value)) || 0))
-              }}
-            />
-            <Form.Text>{t('recognition.form.limitHint')}</Form.Text>
-          </Col>
+        <ToolLimitField
+          md
+          lg={3}
+          id="sweep-limit"
+          label={t('recognition.form.limitLabel')}
+          hint={t('recognition.form.limitHint')}
+          min={0}
+          value={limit}
+          disabled={scanning}
+          onChange={(value) => {
+            setLimit(Math.max(0, Math.trunc(value) || 0))
+          }}
+        />
 
-          <Col xs={6} md={3} lg={2}>
-            {scanning ? (
-              <Button
-                type="button"
-                variant="outline-secondary"
-                onClick={review.cancel}
-                className="d-flex align-items-center gap-2"
-              >
-                <Icon name="x-lg" />
-                {t('recognition.form.cancel')}
-              </Button>
-            ) : (
-              <Button type="submit" variant="primary" className="d-flex align-items-center gap-2">
-                <Icon name="search" />
-                {t('recognition.form.scan')}
-              </Button>
-            )}
-          </Col>
-        </Row>
-      </Form>
+        {scanning ? (
+          <ToolSubmit type="button" variant="outline-secondary" onClick={review.cancel}>
+            <Icon name="x-lg" />
+            {t('recognition.form.cancel')}
+          </ToolSubmit>
+        ) : (
+          <ToolSubmit>
+            <Icon name="search" />
+            {t('recognition.form.scan')}
+          </ToolSubmit>
+        )}
+      </ToolSearchForm>
 
       {scanning && review.progress !== null && (
         <div className="mb-4" data-testid="sweep-progress">

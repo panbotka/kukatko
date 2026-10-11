@@ -1,7 +1,4 @@
-import Button from 'react-bootstrap/Button'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import ToggleButton from 'react-bootstrap/ToggleButton'
 import ToggleButtonGroup from 'react-bootstrap/ToggleButtonGroup'
@@ -19,6 +16,13 @@ import { THRESHOLD_STEP_PERCENT } from '../../lib/faceThreshold'
 import { type ExpandKind } from '../../services/expand'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
 import { Icon } from '../Icon'
+import {
+  ToolField,
+  ToolLimitField,
+  ToolRangeField,
+  ToolSearchForm,
+  ToolSubmit,
+} from '../tools/ToolSearchForm'
 
 /** Props for {@link ExpandSearchForm}. */
 export interface ExpandSearchFormProps {
@@ -81,129 +85,105 @@ export function ExpandSearchForm({
   const selected = sources.find((source) => source.uid === sourceUid)
 
   return (
-    <Form
-      className="mb-4"
-      onSubmit={(event) => {
-        event.preventDefault()
-        onSearch()
-      }}
-    >
-      <Row className="g-3">
-        <Col md={6} lg={5}>
-          <span className="form-label d-block mb-1" id="expand-kind-heading">
-            {t('expand.form.sourceHeading')}
-          </span>
-          <div className="d-flex gap-2 align-items-start flex-wrap">
-            {/* Full-size buttons with a centred label: the group stands beside
+    <ToolSearchForm onSubmit={onSearch}>
+      <ToolField md={6} lg={5}>
+        <span className="form-label d-block mb-1" id="expand-kind-heading">
+          {t('expand.form.sourceHeading')}
+        </span>
+        <div className="d-flex gap-2 align-items-start flex-wrap">
+          {/* Full-size buttons with a centred label: the group stands beside
                 the picker's 44px field at the field's own font size, so the two
                 read as one row rather than a short pill next to a tall box. */}
-            <ToggleButtonGroup
-              type="radio"
-              name="expand-kind"
-              value={kind}
-              aria-labelledby="expand-kind-heading"
-              onChange={(value: ExpandKind) => {
-                onKindChange(value)
-              }}
-            >
-              <ToggleButton
-                id="expand-kind-album"
-                value="album"
-                variant="outline-secondary"
-                className="kukatko-tap-target d-inline-flex align-items-center"
-              >
-                {t('expand.form.kindAlbum')}
-              </ToggleButton>
-              <ToggleButton
-                id="expand-kind-label"
-                value="label"
-                variant="outline-secondary"
-                className="kukatko-tap-target d-inline-flex align-items-center"
-              >
-                {t('expand.form.kindLabel')}
-              </ToggleButton>
-            </ToggleButtonGroup>
-            <div className="flex-grow-1">
-              <AddAutocomplete
-                id="expand-source"
-                label={
-                  kind === 'album'
-                    ? t('expand.form.sourceLabelAlbum')
-                    : t('expand.form.sourceLabelLabel')
-                }
-                disabled={sourcesLoading || sourcesError}
-                options={sources.map((source) => ({
-                  uid: source.uid,
-                  label: source.name,
-                  hint: t('expand.form.sourceHint', { count: source.photoCount }),
-                }))}
-                onAdd={onSourceChange}
-              />
-            </div>
-          </div>
-          <Form.Text className={sourcesError ? 'text-danger' : undefined}>
-            {sourcesError
-              ? t('expand.form.sourcesError')
-              : selected === undefined
-                ? t('expand.form.sourceNone')
-                : t('expand.form.sourceSelected', { name: selected.name })}
-          </Form.Text>
-        </Col>
-
-        <Col md={6} lg={4}>
-          <Form.Label htmlFor="expand-threshold" className="d-flex justify-content-between mb-1">
-            <span>{t('expand.form.thresholdLabel')}</span>
-            <span className="fw-semibold">
-              {t('expand.form.thresholdValue', { percent: thresholdPercent })}
-            </span>
-          </Form.Label>
-          <Form.Range
-            id="expand-threshold"
-            min={EXPAND_THRESHOLD_MIN_PERCENT}
-            max={EXPAND_THRESHOLD_MAX_PERCENT}
-            step={THRESHOLD_STEP_PERCENT}
-            value={thresholdPercent}
-            onChange={(event) => {
-              onThresholdChange(Number(event.target.value))
+          <ToggleButtonGroup
+            type="radio"
+            name="expand-kind"
+            value={kind}
+            aria-labelledby="expand-kind-heading"
+            onChange={(value: ExpandKind) => {
+              onKindChange(value)
             }}
-          />
-          <div className="d-flex justify-content-between small text-secondary">
-            <span>{t('expand.form.thresholdMore')}</span>
-            <span>{t('expand.form.thresholdBetter')}</span>
-          </div>
-        </Col>
-
-        <Col xs={6} md={4} lg={2}>
-          <Form.Label htmlFor="expand-limit">{t('expand.form.limitLabel')}</Form.Label>
-          <Form.Control
-            id="expand-limit"
-            type="number"
-            min={EXPAND_LIMIT_MIN}
-            max={EXPAND_LIMIT_MAX}
-            value={limit}
-            onChange={(event) => {
-              onLimitChange(clampExpandLimit(Number(event.target.value)))
-            }}
-          />
-          <Form.Text>{t('expand.form.limitHint')}</Form.Text>
-        </Col>
-
-        <Col xs={6} md={2} lg={1} className="d-flex align-items-start">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={sourceUid === null || loading}
-            className="mt-md-4 d-flex align-items-center gap-2"
           >
-            {loading ? (
-              <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
-            ) : (
-              <Icon name="search" />
-            )}
-            {t('expand.form.search')}
-          </Button>
-        </Col>
-      </Row>
-    </Form>
+            <ToggleButton
+              id="expand-kind-album"
+              value="album"
+              variant="outline-secondary"
+              className="kukatko-tap-target d-inline-flex align-items-center"
+            >
+              {t('expand.form.kindAlbum')}
+            </ToggleButton>
+            <ToggleButton
+              id="expand-kind-label"
+              value="label"
+              variant="outline-secondary"
+              className="kukatko-tap-target d-inline-flex align-items-center"
+            >
+              {t('expand.form.kindLabel')}
+            </ToggleButton>
+          </ToggleButtonGroup>
+          <div className="flex-grow-1">
+            <AddAutocomplete
+              id="expand-source"
+              className="mb-0"
+              label={
+                kind === 'album'
+                  ? t('expand.form.sourceLabelAlbum')
+                  : t('expand.form.sourceLabelLabel')
+              }
+              disabled={sourcesLoading || sourcesError}
+              options={sources.map((source) => ({
+                uid: source.uid,
+                label: source.name,
+                hint: t('expand.form.sourceHint', { count: source.photoCount }),
+              }))}
+              onAdd={onSourceChange}
+            />
+          </div>
+        </div>
+        <Form.Text className={sourcesError ? 'text-danger' : undefined}>
+          {sourcesError
+            ? t('expand.form.sourcesError')
+            : selected === undefined
+              ? t('expand.form.sourceNone')
+              : t('expand.form.sourceSelected', { name: selected.name })}
+        </Form.Text>
+      </ToolField>
+
+      <ToolRangeField
+        md={6}
+        lg={4}
+        id="expand-threshold"
+        label={t('expand.form.thresholdLabel')}
+        valueText={t('expand.form.thresholdValue', { percent: thresholdPercent })}
+        min={EXPAND_THRESHOLD_MIN_PERCENT}
+        max={EXPAND_THRESHOLD_MAX_PERCENT}
+        step={THRESHOLD_STEP_PERCENT}
+        value={thresholdPercent}
+        onChange={onThresholdChange}
+        lowHint={t('expand.form.thresholdMore')}
+        highHint={t('expand.form.thresholdBetter')}
+      />
+
+      <ToolLimitField
+        md
+        id="expand-limit"
+        label={t('expand.form.limitLabel')}
+        hint={t('expand.form.limitHint')}
+        min={EXPAND_LIMIT_MIN}
+        max={EXPAND_LIMIT_MAX}
+        value={limit}
+        onChange={(value) => {
+          onLimitChange(clampExpandLimit(value))
+        }}
+      />
+
+      <ToolSubmit disabled={sourceUid === null || loading}>
+        {loading ? (
+          <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
+        ) : (
+          <Icon name="search" />
+        )}
+        {t('expand.form.search')}
+      </ToolSubmit>
+    </ToolSearchForm>
   )
 }
