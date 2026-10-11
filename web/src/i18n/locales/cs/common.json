@@ -28,11 +28,22 @@
     "githubTitle": "Zobrazit zdrojový kód projektu na GitHubu",
     "jobs": {
       "link": "Práce na pozadí: {{summary}} — otevřít Stav systému",
-      "idle": "nečinné",
-      "queued": "ve frontě",
-      "running": "zpracovává se",
-      "failed": "nepovedlo se",
-      "dead": "trvale se nepovedlo"
+      "dead_one": "{{count}} úloha trvale selhala",
+      "dead_few": "{{count}} úlohy trvale selhaly",
+      "dead_many": "{{count}} úlohy trvale selhalo",
+      "dead_other": "{{count}} úloh trvale selhalo",
+      "failed_one": "{{count}} úloha selhala",
+      "failed_few": "{{count}} úlohy selhaly",
+      "failed_many": "{{count}} úlohy selhalo",
+      "failed_other": "{{count}} úloh selhalo",
+      "queued_one": "{{count}} úloha ve frontě",
+      "queued_few": "{{count}} úlohy ve frontě",
+      "queued_many": "{{count}} úlohy ve frontě",
+      "queued_other": "{{count}} úloh ve frontě",
+      "running_one": "{{count}} úloha běží",
+      "running_few": "{{count}} úlohy běží",
+      "running_many": "{{count}} úlohy běží",
+      "running_other": "{{count}} úloh běží"
     }
   },
   "nav": {

@@ -19,7 +19,7 @@ interface FooterProps {
  * the routed content — on short pages it simply follows the content rather
  * than floating over it or sticking to the viewport bottom. The footer is a
  * space-between flex row with the operator info on the left; `children` fill
- * the right-hand side (e.g. the admin job-queue badges) without restructuring
+ * the right-hand side (e.g. the maintainers' job-queue status line) without restructuring
  * it.
  */
 export function Footer({ children }: FooterProps) {
@@ -45,7 +45,7 @@ export function Footer({ children }: FooterProps) {
         </a>
       </span>
       {/* The right-hand side of the space-between row hosts optional status
-          content (the admin job-queue badges); empty for everyone else. */}
+          content (the maintainers' job-queue status line); empty for everyone else. */}
       {children}
     </Container>
   )

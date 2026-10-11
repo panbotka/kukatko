@@ -336,6 +336,27 @@ body {
   margin-top: auto;
 }
 
+/* The maintainers' job-queue status line on the right of the footer
+   (`JobQueueStatus`): one link holding an icon + phrase per non-empty state. It
+   inherits the footer's `.small` (14px — the old 11px badges were the complaint),
+   and each phrase sets its own colour (danger for failures, muted otherwise), so
+   the anchor adds no underline of its own; hover/focus underline the phrases,
+   where the underline takes each phrase's colour. The footer row wraps, so on a
+   phone the line drops onto its own row instead of squeezing the credits. */
+.kukatko-job-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 1rem;
+  row-gap: 0.25rem;
+  text-decoration: none;
+}
+
+.kukatko-job-status:hover .kukatko-job-status-item,
+.kukatko-job-status:focus-visible .kukatko-job-status-item {
+  text-decoration: underline;
+}
+
 /* The page shell — the routed content and the footer below it — is a Bootstrap
    `.container`, and the notch handling here has to *add* to its padding rather
    than take it over. Its horizontal padding is load-bearing: every `.row` inside

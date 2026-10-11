@@ -39,6 +39,23 @@ describe('Footer', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
+  it('keeps the credits intact next to the status content it hosts', () => {
+    // The maintainers' job-queue line (`JobQueueStatus`) is passed in as
+    // children; it sits beside the credits, never inside or instead of them.
+    render(
+      <I18nextProvider i18n={i18n}>
+        <Footer>
+          <a href="/system">17 jobs permanently failed</a>
+        </Footer>
+      </I18nextProvider>,
+    )
+    const footer = screen.getByRole('contentinfo')
+    expect(footer).toHaveTextContent('Operated by SDH Veselice · GitHub')
+    const status = screen.getByRole('link', { name: '17 jobs permanently failed' })
+    expect(footer).toContainElement(status)
+    expect(status).toHaveAttribute('href', '/system')
+  })
+
   it('hides the decorative GitHub icon from assistive technology', () => {
     renderFooter()
     const icon = screen.getByRole('link', { name: 'GitHub' }).querySelector('i.bi.bi-github')

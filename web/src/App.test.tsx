@@ -108,7 +108,7 @@ const viewerAuth = {
 /**
  * A signed-in admin: every governance power, but not the top of the ladder — the
  * operations routes (`/system` among them) stay closed. Used to pin down who the
- * footer's job-queue badges may link there.
+ * footer's job-queue status line may link there.
  */
 const adminAuth = {
   ...viewerAuth,
@@ -298,8 +298,8 @@ describe('routing', () => {
     expect(fetchPhotosMock).not.toHaveBeenCalled()
   })
 
-  it('keeps /system for maintainers, the audience the footer queue badge links there', async () => {
-    // The footer's job-queue badges are a link to /system and are rendered for
+  it('keeps /system for maintainers, the audience the footer queue status links there', async () => {
+    // The footer's job-queue status line is a link to /system, rendered for
     // `isMaintainer` only. This is the other end of that promise: an admin — the
     // nearest role below — is refused here, so nobody is offered a link to a page
     // that would answer them with a refusal.

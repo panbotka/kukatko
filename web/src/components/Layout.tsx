@@ -19,7 +19,7 @@ import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
 import { Icon } from './Icon'
-import { JobQueueBadges } from './JobQueueBadges'
+import { JobQueueStatus } from './JobQueueStatus'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
@@ -463,7 +463,7 @@ export function Layout() {
           <Outlet />
         </Container>
         <Footer>
-          <JobQueueBadges />
+          <JobQueueStatus />
         </Footer>
       </div>
       {/* Phone only: the everyday destinations as a fixed bottom strip, so they

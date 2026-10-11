@@ -28,11 +28,14 @@
     "githubTitle": "View the project's source code on GitHub",
     "jobs": {
       "link": "Background work: {{summary}} — open System status",
-      "idle": "idle",
-      "queued": "waiting",
-      "running": "in progress",
-      "failed": "failed",
-      "dead": "permanently failed"
+      "dead_one": "{{count}} job permanently failed",
+      "dead_other": "{{count}} jobs permanently failed",
+      "failed_one": "{{count}} job failed",
+      "failed_other": "{{count}} jobs failed",
+      "queued_one": "{{count}} job queued",
+      "queued_other": "{{count}} jobs queued",
+      "running_one": "{{count}} job running",
+      "running_other": "{{count}} jobs running"
     }
   },
   "nav": {
