@@ -4,6 +4,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../auth/AuthContext'
+import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -19,7 +20,9 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
  *
  * Rendering rather than redirecting keeps the URL on the route that was asked
  * for — the same reasoning as {@link ForbiddenPage} — so retrying, or reloading
- * once the signal is back, lands on the page the reader wanted.
+ * once the signal is back, lands on the page the reader wanted. Drawn with the
+ * shared {@link EmptyState}, like its siblings {@link NotFoundPage} and
+ * {@link ForbiddenPage}.
  */
 export function OfflinePage() {
   const { t } = useTranslation()
@@ -48,23 +51,35 @@ export function OfflinePage() {
   }
 
   return (
-    <div className="text-center py-5" data-testid="offline-page">
-      <Icon name="wifi-off" className="fs-1 text-secondary mb-3 d-block" />
-      <h1 className="kk-page-title mb-3">{t('offline.title')}</h1>
-      <p className="text-secondary mb-2">{t('offline.message')}</p>
-      <p className="text-secondary mb-4">{t('offline.notSignedOut')}</p>
-      <Button
-        variant="primary"
-        disabled={retrying}
-        onClick={() => {
-          void retry()
-        }}
-      >
-        {retrying && (
-          <Spinner animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
-        )}
-        {retrying ? t('offline.retrying') : t('offline.retry')}
-      </Button>
+    <div data-testid="offline-page">
+      <EmptyState
+        titleAs="h1"
+        icon={<Icon name="wifi-off" />}
+        title={t('offline.title')}
+        // The hint is one paragraph: the two sentences read as one explanation
+        // (what failed, and what it did not do), not as two separate notes.
+        hint={`${t('offline.message')} ${t('offline.notSignedOut')}`}
+        action={
+          <Button
+            variant="primary"
+            disabled={retrying}
+            onClick={() => {
+              void retry()
+            }}
+          >
+            {retrying && (
+              <Spinner
+                animation="border"
+                size="sm"
+                role="status"
+                aria-hidden="true"
+                className="me-2"
+              />
+            )}
+            {retrying ? t('offline.retrying') : t('offline.retry')}
+          </Button>
+        }
+      />
     </div>
   )
 }

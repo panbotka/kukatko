@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -88,5 +88,14 @@ describe('OfflinePage', () => {
 
     const button = await screen.findByRole('button', { name: 'Try again' })
     expect(button).toBeEnabled()
+  })
+
+  it('is drawn with the shared empty state', () => {
+    renderOffline(authValue())
+
+    const empty = within(screen.getByTestId('offline-page')).getByTestId('empty-state')
+    expect(empty.querySelector('.kk-empty-state__icon .bi-wifi-off')).not.toBeNull()
+    expect(within(empty).getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(within(empty).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 })

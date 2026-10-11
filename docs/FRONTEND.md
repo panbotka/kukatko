@@ -683,7 +683,9 @@ here.
   a single-line hint and an optional action button, centered in the space the collection would occupy.
   Props `title` (required), `hint?`, `icon?` (default = the outline of an empty frame, `aria-hidden`),
   `action?` (usually the same button the filled view offers), `size?` `'md' | 'sm'`
-  (a compact variant for a tile/narrow panel), `className?`. Titles/hints are **translated by the caller**
+  (a compact variant for a tile/narrow panel), `className?`, `titleAs?` `'p' | 'h1'` (default `p`;
+  `h1` where the empty state *is* the page — `NotFoundPage`, `ForbiddenPage`, `OfflinePage` — so the
+  page keeps its one heading). Titles/hints are **translated by the caller**
   (each page has its own i18n key so the copy stays concrete). Replaced the bare one-liner
   „Bez náhledu" and every hand-assembled `text-center py-5` block across
   pages (`LibraryPage`, `SearchPage`, `AlbumsPage`, `AlbumDetailPage`, `LabelsPage`,
@@ -4910,11 +4912,15 @@ here.
   the tally from the leaderboard, the thumbnail link to the photo, the blank well with no link, the filter
   changes the URL and refetches, the empty state, a non-admin alert) + `styles/reviewDecisions.test.ts`
   (the 96/64 px square and the focus ring),
-  `NotFoundPage`,
+  `NotFoundPage` (the `*` route: the shared `EmptyState` with a `compass` glyph, the title as its `h1`,
+  one sentence and a primary link home — the same treatment as every other "nothing here" screen.
+  i18n `notFound.*` (cs/en). Tests: `NotFoundPage.test.tsx` (renders through `EmptyState`, both
+  languages, the link points at `/`)),
   `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
   current role may not enter, so `/review`, `/duplicates`, `/upload-links`, `/import`, … no longer bounce a
-  viewer to the library without a word. Styled like `NotFoundPage`, its sibling in „this page is not
-  for you": a heading, one sentence and a link back to the library. It takes the demanded role
+  viewer to the library without a word. Drawn with `EmptyState` (`shield-lock` glyph, `titleAs="h1"`)
+  like `NotFoundPage`, its sibling in „this page is not for you": a heading, one sentence and a link
+  back to the library. It takes the demanded role
   (`GuardRole` = `Role` without `viewer`, the floor nobody can miss) and prints **its own sentence per
   role** — `forbidden.message.{curator,editor,admin,maintainer}` — rather than interpolating a role name into
   one template: Czech would have to decline it („roli editora" / „roli správce systému") and the way
@@ -4926,15 +4932,15 @@ here.
   two fullscreen guarded routes (`/review`, `/duplicates/compare`) the guard sits outside `Layout`, so
   it renders bare, without the navbar; the link back to the library is then the only way out, which is
   why it is unconditional. i18n `forbidden.*` (cs/en). Tests: `ForbiddenPage.test.tsx` (the sentence
-  names the role actually demanded, the way out points at `/`, the Czech default),
+  names the role actually demanded, the way out points at `/`, the Czech default, the `EmptyState` shape),
   plus the guard-level checks in `ProtectedRoute.test.tsx` and `App.test.tsx` below),
   `OfflinePage` (**no route of its own** either — `RequireAuth` renders it in place of the route when
   `useAuth().status` is `unreachable`, i.e. the session probe failed at the transport and whether the
   visitor is signed in is simply not known. It replaces a redirect to `/login`, which was the worst
   answer available: the reader had not been signed out, the form could not reach a server to check
   anything, and every attempt came back "invalid username or password" — that is how a lost signal
-  came to read as a forgotten password. Same shape as `ForbiddenPage` (a `wifi-off` glyph, a heading,
-  two sentences, one control) and the same reason for rendering rather than navigating — the URL
+  came to read as a forgotten password. Same shape as `ForbiddenPage` — `EmptyState` with a `wifi-off` glyph,
+  an `h1`, the two sentences joined into one hint, one control — and the same reason for rendering rather than navigating — the URL
   stays on the route asked for, so a retry lands on the page the reader wanted. The copy is held to
   what the shell cache actually holds: the app opens, the photos and the library do not
   (`offline.message`). `offline.notSignedOut` is worded to be true either way — *nothing checked the
@@ -4942,7 +4948,7 @@ here.
   this screen is in a position to know. The button awaits
   `useAuth().refresh()`, which never rejects — a still-unreachable backend re-files the same status
   and the button comes back. i18n `offline.*` (cs/en). Tests: `OfflinePage.test.tsx` (the wording,
-  the retry, the button freeing itself) plus `ProtectedRoute.test.tsx` and `App.coldLaunch.test.tsx`),
+  the retry, the button freeing itself, the `EmptyState` shape) plus `ProtectedRoute.test.tsx` and `App.coldLaunch.test.tsx`),
   `components/savedsearch/` = `SaveSearchModal` (a modal for naming when saving a new view
   or renaming an existing saved search; a saved search is **personal**, like the favourite heart, so
   nothing here is role-gated and a viewer saves views like anyone else. Both footer buttons are

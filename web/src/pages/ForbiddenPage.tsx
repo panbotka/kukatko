@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
+import { EmptyState } from '../components/EmptyState'
+import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { type GuardRole } from '../services/auth'
@@ -32,8 +34,9 @@ const MESSAGE_KEYS = {
  *
  * Rendering rather than redirecting keeps the URL on the protected route, so a
  * reload shows the same explanation and Back returns to wherever the user came
- * from. Styled like {@link NotFoundPage} — its sibling in "this page is not for
- * you": one heading, one sentence, one way out.
+ * from. Drawn with the shared {@link EmptyState}, like {@link NotFoundPage} —
+ * its sibling in "this page is not for you": one heading, one sentence, one way
+ * out.
  *
  * On the two fullscreen guarded routes (`/review`, `/duplicates/compare`) the
  * guard sits outside `Layout`, so this renders without the navbar; the link back
@@ -44,12 +47,18 @@ export function ForbiddenPage({ role }: { role: GuardRole }) {
   useDocumentTitle(t('forbidden.title'))
 
   return (
-    <div className="text-center py-5" data-testid="forbidden-page">
-      <h1 className="kk-page-title mb-3">{t('forbidden.title')}</h1>
-      <p className="text-secondary mb-4">{t(MESSAGE_KEYS[role])}</p>
-      <Link to={LIBRARY_PATH} className="btn btn-primary">
-        {t('forbidden.back')}
-      </Link>
+    <div data-testid="forbidden-page">
+      <EmptyState
+        titleAs="h1"
+        icon={<Icon name="shield-lock" />}
+        title={t('forbidden.title')}
+        hint={t(MESSAGE_KEYS[role])}
+        action={
+          <Link to={LIBRARY_PATH} className="btn btn-primary">
+            {t('forbidden.back')}
+          </Link>
+        }
+      />
     </div>
   )
 }

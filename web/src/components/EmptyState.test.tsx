@@ -55,4 +55,18 @@ describe('EmptyState', () => {
 
     expect(screen.getByTestId('empty-state')).not.toHaveClass('kk-empty-state--sm')
   })
+
+  it('renders the title as a paragraph by default', () => {
+    render(<EmptyState title="Prázdno" />)
+
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
+  })
+
+  it('renders the title as the page heading when asked to', () => {
+    render(<EmptyState title="Stránka nenalezena" titleAs="h1" />)
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Stránka nenalezena' }),
+    ).toBeInTheDocument()
+  })
 })

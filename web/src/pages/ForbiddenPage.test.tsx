@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -60,5 +60,14 @@ describe('ForbiddenPage', () => {
     expect(
       screen.getByText('Na tuhle část potřebujete roli editora — požádejte o ni správce.'),
     ).toBeInTheDocument()
+  })
+
+  it('is drawn with the shared empty state', () => {
+    renderPage('curator')
+
+    const empty = within(screen.getByTestId('forbidden-page')).getByTestId('empty-state')
+    expect(empty.querySelector('.kk-empty-state__icon .bi-shield-lock')).not.toBeNull()
+    expect(within(empty).getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(within(empty).getByRole('link')).toBeInTheDocument()
   })
 })

@@ -55,6 +55,12 @@ export interface EmptyStateProps {
   size?: 'md' | 'sm'
   /** Extra classes merged onto the root element. */
   className?: string
+  /**
+   * The element the title renders as. `p` (default) for an empty collection
+   * inside a page that already has its heading; `h1` when the empty state *is*
+   * the page (404, forbidden, offline), so the page keeps its one heading.
+   */
+  titleAs?: 'p' | 'h1'
 }
 
 /**
@@ -71,7 +77,15 @@ export interface EmptyStateProps {
  * would tower over the chips it stands in for and shove the panel around as the
  * lists fill — those keep a muted one-line caption instead.
  */
-export function EmptyState({ title, hint, icon, action, size = 'md', className }: EmptyStateProps) {
+export function EmptyState({
+  title,
+  hint,
+  icon,
+  action,
+  size = 'md',
+  className,
+  titleAs: Title = 'p',
+}: EmptyStateProps) {
   const classes = ['kk-empty-state', 'kk-appear']
   if (size === 'sm') {
     classes.push('kk-empty-state--sm')
@@ -85,11 +99,11 @@ export function EmptyState({ title, hint, icon, action, size = 'md', className }
       <span className="kk-empty-state__icon" aria-hidden="true">
         {icon ?? <DefaultIcon />}
       </span>
-      <p
+      <Title
         className={`kk-empty-state__title ${size === 'sm' ? 'kk-text-caption' : 'kk-section-title'}`}
       >
         {title}
-      </p>
+      </Title>
       {hint !== undefined && hint !== '' && (
         <p className="kk-empty-state__hint kk-text-caption">{hint}</p>
       )}
