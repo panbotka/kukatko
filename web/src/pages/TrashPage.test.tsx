@@ -181,8 +181,31 @@ describe('TrashPage', () => {
     renderTrash()
     await screen.findByRole('link', { name: 'a.jpg' })
 
-    expect(screen.getByRole('button', { name: 'Delete older than…' })).toBeInTheDocument()
-    expect(screen.getByRole('spinbutton')).toHaveValue(180)
+    // A labelled form, not a bare number: the field is named by its visible
+    // label and described by its unit, and the form carries the same name.
+    const form = screen.getByRole('form', { name: 'Delete photos older than' })
+    const input = within(form).getByRole('spinbutton', { name: 'Delete photos older than' })
+    expect(input).toHaveValue(180)
+    expect(input).toHaveAccessibleDescription('days')
+    expect(within(form).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    // Empty trash is its own action, outside the retention form.
+    expect(within(form).queryByRole('button', { name: 'Empty trash' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Empty trash' })).toBeInTheDocument()
+  })
+
+  it('asks for confirmation when the day count is submitted with Enter', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg', 1)]))
+    renderTrash()
+    await screen.findByRole('link', { name: 'a.jpg' })
+
+    const input = screen.getByRole('spinbutton', { name: 'Delete photos older than' })
+    await user.clear(input)
+    await user.type(input, '45{Enter}')
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/older than 45 days/)).toBeInTheDocument()
+    expect(olderMock).not.toHaveBeenCalled()
   })
 
   it('purges items older than the entered day count after confirmation, then toasts and reloads', async () => {
@@ -193,11 +216,11 @@ describe('TrashPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
 
     // Change the age from the 180-day default to 30 days.
-    const input = screen.getByRole('spinbutton')
+    const input = screen.getByRole('spinbutton', { name: 'Delete photos older than' })
     await user.clear(input)
     await user.type(input, '30')
 
-    await user.click(screen.getByRole('button', { name: 'Delete older than…' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
     // The mutation does not fire until the dialog is confirmed.
     expect(olderMock).not.toHaveBeenCalled()
 
@@ -264,7 +287,8 @@ describe('TrashPage', () => {
     expect(screen.getByRole('button', { name: 'Restore' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Empty trash' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Delete forever' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete older than…' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('form', { name: 'Delete photos older than' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
   })
 })

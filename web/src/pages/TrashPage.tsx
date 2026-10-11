@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Col from 'react-bootstrap/Col'
@@ -88,6 +88,9 @@ export function TrashPage() {
   // ad-hoc value the admin sets each time, never persisted to config.
   const [olderDaysInput, setOlderDaysInput] = useState(String(DEFAULT_OLDER_THAN_DAYS))
   const olderDays = Math.max(0, Math.floor(Number(olderDaysInput) || 0))
+  const olderInputId = useId()
+  const olderLabelId = useId()
+  const olderUnitId = useId()
 
   // Always scope the listing to archived photos; the remaining filters/sort apply
   // on top. The reload key forces a refetch after a restore or purge mutates the set.
@@ -186,63 +189,71 @@ export function TrashPage() {
   }
 
   const selected = [...selection.selected]
+  // Both purges are pointless (and would only confirm a no-op) over an empty trash.
+  const purgeDisabled = pending || (status === 'ready' && photos.length === 0)
 
   return (
     <>
-      <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+      <div className="d-flex justify-content-between align-items-center mb-3 gap-2">
         <h1 className="kk-page-title mb-0">{t('trash.title')}</h1>
-        <div className="d-flex gap-1 flex-wrap">
-          {!selection.active && (
-            <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
-              {t('selection.enter')}
-            </Button>
-          )}
-          {isAdmin && (
-            <div className="d-flex align-items-center gap-1">
-              <InputGroup size="sm" style={{ width: 'auto' }}>
+        {!selection.active && (
+          <Button variant="outline-secondary" size="sm" onClick={selection.enable}>
+            {t('selection.enter')}
+          </Button>
+        )}
+      </div>
+
+      {isAdmin && (
+        <div className="kk-trash-purge mb-3">
+          <Form
+            className="kk-trash-purge__older"
+            aria-labelledby={olderLabelId}
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!purgeDisabled) {
+                setConfirm({ mode: 'older', days: olderDays })
+              }
+            }}
+          >
+            <Form.Label id={olderLabelId} htmlFor={olderInputId} className="kk-trash-purge__label">
+              {t('trash.olderThan.label')}
+            </Form.Label>
+            <div className="kk-trash-purge__controls">
+              <InputGroup className="kk-trash-purge__days">
                 <Form.Control
+                  id={olderInputId}
                   type="number"
                   min={0}
                   step={1}
                   inputMode="numeric"
                   value={olderDaysInput}
                   disabled={pending}
-                  aria-label={t('trash.olderThan.inputLabel')}
+                  aria-describedby={olderUnitId}
                   onChange={(e) => {
                     // Digits only — the backend requires an integer ≥ 0; an empty
                     // field is allowed (it derives to 0) so it can be retyped.
                     setOlderDaysInput(e.currentTarget.value.replace(/\D/g, ''))
                   }}
-                  style={{ maxWidth: '5rem' }}
                 />
-                <InputGroup.Text>{t('trash.olderThan.days')}</InputGroup.Text>
+                <InputGroup.Text id={olderUnitId}>{t('trash.olderThan.days')}</InputGroup.Text>
               </InputGroup>
-              <Button
-                variant="outline-danger"
-                size="sm"
-                disabled={pending || (status === 'ready' && photos.length === 0)}
-                onClick={() => {
-                  setConfirm({ mode: 'older', days: olderDays })
-                }}
-              >
+              <Button type="submit" variant="outline-danger" disabled={purgeDisabled}>
                 {t('trash.olderThan.button')}
               </Button>
             </div>
-          )}
-          {isAdmin && (
-            <Button
-              variant="outline-danger"
-              size="sm"
-              disabled={pending || (status === 'ready' && photos.length === 0)}
-              onClick={() => {
-                setConfirm({ mode: 'empty' })
-              }}
-            >
-              {t('trash.emptyTrash')}
-            </Button>
-          )}
+          </Form>
+          <Button
+            variant="outline-danger"
+            className="kk-trash-purge__empty"
+            disabled={purgeDisabled}
+            onClick={() => {
+              setConfirm({ mode: 'empty' })
+            }}
+          >
+            {t('trash.emptyTrash')}
+          </Button>
         </div>
-      </div>
+      )}
 
       {selection.active && (
         <SelectionBar count={selection.count} onCancel={selection.disable}>

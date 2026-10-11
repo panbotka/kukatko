@@ -3620,3 +3620,74 @@ body {
     display: inline;
   }
 }
+
+/*
+ * The trash's permanent-delete controls (`pages/TrashPage.tsx`, admin+ only),
+ * kept apart from the page title so "Vybrat" is not read as part of them. A
+ * small panel holds two things: the retention purge — a visible label, then the
+ * day count with its unit and one "Smazat" button — and "Vyprázdnit koš".
+ *
+ * On a phone the panel stacks: the label sits above the field (two rows, never
+ * a ragged wrap), and "Vyprázdnit koš" spans the full width below it. The field
+ * stays at 16 px so iOS does not zoom into it on focus. From `md` up it is one
+ * line, with "Vyprázdnit koš" ranged right.
+ */
+.kk-trash-purge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-3);
+  padding: var(--kk-space-3);
+  background-color: var(--kk-surface-1);
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-md);
+}
+
+.kk-trash-purge__older {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-1);
+  min-width: 0;
+}
+
+.kk-trash-purge__label {
+  margin-bottom: 0;
+}
+
+.kk-trash-purge__controls {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--kk-space-2);
+}
+
+.kk-trash-purge__days {
+  flex-wrap: nowrap;
+  width: auto;
+}
+
+.kk-trash-purge__days .form-control {
+  width: 5.5rem;
+  flex: 0 0 auto;
+  font-size: 1rem;
+}
+
+.kk-trash-purge__empty {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .kk-trash-purge {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .kk-trash-purge__older {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--kk-space-2);
+  }
+
+  .kk-trash-purge__empty {
+    width: auto;
+    margin-inline-start: auto;
+  }
+}

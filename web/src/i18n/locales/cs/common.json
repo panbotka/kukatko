@@ -3248,9 +3248,9 @@
     "actionError": "Akce se nezdařila.",
     "unavailable": "Trvalé mazání je v konfiguraci serveru vypnuté.",
     "olderThan": {
-      "button": "Smazat starší než…",
+      "button": "Smazat",
       "days": "dní",
-      "inputLabel": "Smazat fotky starší než, ve dnech",
+      "label": "Smazat fotky starší než",
       "success_one": "Smazána {{count}} fotka",
       "success_few": "Smazány {{count}} fotky",
       "success_many": "Smazáno {{count}} fotky",

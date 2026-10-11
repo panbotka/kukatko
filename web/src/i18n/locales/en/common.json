@@ -3106,9 +3106,9 @@
     "actionError": "The action failed.",
     "unavailable": "Permanent deletion is disabled in the server configuration.",
     "olderThan": {
-      "button": "Delete older than…",
+      "button": "Delete",
       "days": "days",
-      "inputLabel": "Delete photos older than, in days",
+      "label": "Delete photos older than",
       "success_one": "Deleted {{count}} photo",
       "success_other": "Deleted {{count}} photos"
     },

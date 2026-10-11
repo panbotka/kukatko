@@ -4426,11 +4426,16 @@ here.
   `TrashPage` = `/trash` (editor+ sees the page) the trash: archived photos (a `useScopedPhotos`-style listing via
   `usePaginatedPhotos` scoped `archived=only`) in a `TrashCard` grid with `FilterBar`, **restore**
   (`unarchivePhoto`) is an editor action; **permanent deletion** (`purgePhoto`) individually and in bulk (`useSelection`
-  `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`) and **Smazat starší než…** are **admin+ only**
+  `SelectionBar`), **Vyprázdnit koš** (`emptyTrash`) and **Smazat fotky starší než** are **admin+ only**
   (the backend guard `RequireAdmin`), so an editor sees only Obnovit on the card and in the bar — the purge controls
   render behind `isAdmin` (the `TrashCard` prop `canPurge`); each permanent action goes through a confirmation `Modal`;
-  **Smazat starší než…** is a numeric field in days (default 180, ad-hoc, an integer ≥ 0, saved nowhere)
-  + a button → a confirmation modal (`trash.confirm.older` with the specific number of days) → `purgeTrashOlderThan(days)`
+  the purge controls sit in their own panel (`.kk-trash-purge`) below the title, which keeps only **Vybrat**:
+  a form named by its visible label **Smazat fotky starší než** (the field's `<label>`, the unit **dní** its
+  description) — a numeric field in days (default 180, ad-hoc, an integer ≥ 0, saved nowhere, 16 px so iOS does
+  not zoom) + one **Smazat** submit button (Enter submits too) — and **Vyprázdnit koš** as a separate danger
+  action; on a phone the label sits above the field and Vyprázdnit koš spans the width, from `md` up it is one
+  line with Vyprázdnit koš ranged right (read from the CSS by `styles/trashPurge.test.ts`); submitting
+  → a confirmation modal (`trash.confirm.older` with the specific number of days) → `purgeTrashOlderThan(days)`
   (`POST /trash/purge-older?days=N&confirm=true`), on success `useToast` success with the deleted count
   (`trash.olderThan.success`) + a list reload, on error an error toast (503 → `trash.unavailable`);
   every mutation reloads the list and clears the selection **once the batch settles** (in a `finally`,
