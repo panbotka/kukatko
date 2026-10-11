@@ -7,9 +7,10 @@ here.
 <!-- BODY BEGIN -->
 - **Frontend layout:** `web/` (Vite + React 19 + TS): `web/src/` with `components/`
   (`Layout` = navbar shell with a user menu (Můj účet, **Statistiky** `/stats`, **Nápověda** `/help`,
-  **the build version**, the **„Správa" section**, Odhlásit se; the version is a `NavDropdown.ItemText` with `kk-menu-version`
-  — muted caption-sized text closing the account block, deliberately **not** an `Item`: it takes no click and no
-  focus while arrowing through the menu. Its value is `formatVersion(useCapabilities().version)`, so it
+  the **„Správa" section**, Odhlásit se, then **the build version**; the version is a `NavDropdown.ItemText` with
+  `kk-menu-version` — a muted caption-sized footnote under sign-out, labelled `nav.versionLabel` („Verze 0.30.0"),
+  deliberately **not** an `Item`: it takes no click, no hover and no
+  focus while arrowing through the menu. Its value is `bareVersion(useCapabilities().version)`, so it
   costs no request when the menu opens and simply isn't rendered until (or unless) the capabilities call
   answers; the commit belongs to `/help`, the menu is too narrow for it. **„Správa"** is a `NavDropdown.Divider`
   + a `NavDropdown.Header` (`kk-menu-section` — the drawer's uppercase caption label, so both widths name
@@ -171,9 +172,9 @@ here.
   the last keeping the bar's filled CTA look), **Procházet**, **Nástroje** (the same per-item
   `toolsGroup()` as the bar, dropped when it comes back `null`),
   and **Účet** (`nav.sections.account` — Můj účet, Nápověda, the
-  keyboard-shortcuts overlay, **the build version**, the **„Správa" group** and Odhlásit se, i.e. the user dropdown unfolded; the
-  version is a plain `<p class="kk-navdrawer__version">` above them — no row, no tap target,
-  same `formatVersion(useCapabilities().version)` value the bar shows). **„Správa" is a nested
+  keyboard-shortcuts overlay, the **„Správa" group**, Odhlásit se and **the build version**, i.e. the user dropdown unfolded; the
+  version is a plain `<p class="kk-navdrawer__version">` under sign-out — no row, no tap target,
+  same labelled `bareVersion(useCapabilities().version)` value the bar shows). **„Správa" is a nested
   `<section>` + `<h3>` inside Účet** (`kk-navdrawer__subsection`, fenced by a hairline above *and* below so
   sign-out stays out of it), holding the same `adminItems()` rows in the same place the desktop user menu
   holds them — between the account rows and sign-out. Promoting it to a top-level section would have put it

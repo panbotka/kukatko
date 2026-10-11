@@ -6,7 +6,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
-import { formatVersion } from '../lib/version'
+import { bareVersion } from '../lib/version'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { Icon } from './Icon'
@@ -94,7 +94,7 @@ export function MobileNavDrawer({
   // The build the server runs, printed above sign-out exactly as the desktop
   // user menu prints it. It comes from the capabilities the shell already holds,
   // so opening the drawer costs no request.
-  const version = formatVersion(useCapabilities().version)
+  const version = bareVersion(useCapabilities().version)
   // The tasks waiting on the reader, worn by the Úkoly row exactly as the bar's
   // dropdown entry wears it (and the hamburger that opened this drawer).
   const waitingOnMe = useWaitingOnMe()
@@ -191,14 +191,6 @@ export function MobileNavDrawer({
             {renderRow(STATS_ITEM)}
             {renderRow(HELP_ITEM)}
             <KeyboardShortcutsHelp variant="row" />
-            {/* The build, as text rather than a row: no button, no link, nothing
-                the thumb or the keyboard can land on — an unobtrusive fact above
-                the one destructive action in the drawer. */}
-            {version && (
-              <p className="kk-navdrawer__version" title={t('nav.versionTitle')}>
-                {version}
-              </p>
-            )}
             {/* Administration: one labelled group between the account rows and
                 sign-out, in the same place the desktop user menu puts it. A
                 nested `section` rather than a top-level one, because it belongs
@@ -221,6 +213,14 @@ export function MobileNavDrawer({
               <Icon name="box-arrow-right" className="kk-navdrawer__icon" />
               <span className="kk-navdrawer__label">{t('nav.logout')}</span>
             </button>
+            {/* The build, as text rather than a row: no button, no link, nothing
+                the thumb or the keyboard can land on — a labelled footnote under
+                the last action, where the desktop user menu puts it too. */}
+            {version && (
+              <p className="kk-navdrawer__version" title={t('nav.versionTitle')}>
+                {t('nav.versionLabel', { version })}
+              </p>
+            )}
           </section>
         )}
       </Offcanvas.Body>

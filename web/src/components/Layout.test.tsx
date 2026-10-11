@@ -637,21 +637,23 @@ describe('Layout navbar', () => {
     expect(mine).toHaveAttribute('title', 'Show the photos I am on')
   })
 
-  it('prints the build version in the user menu, above sign-out', async () => {
+  it('prints the labelled build version at the bottom of the user menu', async () => {
     const user = userEvent.setup()
     renderLayout(auth(), '/', withVersion)
 
     await user.click(screen.getByRole('button', { name: 'User One' }))
 
-    // A semantic version is shown the customary way, and the commit is left for
-    // the help page — the menu is a narrow place.
-    const version = screen.getByText('v0.5.1')
+    // Labelled, so a bare build name (`stage`, `dev`) is not mistaken for a
+    // broken entry; the commit is left for the help page — the menu is narrow.
+    const version = screen.getByText('Version 0.5.1')
     expect(version).toHaveAttribute('title', 'App version')
+    expect(version).toHaveClass('kk-menu-version')
     expect(version.textContent).not.toContain('77fba72')
 
-    // Order is what the user asked for: the version sits above sign-out.
+    // A footnote under the last action, not a row among the navigation items.
     const logout = screen.getByRole('button', { name: 'Sign out' })
-    expect(precedes(version, logout)).toBe(true)
+    expect(precedes(logout, version)).toBe(true)
+    expect(precedes(version, screen.getByRole('link', { name: 'Help' }))).toBe(false)
   })
 
   it('shows the version as inert text, not a menu item', async () => {
@@ -662,7 +664,7 @@ describe('Layout navbar', () => {
 
     // It is a `dropdown-item-text`: no role, no href, nothing to activate, and
     // no tab stop — arrowing or tabbing through the menu passes it by.
-    const version = screen.getByText('v0.5.1')
+    const version = screen.getByText('Version 0.5.1')
     expect(version.tagName).toBe('SPAN')
     expect(version).toHaveClass('dropdown-item-text')
     expect(version.closest('a, button')).toBeNull()

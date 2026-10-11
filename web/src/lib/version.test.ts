@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { commitUrl, formatVersion } from './version'
+import { bareVersion, commitUrl, formatVersion } from './version'
 
 describe('formatVersion', () => {
   it('prefixes a semantic version with v', () => {
@@ -21,6 +21,21 @@ describe('formatVersion', () => {
 
   it('returns null for an empty version', () => {
     expect(formatVersion({ version: '   ', commit: 'abc1234' })).toBeNull()
+  })
+})
+
+describe('bareVersion', () => {
+  it('returns a semantic version without the v prefix', () => {
+    expect(bareVersion({ version: ' 0.30.0 ', commit: 'abc1234' })).toBe('0.30.0')
+  })
+
+  it('returns a named build verbatim', () => {
+    expect(bareVersion({ version: 'stage', commit: 'none' })).toBe('stage')
+  })
+
+  it('returns null when there is nothing to show', () => {
+    expect(bareVersion(undefined)).toBeNull()
+    expect(bareVersion({ version: '  ', commit: 'abc1234' })).toBeNull()
   })
 })
 

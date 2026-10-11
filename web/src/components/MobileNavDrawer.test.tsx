@@ -258,19 +258,19 @@ describe('MobileNavDrawer', () => {
     expect(within(drawer).getByRole('button', { name: 'Sign out' })).toBeInTheDocument()
   })
 
-  it('prints the build version in the account block, above sign-out', async () => {
+  it('prints the labelled build version in the account block, under sign-out', async () => {
     const user = userEvent.setup()
     renderShell(auth(), '/', withVersion)
     const drawer = await openDrawer(user)
 
     const account = within(drawer).getByRole('region', { name: 'Account' })
-    const version = within(account).getByText('v0.5.1')
+    const version = within(account).getByText('Version 0.5.1')
     expect(version).toHaveAttribute('title', 'App version')
 
-    // Above the one destructive action in the drawer, as on the desktop menu.
+    // A footnote under the last action, as on the desktop menu.
     const logout = within(account).getByRole('button', { name: 'Sign out' })
     expect(
-      version.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING,
+      logout.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeGreaterThan(0)
   })
 
@@ -281,11 +281,11 @@ describe('MobileNavDrawer', () => {
 
     // Not a link, not a button, not even a row: a paragraph the thumb and the
     // keyboard both pass over. It also stays out of the drawer's link list.
-    const version = within(drawer).getByText('v0.5.1')
+    const version = within(drawer).getByText('Version 0.5.1')
     expect(version.tagName).toBe('P')
     expect(version).not.toHaveClass('kk-navdrawer__link')
     expect(version.closest('a, button')).toBeNull()
-    expect(drawerHrefs(drawer)).not.toContain('v0.5.1')
+    expect(drawerHrefs(drawer)).not.toContain('Version 0.5.1')
   })
 
   it('shows no version when the capabilities call has not answered', async () => {

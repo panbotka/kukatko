@@ -932,9 +932,21 @@ body {
   white-space: nowrap;
 }
 
-/* The build version above sign-out: a fact, not a row. It takes the rows' inline
+/* The build version under sign-out: a fact, not a row. It takes the rows' inline
    padding so it lines up with the section heading rather than floating loose,
-   and stays small and muted so it never competes with the actions around it. */
+   and stays small and muted so it never competes with the actions above it.
+   The desktop user menu's `ItemText` gets the same treatment — Bootstrap paints
+   `.dropdown-item-text` in the link colour at full size, which made the bare
+   version read as a broken entry; it is not interactive, so no hover either. */
+.kk-menu-version {
+  padding-top: var(--kk-space-1);
+  color: var(--kk-text-muted);
+  font-size: var(--kk-font-size-caption);
+  white-space: nowrap;
+  cursor: default;
+  user-select: text;
+}
+
 .kk-navdrawer__version {
   margin-bottom: 0;
   padding: var(--kk-space-1) var(--kk-space-3);

@@ -29,6 +29,18 @@ export function formatVersion(info: VersionInfo | undefined): string | null {
 }
 
 /**
+ * Returns the bare version a build reports (`0.30.0`, `dev`, `stage`) for a
+ * caller that labels it itself — the user menu's "Verze 0.30.0" — where the
+ * `v` prefix of {@link formatVersion} would read as a typo after the word.
+ *
+ * Returns `null` when there is nothing to show, exactly as `formatVersion` does.
+ */
+export function bareVersion(info: VersionInfo | undefined): string | null {
+  const raw = info?.version.trim() ?? ''
+  return raw === '' ? null : raw
+}
+
+/**
  * Returns the URL of the commit a build was made from, or `null` when the commit
  * is not a real hash (a development build's `none`, an empty value, or anything
  * that is not a hex sha) — the caller then shows no link at all.

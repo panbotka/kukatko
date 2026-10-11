@@ -124,6 +124,7 @@
     },
     "stats": "Statistiky",
     "versionTitle": "Verze aplikace",
+    "versionLabel": "Verze {{version}}",
     "myPhotos": "Moje fotky",
     "tasks": "Úkoly",
     "uploadLinks": "Odkazy pro nahrávání"

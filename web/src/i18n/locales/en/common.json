@@ -116,6 +116,7 @@
     },
     "stats": "Statistics",
     "versionTitle": "App version",
+    "versionLabel": "Version {{version}}",
     "myPhotos": "My photos",
     "tasks": "Tasks",
     "uploadLinks": "Upload links"

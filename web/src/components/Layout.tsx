@@ -13,7 +13,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
-import { formatVersion } from '../lib/version'
+import { bareVersion } from '../lib/version'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
@@ -136,7 +136,7 @@ export function Layout() {
   // The build the server runs, printed at the foot of the user menu. It rides
   // along on the capabilities the shell already holds, so opening the menu costs
   // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
-  const version = formatVersion(useCapabilities().version)
+  const version = bareVersion(useCapabilities().version)
   // How many tasks wait on the reader — the one count the bar carries. Zero
   // (or unknown) draws nothing.
   const waitingOnMe = useWaitingOnMe()
@@ -378,19 +378,6 @@ export function Layout() {
                         they hang off the user menu rather than a gated group. */}
                     {renderMenuItem(STATS_ITEM)}
                     {renderMenuItem(HELP_ITEM)}
-                    {/* The build, as a plain line of text closing the account
-                        block: an `ItemText` is not a menu item, so it neither
-                        takes focus when arrowing through the menu nor invites a
-                        click. The full form — with the commit — lives on the
-                        help page. */}
-                    {version && (
-                      <NavDropdown.ItemText
-                        className="kk-menu-version"
-                        title={t('nav.versionTitle')}
-                      >
-                        {version}
-                      </NavDropdown.ItemText>
-                    )}
                     {/* Administration, once two dropdowns of its own in the bar:
                         one labelled section between the account block and
                         sign-out. Rendered only for the entries the role actually
@@ -415,6 +402,20 @@ export function Layout() {
                       <Icon name="box-arrow-right" />
                       {t('nav.logout')}
                     </NavDropdown.Item>
+                    {/* The build, as a small muted footnote under the last action:
+                        an `ItemText` is not a menu item, so it neither takes focus
+                        when arrowing through the menu nor invites a click, and the
+                        "Verze" label says what the bare string (`stage`, `dev`)
+                        is. The full form — with the commit — lives on the help
+                        page. */}
+                    {version && (
+                      <NavDropdown.ItemText
+                        className="kk-menu-version"
+                        title={t('nav.versionTitle')}
+                      >
+                        {t('nav.versionLabel', { version })}
+                      </NavDropdown.ItemText>
+                    )}
                   </NavDropdown>
                 </Nav>
               )}
