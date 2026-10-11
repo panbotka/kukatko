@@ -40,6 +40,13 @@ export interface SearchQueryInputProps {
   placeholder?: string
   /** Focus the input on mount (the search page's primary control). */
   autoFocus?: boolean
+  /**
+   * Whether the empty, focused box offers the whole history (default true).
+   * The search page turns it off because its start state already lists the
+   * recent searches under the box: the dropdown would only repeat them on top
+   * of that list. Typed prefixes still bring their matching searches along.
+   */
+  historyWhenEmpty?: boolean
 }
 
 /**
@@ -139,6 +146,7 @@ export function SearchQueryInput({
   onRun,
   placeholder,
   autoFocus,
+  historyWhenEmpty = true,
 }: SearchQueryInputProps) {
   const { t } = useTranslation()
   // Where the reader has moved the highlight, or null while they have not touched
@@ -165,8 +173,8 @@ export function SearchQueryInput({
   )
 
   const historyMatches = useMemo(
-    () => (open ? matchHistory(history.entries, value) : []),
-    [open, history.entries, value],
+    () => (open && (historyWhenEmpty || !empty) ? matchHistory(history.entries, value) : []),
+    [open, historyWhenEmpty, empty, history.entries, value],
   )
 
   // The rows, in the order they are offered: what the reader has searched for

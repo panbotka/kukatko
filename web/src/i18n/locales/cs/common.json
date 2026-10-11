@@ -1037,6 +1037,10 @@
     "degraded": "Vyhledávání podle obsahu je teď dočasně nedostupné. Zobrazujeme výsledky podle textu.",
     "semanticUnavailable": "Vyhledávání podle obsahu je teď nedostupné — služba pro rozpoznávání obsahu neběží.",
     "prompt": "Zadejte hledaný výraz.",
+    "start": {
+      "examples": "Příklady dotazů",
+      "insertTitle": "Vložit „{{query}}“ do hledání"
+    },
     "empty": {
       "title": "Nic nenalezeno",
       "hint": "Zkuste jiný výraz nebo upravte filtry.",

@@ -17,6 +17,7 @@ import { SearchEmptyState } from '../components/search/SearchEmptyState'
 import { SearchModeControl } from '../components/search/SearchModeControl'
 import { SearchQueryHelp } from '../components/search/SearchQueryHelp'
 import { SearchQueryInput } from '../components/search/SearchQueryInput'
+import { SearchStartState } from '../components/search/SearchStartState'
 import { QueryNoticesAlert } from '../components/search/QueryNoticesAlert'
 import { UnknownFiltersAlert } from '../components/search/UnknownFiltersAlert'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
@@ -197,6 +198,13 @@ export function SearchPage() {
     }
     setView({ q: next }, queryHistory.submitted())
   }
+  // An example from the start state goes into the box after whatever is already
+  // typed there, and the caret follows it so the reader can adapt the term; the
+  // typing debounce then runs it like any other edit.
+  const insertTerm = (term: string) => {
+    setText((prev) => (prev.trim() === '' ? term : `${prev.trimEnd()} ${term}`))
+    document.getElementById('search-query')?.focus()
+  }
 
   return (
     <>
@@ -209,16 +217,20 @@ export function SearchPage() {
           {/* Saved searches live here rather than in the navbar: they are a
               search-page concern, and `/saved` stays reachable from the menu. */}
           <SavedSearchesDropdown />
-          <Button
-            variant="outline-secondary"
-            size="sm"
-            title={t('savedSearches.saveViewTitle')}
-            onClick={() => {
-              setSavingView(true)
-            }}
-          >
-            {t('savedSearches.saveView')}
-          </Button>
+          {/* Nothing asked is nothing to save: the button waits for a query,
+              while the dropdown of searches already saved stays. */}
+          {hasQuery && (
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              title={t('savedSearches.saveViewTitle')}
+              onClick={() => {
+                setSavingView(true)
+              }}
+            >
+              {t('savedSearches.saveView')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -246,6 +258,9 @@ export function SearchPage() {
             id="search-query"
             value={text}
             autoFocus
+            // The start state below lists the recent searches while the box is
+            // empty; the dropdown repeating them would cover that list.
+            historyWhenEmpty={false}
             placeholder={t('search.placeholder')}
             onChange={setText}
             onRun={(next) => {
@@ -317,10 +332,18 @@ export function SearchPage() {
 
       <QueryNoticesAlert notices={notices} />
 
+      {/* Before anything is asked: the prompt, plus the reader's recent
+          searches (picking one runs it, a submit like Enter) and example
+          queries (picking one only fills the box). */}
       {status === 'idle' && (
-        <div className="text-center text-secondary py-5">
-          <p className="mb-0 kk-section-title">{t('search.prompt')}</p>
-        </div>
+        <SearchStartState
+          onRun={(next) => {
+            setText(next)
+            submitQuery(next)
+            recordSearch(next)
+          }}
+          onInsert={insertTerm}
+        />
       )}
 
       {status === 'loading' && <GridSkeleton />}

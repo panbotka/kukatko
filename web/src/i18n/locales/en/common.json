@@ -1019,6 +1019,10 @@
     "degraded": "Search by content is temporarily unavailable right now. Showing text-based results instead.",
     "semanticUnavailable": "Content search is unavailable right now — the service that reads photo content is offline.",
     "prompt": "Enter a search term.",
+    "start": {
+      "examples": "Example queries",
+      "insertTitle": "Insert “{{query}}” into the search"
+    },
     "empty": {
       "title": "Nothing found",
       "hint": "Try a different term or adjust the filters.",

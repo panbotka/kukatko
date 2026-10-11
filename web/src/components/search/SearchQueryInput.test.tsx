@@ -84,7 +84,13 @@ function album(title: string, photoCount: number): AlbumSummary {
  * Renders the input as the search page does — controlled, with a form around it —
  * and exposes what was typed and what was run so both can be asserted.
  */
-function Harness({ onRun }: { onRun?: (value: string) => void }) {
+function Harness({
+  onRun,
+  historyWhenEmpty,
+}: {
+  onRun?: (value: string) => void
+  historyWhenEmpty?: boolean
+}) {
   const [text, setText] = useState('')
   const [ran, setRan] = useState<string | null>(null)
   return (
@@ -98,6 +104,7 @@ function Harness({ onRun }: { onRun?: (value: string) => void }) {
         id="q"
         value={text}
         onChange={setText}
+        historyWhenEmpty={historyWhenEmpty}
         onRun={(value) => {
           setRan(value)
           onRun?.(value)
@@ -108,10 +115,10 @@ function Harness({ onRun }: { onRun?: (value: string) => void }) {
   )
 }
 
-function renderInput(onRun?: (value: string) => void) {
+function renderInput(onRun?: (value: string) => void, historyWhenEmpty?: boolean) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <Harness onRun={onRun} />
+      <Harness onRun={onRun} historyWhenEmpty={historyWhenEmpty} />
     </I18nextProvider>,
   )
 }
@@ -145,6 +152,22 @@ describe('SearchQueryInput — recent searches', () => {
     // Clicking one both fills the box and runs it.
     expect(screen.getByRole('combobox')).toHaveValue('svatba 1974')
     expect(screen.getByTestId('ran')).toHaveTextContent('svatba 1974')
+  })
+
+  it('keeps the empty box quiet when the page lists the history itself', async () => {
+    const user = userEvent.setup()
+    historyMock.mockResolvedValue([entry('svatba 1974'), entry('person:Anna')])
+    renderInput(undefined, false)
+    await user.click(screen.getByRole('combobox'))
+
+    await waitFor(() => {
+      expect(historyMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+    // A typed prefix still brings its matching search along.
+    await user.type(screen.getByRole('combobox'), 'sv')
+    expect(await screen.findByRole('option', { name: 'svatba 1974' })).toBeInTheDocument()
   })
 
   it('shows no dropdown at all when there is no history yet', async () => {

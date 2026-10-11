@@ -1671,6 +1671,16 @@ body {
   color: var(--kk-text);
 }
 
+/* The search page's start state: recent searches and example queries as pills
+   that wrap. A long remembered query truncates inside its pill instead of
+   stretching the row past a phone's width. */
+.kk-search-start__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
 /* Library filter bar. The search field is the visual anchor (it grows to fill
    the header row); advanced filters live in a collapsible panel / offcanvas and
    surface as removable chips. These rules only cover what Bootstrap utilities

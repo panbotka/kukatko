@@ -77,7 +77,8 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   "Uploaded by" line links straight to everything that person contributed.
 - **Saved searches** ("smart albums") and a per-account search history, so a query composed on the
   laptop is one keystroke away on the phone; the saved-searches list shows each one's query under its
-  name, with a badge for the filters, mode or sort it also carries. Every view lives in the URL: Back, a second tab, and a
+  name, with a badge for the filters, mode or sort it also carries. An empty search page offers the
+  recent searches and a few example queries to start from. Every view lives in the URL: Back, a second tab, and a
   bookmark all behave the way the rest of the web does.
 
 ### People

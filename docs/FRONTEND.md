@@ -2558,7 +2558,17 @@ here.
   the label stops overstating them. **`totalVideos={totalVideos}`** rides beside it
   (the response's `video_total`) so a video-only search reads „Počet videí: 7" rather than „Počet fotek: 7";
   the ranked wording names no medium at all, so it is unaffected.
-  idle/loading/empty/error states (an empty result is `SearchEmptyState` — it **repeats the query**
+  idle/loading/empty/error states (the idle state is `SearchStartState` (`components/search/`): the
+  one-line `search.prompt` plus **the reader's recent searches** — the same `useSearchHistory` source the
+  palette's „Nedávno hledané" uses, at most `START_RECENT_LIMIT`=10, picking one fills the box, runs it and
+  records it like Enter — and **example queries** (`SEARCH_EXAMPLES`: `year:1965`, `person:Jarmila`,
+  `album:"Léto 2024"`, `label:kostel`, `text:veselice`, untranslated query literals) that only **insert**
+  the term after whatever is typed and focus the box, so the debounce runs it; both rows are wrapping pill
+  buttons on phone and desktop alike, and a failed/empty history drops its row; „Vymazat historii" sits
+  beside its heading. The page passes `historyWhenEmpty={false}` to `SearchQueryInput`, so the autofocused
+  empty box no longer opens a dropdown repeating that list over it (typed prefixes still match). The header's
+  **„Uložit pohled" is hidden until a query exists** — nothing asked is nothing to save — while
+  `SavedSearchesDropdown` stays; an empty result is `SearchEmptyState` — it **repeats the query**
   (`search.empty.hintQuery` „Pro «dotaz» jsme nic nenašli.") and offers the steps that actually fix one; the
   error is `ErrorState` with Retry); the field speaks **the search language**
   (`q` = free text + `klíč:hodnota` filters, grammar in docs/API.md „Vyhledávací jazyk (q=)“;

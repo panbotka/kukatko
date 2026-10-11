@@ -218,6 +218,74 @@ describe('SearchPage', () => {
     expect(searchMock).not.toHaveBeenCalled()
   })
 
+  it('starts with the recent searches and the example queries', async () => {
+    historyMock.mockResolvedValue([{ query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' }])
+    renderSearch()
+
+    const recent = await screen.findByRole('region', { name: 'Recent searches' })
+    expect(within(recent).getByRole('button', { name: 'svatba 1974' })).toBeInTheDocument()
+    const examples = screen.getByRole('region', { name: 'Example queries' })
+    expect(within(examples).getByRole('button', { name: 'person:Jarmila' })).toBeInTheDocument()
+    expect(searchMock).not.toHaveBeenCalled()
+    // The focused empty box does not repeat the list in a dropdown over it.
+    expect(screen.queryByRole('option', { name: 'svatba 1974' })).not.toBeInTheDocument()
+  })
+
+  it('runs and remembers a recent search picked from the start state', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    historyMock.mockResolvedValue([{ query: 'svatba 1974', searched_at: '2026-08-09T12:00:00Z' }])
+    const user = userEvent.setup()
+    renderSearch()
+
+    const recent = await screen.findByRole('region', { name: 'Recent searches' })
+    await user.click(within(recent).getByRole('button', { name: 'svatba 1974' }))
+
+    expect(screen.getByLabelText('Search term')).toHaveValue('svatba 1974')
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.getByTestId('search')).toHaveTextContent('q=svatba+1974')
+    expect(recordMock).toHaveBeenCalledWith('svatba 1974')
+  })
+
+  it('puts an example query into the box after what is typed', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const examples = screen.getByRole('region', { name: 'Example queries' })
+    await user.click(within(examples).getByRole('button', { name: 'year:1965' }))
+    const input = screen.getByLabelText('Search term')
+    expect(input).toHaveValue('year:1965')
+    expect(input).toHaveFocus()
+    // An example is a shape to adapt, not a submit: nothing is remembered.
+    expect(recordMock).not.toHaveBeenCalled()
+  })
+
+  it('appends an example to a query already in the box', async () => {
+    searchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderSearch()
+
+    const input = screen.getByLabelText('Search term')
+    // Typed but not yet committed: the start state is still on screen.
+    fireEvent.change(input, { target: { value: 'svatba ' } })
+    const examples = screen.getByRole('region', { name: 'Example queries' })
+    await user.click(within(examples).getByRole('button', { name: 'label:kostel' }))
+    expect(input).toHaveValue('svatba label:kostel')
+  })
+
+  it('offers saving the view only once there is a query', () => {
+    renderSearch()
+    expect(screen.queryByRole('button', { name: 'Save view' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Saved searches/ })).toBeInTheDocument()
+  })
+
+  it('offers saving the view for a query', async () => {
+    searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderSearch('/search?q=beach')
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.getByRole('button', { name: 'Save view' })).toBeInTheDocument()
+  })
+
   it('quotes the query in the browser tab, so a saved search is recognisable', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderSearch('/search?q=beach')
@@ -595,7 +663,8 @@ describe('SearchPage', () => {
     const user = userEvent.setup()
     renderSearch('/search')
 
-    // The page focuses the box on arrival, so the history is already offered.
+    // The typed prefix brings the matching search along.
+    await user.type(screen.getByLabelText('Search term'), 'sv')
     await user.click(await screen.findByRole('option', { name: 'svatba 1974' }))
 
     expect(screen.getByLabelText('Search term')).toHaveValue('svatba 1974')
