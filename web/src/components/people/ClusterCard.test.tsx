@@ -14,6 +14,9 @@ import { ClusterCard } from './ClusterCard'
 const TOUCH_TARGET_PX = 44
 const REM_PX = 16
 
+/** The smallest a sample crop may be drawn at: room for the corner disc and a face. */
+const SAMPLE_MIN_PX = 64
+
 /**
  * The narrowest the name field may ask to be: the Czech placeholder „Nové nebo
  * existující jméno…" measures 202 px in the app's own face (Lato 1rem, measured in
@@ -74,8 +77,8 @@ describe('ClusterCard', () => {
     expect(onRemoveFace).toHaveBeenCalledWith({ photo_uid: 'p2', face_index: 2 })
   })
 
-  it('enlarges a 48px sample to the whole photo and detaches it from there', async () => {
-    // A 48px square cut from a tile is not something anyone can answer „is this
+  it('enlarges a 64px sample to the whole photo and detaches it from there', async () => {
+    // A 64px square cut from a tile is not something anyone can answer „is this
     // the same person?" from — so the crop opens the frame it came from.
     const user = userEvent.setup()
     const { onRemoveFace } = renderCard()
@@ -127,29 +130,39 @@ describe('ClusterCard', () => {
     expect(submit.parentElement).toBe(input.parentElement)
   })
 
-  it('leaves the remove control sized by the stylesheet, next to its sample', () => {
-    // The inline `width: 18px; height: 18px` this button used to carry was exactly
-    // what the touch floor could not undo (it caps height, nothing caps width), so
-    // the geometry has to stay in CSS where the coarse-pointer layout can replace it.
+  it('leaves the remove control sized by the stylesheet, over its own sample', () => {
+    // Geometry and colour live in `clusters.css`, so the guard below can read them;
+    // and it is no `.btn`, whose app-wide touch floor (a 2.75rem `min-height` under a
+    // coarse pointer) once stretched the corner ✕ into a red sliver down the face.
     const { button } = renderCard()
 
     expect(button).toHaveClass('kk-cluster-sample__remove')
+    expect(button).not.toHaveClass('btn')
+    expect(button).toHaveAttribute('type', 'button')
+    expect(button).toHaveAttribute('title', 'Remove this face from the group')
     expect(button.style.width).toBe('')
     expect(button.style.height).toBe('')
-    // A sibling of the crop, not a child of it: the touch layout can then put the
-    // control below the face instead of on top of it.
+    // A sibling of the crop inside the positioned sample, so the corner it sits
+    // in is unmistakably this face's.
     const sample = button.parentElement
     expect(sample).toHaveClass('kk-cluster-sample')
     expect(sample?.querySelector('img')).toHaveAttribute('alt', 'Sample face')
   })
+
+  it('draws the samples large enough to recognise and to carry the disc', () => {
+    renderCard()
+
+    const crop = screen.getByRole('img', { name: 'Sample face' }).parentElement
+    expect(lengthPx(crop?.style.width ?? '')).toBeGreaterThanOrEqual(SAMPLE_MIN_PX)
+  })
 })
 
 /**
- * jsdom applies no media queries, so the two pointer layouts are pinned by reading
- * the stylesheet: a compact corner badge on a mouse, and — the bug this guards — a
- * full-size touch target that is *out of the corner* on a phone. The old inline
- * 18px square met the app-wide `@media (pointer: coarse) .btn { min-height }` floor
- * and became an 18×44 red sliver down the middle of the face being judged.
+ * jsdom applies no media queries and no `:hover`, so the control is pinned by
+ * reading the stylesheet. One design on every device — a 28–32px muted disc in the
+ * crop's corner, danger only when aimed at — whose touch target is grown by an
+ * invisible pseudo-element rather than by resizing the disc. It replaced an 18px
+ * red badge on desktop and a 44px red block under every face on a phone.
  */
 describe('cluster sample remove control', () => {
   const css = readCss('src/components/people/clusters.css')
@@ -163,35 +176,45 @@ describe('cluster sample remove control', () => {
     return declarations(body)
   }
 
+  const disc = rule(css, /\.kk-cluster-sample\s+\.kk-cluster-sample__remove\s*(?=\{)/)
+  const aimed = rule(
+    css,
+    /\.kk-cluster-sample\s+\.kk-cluster-sample__remove:hover[^{]*:focus-visible[^{]*:active[^{]*(?=\{)/,
+  )
   const coarse =
     ruleBody(css, /@media\s*\(pointer:\s*coarse\)\s*/, /kk-cluster-sample__remove/) ?? ''
-  const fine = rule(css, /\.kk-cluster-sample\s+\.kk-cluster-sample__remove\s*(?=\{)/)
-  const touch = rule(coarse, /\.kk-cluster-sample\s+\.kk-cluster-sample__remove\s*(?=\{)/)
 
-  it('keeps the compact corner ✕ on a fine pointer', () => {
-    expect(fine.get('position')).toBe('absolute')
-    expect(fine.get('top')).toBe('0')
-    expect(fine.get('right')).toBe('0')
-    expect(lengthPx(fine.get('width') ?? '')).toBe(18)
-    expect(lengthPx(fine.get('height') ?? '')).toBe(18)
+  it('is a round disc of 28–32px in the top-right corner of the crop', () => {
+    expect(disc.get('position')).toBe('absolute')
+    expect(disc.get('top')).toBeDefined()
+    expect(disc.get('right')).toBeDefined()
+    expect(disc.get('border-radius')).toBe('50%')
+    for (const side of ['width', 'height']) {
+      const px = lengthPx(disc.get(side) ?? '')
+      expect(px).toBeGreaterThanOrEqual(28)
+      expect(px).toBeLessThanOrEqual(32)
+    }
   })
 
-  it('gives touch a full target that does not overlay the face', () => {
-    // Out of the corner entirely: not absolutely positioned over the crop any more.
-    expect(touch.get('position')).toBe('static')
-    // ...and comfortably tappable in BOTH dimensions, not just the height the
-    // global touch floor would have set.
-    expect(lengthPx(touch.get('min-width') ?? '')).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
-    expect(lengthPx(touch.get('min-height') ?? '')).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
-    // The fine-pointer 18px square must be released, or it would cap the target.
-    expect(touch.get('width')).toBe('100%')
-    expect(touch.get('height')).toBe('auto')
+  it('is muted at rest and turns danger only on hover, focus or press', () => {
+    expect(disc.get('background-color')).toBe('var(--kk-photo-plate-strong)')
+    expect(disc.get('color')).toBe('var(--kk-on-photo)')
+    expect(aimed.get('background-color')).toBe('var(--kk-danger)')
+    expect(aimed.get('color')).toBe('var(--kk-on-danger)')
   })
 
-  it('stacks the sample so the control sits under the face on touch', () => {
-    const sample = rule(coarse, /\.kk-cluster-sample\s*(?=\{)/)
-    expect(sample.get('display')).toBe('flex')
-    expect(sample.get('flex-direction')).toBe('column')
+  it('keeps the disc its size on touch and grows only its target', () => {
+    // Nothing in the coarse block resizes or moves the disc itself...
+    expect(ruleBody(coarse, /\.kk-cluster-sample__remove\s*(?=\{)/)).toBeUndefined()
+    // ...the target is an invisible pseudo-element, sized and centred by translate:
+    // an inset pseudo is laid out against the padding box and would drift.
+    const target = rule(coarse, /\.kk-cluster-sample__remove::before\s*(?=\{)/)
+    expect(target.get('position')).toBe('absolute')
+    expect(target.get('top')).toBe('50%')
+    expect(target.get('left')).toBe('50%')
+    expect(target.get('transform')).toBe('translate(-50%, -50%)')
+    expect(lengthPx(target.get('width') ?? '')).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
+    expect(lengthPx(target.get('height') ?? '')).toBeGreaterThanOrEqual(TOUCH_TARGET_PX)
   })
 })
 

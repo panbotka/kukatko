@@ -1,60 +1,82 @@
 /*
  * Face-cluster review cards. The one thing that needs real CSS here is the
- * per-sample "this face does not belong" control: it has to be a compact corner
- * badge on a mouse and a proper finger target on a phone, and those two are
- * different layouts, not the same box at two sizes.
+ * per-sample "this face does not belong" control: one design on every device —
+ * a small dark disc in the crop's corner that turns danger only once it is
+ * aimed at — whose finger target grows on touch without the disc doing so.
  */
 
-/* One sample: the 48px face crop and its remove control. `position: relative` is
-   the containing block for the corner badge below. */
+/* One sample: the 64px face crop and its remove control. `position: relative` is
+   the containing block for the corner disc below. */
 .kk-cluster-sample {
   position: relative;
 }
 
 /*
- * Mouse / fine pointer (also the default where the pointer media features are
- * unsupported): a small ✕ tucked into the thumbnail's top-right corner. It is
- * out of flow, so the sample strip stays as dense as it has always been.
+ * The remove disc: out of flow, over the crop's top-right corner, so the sample
+ * strip stays as dense as it has always been. A plain `<button>`, not a `.btn` —
+ * the app-wide touch floor in `app.css` (a 2.75rem `min-height` on every `.btn`
+ * under a coarse pointer) would stretch a corner disc into a tall sliver down the
+ * face being judged; the touch target is grown below, by a pseudo-element.
  *
- * Written as a descendant selector so it outranks Bootstrap's own `.btn` /
- * `.btn-sm` box regardless of how the two stylesheets end up ordered.
+ * Muted at rest: a strip of red discs shouts "delete" over every face before the
+ * user has decided anything. The danger colour is the answer to *aiming* at it.
  */
 .kk-cluster-sample .kk-cluster-sample__remove {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: 18px;
-  height: 18px;
-  min-width: 0;
-  min-height: 0;
+  top: var(--kk-space-1);
+  right: var(--kk-space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
   padding: 0;
-  line-height: 1;
+  border: 1px solid color-mix(in srgb, var(--kk-on-photo) 35%, transparent);
+  border-radius: 50%;
+  background-color: var(--kk-photo-plate-strong);
+  color: var(--kk-on-photo);
   font-size: var(--kk-font-size-caption);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--kk-duration-fast) var(--kk-ease-standard),
+    border-color var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-cluster-sample .kk-cluster-sample__remove:hover:not(:disabled),
+.kk-cluster-sample .kk-cluster-sample__remove:focus-visible,
+.kk-cluster-sample .kk-cluster-sample__remove:active:not(:disabled) {
+  border-color: var(--kk-danger);
+  background-color: var(--kk-danger);
+  color: var(--kk-on-danger);
+}
+
+.kk-cluster-sample .kk-cluster-sample__remove:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: var(--kk-focus-ring-offset);
+}
+
+.kk-cluster-sample .kk-cluster-sample__remove:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /*
- * Touch: an 18px corner badge is un-hittable, and the app-wide touch floor in
- * `app.css` (a 2.75rem `min-height` on every `.btn` under a coarse pointer) would
- * stretch it into a ~18px-wide, ~44px-tall red sliver running down the middle of
- * the very face the user is being asked to judge — obscuring it while still
- * being too narrow to tap. So on a coarse pointer the control leaves the corner
- * entirely and becomes an action row under the sample: a real ~44px target in
- * both dimensions that covers nothing.
+ * Touch: the disc keeps its size, and an invisible pseudo-element lifts the
+ * target to the 44px floor. Sized and translated from the centre rather than
+ * inset: an absolutely positioned pseudo is laid out against the padding box, so
+ * insets computed from the visible size would come up short by twice the border
+ * and drift off-centre.
  */
 @media (pointer: coarse) {
-  .kk-cluster-sample {
-    display: flex;
-    flex-direction: column;
-    gap: var(--kk-space-1);
-  }
-
-  .kk-cluster-sample .kk-cluster-sample__remove {
-    position: static;
-    width: 100%;
-    height: auto;
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-    font-size: var(--kk-font-size-body);
+  .kk-cluster-sample .kk-cluster-sample__remove::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
   }
 }
 

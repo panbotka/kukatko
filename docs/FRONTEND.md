@@ -4256,17 +4256,21 @@ here.
   the title row is `flex-md-nowrap`, because a flex line is laid out from each item's *max-content*
   width and the subtitle's is a whole sentence — with wrapping left on the stepper always dropped
   to a second line and `justify-content-between` never applied; optimistic removal after naming;
-  the per-sample ✕ is sized by **`components/people/clusters.css`**, not inline — on a fine
-  pointer it stays the compact 18px badge in the crop's corner, on `pointer: coarse` it drops
-  **out of the corner** into a full-width row under the 48px sample (`position: static`,
-  ≥ 2.75rem in both dimensions, the sample becomes a flex column), because the app-wide touch
-  floor (`.btn { min-height: 2.75rem }`) caps only the height and turned the inline 18px square
-  into a tall red sliver over the very face being judged; pinned by `ClusterCard.test.tsx`
-  (behavior + both pointer layouts read out of the stylesheet via `test/css.ts`);
+  the per-sample ✕ is **one design on every device**, styled wholly by
+  **`components/people/clusters.css`**: a 30px round disc (`x-lg` icon) over the top-right
+  corner of the **64px** sample, muted at rest (`--kk-photo-plate-strong` + `--kk-on-photo`)
+  and `--kk-danger` only on hover/focus/press. It is a plain `<button>`, not a `.btn`, because
+  the app-wide touch floor (`.btn { min-height: 2.75rem }`) would stretch a corner disc into a
+  sliver over the face being judged; on `pointer: coarse` the disc keeps its size and an
+  invisible `::before` (2.75rem, centred by `translate(-50%, -50%)`, never inset: a pseudo is
+  laid out against the padding box and an inset one drifts) lifts the target to 44×44. It replaced an 18px red badge on desktop
+  and a 44px red block under every face on a phone; pinned by `ClusterCard.test.tsx`
+  (behavior + the disc, its colours and the touch target read out of the stylesheet via
+  `test/css.ts`);
   **every crop in the card enlarges** — the representative and each sample are wrapped in
   `EnlargeButton`, and a click opens the cluster's own faces in `ReviewLightbox` at `fit_1280`
   with the face marked, ←/→ walking representative-then-samples in the order the card draws them
-  (48–72px squares are exactly what „is this the same person?" cannot be answered from); the
+  (64–72px squares are exactly what „is this the same person?" cannot be answered from); the
   overlay's footer repeats the sample's ✕ so a stray face can be detached from the picture that
   revealed it, and carries none for the representative, which the card does not offer either,
   `FacesPage` = `/faces` (editor/admin, a link in „Nástrojích") „najdi osobu mezi neotagovanými
@@ -7850,8 +7854,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `styles/pageGutter.test.ts`, which reads the shipped Bootstrap alongside `app.css` and checks the page
   shell's padding against the bleed it has to absorb (the `.row` margin, and the widest `g-*`/`gx-*` gutter
   the markup actually spends) rather than against a transcribed number,
-  and `components/people/ClusterCard.test.tsx`, which guards both pointer variants of
-  `clusters.css` the same way, plus the naming row's flex shorthands — the field's basis is what
+  and `components/people/ClusterCard.test.tsx`, which guards the remove disc in
+  `clusters.css` the same way (its size, its at-rest and aimed colours, the coarse-pointer target), plus the naming row's flex shorthands — the field's basis is what
   keeps it from collapsing beside its button, and no layout runs in jsdom to catch it).
   Routing in `App.tsx`: the route table lives in the exported `AppRoutes` (so that a test can mount it
   into a `MemoryRouter` and verify the wiring itself — `App.test.tsx`), `App` merely wraps it in

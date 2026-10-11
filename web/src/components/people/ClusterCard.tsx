@@ -52,7 +52,7 @@ function exampleKey(face: ExampleFace): string {
  * subject" action, and a free-text name field. Naming applies to every face in
  * the cluster at once — the fast path the People UI is built around.
  *
- * Every crop in the card enlarges: they are 48–72 px squares cut from a tile, and
+ * Every crop in the card enlarges: they are 64–72 px squares cut from a tile, and
  * the question they ask ("is this the same person as those?") is one nobody can
  * answer at that size. The overlay steps through this cluster's own faces and
  * carries the sample's ✕ in its footer, so the stray face can be detached from
@@ -114,17 +114,17 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
                   photoUid={face.photo_uid}
                   bbox={face.bbox}
                   label={t('clusters.sample')}
-                  size={48}
+                  size={64}
                   className="rounded"
                 />
               </EnlargeButton>
-              {/* Geometry lives in `clusters.css`, not inline: on a coarse pointer the
-                  control drops out of the thumbnail corner into a full-width row under
-                  the sample, which no single set of inline sizes can express. */}
-              <Button
-                variant="danger"
-                size="sm"
-                className="kk-cluster-sample__remove d-inline-flex align-items-center justify-content-center"
+              {/* A plain button, styled wholly by `clusters.css`: one corner disc on
+                  every device, its touch target grown by a pseudo-element there —
+                  a `.btn` would pick up the app-wide touch floor and stretch it
+                  down the face being judged. */}
+              <button
+                type="button"
+                className="kk-cluster-sample__remove"
                 title={t('clusters.removeFace')}
                 disabled={busy}
                 aria-label={t('clusters.removeFace')}
@@ -132,8 +132,8 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
                   onRemoveFace({ photo_uid: face.photo_uid, face_index: face.face_index })
                 }}
               >
-                ✕
-              </Button>
+                <Icon name="x-lg" />
+              </button>
             </div>
           ))}
         </div>
