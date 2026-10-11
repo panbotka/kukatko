@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
@@ -10,6 +11,23 @@ import { declarations, readCss, ruleBody, zIndexOf } from '../test/css'
 
 import { Layout } from './Layout'
 import { MobileTabBar } from './MobileTabBar'
+
+// The palette the search tab opens asks for the query schema and the recent
+// searches as it mounts; neither may reach for the network here.
+vi.mock('../services/search', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/search')>()
+  return { ...actual, globalSearch: vi.fn(), fetchQuerySchema: vi.fn() }
+})
+
+vi.mock('../services/searchHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/searchHistory')>()
+  return {
+    ...actual,
+    fetchSearchHistory: vi.fn(),
+    recordSearch: vi.fn(),
+    clearSearchHistory: vi.fn(),
+  }
+})
 
 /** A minimal signed-in auth context; `canCurate` decides the Upload tab. */
 function auth(role: 'viewer' | 'curator' | 'editor'): AuthContextValue {
@@ -52,17 +70,28 @@ function mockViewport(narrow: boolean): void {
   }))
 }
 
+const { fetchQuerySchema } = await import('../services/search')
+const { fetchSearchHistory } = await import('../services/searchHistory')
+
 /** Renders the bar alone at `path`, so the active tab is the one under test. */
 function renderBar(role: 'viewer' | 'curator' | 'editor' = 'editor', path = '/') {
-  return render(
+  const onOpenSearch = vi.fn()
+  const view = render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(role)}>
         <MemoryRouter initialEntries={[path]}>
-          <MobileTabBar />
+          <MobileTabBar onOpenSearch={onOpenSearch} />
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
   )
+  return { ...view, onOpenSearch }
+}
+
+/** Prints the current location, so a test can prove nothing navigated. */
+function LocationDisplay() {
+  const location = useLocation()
+  return <div data-testid="loc">{`${location.pathname}${location.search}`}</div>
 }
 
 /** Renders the whole shell, to pin where the bar does (and does not) appear. */
@@ -73,7 +102,7 @@ function renderShell(path = '/') {
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="*" element={<div>page content</div>} />
+              <Route path="*" element={<LocationDisplay />} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -82,8 +111,15 @@ function renderShell(path = '/') {
   )
 }
 
+/** The tab bar's tabs, links and the search button alike, in slot order. */
+function tabsOf(bar: HTMLElement): HTMLElement[] {
+  return Array.from(bar.querySelectorAll<HTMLElement>('.kk-tabbar__tab'))
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  vi.mocked(fetchQuerySchema).mockResolvedValue([])
+  vi.mocked(fetchSearchHistory).mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -101,13 +137,18 @@ describe('MobileTabBar on a phone', () => {
 
     const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
     // The library is the homepage, so its tab points at the site root.
-    const tabs = ['Library', '/', 'Albums', '/albums', 'Search', '/search', 'Upload', '/upload']
-    for (let i = 0; i < tabs.length; i += 2) {
-      expect(screen.getByRole('link', { name: tabs[i] })).toHaveAttribute('href', tabs[i + 1])
+    const links = ['Library', '/', 'Albums', '/albums', 'Upload', '/upload']
+    for (let i = 0; i < links.length; i += 2) {
+      expect(screen.getByRole('link', { name: links[i] })).toHaveAttribute('href', links[i + 1])
     }
     // Four tabs at most: the bar is the everyday loop, not a second navbar, so
     // browse / review / tools / admin stay in the hamburger menu.
-    expect(bar.querySelectorAll('a')).toHaveLength(4)
+    expect(tabsOf(bar).map((tab) => tab.textContent)).toEqual([
+      'Library',
+      'Albums',
+      'Search',
+      'Upload',
+    ])
     expect(screen.queryByRole('link', { name: 'People' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
   })
@@ -115,13 +156,30 @@ describe('MobileTabBar on a phone', () => {
   it('spends the third slot on search rather than labels', () => {
     renderBar()
 
-    // Searching is what the top bar could only offer through an unlabelled
-    // magnifier a thumb never hovers; browsing by label is the rarer errand and
-    // keeps its row in the drawer.
-    const search = screen.getByRole('link', { name: 'Search' })
-    expect(search).toHaveAttribute('title', 'Search the photos')
+    // Browsing by label is the rarer errand and keeps its row in the drawer.
+    const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const search = screen.getByRole('button', { name: 'Search' })
+    expect(tabsOf(bar)[2]).toBe(search)
     expect(search.querySelector('i.bi.bi-search')).not.toBeNull()
     expect(screen.queryByRole('link', { name: 'Labels' })).not.toBeInTheDocument()
+  })
+
+  it('opens the global search palette from the search tab, not the /search page', async () => {
+    const user = userEvent.setup()
+    const { onOpenSearch } = renderBar()
+
+    // One search on a phone: the tab is the palette's door (the top bar drops
+    // its magnifier), and the /search page stays a drawer row. So the tab is a
+    // dialog-opening button, not a link anywhere.
+    expect(screen.queryByRole('link', { name: 'Search' })).not.toBeInTheDocument()
+    const search = screen.getByRole('button', { name: 'Search' })
+    expect(search).toHaveAttribute('aria-haspopup', 'dialog')
+    expect(search).toHaveAttribute(
+      'title',
+      'Search the whole library: photos, people, albums, labels',
+    )
+    await user.click(search)
+    expect(onOpenSearch).toHaveBeenCalledTimes(1)
   })
 
   it('gives every tab an icon, a label and an action tooltip', () => {
@@ -165,9 +223,7 @@ describe('MobileTabBar on a phone', () => {
 
     expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('navigation', { name: 'Primary navigation' }).querySelectorAll('a'),
-    ).toHaveLength(4)
+    expect(tabsOf(screen.getByRole('navigation', { name: 'Primary navigation' }))).toHaveLength(4)
   })
 
   it('publishes its height so the rest of the shell can keep clear of it', () => {
@@ -185,9 +241,38 @@ describe('MobileTabBar on a phone', () => {
     const { container } = renderShell()
 
     expect(container.querySelector('.kk-tabbar')).not.toBeNull()
-    // The top bar is untouched — the tab bar adds a second navigation, it does
-    // not replace the hamburger menu.
+    // The top bar stays — the tab bar adds a second navigation, it does not
+    // replace the hamburger menu.
     expect(container.querySelector('.navbar.kukatko-navbar')).not.toBeNull()
+  })
+
+  it('leaves the top bar without a magnifier, so the phone has one search', () => {
+    const { container } = renderShell()
+
+    expect(container.querySelector('.kukatko-search-trigger')).toBeNull()
+    const navbar = container.querySelector<HTMLElement>('.navbar.kukatko-navbar')
+    expect(navbar).not.toBeNull()
+    expect(within(navbar ?? document.body).queryByRole('button', { name: 'Search' })).toBeNull()
+    // The lone hamburger holds the trailing edge, under the thumb.
+    expect(container.querySelector('.navbar-toggler')).toHaveClass('ms-auto')
+  })
+
+  it('opens the palette from the search tab without navigating anywhere', async () => {
+    const user = userEvent.setup()
+    renderShell('/albums')
+
+    const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
+    await user.click(within(bar).getByRole('button', { name: 'Search' }))
+    const input = await screen.findByRole('combobox')
+    // The palette is state, not a route: the page underneath keeps its URL, so
+    // closing it leaves nothing on the history stack for Back to walk through.
+    expect(screen.getByTestId('loc')).toHaveTextContent('/albums')
+
+    fireEvent.keyDown(input, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    })
+    expect(screen.getByTestId('loc')).toHaveTextContent('/albums')
   })
 })
 
@@ -208,6 +293,8 @@ describe('MobileTabBar on desktop', () => {
     expect(container.querySelector('.kk-tabbar')).toBeNull()
     // …and therefore exactly one "Albums" link in the DOM, not two.
     expect(screen.getAllByRole('link', { name: 'Albums' })).toHaveLength(1)
+    // Desktop is unchanged: the magnifier still leads the bar.
+    expect(container.querySelector('.kukatko-search-trigger')).not.toBeNull()
   })
 })
 

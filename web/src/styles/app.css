@@ -760,9 +760,15 @@ body {
    targets are predictable to hit blind, `min-height` clears the 44px finger floor
    on its own (the app-wide `pointer: coarse` floor does not reach an `<a>` that is
    not a `.nav-link`), and `min-width: 0` lets a long label ellipsize instead of
-   widening its tab and pushing the row past the viewport. */
+   widening its tab and pushing the row past the viewport. The search tab is a
+   `<button>` (it opens the palette rather than navigating), so the browser's
+   button chrome — border, fill, font — is reset here and it reads as one of the
+   row. */
 .kk-tabbar__tab {
   flex: 1 1 0;
+  font: inherit;
+  background-color: transparent;
+  border: 0;
   min-width: 0;
   min-height: 2.75rem;
   display: flex;
@@ -2046,10 +2052,9 @@ body {
  * screen. It keeps the sunken well and the hairline so it still reads as a
  * control among the quiet nav links rather than as one more glyph.
  *
- * `margin-inline-start: auto` is the collapsed rule: with the brand gone the top
- * row is `[search] [hamburger]`, and the pair belongs together at the thumb end
- * instead of one control at each edge with a hole between them. From `lg` the
- * margin flips (below) and it leads the bar again, ahead of the nav.
+ * It exists only on the inline bar (`lg`+), where it leads the row ahead of the
+ * nav. Below that `Layout` does not render it at all — the tab bar's search tab
+ * opens the same palette there — so there is no collapsed placement to style.
  */
 .kukatko-search-trigger {
   display: inline-flex;
@@ -2058,7 +2063,7 @@ body {
   flex: 0 0 auto;
   min-width: 2.25rem;
   min-height: 2.25rem;
-  margin-inline-start: auto;
+  margin-inline-end: var(--kk-space-3);
   padding: 0;
   color: var(--kk-text-muted);
   background-color: var(--kk-surface-sunken);
@@ -2080,17 +2085,6 @@ body {
 .kukatko-search-trigger:focus-visible {
   outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
   outline-offset: var(--kk-focus-ring-offset);
-}
-
-/* From the navbar's own breakpoint (`lg`, see `Layout`) the bar unfolds and the
-   trigger leads it, so it stops hugging the trailing edge and just keeps a gap to
-   the first nav item. Below it the row is `[search] [hamburger]` and the pair
-   belongs together at the thumb end. */
-@media (min-width: 992px) {
-  .kukatko-search-trigger {
-    margin-inline-start: 0;
-    margin-inline-end: var(--kk-space-3);
-  }
 }
 
 /* The trigger keeps the slim 2.25rem box on a fine pointer but grows to the 44px

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -114,11 +115,17 @@ function LocationDisplay() {
   return <div data-testid="loc">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderCommand() {
+/** The palette's owner, as `Layout` is: it holds the open state. */
+function OwnedCommand({ showTrigger }: { showTrigger?: boolean }) {
+  const [open, setOpen] = useState(false)
+  return <SearchCommand open={open} onOpenChange={setOpen} showTrigger={showTrigger} />
+}
+
+function renderCommand({ showTrigger }: { showTrigger?: boolean } = {}) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={['/']}>
-        <SearchCommand />
+        <OwnedCommand showTrigger={showTrigger} />
         <input aria-label="unrelated field" />
         <LocationDisplay />
       </MemoryRouter>
@@ -177,6 +184,15 @@ describe('SearchCommand', () => {
     await waitFor(() => {
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     })
+  })
+
+  it('drops the magnifier when its owner opens the palette from elsewhere, keeping the shortcuts', async () => {
+    // The phone shell: the bottom tab bar is the palette's door there, so the top
+    // bar renders no trigger — but a keyboard still reaches the palette.
+    renderCommand({ showTrigger: false })
+    expect(screen.queryByRole('button', { name: 'Search' })).not.toBeInTheDocument()
+    fireEvent.keyDown(document.body, { key: '/' })
+    expect(await screen.findByRole('combobox')).toBeInTheDocument()
   })
 
   it('does not open on / while the user is typing in another field', () => {

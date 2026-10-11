@@ -917,12 +917,30 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
  * Cmd/Ctrl-K (neither hijacks typing: the `/` shortcut is suppressed while a text
  * field or a form dialog has focus, mirroring the app's other shortcuts), and both
  * chords are listed in the keyboard-shortcuts overlay that sits in the same bar.
- * The open state is local component state, so the palette never touches the
- * URL-driven view state and Back keeps working.
+ * The open state is plain React state, never the URL, so the palette touches
+ * none of the URL-driven view state: opening and closing it adds no history entry
+ * and Back keeps leaving the page it was opened over.
+ *
+ * That state is **the caller's** (`open` / `onOpenChange`) because the palette
+ * has a second door: on a phone the bottom tab bar's „Hledat" tab opens this
+ * very dialog, and the magnifier is dropped from the top bar there
+ * (`showTrigger={false}`) so the two doors are one experience instead of two
+ * controls with the same glyph leading to two different places. The shortcuts
+ * stay bound either way — a phone with a keyboard still gets `/` and Ctrl-K.
  */
-export function SearchCommand() {
+export function SearchCommand({
+  open,
+  onOpenChange,
+  showTrigger = true,
+}: {
+  /** Whether the palette is open. */
+  open: boolean
+  /** Asks the owner to open (`true`) or close (`false`) the palette. */
+  onOpenChange: (open: boolean) => void
+  /** Render the magnifier button; false keeps only the shortcuts and the dialog. */
+  showTrigger?: boolean
+}) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -932,7 +950,7 @@ export function SearchCommand() {
       // modifiers by design.
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        setOpen((value) => !value)
+        onOpenChange(!open)
         return
       }
       // `/` opens it too, but only when the user is not typing into a field and no
@@ -946,33 +964,35 @@ export function SearchCommand() {
         !isFormModalOpen()
       ) {
         event.preventDefault()
-        setOpen(true)
+        onOpenChange(true)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [])
+  }, [open, onOpenChange])
 
   return (
     <>
-      <button
-        type="button"
-        className="kukatko-search-trigger"
-        aria-label={t('searchCommand.open')}
-        title={t('searchCommand.triggerTitle')}
-        aria-keyshortcuts="/ Control+K Meta+K"
-        onClick={() => {
-          setOpen(true)
-        }}
-      >
-        <Icon name="search" />
-      </button>
+      {showTrigger && (
+        <button
+          type="button"
+          className="kukatko-search-trigger"
+          aria-label={t('searchCommand.open')}
+          title={t('searchCommand.triggerTitle')}
+          aria-keyshortcuts="/ Control+K Meta+K"
+          onClick={() => {
+            onOpenChange(true)
+          }}
+        >
+          <Icon name="search" />
+        </button>
+      )}
       <SearchCommandDialog
         show={open}
         onClose={() => {
-          setOpen(false)
+          onOpenChange(false)
         }}
       />
     </>

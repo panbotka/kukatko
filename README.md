@@ -56,7 +56,8 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   **Nothing has to be spelled with háčky, either:** every text filter folds accents on both sides, so
   `city:Chotemice` finds Chotěmice — and, the other way round, `text:pouť` finds a sign the reader read
   as "Pout".
-  **Nothing here has to be memorised:** the command palette (`/` or Cmd-K) completes the language as
+  **Nothing here has to be memorised:** the command palette (`/` or Cmd-K, and the „Hledat" tab at the
+  bottom of a phone — the full search page is the menu's „Hledání" there) completes the language as
   you write it — a half-typed word offers the filter keys starting with it, each explained in a line,
   and a key followed by a colon offers its values: the words it accepts, or the albums, labels and
   people your library actually holds. Tab or Enter finishes the filter and runs the whole query.

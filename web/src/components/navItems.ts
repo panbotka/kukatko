@@ -40,10 +40,12 @@ export interface NavGroup {
  *
  * **Hledání is a menu item, not just a shortcut.** The magnifier button in the bar
  * (see `SearchCommand`) opens the command palette and names its chords in a `title`
- * — which a phone never shows and a first-time desktop user has to hover to find.
- * The `/search` page behind this entry is the only place carrying the query-language
- * help and the search-mode selector, i.e. the app's strongest feature; it gets a
- * label like every other destination and the bare circle stays as the shortcut.
+ * — which a first-time desktop user has to hover to find. The `/search` page behind
+ * this entry is the only place carrying the query-language help and the search-mode
+ * selector, i.e. the app's strongest feature; it gets a label like every other
+ * destination and the bare circle stays as the shortcut. On a phone this entry is
+ * the drawer's row and the page's only door: the tab bar's search tab opens the
+ * palette there, and the top bar has no magnifier.
  */
 export const PRIMARY_ITEMS: NavEntry[] = [
   { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },

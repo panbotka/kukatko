@@ -192,13 +192,19 @@ describe('MobileNavDrawer', () => {
     renderShell(auth())
     const drawer = await openDrawer(user)
 
-    // On a phone the search page used to have no menu entry at all — its only
-    // door was the top bar's unlabelled magnifier, whose shortcut tooltip a
-    // touch screen never shows. Here it is a row of the everyday block.
+    // On a phone the drawer is the /search page's only door: the tab bar's
+    // search tab opens the global palette instead, and the top bar carries no
+    // magnifier. Here it is a row of the everyday block, a real navigation.
     const main = within(drawer).getByRole('region', { name: 'Main' })
     const search = within(main).getByRole('link', { name: 'Search' })
     expect(search).toHaveAttribute('href', '/search')
     expect(search).toHaveAttribute('title', 'Search the photos')
+    // …and the only link to it anywhere on the phone shell.
+    expect(
+      Array.from(document.querySelectorAll('a[href="/search"]')).filter(
+        (link) => !drawer.contains(link),
+      ),
+    ).toHaveLength(0)
 
     // Saved searches are smart albums: they belong beside the favorites, not a
     // dropdown deeper still inside the search page.

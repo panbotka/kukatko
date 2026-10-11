@@ -77,18 +77,20 @@ here.
   **The way home does not depend on a logo:** on `lg`+ it
   is the bar's first item **Knihovna** `/` (labelled, `end`-matched, `title` „Zobrazit knihovnu fotek"),
   below `lg` it is the leading tab of `MobileTabBar`, permanently under the thumb — one tap either way,
-  exactly as the mark was. The **hamburger closes the collapsed row** `[search] [hamburger]` instead of
-  opening it (last in the DOM); it is `display: none` on `lg`+, so the desktop bar is unmoved by that. It names
+  exactly as the mark was. The **hamburger is the whole collapsed row**, held at the trailing edge by
+  `ms-auto` (last in the DOM); it is `display: none` on `lg`+, so the desktop bar is unmoved by that. It names
   itself from the catalogue — `label={t('nav.openMenu')}` („Otevřít nabídku") — rather than leaving
   react-bootstrap's English `Toggle navigation` default on the one control a phone reader needs most.
   **The bar leads with global search** `SearchCommand` (`components/search/`) — since the same change a
   **compact icon button** (a 2.25rem magnifier, 2.75rem on `pointer: coarse`, guarded by
   `styles/tapTargets.test.ts`), not the old 16rem field-shaped pill: the control never takes a keystroke, it
   only opens a dialog, so it does not need to look like a place to type. It keeps the sunken well and the
-  hairline so it still reads as a control among the quiet nav links, and stays **outside the collapse** (on
-  mobile it survives the nav folding into the burger). Below `md` `margin-inline-start: auto` pairs it with
-  the hamburger at the trailing edge rather than leaving it alone on the left of the row the brand used to
-  open; from `md` the margin flips and it leads the bar ahead of the nav. Nothing on it is visible text, so
+  hairline so it still reads as a control among the quiet nav links, and leads the bar ahead of the nav
+  (`margin-inline-end`). **It is rendered on `lg`+ only** (`showTrigger={!drawerNav}`, since 2026-10-11): below
+  `lg` the tab bar's „Hledat" tab opens the same palette, so the phone has one search instead of two controls
+  with the same glyph two thumbs apart (UI/UX review 2026-10-11, #8). `Layout` therefore **owns the palette's
+  open state** (`paletteOpen`) and `SearchCommand` is controlled (`open` / `onOpenChange`); the `/` and
+  Cmd/Ctrl-K chords stay bound on every viewport. Nothing on it is visible text, so
   its name and its shortcut are stated outright: `aria-label` (`searchCommand.open`), `aria-keyshortcuts`
   and a `title` tooltip (`searchCommand.triggerTitle` = „Hledat v celé knihovně (klávesa / nebo Ctrl+K)")
   which is what replaces the keycap the field used to draw — both chords are listed in the
@@ -192,12 +194,19 @@ here.
   whole primary nav is folded into the burger — a phone, and since 2026-09-06 a portrait tablet too — every
   everyday destination costs an open-then-tap, and this pins them to the bottom edge where the thumb already is. Four tabs at most (`TABS`), the everyday loop only:
   **Knihovna** `/` (`end`-matched, otherwise the root's prefix match lights it up everywhere), **Alba** `/albums`,
-  **Hledat** `/search` (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
+  **Hledat** (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
   drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
-  row in the drawer: on a phone searching had no entry at all, while browsing by label is the rarer errand),
+  row in the drawer: browsing by label is the rarer errand). **Since 2026-10-11 the search tab is a `<button>`
+  that opens the global command palette** (`onOpenSearch` → `Layout`'s `paletteOpen`, `aria-haspopup="dialog"`,
+  tooltip `nav.titles.searchPalette`), not a link to `/search`: the phone used to have the palette behind the
+  top bar's magnifier *and* the `/search` page behind this tab, same glyph, nearly the same word. Now the tab
+  is the palette's only door on a phone (the magnifier is not rendered below `lg`) and the `/search` page is
+  the drawer's „Hledání" row. The palette is state, never a route, so opening and closing it adds no history
+  entry, while the drawer row is a real navigation Back returns from; the button wears the tabs' class with
+  the browser's button chrome reset (`font: inherit`, no border, no fill),
   **Nahrát** `/upload` (every signed-in role, so the bar always has four). Browse / Třídění /
   Nástroje / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
-  being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
+  being short enough to hit blind. Each route tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
   „you are here", and a 2.75rem (44px) touch target; the landmark is labelled `nav.tabBar` (cs/en).
   **Shown only below the navbar's `lg` expand breakpoint**, and the decision is made in JS

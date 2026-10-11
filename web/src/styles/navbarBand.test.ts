@@ -69,13 +69,4 @@ describe('the navbar band between the drawer and a roomy container', () => {
     expect(band).not.toMatch(/font-size:\s*0/)
     expect(band).not.toMatch(/\.nav-link\s*\{[^}]*display:\s*none/)
   })
-
-  it('flips the search trigger to the head of the bar at the same width', () => {
-    // Below the breakpoint the trigger hugs the trailing edge, paired with the
-    // hamburger; from it, it leads the bar. Keyed to the drawer breakpoint, or
-    // the collapsed row grows a hole between its two controls.
-    expect(mediaMin(/@media \(min-width: [\d.]+px\)(?! and)/, /\.kukatko-search-trigger/)).toBe(
-      barMin,
-    )
-  })
 })

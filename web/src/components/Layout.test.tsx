@@ -290,17 +290,21 @@ describe('Layout navbar', () => {
     expect(home.closest('.kk-tabbar')).not.toBeNull()
   })
 
-  it('pairs search with the hamburger on the phone row', () => {
+  it('gives the phone one search: the tab bar opens the palette, the top row is the hamburger', () => {
     mockViewport(true)
     renderLayout(auth())
 
-    // On a phone the nav folds into the drawer entirely, so the top row is just
-    // `[search] [hamburger]` — search first (the hamburger belongs on the
-    // trailing edge), and outside the collapse so it never folds away.
-    const search = screen.getByRole('button', { name: 'Search' })
+    // On a phone the nav folds into the drawer entirely and the magnifier is not
+    // rendered: the tab bar's search tab is the palette's door there, so the
+    // top row is the hamburger alone, held at the trailing edge.
+    const navbar = document.querySelector<HTMLElement>('.navbar.kukatko-navbar')
+    expect(navbar).not.toBeNull()
+    expect(navbar?.querySelector('.kukatko-search-trigger')).toBeNull()
     const toggle = screen.getByRole('button', { name: /open the menu/i })
-    expect(precedes(search, toggle)).toBe(true)
-    expect(search.closest('.navbar.kukatko-navbar')).not.toBeNull()
+    expect(toggle).toHaveClass('ms-auto')
+    // Exactly one "Search" button in the shell, and it is the tab bar's.
+    const search = screen.getByRole('button', { name: 'Search' })
+    expect(search.closest('.kk-tabbar')).not.toBeNull()
 
     // The bar did not bring the inline nav back with it: the only Albums link on
     // a phone is the bottom tab bar's.

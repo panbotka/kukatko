@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { TOOLS_GROUP, toolsGroup } from './navItems'
+import { PRIMARY_ITEMS, TOOLS_GROUP, toolsGroup } from './navItems'
 
 /** The routes of a narrowed group, or null when there is none. */
 function routes(roles: { canCurate: boolean; canWrite: boolean }): string[] | null {
@@ -34,5 +34,15 @@ describe('toolsGroup', () => {
     const group = toolsGroup({ canCurate: true, canWrite: false })
     expect(group?.id).toBe(TOOLS_GROUP.id)
     expect(group?.labelKey).toBe(TOOLS_GROUP.labelKey)
+  })
+})
+
+describe('PRIMARY_ITEMS', () => {
+  it('keeps the /search page a labelled destination, since the phone tab opens the palette', () => {
+    // The phone tab bar's search tab is the palette's door, so the drawer's
+    // everyday block — built from these entries — is the only way to the page.
+    const search = PRIMARY_ITEMS.find((entry) => entry.to === '/search')
+    expect(search?.labelKey).toBe('nav.search')
+    expect(search?.icon).toBe('search')
   })
 })

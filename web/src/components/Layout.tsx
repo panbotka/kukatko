@@ -79,14 +79,20 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * {@link MobileTabBar}, permanently under the thumb. Both are one tap, exactly as
  * the mark was.
  *
- * Leading the bar — outside the collapse, so it survives the nav folding into the
- * hamburger — is the global {@link SearchCommand}: a compact icon button, since
- * all it does is open the command palette (`/` or Cmd/Ctrl-K). On a phone CSS
- * pairs it with the hamburger at the trailing edge rather than leaving it alone
- * on the left of a row the brand used to open. That circle is the *shortcut*, not
- * the entrance: it carries no label and states its chords only in a `title`, so
- * the labelled **Hledání** item beside Štítky is what actually makes search
- * findable — the bare glyph was the whole way in, and a phone never hovers.
+ * Leading the bar is the global {@link SearchCommand}: a compact icon button,
+ * since all it does is open the command palette (`/` or Cmd/Ctrl-K). That circle
+ * is the *shortcut*, not the entrance: it carries no label and states its chords
+ * only in a `title`, so the labelled **Hledání** item beside Štítky is what
+ * actually makes search findable — the bare glyph was the whole way in.
+ *
+ * **On a phone the palette has one door, and it is not the magnifier.** The
+ * shell owns the palette's open state so the {@link MobileTabBar}'s „Hledat" tab
+ * can open it; below `lg` the magnifier is therefore not rendered at all and the
+ * top row is the hamburger alone. Two controls with the same glyph and nearly the
+ * same word used to sit two thumbs apart and lead to two different searches (the
+ * palette up top, the `/search` page down below). The `/search` page is still
+ * the drawer's „Hledání" row, and the `/` and Ctrl-K chords stay bound on every
+ * viewport.
  * Because the swap trades **Žebříček** (now inside "Procházet") for **Hledání**,
  * the widest role's bar comes out marginally *narrower* than before, which is what
  * keeps this change clear of the inline row's long-standing overflow.
@@ -133,6 +139,13 @@ export function Layout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const drawerNav = useIsNavDrawerViewport()
+  // The global search palette, opened by the top bar's magnifier on `lg`+ and by
+  // the tab bar's search tab below it. Plain state, never the URL: opening and
+  // closing it adds no history entry.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const openPalette = useCallback(() => {
+    setPaletteOpen(true)
+  }, [])
   // The build the server runs, printed at the foot of the user menu. It rides
   // along on the capabilities the shell already holds, so opening the menu costs
   // no request; `null` (nothing loaded yet, or the call failed) shows nothing.
@@ -311,12 +324,15 @@ export function Layout() {
         className="kukatko-navbar"
       >
         <Container>
-          {/* Search leads the bar and stays outside the collapse, so it is always
-              visible — on a phone it is one half of the row while the nav folds
-              away into the drawer (CSS pairs it with the hamburger there). It is
-              a bare icon button: it opens a dialog, so it does not need the width
-              of something you can type into. */}
-          <SearchCommand />
+          {/* Search leads the bar, as a bare icon button: it opens a dialog, so it
+              does not need the width of something you can type into. Below `lg`
+              the tab bar's search tab is the palette's door instead, so only the
+              dialog and its shortcuts are mounted there. */}
+          <SearchCommand
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+            showTrigger={!drawerNav}
+          />
           {/* The inline bar is the `lg`+ navigation only: below that the same
               items are the drawer's, so rendering both would duplicate every
               link in the DOM. */}
@@ -421,8 +437,8 @@ export function Layout() {
               )}
             </Navbar.Collapse>
           )}
-          {/* The hamburger closes the phone row (`[search] [hamburger]`): a menu
-              button sits best under the thumb on the trailing edge. It is
+          {/* The hamburger is the whole phone row, held at the trailing edge
+              (`ms-auto`): a menu button sits best under the thumb there. It is
               `display: none` on `lg`+, so the desktop bar is unmoved by where it
               stands in the DOM. It wears the tasks-waiting count on its corner:
               Úkoly is inside the menu, and a summons behind a closed menu is no
@@ -431,7 +447,7 @@ export function Layout() {
           <Navbar.Toggle
             aria-controls={MOBILE_MENU_ID}
             label={t('nav.openMenu')}
-            className="position-relative"
+            className="position-relative ms-auto"
           >
             <span className="navbar-toggler-icon" />
             <WaitingBadge count={waitingOnMe} over />
@@ -470,7 +486,7 @@ export function Layout() {
       {/* Phone only: the everyday destinations as a fixed bottom strip, so they
           do not cost a hamburger open-then-tap. Renders nothing on `lg`+, where
           the top bar above is already the whole navigation. */}
-      <MobileTabBar />
+      <MobileTabBar onOpenSearch={openPalette} />
       {/* Shown once, to an account that has never seen it, over whatever it
           landed on. It renders nothing — and asks the backend nothing — for
           everybody else, which is almost every page load. */}

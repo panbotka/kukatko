@@ -9,12 +9,23 @@ import { LIBRARY_PATH } from '../lib/libraryView'
 import { Icon, type IconName } from './Icon'
 
 /** One destination in the bottom bar: a glyph, a short label, a route. */
-interface TabEntry {
+interface RouteTab {
+  kind: 'route'
   to: string
   labelKey: ParseKeys
   titleKey: ParseKeys
   icon: IconName
 }
+
+/** The one tab that is not a route: it opens the global search palette. */
+interface PaletteTab {
+  kind: 'palette'
+  labelKey: ParseKeys
+  titleKey: ParseKeys
+  icon: IconName
+}
+
+type TabEntry = RouteTab | PaletteTab
 
 /**
  * The everyday loop, and nothing else. The bar is deliberately not a second copy
@@ -27,19 +38,44 @@ interface TabEntry {
  * comfortable finger target and an unabbreviated label.
  * The library is the homepage, so its tab points at the site root.
  *
- * **Search holds the third slot, Štítky does not.** On a phone the only way to
- * search was the unlabelled magnifier in the top bar, whose `title` names the `/`
- * and Ctrl+K chords on hover — which never happens on a touch screen. Browsing by
- * label is the rarer errand of the two and keeps its row in the drawer, so the
- * trade costs nothing and buys the app's strongest feature a thumb-level slot.
- * The label is the imperative „Hledat" rather than the navbar's noun „Hledání":
- * a tab is something you do, like the „Nahrát" beside it.
+ * **Search holds the third slot, Štítky does not.** Browsing by label is the
+ * rarer errand of the two and keeps its row in the drawer, so the trade costs
+ * nothing and buys the app's strongest feature a thumb-level slot. The label is
+ * the imperative „Hledat" rather than the navbar's noun „Hledání": a tab is
+ * something you do, like the „Nahrát" beside it.
+ *
+ * **The search tab opens the palette, not the `/search` page.** The phone used
+ * to carry two searches two thumbs apart — the top bar's magnifier opening the
+ * command palette, this tab opening the full-text page — with the same glyph and
+ * nearly the same word. Now there is one: this tab *is* the palette's door on a
+ * phone, and `Layout` drops the magnifier from the top bar there. The `/search`
+ * page (query-language help, search modes) stays one tap into the drawer, under
+ * „Hledání". The palette is React state, not a route, so opening and closing it
+ * leaves history alone, exactly as the magnifier always did.
  */
 const TABS: readonly TabEntry[] = [
-  { to: LIBRARY_PATH, labelKey: 'nav.library', titleKey: 'nav.titles.library', icon: 'images' },
-  { to: '/albums', labelKey: 'nav.albums', titleKey: 'nav.titles.albums', icon: 'collection' },
-  { to: '/search', labelKey: 'nav.searchShort', titleKey: 'nav.titles.search', icon: 'search' },
   {
+    kind: 'route',
+    to: LIBRARY_PATH,
+    labelKey: 'nav.library',
+    titleKey: 'nav.titles.library',
+    icon: 'images',
+  },
+  {
+    kind: 'route',
+    to: '/albums',
+    labelKey: 'nav.albums',
+    titleKey: 'nav.titles.albums',
+    icon: 'collection',
+  },
+  {
+    kind: 'palette',
+    labelKey: 'nav.searchShort',
+    titleKey: 'nav.titles.searchPalette',
+    icon: 'search',
+  },
+  {
+    kind: 'route',
     to: '/upload',
     labelKey: 'nav.upload',
     titleKey: 'nav.titles.upload',
@@ -54,8 +90,8 @@ const TABS: readonly TabEntry[] = [
  * hamburger there as well (see `Layout`). Wherever the whole primary navigation
  * is otherwise behind the hamburger, reaching the library or the albums costs an
  * open-then-tap every single time; the bar puts the everyday loop — searching
- * among it now — one thumb-reach away, while the top bar keeps the command
- * palette's shortcut.
+ * among it now — one thumb-reach away. `onOpenSearch` is how its search tab
+ * reaches the palette the shell owns.
  *
  * On `lg`+ it renders nothing at all — the decision is made in JS via
  * {@link useIsNavDrawerViewport} rather than by a `d-lg-none` display rule, so
@@ -71,7 +107,7 @@ const TABS: readonly TabEntry[] = [
  * of them. The variable is removed on unmount and on the desktop breakpoint, so
  * nothing reserves space for a bar that is not there.
  */
-export function MobileTabBar() {
+export function MobileTabBar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { t } = useTranslation()
   const drawerNav = useIsNavDrawerViewport()
   const barRef = useRef<HTMLElement>(null)
@@ -110,20 +146,34 @@ export function MobileTabBar() {
 
   return (
     <nav ref={barRef} className="kk-tabbar d-lg-none" aria-label={t('nav.tabBar')}>
-      {TABS.map((tab) => (
-        <NavLink
-          key={tab.to}
-          to={tab.to}
-          // Without `end` the root route's prefix match would light the library
-          // tab up on every page in the app.
-          end={tab.to === LIBRARY_PATH}
-          title={t(tab.titleKey)}
-          className="kk-tabbar__tab"
-        >
-          <Icon name={tab.icon} className="kk-tabbar__icon" />
-          <span className="kk-tabbar__label">{t(tab.labelKey)}</span>
-        </NavLink>
-      ))}
+      {TABS.map((tab) =>
+        tab.kind === 'palette' ? (
+          <button
+            key="palette"
+            type="button"
+            title={t(tab.titleKey)}
+            aria-haspopup="dialog"
+            className="kk-tabbar__tab"
+            onClick={onOpenSearch}
+          >
+            <Icon name={tab.icon} className="kk-tabbar__icon" />
+            <span className="kk-tabbar__label">{t(tab.labelKey)}</span>
+          </button>
+        ) : (
+          <NavLink
+            key={tab.to}
+            to={tab.to}
+            // Without `end` the root route's prefix match would light the library
+            // tab up on every page in the app.
+            end={tab.to === LIBRARY_PATH}
+            title={t(tab.titleKey)}
+            className="kk-tabbar__tab"
+          >
+            <Icon name={tab.icon} className="kk-tabbar__icon" />
+            <span className="kk-tabbar__label">{t(tab.labelKey)}</span>
+          </NavLink>
+        ),
+      )}
     </nav>
   )
 }
