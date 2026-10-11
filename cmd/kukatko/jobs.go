@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 
+	"github.com/panbotka/kukatko/internal/albumfeaturedjob"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clusterjob"
 	"github.com/panbotka/kukatko/internal/config"
@@ -60,7 +61,9 @@ import (
 // that delivers a queued notification to one browser and, with push off,
 // completes a leftover one unsent), the tagging-window service (always built;
 // it registers the `tag_notify` job that turns a window's tags into one
-// notification) and the library-maintenance service/API,
+// notification), the featured-album service (always built; it registers the
+// `album_featured_notify` job that announces a newly featured album) and the
+// library-maintenance service/API,
 // since all are part of the job subsystem; a build failure for any of them is
 // returned as an error.
 func buildJobs(
@@ -195,9 +198,10 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc, push: pushSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
-		taskDigest:  buildTaskDigestServiceOrNil(d.cfg, d.db),
-		tagNotify:   buildTagNotifyService(d.cfg, d.db),
-		notifyPurge: buildNotifyPurgeService(d.db),
+		taskDigest:    buildTaskDigestServiceOrNil(d.cfg, d.db),
+		tagNotify:     buildTagNotifyService(d.cfg, d.db),
+		notifyPurge:   buildNotifyPurgeService(d.db),
+		albumFeatured: buildAlbumFeaturedService(d.cfg, d.db),
 	}, maintenanceSvc, nil
 }
 
@@ -228,6 +232,9 @@ type registryServices struct {
 	tagNotify *tagnotifyjob.Service
 	// notifyPurge deletes the notifications past their retention; always built.
 	notifyPurge *notifypurgejob.Service
+	// albumFeatured announces a newly featured album to the accounts that want
+	// the kind; always built, like tagNotify.
+	albumFeatured *albumfeaturedjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -250,6 +257,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypePushSend, svc.push.Handle)
 	registry.Register(jobs.TypeTagNotify, svc.tagNotify.Handle)
 	registry.Register(jobs.TypeNotificationPurge, svc.notifyPurge.Handle)
+	registry.Register(jobs.TypeAlbumFeaturedNotify, svc.albumFeatured.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

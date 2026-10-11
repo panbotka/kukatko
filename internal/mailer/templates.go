@@ -33,6 +33,9 @@ const (
 	// TemplateNotification is the e-mail channel of any notification kind
 	// without a template of its own: its title, body and link.
 	TemplateNotification = "notification"
+	// TemplateAlbumFeatured tells somebody a new album is featured on the
+	// homepage — the e-mail channel of the album_featured notification kind.
+	TemplateAlbumFeatured = "album_featured"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.

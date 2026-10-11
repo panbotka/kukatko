@@ -37,6 +37,11 @@ const (
 	// KindRegistrationPending is "a registration is waiting for approval",
 	// sent to the accounts that may approve one. It carries no photographs.
 	KindRegistrationPending Kind = "registration_pending"
+	// KindAlbumFeatured is "a new album is featured on the homepage": a curator
+	// put an album on the "Doporučujeme" strip. Its photo set is the album's
+	// cover (one photograph, or none for an album with nothing to show); it
+	// opens the album, not its own page.
+	KindAlbumFeatured Kind = "album_featured"
 )
 
 // Channel names how a notification reaches its account: the in-app inbox, a
@@ -95,6 +100,7 @@ var registry = []struct {
 }{
 	{kind: KindTagged, channels: everyChannelOff()},
 	{kind: KindRegistrationPending, channels: everyChannelOff()},
+	{kind: KindAlbumFeatured, channels: everyChannelOff()},
 }
 
 // Kinds returns every known kind, in display order, as a fresh slice.

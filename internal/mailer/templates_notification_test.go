@@ -102,3 +102,38 @@ func TestRenderNotification(t *testing.T) {
 		t.Errorf("bare Body =\n%q\nwant\n%q", bare.Body, want)
 	}
 }
+
+// TestRenderAlbumFeatured pins the featured-album mail: the album in the
+// subject, the link when there is one, the untitled fallback.
+func TestRenderAlbumFeatured(t *testing.T) {
+	t.Parallel()
+
+	got := RenderAlbumFeatured(AlbumFeaturedData{
+		DisplayName: "Anna", Title: " Pouť 2026 ", URL: "https://kukatko.example/albums/al1",
+	})
+	if got.Template != TemplateAlbumFeatured || got.Subject != "Nové doporučené album: Pouť 2026" {
+		t.Errorf("template %q, subject %q", got.Template, got.Subject)
+	}
+	want := "Ahoj, Anna,\n" +
+		"\n" +
+		"v Kukátku je na úvodní stránce nově doporučené album Pouť 2026.\n" +
+		"\n" +
+		"Podívat se na něj můžeš tady:\n" +
+		"\n" +
+		"https://kukatko.example/albums/al1\n" +
+		"\n" +
+		notificationFooter + "\n" +
+		"\n" +
+		"Kukátko\n"
+	if got.Body != want {
+		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
+	}
+
+	bare := RenderAlbumFeatured(AlbumFeaturedData{Title: "  "})
+	if bare.Subject != "Nové doporučené album: (bez názvu)" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+		t.Errorf("untitled: subject %q, body %q", bare.Subject, bare.Body)
+	}
+	if strings.Contains(bare.Body, "tady:") || !strings.Contains(bare.Body, "album (bez názvu).") {
+		t.Errorf("untitled without link: body %q", bare.Body)
+	}
+}

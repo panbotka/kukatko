@@ -808,7 +808,7 @@ lost on restart).
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
-  `push_send`, `task_digest`, `tag_notify`, `face_cluster`
+  `push_send`, `task_digest`, `tag_notify`, `album_featured_notify`, `face_cluster`
   (run locally on the
   Pi, immediately), `image_embed`, `face_detect`, `ocr` (require the box), `pp_import`, `ps_migrate`, `backup`.
   `ocr` reads the text printed in a photo (`POST /ocr/image` over its `fit_1920` preview) into

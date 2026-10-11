@@ -407,6 +407,7 @@ describe('NotificationsCard — kinds × channels', () => {
   ])('offers the registration kind to a %s: %s', (role, offered) => {
     expect(isKindOffered('registration_pending', role)).toBe(offered)
     expect(isKindOffered('tagged', role)).toBe(true)
+    expect(isKindOffered('album_featured', role)).toBe(true)
     expect(isKindOffered('something_new', role)).toBe(false)
   })
 
@@ -415,12 +416,18 @@ describe('NotificationsCard — kinds × channels', () => {
       [
         ...DEFAULT_PREFS,
         { kind: 'something_new', channel: 'push', enabled: true, is_default: true },
+        { kind: 'album_featured', channel: 'in_app', enabled: false, is_default: true },
       ],
       'admin',
     )
-    expect(rows.map((row) => row.kind)).toEqual(['tagged', 'registration_pending'])
+    expect(rows.map((row) => row.kind)).toEqual([
+      'tagged',
+      'registration_pending',
+      'album_featured',
+    ])
     expect([...rows[0].byChannel.keys()]).toEqual(['push'])
     expect([...rows[1].byChannel.keys()]).toEqual(['push', 'email'])
+    expect([...rows[2].byChannel.keys()]).toEqual(['in_app'])
   })
 
   it.each<[string | undefined, boolean]>([

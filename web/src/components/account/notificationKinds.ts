@@ -20,6 +20,7 @@ import { isPlaceholderEmail } from '../users/account'
 export type KindLabelKey =
   | 'account.notifications.kinds.tagged'
   | 'account.notifications.kinds.registration_pending'
+  | 'account.notifications.kinds.album_featured'
 
 /** What the card knows about one kind: its label, and who can ever receive it. */
 interface KindCopy {
@@ -39,6 +40,7 @@ const KINDS: Partial<Record<NotificationKind, KindCopy>> = {
     label: 'account.notifications.kinds.registration_pending',
     adminOnly: true,
   },
+  album_featured: { label: 'account.notifications.kinds.album_featured', adminOnly: false },
 }
 
 /** One column of the kinds × channels grid. */

@@ -11,12 +11,12 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 )
 
-// TestKinds checks the registry: both kinds exist, in display order, and an
+// TestKinds checks the registry: every kind exists, in display order, and an
 // unknown kind is neither known nor offers any channel.
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
-	if got, want := Kinds(), []Kind{KindTagged, KindRegistrationPending}; !reflect.DeepEqual(got, want) {
+	if got, want := Kinds(), []Kind{KindTagged, KindRegistrationPending, KindAlbumFeatured}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Kinds() = %v, want %v", got, want)
 	}
 	for _, kind := range Kinds() {
@@ -259,6 +259,9 @@ func TestEffective(t *testing.T) {
 		{Kind: KindRegistrationPending, Channel: ChannelInApp, Enabled: false, IsDefault: true},
 		{Kind: KindRegistrationPending, Channel: ChannelPush, Enabled: false, IsDefault: true},
 		{Kind: KindRegistrationPending, Channel: ChannelEmail, Enabled: true},
+		{Kind: KindAlbumFeatured, Channel: ChannelInApp, Enabled: false, IsDefault: true},
+		{Kind: KindAlbumFeatured, Channel: ChannelPush, Enabled: false, IsDefault: true},
+		{Kind: KindAlbumFeatured, Channel: ChannelEmail, Enabled: false, IsDefault: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("effective() = %+v, want %+v", got, want)

@@ -57,6 +57,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 
 - `cmd/kukatko` — thin Cobra entrypoint (`serve`/`migrate`/`import`/`backup`/`restore`/`maintenance`/`storage`/`ctl`/`version`) + `buildXxxAPI` wiring
 - `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
+- `internal/albumfeaturedjob` — the `album_featured_notify` job: the organize store's feature observer queues it in the feature's transaction (fresh features only, one queued job per album); the handler announces the album to every account that wants the kind — never the curator, never a disabled account, a private album only to curator+ — through `internal/notifydeliver`
 - `internal/announcement` — single instance-wide banner message (`Get`/`Set`/`Clear`), one-row table, publish/clear audited in the mutation's transaction
 - `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/apitest` — the HTTP client the API packages' tests drive their `httptest` servers with; never `http.DefaultClient`, whose process-wide pool a closing test server empties under a parallel test

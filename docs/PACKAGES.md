@@ -1549,7 +1549,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `audit.Write` records a mutation: a registration that rolls back schedules no mail, one that commits
   schedules it once. A payload with no `photo_uid` (a mail, a backup) never dedupes, NULLs being distinct
   in a unique index — except `tag_notify`, whose own index `idx_jobs_tag_notify_dedup` (migration 0089)
-  keys on the payload's `user_uid` while **queued**, one open tagging window per account.
+  keys on the payload's `user_uid` while **queued**, one open tagging window per account, and
+  `album_featured_notify`, whose `idx_jobs_album_featured_notify_dedup` (migration 0097) keys on the
+  payload's `album_uid` while queued, one pending announcement per album.
   **`EnqueueOrSkip(ctx, exec, type, payload, opts)`** is the same insert with `ON CONFLICT DO NOTHING`:
   a duplicate is still `ErrDuplicate`, but it **does not abort the caller's transaction** the way a
   unique violation would — for a caller that enqueues "unless already scheduled" in the middle of its
@@ -3284,10 +3286,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **every** album projection (`albumColumns`, the index and search SQL) as the *active* end —
   `CASE WHEN featured_until > now() …` — so a lapsed feature is nil without any job clearing it;
   `FeatureAlbumAudited(uid,until,byUID,entry)` (locks the row, `ErrAlbumNotFound`/`ErrNotFeaturable`, a
-  running feature keeps its `featured_at`, a lapsed one restarts it), `UnfeatureAlbumAudited` (clears all
-  three, idempotent) and `ListFeaturedAlbums(includePrivate)` → `[]FeaturedAlbum` (active, newest feature
-  first, the index's count, the cover resolved as `AlbumCovers` does plus its BlurHash — one statement whose
-  CTEs scan only the featured albums' membership); validating `until` is the caller's job)), `internal/organizeapi/`
+  running feature keeps its `featured_at`, a lapsed one restarts it; a **`FeatureObserver`** set with
+  `WithFeatureObserver` hears `Featured(ctx, tx, Featuring{AlbumUID, ActorUID})` inside the transaction —
+  **only for a fresh feature**, read under the row lock as `featured_until > now()` before the write, so
+  re-dating a running feature is silent; it is how `internal/albumfeaturedjob` queues the "new featured
+  album" announcement), `UnfeatureAlbumAudited` (clears all
+  three, idempotent), `ListFeaturedAlbums(includePrivate)` → `[]FeaturedAlbum` (active, newest feature
+  first, the index's count, the cover resolved as `AlbumCovers` does plus its BlurHash, `FeaturedBy` — one
+  statement whose CTEs scan only the featured albums' membership) and `FeaturedAlbumTx(ctx, tx, uid)` (the
+  same record for one album on the caller's transaction, private or not, `ErrNotFeatured` when the strip
+  would not list it — for the announcement job); validating `until` is the caller's job)), `internal/organizeapi/`
   (a read/curation HTTP API over albums and labels — the basis of the Albums/Labels UI: the interfaces `AlbumStore`/
   `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireCurator})`+`RegisterRoutes` mounts two
@@ -5491,17 +5499,19 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     The sixth, `RenderUsernameChanged` (`UsernameChangedData{DisplayName,Username,SignInURL}`), tells somebody an
     administrator renamed their account: the new name in the subject and the body, that the password stays the
     same, and the sign-in link — left out entirely when `SignInURL` is blank.
-    The last two are the **e-mail channel of the notification kinds** (`templates_notification.go`, both
+    The last three are the **e-mail channel of the notification kinds** (`templates_notification.go`, all
     informal and closed by a footer saying the mail was switched on in the notification settings and can be
     switched off there): `RenderTagged` (`TaggedData{DisplayName,Count,URL,Groups}` — "označil na jedné
     fotce / 3 fotkách", subject „Označili vás na fotce/fotkách", the link to the notification's page; with
     `Groups` (`TaggedGroup{Album,Count,URL}`, the tagging window split by album) one mail all the same: the
     total, "Podle alb:", then one line per album — title, "5 fotek" and its link — and the photos outside
-    the albums last as "Další fotky", `Groups` winning over `URL`) and the
+    the albums last as "Další fotky", `Groups` winning over `URL`), `RenderAlbumFeatured`
+    (`AlbumFeaturedData{DisplayName,Title,URL}` — subject „Nové doporučené album: <title>", the album is
+    on the homepage, the link to it; a blank title reads „(bez názvu)") and the
     generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,
     the body (or the title when there is none) and the link), which `internal/notifydeliver` uses for any
     kind without a template of its own. `internal/mailjob` has a constructor for each (`Tagged`,
-    `Notification`) and renders both.
+    `AlbumFeatured`, `Notification`) and renders all three.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5694,7 +5704,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (migrations `0087`, `0093` for the channel, `0095` for `notifications.in_app`,
   [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
-    photos) and **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) — in a
+    photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) and
+    **`KindAlbumFeatured`** ("a new album is featured on the homepage", its set is the album's cover, the
+    link is the album's page) — in a
     package registry in display order, each with the **channels** it is delivered through
     (`AllChannels()`: **`ChannelInApp`** `in_app`, **`ChannelPush`**, **`ChannelEmail`**, in that order) —
     **every kind offers all three, and every default is off** (`everyChannelOff()`; the 2026-10-11
@@ -5885,6 +5897,35 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     un-announces; one `mail_send` per window listing the groups in delivery order with their counts and
     links. Unit (`group_test.go`): the grouping rules, the cap, the order, the mail builder, the wording.
 
+- **Featured album announcement (`internal/albumfeaturedjob`):** "a new album is featured" — the
+  `album_featured` kind, one notification per account that asked for it when a curator puts an album on the
+  homepage's "Doporučujeme" strip. The fan-out never runs in the request: **`Scheduler`** is the organize
+  store's `FeatureObserver` (`NewScheduler(enqueue)`, nil = `jobs.EnqueueOrSkip` so a duplicate cannot abort
+  the feature's transaction) and queues one **`album_featured_notify`** job, payload `{album_uid}`, inside
+  the feature's transaction — the store reports only a *fresh* feature, so prolonging a running one queues
+  nothing, and the dedup index (migration 0097) keeps one queued job per album, so feature → unfeature →
+  feature while it waits collapses into that job. **`Service`** (`New(Config{DB, Albums, Deliver,
+  Language, Logger})`, `Handle` → **`Announce(ctx, albumUID)`**) runs in one transaction: it reads the album
+  through `organize.Store.FeaturedAlbumTx` — `ErrNotFeatured` (unfeatured before the run, lapsed, deleted)
+  completes with nothing sent — then walks every account (`SELECT uid, role, disabled FROM users`) through
+  the pure **`recipients`** rules: never `featured_by` (nobody is told about their own work), never a
+  disabled account, and a **private album only to curator+** (the strip's own rule); whether an account wants
+  the kind is `notifydeliver.Deliver`'s per-account question. Each delivery runs **under a savepoint**, so
+  one failing account is logged and skipped, never costing the others. The message: `KindAlbumFeatured`,
+  `notification.RenderAlbumFeatured` ("Nové doporučené album: <title>", the title cut at
+  `MaxAlbumNameLen`), `Link` = `AlbumPath(uid)` (`/albums/<uid>`), `PhotoUIDs` = the album's cover (none
+  without one) and the `album_featured` mail (`mailer.AlbumFeaturedData{DisplayName, Title, URL}`) with the
+  absolute album link. A payload naming no album is `worker.Terminal`.
+  - Wired in `cmd/kukatko/albumfeatured.go`: the scheduler onto the organize store in `buildOrganizeAPI`,
+    the handler registered **unconditionally** (like `tag_notify`) over `buildDeliverer`. Tests: payload,
+    refusals, the recipient table, the scheduler against a fake queue (duplicate swallowed, failure wrapped),
+    the message and mail builder as unit tests; over a real database — feature → job → exactly the viewer and
+    the editor who opted in (title, body, album link, the cover as the frozen set, in the inbox) and the
+    editor's mail, not the curator, the admin who never chose or the disabled account; prolonging queues no
+    second job and a lapsed feature renewed announces again; unfeatured before the run (twice, collapsing
+    into one job) sends nothing; a private album reaches the admin and the editor only; nobody opted in →
+    no record.
+
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
   A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and calls
   **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
@@ -5906,8 +5947,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     joins `tx`; a failure is returned wrapped and leaves `tx` aborted — a best-effort caller runs it under
     a savepoint. `Result{Channels, Notification, Devices}` says what happened.
   - Adding a kind = a registry entry in `internal/notification`, a render function for its text and
-    optionally a `MailBuilder` + template; nothing here changes. Producers: `internal/tagnotifyjob` and
-    self-service registration (`internal/auth`). Tests (unit, fakes for the store, both queues and the
+    optionally a `MailBuilder` + template; nothing here changes. Producers: `internal/tagnotifyjob`,
+    `internal/albumfeaturedjob` and self-service registration (`internal/auth`). Tests (unit, fakes for the store, both queues and the
     transaction's recipient read): the fan-out table — none, in-app only, push only, mail only, all — with
     the record and its in-app flag, the push and generic-mail payloads (absolute link), a kind's own mail
     builder without a base URL, both instance switches off (no record), a blank address skipping only the

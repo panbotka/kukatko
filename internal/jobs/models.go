@@ -144,6 +144,15 @@ const (
 	// (migration 0089) keeping at most one queued job per account. See
 	// internal/tagnotifyjob.
 	TypeTagNotify = "tag_notify"
+	// TypeAlbumFeaturedNotify announces one newly featured album (the
+	// homepage's "Doporučujeme" strip) to every account that wants the
+	// album_featured notification kind. It is enqueued inside the feature's
+	// transaction — once per album, by the organize store's feature observer,
+	// only when the album was not featured already — and runs locally. Its
+	// payload names an album, not a photo, so a dedup index of its own
+	// (migration 0097) keeps at most one queued job per album. See
+	// internal/albumfeaturedjob.
+	TypeAlbumFeaturedNotify = "album_featured_notify"
 	// TypeNotificationPurge deletes the notification records past their
 	// retention (read ones after 30 days, unread ones after 90). It runs locally
 	// and is enqueued once a day by the scheduler in internal/notifypurgejob; it

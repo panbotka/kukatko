@@ -140,25 +140,34 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // binary cannot render, and a wrapped decoding error when the data does not fit
 // the template it is addressed to; both are permanent.
 func render(p payload) (mailer.Rendered, error) {
-	switch p.Template {
-	case mailer.TemplateRegistrationReceived:
-		return renderWith(p, mailer.RenderRegistrationReceived)
-	case mailer.TemplateAccountApproved:
-		return renderWith(p, mailer.RenderAccountApproved)
-	case mailer.TemplateNewRegistrationPending:
-		return renderWith(p, mailer.RenderNewRegistrationPending)
-	case mailer.TemplatePasswordReset:
-		return renderWith(p, mailer.RenderPasswordReset)
-	case mailer.TemplateTasksWaitingDigest:
-		return renderWith(p, mailer.RenderTasksWaitingDigest)
-	case mailer.TemplateUsernameChanged:
-		return renderWith(p, mailer.RenderUsernameChanged)
-	case mailer.TemplateTagged:
-		return renderWith(p, mailer.RenderTagged)
-	case mailer.TemplateNotification:
-		return renderWith(p, mailer.RenderNotification)
-	default:
+	fn, ok := renderers[p.Template]
+	if !ok {
 		return mailer.Rendered{}, fmt.Errorf("%w: %q", ErrUnknownTemplate, p.Template)
+	}
+	return fn(p)
+}
+
+// renderers pairs every template this binary can render with the function that
+// renders it; a template absent here is unknown to both render and
+// knownTemplate, so the two can never disagree.
+var renderers = map[string]func(payload) (mailer.Rendered, error){
+	mailer.TemplateRegistrationReceived:   renderer(mailer.RenderRegistrationReceived),
+	mailer.TemplateAccountApproved:        renderer(mailer.RenderAccountApproved),
+	mailer.TemplateNewRegistrationPending: renderer(mailer.RenderNewRegistrationPending),
+	mailer.TemplatePasswordReset:          renderer(mailer.RenderPasswordReset),
+	mailer.TemplateTasksWaitingDigest:     renderer(mailer.RenderTasksWaitingDigest),
+	mailer.TemplateUsernameChanged:        renderer(mailer.RenderUsernameChanged),
+	mailer.TemplateTagged:                 renderer(mailer.RenderTagged),
+	mailer.TemplateNotification:           renderer(mailer.RenderNotification),
+	mailer.TemplateAlbumFeatured:          renderer(mailer.RenderAlbumFeatured),
+}
+
+// renderer adapts a template's typed render function to the shape renderers
+// holds: it decodes the payload's data into the type the template expects
+// through renderWith.
+func renderer[T any](render func(T) mailer.Rendered) func(payload) (mailer.Rendered, error) {
+	return func(p payload) (mailer.Rendered, error) {
+		return renderWith(p, render)
 	}
 }
 

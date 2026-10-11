@@ -17,6 +17,42 @@ import (
 // family at). Migration 0094 enforces the same rule with a CHECK.
 var ErrNotFeaturable = errors.New("organize: only a hand-made album can be featured")
 
+// ErrNotFeatured indicates an album that is not featured right now — its
+// feature lapsed, was switched off, or never was — or no album at all.
+var ErrNotFeatured = errors.New("organize: album is not featured")
+
+// Featuring is one album newly put on the homepage: the album and the account
+// that featured it (empty for a system caller).
+type Featuring struct {
+	// AlbumUID is the album that was featured.
+	AlbumUID string
+	// ActorUID is the account that featured it, or empty for none.
+	ActorUID string
+}
+
+// FeatureObserver hears that an album was freshly featured — put on the
+// homepage while it was not there — inside the transaction that featured it,
+// so whatever it records commits with the feature or not at all. Prolonging
+// or shortening a running feature is not reported: the album is already on
+// the strip and nobody should hear about it twice. It is how the
+// "a new album is featured" notification (internal/albumfeaturedjob) learns
+// about a feature without the HTTP handler having to remember it.
+//
+// An error it returns fails the feature.
+type FeatureObserver interface {
+	// Featured hears that f.AlbumUID is now on the homepage.
+	Featured(ctx context.Context, tx pgx.Tx, f Featuring) error
+}
+
+// WithFeatureObserver returns a copy of s that reports every fresh feature to
+// observer, within the transaction of the change. The copy shares the pool; s
+// itself is unchanged.
+func (s *Store) WithFeatureObserver(observer FeatureObserver) *Store {
+	out := *s
+	out.features = observer
+	return &out
+}
+
 // FeaturedAlbum is one album on the homepage's "Doporučujeme" strip: the album
 // (whose FeaturedUntil is always set here, since only active features are
 // listed), when it was featured, how many photos it holds and what to draw for
@@ -49,6 +85,9 @@ type FeaturedAlbum struct {
 	CoverFileHash string `json:"-"`
 	// CoverBlurhash is the cover's blurred placeholder, nil when it has none.
 	CoverBlurhash *string `json:"cover_blurhash,omitempty"`
+	// FeaturedBy is the account that last featured the album, nil when it is
+	// not known (a system caller, or the account was deleted).
+	FeaturedBy *string `json:"featured_by,omitempty"`
 }
 
 // featureAlbumSQL starts or extends an album's feature. A feature still running
@@ -76,7 +115,9 @@ RETURNING ` + albumColumns
 // entry's TargetUID defaults to uid. It returns ErrAlbumNotFound for a missing
 // album and ErrNotFeaturable for one that is not a hand-made album; either way
 // no audit row is written. Validating until (in the future, not too far) is the
-// caller's job: the store records whatever instant it is given.
+// caller's job: the store records whatever instant it is given. A feature
+// observer (WithFeatureObserver) hears the change only when the album was not
+// featured already — re-dating a running feature is silent.
 func (s *Store) FeatureAlbumAudited(
 	ctx context.Context, uid string, until time.Time, byUID string, entry audit.Entry,
 ) (Album, error) {
@@ -85,7 +126,8 @@ func (s *Store) FeatureAlbumAudited(
 	}
 	var out Album
 	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		if err := requireFeaturable(ctx, tx, uid); err != nil {
+		wasFeatured, err := requireFeaturable(ctx, tx, uid)
+		if err != nil {
 			return err
 		}
 		a, err := scanAlbum(tx.QueryRow(ctx, featureAlbumSQL, uid, until, optionalUID(byUID)))
@@ -93,6 +135,12 @@ func (s *Store) FeatureAlbumAudited(
 			return fmt.Errorf("organize: featuring album %s: %w", uid, err)
 		}
 		out = a
+		if wasFeatured || s.features == nil {
+			return nil
+		}
+		if err := s.features.Featured(ctx, tx, Featuring{AlbumUID: uid, ActorUID: byUID}); err != nil {
+			return fmt.Errorf("organize: reporting the feature of album %s: %w", uid, err)
+		}
 		return nil
 	})
 	if err != nil {
@@ -114,20 +162,25 @@ func optionalUID(uid string) *string {
 // requireFeaturable locks the album row for the rest of tx and reports whether
 // it may be featured: ErrAlbumNotFound when no album has the uid, and
 // ErrNotFeaturable when it is not a hand-made one. Asking first rather than
-// letting the CHECK fire is what gives the caller a typed error to map.
-func requireFeaturable(ctx context.Context, tx pgx.Tx, uid string) error {
+// letting the CHECK fire is what gives the caller a typed error to map. It also
+// reports whether the album is featured right now, read under the same lock,
+// so the caller knows whether the feature it is about to write is a fresh one.
+func requireFeaturable(ctx context.Context, tx pgx.Tx, uid string) (bool, error) {
 	var typ AlbumType
-	err := tx.QueryRow(ctx, "SELECT type FROM albums WHERE uid = $1 FOR UPDATE", uid).Scan(&typ)
+	var featured bool
+	err := tx.QueryRow(ctx,
+		"SELECT type, COALESCE(featured_until > now(), false) FROM albums WHERE uid = $1 FOR UPDATE", uid,
+	).Scan(&typ, &featured)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrAlbumNotFound
+		return false, ErrAlbumNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("organize: reading album %s: %w", uid, err)
+		return false, fmt.Errorf("organize: reading album %s: %w", uid, err)
 	}
 	if typ != AlbumManual {
-		return fmt.Errorf("%w: type %q", ErrNotFeaturable, typ)
+		return false, fmt.Errorf("%w: type %q", ErrNotFeaturable, typ)
 	}
-	return nil
+	return featured, nil
 }
 
 // UnfeatureAlbumAudited takes the album identified by uid off the homepage and
@@ -157,11 +210,12 @@ func (s *Store) UnfeatureAlbumAudited(ctx context.Context, uid string, entry aud
 	return out, nil
 }
 
-// listFeaturedAlbumsSQL reads every album featured right now, newest feature
-// first, with its photo count, its cover candidates and its cover.
+// listFeaturedAlbumsSQL reads every album featured right now — or, with $3
+// set, just the one with that uid — newest feature first, with its photo
+// count, its cover candidates and its cover.
 //
-// The featured CTE is the whole selection — active, hand-made, and private only
-// when $1 allows it — and everything after it is restricted to that handful of
+// The featured CTE is the whole selection — active, hand-made, private only
+// when $1 allows it, and one uid when $3 names it — and everything after it is restricted to that handful of
 // albums up front: one aggregation over the membership of the featured albums
 // only, never the library, yields both the count and the candidates. The count
 // agrees with the album index's badge (live photos, one per stack). The
@@ -174,6 +228,7 @@ const listFeaturedAlbumsSQL = `
 WITH featured AS (
     SELECT uid FROM albums
     WHERE featured_until > now() AND type = 'album' AND ($1::boolean OR NOT private)
+      AND ($3::text IS NULL OR uid = $3)
 ),
 members AS (
     SELECT ap.album_uid,
@@ -193,7 +248,8 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        COALESCE(m.cover_uids, '{}'),
        COALESCE(picked.uid, derived.uid),
        COALESCE(picked.file_hash, derived.file_hash),
-       CASE WHEN picked.uid IS NOT NULL THEN picked.blurhash ELSE derived.blurhash END
+       CASE WHEN picked.uid IS NOT NULL THEN picked.blurhash ELSE derived.blurhash END,
+       a.featured_by
 FROM albums a
 JOIN featured f ON f.uid = a.uid
 LEFT JOIN members m ON m.album_uid = a.uid
@@ -207,7 +263,30 @@ ORDER BY a.featured_at DESC NULLS LAST, a.uid`
 // included only when includePrivate is true (the caller decides who may see
 // them). Nothing featured yields an empty slice and a nil error.
 func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]FeaturedAlbum, error) {
-	rows, err := s.pool.Query(ctx, listFeaturedAlbumsSQL, includePrivate, CoverCandidates)
+	return listFeatured(ctx, s.pool, includePrivate, nil)
+}
+
+// FeaturedAlbumTx reads, on tx, the album identified by uid as the homepage
+// strip would list it — the same record ListFeaturedAlbums returns, private or
+// not — and ErrNotFeatured when the strip would not list it: the feature
+// lapsed or was switched off, or no album has the uid. It is for a caller
+// acting on a feature after the fact (the album_featured notification job)
+// that must see the album as it stands in its own transaction.
+func (s *Store) FeaturedAlbumTx(ctx context.Context, tx pgx.Tx, uid string) (FeaturedAlbum, error) {
+	list, err := listFeatured(ctx, tx, true, &uid)
+	if err != nil {
+		return FeaturedAlbum{}, err
+	}
+	if len(list) == 0 {
+		return FeaturedAlbum{}, ErrNotFeatured
+	}
+	return list[0], nil
+}
+
+// listFeatured runs listFeaturedAlbumsSQL on q: every featured album, or only
+// the one uid names, private ones only when includePrivate is set.
+func listFeatured(ctx context.Context, q querier, includePrivate bool, uid *string) ([]FeaturedAlbum, error) {
+	rows, err := q.Query(ctx, listFeaturedAlbumsSQL, includePrivate, CoverCandidates, uid)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing featured albums: %w", err)
 	}
@@ -220,7 +299,7 @@ func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]
 		if err := rows.Scan(
 			&fa.UID, &fa.Slug, &fa.Title, &fa.Description, &fa.Type, &fa.CoverPhotoUID,
 			&fa.Private, &fa.CreatedBy, &fa.CreatedAt, &fa.UpdatedAt, &fa.FeaturedUntil, &fa.FeaturedAt,
-			&fa.PhotoCount, &fa.CoverUIDs, &fa.CoverUID, &fileHash, &fa.CoverBlurhash,
+			&fa.PhotoCount, &fa.CoverUIDs, &fa.CoverUID, &fileHash, &fa.CoverBlurhash, &fa.FeaturedBy,
 		); err != nil {
 			return nil, fmt.Errorf("organize: scanning featured album: %w", err)
 		}

@@ -211,7 +211,10 @@ shared library is tidied by more than one person.
   row of album cards above the timeline — cover, name, count, one tap to the album — for two months by
   default, or until any day up to a year ahead. A feature always ends on its own (nothing to forget to
   switch off), the album page says "Doporučeno do 11. 12." and offers *Prodloužit* or *Zrušit
-  doporučení*, the album index badges it, and the row steps aside the moment you search or filter. A
+  doporučení*, the album index badges it, and the row steps aside the moment you search or filter.
+  Anybody who switched on the "new featured album" notification hears about it too — "Nové doporučené
+  album: Pouť 2026", one tap to the album — except the curator who featured it, and a private album only
+  tells curators; prolonging a feature already running tells nobody again. A
   private album is shown on it only to curators.
 - **Everybody's photos from the fair, without an account each.** A curator creates an *upload link*
   — pick the albums and labels, a title like "Pouť 2026 – fotky od vás", how many days it stays valid
@@ -530,8 +533,9 @@ of them start off** — Kukátko tells you nothing you did not ask for. (This ch
 until then the tagged and registration pushes were on unless switched off. A choice you had saved
 explicitly is kept; if you relied on the old default, switch the push back on.) A channel the
 instance cannot deliver stays visible but disabled with the reason (push or mail switched off, or no
-real address on your account); the in-app one always works. Administrators also get the row for "a
-registration is waiting"; nobody else sees a setting for a message they could never get.
+real address on your account); the in-app one always works. The kinds: "somebody tagged me", "a new
+featured album appeared on the home page", and — for administrators only — "a registration is waiting";
+nobody else sees a setting for a message they could never get.
 
 **The bell.** In-app notifications land behind a bell in the top bar (on a phone, beside the menu
 button), with the number of unread ones on its corner — refreshed about once a minute and whenever you

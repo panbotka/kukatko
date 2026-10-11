@@ -19,11 +19,13 @@ import (
 // stays decoupled from auth's wiring. An album's or label's photos are browsed
 // through the shared photo-list endpoint scoped by ?album= / ?label=. sidecar
 // schedules a metadata-sidecar rewrite for each photo whose membership or labels
-// changed — curation that lives nowhere but the database.
+// changed — curation that lives nowhere but the database. The store reports a
+// fresh feature to the album_featured scheduler, which queues the announcement
+// job in the feature's transaction.
 func buildOrganizeAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage, sidecar sidecarScheduler,
 ) *organizeapi.API {
-	store := organize.NewStore(db.Pool())
+	store := organize.NewStore(db.Pool()).WithFeatureObserver(buildAlbumFeaturedScheduler())
 	return organizeapi.NewAPI(organizeapi.Config{
 		Albums:              store,
 		Labels:              store,

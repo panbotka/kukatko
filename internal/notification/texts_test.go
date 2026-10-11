@@ -210,3 +210,65 @@ func TestVisiblePhotoSQL(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderAlbumFeatured checks the wording in both languages, the untitled
+// fallback and the cut of an overlong title.
+func TestRenderAlbumFeatured(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("x", MaxAlbumNameLen+10)
+	tests := []struct {
+		name  string
+		lang  Language
+		album string
+		want  Text
+	}{
+		{
+			name: "czech", lang: LanguageCzech, album: " Pouť 2026 ",
+			want: Text{
+				Title: "Nové doporučené album: Pouť 2026",
+				Body:  "Na úvodní stránce Kukátka je nově doporučené album Pouť 2026.",
+			},
+		},
+		{
+			name: "english", lang: LanguageEnglish, album: "Pouť 2026",
+			want: Text{
+				Title: "New featured album: Pouť 2026",
+				Body:  "The album Pouť 2026 is now featured on the home page.",
+			},
+		},
+		{
+			name: "unknown language reads as czech", lang: "de", album: "Pouť",
+			want: Text{
+				Title: "Nové doporučené album: Pouť",
+				Body:  "Na úvodní stránce Kukátka je nově doporučené album Pouť.",
+			},
+		},
+		{
+			name: "untitled", lang: LanguageCzech, album: "  ",
+			want: Text{
+				Title: "Nové doporučené album: (bez názvu)",
+				Body:  "Na úvodní stránce Kukátka je nově doporučené album (bez názvu).",
+			},
+		},
+		{
+			name: "overlong title is cut", lang: LanguageEnglish, album: long,
+			want: Text{
+				Title: "New featured album: " + strings.Repeat("x", MaxAlbumNameLen-1) + "…",
+				Body:  "The album " + strings.Repeat("x", MaxAlbumNameLen-1) + "… is now featured on the home page.",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := RenderAlbumFeatured(tt.lang, tt.album)
+			if got != tt.want {
+				t.Errorf("RenderAlbumFeatured(%q, %q) = %+v, want %+v", tt.lang, tt.album, got, tt.want)
+			}
+			if utf8.RuneCountInString(got.Title) > MaxTitleLen {
+				t.Errorf("title over MaxTitleLen: %d", utf8.RuneCountInString(got.Title))
+			}
+		})
+	}
+}

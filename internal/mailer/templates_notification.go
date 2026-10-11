@@ -107,3 +107,33 @@ func RenderNotification(d NotificationData) Rendered {
 // came and where to stop it, because the recipient chose it and can unchoose it.
 const notificationFooter = "Tenhle e-mail ti chodí, protože sis ho zapnul(a) v nastavení oznámení\n" +
 	"v Kukátku (Účet → Oznámení). Tam ho můžeš i vypnout."
+
+// AlbumFeaturedData is what the "a new album is featured" message needs: whom
+// to greet, the album's title and the absolute link to the album. An empty URL
+// leaves the link out.
+type AlbumFeaturedData struct {
+	DisplayName string
+	Title       string
+	URL         string
+}
+
+// RenderAlbumFeatured builds the e-mail channel of the album_featured
+// notification kind: the subject names the album the way the notification's
+// title does, the body says it is on the homepage and links to it. It names no
+// curator — the strip is the library's recommendation, not one person's. It is
+// a pure function of d.
+func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
+	title := strings.TrimSpace(d.Title)
+	if title == "" {
+		title = "(bez názvu)"
+	}
+	lines := []string{
+		informalGreeting(d.DisplayName), "",
+		"v Kukátku je na úvodní stránce nově doporučené album " + title + ".",
+	}
+	if url := strings.TrimSpace(d.URL); url != "" {
+		lines = append(lines, "", "Podívat se na něj můžeš tady:", "", url)
+	}
+	lines = append(lines, "", notificationFooter, "", signature)
+	return Rendered{Template: TemplateAlbumFeatured, Subject: "Nové doporučené album: " + title, Body: body(lines...)}
+}

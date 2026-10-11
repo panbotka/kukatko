@@ -77,6 +77,12 @@ func Notification(to string, data mailer.NotificationData) Mail {
 	return Mail{Template: mailer.TemplateNotification, To: to, Data: data}
 }
 
+// AlbumFeatured is the e-mail channel of the album_featured notification kind:
+// a new album is on the homepage, with a link to it.
+func AlbumFeatured(to string, data mailer.AlbumFeaturedData) Mail {
+	return Mail{Template: mailer.TemplateAlbumFeatured, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.
@@ -196,15 +202,9 @@ func encodePayload(m Mail) (json.RawMessage, error) {
 	return raw, nil
 }
 
-// knownTemplate reports whether name is a template this package can render.
+// knownTemplate reports whether name is a template this package can render:
+// one the renderers table (mailjob.go) holds.
 func knownTemplate(name string) bool {
-	switch name {
-	case mailer.TemplateRegistrationReceived, mailer.TemplateAccountApproved,
-		mailer.TemplateNewRegistrationPending, mailer.TemplatePasswordReset,
-		mailer.TemplateTasksWaitingDigest, mailer.TemplateUsernameChanged,
-		mailer.TemplateTagged, mailer.TemplateNotification:
-		return true
-	default:
-		return false
-	}
+	_, ok := renderers[name]
+	return ok
 }

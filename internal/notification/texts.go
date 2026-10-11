@@ -176,3 +176,24 @@ func albumName(lang Language, title string) string {
 	}
 	return strings.TrimSpace(string(runes[:MaxAlbumNameLen-1])) + "…"
 }
+
+// RenderAlbumFeatured builds the "a new album is featured" notification for
+// the album titled title, in lang (anything but English reads as Czech). The
+// title is the headline — "Nové doporučené album: Pouť 2026" — so the album is
+// named where a lock screen shows it, cut at MaxAlbumNameLen like every album
+// name here; an empty title reads as untitled. It names no curator: the strip
+// is the library's recommendation, not one person's. It is a pure function of
+// its arguments.
+func RenderAlbumFeatured(lang Language, title string) Text {
+	name := albumName(lang, title)
+	if lang == LanguageEnglish {
+		return Text{
+			Title: "New featured album: " + name,
+			Body:  "The album " + name + " is now featured on the home page.",
+		}
+	}
+	return Text{
+		Title: "Nové doporučené album: " + name,
+		Body:  "Na úvodní stránce Kukátka je nově doporučené album " + name + ".",
+	}
+}

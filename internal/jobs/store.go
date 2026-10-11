@@ -61,12 +61,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // idx_jobs_notification_purge_dedup (migration 0096) — key on the type alone, since
 // their payloads name no photo and NULLs would otherwise be distinct. The
 // per-account tag_notify job (idx_jobs_tag_notify_dedup, migration 0089) keys
-// on the payload's user_uid for the same reason.
+// on the payload's user_uid for the same reason, and the per-album
+// album_featured_notify job (idx_jobs_album_featured_notify_dedup, migration
+// 0097) on the payload's album_uid.
 var dedupIndexes = map[string]bool{
-	"idx_jobs_dedup":               true,
-	"idx_jobs_family_export_dedup": true,
-	"idx_jobs_task_digest_dedup":   true,
-	"idx_jobs_tag_notify_dedup":    true,
+	"idx_jobs_dedup":                       true,
+	"idx_jobs_family_export_dedup":         true,
+	"idx_jobs_task_digest_dedup":           true,
+	"idx_jobs_tag_notify_dedup":            true,
+	"idx_jobs_album_featured_notify_dedup": true,
 	// The daily inbox retention purge, keyed on the type alone.
 	"idx_jobs_notification_purge_dedup": true,
 }

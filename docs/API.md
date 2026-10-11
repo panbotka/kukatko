@@ -1741,9 +1741,14 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **366 days** ahead → 400 (a feature always ends), a non-`album` type (folder/moment/state/month) → 400, a
   missing album → 404. `DELETE /albums/{uid}/featured` (RequireCurator) clears it (idempotent). Both return
   the refreshed album and are audited in the mutation's transaction (`album.feature` with
-  `{title,until,previous_until}`, `album.unfeature` with `{title,previous_until}`). `GET /albums/featured`
+  `{title,until,previous_until}`, `album.unfeature` with `{title,previous_until}`). A **fresh** feature (the
+  album was not featured at that moment — re-dating a running one does not count) also queues one
+  `album_featured_notify` job in the same transaction, which later sends the **`album_featured`**
+  notification ("Nové doporučené album: <title>", link `/albums/{uid}`, the cover as its photo set) to
+  every account that switched the kind on — never the curator who featured it, never a disabled account,
+  and a private album only to curator+; an album unfeatured before the job runs announces nothing. `GET /albums/featured`
   (RequireAuth) → `{albums:[{...album, featured_at, photo_count, cover_uids?, cover_uid?, cover_blurhash?,
-  thumb_url?}], default_days, max_days}`: the albums featured now, **newest feature first** (`featured_at
+  featured_by?, thumb_url?}], default_days, max_days}`: the albums featured now, **newest feature first** (`featured_at
   DESC`), each with **`cover_uids`** — the album index's own cover candidates for it (same order, same
   `organize.CoverCandidates` cap, never the hand-picked cover), so the strip draws **the same 2 × 2 collage as
   the album's tile** — and the single cover (hand-picked, else the first candidate) with its BlurHash and its
@@ -2053,7 +2058,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
     the **effective** set, one entry per known kind and **delivery channel** — every kind offers all three,
     in display order `in_app`, `push`, `email` (`tagged/in_app`, `tagged/push`, `tagged/email`,
-    `registration_pending/in_app`, …) — the stored choice or the channel's default (`is_default: true`),
+    `registration_pending/in_app`, …, `album_featured/email`) — the stored choice or the channel's default (`is_default: true`),
     so the frontend needs no knowledge of the defaults. **Every default is off** (since 2026-10-11;
     before, the two push channels defaulted on): an account that never chose receives nothing, and an
     explicit stored choice is kept as it was. Which kinds a role can ever
