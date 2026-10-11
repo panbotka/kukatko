@@ -4177,10 +4177,20 @@ here.
   *parent* and their known parent already in hand for the sibling copy; a successful add refetches the network
   rather than patching the new person into the old answer.
   `TreeStage` (`components/people/TreeStage.tsx` + `familyTree.css`) is the sheet of paper the drawing is
-  painted on: drag to pan (a drag that travels more than 4 px swallows the click that ends it, so panning over a
-  person does not also follow their link), wheel to zoom about the cursor (a
+  painted on: drag (one finger) to pan (a drag that travels more than 4 px swallows the click that ends it, so
+  panning over a person does not also follow their link), wheel to zoom about the cursor (a
   **hand-attached** listener — React's own wheel handler is passive and cannot `preventDefault`, without which the
-  page scrolls instead of the tree zooming) and four buttons (zoom in/out, fit, back to the person it is about).
+  page scrolls instead of the tree zooming), **pinch** to zoom about the point between the fingers (a second
+  pointer down turns the gesture into a pinch and swallows its tap; lifting one finger carries on as a pan; a
+  primary pointer down starts afresh, so a release never heard cannot fake a second finger) and four buttons
+  (zoom in/out, fit, back to the person it is about). It **opens at `lib/treeView` `initialView`**: fitted when
+  the whole drawing fits at natural size (scale 1 — a 14 px name, a 40 px face), otherwise **natural size centred
+  on the focal person's own card** (`focus`, which `FamilyNetworkCanvas` points at the root's card, not the middle
+  of a couple's box). Fitting an 8-person, 3-generation family into a 390 px phone drew 8 px names and 16 px faces
+  nobody could read or tap (UI/UX review 2026-10-11, #15); the fit button still shows the whole family on demand.
+  Below the navbar's `lg` breakpoint the stage is as tall as the room **from where it starts down to the tab bar**:
+  it publishes its document offset as `--kk-tree-stage-top` and `familyTree.css` subtracts that and
+  `--kk-bottom-edge` from `100dvh` (floor 20rem); from `lg` up it keeps `clamp(24rem, 68vh, 56rem)`.
   The pointer is captured **only once that 4 px has been passed**, never on `pointerdown`: capture retargets every
   mouse event derived from that pointer, so an eager one delivers the `mouseup` — and with it the `click` — to the
   `<svg>`, leaving every control inside the drawing (a person, a card's `+`) dead to a **mouse** while it still
@@ -4190,7 +4200,7 @@ here.
   Everything inside the transformed `<g>` is in **layout units**, font sizes included, so type shrinks with the
   drawing rather than staying 13 px while the tree gets smaller around it. `resetKey` is what the drawing is *of*
   (the root plus the number of boxes): when it changes the reader's pan and zoom are dropped, so a new root — or a
-  drawing a recorded parent just grew — starts fitted, while opening a dialog leaves the view exactly where it
+  drawing a recorded parent just grew — starts at its opening view, while opening a dialog leaves the view exactly where it
   was. `TreePersonCard` (`TreePersonCard.tsx`) is one person in the drawing — the server-cut round face
   (`GET /subjects/{uid}/avatar`), falling back to `avatarIdentity`'s coloured initial for `photo_count === 0` or
   a rendition that fails (the ordinary case in a tree, not a failure), the name cut to the card's width by

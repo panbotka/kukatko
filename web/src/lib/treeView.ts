@@ -4,10 +4,10 @@
  * It is deliberately not `lib/compareZoom.ts`, which magnifies a photograph
  * inside a fixed pane and therefore never zooms *out* (`MIN_SCALE` is 1 there:
  * shrinking two photos compares nothing). A family tree is the opposite problem
- * — four generations are several thousand layout units wide and the first thing
- * a reader needs is to see the whole of it — so this one starts at
- * fit-to-viewport and pans without bounds, because a tree has no edge that means
- * anything to keep a reader inside.
+ * — four generations are several thousand layout units wide — so this one zooms
+ * out as readily as in, opens either fitted or at natural size on the person it
+ * is about ({@link initialView}), and pans without bounds, because a tree has no
+ * edge that means anything to keep a reader inside.
  *
  * A {@link TreeView} is applied as `translate(x, y) scale(scale)` on the SVG's
  * content group, with the default top-left origin: `x`/`y` are viewport pixels,
@@ -71,6 +71,33 @@ export function fitView(content: Size, viewport: Size): TreeView {
     x: (viewport.width - content.width * scale) / 2,
     y: Math.max((viewport.height - content.height * scale) / 2, 0),
   }
+}
+
+/**
+ * The view a drawing opens at: the whole of it when it fits at its natural size
+ * (a scale of 1, where a card's name is 14 px and its face 40 px), otherwise
+ * natural size **centred on the person the page is about**.
+ *
+ * Fitting a three-generation family into a 390 px phone drew cards with 8 px
+ * names and 16 px faces — nothing on them could be read or tapped, and the first
+ * thing every reader did was zoom in on the one person they had come for. So the
+ * drawing now opens there and the reader pans out to the rest; the fit button
+ * still shows the whole of it on demand. On a desktop a family that fits keeps
+ * opening fitted, because there nothing is lost by seeing it all.
+ *
+ * Without a `focus` (a drawing about nobody in particular) the fitted view is
+ * the only honest answer.
+ */
+export function initialView(
+  content: Size,
+  viewport: Size,
+  focus: { x: number; y: number } | null | undefined,
+): TreeView {
+  const fitted = fitView(content, viewport)
+  if (fitted.scale >= 1 || focus == null) {
+    return fitted
+  }
+  return centreOn({ scale: 1, x: 0, y: 0 }, focus, viewport)
 }
 
 /**

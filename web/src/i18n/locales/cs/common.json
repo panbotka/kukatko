@@ -2217,7 +2217,7 @@
     "summary": "{{people}} osob · {{generations}} generací",
     "truncated": "Rodina je větší, než se vejde do jedné kresby — zobrazeno je nejbližších {{shown}} z {{total}} lidí.",
     "openRoot": "Otevřít osobu",
-    "hint": "Táhnutím se kresba posouvá, kolečkem nebo tlačítky přibližuje. Kliknutí na osobu překreslí rodinu kolem ní.",
+    "hint": "Táhnutím se kresba posouvá, kolečkem nebo tlačítky přibližuje; na dotykovém displeji ji posunete jedním prstem a přiblížíte roztažením dvou prstů. Tlačítko se šipkami ukáže celou rodinu. Kliknutí na osobu překreslí rodinu kolem ní.",
     "hintAdd": "Plusko na kartě zapíše rodiče, který osobě chybí.",
     "reroot": "Překreslit rodinu kolem osoby {{name}}",
     "openPerson": "Otevřít osobu {{name}}",

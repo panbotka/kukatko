@@ -148,3 +148,136 @@ describe('TreeStage pointer handling', () => {
     expect(transformOf(container)).not.toBe(before)
   })
 })
+
+/**
+ * Where the drawing opens. jsdom never measures the stage, so it is the
+ * fallback 1024 × 640 these numbers are worked out against.
+ */
+describe('TreeStage opening view', () => {
+  const STAGE = { width: 1024, height: 640 }
+
+  function transformOf(container: HTMLElement): string {
+    return container.querySelector('svg > g')?.getAttribute('transform') ?? ''
+  }
+
+  function svgOf(container: HTMLElement): SVGSVGElement {
+    const svg = container.querySelector<SVGSVGElement>('svg.kk-tree-stage__svg')
+    if (svg === null) {
+      throw new Error('the stage has no svg')
+    }
+    return svg
+  }
+
+  function renderStage(content: { width: number; height: number }) {
+    return render(
+      <TreeStage content={content} resetKey="root" focus={{ x: 1500, y: 300 }}>
+        <rect width={content.width} height={content.height} />
+      </TreeStage>,
+    )
+  }
+
+  it('centres the focal person at natural size when the tree does not fit', () => {
+    const { container } = renderStage({ width: 3000, height: 900 })
+
+    expect(transformOf(container)).toBe(
+      `translate(${STAGE.width / 2 - 1500}, ${STAGE.height / 2 - 300}) scale(1)`,
+    )
+  })
+
+  it('keeps the whole tree in view when it fits at natural size', () => {
+    const { container } = render(
+      <TreeStage content={{ width: 400, height: 300 }} resetKey="root" focus={{ x: 50, y: 50 }}>
+        <rect width={400} height={300} />
+      </TreeStage>,
+    )
+
+    expect(transformOf(container)).toBe('translate(312, 170) scale(1)')
+  })
+
+  it('still fits the whole tree on demand', () => {
+    const { container } = renderStage({ width: 2048, height: 900 })
+
+    fireEvent.click(screen.getByRole('button', { name: 'familyTree.fit' }))
+
+    // 1024 / 2048 = 0.5, centred vertically: (640 - 450) / 2 = 95.
+    expect(transformOf(container)).toBe('translate(0, 95) scale(0.5)')
+  })
+
+  it('zooms with a pinch about the point between the fingers', () => {
+    const { container } = renderStage({ width: 3000, height: 900 })
+    const svg = svgOf(container)
+    const spot = { x: 300, y: 200 }
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 1,
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+      clientX: 250,
+      clientY: 200,
+    })
+    fireEvent.pointerDown(svg, {
+      pointerId: 2,
+      isPrimary: false,
+      button: 0,
+      buttons: 1,
+      clientX: 350,
+      clientY: 200,
+    })
+    // Fingers closing from 100 px apart to 50 px about the same midpoint.
+    fireEvent.pointerMove(svg, { pointerId: 1, buttons: 1, clientX: 275, clientY: 200 })
+    fireEvent.pointerMove(svg, { pointerId: 2, buttons: 1, clientX: 325, clientY: 200 })
+
+    const match = /translate\(([-\d.]+), ([-\d.]+)\) scale\(([-\d.]+)\)/.exec(
+      transformOf(container),
+    )
+    expect(match).not.toBeNull()
+    const [x, y, scale] = (match ?? []).slice(1).map(Number)
+    expect(scale).toBeCloseTo(0.5)
+    // The layout point that was under the midpoint at scale 1 is still there.
+    const before = { x: spot.x - (STAGE.width / 2 - 1500), y: spot.y - (STAGE.height / 2 - 300) }
+    expect(before.x * scale + x).toBeCloseTo(spot.x)
+    expect(before.y * scale + y).toBeCloseTo(spot.y)
+  })
+
+  it('swallows the tap a pinch ends on', () => {
+    const onPerson = vi.fn()
+    const { container } = render(
+      <TreeStage content={{ width: 3000, height: 900 }} resetKey="root" focus={{ x: 1500, y: 300 }}>
+        <a
+          href="/people/p1/tree"
+          aria-label="Anna"
+          onClick={(event) => {
+            event.preventDefault()
+            onPerson()
+          }}
+        >
+          <rect width={100} height={40} />
+        </a>
+      </TreeStage>,
+    )
+    const svg = svgOf(container)
+
+    fireEvent.pointerDown(svg, {
+      pointerId: 1,
+      isPrimary: true,
+      button: 0,
+      buttons: 1,
+      clientX: 250,
+      clientY: 200,
+    })
+    fireEvent.pointerDown(svg, {
+      pointerId: 2,
+      isPrimary: false,
+      button: 0,
+      buttons: 1,
+      clientX: 350,
+      clientY: 200,
+    })
+    fireEvent.pointerUp(svg, { pointerId: 2, clientX: 350, clientY: 200 })
+    fireEvent.pointerUp(svg, { pointerId: 1, clientX: 250, clientY: 200 })
+    fireEvent.click(screen.getByLabelText('Anna'))
+
+    expect(onPerson).not.toHaveBeenCalled()
+  })
+})

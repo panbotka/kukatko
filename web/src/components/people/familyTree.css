@@ -22,6 +22,26 @@
   touch-action: none;
 }
 
+/* Below the navbar's `lg` breakpoint — where the bottom tab bar is — the stage
+   takes every pixel from where it starts down to the tab bar, so a phone gets the
+   room the drawing needs rather than a fixed share of the screen.
+   `--kk-tree-stage-top` is the stage's measured page offset (published by
+   `TreeStage`), `--kk-bottom-edge` the tab bar; `dvh` so a collapsing browser
+   toolbar does not leave the stage too tall, with `vh` for an engine without it.
+   The floor keeps a landscape phone from getting a sliver. */
+@media (max-width: 991.98px) {
+  .kk-tree-stage {
+    height: max(
+      20rem,
+      calc(100vh - var(--kk-tree-stage-top, 12rem) - var(--kk-bottom-edge) - var(--kk-space-3))
+    );
+    height: max(
+      20rem,
+      calc(100dvh - var(--kk-tree-stage-top, 12rem) - var(--kk-bottom-edge) - var(--kk-space-3))
+    );
+  }
+}
+
 .kk-tree-stage__svg {
   display: block;
   width: 100%;
@@ -96,7 +116,9 @@
 
 .kk-tree-person__name {
   fill: var(--kk-text);
-  font-size: 13px;
+  /* 14 px at the natural scale the drawing opens at on a phone — the smallest a
+     name reads at arm's length. */
+  font-size: 14px;
   dominant-baseline: middle;
 }
 

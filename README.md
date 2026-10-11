@@ -143,8 +143,9 @@ photo-book tool (deliberately out of scope), or a product with support and a rel
   **Zobrazit rodokmen** opens the whole family as one drawing: everybody the family links reach from
   that person — parents and grandparents, children and grandchildren, and sideways through a sister to
   her children, the aunts and cousins and the people they married — a generation per row, a couple in
-  one box. There is no direction to pick and no depth to set; the drawing pans and zooms, a click on
-  anybody redraws it around them, and if a village-sized family ever outgrows it the page says it is
+  one box. There is no direction to pick and no depth to set; the drawing pans and zooms (drag, wheel,
+  or one finger and a pinch on a phone), opens on the person at a size you can read — the whole family
+  at once only when it fits, the fit button for the rest — a click on anybody redraws it around them, and if a village-sized family ever outgrows it the page says it is
   showing the nearest few hundred. For a curator every person with a parent the library does not know
   carries a **+** on their card: click it and the dialog opens on the right person, ready to record
   their mother or father. And the family is also a **search filter**: `family:Nečas` (or `family:me`)

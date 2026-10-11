@@ -159,16 +159,24 @@ function TreeBox({
 export function FamilyNetworkCanvas({ layout, ...boxProps }: FamilyNetworkCanvasProps) {
   const { rootUid } = boxProps
   const root = layout.nodes.find((node) => node.personUids.includes(rootUid))
+  // The root's own card, not the middle of their box: in a couple the box's
+  // middle is the bar between two people, and the drawing opens on this person.
+  const rootIndex = root?.personUids.indexOf(rootUid) ?? 0
 
   return (
     <TreeStage
       content={layout}
       // A recorded parent redraws the family around the same person; the reader
-      // is shown the whole of the new drawing rather than left zoomed into a
-      // corner of the old one.
+      // is shown the new drawing's opening view rather than left in a corner of
+      // the old one.
       resetKey={`${rootUid}:${layout.nodes.length}`}
       focus={
-        root === undefined ? null : { x: root.x + root.width / 2, y: root.y + root.height / 2 }
+        root === undefined
+          ? null
+          : {
+              x: root.x + rootIndex * (PERSON_WIDTH + COUPLE_GAP) + PERSON_WIDTH / 2,
+              y: root.y + NODE_HEIGHT / 2,
+            }
       }
     >
       <g className="kk-tree-edges">

@@ -4,6 +4,7 @@ import {
   centreOn,
   clampScale,
   fitView,
+  initialView,
   MAX_SCALE,
   MIN_SCALE,
   panBy,
@@ -48,6 +49,33 @@ describe('fitView', () => {
       x: 0,
       y: 0,
     })
+  })
+})
+
+describe('initialView', () => {
+  // A three-generation family on a 390 px phone: far too wide to fit at 1.
+  const family = { width: 1200, height: 420 }
+  const phone = { width: 390, height: 600 }
+
+  it('opens a family that does not fit at natural size, centred on the focal person', () => {
+    const focus = { x: 300, y: 200 }
+
+    const view = initialView(family, phone, focus)
+
+    expect(view.scale).toBe(1)
+    // The focal card's centre lands in the middle of the stage.
+    expect(focus.x * view.scale + view.x).toBe(phone.width / 2)
+    expect(focus.y * view.scale + view.y).toBe(phone.height / 2)
+  })
+
+  it('keeps the fitted view for a family that fits at natural size', () => {
+    const desktop = { width: 1440, height: 640 }
+
+    expect(initialView(family, desktop, { x: 300, y: 200 })).toEqual(fitView(family, desktop))
+  })
+
+  it('falls back to the fitted view when the drawing is about nobody', () => {
+    expect(initialView(family, phone, null)).toEqual(fitView(family, phone))
   })
 })
 
