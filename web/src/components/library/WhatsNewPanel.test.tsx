@@ -174,6 +174,19 @@ describe('WhatsNewPanel', () => {
     expect(screen.getByText('and 3 more')).toBeInTheDocument()
   })
 
+  it('renders the dismiss as the shared close button the ink-X styles key on', async () => {
+    fetchMock.mockResolvedValue(FULL_DIGEST)
+    renderPanel()
+    const close = await screen.findByRole('button', { name: 'Dismiss the summary' })
+    // `.btn-close` takes the palette's ink glyph (`bootstrapBridge.css`) and
+    // `.kk-whats-new .btn-close` the 44px box (`app.css`). The white variant is
+    // kept off: its class re-applies the dark theme's invert filter in plain
+    // Bootstrap, which is how this `X` came out black on the dark banner.
+    expect(close).toHaveClass('btn-close')
+    expect(close).not.toHaveClass('btn-close-white')
+    expect(close.closest('.kk-whats-new')).not.toBeNull()
+  })
+
   it('dismiss persists keyed on since, and a new visit re-shows the panel', async () => {
     const user = userEvent.setup()
 

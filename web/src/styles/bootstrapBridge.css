@@ -892,6 +892,36 @@ fieldset:disabled .btn:active {
   color: var(--kk-text-muted);
 }
 
+/* ---- Close buttons ------------------------------------------------------
+   Superhero draws the `X` white and Bootstrap's dark theme then runs it through
+   `invert(1)` (both on `[data-bs-theme=dark]`, inherited, and on
+   `.btn-close-white`), so every dismiss button — a modal or offcanvas header,
+   a toast, a dismissible alert — came out as a black glyph at half strength on
+   a dark surface: on the "what's new" banner's sunken tint it all but vanished.
+   Here the glyph is the palette's ink with no filter at all, so the `X` is the
+   colour of the text beside it whatever the variant prop says; the focus ring
+   is the app's own outline rather than Bootstrap's 25 % accent glow. */
+.btn-close {
+  --bs-btn-close-bg: var(--kk-close-glyph);
+  --bs-btn-close-filter: none;
+  --bs-btn-close-opacity: var(--kk-close-opacity);
+  --bs-btn-close-focus-shadow: none;
+}
+
+/* …except on the bright fills, whose label is the base colour (the filter bar's
+   orange chip): there an ink `X` would be the one light mark on a light pill. */
+.text-bg-primary .btn-close,
+.text-bg-success .btn-close,
+.text-bg-warning .btn-close,
+.text-bg-light .btn-close {
+  --bs-btn-close-bg: var(--kk-close-glyph-on-fill);
+}
+
+.btn-close:focus-visible {
+  outline: var(--kk-focus-ring-width) solid var(--kk-focus-ring-color);
+  outline-offset: calc(-1 * var(--kk-focus-ring-width));
+}
+
 /* ---- Alerts -------------------------------------------------------------
    Superhero paints an alert as a SOLID variant fill with white text — on the
    info cyan that measured ~2:1, and on warning yellow worse. Here an alert is

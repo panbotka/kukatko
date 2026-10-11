@@ -260,6 +260,11 @@
      reads it into `--bs-btn-disabled-opacity`; a disabled control is exempt
      from AA, so nothing on it is measured). */
   --kk-btn-disabled-opacity: 0.5;
+  /* A close button's ink `X` rests at this strength and goes full on hover and
+     focus. Superhero's 0.5 is kept no longer: it was tuned for a glyph the dark
+     theme then inverted to black, and at 0.75 the resting `X` clears 3:1 on
+     every surface and alert tint (the contrast test measures it). */
+  --kk-close-opacity: 0.75;
 
   /* ---- Translucent header --------------------------------------------
      The sticky top bar sits OVER scrolling photographs rather than on an

@@ -160,6 +160,28 @@ describe('coarse-pointer touch-target floor', () => {
 })
 
 /**
+ * The "what's new" banner is a one-line alert, and Superhero's fixed `1.25rem`
+ * padding made its `X` a 56px-tall box hanging below the line. It is a 44px
+ * square on every pointer, placed off the banner's own padding variable.
+ */
+describe('the what’s-new banner close button', () => {
+  const css = readCss('src/styles/app.css')
+  const close = declarations(ruleBody(css, /\.kk-whats-new \.btn-close\s*(?=\{)/) ?? '')
+
+  it('is a 44px square whatever the pointer', () => {
+    expect(close.get('box-sizing')).toBe('border-box')
+    expect(lengthPx(close.get('width'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(lengthPx(close.get('height'))).toBeGreaterThanOrEqual(TOUCH_FLOOR_PX)
+    expect(close.get('padding')).toBe('0')
+  })
+
+  it('centres on the first line rather than on the (expandable) box', () => {
+    expect(close.get('top')).toContain('var(--bs-alert-padding-y)')
+    expect(close.get('translate')).toBe('0 -50%')
+  })
+})
+
+/**
  * A task participant's remove ✕ used to sit at `opacity: 0.6` until the pill was
  * hovered — and hover never fires on a phone, so a destructive control stayed
  * permanently dimmed there. The dimming now lives behind a hover-capable fine

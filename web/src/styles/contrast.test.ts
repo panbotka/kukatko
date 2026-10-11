@@ -87,6 +87,8 @@ describe('the palette file', () => {
       ['--kk-switch-on-glyph', '--kk-palette-base'],
       ['--kk-switch-off-glyph', '--kk-palette-ink'],
       ['--kk-switch-focus-glyph', '--kk-palette-accent'],
+      ['--kk-close-glyph', '--kk-palette-ink'],
+      ['--kk-close-glyph-on-fill', '--kk-palette-base'],
     ]
     for (const [glyph, source] of glyphs) {
       const baked = /%23([0-9a-fA-F]{6})/.exec(tokens.get(glyph) ?? '')?.[1]
@@ -327,6 +329,81 @@ describe('an unchecked checkbox and switch', () => {
     expect(
       contrastRatio(knobFaded, trackFaded),
       `disabled knob ${toHex(knobFaded)} on ${toHex(trackFaded)}`,
+    ).toBeGreaterThanOrEqual(NON_TEXT)
+  })
+})
+
+describe('a close button’s X', () => {
+  // The dismiss `X` of a modal, an offcanvas, a toast or a dismissible alert is a
+  // non-text control the reader has to find (WCAG 1.4.11): 3:1 at its RESTING
+  // strength — hover and focus take it to full — on every surface a close button
+  // sits on, the alert tints included. Superhero's white glyph through the dark
+  // theme's `invert(1)` came out black at half strength, which is how the "what's
+  // new" banner's `X` vanished into its sunken tint.
+  const bridge = stripCssComments(readCss('src/styles/bootstrapBridge.css'))
+  const close = declarations(ruleBody(bridge, /(^|\})\s*\.btn-close\s*(?=\{)/) ?? '')
+  const opacity = Number(tokens.get('--kk-close-opacity'))
+
+  it('draws the palette glyph with no filter, so the dark theme cannot invert it', () => {
+    expect(close.get('--bs-btn-close-bg')).toBe('var(--kk-close-glyph)')
+    expect(close.get('--bs-btn-close-filter')).toBe('none')
+    expect(close.get('--bs-btn-close-opacity')).toBe('var(--kk-close-opacity)')
+  })
+
+  it('rings a keyboard focus with the app’s own outline', () => {
+    const focus = declarations(ruleBody(bridge, /\.btn-close:focus-visible\s*(?=\{)/) ?? '')
+    expect(focus.get('outline')).toBe('var(--kk-focus-ring-width) solid var(--kk-focus-ring-color)')
+  })
+
+  it.each([...SURFACES, '--bs-dark-bg-subtle', '--bs-secondary-bg-subtle', '--bs-info-bg-subtle'])(
+    'clears 3:1 at rest on %s',
+    (surface) => {
+      expect(opacity).toBeGreaterThan(0)
+      expect(opacity).toBeLessThanOrEqual(1)
+      const background = colour(token(surface))
+      const under =
+        background.a < 1 ? composite(background, colour(token('--kk-surface-page'))) : background
+      const glyph = composite({ ...colour(token('--kk-palette-ink')), a: opacity }, under)
+      const ratio = contrastRatio(glyph, under)
+      expect(
+        ratio,
+        `X ${toHex(glyph)} on ${toHex(under)} is ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(NON_TEXT)
+    },
+  )
+
+  // A remove `X` inside a filled pill (a filter chip, a picked option, a
+  // keyword) takes the pill's label colour: base on the bright fills, ink on the
+  // rest. Whichever glyph a fill gets has to clear 3:1 on it at rest.
+  const onFill = declarations(
+    ruleBody(bridge, /\.text-bg-primary \.btn-close,[^{]*\.text-bg-light \.btn-close\s*(?=\{)/) ??
+      '',
+  )
+  const fills: [string, string][] = [
+    ['--kk-palette-base', '--kk-accent-solid'],
+    ['--kk-palette-base', '--kk-success'],
+    ['--kk-palette-base', '--kk-warning'],
+    ['--kk-palette-base', '--kk-light'],
+    ['--kk-palette-ink', '--kk-secondary'],
+    ['--kk-palette-ink', '--kk-info'],
+    ['--kk-palette-ink', '--kk-danger'],
+    ['--kk-palette-ink', '--kk-dark'],
+    ['--kk-palette-ink', '--kk-entity-album-bg'],
+    ['--kk-palette-ink', '--kk-entity-tag-bg'],
+    ['--kk-palette-ink', '--kk-entity-person-bg'],
+  ]
+
+  it('swaps in the base glyph on the bright fills', () => {
+    expect(onFill.get('--bs-btn-close-bg')).toBe('var(--kk-close-glyph-on-fill)')
+  })
+
+  it.each(fills)('the %s glyph clears 3:1 at rest on %s', (ink, fill) => {
+    const under = colour(token(fill))
+    const glyph = composite({ ...colour(token(ink)), a: opacity }, under)
+    const ratio = contrastRatio(glyph, under)
+    expect(
+      ratio,
+      `X ${toHex(glyph)} on ${toHex(under)} is ${ratio.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(NON_TEXT)
   })
 })

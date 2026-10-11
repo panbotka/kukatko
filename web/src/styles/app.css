@@ -1752,11 +1752,28 @@ body {
  * thing on the page — which is exactly why it may not cost more than a line:
  * everything it pushes down is photographs. Bootstrap's alert padding is a
  * whole rem top and bottom, so the variable is re-pointed rather than a `py-2`
- * utility bolted on, because the dismiss `X` positions itself off the very same
- * variable and would otherwise sit off-centre in the shortened box.
+ * utility bolted on, and the dismiss `X` below is placed off the same variable.
  */
 .kk-whats-new {
   --bs-alert-padding-y: var(--kk-space-2);
+}
+
+/*
+ * Superhero compiles a dismissible alert's `X` with a fixed `1.25rem 1rem`
+ * padding from the top corner — a 56px-tall box sized for the full-height
+ * alert, which in this one-line banner hung the glyph below the text and half
+ * over the bottom border. Here it is a 44px square (the touch floor, on every
+ * pointer) centred on the first line — the line, not the box, because opening
+ * the detail makes the banner tall and the `X` must stay beside the summary it
+ * closes. The glyph itself is the shared ink one (`bootstrapBridge.css`).
+ */
+.kk-whats-new .btn-close {
+  top: calc(var(--bs-alert-padding-y) + 0.75rem);
+  translate: 0 -50%;
+  box-sizing: border-box;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
 }
 
 /* ---- Label cloud -------------------------------------------------------- */

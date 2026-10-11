@@ -305,7 +305,9 @@ here.
   under `kukatko.whatsNew.dismissedSince.<uid>` (`lib/whatsNewDismissal.ts`: `readDismissedWhatsNew`/
   `writeDismissedWhatsNew`, mirrors `announcementDismissal.ts`) — `since` is constant for the length of a visit, so closing the panel closes it
   for **this** visit through every reload and every walk around the app, and the next visit's fresh `since`
-  brings it back. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
+  brings it back. The dismiss `X` is the shared ink close glyph in a 44 × 44 box centred on the first line
+  (`.kk-whats-new .btn-close`; Superhero's fixed `1.25rem` padding hung it below the one-line banner), so it
+  stays beside the summary when the detail is open. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
   viewers included. Texts `whatsNew.*` (cs/en, with the Czech plural categories `_one/_few/_many/_other`
   so 1 fotka / 2 fotky / 5 fotek all read correctly). Tests: `WhatsNewPanel.test.tsx`),
   `WelcomeModal` (`components/welcome/`, **the first-run welcome, shown once**: mounted by `Layout` after
@@ -7577,7 +7579,13 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   the checkbox's because nothing on it is measured), drops the raised inset, pins hover/active to the disabled
   colours and shows `cursor: not-allowed`, which needs the pointer events Bootstrap kills restored — a disabled
   button still receives no click. `ReasonedButton`'s `.kk-btn-inert` wears the same fade; `styles/buttonDisabled.test.ts`
-  reads both), cards,
+  reads both), **close buttons** (Superhero draws the `X` white and the dark theme — inherited from `<html>`, and
+  again on `.btn-close-white` — inverts it, so every dismiss `X` was black at half strength on a dark surface, and
+  on the what's-new banner's sunken tint all but invisible; UI/UX review 2026-10-11 #2. `.btn-close` now draws the
+  palette's `--kk-close-glyph` (ink) with `filter: none` at `--kk-close-opacity` (0.75, full on hover/focus) and
+  the app's focus outline instead of Bootstrap's 25 % glow; inside a bright `.text-bg-{primary,success,warning,light}`
+  pill it takes `--kk-close-glyph-on-fill` (base), like the pill's label. `contrast.test.ts` holds the resting `X`
+  to 3:1 on every surface, alert tint and pill fill), cards,
   modals, offcanvas, popovers, tooltips, toasts, dropdowns, list groups, progress, pagination, nav tabs/pills,
   tables and **alerts** — a tinted surface with ink text and a rail in the variant's text tone instead of
   Superhero's solid fill (which put white on cyan at ~2:1). **The quiet action** `.btn-outline-secondary`
@@ -7984,8 +7992,8 @@ Each also has an `-rgb` triplet beside it (Bootstrap's `rgba(var(--bs-*-rgb), α
 Next to the five sits a **semantic block**: success/warning/danger (a green, a yellow kept apart from the orange,
 a deep crimson that cannot be mistaken for it), the shade photos are shown on, the categorical hues (entity chips,
 task states, avatars — many mutually distinct hues five colours cannot provide), the podium metals, and the few
-**data-URI glyphs** that cannot read a custom property (select chevron, check/radio/switch glyphs) with the palette
-colour baked into them.
+**data-URI glyphs** that cannot read a custom property (select chevron, check/radio/switch glyphs, the close-button
+`X` in ink and in base) with the palette colour baked into them.
 
 Everything else is derived in `styles/tokens.css` with `color-mix(in srgb, …)` — surfaces, borders, hovers, muted
 text, links, focus, selection, badges and every `--bs-*` variable — and `styles/bootstrapBridge.css` points
