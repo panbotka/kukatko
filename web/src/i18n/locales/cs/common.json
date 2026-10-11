@@ -2635,7 +2635,7 @@
       "placeholder": "Napiš komentář…",
       "inputLabel": "Nový komentář",
       "submit": "Odeslat komentář",
-      "submitHint": "Enter odešle, Shift+Enter odřádkuje",
+      "submitHint": "Enter odešle, Shift+Enter odřádkuje. Funguje Markdown: **tučně**, `kód`, [odkaz](url)",
       "send": "Odeslat",
       "handOverHint": "Odešle komentář a předá úkol agentovi (Ctrl/Cmd+Shift+Enter)",
       "edit": "Upravit",

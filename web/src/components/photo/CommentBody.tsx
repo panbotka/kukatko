@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { photoRefHref, referencedPhotoUids, splitPhotoRefs } from '../../lib/photoRefs'
+import { markdownPhotoUids } from '../../lib/markdownLinks'
+import { photoRefHref } from '../../lib/photoRefs'
+import { Markdown } from '../Markdown'
 import { thumbUrl } from '../../services/photos'
 
 /** How many referenced photographs the strip draws before folding into "+N". */
@@ -24,45 +26,42 @@ export interface CommentBodyProps {
 }
 
 /**
- * A comment's body as the reader sees it: the text as written, with every photo
- * uid in it turned into a link, and under it a strip of small thumbnails of the
- * photographs it refers to.
+ * A comment's body as the reader sees it: the text rendered as Markdown, with
+ * every photo uid in it turned into a link, and under it a strip of small
+ * thumbnails of the photographs it refers to.
  *
- * The body stays **text** — React escapes it, nothing is parsed as HTML or
- * Markdown, and `pre-wrap` in the stylesheet keeps the writer's line breaks.
- * The only substitution is the recognised uid token, which becomes an anchor
- * with the uid itself as its text; a reviewer's "these three are wrong" followed
- * by three uids reads the same in the CLI and clicks in the web. Uids that are
- * not in the current task's group still link — the reference is to the
+ * The body goes through the app's one {@link Markdown} renderer — sanitised, raw
+ * HTML inert — so `**bold**`, `` `code` ``, a `[name](url)` link and a table
+ * read as they were meant, in a task's thread and a photo's alike. A single
+ * newline is a line break (`breaks`), so a short typed comment looks as typed.
+ * A typed heading starts at level 4 and is drawn small, under the thread's own.
+ *
+ * A bare photo uid token in the text still becomes a link with the uid itself
+ * as its text; a reviewer's "these three are wrong" followed by three uids
+ * reads the same in the CLI and clicks in the web. That substitution sees text
+ * only — a uid inside `code` or already inside a link is left alone. Uids that
+ * are not in the current task's group still link — the reference is to the
  * photograph, not to its membership.
  *
- * The strip caps at {@link COMMENT_STRIP_MAX} and says "+N" for the rest: a
- * batch comment can name sixty photographs, and sixty thumbnails under one
- * remark would be the wall over again. A thumbnail that fails to load (a photo
- * since deleted, a mistyped uid of the right shape) drops out rather than
- * showing a broken image.
+ * The strip shows every photograph the comment refers to — bare uid tokens and
+ * own-site `/photos/<uid>` links alike, each once, in order of first mention.
+ * It caps at {@link COMMENT_STRIP_MAX} and says "+N" for the rest: a batch
+ * comment can name sixty photographs, and sixty thumbnails under one remark
+ * would be the wall over again. A thumbnail that fails to load (a photo since
+ * deleted, a mistyped uid of the right shape) drops out rather than showing a
+ * broken image.
  */
 export function CommentBody({ body, taskUid }: CommentBodyProps) {
   const { t } = useTranslation()
-  const segments = splitPhotoRefs(body)
-  const uids = referencedPhotoUids(body)
+  const uids = useMemo(() => markdownPhotoUids(body, window.location.origin), [body])
   const shown = uids.slice(0, COMMENT_STRIP_MAX)
   const rest = uids.length - shown.length
 
   return (
     <>
-      <p className="kk-comment__body">
-        {segments.map((segment, index) =>
-          segment.kind === 'text' ? (
-            // Text segments have no identity of their own; their position is it.
-            <span key={index}>{segment.text}</span>
-          ) : (
-            <Link key={index} to={photoRefHref(segment.uid, taskUid)} className="kk-comment__ref">
-              {segment.uid}
-            </Link>
-          ),
-        )}
-      </p>
+      <Markdown className="kk-comment__body" breaks photoRefs headingFloor={4} taskUid={taskUid}>
+        {body}
+      </Markdown>
       {shown.length > 0 && (
         <ul className="kk-comment__strip" aria-label={t('photo.comments.referenced')}>
           {shown.map((uid) => (

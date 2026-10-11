@@ -168,7 +168,9 @@ export function TaskQuestion({ task, canEdit, busy, onSave }: TaskQuestionProps)
       {task.body !== '' && (
         <Card className="mt-3">
           <Card.Body>
-            <Markdown>{task.body}</Markdown>
+            <Markdown headingFloor={3} photoRefs taskUid={task.uid}>
+              {task.body}
+            </Markdown>
           </Card.Body>
         </Card>
       )}

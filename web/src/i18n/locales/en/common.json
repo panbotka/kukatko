@@ -2517,7 +2517,7 @@
       "placeholder": "Write a comment…",
       "inputLabel": "New comment",
       "submit": "Post comment",
-      "submitHint": "Enter posts, Shift+Enter adds a line",
+      "submitHint": "Enter posts, Shift+Enter adds a line. Markdown works: **bold**, `code`, [link](url)",
       "send": "Send",
       "handOverHint": "Posts the comment and hands the task to the agent (Ctrl/Cmd+Shift+Enter)",
       "edit": "Edit",

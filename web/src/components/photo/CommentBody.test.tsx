@@ -51,12 +51,75 @@ describe('CommentBody', () => {
     }
   })
 
-  it('renders the body as text — markup in it is never interpreted', () => {
-    renderBody('<b>bold</b> <a href="/x">link</a> and *stars*')
+  it('renders Markdown: bold, inline code and a link', () => {
+    renderBody('**tučně**, `kód` a [kalendář](https://example.com/cal)')
 
-    expect(screen.getByText('<b>bold</b> <a href="/x">link</a> and *stars*')).toBeInTheDocument()
-    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.getByText('tučně').tagName).toBe('STRONG')
+    expect(screen.getByText('kód').tagName).toBe('CODE')
+    const link = screen.getByRole('link', { name: 'kalendář' })
+    expect(link).toHaveAttribute('href', 'https://example.com/cal')
+    expect(link).toHaveAttribute('target', '_blank')
+  })
+
+  it('never interprets raw HTML in the body', () => {
+    renderBody('<b>bold</b> <a href="/x">link</a> and <img src=x onerror=alert(1)>')
+
     expect(document.querySelector('b')).toBeNull()
+    expect(document.querySelector('img')).toBeNull()
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('shows a single newline as a line break', () => {
+    renderBody('first line\nsecond line')
+
+    expect(document.querySelector('.kk-comment__body br')).not.toBeNull()
+  })
+
+  it('links a bare uid and lists it in the strip', () => {
+    renderBody(`Wrong one: ${uid(1)}.`)
+
+    const body = document.querySelector('.kk-comment__body')
+    if (!(body instanceof HTMLElement)) {
+      throw new Error('the comment body is missing')
+    }
+    expect(within(body).getByRole('link', { name: uid(1) })).toHaveAttribute(
+      'href',
+      `/photos/${uid(1)}`,
+    )
+    const strip = screen.getByRole('list', { name: 'Photos mentioned in the comment' })
+    expect(within(strip).getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('lists a photo linked by its own-site URL in the strip, once', () => {
+    const own = `${window.location.origin}/photos/${uid(1)}`
+    renderBody(`[this one](${own}), again ${own} and /photos/${uid(1)} plus ${uid(1)}`, 'tk1')
+
+    const strip = screen.getByRole('list', { name: 'Photos mentioned in the comment' })
+    const thumbs = within(strip).getAllByRole('link')
+    expect(thumbs).toHaveLength(1)
+    expect(thumbs[0]).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+    // The written link stays in the app and carries the task.
+    const written = screen.getByRole('link', { name: 'this one' })
+    expect(written).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+    expect(written).not.toHaveAttribute('target')
+  })
+
+  it('leaves a uid inside inline code alone', () => {
+    renderBody(`run \`kukatko ctl photos get ${uid(1)}\``)
+
+    expect(screen.getByText(`kukatko ctl photos get ${uid(1)}`).tagName).toBe('CODE')
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('list')).toBeNull()
+  })
+
+  it('does not link a uid that is already the text of a link twice', () => {
+    renderBody(`[${uid(1)}](https://example.com/${uid(1)})`)
+
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute('href', `https://example.com/${uid(1)}`)
+    // Another site's URL is not a reference to one of our photos.
+    expect(screen.queryByRole('list')).toBeNull()
   })
 
   it('draws a thumbnail strip of the referenced photos, each once, capped with +N', () => {

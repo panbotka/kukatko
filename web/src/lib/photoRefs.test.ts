@@ -6,7 +6,6 @@ import {
   PHOTO_UID_PATTERN,
   photoRefHref,
   photoRefsThatFit,
-  referencedPhotoUids,
   splitPhotoRefs,
 } from './photoRefs'
 
@@ -63,14 +62,6 @@ describe('splitPhotoRefs', () => {
   it('yields nothing for an empty body and one text segment for plain prose', () => {
     expect(splitPhotoRefs('')).toEqual([])
     expect(splitPhotoRefs('1987.')).toEqual([{ kind: 'text', text: '1987.' }])
-  })
-})
-
-describe('referencedPhotoUids', () => {
-  it('lists each uid once, in order of first mention', () => {
-    const a = uid('a')
-    const b = uid('b')
-    expect(referencedPhotoUids(`${b} then ${a} and ${b} again`)).toEqual([b, a])
   })
 })
 

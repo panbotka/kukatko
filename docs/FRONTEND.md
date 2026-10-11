@@ -875,19 +875,33 @@ here.
   (keyboard-shrunk) phone viewport; it is deliberately **not** `fullscreen="sm-down"` like the admin form
   dialogs — a confirm has no inputs, so no keyboard ever covers its footer, and a phone-wide sheet for a
   two-line question reads as a page rather than as a question. Tests: `ConfirmModal.test.tsx`),
-  `Markdown` (**the app's one Markdown renderer** — `react-markdown` + `rehype-sanitize`, for wherever
-  prose somebody typed is shown as formatted text. Its two callers are the administrator's live
+  `Markdown` (**the app's one Markdown renderer** — `react-markdown` + `remark-gfm` + `rehype-sanitize`,
+  for wherever prose somebody typed is shown as formatted text. Its callers are the administrator's live
   preview of the first-sign-in welcome in `SettingsPage` and the welcome itself (`WelcomeModal`), so
-  the preview is not a lookalike of the real thing but literally the same renderer. **Sanitising is not optional**
-  even though only an administrator can write the text: `rehype-sanitize` runs on the rendered tree
-  with its default (GitHub) schema, so a `javascript:` href, an `onclick`, an `<iframe>` or a `<style>`
-  block cannot survive — a taken-over admin account must not become a way to run script in every other
-  user's browser, and the welcome is shown to everybody once, unprompted. Raw HTML in the source is
-  inert for a second reason too: `rehype-raw` is deliberately **not** installed, so react-markdown
-  never parses HTML at all. A link is rendered through a `components.a` override — `target="_blank"` +
-  `rel="noopener noreferrer"` — rather than by a rehype plugin, so the attributes are added *after*
-  sanitising and cannot be stripped by it. Props: `children` (the source) and `className` (the
-  wrapper). Tests: `Markdown.test.tsx`),
+  the preview is not a lookalike of the real thing but literally the same renderer, the body of a task
+  (`TaskQuestion`) and every comment (`CommentBody`, task and photo threads alike). The syntax is
+  CommonMark + **GFM** (tables, strikethrough, autolinked URLs, task lists) — what the curating agent
+  writes. **Sanitising is not optional**, whoever writes the text: `rehype-sanitize` runs on the
+  rendered tree with its default (GitHub) schema, so a `javascript:` href, an `onclick`, an `<iframe>`
+  or a `<style>` block cannot survive — a taken-over account must not become a way to run script in
+  every other user's browser, and the welcome is shown to everybody once, unprompted. Raw HTML in the
+  source is inert for a second reason too: `rehype-raw` is deliberately **not** installed, so
+  react-markdown never parses HTML at all. A link is rendered through a `components.a` override
+  (`MarkdownLink`, after sanitising, so its attributes cannot be stripped), which asks
+  `lib/markdownLinks` `resolveMarkdownLink` where it leads: an **own-site link** (root-relative `/…`, or
+  absolute on `window.location.origin`) is a react-router `Link`, **same tab**, and inside a task
+  (`taskUid`) a bare `/photos/<uid>` gains `?task=` exactly as `photoRefHref` writes it; `/api/…`, an
+  in-page `#…` and `mailto:` stay plain same-tab anchors; any other `http(s)` link opens a new tab with
+  `rel="noopener noreferrer"`. Outside a router an own link degrades to a plain anchor. A **table**
+  gets Bootstrap's `table table-sm` inside `.kk-markdown__table`, which scrolls sideways so a wide table
+  never widens a 360px page (transparent background, so it takes the card's surface). A list made only
+  of empty items — a comment that is just `1987.` — is shown as the text typed (`lib/remarkEmptyLists`).
+  Props: `children` (the source), `className` (the wrapper, which always carries `.kk-markdown`),
+  `breaks` (a single newline is a `<br>`, `remark-breaks` — comments), `headingFloor` (the level a `#`
+  becomes, capped at 6, and every heading drawn at body size via `.kk-markdown--embedded` — so typed
+  headings never outrank the page's: 3 for a task body, 4 for a comment), `photoRefs` (bare photo uid
+  tokens in **text** become links — never inside code or an existing link; `lib/markdownLinks`
+  `remarkPhotoRefs`) and `taskUid`. Tests: `Markdown.test.tsx`, `lib/markdownLinks.test.ts`),
   `ReasonedButton` (**the shared „a button that is off always says why" control.** A greyed-out
   control with no explanation reads as a malfunction, so this drop-in for react-bootstrap's `Button`
   has **no `disabled` prop at all**: the only way to switch it off is `disabledReason` — one finished,
@@ -2444,7 +2458,9 @@ here.
   **Do diskuse** (plus the downloads) and none of the writer's actions, the removal included
   (`extraActions` is empty for them). The posted comment lists the selected uids one per line (see
   `DiscussPhotosModal`), the thread refetches through the same `reloadKey` the quick answers use, and
-  `CommentBody` renders each uid as a link carrying `?task=` so the viewer stays in the task. **The group
+  `CommentBody` renders each uid as a link carrying `?task=` so the viewer stays in the task. The task's
+  body renders through `Markdown` with `headingFloor={3}`, `photoRefs` and `taskUid`, so the agent's GFM
+  tables show as tables and its links to this instance open in the same tab, inside the task. **The group
   has two layouts**, the wall and the **review ledger** (`TaskLedger`), chosen by `TaskViewToggle` — in
   the filter bar's `displayExtras` beside the density stepper for a large group, on the count line for a
   small one — and kept in the URL as **`?view=list`** (`TaskView` = `LibraryView` + `view`,
@@ -3632,22 +3648,27 @@ here.
   beside it. **`CommentItem`** renders
   `PersonAvatar` + author + `formatRelativeTime` (`lib/relativeTime`, `Intl.RelativeTimeFormat`
   `numeric: 'auto'` + `style: 'narrow'` → „před 2 h", „včera"; the absolute stamp survives as the `<time>`'s
-  `title`) + an „upraveno" marker when `edited_at` is set + the body with **`white-space: pre-wrap`** — the
-  backend parses nothing, so the client renders text, never HTML/markdown. The body goes through
-  **`CommentBody`** (`components/photo/`): the one token it recognises is a **photo uid** (`ph` + 24 of the
-  catalogue's base32 alphabet `0-9a-v`, word-bounded — `lib/photoRefs` `splitPhotoRefs`/`referencedPhotoUids`,
-  the pure half), which becomes a `Link` to `/photos/{uid}` with the uid as its text (`.kk-comment__ref`,
-  underlined, the body's colour); **inside a task thread** (`comment.task_uid` set) every link carries
-  `?task={taskUid}` (`photoRefHref`) so the viewer's prev/next and Back stay in the task. Everything else
-  stays text — markup in a body is never interpreted, there is no `dangerouslySetInnerHTML` anywhere in
-  the chain. Under the body a **strip of `tile_100` thumbnails** (`.kk-comment__strip`, a `<ul>` named
-  `photo.comments.referenced`) draws the referenced uids, each once and in order of first mention, capped
+  `title`) + an „upraveno" marker when `edited_at` is set + the body. The backend parses nothing; the
+  body goes through **`CommentBody`** (`components/photo/`), which renders it as **Markdown** through the
+  shared `Markdown` component (`breaks` — a single newline is a line break, so a short typed comment looks
+  as typed; `headingFloor={4}`; sanitised, raw HTML inert, no `dangerouslySetInnerHTML` anywhere in the
+  chain) — `**bold**`, `` `code` ``, `[name](url)` and tables read as meant. The composer's
+  `photo.comments.submitHint` says Markdown works. On top of that it recognises a **photo uid** (`ph` + 24
+  of the catalogue's base32 alphabet `0-9a-v`, word-bounded — `lib/photoRefs` `splitPhotoRefs`, the pure
+  half) in **text only** (`photoRefs`, never inside code or an existing link), which becomes a `Link` to
+  `/photos/{uid}` with the uid as its text (every link in `.kk-comment__body` is underlined in the body's
+  colour); **inside a task thread** (`comment.task_uid` set) every photo link — a bare uid and a written
+  own-site `/photos/<uid>` link alike — carries `?task={taskUid}` (`photoRefHref`) so the viewer's
+  prev/next and Back stay in the task. Under the body a **strip of `tile_100` thumbnails**
+  (`.kk-comment__strip`, a `<ul>` named `photo.comments.referenced`) draws the referenced photos — bare
+  uids **and** uids of own-site `/photos/<uid>` links (`lib/markdownLinks` `markdownPhotoUids`, which
+  parses with the renderer's own syntax so a uid in code does not count) — each once and in order of first mention, capped
   at `COMMENT_STRIP_MAX` = 12 then „+N", each a link to the same place; a thumbnail whose image fails to
   load **drops out** (`CommentThumb` remembers its own error) rather than showing a broken image — a uid of
   the right shape need not exist, and one outside the task's group still links, because the reference is
   to the photograph, not to its membership. This is how the batch bar's **Do diskuse** (`DiscussPhotosModal`)
   reads back, and why `kukatko ctl tasks comment` with uids in the text needed no change. Tests
-  `CommentBody.test.tsx`, `lib/photoRefs.test.ts`. **Edit is in place** (a textarea
+  `CommentBody.test.tsx`, `lib/photoRefs.test.ts`, `lib/markdownLinks.test.ts`. **Edit is in place** (a textarea
   replacing the body; a modal for fixing a typo would hide the conversation the remark belongs to), **only
   on the reader's own comment**; **delete** is the author's *or* an admin's (`canModerate`) and always goes
   through **one** `ConfirmModal` owned by the panel, not one per row. An admin therefore removes but never

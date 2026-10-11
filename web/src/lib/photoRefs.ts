@@ -1,14 +1,15 @@
 import { MAX_COMMENT_LENGTH } from '../services/comments'
 
 /**
- * References to photographs inside plain-text comments.
+ * References to photographs inside comments.
  *
- * A comment body is stored and rendered as text — the backend parses nothing —
- * but a photo uid dropped into it ("these three are wrong: phabc…") is the one
- * token worth recognising: it is how a reviewer points at a picture from the
- * discussion, and how `kukatko ctl tasks comment` has always pointed at one.
- * This module is the pure half of that: it finds the uids, builds the links
- * they become, writes the body the batch bar posts for a selection, and says
+ * A comment body is stored as text — the backend parses nothing — and the web
+ * renders it as Markdown, but a bare photo uid dropped into it ("these three are
+ * wrong: phabc…") is the one token worth recognising: it is how a reviewer
+ * points at a picture from the discussion, and how `kukatko ctl tasks comment`
+ * has always pointed at one. This module is the pure half of that: it finds the
+ * uids (`lib/markdownLinks` applies that to the Markdown's text), builds the
+ * links they become, writes the body the batch bar posts for a selection, and says
  * how many uids fit under the comment length limit. Nothing here touches the
  * DOM or the network, so the renderer and the composer share one definition of
  * what a reference is.
@@ -51,20 +52,6 @@ export function splitPhotoRefs(body: string): PhotoRefSegment[] {
     segments.push({ kind: 'text', text: body.slice(last) })
   }
   return segments
-}
-
-/**
- * The distinct photo uids a body refers to, in order of first mention — the
- * list the thumbnail strip under a comment draws.
- */
-export function referencedPhotoUids(body: string): string[] {
-  const seen = new Set<string>()
-  for (const segment of splitPhotoRefs(body)) {
-    if (segment.kind === 'uid') {
-      seen.add(segment.uid)
-    }
-  }
-  return [...seen]
 }
 
 /**

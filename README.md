@@ -379,6 +379,9 @@ rebuilt? — and the only person who knows is usually not the person editing the
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and
   small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
   pasted into a comment renders the same way, on a photo's thread as on a task's.
+- **Task texts and comments are Markdown.** Bold, `code`, links and tables in a task's question or in a
+  comment show formatted, a wide table scrolls sideways on a phone, and a link to a photo or a task in
+  Kukátko itself opens in the same tab — from inside a task, a photo link keeps you in that task.
 - **Approving a batch is reading, not clicking.** A task's group can be shown as a **ledger** instead of
   a wall — „Přehled" beside the density control, `?view=list` in the link — one line per photograph:
   thumbnail, title, the date exactly as precise as the catalogue claims it („červen 1974", not

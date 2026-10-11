@@ -1038,20 +1038,23 @@
   font-style: italic;
 }
 
-/* The body is plain text and stays plain text — the backend parses nothing, so
-   `pre-wrap` honours the writer's own line breaks and `break-word` keeps a pasted
-   URL from widening the drawer. */
+/* The body is Markdown (`components/Markdown`, line breaks as typed), packed
+   tighter than a page's prose; `break-word` keeps a pasted URL from widening the
+   drawer. */
 .kk-comment__body {
   margin: 0.15rem 0 0;
-  white-space: pre-wrap;
   overflow-wrap: break-word;
   color: var(--kk-text);
 }
 
-/* A photo uid in the text is the one token that becomes a link; it keeps the
-   body's colour so the sentence still reads as one, and the underline says it
-   is a link. */
-.kk-comment__ref {
+.kk-comment__body > :is(p, ul, ol, pre, blockquote, .kk-markdown__table):not(:last-child) {
+  margin-bottom: var(--kk-space-2);
+}
+
+/* A link in the text keeps the body's colour so the sentence still reads as
+   one, and the underline says it is a link; a photo uid (the usual link here)
+   may break anywhere. */
+.kk-comment__body a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 0.15em;

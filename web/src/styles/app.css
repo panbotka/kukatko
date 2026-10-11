@@ -3952,3 +3952,48 @@ body {
     padding-top: 12svh;
   }
 }
+
+/* ---- Rendered Markdown (`components/Markdown`) ---------------------------
+   Prose somebody typed: a task's body, a comment, the welcome. The last block
+   carries no bottom margin, so a one-paragraph comment does not stand on an
+   empty line. */
+.kk-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* A GFM table scrolls inside its own box: a wide table on a 360px phone moves
+   sideways on its own instead of pushing the page past the screen. The table
+   takes the surface it sits on (a card, the comment drawer) rather than the
+   page's. */
+.kk-markdown__table {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-bottom: var(--kk-space-4);
+}
+
+.kk-markdown__table > .table {
+  --bs-table-bg: transparent;
+  margin-bottom: 0;
+}
+
+.kk-markdown__table th {
+  white-space: nowrap;
+}
+
+/* A code block scrolls rather than widening its container. */
+.kk-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Text shown inside a page (`headingFloor`) never outranks the page's own
+   headings, in the outline or by eye: every level is drawn at body size. */
+.kk-markdown--embedded :is(h1, h2, h3, h4, h5, h6) {
+  font-size: var(--kk-font-size-body);
+  font-weight: 600;
+  margin: var(--kk-space-3) 0 var(--kk-space-2);
+}
+
+.kk-markdown--embedded > :first-child {
+  margin-top: 0;
+}
