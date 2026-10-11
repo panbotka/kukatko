@@ -5013,9 +5013,10 @@ here.
   `components/trash/` = `TrashCard` (an archived-photo tile: a preview + a countdown to auto-purge via
   `trashCountdown` + restore/delete actions + selection in selection mode);
   `components/duplicates/` = `DuplicateGroupCard` (a group card: members side by side with a preview/
-  dimensions/size/`taken_at`/distances — the two distance badges are titled by **what they answer**
-  („jak moc se podobají", smaller = more alike) rather than by what they are computed from, since
-  „vzdálenost perceptuálního hashe / embeddingu" told a lay admin nothing —, a radio selection of the keeper
+  dimensions/size/`taken_at`/distances — the distances to the **suggested** keeper sit on one muted
+  `small` line, each **named** („pHash 28 · obsah 0,001", locale number notation; a bare „≈28"/„0.001"
+  read as noise) with its own tooltip saying what it measures (differing bits of 64 / content-vector
+  distance) and that smaller = more alike; the keeper carries none —, a radio selection of the keeper
   (the suggested one by default), a `reason` badge,
   actions **Ponechat nejlepší a sloučit** (`onResolve` → preview) / **Není duplikát**, a busy state; a member that
   is a clip carries a `MediaKindMark` under its thumbnail and its length in the enlarged view's title

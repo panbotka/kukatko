@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { useLightbox } from '../../hooks/useLightbox'
-import { formatBytes, formatDate, formatDuration } from '../../lib/format'
+import { formatBytes, formatCount, formatDate, formatDuration } from '../../lib/format'
 import { pairId } from '../../lib/duplicateCompare'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { photoLabel } from '../../lib/photoTitle'
@@ -222,6 +222,17 @@ function memberSummary(member: DuplicateMember, language: string): string {
   return parts.join(' · ')
 }
 
+/**
+ * A cosine distance at the precision the duplicate threshold is measured in
+ * (0.028, see docs/THRESHOLDS.md): three decimals, in the locale's own notation.
+ */
+function formatDistance(distance: number, language: string): string {
+  return new Intl.NumberFormat(language, {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  }).format(distance)
+}
+
 interface DuplicateMemberTileProps {
   member: DuplicateMember
   selected: boolean
@@ -272,18 +283,30 @@ function DuplicateMemberTile({
       {member.taken_at !== undefined && member.taken_at !== '' && (
         <div className="small text-secondary">{formatDate(member.taken_at, i18n.language)}</div>
       )}
-      <div className="d-flex gap-1 flex-wrap my-1">
-        {member.phash_distance !== undefined && (
-          <Badge bg="light" text="dark" title={t('duplicates.phashDistanceTitle')}>
-            ≈{member.phash_distance}
-          </Badge>
-        )}
-        {member.embedding_distance !== undefined && (
-          <Badge bg="light" text="dark" title={t('duplicates.embeddingDistanceTitle')}>
-            {member.embedding_distance.toFixed(3)}
-          </Badge>
-        )}
-      </div>
+      {/* The distances to the suggested keeper (the keeper itself carries none).
+          Each figure is named on the tile — a bare "≈28" or "0.001" read as noise —
+          and its tooltip says what it measures and which way is "more alike". */}
+      {(member.phash_distance !== undefined || member.embedding_distance !== undefined) && (
+        <div className="small text-secondary my-1" data-testid="duplicate-distances">
+          {member.phash_distance !== undefined && (
+            <span title={t('duplicates.phashDistanceTitle')}>
+              {t('duplicates.phashDistanceLabel', {
+                value: formatCount(member.phash_distance, i18n.language),
+              })}
+            </span>
+          )}
+          {member.phash_distance !== undefined && member.embedding_distance !== undefined && (
+            <span aria-hidden="true"> · </span>
+          )}
+          {member.embedding_distance !== undefined && (
+            <span title={t('duplicates.embeddingDistanceTitle')}>
+              {t('duplicates.embeddingDistanceLabel', {
+                value: formatDistance(member.embedding_distance, i18n.language),
+              })}
+            </span>
+          )}
+        </div>
+      )}
       <Form.Check
         type="radio"
         name={`keeper-${groupId}`}

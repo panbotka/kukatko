@@ -128,6 +128,40 @@ describe('DuplicatesPage', () => {
     expect(screen.queryByTestId('media-video')).not.toBeInTheDocument()
   })
 
+  it('names each distance to the keeper and explains it in a tooltip', async () => {
+    // A bare "≈28" and "0.001" under a tile read as noise: each figure says what
+    // it is, and its tooltip says what it measures and which way is "more alike".
+    const g = group('g1', 'ph_keep', 'ph_dup')
+    g.members[1] = { ...g.members[1], phash_distance: 28, embedding_distance: 0.0012 }
+    fetchMock.mockResolvedValue(page([g]))
+    renderPage()
+
+    const lines = await screen.findAllByTestId('duplicate-distances')
+    // The keeper is the reference, so it carries no distances of its own.
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toHaveTextContent('pHash 28 · content 0.001')
+    expect(within(lines[0]).getByText('pHash 28')).toHaveAttribute(
+      'title',
+      expect.stringContaining('64 bits'),
+    )
+    expect(within(lines[0]).getByText('content 0.001')).toHaveAttribute(
+      'title',
+      expect.stringContaining('smaller = more alike'),
+    )
+  })
+
+  it('writes the distances in Czech notation in Czech', async () => {
+    await i18n.changeLanguage('cs')
+    const g = group('g1', 'ph_keep', 'ph_dup')
+    g.members[1] = { ...g.members[1], phash_distance: 28, embedding_distance: 0.0012 }
+    fetchMock.mockResolvedValue(page([g]))
+    renderPage()
+
+    expect(await screen.findByTestId('duplicate-distances')).toHaveTextContent(
+      'pHash 28 · obsah 0,001',
+    )
+  })
+
   it('renders the duplicate groups returned by the API', async () => {
     fetchMock.mockResolvedValue(page([group('g1', 'ph_keep', 'ph_dup')]))
     renderPage()
