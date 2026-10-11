@@ -2140,8 +2140,13 @@ here.
   `SavedSearchesPage` = `/saved` (any logged-in user, reached from the „Procházet" nav group as well as
   from the dropdown on `/search`) „Moje uložená hledání": a list of the current
   user's saved views, each link opens the exactly restored view (`savedSearchHref`), plus
-  renaming (`SaveSearchModal`) and **optimistic deletion** + empty state; the row is phone-proof —
-  the name truncates (`kk-min-w-0` + `text-truncate`) and rename/delete keep only their glyph below
+  renaming (`SaveSearchModal`) and **optimistic deletion** + empty state; the whole name + query
+  block is the one link (named by the name alone via `aria-label`, described by the query line via
+  `aria-describedby`), the actions stay separate buttons; under the name a muted line shows the saved
+  `q` in small monospace (14 px), one line with an ellipsis and the full text in `title` (or „bez
+  hledaného textu" in italics when none was saved), followed by a 12 px `Badge` for the most relevant
+  extra state from `savedSearchSummary` (filter count › non-default mode › non-default sort); the row is
+  phone-proof — both lines truncate (`kk-min-w-0` + `text-truncate`) and rename/delete keep only their glyph below
   `sm` (`aria-label` = the same word, so the accessible name doesn't change with the viewport),
   `FavoritesPage` = `/favorites` the current user's favorites: the same grid/filters as the library
   scoped to `favorite=true`, hearts to remove from favorites in place (favoritable),
@@ -6666,7 +6671,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `savedSearchView.ts` = the pure `isSearchParams(params)` (the presence of `mode` distinguishes a search from a library
   view) + `savedSearchHref(params)` (assembles `pathname?query` onto `LIBRARY_PATH` or `/search`, encodes the stored
   params minimally against the defaults via `writeUrlState`, ignores unknown/stale keys) —
-  the restoration of a saved search to an exact URL;
+  the restoration of a saved search to an exact URL — + `savedSearchSummary(params)` (the trimmed `q` and
+  one `SavedSearchBadge`: how many non-default facets filter it, the period's three keys counting as one,
+  else a non-default search `mode`, else a non-default `sort`, else none) for the `/saved` list's query line;
   `mapView.ts` = the `MapView` type (mapset + the viewport `lat`/`lng`/`z` + filters) + `MAP_DEFAULTS` +
   `mapViewToParams` (sanitizes archived) + `viewportFromView`/`mapsetFromView`/`hasActiveMapFilters`
   — the mapping of the map's URL state onto the feed params; `mapPopup.ts` = the pure `buildPopupElement` (a preview +

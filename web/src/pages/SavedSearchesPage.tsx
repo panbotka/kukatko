@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
+import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import ListGroup from 'react-bootstrap/ListGroup'
 import Spinner from 'react-bootstrap/Spinner'
+import { type TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
@@ -13,7 +15,7 @@ import { Icon } from '../components/Icon'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
-import { savedSearchHref } from '../lib/savedSearchView'
+import { type SavedSearchBadge, savedSearchHref, savedSearchSummary } from '../lib/savedSearchView'
 import { deleteSavedSearch, fetchSavedSearches, type SavedSearch } from '../services/savedSearches'
 
 /** Fetch lifecycle of the saved-searches list. */
@@ -111,14 +113,22 @@ export function SavedSearchesPage() {
               key={search.uid}
               className="d-flex align-items-center justify-content-between gap-2"
             >
-              {/* The name truncates rather than pushing the row past the
-                  viewport — a saved search is named by the user and can be long
-                  or unbroken. */}
+              {/* The whole name + query block is the one link that opens the
+                  search; the actions stay separate buttons beside it. Both
+                  lines truncate rather than pushing the row past the viewport
+                  — a name is typed by the user and a query can be long or
+                  unbroken — and the query keeps its full text in a tooltip.
+                  The link is named by the saved search's name alone and
+                  described by its query line, so a screen reader hears the
+                  name first and the query as the description. */}
               <Link
                 to={savedSearchHref(search.params)}
-                className="text-decoration-none flex-grow-1 kk-min-w-0 text-truncate"
+                aria-label={search.name}
+                aria-describedby={`saved-search-${search.uid}-query`}
+                className="text-decoration-none flex-grow-1 kk-min-w-0"
               >
-                {search.name}
+                <span className="d-block text-truncate">{search.name}</span>
+                <SavedSearchQueryLine id={`saved-search-${search.uid}-query`} search={search} />
               </Link>
               {/* Both actions keep a glyph and drop their word below `sm`, so a
                   phone row never has to fit a name plus two Czech-worded buttons
@@ -188,5 +198,47 @@ export function SavedSearchesPage() {
         {pendingDelete && t('savedSearches.confirmDelete', { name: pendingDelete.name })}
       </ConfirmModal>
     </>
+  )
+}
+
+/** The badge's words for the one piece of extra state a saved search carries. */
+function badgeText(badge: SavedSearchBadge, t: TFunction): string {
+  switch (badge.kind) {
+    case 'filters':
+      return t('savedSearches.badge.filters', { count: badge.count })
+    case 'mode':
+      return t(`savedSearches.badge.mode.${badge.mode}`)
+    case 'sort':
+      return t('savedSearches.badge.sort', {
+        sort: t(`library.sort.${badge.sort}`, { defaultValue: badge.sort }),
+      })
+  }
+}
+
+/**
+ * The muted second line of a saved-search row: the query it was saved with in
+ * small monospace, on one line with an ellipsis and the whole text in a
+ * tooltip, followed by a tiny badge for the most relevant extra state (filters,
+ * mode or sort; see {@link savedSearchSummary}). A search saved without any
+ * query text says so instead of leaving the line blank.
+ */
+function SavedSearchQueryLine({ id, search }: { id: string; search: SavedSearch }) {
+  const { t } = useTranslation()
+  const { query, badge } = savedSearchSummary(search.params)
+  return (
+    <span id={id} className="d-flex align-items-center gap-2 kk-min-w-0 text-secondary">
+      {query === '' ? (
+        <span className="text-truncate small fst-italic">{t('savedSearches.noQuery')}</span>
+      ) : (
+        <span className="text-truncate small font-monospace" title={query}>
+          {query}
+        </span>
+      )}
+      {badge && (
+        <Badge bg="secondary" className="flex-shrink-0 fw-normal">
+          {badgeText(badge, t)}
+        </Badge>
+      )}
+    </span>
   )
 }

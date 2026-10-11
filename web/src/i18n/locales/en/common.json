@@ -1245,6 +1245,17 @@
     "navTitle": "Show your saved searches",
     "openTitle": "Open the saved search \"{{name}}\"",
     "manageTitle": "Rename or delete your saved searches",
+    "noQuery": "no search text",
+    "badge": {
+      "filters_one": "+{{count}} filter",
+      "filters_other": "+{{count}} filters",
+      "mode": {
+        "fulltext": "by text",
+        "semantic": "by content",
+        "hybrid": "smart"
+      },
+      "sort": "sort: {{sort}}"
+    },
     "saveViewTitle": "Save the current view as a search"
   },
   "map": {

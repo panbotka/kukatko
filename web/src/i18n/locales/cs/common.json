@@ -1263,6 +1263,19 @@
     "navTitle": "Zobrazit uložená hledání",
     "openTitle": "Otevřít uložené hledání „{{name}}“",
     "manageTitle": "Přejmenovat nebo smazat uložená hledání",
+    "noQuery": "bez hledaného textu",
+    "badge": {
+      "filters_one": "+{{count}} filtr",
+      "filters_few": "+{{count}} filtry",
+      "filters_many": "+{{count}} filtru",
+      "filters_other": "+{{count}} filtrů",
+      "mode": {
+        "fulltext": "podle textu",
+        "semantic": "podle obsahu",
+        "hybrid": "chytré"
+      },
+      "sort": "řazení: {{sort}}"
+    },
     "saveViewTitle": "Uložit aktuální pohled jako hledání"
   },
   "albums": {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isSearchParams, savedSearchHref } from './savedSearchView'
+import { isSearchParams, savedSearchHref, savedSearchSummary } from './savedSearchView'
 
 describe('isSearchParams', () => {
   it('treats params with a non-empty mode as a search view', () => {
@@ -39,5 +39,52 @@ describe('savedSearchHref', () => {
   it('ignores unknown/stale keys and fills missing keys from defaults', () => {
     // `bogus` is not a known view key, so it is dropped; sort defaults through.
     expect(savedSearchHref({ camera: 'Nikon', bogus: 'x' })).toBe('/?camera=Nikon')
+  })
+})
+
+describe('savedSearchSummary', () => {
+  it('returns the trimmed query and no badge for a bare query', () => {
+    expect(savedSearchSummary({ q: '  beach iso:100  ' })).toEqual({
+      query: 'beach iso:100',
+      badge: null,
+    })
+  })
+
+  it('returns an empty query when none was saved', () => {
+    expect(savedSearchSummary({}).query).toBe('')
+  })
+
+  it('counts the non-default filters, the period as one', () => {
+    expect(
+      savedSearchSummary({
+        q: 'svatba',
+        sort: 'oldest',
+        mode: 'semantic',
+        person: 'su1,su2',
+        taken_after: '1960-01-01',
+        taken_before: '1969-12-31',
+        favorite: 'true',
+      }).badge,
+    ).toEqual({ kind: 'filters', count: 3 })
+  })
+
+  it('ignores values equal to their defaults and unknown keys', () => {
+    expect(
+      savedSearchSummary({ archived: 'false', sort: 'newest', mode: 'hybrid', bogus: 'x' }).badge,
+    ).toBeNull()
+  })
+
+  it('falls back to a non-default search mode when nothing filters', () => {
+    expect(savedSearchSummary({ q: 'sunset', mode: 'semantic', sort: 'oldest' }).badge).toEqual({
+      kind: 'mode',
+      mode: 'semantic',
+    })
+  })
+
+  it('falls back to a non-default sort', () => {
+    expect(savedSearchSummary({ q: 'cat', sort: 'oldest' }).badge).toEqual({
+      kind: 'sort',
+      sort: 'oldest',
+    })
   })
 })

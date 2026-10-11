@@ -75,6 +75,53 @@ describe('SavedSearchesPage', () => {
     expect(searchLink).toHaveAttribute('href', '/search?q=sunset&mode=semantic')
   })
 
+  it('shows the saved query under each name, inside the link', async () => {
+    const query = 'svatba person:jana year:1960-1969 '.repeat(4).trim()
+    fetchMock.mockResolvedValue([
+      saved('ss_1', 'Wedding', { mode: 'hybrid', q: query, album: 'al1', sort: 'oldest' }),
+      saved('ss_2', 'Sunset search', { mode: 'semantic', q: 'sunset' }),
+      saved('ss_3', 'Old Canon shots', { sort: 'oldest' }),
+      saved('ss_4', 'Everything', {}),
+    ])
+    renderPage()
+
+    // The query sits inside the link, truncated on one line with the full text
+    // in a tooltip, and describes the link whose name stays the saved name.
+    const wedding = await screen.findByRole('link', { name: 'Wedding' })
+    const queryText = within(wedding).getByText(query)
+    expect(queryText).toHaveClass('text-truncate', 'font-monospace')
+    expect(queryText).toHaveAttribute('title', query)
+    expect(wedding).toHaveAccessibleDescription(`${query} +1 filter`)
+    // Filters outrank the sort: one album facet is the badge.
+    expect(within(wedding).getByText('+1 filter')).toHaveClass('badge')
+
+    // With nothing filtering, a non-default mode is the badge…
+    const sunset = screen.getByRole('link', { name: 'Sunset search' })
+    expect(within(sunset).getByText('sunset')).toBeInTheDocument()
+    expect(within(sunset).getByText('by content')).toHaveClass('badge')
+
+    // …and a view saved without query text says so, with its sort as the badge.
+    const canon = screen.getByRole('link', { name: 'Old Canon shots' })
+    expect(within(canon).getByText('no search text')).toBeInTheDocument()
+    expect(within(canon).getByText('sort: Oldest')).toHaveClass('badge')
+
+    // An all-default view carries no badge at all.
+    const everything = screen.getByRole('link', { name: 'Everything' })
+    expect(everything.querySelector('.badge')).toBeNull()
+  })
+
+  it('shows the query line in Czech', async () => {
+    await i18n.changeLanguage('cs')
+    fetchMock.mockResolvedValue([
+      saved('ss_1', 'Rodina', { person: 'su1', label: 'lb1', favorite: 'true' }),
+    ])
+    renderPage()
+
+    const link = await screen.findByRole('link', { name: 'Rodina' })
+    expect(within(link).getByText('bez hledaného textu')).toBeInTheDocument()
+    expect(within(link).getByText('+3 filtry')).toBeInTheDocument()
+  })
+
   it('keeps a long unbroken name inside the row on a phone', async () => {
     // A 360px row cannot fit a name plus two Czech-worded buttons: the name
     // truncates, the actions collapse to their glyph, and nothing widens the
@@ -84,7 +131,8 @@ describe('SavedSearchesPage', () => {
     renderPage()
 
     const link = await screen.findByRole('link', { name: long })
-    expect(link).toHaveClass('text-truncate', 'kk-min-w-0')
+    expect(link).toHaveClass('kk-min-w-0')
+    expect(within(link).getByText(long)).toHaveClass('text-truncate')
     for (const [name, glyph] of [
       ['Rename', 'bi-pencil'],
       ['Delete', 'bi-trash'],
