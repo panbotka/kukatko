@@ -4424,8 +4424,18 @@ here.
   `MapFilterBar`'s drawer and the page lays the title and that one Filters button out side by side
   (`d-flex justify-content-between`, the pair wrapping onto two lines below ~360 px). The heading
   **stays visible** here, unlike `LibraryPage`'s: the map is not a tab-bar destination, so its `h1` is
-  the only thing that says where the reader is. The map keeps its `70dvh`, which on a 390×853 phone
-  now starts at y=121 and needs no scroll — **597 px, 70 % of the screen**, up from ~417 px,
+  the only thing that says where the reader is.
+  **Below `lg` (wherever the shell owes the tab bar, `useIsNavDrawerViewport`) the map IS the page**:
+  the root wears `.kk-map-fill` and the map sits in `.kk-map-stage`; the shell's sheet answers through
+  `:has()` — `.kukatko-shell` gets a *height* (not just its minimum) of `100dvh` minus `--kk-bottom-edge`,
+  every column down to the map flexes with `min-height: 0`, the footer and `.kukatko-main`'s bottom gutter
+  go, and the map's zero flex basis overrules its inline `70dvh` (guarded by `styles/mapFill.test.ts`).
+  The fixed `70dvh` had a 390×844 phone's map end ~600 px down, with the footer and bare background
+  between it and the tab bar; now it runs from the header row (y=121) to the tab bar (y=790) and the page
+  never scrolls — on an 820×1180 tablet from y=267 to 1126. So the footer's `display: flex` and the main
+  column's bottom padding live in `app.css`, not in `d-flex`/`pb-4` utilities, whose `!important` would
+  beat the drop. With nothing to scroll past, the map gets **`fillsViewport`**, i.e. one finger pans it.
+  A desktop keeps the `70dvh` map with the page and footer around it,
   `PlacesPage` = `/places` browsing the library by locality: a single `fetchPlaces()` fetch pulls
   the countries→cities hierarchy with counts and per-place `cover_uid`; a **drill in the URL**
   (`?country=&city=` via `useUrlState` over
@@ -5285,13 +5295,20 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   prop receives the URL of a tile that failed to load (Leaflet `tileerror`), so the parent can
   find out **why** — it fires per tile, the parent debounces;
   **on touch the map doesn't take over the one-finger swipe**: `prefersTouchGestures()` from `lib/mapGestures`
-  decides once on mount and the map is then built with `dragging: false` + `touchZoom: true`, so
+  decides on mount (and again when `fillsViewport` changes) and the map is built with `dragging: false` + `touchZoom: true`, so
   one finger scrolls the page and two fingers move the map — nobody gets stuck on a tall map in the middle of
   scrolling content; the mouse (a fine pointer) keeps drag-to-pan and wheel-zoom unchanged.
   The optional **`twoFingerHint`** prop is the text of a pill shown after a one-finger drag
   (an imperative DOM `.kukatko-map-gesture-hint` inside the Leaflet container, the caption goes into
   `data-label` and CSS draws it with `content: attr(...)`, `aria-hidden`, `pointer-events: none`, it disappears
   by itself after 2 s — so the gesture never repaints the React tree);
+  **`fillsViewport`** (the map page below `lg`) switches that off on every pointer: a map that fills a page
+  that never scrolls traps nothing, and a one-finger swipe that only flashed the hint would be a map that
+  cannot be panned the obvious way; the gesture wiring lives in its own effect keyed on the prop, so a
+  rotation across the breakpoint hands the drag back and forth without rebuilding the map;
+  a **`ResizeObserver`** on the container calls `map.invalidateSize()` whenever it changes size (the map
+  page flexes it, a tile warning takes a slice, a collapsing URL bar moves the dynamic viewport — none of
+  which is a window resize Leaflet would notice), disconnected before `map.remove()`;
   the default height is **`70dvh`** (`DEFAULT_MAP_HEIGHT`, a dynamic viewport unit = what really
   remains on a phone under the disappearing chrome bar; a `vh` fallback in `.kukatko-map`), the detail's mini-map
   and the picker pass a fixed one; a mapset the provider draws **light** (`mapsetNeedsDimming` in

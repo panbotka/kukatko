@@ -10,7 +10,7 @@ import { ErrorState } from '../components/ErrorState'
 import { LeafletMap } from '../components/map/LeafletMap'
 import { MapFilterBar } from '../components/map/MapFilterBar'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { useIsNarrowViewport, useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { useMapPhotos } from '../hooks/useMapPhotos'
 import {
   MAP_DEFAULTS,
@@ -56,6 +56,16 @@ const TILE_FAILURE_MESSAGES = {
  * The heading stays visible here (unlike the library's, which the bottom tab bar
  * names): the map is not a tab, so this `h1` is the only thing that says where
  * the reader is.
+ *
+ * Wherever the shell owes the bottom tab bar (a phone, a portrait tablet), the
+ * map **is** the page: it runs from the header row down to the tab bar and the
+ * page itself never scrolls. The fixed `70dvh` it keeps on a desktop left a
+ * phone's map ending around 600 px of an 844 px screen, with the footer and bare
+ * background under it — so here the page wears `.kk-map-fill`, which the shell's
+ * stylesheet answers by sizing the column to the dynamic viewport, dropping the
+ * footer and letting the map flex into every pixel that is left (see
+ * `.kk-map-fill` in `app.css`). With nothing to scroll past, a one-finger swipe
+ * belongs to the map again ({@link LeafletMap}'s `fillsViewport`).
  */
 export function MapPage() {
   const { t } = useTranslation()
@@ -63,6 +73,7 @@ export function MapPage() {
   const navigate = useNavigate()
   const { canWrite } = useAuth()
   const narrow = useIsNarrowViewport()
+  const fill = useIsNavDrawerViewport()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
   const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)
   const [warningDismissed, setWarningDismissed] = useState(false)
@@ -150,7 +161,7 @@ export function MapPage() {
   )
 
   return (
-    <>
+    <div className={fill ? 'kk-map-page kk-map-fill' : 'kk-map-page'}>
       {narrow ? (
         // One row for the whole page header: the title on the left, the bar —
         // which on a phone is a single Filters button plus the short coverage —
@@ -170,7 +181,7 @@ export function MapPage() {
       {status === 'error' ? (
         <ErrorState title={t('map.error.load')} onRetry={retry} />
       ) : (
-        <div className="position-relative">
+        <div className="position-relative kk-map-stage">
           {tileFailure !== null && !warningDismissed && (
             <Alert
               variant="warning"
@@ -194,6 +205,7 @@ export function MapPage() {
             estimatedTitle={t('map.estimatedTitle')}
             twoFingerHint={t('map.gesture.twoFingers')}
             onTileError={handleTileError}
+            fillsViewport={fill}
           />
 
           {status === 'loading' && (
@@ -220,6 +232,6 @@ export function MapPage() {
           )}
         </div>
       )}
-    </>
+    </div>
   )
 }

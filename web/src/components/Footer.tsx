@@ -20,7 +20,9 @@ interface FooterProps {
  * than floating over it or sticking to the viewport bottom. The footer is a
  * space-between flex row with the operator info on the left; `children` fill
  * the right-hand side (e.g. the maintainers' job-queue status line) without restructuring
- * it.
+ * it. Its `display: flex` is the stylesheet's (`.kukatko-footer`), not a
+ * `d-flex` utility, whose `!important` would keep it on the one page that drops
+ * it — the full-viewport map (`.kk-map-fill`).
  */
 export function Footer({ children }: FooterProps) {
   const { t } = useTranslation()
@@ -28,7 +30,7 @@ export function Footer({ children }: FooterProps) {
   return (
     <Container
       as="footer"
-      className="kukatko-footer d-flex flex-wrap justify-content-between align-items-center gap-2 border-top py-3 small text-body-secondary"
+      className="kukatko-footer flex-wrap justify-content-between align-items-center gap-2 border-top py-3 small text-body-secondary"
     >
       <span>
         {t('footer.operator')}

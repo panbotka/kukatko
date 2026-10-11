@@ -18,8 +18,14 @@ const FAILED_TILE_URL = '/api/v1/map/tiles/basic/7/70/44'
 // can assert markers reach the map and a marker click navigates to the detail,
 // plus a button that fires a tile-load failure the way Leaflet's tileerror does.
 vi.mock('../components/map/LeafletMap', () => ({
-  LeafletMap: ({ features, mapset, onSelectPhoto, onTileError }: LeafletMapProps) => (
-    <div data-testid="leaflet-map" data-mapset={mapset}>
+  LeafletMap: ({
+    features,
+    mapset,
+    onSelectPhoto,
+    onTileError,
+    fillsViewport = false,
+  }: LeafletMapProps) => (
+    <div data-testid="leaflet-map" data-mapset={mapset} data-fills={String(fillsViewport)}>
       {features.map((f) => (
         <a
           key={f.properties.uid}
@@ -401,6 +407,75 @@ describe('MapPage narrow viewport (phone)', () => {
     await user.click(within(drawer).getByRole('button', { name: 'Clear filters' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByTestId('location')).not.toHaveTextContent('taken_after')
+  })
+})
+
+/**
+ * Points `window.matchMedia` at a viewport `width` wide, answering the
+ * `max-width` queries the page asks honestly — a tablet is narrow enough for
+ * the tab bar but not for the phone header, which a single yes/no cannot say.
+ */
+function mockWidth(width: number): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => {
+    const max = /max-width:\s*([\d.]+)px/.exec(query)
+    return {
+      matches: max !== null && width <= Number(max[1]),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }
+  })
+}
+
+/**
+ * The map as the whole page below `lg`. On a phone the map used to end around
+ * 600 px of an 844 px screen, with the footer and empty background under it; the
+ * page now wears the class the shell's stylesheet answers by sizing the column
+ * to the viewport, dropping the footer and flexing the map into the rest (the
+ * CSS half is guarded by `styles/mapFill.test.ts`).
+ */
+describe('MapPage full-height layout', () => {
+  afterEach(() => {
+    mockViewport(false)
+  })
+
+  /** The page root, which carries the layout class the shell's `:has()` reads. */
+  function pageRoot(): Element {
+    const root = screen.getByTestId('leaflet-map').closest('.kk-map-page')
+    if (root === null) {
+      throw new Error('the map page root was not rendered')
+    }
+    return root
+  }
+
+  it.each([
+    ['a phone', 390],
+    ['a portrait tablet', 820],
+  ])('fills the viewport with the map on %s', async (_name, width) => {
+    mockWidth(width)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+    expect(pageRoot()).toHaveClass('kk-map-fill')
+    // The map sits in the stage the stylesheet flexes down to the tab bar…
+    expect(screen.getByTestId('leaflet-map').parentElement).toHaveClass('kk-map-stage')
+    // …and, with no page left to scroll, takes a one-finger swipe itself.
+    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-fills', 'true')
+  })
+
+  it('keeps the desktop page as it was: a 70dvh map with the page around it', async () => {
+    mockWidth(1440)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap()
+
+    await screen.findByRole('link', { name: 'ph1' })
+    expect(pageRoot()).not.toHaveClass('kk-map-fill')
+    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-fills', 'false')
   })
 })
 

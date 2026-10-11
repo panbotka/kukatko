@@ -474,8 +474,11 @@ export function Layout() {
       <div className="kukatko-page">
         {/* A phone pays for its top padding out of the first screen — on the
             library that gap sits directly above the photographs — so it gets one
-            step less of it and `md`+ keeps the full 1.5rem. */}
-        <Container as="main" className="pt-3 pt-md-4 pb-4 kukatko-main">
+            step less of it and `md`+ keeps the full 1.5rem. The bottom padding
+            is the stylesheet's (`.kukatko-main`), not a `pb-*` utility, so a
+            page that fills the viewport — the map on a phone — can drop it
+            without an `!important`. */}
+        <Container as="main" className="pt-3 pt-md-4 kukatko-main">
           <AnnouncementBanner />
           <Outlet />
         </Container>

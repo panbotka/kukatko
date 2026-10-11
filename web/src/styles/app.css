@@ -332,7 +332,10 @@ body {
   flex: 1 0 auto;
 }
 
+/* `display` lives here rather than in a `d-flex` utility so the full-viewport
+   map page can take the footer out (see `.kk-map-fill`) without `!important`. */
 .kukatko-footer {
+  display: flex;
   margin-top: auto;
 }
 
@@ -367,6 +370,13 @@ body {
    margin, but a page that scrolls sideways on a phone, where the container *is*
    the viewport. `var(--bs-gutter-x)` is the same variable the rows spend, so the
    two stay in step (guarded by `pageGutter.test.ts`). */
+/* The page's bottom gutter above the footer (Bootstrap's `pb-4`, 1.5rem), kept
+   here instead of in the markup so the full-viewport map page can drop it (see
+   `.kk-map-fill`). */
+.kukatko-main {
+  padding-bottom: var(--kk-space-5);
+}
+
 .kukatko-main,
 .kukatko-footer {
   padding-left: calc(var(--bs-gutter-x) * 0.5 + env(safe-area-inset-left, 0px));
@@ -2437,6 +2447,52 @@ body {
      map would collapse to nothing, so land it on the `vh` equivalent. A caller
      passing a fixed height (the detail mini-map, the picker) overrides both. */
   height: 70vh;
+}
+
+/* The map page where the shell owes the bottom tab bar (`MapPage` puts
+   `.kk-map-fill` on its root below `lg`): the map IS the page. The fixed `70dvh`
+   above left a phone's map ending around 600px of an 844px screen, with the
+   footer and bare background between it and the tab bar.
+
+   So the shell's minimum height becomes its height — the same dynamic-viewport
+   span minus the taken bottom edge that `body` reserves as scroll clearance, so
+   the two add up to exactly one screen and nothing scrolls — the footer is
+   dropped, and every link of the column down to the map flexes into what the
+   navbar and the header row leave (`min-height: 0`, or a flex item would refuse
+   to shrink below its content). The map's inline `70dvh` is overruled by its
+   zero flex basis, and Leaflet re-measures itself through its ResizeObserver.
+   `:has()` because the shell is the Layout's and only the page knows it fills;
+   a browser without it keeps the plain `70dvh` page. Guarded by
+   `mapFill.test.ts`. */
+.kukatko-shell:has(.kk-map-fill) {
+  height: calc(100vh - var(--kk-bottom-edge));
+  height: calc(100dvh - var(--kk-bottom-edge));
+}
+
+.kukatko-page:has(.kk-map-fill),
+.kukatko-main:has(.kk-map-fill),
+.kk-map-fill,
+.kk-map-fill > .kk-map-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* The map runs down to the tab bar, not to the page's bottom gutter above it
+   (`.kukatko-main`'s own padding, held there rather than in a `pb-*` utility so
+   this rule can win without an `!important`). */
+.kukatko-main:has(.kk-map-fill) {
+  padding-bottom: 0;
+}
+
+.kukatko-page:has(.kk-map-fill) > .kukatko-footer {
+  display: none;
+}
+
+.kk-map-fill > .kk-map-stage > .kukatko-map {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 /* The map page's control bar. Its bottom rhythm lives here rather than in an

@@ -40,6 +40,7 @@ const leaflet = vi.hoisted(() => {
       calls.fitBounds.push(latlngs)
     }),
     dragging: { enable: vi.fn(), disable: vi.fn() },
+    invalidateSize: vi.fn(),
   }
 
   const cluster = {
@@ -413,6 +414,55 @@ describe('LeafletMap touch gestures', () => {
     expect(hint.getAttribute('data-label')).toBe('Use two fingers to move the map')
   })
 
+  it('lets one finger pan a map that fills a page with nothing to scroll', () => {
+    pinPointer(true)
+    const { container } = render(
+      <LeafletMap
+        features={FEATURES}
+        mapset="basic"
+        viewport={null}
+        onViewportChange={vi.fn()}
+        onSelectPhoto={vi.fn()}
+        thumbAlt="Photo on the map"
+        twoFingerHint="Use two fingers to move the map"
+        fillsViewport
+      />,
+    )
+    // There is no page around the map to trap a swipe in, so the drag handler
+    // stays on and nothing tells the user to use a second finger.
+    expect(leaflet.calls.mapOptions[0].dragging).toBe(true)
+    expect(container.querySelector('.kukatko-map-gesture-hint')).toBeNull()
+  })
+
+  it('follows a rotation across the breakpoint without rebuilding the map', () => {
+    pinPointer(true)
+    const props = {
+      features: FEATURES,
+      mapset: 'basic' as const,
+      viewport: null,
+      onViewportChange: vi.fn(),
+      onSelectPhoto: vi.fn(),
+      thumbAlt: 'Photo on the map',
+      twoFingerHint: 'Use two fingers to move the map',
+    }
+    const { container, rerender } = render(<LeafletMap {...props} fillsViewport />)
+    expect(container.querySelector('.kukatko-map-gesture-hint')).toBeNull()
+
+    // Now the page scrolls around the map: one finger goes back to the page.
+    leaflet.map.dragging.disable.mockClear()
+    rerender(<LeafletMap {...props} fillsViewport={false} />)
+    expect(leaflet.map.dragging.disable).toHaveBeenCalled()
+    expect(container.querySelector('.kukatko-map-gesture-hint')).not.toBeNull()
+
+    // And back: the hint is gone and the drag handler is on again.
+    leaflet.map.dragging.enable.mockClear()
+    rerender(<LeafletMap {...props} fillsViewport />)
+    expect(leaflet.map.dragging.enable).toHaveBeenCalled()
+    expect(container.querySelector('.kukatko-map-gesture-hint')).toBeNull()
+    // One map throughout: the gesture handling changed, not the map.
+    expect(leaflet.calls.mapOptions).toHaveLength(1)
+  })
+
   it('adds no hint element on a fine pointer', () => {
     pinPointer(false)
     const { container } = render(
@@ -436,5 +486,41 @@ describe('LeafletMap sizing', () => {
     // chrome; jsdom drops the unit, so read the prop's default rather than the
     // computed style.
     expect(DEFAULT_MAP_HEIGHT).toBe('70dvh')
+  })
+
+  it('re-measures whenever its container changes size, and stops watching on unmount', () => {
+    // The map page flexes the container into whatever the header row leaves,
+    // and a tile warning or a collapsing URL bar resizes it with no window
+    // resize for Leaflet to notice. jsdom has no ResizeObserver, so stand one in
+    // that hands the test its callback.
+    const observed: Element[] = []
+    const disconnect = vi.fn()
+    let notify: (() => void) | undefined
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback
+        }
+        observe(target: Element) {
+          observed.push(target)
+        }
+        disconnect() {
+          disconnect()
+        }
+      },
+    )
+    try {
+      const { container, unmount } = renderMap()
+      expect(observed).toEqual([container.querySelector('.kukatko-map')])
+
+      notify?.()
+      expect(leaflet.map.invalidateSize).toHaveBeenCalledTimes(1)
+
+      unmount()
+      expect(disconnect).toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

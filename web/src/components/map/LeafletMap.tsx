@@ -124,6 +124,16 @@ export interface LeafletMapProps {
    */
   twoFingerHint?: string
   /**
+   * Whether the map fills the viewport on a page that never scrolls (the map
+   * page on a phone or tablet). The two-finger convention exists so a map does
+   * not trap a swipe meant for the page around it; with no page to scroll there
+   * is nothing to trap, and a one-finger swipe that only flashed the hint would
+   * be a map that cannot be panned the obvious way. So a filling map keeps
+   * Leaflet's own one-finger drag on every pointer. May change while the map is
+   * mounted (a rotation across the breakpoint); the gesture handling follows.
+   */
+  fillsViewport?: boolean
+  /**
    * Called with the URL of a tile the layer failed to load. An `<img>` never
    * exposes its response status to JavaScript, so the parent has to re-request
    * the URL to learn *why* the tiles are missing (see `probeTileFailure`) and can
@@ -163,6 +173,7 @@ export function LeafletMap({
   picker,
   onTileError,
   twoFingerHint,
+  fillsViewport = false,
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -199,6 +210,10 @@ export function LeafletMap({
   // Captured once: the initial viewport and mapset used to build the map.
   const initialViewportRef = useRef(viewport)
   const initialMapsetRef = useRef(mapset)
+  // Captured for the one-time setup effect, so the map is built with the drag
+  // handler the gesture effect below would otherwise switch on a frame later.
+  const fillsViewportRef = useRef(fillsViewport)
+  fillsViewportRef.current = fillsViewport
 
   // One-time setup: create the map, the proxied tile layer, the required mapy.com
   // controls and the cluster layer. Cleans up fully on unmount.
@@ -209,11 +224,9 @@ export function LeafletMap({
     }
 
     const initial = initialViewportRef.current
-    // Whether this map hands one-finger swipes to the page scroller. Decided
-    // here rather than during render: this effect runs exactly once, so the
-    // media query is asked once too, and the answer is fixed for the map's
-    // lifetime (Leaflet cannot swap its handlers under a live gesture anyway).
-    const gestureHandling = prefersTouchGestures()
+    // Whether this map starts out handing one-finger swipes to the page
+    // scroller; the gesture effect below owns the decision from here on.
+    const gestureHandling = !fillsViewportRef.current && prefersTouchGestures()
     const map = L.map(container, {
       center: initial !== null ? [initial.lat, initial.lng] : DEFAULT_CENTER,
       zoom: initial !== null ? initial.zoom : DEFAULT_ZOOM,
@@ -285,47 +298,77 @@ export function LeafletMap({
       })
     }
 
-    // Touch only: two-finger gesture handling, plus the hint that says so. The
-    // hint is plain DOM rather than React state so a gesture never re-renders
-    // the map; it sits inside the (positioned) Leaflet container and is inert
-    // to hit-testing, so it can never swallow a tap.
-    let detachGestures: (() => void) | undefined
-    let hintElement: HTMLElement | undefined
-    let hintTimer: number | undefined
-    if (gestureHandling) {
-      const hint = document.createElement('div')
-      hint.className = 'kukatko-map-gesture-hint'
-      // Decorative: the hint answers a gesture nobody makes with a keyboard or
-      // a screen reader, and it would otherwise be announced out of nowhere.
-      hint.setAttribute('aria-hidden', 'true')
-      container.appendChild(hint)
-      hintElement = hint
-      detachGestures = enableTwoFingerPan(map, container, () => {
-        const text = twoFingerHintRef.current
-        if (text === undefined || text === '') {
-          return
-        }
-        // The pill draws its label from this attribute (`content: attr(...)`),
-        // so an empty hint leaves nothing visible at all.
-        hint.dataset.label = text
-        hint.classList.add('is-visible')
-        window.clearTimeout(hintTimer)
-        hintTimer = window.setTimeout(() => {
-          hint.classList.remove('is-visible')
-        }, GESTURE_HINT_MS)
-      })
-    }
+    // Leaflet measures its container once, at creation, and again only on a
+    // window resize — but this container also changes size on its own: the map
+    // page flexes it into whatever the header row leaves, a tile warning above
+    // it takes a slice away, and a phone's collapsing URL bar moves the dynamic
+    // viewport it is sized from. Re-measure whenever it does, or the tiles and
+    // the pan bounds keep the stale size (a grey band, a centre that is not).
+    const resizeObserver =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+            map.invalidateSize()
+          })
+        : null
+    resizeObserver?.observe(container)
 
     return () => {
-      window.clearTimeout(hintTimer)
-      detachGestures?.()
-      hintElement?.remove()
+      resizeObserver?.disconnect()
       map.remove()
       mapRef.current = null
       tileLayerRef.current = null
       clusterRef.current = null
     }
   }, [])
+
+  // Touch only, and only on a map with a page around it: two-finger gesture
+  // handling, plus the hint that says so. Its own effect (not part of the
+  // one-time setup) so a filling map can hand the one-finger drag back and forth
+  // as a rotation crosses the breakpoint. The pointer is asked here rather than
+  // during render, once per change of `fillsViewport`. The hint is plain DOM
+  // rather than React state so a gesture never re-renders the map; it sits
+  // inside the (positioned) Leaflet container and is inert to hit-testing, so
+  // it can never swallow a tap.
+  useEffect(() => {
+    const map = mapRef.current
+    const container = containerRef.current
+    if (map === null || container === null) {
+      return
+    }
+    if (fillsViewport || !prefersTouchGestures()) {
+      map.dragging.enable()
+      return
+    }
+    map.dragging.disable()
+
+    const hint = document.createElement('div')
+    hint.className = 'kukatko-map-gesture-hint'
+    // Decorative: the hint answers a gesture nobody makes with a keyboard or a
+    // screen reader, and it would otherwise be announced out of nowhere.
+    hint.setAttribute('aria-hidden', 'true')
+    container.appendChild(hint)
+    let hintTimer: number | undefined
+    const detachGestures = enableTwoFingerPan(map, container, () => {
+      const text = twoFingerHintRef.current
+      if (text === undefined || text === '') {
+        return
+      }
+      // The pill draws its label from this attribute (`content: attr(...)`), so
+      // an empty hint leaves nothing visible at all.
+      hint.dataset.label = text
+      hint.classList.add('is-visible')
+      window.clearTimeout(hintTimer)
+      hintTimer = window.setTimeout(() => {
+        hint.classList.remove('is-visible')
+      }, GESTURE_HINT_MS)
+    })
+
+    return () => {
+      window.clearTimeout(hintTimer)
+      detachGestures()
+      hint.remove()
+    }
+  }, [fillsViewport])
 
   // Swap the tile layer's URL when the mapset changes (no map rebuild needed).
   useEffect(() => {
