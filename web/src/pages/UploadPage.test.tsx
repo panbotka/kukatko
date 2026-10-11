@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { StrictMode, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
@@ -255,6 +255,82 @@ describe('UploadPage — stage 1, pick', () => {
 
     expect(uploadMock).toHaveBeenCalledTimes(1)
     expect(screen.getByText('0 / 1')).toBeInTheDocument()
+  })
+})
+
+/**
+ * A phone has nothing to drag from and no Ctrl key, so the drop zone's copy
+ * follows the primary pointer: a mouse is told to drag and paste, a finger only
+ * to tap.
+ */
+describe('UploadPage — stage 1 copy by pointer', () => {
+  const realMatchMedia = window.matchMedia
+
+  /** Points `window.matchMedia` at a device whose primary pointer is a finger. */
+  function setCoarsePointer(coarse: boolean): void {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: coarse && query.includes('pointer: coarse'),
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }))
+  }
+
+  afterEach(() => {
+    // Reassigning `window.matchMedia` outlives mock restoration.
+    window.matchMedia = realMatchMedia
+  })
+
+  it('tells a mouse to drag or paste', () => {
+    setCoarsePointer(false)
+    renderPage()
+
+    expect(screen.getByText('Drag photos here')).toBeInTheDocument()
+    expect(screen.getByText('or tap to choose them from your device')).toBeInTheDocument()
+    expect(screen.getByText(/paste it here \(Ctrl\+V\)/)).toBeInTheDocument()
+    expect(screen.queryByText('Tap to choose photos')).not.toBeInTheDocument()
+  })
+
+  it('asks a finger only to tap, with no drag or Ctrl+V talk', () => {
+    setCoarsePointer(true)
+    renderPage()
+
+    expect(screen.getByText('Tap to choose photos')).toBeInTheDocument()
+    expect(screen.getByText('You can choose several photos at once')).toBeInTheDocument()
+    expect(screen.queryByText('Drag photos here')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Ctrl\+V/)).not.toBeInTheDocument()
+    // The buttons are the same either way.
+    expect(screen.getByRole('button', { name: 'Choose photos' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Take a photo' })).toBeInTheDocument()
+  })
+
+  it('speaks Czech on touch too', async () => {
+    await i18n.changeLanguage('cs')
+    setCoarsePointer(true)
+    renderPage()
+
+    expect(screen.getByText('Klepněte a vyberte fotky')).toBeInTheDocument()
+    expect(screen.getByText('Můžete vybrat víc fotek najednou')).toBeInTheDocument()
+    expect(screen.queryByText(/Ctrl\+V/)).not.toBeInTheDocument()
+  })
+
+  it('keeps pasting working on touch even though it is not advertised', async () => {
+    setCoarsePointer(true)
+    uploadMock.mockReturnValue(new Promise<UploadFileResult>(() => undefined))
+    renderPage()
+
+    const event = new Event('paste')
+    Object.defineProperty(event, 'clipboardData', { value: { files: [file('pasted.jpg')] } })
+    await act(async () => {
+      window.dispatchEvent(event)
+      await Promise.resolve()
+    })
+
+    expect(uploadMock).toHaveBeenCalledTimes(1)
   })
 })
 

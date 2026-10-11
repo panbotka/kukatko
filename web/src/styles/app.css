@@ -2977,6 +2977,17 @@ body {
   font-weight: 600;
 }
 
+/* On a phone the zone is only asked to be tapped — nothing is dragged onto it —
+   so it gives up height and a heavy dashed edge to keep the action rail's
+   camera and picker buttons above the fold. */
+@media (max-width: 575.98px) and (pointer: coarse) {
+  .kk-upload-drop {
+    min-height: 7rem;
+    padding: var(--kk-space-4) var(--kk-space-3);
+    border-width: 1px;
+  }
+}
+
 /* The finished batch's sentence. Set at page-title size because in the last
    stage it *is* the page — the outcome, not a heading over one. */
 .kk-upload-outcome {

@@ -927,7 +927,11 @@ here.
   — sunken, dashed hairline, because it is a hole to put photos into rather than a button. Whatever it
   is given uploads at once, so the copy promises that and there is nothing under it to press. A footnote
   names the third way in, **paste** — the page listens for it via `usePasteFiles`, but nothing on screen
-  would otherwise say so),
+  would otherwise say so. On a touch-primary device (`useCoarsePointer`) there is no drag source and no
+  Ctrl key, so the copy becomes **Klepněte a vyberte fotky** / **Můžete vybrat víc fotek najednou** and
+  the paste footnote is left out (pasting itself still works); on a phone (`max-width: 575.98px` +
+  `pointer: coarse`) the zone also shrinks — lower, a 1px dashed edge — so the action rail stays above
+  the fold. Tests: `UploadPage.test.tsx` "stage 1 copy by pointer"),
   `PickFilesButton` (a real, thumb-sized button with its `<input type=file>` hidden behind it: the
   gallery, the camera (`camera` → `capture="environment"` + `accept="image/*"`) and **Přidat další
   soubory** are all this one component, so no entry point can forget that picking *is* starting),

@@ -2798,6 +2798,8 @@
       "headline": "Drag photos here",
       "drop": "Drop them and the upload starts",
       "dropHint": "or tap to choose them from your device",
+      "touchHeadline": "Tap to choose photos",
+      "touchHint": "You can choose several photos at once",
       "choose": "Choose photos",
       "camera": "Take a photo",
       "more": "Add more files",

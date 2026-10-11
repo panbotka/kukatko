@@ -1,6 +1,7 @@
 import { useId, useState, type DragEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { useCoarsePointer } from '../../hooks/useCoarsePointer'
 import { PICKER_ACCEPT } from '../../lib/mediaFiles'
 
 /** Props for {@link DropZone}. */
@@ -22,11 +23,17 @@ export interface DropZoneProps {
  * scrolling; this zone is the affordance, not the only way in. The footnote
  * names the third way, pasting, which the page listens for (see
  * `hooks/usePasteFiles`) but nothing on screen would otherwise mention.
+ *
+ * On a touch-primary device ({@link useCoarsePointer}) there is nothing to drag
+ * from and no Ctrl key, so the zone just asks for a tap and says the picker takes
+ * several photos at once, and the paste footnote is left out. Only the copy
+ * changes: the drop handlers and the paste listener stay wired either way.
  */
 export function DropZone({ onFiles }: DropZoneProps) {
   const { t } = useTranslation()
   const inputId = useId()
   const [dragActive, setDragActive] = useState(false)
+  const touch = useCoarsePointer()
 
   const emit = (list: FileList | null): void => {
     if (list && list.length > 0) {
@@ -62,9 +69,15 @@ export function DropZone({ onFiles }: DropZoneProps) {
         onDragLeave={handleDragLeave}
       >
         <span className="kk-upload-drop__headline">
-          {dragActive ? t('upload.pick.drop') : t('upload.pick.headline')}
+          {dragActive
+            ? t('upload.pick.drop')
+            : touch
+              ? t('upload.pick.touchHeadline')
+              : t('upload.pick.headline')}
         </span>
-        <span className="text-secondary">{t('upload.pick.dropHint')}</span>
+        <span className="text-secondary">
+          {touch ? t('upload.pick.touchHint') : t('upload.pick.dropHint')}
+        </span>
       </label>
       <input
         id={inputId}
@@ -80,7 +93,9 @@ export function DropZone({ onFiles }: DropZoneProps) {
         }}
       />
 
-      <p className="kk-text-caption text-secondary mt-3 mb-0">{t('upload.pick.paste')}</p>
+      {!touch && (
+        <p className="kk-text-caption text-secondary mt-3 mb-0">{t('upload.pick.paste')}</p>
+      )}
     </div>
   )
 }
