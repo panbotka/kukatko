@@ -617,13 +617,15 @@ body {
  *
  * `ReasonedButton` marks itself `aria-disabled` instead of taking the native
  * `disabled` attribute, so the reader can still focus it (to hear the reason)
- * and still hover it (to see the reason in the `title`). Bootstrap's own
- * `.btn:disabled` rule would have killed both: it drops the control out of the
- * tab order and sets `pointer-events: none`, which suppresses the tooltip.
+ * and still hover it (to see the reason in the `title`). A native `disabled`
+ * drops the control out of the tab order for good, and Bootstrap's own
+ * `.btn:disabled` rule also set `pointer-events: none`, which suppressed the
+ * tooltip (the bridge restores pointer events now, for the cursor).
  *
  * So the look is reproduced here by hand — the same `--bs-btn-disabled-*`
- * custom properties Bootstrap resolves per variant, minus the parts that make
- * the explanation unreachable.
+ * custom properties Bootstrap resolves per variant, at the same
+ * `--kk-btn-disabled-opacity` the bridge's one disabled rule fades every
+ * native disabled button to (`styles/buttonDisabled.test.ts` ties the two).
  */
 .kk-btn-inert {
   color: var(--bs-btn-disabled-color);

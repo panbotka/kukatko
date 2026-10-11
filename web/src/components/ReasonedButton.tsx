@@ -29,13 +29,12 @@ export interface ReasonedButtonProps extends Omit<ButtonProps, 'disabled'> {
  *
  * **Why not the native `disabled` attribute.** A `<button disabled>` is removed
  * from the tab order, so a keyboard or screen-reader user can never reach it to
- * hear the explanation; and Bootstrap puts `pointer-events: none` on `.btn:disabled`,
- * which stops the browser from ever showing the `title` tooltip on hover. A
- * `title` on a natively disabled Bootstrap button is therefore invisible to
- * *both* input methods — decoration, not information. This button instead marks
- * itself `aria-disabled`, which keeps it focusable and hoverable, swallows the
- * click in JS, and takes the greyed-out look from `.kk-btn-inert` (the same
- * opacity Bootstrap uses, minus the `pointer-events` kill).
+ * hear the explanation — a `title` on it is decoration for one input method
+ * only, not information for both. This button instead marks itself
+ * `aria-disabled`, which keeps it focusable and hoverable, swallows the click in
+ * JS, and takes the greyed-out look from `.kk-btn-inert` (the same
+ * `--kk-btn-disabled-opacity` fade and not-allowed cursor every natively
+ * disabled button gets from `bootstrapBridge.css`).
  *
  * The rule this implements, and the one case it deliberately does not cover:
  * a control the reader's **role** forbids is not rendered at all (see

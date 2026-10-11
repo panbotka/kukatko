@@ -144,6 +144,7 @@
    accent too. */
 
 .btn {
+  --bs-btn-disabled-opacity: var(--kk-btn-disabled-opacity);
   --bs-btn-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
   --bs-btn-box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--kk-palette-ink) 15%, transparent),
@@ -408,6 +409,40 @@
   --bs-btn-hover-color: var(--kk-accent-hover);
   --bs-btn-active-color: var(--kk-accent-hover);
   --bs-btn-disabled-color: var(--kk-text-subtle);
+}
+
+/* ---- The disabled state, one rule for every variant ----------------------
+   Each variant above keeps its own fill and label when disabled (Bootstrap's
+   `--bs-btn-disabled-*`), so what says "unavailable" is the fade — and at
+   Superhero's 0.65 a disabled filled primary was a dark-orange plate with a
+   full-contrast label, a second brand colour next to the live one. This rule
+   (native `disabled`, the `.disabled` class react-bootstrap puts on an anchor,
+   a disabled `fieldset`) fades the whole button, label included, to
+   `--kk-btn-disabled-opacity`, drops the raised inset so it no longer answers a
+   press, and shows the not-allowed cursor — which needs pointer events back
+   (Bootstrap kills them, and the cursor with them; the browser still sends no
+   click to a disabled button). With hover reachable again, the colours are
+   pinned to the disabled ones so the button never repaints on the way past.
+   `ReasonedButton` (`.kk-btn-inert` in `app.css`) reproduces the same look
+   for the `aria-disabled` twin that must stay focusable. */
+.btn:disabled,
+.btn.disabled,
+fieldset:disabled .btn {
+  pointer-events: auto;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn:disabled:hover,
+.btn:disabled:active,
+.btn.disabled:hover,
+.btn.disabled:active,
+fieldset:disabled .btn:hover,
+fieldset:disabled .btn:active {
+  color: var(--bs-btn-disabled-color);
+  background-color: var(--bs-btn-disabled-bg);
+  border-color: var(--bs-btn-disabled-border-color);
+  box-shadow: none;
 }
 
 /* ---- Form controls ----------------------------------------------------

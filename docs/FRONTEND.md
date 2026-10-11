@@ -834,13 +834,13 @@ here.
   already-translated sentence, specific („Nejdřív vyberte fotky, na které se má úprava použít.") rather
   than generic. Empty/`null`/`undefined` = a live button. **It does not use the native `disabled`
   attribute**, and that is the point: `<button disabled>` leaves the tab order, so a keyboard or
-  screen-reader user can never reach the explanation, and Bootstrap's own `.btn:disabled` rule sets
-  `pointer-events: none`, which stops the browser ever showing the `title` — a `title` on a natively
-  disabled Bootstrap button is therefore invisible to **both** input methods. Instead it sets
+  screen-reader user can never reach the explanation — a `title` on a natively disabled button serves
+  one input method only (the bridge's disabled rule has restored pointer events, so the mouse does see
+  it now; the keyboard never will). Instead it sets
   `aria-disabled`, keeps the button focusable and hoverable, swallows the click in JS (so a
   `type="submit"` inside a form cannot submit it either) and takes the greyed look from `.kk-btn-inert`
-  in `app.css` — Bootstrap's own `--bs-btn-disabled-*` values plus `cursor: not-allowed`, minus the
-  `pointer-events` kill; the hover/active/focus overrides keep an inert button from repainting on the
+  in `app.css` — Bootstrap's own `--bs-btn-disabled-*` values at the bridge's `--kk-btn-disabled-opacity`
+  plus `cursor: not-allowed`; the hover/active/focus overrides keep an inert button from repainting on the
   way past, while leaving the focus ring alone. The reason reaches the reader three ways: `title`
   (mouse), `aria-describedby` → a `visually-hidden` sibling (keyboard/AT; `visually-hidden` is
   absolutely positioned, so it adds no box to the toolbar), and — where a cluster of buttons shares one
@@ -7570,7 +7570,14 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `.form-check-input` gets a whole `border` because Superhero compiles it `border: none`, the off switch knob is
   the palette's `--kk-switch-off-glyph` (ink at 64 %) instead of the dark theme's 25 % white, and a disabled one
   fades to `--kk-control-disabled-opacity` with the strong edge — all ≥ 3:1 on every surface, measured in
-  `styles/contrast.test.ts`), cards,
+  `styles/contrast.test.ts`), **disabled buttons** (one rule for every variant, `.btn:disabled` / `.disabled` /
+  `fieldset:disabled`: each keeps its own fill and label, so the fade is what says "off" — Superhero's 0.65 left
+  a disabled filled primary a dark-orange plate with a full-contrast label, a second brand colour next to the
+  live one (UI/UX review 2026-10-11 #1). It fades the whole button to `--kk-btn-disabled-opacity` (0.5, below
+  the checkbox's because nothing on it is measured), drops the raised inset, pins hover/active to the disabled
+  colours and shows `cursor: not-allowed`, which needs the pointer events Bootstrap kills restored — a disabled
+  button still receives no click. `ReasonedButton`'s `.kk-btn-inert` wears the same fade; `styles/buttonDisabled.test.ts`
+  reads both), cards,
   modals, offcanvas, popovers, tooltips, toasts, dropdowns, list groups, progress, pagination, nav tabs/pills,
   tables and **alerts** — a tinted surface with ink text and a rail in the variant's text tone instead of
   Superhero's solid fill (which put white on cyan at ~2:1). **The quiet action** `.btn-outline-secondary`
