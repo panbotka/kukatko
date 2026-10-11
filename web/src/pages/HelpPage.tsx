@@ -1,12 +1,11 @@
 import type { ParseKeys } from 'i18next'
 import { Fragment } from 'react'
 import Accordion from 'react-bootstrap/Accordion'
-import Col from 'react-bootstrap/Col'
-import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
 
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { Icon, type IconName } from '../components/Icon'
+import { NarrowPage } from '../components/NarrowPage'
 import { SearchQueryReference } from '../components/search/SearchQueryReference'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { commitUrl, formatVersion } from '../lib/version'
@@ -248,54 +247,52 @@ export function HelpPage() {
   useDocumentTitle(t('help.title'))
 
   return (
-    <Row className="justify-content-center">
-      <Col xs={12} lg={9} xl={8}>
-        <h1 className="kk-page-title mb-4">{t('help.title')}</h1>
-        <p className="kk-text-body mb-4">{t('help.intro')}</p>
+    <NarrowPage>
+      <h1 className="kk-page-title mb-4">{t('help.title')}</h1>
+      <p className="kk-text-body mb-4">{t('help.intro')}</p>
 
-        <nav aria-label={t('help.tocTitle')} className="mb-4">
-          <h2 className="kk-section-title h5 mb-2">{t('help.tocTitle')}</h2>
-          <ul className="list-unstyled mb-0">
-            {SECTIONS.map((section) => (
-              <li key={section.id} className="mb-1">
-                <a href={`#help-${section.id}`} className="d-inline-flex align-items-center gap-2">
-                  <Icon name={section.icon} />
-                  {t(section.titleKey)}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <Accordion alwaysOpen defaultActiveKey={SECTIONS.map((section) => section.id)}>
+      <nav aria-label={t('help.tocTitle')} className="mb-4">
+        <h2 className="kk-section-title h5 mb-2">{t('help.tocTitle')}</h2>
+        <ul className="list-unstyled mb-0">
           {SECTIONS.map((section) => (
-            <Accordion.Item key={section.id} eventKey={section.id} id={`help-${section.id}`}>
-              <Accordion.Header>
-                <span className="d-inline-flex align-items-center gap-2">
-                  <Icon name={section.icon} />
-                  {t(section.titleKey)}
-                </span>
-              </Accordion.Header>
-              <Accordion.Body>
-                {renderParagraphs(t(section.bodyKey))}
-                {section.id === 'search' && <SearchQueryChapter />}
-                {section.id === 'roles' && (
-                  <dl className="row mb-0 mt-2">
-                    {ROLE_ROWS.map((row) => (
-                      <Fragment key={row.role}>
-                        <dt className="col-sm-3">{t(row.role)}</dt>
-                        <dd className="col-sm-9 kk-text-body">{t(row.descKey)}</dd>
-                      </Fragment>
-                    ))}
-                  </dl>
-                )}
-              </Accordion.Body>
-            </Accordion.Item>
+            <li key={section.id} className="mb-1">
+              <a href={`#help-${section.id}`} className="d-inline-flex align-items-center gap-2">
+                <Icon name={section.icon} />
+                {t(section.titleKey)}
+              </a>
+            </li>
           ))}
-        </Accordion>
+        </ul>
+      </nav>
 
-        <BuildInfo />
-      </Col>
-    </Row>
+      <Accordion alwaysOpen defaultActiveKey={SECTIONS.map((section) => section.id)}>
+        {SECTIONS.map((section) => (
+          <Accordion.Item key={section.id} eventKey={section.id} id={`help-${section.id}`}>
+            <Accordion.Header>
+              <span className="d-inline-flex align-items-center gap-2">
+                <Icon name={section.icon} />
+                {t(section.titleKey)}
+              </span>
+            </Accordion.Header>
+            <Accordion.Body>
+              {renderParagraphs(t(section.bodyKey))}
+              {section.id === 'search' && <SearchQueryChapter />}
+              {section.id === 'roles' && (
+                <dl className="row mb-0 mt-2">
+                  {ROLE_ROWS.map((row) => (
+                    <Fragment key={row.role}>
+                      <dt className="col-sm-3">{t(row.role)}</dt>
+                      <dd className="col-sm-9 kk-text-body">{t(row.descKey)}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              )}
+            </Accordion.Body>
+          </Accordion.Item>
+        ))}
+      </Accordion>
+
+      <BuildInfo />
+    </NarrowPage>
   )
 }

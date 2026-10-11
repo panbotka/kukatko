@@ -3,9 +3,7 @@ import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -18,6 +16,7 @@ import { NotificationsCard } from '../components/account/NotificationsCard'
 import { PasskeysCard } from '../components/account/PasskeysCard'
 import { Icon } from '../components/Icon'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { NarrowPage } from '../components/NarrowPage'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { ACTIVITY_PATH } from '../lib/activityView'
 import { ApiError, changePassword, MIN_PASSWORD_LENGTH } from '../services/auth'
@@ -146,191 +145,189 @@ export function AccountPage() {
   const submitting = state.status === 'submitting'
 
   return (
-    <Row className="justify-content-center">
-      <Col xs={12} md={8} lg={6}>
-        <h1 className="kk-page-title mb-4">{t('account.title')}</h1>
+    <NarrowPage>
+      <h1 className="kk-page-title mb-4">{t('account.title')}</h1>
 
-        <Card text="light" className="mb-4">
-          <Card.Body>
-            <dl className="row mb-0">
-              <dt className="col-sm-4">{t('account.username')}</dt>
-              <dd className="col-sm-8">{user?.username}</dd>
-              {user?.display_name ? (
-                <>
-                  <dt className="col-sm-4">{t('account.displayName')}</dt>
-                  <dd className="col-sm-8">{user.display_name}</dd>
-                </>
-              ) : null}
-              <dt className="col-sm-4">{t('account.role')}</dt>
-              <dd className="col-sm-8">
-                {role ? <Badge bg="secondary">{t(`roles.${role}`)}</Badge> : null}
-              </dd>
-            </dl>
-          </Card.Body>
-        </Card>
+      <Card text="light" className="mb-4">
+        <Card.Body>
+          <dl className="row mb-0">
+            <dt className="col-sm-4">{t('account.username')}</dt>
+            <dd className="col-sm-8">{user?.username}</dd>
+            {user?.display_name ? (
+              <>
+                <dt className="col-sm-4">{t('account.displayName')}</dt>
+                <dd className="col-sm-8">{user.display_name}</dd>
+              </>
+            ) : null}
+            <dt className="col-sm-4">{t('account.role')}</dt>
+            <dd className="col-sm-8">
+              {role ? <Badge bg="secondary">{t(`roles.${role}`)}</Badge> : null}
+            </dd>
+          </dl>
+        </Card.Body>
+      </Card>
 
-        {/* The way to one's own history. It hangs off the account rather than
+      {/* The way to one's own history. It hangs off the account rather than
             the navigation: it is a fact about the signed-in user, and the admin
             group next door is about supervising everybody. */}
-        <Card text="light" className="mb-4">
-          <Card.Body>
-            <Card.Title as="h2" className="kk-section-title mb-3">
-              {t('account.activity.title')}
-            </Card.Title>
-            <p className="text-secondary">{t('account.activity.hint')}</p>
-            <Link
-              to={ACTIVITY_PATH}
-              className="btn btn-outline-light d-inline-flex align-items-center gap-2"
-            >
-              <Icon name="clock-history" />
-              {t('account.activity.link')}
-            </Link>
-          </Card.Body>
-        </Card>
+      <Card text="light" className="mb-4">
+        <Card.Body>
+          <Card.Title as="h2" className="kk-section-title mb-3">
+            {t('account.activity.title')}
+          </Card.Title>
+          <p className="text-secondary">{t('account.activity.hint')}</p>
+          <Link
+            to={ACTIVITY_PATH}
+            className="btn btn-outline-light d-inline-flex align-items-center gap-2"
+          >
+            <Icon name="clock-history" />
+            {t('account.activity.link')}
+          </Link>
+        </Card.Body>
+      </Card>
 
-        {/* Who this account is in the photographs. It sits directly under the
+      {/* Who this account is in the photographs. It sits directly under the
             identity card because it is part of the same answer: the first block
             says which account this is, this one says which person. */}
-        <MySubjectCard />
+      <MySubjectCard />
 
-        {/* And what this account looks like. It follows the link rather than
+      {/* And what this account looks like. It follows the link rather than
             preceding it, because the link is the picture's own default: an
             account that has just said which person it is already has a face, and
             this card is where one overrides it. */}
-        <MyPictureCard />
+      <MyPictureCard />
 
-        <Card text="light" className="mb-4">
-          <Card.Body>
-            <Card.Title as="h2" className="kk-section-title mb-3">
-              {t('account.language')}
-            </Card.Title>
-            <LanguageSwitcher />
-            <div className="text-secondary small mt-2">{t('account.languageHint')}</div>
-          </Card.Body>
-        </Card>
+      <Card text="light" className="mb-4">
+        <Card.Body>
+          <Card.Title as="h2" className="kk-section-title mb-3">
+            {t('account.language')}
+          </Card.Title>
+          <LanguageSwitcher />
+          <div className="text-secondary small mt-2">{t('account.languageHint')}</div>
+        </Card.Body>
+      </Card>
 
-        {/* How this person hears about things while not looking: this browser's
+      {/* How this person hears about things while not looking: this browser's
             push switch, the account-wide choice of messages, and the devices.
             It sits with the language because both are about how Kukátko talks to
             this one person, not about the photos. */}
-        <NotificationsCard />
+      <NotificationsCard />
 
-        <Card text="light" className="mb-4">
-          <Card.Body>
-            <Card.Title as="h2" className="kk-section-title mb-3">
-              {t('account.changePassword')}
-            </Card.Title>
+      <Card text="light" className="mb-4">
+        <Card.Body>
+          <Card.Title as="h2" className="kk-section-title mb-3">
+            {t('account.changePassword')}
+          </Card.Title>
 
-            {state.status === 'success' && (
-              <Alert variant="success" role="alert">
-                {t('account.success')}
-              </Alert>
-            )}
-            {state.status === 'error' && (
-              <Alert variant="danger" role="alert">
-                {t(state.messageKey)}
-              </Alert>
-            )}
+          {state.status === 'success' && (
+            <Alert variant="success" role="alert">
+              {t('account.success')}
+            </Alert>
+          )}
+          {state.status === 'error' && (
+            <Alert variant="danger" role="alert">
+              {t(state.messageKey)}
+            </Alert>
+          )}
 
-            <Form
-              noValidate
-              validated={validated}
-              onSubmit={(event) => {
-                void handleSubmit(event)
-              }}
-            >
-              <Form.Group className="mb-3" controlId="account-current">
-                <Form.Label>{t('account.currentPassword')}</Form.Label>
-                <Form.Control
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={current}
-                  onChange={(event) => {
-                    setCurrent(event.target.value)
-                  }}
-                  disabled={submitting}
+          <Form
+            noValidate
+            validated={validated}
+            onSubmit={(event) => {
+              void handleSubmit(event)
+            }}
+          >
+            <Form.Group className="mb-3" controlId="account-current">
+              <Form.Label>{t('account.currentPassword')}</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="current-password"
+                required
+                value={current}
+                onChange={(event) => {
+                  setCurrent(event.target.value)
+                }}
+                disabled={submitting}
+              />
+              <Form.Control.Feedback type="invalid">
+                {t('account.currentRequired')}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="account-new">
+              <Form.Label>{t('account.newPassword')}</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                isInvalid={validated && tooShort}
+                value={next}
+                onChange={(event) => {
+                  setNext(event.target.value)
+                }}
+                disabled={submitting}
+              />
+              <Form.Text className="text-secondary">
+                {t('account.passwordHint', { min: MIN_PASSWORD_LENGTH })}
+              </Form.Text>
+              <Form.Control.Feedback type="invalid">
+                {t('account.tooShort', { min: MIN_PASSWORD_LENGTH })}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-4" controlId="account-confirm">
+              <Form.Label>{t('account.confirmPassword')}</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                required
+                isInvalid={mismatch || (validated && confirm === '')}
+                value={confirm}
+                onChange={(event) => {
+                  setConfirm(event.target.value)
+                }}
+                disabled={submitting}
+              />
+              <Form.Control.Feedback type="invalid">
+                {confirm === '' ? t('account.confirmRequired') : t('account.mismatch')}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting && (
+                <Spinner
+                  animation="border"
+                  size="sm"
+                  role="status"
+                  aria-hidden="true"
+                  className="me-2"
                 />
-                <Form.Control.Feedback type="invalid">
-                  {t('account.currentRequired')}
-                </Form.Control.Feedback>
-              </Form.Group>
+              )}
+              {t('account.submit')}
+            </Button>
+          </Form>
+        </Card.Body>
+      </Card>
 
-              <Form.Group className="mb-3" controlId="account-new">
-                <Form.Label>{t('account.newPassword')}</Form.Label>
-                <Form.Control
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={MIN_PASSWORD_LENGTH}
-                  isInvalid={validated && tooShort}
-                  value={next}
-                  onChange={(event) => {
-                    setNext(event.target.value)
-                  }}
-                  disabled={submitting}
-                />
-                <Form.Text className="text-secondary">
-                  {t('account.passwordHint', { min: MIN_PASSWORD_LENGTH })}
-                </Form.Text>
-                <Form.Control.Feedback type="invalid">
-                  {t('account.tooShort', { min: MIN_PASSWORD_LENGTH })}
-                </Form.Control.Feedback>
-              </Form.Group>
-
-              <Form.Group className="mb-4" controlId="account-confirm">
-                <Form.Label>{t('account.confirmPassword')}</Form.Label>
-                <Form.Control
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  isInvalid={mismatch || (validated && confirm === '')}
-                  value={confirm}
-                  onChange={(event) => {
-                    setConfirm(event.target.value)
-                  }}
-                  disabled={submitting}
-                />
-                <Form.Control.Feedback type="invalid">
-                  {confirm === '' ? t('account.confirmRequired') : t('account.mismatch')}
-                </Form.Control.Feedback>
-              </Form.Group>
-
-              <Button type="submit" variant="primary" disabled={submitting}>
-                {submitting && (
-                  <Spinner
-                    animation="border"
-                    size="sm"
-                    role="status"
-                    aria-hidden="true"
-                    className="me-2"
-                  />
-                )}
-                {t('account.submit')}
-              </Button>
-            </Form>
-          </Card.Body>
-        </Card>
-
-        {/* The way to stop typing the password above: a key kept in the phone or
+      {/* The way to stop typing the password above: a key kept in the phone or
             the laptop. It follows the password form because it is the same
             question — how this person gets in — answered better. */}
-        <PasskeysCard />
+      <PasskeysCard />
 
-        {/* The other credential a user owns, next to the password: the tokens
+      {/* The other credential a user owns, next to the password: the tokens
             that let a script or the CLI act as them. */}
-        <ApiTokensCard />
+      <ApiTokensCard />
 
-        <div className="text-secondary small mt-4 d-flex align-items-center gap-2 flex-wrap">
-          <ApiStatusBadge state={health} />
-          {health.status === 'ok' && (
-            <span>
-              {t('account.version')} {health.data.version.version}
-            </span>
-          )}
-        </div>
-      </Col>
-    </Row>
+      <div className="text-secondary small mt-4 d-flex align-items-center gap-2 flex-wrap">
+        <ApiStatusBadge state={health} />
+        {health.status === 'ok' && (
+          <span>
+            {t('account.version')} {health.data.version.version}
+          </span>
+        )}
+      </div>
+    </NarrowPage>
   )
 }
 

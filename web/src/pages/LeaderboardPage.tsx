@@ -10,6 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
 import { Icon, type IconName } from '../components/Icon'
+import { NarrowPage } from '../components/NarrowPage'
 import { ListSkeleton } from '../components/Skeleton'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
@@ -244,7 +245,7 @@ export function LeaderboardPage() {
   }
 
   return (
-    <>
+    <NarrowPage>
       <div className="mb-3">
         <h1 className="kk-page-title mb-1">{t('leaderboard.title')}</h1>
         <p className="text-secondary mb-0">{t('leaderboard.subtitle')}</p>
@@ -270,6 +271,6 @@ export function LeaderboardPage() {
       </ButtonGroup>
 
       {content}
-    </>
+    </NarrowPage>
   )
 }

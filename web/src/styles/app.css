@@ -383,6 +383,17 @@ body {
   padding-right: calc(var(--bs-gutter-x) * 0.5 + env(safe-area-inset-right, 0px));
 }
 
+/* The one width convention for reading and form pages (`NarrowPage`: account,
+   instance settings, help, leaderboard). 48rem (768px) holds Markdown and
+   form labels to about seventy characters a line, where the full 1320px
+   container ran them past what an eye can follow back; it is centred so the
+   column sits under the navbar's middle, and below 48rem it is the container
+   itself. Grid and list pages keep the full container. */
+.kk-page-narrow {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
 /* Navbar hierarchy. The bar is not a flat row of equals: the everyday actions
    lead, one call-to-action stands out, and a divider fences off the quieter
    tools/admin cluster. These rules add only what Bootstrap utilities cannot. */

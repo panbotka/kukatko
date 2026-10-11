@@ -68,6 +68,16 @@ afterEach(() => {
 })
 
 describe('AccountPage', () => {
+  it('sits in the shared narrow reading column', async () => {
+    renderAccount()
+
+    expect(screen.getByTestId('narrow-page')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'My account' }),
+    )
+    // Let the health check settle so its update lands inside the test.
+    expect(await screen.findByText('Everything is working')).toBeInTheDocument()
+  })
+
   it('shows the signed-in identity and the password form', async () => {
     renderAccount()
 

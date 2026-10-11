@@ -58,6 +58,21 @@ beforeEach(async () => {
 })
 
 describe('SettingsPage', () => {
+  it('sits in the shared narrow reading column, loaded or not', async () => {
+    fetchMock.mockRejectedValueOnce(new ApiError(500, 'boom'))
+    renderPage()
+
+    // The failed load keeps the same column, so retrying does not reflow the page.
+    const failed = await screen.findByText('The settings could not be loaded.')
+    expect(screen.getByTestId('narrow-page')).toContainElement(failed)
+
+    fetchMock.mockResolvedValue(settings())
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }))
+
+    const heading = await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByTestId('narrow-page')).toContainElement(heading)
+  })
+
   it('loads the current settings into the form', async () => {
     fetchMock.mockResolvedValue(
       settings({

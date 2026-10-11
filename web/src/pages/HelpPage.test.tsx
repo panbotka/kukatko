@@ -30,6 +30,14 @@ beforeEach(async () => {
 })
 
 describe('HelpPage', () => {
+  it('sits in the shared narrow reading column', () => {
+    renderHelp()
+
+    expect(screen.getByTestId('narrow-page')).toContainElement(
+      screen.getByRole('heading', { level: 1, name: 'Help' }),
+    )
+  })
+
   it('opens with the page title and an intro', () => {
     renderHelp()
 

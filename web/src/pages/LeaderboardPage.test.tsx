@@ -87,6 +87,16 @@ beforeEach(async () => {
 })
 
 describe('LeaderboardPage', () => {
+  it('sits in the shared narrow reading column', async () => {
+    fetchMock.mockResolvedValue(board([entry('u1', 'Alice', 10, 2)]))
+    renderPage()
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByTestId('narrow-page')).toContainElement(
+      screen.getByTestId('leaderboard-row-u1'),
+    )
+  })
+
   it('renders the standings ranked with the Ano/Ne split', async () => {
     fetchMock.mockResolvedValue(
       board([entry('u1', 'Alice', 10, 2), entry('u2', 'Bob', 5, 1), entry('u3', 'Cyril', 3, 0)]),

@@ -13,6 +13,7 @@ import { ConfirmModal } from '../components/ConfirmModal'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { Markdown } from '../components/Markdown'
+import { NarrowPage } from '../components/NarrowPage'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { formatDateTime } from '../lib/format'
@@ -180,29 +181,33 @@ export function SettingsPage() {
 
   if (load.status === 'loading') {
     return (
-      <div className="d-flex justify-content-center py-5">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">{t('settings.loading')}</span>
-        </Spinner>
-      </div>
+      <NarrowPage>
+        <div className="d-flex justify-content-center py-5">
+          <Spinner animation="border" role="status">
+            <span className="visually-hidden">{t('settings.loading')}</span>
+          </Spinner>
+        </div>
+      </NarrowPage>
     )
   }
 
   if (load.status === 'error') {
     return (
-      <ErrorState
-        title={t('settings.loadFailed')}
-        onRetry={() => {
-          void reload()
-        }}
-      />
+      <NarrowPage>
+        <ErrorState
+          title={t('settings.loadFailed')}
+          onRetry={() => {
+            void reload()
+          }}
+        />
+      </NarrowPage>
     )
   }
 
   const savedRecord = load.saved
 
   return (
-    <>
+    <NarrowPage>
       <h1 className="kk-page-title mb-3">{t('settings.title')}</h1>
       <p className="text-secondary">{t('settings.intro')}</p>
 
@@ -341,6 +346,6 @@ export function SettingsPage() {
       >
         {t('settings.leave.body')}
       </ConfirmModal>
-    </>
+    </NarrowPage>
   )
 }

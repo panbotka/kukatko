@@ -587,6 +587,18 @@ here.
   `.kk-auth-frame` **centres** the pair in `100dvh` less `--kk-bottom-edge` on desktop and tablet; below
   576px it sits **12svh from the top** instead, so the on-screen keyboard cannot slide the card and its
   focused field away. Tests: `AuthFrame.test` + one frame assertion per page test),
+  `NarrowPage` (**the one width convention for reading and form pages** — `AccountPage`, `SettingsPage`,
+  `HelpPage`, `LeaderboardPage`: a `.kk-page-narrow` wrapper (`data-testid="narrow-page"`) capped at
+  **48rem (768px)** and centred in the shell's container, so Markdown and form labels run about seventy
+  characters a line and switching between those pages no longer changes the page's width (UI/UX review
+  #31, 2026-10-11: the account sat in a ~640px `Col lg={6}`, help in `lg={9} xl={8}`, settings across the
+  full 1320px container). Below 48rem it is simply the container. **Grid and list pages keep the full
+  container** (library, albums, people, tasks, the admin tables), and so do the tool pages (`/expand`,
+  `/outliers`, `/recognition`) whose empty state is only the first moment of a result grid — narrowing
+  them until a pick arrives would make the form jump sideways when the results land. A page uses the
+  component, never its own column span; `SettingsPage` wraps its loading and failed-load states too, so a
+  retry does not reflow. Tests: `NarrowPage.test` (the wrapper + the shipped rule) and one wrapper
+  assertion per page test),
   `BackLink` (**shared way back** from every detail (album, label, person, photo) to the list
   it belongs to: an `arrow-left` arrow via `Icon` (decorative, `aria-hidden`) + **text naming the
   target** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), which is also the link's accessible
