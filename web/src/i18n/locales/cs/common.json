@@ -1614,6 +1614,7 @@
       "label": "Odpověď jedním klepnutím",
       "approve": "Schvaluji",
       "sendBack": "Vrátit k přepracování",
+      "handOverHint": "Odpověď zároveň předá úkol agentovi.",
       "failed": "Odpověď se nepodařilo odeslat. Zkus to znovu, nebo napiš do diskuse."
     }
   },

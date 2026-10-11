@@ -2506,7 +2506,13 @@ here.
   `aria-pressed`, the others `outline-primary`, tapping the chosen one again does nothing, and a failure
   is an inline `Alert` under the row with the page still usable. `answerOptions(task)` in
   `services/tasks` is the one rule for which answers a task offers: its own always win over the built-in
-  pair),
+  pair. **For a writer the built-in pair is also the move** (`canHandOver` = the page's `canWrite`, the
+  same rule as the discussion's hand-over): the fixed string goes out with `{state:'working'}` in the one
+  request, a small note under the row says so ("Odpověď zároveň předá úkol agentovi.", `taskDetail.answers.handOverHint`),
+  and after it lands `onHandedOver` (the page's `refreshTask`) redraws the badge, the controls and the
+  people — the review row then gives way, since the task is no longer in `review`. Approving never closes
+  the task (`done` needs a resolution, which is the agent's). A viewer's tap and every tap on a task's own
+  `options` stay a plain comment, so a viewer can never hit the move's 403),
   `components/tasks/AnswerOptionsEditor` (the **Možnosti odpovědi** field shared by `NewTaskModal` and
   `TaskQuestion`'s in-place editor: up to `MAX_TASK_OPTIONS` = 5 entries added **one at a time** — Enter
   (which must not submit the form around it) or a plus button — and shown as removable chips, because an

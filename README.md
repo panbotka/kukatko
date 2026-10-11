@@ -370,6 +370,9 @@ rebuilt? — and the only person who knows is usually not the person editing the
 - **Answering and handing back is one tap.** Under a task's discussion a curator has two buttons: the
   plain „Odeslat" and the primary **„Odeslat a předat agentovi"**, which posts the comment and moves the
   task to *in progress* in one go — both land or neither does (Ctrl/Cmd+Shift+Enter from the keyboard).
+  The same goes for a batch in review: a curator's tap on **„Schvaluji"** or **„Vrátit
+  k přepracování"** under the question posts that answer *and* hands the task to the agent, so it stops
+  looking like it is still waiting on a person (a viewer's tap stays a plain comment).
   Above the full state picker a row of **quick moves** offers only what fits the current state —
   „Schválit a uzavřít" and „Vrátit agentovi" for a batch in review, „Potřebuji odpověď" while it is being
   worked on — and a closing one opens the resolution field ready to type. From the terminal:

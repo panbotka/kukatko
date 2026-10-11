@@ -16,6 +16,17 @@ export interface TaskAnswersProps {
   chosen: string | null
   /** Called after an answer landed, so the page can refresh the thread. */
   onAnswered: () => void
+  /**
+   * Whether the reader may move the task (a writer — the same rule as the
+   * discussion's "send and hand over"). Only then does a built-in review answer
+   * also hand the task to the agent; a viewer's tap stays a plain comment.
+   */
+  canHandOver: boolean
+  /**
+   * Called after a built-in answer moved the task to `working`, so the page can
+   * refetch the task (badge, controls, participants) in place.
+   */
+  onHandedOver: () => void
 }
 
 /**
@@ -32,8 +43,21 @@ export interface TaskAnswersProps {
  * the person read the page in.
  *
  * A viewer may tap as well as anyone: answering is what a viewer account is for.
+ *
+ * For a writer the built-in pair is also the move: approving or returning a
+ * batch is the human handing it back, so the comment carries `state: 'working'`
+ * and lands with the move in one request (one server transaction). Approving
+ * does not close the task — closing needs a resolution, and that stays the
+ * agent's job. A viewer cannot move a task, so their tap posts the comment only
+ * (sending a state would be a 403), and a task's own options never move it.
  */
-export function TaskAnswers({ task, chosen, onAnswered }: TaskAnswersProps) {
+export function TaskAnswers({
+  task,
+  chosen,
+  onAnswered,
+  canHandOver,
+  onHandedOver,
+}: TaskAnswersProps) {
   const { t } = useTranslation()
   // The option whose comment is in flight, or null. One at a time: a second tap
   // while the first is posting would post twice.
@@ -44,6 +68,9 @@ export function TaskAnswers({ task, chosen, onAnswered }: TaskAnswersProps) {
   if (options.length === 0) {
     return null
   }
+  // The built-in pair only ever appears on a task in review, so a writer's
+  // built-in answer is always a move away from the human.
+  const handsOver = canHandOver && options.some((option) => option.builtin !== undefined)
 
   async function answer(option: AnswerOption) {
     if (pending !== null || option.text === chosen) {
@@ -52,8 +79,16 @@ export function TaskAnswers({ task, chosen, onAnswered }: TaskAnswersProps) {
     setPending(option.text)
     setFailed(false)
     try {
-      await createComment(taskSubject(task.uid), option.text)
+      const move = handsOver && option.builtin !== undefined
+      if (move) {
+        await createComment(taskSubject(task.uid), option.text, { state: 'working' })
+      } else {
+        await createComment(taskSubject(task.uid), option.text)
+      }
       onAnswered()
+      if (move) {
+        onHandedOver()
+      }
     } catch {
       setFailed(true)
     } finally {
@@ -94,6 +129,11 @@ export function TaskAnswers({ task, chosen, onAnswered }: TaskAnswersProps) {
           )
         })}
       </div>
+      {handsOver && (
+        <p className="text-body-secondary small mt-2 mb-0">
+          {t('taskDetail.answers.handOverHint')}
+        </p>
+      )}
       {failed && (
         <Alert variant="danger" className="py-2 mt-2 mb-0">
           {t('taskDetail.answers.failed')}

@@ -349,7 +349,13 @@ export function TaskDetailPage() {
 
       <TaskQuestion task={task} canEdit={canWrite} busy={busy} onSave={save} />
 
-      <TaskAnswers task={task} chosen={chosen} onAnswered={reloadThread} />
+      <TaskAnswers
+        task={task}
+        chosen={chosen}
+        onAnswered={reloadThread}
+        canHandOver={canWrite}
+        onHandedOver={refreshTask}
+      />
 
       <TaskParticipants
         taskUid={task.uid}

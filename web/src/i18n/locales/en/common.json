@@ -1640,6 +1640,7 @@
       "label": "Answer with one tap",
       "approve": "Approve",
       "sendBack": "Send back",
+      "handOverHint": "Answering also hands the task to the agent.",
       "failed": "The answer could not be posted. Try again, or write in the discussion."
     }
   },

@@ -931,6 +931,30 @@ describe('quick answers', () => {
     })
   })
 
+  it("hands the review to the agent with a writer's built-in answer and redraws the task", async () => {
+    const user = userEvent.setup()
+    fetchTaskMock.mockResolvedValue(task({ state: 'review' }))
+    createCommentMock.mockResolvedValue(comment('cm1', 'u1', 'Schvaluji.'))
+    renderPage()
+
+    expect(
+      await screen.findByText('Answering also hands the task to the agent.'),
+    ).toBeInTheDocument()
+    fetchTaskMock.mockResolvedValue(task({ state: 'working' }))
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({ kind: 'task', uid: 'tk1' }, 'Schvaluji.', {
+        state: 'working',
+      })
+    })
+    // The task was refetched: the review's answer row gives way, the move landed.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
+    })
+    expect(fetchTaskMock.mock.calls.length).toBeGreaterThan(1)
+  })
+
   it('lets a review with its own options keep them', async () => {
     fetchTaskMock.mockResolvedValue(task({ state: 'review', options: ['1936', '1938'] }))
     renderPage()
