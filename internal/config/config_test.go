@@ -213,6 +213,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"upload_links.max_uploads_per_link", cfg.UploadLinks.MaxUploadsPerLink, 2000},
 		{"upload_links.default_days", cfg.UploadLinks.DefaultDays, 30},
 		{"upload_links.max_days", cfg.UploadLinks.MaxDays, 365},
+		{"albums.featured.default_days", cfg.Albums.Featured.DefaultDays, 61},
 		// Mail is off out of the box: an instance nobody gave an SMTP server to must
 		// still work, and the three keys an enabled mailer needs have no default at
 		// all — a guessed host or public URL would fail silently.

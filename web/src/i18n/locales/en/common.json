@@ -741,7 +741,9 @@
         "create": "Album created",
         "delete": "Album deleted",
         "remove_photos": "Photos removed from an album",
-        "update": "Album edited"
+        "update": "Album edited",
+        "feature": "Featured an album on the homepage",
+        "unfeature": "Stopped featuring an album"
       },
       "announcement": {
         "clear": "Announcement cleared",
@@ -1414,6 +1416,22 @@
       "hint": "Faces nobody suggested a name for are left on the photo detail.",
       "back": "Back to the album"
     }
+  },
+  "featured": {
+    "heading": "Featured",
+    "badge": "Featured",
+    "badgeUntil": "Featured until {{date}}",
+    "tileLabel": "{{title}} (featured)",
+    "feature": "Feature on homepage",
+    "extend": "Extend feature",
+    "extendTitle": "Extend feature",
+    "unfeature": "Stop featuring",
+    "until": "Feature until",
+    "untilHint": "Everyone sees the album on the homepage until the end of this day. One year at most.",
+    "submit": "Feature",
+    "save": "Save",
+    "cancel": "Cancel",
+    "error": "Could not save the feature. Pick a day at most a year ahead and try again."
   },
   "labels": {
     "title": "Labels",

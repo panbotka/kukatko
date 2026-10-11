@@ -1752,6 +1752,11 @@ other type; values ≤ 0 are ignored and a type
   form offers) and `max_days` (default **365**, the longest validity a link may be created or extended
   with). Env e.g. `KUKATKO_UPLOAD_LINKS_MAX_UPLOADS_PER_LINK`. The anonymous uploader's session cookie
   follows `web.secure_cookies` like the sign-in cookie.
+- **Featured-album key (`albums.featured.default_days`, `internal/organizeapi`):** default **61** (two
+  months) — how long an album stays on the homepage's "Doporučujeme" strip when the curator picks no end
+  (`PUT /albums/{uid}/featured` without `until`), and the date the feature dialog pre-fills. A feature
+  always ends: the furthest end the API accepts is **366 days** ahead (fixed, not configurable), and a
+  `default_days` outside 1…366 falls back to 61. Env `KUKATKO_ALBUMS_FEATURED_DEFAULT_DAYS`.
 - **Login keys (`auth.login_rate_limit`, `auth.login_rate_window`):** default **10 failed attempts per
   (username, client IP) within 15m**, then 429; a successful login clears the count. Every attempt is
   charged to a **second, IP-independent per-username budget** as well — `login_rate_limit × 3` over the same

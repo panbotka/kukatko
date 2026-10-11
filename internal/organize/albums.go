@@ -10,9 +10,20 @@ import (
 )
 
 // albumColumns is the canonical, ordered column list for album reads, matched by
-// scanAlbum.
+// scanAlbum. Its last entry is not the stored featured_until but the *active*
+// one (activeFeaturedUntil), so every album payload reads null for a feature
+// that has lapsed without anything having to clear the row.
 const albumColumns = "uid, slug, title, description, type, cover_photo_uid, " +
-	"private, created_by, created_at, updated_at"
+	"private, created_by, created_at, updated_at, " + activeFeaturedUntil
+
+// activeFeaturedUntil projects an album's feature end only while it lies in the
+// future: an album is featured while featured_until > now(), and an expired
+// value left in the row reads as no feature at all. The a-qualified twin is for
+// the statements that join albums to its membership.
+const (
+	activeFeaturedUntil  = "CASE WHEN featured_until > now() THEN featured_until END"
+	activeFeaturedUntilA = "CASE WHEN a.featured_until > now() THEN a.featured_until END"
+)
 
 // insertAlbumSQL inserts an album and returns the stored row.
 const insertAlbumSQL = `
@@ -26,7 +37,7 @@ func scanAlbum(row pgx.Row) (Album, error) {
 	var a Album
 	if err := row.Scan(
 		&a.UID, &a.Slug, &a.Title, &a.Description, &a.Type, &a.CoverPhotoUID,
-		&a.Private, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt,
+		&a.Private, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt, &a.FeaturedUntil,
 	); err != nil {
 		return Album{}, fmt.Errorf("organize: scanning album: %w", err)
 	}
@@ -40,7 +51,7 @@ func scanAlbumCount(row pgx.Row) (AlbumCount, error) {
 	var ac AlbumCount
 	if err := row.Scan(
 		&ac.UID, &ac.Slug, &ac.Title, &ac.Description, &ac.Type, &ac.CoverPhotoUID,
-		&ac.Private, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.PhotoCount,
+		&ac.Private, &ac.CreatedBy, &ac.CreatedAt, &ac.UpdatedAt, &ac.FeaturedUntil, &ac.PhotoCount,
 	); err != nil {
 		return AlbumCount{}, fmt.Errorf("organize: scanning album count: %w", err)
 	}
@@ -54,7 +65,7 @@ func scanAlbumSummary(row pgx.Row) (AlbumSummary, error) {
 	var as AlbumSummary
 	if err := row.Scan(
 		&as.UID, &as.Slug, &as.Title, &as.Description, &as.Type, &as.CoverPhotoUID,
-		&as.Private, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.PhotoCount,
+		&as.Private, &as.CreatedBy, &as.CreatedAt, &as.UpdatedAt, &as.FeaturedUntil, &as.PhotoCount,
 		&as.CoverUID, &as.CoverUIDs, &as.TakenFrom, &as.TakenTo,
 	); err != nil {
 		return AlbumSummary{}, fmt.Errorf("organize: scanning album summary: %w", err)
@@ -222,7 +233,7 @@ func (s *Store) UpdateAlbum(ctx context.Context, uid string, upd AlbumUpdate) (A
 // ORDER BY … LIMIT 1 here. See docs/PERF.md § "The album index".
 const listAlbumsSQL = `
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
-       a.private, a.created_by, a.created_at, a.updated_at,
+       a.private, a.created_by, a.created_at, a.updated_at, ` + activeFeaturedUntilA + `,
        COUNT(p.uid) AS photo_count,
        COALESCE(a.cover_photo_uid,
                 (array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)

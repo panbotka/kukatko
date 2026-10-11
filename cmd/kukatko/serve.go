@@ -435,7 +435,7 @@ func readAPIOptions(
 		// The family routes hang off the same /subjects prefix, flat like the
 		// outlier one, so they mount alongside rather than under peopleapi.
 		server.WithAPI(buildFamilyAPI(db, authAPI, exports.family).RegisterRoutes),
-		server.WithAPI(buildOrganizeAPI(db, authAPI, exports.sidecar).RegisterRoutes),
+		server.WithAPI(buildOrganizeAPI(cfg, db, authAPI, mediaStore, exports.sidecar).RegisterRoutes),
 		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildPhotoTaskAPI(cfg, db, authAPI).RegisterRoutes),

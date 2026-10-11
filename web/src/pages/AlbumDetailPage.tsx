@@ -23,6 +23,7 @@ import {
   TimelineScrubber,
 } from '../components/library/TimelineScrubber'
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
+import { FeatureAlbumModal } from '../components/organize/FeatureAlbumModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
@@ -35,11 +36,13 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
 import { detailQueryString } from '../lib/detailView'
+import { formatFeaturedUntil, isFeatured } from '../lib/featured'
 import { gridScrollKey } from '../lib/gridScroll'
 import { ALBUM_DEFAULTS, ALBUM_SORTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { newLinkForAlbum } from '../lib/uploadLinks'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
+import { unfeatureAlbum } from '../services/featured'
 import {
   type Album,
   deleteAlbum,
@@ -122,6 +125,7 @@ export function AlbumDetailPage() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [editing, setEditing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
+  const [featuring, setFeaturing] = useState(false)
   const [reloadKey, reload] = useReloadKey()
   const [actionError, setActionError] = useState(false)
 
@@ -263,6 +267,20 @@ export function AlbumDetailPage() {
     [t, selection.count, setCover, removeSelected],
   )
 
+  // Taking the album off the homepage. No confirmation: it is undone by
+  // featuring it again, and nothing but a date is lost.
+  const unfeature = useCallback(async () => {
+    if (state.status !== 'ready') {
+      return
+    }
+    setActionError(false)
+    try {
+      setState({ status: 'ready', album: await unfeatureAlbum(state.album.uid) })
+    } catch {
+      setActionError(true)
+    }
+  }, [state])
+
   const removeAlbum = useCallback(async () => {
     if (state.status !== 'ready') {
       return
@@ -345,6 +363,10 @@ export function AlbumDetailPage() {
   }
 
   const album = state.status === 'ready' ? state.album : null
+  // Only a hand-made album can go on the homepage (the server refuses the
+  // machine-made folders, months, moments and places), so only one offers it.
+  const canFeature = canCurate && album?.type === 'album'
+  const featured = album !== null && isFeatured(album)
 
   return (
     <>
@@ -358,6 +380,14 @@ export function AlbumDetailPage() {
             {album == null ? '' : albumDisplayTitle(album.title, i18n.language)}
           </h1>
           {album?.private && <Badge bg="secondary">{t('albums.private')}</Badge>}
+          {featured && (
+            <Badge bg="primary">
+              <Icon name="stars" className="me-1" />
+              {t('featured.badgeUntil', {
+                date: formatFeaturedUntil(album.featured_until ?? '', i18n.language),
+              })}
+            </Badge>
+          )}
         </div>
         {/* The album's own controls stay put during a selection: the batch bar
             floats over the bottom edge and never contends with the header.
@@ -412,6 +442,30 @@ export function AlbumDetailPage() {
                   name={album.title}
                   variant="outline-secondary"
                 />
+              ),
+              canFeature && (
+                <Button
+                  key="feature"
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => {
+                    setFeaturing(true)
+                  }}
+                >
+                  <Icon name="stars" className="me-1" />
+                  {featured ? t('featured.extend') : t('featured.feature')}
+                </Button>
+              ),
+              canFeature && featured && (
+                <Button
+                  key="unfeature"
+                  variant="outline-secondary"
+                  size="sm"
+                  onClick={() => void unfeature()}
+                >
+                  <Icon name="x-lg" className="me-1" />
+                  {t('featured.unfeature')}
+                </Button>
               ),
               canCurate && (
                 /* A link, not a button: the create form has an address of its
@@ -528,6 +582,20 @@ export function AlbumDetailPage() {
           onSaved={(updated) => {
             setState({ status: 'ready', album: updated })
             setEditing(false)
+          }}
+        />
+      )}
+
+      {canFeature && (
+        <FeatureAlbumModal
+          album={album}
+          show={featuring}
+          onHide={() => {
+            setFeaturing(false)
+          }}
+          onSaved={(updated) => {
+            setState({ status: 'ready', album: updated })
+            setFeaturing(false)
           }}
         />
       )}

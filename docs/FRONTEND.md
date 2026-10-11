@@ -324,6 +324,23 @@ here.
   stays beside the summary when the detail is open. Loading / `has_news:false` / already dismissed → renders nothing; **every role sees it**,
   viewers included. Texts `whatsNew.*` (cs/en, with the Czech plural categories `_one/_few/_many/_other`
   so 1 fotka / 2 fotky / 5 fotek all read correctly). Tests: `WhatsNewPanel.test.tsx`),
+  `FeaturedAlbumsStrip` (`components/library/`, **the homepage's „Doporučujeme" strip** — the albums a
+  curator featured (`GET /albums/featured` via `services/featured.ts`, a module of its own so a later kind
+  of featured entity joins it without touching `services/organize`). `LibraryPage` renders it right after
+  `WhatsNewPanel`, above the filters and the timeline, **only while `hasActiveFilters(view)` is false** — a
+  promotion is for the front door; the moment the reader searches or filters it steps aside. A
+  `<section aria-labelledby>` with a `kk-section-title` heading (`featured.heading`) over a
+  `<ul class="kk-featured-strip__list">`: **one row that scrolls sideways inside its own box**
+  (`overflow-x: auto`, `scroll-snap-type: x proximity`, fixed-width cards 11 rem / 13 rem from `md`), so
+  however many albums are featured the strip costs one row and the page never overflows on a phone; the list
+  pads itself (and hands the padding back with a negative margin) because a `.kk-tile` lifts and casts a
+  shadow that an `overflow-x` box would otherwise clip. Each card is a `.kk-tile` link to `/albums/{uid}`: a
+  4 : 3 `.kk-tile__media` with the cover's `BlurPlaceholder` (`cover_blurhash`) under a `FadeInImage` of the
+  server-minted `thumb_url` (falling back to `thumbUrl(cover_uid, GRID_THUMB_SIZE)`), the shared `EmptyState`
+  for an album with nothing to show, then the display title (`albumDisplayTitle`) and `albums.photoCount`.
+  Loading, a failure and an empty list all render **nothing** — an empty or broken promotion is noise. Colours
+  only through the tile tokens. Tests: `FeaturedAlbumsStrip.test.tsx`, plus the show/hide rule in
+  `LibraryPage.test.tsx`),
   `WelcomeModal` (`components/welcome/`, **the first-run welcome, shown once**: mounted by `Layout` after
   `MobileTabBar`, so it lies over whatever page the reader landed on and every routed screen inside the shell
   stays where it is behind it (the immersive routes outside `Layout` never get it). Two steps in one
@@ -1622,7 +1639,20 @@ here.
   nothing about, and the preview stays out of it (`alt=""` + `aria-hidden`, lazy): the link is already named
   after the label. On a coarse pointer the whole pill grows to 44px rather than the menu being exempted
   from the floor — see `styles/tapTargets.test.ts`),
-  `AlbumEditModal` (create/rename an album: name/description/private), `LabelEditModal` (create/rename
+  `AlbumEditModal` (create/rename an album: name/description/private), `FeatureAlbumModal` (**„Doporučit na
+  úvodní stránce"** / „Prodloužit doporučení": one `<input type="date">` — the last day the album stays on the
+  homepage — sent as the end of that **local** day (`lib/featured.ts` `endOfLocalDay`). Its bounds come from
+  `GET /albums/featured` when it opens (`default_days`/`max_days`; fallbacks 61/366 until then or on a
+  failure): `min` today, `max` today + `max_days − 1`, pre-filled with today + `default_days` — or, extending a
+  running feature, the later of that and its current end, so „Prodloužit" never offers a shorter one. There is
+  no "until I switch it off". `AlbumDetailPage` offers it from the „…" menu to a curator on a `type: 'album'`
+  album only (`featured.feature`, or `featured.extend` + `featured.unfeature` — no confirmation, it is undone
+  by featuring again), and shows a featured album a `featured.badgeUntil` badge beside the private one
+  („Doporučeno do 11. 12.", `formatFeaturedUntil`: day + month, the year only when it differs) for every role.
+  `AlbumTile` badges a featured album top-left (`featured.badge`, the private badge keeps top-right) and
+  appends „(doporučeno)" to the link's name (`featured.tileLabel`); `lib/featured.ts` `isFeatured` re-checks
+  the end against the clock for a page left open past it. Tests: `lib/featured.test.ts`, the „featuring on
+  the homepage" block of `AlbumDetailPage.test.tsx`, `AlbumTile.test.tsx`), `LabelEditModal` (create/rename
   a label: name/priority), `SelectionBar` (a sticky selection toolbar: count +
   actions + clear — shown at `selection.count > 0` since those grids are hover-select too;
   since the batch bar took over **every photo list**, it is left only to the **non-photo-list**

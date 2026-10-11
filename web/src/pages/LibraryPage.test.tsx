@@ -185,6 +185,12 @@ vi.mock('../services/photos', async (importOriginal) => {
   }
 })
 
+// The featured strip fetches on its own and has tests of its own; here it is a
+// marker, so the page's only concern — when to show it at all — is what's tested.
+vi.mock('../components/library/FeaturedAlbumsStrip', () => ({
+  FeaturedAlbumsStrip: () => <div data-testid="featured-strip" />,
+}))
+
 // The filter bar's album/label facets load their options on mount.
 vi.mock('../services/organize', () => ({ fetchAlbums: vi.fn(), fetchLabels: vi.fn() }))
 
@@ -414,6 +420,21 @@ afterEach(() => {
 })
 
 describe('LibraryPage', () => {
+  it('shows the featured albums on the unfiltered homepage only', async () => {
+    fetchMock.mockResolvedValue(page([], 0, null))
+    const { unmount } = renderLibrary()
+    expect(screen.getByTestId('featured-strip')).toBeInTheDocument()
+    unmount()
+
+    // A search or a filter is the reader's own view; the promotion steps aside.
+    for (const entry of ['/?q=pout', '/?camera=Canon', '/?favorite=true']) {
+      const view = renderLibrary(entry)
+      expect(await screen.findByText('No photos found')).toBeInTheDocument()
+      expect(screen.queryByTestId('featured-strip')).toBeNull()
+      view.unmount()
+    }
+  })
+
   it('names the browser tab after the library, never leaving it a bare app name', () => {
     fetchMock.mockReturnValue(new Promise<PhotoListResponse>(() => undefined))
     renderLibrary()

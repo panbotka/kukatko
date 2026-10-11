@@ -19,11 +19,13 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
 )
 
@@ -90,11 +92,15 @@ type LabelStore interface {
 // supplied by the caller (the auth subsystem) so this package depends on auth's
 // behaviour, not its wiring.
 type API struct {
-	albums         AlbumStore
-	labels         LabelStore
-	sidecar        SidecarEnqueuer
-	requireAuth    func(http.Handler) http.Handler
-	requireCurator func(http.Handler) http.Handler
+	albums              AlbumStore
+	labels              LabelStore
+	featured            FeaturedStore
+	sidecar             SidecarEnqueuer
+	media               *mediaurl.Builder
+	featuredDefaultDays int
+	now                 func() time.Time
+	requireAuth         func(http.Handler) http.Handler
+	requireCurator      func(http.Handler) http.Handler
 }
 
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
@@ -113,6 +119,19 @@ type Config struct {
 	Albums AlbumStore
 	// Labels backs the label reads, mutations and attachment management.
 	Labels LabelStore
+	// Featured backs the homepage's featured albums. When nil the featured routes
+	// are not mounted at all.
+	Featured FeaturedStore
+	// FeaturedDefaultDays is how long a feature runs when the request names no
+	// end (albums.featured.default_days); a value outside 1…MaxFeaturedDays
+	// falls back to 61.
+	FeaturedDefaultDays int
+	// Media mints the featured covers' thumbnail URLs. Nil yields the
+	// application's own thumbnail route.
+	Media *mediaurl.Builder
+	// Now is the clock a feature's default end and its bounds are computed
+	// from; nil uses time.Now. Expiry itself is the database's clock.
+	Now func() time.Time
 	// Sidecar schedules a sidecar rewrite for the photos whose membership or labels
 	// changed. When nil no sidecar is scheduled and the mutation still succeeds.
 	Sidecar SidecarEnqueuer
@@ -124,13 +143,21 @@ type Config struct {
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
-	return &API{
-		albums:         cfg.Albums,
-		labels:         cfg.Labels,
-		sidecar:        cfg.Sidecar,
-		requireAuth:    cfg.RequireAuth,
-		requireCurator: cfg.RequireCurator,
+	a := &API{
+		albums:              cfg.Albums,
+		labels:              cfg.Labels,
+		featured:            cfg.Featured,
+		sidecar:             cfg.Sidecar,
+		media:               cfg.Media,
+		featuredDefaultDays: featuredDays(cfg.FeaturedDefaultDays),
+		now:                 cfg.Now,
+		requireAuth:         cfg.RequireAuth,
+		requireCurator:      cfg.RequireCurator,
 	}
+	if a.now == nil {
+		a.now = time.Now
+	}
+	return a
 }
 
 // RegisterRoutes mounts the album and label endpoints onto r, which the caller
@@ -143,6 +170,9 @@ func NewAPI(cfg Config) *API {
 //	DELETE /albums/{uid}          RequireCurator  delete an album
 //	POST   /albums/{uid}/photos   RequireCurator  add photos to the album
 //	DELETE /albums/{uid}/photos   RequireCurator  remove photos from the album
+//	GET    /albums/featured       RequireAuth   albums featured on the homepage now
+//	PUT    /albums/{uid}/featured RequireCurator  feature an album / re-date its feature
+//	DELETE /albums/{uid}/featured RequireCurator  take an album off the homepage
 //
 //	GET    /labels                RequireAuth   list labels with counts
 //	POST   /labels                RequireCurator  create a label
@@ -163,6 +193,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.requireCurator).Delete("/{uid}", a.handleAlbumDelete)
 		r.With(a.requireCurator).Post("/{uid}/photos", a.handleAlbumAddPhotos)
 		r.With(a.requireCurator).Delete("/{uid}/photos", a.handleAlbumRemovePhotos)
+		if a.featured != nil {
+			r.With(a.requireAuth).Get("/featured", a.handleFeaturedList)
+			r.With(a.requireCurator).Put("/{uid}/featured", a.handleAlbumFeature)
+			r.With(a.requireCurator).Delete("/{uid}/featured", a.handleAlbumUnfeature)
+		}
 	})
 	r.Route("/labels", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleLabelList)

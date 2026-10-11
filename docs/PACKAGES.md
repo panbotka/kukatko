@@ -3282,7 +3282,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   audit — when the mutation rolls back, no audit record is created; the shared `inAuditedTx` +
   `insertAuditedWithUniqueSlug`, which resolves a slug collision on create/update by retrying through separate transactions
   and writes the audit only for the successful attempt); the non-audited variants remain for system callers
-  that have no actor)), `internal/organizeapi/`
+  that have no actor);
+  **featured albums** (`featured.go`, migration `0094_albums_featured.sql`: `albums.featured_until`/
+  `featured_at`/`featured_by` FK users `ON DELETE SET NULL`, a CHECK that only `type = 'album'` is ever
+  featured, a partial index on `featured_at` over the ever-featured rows): `Album.FeaturedUntil` is read by
+  **every** album projection (`albumColumns`, the index and search SQL) as the *active* end —
+  `CASE WHEN featured_until > now() …` — so a lapsed feature is nil without any job clearing it;
+  `FeatureAlbumAudited(uid,until,byUID,entry)` (locks the row, `ErrAlbumNotFound`/`ErrNotFeaturable`, a
+  running feature keeps its `featured_at`, a lapsed one restarts it), `UnfeatureAlbumAudited` (clears all
+  three, idempotent) and `ListFeaturedAlbums(includePrivate)` → `[]FeaturedAlbum` (active, newest feature
+  first, the index's count, the cover resolved as `AlbumCovers` does plus its BlurHash — one statement whose
+  CTEs scan only the featured albums' membership); validating `until` is the caller's job)), `internal/organizeapi/`
   (a read/curation HTTP API over albums and labels — the basis of the Albums/Labels UI: the interfaces `AlbumStore`/
   `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireCurator})`+`RegisterRoutes` mounts two
@@ -3314,7 +3324,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   logged (the caller is already told what was wrong); **browsing an album's/label's photos has no own endpoint** —
   it goes through the shared `GET /photos` scoped `?album={uid}`/`?label={uid}` (see `photos.ListParams`
   `AlbumUID`/`LabelUID` + `photoapi` `parseListParams`); mounted by another `server.WithAPI`
-  (`buildOrganizeAPI` in `cmd/kukatko/organize.go`, sharing one `organize.Store` for both albums and labels)),
+  (`buildOrganizeAPI` in `cmd/kukatko/organize.go`, sharing one `organize.Store` for both albums and labels);
+  **featured albums** (`featured.go`) behind their own `FeaturedStore` interface (`Config.Featured`; nil =
+  the routes are not mounted) so featured labels can join it later: `GET /albums/featured` (RequireAuth;
+  private albums only for `Role.CanCurate()`, covers minted into `thumb_url` via `Config.Media`, plus
+  `default_days` = `Config.FeaturedDefaultDays` — `albums.featured.default_days`, outside 1…366 → 61 — and
+  `max_days` = `MaxFeaturedDays` 366), `PUT /albums/{uid}/featured` `{until?}` (empty body = now + default;
+  past or beyond 366 days → 400, `ErrNotFeaturable` → 400; audited `album.feature`) and
+  `DELETE /albums/{uid}/featured` (audited `album.unfeature`), both RequireCurator and both returning the
+  album; `Config.Now` pins the clock in tests)),
   `internal/feedback/`
   (the DB layer for **persisted rejections** (negative feedback) — a permanent user "no" to a face↔subject
   or photo↔label guess; it closes the gap where a rejection wasn't kept and the same

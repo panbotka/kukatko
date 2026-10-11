@@ -824,6 +824,15 @@ upload_links:
   # The longest validity a link may be created or extended with, in days.
   max_days: 365
 
+# Albums.
+albums:
+  featured:
+    # How long a curator's "Feature on homepage" lasts when no end date is
+    # picked, and the date the dialog pre-fills, in days (default two months).
+    # A feature always ends; the furthest end allowed is one year ahead.
+    # KUKATKO_ALBUMS_FEATURED_DEFAULT_DAYS.
+    default_days: 61
+
 # Video playback/streaming. Videos are always served with HTTP range support so
 # browsers can seek without downloading the whole file.
 video:

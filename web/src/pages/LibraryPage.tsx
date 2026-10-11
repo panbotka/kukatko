@@ -16,6 +16,7 @@ import {
   type TimelineJump,
   TimelineScrubber,
 } from '../components/library/TimelineScrubber'
+import { FeaturedAlbumsStrip } from '../components/library/FeaturedAlbumsStrip'
 import { WhatsNewPanel } from '../components/library/WhatsNewPanel'
 import { BatchActionBar } from '../components/organize/BatchActionBar'
 import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
@@ -345,6 +346,12 @@ export function LibraryPage() {
           should see before they start filtering. It renders nothing on a first
           visit, when nothing changed, or once dismissed. */}
       <WhatsNewPanel />
+
+      {/* The albums a curator promoted ("Doporučujeme"), above the timeline. A
+          promotion is for the front door, not for a search: the moment the
+          reader narrows the view to something of their own it steps aside. It
+          renders nothing when nothing is featured. */}
+      {!hasActiveFilters(view) && <FeaturedAlbumsStrip />}
 
       <FilterBar
         view={view}

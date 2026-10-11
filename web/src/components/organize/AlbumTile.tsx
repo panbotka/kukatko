@@ -6,6 +6,7 @@ import { FadeInImage } from '../FadeInImage'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { type AlbumCover, albumCover } from '../../lib/albumCovers'
+import { isFeatured } from '../../lib/featured'
 import { formatCaptureRange } from '../../lib/format'
 import { type AlbumSummary } from '../../services/organize'
 import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
@@ -58,7 +59,7 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
     <Link
       to={`/albums/${album.uid}`}
       className="kk-tile d-flex flex-column h-100 text-decoration-none text-body"
-      aria-label={title}
+      aria-label={isFeatured(album) ? t('featured.tileLabel', { title }) : title}
       title={title}
     >
       <div
@@ -91,6 +92,16 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
         )}
         {drawn.kind === 'none' && (
           <EmptyState size="sm" title={t('albums.noPhotos')} className="kk-tile__placeholder" />
+        )}
+        {/* On the homepage right now. Top-left, where the private badge (top-right)
+            cannot collide with it; read aloud through the link's own name. */}
+        {isFeatured(album) && (
+          <span
+            className="position-absolute top-0 start-0 m-1 badge text-bg-primary"
+            aria-hidden="true"
+          >
+            {t('featured.badge')}
+          </span>
         )}
         {album.private && (
           <span

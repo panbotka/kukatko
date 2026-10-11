@@ -207,6 +207,12 @@ const (
 	// ActionAlbumRemovePhotos records removing one or more photos from an album;
 	// the affected photo UIDs are listed in the entry's details.
 	ActionAlbumRemovePhotos = "album.remove_photos"
+	// ActionAlbumFeature records featuring an album on the homepage, or moving
+	// the end of a running feature; the details carry the new and the previous
+	// end.
+	ActionAlbumFeature = "album.feature"
+	// ActionAlbumUnfeature records taking an album off the homepage by hand.
+	ActionAlbumUnfeature = "album.unfeature"
 	// ActionLabelCreate records creating a label.
 	ActionLabelCreate = "label.create"
 	// ActionLabelUpdate records editing a label.
@@ -467,7 +473,8 @@ var knownActions = map[string]struct{}{
 	ActionPhotoStoryboard: {}, ActionPhotoEdit: {}, ActionCommentCreate: {},
 	ActionCommentUpdate: {}, ActionCommentDelete: {}, ActionAlbumCreate: {},
 	ActionAlbumUpdate: {}, ActionAlbumDelete: {}, ActionAlbumAddPhotos: {},
-	ActionAlbumRemovePhotos: {}, ActionLabelCreate: {}, ActionLabelUpdate: {},
+	ActionAlbumRemovePhotos: {}, ActionAlbumFeature: {}, ActionAlbumUnfeature: {},
+	ActionLabelCreate: {}, ActionLabelUpdate: {},
 	ActionLabelDelete: {}, ActionLabelAttach: {}, ActionLabelDetach: {},
 	ActionLabelReject: {}, ActionLabelUnreject: {}, ActionTaskCreate: {},
 	ActionTaskUpdate: {}, ActionTaskDelete: {}, ActionTaskAddPhotos: {},

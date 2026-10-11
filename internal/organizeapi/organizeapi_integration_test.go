@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/organize"
@@ -34,6 +35,7 @@ type env struct {
 	server  *httptest.Server
 	authSvc *auth.Service
 	photos  *photos.Store
+	audit   *audit.Store
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -48,10 +50,12 @@ func newEnv(t *testing.T) *env {
 
 	store := organize.NewStore(db.Pool())
 	api := organizeapi.NewAPI(organizeapi.Config{
-		Albums:         store,
-		Labels:         store,
-		RequireAuth:    authAPI.RequireAuth,
-		RequireCurator: authAPI.RequireCurator,
+		Albums:              store,
+		Labels:              store,
+		Featured:            store,
+		FeaturedDefaultDays: 61,
+		RequireAuth:         authAPI.RequireAuth,
+		RequireCurator:      authAPI.RequireCurator,
 	})
 
 	r := chi.NewRouter()
@@ -61,7 +65,7 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool())}
+	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()), audit: audit.NewStore(db.Pool())}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.

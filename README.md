@@ -206,6 +206,13 @@ shared library is tidied by more than one person.
   chip that names it and clears in one click, whether you set it here or arrived from a shared link.
   The digest itself is about the others: what *you* uploaded, curated or wrote is never announced back
   to you, so a library where only you have been busy greets you with nothing at all.
+- **"Doporučujeme" — a fresh album on the front door.** Right after the fair's photos are in, a curator
+  opens the album and picks *Doporučit na úvodní stránce*: everybody who opens Kukátko then finds it in a
+  row of album cards above the timeline — cover, name, count, one tap to the album — for two months by
+  default, or until any day up to a year ahead. A feature always ends on its own (nothing to forget to
+  switch off), the album page says "Doporučeno do 11. 12." and offers *Prodloužit* or *Zrušit
+  doporučení*, the album index badges it, and the row steps aside the moment you search or filter. A
+  private album is shown on it only to curators.
 - **Everybody's photos from the fair, without an account each.** A curator creates an *upload link*
   — pick the albums and labels, a title like "Pouť 2026 – fotky od vás", how many days it stays valid
   — and posts the short `/u/…` address to the group chat. Whoever opens it, signed in or not, sees

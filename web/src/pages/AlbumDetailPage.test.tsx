@@ -138,6 +138,16 @@ vi.mock('../services/organize', async (importOriginal) => {
   }
 })
 
+vi.mock('../services/featured', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/featured')>()
+  return {
+    ...actual,
+    fetchFeaturedAlbums: vi.fn(),
+    featureAlbum: vi.fn(),
+    unfeatureAlbum: vi.fn(),
+  }
+})
+
 vi.mock('../services/bulk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/bulk')>()
   return { ...actual, bulkUpdatePhotos: vi.fn() }
@@ -145,6 +155,10 @@ vi.mock('../services/bulk', async (importOriginal) => {
 
 const { fetchPhotos, fetchTimeline } = await import('../services/photos')
 const { bulkUpdatePhotos } = await import('../services/bulk')
+const { fetchFeaturedAlbums, featureAlbum, unfeatureAlbum } = await import('../services/featured')
+const featuredListMock = vi.mocked(fetchFeaturedAlbums)
+const featureMock = vi.mocked(featureAlbum)
+const unfeatureMock = vi.mocked(unfeatureAlbum)
 const { fetchAlbum, deleteAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
   await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
@@ -284,6 +298,10 @@ beforeEach(async () => {
   removeMock.mockResolvedValue([])
   albumsMock.mockResolvedValue([])
   labelsMock.mockResolvedValue([])
+  featuredListMock.mockReset()
+  featureMock.mockReset()
+  unfeatureMock.mockReset()
+  featuredListMock.mockResolvedValue({ albums: [], default_days: 61, max_days: 366 })
 })
 
 describe('AlbumDetailPage', () => {
@@ -626,7 +644,13 @@ describe('AlbumDetailPage', () => {
     // In order: the occasional actions, then — behind a divider, in danger
     // styling — the delete, last.
     const items = [...menu.querySelectorAll('a, button')].map((item) => item.textContent)
-    expect(items).toEqual(['Faces (13)', 'Download ZIP', 'Share an upload link', 'Delete'])
+    expect(items).toEqual([
+      'Faces (13)',
+      'Download ZIP',
+      'Feature on homepage',
+      'Share an upload link',
+      'Delete',
+    ])
     const remove = within(menu).getByRole('button', { name: 'Delete' })
     expect(remove).toHaveClass('btn-outline-danger')
     const divider = menu.querySelector('.dropdown-divider')
@@ -1091,5 +1115,110 @@ describe('AlbumDetailPage timeline (rail forced on)', () => {
     await waitFor(() => {
       expect(screen.queryByRole('navigation', { name: 'Timeline' })).toBeNull()
     })
+  })
+})
+
+describe('AlbumDetailPage featuring on the homepage', () => {
+  /** An ISO instant `days` from now, at the end of that local day. */
+  function endOfDayIn(days: number): string {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    date.setHours(23, 59, 59, 0)
+    return date.toISOString()
+  }
+
+  /** The local `YYYY-MM-DD` of an ISO instant. */
+  function localDay(iso: string): string {
+    const date = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${String(date.getFullYear())}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  }
+
+  it('features the album through the dialog, pre-filled with the default length', async () => {
+    const until = endOfDayIn(61)
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    featureMock.mockResolvedValue({ ...album(), featured_until: until })
+    const user = userEvent.setup()
+    renderPage('curator')
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(
+      within(await openHeaderMenu(user)).getByRole('button', { name: 'Feature on homepage' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    const field = within(dialog).getByLabelText('Feature until')
+    await waitFor(() => {
+      expect(field).toHaveValue(localDay(until))
+    })
+    await user.click(within(dialog).getByRole('button', { name: 'Feature' }))
+
+    await waitFor(() => {
+      expect(featureMock).toHaveBeenCalledWith('al_1', until)
+    })
+    // The header now says until when, and the menu offers to extend or stop.
+    expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
+    const menu = await openHeaderMenu(user)
+    expect(within(menu).getByRole('button', { name: 'Extend feature' })).toBeInTheDocument()
+    expect(within(menu).getByRole('button', { name: 'Stop featuring' })).toBeInTheDocument()
+  })
+
+  it('badges a featured album and stops featuring it from the menu', async () => {
+    fetchAlbumMock.mockResolvedValue({ ...album(), featured_until: endOfDayIn(10) })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    unfeatureMock.mockResolvedValue({ ...album(), featured_until: null })
+    const user = userEvent.setup()
+    renderPage('curator')
+
+    expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
+    await user.click(
+      within(await openHeaderMenu(user)).getByRole('button', { name: 'Stop featuring' }),
+    )
+    await waitFor(() => {
+      expect(unfeatureMock).toHaveBeenCalledWith('al_1')
+    })
+    await waitFor(() => {
+      expect(screen.queryByText(/Featured until/)).not.toBeInTheDocument()
+    })
+  })
+
+  it('extends a running feature from its current end, never shorter', async () => {
+    const current = endOfDayIn(200)
+    fetchAlbumMock.mockResolvedValue({ ...album(), featured_until: current })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage('curator')
+
+    await screen.findByText(/Featured until/)
+    await user.click(
+      within(await openHeaderMenu(user)).getByRole('button', { name: 'Extend feature' }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(within(dialog).getByLabelText('Feature until')).toHaveValue(localDay(current))
+    })
+  })
+
+  it('shows a viewer the badge but no featuring controls', async () => {
+    fetchAlbumMock.mockResolvedValue({ ...album(), featured_until: endOfDayIn(10) })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage(false)
+
+    expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
+    const menu = await openHeaderMenu(user)
+    expect(within(menu).queryByRole('button', { name: 'Extend feature' })).toBeNull()
+    expect(within(menu).queryByRole('button', { name: 'Stop featuring' })).toBeNull()
+  })
+
+  it('offers no featuring for a machine-made album', async () => {
+    fetchAlbumMock.mockResolvedValue({ ...album(), type: 'month' })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    const user = userEvent.setup()
+    renderPage('curator')
+
+    await screen.findByRole('heading')
+    const menu = await openHeaderMenu(user)
+    expect(within(menu).queryByRole('button', { name: 'Feature on homepage' })).toBeNull()
   })
 })

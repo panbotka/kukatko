@@ -83,6 +83,12 @@ export interface Album {
   created_by?: string
   created_at: string
   updated_at: string
+  /**
+   * When the album's spot on the homepage ends (RFC 3339), `null` when it is
+   * not featured right now — the server reads it through the clock, so a lapsed
+   * feature arrives as `null`. Optional only so older fixtures type-check.
+   */
+  featured_until?: string | null
 }
 
 /** An album paired with its photo count (`organize.AlbumCount`). */

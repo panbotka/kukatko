@@ -753,7 +753,9 @@
         "create": "Vytvoření alba",
         "delete": "Smazání alba",
         "remove_photos": "Odebrání fotek z alba",
-        "update": "Úprava alba"
+        "update": "Úprava alba",
+        "feature": "Doporučení alba na úvodní stránce",
+        "unfeature": "Zrušení doporučení alba"
       },
       "announcement": {
         "clear": "Zrušení oznámení",
@@ -1376,6 +1378,22 @@
       "hint": "Obličeje, ke kterým nikdo nenavrhl jméno, zůstaly na detailu fotek.",
       "back": "Zpět do alba"
     }
+  },
+  "featured": {
+    "heading": "Doporučujeme",
+    "badge": "Doporučeno",
+    "badgeUntil": "Doporučeno do {{date}}",
+    "tileLabel": "{{title}} (doporučeno)",
+    "feature": "Doporučit na úvodní stránce",
+    "extend": "Prodloužit doporučení",
+    "extendTitle": "Prodloužit doporučení",
+    "unfeature": "Zrušit doporučení",
+    "until": "Doporučovat do",
+    "untilHint": "Album uvidí na úvodní stránce všichni až do konce tohoto dne. Nejdéle na rok.",
+    "submit": "Doporučit",
+    "save": "Uložit",
+    "cancel": "Zrušit",
+    "error": "Doporučení se nepodařilo uložit. Vyber den nejdéle za rok a zkus to znovu."
   },
   "labels": {
     "title": "Štítky",

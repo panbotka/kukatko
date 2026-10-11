@@ -1730,6 +1730,27 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204, both RequireCurator.
   Every album and label write is a curator's, deleting included: deleting a collection throws away a
   stitching-together, never a photograph.
+  **Featured albums ("Doporučujeme" on the homepage):** every album payload (detail, list, global search)
+  carries **`featured_until`** — when the album's homepage feature ends, **`null` when it is not featured
+  now**. Expiry is read through the clock (`featured_until > now()` on every read, nothing unfeatures a row),
+  so a lapsed feature reads `null` although the stale value may still sit in the row.
+  `PUT /albums/{uid}/featured` (RequireCurator — the role that edits albums) `{until?}` (RFC 3339; an empty
+  body or a missing `until` means now + `albums.featured.default_days`, default 61) features the album, or
+  re-dates a running feature — extending and shortening are the same request, and a running feature keeps its
+  `featured_at`, so prolonging it does not move it up the strip. An end not in the future or more than
+  **366 days** ahead → 400 (a feature always ends), a non-`album` type (folder/moment/state/month) → 400, a
+  missing album → 404. `DELETE /albums/{uid}/featured` (RequireCurator) clears it (idempotent). Both return
+  the refreshed album and are audited in the mutation's transaction (`album.feature` with
+  `{title,until,previous_until}`, `album.unfeature` with `{title,previous_until}`). `GET /albums/featured`
+  (RequireAuth) → `{albums:[{...album, featured_at, photo_count, cover_uid?, cover_blurhash?, thumb_url?}],
+  default_days, max_days}`: the albums featured now, **newest feature first** (`featured_at DESC`), each with
+  the cover the album index would draw (hand-picked, else the newest visible member), its BlurHash and its
+  grid-thumbnail URL (`internal/mediaurl`, a signed edge URL on a published bucket); the count is the index's.
+  **A private album is listed only for a curator and above** — the album index itself filters nothing by
+  `private`, but the homepage strip is the one album surface pushed at everybody who opens the app, so it does
+  not broadcast what was marked private. `default_days`/`max_days` let the feature dialog pre-fill and cap its
+  date from the server. The routes are mounted only when a featured store is wired (`Config.Featured`), and the
+  `FeaturedStore` interface is kept apart from `AlbumStore` so featured labels can join it later.
   Every label payload carries **`review_enabled`** — whether the review game may ask about it. It is `true` for
   every created label (`POST` ignores the field) and is switched on the labels page via `PATCH`; **omitting it
   from a PATCH body keeps the stored value**, so the rename form and the toggle can each send only what they

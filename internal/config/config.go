@@ -141,6 +141,7 @@ type Config struct {
 
 	Upload      UploadConfig      `mapstructure:"upload"`
 	UploadLinks UploadLinksConfig `mapstructure:"upload_links"`
+	Albums      AlbumsConfig      `mapstructure:"albums"`
 	Video       VideoConfig       `mapstructure:"video"`
 	Worker      WorkerConfig      `mapstructure:"worker"`
 	Bulk        BulkConfig        `mapstructure:"bulk"`
@@ -1106,6 +1107,22 @@ func (u UploadLinksConfig) MaxFileSizeBytes() int64 {
 	return int64(u.MaxFileSizeMB) * 1024 * 1024
 }
 
+// AlbumsConfig tunes the album features that need a number from the operator.
+type AlbumsConfig struct {
+	// Featured configures promoting an album to the homepage.
+	Featured AlbumsFeaturedConfig `mapstructure:"featured"`
+}
+
+// AlbumsFeaturedConfig configures featured albums — the homepage's
+// "Doporučujeme" strip. A feature always ends on a date; there is no "until I
+// switch it off".
+type AlbumsFeaturedConfig struct {
+	// DefaultDays is how long a feature runs when the curator does not pick an
+	// end, and the date the feature dialog pre-fills, in days. A value outside
+	// 1…internal/organizeapi's one-year cap falls back to the default.
+	DefaultDays int `mapstructure:"default_days"`
+}
+
 // WorkerConfig tunes the in-process background worker that drains the job queue.
 type WorkerConfig struct {
 	// Count is the number of jobs processed in parallel by the shared pool, which
@@ -1538,6 +1555,11 @@ func setOpsDefaults(v *viper.Viper) {
 	v.SetDefault("upload.max_file_size_mb", 0) // 0 = unlimited
 
 	setUploadLinkDefaults(v)
+
+	// How long an album stays on the homepage when featured: two months, long
+	// enough for an event's photos to be found, short enough that the strip does
+	// not fossilise.
+	v.SetDefault("albums.featured.default_days", 61)
 
 	v.SetDefault("video.transcode", false) // on-the-fly HEVC→H.264 transcode is opt-in
 

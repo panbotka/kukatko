@@ -190,4 +190,18 @@ describe('AlbumTile layout', () => {
     expect(media).toHaveTextContent('Private')
     expect(container.querySelector('.kk-album-tile__meta')).toHaveTextContent('0 photos')
   })
+
+  it('badges an album featured on the homepage and says so in its name', () => {
+    const until = new Date(Date.now() + 86_400_000).toISOString()
+    renderTile(album({ featured_until: until }))
+    expect(screen.getByText('Featured')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Pouť 2024 (featured)' })).toBeInTheDocument()
+  })
+
+  it('draws no badge for an album that is not, or no longer, featured', () => {
+    const past = new Date(Date.now() - 86_400_000).toISOString()
+    renderTile(album({ featured_until: past }))
+    expect(screen.queryByText('Featured')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Pouť 2024' })).toBeInTheDocument()
+  })
 })

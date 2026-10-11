@@ -1985,6 +1985,53 @@ body {
   padding: 0;
 }
 
+/* ---- Featured albums strip --------------------------------------------- */
+
+/*
+ * The homepage's "Doporučujeme" row: a few album cards a curator promoted,
+ * above the timeline. One row that scrolls sideways inside its own box, so
+ * however many albums are featured the strip costs one row of height and the
+ * page itself never gains a horizontal scrollbar — on a phone above all.
+ *
+ * The cards are a fixed width (a bit under two per phone screen, so the cut-off
+ * second card says "there is more this way") and snap to the row's start.
+ * The list carries a little padding on every side because a `.kk-tile` lifts
+ * and casts a shadow under the pointer, and an `overflow-x: auto` box clips
+ * both vertically too; the negative margin hands that padding back so the
+ * cards still line up with the page gutter.
+ */
+.kk-featured-strip__list {
+  display: flex;
+  gap: var(--kk-space-3);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  padding: var(--kk-space-1) var(--kk-space-2) var(--kk-space-2);
+  margin: calc(-1 * var(--kk-space-1)) calc(-1 * var(--kk-space-2)) 0;
+}
+
+.kk-featured-strip__item {
+  flex: 0 0 auto;
+  width: 11rem;
+  scroll-snap-align: start;
+}
+
+@media (min-width: 768px) {
+  .kk-featured-strip__item {
+    width: 13rem;
+  }
+}
+
+.kk-featured-card {
+  height: 100%;
+}
+
+/* Landscape, like most of the photographs an event album is made of. */
+.kk-featured-card__media {
+  aspect-ratio: 4 / 3;
+}
+
 /* ---- Label cloud -------------------------------------------------------- */
 
 /*

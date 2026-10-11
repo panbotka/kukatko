@@ -108,6 +108,13 @@ type Album struct {
 	CreatedBy     *string   `json:"created_by,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// FeaturedUntil is when the album's spot on the homepage ends, and nil when
+	// the album is not featured *now*: it is read through the clock (see
+	// activeFeaturedUntil), so a lapsed feature is nil without anything having
+	// cleared it. It is never written through Album — featuring is its own
+	// audited mutation (Store.FeatureAlbumAudited), so an album edit cannot start
+	// or end one by accident. Always present in JSON, null when inactive.
+	FeaturedUntil *time.Time `json:"featured_until"`
 }
 
 // AlbumCount is an album paired with how many photos it contains, as returned by
