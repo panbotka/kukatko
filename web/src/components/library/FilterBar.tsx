@@ -142,16 +142,19 @@ export interface FilterBarProps<T extends LibraryView> {
   showFavorite?: boolean
   /**
    * Where the "search the full text instead" link points, carrying the current
-   * view. Omit on pages that are not the library (and on `/search` itself, which
-   * is the destination), and no link is rendered.
+   * view. It sits at the foot of the query-language help (the `?` beside the
+   * field) and, on a phone, in the search note inside the drawer. Omit on pages
+   * that are not the library (and on `/search` itself, which is the
+   * destination), and no link is rendered.
    */
   searchHref?: string
   /**
    * Page-level view actions (Slideshow, Save view). No viewport spends a
    * page-heading row on them any more, so the bar hosts them in the one line
-   * that already exists on each: beside the result count on desktop, at the
-   * foot of the filters drawer on a phone. Rendered in exactly one of the two
-   * places, so a page can never have the same button in the document twice.
+   * that already exists on each: beside the result count at the end of the
+   * header row on desktop, at the foot of the filters drawer on a phone.
+   * Rendered in exactly one of the two places, so a page can never have the
+   * same button in the document twice.
    */
   viewActions?: ReactNode
   /**
@@ -168,8 +171,18 @@ export interface FilterBarProps<T extends LibraryView> {
  * disclosure. On desktop the header is a single row: a prominent quick-filter
  * field (the visual anchor, matching title and description as you type), the
  * sort selector, the grid-density picker (how many photos sit side by side — a
- * per-device display preference, not part of the view), and a "Filters" toggle
- * badged with the count of active filters.
+ * per-device display preference, not part of the view), a "Filters" toggle
+ * badged with the count of active filters, and the status line — the result
+ * count, clear-all and the page's view actions.
+ *
+ * **The status line rides at the end of that row when it fits** and wraps onto
+ * a line of its own, still right-aligned, when it does not (a 1024 px window, a long
+ * ranked-count label). The header used to stack three rows of chrome — the
+ * controls, a helper sentence about the query language and the count line — so
+ * about 80 px stood between the controls and the first photograph at 1440 px.
+ * The sentence mostly repeated the field's placeholder; its one unique part,
+ * the link to ranked full-text and semantic search, now sits at the foot of the
+ * `?` help that explains the language in full.
  *
  * **Every filter lives behind that toggle — on desktop too.** Period, Album,
  * Label and Person, the ways photos are actually found, used to hold an
@@ -316,10 +329,11 @@ export function FilterBar<T extends LibraryView>({
     push({ ...LIBRARY_DEFAULTS, sort: view.sort, ...(showSearch ? {} : { q: view.q }) })
   }
 
-  // The note under the search field, rendered in exactly one place: below the
-  // header row on desktop, inside the drawer on a phone.
+  // The note explaining the search field. Only a phone shows it, at the foot of
+  // the drawer, which has room to spare; on desktop it was a whole row above the
+  // photographs repeating the placeholder, and its link lives in the `?` help.
   const searchNote =
-    showSearch && searchHref !== undefined ? (
+    narrow && showSearch && searchHref !== undefined ? (
       <SearchNote href={searchHref} semanticSearch={semanticSearch} />
     ) : null
 
@@ -355,7 +369,7 @@ export function FilterBar<T extends LibraryView>({
         uploaders={uploaders}
         queryFilters={queryFilters}
       />
-      {narrow && searchNote !== null && (
+      {searchNote !== null && (
         <>
           <hr className="my-3" />
           {searchNote}
@@ -374,19 +388,20 @@ export function FilterBar<T extends LibraryView>({
   )
 
   // The result count, the clear-all action and — on desktop — the page's own
-  // view actions. On desktop they are a row of their own under the bar, and it
-  // is the row that replaced the page-heading row the library used to carry:
-  // one short line stating what is on screen and offering what to do with it,
-  // rather than a title repeating the navigation plus a line of buttons. On a
-  // phone the row rides *inside* the header's flex row as a full-width wrapped
-  // line, so the count lands directly beneath the Filters button
-  // (`flex-row-reverse` keeps it on that side) instead of costing a line of its
-  // own between the search field and the photos; there the view actions are in
-  // the drawer instead (see `panel`), because this line has no room for them.
+  // view actions: the line that replaced the page-heading row the library used
+  // to carry, stating what is on screen and offering what to do with it rather
+  // than a title repeating the navigation plus a line of buttons. It is always
+  // the last item of the header's flex row. On desktop it keeps to the right
+  // edge at its own width (`.kukatko-filter-status` in app.css), leaving the
+  // rest to the search field, and when the controls leave too little it wraps
+  // onto a line of its own — so a wide window spends no row on it at all. On a phone it is that wrapped line by
+  // construction (`w-100`), landing directly beneath the Filters button
+  // (`flex-row-reverse` keeps the count on that side); there the view actions
+  // are in the drawer instead (see `panel`), because this line has no room.
   const status = (
     <div
-      className={`kukatko-filter-status d-flex align-items-center justify-content-between gap-2 ${
-        narrow ? 'w-100 flex-row-reverse' : 'mt-2'
+      className={`kukatko-filter-status d-flex align-items-center justify-content-between gap-2${
+        narrow ? ' w-100 flex-row-reverse' : ''
       }`}
     >
       {/* The live region stays mounted while the count is absent, so the number
@@ -457,8 +472,12 @@ export function FilterBar<T extends LibraryView>({
             </InputGroup>
             {/* The very same help the search page opens: this field speaks the
                 same query language, so it gets the same one explanation rather
-                than a second, drifting copy of it. */}
-            <SearchQueryHelp />
+                than a second, drifting copy of it — plus, at its foot, the way
+                on to ranked search, offered only while semantics are actually
+                available, since the link's own label promises them. */}
+            <SearchQueryHelp
+              fullSearchHref={semanticSearch && searchHref !== undefined ? searchHref : undefined}
+            />
           </>
         )}
 
@@ -501,19 +520,12 @@ export function FilterBar<T extends LibraryView>({
           )}
         </Button>
 
-        {/* On a phone the count wraps onto its own line right under the Filters
-            button. It is the one number the reader wants from this bar, and it
-            now costs no line of its own. */}
-        {narrow && status}
+        {/* The count closes the row: beside the Filters button on a wide
+            desktop, wrapped onto its own line right under it otherwise. It is
+            the one number the reader wants from this bar, and on a wide window
+            it costs no line of its own. */}
+        {status}
       </div>
-
-      {/* The note sits below the alignment row, not inside the search field's flex
-          item: kept a sibling of that item it would stretch the search column and
-          the row's centre alignment would push the sort selector down. On a phone
-          it is two lines of reference material above the photos, so there it
-          moves into the drawer (see `panel`) — the placeholder and the `?` beside
-          the field carry the same message at no cost in height. */}
-      {!narrow && searchNote}
 
       {chips.length > 0 && (
         <div className="kukatko-filter-chips d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -547,8 +559,6 @@ export function FilterBar<T extends LibraryView>({
           })}
         </div>
       )}
-
-      {!narrow && status}
 
       {narrow ? (
         <Offcanvas
@@ -591,16 +601,16 @@ export function FilterBar<T extends LibraryView>({
 }
 
 /**
- * The note under the search field: what the box really does — a substring match
- * over title, description and notes *and* the full `key:value` query language,
- * which works here exactly as it does on `/search`; the `?` beside the field
- * spells that language out in full. The link to ranked full-text/semantic search
- * only appears when semantic search is actually available (the embeddings box is
- * reachable), since the link's own label promises semantics.
+ * The note explaining the search field: what the box really does — a substring
+ * match over title, description and notes *and* the full `key:value` query
+ * language, which works here exactly as it does on `/search`; the `?` beside the
+ * field spells that language out in full. The link to ranked full-text/semantic
+ * search only appears when semantic search is actually available (the
+ * embeddings box is reachable), since the link's own label promises semantics.
  *
- * Defined once and placed twice: under the header row on desktop, at the foot of
- * the filters drawer on a phone, where two lines of reference material would
- * otherwise stand between the search field and the photographs.
+ * Shown only at the foot of the filters drawer on a phone. Desktop dropped it:
+ * it was a row of chrome above the photographs that mostly repeated the
+ * placeholder, and its link moved into the `?` help.
  */
 function SearchNote({ href, semanticSearch }: { href: string; semanticSearch: boolean }) {
   const { t } = useTranslation()

@@ -1206,6 +1206,18 @@ here.
   drops to an 8 rem flex-basis below `md` (an 18 rem basis is wider than the screen, which wrapped the button
   onto its own row) and the bar's bottom margin is `.kukatko-filter-bar` (1 rem, 0.5 rem on a phone) rather
   than an `mb-3` utility.
+  **On desktop the status line closes the header row too** (2026-10-11). The toolbar used to stack three
+  rows of chrome before the grid — the controls, a helper sentence about the query language („Hledá v názvu,
+  popisu a poznámce…", which mostly repeated the placeholder) and the count line with Promítání / Uložit
+  pohled. The sentence is gone from desktop (`SearchNote` now renders only in the phone drawer) and its one
+  unique part, the link to ranked search, sits at the foot of the `?` help (`SearchQueryHelp`
+  `fullSearchHref`). `.kukatko-filter-status` is the last item of the header's flex row in both layouts; from
+  `md` up it is `flex: 0 0 auto` + `margin-left: auto` — as wide as its content, never shrinking, kept to the
+  right edge, every spare pixel left to the search field — so it rides beside Filtry when it fits and wraps
+  onto a line of its own (still right-aligned) when it does not. A/B over the same catalogue, digest
+  showing (deployed 0.30.0 vs. this tree through the prod-proxy probe): first photograph at **263 → 199 px**
+  at 1440 × 900 (one row: search field ~375 px, ~310 px with „Zrušit filtry" also in the row) and
+  **263 → 238 px** at 1024 × 800 (the status wraps, so two rows); the phone bar is unchanged (77 px at 390 × 844).
   **The mobile drawer ends in a sticky footer** (`FilterDrawerFooter`, `.offcanvas-footer.kukatko-filter-footer`):
   the drawer covers the screen, so the „Počet fotek: N" line stays behind it and filtering was blind —
   set a period, a person and a rating, scroll ten fields back up to the cross (the only exit) and only there
@@ -1321,14 +1333,16 @@ here.
   everywhere else.
   The inline search field (`q`) is **not** merely a substring narrowing: it runs the **whole `klíč:hodnota`
   search language**, exactly as `/search` does — `year:1960-1969` narrows the library grid to the sixties here
-  too — with the residual free text matching title/description/notes as a substring. The placeholder and the
-  hint therefore name both halves („Filtrovat — text, nebo filtr jako `year:1965` či `person:Jarmila`" —
+  too — with the residual free text matching title/description/notes as a substring. The placeholder (and,
+  in the phone drawer, the search note) therefore names both halves („Filtrovat — text, nebo filtr jako `year:1965` či `person:Jarmila`" —
   it opens on the same verb as the field's own label „Filtrovat v knihovně", so the two never disagree about
   what the box does; „Hledat" is what the *navigation* and `/search` say), and
   beside the field sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
   explanation, never a second copy to drift (`showSearch={false}` hides field and `?` together, so `/search`
   doesn't end up with two triggers). What `/search` adds on top is **ranking**, which is what
-  **the link to `/search`** promises: it shows **only when semantic
+  **the link to `/search`** promises — at the foot of that `?` dialog (`SearchQueryHelp` `fullSearchHref`, a
+  `Modal.Footer` link that closes the dialog as it navigates; the search page passes none, so its dialog has no
+  footer) and, on a phone, in the drawer's search note: it shows **only when semantic
   search is available** — `FilterBar` reads `useCapabilities().semantic_search` and hides the link when the embeddings box is offline
   (fulltext keeps working, but its label promises semantics); `searchHref` carries the current `q`,
   the search modes are **not duplicated** here),
@@ -2043,7 +2057,7 @@ here.
   Uložit pohled) are occasional; together they were a fifth of a phone's first screen and the top of a
   desktop's. The heading always renders `visually-hidden` — the page still opens with an `h1` for a screen
   reader — and the two actions are handed to `FilterBar` as **`viewActions`**, which seats them in a line
-  that exists anyway: beside the result count (`.kukatko-filter-status`) on desktop, at the foot of the
+  that exists anyway: beside the result count (`.kukatko-filter-status`, the end of the header row) on desktop, at the foot of the
   filters drawer on a phone. Built once into one fragment and rendered in exactly one of the two places,
   so neither button can end up in the document twice. That, with the digest condensed to one line
   (`WhatsNewPanel`) and the filter pickers moved behind the Filtry button, is what puts the first row of

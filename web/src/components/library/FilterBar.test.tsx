@@ -153,6 +153,12 @@ async function openPanel(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /Filters/ }))
 }
 
+/** Opens the query-language help beside the field and returns its dialog. */
+async function openQueryHelp(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Search query language help' }))
+  return screen.findByRole('dialog')
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   // The density picker reads localStorage; keep every test on a clean slate.
@@ -319,49 +325,51 @@ describe('FilterBar header', () => {
     expect(screen.queryByLabelText('Tiles per row')).not.toBeInTheDocument()
   })
 
-  it('points the quick filter at /search for real search, carrying the view', () => {
+  it('points the quick filter at /search for real search, carrying the view', async () => {
+    const user = userEvent.setup()
     renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), { searchHref: '/search?q=sunset' })
 
-    // The quick filter says what it does — text *or* a filter; the link says
-    // where ranked full-text and semantic search live.
+    // The quick filter says what it does — text *or* a filter — in its
+    // placeholder; the way on to ranked full-text and semantic search sits at
+    // the foot of the `?` help that explains the language, not in a row of its
+    // own above the photographs.
     expect(
       screen.getByPlaceholderText('Filter — text, or a filter like year:1965 or person:Jarmila'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
-      'href',
-      '/search?q=sunset',
-    )
-  })
-
-  it('omits the search link when the page does not offer one', () => {
-    renderBar(LIBRARY_DEFAULTS, vi.fn())
     expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+    const dialog = await openQueryHelp(user)
+    expect(
+      within(dialog).getByRole('link', { name: /Full-text & semantic search/ }),
+    ).toHaveAttribute('href', '/search?q=sunset')
   })
 
-  it('hides the semantic-search link when the embeddings box is offline, keeping the filter help', () => {
+  it('omits the search link when the page does not offer one', async () => {
+    const user = userEvent.setup()
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+    const dialog = await openQueryHelp(user)
+    expect(within(dialog).queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+  })
+
+  it('hides the semantic-search link when the embeddings box is offline, keeping the filter help', async () => {
+    const user = userEvent.setup()
     renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), {
       searchHref: '/search?q=sunset',
       semanticSearch: false,
     })
 
     // The link that promises semantic search is gone — full-text still works,
-    // but there is no point advertising semantics while the box is unreachable.
-    expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
-    // …while the quick-filter help text (unrelated to embeddings) stays put.
-    expect(screen.getByText(/Searches title, description and notes/)).toBeInTheDocument()
+    // but there is no point advertising semantics while the box is unreachable…
+    const dialog = await openQueryHelp(user)
+    expect(within(dialog).queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+    // …while the query-language help itself (unrelated to embeddings) stays.
+    expect(dialog).toHaveTextContent('Operators')
   })
 
-  it('shows the semantic-search link and the filter help when the box is reachable', () => {
-    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), {
-      searchHref: '/search?q=sunset',
-      semanticSearch: true,
-    })
-
-    expect(screen.getByText(/Searches title, description and notes/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Full-text & semantic search/ })).toHaveAttribute(
-      'href',
-      '/search?q=sunset',
-    )
+  it('drops the helper sentence under the field on desktop', () => {
+    // It mostly repeated the placeholder and cost a whole row of chrome between
+    // the controls and the first photograph; the phone keeps it in the drawer.
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), { searchHref: '/search?q=sunset' })
+    expect(screen.queryByText(/Searches title, description and notes/)).not.toBeInTheDocument()
   })
 
   it('commits a typed query once the reader pauses, not once per letter', async () => {
@@ -416,33 +424,36 @@ describe('FilterBar header', () => {
 })
 
 describe('FilterBar layout', () => {
-  // The sort selector must share the search input's row so the two line up. The
-  // search hint sits below that row — not inside it — so its extra height cannot
-  // stretch the search column and push the selector down under the row's centre
-  // alignment. Asserting on structure (not a fragile pixel measurement) keeps the
-  // guard honest in jsdom, where layout has no geometry.
-  it('keeps the sort selector in the search input row, with the hint outside it', () => {
-    renderBar(LIBRARY_DEFAULTS, vi.fn(), { searchHref: '/search' })
-
-    const sort = screen.getByLabelText('Sort')
-    const searchInput = screen.getByLabelText('Filter the library')
-    const row = sort.parentElement
-    expect(row).not.toBeNull()
-
-    // Both controls belong to the same header row (the alignment group)...
-    expect(row).toContainElement(searchInput)
-    // ...but the helper hint is not a member of it, so it can't affect alignment.
-    const hint = screen.getByRole('link', { name: /Full-text & semantic search/ })
-    expect(row).not.toContainElement(hint)
-  })
-
-  it('keeps the sort selector in the search input row when no hint is shown', () => {
+  // The sort selector must share the search input's row so the two line up.
+  // Asserting on structure (not a fragile pixel measurement) keeps the guard
+  // honest in jsdom, where layout has no geometry.
+  it('keeps the sort selector in the search input row', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn())
 
     const sort = screen.getByLabelText('Sort')
     const searchInput = screen.getByLabelText('Filter the library')
     expect(sort.parentElement).toContainElement(searchInput)
-    expect(screen.queryByRole('link', { name: /Full-text/ })).not.toBeInTheDocument()
+  })
+
+  // The desktop toolbar used to stack three rows of chrome — the controls, a
+  // helper sentence and the count line — before the first photograph. The count
+  // and the page's view actions now close the controls' own flex row, which
+  // wraps them onto a line of their own only when the window is too narrow.
+  it('closes the header row with the count and the view actions', () => {
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'sunset' }, vi.fn(), {
+      total: 20637,
+      searchHref: '/search?q=sunset',
+      viewActions: <button type="button">Save view</button>,
+    })
+
+    const row = screen.getByLabelText('Sort').parentElement
+    const status = screen.getByText('Photos: 20637').closest('.kukatko-filter-status')
+    expect(status).not.toBeNull()
+    expect(status?.parentElement).toBe(row)
+    // It is the row's last item, after the Filters button.
+    expect(row?.lastElementChild).toBe(status)
+    expect(status).toContainElement(screen.getByRole('button', { name: 'Save view' }))
+    expect(status).toContainElement(screen.getByRole('button', { name: 'Clear filters' }))
   })
 })
 
@@ -1484,14 +1495,13 @@ describe('FilterBar favorites toggle', () => {
 describe('FilterBar query language', () => {
   // The field always ran the whole `key:value` language; it only ever claimed
   // otherwise. These guard the claim, not the parser (which is the backend's).
-  it('describes the query language in the placeholder and the hint', () => {
+  it('describes the query language in the placeholder', () => {
     renderBar(LIBRARY_DEFAULTS, vi.fn(), { searchHref: '/search' })
 
     expect(screen.getByLabelText('Filter the library')).toHaveAttribute(
       'placeholder',
       expect.stringContaining('year:1965'),
     )
-    expect(screen.getByText(/understands filters like year:1965/)).toBeInTheDocument()
   })
 
   it('offers the same query-language help the search page opens', async () => {

@@ -1,16 +1,19 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import i18n from '../../i18n'
 
 import { SearchQueryHelp } from './SearchQueryHelp'
 
-function renderHelp() {
+function renderHelp(fullSearchHref?: string) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <SearchQueryHelp />
+      <MemoryRouter>
+        <SearchQueryHelp fullSearchHref={fullSearchHref} />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -30,6 +33,35 @@ describe('SearchQueryHelp', () => {
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toHaveTextContent('Operators')
     expect(dialog).toHaveTextContent('Filters')
+  })
+
+  it('offers ranked search at the foot of the dialog when given a destination', async () => {
+    // The library's quick filter passes it: the link used to be the tail of a
+    // helper sentence under the field, a row of chrome above the photographs.
+    const user = userEvent.setup()
+    renderHelp('/search?q=sunset')
+    await user.click(screen.getByRole('button', { name: 'Search query language help' }))
+
+    const dialog = await screen.findByRole('dialog')
+    const link = within(dialog).getByRole('link', { name: /Full-text & semantic search/ })
+    expect(link).toHaveAttribute('href', '/search?q=sunset')
+    expect(link.closest('.modal-footer')).not.toBeNull()
+
+    // Following it closes the dialog rather than leaving it over the search page.
+    await user.click(link)
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('has no footer without a destination (the search page is the destination)', async () => {
+    const user = userEvent.setup()
+    renderHelp()
+    await user.click(screen.getByRole('button', { name: 'Search query language help' }))
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('link')).not.toBeInTheDocument()
+    expect(dialog.querySelector('.modal-footer')).toBeNull()
   })
 
   it('gives the ? trigger a finger-sized hit area without growing on desktop', () => {

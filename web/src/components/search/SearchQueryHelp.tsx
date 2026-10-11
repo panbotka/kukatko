@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { Icon } from '../Icon'
 
@@ -14,8 +15,16 @@ import { SearchQueryReference } from './SearchQueryReference'
  * language nobody knows about is a query language nobody uses — this is its
  * discoverability at the field; the Search chapter of `/help` renders the same
  * reference for the reader who looks for it there.
+ *
+ * `fullSearchHref`, when given, adds a way out at the foot of the dialog to
+ * ranked full-text and semantic search. The library's quick filter passes it:
+ * that link used to be the tail of a helper sentence under the field, a whole
+ * row of chrome above the photographs that mostly repeated the placeholder, and
+ * the explanation of what the field understands is where the reader who wonders
+ * goes looking. Omit it (the search page, which *is* that destination) and the
+ * dialog has no footer.
  */
-export function SearchQueryHelp() {
+export function SearchQueryHelp({ fullSearchHref }: { fullSearchHref?: string }) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
 
@@ -62,6 +71,15 @@ export function SearchQueryHelp() {
         <Modal.Body>
           <SearchQueryReference />
         </Modal.Body>
+        {fullSearchHref !== undefined && (
+          <Modal.Footer>
+            {/* Navigating away unmounts nothing here (the bar stays), so the
+                dialog closes itself rather than following the reader. */}
+            <Link to={fullSearchHref} className="text-decoration-none" onClick={close}>
+              {t('library.filters.fullSearchLink')}
+            </Link>
+          </Modal.Footer>
+        )}
       </Modal>
     </>
   )

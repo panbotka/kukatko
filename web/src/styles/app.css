@@ -1626,7 +1626,20 @@ body {
   min-width: 9rem;
 }
 
-/* The count + clear-all line. On a phone it wraps under the Filters button and
+/* The count + clear-all line closes the header row. On desktop it is exactly as
+   wide as its content and never shrinks, so whatever the controls leave goes to
+   the search field (the row's visual anchor), and `margin-left: auto` keeps it
+   against the right edge. When it fits beside the Filters button it costs no
+   row of its own; when it does not, it wraps onto a line of its own and stays
+   right-aligned there, the count beside the actions it describes. */
+@media (min-width: 768px) {
+  .kukatko-filter-status {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+}
+
+/* On a phone it wraps under the Filters button and
    keeps to that side (`flex-row-reverse` in the markup), so the reader reads the
    number where the control that changes it is — but it has to stop short of the
    right edge, which on a phone belongs to the fixed timeline rail. */
