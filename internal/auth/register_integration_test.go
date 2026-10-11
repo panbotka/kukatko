@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -102,18 +103,24 @@ func countAudit(t *testing.T, env *httpEnv, action string) int {
 // TestRegister_createsAWaitingAccountAndMailsEverybody is the whole happy path:
 // a stranger with the shared secret creates an account, the account exists but
 // is not approved and holds the lowest role, the registration is in the audit
-// trail, and two messages are waiting on the queue — the person's confirmation
-// and one notice per enabled administrator.
+// trail, and the messages waiting on the queue are the person's confirmation and
+// one notice per enabled administrator who opted into it by e-mail. The e-mail
+// is opt-in: an administrator who never chose gets none.
 func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	// One admin, one maintainer, and two accounts that must not be told: a
+	// An admin and a maintainer who opted into the mail, an admin who never
+	// chose, and accounts that must not be told even having opted in: a
 	// disabled admin and an editor.
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	env.mustCreate(t, "keeper", auth.RoleMaintainer)
-	env.mustCreate(t, "scribe", auth.RoleEditor)
+	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
+	env.mustCreate(t, "silent", auth.RoleAdmin)
+	scribe := env.mustCreate(t, "scribe", auth.RoleEditor)
 	blocked := env.mustCreate(t, "retired", auth.RoleAdmin)
 	if _, err := env.svc.SetUserDisabled(t.Context(), blocked.UID, true); err != nil {
 		t.Fatalf("disabling the retired admin: %v", err)
+	}
+	for _, uid := range []string{boss.UID, keeper.UID, scribe.UID, blocked.UID} {
+		choose(t, env, uid, notification.ChannelEmail, true)
 	}
 	openRegistration(t, env)
 
@@ -156,7 +163,7 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 
 	mail := queuedMail(t, env)
 	if len(mail) != 3 {
-		t.Fatalf("%d mails queued, want 3 (the newcomer plus two administrators): %+v", len(mail), mail)
+		t.Fatalf("%d mails queued, want 3 (the newcomer plus the two who opted in): %+v", len(mail), mail)
 	}
 	if mail[0].Template != mailer.TemplateRegistrationReceived || mail[0].To != "newcomer@example.test" {
 		t.Errorf("first mail = %s to %s, want %s to the newcomer",
@@ -166,6 +173,10 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 	for _, m := range mail[1:] {
 		if m.Template != mailer.TemplateNewRegistrationPending {
 			t.Errorf("mail to %s = %s, want %s", m.To, m.Template, mailer.TemplateNewRegistrationPending)
+		}
+		var data mailer.NewRegistrationPendingData
+		if err := json.Unmarshal(m.Data, &data); err != nil || data.ApprovalURL != testApprovalURL {
+			t.Errorf("mail to %s carries %s, want the approval URL %s", m.To, m.Data, testApprovalURL)
 		}
 		notified[m.To] = true
 	}
@@ -178,6 +189,9 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 		if notified[unwanted] {
 			t.Errorf("%s was notified, but only enabled admins and maintainers may be", unwanted)
 		}
+	}
+	if notified["silent@example.test"] {
+		t.Error("an admin who never opted into the e-mail was mailed; it is off by default")
 	}
 }
 

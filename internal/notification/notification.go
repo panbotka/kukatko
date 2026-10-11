@@ -2,7 +2,7 @@
 // for, what kind it was, the text and deeplink it was sent with, when it was
 // read, and — for the kinds that are about photographs — the frozen, ordered set
 // of photographs tapping it opens. It also keeps each account's choice of which
-// kinds it wants at all.
+// kinds it wants, per delivery channel (push, e-mail).
 //
 // A notification is a record rather than a transient message because it has to
 // survive being tapped: "you were tagged in 12 photos" opens exactly those 12,
@@ -37,14 +37,41 @@ const (
 	KindRegistrationPending Kind = "registration_pending"
 )
 
-// registry is every known kind in display order, with whether an account that
-// never chose wants it. The order is the order Preferences reports them in.
+// Channel names how a notification reaches its account: a push to its devices
+// or an e-mail. It is stored verbatim in notification_prefs.channel, which — like
+// the kind columns — carries no CHECK on its values, so adding a channel costs a
+// constant here and the kinds that offer it, never a migration.
+type Channel string
+
+const (
+	// ChannelPush is a Web Push notification to every device of the account,
+	// together with the record the notification page reads.
+	ChannelPush Channel = "push"
+	// ChannelEmail is a message to the account's e-mail address.
+	ChannelEmail Channel = "email"
+)
+
+// channelDef is one channel a kind can be delivered through, with whether an
+// account that never chose wants it there.
+type channelDef struct {
+	channel Channel
+	def     bool
+}
+
+// registry is every known kind in display order, each with the channels it can
+// be delivered through (push before e-mail) and their defaults. The order is the
+// order Preferences reports them in.
 var registry = []struct {
-	kind Kind
-	def  bool
+	kind     Kind
+	channels []channelDef
 }{
-	{kind: KindTagged, def: true},
-	{kind: KindRegistrationPending, def: true},
+	{kind: KindTagged, channels: []channelDef{{channel: ChannelPush, def: true}}},
+	// The administrators' e-mail is opt-in: before channels existed every
+	// approver was mailed about every registration whether they cared or not.
+	{kind: KindRegistrationPending, channels: []channelDef{
+		{channel: ChannelPush, def: true},
+		{channel: ChannelEmail, def: false},
+	}},
 }
 
 // Kinds returns every known kind, in display order, as a fresh slice.
@@ -58,22 +85,55 @@ func Kinds() []Kind {
 
 // Known reports whether k is one of the kinds this package defines.
 func (k Kind) Known() bool {
-	_, ok := k.lookup()
+	_, ok := k.channelDefs()
 	return ok
 }
 
-// Default reports whether an account that never chose wants kind k. An unknown
-// kind is never wanted.
-func (k Kind) Default() bool {
-	def, _ := k.lookup()
+// Channels returns the channels kind k can be delivered through, push before
+// e-mail, as a fresh slice; nil for an unknown kind.
+func (k Kind) Channels() []Channel {
+	defs, _ := k.channelDefs()
+	if defs == nil {
+		return nil
+	}
+	out := make([]Channel, 0, len(defs))
+	for _, def := range defs {
+		out = append(out, def.channel)
+	}
+	return out
+}
+
+// Supports reports whether kind k can be delivered through channel c. An
+// unknown kind supports nothing.
+func (k Kind) Supports(c Channel) bool {
+	_, ok := k.lookup(c)
+	return ok
+}
+
+// Default reports whether an account that never chose wants kind k through
+// channel c. An unknown kind, or a channel the kind does not offer, is never
+// wanted.
+func (k Kind) Default(c Channel) bool {
+	def, _ := k.lookup(c)
 	return def
 }
 
-// lookup returns k's default and whether k is a known kind at all.
-func (k Kind) lookup() (bool, bool) {
+// channelDefs returns k's channels and whether k is a known kind at all.
+func (k Kind) channelDefs() ([]channelDef, bool) {
 	for _, entry := range registry {
 		if entry.kind == k {
-			return entry.def, true
+			return entry.channels, true
+		}
+	}
+	return nil, false
+}
+
+// lookup returns k's default on channel c and whether k offers c at all.
+func (k Kind) lookup(c Channel) (bool, bool) {
+	defs, _ := k.channelDefs()
+	for _, def := range defs {
+		if def.channel == c {
+			return def.def, true
 		}
 	}
 	return false, false
@@ -118,8 +178,12 @@ var (
 	// ErrUserNotFound means a notification or preference for an account that
 	// does not exist.
 	ErrUserNotFound = errors.New("notification: user not found")
-	// ErrDuplicateKind means a preference replace naming the same kind twice.
-	ErrDuplicateKind = errors.New("notification: kind given twice")
+	// ErrUnsupportedChannel means a channel the kind cannot be delivered
+	// through — an unknown channel, or a known one the kind does not offer.
+	ErrUnsupportedChannel = errors.New("notification: channel not supported for this kind")
+	// ErrDuplicateKind means a preference replace naming the same kind and
+	// channel twice.
+	ErrDuplicateKind = errors.New("notification: kind and channel given twice")
 	// ErrInvalidRetention means a purge with a non-positive threshold or an
 	// unread threshold shorter than the read one.
 	ErrInvalidRetention = errors.New("notification: invalid retention")
@@ -302,44 +366,67 @@ func (r Retention) validate() error {
 	return nil
 }
 
-// Preference is whether an account wants one kind.
+// Preference is whether an account wants one kind through one channel.
 type Preference struct {
 	// Kind is the notification kind.
 	Kind Kind `json:"kind"`
-	// Enabled is whether the account wants it.
+	// Channel is the delivery channel the choice is about.
+	Channel Channel `json:"channel"`
+	// Enabled is whether the account wants the kind through the channel.
 	Enabled bool `json:"enabled"`
-	// IsDefault is true when the account never chose and Enabled is the kind's
-	// default. It is ignored on input.
+	// IsDefault is true when the account never chose and Enabled is the
+	// channel's default for the kind. It is ignored on input.
 	IsDefault bool `json:"is_default"`
 }
 
-// validatePrefs refuses an unknown kind (ErrUnknownKind) and a kind given twice
-// (ErrDuplicateKind) — a replace must say one thing per kind rather than let the
-// last entry win silently.
+// prefKey is one (kind, channel) pair, the unit an account chooses about.
+type prefKey struct {
+	kind    Kind
+	channel Channel
+}
+
+// String renders k as "kind/channel", the form the audit trail records it in.
+func (k prefKey) String() string {
+	return string(k.kind) + "/" + string(k.channel)
+}
+
+// validatePrefs refuses an unknown kind (ErrUnknownKind), a channel the kind is
+// not delivered through (ErrUnsupportedChannel) and a (kind, channel) given
+// twice (ErrDuplicateKind) — a replace must say one thing per pair rather than
+// let the last entry win silently.
 func validatePrefs(prefs []Preference) error {
-	seen := make(map[Kind]struct{}, len(prefs))
+	seen := make(map[prefKey]struct{}, len(prefs))
 	for _, pref := range prefs {
 		if !pref.Kind.Known() {
 			return fmt.Errorf("%w: %q", ErrUnknownKind, pref.Kind)
 		}
-		if _, dup := seen[pref.Kind]; dup {
-			return fmt.Errorf("%w: %q", ErrDuplicateKind, pref.Kind)
+		if !pref.Kind.Supports(pref.Channel) {
+			return fmt.Errorf("%w: %q through %q", ErrUnsupportedChannel, pref.Kind, pref.Channel)
 		}
-		seen[pref.Kind] = struct{}{}
+		key := prefKey{kind: pref.Kind, channel: pref.Channel}
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("%w: %s", ErrDuplicateKind, key)
+		}
+		seen[key] = struct{}{}
 	}
 	return nil
 }
 
 // effective merges stored choices over the defaults: one Preference per known
-// kind, in registry order. A stored row for a kind no longer defined is ignored.
-func effective(stored map[Kind]bool) []Preference {
-	out := make([]Preference, 0, len(registry))
+// kind and channel it supports, in registry order (push before e-mail within a
+// kind). A stored row for a kind or channel no longer defined is ignored.
+func effective(stored map[prefKey]bool) []Preference {
+	out := make([]Preference, 0, 2*len(registry))
 	for _, entry := range registry {
-		enabled, chosen := stored[entry.kind]
-		if !chosen {
-			enabled = entry.def
+		for _, def := range entry.channels {
+			enabled, chosen := stored[prefKey{kind: entry.kind, channel: def.channel}]
+			if !chosen {
+				enabled = def.def
+			}
+			out = append(out, Preference{
+				Kind: entry.kind, Channel: def.channel, Enabled: enabled, IsDefault: !chosen,
+			})
 		}
-		out = append(out, Preference{Kind: entry.kind, Enabled: enabled, IsDefault: !chosen})
 	}
 	return out
 }

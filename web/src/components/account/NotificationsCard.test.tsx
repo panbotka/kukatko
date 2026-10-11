@@ -73,10 +73,11 @@ const PHONE: PushSubscriptionRecord = {
   last_used_at: '2026-09-25T18:30:00Z',
 }
 
-/** Both kinds on their defaults. */
+/** Every kind and channel on its default, as the server reports a fresh account. */
 const DEFAULT_PREFS: NotificationPreference[] = [
-  { kind: 'tagged', enabled: true, is_default: true },
-  { kind: 'registration_pending', enabled: true, is_default: true },
+  { kind: 'tagged', channel: 'push', enabled: true, is_default: true },
+  { kind: 'registration_pending', channel: 'push', enabled: true, is_default: true },
+  { kind: 'registration_pending', channel: 'email', enabled: false, is_default: true },
 ]
 
 /** Mounts the card for an account of `role`. */
@@ -117,7 +118,9 @@ beforeEach(async () => {
   savePrefsMock.mockImplementation((input) =>
     Promise.resolve(
       DEFAULT_PREFS.map((pref) => {
-        const stored = input.find((entry) => entry.kind === pref.kind)
+        const stored = input.find(
+          (entry) => entry.kind === pref.kind && entry.channel === pref.channel,
+        )
         return stored ? { ...stored, is_default: false } : pref
       }),
     ),
@@ -258,9 +261,36 @@ describe('NotificationsCard — which messages', () => {
 
     await user.click(tagged)
 
-    expect(savePrefsMock).toHaveBeenCalledWith([{ kind: 'tagged', enabled: false }])
+    expect(savePrefsMock).toHaveBeenCalledWith([
+      { kind: 'tagged', channel: 'push', enabled: false },
+    ])
     await waitFor(() => {
       expect(tagged).not.toBeChecked()
+    })
+  })
+
+  it('shows only the push channel and keeps a stored e-mail choice when saving', async () => {
+    const user = userEvent.setup()
+    prefsMock.mockResolvedValue([
+      DEFAULT_PREFS[0],
+      DEFAULT_PREFS[1],
+      { kind: 'registration_pending', channel: 'email', enabled: true, is_default: false },
+    ])
+    renderCard('admin')
+    await loaded()
+
+    const registration = screen.getAllByRole('checkbox', { name: /registration/ })
+    expect(registration).toHaveLength(1)
+    expect(registration[0]).toBeChecked()
+
+    await user.click(registration[0])
+
+    expect(savePrefsMock).toHaveBeenCalledWith([
+      { kind: 'registration_pending', channel: 'email', enabled: true },
+      { kind: 'registration_pending', channel: 'push', enabled: false },
+    ])
+    await waitFor(() => {
+      expect(registration[0]).not.toBeChecked()
     })
   })
 

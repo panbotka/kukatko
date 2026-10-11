@@ -15,7 +15,7 @@ import (
 type wantsAll struct{}
 
 // WantsTx wants everything.
-func (wantsAll) WantsTx(context.Context, pgx.Tx, string, notification.Kind) (bool, error) {
+func (wantsAll) WantsTx(context.Context, pgx.Tx, string, notification.Kind, notification.Channel) (bool, error) {
 	return true, nil
 }
 

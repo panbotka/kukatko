@@ -37,6 +37,16 @@ export function notificationPath(uid: string): string {
  */
 export type NotificationKind = string
 
+/**
+ * How a notification reaches the account (`notification.Channel`): `push` to its
+ * devices or `email`. A string rather than a union because the server may grow
+ * a channel this build does not know; the card simply ignores it.
+ */
+export type NotificationChannel = string
+
+/** The push channel — the only one the current settings card offers. */
+export const PUSH_CHANNEL: NotificationChannel = 'push'
+
 /** One notification as its owner reads it (`notificationView`). */
 export interface NotificationRecord {
   uid: string
@@ -173,11 +183,13 @@ export async function deletePushSubscription(endpoint: string): Promise<void> {
 }
 
 /**
- * One kind's effective setting (`notification.Preference`): the stored choice,
- * or the kind's default when the account never chose (`is_default`).
+ * One kind's effective setting on one channel (`notification.Preference`): the
+ * stored choice, or the channel's default for the kind when the account never
+ * chose (`is_default`).
  */
 export interface NotificationPreference {
   kind: NotificationKind
+  channel: NotificationChannel
   enabled: boolean
   is_default: boolean
 }
@@ -185,6 +197,7 @@ export interface NotificationPreference {
 /** A choice to store, as `PUT /notifications/preferences` takes it. */
 export interface NotificationPreferenceInput {
   kind: NotificationKind
+  channel: NotificationChannel
   enabled: boolean
 }
 
@@ -194,8 +207,8 @@ interface PreferencesBody {
 }
 
 /**
- * Reads the caller's effective notification preferences — every known kind in
- * display order, defaults merged in. They belong to the **account**: one set
+ * Reads the caller's effective notification preferences — every known kind and
+ * channel it is delivered through, in display order, defaults merged in. They belong to the **account**: one set
  * for every device it is signed in on.
  *
  * @throws ApiError when the request fails.
@@ -212,8 +225,8 @@ export async function fetchNotificationPreferences(
 
 /**
  * Replaces the caller's stored choices and resolves with the new effective set.
- * **A kind left out returns to its default**, so a caller changing one kind
- * sends the other stored choices along — see {@link withPreference}.
+ * **A (kind, channel) left out returns to its default**, so a caller changing
+ * one sends the other stored choices along — see {@link withPreference}.
  *
  * @throws ApiError when the server refuses the set or the request fails.
  */
@@ -230,18 +243,20 @@ export async function updateNotificationPreferences(
 }
 
 /**
- * The body that changes one kind and keeps everything else as it is: every
- * choice the account already stored, plus `kind` set to `enabled`. Kinds still
- * on their default are left out on purpose — posting them would freeze today's
- * default into a stored choice the account never made.
+ * The body that changes one kind on one channel and keeps everything else as it
+ * is: every choice the account already stored — on any channel, including ones
+ * this screen does not show — plus `kind` on `channel` set to `enabled`. Pairs
+ * still on their default are left out on purpose — posting them would freeze
+ * today's default into a stored choice the account never made.
  */
 export function withPreference(
   current: NotificationPreference[],
   kind: NotificationKind,
+  channel: NotificationChannel,
   enabled: boolean,
 ): NotificationPreferenceInput[] {
   const stored = current
-    .filter((pref) => !pref.is_default && pref.kind !== kind)
-    .map((pref) => ({ kind: pref.kind, enabled: pref.enabled }))
-  return [...stored, { kind, enabled }]
+    .filter((pref) => !pref.is_default && !(pref.kind === kind && pref.channel === channel))
+    .map((pref) => ({ kind: pref.kind, channel: pref.channel, enabled: pref.enabled }))
+  return [...stored, { kind, channel, enabled }]
 }

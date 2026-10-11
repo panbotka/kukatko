@@ -17,8 +17,11 @@ import (
 // PreferenceReader says whether an account wants a kind of notification, read
 // on the caller's transaction. It is satisfied by *notification.Store.
 type PreferenceReader interface {
-	// WantsTx reports whether userUID wants notifications of kind, read on tx.
-	WantsTx(ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind) (bool, error)
+	// WantsTx reports whether userUID wants notifications of kind through
+	// channel, read on tx.
+	WantsTx(
+		ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind, channel notification.Channel,
+	) (bool, error)
 }
 
 // RecorderConfig bundles what NewRecorder needs.
@@ -159,7 +162,7 @@ func (r *Recorder) record(ctx context.Context, sp pgx.Tx, t people.Tagging) erro
 // recordFor records photoUID for the account userUID, if it wants the kind, and
 // opens its window when this notice is the first of one.
 func (r *Recorder) recordFor(ctx context.Context, sp pgx.Tx, userUID, photoUID string) error {
-	wants, err := r.prefs.WantsTx(ctx, sp, userUID, notification.KindTagged)
+	wants, err := r.prefs.WantsTx(ctx, sp, userUID, notification.KindTagged, notification.ChannelPush)
 	if err != nil {
 		return fmt.Errorf("reading the preference of %s: %w", userUID, err)
 	}

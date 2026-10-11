@@ -549,9 +549,10 @@ registration is waiting"; nobody else sees a setting for a message they could ne
 - **People can ask for an account themselves.** Switch registration on in the settings, tell the
   family the shared secret, and anybody who knows it can register — the sign-in screen then offers a
   registration form (and offers it only while registration is open) — but nobody gets in until an
-  administrator approves them. They are e-mailed that they are waiting, every administrator is
-  e-mailed that somebody is — and, on a device where they allowed notifications, gets a push that
-  opens the user list (unless they turned that kind off; the mail comes either way) — and until the approval the sign-in screen says what is being waited for
+  administrator approves them. They are e-mailed that they are waiting; every administrator, on a
+  device where they allowed notifications, gets a push that opens the user list (unless they turned
+  that kind off), and an administrator who opted into it is also e-mailed, with a link to approve
+  (the e-mail is off until they choose it) — and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.
 - **An administrator lets them in.** Approving a waiting account activates it and e-mails that
   person the link to sign in. The user list opens on just the accounts that are waiting (one switch,

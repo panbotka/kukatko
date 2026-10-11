@@ -78,13 +78,14 @@ func subscribeDevice(t *testing.T, env *httpEnv, userUID, endpoint string) {
 	}
 }
 
-// turnOff stores userUID's choice not to be told about pending registrations.
-func turnOff(t *testing.T, env *httpEnv, userUID string) {
+// choose stores userUID's choice whether to be told about pending registrations
+// through channel.
+func choose(t *testing.T, env *httpEnv, userUID string, channel notification.Channel, enabled bool) {
 	t.Helper()
 	if _, err := env.db.Pool().Exec(t.Context(),
-		`INSERT INTO notification_prefs (user_uid, kind, enabled) VALUES ($1, $2, FALSE)`,
-		userUID, string(notification.KindRegistrationPending)); err != nil {
-		t.Fatalf("turning the kind off for %s: %v", userUID, err)
+		`INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES ($1, $2, $3, $4)`,
+		userUID, string(notification.KindRegistrationPending), string(channel), enabled); err != nil {
+		t.Fatalf("storing the %s choice of %s: %v", channel, userUID, err)
 	}
 }
 
@@ -162,10 +163,12 @@ func pendingMailTo(t *testing.T, env *httpEnv, addr string) bool {
 }
 
 // TestRegister_pushesEveryApproverWhoWantsIt is the push half of the happy path:
-// every enabled admin and maintainer who has not turned the kind off gets one
-// notification record, naming the newcomer and opening the approval screen,
-// and one delivery per device; the one who turned it off gets no record and no
-// delivery but still the mail; an editor gets nothing at all.
+// every enabled admin and maintainer who has not turned the kind's push off gets
+// one notification record, naming the newcomer and opening the approval screen,
+// and one delivery per device; the one who turned the push off gets no record
+// and no delivery, yet the mail they opted into all the same — the channels are
+// chosen independently — while the admins who never chose get no mail; an
+// editor gets nothing at all.
 func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
@@ -176,7 +179,8 @@ func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-laptop")
 	subscribeDevice(t, env, quiet.UID, "https://push.example.test/quiet-phone")
 	subscribeDevice(t, env, scribe.UID, "https://push.example.test/scribe-phone")
-	turnOff(t, env, quiet.UID)
+	choose(t, env, quiet.UID, notification.ChannelPush, false)
+	choose(t, env, quiet.UID, notification.ChannelEmail, true)
 	openRegistration(t, env)
 	rg, logs := pushRegistration(t, env, nil)
 
@@ -216,7 +220,10 @@ func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	}
 
 	if !pendingMailTo(t, env, quiet.Email) {
-		t.Error("the admin who turned push off got no mail; the mail must not depend on it")
+		t.Error("the admin who turned push off got no mail they opted into; the mail must not depend on push")
+	}
+	if pendingMailTo(t, env, boss.Email) || pendingMailTo(t, env, keeper.Email) {
+		t.Error("an admin who never opted into the e-mail was mailed; it is off by default")
 	}
 	if logs.Len() != 0 {
 		t.Errorf("a clean registration logged: %s", logs)
@@ -230,6 +237,7 @@ func TestRegister_failedPushIsLoggedAndRegistrationGoesOn(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
+	choose(t, env, boss.UID, notification.ChannelEmail, true)
 	openRegistration(t, env)
 	rg, logs := pushRegistration(t, env, failingPush{})
 

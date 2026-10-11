@@ -323,9 +323,11 @@ type preferences struct {
 	Preferences []notification.Preference `json:"preferences"`
 }
 
-// TestPreferences_readAndReplace checks the read reports the defaults, a replace
-// stores and reports the choice (audited), a kind left out returns to its
-// default, and an unknown or doubled kind is a 400 that changes nothing.
+// TestPreferences_readAndReplace checks the read reports the defaults per kind
+// and channel, a replace stores and reports the choice (audited) — an entry
+// without a channel as the push choice an older client means — a pair left out
+// returns to its default, and an unknown kind, a channel the kind lacks or a
+// doubled pair is a 400 that changes nothing.
 func TestPreferences_readAndReplace(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	user := e.login(t, "vera", auth.RoleViewer)
@@ -333,21 +335,30 @@ func TestPreferences_readAndReplace(t *testing.T) {
 	status, body := e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
 	var got preferences
 	decode(t, body, &got)
-	if status != http.StatusOK || len(got.Preferences) != len(notification.Kinds()) {
-		t.Fatalf("read = %d %s, want one entry per kind", status, body)
+	want := 0
+	for _, kind := range notification.Kinds() {
+		want += len(kind.Channels())
+	}
+	if status != http.StatusOK || len(got.Preferences) != want {
+		t.Fatalf("read = %d %s, want one entry per kind and channel (%d)", status, body, want)
 	}
 	for _, pref := range got.Preferences {
-		if !pref.IsDefault || pref.Enabled != pref.Kind.Default() {
-			t.Errorf("fresh preference %+v, want the kind's default", pref)
+		if !pref.IsDefault || pref.Enabled != pref.Kind.Default(pref.Channel) {
+			t.Errorf("fresh preference %+v, want the channel's default", pref)
 		}
 	}
 
 	status, body = e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences",
-		`{"preferences":[{"kind":"tagged","enabled":false}]}`)
+		`{"preferences":[{"kind":"tagged","enabled":false},`+
+			`{"kind":"registration_pending","channel":"email","enabled":true}]}`)
 	decode(t, body, &got)
 	if status != http.StatusOK || got.Preferences[0].Kind != notification.KindTagged ||
+		got.Preferences[0].Channel != notification.ChannelPush ||
 		got.Preferences[0].Enabled || got.Preferences[0].IsDefault {
-		t.Fatalf("replace = %d %s, want tagged stored off", status, body)
+		t.Fatalf("replace = %d %s, want tagged/push stored off", status, body)
+	}
+	if email := got.Preferences[2]; email.Channel != notification.ChannelEmail || !email.Enabled || email.IsDefault {
+		t.Fatalf("replace = %s, want registration_pending/email stored on", body)
 	}
 	var audited int
 	if err := e.db.Pool().QueryRow(t.Context(),
@@ -360,7 +371,8 @@ func TestPreferences_readAndReplace(t *testing.T) {
 
 	for _, bad := range []string{
 		`{"preferences":[{"kind":"nope","enabled":true}]}`,
-		`{"preferences":[{"kind":"tagged","enabled":true},{"kind":"tagged","enabled":false}]}`,
+		`{"preferences":[{"kind":"tagged","channel":"email","enabled":true}]}`,
+		`{"preferences":[{"kind":"tagged","enabled":true},{"kind":"tagged","channel":"push","enabled":false}]}`,
 		`{"preferences":[{"kind":"tagged"}]}`,
 	} {
 		if status, resp := e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences", bad); status != 400 {
@@ -369,14 +381,15 @@ func TestPreferences_readAndReplace(t *testing.T) {
 	}
 	_, body = e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
 	decode(t, body, &got)
-	if got.Preferences[0].Enabled || got.Preferences[0].IsDefault {
-		t.Errorf("after refused replaces %s, want tagged still stored off", body)
+	if got.Preferences[0].Enabled || got.Preferences[0].IsDefault || !got.Preferences[2].Enabled {
+		t.Errorf("after refused replaces %s, want the stored choices unchanged", body)
 	}
 
 	_, body = e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences", `{"preferences":[]}`)
 	decode(t, body, &got)
-	if !got.Preferences[0].IsDefault || !got.Preferences[0].Enabled {
-		t.Errorf("after an empty replace %s, want tagged back to its default", body)
+	if !got.Preferences[0].IsDefault || !got.Preferences[0].Enabled ||
+		!got.Preferences[2].IsDefault || got.Preferences[2].Enabled {
+		t.Errorf("after an empty replace %s, want every pair back to its default", body)
 	}
 }
 

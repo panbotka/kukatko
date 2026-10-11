@@ -436,7 +436,7 @@ func TestRecordsNothing(t *testing.T) {
 		}},
 		{name: "kind turned off", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()
-			f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, enabled) VALUES ($1, 'tagged', FALSE)", annaUID)
+			f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES ($1, 'tagged', 'push', FALSE)", annaUID)
 		}},
 		{name: "subject linked to no account", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()

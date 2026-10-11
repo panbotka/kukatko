@@ -31,6 +31,28 @@ func TestSignInURL(t *testing.T) {
 	}
 }
 
+// TestApprovalURL covers the link at the end of the administrators'
+// "registration pending" mail: the approval screen under the instance's public
+// URL, empty when the instance was never told its address.
+func TestApprovalURL(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{name: "plain", base: "https://kukatko.example.cz", want: "https://kukatko.example.cz/users"},
+		{name: "trailing slash", base: "https://kukatko.example.cz/", want: "https://kukatko.example.cz/users"},
+		{name: "unconfigured", base: "", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := approvalURL(tt.base); got != tt.want {
+				t.Errorf("approvalURL(%q) = %q, want %q", tt.base, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestBuildPasskeys covers what the wiring does with a relying party the
 // configuration resolved: build the flow, or fail startup. Failing is the point
 // of the second case — silently degrading to "no passkeys" would leave an

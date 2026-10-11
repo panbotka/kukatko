@@ -484,9 +484,11 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `(notification_uid, photo_uid, position)` rows — `position` unique per notification keeps the order,
   the photo cascades, so a deleted photograph drops out and a notification whose whole set is gone stays a
   legitimate record; an archived, hidden or private one stays in the set and **the reader filters**,
-  because who may see it depends on who asks. `notification_prefs` is one `(user_uid, kind, enabled)` row
-  per explicit choice; **an absent row means the kind's default**, and `kind` carries no CHECK anywhere, so
-  a new kind costs a Go constant and a locale string — never a migration or a backfill. The wipe
+  because who may see it depends on who asks. `notification_prefs` is one `(user_uid, kind, channel,
+  enabled)` row per explicit choice — the channel (`push`, `email`; migration `0093`, earlier rows became
+  `push`) is part of the key, so a kind's push and e-mail are chosen separately; **an absent row means the
+  default for that kind and channel**, and neither `kind` nor `channel` carries a CHECK on its values, so
+  a new kind or channel costs a Go constant (and a locale string) — never a migration or a backfill. The wipe
   (`maintenance reset`) empties the two notification tables (they point at photographs) and keeps
   `notification_prefs` (account data, like `push_subscriptions`). Retention is a purge by age — read ones
   after `DefaultReadRetention` (30 d), unread after the longer `DefaultUnreadRetention` (90 d) — exposed

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -257,20 +258,41 @@ func TestTruncateUTF8(t *testing.T) {
 }
 
 // TestDecodePreferences covers the replace body: a read's shape (is_default
-// included) posts back unchanged, an empty list resets everything, and an
-// unknown kind, a missing enabled or a missing list are refused.
+// included) posts back unchanged, an entry without a channel is a push choice,
+// an empty list resets everything, and an unknown kind, a channel the kind is
+// not delivered through, a missing enabled or a missing list are refused.
 func TestDecodePreferences(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
 		body    string
-		want    int
+		want    []notification.Preference
 		wantErr string
 	}{
-		{name: "read shape round-trips", body: `{"preferences":[{"kind":"tagged","enabled":false,"is_default":true}]}`,
-			want: 1},
-		{name: "empty list resets", body: `{"preferences":[]}`, want: 0},
+		{
+			name: "read shape round-trips",
+			body: `{"preferences":[{"kind":"registration_pending","channel":"email","enabled":true,"is_default":true}]}`,
+			want: []notification.Preference{
+				{Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: true},
+			},
+		},
+		{
+			name: "no channel means push",
+			body: `{"preferences":[{"kind":"tagged","enabled":false}]}`,
+			want: []notification.Preference{{Kind: notification.KindTagged, Channel: notification.ChannelPush}},
+		},
+		{name: "empty list resets", body: `{"preferences":[]}`, want: []notification.Preference{}},
 		{name: "unknown kind", body: `{"preferences":[{"kind":"nope","enabled":true}]}`, wantErr: "unknown"},
+		{
+			name:    "channel the kind lacks",
+			body:    `{"preferences":[{"kind":"tagged","channel":"email","enabled":true}]}`,
+			wantErr: "not delivered through",
+		},
+		{
+			name:    "unknown channel",
+			body:    `{"preferences":[{"kind":"registration_pending","channel":"sms","enabled":true}]}`,
+			wantErr: "not delivered through",
+		},
 		{name: "missing enabled", body: `{"preferences":[{"kind":"tagged"}]}`, wantErr: "enabled"},
 		{name: "missing list", body: `{}`, wantErr: "required"},
 	}
@@ -288,11 +310,8 @@ func TestDecodePreferences(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodePreferences: %v", err)
 			}
-			if len(prefs) != tt.want {
-				t.Fatalf("decodePreferences = %+v, want %d entries", prefs, tt.want)
-			}
-			if tt.want == 1 && (prefs[0].Kind != notification.KindTagged || prefs[0].Enabled) {
-				t.Errorf("decodePreferences = %+v, want tagged off", prefs)
+			if !reflect.DeepEqual(prefs, tt.want) {
+				t.Fatalf("decodePreferences = %+v, want %+v", prefs, tt.want)
 			}
 		})
 	}

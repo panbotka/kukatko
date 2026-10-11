@@ -168,7 +168,7 @@ func consume(ctx context.Context, tx pgx.Tx, userUID string) ([]string, error) {
 // notification.MaxPhotos keeps its newest MaxPhotos photos, and the count says
 // what the set holds, so the message never promises more than tapping it opens.
 func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, photos []string) error {
-	wants, err := s.notes.WantsTx(ctx, tx, userUID, notification.KindTagged)
+	wants, err := s.notes.WantsTx(ctx, tx, userUID, notification.KindTagged, notification.ChannelPush)
 	if err != nil {
 		return fmt.Errorf("tagnotifyjob: reading the preference of %s: %w", userUID, err)
 	}

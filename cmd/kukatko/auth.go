@@ -46,6 +46,7 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Service:       svc,
 		Settings:      settings.NewStore(db.Pool()),
 		Mail:          mail,
+		ApprovalURL:   approvalURL(cfg.Mail.BaseURL),
 		Notifications: notification.NewStore(db.Pool()),
 		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: cfg.Push.Enabled}),
 	})
@@ -130,11 +131,27 @@ const signInPath = "/login"
 // reach that case are the ones that send nothing anyway, and inventing a host
 // would send somebody to the wrong one.
 func signInURL(baseURL string) string {
+	return instanceURL(baseURL, signInPath)
+}
+
+// approvalURL builds the address the administrators' "registration pending" mail
+// links to — the approval screen, auth.ApprovalPath — from this instance's public
+// URL, on the same terms as signInURL: an empty base yields an empty URL, which
+// leaves the link out of the mail.
+func approvalURL(baseURL string) string {
+	return instanceURL(baseURL, auth.ApprovalPath)
+}
+
+// instanceURL appends the frontend route path to this instance's public URL,
+// tolerating surrounding whitespace and a trailing slash on the base. An empty
+// base (or one that is only a slash) yields an empty URL rather than a guessed
+// host.
+func instanceURL(baseURL, path string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {
 		return ""
 	}
-	return base + signInPath
+	return base + path
 }
 
 // passwordResetPath is the frontend route where somebody follows a reset link
@@ -147,11 +164,7 @@ const passwordResetPath = "/password-reset"
 // for an instance nobody told its own address, and still a link an administrator
 // can paste after their host.
 func passwordResetURL(baseURL string) string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		return ""
-	}
-	return base + passwordResetPath
+	return instanceURL(baseURL, passwordResetPath)
 }
 
 // runBootstrap creates the initial admin account if the users table is empty and

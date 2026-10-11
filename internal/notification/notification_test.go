@@ -11,8 +11,8 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 )
 
-// TestKinds checks the registry: both kinds exist, in display order, default on,
-// and an unknown kind is neither known nor wanted.
+// TestKinds checks the registry: both kinds exist, in display order, and an
+// unknown kind is neither known nor offers any channel.
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
@@ -20,12 +20,64 @@ func TestKinds(t *testing.T) {
 		t.Fatalf("Kinds() = %v, want %v", got, want)
 	}
 	for _, kind := range Kinds() {
-		if !kind.Known() || !kind.Default() {
-			t.Errorf("kind %q: Known=%v Default=%v, want both true", kind, kind.Known(), kind.Default())
+		if !kind.Known() {
+			t.Errorf("kind %q: Known = false, want true", kind)
 		}
 	}
-	if Kind("nope").Known() || Kind("nope").Default() {
-		t.Error("an unknown kind reads as known or wanted")
+	if Kind("nope").Known() || Kind("nope").Channels() != nil || Kind("nope").Supports(ChannelPush) {
+		t.Error("an unknown kind reads as known or deliverable")
+	}
+}
+
+// TestKindChannels pins each kind's channels, their order (push before e-mail)
+// and their defaults — above all that the administrators' registration e-mail is
+// opt-in.
+func TestKindChannels(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		kind     Kind
+		channels []Channel
+		defaults map[Channel]bool
+	}{
+		{kind: KindTagged, channels: []Channel{ChannelPush}, defaults: map[Channel]bool{ChannelPush: true}},
+		{
+			kind:     KindRegistrationPending,
+			channels: []Channel{ChannelPush, ChannelEmail},
+			defaults: map[Channel]bool{ChannelPush: true, ChannelEmail: false},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			t.Parallel()
+			if got := tt.kind.Channels(); !reflect.DeepEqual(got, tt.channels) {
+				t.Fatalf("Channels() = %v, want %v", got, tt.channels)
+			}
+			for channel, def := range tt.defaults {
+				if !tt.kind.Supports(channel) || tt.kind.Default(channel) != def {
+					t.Errorf("%s: Supports=%v Default=%v, want true, %v",
+						channel, tt.kind.Supports(channel), tt.kind.Default(channel), def)
+				}
+			}
+		})
+	}
+	if KindTagged.Supports(ChannelEmail) || KindTagged.Default(ChannelEmail) {
+		t.Error("tagged reads as deliverable by e-mail")
+	}
+	if KindRegistrationPending.Supports("sms") {
+		t.Error("an unknown channel reads as supported")
+	}
+}
+
+// TestKindChannelsReturnsFreshSlice checks a caller cannot rewrite a kind's
+// channels in the registry.
+func TestKindChannelsReturnsFreshSlice(t *testing.T) {
+	t.Parallel()
+
+	channels := KindRegistrationPending.Channels()
+	channels[0] = "mutated"
+	if KindRegistrationPending.Channels()[0] != ChannelPush {
+		t.Fatal("Channels() shares its backing array with the registry")
 	}
 }
 
@@ -143,7 +195,8 @@ func TestRetentionValidate(t *testing.T) {
 	}
 }
 
-// TestValidatePrefs checks a replace refuses unknown and repeated kinds.
+// TestValidatePrefs checks a replace refuses unknown kinds, channels a kind is
+// not delivered through and repeated (kind, channel) pairs.
 func TestValidatePrefs(t *testing.T) {
 	t.Parallel()
 
@@ -153,11 +206,31 @@ func TestValidatePrefs(t *testing.T) {
 		wantErr error
 	}{
 		{name: "empty", prefs: nil},
-		{name: "both kinds", prefs: []Preference{{Kind: KindTagged}, {Kind: KindRegistrationPending, Enabled: true}}},
-		{name: "unknown", prefs: []Preference{{Kind: "later"}}, wantErr: ErrUnknownKind},
 		{
-			name:    "same kind twice",
-			prefs:   []Preference{{Kind: KindTagged, Enabled: true}, {Kind: KindTagged}},
+			name: "every pair",
+			prefs: []Preference{
+				{Kind: KindTagged, Channel: ChannelPush},
+				{Kind: KindRegistrationPending, Channel: ChannelPush, Enabled: true},
+				{Kind: KindRegistrationPending, Channel: ChannelEmail, Enabled: true},
+			},
+		},
+		{name: "unknown", prefs: []Preference{{Kind: "later", Channel: ChannelPush}}, wantErr: ErrUnknownKind},
+		{
+			name:    "channel the kind lacks",
+			prefs:   []Preference{{Kind: KindTagged, Channel: ChannelEmail}},
+			wantErr: ErrUnsupportedChannel,
+		},
+		{
+			name:    "unknown channel",
+			prefs:   []Preference{{Kind: KindRegistrationPending, Channel: "sms"}},
+			wantErr: ErrUnsupportedChannel,
+		},
+		{name: "no channel", prefs: []Preference{{Kind: KindTagged}}, wantErr: ErrUnsupportedChannel},
+		{
+			name: "same pair twice",
+			prefs: []Preference{
+				{Kind: KindTagged, Channel: ChannelPush, Enabled: true}, {Kind: KindTagged, Channel: ChannelPush},
+			},
 			wantErr: ErrDuplicateKind,
 		},
 	}
@@ -171,15 +244,21 @@ func TestValidatePrefs(t *testing.T) {
 	}
 }
 
-// TestEffective checks stored choices override defaults, missing kinds fall
-// back, and a retired kind's row is ignored.
+// TestEffective checks stored choices override defaults, missing pairs fall
+// back, and a retired kind's or channel's row is ignored.
 func TestEffective(t *testing.T) {
 	t.Parallel()
 
-	got := effective(map[Kind]bool{KindTagged: false, "retired": true})
+	got := effective(map[prefKey]bool{
+		{kind: KindTagged, channel: ChannelPush}:               false,
+		{kind: KindRegistrationPending, channel: ChannelEmail}: true,
+		{kind: "retired", channel: ChannelPush}:                true,
+		{kind: KindTagged, channel: ChannelEmail}:              true,
+	})
 	want := []Preference{
-		{Kind: KindTagged, Enabled: false},
-		{Kind: KindRegistrationPending, Enabled: true, IsDefault: true},
+		{Kind: KindTagged, Channel: ChannelPush, Enabled: false},
+		{Kind: KindRegistrationPending, Channel: ChannelPush, Enabled: true, IsDefault: true},
+		{Kind: KindRegistrationPending, Channel: ChannelEmail, Enabled: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("effective() = %+v, want %+v", got, want)
@@ -193,14 +272,19 @@ func TestPrefsEntry(t *testing.T) {
 
 	callerDetails := map[string]any{"via": "settings"}
 	got := prefsEntry(audit.Entry{ActorUID: "us-admin", Details: callerDetails}, "us1",
-		[]Preference{{Kind: KindTagged, Enabled: false}})
+		[]Preference{
+			{Kind: KindTagged, Channel: ChannelPush, Enabled: false},
+			{Kind: KindRegistrationPending, Channel: ChannelEmail, Enabled: true},
+		})
 	if got.Action != audit.ActionNotificationPrefsUpdate || got.TargetType != "users" || got.TargetUID != "us1" {
 		t.Fatalf("entry = %+v, want the prefs action targeting users/us1", got)
 	}
 	if got.ActorUID != "us-admin" || got.Details["via"] != "settings" {
 		t.Fatalf("entry lost the caller's fields: %+v", got)
 	}
-	if !reflect.DeepEqual(got.Details["preferences"], map[string]bool{"tagged": false}) {
+	if !reflect.DeepEqual(got.Details["preferences"], map[string]bool{
+		"tagged/push": false, "registration_pending/email": true,
+	}) {
 		t.Fatalf("details.preferences = %v", got.Details["preferences"])
 	}
 	if _, leaked := callerDetails["preferences"]; leaked {

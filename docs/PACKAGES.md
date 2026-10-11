@@ -111,22 +111,27 @@ to `## Package map` in `CLAUDE.md`.
   `Committed` after it. The account is
   built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
   `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
-  transaction**, which is how the two mails are enqueued: a rolled-back registration schedules
+  transaction**, which is how the mails are enqueued: a rolled-back registration schedules
   nothing. `Store.ListApprovalRecipients` reads the enabled admins and maintainers to notify (no
   filtering on the address: skipping a `.invalid` placeholder is `internal/mailjob`'s single decision);
   reading them fails soft, and so does an individual notice that will not schedule — the person's own
-  confirmation is the only mail whose failure fails the registration. **Besides the mail, each of those
-  recipients is notified by push** (`schedulePush`, same transaction, after the mails): when
+  confirmation is the only mail whose failure fails the registration. **The administrators' mail is
+  opt-in**: `mailApprover` sends `new_registration_pending` only to a recipient for whom
+  `WantsTx(…, KindRegistrationPending, ChannelEmail)` is true (default **off**), each under its own
+  savepoint, and the mail ends with `RegistrationConfig.ApprovalURL` (`mail.base_url` + `ApprovalPath`,
+  built in `cmd/kukatko`; empty leaves the link out). Without a `Notifications` recorder nobody can have
+  opted in, so only the person is mailed. **Each of those recipients is also notified by push**
+  (`schedulePush`, same transaction, after the mails): when
   `RegistrationConfig.Notifications` (`NotificationRecorder`, satisfied by `*notification.Store`) and
   `Push` (`PushScheduler`, satisfied by `*pushjob.Enqueuer`) are both set, every recipient who has not
-  turned `registration_pending` off gets one notification record — the Czech
+  turned `registration_pending`'s `push` channel off gets one notification record — the Czech
   `notification.RenderRegistrationPending` text naming the newcomer (display name, else username),
   link `/users`, the approval screen — and one `push_send` job per device, tagged with the record's uid.
   Each recipient runs under its own **savepoint**, because a failed statement would otherwise abort the
   whole registration: a notification that will not record or schedule is rolled back to it, logged, and
-  the registration goes on (the administrators' mail rule). The preference is push-only — a recipient who
-  turned the kind off still gets the mail — and push off instance-wide is `pushjob`'s silent refusal, not
-  a case here (the record is still written). Either field nil means mail only. The audit entry
+  the registration goes on (the administrators' mail rule). The two channels are chosen independently —
+  push off does not stop an opted-in mail — and push off instance-wide is `pushjob`'s silent refusal, not
+  a case here (the record is still written). `Push` nil means no push. The audit entry
   (`audit.ActionUserRegister`, `user.register`) names the new account as both actor and target and is
   written in that same transaction. `perAddressLimiter` derives the endpoint's per-address
   `ratelimit.Limiter` from the login budget when the caller supplies none (shared with the
@@ -5658,14 +5663,20 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
 
 - **Notification records (`internal/notification`):** what a push notification **is** once it has been
   sent — the record tapping it opens, with its frozen photo set — plus each account's choice of which
-  kinds it wants. It sends nothing and serves nothing: delivery is `internal/pushjob`, the HTTP surface is
+  kinds it wants through which delivery channel. It sends nothing and serves nothing: delivery is
+  `internal/pushjob` (and `internal/mailjob` for the e-mail channel), the HTTP surface is
   `internal/notificationapi`. Tables `notifications`, `notification_photos`, `notification_prefs`
-  (migration `0087`, [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
+  (migrations `0087`, `0093` for the channel, [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape
+  follows `internal/phototask`.
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos) and **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) — in a
-    package registry with their defaults (both **on**) and display order: `Kinds()`, `Kind.Known()`,
-    `Kind.Default()`. A new kind is a constant + a registry entry + a locale string; the `kind` columns
-    carry no CHECK, so it never costs a migration.
+    package registry in display order, each with the **channels** (`Channel`: **`ChannelPush`**,
+    **`ChannelEmail`**) it is delivered through and a default per channel: `tagged` push only (on),
+    `registration_pending` push (on) and e-mail (**off** — the administrators' registration mail is
+    opt-in). `Kinds()`, `Kind.Known()`, `Kind.Channels()` (push before e-mail), `Kind.Supports(channel)`,
+    `Kind.Default(channel)`. A new kind is a constant + a registry entry + a locale string, a new channel a
+    constant + the kinds that offer it; neither `kind` nor `channel` carries a CHECK on its values, so
+    neither costs a migration.
   - **`Store.Create(ctx, New)`** writes the notification **and its whole photo set in one transaction**
     (`unnest … WITH ORDINALITY` → zero-based `position`, so the set keeps the given order; a repeated uid
     keeps its first position). Validation first: an account, a known kind (`ErrUnknownKind`), a non-blank
@@ -5673,7 +5684,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     in-app path (no absolute URL, no `//host`, no `/\host`; ≤ 2048 bytes) — all `ErrInvalid` — and at most
     `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph is `ErrPhotoNotFound`, a missing account
     `ErrUserNotFound`, and either leaves **nothing** written. It does not consult preferences — the caller
-    asks `Wants` first. **`CreateTx(ctx, tx, New)`** and **`WantsTx(ctx, tx, userUID, kind)`** are the same
+    asks `Wants` first. **`CreateTx(ctx, tx, New)`** and **`WantsTx(ctx, tx, userUID, kind, channel)`** are the same
     on the caller's open transaction, for a notification that must commit with the mutation that caused
     it (self-service registration in `internal/auth`); a caller that must survive a failed insert runs
     them under a savepoint. **`New.SelfLink`** stores the notification's own page, **`Path(uid)`** =
@@ -5699,14 +5710,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     archived, hidden-from-library and private photographs; `IncludeArchived`/`IncludeHidden`/
     `IncludePrivate` let each through. The order is the frozen `position`. A set that is empty or wholly
     deleted yields an empty non-nil slice and no error.
-  - **Preferences.** `Preferences(ctx, userUID)` returns one `Preference{Kind, Enabled, IsDefault}` per
-    known kind, stored choices merged over the defaults (a row for a retired kind is ignored);
-    `Wants(ctx, userUID, kind)` answers one. **`ReplacePreferences(ctx, userUID, prefs, audit.Entry)`**
-    replaces every stored row (a kind left out returns to its default; a kind named is stored even when it
-    equals the default) and writes the audit entry **in the same transaction** — action
-    `notification_prefs.update`, target `users`/`userUID` unless the caller set them, the stored choices
-    under `details.preferences`. A kind named twice is **`ErrDuplicateKind`** (no silent last-write-wins),
-    an unknown one `ErrUnknownKind`, a missing account `ErrUserNotFound`; each writes nothing.
+  - **Preferences.** `Preferences(ctx, userUID)` returns one `Preference{Kind, Channel, Enabled,
+    IsDefault}` per known kind and channel it supports, in registry order (push before e-mail), stored
+    choices merged over the defaults (a row for a retired kind or channel is ignored);
+    `Wants(ctx, userUID, kind, channel)` answers one (`ErrUnknownKind`, or `ErrUnsupportedChannel` for a
+    channel the kind lacks). **`ReplacePreferences(ctx, userUID, prefs, audit.Entry)`** replaces every
+    stored row (a pair left out returns to its default; a pair named is stored even when it equals the
+    default) and writes the audit entry **in the same transaction** — action `notification_prefs.update`,
+    target `users`/`userUID` unless the caller set them, the stored choices under `details.preferences`
+    keyed `"kind/channel"`. A (kind, channel) named twice is **`ErrDuplicateKind`** (no silent
+    last-write-wins), an unknown kind `ErrUnknownKind`, a channel the kind lacks (an empty one included)
+    `ErrUnsupportedChannel`, a missing account `ErrUserNotFound`; each writes nothing.
   - **Retention.** `Purge(ctx, now, Retention{Read, Unread})` deletes read notifications recorded more
     than `Read` ago and unread ones more than `Unread` ago (both measured from `created_at`); `Unread`
     shorter than `Read`, or a non-positive threshold, is `ErrInvalidRetention`. `DefaultRetention()` is

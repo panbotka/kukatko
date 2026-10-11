@@ -129,16 +129,18 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   login budget (`auth.login_rate_limit`/`auth.login_rate_window`) spent from one bucket per address —
   at least as strict as signing in, whose budget is also split per username; a registration names no
   existing account, so the address is all there is to attribute it to.
-  On success **two mails are enqueued on the job queue** (`mail_send`, see `internal/mailjob`), in the
+  On success **mails are enqueued on the job queue** (`mail_send`, see `internal/mailjob`), in the
   **same transaction** as the account and its `user.register` audit entry: the `registration_received`
   confirmation to the person, and one `new_registration_pending` notice per **enabled admin or
-  maintainer**, naming the username, display name and address. A registration that rolls back
+  maintainer who opted into it by e-mail** (the `registration_pending` kind's `email` channel, **off by
+  default** — an administrator who never chose gets no mail), naming the username, display name and
+  address and ending with the approval link (`mail.base_url` + `/users`). A registration that rolls back
   therefore sends nothing, and mail switched off (`mail.enabled: false`) or an administrator with a
   placeholder `.invalid` address costs only the notification — the registration still succeeds. In the
-  same transaction every such recipient who has not turned the `registration_pending` kind off also gets a
+  same transaction every such recipient who has not turned the kind's `push` channel off also gets a
   **notification record and one `push_send` job per subscribed device** (opening `/users`); that is
-  best-effort like the notices — a push that will not schedule is logged and the registration goes on —
-  and turning the kind off stops only the push, never the mail. The response is unchanged. The
+  best-effort like the notices — a push or mail that will not schedule is logged and the registration
+  goes on — and the two channels are chosen independently. The response is unchanged. The
   audit entry names the new account as **both actor and target**: nobody else was involved.
   **Registering through an upload link.** The body may carry `upload_link` (a link's short code) in
   place of `secret`: a live link stands in for the shared secret — and only for it (registration must
@@ -2008,14 +2010,19 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
     the caller's own rows and deleted under the caller's account, so an endpoint that is unknown **or
     somebody else's** is `404`; no `endpoint` → `400`. Works with push off, so a device can always be
     cleaned up.
-  - **`GET /notifications/preferences`** → `200 {preferences:[{kind, enabled, is_default}]}`: the
-    **effective** set, one entry per known kind in display order (`tagged`, `registration_pending`), the
-    stored choice or the kind's default (`is_default: true`), so the frontend needs no knowledge of the
-    defaults. **`PUT /notifications/preferences`** with `{preferences:[{kind, enabled}]}` **replaces** the
-    stored choices (a kind left out returns to its default, `[]` resets all; `is_default` is accepted and
-    ignored, so a read posts back unchanged) → `200` with the new effective set. An unknown kind, a kind
-    given twice, an entry without `enabled` or a body without `preferences` → `400`, nothing changes.
-    **Audited** (`notification_prefs.update`) in the replace's transaction.
+  - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
+    the **effective** set, one entry per known kind and **delivery channel** it supports, in display order
+    with push before e-mail — `tagged/push` (default on), `registration_pending/push` (default on),
+    `registration_pending/email` (**default off**) — the stored choice or the channel's default
+    (`is_default: true`), so the frontend needs no knowledge of the defaults. Which kinds a role can ever
+    receive is the frontend's gating, not the server's. **`PUT /notifications/preferences`** with
+    `{preferences:[{kind, channel, enabled}]}` **replaces** the stored choices (a pair left out returns to
+    its default, `[]` resets all; `is_default` is accepted and ignored, so a read posts back unchanged;
+    **an entry without `channel` means `push`**, so an older client keeps working) → `200` with the new
+    effective set. An unknown kind, a channel the kind is not delivered through, a (kind, channel) given
+    twice, an entry without `enabled` or a body without `preferences` → `400`, nothing changes.
+    **Audited** (`notification_prefs.update`, details `preferences: {"kind/channel": bool}`) in the
+    replace's transaction.
   - **`GET /notifications/{uid}`** → `200 {uid, kind, title, body, link, created_at, read_at, photos:[…],
     total_count, dropped_count}`. `photos` is the **frozen set in its stored order**, each shaped like every
     other photo payload of the API (the `photos.Photo` JSON, `thumb_url`/`preview_url`/`download_url`

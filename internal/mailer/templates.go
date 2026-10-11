@@ -132,32 +132,39 @@ func RenderUsernameChanged(d UsernameChangedData) Rendered {
 }
 
 // NewRegistrationPendingData is what the administrator's message needs: who
-// registered, under which username and with which e-mail address.
+// registered, under which username and with which e-mail address, and where the
+// waiting account is approved.
 type NewRegistrationPendingData struct {
 	Username    string
 	DisplayName string
 	Email       string
+	ApprovalURL string
 }
 
 // RenderNewRegistrationPending builds the message telling an administrator that
-// somebody registered and is waiting for approval. It is a pure function of d.
+// somebody registered and is waiting for approval. The link to the approval
+// screen is the body's last line; an empty ApprovalURL leaves it out rather than
+// printing a label with no address. It is a pure function of d.
 func RenderNewRegistrationPending(d NewRegistrationPendingData) Rendered {
+	lines := []string{
+		"Dobrý den,",
+		"",
+		"do Kukátka se zaregistroval nový uživatel a čeká na schválení:",
+		"",
+		"Uživatelské jméno: " + d.Username,
+		"Jméno: " + orDash(d.DisplayName),
+		"E-mail: " + orDash(d.Email),
+		"",
+		"Účet zůstane neaktivní, dokud ho někdo ze správců neschválí.",
+	}
+	if url := strings.TrimSpace(d.ApprovalURL); url != "" {
+		lines = append(lines, "", "Schválit nebo zamítnout: "+url)
+	}
+	lines = append(lines, "", signature)
 	return Rendered{
 		Template: TemplateNewRegistrationPending,
 		Subject:  "Nová registrace čeká na schválení: " + d.Username,
-		Body: body(
-			"Dobrý den,",
-			"",
-			"do Kukátka se zaregistroval nový uživatel a čeká na schválení:",
-			"",
-			"Uživatelské jméno: "+d.Username,
-			"Jméno: "+orDash(d.DisplayName),
-			"E-mail: "+orDash(d.Email),
-			"",
-			"Účet zůstane neaktivní, dokud ho někdo ze správců neschválí.",
-			"",
-			signature,
-		),
+		Body:     body(lines...),
 	}
 }
 

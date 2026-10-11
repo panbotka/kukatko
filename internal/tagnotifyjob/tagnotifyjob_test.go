@@ -68,7 +68,7 @@ func (d panicDB) Begin(context.Context) (pgx.Tx, error) {
 type fakeNotes struct{}
 
 // WantsTx wants everything.
-func (fakeNotes) WantsTx(context.Context, pgx.Tx, string, notification.Kind) (bool, error) {
+func (fakeNotes) WantsTx(context.Context, pgx.Tx, string, notification.Kind, notification.Channel) (bool, error) {
 	return true, nil
 }
 

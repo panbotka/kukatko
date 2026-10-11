@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -65,10 +66,16 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	api := auth.NewAPI(auth.APIConfig{
 		Service: svc,
 		Limiter: limiter,
+		// The real notification store too, so which administrator is mailed
+		// about a registration follows their stored e-mail preference. No push
+		// scheduler: these tests read mail, register_push_integration_test the
+		// pushes.
 		Registration: auth.NewRegistration(auth.RegistrationConfig{
-			Service:  svc,
-			Settings: settingsStore,
-			Mail:     mail,
+			Service:       svc,
+			Settings:      settingsStore,
+			Mail:          mail,
+			ApprovalURL:   testApprovalURL,
+			Notifications: notification.NewStore(db.Pool()),
 		}),
 		// The other half of the same flow, wired the same way, so an approval
 		// enqueues a real `mail_send` job a test can read off the queue.
@@ -113,6 +120,10 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 // testSignInURL is the address the approval mail points at in these tests, the
 // stand-in for mail.base_url + /login.
 const testSignInURL = "https://kukatko.example.test/login"
+
+// testApprovalURL is the approval screen's address in these tests, the last line
+// of the administrators' "registration pending" mail.
+const testApprovalURL = "https://kukatko.example.test/users"
 
 // testResetLinkBase is the base of a password-reset link in these tests, the
 // stand-in for mail.base_url + /password-reset.

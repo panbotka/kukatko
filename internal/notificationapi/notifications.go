@@ -72,12 +72,15 @@ type preferencesEnvelope struct {
 }
 
 // preferenceInput is one entry of a preference replace. Enabled is a pointer so
-// an entry that forgets it is refused instead of read as "off".
+// an entry that forgets it is refused instead of read as "off". An empty Channel
+// means push: every choice a client made before channels existed was a push
+// choice, so an older client keeps saving what it always saved.
 type preferenceInput struct {
-	Kind    notification.Kind `json:"kind"`
-	Enabled *bool             `json:"enabled"`
+	Kind    notification.Kind    `json:"kind"`
+	Channel notification.Channel `json:"channel"`
+	Enabled *bool                `json:"enabled"`
 	// IsDefault is what a read reports; it is accepted so a read can be sent
-	// back as a replace unchanged, and ignored — naming a kind is a choice.
+	// back as a replace unchanged, and ignored — naming a pair is a choice.
 	IsDefault *bool `json:"is_default"`
 }
 
@@ -89,8 +92,9 @@ type preferencesInput struct {
 }
 
 // decodePreferences decodes and validates a preference replace: the list must be
-// present (it may be empty), and every entry must name a known kind and say
-// whether it is enabled. A kind named twice is left for the store to refuse.
+// present (it may be empty), and every entry must name a known kind, a channel
+// that kind is delivered through (none given means push) and say whether it is
+// enabled. A pair named twice is left for the store to refuse.
 func decodePreferences(r *http.Request) ([]notification.Preference, error) {
 	var in preferencesInput
 	if err := decodeJSON(r, &in); err != nil {
@@ -104,17 +108,24 @@ func decodePreferences(r *http.Request) ([]notification.Preference, error) {
 		if !entry.Kind.Known() {
 			return nil, fmt.Errorf("unknown notification kind %q", entry.Kind)
 		}
+		channel := entry.Channel
+		if channel == "" {
+			channel = notification.ChannelPush
+		}
+		if !entry.Kind.Supports(channel) {
+			return nil, fmt.Errorf("notification kind %q is not delivered through channel %q", entry.Kind, channel)
+		}
 		if entry.Enabled == nil {
 			return nil, fmt.Errorf("enabled is required for kind %q", entry.Kind)
 		}
-		out = append(out, notification.Preference{Kind: entry.Kind, Enabled: *entry.Enabled})
+		out = append(out, notification.Preference{Kind: entry.Kind, Channel: channel, Enabled: *entry.Enabled})
 	}
 	return out, nil
 }
 
 // handleGetPreferences writes the caller's effective preferences: one entry per
-// known kind, the stored choice or the kind's default, so the client needs no
-// knowledge of what the defaults are.
+// known kind and channel it is delivered through, the stored choice or the
+// channel's default, so the client needs no knowledge of what the defaults are.
 func (a *API) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -130,8 +141,9 @@ func (a *API) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleReplacePreferences replaces the caller's stored choices and writes the
-// new effective set. A kind left out returns to its default; an unknown kind, a
-// kind named twice or a malformed body is a 400.
+// new effective set. A (kind, channel) left out returns to its default; an
+// unknown kind, a channel the kind lacks, a pair named twice or a malformed body
+// is a 400.
 func (a *API) handleReplacePreferences(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -145,7 +157,8 @@ func (a *API) handleReplacePreferences(w http.ResponseWriter, r *http.Request) {
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionNotificationPrefsUpdate, "users", user.UID, nil)
 	stored, err := a.notifications.ReplacePreferences(r.Context(), user.UID, prefs, entry)
 	switch {
-	case errors.Is(err, notification.ErrUnknownKind), errors.Is(err, notification.ErrDuplicateKind):
+	case errors.Is(err, notification.ErrUnknownKind), errors.Is(err, notification.ErrUnsupportedChannel),
+		errors.Is(err, notification.ErrDuplicateKind):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, notification.ErrUserNotFound):
 		writeError(w, http.StatusUnauthorized, "authentication required")

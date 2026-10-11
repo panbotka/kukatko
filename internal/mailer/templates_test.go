@@ -113,6 +113,7 @@ func TestRenderNewRegistrationPending(t *testing.T) {
 		Username:    "jan",
 		DisplayName: "Jan Novák",
 		Email:       "jan@example.com",
+		ApprovalURL: "https://kukatko.example/users",
 	})
 
 	if got.Template != TemplateNewRegistrationPending {
@@ -131,6 +132,8 @@ func TestRenderNewRegistrationPending(t *testing.T) {
 		"\n" +
 		"Účet zůstane neaktivní, dokud ho někdo ze správců neschválí.\n" +
 		"\n" +
+		"Schválit nebo zamítnout: https://kukatko.example/users\n" +
+		"\n" +
 		"Kukátko\n"
 	if got.Body != want {
 		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
@@ -138,7 +141,8 @@ func TestRenderNewRegistrationPending(t *testing.T) {
 }
 
 // TestRenderNewRegistrationPending_missingValues verifies an account without a
-// display name or e-mail renders a dash rather than a line ending in a colon.
+// display name or e-mail renders a dash rather than a line ending in a colon, and
+// that a message with no approval URL leaves the link line out entirely.
 func TestRenderNewRegistrationPending_missingValues(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +152,9 @@ func TestRenderNewRegistrationPending_missingValues(t *testing.T) {
 		if !strings.Contains(got.Body, want) {
 			t.Errorf("Body =\n%s\nwant it to contain %q", got.Body, want)
 		}
+	}
+	if strings.Contains(got.Body, "Schválit nebo zamítnout") {
+		t.Errorf("Body =\n%s\nwant no approval line without a URL", got.Body)
 	}
 }
 

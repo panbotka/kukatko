@@ -86,9 +86,9 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 		{
 			name: "new registration pending",
 			mail: NewRegistrationPending("admin@example.com", mailer.NewRegistrationPendingData{
-				Username: "jan", Email: "jan@example.com",
+				Username: "jan", Email: "jan@example.com", ApprovalURL: "https://kukatko.example/users",
 			}),
-			wantBody: "Uživatelské jméno: jan",
+			wantBody: "Schválit nebo zamítnout: https://kukatko.example/users",
 		},
 		{
 			name: "password reset",

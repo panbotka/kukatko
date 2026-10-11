@@ -29,6 +29,7 @@ import {
   fetchPushSubscriptions,
   type NotificationKind,
   type NotificationPreference,
+  PUSH_CHANNEL,
   type PushSubscriptionRecord,
   updateNotificationPreferences,
   withPreference,
@@ -353,11 +354,15 @@ export function NotificationsCard() {
     setPrefs({
       status: 'ready',
       items: previous.map((pref) =>
-        pref.kind === kind ? { ...pref, enabled, is_default: false } : pref,
+        pref.kind === kind && pref.channel === PUSH_CHANNEL
+          ? { ...pref, enabled, is_default: false }
+          : pref,
       ),
     })
     try {
-      const items = await updateNotificationPreferences(withPreference(previous, kind, enabled))
+      const items = await updateNotificationPreferences(
+        withPreference(previous, kind, PUSH_CHANNEL, enabled),
+      )
       setPrefs({ status: 'ready', items })
     } catch {
       setPrefError(true)
@@ -407,8 +412,14 @@ export function NotificationsCard() {
     devices.status !== 'ready' ||
     devices.items.some((device) => device.endpoint === browser?.endpoint)
   const on = browser?.status === 'subscribed' && serverKnowsThisBrowser
+  // Only the push channel is shown here; the e-mail choices ride along
+  // untouched (withPreference keeps every stored pair).
   const offeredKinds =
-    prefs.status === 'ready' ? prefs.items.filter((pref) => isKindOffered(pref.kind, role)) : []
+    prefs.status === 'ready'
+      ? prefs.items.filter(
+          (pref) => pref.channel === PUSH_CHANNEL && isKindOffered(pref.kind, role),
+        )
+      : []
 
   return (
     <Card text="light" className="mb-4">

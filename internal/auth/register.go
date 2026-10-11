@@ -20,10 +20,11 @@ import (
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
-// approvalPath is the frontend route where an administrator approves a waiting
+// ApprovalPath is the frontend route where an administrator approves a waiting
 // account — the user administration screen (web/src/App.tsx, UsersPage). The
-// administrators' push notification opens it.
-const approvalPath = "/users"
+// administrators' push notification opens it, and their mail links to it (the
+// caller builds the absolute address, see RegistrationConfig.ApprovalURL).
+const ApprovalPath = "/users"
 
 // SettingsSource reads the instance settings self-service registration depends
 // on: whether it is open at all and the shared secret it asks for. It is an
@@ -44,11 +45,15 @@ type MailScheduler interface {
 }
 
 // NotificationRecorder decides whether an account wants a kind of notification
-// and records one, both on the caller's transaction, so the notification shares
-// the fate of the change that caused it. It is satisfied by *notification.Store.
+// through a channel and records one, both on the caller's transaction, so the
+// notification shares the fate of the change that caused it. It is satisfied by
+// *notification.Store.
 type NotificationRecorder interface {
-	// WantsTx reports whether userUID wants notifications of kind, read on tx.
-	WantsTx(ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind) (bool, error)
+	// WantsTx reports whether userUID wants notifications of kind through
+	// channel, read on tx.
+	WantsTx(
+		ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind, channel notification.Channel,
+	) (bool, error)
 	// CreateTx records n on tx and returns the stored notification.
 	CreateTx(ctx context.Context, tx pgx.Tx, n notification.New) (notification.Notification, error)
 }
@@ -120,11 +125,18 @@ type RegistrationConfig struct {
 	// Settings reads whether registration is open and the shared secret
 	// (required).
 	Settings SettingsSource
-	// Mail schedules the two messages a registration sends (required).
+	// Mail schedules the messages a registration sends: the person's own
+	// confirmation, and the administrators' notice to those who opted into it
+	// (required).
 	Mail MailScheduler
-	// Notifications records the administrators' "a registration is waiting"
-	// notification. Together with Push it is optional: with either nil a
-	// registration notifies by mail only.
+	// ApprovalURL is the absolute address of the approval screen
+	// (ApprovalPath under the instance's public URL), the last line of the
+	// administrators' mail. Empty leaves the link out.
+	ApprovalURL string
+	// Notifications reads the administrators' notification preferences and
+	// records their "a registration is waiting" notification. It is optional:
+	// without it nobody can have opted into the mail, so a registration mails
+	// only the person registering and pushes nothing.
 	Notifications NotificationRecorder
 	// Push schedules the delivery of that notification to the administrators'
 	// devices.
@@ -143,12 +155,13 @@ type RegistrationConfig struct {
 // because an instance may run without it — an API built with no Registration
 // simply answers "registration is not open".
 type Registration struct {
-	svc      *Service
-	settings SettingsSource
-	mail     MailScheduler
-	notes    NotificationRecorder
-	push     PushScheduler
-	log      *slog.Logger
+	svc         *Service
+	settings    SettingsSource
+	mail        MailScheduler
+	approvalURL string
+	notes       NotificationRecorder
+	push        PushScheduler
+	log         *slog.Logger
 }
 
 // NewRegistration returns a Registration from cfg, defaulting Logger to
@@ -159,7 +172,7 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 		log = slog.Default()
 	}
 	return &Registration{
-		svc: cfg.Service, settings: cfg.Settings, mail: cfg.Mail,
+		svc: cfg.Service, settings: cfg.Settings, mail: cfg.Mail, approvalURL: cfg.ApprovalURL,
 		notes: cfg.Notifications, push: cfg.Push, log: log,
 	}
 }
@@ -167,7 +180,7 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 // Register creates the account described by in and returns it, unapproved.
 //
 // The account, the audit entry (entry, whose actor and target are stamped with
-// the new account — nobody else was involved), both notification mails and the
+// the new account — nobody else was involved), the notification mails and the
 // administrators' push notifications are written on one transaction, so a
 // registration that fails at any point leaves neither an account, nor a trail
 // entry, nor a mail or a push anybody will receive.
@@ -309,8 +322,10 @@ func (rg *Registration) approvalRecipients(ctx context.Context) []User {
 	return recipients
 }
 
-// scheduleMail enqueues the two messages a registration sends, on tx, so they
-// are scheduled if and only if the account commits.
+// scheduleMail enqueues the messages a registration sends, on tx, so they are
+// scheduled if and only if the account commits: the person's own confirmation,
+// and the administrators' notice to every recipient who opted into it by e-mail
+// (the registration_pending kind's e-mail channel, off unless chosen).
 //
 // The person's own confirmation is the one that must not be lost: failing to
 // schedule it fails the registration, and they are better off retrying than
@@ -324,13 +339,17 @@ func (rg *Registration) scheduleMail(ctx context.Context, tx pgx.Tx, user User, 
 	)); err != nil {
 		return fmt.Errorf("auth: scheduling the registration confirmation: %w", err)
 	}
+	if rg.notes == nil {
+		return nil
+	}
 	pending := mailer.NewRegistrationPendingData{
 		Username:    user.Username,
 		DisplayName: user.DisplayName,
 		Email:       user.Email,
+		ApprovalURL: rg.approvalURL,
 	}
 	for _, recipient := range recipients {
-		if err := rg.mail.Enqueue(ctx, tx, mailjob.NewRegistrationPending(recipient.Email, pending)); err != nil {
+		if err := rg.mailApprover(ctx, tx, recipient, pending); err != nil {
 			rg.log.WarnContext(ctx, "registration: could not notify an administrator",
 				slog.String("recipient_uid", recipient.UID), slog.String("error", err.Error()))
 		}
@@ -338,15 +357,39 @@ func (rg *Registration) scheduleMail(ctx context.Context, tx pgx.Tx, user User, 
 	return nil
 }
 
+// mailApprover schedules one administrator's notice under a savepoint of tx, if
+// and only if they want the registration_pending kind by e-mail. The savepoint
+// is what keeps a failed preference read or enqueue from aborting the account's
+// whole transaction (see notifyApprover). A recipient who did not opt in gets
+// nothing and nil.
+func (rg *Registration) mailApprover(
+	ctx context.Context, tx pgx.Tx, recipient User, pending mailer.NewRegistrationPendingData,
+) error {
+	return inSavepoint(ctx, tx, func(savepoint pgx.Tx) error {
+		wants, err := rg.notes.WantsTx(ctx, savepoint, recipient.UID,
+			notification.KindRegistrationPending, notification.ChannelEmail)
+		if err != nil {
+			return fmt.Errorf("auth: reading the e-mail preference: %w", err)
+		}
+		if !wants {
+			return nil
+		}
+		if err := rg.mail.Enqueue(ctx, savepoint, mailjob.NewRegistrationPending(recipient.Email, pending)); err != nil {
+			return fmt.Errorf("auth: scheduling the mail: %w", err)
+		}
+		return nil
+	})
+}
+
 // schedulePush records a "registration pending" notification for every
-// recipient who has not turned that kind off and schedules its delivery to
-// their devices, on tx, so both exist if and only if the account commits.
+// recipient who has not turned that kind's push off and schedules its delivery
+// to their devices, on tx, so both exist if and only if the account commits.
 //
 // It follows the administrators' mail: best-effort. A recipient whose
 // notification will not schedule is logged and skipped, and the registration
-// goes on. The choice is push-only — a recipient who turned the kind off still
-// gets the mail, which scheduleMail sends regardless. A Registration built
-// without a recorder or a scheduler sends no push at all.
+// goes on. The choice is per channel — a recipient who turned the push off may
+// still get the mail, and the other way round. A Registration built without a
+// recorder or a scheduler sends no push at all.
 func (rg *Registration) schedulePush(ctx context.Context, tx pgx.Tx, user User, recipients []User) {
 	if rg.notes == nil || rg.push == nil {
 		return
@@ -368,11 +411,40 @@ func (rg *Registration) schedulePush(ctx context.Context, tx pgx.Tx, user User, 
 // statement that fails inside a PostgreSQL transaction aborts all of it, so
 // without one a single broken notification would take the account down with it.
 // Rolled back to, it leaves neither a record without its delivery nor a
-// delivery without its record. A recipient who does not want the kind gets
-// nothing and nil.
+// delivery without its record. A recipient who does not want the kind's push
+// gets nothing and nil.
 func (rg *Registration) notifyApprover(
 	ctx context.Context, tx pgx.Tx, recipientUID string, text notification.Text,
 ) error {
+	kind := notification.KindRegistrationPending
+	return inSavepoint(ctx, tx, func(savepoint pgx.Tx) error {
+		wants, err := rg.notes.WantsTx(ctx, savepoint, recipientUID, kind, notification.ChannelPush)
+		if err != nil {
+			return fmt.Errorf("auth: reading the notification preference: %w", err)
+		}
+		if !wants {
+			return nil
+		}
+		record, err := rg.notes.CreateTx(ctx, savepoint, notification.New{
+			UserUID: recipientUID, Kind: kind, Title: text.Title, Body: text.Body, Link: ApprovalPath,
+		})
+		if err != nil {
+			return fmt.Errorf("auth: recording the notification: %w", err)
+		}
+		if _, err := rg.push.Enqueue(ctx, savepoint, recipientUID, push.Notification{
+			Title: record.Title, Body: record.Body, URL: record.Link, Kind: string(kind), Tag: record.UID,
+		}); err != nil {
+			return fmt.Errorf("auth: scheduling the push: %w", err)
+		}
+		return nil
+	})
+}
+
+// inSavepoint runs fn on a savepoint of tx and releases it when fn returns nil;
+// on an error, fn's writes are rolled back and tx stays usable — the reason a
+// best-effort step runs under one at all. It returns fn's error, or the failure
+// to open or release the savepoint.
+func inSavepoint(ctx context.Context, tx pgx.Tx, fn func(savepoint pgx.Tx) error) error {
 	savepoint, err := tx.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("auth: opening a savepoint: %w", err)
@@ -380,25 +452,8 @@ func (rg *Registration) notifyApprover(
 	// After a commit the rollback is a no-op; on every early return it undoes
 	// whatever the savepoint wrote.
 	defer func() { _ = savepoint.Rollback(ctx) }()
-
-	kind := notification.KindRegistrationPending
-	wants, err := rg.notes.WantsTx(ctx, savepoint, recipientUID, kind)
-	if err != nil {
-		return fmt.Errorf("auth: reading the notification preference: %w", err)
-	}
-	if !wants {
-		return nil
-	}
-	record, err := rg.notes.CreateTx(ctx, savepoint, notification.New{
-		UserUID: recipientUID, Kind: kind, Title: text.Title, Body: text.Body, Link: approvalPath,
-	})
-	if err != nil {
-		return fmt.Errorf("auth: recording the notification: %w", err)
-	}
-	if _, err := rg.push.Enqueue(ctx, savepoint, recipientUID, push.Notification{
-		Title: record.Title, Body: record.Body, URL: record.Link, Kind: string(kind), Tag: record.UID,
-	}); err != nil {
-		return fmt.Errorf("auth: scheduling the push: %w", err)
+	if err := fn(savepoint); err != nil {
+		return err
 	}
 	if err := savepoint.Commit(ctx); err != nil {
 		return fmt.Errorf("auth: releasing the savepoint: %w", err)

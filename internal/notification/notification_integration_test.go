@@ -294,8 +294,9 @@ func TestWholeSetDeleted(t *testing.T) {
 	}
 }
 
-// TestPreferencesMergeDefaults checks an account with no rows reads defaults and
-// a stored row overrides only its own kind.
+// TestPreferencesMergeDefaults checks an account with no rows reads defaults — the
+// administrators' e-mail off, everything else on — and a stored row overrides
+// only its own (kind, channel).
 func TestPreferencesMergeDefaults(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -305,58 +306,83 @@ func TestPreferencesMergeDefaults(t *testing.T) {
 		t.Fatalf("Preferences: %v", err)
 	}
 	want := []notification.Preference{
-		{Kind: notification.KindTagged, Enabled: true, IsDefault: true},
-		{Kind: notification.KindRegistrationPending, Enabled: true, IsDefault: true},
+		{Kind: notification.KindTagged, Channel: notification.ChannelPush, Enabled: true, IsDefault: true},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelPush, Enabled: true, IsDefault: true},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: false, IsDefault: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("defaults = %+v, want %+v", got, want)
 	}
 
-	f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, enabled) VALUES ($1, 'tagged', FALSE), "+
-		"($1, 'retired_kind', TRUE)", owner)
+	// A row written without a channel is a push choice — what every row stored
+	// before channels existed became.
+	f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, enabled) VALUES ($1, 'tagged', FALSE)", owner)
+	f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES "+
+		"($1, 'registration_pending', 'email', TRUE), ($1, 'retired_kind', 'push', TRUE), "+
+		"($1, 'tagged', 'carrier_pigeon', TRUE)", owner)
 	got, err = f.store.Preferences(ctx, owner)
 	if err != nil {
 		t.Fatalf("Preferences: %v", err)
 	}
-	want[0] = notification.Preference{Kind: notification.KindTagged, Enabled: false}
+	want[0] = notification.Preference{Kind: notification.KindTagged, Channel: notification.ChannelPush}
+	want[2] = notification.Preference{
+		Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: true,
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("merged = %+v, want %+v", got, want)
 	}
-	wants, err := f.store.Wants(ctx, owner, notification.KindTagged)
-	if err != nil || wants {
-		t.Fatalf("Wants(tagged) = %v, %v; want false", wants, err)
+	wantsCases := []struct {
+		kind    notification.Kind
+		channel notification.Channel
+		want    bool
+	}{
+		{kind: notification.KindTagged, channel: notification.ChannelPush, want: false},
+		{kind: notification.KindRegistrationPending, channel: notification.ChannelPush, want: true},
+		{kind: notification.KindRegistrationPending, channel: notification.ChannelEmail, want: true},
 	}
-	wants, err = f.store.Wants(ctx, owner, notification.KindRegistrationPending)
-	if err != nil || !wants {
-		t.Fatalf("Wants(registration_pending) = %v, %v; want the default true", wants, err)
+	for _, tc := range wantsCases {
+		if wants, err := f.store.Wants(ctx, owner, tc.kind, tc.channel); err != nil || wants != tc.want {
+			t.Errorf("Wants(%s, %s) = %v, %v; want %v", tc.kind, tc.channel, wants, err, tc.want)
+		}
 	}
-	if _, err := f.store.Wants(ctx, owner, "later"); !errors.Is(err, notification.ErrUnknownKind) {
-		t.Fatalf("Wants(unknown) = %v, want ErrUnknownKind", err)
+	if wants, err := f.store.Wants(ctx, stranger, notification.KindRegistrationPending,
+		notification.ChannelEmail); err != nil || wants {
+		t.Errorf("Wants(email) of an account that never chose = %v, %v; want the default false", wants, err)
+	}
+	if _, err := f.store.Wants(ctx, owner, "later", notification.ChannelPush); !errors.Is(err, notification.ErrUnknownKind) {
+		t.Errorf("Wants(unknown) = %v, want ErrUnknownKind", err)
+	}
+	if _, err := f.store.Wants(ctx, owner, notification.KindTagged,
+		notification.ChannelEmail); !errors.Is(err, notification.ErrUnsupportedChannel) {
+		t.Errorf("Wants(tagged, email) = %v, want ErrUnsupportedChannel", err)
 	}
 }
 
 // TestReplacePreferencesIsAudited checks a replace stores the choices, resets
-// the kinds it leaves out, and records who did it in the same transaction.
+// the pairs it leaves out, and records who did it in the same transaction.
 func TestReplacePreferencesIsAudited(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	entry := audit.Entry{ActorUID: owner, IP: "192.0.2.1"}
 
 	if _, err := f.store.ReplacePreferences(ctx, owner, []notification.Preference{
-		{Kind: notification.KindTagged, Enabled: false},
-		{Kind: notification.KindRegistrationPending, Enabled: false},
+		{Kind: notification.KindTagged, Channel: notification.ChannelPush, Enabled: false},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelPush, Enabled: false},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: true},
 	}, entry); err != nil {
 		t.Fatalf("ReplacePreferences: %v", err)
 	}
 	got, err := f.store.ReplacePreferences(ctx, owner, []notification.Preference{
-		{Kind: notification.KindRegistrationPending, Enabled: false},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelPush, Enabled: false},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: true},
 	}, entry)
 	if err != nil {
 		t.Fatalf("ReplacePreferences: %v", err)
 	}
 	want := []notification.Preference{
-		{Kind: notification.KindTagged, Enabled: true, IsDefault: true},
-		{Kind: notification.KindRegistrationPending, Enabled: false},
+		{Kind: notification.KindTagged, Channel: notification.ChannelPush, Enabled: true, IsDefault: true},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelPush, Enabled: false},
+		{Kind: notification.KindRegistrationPending, Channel: notification.ChannelEmail, Enabled: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("after replace = %+v, want %+v", got, want)
@@ -378,7 +404,9 @@ func TestReplacePreferencesIsAudited(t *testing.T) {
 		t.Fatalf("decoding details %s: %v", raw, err)
 	}
 	if actor != owner || targetType != "users" || target != owner ||
-		!reflect.DeepEqual(details.Preferences, map[string]bool{"registration_pending": false}) {
+		!reflect.DeepEqual(details.Preferences, map[string]bool{
+			"registration_pending/push": false, "registration_pending/email": true,
+		}) {
 		t.Fatalf("audit entry = %s/%s/%s %s", actor, targetType, target, raw)
 	}
 	if n := f.count(t, "SELECT count(*) FROM audit_log WHERE action = $1",
@@ -387,8 +415,9 @@ func TestReplacePreferencesIsAudited(t *testing.T) {
 	}
 }
 
-// TestReplacePreferencesRefuses checks a repeated kind, an unknown kind and a
-// missing account write nothing — neither preferences nor an audit entry.
+// TestReplacePreferencesRefuses checks a repeated pair, an unknown kind, a channel
+// the kind lacks and a missing account write nothing — neither preferences nor
+// an audit entry.
 func TestReplacePreferencesRefuses(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -401,14 +430,19 @@ func TestReplacePreferencesRefuses(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name: "same kind twice", user: owner, wantErr: notification.ErrDuplicateKind,
+			name: "same pair twice", user: owner, wantErr: notification.ErrDuplicateKind,
 			prefs: []notification.Preference{
-				{Kind: notification.KindTagged, Enabled: false}, {Kind: notification.KindTagged, Enabled: true},
+				{Kind: notification.KindTagged, Channel: notification.ChannelPush, Enabled: false},
+				{Kind: notification.KindTagged, Channel: notification.ChannelPush, Enabled: true},
 			},
 		},
 		{
 			name: "unknown kind", user: owner, wantErr: notification.ErrUnknownKind,
-			prefs: []notification.Preference{{Kind: "later"}},
+			prefs: []notification.Preference{{Kind: "later", Channel: notification.ChannelPush}},
+		},
+		{
+			name: "channel the kind lacks", user: owner, wantErr: notification.ErrUnsupportedChannel,
+			prefs: []notification.Preference{{Kind: notification.KindTagged, Channel: notification.ChannelEmail}},
 		},
 		{name: "missing account", user: "us-nobody", wantErr: notification.ErrUserNotFound},
 	}
@@ -492,7 +526,7 @@ func TestDeletingAccountCascades(t *testing.T) {
 	ctx := context.Background()
 	f.tagged(t, f.makePhotos(t, "a")...)
 	if _, err := f.store.ReplacePreferences(ctx, owner, []notification.Preference{
-		{Kind: notification.KindTagged},
+		{Kind: notification.KindTagged, Channel: notification.ChannelPush},
 	}, audit.Entry{ActorUID: stranger}); err != nil {
 		t.Fatalf("ReplacePreferences: %v", err)
 	}
@@ -539,10 +573,12 @@ func TestCreateTxSharesTheCallersFate(t *testing.T) {
 		"VALUES ($1, 'registration_pending', FALSE)", stranger); err != nil {
 		t.Fatalf("storing a preference: %v", err)
 	}
-	if wants, err := f.store.WantsTx(ctx, tx, stranger, notification.KindRegistrationPending); err != nil || wants {
+	if wants, err := f.store.WantsTx(ctx, tx, stranger, notification.KindRegistrationPending,
+		notification.ChannelPush); err != nil || wants {
 		t.Fatalf("WantsTx(stranger) = %v, %v; want the uncommitted false", wants, err)
 	}
-	if wants, err := f.store.WantsTx(ctx, tx, owner, notification.KindRegistrationPending); err != nil || !wants {
+	if wants, err := f.store.WantsTx(ctx, tx, owner, notification.KindRegistrationPending,
+		notification.ChannelPush); err != nil || !wants {
 		t.Fatalf("WantsTx(owner) = %v, %v; want the default true", wants, err)
 	}
 	created, err := f.store.CreateTx(ctx, tx, n)
