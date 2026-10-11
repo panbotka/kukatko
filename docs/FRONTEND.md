@@ -1577,21 +1577,32 @@ here.
   selection via grid keyboard nav. **Editor/admin only** (`bulk.canBulkEdit`), i18n `batch.*` — except
   where a page passes `openToViewers` (the task page, see the `discussion` prop below), which makes
   `canBulkEdit` true for a viewer too and leaves the bar to hide its writer-only actions itself.
-  **Responsive:** on a phone (`useIsNarrowViewport`) the ~10 labelled actions can't share one row, so the bar
-  **collapses** — clear (✕), the count and the two most-common actions (**Přidat do alba** / **Štítky**, icon-only)
-  stay inline, the rest fold into a **`…` overflow `Dropdown`** (`drop="up"`, `batch.overflow`) — keeping it a single
-  compact row instead of wrapping into a tall block. The grid's bottom clearance is **measured, not constant**: the bar
+  **One row, with a „Další…" menu:** the ~10 labelled actions can't share one row, so the bar splits them by
+  frequency. On a desktop the row carries clear (✕), the count, **Vybrat vše** and the five everyday actions
+  (**Přidat do alba**, **Štítky**, **Oblíbené**, **Nastavit polohu**, **Zeptat se**; **Do diskuse** joins them on a
+  task page), then a **„Další…" `Dropdown`** (`drop="up"`, `batch.secondary`, id `batch-secondary`) holding the
+  occasional ones (**Stáhnout ZIP**, **Sdílet**, **Seskupit vybrané**, **Další úpravy**, a page's non-destructive
+  extras), and last the **danger group** — a page's `danger` extras, then **Archivovat** (`outline-danger`) —
+  behind a vertical rule (`.kk-batch-divider`, `role="separator"`). The dock is `width: fit-content`
+  (centred by `left/right: 0` + auto margins), so the bar hugs its ~1000px of Czech labels: one row from 1200px
+  up, and between 768 and 1199px **Vybrat vše** folds to its glyph (`BarAction compact` → `.kk-batch-compact`,
+  name in `aria-label`) so 1024px stays one row too. On a phone (`useIsNarrowViewport`) the bar **collapses**:
+  clear, the count and three icon-only controls (**Vybrat vše**, **Přidat do alba**, **Štítky**) stay inline,
+  everything else folds into a **`…` overflow `Dropdown`** (`batch.overflow`, id `batch-overflow`) with the danger
+  group last behind a `Dropdown.Divider`; the dock sits above the tab bar (`--kk-bottom-edge`), never over it.
+  Both menus are the same `overflowMenu` and only one layout is ever in the DOM. The grid's bottom clearance is **measured, not constant**: the bar
   publishes its live rendered height (a `ResizeObserver` sets the `--kk-batch-bar-height` root var) and every list page
   reserves `--kk-batch-clearance` (`app.css`) as bottom padding while selecting, so the last photo row always scrolls
   clear however the bar wraps or collapses; the safe-area inset is folded into that var.
   **`extraActions?: readonly BatchExtraAction[]`** merges a page's own actions onto the *same* bar
-  (`{id, icon, label, onClick, disabled?, danger?}`, rendered after **Další úpravy** with the shared
-  `BarAction` styling, disabled while a batch request is in flight) — so a page never grows a second
+  (`{id, icon, label, onClick, disabled?, danger?}`, rendered with the shared `BarAction` styling, disabled
+  while a batch request is in flight; a non-destructive one waits in the „Další…" menu after **Další úpravy**, a
+  `danger` one joins **Archivovat** in the danger group on the row) — so a page never grows a second
   toolbar: `AlbumDetailPage` passes **Nastavit obálku** (needs exactly 1 selected) + **Odebrat z alba**
   (`danger`), `SubjectPage` passes **Nastavit jako náhled**; the library, favorites, label and search
   pages pass none). **`discussion?: BatchDiscussion`** (`{taskUid, onPosted?}`) is the task page's
   alone: with it set the bar carries **Do diskuse** (`batch.discuss.action`, a `chat-left-text` glyph,
-  between **Zeptat se** and **Další úpravy**), which opens `DiscussPhotosModal` over the selection and,
+  on the row right after **Zeptat se**), which opens `DiscussPhotosModal` over the selection and,
   once the comment landed, **clears the selection** (`selection.clear`, not `finish` — nothing about the
   photographs changed, so the wall does not reload) and calls `onPosted` so the page refetches its
   thread. Elsewhere the prop is absent and the action does not exist, because there is no thread.

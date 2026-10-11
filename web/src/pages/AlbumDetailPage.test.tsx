@@ -466,9 +466,11 @@ describe('AlbumDetailPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
 
-    // Picking raises the selection bar with the album's selection actions.
-    expect(screen.getByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
+    // Picking raises the selection bar with the album's selection actions: the
+    // destructive one on the row, the rest in its "More…" menu.
     expect(screen.getByRole('button', { name: 'Remove from album' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    expect(await screen.findByRole('button', { name: 'Set as cover' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
   })
 
@@ -486,6 +488,8 @@ describe('AlbumDetailPage', () => {
     const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
     expect(bars).toHaveLength(1)
     const [bar] = bars
+    // The occasional actions wait in the bar's "More…" menu.
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
     for (const name of [
       'Clear selection',
       'Select all',
@@ -569,7 +573,8 @@ describe('AlbumDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Select c.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'More edits' }))
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'More edits' }))
     const dialog = await screen.findByRole('dialog')
     await user.selectOptions(within(dialog).getByLabelText('Favorite'), 'true')
     await user.click(within(dialog).getByRole('button', { name: 'Apply' }))

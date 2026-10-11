@@ -1817,6 +1817,7 @@
     "download": "Download",
     "more": "More edits",
     "overflow": "More actions",
+    "secondary": "More…",
     "apply": "Apply",
     "cancel": "Cancel",
     "optionsError": "Could not load the list. Please try again.",

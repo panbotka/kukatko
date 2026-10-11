@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Spinner from 'react-bootstrap/Spinner'
@@ -132,6 +132,7 @@ function BarAction({
   disabled,
   danger,
   iconOnly = false,
+  compact = false,
 }: {
   icon: IconName
   label: string
@@ -139,7 +140,11 @@ function BarAction({
   disabled?: boolean
   danger?: boolean
   iconOnly?: boolean
+  compact?: boolean
 }) {
+  // `compact` folds the visible label away by CSS below 1200px, where the
+  // labelled row is a few pixels too wide; the `aria-label` then carries the
+  // name, so it never depends on a stylesheet.
   return (
     <Button
       variant={danger === true ? 'outline-danger' : 'outline-light'}
@@ -147,10 +152,11 @@ function BarAction({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      aria-label={iconOnly ? label : undefined}
+      aria-label={iconOnly || compact ? label : undefined}
+      className={compact ? 'kk-batch-compact' : undefined}
     >
-      <Icon name={icon} className={iconOnly ? undefined : 'me-1'} />
-      {!iconOnly && <span>{label}</span>}
+      <Icon name={icon} className={iconOnly || compact ? undefined : 'me-1'} />
+      {!iconOnly && <span className={compact ? 'ms-1' : undefined}>{label}</span>}
     </Button>
   )
 }
@@ -174,6 +180,13 @@ function BarAction({
  * ("these forty photos are Ostatky 2022"). Creation is deferred to the apply, so
  * closing the picker never leaves an empty album behind, and only a curator (or
  * above) is offered it — a viewer picks from what exists.
+ *
+ * The bar stays one row from 1200px up: select all and the five everyday actions
+ * (album, labels, favorite, location, ask) are labelled on it, the occasional
+ * ones (ZIP, share, stack, the full editor, a page's non-destructive extras) wait
+ * in a "Další…" menu, and the danger group — a page's destructive extra, then
+ * Archive — closes the row behind a divider. A phone keeps only select all,
+ * album and labels inline, as glyphs, and folds the rest into a "…" menu.
  *
  * Every photo list shows this same bar, so the batch vocabulary does not change
  * from page to page; a page that owns actions of its own (an album's set-cover /
@@ -213,8 +226,9 @@ export function BatchActionBar({
   const [addAlbums, setAddAlbums] = useState<string[]>([])
   const [addLabels, setAddLabels] = useState<string[]>([])
   const [removeLabels, setRemoveLabels] = useState<string[]>([])
-  // On a phone the ~10 labelled actions cannot share one row, so the bar folds
-  // the secondary ones into a "…" overflow menu and shows the rest icon-only.
+  // The ~10 labelled actions cannot share one row anywhere, so both layouts fold
+  // the occasional ones into a menu; a phone folds nearly all of them and shows
+  // its few inline ones icon-only.
   const narrow = useIsNarrowViewport()
 
   // Load albums and labels the first time a picker opens and cache them for the
@@ -423,15 +437,20 @@ export function BatchActionBar({
         ? addLabels.length > 0 || removeLabels.length > 0
         : false
 
-  // The bar's controls, built once and then placed either all inline (desktop) or
-  // split into inline primaries + an overflow menu (phone). Clear and the count
-  // stay pinned in the wrapper below; these are the actions that move.
+  // The bar's controls, built once and then placed by the layout below: the
+  // everyday ones inline, the occasional ones in an overflow menu (a phone moves
+  // more of them there). Clear and the count stay pinned in the wrapper below;
+  // these are the actions that move.
   const selectAllControl =
     onSelectAll !== undefined ? (
-      <Button variant="outline-light" size="sm" onClick={onSelectAll} disabled={busy}>
-        <Icon name="ui-checks" className="me-1" />
-        <span>{t('batch.selectAll')}</span>
-      </Button>
+      <BarAction
+        icon="ui-checks"
+        label={t('batch.selectAll')}
+        iconOnly={narrow}
+        compact
+        onClick={onSelectAll}
+        disabled={busy}
+      />
     ) : null
   const albumAction = (
     <BarAction
@@ -537,7 +556,7 @@ export function BatchActionBar({
         ask: askAction,
       }
     : null
-  const extras = extraActions?.map((action) => (
+  const renderExtra = (action: BatchExtraAction) => (
     <BarAction
       key={action.id}
       icon={action.icon}
@@ -546,7 +565,44 @@ export function BatchActionBar({
       disabled={busy || action.disabled === true}
       danger={action.danger}
     />
-  ))
+  )
+  // A page's destructive action (remove from the album, from the task) joins
+  // Archive in the separated danger group at the end; the rest of a page's
+  // vocabulary is occasional, so it waits in the "Další…" menu.
+  const menuExtras = extraActions?.filter((action) => action.danger !== true).map(renderExtra)
+  const dangerExtras = extraActions?.filter((action) => action.danger === true).map(renderExtra)
+  const hasDangerGroup = editorActions !== null || (dangerExtras?.length ?? 0) > 0
+  // The danger group, set apart by a rule so a destructive click is never the
+  // neighbour of an everyday one.
+  const dangerGroup = hasDangerGroup ? (
+    <>
+      <div role="separator" aria-orientation="vertical" className="kk-batch-divider" />
+      {dangerExtras}
+      {editorActions?.archive}
+    </>
+  ) : null
+
+  // The bar's overflow dropdown, shared by both layouts — only the toggle and the
+  // items differ. A phone's toggle is a bare "…" and needs its name spelled out;
+  // the desktop one reads "Další…" and is named by that.
+  const overflowMenu = (toggle: ReactNode, items: ReactNode, id: string) => (
+    <Dropdown drop="up" align="end" className="kk-batch-overflow">
+      <Dropdown.Toggle
+        variant="outline-light"
+        size="sm"
+        id={id}
+        className="kk-batch-overflow-toggle"
+        aria-label={narrow ? t('batch.overflow') : undefined}
+        title={t('batch.overflow')}
+        disabled={busy}
+      >
+        {toggle}
+      </Dropdown.Toggle>
+      <Dropdown.Menu className="kk-batch-overflow-menu">
+        <div className="d-grid gap-1">{items}</div>
+      </Dropdown.Menu>
+    </Dropdown>
+  )
 
   return (
     <div className="kk-batch-dock">
@@ -564,53 +620,58 @@ export function BatchActionBar({
           {t('selection.count', { count: bulk.selection.count })}
         </span>
         {narrow ? (
+          // A phone keeps select-all and the two most frequent actions inline as
+          // glyphs and folds everything else into the "…" menu, danger last.
           <>
+            {selectAllControl}
             {curatorActions?.album}
             {curatorActions?.label}
-            <Dropdown drop="up" align="end" className="kk-batch-overflow">
-              <Dropdown.Toggle
-                variant="outline-light"
-                size="sm"
-                id="batch-overflow"
-                className="kk-batch-overflow-toggle"
-                aria-label={t('batch.overflow')}
-                title={t('batch.overflow')}
-                disabled={busy}
-              >
-                <Icon name="three-dots" />
-              </Dropdown.Toggle>
-              <Dropdown.Menu className="kk-batch-overflow-menu">
-                <div className="d-grid gap-1">
-                  {selectAllControl}
-                  {curatorActions?.favorite}
-                  {editorActions?.location}
-                  {editorActions?.archive}
-                  {downloadControl}
-                  {shareControl}
-                  {editorActions?.stack}
-                  {editorActions?.ask}
-                  {discussAction}
-                  {curatorActions?.more}
-                  {extras}
-                </div>
-              </Dropdown.Menu>
-            </Dropdown>
+            {overflowMenu(
+              <Icon name="three-dots" />,
+              <>
+                {curatorActions?.favorite}
+                {editorActions?.location}
+                {editorActions?.ask}
+                {discussAction}
+                {downloadControl}
+                {shareControl}
+                {editorActions?.stack}
+                {curatorActions?.more}
+                {menuExtras}
+                {hasDangerGroup && <Dropdown.Divider />}
+                {dangerExtras}
+                {editorActions?.archive}
+              </>,
+              'batch-overflow',
+            )}
           </>
         ) : (
+          // A desktop keeps the five everyday actions labelled on the row, the
+          // occasional ones in "Další…", and the danger group set apart at the end
+          // — one row from 1200px up instead of the old wrap into two.
           <>
             {selectAllControl}
             {curatorActions?.album}
             {curatorActions?.label}
             {curatorActions?.favorite}
             {editorActions?.location}
-            {editorActions?.archive}
-            {downloadControl}
-            {shareControl}
-            {editorActions?.stack}
             {editorActions?.ask}
             {discussAction}
-            {curatorActions?.more}
-            {extras}
+            {overflowMenu(
+              <>
+                <Icon name="three-dots" className="me-1" />
+                <span>{t('batch.secondary')}</span>
+              </>,
+              <>
+                {downloadControl}
+                {shareControl}
+                {editorActions?.stack}
+                {curatorActions?.more}
+                {menuExtras}
+              </>,
+              'batch-secondary',
+            )}
+            {dangerGroup}
           </>
         )}
       </div>

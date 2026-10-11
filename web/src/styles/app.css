@@ -480,13 +480,20 @@ body {
    resolves to the tab bar's height on a phone, to the bare home-indicator inset
    everywhere else). Stacking rather than hiding: a selection does not have to cost
    you the navigation. */
+/* The dock hugs its content (`fit-content`, centred by the auto margins between
+   `left: 0` and `right: 0`) rather than sitting at a fixed width: the one-row
+   desktop bar is ~1000px of labelled actions in Czech, wider than any sensible
+   constant, and a page with fewer actions (a viewer's) should not float in an
+   empty pill. Only a viewport narrower than the content makes it wrap. */
 .kk-batch-dock {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: calc(var(--kk-bottom-edge) + var(--kk-space-4));
-  transform: translateX(-50%);
+  margin-inline: auto;
   z-index: var(--kk-batch-dock-z);
-  width: min(100% - 2 * var(--kk-space-3), 56rem);
+  width: fit-content;
+  max-width: calc(100% - 2 * var(--kk-space-3));
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -533,16 +540,41 @@ body {
 }
 
 /* On a phone the ~10 labelled actions cannot fit in one row, so the bar shows
-   only the icon-only primaries (clear, count, add-to-album, labels) plus a "…"
+   only the icon-only primaries (clear, count, select all, album, labels) plus a "…"
    overflow toggle and keeps them on a single line — the rest live in the menu,
    which is what stops the old wrap into a tall multi-row block. */
 @media (max-width: 767.98px) {
+  .kk-batch-dock {
+    width: calc(100% - 2 * var(--kk-space-3));
+  }
+
   .kk-batch-bar {
     flex-wrap: nowrap;
   }
 }
 
-/* The overflow toggle is a bare "…" glyph: drop Bootstrap's default caret. */
+/* Between the phone layout and 1200px the labelled row runs a few pixels past the
+   viewport (Archive alone wrapped at 1024px), so "Vybrat vše" — a control whose
+   glyph is learnt on the first use — drops its label there and keeps its glyph;
+   its name lives in `aria-label`. */
+@media (max-width: 1199.98px) {
+  .kk-batch-compact > span {
+    display: none;
+  }
+}
+
+/* The rule that sets the danger group (a page's destructive extra, Archive) apart
+   from the everyday actions, so a destructive click is never the next button
+   along. */
+.kk-batch-divider {
+  align-self: stretch;
+  width: 1px;
+  margin-inline: var(--kk-space-1);
+  background-color: var(--kk-header-border);
+}
+
+/* The overflow toggle carries a "…" glyph (plus "Další…" on a desktop), which says
+   "more" by itself: drop Bootstrap's default caret. */
 .kk-batch-overflow-toggle.dropdown-toggle::after {
   display: none;
 }

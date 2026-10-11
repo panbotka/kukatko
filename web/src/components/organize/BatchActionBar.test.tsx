@@ -198,6 +198,46 @@ describe('BatchActionBar', () => {
     expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
     // One pin for a whole box of scans lives in the same vocabulary as the rest.
     expect(screen.getByRole('button', { name: 'Set location' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ask about these' })).toBeInTheDocument()
+  })
+
+  it('keeps the everyday actions on the row and folds the occasional ones into "More…"', async () => {
+    const user = userEvent.setup()
+    renderBar(makeBulk())
+
+    // The occasional actions are not on the row — that is what keeps it one row.
+    for (const name of ['Download ZIP', 'Stack selected', 'More edits']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+
+    // Opening the menu reveals them, each with its own label, so nothing is lost.
+    for (const name of ['Download ZIP', 'Stack selected', 'More edits']) {
+      expect(await screen.findByRole('button', { name })).toBeInTheDocument()
+    }
+  })
+
+  it('closes the row with Archive, set apart from the everyday actions by a divider', () => {
+    renderBar(makeBulk())
+
+    const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
+    const archive = within(bar).getByRole('button', { name: 'Archive' })
+    // Last on the row, still in the danger outline style, right behind the rule.
+    expect(bar.lastElementChild).toBe(archive)
+    expect(archive).toHaveClass('btn-outline-danger')
+    expect(archive.previousElementSibling).toBe(within(bar).getByRole('separator'))
+  })
+
+  it('opens the full editor from the "More…" menu', async () => {
+    const bulk = makeBulk()
+    const user = userEvent.setup()
+    renderBar(bulk)
+
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'More edits' }))
+
+    expect(bulk.open).toHaveBeenCalledTimes(1)
   })
 
   it("joins a page's own actions onto the same bar, honouring their disabled state", async () => {
@@ -214,10 +254,20 @@ describe('BatchActionBar', () => {
     // One bar carries both vocabularies: the shared batch actions and the page's.
     const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
     expect(within(bar).getByRole('button', { name: 'Add to album' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Set as cover' })).toBeDisabled()
 
-    await user.click(within(bar).getByRole('button', { name: 'Remove from album' }))
+    // The destructive extra joins Archive in the danger group behind the rule.
+    const removeButton = within(bar).getByRole('button', { name: 'Remove from album' })
+    expect(removeButton.previousElementSibling).toBe(within(bar).getByRole('separator'))
+    expect(removeButton.nextElementSibling).toBe(
+      within(bar).getByRole('button', { name: 'Archive' }),
+    )
+    await user.click(removeButton)
     expect(remove).toHaveBeenCalledTimes(1)
+
+    // The rest of the page's vocabulary waits in the "More…" menu.
+    expect(within(bar).queryByRole('button', { name: 'Set as cover' })).toBeNull()
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
+    expect(await within(bar).findByRole('button', { name: 'Set as cover' })).toBeDisabled()
     expect(setCover).not.toHaveBeenCalled()
   })
 
@@ -518,22 +568,30 @@ describe('BatchActionBar inline creation', () => {
 })
 
 describe('BatchActionBar for a curator', () => {
-  it('offers the album, label, favorite and full-editor actions', () => {
+  it('offers the album, label, favorite and full-editor actions', async () => {
+    const user = userEvent.setup()
     renderBar(makeBulk(), undefined, curatorAuth)
 
-    for (const name of ['Add to album', 'Labels', 'Favorite', 'More edits']) {
+    for (const name of ['Add to album', 'Labels', 'Favorite']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument()
     }
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    expect(await screen.findByRole('button', { name: 'More edits' })).toBeInTheDocument()
   })
 
-  it('renders none of the editor-only actions — not even greyed out', () => {
+  it('renders none of the editor-only actions — not even greyed out', async () => {
+    const user = userEvent.setup()
     renderBar(makeBulk(), undefined, curatorAuth)
 
     // Location, archive, stacking and asking a task are refused by the backend
-    // for a curator, so the bar never offers them.
+    // for a curator, so the bar never offers them — neither on the row nor in the
+    // menu — and with no danger action there is no rule to set one apart.
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await screen.findByRole('button', { name: 'More edits' })
     for (const name of ['Set location', 'Archive', 'Stack selected', 'Ask about these']) {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
+    expect(screen.queryByRole('separator')).toBeNull()
   })
 
   it('lets a curator create an album from the picker', async () => {
@@ -627,13 +685,17 @@ describe('BatchActionBar discussion', () => {
     expect(await screen.findByText('2 photos put into the discussion.')).toBeInTheDocument()
   })
 
-  it('gives a viewer the discussion and the downloads, and no metadata action', () => {
+  it('gives a viewer the discussion and the downloads, and no metadata action', async () => {
+    const user = userEvent.setup()
     renderWithDiscussion(discussBulk(), viewerAuth)
 
     const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
     expect(within(bar).getByRole('button', { name: 'To the discussion' })).toBeInTheDocument()
-    expect(within(bar).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
+    expect(await within(bar).findByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(bar).queryByRole('button', { name: 'More edits' })).toBeNull()
+    expect(within(bar).queryByRole('separator')).toBeNull()
     for (const name of ['Add to album', 'Labels', 'Favorite', 'Archive', 'Ask about these']) {
       expect(within(bar).queryByRole('button', { name })).toBeNull()
     }
@@ -669,12 +731,15 @@ describe('BatchActionBar on a narrow (phone) screen', () => {
     const user = userEvent.setup()
     renderBar(makeBulk())
 
-    // Clear, the live count and the two most-common actions stay directly
-    // reachable — no wrapping into a tall multi-row block.
+    // Clear, the live count, select all and the two most-common actions stay
+    // directly reachable — no wrapping into a tall multi-row block.
     expect(screen.getByRole('button', { name: 'Clear selection' })).toBeInTheDocument()
     expect(screen.getByText('2 selected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add to album' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Labels' })).toBeInTheDocument()
+    // The phone's toggle is a bare glyph, so it has no desktop "More…" label.
+    expect(screen.queryByRole('button', { name: 'More…' })).toBeNull()
 
     // The secondary actions are collapsed away until the overflow menu is opened,
     // so the bar stays a single compact row.
@@ -686,7 +751,7 @@ describe('BatchActionBar on a narrow (phone) screen', () => {
     // Opening the menu reveals the rest, so nothing is lost on a phone.
     expect(await screen.findByRole('button', { name: 'Favorite' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Select all' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ask about these' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'More edits' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stack selected' })).toBeInTheDocument()
@@ -722,23 +787,27 @@ describe('BatchActionBar share action', () => {
     Reflect.deleteProperty(navigator, 'canShare')
   })
 
-  it('offers it beside the ZIP download where files can be shared', () => {
+  it('offers it beside the ZIP download where files can be shared', async () => {
     Object.defineProperty(navigator, 'share', { value: vi.fn(), configurable: true })
     Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true })
+    const user = userEvent.setup()
 
     renderBar(makeBulk())
 
     const bar = screen.getByRole('toolbar', { name: 'Batch actions' })
-    expect(within(bar).getByRole('button', { name: 'Share' })).toBeInTheDocument()
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
+    expect(await within(bar).findByRole('button', { name: 'Share' })).toBeInTheDocument()
     expect(within(bar).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
   })
 
-  it('renders nothing at all where the browser cannot share files', () => {
+  it('renders nothing at all where the browser cannot share files', async () => {
+    const user = userEvent.setup()
     renderBar(makeBulk())
 
-    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More…' }))
     // The ZIP download is still the answer there.
-    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Share' })).not.toBeInTheDocument()
   })
 })
 

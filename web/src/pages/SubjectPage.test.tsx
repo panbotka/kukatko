@@ -342,7 +342,8 @@ describe('SubjectPage', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
-    await user.click(screen.getByRole('button', { name: 'Move to another person' }))
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'Move to another person' }))
 
     const dialog = await screen.findByRole('dialog')
     await user.type(within(dialog).getByRole('combobox', { name: 'Move to…' }), 'Jana K')
@@ -392,7 +393,8 @@ describe('SubjectPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    expect(await screen.findByRole('button', { name: 'More edits' })).toBeEnabled()
   })
 
   it('raises the library’s full batch bar, with the gallery’s set-cover merged in', async () => {
@@ -406,6 +408,8 @@ describe('SubjectPage', () => {
     const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
     expect(bars).toHaveLength(1)
     const [bar] = bars
+    // The occasional actions wait in the bar's "More…" menu.
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
     for (const name of BATCH_ACTIONS) {
       expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
     }
@@ -429,8 +433,9 @@ describe('SubjectPage', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     // The tile's own overlay is gone by now: this is the bar's action, applied
-    // to exactly the picked photo.
-    await user.click(screen.getByRole('button', { name: 'Set as cover' }))
+    // to exactly the picked photo, from the bar's "More…" menu.
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'Set as cover' }))
 
     await waitFor(() => {
       expect(updateSubjectMock).toHaveBeenCalledWith(
@@ -481,7 +486,8 @@ describe('SubjectPage', () => {
     await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const fetchesBefore = fetchPhotosMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'More edits' }))
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
@@ -507,7 +513,8 @@ describe('SubjectPage', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
-    await user.click(screen.getByRole('button', { name: 'More edits' }))
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 

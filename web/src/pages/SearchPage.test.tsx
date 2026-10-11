@@ -699,7 +699,8 @@ describe('SearchPage bulk edit', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select a.jpg' }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'More edits' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    expect(await screen.findByRole('button', { name: 'More edits' })).toBeEnabled()
   })
 
   it('raises the library’s full batch bar over the results, and only that one bar', async () => {
@@ -713,6 +714,8 @@ describe('SearchPage bulk edit', () => {
     const bars = screen.getAllByRole('toolbar', { name: 'Batch actions' })
     expect(bars).toHaveLength(1)
     const [bar] = bars
+    // The occasional actions wait in the bar's "More…" menu.
+    await user.click(within(bar).getByRole('button', { name: 'More…' }))
     for (const name of BATCH_ACTIONS) {
       expect(within(bar).getByRole('button', { name })).toBeInTheDocument()
     }
@@ -763,7 +766,8 @@ describe('SearchPage bulk edit', () => {
     await user.click(screen.getByRole('button', { name: 'Select b.jpg' }))
 
     const searchesBefore = searchMock.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'More edits' }))
+    await user.click(screen.getByRole('button', { name: 'More…' }))
+    await user.click(await screen.findByRole('button', { name: 'More edits' }))
     await user.selectOptions(await screen.findByLabelText('Archive'), 'archive')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
 
