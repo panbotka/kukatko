@@ -531,9 +531,10 @@ registration is waiting"; nobody else sees a setting for a message they could ne
 - Originals on **local disk** or in an **S3-compatible bucket** (Cloudflare R2, with short-lived
   signed URLs), plus **S3 backup** — `pg_dump` and originals with retention — and a restore runbook
   that has been used.
-- Five roles (viewer < curator < editor < admin < maintainer). A **curator** names faces, manages
-  people and their family tree, creates and fills albums and labels (one photo at a time or a whole
-  selection), plays the sorting game and uploads — without touching the photos themselves: the capture
+- Five roles (viewer < curator < editor < admin < maintainer). **Anybody signed in uploads**, a
+  viewer included; filing the batch into albums and labels is a curator's. A **curator** names faces,
+  manages people and their family tree, creates and fills albums and labels (one photo at a time or a
+  whole selection) and plays the sorting game — without touching the photos themselves: the capture
   date, description, location, image edits, stacks, archiving, tasks and duplicate merging stay an
   editor's, and the app simply does not show a curator those controls. A durable **audit trail** written in the same
   transaction as the change it records, personal **API tokens**, Prometheus metrics, and

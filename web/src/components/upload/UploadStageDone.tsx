@@ -34,8 +34,12 @@ export interface UploadStageDoneProps {
   summary: UploadSummary
   /** Every file of the batch, for the per-file list a failure brings back. */
   items: UploadQueueItem[]
-  /** The batch-wide album/label picker, still live — a pick now still applies. */
-  organize: UploadOrganizeProps
+  /**
+   * The batch-wide album/label picker, still live — a pick now still applies.
+   * Null for a role that may upload but not file photos (below curator): the
+   * stage is then just the outcome and its actions.
+   */
+  organize: UploadOrganizeProps | null
   /** Human names of everything chosen, for the outcome sentence. */
   organizeNames: string[]
   /** Lifecycle of the album/label assignment that runs once the batch settles. */
@@ -85,6 +89,10 @@ export interface UploadStageDoneProps {
  * none of them is. Until then, after a failed question, or when some are filed,
  * the stage asks a neutral question instead, prefixed by where they already are
  * when that is known.
+ *
+ * A viewer may upload but not file photos, so for them (`organize` null) there
+ * is no picker and no caption about albums at all — just the outcome sentence
+ * and the actions.
  *
  * The per-file list comes back only when something failed — that is where the
  * reason, the per-file **Retry** and the errors-only filter live, and a batch
@@ -257,10 +265,10 @@ export function UploadStageDone({
         </Alert>
       )}
 
-      {/* Only when there are photos to put somewhere. A batch where every file
-          failed has nothing to file, and offering an album picker over it reads
-          as if the upload had half worked. */}
-      {landed > 0 && (
+      {/* Only when there are photos to put somewhere and the role may file them.
+          A batch where every file failed has nothing to file, and offering an
+          album picker over it reads as if the upload had half worked. */}
+      {landed > 0 && organize !== null && (
         <div>
           <h3 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h3>
           {/* Both lines are about what landed, so a batch holding a clip takes

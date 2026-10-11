@@ -31,6 +31,7 @@ import (
 type httpEnv struct {
 	server *httptest.Server
 	svc    *auth.Service
+	photos *photos.Store
 }
 
 // newHTTPEnv builds the HTTP test environment over the integration database.
@@ -47,14 +48,15 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 	if err != nil {
 		t.Fatalf("storage.NewFS: %v", err)
 	}
+	photoStore := photos.NewStore(db.Pool())
 	ingestSvc := ingest.New(ingest.Config{
 		Storage:     fs,
-		Photos:      photos.NewStore(db.Pool()),
+		Photos:      photoStore,
 		Thumbnailer: thumb.New(fs, t.TempDir()),
 		Duplicate:   config.DuplicateConfig{Enabled: false},
 		TempDir:     t.TempDir(),
 	})
-	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireCurator, nil)
+	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireAuth, nil)
 
 	r := chi.NewRouter()
 	// Mirrors the real server: a forwarding header is only believed from a
@@ -67,17 +69,26 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &httpEnv{server: server, svc: authSvc}
+	return &httpEnv{server: server, svc: authSvc, photos: photoStore}
 }
 
 // loginClient creates a user with the given role and returns an HTTP client
 // carrying its authenticated session cookie.
 func (e *httpEnv) loginClient(t *testing.T, username string, role auth.Role) *http.Client {
 	t.Helper()
+	client, _ := e.loginUser(t, username, role)
+	return client
+}
+
+// loginUser is loginClient that also returns the created user's UID, for a test
+// that checks what the upload was attributed to.
+func (e *httpEnv) loginUser(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+	t.Helper()
 	const password = "correct horse battery staple"
-	if _, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
+	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: password, Role: role,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
@@ -99,7 +110,7 @@ func (e *httpEnv) loginClient(t *testing.T, username string, role auth.Role) *ht
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want 200", resp.StatusCode)
 	}
-	return client
+	return client, user.UID
 }
 
 // uploadFiles posts the given named files as one multipart request and returns
@@ -168,8 +179,8 @@ func TestHTTPUpload_editorCreatesPhotos(t *testing.T) {
 	}
 }
 
-// TestHTTPUpload_curatorCreatesPhotos verifies the upload hangs on
-// RequireCurator: a curator may add photos to the library, not only file them.
+// TestHTTPUpload_curatorCreatesPhotos verifies a curator may add photos to the
+// library, not only file them.
 func TestHTTPUpload_curatorCreatesPhotos(t *testing.T) {
 	env := newHTTPEnv(t)
 	client := env.loginClient(t, "curator", auth.RoleCurator)
@@ -243,17 +254,28 @@ func TestHTTPUpload_refusesAVIFAndTruncatedImages(t *testing.T) {
 	}
 }
 
-// TestHTTPUpload_viewerForbidden verifies a viewer (below curator) is rejected
-// with 403 by the RequireCurator guard before any ingest happens.
-func TestHTTPUpload_viewerForbidden(t *testing.T) {
+// TestHTTPUpload_viewerCreatesPhotos verifies the upload hangs on RequireAuth:
+// a viewer, the lowest signed-in role, may add photos to the library, and the
+// photo is attributed to that viewer.
+func TestHTTPUpload_viewerCreatesPhotos(t *testing.T) {
 	env := newHTTPEnv(t)
-	client := env.loginClient(t, "viewer", auth.RoleViewer)
+	client, viewerUID := env.loginUser(t, "viewer", auth.RoleViewer)
 
-	status, _ := env.uploadFiles(t, client, map[string][]byte{
+	status, results := env.uploadFiles(t, client, map[string][]byte{
 		"x.jpg": jpegBytes(t, 1, 2, 3, 80),
 	})
-	if status != http.StatusForbidden {
-		t.Errorf("upload status = %d, want 403 for viewer", status)
+	if status != http.StatusOK {
+		t.Fatalf("upload status = %d, want 200 for viewer", status)
+	}
+	if len(results) != 1 || results[0].Outcome != ingest.OutcomeCreated || results[0].PhotoUID == "" {
+		t.Fatalf("results = %+v, want one created photo with a UID", results)
+	}
+	photo, err := env.photos.GetByUID(t.Context(), results[0].PhotoUID)
+	if err != nil {
+		t.Fatalf("GetByUID: %v", err)
+	}
+	if photo.UploadedBy == nil || *photo.UploadedBy != viewerUID {
+		t.Errorf("uploaded_by = %v, want the viewer %s", photo.UploadedBy, viewerUID)
 	}
 }
 

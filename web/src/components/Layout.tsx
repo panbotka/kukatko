@@ -332,8 +332,8 @@ export function Layout() {
                 {/* The review game: curators and above, and kept in plain sight. */}
                 {canCurate && renderLink(REVIEW_ITEM)}
                 {/* Adding photos is the loop's payoff: the bar's one filled CTA,
-                    hidden from viewers. */}
-                {canCurate && renderLink(UPLOAD_ITEM, { cta: true })}
+                    open to every signed-in role. */}
+                {renderLink(UPLOAD_ITEM, { cta: true })}
 
                 {/* A divider fences off the quieter power-user cluster, but only
                     when the current role actually has something below it. */}

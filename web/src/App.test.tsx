@@ -271,7 +271,7 @@ describe('routing', () => {
       '/recognition',
       '/outliers',
       '/duplicate-markers',
-      '/upload',
+      '/upload-links',
     ]) {
       const { unmount } = renderRoutes([path])
       expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/curator role/i)
@@ -288,14 +288,22 @@ describe('routing', () => {
     }
   })
 
-  it('explains the refusal inside the shell for a viewer on /upload', async () => {
-    renderRoutes(['/upload'])
+  it('explains the refusal inside the shell for a viewer on a curation route', async () => {
+    renderRoutes(['/upload-links'])
 
     expect(await screen.findByTestId('forbidden-page')).toBeInTheDocument()
-    expect(screen.getByTestId('pathname')).toHaveTextContent('/upload')
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/upload-links')
     // The library never loads behind the refusal — the guard replaced the route,
     // it did not navigate away from it.
     expect(fetchPhotosMock).not.toHaveBeenCalled()
+  })
+
+  it('lets a viewer upload: /upload is open to every signed-in role', async () => {
+    renderRoutes(['/upload'])
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Upload' })).toBeInTheDocument()
+    expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/upload')
   })
 
   it('keeps /system for maintainers, the audience the footer queue status links there', async () => {
@@ -309,15 +317,22 @@ describe('routing', () => {
     expect(screen.getByTestId('pathname')).toHaveTextContent('/system')
   })
 
-  it('lets a viewer reach the share landing, which explains itself', async () => {
-    // The share target sits outside the editor gate on purpose: a viewer must
-    // be told their shared photos cannot be uploaded (and have them discarded),
-    // not handed the generic refusal of a route they never typed.
+  it('forwards a viewer’s share from the share landing to the upload page', async () => {
+    // Every signed-in role may upload, so a viewer's shared photos go where
+    // anybody's do: to /upload, carrying the staged share.
     renderRoutes(['/share-target?share=abc'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/upload')
+    })
+    expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
+  })
+
+  it('lets a viewer reach the share landing when nothing was staged', async () => {
+    renderRoutes(['/share-target'])
 
     expect(await screen.findByTestId('share-target-page')).toBeInTheDocument()
     expect(screen.queryByTestId('forbidden-page')).not.toBeInTheDocument()
-    expect(screen.getByTestId('pathname')).toHaveTextContent('/share-target')
   })
 
   it('leaves Back pointing at wherever the refused user came from', async () => {

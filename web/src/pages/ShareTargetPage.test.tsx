@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,15 +8,7 @@ import i18n from '../i18n'
 
 import { ShareTargetPage } from './ShareTargetPage'
 
-vi.mock('../pwa/shareTarget', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../pwa/shareTarget')>()
-  return { ...actual, discardSharedFiles: vi.fn(() => Promise.resolve()) }
-})
-
-const { discardSharedFiles } = await import('../pwa/shareTarget')
-const discardMock = vi.mocked(discardSharedFiles)
-
-/** A signed-in account of the given persuasion. */
+/** A signed-in account: an editor, or a viewer (the lowest signed-in role). */
 function auth(canWrite: boolean): AuthContextValue {
   return {
     status: 'authenticated',
@@ -58,7 +50,6 @@ function renderPage(url: string, canWrite = true) {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
-  discardMock.mockClear()
 })
 
 describe('ShareTargetPage', () => {
@@ -66,6 +57,13 @@ describe('ShareTargetPage', () => {
     renderPage('/share-target?share=1700000000000-1')
 
     expect(screen.getByTestId('location')).toHaveTextContent('/upload?share=1700000000000-1')
+    expect(screen.getByText('upload page')).toBeInTheDocument()
+  })
+
+  it('forwards a viewer the same way: every signed-in role may upload', () => {
+    renderPage('/share-target?share=abc', false)
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/upload?share=abc')
     expect(screen.getByText('upload page')).toBeInTheDocument()
   })
 
@@ -77,35 +75,20 @@ describe('ShareTargetPage', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/upload?share=abc')
   })
 
-  it('tells a viewer their account cannot upload, and throws the photos away', async () => {
-    renderPage('/share-target?share=abc', false)
-
-    expect(screen.getByRole('heading', { name: 'Shared photos' })).toBeInTheDocument()
-    expect(
-      screen.getByText(/Your account can only view the library, not add to it/),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to the library' })).toHaveAttribute('href', '/')
-    await waitFor(() => {
-      expect(discardMock).toHaveBeenCalledWith('abc')
-    })
-  })
-
   it('says so when the files did not come through at all', () => {
     // No share id: either the worker could not read the POST, or none was
     // installed and the server answered it with the app shell.
     renderPage('/share-target')
 
+    expect(screen.getByRole('heading', { name: 'Shared photos' })).toBeInTheDocument()
     expect(screen.getByText(/The shared files did not reach us/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Go to upload' })).toHaveAttribute('href', '/upload')
-    expect(discardMock).not.toHaveBeenCalled()
   })
 
-  it('does not discard anything when there was nothing staged for a viewer', () => {
+  it('says the same to a viewer with nothing staged', () => {
     renderPage('/share-target', false)
 
-    expect(
-      screen.getByText(/Your account can only view the library, not add to it/),
-    ).toBeInTheDocument()
-    expect(discardMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/The shared files did not reach us/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to upload' })).toHaveAttribute('href', '/upload')
   })
 })

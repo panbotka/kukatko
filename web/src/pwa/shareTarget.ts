@@ -162,30 +162,3 @@ export async function collectSharedFiles(
     return NOTHING
   }
 }
-
-/**
- * Throws away a staged share without reading it. Used when the share can never
- * be uploaded — a viewer's account may not — so their photos do not linger in
- * the cache until the TTL sweeps them.
- */
-export async function discardSharedFiles(id: string, options: CollectOptions = {}): Promise<void> {
-  const storage = storageOf(options)
-  if (storage === null || id === '') {
-    return
-  }
-  try {
-    if (!(await storage.has(SHARE_CACHE))) {
-      return
-    }
-    const cache = await storage.open(SHARE_CACHE)
-    for (const key of await cache.keys()) {
-      const pathname = pathnameOf(key)
-      const entry = pathname === null ? null : parseShareEntry(pathname)
-      if (entry !== null && entry.id === id) {
-        await cache.delete(key)
-      }
-    }
-  } catch {
-    // Nothing to do: the TTL sweep will get to it.
-  }
-}

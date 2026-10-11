@@ -7,7 +7,7 @@ import {
   SHARE_TTL_MS,
   shareEntryPath,
 } from './shareContract'
-import { collectSharedFiles, discardSharedFiles, partitionSharedFiles } from './shareTarget'
+import { collectSharedFiles, partitionSharedFiles } from './shareTarget'
 
 /** "Now" for every test that cares about a share's age. */
 const NOW = 1_800_000_000_000
@@ -255,28 +255,5 @@ describe('collectSharedFiles', () => {
       accepted: [],
       rejected: [],
     })
-  })
-})
-
-describe('discardSharedFiles', () => {
-  it('throws away just that share, leaving other shares alone', async () => {
-    const storage = staged([
-      { id: 's1', index: 0, name: 'a.jpg' },
-      { id: 's1', index: 1, name: 'b.jpg' },
-      { id: 's2', index: 0, name: 'c.jpg' },
-    ])
-
-    await discardSharedFiles('s1', { storage: storage as unknown as CacheStorage })
-
-    expect([...(storage.caches.get(SHARE_CACHE)?.entries.keys() ?? [])]).toEqual([
-      shareEntryPath('s2', 0),
-    ])
-  })
-
-  it('does nothing at all without a cache, an id, or a working storage', async () => {
-    await expect(discardSharedFiles('')).resolves.toBeUndefined()
-    await expect(
-      discardSharedFiles('s1', { storage: new FakeCacheStorage() as unknown as CacheStorage }),
-    ).resolves.toBeUndefined()
   })
 })

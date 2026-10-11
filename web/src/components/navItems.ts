@@ -293,7 +293,7 @@ export const REVIEW_ITEM: NavEntry = {
 }
 
 /**
- * The curation-gated upload entry (`canCurate`). Adding photos is the everyday loop's payoff, so
+ * The upload entry, open to every signed-in role. Adding photos is the everyday loop's payoff, so
  * it is not just top-level but the bar's one call-to-action: rendered as a filled
  * pill (see `renderLink`'s `cta` option) so a non-technical user's eye lands on
  * "add photos" instead of treating it as just another link beside Import.

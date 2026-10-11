@@ -179,7 +179,7 @@
       },
       "sharing": {
         "title": "Adding photos from your phone",
-        "body": "On Android it works straight from the gallery: pick the photos, tap Share and choose Kukátko. The app opens on the upload page with those files already queued — look them over, give the batch an album and labels if you like, and upload as usual. The one condition is that Kukátko is added to the home screen (installed); otherwise it does not appear in the share sheet.\niPhone cannot do this yet — Safari has no support for sharing into web apps, and there is no honest way to fake it. Add photos on the upload page instead: the Choose files button opens the photo library, or copy a photo in Photos and paste it here. Adding Kukátko to the home screen still pays off: it then opens straight away, even with no signal.\nUploading needs the curator role or higher. A view-only account is told why its shared photos were not added. Only photos and videos can be shared; anything else is left out and listed on the page."
+        "body": "On Android it works straight from the gallery: pick the photos, tap Share and choose Kukátko. The app opens on the upload page with those files already queued — look them over, give the batch an album and labels if you like, and upload as usual. The one condition is that Kukátko is added to the home screen (installed); otherwise it does not appear in the share sheet.\niPhone cannot do this yet — Safari has no support for sharing into web apps, and there is no honest way to fake it. Add photos on the upload page instead: the Choose files button opens the photo library, or copy a photo in Photos and paste it here. Adding Kukátko to the home screen still pays off: it then opens straight away, even with no signal.\nEvery signed-in account may upload; choosing an album and labels for the batch takes the curator role or higher. Only photos and videos can be shared; anything else is left out and listed on the page."
       },
       "import": {
         "title": "Importing the library",
@@ -188,8 +188,8 @@
       "roles": {
         "title": "User roles",
         "body": "What you can do in Kukátko depends on your role. Roles form a ladder – each higher one can do everything the one below can, plus more:",
-        "viewer": "Views photos, albums, labels, the map and the leaderboard. Changes nothing.",
-        "curator": "Additionally sorts faces and people, manages albums and labels, plays the review game and uploads photos.",
+        "viewer": "Views photos, albums, labels, the map and the leaderboard, and uploads new photos. Changes nothing else.",
+        "curator": "Additionally sorts faces and people, manages albums and labels, files uploaded photos into albums and plays the review game.",
         "editor": "Additionally edits photos and their details (the capture date among them), merges duplicates and moves photos to the trash.",
         "admin": "Additionally manages users, sees the audit log, and can delete permanently.",
         "maintainer": "Additionally runs imports and maintenance, watches system status, and manages backups."
@@ -961,7 +961,6 @@
     "emptyCatalog": {
       "title": "There are no photos yet",
       "hint": "Upload your first photos and videos to bring the library to life.",
-      "hintViewer": "Once someone uploads the first photos, they will show up here.",
       "action": "Upload photos"
     },
     "error": {
@@ -2883,10 +2882,6 @@
     "missing": {
       "message": "The shared files did not reach us. Please pick them by hand on the upload page.",
       "action": "Go to upload"
-    },
-    "forbidden": {
-      "message": "Your account can only view the library, not add to it, so the shared files were discarded. Ask an administrator for the curator role if you need to upload.",
-      "action": "Back to the library"
     }
   },
   "sharePhotos": {

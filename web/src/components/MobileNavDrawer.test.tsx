@@ -308,13 +308,15 @@ describe('MobileNavDrawer', () => {
     }
     // No orphan heading either: a viewer's account block ends where it always did.
     expect(within(drawer).queryByRole('heading', { name: 'Admin' })).not.toBeInTheDocument()
-    // Browse and the account block stay — they are available to every role.
+    // Browse, Upload and the account block stay — they are available to every
+    // role. The review game beside Upload is curation and is not there.
     expect(within(drawer).getByRole('region', { name: 'Browse' })).toBeInTheDocument()
     expect(drawerHrefs(drawer)).toEqual([
       '/',
       '/albums',
       '/labels',
       '/search',
+      '/upload',
       '/favorites',
       '/saved',
       '/tasks',

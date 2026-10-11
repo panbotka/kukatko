@@ -122,15 +122,19 @@ function bulkResult(): BulkResult {
   return { results: [], counts: { total: 0, updated: 0, skipped: 0, errored: 0 } }
 }
 
-/** A signed-in editor, so inline album/label creation is offered. */
-function auth(): AuthContextValue {
+/**
+ * A signed-in account: by default an editor, so the album/label picker and its
+ * inline creation are offered; a viewer may upload but not file photos.
+ */
+function auth(role: 'editor' | 'viewer' = 'editor'): AuthContextValue {
+  const editor = role === 'editor'
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: 'editor' },
-    role: 'editor',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
     downloadToken: null,
-    canCurate: true,
-    canWrite: true,
+    canCurate: editor,
+    canWrite: editor,
     isAdmin: false,
     login: vi.fn(),
     logout: vi.fn(),
@@ -142,10 +146,10 @@ function auth(): AuthContextValue {
  * Renders the page inside a two-route memory router, so an in-app link out of
  * `/upload` is a real navigation the leave guard can hold back.
  */
-function renderPage(url = '/upload') {
+function renderPage(url = '/upload', role: 'editor' | 'viewer' = 'editor') {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth()}>
+      <AuthContext.Provider value={auth(role)}>
         <MemoryRouter initialEntries={[url]}>
           <Link to="/albums">Albums page</Link>
           <Routes>
@@ -600,6 +604,59 @@ describe('UploadPage — stage 3, done', () => {
     await waitFor(() => {
       expect(bulkMock).toHaveBeenLastCalledWith(['ph2'], { add_to_albums: ['al1'] })
     })
+  })
+})
+
+describe('UploadPage — by role', () => {
+  it('lets a viewer upload without the album picker while the batch is in flight', async () => {
+    uploadMock.mockReturnValue(new Promise<UploadFileResult>(() => undefined))
+    const user = userEvent.setup()
+    renderPage('/upload', 'viewer')
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+
+    const bar = screen.getByTestId('upload-action-bar')
+    expect(within(bar).getByText('0 / 2')).toBeInTheDocument()
+    // Filing is curation: no heading, no hint, no picker that would be refused.
+    expect(screen.queryByRole('heading', { name: 'Albums and labels' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Albums' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Labels' })).not.toBeInTheDocument()
+  })
+
+  it('ends a viewer’s batch with just the outcome and its actions, no bulk call', async () => {
+    uploadMock.mockResolvedValueOnce(created('ph1')).mockResolvedValueOnce(duplicate('ph2'))
+    const user = userEvent.setup()
+    renderPage('/upload', 'viewer')
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+
+    expect(await screen.findByText('1 photo uploaded.')).toBeInTheDocument()
+    const bar = screen.getByTestId('upload-action-bar')
+    expect(within(bar).getByRole('button', { name: 'Upload more' })).toBeInTheDocument()
+    expect(within(bar).getByRole('link', { name: 'Show them in the library' })).toHaveAttribute(
+      'href',
+      '/?sort=added',
+    )
+    expect(screen.queryByRole('heading', { name: 'Albums and labels' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Albums' })).not.toBeInTheDocument()
+    // Neither the membership question nor an assignment: both are curator
+    // endpoints that would only answer 403.
+    expect(membershipMock).not.toHaveBeenCalled()
+    expect(bulkMock).not.toHaveBeenCalled()
+  })
+
+  it('still asks where a curator’s finished batch already is', async () => {
+    uploadMock.mockResolvedValueOnce(created('ph1'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await pickFiles(user, [file('a.jpg')])
+
+    expect(await screen.findByText('1 photo uploaded.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(membershipMock).toHaveBeenCalledWith(['ph1'], expect.any(AbortSignal))
+    })
+    expect(screen.getByRole('combobox', { name: 'Albums' })).toBeInTheDocument()
   })
 })
 

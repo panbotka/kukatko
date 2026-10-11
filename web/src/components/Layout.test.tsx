@@ -411,7 +411,7 @@ describe('Layout navbar', () => {
     }
   })
 
-  it('hides the Tools group, the admin section and Upload from viewers', async () => {
+  it('hides the Tools group and the admin section from viewers, but not Upload', async () => {
     const user = userEvent.setup()
     renderLayout(auth({ canWrite: false, isAdmin: false }))
 
@@ -419,9 +419,10 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument()
 
-    // The editor group does not render, nor the write-only Upload entry.
+    // The editor group does not render, but the Upload CTA does: every
+    // signed-in role may add photos.
     expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Upload' })).toBeInTheDocument()
 
     // And the user menu carries no administration: no heading, no divider left
     // hanging over nothing, none of the five destinations.

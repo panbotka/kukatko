@@ -18,8 +18,11 @@ export interface UploadStageUploadingProps {
   progress: number
   /** Every file in the batch, for the demoted per-file list. */
   items: UploadQueueItem[]
-  /** The batch-wide album/label picker, wired by the page. */
-  organize: UploadOrganizeProps
+  /**
+   * The batch-wide album/label picker, wired by the page — or null for a role
+   * that may upload but not file photos (below curator), which gets no picker.
+   */
+  organize: UploadOrganizeProps | null
   /** Appends more files to the running batch. */
   onFiles: (files: File[]) => void
   /** Removes a file from the queue. */
@@ -41,8 +44,9 @@ export interface UploadStageUploadingProps {
  * and labels for the whole batch. That works because the assignment runs when
  * the batch settles, not when it starts (see `useUploadOrganize`) — picking an
  * album while the photos are still going up is exactly as good as picking it
- * first, and a pick made even later still lands. The per-file list is below,
- * closed, in {@link UploadQueuePanel}.
+ * first, and a pick made even later still lands. A viewer, who may add photos but
+ * not file them, simply has no picker here. The per-file list is below, closed,
+ * in {@link UploadQueuePanel}.
  *
  * Adding files here appends to the running batch: the queue drains whatever it
  * holds, so nothing in flight is restarted or dropped.
@@ -82,13 +86,15 @@ export function UploadStageUploading({
         </p>
       </div>
 
-      <div>
-        <h3 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h3>
-        <p className="kk-text-caption text-secondary mb-2">
-          {t(stills ? 'upload.organize.hint' : 'upload.organize.hintWithVideo')}
-        </p>
-        <UploadOrganize {...organize} />
-      </div>
+      {organize !== null && (
+        <div>
+          <h3 className="kk-text-eyebrow text-secondary mb-1">{t('upload.organize.heading')}</h3>
+          <p className="kk-text-caption text-secondary mb-2">
+            {t(stills ? 'upload.organize.hint' : 'upload.organize.hintWithVideo')}
+          </p>
+          <UploadOrganize {...organize} />
+        </div>
+      )}
 
       <UploadQueuePanel items={items} summary={summary} onRemove={onRemove} onRetry={onRetry} />
 

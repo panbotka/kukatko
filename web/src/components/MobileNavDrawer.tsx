@@ -120,9 +120,9 @@ export function MobileNavDrawer({
     {
       id: 'main',
       labelKey: 'nav.sections.main',
-      // The review game and the upload CTA share one gate, so they share one
-      // spread; the leaderboard they used to sandwich now lives in Procházet.
-      items: [...PRIMARY_ITEMS, ...(canCurate ? [REVIEW_ITEM, UPLOAD_ITEM] : [])],
+      // The review game is curation; the upload CTA is open to every signed-in
+      // role. The leaderboard they used to sandwich now lives in Procházet.
+      items: [...PRIMARY_ITEMS, ...(canCurate ? [REVIEW_ITEM] : []), UPLOAD_ITEM],
     },
     ...groups.map((group) => ({ id: group.id, labelKey: group.labelKey, items: group.items })),
   ]

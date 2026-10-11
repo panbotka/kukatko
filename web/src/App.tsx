@@ -141,16 +141,18 @@ export function AppRoutes() {
           {/* The sorting competition standings: read-only aggregate counts, so
               any signed-in role may watch the game — no write gate. */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />
-          {/* Where the phone's share sheet lands. Deliberately outside the
-              editor gate: it has to greet a viewer with an explanation of its
-              own (their shared photos are discarded, not silently dropped),
-              and it forwards an editor to /upload with the staged share. */}
+          {/* Where the phone's share sheet lands: it forwards anybody signed in
+              to /upload with the staged share. */}
           <Route path="/share-target" element={<ShareTargetPage />} />
-          {/* Uploading and cluster review are curation: curators and above. */}
+          {/* Adding photos is open to every signed-in role, viewers included;
+              filing them into albums and labels stays curation (the page
+              offers its picker only to curators). */}
+          <Route path="/upload" element={<UploadPage />} />
+          {/* Cluster review and the other face/collection tools are curation:
+              curators and above. */}
           <Route element={<RequireRole role="curator" />}>
-            <Route path="/upload" element={<UploadPage />} />
             {/* Creating and managing upload links hands upload rights to anybody
-                holding one: curation, like uploading itself. */}
+                holding one, signed in or not: curation. */}
             <Route path="/upload-links" element={<UploadLinksPage />} />
             <Route path="/people/clusters" element={<ClustersPage />} />
             {/* Finding a person among untagged photos assigns faces: curation. */}

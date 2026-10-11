@@ -195,7 +195,7 @@ here.
   **Hledat** `/search` (`nav.searchShort` — the imperative, like the „Nahrát" beside it, where the bar and the
   drawer use the page's own noun „Hledání"; it took the slot **Štítky** `/labels` used to hold, which keeps its
   row in the drawer: on a phone searching had no entry at all, while browsing by label is the rarer errand),
-  **Nahrát** `/upload` (`curateOnly`, gated on `canCurate` — a viewer gets three). Browse / Třídění /
+  **Nahrát** `/upload` (every signed-in role, so the bar always has four). Browse / Třídění /
   Nástroje / Správa deliberately stay in the burger menu: the bar earns its permanent strip only by
   being short enough to hit blind. Each tab is a `NavLink` with a decorative `Icon` above a short label plus the
   same `nav.titles.*` action tooltip as the navbar, an `active` accent-tinted pill matching the top bar's
@@ -2024,8 +2024,8 @@ here.
   **two different empty states** — with active filters „Nenalezeny žádné fotky", whose hint
   **lists the active filters** (`buildChips(..., {facets, includeQuery: true})` joined by ` · `,
   album/label by title, not UID) and offers to clear them with one button,
-  without filters „Zatím tu nejsou žádné fotky" with a CTA to `/upload` (editor/admin; a viewer gets only
-  an explanatory sentence), distinguished via `hasActiveFilters(view)`,
+  without filters „Zatím tu nejsou žádné fotky" with a CTA to `/upload` (every signed-in role — viewers
+  may upload too), distinguished via `hasActiveFilters(view)`,
   `LibraryRedirect` = a shim for the retired route `/library` **and its whole subtree**
   (`/library/*`): `<Navigate replace>` to `/` with the `search`+`hash` preserved literally
   (old bookmarks and links work, `replace` prevents a Back bounce); the subtree catches the addresses
@@ -2561,7 +2561,11 @@ here.
   sets — it is read off the queue: empty → ① *vybrat*, files not all settled → ② *nahrávám*, everything
   settled → ③ *hotovo*. So nothing can be out of sync: picking files puts bytes on the wire and moves the
   page in one step, adding more mid-flight keeps it where it is, removing the last file (or **Nahrát další**,
-  which only empties the queue) walks it back to ①.
+  which only empties the queue) walks it back to ①. **Every signed-in role** reaches the page (it is not
+  behind `RequireRole`); filing is curation, so below `canCurate` the page hands both stages
+  `organize={null}` — no "Alba a štítky" heading, hint or picker — passes `enabled = false` to
+  `useBatchMembership` and never runs the assignment, so ③ is just the outcome sentence plus
+  **Nahrát další** / **Zobrazit v knihovně**.
   ① `UploadStagePick` = the headline, the `DropZone`, and an `UploadActionBar` with **Vyfotit** +
   **Vybrat fotky**. No album fields, no queue, no empty third step explaining itself.
   ② `UploadStageUploading` = the album/label picker (`UploadOrganize`) as the body — the one useful thing
@@ -2611,12 +2615,11 @@ here.
   the cache entries. It then says what it took (`share.notice.staged`, a Czech plural), what it left out
   by name (`share.notice.rejected`) or that the share held nothing usable (`share.notice.empty`),
   `ShareTargetPage` = `/share-target`, where the share sheet lands (see the PWA section below): a junction,
-  not a destination — an editor with a staged share is `Navigate`d (`replace`) to `/upload?share=<id>`,
-  a **viewer** gets a plain explanation that their account may not upload and their files are discarded
-  on the spot (`discardSharedFiles`) rather than left to expire, and **no id at all** — a worker that
+  not a destination — anybody signed in with a staged share (viewers included, since every role may
+  upload) is `Navigate`d (`replace`) to `/upload?share=<id>`, and **no id at all** — a worker that
   could not read the POST, or none installed, so the server answered it with the shell — gets the honest
-  „the files did not come through" plus a link to the picker. It sits inside `RequireAuth` but **outside**
-  the editor gate, so an unauthenticated sharer goes through login and comes back to this exact URL,
+  „the files did not come through" plus a link to the picker. It sits inside `RequireAuth`, so an
+  unauthenticated sharer goes through login and comes back to this exact URL,
   which is what makes a share survive the round trip,
   `ImportPage` = `/import` (maintainer only) the import console, now **read-only**: a `BackgroundWorkLink`
   card pointing at System status for the work an import leaves behind (the page no longer fetches
@@ -4716,7 +4719,7 @@ here.
   (the 96/64 px square and the focus ring),
   `NotFoundPage`,
   `ForbiddenPage` (**no route of its own** — the route guards render it *in place of* the route the
-  current role may not enter, so `/review`, `/duplicates`, `/upload`, `/import`, … no longer bounce a
+  current role may not enter, so `/review`, `/duplicates`, `/upload-links`, `/import`, … no longer bounce a
   viewer to the library without a word. Styled like `NotFoundPage`, its sibling in „this page is not
   for you": a heading, one sentence and a link back to the library. It takes the demanded role
   (`GuardRole` = `Role` without `viewer`, the floor nobody can miss) and prints **its own sentence per
@@ -5342,7 +5345,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `overflow: hidden` therefore cannot clip; the strokes are absolute px, so they don't thin out at ten columns));
   `auth/` (`AuthContext`/`useAuth` + `AuthProvider` = boot `GET /auth/me`,
   exposes `status`/`user`/`role`/`login`/**`loginWithPasskey`**/`logout`/`refresh`/**`canCurate`**
-  (curator+: people and faces, albums and labels, the review game, uploading — `canCurate()` in
+  (curator+: people and faces, albums and labels, the review game, upload links — `canCurate()` in
   `services/auth.ts`, beside `canWrite()` on the same `ROLE_RANK` ladder
   `viewer < curator < editor < admin < maintainer`)/`canWrite` (editor+)/`isAdmin`
   (admin+)/`isMaintainer`/`canImport`/**`pictureVersion`**/**`pictureChanged()`**. The last two are the
@@ -5373,14 +5376,16 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   asked for, with no explanation and without the address — a shared link to `/duplicates` opened the
   library and read as a broken app. `RequireRole`'s prop is a `GuardRole`, so `role="viewer"` — a
   threshold nobody could fail — is a compile error. **The route gates in `App.tsx`**: `role="curator"` for
-  the curation routes — `/review`, `/albums/:uid/faces`, `/upload`, `/people/clusters`, `/faces`, `/expand`,
-  `/recognition`, `/outliers`, `/duplicate-markers`; `role="editor"` for what touches the photos
+  the curation routes — `/review`, `/albums/:uid/faces`, `/upload-links`, `/people/clusters`, `/faces`,
+  `/expand`, `/recognition`, `/outliers`, `/duplicate-markers` (**`/upload` is not among them**: adding
+  photos is open to every signed-in role, only filing them is curation); `role="editor"` for what touches the photos
   themselves — `/duplicates`, `/duplicates/compare`, `/trash`; `admin` and `maintainer` as before.
   **Page- and panel-level controls follow the same line**: whatever creates, renames, deletes or attaches
   albums, labels, people, faces or family relations reads `canCurate` — `AlbumsPage`/`AlbumDetailPage`,
   `LabelsPage`, `PeoplePage`, `SubjectPage` (edit, merge, move faces, cover, candidates, outliers),
   `FamilyStrip`/`FamilyTreePage`, `FacesPanel` and the photo's face boxes, `OrganizePanel`/`PeoplePanel`
-  (both take a `canCurate` prop), `UploadPage`/`ShareTargetPage`, the library's empty-state upload CTA, the
+  (both take a `canCurate` prop), `UploadPage`'s album/label picker (below curator the page passes
+  `organize={null}` to both stages, skips the membership question and never assigns), the
   leaderboard's invitations and the batch bar's membership half; whatever rewrites the photo itself keeps
   `canWrite` — `MetadataPanel` (title, description, **capture date**, credits), `TechnicalDetails`,
   `PhotoLocation` and the map's "add locations" link, `StackStrip`, the image editor, archive/hide
@@ -7867,8 +7872,8 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   over exactly once) and sweeps out any *other* share past the TTL on the way — the only place abandoned
   shares are cleaned up; it never rejects (no Cache Storage, no cache, a foreign entry, a failing quota
   all mean „no files"). `partitionSharedFiles` splits the result through `lib/mediaFiles`, so anything
-  that is not a photo or a video is **named** on the page instead of queued to fail on the server, and
-  `discardSharedFiles(id)` is the viewer's path. The share id rides in the URL, so the login round trip
+  that is not a photo or a video is **named** on the page instead of queued to fail on the server (the
+  old `discardSharedFiles` viewer path is gone: every signed-in role may upload a share). The share id rides in the URL, so the login round trip
   keeps it (`LoginPage` returns to `pathname + search`, not the pathname alone) and the files simply wait
   in the cache. With **no worker installed** the POST reaches Go, whose SPA fallback ignores the method
   (`internal/web`, tested) and answers with the shell — the same page, saying the files did not arrive.

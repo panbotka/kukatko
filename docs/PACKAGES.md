@@ -1175,8 +1175,8 @@ to `## Package map` in `CLAUDE.md`.
   store, when nothing is missing), `MarkThumbnailsPresent` stamps it without moving an existing stamp, and the
   optional `Config.Pending` (`PendingScheduler`, satisfied by `processing.Service`) schedules every `pending`
   step; failures are logged, the result stays `duplicate`;
-  `API` = `NewAPI(svc, requireCurator, rateLimit)` + `RegisterRoutes` mounts `POST /upload` behind
-  `RequireCurator` (curator and above);
+  `API` = `NewAPI(svc, requireAuth, rateLimit)` + `RegisterRoutes` mounts `POST /upload` behind
+  `RequireAuth` (every signed-in role, viewers included; filing into albums/labels stays curation);
   multipart is streamed part-by-part, never the whole file in RAM),
   `internal/sidecar/`
   (**metadata next to the media** — reads what the export wrote *into a file next to* the photo, not into it:
@@ -3620,7 +3620,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   each would otherwise start a session of its own (only the last cookie would survive in the browser). `RegistrationGate`
   implements `auth.UploadLinkGate`: a live link admits `POST /auth/register` without the secret and its
   `Claim` runs `uploadlink.AttributeSessionTx` on the account's transaction, `Committed` reschedules the
-  claimed photos' sidecars. Built by `buildUploadLinkAPI` inside `buildIngest` (it shares the curator
+  claimed photos' sidecars. Built by `buildUploadLinkAPI` inside `buildIngest` (it shares the signed-in
   upload's `ingest.Service`) and `uploadLinkGate` in `cmd/kukatko/auth.go`)),
   `internal/searchhistory/`
   (the DB layer for **each user's recent searches** — the short ordered list of what somebody actually

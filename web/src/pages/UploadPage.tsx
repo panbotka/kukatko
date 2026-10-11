@@ -42,6 +42,9 @@ import { collectSharedFiles, type SharedFiles } from '../pwa/shareTarget'
  * works without any new backend behaviour: `useUploadOrganize` assigns once the
  * batch settles and re-arms whenever the selection changes, so a pick made while
  * the photos upload — or after they have finished — is applied just the same.
+ * Uploading is open to every signed-in role, filing is not: below curator the
+ * picker, the assignment and the membership question are all left out, and the
+ * page is just the upload and its outcome.
  *
  * Three ways in, all of them the same queue: the picker (gallery or camera),
  * pasting anywhere on the page, and `?share=<id>` from the phone's share sheet.
@@ -130,11 +133,19 @@ export function UploadPage() {
   // Editing the selection afterwards puts `assign` back to `idle` (see
   // `useUploadOrganize`), so this also picks up a choice made after the fact
   // instead of dropping it.
+  // Filing is curation: a viewer has no picker, and nothing is ever assigned for
+  // them.
   useEffect(() => {
-    if (isComplete && hasSelection && resolvedUids.length > 0 && assign.status === 'idle') {
+    if (
+      canCurate &&
+      isComplete &&
+      hasSelection &&
+      resolvedUids.length > 0 &&
+      assign.status === 'idle'
+    ) {
       runAssign(resolvedUids)
     }
-  }, [isComplete, hasSelection, resolvedUids, assign.status, runAssign])
+  }, [canCurate, isComplete, hasSelection, resolvedUids, assign.status, runAssign])
 
   // A fresh batch (files added to a finished one, cleared, or a failed upload
   // retried) clears a prior assignment result so the next completion assigns
@@ -161,7 +172,9 @@ export function UploadPage() {
   // Where the batch already is, asked once it settles with nothing chosen: a
   // duplicate may sit in an album since its first upload, and the done stage
   // must not call it "not in any album yet". Duplicates go first, so a batch
-  // longer than one question still asks about the photos most likely filed.
+  // longer than one question still asks about the photos most likely filed. Not
+  // asked at all for a viewer: the answer only feeds the picker's caption, and
+  // the summary is a curator endpoint.
   const membershipUids = useMemo(
     () =>
       ['duplicate', 'created'].flatMap((status) =>
@@ -175,20 +188,24 @@ export function UploadPage() {
   )
   const membership = useBatchMembership(
     membershipUids,
-    isComplete && !hasSelection && assign.status !== 'assigning',
+    canCurate && isComplete && !hasSelection && assign.status !== 'assigning',
   )
 
   // The picker is the same control in both of the stages that show it, so it is
-  // wired once here and handed over whole.
-  const organize: UploadOrganizeProps = {
-    load: organizeLoad,
-    albums,
-    labels,
-    onAlbums: setAlbums,
-    onLabels: setLabels,
-    disabled: assigning,
-    allowCreate: canCurate,
-  }
+  // wired once here and handed over whole. Uploading is open to every signed-in
+  // role but filing photos into albums and labels is curation, so a viewer gets
+  // no picker at all rather than one whose assignment would be refused.
+  const organize: UploadOrganizeProps | null = canCurate
+    ? {
+        load: organizeLoad,
+        albums,
+        labels,
+        onAlbums: setAlbums,
+        onLabels: setLabels,
+        disabled: assigning,
+        allowCreate: true,
+      }
+    : null
 
   return (
     <>

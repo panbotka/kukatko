@@ -403,13 +403,11 @@ export function LibraryPage() {
       {catalogEmpty && (
         <EmptyState
           title={t('library.emptyCatalog.title')}
-          hint={canCurate ? t('library.emptyCatalog.hint') : t('library.emptyCatalog.hintViewer')}
+          hint={t('library.emptyCatalog.hint')}
           action={
-            canCurate ? (
-              <Link to="/upload" className="btn btn-primary">
-                {t('library.emptyCatalog.action')}
-              </Link>
-            ) : undefined
+            <Link to="/upload" className="btn btn-primary">
+              {t('library.emptyCatalog.action')}
+            </Link>
           }
         />
       )}

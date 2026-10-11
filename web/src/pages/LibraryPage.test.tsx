@@ -473,15 +473,15 @@ describe('LibraryPage', () => {
     expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute('href', '/upload')
   })
 
-  it('tells a viewer to wait rather than offering an upload they cannot do', async () => {
+  it('invites a viewer to upload too: every signed-in role may add photos', async () => {
     fetchMock.mockResolvedValue(page([], 0, null))
     renderLibraryAs(viewerAuth)
 
     expect(await screen.findByText('There are no photos yet')).toBeInTheDocument()
     expect(
-      screen.getByText('Once someone uploads the first photos, they will show up here.'),
+      screen.getByText('Upload your first photos and videos to bring the library to life.'),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Upload photos' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute('href', '/upload')
   })
 
   it('leaves saving a view live for a viewer, and says what it does', async () => {

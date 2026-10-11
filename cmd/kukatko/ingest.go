@@ -18,9 +18,10 @@ import (
 
 // buildIngest assembles the upload/ingest subsystem: the configured original
 // store, the thumbnailer, the photo repository, and the HTTP API. The upload
-// route reuses the auth subsystem's curator guard (curators and above) supplied
-// via authAPI. enqueuer is the shared persistent-queue adapter, so a freshly
-// uploaded photo immediately gets its image_embed and face_detect jobs queued.
+// route reuses the auth subsystem's sign-in guard (every signed-in role, viewers
+// included) supplied via authAPI. enqueuer is the shared persistent-queue
+// adapter, so a freshly uploaded photo immediately gets its image_embed and
+// face_detect jobs queued.
 // sidecar queues its metadata-sidecar job too, so a photo is described on disk
 // from the moment it is catalogued rather than only once someone edits it; it is
 // nil when the sidecar export is switched off.
@@ -66,7 +67,7 @@ func buildIngest(
 	// Throttled by client IP, except for a request bearing an API token an admin
 	// marked unlimited — an agent importing a shoebox of scans is the case the
 	// limiter's burst was never meant to stop.
-	ingestAPI := ingest.NewAPI(svc, authAPI.RequireCurator, uploadLimit.MiddlewareExcept(auth.RateLimitExempt))
+	ingestAPI := ingest.NewAPI(svc, authAPI.RequireAuth, uploadLimit.MiddlewareExcept(auth.RateLimitExempt))
 	linkAPI := buildUploadLinkAPI(cfg, db, authAPI, svc, sidecar)
 	return func(r chi.Router) {
 		ingestAPI.RegisterRoutes(r)
@@ -76,7 +77,7 @@ func buildIngest(
 
 // buildUploadLinkAPI assembles the upload links: the curators' management
 // routes and the public page + upload behind a short link. It shares the
-// curator upload's pipeline (svc), so a file sent through a link is ingested,
+// signed-in upload's pipeline (svc), so a file sent through a link is ingested,
 // deduplicated and post-processed exactly like any other upload, and the
 // sidecar scheduler, so a photo filed into a link's albums is described anew.
 func buildUploadLinkAPI(

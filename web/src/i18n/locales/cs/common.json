@@ -187,7 +187,7 @@
       },
       "sharing": {
         "title": "Přidávání fotek z telefonu",
-        "body": "Na Androidu to jde přímo z galerie: vyberte snímky, dejte Sdílet a zvolte Kukátko. Aplikace se otevře na stránce Nahrát s vybranými soubory ve frontě — projdete je, můžete jim rovnou vybrat album a štítky a nahrajete je jako každé jiné. Podmínka je jediná: Kukátko musí být přidané na plochu (nainstalované), jinak se v nabídce sdílení neobjeví.\niPhone tohle zatím neumí — Safari sdílení do webových aplikací nepodporuje a předstírat to nejde. Fotky proto přidáte na stránce Nahrát: tlačítko Vybrat soubory otevře knihovnu fotek, nebo snímek zkopírujete ve Fotkách a tady ho vložíte. Když si Kukátko přidáte na plochu, otevře se rovnou a rychle, i bez signálu.\nNahrávat mohou účty s rolí kurátora a vyšší. Prohlížejícímu účtu Kukátko sdílené fotky nepřidá a řekne proč. Sdílet lze jen fotky a videa; co jimi není, zůstane stranou a stránka to vypíše."
+        "body": "Na Androidu to jde přímo z galerie: vyberte snímky, dejte Sdílet a zvolte Kukátko. Aplikace se otevře na stránce Nahrát s vybranými soubory ve frontě — projdete je, můžete jim rovnou vybrat album a štítky a nahrajete je jako každé jiné. Podmínka je jediná: Kukátko musí být přidané na plochu (nainstalované), jinak se v nabídce sdílení neobjeví.\niPhone tohle zatím neumí — Safari sdílení do webových aplikací nepodporuje a předstírat to nejde. Fotky proto přidáte na stránce Nahrát: tlačítko Vybrat soubory otevře knihovnu fotek, nebo snímek zkopírujete ve Fotkách a tady ho vložíte. Když si Kukátko přidáte na plochu, otevře se rovnou a rychle, i bez signálu.\nNahrávat může každý přihlášený účet, album a štítky ale dávce vybírá jen kurátor a vyšší. Sdílet lze jen fotky a videa; co jimi není, zůstane stranou a stránka to vypíše."
       },
       "import": {
         "title": "Import knihovny",
@@ -196,8 +196,8 @@
       "roles": {
         "title": "Uživatelské role",
         "body": "Co v Kukátku můžete dělat, závisí na vaší roli. Role tvoří žebříček – každá vyšší umí všechno, co ta nižší, a něco navíc:",
-        "viewer": "Prohlíží fotky, alba, štítky, mapu i žebříček. Nic nemění.",
-        "curator": "Navíc třídí obličeje a lidi, spravuje alba i štítky, hraje třídicí hru a nahrává fotky.",
+        "viewer": "Prohlíží fotky, alba, štítky, mapu i žebříček a nahrává nové fotky. Nic dalšího nemění.",
+        "curator": "Navíc třídí obličeje a lidi, spravuje alba i štítky, řadí nahrané fotky do alb a hraje třídicí hru.",
         "editor": "Navíc upravuje fotky a jejich údaje (třeba datum pořízení), slučuje duplicity a přesouvá fotky do koše.",
         "admin": "Navíc spravuje uživatele, vidí auditní log a může trvale mazat.",
         "maintainer": "Navíc spouští importy a údržbu, sleduje stav systému a spravuje zálohy."
@@ -979,7 +979,6 @@
     "emptyCatalog": {
       "title": "Zatím tu nejsou žádné fotky",
       "hint": "Nahrajte první fotky a videa a knihovna ožije.",
-      "hintViewer": "Jakmile někdo nahraje první fotky, uvidíte je tady.",
       "action": "Nahrát fotky"
     },
     "error": {
@@ -3022,10 +3021,6 @@
     "missing": {
       "message": "Sdílené soubory k nám nedorazily. Vyberte je prosím ručně na stránce Nahrát.",
       "action": "Přejít na nahrávání"
-    },
-    "forbidden": {
-      "message": "Váš účet je jen pro prohlížení, fotky do knihovny přidávat nemůže. Sdílené soubory jsme proto zahodili. Chcete-li nahrávat, požádejte správce o roli kurátora.",
-      "action": "Zpět do knihovny"
     }
   },
   "sharePhotos": {

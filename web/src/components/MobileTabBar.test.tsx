@@ -160,14 +160,14 @@ describe('MobileTabBar on a phone', () => {
     expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
   })
 
-  it('hides the curation-gated Upload tab from a viewer', () => {
+  it('gives a viewer the Upload tab too: all four tabs for every role', () => {
     renderBar('viewer')
 
-    expect(screen.queryByRole('link', { name: 'Upload' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
     expect(
       screen.getByRole('navigation', { name: 'Primary navigation' }).querySelectorAll('a'),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
   })
 
   it('publishes its height so the rest of the shell can keep clear of it', () => {

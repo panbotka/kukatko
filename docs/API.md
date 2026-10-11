@@ -314,7 +314,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `oauth-authorization-server` or `openid-configuration` metadata has to be told "nothing here". Answering
   `200` with `index.html` made such a client parse a web page as JSON and fail incomprehensibly instead of
   concluding that this server has no OAuth. Ordinary client-side routes still reach the SPA unchanged.
-- **Upload API (`/api/v1`):** `POST /upload` (curator and above via `RequireCurator`, **then** the per-IP
+- **Upload API (`/api/v1`):** `POST /upload` (every signed-in role, viewers included, via `RequireAuth`, **then** the per-IP
   `ratelimit.upload` throttle — the limiter moved *behind* the auth guard so it can see who the caller is and
   let an `unlimited` API token through; the bucket key is still the client IP for everyone else, and an
   unauthenticated flood now pays one indexed credential lookup before its 401) — `multipart/form-data`
@@ -1882,7 +1882,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   with any upload; an anonymous one is identified by the `kukatko_upload_session` cookie (HttpOnly,
   SameSite=Strict, path `/api/v1`, session-scoped; minted here only if the page's GET did not) whose hash
   marks their photos for `POST /auth/register` with
-  `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the curator upload
+  `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the signed-in upload
   (`buildIngest` → `buildUploadLinkAPI` in `cmd/kukatko/ingest.go`).
 - **Search History API (`/api/v1`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
   `RequireAuth`):** each user's **recent searches** — the short ordered list the search box offers back (whole

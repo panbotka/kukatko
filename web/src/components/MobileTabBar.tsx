@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router-dom'
 
-import { useAuth } from '../auth/AuthContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 
@@ -15,8 +14,6 @@ interface TabEntry {
   labelKey: ParseKeys
   titleKey: ParseKeys
   icon: IconName
-  /** Curators and above only — a viewer simply gets one tab fewer. */
-  curateOnly?: boolean
 }
 
 /**
@@ -26,8 +23,8 @@ interface TabEntry {
  * earns its permanent strip of a phone screen only by being short enough to hit
  * blind.
  *
- * Four tabs at most, so a 320px screen still gives each one a comfortable finger
- * target and an unabbreviated label; Upload drops out for a viewer, leaving three.
+ * Four tabs, for every signed-in role, so a 320px screen still gives each one a
+ * comfortable finger target and an unabbreviated label.
  * The library is the homepage, so its tab points at the site root.
  *
  * **Search holds the third slot, Štítky does not.** On a phone the only way to
@@ -47,7 +44,6 @@ const TABS: readonly TabEntry[] = [
     labelKey: 'nav.upload',
     titleKey: 'nav.titles.upload',
     icon: 'cloud-arrow-up',
-    curateOnly: true,
   },
 ]
 
@@ -77,7 +73,6 @@ const TABS: readonly TabEntry[] = [
  */
 export function MobileTabBar() {
   const { t } = useTranslation()
-  const { canCurate } = useAuth()
   const drawerNav = useIsNavDrawerViewport()
   const barRef = useRef<HTMLElement>(null)
 
@@ -113,11 +108,9 @@ export function MobileTabBar() {
     return null
   }
 
-  const tabs = TABS.filter((tab) => tab.curateOnly !== true || canCurate)
-
   return (
     <nav ref={barRef} className="kk-tabbar d-lg-none" aria-label={t('nav.tabBar')}>
-      {tabs.map((tab) => (
+      {TABS.map((tab) => (
         <NavLink
           key={tab.to}
           to={tab.to}
