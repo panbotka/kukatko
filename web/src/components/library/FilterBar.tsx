@@ -353,8 +353,9 @@ export function FilterBar<T extends LibraryView>({
   // copy of it — plus, at its foot, the way on to ranked search, offered only
   // while semantics are actually available, since the link's own label promises
   // them.
-  const help = (
+  const renderHelp = (className?: string) => (
     <SearchQueryHelp
+      className={className}
       fullSearchHref={semanticSearch && searchHref !== undefined ? searchHref : undefined}
     />
   )
@@ -551,13 +552,11 @@ export function FilterBar<T extends LibraryView>({
                   }
                 }}
               />
-              {/* On a phone the `?` rides inside the field's end, so the row
+              {/* On a phone the `?` is the field's joined end segment, so the row
                   spends its width on the field rather than on a third control. */}
-              {narrow && (
-                <InputGroup.Text className="kukatko-filter-search-help">{help}</InputGroup.Text>
-              )}
+              {narrow && renderHelp('kukatko-filter-search-help')}
             </InputGroup>
-            {!narrow && help}
+            {!narrow && renderHelp()}
           </>
         )}
 

@@ -64,13 +64,23 @@ describe('SearchQueryHelp', () => {
     expect(dialog.querySelector('.modal-footer')).toBeNull()
   })
 
-  it('gives the ? trigger a finger-sized hit area without growing on desktop', () => {
-    // Icon-only and `p-0`, so on touch its width would otherwise be the glyph.
-    // The touch-scoped helper squares it up to 44px on coarse pointers only.
+  it('renders the ? trigger as the standard icon button', () => {
+    // The app's icon-only button: a quiet `outline-secondary` `btn-sm` (~32px),
+    // squared up to 44px on coarse pointers by the touch-scoped helper — no
+    // longer a bare 16px link glyph in the muted grey.
     renderHelp()
     const trigger = screen.getByRole('button', { name: 'Search query language help' })
-    expect(trigger).toHaveClass('kukatko-tap-target-touch')
+    expect(trigger).toHaveClass('btn-outline-secondary', 'btn-sm', 'kukatko-tap-target-touch')
+    expect(trigger).not.toHaveClass('btn-link')
+    expect(trigger).toHaveAttribute('title', 'Search query language help')
     expect(trigger.querySelector('.bi-question-circle')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('names the ? trigger in Czech by default', async () => {
+    await i18n.changeLanguage('cs')
+    renderHelp()
+    const trigger = screen.getByRole('button', { name: 'Nápověda k vyhledávacímu jazyku' })
+    expect(trigger).toHaveAttribute('title', 'Nápověda k vyhledávacímu jazyku')
   })
 
   it('keeps the tables inside the modal on a phone', async () => {

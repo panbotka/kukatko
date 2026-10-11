@@ -877,6 +877,9 @@ describe('FilterBar narrow viewport (phone)', () => {
     expect(field).toHaveAttribute('placeholder', 'Search the library…')
     const help = screen.getByRole('button', { name: 'Search query language help' })
     expect(help.closest('.kukatko-filter-search')).toContainElement(field)
+    // A joined segment of the field's group, not a button boxed in an adornment.
+    expect(help.parentElement).toHaveClass('kukatko-filter-search')
+    expect(help).toHaveClass('btn-outline-secondary', 'kukatko-filter-search-help')
   })
 
   it('shows the active query as chips, one per filter term plus the free text', () => {

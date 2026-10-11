@@ -43,6 +43,22 @@ describe('GridDensityControl', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
   })
 
+  it('renders the readout as a plain segment, not a highlighted toggle', () => {
+    // A filled chip between two outline steppers read as an *active* toggle: the
+    // readout wears the steppers' own quiet surface, never the filled/accent one.
+    window.localStorage.setItem(STORAGE_KEY, '4')
+    const { container } = renderControl()
+    const value = container.querySelector('.kukatko-grid-density-value')
+    expect(value).toHaveClass('btn-outline-secondary')
+    expect(value).not.toHaveClass('btn-secondary')
+    expect(value).not.toHaveClass('btn-primary')
+    expect(value).not.toHaveClass('active')
+    // Still inert and still showing its grid glyph.
+    expect(value?.tagName).toBe('SPAN')
+    expect(value).toHaveStyle({ pointerEvents: 'none' })
+    expect(value?.querySelector('.bi-grid-3x3-gap-fill')).not.toBeNull()
+  })
+
   it('offers only fewer/more steps — no auto or reset control', () => {
     window.localStorage.setItem(STORAGE_KEY, '5')
     renderControl()

@@ -1382,7 +1382,8 @@ here.
   in the phone drawer, the search note) therefore names both halves („Filtrovat — text, nebo filtr jako `year:1965` či `person:Jarmila`" —
   it opens on the same verb as the field's own label „Filtrovat v knihovně", so the two never disagree about
   what the box does; „Hledat" is what the *navigation* and `/search` say), and
-  beside the field (inside it, on a phone) sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
+  beside the field (on a phone the field's joined end segment, `className="kukatko-filter-search-help"`) sits
+  **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
   explanation, never a second copy to drift (`showSearch={false}` hides field and `?` together, so `/search`
   doesn't end up with two triggers). What `/search` adds on top is **ranking**, which is what
   **the link to `/search`** promises — at the foot of that `?` dialog (`SearchQueryHelp` `fullSearchHref`, a
@@ -1481,7 +1482,9 @@ here.
   `GridDensityControl` (a compact zoom stepper **Dlaždic na řádek**: `−` / a middle chip / `+`;
   `−` steps toward **one photo per row** (fewer, larger tiles) down to a floor of 1, `+` pins more
   columns up to 10, the middle chip is **only a read-only indicator** of the current column count (1…10) —
-  no „auto" mode and no reset button (`pointer-events: none`, it is not a button); it steps along
+  no „auto" mode and no reset button (`pointer-events: none`, it is not a button); it wears the steppers'
+  own `btn-outline-secondary` surface in the body colour, never a filled one, which read as an active
+  toggle (UI/UX review 2026-10-11 #28); it steps along
   the `stepDensity` ladder within 1…10; icons via `Icon` (`dash-lg`/`grid-3x3-gap-fill`/`plus-lg`),
   `−` is disabled at 1 (one photo per row), `+` at the **viewport's ceiling** (10 on a desktop, but 4 below
   768px and 3 below 576px, see `useGridDensity` `maxColumns`) — the chip reads out the count **in effect**,
@@ -2620,7 +2623,9 @@ here.
   accepts the first **completion** untouched, skipping the recent searches above it (a whole query is not
   something to complete a word into; with only history on offer Tab leaves the field as usual), while a
   highlight the reader put on a history row is honoured. Beside the label sits `SearchQueryHelp`
-  (a `?` button → a modal holding
+  (a `?` button — the standard icon button, `outline-secondary` `btn-sm` ~32px, 44px on touch via
+  `kukatko-tap-target-touch`, tooltip + label „Nápověda k vyhledávacímu jazyku", an optional `className` to
+  seat it in an input group; once a bare 16px muted `link` glyph, UI/UX review 2026-10-11 #29 — → a modal holding
   **`SearchQueryReference`** — the reference lives in its own component because `/help`'s Search chapter
   renders the same tables inline, so the syntax has one source of truth; operators and filters
   with examples, rows from `QUERY_HELP_ROWS`/`QUERY_HELP_OPERATORS`, texts `search.help.*` cs+en.

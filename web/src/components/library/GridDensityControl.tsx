@@ -25,7 +25,7 @@ export interface GridDensityControlProps {
  * Picks how many tiles sit side by side in a grid, as a compact zoom stepper:
  * `−` pins fewer, larger tiles down to one per row (where it disables), `+` pins
  * more columns (smaller tiles) up to the maximum (where it disables). The middle
- * chip is a read-only display of the current column count — there is no "auto"
+ * segment is a plain, read-only display of the current column count — there is no "auto"
  * mode any more, so nothing to reset to. The preference lives in localStorage, so
  * it is per device and survives a reload, and it is deliberately not URL state —
  * see `hooks/useGridDensity`.
@@ -62,9 +62,12 @@ export function GridDensityControl({ scope = LIBRARY_GRID_SCOPE }: GridDensityCo
       </Button>
 
       {/* A read-only readout of the current count, styled to sit in the group.
-          `pointer-events: none` keeps it inert — it is not a button. */}
+          `pointer-events: none` keeps it inert — it is not a button. It wears the
+          steppers' own outline surface rather than a filled one: a filled chip
+          between two outline buttons reads as an *active toggle*, which this is
+          not. */}
       <span
-        className="btn btn-secondary kukatko-grid-density-value"
+        className="btn btn-outline-secondary kukatko-grid-density-value"
         style={{ pointerEvents: 'none' }}
         title={t('library.density.columns', { n: density })}
       >

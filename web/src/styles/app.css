@@ -1711,10 +1711,11 @@ body {
   }
 }
 
-/* The query-language `?` as the field's end adornment on a phone: the same
-   quiet surface as the leading search glyph, so the field reads as one control.
-   The button's own 44px touch target (`kukatko-tap-target-touch`) overflows the
-   adornment rather than widening it. */
+/* The query-language `?` as the field's joined end segment on a phone: the
+   input group stretches it to the field's height, and on a coarse pointer
+   `kukatko-tap-target-touch` makes it the 44px-wide finger target. The padding
+   only keeps a fine-pointer phone's segment from growing wider than its glyph
+   needs. */
 .kukatko-filter-search-help {
   padding-inline: var(--kk-space-2);
 }
@@ -1760,9 +1761,11 @@ body {
   }
 }
 
-/* The density stepper's centre chip shows the current column count. A stable
+/* The density stepper's centre segment shows the current column count. A stable
    min-width plus tabular figures stop the stepper — and the controls beside it —
-   from twitching sideways as the value changes. */
+   from twitching sideways as the value changes. Its surface is the steppers' own
+   `btn-outline-secondary` (body-colour label, see `bootstrapBridge.css`), never a
+   filled chip, which would read as an active toggle. */
 .kukatko-grid-density-value {
   min-width: 3rem;
   font-variant-numeric: tabular-nums;

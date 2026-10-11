@@ -9,7 +9,7 @@ import Modal from '../Modal'
 import { SearchQueryReference } from './SearchQueryReference'
 
 /**
- * The query-language help: a small `?` button next to the search box and a
+ * The query-language help: a `?` icon button next to the search box and a
  * modal holding {@link SearchQueryReference} — every filter with one worked
  * example, plus the operators (AND/OR/NOT, ranges, quoting, wildcards). A query
  * language nobody knows about is a query language nobody uses — this is its
@@ -24,7 +24,14 @@ import { SearchQueryReference } from './SearchQueryReference'
  * goes looking. Omit it (the search page, which *is* that destination) and the
  * dialog has no footer.
  */
-export function SearchQueryHelp({ fullSearchHref }: { fullSearchHref?: string }) {
+export function SearchQueryHelp({
+  fullSearchHref,
+  className,
+}: {
+  fullSearchHref?: string
+  /** Extra classes for the `?` trigger, e.g. to seat it inside an input group. */
+  className?: string
+}) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
 
@@ -34,13 +41,21 @@ export function SearchQueryHelp({ fullSearchHref }: { fullSearchHref?: string })
 
   return (
     <>
-      {/* The glyph stays small, but on a finger the button still needs a real
-          target: `kukatko-tap-target-touch` gives it a 44px square on coarse
-          pointers only, leaving the desktop `?` as compact as before. */}
+      {/* The app's standard icon button — the same quiet `outline-secondary`
+          `btn-sm` square (~32px) the edit panel's rotate pair and the other
+          icon-only actions wear, lifted to a 44px square on coarse pointers by
+          `kukatko-tap-target-touch`. It used to be a bare 16px `link` glyph in
+          the muted grey, easy to miss right where the query language needs
+          finding. */}
       <Button
-        variant="link"
+        variant="outline-secondary"
         size="sm"
-        className="p-0 text-secondary d-inline-flex align-items-center justify-content-center kukatko-tap-target-touch"
+        className={[
+          'd-inline-flex align-items-center justify-content-center kukatko-tap-target-touch',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         aria-label={t('search.help.open')}
         title={t('search.help.open')}
         onClick={() => {
