@@ -59,8 +59,9 @@
 }
 
 /* What the game asks about: people, labels or both. It rides in the header row
-   wherever it fits — the labels themselves are hidden below `md`, so from a
-   tablet down it is three glyphs. */
+   wherever it fits — the full labels are hidden below `md`, so between `sm` and
+   `md` it is three glyphs; below `sm` it gets a line of its own and each glyph
+   a short word again. */
 .review-game__source {
   flex: 0 0 auto;
 }

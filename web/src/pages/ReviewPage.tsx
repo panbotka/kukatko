@@ -85,6 +85,16 @@ const SOURCE_LABEL_KEYS = {
   labels: 'review.source.labels',
 } as const
 
+/**
+ * The phone-width label per source: a word short enough that the three of
+ * them, glyph included, share one line down to a 320 px screen.
+ */
+const SOURCE_SHORT_LABEL_KEYS = {
+  both: 'review.source.short.both',
+  people: 'review.source.short.people',
+  labels: 'review.source.short.labels',
+} as const
+
 /** The glyph per source; decorative, the label carries the meaning. */
 const SOURCE_ICONS: Record<ReviewSource, IconName> = {
   both: 'ui-checks',
@@ -129,9 +139,9 @@ function SourceToggle({
             variant="outline-secondary"
             active={isActive}
             aria-pressed={isActive}
-            // The label is the button's only text on a phone (it is hidden
-            // below `md` to keep the row on one line), so it has to be the
-            // accessible name as well, not just decoration next to the glyph.
+            // The visible words change with the width (a short one on a phone,
+            // none between `sm` and `md`, the full one above), so the full
+            // label is the accessible name and the tooltip at every width.
             aria-label={label}
             title={label}
             data-testid={`review-source-${candidate}`}
@@ -141,6 +151,12 @@ function SourceToggle({
             }}
           >
             <Icon name={SOURCE_ICONS[candidate]} />
+            {/* Below `sm` the toggle has a line of its own, room for a short
+                word; between `sm` and `md` it shares the header row, which
+                only three glyphs fit. */}
+            <span className="d-sm-none text-nowrap" data-testid="review-source-short">
+              {t(SOURCE_SHORT_LABEL_KEYS[candidate])}
+            </span>
             <span className="d-none d-md-inline">{label}</span>
           </Button>
         )

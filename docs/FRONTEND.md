@@ -4710,8 +4710,10 @@ here.
   the game that clears itself after `MILESTONE_MS = 2600`, `aria-live="polite"`, **no sound**, nothing to
   dismiss and nothing that moves the card underneath;
   **the player chooses what is asked about** — `SourceToggle`, a three-state `ButtonGroup` **Oboje · Lidé ·
-  Štítky** in the header (glyph + label, the label hidden below `md`, so on a tablet down it is three glyphs
-  with an `aria-label`) whose state lives in the **`?source=` query param** (`parseSource` degrades an unknown
+  Štítky** in the header (glyph + label; the full label is hidden below `md`, so between `sm` and `md` it is
+  three glyphs, and below `sm` — where the toggle has its own line — each glyph carries a short word
+  `review.source.short.*` **Vše · Lidé · Štítky**; the full label is the `aria-label` and the `title` tooltip
+  at every width) whose state lives in the **`?source=` query param** (`parseSource` degrades an unknown
   value to `both`), written with `{replace: true}`: `Esc` leaves via `navigate(-1)`, so pushed toggle entries
   would turn "leave" into "switch back". Below `sm` the toggle takes **a line of its own** in the header
   (`review.css`: `flex-wrap` + `order: 4` + `flex: 1 0 100%`, and the counter's basis is `0` so a wrapping

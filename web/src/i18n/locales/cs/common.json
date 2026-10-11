@@ -4110,7 +4110,12 @@
       "label": "Na co se ptát",
       "both": "Oboje",
       "people": "Lidé",
-      "labels": "Štítky"
+      "labels": "Štítky",
+      "short": {
+        "both": "Vše",
+        "people": "Lidé",
+        "labels": "Štítky"
+      }
     },
     "progress": {
       "answered_one": "{{count}} zodpovězená",

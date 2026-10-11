@@ -3930,7 +3930,12 @@
       "label": "What to ask about",
       "both": "Both",
       "people": "People",
-      "labels": "Labels"
+      "labels": "Labels",
+      "short": {
+        "both": "All",
+        "people": "People",
+        "labels": "Labels"
+      }
     },
     "progress": {
       "answered_one": "{{count}} answered",

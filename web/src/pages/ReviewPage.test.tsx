@@ -661,6 +661,31 @@ describe('ReviewPage', () => {
     expectChosenToggle(sources, screen.getByTestId('review-source-labels'))
   })
 
+  it.each([
+    ['cs', ['Vše', 'Lidé', 'Štítky'], ['Oboje', 'Lidé', 'Štítky']],
+    ['en', ['All', 'People', 'Labels'], ['Both', 'People', 'Labels']],
+  ])('names every source in words on a phone (%s)', async (lang, short, full) => {
+    await i18n.changeLanguage(lang)
+    queueMock.mockResolvedValue(makeQueue([labelQuestion('q1')]))
+    renderPage()
+
+    await screen.findByTestId('review-question')
+    ;(['both', 'people', 'labels'] as const).forEach((s, i) => {
+      const button = screen.getByTestId(`review-source-${s}`)
+      // jsdom applies no breakpoints, so the classes are the contract: the short
+      // word is shown exactly where the toggle has a line of its own (below
+      // `sm`), the full one only from `md`.
+      const word = within(button).getByTestId('review-source-short')
+      expect(word).toHaveTextContent(short[i])
+      expect(word).toHaveClass('d-sm-none')
+      expect(word).not.toHaveClass('d-none')
+      // Whatever the width shows, the full label is the name and the tooltip.
+      expect(button).toHaveAccessibleName(full[i])
+      expect(button).toHaveAttribute('title', full[i])
+      expect(within(button).getByText(full[i], { selector: '.d-none.d-md-inline' })).toBeTruthy()
+    })
+  })
+
   it('rebuilds the game from the chosen source and puts the choice in the URL', async () => {
     const user = userEvent.setup()
     // The backend echoes the source it built for; the questions differ per
