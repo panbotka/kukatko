@@ -619,6 +619,29 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(screen.queryByRole('group', { name: 'Actions' })).not.toBeInTheDocument()
   })
 
+  it('gives the stars and the marks a hit area and a tooltip naming their key', async () => {
+    // The glyphs stay small; `kk-viewer__target` is what grows them to a 36px
+    // (mouse) / 44px (finger) target, and the tooltip is where a reader learns
+    // that the digits and p/r/v do the same.
+    const { container } = renderPage()
+    await screen.findByRole('heading', { name: 'Beach' })
+
+    const bar = actionBar(container)
+    const star = within(bar).getByRole('button', { name: 'Rate 3 of 5' })
+    expect(star).toHaveClass('kk-viewer__target')
+    expect(star).toHaveAttribute('title', 'Rate 3 of 5 (3)')
+    const marks = [
+      ['Look at later', 'Look at later (v)'],
+      ['Pick', 'Pick (p)'],
+      ['Reject', 'Reject (r)'],
+    ] as const
+    for (const [name, firstLine] of marks) {
+      const mark = within(bar).getByRole('button', { name })
+      expect(mark).toHaveClass('kk-viewer__target')
+      expect(mark.getAttribute('title')?.split('\n')[0]).toBe(firstLine)
+    }
+  })
+
   /**
    * The bar used to be fourteen identical round glyphs in one row, which says
    * nothing about which of them change the library and which only change the

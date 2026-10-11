@@ -450,6 +450,48 @@
   background: color-mix(in srgb, var(--kk-on-photo) 18%, transparent);
 }
 
+/* The stars and the three marks: glyphs of 18–22px that used to be their own
+   hit area (measured 22×22 and 26×26 beside a 44px heart). The target grows,
+   the glyph does not — a bigger star would only shout — so each one is a 36px
+   square for a mouse and the 44px finger floor on a coarse pointer, the glyph
+   centred in it. The phone dock lifts its copies to 44px with its own rules,
+   which are more specific and win, so its single-row layout is untouched. */
+.kk-viewer__target {
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  border-radius: var(--kk-radius-pill);
+}
+
+@media (pointer: coarse) {
+  .kk-viewer__target {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+/* Two neighbouring targets in the top bar sit at least 8px apart, so a star is
+   not mistaken for the next one and a mark for its neighbour. The dock keeps its
+   own spacing: there the stars yield width rather than wrap (see below), and the
+   marks stay at the 4px they have always had. */
+.kk-viewer__marks {
+  gap: var(--kk-space-1);
+}
+
+.kk-viewer__actions .kk-viewer__stars,
+.kk-viewer__actions .kk-viewer__marks {
+  gap: var(--kk-space-2);
+}
+
+/* The chosen mark is already told apart twice — its own colour and the filled
+   glyph against an outline — and the ring makes it a third time, by shape: a
+   reader who cannot tell the green from the grey still sees which of the three
+   is pressed. It steps aside for the focus ring, which must never be hidden. */
+.kk-viewer__marks .kk-viewer__target[aria-pressed='true']:not(:focus-visible) {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, currentColor 55%, transparent);
+}
+
 /* Round control buttons on the stage (close, prev/next, chrome toggles). Solid
    enough to read over any photo, with a real focus ring from the tokens. */
 .kk-viewer__btn {

@@ -4,6 +4,7 @@ import { I18nextProvider } from 'react-i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
+import { ratingHotkey } from '../../lib/ratingHotkeys'
 import { type RatingFlag } from '../../services/photos'
 
 import { FlagControl } from './FlagControl'
@@ -47,6 +48,70 @@ describe('FlagControl', () => {
       // A sentence about the mark, not a second copy of the button's name.
       expect(title).toMatch(/\.$/)
       expect(title).not.toBe(name)
+    }
+  })
+
+  it('names each mark and its key on the tooltip’s first line', () => {
+    renderControl('none')
+    const firstLine = (name: string) =>
+      screen.getByRole('button', { name }).getAttribute('title')?.split('\n')[0]
+    expect(firstLine('Look at later')).toBe('Look at later (v)')
+    expect(firstLine('Pick')).toBe('Pick (p)')
+    expect(firstLine('Reject')).toBe('Reject (r)')
+  })
+
+  it('names the key that really presses the mark', () => {
+    // The key in the tooltip and the key the page listens for come from two
+    // places; this is what keeps them from drifting apart.
+    renderControl('none')
+    const marks = [
+      ['Look at later', 'eye'],
+      ['Pick', 'pick'],
+      ['Reject', 'reject'],
+    ] as const
+    for (const [name, value] of marks) {
+      const title = screen.getByRole('button', { name }).getAttribute('title') ?? ''
+      const key = /\((.)\)/.exec(title)?.[1] ?? ''
+      expect(ratingHotkey(key)).toEqual({ kind: 'flag', value })
+    }
+  })
+
+  it('names the marks and their keys in Czech', async () => {
+    await i18n.changeLanguage('cs')
+    renderControl('none')
+    const firstLine = (name: string) =>
+      screen.getByRole('button', { name }).getAttribute('title')?.split('\n')[0]
+    expect(firstLine('Prohlédnout později')).toBe('Prohlédnout později (v)')
+    expect(firstLine('Vybrat')).toBe('Vybrat (p)')
+    expect(firstLine('Zamítnout')).toBe('Zamítnout (r)')
+  })
+
+  it('puts the host’s hit-area class on every mark, and lets the host space them', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <FlagControl
+          flag="none"
+          onToggle={vi.fn()}
+          className="kk-viewer__marks"
+          buttonClassName="kk-viewer__target"
+        />
+      </I18nextProvider>,
+    )
+    for (const name of ['Look at later', 'Pick', 'Reject']) {
+      expect(screen.getByRole('button', { name })).toHaveClass('kk-viewer__target')
+    }
+    // The host's class carries the spacing; Bootstrap's `!important` gap would
+    // otherwise beat whatever the host's stylesheet sets.
+    const group = screen.getByRole('group', { name: 'Personal mark' })
+    expect(group).toHaveClass('kk-viewer__marks')
+    expect(group).not.toHaveClass('gap-1')
+  })
+
+  it('tells the chosen mark apart by its glyph, not by colour alone', () => {
+    const { container } = renderControl('pick')
+    expect(container.querySelector('[aria-pressed="true"] .bi-hand-thumbs-up-fill')).not.toBeNull()
+    for (const outline of ['.bi-eye', '.bi-hand-thumbs-down']) {
+      expect(container.querySelector(`[aria-pressed="false"] ${outline}`)).not.toBeNull()
     }
   })
 

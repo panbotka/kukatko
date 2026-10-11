@@ -16,6 +16,18 @@ export interface RatingStarsProps {
   size?: number
   /** Extra classes on the wrapping group (e.g. positioning). */
   className?: string
+  /**
+   * Extra classes on every star button — the hook a host uses to give the stars
+   * a hit area larger than the glyph (the viewer's `kk-viewer__target`).
+   */
+  buttonClassName?: string
+  /**
+   * Whether each star's tooltip names its key (`3` for three stars). On by
+   * default: the digits rate wherever these stars are shown. A host turns it off
+   * while the digits belong to something else (a video player's seek keys), so
+   * the tooltip never promises a key that does not rate.
+   */
+  shortcutHints?: boolean
 }
 
 /** A filled or outlined star glyph. */
@@ -50,6 +62,8 @@ export function RatingStars({
   disabled = false,
   size = 18,
   className,
+  buttonClassName,
+  shortcutHints = true,
 }: RatingStarsProps) {
   const { t } = useTranslation()
   const stars = [1, 2, 3, 4, 5]
@@ -83,22 +97,26 @@ export function RatingStars({
       role="group"
       aria-label={t('rating.label')}
     >
-      {stars.map((value) => (
-        <button
-          key={value}
-          type="button"
-          aria-pressed={value <= rating}
-          aria-label={t('rating.rate', { n: value })}
-          title={t('rating.rate', { n: value })}
-          disabled={disabled}
-          onClick={handleClick(value)}
-          className={`btn btn-sm p-0 border-0 lh-1 bg-transparent d-inline-flex ${
-            value <= rating ? 'text-warning' : 'text-secondary'
-          }`}
-        >
-          <StarIcon filled={value <= rating} size={size} />
-        </button>
-      ))}
+      {stars.map((value) => {
+        const label = t('rating.rate', { n: value })
+        return (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={value <= rating}
+            aria-label={label}
+            // The digit key sets exactly this star, so the tooltip teaches it.
+            title={shortcutHints ? t('rating.withShortcut', { label, key: String(value) }) : label}
+            disabled={disabled}
+            onClick={handleClick(value)}
+            className={`btn btn-sm p-0 border-0 lh-1 bg-transparent d-inline-flex ${
+              value <= rating ? 'text-warning' : 'text-secondary'
+            } ${buttonClassName ?? ''}`}
+          >
+            <StarIcon filled={value <= rating} size={size} />
+          </button>
+        )
+      })}
     </span>
   )
 }

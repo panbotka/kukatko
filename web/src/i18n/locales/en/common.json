@@ -1643,6 +1643,7 @@
     "label": "Rating",
     "value": "Rated {{n}} of 5",
     "rate": "Rate {{n}} of 5",
+    "withShortcut": "{{label}} ({{key}})",
     "flag": "Personal mark",
     "pick": "Pick",
     "pickHint": "Pick this for further work — an album, edits or print.",

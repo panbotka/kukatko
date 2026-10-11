@@ -20,8 +20,17 @@ export interface FlagControlProps {
   disabled?: boolean
   /** Glyph size in pixels. Defaults to 16. */
   size?: number
-  /** Extra classes on the wrapping group. */
+  /**
+   * Extra classes on the wrapping group. They carry the group's spacing too: a
+   * host that passes its own class sets the gap between the buttons itself, and
+   * without one the buttons sit Bootstrap's `gap-1` apart.
+   */
   className?: string
+  /**
+   * Extra classes on every button — the hook a host uses to give the marks a hit
+   * area larger than the glyph (the viewer's `kk-viewer__target`).
+   */
+  buttonClassName?: string
 }
 
 /** The selectable personal-marking states, in display order (eye, pick, reject). */
@@ -29,14 +38,16 @@ type FlagValue = 'eye' | 'pick' | 'reject'
 
 /**
  * One personal-marking state's presentation: the i18n keys for its name and its
- * one-sentence explanation, the outline and filled bootstrap-icons glyphs, and
- * the Bootstrap text-colour utility applied when the state is active.
+ * one-sentence explanation, the key that presses it (`lib/ratingHotkeys`), the
+ * outline and filled bootstrap-icons glyphs, and the Bootstrap text-colour
+ * utility applied when the state is active.
  */
 interface FlagSpec {
   readonly value: FlagValue
   // Literal i18n keys (not a wide `string`) so the typed `t()` accepts them.
   readonly labelKey: 'rating.eye' | 'rating.pick' | 'rating.reject'
   readonly hintKey: 'rating.eyeHint' | 'rating.pickHint' | 'rating.rejectHint'
+  readonly shortcut: 'v' | 'p' | 'r'
   readonly icon: IconName
   readonly iconActive: IconName
   readonly activeClass: string
@@ -52,6 +63,7 @@ const FLAG_SPECS: readonly FlagSpec[] = [
     value: 'eye',
     labelKey: 'rating.eye',
     hintKey: 'rating.eyeHint',
+    shortcut: 'v',
     icon: 'eye',
     iconActive: 'eye-fill',
     activeClass: 'text-info',
@@ -60,6 +72,7 @@ const FLAG_SPECS: readonly FlagSpec[] = [
     value: 'pick',
     labelKey: 'rating.pick',
     hintKey: 'rating.pickHint',
+    shortcut: 'p',
     icon: 'hand-thumbs-up',
     iconActive: 'hand-thumbs-up-fill',
     activeClass: 'text-success',
@@ -68,6 +81,7 @@ const FLAG_SPECS: readonly FlagSpec[] = [
     value: 'reject',
     labelKey: 'rating.reject',
     hintKey: 'rating.rejectHint',
+    shortcut: 'r',
     icon: 'hand-thumbs-down',
     iconActive: 'hand-thumbs-down-fill',
     activeClass: 'text-danger',
@@ -91,6 +105,7 @@ export function FlagControl({
   disabled = false,
   size = 16,
   className,
+  buttonClassName,
 }: FlagControlProps) {
   const { t } = useTranslation()
 
@@ -103,7 +118,7 @@ export function FlagControl({
 
   return (
     <span
-      className={`d-inline-flex align-items-center gap-1 ${className ?? ''}`}
+      className={`d-inline-flex align-items-center ${className ?? 'gap-1'}`}
       role="group"
       aria-label={t('rating.flag')}
     >
@@ -111,20 +126,22 @@ export function FlagControl({
         const active = flag === spec.value
         const label = t(spec.labelKey)
         // The accessible name stays short (it is announced on every button),
-        // the tooltip carries the sentence that explains what the mark is for.
+        // the tooltip carries the rest: the name with its key on the first line
+        // — the glyphs alone say neither — and under it the sentence that
+        // explains what the mark is for.
         return (
           <button
             key={spec.value}
             type="button"
             aria-pressed={active}
             aria-label={label}
-            title={t(spec.hintKey)}
+            title={`${t('rating.withShortcut', { label, key: spec.shortcut })}\n${t(spec.hintKey)}`}
             disabled={disabled || onToggle === undefined}
             onClick={press(spec.value)}
             style={{ fontSize: size }}
             className={`btn btn-sm p-1 lh-1 border-0 bg-transparent d-inline-flex ${
               active ? spec.activeClass : 'text-secondary'
-            }`}
+            } ${buttonClassName ?? ''}`}
           >
             <Icon name={active ? spec.iconActive : spec.icon} className="d-block" />
           </button>

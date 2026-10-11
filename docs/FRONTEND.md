@@ -1440,18 +1440,24 @@ here.
   rollback to the owning list, which is how the library's `f` shares this button's state instead of
   keeping a second one; on a grid tile `PhotoTile` gives it `.kk-tile__fav`, the hook the hover reveal
   above selects on), `RatingStars` (pure controlled 0–5 stars; a click on the current
-  rating clears it to 0; without `onRate` a read-only display) + `FlagControl` (a pure controlled per-user
+  rating clears it to 0; without `onRate` a read-only display; each star's `title` names its digit
+  key — `rating.withShortcut`, „Ohodnotit 3 z 5 (3)" — while the `aria-label` stays the short
+  sentence; `shortcutHints={false}` drops the key while the digits belong to something else; a
+  `buttonClassName` reaches every star) + `FlagControl` (a pure controlled per-user
   **personal flag** — three neutral states via `Icon` bootstrap-icons: 👁 **Prohlédnout později**
   (stored `eye`, `text-info`), 👍 **Vybrat** (stored `pick`, `text-success`), 👎 **Zamítnout**
   (stored `reject`, `text-danger`). Each button is **named after the act, not the glyph** —
-  the `aria-label` is the short name (`rating.eye`/`pick`/`reject`) and the `title` is the
+  the `aria-label` is the short name (`rating.eye`/`pick`/`reject`) and the `title` is two lines:
+  the name with its key (`rating.withShortcut` — „Prohlédnout později (v)", „Vybrat (p)",
+  „Zamítnout (r)", the keys of `lib/ratingHotkeys`, pinned against it by a test) and under it the
   one-sentence explanation (`rating.eyeHint`/`pickHint`/`rejectHint`), which is also what the
   library's **Označení** filter calls its values (`library.flag.eyes` = „K prohlédnutí později"),
   so the filter and the viewer agree; the stored values and the `flag:` query key are untouched.
   It reports **which mark was pressed** (`onToggle`), never the resulting flag: pressing the active state
   clears it to `none`, but that rule lives in `useRating`'s `toggleFlag`, which the `p`/`r`/`v` keys go
   through as well, so a key and its button cannot mean different things. Without `onToggle` read-only; a
-  sibling of the link → a click doesn't navigate),
+  sibling of the link → a click doesn't navigate; a host `className` carries the group's spacing
+  (Bootstrap's `gap-1` only without one), a `buttonClassName` reaches every mark),
   `GridSkeleton` (a placeholder photo grid on the first load; it also mirrors the chosen density, so after
   the photos load the layout doesn't jump. The tiles are `Skeleton` blocks (the shared `.kk-skeleton` shimmer, not
   Bootstrap `.placeholder`); the `label?` prop localizes the `role="status"` message (a person's gallery says
@@ -3183,6 +3189,14 @@ here.
   `.kk-viewer__group` gaps its own by `--kk-space-2` — plus a hairline before every group but the
   first (`.kk-viewer__actions > * + .kk-viewer__group::before`, a pseudo-element so a group that is
   not rendered takes its rule with it: a viewer's bar cannot end up with a rule leading nowhere).
+  **The stars and the marks are `.kk-viewer__target`s** (UI/UX review 2026-10-11, #10: they were
+  22×22 / 26×26px beside a 44px heart): the hit area grows, the glyph does not — 36px square for a
+  mouse, 44px on `pointer: coarse`, glyph centred — and in the top bar neighbouring targets sit
+  `--kk-space-2` (8px) apart (`.kk-viewer__actions .kk-viewer__stars` / `.kk-viewer__marks`). The
+  chosen mark is told apart three ways: its colour, the filled glyph against an outline, and an
+  inset ring (`.kk-viewer__marks .kk-viewer__target[aria-pressed='true']`, never over the focus
+  ring). The dock's own, more specific rules win there, so its single row is unchanged (the marks
+  keep their 4px, the stars still yield width). Pinned in `styles/viewerCurationTargets.test.ts`.
   **Where the everyday loop sits depends on the reach.** With a mouse it rides the top bar; **below
   `md` (`useIsNarrowViewport`) it moves into a bottom dock** (`.kk-viewer__dock`, `role="group"` /
   `photo.viewer.actions`) along the edge the thumb already rests on — the top-right corner is the

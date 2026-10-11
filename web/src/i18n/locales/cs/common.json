@@ -1617,6 +1617,7 @@
     "label": "Hodnocení",
     "value": "Hodnocení {{n}} z 5",
     "rate": "Ohodnotit {{n}} z 5",
+    "withShortcut": "{{label}} ({{key}})",
     "flag": "Osobní označení",
     "pick": "Vybrat",
     "pickHint": "Vybrat k dalšímu zpracování — do alba, k úpravám nebo do tisku.",

@@ -1214,14 +1214,22 @@ export function PhotoDetailPage() {
         role="group"
         aria-label={t('photo.viewer.assess')}
       >
+        {/* Every star and mark is a `kk-viewer__target`: a hit area larger than
+            its glyph (36px for a mouse, 44px for a finger — viewer.css). Each
+            tooltip names the key that does the same, which is where a reader
+            learns that `p`/`r`/`v` and the digits exist at all. */}
         <RatingStars
           className="kk-viewer__stars"
+          buttonClassName="kk-viewer__target"
           rating={rating.rating}
           onRate={rating.setRating}
           disabled={rating.pending}
           size={narrow ? 26 : 22}
+          shortcutHints={!videoOwnsDigits}
         />
         <FlagControl
+          className="kk-viewer__marks"
+          buttonClassName="kk-viewer__target"
           flag={rating.flag}
           onToggle={rating.toggleFlag}
           disabled={rating.pending}

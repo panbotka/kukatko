@@ -48,6 +48,49 @@ describe('RatingStars', () => {
     expect(onRate).toHaveBeenCalledWith(0)
   })
 
+  it('names the digit key that sets each star in its tooltip', () => {
+    renderStars(0)
+    for (const n of [1, 2, 3, 4, 5]) {
+      const star = screen.getByRole('button', { name: `Rate ${n} of 5` })
+      // The accessible name stays the short sentence; only the tooltip adds the key.
+      expect(star).toHaveAttribute('title', `Rate ${n} of 5 (${n})`)
+    }
+  })
+
+  it('names the key in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    renderStars(0)
+    expect(screen.getByRole('button', { name: 'Ohodnotit 3 z 5' })).toHaveAttribute(
+      'title',
+      'Ohodnotit 3 z 5 (3)',
+    )
+  })
+
+  it('drops the key from the tooltip when the host says the digits are taken', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <RatingStars rating={0} onRate={vi.fn()} shortcutHints={false} />
+      </I18nextProvider>,
+    )
+    expect(screen.getByRole('button', { name: 'Rate 3 of 5' })).toHaveAttribute(
+      'title',
+      'Rate 3 of 5',
+    )
+  })
+
+  it('puts the host’s hit-area class on every star', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <RatingStars rating={2} onRate={vi.fn()} buttonClassName="kk-viewer__target" />
+      </I18nextProvider>,
+    )
+    const stars = screen.getAllByRole('button')
+    expect(stars).toHaveLength(5)
+    for (const star of stars) {
+      expect(star).toHaveClass('kk-viewer__target')
+    }
+  })
+
   it('renders read-only (no buttons) when onRate is omitted', () => {
     render(
       <I18nextProvider i18n={i18n}>
