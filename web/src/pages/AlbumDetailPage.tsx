@@ -30,6 +30,7 @@ import { useAlbumFaceCount } from '../hooks/useAlbumFaces'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
@@ -162,6 +163,8 @@ export function AlbumDetailPage() {
   // into the tagging run and the reason the button is there at all: an album
   // where everybody is named offers nothing to do, so it offers no button.
   const unnamedFaces = useAlbumFaceCount(uid)
+  // Where Edit sits: on the header row (filled) or in the phone's "…" menu.
+  const narrow = useIsNarrowViewport()
 
   // Hover-select: a curator's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -358,9 +361,12 @@ export function AlbumDetailPage() {
         </div>
         {/* The album's own controls stay put during a selection: the batch bar
             floats over the bottom edge and never contends with the header.
-            Slideshow is the one action that stays inline on a phone; the rest —
-            and the destructive delete behind its own divider — fold into the
-            shared "…" overflow menu, so the header keeps to a single row. */}
+            Slideshow and Edit are the header's two real actions — Edit in the
+            primary style, so something on the row stands out — and the
+            occasional ones (faces, ZIP, upload link) plus the destructive
+            delete behind its own divider live in the shared "…" menu. On a
+            phone Edit folds into that menu too, so the header keeps to a
+            single row. */}
         {album && (
           <HeaderActions
             id="album-actions-overflow"
@@ -370,6 +376,22 @@ export function AlbumDetailPage() {
               ),
             ]}
             secondary={[
+              canCurate && (
+                <Button
+                  key="edit"
+                  // Filled on the header row; inside the phone's menu it is one
+                  // item among the others, not a blue block in a list.
+                  variant={narrow ? 'outline-secondary' : 'primary'}
+                  size="sm"
+                  onClick={() => {
+                    setEditing(true)
+                  }}
+                >
+                  {t('albumDetail.edit')}
+                </Button>
+              ),
+            ]}
+            overflow={[
               canCurate && unnamedFaces !== null && unnamedFaces > 0 && (
                 /* An anchor styled as a button, not a Button with an onClick:
                    the run has an address of its own, so it must be openable in a
@@ -402,18 +424,6 @@ export function AlbumDetailPage() {
                   <Icon name="link-45deg" className="me-1" />
                   {t('albumDetail.uploadLink')}
                 </Link>
-              ),
-              canCurate && (
-                <Button
-                  key="edit"
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={() => {
-                    setEditing(true)
-                  }}
-                >
-                  {t('albumDetail.edit')}
-                </Button>
               ),
             ]}
             destructive={[

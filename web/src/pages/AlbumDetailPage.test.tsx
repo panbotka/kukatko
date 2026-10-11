@@ -392,8 +392,15 @@ describe('AlbumDetailPage', () => {
 
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Share an upload link' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    // The "…" menu is a different place for the actions, not a way around RBAC:
+    // a viewer's holds the download alone.
+    const menu = await openHeaderMenu(userEvent.setup())
+    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(
+      within(menu).queryByRole('link', { name: 'Share an upload link' }),
+    ).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(menu.querySelector('.dropdown-divider')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
   })
@@ -405,9 +412,10 @@ describe('AlbumDetailPage', () => {
 
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    const menu = await openHeaderMenu(userEvent.setup())
+    expect(within(menu).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
     // Sharing an upload link opens the create form with this album chosen.
-    expect(screen.getByRole('link', { name: 'Share an upload link' })).toHaveAttribute(
+    expect(within(menu).getByRole('link', { name: 'Share an upload link' })).toHaveAttribute(
       'href',
       `/upload-links?album=${album().uid}`,
     )
@@ -423,8 +431,8 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('heading', { name: 'Holidays' })
-    // The row control opens the dialog; nothing is deleted until it is confirmed.
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    // The menu item opens the dialog; nothing is deleted until it is confirmed.
+    await user.click(within(await openHeaderMenu(user)).getByRole('button', { name: 'Delete' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/Delete the album "Holidays"/)).toBeInTheDocument()
     expect(deleteAlbumMock).not.toHaveBeenCalled()
@@ -443,7 +451,7 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('heading', { name: 'Holidays' })
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(within(await openHeaderMenu(user)).getByRole('button', { name: 'Delete' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
@@ -592,19 +600,37 @@ describe('AlbumDetailPage', () => {
     })
   })
 
-  it('keeps every header action inline on a wide screen', async () => {
+  it('gives the wide header one primary action and folds the rest into "…"', async () => {
     fetchAlbumMock.mockResolvedValue(album())
-    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    fetchPhotosMock.mockImplementation((params) =>
+      Promise.resolve(
+        params.q === 'face:new'
+          ? { photos: [], total: 13, limit: 1, offset: 0, next_offset: null }
+          : page([photo('a', 'a.jpg')]),
+      ),
+    )
+    const user = userEvent.setup()
     renderPage()
 
     await screen.findByRole('heading', { name: 'Holidays' })
-    // Desktop is unchanged by the phone collapse: no overflow toggle, every
-    // action directly on the header row.
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
+    // The header row is Slideshow, Edit — the one in the primary style, so
+    // something stands out — and the "…" toggle; not six equal outline buttons.
     expect(screen.getByRole('link', { name: 'Slideshow' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toHaveClass('btn-primary')
+    expect(screen.queryByRole('button', { name: 'Download ZIP' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Share an upload link' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    const menu = await openHeaderMenu(user)
+    await within(menu).findByRole('link', { name: 'Faces (13)' })
+    // In order: the occasional actions, then — behind a divider, in danger
+    // styling — the delete, last.
+    const items = [...menu.querySelectorAll('a, button')].map((item) => item.textContent)
+    expect(items).toEqual(['Faces (13)', 'Download ZIP', 'Share an upload link', 'Delete'])
+    const remove = within(menu).getByRole('button', { name: 'Delete' })
+    expect(remove).toHaveClass('btn-outline-danger')
+    const divider = menu.querySelector('.dropdown-divider')
+    expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
   it('drops the selection when the selected photos are removed from the album', async () => {
@@ -660,6 +686,15 @@ function overflowMenu(): HTMLElement {
   return menu
 }
 
+/** Opens the header's "…" menu and waits until it is shown. */
+async function openHeaderMenu(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: 'More actions' }))
+  await waitFor(() => {
+    expect(overflowMenu()).toHaveClass('show')
+  })
+  return overflowMenu()
+}
+
 describe('AlbumDetailPage on a narrow (phone) screen', () => {
   afterEach(() => {
     // Restore the shared desktop default so later tests never inherit a phone.
@@ -690,7 +725,8 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     // sits behind a divider in danger styling rather than next to "Edit".
     const menu = overflowMenu()
     expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    // Edit leads the menu, as one item among the others rather than a filled block.
+    expect(within(menu).getByRole('button', { name: 'Edit' })).toHaveClass('btn-outline-secondary')
     const remove = within(menu).getByRole('button', { name: 'Delete' })
     expect(remove).toHaveClass('btn-outline-danger')
     const divider = menu.querySelector('.dropdown-divider')
@@ -791,7 +827,10 @@ describe('AlbumDetailPage face tagging', () => {
 
     renderPage()
 
-    const link = await screen.findByRole('link', { name: 'Faces (12)' })
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // An occasional action: it waits in the header's "…" menu.
+    const menu = await openHeaderMenu(userEvent.setup())
+    const link = await within(menu).findByRole('link', { name: 'Faces (12)' })
     expect(link).toHaveAttribute('href', '/albums/al_1/faces')
   })
 
@@ -802,7 +841,8 @@ describe('AlbumDetailPage face tagging', () => {
     renderPage()
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(screen.queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+    const menu = await openHeaderMenu(userEvent.setup())
+    expect(within(menu).queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
   })
 
   it('keeps the run away from a viewer, who may not name anybody', async () => {
@@ -812,7 +852,8 @@ describe('AlbumDetailPage face tagging', () => {
     renderPage(false)
 
     await screen.findByRole('link', { name: 'a.jpg' })
-    expect(screen.queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+    const menu = await openHeaderMenu(userEvent.setup())
+    expect(within(menu).queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
   })
 })
 

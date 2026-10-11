@@ -45,7 +45,8 @@ function renderGroup(onDelete?: () => void) {
     <I18nextProvider i18n={i18n}>
       <HeaderActions
         primary={[action('Slideshow')]}
-        secondary={[action('Download'), action('Edit')]}
+        secondary={[action('Edit')]}
+        overflow={[action('Download'), action('Share')]}
         destructive={[action('Delete', onDelete, true)]}
       />
     </I18nextProvider>,
@@ -74,22 +75,123 @@ afterEach(() => {
   mockViewport(false)
 })
 
+/** Opens the "…" menu and waits until it is shown. */
+async function openMenu(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: 'More actions' }))
+  await waitFor(() => {
+    expect(overflowMenu()).toHaveClass('show')
+  })
+  return overflowMenu()
+}
+
 describe('HeaderActions on a wide screen', () => {
-  it('keeps every action inline, with no overflow toggle', () => {
+  it('keeps the primary and secondary actions inline and the rest in the menu', async () => {
+    const user = userEvent.setup()
     renderGroup()
 
-    for (const name of ['Slideshow', 'Download', 'Edit', 'Delete']) {
-      expect(screen.getByRole('button', { name })).toBeInTheDocument()
-    }
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
-    expect(document.querySelector('.dropdown-menu')).toBeNull()
+    // The header row is the one or two real actions plus the "…" toggle — not
+    // a row of equal buttons nothing stands out from.
+    const labels = screen.getAllByRole('button').map((button) => button.textContent)
+    expect(labels).toEqual(['Slideshow', 'Edit', ''])
+    expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+
+    const menu = await openMenu(user)
+    const items = within(menu)
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(items).toEqual(['Download', 'Share', 'Delete'])
+    // The secondary action is not duplicated into the menu on a wide screen.
+    expect(within(menu).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
-  it('renders the destructive action last, after the neutral ones', () => {
+  it('puts the destructive action last in the menu, behind a divider', async () => {
+    const user = userEvent.setup()
     renderGroup()
 
-    const labels = screen.getAllByRole('button').map((button) => button.textContent)
-    expect(labels).toEqual(['Slideshow', 'Download', 'Edit', 'Delete'])
+    const menu = await openMenu(user)
+    const divider = menu.querySelector('.dropdown-divider')
+    expect(divider).not.toBeNull()
+    const remove = within(menu).getByRole('button', { name: 'Delete' })
+    expect(remove).toHaveClass('btn-outline-danger')
+    expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('folds a lone destructive action into the menu without a divider', async () => {
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <HeaderActions
+          primary={[action('Slideshow')]}
+          destructive={[action('Delete', undefined, true)]}
+        />
+      </I18nextProvider>,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    const menu = await openMenu(user)
+    expect(within(menu).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(menu.querySelector('.dropdown-divider')).toBeNull()
+  })
+
+  it('raises no toggle when every action is inline', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <HeaderActions
+          primary={[action('Slideshow')]}
+          secondary={[action('Edit')]}
+          overflow={[false]}
+          destructive={[false]}
+        />
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Slideshow' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
+  })
+
+  it('is operable from the keyboard alone', async () => {
+    const onDelete = vi.fn()
+    const user = userEvent.setup()
+    renderGroup(onDelete)
+
+    // The toggle is a labelled button in the tab order, after the inline ones.
+    const toggle = screen.getByRole('button', { name: 'More actions' })
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(toggle).toHaveFocus()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await user.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    // The menu follows its toggle in the DOM, so Tab walks into its items.
+    await user.tab()
+    expect(within(overflowMenu()).getByRole('button', { name: 'Download' })).toHaveFocus()
+
+    // Escape closes it again and hands focus back to the toggle.
+    await user.keyboard('{Escape}')
+    await waitFor(() => {
+      expect(overflowMenu()).not.toHaveClass('show')
+    })
+    expect(toggle).toHaveFocus()
+
+    // And an item is activated with Enter like any button.
+    await user.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(overflowMenu()).toHaveClass('show')
+    })
+    await user.tab()
+    await user.tab()
+    await user.tab()
+    expect(within(overflowMenu()).getByRole('button', { name: 'Delete' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(onDelete).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -112,10 +214,11 @@ describe('HeaderActions on a narrow (phone) screen', () => {
     await waitFor(() => {
       expect(overflowMenu()).toHaveClass('show')
     })
-    const menu = overflowMenu()
-    expect(within(menu).getByRole('button', { name: 'Download' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    // The secondary action leads, then the occasional ones, the destructive last.
+    const items = within(overflowMenu())
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(items).toEqual(['Edit', 'Download', 'Share', 'Delete'])
   })
 
   it('separates the destructive action from the neutral ones by a divider', async () => {

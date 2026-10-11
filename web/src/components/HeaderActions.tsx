@@ -15,13 +15,19 @@ export interface HeaderActionsProps {
   primary?: readonly ReactNode[]
   /**
    * Secondary actions: inline on desktop, folded into the "…" overflow menu on a
-   * phone.
+   * phone (where they lead the menu).
    */
   secondary?: readonly ReactNode[]
   /**
-   * Destructive actions (delete and friends): placed like {@link secondary}, but
-   * always last and, inside the menu, behind a divider so a mis-tap cannot land
-   * on them from the neutral actions above.
+   * Occasional actions that live in the "…" overflow menu **at every width**, so
+   * a desktop header shows only its one or two real actions instead of a row of
+   * equal buttons nothing stands out from.
+   */
+  overflow?: readonly ReactNode[]
+  /**
+   * Destructive actions (delete and friends): always in the "…" overflow menu,
+   * at every width, last and behind a divider so a mis-tap cannot land on them
+   * from the neutral actions above.
    */
   destructive?: readonly ReactNode[]
   /**
@@ -40,11 +46,12 @@ function present(nodes: readonly ReactNode[] | undefined): ReactNode[] {
 }
 
 /**
- * The action group of a page header. On desktop it is the plain inline row of
- * buttons it has always been; on a phone (`useIsNarrowViewport`) only the
- * primary actions stay inline and the rest fold into a single "…" overflow
- * `Dropdown`, so the header keeps to one compact row instead of wrapping into a
- * two- or three-row block of 44px targets.
+ * The action group of a page header: the primary actions always inline, the
+ * secondary ones inline on desktop, and everything else — occasional actions
+ * and, last, the destructive ones — in a single "…" overflow `Dropdown`. On a
+ * phone (`useIsNarrowViewport`) the secondary actions fold into that menu too,
+ * so the header keeps to one compact row instead of wrapping into a two- or
+ * three-row block of 44px targets.
  *
  * Actions are passed as ready-made nodes (arrays, so a conditionally rendered
  * `false` can be told apart from a real action) — the group only decides *where*
@@ -59,6 +66,7 @@ function present(nodes: readonly ReactNode[] | undefined): ReactNode[] {
 export function HeaderActions({
   primary,
   secondary,
+  overflow,
   destructive,
   id = 'header-overflow',
 }: HeaderActionsProps) {
@@ -69,14 +77,17 @@ export function HeaderActions({
   const primaryItems = present(primary)
   const secondaryItems = present(secondary)
   const destructiveItems = present(destructive)
+  const inlineItems = narrow ? [] : secondaryItems
+  const menuItems = narrow ? [...secondaryItems, ...present(overflow)] : present(overflow)
   // Nothing to hide (a viewer on an empty album, say) means no toggle: an
   // overflow button that opens an empty menu is worse than no button.
-  const collapsed = narrow && secondaryItems.length + destructiveItems.length > 0
+  const hasMenu = menuItems.length + destructiveItems.length > 0
 
   return (
     <div className="d-flex gap-1 flex-wrap align-items-center">
       {primaryItems}
-      {collapsed ? (
+      {inlineItems}
+      {hasMenu && (
         <Dropdown align="end" show={open} onToggle={setOpen}>
           <Dropdown.Toggle
             variant="outline-secondary"
@@ -94,20 +105,15 @@ export function HeaderActions({
               setOpen(false)
             }}
           >
-            <div className="d-grid gap-1">{secondaryItems}</div>
+            {menuItems.length > 0 && <div className="d-grid gap-1">{menuItems}</div>}
             {destructiveItems.length > 0 && (
               <>
-                {secondaryItems.length > 0 && <Dropdown.Divider />}
+                {menuItems.length > 0 && <Dropdown.Divider />}
                 <div className="d-grid gap-1">{destructiveItems}</div>
               </>
             )}
           </Dropdown.Menu>
         </Dropdown>
-      ) : (
-        <>
-          {secondaryItems}
-          {destructiveItems}
-        </>
       )}
     </div>
   )

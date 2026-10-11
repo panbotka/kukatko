@@ -159,6 +159,18 @@ describe('LabelDetailPage', () => {
     expect(back.querySelector('.bi-arrow-left')).toHaveAttribute('aria-hidden', 'true')
   })
 
+  it('heads the page like an album: Slideshow inline, no empty "…" menu', async () => {
+    fetchLabelMock.mockResolvedValue(label())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    renderPage()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    expect(screen.getByRole('link', { name: 'Slideshow' })).toBeInTheDocument()
+    // A label is renamed and deleted from the labels list, so the shared header
+    // group has nothing to fold and raises no toggle.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
+  })
+
   it('names the label list in the back link of the error state too', async () => {
     fetchLabelMock.mockRejectedValue(new Error('boom'))
     fetchPhotosMock.mockResolvedValue(page([]))

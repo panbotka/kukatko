@@ -893,18 +893,25 @@ here.
   actions next to the title, and on a phone a row of four or five ≥44px buttons wrapped into two or three rows
   — with the destructive one sitting inline among the neutral ones, a mis-tap away. Props are ready-made nodes,
   not descriptors, so a page keeps its own RBAC gating and button styling: `primary` (the one or two actions
-  that stay inline **at every width**), `secondary` (inline on desktop, in the menu on a phone),
-  `destructive` (same, but always last and, inside the menu, **behind a `Dropdown.Divider`**) and `id?` (the
-  toggle's DOM id). Each is a `ReactNode[]` — an array, not a fragment, precisely so a conditionally rendered
+  that stay inline **at every width**), `secondary` (inline on desktop, leading the menu on a phone),
+  `overflow` (the occasional actions: **in the menu at every width**, so a desktop header is not a row of
+  equal buttons nothing stands out from), `destructive` (in the menu at every width too, always last and
+  **behind a `Dropdown.Divider`**) and `id?` (the toggle's DOM id). So the menu exists on desktop as well
+  whenever `overflow`/`destructive` hold anything. Each is a `ReactNode[]` — an array, not a fragment, precisely so a conditionally rendered
   `{canWrite && <Button/>}` arrives as `false` and can be told apart from a real action: an all-`false` list
   renders **no toggle at all** rather than an empty menu, and every entry needs a stable `key` as any array of
-  children does. The breakpoint is decided **in JS** (`useIsNarrowViewport`), never `d-md-none`, so only one
+  children does. The menu is keyboard-operable as a disclosure: the toggle is a labelled button
+  (`aria-label` + `aria-expanded`), Enter/Space open it, the menu follows its toggle in the DOM so **Tab**
+  walks into its items (they are buttons/links, not `.dropdown-item`s, so there are no arrow keys), and
+  **Escape** closes it and hands focus back to the toggle. The breakpoint is decided **in JS** (`useIsNarrowViewport`), never `d-md-none`, so only one
   layout is ever in the DOM; the menu stacks its actions as full-width buttons (an inner `d-grid`, like
   `BatchActionBar`'s overflow) and **closes itself on any click inside** — a plain button raises no `select`
   event react-bootstrap would act on, and a menu left standing open behind the modal its item just opened reads
   as a stuck page. Styles `.kk-header-overflow-*` in `app.css`; the bare „…" toggle drops Bootstrap's caret and
-  squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`). i18n
-  `headerActions.overflow`. Adopted by `AlbumDetailPage`; any other detail header can take it as-is.
+  squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`); the menu's
+  buttons keep their labels on one line (`white-space: nowrap`), widening the menu instead. i18n
+  `headerActions.overflow`. Adopted by `AlbumDetailPage` and `LabelDetailPage`; any other detail header can
+  take it as-is.
   Tests: `HeaderActions.test.tsx`);
   `components/upload/` = `DropZone` (the pick stage's one surface: a drag-and-drop target that is also
   one big tap target opening the picker, `accept` = `lib/mediaFiles` `PICKER_ACCEPT` (`image/*,video/*`
@@ -1883,7 +1890,7 @@ here.
   only when the form is submitted), validity in days (`default_days`, capped by `max_days`); the created
   link is shown in `LinkAddress` with a note that it stays copyable from the list. `?album=<uid>` (`ALBUM_PARAM`, `newLinkForAlbum` in `lib/uploadLinks.ts`) opens the form with
   that album chosen and is removed when the form closes; the album page's "Sdílet odkaz pro nahrávání"
-  (`AlbumDetailPage`, curator, in `HeaderActions.secondary`) links there. Texts in `uploadLinks.*`;
+  (`AlbumDetailPage`, curator, in `HeaderActions.overflow`) links there. Texts in `uploadLinks.*`;
   `UploadLinksPage.test.tsx`.
   `PasswordResetPage` (route **`/password-reset/:token`**, the landing page of the one-time link
   `POST /admin/users/{uid}/password-reset` mints — **public like sign-in and registration**, because
@@ -2155,12 +2162,15 @@ here.
   URL state) — under the heading it renders the album's **`description`** (`.kk-prose-note`: a readable
   measure, `white-space: pre-line`, so the line breaks the writer typed survive), which was stored,
   editable and shown to nobody until now;
-  the header row is a **`HeaderActions`** group: **Promítání** stays inline at every width, while
-  **Obličeje (N)**, **Stáhnout ZIP**, **Upravit** and — behind its own divider, in danger styling —
-  **Smazat** fold into
-  the „…" overflow menu on a phone, so the header keeps to one row instead of wrapping into two or
-  three; on desktop the actions stay inline exactly as before, and either way the RBAC gate is the
-  same `canCurate` on the same buttons (an album is curation: a curator renames and deletes it).
+  the header row is a **`HeaderActions`** group with **one primary action**: on desktop it shows
+  **Promítání** and **Upravit** (the latter in the filled `primary` style, so something on the row stands
+  out — the UI/UX review of 2026-10-11 found six equal outline buttons) and a „…" menu holding
+  **Obličeje (N)**, **Stáhnout ZIP**, **Sdílet odkaz pro nahrávání** and — last, behind its own divider,
+  in danger styling — **Smazat**; on a phone **Upravit** folds into that menu too (leading it, as an
+  outline item — the page reads `useIsNarrowViewport` for the variant), so the header keeps to one row
+  instead of wrapping into two or three. Either way the RBAC gate is the same `canCurate` on the same
+  buttons (an album is curation: a curator renames and deletes it); a viewer gets Promítání and a menu
+  with the ZIP alone.
   **Obličeje (N)** is the way into the album face-tagging run (`AlbumFacesPage`, below): an `<a>`
   styled as a button (`btn btn-outline-secondary btn-sm`) to `/albums/:uid/faces` — an anchor, not
   an `onClick`, because the run has an address and must be openable in a new tab. `N` is
@@ -2249,7 +2259,9 @@ here.
   taken at the worst moment, and "not this photo" is already a per-photo rejection,
   `LabelDetailPage` = `/labels/:uid` a photo grid scoped to the label (`useScopedPhotos` + `FilterBar` + URL);
   the tiles carry the label scope in the detail link (`detailQuery` with `label=uid`) → Esc/Back/prev-next from a photo
-  returns to the label; + a **Promítání** button + for editors **hover-select** → the shared
+  returns to the label; + a **Promítání** button (in the same **`HeaderActions`** group as the album header,
+  for one layout across detail pages; a label is renamed and deleted from `LabelsPage`, so it has no „…"
+  menu) + for editors **hover-select** → the shared
   **`BatchActionBar`** (the library's full set of actions, `onSelectAll`; refetch on success),
   `TasksPage` = `/tasks` the **work queue**: one row per task (one of its photographs as a 56px tile, the
   question, the state as a `TaskStateBadge`, the photo/comment counts, **who acted last** — "naposledy

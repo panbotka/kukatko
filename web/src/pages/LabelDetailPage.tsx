@@ -5,6 +5,7 @@ import { useLocation, useParams } from 'react-router-dom'
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
+import { HeaderActions } from '../components/HeaderActions'
 import { FilterBar } from '../components/library/FilterBar'
 import { GridSkeleton } from '../components/library/GridSkeleton'
 import { PhotoGrid } from '../components/library/PhotoGrid'
@@ -153,11 +154,15 @@ export function LabelDetailPage() {
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>
         {/* The label's own actions stay put during a selection: the batch bar
-            floats over the bottom edge and never contends with the header. */}
+            floats over the bottom edge and never contends with the header. The
+            same group as the album header, so the two detail pages read alike;
+            a label is renamed and deleted from the labels list, not here, so
+            there is nothing for a "…" menu and the group raises none. */}
         {hasPhotos && (
-          <div className="d-flex gap-1 flex-wrap">
-            <SlideshowStart scope={scope} view={view} count={total} />
-          </div>
+          <HeaderActions
+            id="label-actions-overflow"
+            primary={[<SlideshowStart key="slideshow" scope={scope} view={view} count={total} />]}
+          />
         )}
       </div>
 
