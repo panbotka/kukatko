@@ -29,11 +29,18 @@ import {
 } from '../../lib/libraryView'
 import { mediaCountKind } from '../../lib/mediaKind'
 import { periodFromQuery } from '../../lib/period'
-import { FACET_QUERY_KEYS, facetQueryTokens, queryFilterTokens } from '../../lib/queryLanguage'
+import {
+  FACET_QUERY_KEYS,
+  facetQueryTokens,
+  queryFilterTokens,
+  type QueryTerm,
+  queryTerms,
+  removeQueryTerm,
+} from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
 import { type UploaderBucket } from '../../services/photos'
 import { ENTITY_STYLE } from '../entityStyle'
-import { Icon } from '../Icon'
+import { Icon, type IconName } from '../Icon'
 import { SearchQueryHelp } from '../search/SearchQueryHelp'
 
 import { buildChips } from './filterChips'
@@ -219,6 +226,13 @@ export interface FilterBarProps<T extends LibraryView> {
  * button that opens them ({@link FilterDrawerFooter} states it again on the way
  * out). What is left above the photos is one field and one button.
  *
+ * And that one field gets the row: the button is an icon with the count badge,
+ * the `?` help rides inside the field's end, and the placeholder is a short
+ * one. Even so a phone field cannot read a query back (`year:2025 al…`), so
+ * there the committed query also shows as chips under it — one per filter
+ * term, one for the free text ({@link queryTerms}) — each removing just its
+ * term. They are another view of `q`, never a second state.
+ *
  * The chips are joined by a single clear-all action, so a filtered set is never
  * a mystery nor a chore to undo. The drawer closes on a sticky footer carrying
  * the live result count ({@link FilterDrawerFooter}) rather than only on the
@@ -317,11 +331,33 @@ export function FilterBar<T extends LibraryView>({
   }
 
   const chips = buildChips(view, t, i18n.language, { facets, uploaders })
+  // On a phone the field is too narrow to read a query back (`year:2025 al…`),
+  // so the committed query is also shown as chips, one per filter term plus one
+  // for the free text — another view of `q`, never a second state. Desktop keeps
+  // the whole query legible in the field and needs none.
+  const queryChips = narrow && showSearch ? queryTerms(view.q) : []
+  const removeQueryChip = (term: QueryTerm) => {
+    // A removed term is a new view of its own: it closes any edit in progress so
+    // the next typing starts a fresh history entry instead of rewriting this one.
+    queryHistory.end()
+    push({ q: removeQueryTerm(view.q, term) })
+  }
   const clearVisible = hasActiveFilters(view, { ignoreQuery: !showSearch })
   // Which filters the query itself already sets. The pickers in the panel would
   // otherwise keep reading "any period" while `year:1960-1969` in the box has
   // filtered the grid down to the sixties.
   const queryFilters = useMemo(() => queryFilterTokens(view.q), [view.q])
+
+  // The very same help the search page opens: this field speaks the same query
+  // language, so it gets the same one explanation rather than a second, drifting
+  // copy of it — plus, at its foot, the way on to ranked search, offered only
+  // while semantics are actually available, since the link's own label promises
+  // them.
+  const help = (
+    <SearchQueryHelp
+      fullSearchHref={semanticSearch && searchHref !== undefined ? searchHref : undefined}
+    />
+  )
 
   const clearAll = () => {
     // Keep the current sort, and keep the query when it is owned by the page's
@@ -395,8 +431,8 @@ export function FilterBar<T extends LibraryView>({
   // edge at its own width (`.kukatko-filter-status` in app.css), leaving the
   // rest to the search field, and when the controls leave too little it wraps
   // onto a line of its own — so a wide window spends no row on it at all. On a phone it is that wrapped line by
-  // construction (`w-100`), landing directly beneath the Filters button
-  // (`flex-row-reverse` keeps the count on that side); there the view actions
+  // construction (`w-100`), landing beneath the Filters button — under the chips,
+  // when any are set — (`flex-row-reverse` keeps the count on that side); there the view actions
   // are in the drawer instead (see `panel`), because this line has no room.
   const status = (
     <div
@@ -430,6 +466,48 @@ export function FilterBar<T extends LibraryView>({
     </div>
   )
 
+  // Every active filter as a removable chip: on a phone the query's own terms
+  // first (in the neutral secondary style, since they live in the field), then
+  // the filters set in the panel.
+  const chipRow =
+    queryChips.length > 0 || chips.length > 0 ? (
+      <div
+        className={`kukatko-filter-chips d-flex flex-wrap align-items-center gap-2 ${
+          narrow ? 'w-100' : 'mt-2'
+        }`}
+      >
+        {queryChips.map((term) => (
+          <FilterChipPill
+            key={`q:${term.key}`}
+            label={
+              term.kind === 'text' ? `${t('library.filters.queryText')}: ${term.label}` : term.label
+            }
+            className="text-bg-secondary kukatko-filter-chip--query"
+            onRemove={() => {
+              removeQueryChip(term)
+            }}
+          />
+        ))}
+        {chips.map((chip) => {
+          // Album and tag chips carry a distinct hue + leading icon from the
+          // shared entity convention; every other filter keeps the neutral
+          // primary chip so colour stays reserved for "which entity is this".
+          const entity = chip.kind === undefined ? undefined : ENTITY_STYLE[chip.kind]
+          return (
+            <FilterChipPill
+              key={chip.key}
+              label={chip.label}
+              className={entity === undefined ? 'text-bg-primary' : entity.className}
+              icon={entity?.icon}
+              onRemove={() => {
+                push(chip.clear)
+              }}
+            />
+          )
+        })}
+      </div>
+    ) : null
+
   return (
     <Form
       className="kukatko-filter-bar"
@@ -453,7 +531,11 @@ export function FilterBar<T extends LibraryView>({
                 size="lg"
                 value={queryDraft}
                 aria-label={t('library.filters.search')}
-                placeholder={t('library.filters.searchPlaceholder')}
+                placeholder={t(
+                  narrow
+                    ? 'library.filters.searchPlaceholderShort'
+                    : 'library.filters.searchPlaceholder',
+                )}
                 onChange={(e) => {
                   setQueryDraft(e.target.value)
                 }}
@@ -469,15 +551,13 @@ export function FilterBar<T extends LibraryView>({
                   }
                 }}
               />
+              {/* On a phone the `?` rides inside the field's end, so the row
+                  spends its width on the field rather than on a third control. */}
+              {narrow && (
+                <InputGroup.Text className="kukatko-filter-search-help">{help}</InputGroup.Text>
+              )}
             </InputGroup>
-            {/* The very same help the search page opens: this field speaks the
-                same query language, so it gets the same one explanation rather
-                than a second, drifting copy of it — plus, at its foot, the way
-                on to ranked search, offered only while semantics are actually
-                available, since the link's own label promises them. */}
-            <SearchQueryHelp
-              fullSearchHref={semanticSearch && searchHref !== undefined ? searchHref : undefined}
-            />
+            {!narrow && help}
           </>
         )}
 
@@ -504,21 +584,28 @@ export function FilterBar<T extends LibraryView>({
           type="button"
           size="lg"
           variant={open || chips.length > 0 ? 'primary' : 'outline-primary'}
-          className="d-inline-flex align-items-center gap-2"
+          className={`kukatko-filter-toggle d-inline-flex align-items-center ${narrow ? 'gap-1' : 'gap-2'}`}
           aria-expanded={open}
           aria-controls={PANEL_ID}
+          // Icon-only on a phone, so the search field keeps the row; the name
+          // the word gave it moves to the label, the badge still counts.
+          aria-label={narrow ? t('library.filters.toggle') : undefined}
           onClick={() => {
             setOpen((prev) => !prev)
           }}
         >
           <FunnelIcon />
-          {t('library.filters.toggle')}
+          {!narrow && t('library.filters.toggle')}
           {chips.length > 0 && (
             <Badge bg="light" text="dark" pill>
               {chips.length}
             </Badge>
           )}
         </Button>
+
+        {/* On a phone the chips sit straight under the field they describe,
+            above the count; on desktop they follow the whole header row. */}
+        {narrow && chipRow}
 
         {/* The count closes the row: beside the Filters button on a wide
             desktop, wrapped onto its own line right under it otherwise. It is
@@ -527,38 +614,7 @@ export function FilterBar<T extends LibraryView>({
         {status}
       </div>
 
-      {chips.length > 0 && (
-        <div className="kukatko-filter-chips d-flex flex-wrap align-items-center gap-2 mt-2">
-          {chips.map((chip) => {
-            // Album and tag chips carry a distinct hue + leading icon from the
-            // shared entity convention; every other filter keeps the neutral
-            // primary chip so colour stays reserved for "which entity is this".
-            const entity = chip.kind === undefined ? undefined : ENTITY_STYLE[chip.kind]
-            // Named once, worn twice: the accessible name and the hover hint.
-            const removeLabel = t('library.filters.removeFilter', { name: chip.label })
-            return (
-              <span
-                key={chip.key}
-                className={`kukatko-filter-chip badge rounded-pill ${
-                  entity === undefined ? 'text-bg-primary' : entity.className
-                }`}
-              >
-                {entity !== undefined && <Icon name={entity.icon} className="me-1" />}
-                {chip.label}
-                <button
-                  type="button"
-                  className="btn-close btn-close-white ms-2"
-                  aria-label={removeLabel}
-                  title={removeLabel}
-                  onClick={() => {
-                    push(chip.clear)
-                  }}
-                />
-              </span>
-            )
-          })}
-        </div>
-      )}
+      {!narrow && chipRow}
 
       {narrow ? (
         <Offcanvas
@@ -597,6 +653,39 @@ export function FilterBar<T extends LibraryView>({
         </Collapse>
       )}
     </Form>
+  )
+}
+
+/**
+ * One removable chip: a pill with an optional leading entity icon and a
+ * trailing close button named after what it removes.
+ */
+function FilterChipPill({
+  label,
+  className,
+  icon,
+  onRemove,
+}: {
+  label: string
+  className: string
+  icon?: IconName
+  onRemove: () => void
+}) {
+  const { t } = useTranslation()
+  // Named once, worn twice: the accessible name and the hover hint.
+  const removeLabel = t('library.filters.removeFilter', { name: label })
+  return (
+    <span className={`kukatko-filter-chip badge rounded-pill ${className}`}>
+      {icon !== undefined && <Icon name={icon} className="me-1" />}
+      {label}
+      <button
+        type="button"
+        className="btn-close btn-close-white ms-2"
+        aria-label={removeLabel}
+        title={removeLabel}
+        onClick={onRemove}
+      />
+    </span>
   )
 }
 

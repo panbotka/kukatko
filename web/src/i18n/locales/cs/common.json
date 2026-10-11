@@ -888,6 +888,8 @@
       "barLabel": "Filtry fotek",
       "search": "Filtrovat v knihovně",
       "searchPlaceholder": "Filtrovat — text, nebo filtr jako year:1965 či person:Jarmila",
+      "searchPlaceholderShort": "Hledat v knihovně…",
+      "queryText": "Text",
       "searchHint": "Hledá v názvu, popisu a poznámce a rozumí filtrům jako year:1965, album:\"Léto 2024\" nebo person:Jarmila.",
       "fullSearchLink": "Fulltext a sémantické hledání →",
       "setByQuery": "Nastavuje už dotaz:",

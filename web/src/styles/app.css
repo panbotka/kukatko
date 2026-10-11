@@ -1640,6 +1640,23 @@ body {
   }
 }
 
+/* The Filters button is icon-only on a phone (funnel + count badge); the
+   large-button padding sized for the word would otherwise take back the width
+   the word gave the field. */
+@media (max-width: 767.98px) {
+  .kukatko-filter-toggle {
+    padding-inline: var(--kk-space-3);
+  }
+}
+
+/* The query-language `?` as the field's end adornment on a phone: the same
+   quiet surface as the leading search glyph, so the field reads as one control.
+   The button's own 44px touch target (`kukatko-tap-target-touch`) overflows the
+   adornment rather than widening it. */
+.kukatko-filter-search-help {
+  padding-inline: var(--kk-space-2);
+}
+
 /* The bar's own bottom rhythm, in CSS rather than an `mb-3` utility so a phone
    can spend less of the first screen on the gap between the last control and the
    first photograph. Desktop keeps the 1rem the utility gave it. */
@@ -1785,10 +1802,22 @@ body {
 .kukatko-filter-chip {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 2.25rem;
   padding-inline: var(--kk-space-3);
   font-size: var(--kk-font-size-caption);
   font-weight: 500;
+}
+
+/* A query term can be as long as the reader typed it; the chip wraps its label
+   rather than pushing the page sideways or cutting the term off, since reading
+   it back is the whole point of the chip. The label is the chip's own text
+   (tests and readers alike find a chip by it), so the rule sits on the pill. */
+.kukatko-filter-chip {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+  line-height: 1.3;
 }
 
 .kukatko-filter-chip .btn-close {

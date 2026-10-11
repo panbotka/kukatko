@@ -215,6 +215,62 @@ export function queryFilterTokens(input: string): Map<string, string[]> {
 }
 
 /**
+ * One removable piece of a query, as the filter bar's phone chips show it:
+ * either one recognised `key:value` filter token, or every free-text token of
+ * the query together (the backend reads them as one substring condition).
+ */
+export interface QueryTerm {
+  /** Stable React key: `filter:<token index>`, or `text` for the free text. */
+  key: string
+  /** Whether the term is a filter or the query's free text. */
+  kind: 'filter' | 'text'
+  /** What the chip reads: the filter token exactly as typed, or the free-text tokens joined by a space. */
+  label: string
+  /** Indices (in scan order) of the tokens the term stands for. */
+  tokens: readonly number[]
+}
+
+/**
+ * Splits a query into the terms the filter bar shows as removable chips: the
+ * free text as one term first (when there is any), then one term per recognised
+ * filter token in the order typed. A token whose key the language does not know
+ * is free text, exactly as the backend reads it ({@link queryFilterTokens}).
+ *
+ * Like {@link queryFilterTokens} this is not a parser — it only says where the
+ * tokens are, so that {@link removeQueryTerm} can take one of them out again.
+ */
+export function queryTerms(input: string): QueryTerm[] {
+  const filters: QueryTerm[] = []
+  const text: number[] = []
+  const words: string[] = []
+  scanTokens(input).forEach((token, i) => {
+    const key = tokenKey(token.chars)
+    if (key !== null && KNOWN_KEYS.has(key)) {
+      filters.push({ key: `filter:${String(i)}`, kind: 'filter', label: token.raw, tokens: [i] })
+      return
+    }
+    text.push(i)
+    words.push(token.raw)
+  })
+  if (text.length === 0) {
+    return filters
+  }
+  return [{ key: 'text', kind: 'text', label: words.join(' '), tokens: text }, ...filters]
+}
+
+/**
+ * The query without `term`: every other token kept verbatim, in order, joined by
+ * a single space. `term` must come from {@link queryTerms} over the same input.
+ */
+export function removeQueryTerm(input: string, term: QueryTerm): string {
+  const drop = new Set(term.tokens)
+  return scanTokens(input)
+    .filter((_, i) => !drop.has(i))
+    .map((token) => token.raw)
+    .join(' ')
+}
+
+/**
  * The filter keys behind each control of the filter bar, aliases included. A
  * query using any of them sets that filter without the control knowing, which is
  * what {@link queryFilterTokens} lets the filter bar flag.

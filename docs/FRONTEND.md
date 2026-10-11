@@ -1246,8 +1246,23 @@ here.
   keystroke, so a typed word is one query instead of one per letter (`Apple` on the deployed build:
   `q=A`, `q=Ap`, `q=App`, `q=Appl`, `q=Apple`; now a single `camera=Apple`) — which is what lets the
   number the reader is watching move once. Each active filter = a removable
-  **chip** (`buildChips`, a pill with a cross, clears only that filter — the `q` query has no chip,
-  it has its own field; the photo count below the chips comes from the `total` prop, which is **optional** —
+  **chip** (`buildChips`, a pill with a cross, clears only that filter — on desktop the `q` query has no chip,
+  it has its own field wide enough to read back. **On a phone it gets chips too**: at 390 px the field used to
+  be ~130 px and an active `year:2025 album:"Kroje a pouť"` read „year:2025 al", so the committed `q` is also
+  shown as `text-bg-secondary` chips **first in the chip row, straight under the field** (above the count
+  line) — one per recognised `key:value` token exactly as typed, plus one „Text: …" chip for all the free
+  text together (`lib/queryLanguage` `queryTerms`, the same scanner as `queryFilterTokens`: an unknown key
+  is free text, as the backend reads it); the cross drops just that term (`removeQueryTerm` keeps every
+  other token verbatim, single-space joined), ends any query edit in progress (`useQueryHistory.end`) and
+  pushes. Chips are only another view of `q` — the URL and the language are unchanged — and they are
+  skipped with `showSearch={false}`, where the page owns `q`. To give the field the row, the phone's
+  **Filtry button is icon-only** (funnel + the structured-filter count badge, `aria-label` „Filtry",
+  narrower padding via `.kukatko-filter-toggle`), the `?` help sits **inside the field** as an
+  `InputGroup.Text` end adornment, and the placeholder is the short „Hledat v knihovně…"
+  (`library.filters.searchPlaceholderShort`) rather than the long desktop one cut mid-phrase. Measured in a
+  probe at 390 px the empty field is 242 px wide, no horizontal scroll at 320 px with four query chips; a chip
+  wraps a long term (`white-space: normal; overflow-wrap: anywhere` on `.kukatko-filter-chip`) rather than
+  pushing the page sideways. The photo count below the chips comes from the `total` prop, which is **optional** —
   omit it and the bar states nothing (the live region stays mounted, so the number is announced when it
   arrives), which is how `SearchPage` avoids claiming zero photos before a query is even typed;
   **`totalRanked` decides what that number may be called** (`countLabel`): a ranked search does not count
@@ -1337,7 +1352,7 @@ here.
   in the phone drawer, the search note) therefore names both halves („Filtrovat — text, nebo filtr jako `year:1965` či `person:Jarmila`" —
   it opens on the same verb as the field's own label „Filtrovat v knihovně", so the two never disagree about
   what the box does; „Hledat" is what the *navigation* and `/search` say), and
-  beside the field sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
+  beside the field (inside it, on a phone) sits **the very same `SearchQueryHelp` `?`** the search page opens — one language, one
   explanation, never a second copy to drift (`showSearch={false}` hides field and `?` together, so `/search`
   doesn't end up with two triggers). What `/search` adds on top is **ranking**, which is what
   **the link to `/search`** promises — at the foot of that `?` dialog (`SearchQueryHelp` `fullSearchHref`, a

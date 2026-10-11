@@ -10,7 +10,9 @@ import {
   type FilterValue,
   matchFilterValues,
   queryFilterTokens,
+  queryTerms,
   quoteFilterValue,
+  removeQueryTerm,
   suggestFilterKey,
   suggestFilterKeys,
   suggestFilterValues,
@@ -104,6 +106,64 @@ describe('applyFilterKey', () => {
     if (s) {
       expect(applyFilterKey('la', s, 'label')).toBe('label:')
     }
+  })
+})
+
+describe('queryTerms', () => {
+  it('yields one term per filter, as typed, quotes included', () => {
+    const terms = queryTerms('year:2025 album:"Kroje a pouť"')
+    expect(terms.map((t) => [t.kind, t.label])).toEqual([
+      ['filter', 'year:2025'],
+      ['filter', 'album:"Kroje a pouť"'],
+    ])
+  })
+
+  it('gathers the free text into one term, first', () => {
+    const terms = queryTerms('svatba person:Jarmila -pes  osoba:Jarmila')
+    expect(terms.map((t) => [t.kind, t.label])).toEqual([
+      // An unknown key and a negated word are free text, as the backend reads them.
+      ['text', 'svatba -pes osoba:Jarmila'],
+      ['filter', 'person:Jarmila'],
+    ])
+  })
+
+  it('keys every term uniquely, a repeated filter included', () => {
+    const keys = queryTerms('pes album:a album:a').map((t) => t.key)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('has no terms for an empty or blank query', () => {
+    expect(queryTerms('')).toEqual([])
+    expect(queryTerms('   ')).toEqual([])
+  })
+})
+
+describe('removeQueryTerm', () => {
+  it('drops just that filter and keeps the rest verbatim', () => {
+    const q = 'svatba year:2025 album:"Kroje a pouť"'
+    const year = queryTerms(q).find((t) => t.label === 'year:2025')
+    expect(year).toBeDefined()
+    if (year !== undefined) {
+      expect(removeQueryTerm(q, year)).toBe('svatba album:"Kroje a pouť"')
+    }
+  })
+
+  it('drops every free-text word with the text term', () => {
+    const q = 'svatba  year:2025 -pes'
+    const [text] = queryTerms(q)
+    expect(text.kind).toBe('text')
+    expect(removeQueryTerm(q, text)).toBe('year:2025')
+  })
+
+  it('removes only the chosen copy of a repeated filter', () => {
+    const q = 'album:a album:a'
+    const [, second] = queryTerms(q)
+    expect(removeQueryTerm(q, second)).toBe('album:a')
+  })
+
+  it('leaves an empty query when the last term goes', () => {
+    const [only] = queryTerms('year:2025')
+    expect(removeQueryTerm('year:2025', only)).toBe('')
   })
 })
 

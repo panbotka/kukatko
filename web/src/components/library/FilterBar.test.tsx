@@ -848,6 +848,66 @@ describe('FilterBar narrow viewport (phone)', () => {
     expect(within(drawer).getByText(/Searches title, description and notes/)).toBeInTheDocument()
   })
 
+  it('makes the Filters button icon-only, badged with the active filter count', () => {
+    mockViewport(true)
+    renderBar({ ...LIBRARY_DEFAULTS, min_rating: '4', favorite: 'true' }, vi.fn(), {
+      showFavorite: true,
+    })
+
+    const toggle = screen.getByRole('button', { name: 'Filters' })
+    // The word is gone from the face of the button — the field gets that width —
+    // but the name stays on the label and the badge still counts.
+    expect(toggle).toHaveAttribute('aria-label', 'Filters')
+    expect(toggle).toHaveTextContent(/^2$/)
+  })
+
+  it('keeps the word on the desktop Filters button', () => {
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    const toggle = screen.getByRole('button', { name: 'Filters' })
+    expect(toggle).not.toHaveAttribute('aria-label')
+    expect(toggle).toHaveTextContent('Filters')
+  })
+
+  it('gives the field a short placeholder and seats the query help inside it', () => {
+    mockViewport(true)
+    renderBar(LIBRARY_DEFAULTS, vi.fn())
+
+    const field = screen.getByLabelText('Filter the library')
+    expect(field).toHaveAttribute('placeholder', 'Search the library…')
+    const help = screen.getByRole('button', { name: 'Search query language help' })
+    expect(help.closest('.kukatko-filter-search')).toContainElement(field)
+  })
+
+  it('shows the active query as chips, one per filter term plus the free text', () => {
+    mockViewport(true)
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'svatba year:2025 album:"Kroje a pouť"' }, vi.fn())
+
+    expect(screen.getByText('Text: svatba')).toBeInTheDocument()
+    expect(screen.getByText('year:2025')).toBeInTheDocument()
+    expect(screen.getByText('album:"Kroje a pouť"')).toBeInTheDocument()
+  })
+
+  it('removes just that term from the query when its chip is dismissed', async () => {
+    mockViewport(true)
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'svatba year:2025 album:"Kroje a pouť"' }, onChange)
+
+    await user.click(screen.getByRole('button', { name: 'Remove filter: year:2025' }))
+    expect(onChange).toHaveBeenCalledWith({ q: 'svatba album:"Kroje a pouť"' })
+
+    await user.click(screen.getByRole('button', { name: 'Remove filter: Text: svatba' }))
+    expect(onChange).toHaveBeenLastCalledWith({ q: 'year:2025 album:"Kroje a pouť"' })
+  })
+
+  it('shows no query chips when the page owns the search box', () => {
+    mockViewport(true)
+    renderBar({ ...LIBRARY_DEFAULTS, q: 'year:2025' }, vi.fn(), { showSearch: false })
+
+    expect(screen.queryByText('year:2025')).not.toBeInTheDocument()
+  })
+
   it('hosts the page own view actions at the foot of the drawer, and only there', async () => {
     mockViewport(true)
     const user = userEvent.setup()
