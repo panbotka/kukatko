@@ -19,10 +19,14 @@ import (
 // comments, in its own bucket. Sharing the settings keeps one number to tune;
 // separate buckets mean a burst of answers on a task cannot use up a person's
 // allowance for commenting on photographs, which is a different activity.
+//
+// The task store reports every fresh hand-over to the task_assigned notifier,
+// which tells the person asked inside the assignment's transaction.
 func buildPhotoTaskAPI(cfg *config.Config, db *database.DB, authAPI *auth.API) *phototaskapi.API {
 	limit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
+	store := phototask.NewStore(db.Pool()).WithAssignObserver(buildTaskAssignNotifier(cfg, db))
 	return phototaskapi.NewAPI(phototaskapi.Config{
-		Store:           phototask.NewStore(db.Pool()),
+		Store:           store,
 		Comments:        comments.NewStore(db.Pool()),
 		RequireAuth:     authAPI.RequireAuth,
 		RequireWrite:    authAPI.RequireWrite,

@@ -55,23 +55,44 @@ func (s *Store) Join(ctx context.Context, taskUID, userUID string) error {
 
 // assignSQL puts somebody on a task by somebody else's decision. Unlike joining,
 // it upgrades an existing row: a person who was already there by acting and is
-// then explicitly asked has been asked, and the UI says so.
+// then explicitly asked has been asked, and the UI says so. It reports whether
+// the row is new — xmax is zero for a row this statement inserted and the
+// updating transaction's id for one it upgraded — which is what tells a fresh
+// hand-over (worth announcing) from a repeated one.
 const assignSQL = `
 INSERT INTO photo_task_participants (task_uid, user_uid, added_by)
 VALUES ($1, $2, $3)
-ON CONFLICT (task_uid, user_uid) DO UPDATE SET added_by = excluded.added_by`
+ON CONFLICT (task_uid, user_uid) DO UPDATE SET added_by = excluded.added_by
+RETURNING (xmax = 0)`
+
+// ask runs assignSQL for userUID on taskUID as asked by actorUID and reports
+// the fresh assignment to the store's observer when the person was not on the
+// task before. what names the step for the error.
+func (s *Store) ask(ctx context.Context, tx pgx.Tx, taskUID, userUID, actorUID, what string) error {
+	var inserted bool
+	if err := tx.QueryRow(ctx, assignSQL, taskUID, userUID, nullableUID(actorUID)).Scan(&inserted); err != nil {
+		return fmt.Errorf("%s: %w", what, err)
+	}
+	a := Assignment{TaskUID: taskUID, UserUID: userUID, ActorUID: actorUID}
+	if err := s.assigned(ctx, tx, inserted, a); err != nil {
+		return fmt.Errorf("reporting the assignment of %s to %s: %w", userUID, taskUID, err)
+	}
+	return nil
+}
 
 // Assign puts userUID on the task on purpose — asking a particular person —
 // and writes entry in the same transaction. A missing task yields ErrNotFound
 // and a person with no account ErrUserNotFound; in either case nothing is
-// written. Assigning somebody already on the task is not an error.
+// written. Assigning somebody already on the task is not an error. An assign
+// observer (WithAssignObserver) hears the change only when the person was not
+// on the task before — re-asking is silent.
 func (s *Store) Assign(ctx context.Context, taskUID, userUID string, entry audit.Entry) error {
 	return s.inTx(ctx, "assigning task participant", func(tx pgx.Tx) error {
 		if err := lockTask(ctx, tx, taskUID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, assignSQL, taskUID, userUID, nullableUID(entry.ActorUID)); err != nil {
-			return fmt.Errorf("inserting task participant: %w", err)
+		if err := s.ask(ctx, tx, taskUID, userUID, entry.ActorUID, "inserting task participant"); err != nil {
+			return err
 		}
 		// The person doing the asking is on the task too — they are the one
 		// waiting for the answer.
@@ -87,13 +108,15 @@ func (s *Store) Assign(ctx context.Context, taskUID, userUID string, entry audit
 // handed to somebody at its opening reads, in the participants and in the
 // trail, exactly as one handed over afterwards. A uid given twice is asked
 // once; a person with no account fails the whole transaction (ErrUserNotFound
-// once translated), because half a hand-over is worse than none.
-func askParticipants(
+// once translated), because half a hand-over is worse than none. The store's
+// assign observer hears each person who was not on the task yet — at an
+// opening that is everybody but the actor, who joined by opening it.
+func (s *Store) askParticipants(
 	ctx context.Context, tx pgx.Tx, taskUID string, userUIDs []string, entry audit.Entry,
 ) error {
 	for _, userUID := range uniqueUIDs(userUIDs) {
-		if _, err := tx.Exec(ctx, assignSQL, taskUID, userUID, nullableUID(entry.ActorUID)); err != nil {
-			return fmt.Errorf("inserting asked participant: %w", err)
+		if err := s.ask(ctx, tx, taskUID, userUID, entry.ActorUID, "inserting asked participant"); err != nil {
+			return err
 		}
 		asked := audit.Entry{
 			ActorUID: entry.ActorUID, Action: audit.ActionTaskAssign,

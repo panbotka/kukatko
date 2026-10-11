@@ -26,6 +26,9 @@ const (
 // borrows the shared pgx pool supplied at construction.
 type Store struct {
 	pool *pgxpool.Pool
+	// assigns hears every fresh assignment inside its transaction; nil hears
+	// nothing. See WithAssignObserver.
+	assigns AssignObserver
 }
 
 // NewStore returns a Store backed by pool. The pool stays owned by the caller.

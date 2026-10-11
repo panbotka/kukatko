@@ -137,3 +137,39 @@ func TestRenderAlbumFeatured(t *testing.T) {
 		t.Errorf("untitled without link: body %q", bare.Body)
 	}
 }
+
+// TestRenderTaskAssigned pins the task_assigned mail: who asked and the task in
+// the subject, the sentence and the link in the body, and the fallbacks for a
+// blank asker and a blank title without a link.
+func TestRenderTaskAssigned(t *testing.T) {
+	t.Parallel()
+
+	got := RenderTaskAssigned(TaskAssignedData{
+		DisplayName: "Anna", Who: " Pan Botka ", Title: " Kdy to bylo? ", URL: "https://kukatko.example/tasks/pt1",
+	})
+	if got.Template != TemplateTaskAssigned || got.Subject != "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" {
+		t.Errorf("template %q, subject %q", got.Template, got.Subject)
+	}
+	want := "Ahoj, Anna,\n" +
+		"\n" +
+		"v Kukátku tě Pan Botka přidal(a) k úkolu „Kdy to bylo?“.\n" +
+		"\n" +
+		"Podívat se na něj a odpovědět můžeš tady:\n" +
+		"\n" +
+		"https://kukatko.example/tasks/pt1\n" +
+		"\n" +
+		notificationFooter + "\n" +
+		"\n" +
+		"Kukátko\n"
+	if got.Body != want {
+		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
+	}
+
+	bare := RenderTaskAssigned(TaskAssignedData{Who: " ", Title: "  "})
+	if bare.Subject != "Někdo tě přidal(a) k úkolu: (bez názvu)" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+		t.Errorf("nameless and untitled: subject %q, body %q", bare.Subject, bare.Body)
+	}
+	if strings.Contains(bare.Body, "tady:") || !strings.Contains(bare.Body, "tě Někdo přidal(a) k úkolu „(bez názvu)“.") {
+		t.Errorf("nameless and untitled without link: body %q", bare.Body)
+	}
+}

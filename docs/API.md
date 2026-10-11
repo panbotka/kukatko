@@ -1026,7 +1026,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   there the list *is* the request. **`participants` hands the task over as it is opened** — an array of
   user uids, each put on the task as **asked by the creator** (`added_by` = the caller) in the opening's
   transaction and audited as the same `task.assign` action a later `POST …/participants` writes, so a
-  task handed over at birth reads exactly like one handed over afterwards. A uid given twice is asked
+  task handed over at birth reads exactly like one handed over afterwards; each asked person other than
+  the creator gets the **`task_assigned` notification** in that same transaction (`internal/taskassignnotify`,
+  through the channels they chose). A uid given twice is asked
   once; a uid naming no account is **404** and nothing at all is written — half a hand-over is worse
   than none. Closing a task (`state` `done` or `rejected`) without a non-empty `resolution` is
   a **400**: "rejected" is a real outcome, and what must never exist is a task that is closed and silent.
@@ -1084,7 +1086,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   "you put Anna on this". Assigning is `RequireWrite` while answering is not, for the same reason as the
   thread: adding your own answer is a viewer's business, putting somebody else's name against a question is
   curation. Assigning somebody already on a task only records that they were asked; unassigning somebody who
-  is not on it is a no-op, not an error. A `user_uid` naming no account is **404**, an empty one **400**.
+  is not on it is a no-op, not an error. Asking somebody who was **not** on the task sends them the
+  **`task_assigned` notification** in the same transaction (`internal/taskassignnotify`: never the caller
+  asking themselves, never a disabled account, never again for a task they are already on); whether it
+  reaches them is their own per-channel choice, off by default. A `user_uid` naming no account is **404**, an empty one **400**.
   Both write `task.assign` / `task.unassign` in the mutation's transaction, naming the person under
   `details.user_uid`; joining *by acting* is deliberately not audited, because the act that caused it
   already is. Table `photo_task_participants` (migration `0081_photo_task_participants.sql`), which
@@ -2058,7 +2063,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
     the **effective** set, one entry per known kind and **delivery channel** — every kind offers all three,
     in display order `in_app`, `push`, `email` (`tagged/in_app`, `tagged/push`, `tagged/email`,
-    `registration_pending/in_app`, …, `album_featured/email`) — the stored choice or the channel's default (`is_default: true`),
+    `registration_pending/in_app`, …, `task_assigned/email`) — the stored choice or the channel's default (`is_default: true`),
     so the frontend needs no knowledge of the defaults. **Every default is off** (since 2026-10-11;
     before, the two push channels defaulted on): an account that never chose receives nothing, and an
     explicit stored choice is kept as it was. Which kinds a role can ever

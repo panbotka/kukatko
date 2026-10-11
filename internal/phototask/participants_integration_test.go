@@ -5,7 +5,10 @@ package phototask_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
@@ -120,6 +123,67 @@ func TestParticipants_assignAndRemove(t *testing.T) {
 	}
 	if removed {
 		t.Error("Unassign reported a removal twice")
+	}
+}
+
+// recordingObserver remembers every assignment the store reports.
+type recordingObserver struct {
+	heard []phototask.Assignment
+}
+
+// Assigned records a.
+func (r *recordingObserver) Assigned(_ context.Context, _ pgx.Tx, a phototask.Assignment) error {
+	r.heard = append(r.heard, a)
+	return nil
+}
+
+// TestParticipants_observerHearsFreshAssignmentsOnly verifies what the store
+// tells its assign observer: each person asked at an opening (not the actor,
+// who joined by opening it), a person asked afterwards once — re-asking them
+// is silent — and never somebody who is already on the task by having acted.
+func TestParticipants_observerHearsFreshAssignmentsOnly(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	obs := &recordingObserver{}
+	tasks := f.tasks.WithAssignObserver(obs)
+	anna := f.makeUser(t, "us-anna", "anna", "Anna")
+	bedrich := f.makeUser(t, "us-bedrich", "bedrich", "Bedřich")
+
+	task, err := tasks.Create(ctx, phototask.Task{Title: "Kdy to bylo?"},
+		phototask.Opening{AskedUIDs: []string{anna, actor, anna}}, entry(audit.ActionTaskCreate))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	want := []phototask.Assignment{{TaskUID: task.UID, UserUID: anna, ActorUID: actor}}
+	if !reflect.DeepEqual(obs.heard, want) {
+		t.Fatalf("after an opening asking Anna and the actor, heard %+v, want %+v", obs.heard, want)
+	}
+
+	if err := tasks.Assign(ctx, task.UID, anna, entry(audit.ActionTaskAssign)); err != nil {
+		t.Fatalf("Assign (again): %v", err)
+	}
+	if !reflect.DeepEqual(obs.heard, want) {
+		t.Fatalf("re-asking Anna: heard %+v, want unchanged %+v", obs.heard, want)
+	}
+
+	if _, err := tasks.Update(ctx, task.UID, phototask.Update{State: statePtr(phototask.StateWorking)},
+		audit.Entry{ActorUID: bedrich, Action: audit.ActionTaskUpdate}); err != nil {
+		t.Fatalf("Update by Bedřich: %v", err)
+	}
+	if err := tasks.Assign(ctx, task.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
+		t.Fatalf("Assign Bedřich: %v", err)
+	}
+	if !reflect.DeepEqual(obs.heard, want) {
+		t.Fatalf("asking Bedřich, who acted already: heard %+v, want unchanged %+v", obs.heard, want)
+	}
+
+	other := f.mustCreate(t, "Druhý")
+	if err := tasks.Assign(ctx, other.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
+		t.Fatalf("Assign Bedřich on another task: %v", err)
+	}
+	want = append(want, phototask.Assignment{TaskUID: other.UID, UserUID: bedrich, ActorUID: actor})
+	if !reflect.DeepEqual(obs.heard, want) {
+		t.Fatalf("asking Bedřich on a fresh task: heard %+v, want %+v", obs.heard, want)
 	}
 }
 

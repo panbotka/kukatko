@@ -83,6 +83,12 @@ func AlbumFeatured(to string, data mailer.AlbumFeaturedData) Mail {
 	return Mail{Template: mailer.TemplateAlbumFeatured, To: to, Data: data}
 }
 
+// TaskAssigned is the e-mail channel of the task_assigned notification kind:
+// somebody put the recipient on a task, with a link to it.
+func TaskAssigned(to string, data mailer.TaskAssignedData) Mail {
+	return Mail{Template: mailer.TemplateTaskAssigned, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.

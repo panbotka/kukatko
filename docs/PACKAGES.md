@@ -3500,7 +3500,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   this" and "you put Anna on this". `Join` is the unaudited, transaction-free form for the one act the
   package does not own — writing in the thread, which belongs to `internal/comments` — and `Assign`
   *upgrades* an existing row (somebody who acted and is then asked has been asked) while `joinParticipant`
-  never downgrades one. The aggregate rides along with every read as a `json_agg` LATERAL, so a listing
+  never downgrades one. **`AssignObserver`** (`WithAssignObserver`, the people store's `TagObserver`
+  pattern) hears every *fresh* hand-over — `Assignment{TaskUID, UserUID, ActorUID}`, inside the
+  assignment's transaction, from `Assign` and from the `AskedUIDs` of an opening alike — and nothing
+  else: `assignSQL` returns `(xmax = 0)`, true only for a row it inserted, so re-asking somebody already
+  on the task (asked, or there by acting) reports nothing. An observer's error fails the assignment.
+  It is how `internal/taskassignnotify` sends the `task_assigned` notification. The aggregate rides along with every read as a `json_agg` LATERAL, so a listing
   renders who is on each task without a second request, while the **filter** is an `EXISTS` over the
   `(user_uid, joined_at)` index rather than a predicate over that aggregate;
   **the read joins the `comments` table itself** rather than enriching afterwards — the thread is where
@@ -5507,11 +5512,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     total, "Podle alb:", then one line per album — title, "5 fotek" and its link — and the photos outside
     the albums last as "Další fotky", `Groups` winning over `URL`), `RenderAlbumFeatured`
     (`AlbumFeaturedData{DisplayName,Title,URL}` — subject „Nové doporučené album: <title>", the album is
-    on the homepage, the link to it; a blank title reads „(bez názvu)") and the
+    on the homepage, the link to it; a blank title reads „(bez názvu)"), `RenderTaskAssigned`
+    (`TaskAssignedData{DisplayName,Who,Title,URL}` — subject „<who> tě přidal(a) k úkolu: <title>", the
+    body „v Kukátku tě <who> přidal(a) k úkolu „<title>"." and the link to the task; a blank `Who` reads
+    „Někdo", a blank title „(bez názvu)") and the
     generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,
     the body (or the title when there is none) and the link), which `internal/notifydeliver` uses for any
     kind without a template of its own. `internal/mailjob` has a constructor for each (`Tagged`,
-    `AlbumFeatured`, `Notification`) and renders all three.
+    `AlbumFeatured`, `TaskAssigned`, `Notification`) and renders all four.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5704,9 +5712,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (migrations `0087`, `0093` for the channel, `0095` for `notifications.in_app`,
   [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
-    photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) and
+    photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos),
     **`KindAlbumFeatured`** ("a new album is featured on the homepage", its set is the album's cover, the
-    link is the album's page) — in a
+    link is the album's page) and **`KindTaskAssigned`** ("somebody put you on a task", no photos, the
+    link is the task's page) — in a
     package registry in display order, each with the **channels** it is delivered through
     (`AllChannels()`: **`ChannelInApp`** `in_app`, **`ChannelPush`**, **`ChannelEmail`**, in that order) —
     **every kind offers all three, and every default is off** (`everyChannelOff()`; the 2026-10-11
@@ -5747,7 +5756,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     title trimmed and cut at `MaxAlbumNameLen` (60) with an ellipsis so the title stays under
     `MaxTitleLen`, a blank title reading "(bez názvu)"/"(untitled)") and **`RenderTaggedOther(Language,
     count)`** ("Označili vás na dalších fotkách", "Přibyly 3 další fotky, na kterých vás označili."), used
-    only beside at least one album notification.
+    only beside at least one album notification. **`RenderAlbumFeatured(Language, title)`** ("Nové
+    doporučené album: Pouť 2026", the title cut at `MaxAlbumNameLen`) and **`RenderTaskAssigned(Language,
+    who, title)`** ("Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" / "Otevři úkol a odpověz."; English
+    "Anna added you to the task: …"; the asker's name trimmed, a blank one "Někdo"/"Somebody", the task's
+    title cut at `MaxTaskTitleLen` (100) by the shared `shorten`, a blank one untitled).
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
     foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
     uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is
@@ -5925,6 +5938,29 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     second job and a lapsed feature renewed announces again; unfeatured before the run (twice, collapsing
     into one job) sends nothing; a private album reaches the admin and the editor only; nobody opted in →
     no record.
+
+- **Task hand-over notification (`internal/taskassignnotify`):** "somebody put you on a task" — the
+  `task_assigned` kind, one notification to the person asked, **inside the assignment's transaction**.
+  **`Notifier`** (`New(Config{Deliver, Language, Logger})`, panicking without `Deliver`) is the task
+  store's `AssignObserver`, wired onto the store in `cmd/kukatko/phototask.go` (`buildTaskAssignNotifier`
+  over `buildDeliverer`); the store reports only a fresh hand-over, so "already on the task" costs
+  nothing here. **`Assigned(ctx, tx, Assignment)`** runs under a **savepoint** of the assignment's
+  transaction (the tagging recorder's rule: a notification is worth less than the assignment, so a
+  failed delivery is rolled back to the savepoint, logged and swallowed; only a broken transaction is
+  returned), reads one row — the task's title, the asker's name (display name, else username) and the
+  asked account's `disabled`/`approved_at` — and applies the pure **`wanted`** rules: never without an
+  actor (a NULL `added_by` is joined by acting, not asked), never the person who asked themselves,
+  never a disabled or unapproved account. Whether the person wants the kind at all is
+  `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
+  `KindTaskAssigned`, `notification.RenderTaskAssigned` ("Pan Botka tě přidal(a) k úkolu: Kdy to
+  bylo?"), `Link` = **`TaskPath(uid)`** (`/tasks/<uid>`), no photographs, and the `task_assigned` mail
+  (`mailer.TaskAssignedData{DisplayName, Who, Title, URL}`) with the absolute task link. The daily
+  `task_digest` mail (`internal/taskdigestjob`) is untouched: a separate digest with its own switch.
+  Tests: the rules table, the path, the defaults and the message as unit tests; over a real database —
+  an opening asking Anna, Bedřich, the creator and a newcomer who never chose → exactly Anna's and
+  Bedřich's notifications (title, body, task link, in the inbox) and Anna's mail; `Assign` once → one,
+  re-asked (by anybody) → none, self-assign → none, a disabled account → none, somebody already on the
+  task by acting → none, a fresh task → one; the plain store without the hook announces nothing.
 
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
   A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and calls

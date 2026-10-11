@@ -170,11 +170,18 @@ func albumName(lang Language, title string) string {
 		}
 		return "(bez názvu)"
 	}
+	return shorten(name, MaxAlbumNameLen)
+}
+
+// shorten cuts name to at most limit characters, ending a cut name with an
+// ellipsis (which counts towards the limit); a name within the limit is
+// returned as it is.
+func shorten(name string, limit int) string {
 	runes := []rune(name)
-	if len(runes) <= MaxAlbumNameLen {
+	if len(runes) <= limit {
 		return name
 	}
-	return strings.TrimSpace(string(runes[:MaxAlbumNameLen-1])) + "…"
+	return strings.TrimSpace(string(runes[:limit-1])) + "…"
 }
 
 // RenderAlbumFeatured builds the "a new album is featured" notification for
@@ -196,4 +203,54 @@ func RenderAlbumFeatured(lang Language, title string) Text {
 		Title: "Nové doporučené album: " + name,
 		Body:  "Na úvodní stránce Kukátka je nově doporučené album " + name + ".",
 	}
+}
+
+// MaxTaskTitleLen is the most characters of a task's title a notification
+// repeats. A task title may run to 200 characters, the whole of MaxTitleLen,
+// so a longer one is cut and ended with an ellipsis after the name of whoever
+// asked.
+const MaxTaskTitleLen = 100
+
+// RenderTaskAssigned builds the "somebody put you on a task" notification: who
+// asked (by name) and the task's title, in lang (anything but English reads
+// as Czech). The headline is the whole message — "Anna tě přidal(a) k úkolu:
+// Kdy to bylo?" — so a lock screen says who and what; the line under it is the
+// call to open the task. The asking person's name is trimmed and, when blank
+// (an account since deleted), replaced by "Někdo"/"Somebody"; the title is cut
+// at MaxTaskTitleLen and a blank one reads as untitled. It is a pure function
+// of its arguments.
+func RenderTaskAssigned(lang Language, who, title string) Text {
+	name := taskTitle(lang, title)
+	asker := strings.TrimSpace(who)
+	if lang == LanguageEnglish {
+		if asker == "" {
+			asker = "Somebody"
+		}
+		return Text{
+			Title: asker + " added you to the task: " + name,
+			Body:  "Open the task and answer.",
+		}
+	}
+	if asker == "" {
+		asker = "Někdo"
+	}
+	return Text{
+		Title: asker + " tě přidal(a) k úkolu: " + name,
+		Body:  "Otevři úkol a odpověz.",
+	}
+}
+
+// taskTitle is how a notification calls a task: its trimmed title, cut to
+// MaxTaskTitleLen characters with an ellipsis, or "untitled" in lang when the
+// title is blank (the store never stores one, but a render function refuses
+// nothing).
+func taskTitle(lang Language, title string) string {
+	name := strings.TrimSpace(title)
+	if name == "" {
+		if lang == LanguageEnglish {
+			return "(untitled)"
+		}
+		return "(bez názvu)"
+	}
+	return shorten(name, MaxTaskTitleLen)
 }

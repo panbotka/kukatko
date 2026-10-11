@@ -36,6 +36,9 @@ const (
 	// TemplateAlbumFeatured tells somebody a new album is featured on the
 	// homepage — the e-mail channel of the album_featured notification kind.
 	TemplateAlbumFeatured = "album_featured"
+	// TemplateTaskAssigned tells somebody they were put on a task — the e-mail
+	// channel of the task_assigned notification kind.
+	TemplateTaskAssigned = "task_assigned"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.

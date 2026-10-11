@@ -366,6 +366,12 @@ rebuilt? — and the only person who knows is usually not the person editing the
   answer) or as work (someone should do it), so giving somebody a job is one dialog rather than opening
   a task and then assigning it. From the terminal that is
   `kukatko ctl tasks create --state working --assign <user-uid>`.
+- **Being asked is a notification.** Switch on „Když mě někdo přidá k úkolu" in your notification
+  settings (in the app, as a push, by e-mail — all off until you choose) and every time somebody puts you
+  on a task, at its opening or later, you get „Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", one tap to
+  the task. It never tells you about putting yourself on one, never repeats itself for a task you are
+  already on (asked or by having acted), and it is separate from the daily digest of tasks waiting for
+  you, which keeps its own switch.
 - **A task does not have to be about photographs.** „Přejmenovat štítky `wf:`" or „kam patří fotky
   z náboru?" is agenda about the library rather than about particular pictures, and the **Nový úkol**
   button with nothing selected opens exactly that — a task with no photographs, which says „Bez fotek"

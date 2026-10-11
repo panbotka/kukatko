@@ -42,6 +42,10 @@ const (
 	// cover (one photograph, or none for an album with nothing to show); it
 	// opens the album, not its own page.
 	KindAlbumFeatured Kind = "album_featured"
+	// KindTaskAssigned is "somebody put you on a task": an account was asked on
+	// a Kukátko task (/tasks) by somebody else. It carries no photographs — the
+	// task's own page holds its frozen group — and opens the task.
+	KindTaskAssigned Kind = "task_assigned"
 )
 
 // Channel names how a notification reaches its account: the in-app inbox, a
@@ -101,6 +105,7 @@ var registry = []struct {
 	{kind: KindTagged, channels: everyChannelOff()},
 	{kind: KindRegistrationPending, channels: everyChannelOff()},
 	{kind: KindAlbumFeatured, channels: everyChannelOff()},
+	{kind: KindTaskAssigned, channels: everyChannelOff()},
 }
 
 // Kinds returns every known kind, in display order, as a fresh slice.

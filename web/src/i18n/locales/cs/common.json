@@ -576,7 +576,8 @@
       "kinds": {
         "tagged": "Když mě někdo označí na fotce",
         "registration_pending": "Když na schválení čeká nová registrace",
-        "album_featured": "Když se na úvodní stránce objeví nové doporučené album"
+        "album_featured": "Když se na úvodní stránce objeví nové doporučené album",
+        "task_assigned": "Když mě někdo přidá k úkolu"
       },
       "saveError": "Volbu se nepodařilo uložit. Zkus to prosím znovu.",
       "prefsLoadError": "Volby oznámení se nepodařilo načíst.",

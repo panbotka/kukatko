@@ -21,6 +21,7 @@ export type KindLabelKey =
   | 'account.notifications.kinds.tagged'
   | 'account.notifications.kinds.registration_pending'
   | 'account.notifications.kinds.album_featured'
+  | 'account.notifications.kinds.task_assigned'
 
 /** What the card knows about one kind: its label, and who can ever receive it. */
 interface KindCopy {
@@ -41,6 +42,7 @@ const KINDS: Partial<Record<NotificationKind, KindCopy>> = {
     adminOnly: true,
   },
   album_featured: { label: 'account.notifications.kinds.album_featured', adminOnly: false },
+  task_assigned: { label: 'account.notifications.kinds.task_assigned', adminOnly: false },
 }
 
 /** One column of the kinds × channels grid. */

@@ -137,3 +137,41 @@ func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{Template: TemplateAlbumFeatured, Subject: "Nové doporučené album: " + title, Body: body(lines...)}
 }
+
+// TaskAssignedData is what the "you were put on a task" message needs: whom to
+// greet, who asked (by name; blank reads as „někdo"), the task's title and the
+// absolute link to the task. An empty URL leaves the link out.
+type TaskAssignedData struct {
+	DisplayName string
+	Who         string
+	Title       string
+	URL         string
+}
+
+// RenderTaskAssigned builds the e-mail channel of the task_assigned
+// notification kind: the subject says who put the recipient on which task, the
+// way the notification's title does, and the body links to the task. It is a
+// pure function of d.
+func RenderTaskAssigned(d TaskAssignedData) Rendered {
+	who := strings.TrimSpace(d.Who)
+	if who == "" {
+		who = "Někdo"
+	}
+	title := strings.TrimSpace(d.Title)
+	if title == "" {
+		title = "(bez názvu)"
+	}
+	lines := []string{
+		informalGreeting(d.DisplayName), "",
+		"v Kukátku tě " + who + " přidal(a) k úkolu „" + title + "“.",
+	}
+	if url := strings.TrimSpace(d.URL); url != "" {
+		lines = append(lines, "", "Podívat se na něj a odpovědět můžeš tady:", "", url)
+	}
+	lines = append(lines, "", notificationFooter, "", signature)
+	return Rendered{
+		Template: TemplateTaskAssigned,
+		Subject:  who + " tě přidal(a) k úkolu: " + title,
+		Body:     body(lines...),
+	}
+}

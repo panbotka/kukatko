@@ -87,7 +87,7 @@ func (s *Store) Create(ctx context.Context, t Task, opening Opening, entry audit
 		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
 			return err
 		}
-		if err := askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
+		if err := s.askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
 			return err
 		}
 		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))

@@ -564,7 +564,8 @@
       "kinds": {
         "tagged": "When somebody tags me in a photo",
         "registration_pending": "When a new registration is waiting for approval",
-        "album_featured": "When a new featured album appears on the home page"
+        "album_featured": "When a new featured album appears on the home page",
+        "task_assigned": "When somebody adds me to a task"
       },
       "saveError": "The choice could not be saved. Please try again.",
       "prefsLoadError": "Your notification choices could not be loaded.",

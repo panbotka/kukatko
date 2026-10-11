@@ -272,3 +272,91 @@ func TestRenderAlbumFeatured(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderTaskAssigned pins the "somebody put you on a task" text in both
+// languages: who asked and the task in the headline, the call to open it under
+// it, a blank asker as "Někdo"/"Somebody", a blank title as untitled and an
+// overlong title cut at MaxTaskTitleLen.
+func TestRenderTaskAssigned(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("x", MaxTaskTitleLen+10)
+	tests := []struct {
+		name  string
+		lang  Language
+		who   string
+		title string
+		want  Text
+	}{
+		{
+			name: "czech", lang: LanguageCzech, who: " Anna ", title: " Kdy to bylo? ",
+			want: Text{Title: "Anna tě přidal(a) k úkolu: Kdy to bylo?", Body: "Otevři úkol a odpověz."},
+		},
+		{
+			name: "english", lang: LanguageEnglish, who: "Anna", title: "Kdy to bylo?",
+			want: Text{Title: "Anna added you to the task: Kdy to bylo?", Body: "Open the task and answer."},
+		},
+		{
+			name: "unknown language reads as czech", lang: "de", who: "Anna", title: "Kdy?",
+			want: Text{Title: "Anna tě přidal(a) k úkolu: Kdy?", Body: "Otevři úkol a odpověz."},
+		},
+		{
+			name: "nobody named, czech", lang: LanguageCzech, who: "  ", title: "Kdy?",
+			want: Text{Title: "Někdo tě přidal(a) k úkolu: Kdy?", Body: "Otevři úkol a odpověz."},
+		},
+		{
+			name: "nobody named, english", lang: LanguageEnglish, who: "", title: "Kdy?",
+			want: Text{Title: "Somebody added you to the task: Kdy?", Body: "Open the task and answer."},
+		},
+		{
+			name: "untitled", lang: LanguageCzech, who: "Anna", title: " ",
+			want: Text{Title: "Anna tě přidal(a) k úkolu: (bez názvu)", Body: "Otevři úkol a odpověz."},
+		},
+		{
+			name: "untitled, english", lang: LanguageEnglish, who: "Anna", title: "",
+			want: Text{Title: "Anna added you to the task: (untitled)", Body: "Open the task and answer."},
+		},
+		{
+			name: "overlong title is cut", lang: LanguageCzech, who: "Anna", title: long,
+			want: Text{
+				Title: "Anna tě přidal(a) k úkolu: " + strings.Repeat("x", MaxTaskTitleLen-1) + "…",
+				Body:  "Otevři úkol a odpověz.",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := RenderTaskAssigned(tt.lang, tt.who, tt.title); got != tt.want {
+				t.Errorf("RenderTaskAssigned(%q, %q, %q) = %+v, want %+v", tt.lang, tt.who, tt.title, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestShorten checks the cut at the limit: within it untouched, over it cut to
+// limit-1 characters plus an ellipsis with the trailing space trimmed, counted
+// in runes rather than bytes.
+func TestShorten(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		in    string
+		limit int
+		want  string
+	}{
+		{name: "within", in: "Pouť", limit: 4, want: "Pouť"},
+		{name: "over", in: "Pouť 2026", limit: 5, want: "Pouť…"},
+		{name: "cut lands on a space", in: "Pouť 2026", limit: 6, want: "Pouť…"},
+		{name: "runes not bytes", in: "ěščřž", limit: 5, want: "ěščřž"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := shorten(tt.in, tt.limit); got != tt.want {
+				t.Errorf("shorten(%q, %d) = %q, want %q", tt.in, tt.limit, got, tt.want)
+			}
+		})
+	}
+}
