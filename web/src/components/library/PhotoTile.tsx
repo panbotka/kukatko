@@ -102,6 +102,14 @@ export interface PhotoTileProps {
    */
   favoritable?: boolean
   /**
+   * When true a favourite's filled heart is drawn only on hover/focus, like a
+   * non-favourite's outline, instead of staying on the tile. For a list where
+   * every tile is a favourite by definition (the favourites page) the
+   * persistent heart states nothing; the toggle itself stays reachable. Only
+   * meaningful with `favoritable`. Defaults false.
+   */
+  favoriteHoverOnly?: boolean
+  /**
    * Called with this photo's new favorite state whenever the heart flips (the
    * optimistic flip and a rollback alike). A page that also favorites the photo
    * by another route — the library's `f` shortcut — passes it so both share one
@@ -197,6 +205,7 @@ export function PhotoTile({
   anySelected = false,
   onToggleSelect,
   favoritable = false,
+  favoriteHoverOnly = false,
   onFavoriteChange,
   detailQuery,
   gridOrigin,
@@ -413,8 +422,12 @@ export function PhotoTile({
           // only while its tile is hovered or holds focus, so a dense wall shows
           // photographs rather than a disc over every one of them. A favourite
           // tile keeps its filled heart (matched on `aria-pressed`, which the
-          // optimistic toggle keeps current), and touch screens are untouched.
-          className="kk-tile__fav position-absolute bottom-0 end-0 m-1"
+          // optimistic toggle keeps current) unless `kk-tile__fav--hover-only`
+          // asks for the same reveal regardless of state, and touch screens are
+          // untouched.
+          className={`kk-tile__fav${
+            favoriteHoverOnly ? ' kk-tile__fav--hover-only' : ''
+          } position-absolute bottom-0 end-0 m-1`}
           onChange={
             onFavoriteChange === undefined
               ? undefined

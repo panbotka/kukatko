@@ -23,7 +23,8 @@ import { useUrlState } from '../lib/urlState'
  * grid as the library, scoped to the current user's favorites via the
  * `favorite=true` list filter. Each tile keeps its favorite heart, so a photo can
  * be unfavorited in place (the change is optimistic; it reappears on the next
- * reload if the request failed). The view state lives in the URL like the library.
+ * reload if the request failed) — but only on hover/focus: every tile here is a
+ * favourite, so a filled heart pinned to each one would state nothing. The view state lives in the URL like the library.
  *
  * Editors can also multi-select tiles — the corner checkmark is offered straight
  * away, as on the library — and picking one raises the library's own floating
@@ -99,6 +100,7 @@ export function FavoritesPage() {
             onRetry={retry}
             selection={bulk.gridSelection}
             favoritable
+            favoriteHoverOnly
             detailQuery={detailQuery}
             scroll={gridScroll}
           />

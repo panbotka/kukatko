@@ -1090,6 +1090,11 @@
  * carries and the optimistic toggle keeps current, so an unfavourited tile fades
  * its heart back out the moment the flip lands.
  *
+ * The one exception is a grid whose every tile is a favourite (the favourites
+ * page): there a filled heart on each tile states nothing, so the tile opts in
+ * to `kk-tile__fav--hover-only` (its `favoriteHoverOnly` prop) and its heart
+ * follows the same hover/focus reveal whatever its state.
+ *
  * Deliberately NOT touched:
  *   - touch and coarse-pointer screens (no `hover`/`fine` match here at all):
  *     without hover a hidden heart is an unreachable heart, and the phone grid
@@ -1102,7 +1107,8 @@
  * it before it is ever activated.
  */
 @media (hover: hover) and (pointer: fine) {
-  .kk-tile__fav[aria-pressed='false'] {
+  .kk-tile__fav[aria-pressed='false'],
+  .kk-tile__fav--hover-only {
     opacity: 0;
     transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
   }

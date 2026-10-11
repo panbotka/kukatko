@@ -1016,7 +1016,9 @@ here.
   screen a *non-favourite* heart is drawn only while its tile is hovered or holds focus
   (`.kk-tile__fav` + `.kk-tile:hover`/`:focus-within` in `tokens.css`, matched on `aria-pressed` so the
   optimistic flip keeps it current) — at density 10 the library painted a plated disc over all 108 visible
-  ~100 px thumbnails at once; a tile that **is** a favourite keeps its filled heart shown, and touch/coarse
+  ~100 px thumbnails at once; a tile that **is** a favourite keeps its filled heart shown — unless the list
+  passes `favoriteHoverOnly` (also on `PhotoGrid`; `FavoritesPage` does, every tile there being one), which adds
+  `.kk-tile__fav--hover-only` and puts the filled heart behind the same reveal — and touch/coarse
   pointers and a grid holding a selection (`kk-tile--checks`) are untouched, where a hidden control would be
   an unreachable one (see `styles/tokens.test.ts`); the optional
   `onFavoriteChange(uid,favorite)` reports every flip (optimistic **and** rolled back) up to the page,
@@ -2153,7 +2155,8 @@ here.
   phone-proof — both lines truncate (`kk-min-w-0` + `text-truncate`) and rename/delete keep only their glyph below
   `sm` (`aria-label` = the same word, so the accessible name doesn't change with the viewport),
   `FavoritesPage` = `/favorites` the current user's favorites: the same grid/filters as the library
-  scoped to `favorite=true`, hearts to remove from favorites in place (favoritable),
+  scoped to `favorite=true`, hearts to remove from favorites in place (favoritable), drawn on hover/focus
+  only (`favoriteHoverOnly` — a filled heart on every tile would state nothing),
   the tiles carry the scope in the detail link (`detailQuery` with `favorite=true`) → Esc/Back/prev-next from a photo returns here,
   for editors **hover-select** → the shared **`BatchActionBar`** (the library's full set of actions,
   `onSelectAll` picks every loaded tile); a bulk removal from favorites drops the photo from the list

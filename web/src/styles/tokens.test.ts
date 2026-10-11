@@ -113,12 +113,23 @@ describe('tile favourite heart on a pointer screen', () => {
     }
   })
 
-  it('never hides a favourite tile’s heart', () => {
-    // The only rule that hides one selects `aria-pressed='false'`, so a
-    // favourite — `aria-pressed='true'`, kept current by the optimistic toggle —
-    // is not matched by it at all.
+  it('never hides a favourite tile’s heart unless the tile opts in', () => {
+    // The hiding rule selects `aria-pressed='false'`, so a favourite —
+    // `aria-pressed='true'`, kept current by the optimistic toggle — is not
+    // matched by it, except through the explicit hover-only modifier.
     expect(css).not.toMatch(/\.kk-tile__fav\s*\{[^}]*opacity:\s*0/)
     expect(css).not.toContain(".kk-tile__fav[aria-pressed='true']")
+  })
+
+  it('hides an opted-in heart at rest whatever its state, with the same reveals', () => {
+    // The favourites page, where every tile is one, asks for this via
+    // `favoriteHoverOnly`; the modifier shares the hiding rule, so the reveals
+    // after it apply unchanged.
+    const rest = declarations(ruleBody(fine ?? '', /\.kk-tile__fav--hover-only\s*/) ?? '')
+    expect(rest.get('opacity')).toBe('0')
+    expect((fine ?? '').indexOf('.kk-tile:hover .kk-tile__fav')).toBeGreaterThan(
+      (fine ?? '').indexOf('.kk-tile__fav--hover-only'),
+    )
   })
 
   it('leaves the touch branch exactly as it was', () => {

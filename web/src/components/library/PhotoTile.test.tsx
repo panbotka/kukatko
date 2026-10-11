@@ -69,11 +69,11 @@ function renderTileWithRoute(p: Photo, fill: boolean) {
   )
 }
 
-function renderTile(p: Photo, favoritable = false) {
+function renderTile(p: Photo, favoritable = false, favoriteHoverOnly = false) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter>
-        <PhotoTile photo={p} favoritable={favoritable} />
+        <PhotoTile photo={p} favoritable={favoritable} favoriteHoverOnly={favoriteHoverOnly} />
       </MemoryRouter>
     </I18nextProvider>,
   )
@@ -344,7 +344,14 @@ describe('PhotoTile curation controls', () => {
     renderTile(photo({ media_type: 'image', is_favorite: true }), true)
     const heart = screen.getByRole('button', { name: 'Remove from favorites' })
     expect(heart).toHaveClass('kk-tile__fav')
+    expect(heart).not.toHaveClass('kk-tile__fav--hover-only')
     expect(heart).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('marks a favourite’s heart hover-only when the list asks for it', () => {
+    renderTile(photo({ media_type: 'image', is_favorite: true }), true, true)
+    const heart = screen.getByRole('button', { name: 'Remove from favorites' })
+    expect(heart).toHaveClass('kk-tile__fav', 'kk-tile__fav--hover-only')
   })
 })
 

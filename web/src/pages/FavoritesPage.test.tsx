@@ -138,6 +138,20 @@ describe('FavoritesPage', () => {
     expect(screen.getByRole('button', { name: 'Remove from favorites' })).toBeInTheDocument()
   })
 
+  it('draws no persistent heart: every tile is a favourite, so it shows on hover only', async () => {
+    fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
+    renderFavorites()
+
+    await screen.findByRole('link', { name: 'a.jpg' })
+    // The hover-only modifier is what the stylesheet hides at rest regardless of
+    // `aria-pressed`; the button itself stays so a photo can be unfavorited.
+    const hearts = screen.getAllByRole('button', { name: 'Remove from favorites' })
+    expect(hearts).toHaveLength(2)
+    for (const heart of hearts) {
+      expect(heart).toHaveClass('kk-tile__fav', 'kk-tile__fav--hover-only')
+    }
+  })
+
   it('keeps selection and bulk edit away from viewers', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderFavorites(false)

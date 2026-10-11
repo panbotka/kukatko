@@ -816,6 +816,17 @@ describe('LibraryPage', () => {
     expect(screen.queryByRole('button', { name: 'Select' })).not.toBeInTheDocument()
   })
 
+  it('keeps a favourite’s heart on its tile at rest', async () => {
+    // Only the favourites page, where every tile is one, quiets the filled
+    // heart to a hover reveal; in the library it is state worth reading.
+    fetchMock.mockResolvedValue(page([{ ...photo('a', 'a.jpg'), is_favorite: true }], 1, null))
+    renderLibrary()
+
+    const heart = await screen.findByRole('button', { name: 'Remove from favorites' })
+    expect(heart).toHaveClass('kk-tile__fav')
+    expect(heart).not.toHaveClass('kk-tile__fav--hover-only')
+  })
+
   it('lets an editor hover-select a tile, raising the floating batch bar', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], 2, null))
     const user = userEvent.setup()

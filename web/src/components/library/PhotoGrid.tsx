@@ -172,6 +172,13 @@ export interface PhotoGridProps {
    */
   favoritable?: boolean
   /**
+   * When true a favourite's heart is revealed on hover/focus only instead of
+   * staying on its tile — for a list that is all favourites (the favourites
+   * page), where a heart on every tile carries no information. Passed through
+   * to {@link PhotoTile}'s `favoriteHoverOnly`. Defaults false.
+   */
+  favoriteHoverOnly?: boolean
+  /**
    * Called with a photo's new favorite state whenever its heart flips, so a page
    * that also favorites from elsewhere (the library's `f` shortcut) keeps one
    * baseline per photo rather than two that drift apart.
@@ -263,6 +270,7 @@ export function PhotoGrid({
   onRetry,
   selection,
   favoritable = false,
+  favoriteHoverOnly = false,
   onFavoriteChange,
   detailQuery,
   gridRef,
@@ -526,6 +534,7 @@ export function PhotoGrid({
                 anySelected={anySelected}
                 onToggleSelect={selection === undefined ? undefined : toggleSelect}
                 favoritable={favoritable && !coarse}
+                favoriteHoverOnly={favoriteHoverOnly}
                 onFavoriteChange={onFavoriteChange}
                 detailQuery={detailQuery}
                 gridOrigin={scroll?.key}
