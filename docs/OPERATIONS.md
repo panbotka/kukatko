@@ -2121,8 +2121,9 @@ other type; values ≤ 0 are ignored and a type
   **tagging window** stays open: the first time somebody's linked person is tagged, a window opens, every
   photo they are tagged on inside it is counted, and when it closes one "you were tagged in N photos"
   notification is sent (the `tag_notify` job, `internal/tagnotifyjob`) — not one per photo. It must be
-  positive, checked **whether push is on or off** (`ErrInvalidPushTagsWindow`); with push off nothing is
-  recorded at all. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
+  positive, checked **whether push is on or off** (`ErrInvalidPushTagsWindow`); the window governs every
+  channel (in-app, push, e-mail), and nothing is recorded for an account no channel would reach — with
+  push off, an account that chose only push. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
   `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`, `KUKATKO_PUSH_TAGS_WINDOW`.
 - **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
   outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's
@@ -2135,6 +2136,17 @@ other type; values ≤ 0 are ignored and a type
   (`users.task_digest_at`, stamped after the mail is scheduled) — a queue that has not moved sends nothing,
   and a `.invalid` placeholder address is skipped, never dialled. A server that was down at the hour sends
   nothing until the next one. Env: `KUKATKO_TASKS_DIGEST_ENABLED`, `KUKATKO_TASKS_DIGEST_HOUR`.
+
+- **Notification channels and retention (no keys of their own):** every notification kind is delivered
+  through up to three channels — **in-app** (the inbox behind the navbar's bell; needs no switch), **push**
+  (needs `push.enabled`) and **e-mail** (needs `mail.enabled`; links built on `mail.base_url`) — chosen
+  per account and kind in *My account → Notifications*. **Every channel of every kind is off until the
+  account turns it on** (since 2026-10-11; before, the tagged and registration pushes defaulted on —
+  accounts that saved an explicit choice keep it). One delivery path, `internal/notifydeliver`, decides
+  for all producers. The records are purged by the **`notification_purge`** job (`internal/notifypurgejob`):
+  enqueued at startup and every 24 h, it deletes read notifications older than **30 days** and unread
+  ones older than **90 days** (fixed retention, not configurable); at most one is ever queued
+  (migration 0096). The job shows in *System → Jobs* like every other.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 

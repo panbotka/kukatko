@@ -1,8 +1,9 @@
 // Package notificationapi exposes over HTTP what internal/push and
 // internal/notification already do: whether this instance can push at all and
 // with which public key, the calling account's push subscriptions (register,
-// list, remove), its per-kind notification preferences, and one notification
-// record with its frozen photo set.
+// list, remove), its per-kind, per-channel notification preferences, its in-app
+// inbox (the listing, the unread count, "mark everything read"), and one
+// notification record with its frozen photo set.
 //
 // It holds no business logic of its own. Every operation is scoped to the
 // account taken from the auth context, and every role may use every route — a
@@ -22,8 +23,10 @@
 // so the page can explain a short list instead of silently showing ten of
 // twelve.
 //
-// There is deliberately no "list my notifications" route: there is no in-app
-// notification centre, and a deeplink only ever needs one record.
+// The inbox lists only the notifications delivered in-app. A record that exists
+// only behind a push or an e-mail (the owner turned the in-app channel off) is
+// never listed or counted, but its own uid route still answers, because that is
+// what the push and the mail open.
 package notificationapi
 
 import (
@@ -63,6 +66,13 @@ type NotificationStore interface {
 	// MarkRead stamps ownerUID's notification uid read (idempotently) and
 	// returns it, or notification.ErrNotFound.
 	MarkRead(ctx context.Context, ownerUID, uid string) (notification.Notification, error)
+	// List returns one page of ownerUID's inbox, newest first.
+	List(ctx context.Context, ownerUID string, opts notification.ListOptions) (notification.Page, error)
+	// UnreadCount returns how many notifications in ownerUID's inbox are unread.
+	UnreadCount(ctx context.Context, ownerUID string) (int, error)
+	// MarkAllRead marks every unread notification in ownerUID's inbox read and
+	// returns how many it marked.
+	MarkAllRead(ctx context.Context, ownerUID string) (int64, error)
 	// Photos returns the photo uids of the frozen set that vis lets through,
 	// in their frozen order, or notification.ErrNotFound.
 	Photos(ctx context.Context, ownerUID, uid string, vis notification.Visibility) ([]string, error)
@@ -154,6 +164,9 @@ func NewAPI(cfg Config) *API {
 //	GET    /push/subscriptions           the caller's subscribed devices
 //	POST   /push/subscriptions           register or refresh this browser (503 when push is off)
 //	DELETE /push/subscriptions?endpoint= remove one of the caller's subscriptions
+//	GET    /notifications                the caller's inbox, newest first (?unread, ?limit, ?offset)
+//	GET    /notifications/unread-count   how many inbox notifications are unread
+//	POST   /notifications/read-all       mark the whole inbox read
 //	GET    /notifications/preferences    the caller's effective preferences
 //	PUT    /notifications/preferences    replace them
 //	GET    /notifications/{uid}          one notification with its visible photos
@@ -168,6 +181,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 	r.Route("/notifications", func(r chi.Router) {
 		r.Use(a.requireAuth)
+		r.Get("/", a.handleList)
+		r.Get("/unread-count", a.handleUnreadCount)
+		r.Post("/read-all", a.handleMarkAllRead)
 		r.Get("/preferences", a.handleGetPreferences)
 		r.Put("/preferences", a.handleReplacePreferences)
 		r.Get("/{uid}", a.handleGetNotification)

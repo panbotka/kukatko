@@ -1,5 +1,7 @@
 // Package tagnotifyjob turns face tagging into one "you were tagged in N photos"
-// push notification per window, instead of one per photo.
+// notification per window, instead of one per photo, delivered to whichever
+// channels (in-app, push, e-mail) the account wants through
+// internal/notifydeliver.
 //
 // When somebody uploads an album from a village event and spends an afternoon
 // naming the faces on it, the people they name must not receive forty separate
@@ -13,15 +15,15 @@
 //   - Everything tagged inside the window is counted: later tags add rows and
 //     find the job already queued.
 //   - When the window closes, Service.Handle consumes the account's rows and
-//     records one notification with the frozen photo set, newest photo first,
-//     schedules its push delivery, and deletes the rows — all in one
+//     delivers one notification with the frozen photo set, newest photo first,
+//     to the account's channels, and deletes the rows — all in one
 //     transaction, so a crash part-way re-runs cleanly instead of losing the
 //     notices or announcing them twice.
 //
 // The rules the recorder enforces are what keeps the message honest: an account
 // is never told about its own work, a photo it may not see (private, hidden,
-// archived) is never recorded, an account that turned the kind off records
-// nothing, and an untagging before the window closes un-announces the photo.
+// archived) is never recorded, an account that would receive the kind through
+// no channel records nothing, and an untagging before the window closes un-announces the photo.
 // The job re-checks the last two when it runs — visibility and presence can
 // change inside the window in more ways than an untagging (an archive, a merge,
 // an invalidated marker) — so the notification never names a photo the person

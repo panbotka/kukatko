@@ -2082,18 +2082,21 @@ here.
   **„O čem mi dávat vědět"** is a **kind × channel grid** (`.kk-notify-grid` in `app.css`), worded as an
   **account** setting: one row per kind the account can receive (`kindRows` in
   `components/account/notificationKinds.ts` groups `GET /notifications/preferences` by kind, in the
-  server's order), one switch per channel in a „Push" and an „E-mail" column (`CHANNELS`), an empty cell
-  where the kind lacks the channel (`tagged` is push only). The `registration_pending` kind is offered
-  **only to an admin or a maintainer** (`isKindOffered`, `isAdmin`) — and they get the hint „E-mail o nové
-  registraci je ve výchozím stavu vypnutý." under the column headers; a kind or channel the client has no
+  server's order), one switch per channel in a „V aplikaci", a „Push" and an „E-mail" column (`CHANNELS`,
+  in that order; every kind offers all three since 2026-10-11), an empty cell where a kind lacks a
+  channel. Under the column headers, for everybody: „Ve výchozím stavu je všechno vypnuté — zapni si jen
+  to, o co stojíš." — every default is off. The **in-app** column (`IN_APP_CHANNEL`) is never disabled:
+  the inbox needs no device subscription and no instance switch. The `registration_pending` kind is
+  offered **only to an admin or a maintainer** (`isKindOffered`, `isAdmin`); a kind or channel the client has no
   words for is left out rather than shown by its raw name (its stored choices still ride along). A
   channel the instance cannot deliver keeps its switches but **disables** them, with the reason as the
   cell's `title` tooltip, as the switch's `aria-describedby` and as a line under the grid (a phone has no
   hover): push off → „Push notifikace nejsou na této instanci zapnuté.", mail off (`useMailEnabled`) →
   „E-maily nejsou na této instanci zapnuté.", an account without a real address (empty or a `.invalid`
   placeholder, `isReachableEmail`) → „Doplň si e-mail v účtu.". On a phone (< 576px) the header row goes
-  and each row stacks — the label on its own line, the two switches under it naming their own channel — so
-  nothing scrolls sideways at 390px. Each switch's accessible name is „<kind> — <channel>". A toggle saves
+  and each row stacks — the label on its own line, the three switches under it naming their own channel, in
+  content-sized columns so „V aplikaci" stays on one line (below 360px back to equal thirds, the label
+  allowed to wrap) — so nothing scrolls sideways at 320–390px. Each switch's accessible name is „<kind> — <channel>". A toggle saves
   at once, optimistically, and puts the switch back with an alert on failure; the body
   (`withPreference(current, kind, channel, enabled)` in `services/notifications.ts`) is the stored choices
   on every channel plus the changed (kind, channel) — pairs still on their default are **not** posted,
@@ -2433,10 +2436,24 @@ here.
   with a button back to the library, never the error treatment; any other failure → `ErrorState` with
   retry. **Marked read once** (`POST /notifications/{uid}/read`, fire-and-forget) after the load succeeds,
   guarded by a ref per uid and **skipped when `read_at` is already set** — Back from the viewer remounts
-  the page, and that visit has nothing to record. The tiles carry **no detail scope**: there is no list
+  the page, and that visit has nothing to record; either way it then calls the inbox's `refresh()`, so the
+  bell's badge drops at once. The tiles carry **no detail scope**: there is no list
   filter for a notification's set, so the viewer's prev/next pages the library around the photo. Tests
   `NotificationPage.test.tsx` (virtuoso mocked through `test/virtuoso`, so the real wall renders) and the
   route + sign-in round trip in `App.test.tsx`,
+  `NotificationsPage` = `/notifications`, **the whole in-app inbox** the bell's „Zobrazit všechna oznámení"
+  opens (any signed-in role; no nav entry — the bell is its door): `fetchNotifications` pages of
+  `PAGE_SIZE` (30), newest first, as a `react-virtuoso` list over the window scroll (`endReached` loads the
+  next page while `items < total`, duplicates by uid dropped; a failed page shows `GridFooter`'s retry and
+  keeps what was listed). An „Všechna / Nepřečtená" `ToggleButtonGroup` keeps the filter in the URL
+  (`?unread=1`, so Back and a reload keep it); „Označit vše jako přečtené" (shown while something listed is
+  unread) posts `read-all`, then reloads the list and refreshes the bell; a link to the account settings
+  sits by the `h1`. Each row is a link to `notificationTarget(n)` (its `link`, or `/n/<uid>`) wrapping a
+  `NotificationRow`; choosing an unread one marks it read (idempotent) and refreshes the bell. Empty →
+  `EmptyState` („Zatím tu nejsou žádná oznámení." + where to switch the channel on; for the unread filter
+  „Všechno máš přečtené."); a failed first load → `ErrorState` with retry. Texts `inbox.*`. Tests
+  `pages/NotificationsPage.test.tsx` (virtuoso stubbed locally with `endReached` exposed: paging and its
+  end, the URL filter, mark one / mark all, both empty states, retry),
   `TaskDetailPage` = `/tasks/:uid` the page a **link is sent to**, so it is built for somebody who has never
   seen Kukátko: the byline (`TaskQuestion`) is the page's **eyebrow above** the `h1`, not a line under it —
   it says where the question came from, which is worth knowing before reading it and never worth reading
@@ -5880,6 +5897,39 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   hides silently, the chips fall back to plain labels; the context's default outside the provider is the
   same `null` + a no-op `refresh`, so a focused test needs no provider. Tests:
   `tasks/TaskSummaryProvider.test.tsx`, `lib/taskChanges.test.ts`;
+  `NotificationInboxProvider` + `useNotificationInbox()` (`notifications/NotificationInboxContext.tsx`,
+  `notifications/NotificationInboxProvider.tsx`; mounted in `App` inside `TaskSummaryProvider`, around the
+  routes) = the in-app inbox's **unread count** (`fetchUnreadNotificationCount`, `GET
+  /notifications/unread-count`) for the bell. The task summary's shape: fetched only for
+  `status === 'authenticated'` (signing out clears it), then every **60 s** (`REFRESH_INTERVAL_MS`) while
+  the tab is visible (paused hidden), **immediately when the tab becomes visible or the window regains
+  focus**, and on `refresh()` (the bell on open and after „mark all", the inbox page, `NotificationPage`
+  after marking). A failed fetch sets `unread` to `null` = no badge; the default outside a provider is
+  `null` + a no-op `refresh`. Tests `notifications/NotificationInboxProvider.test.tsx`;
+  `NotificationBell` (`components/notifications/NotificationBell.tsx`, constants in `bell.ts`) = the
+  inbox's door in the navbar: an `outline-secondary` `sm` icon button (`bell`, `bell-fill` while
+  something is unread) with the unread count as the tasks badge on its corner (`kk-waiting-badge--over`,
+  `badgeText` caps it at „99+"; the number itself is `aria-hidden`, the button's name says it —
+  „Oznámení – 3 nepřečtená", `inbox.bellUnread` plural). On desktop it sits in the right-hand `Nav` beside
+  the shortcuts button (`gap-2`; ~42px with a mouse — measured 2026-10-11 over the real `Layout`,
+  maintainer „Tomáš Kozák", 12 unread: one 53px row at 992/1100/1200/1280px, the collapse never scrolls,
+  even with headless Chromium's 44px coarse-pointer tap targets — the badge costs no width: `.btn .badge`
+  would put it back in the flow, so `.kk-bell .kk-waiting-badge--over` restates `position: absolute`), on a phone (`drawerNav`) just before the hamburger, taking the trailing `ms-auto` from it. It is
+  a react-bootstrap `Dropdown` (`align="end"`, caret hidden, `.kk-bell-menu`: at most 22rem / the viewport,
+  scrolls inside itself; below `sm` the bar's dropdowns are statically positioned, so the panel is pinned
+  `fixed` under the bar across the viewport instead of hanging off the bell's right edge into the left
+  margin): **each open fetches the newest `BELL_LIMIT` (8)** and refreshes the count, lists
+  them as `Dropdown.Item as={Link}` to `notificationTarget(n)` (choosing an unread one marks it read, then
+  refreshes), offers „Označit vše jako přečtené" while the count is above zero (marks the listed ones read
+  in place), and ends with „Zobrazit všechna oznámení" → `/notifications` and a gear → `/account`. Empty →
+  „Zatím tu nejsou žádná oznámení." + where to switch the channel on; a failed list → one line.
+  `NotificationRow` (`components/notifications/NotificationRow.tsx`) = the shared entry body of the
+  dropdown and the inbox page: a dot (`--bs-primary`) and a bold title while unread, a visually-hidden
+  „Nepřečtené:" for a screen reader, the body clamped to two lines and `formatRelativeTime` in a `<time>`
+  whose `title` is the full date. Styles `.kk-bell*`, `.kk-inbox*` in `app.css`. Tests
+  `components/notifications/NotificationBell.test.tsx` (badge + its name, no badge for 0/unknown, 99+, the
+  list on open with links and unread markers, mark one on choose, an already-read one not re-marked, mark
+  all, empty, error, Czech) and the phone row in `Layout.test.tsx`;
   `WaitingBadge` (`components/tasks/WaitingBadge.tsx`) = the count as a small `danger` pill
   (`.kk-waiting-badge`, `--over` pins it to the corner of the hamburger); renders **nothing for zero**, the
   digit is `aria-hidden` and a visually-hidden sentence (`tasks.waitingBadge`, „3 úkoly čekají na tebe")

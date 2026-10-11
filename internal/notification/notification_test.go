@@ -29,55 +29,49 @@ func TestKinds(t *testing.T) {
 	}
 }
 
-// TestKindChannels pins each kind's channels, their order (push before e-mail)
-// and their defaults — above all that the administrators' registration e-mail is
-// opt-in.
+// TestKindChannels pins every kind to all three channels, in display order
+// (in-app, push, e-mail), and every default off — "nothing unless asked for"
+// is the product decision, so a kind that defaulted on would be a regression.
 func TestKindChannels(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		kind     Kind
-		channels []Channel
-		defaults map[Channel]bool
-	}{
-		{kind: KindTagged, channels: []Channel{ChannelPush}, defaults: map[Channel]bool{ChannelPush: true}},
-		{
-			kind:     KindRegistrationPending,
-			channels: []Channel{ChannelPush, ChannelEmail},
-			defaults: map[Channel]bool{ChannelPush: true, ChannelEmail: false},
-		},
+	want := []Channel{ChannelInApp, ChannelPush, ChannelEmail}
+	if got := AllChannels(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("AllChannels() = %v, want %v", got, want)
 	}
-	for _, tt := range tests {
-		t.Run(string(tt.kind), func(t *testing.T) {
+	for _, kind := range Kinds() {
+		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
-			if got := tt.kind.Channels(); !reflect.DeepEqual(got, tt.channels) {
-				t.Fatalf("Channels() = %v, want %v", got, tt.channels)
+			if got := kind.Channels(); !reflect.DeepEqual(got, want) {
+				t.Fatalf("Channels() = %v, want %v", got, want)
 			}
-			for channel, def := range tt.defaults {
-				if !tt.kind.Supports(channel) || tt.kind.Default(channel) != def {
-					t.Errorf("%s: Supports=%v Default=%v, want true, %v",
-						channel, tt.kind.Supports(channel), tt.kind.Default(channel), def)
+			for _, channel := range want {
+				if !kind.Supports(channel) || kind.Default(channel) {
+					t.Errorf("%s: Supports=%v Default=%v, want true, false",
+						channel, kind.Supports(channel), kind.Default(channel))
 				}
 			}
 		})
 	}
-	if KindTagged.Supports(ChannelEmail) || KindTagged.Default(ChannelEmail) {
-		t.Error("tagged reads as deliverable by e-mail")
-	}
-	if KindRegistrationPending.Supports("sms") {
+	if KindRegistrationPending.Supports("sms") || KindRegistrationPending.Default("sms") {
 		t.Error("an unknown channel reads as supported")
 	}
 }
 
 // TestKindChannelsReturnsFreshSlice checks a caller cannot rewrite a kind's
-// channels in the registry.
+// channels in the registry, nor the channel list.
 func TestKindChannelsReturnsFreshSlice(t *testing.T) {
 	t.Parallel()
 
 	channels := KindRegistrationPending.Channels()
 	channels[0] = "mutated"
-	if KindRegistrationPending.Channels()[0] != ChannelPush {
+	if KindRegistrationPending.Channels()[0] != ChannelInApp {
 		t.Fatal("Channels() shares its backing array with the registry")
+	}
+	all := AllChannels()
+	all[0] = "mutated"
+	if AllChannels()[0] != ChannelInApp {
+		t.Fatal("AllChannels() shares its backing array")
 	}
 }
 
@@ -216,9 +210,11 @@ func TestValidatePrefs(t *testing.T) {
 		},
 		{name: "unknown", prefs: []Preference{{Kind: "later", Channel: ChannelPush}}, wantErr: ErrUnknownKind},
 		{
-			name:    "channel the kind lacks",
-			prefs:   []Preference{{Kind: KindTagged, Channel: ChannelEmail}},
-			wantErr: ErrUnsupportedChannel,
+			name: "every channel of a kind",
+			prefs: []Preference{
+				{Kind: KindTagged, Channel: ChannelInApp}, {Kind: KindTagged, Channel: ChannelPush},
+				{Kind: KindTagged, Channel: ChannelEmail},
+			},
 		},
 		{
 			name:    "unknown channel",
@@ -253,11 +249,15 @@ func TestEffective(t *testing.T) {
 		{kind: KindTagged, channel: ChannelPush}:               false,
 		{kind: KindRegistrationPending, channel: ChannelEmail}: true,
 		{kind: "retired", channel: ChannelPush}:                true,
-		{kind: KindTagged, channel: ChannelEmail}:              true,
+		{kind: KindTagged, channel: "sms"}:                     true,
+		{kind: KindTagged, channel: ChannelInApp}:              true,
 	})
 	want := []Preference{
+		{Kind: KindTagged, Channel: ChannelInApp, Enabled: true},
 		{Kind: KindTagged, Channel: ChannelPush, Enabled: false},
-		{Kind: KindRegistrationPending, Channel: ChannelPush, Enabled: true, IsDefault: true},
+		{Kind: KindTagged, Channel: ChannelEmail, Enabled: false, IsDefault: true},
+		{Kind: KindRegistrationPending, Channel: ChannelInApp, Enabled: false, IsDefault: true},
+		{Kind: KindRegistrationPending, Channel: ChannelPush, Enabled: false, IsDefault: true},
 		{Kind: KindRegistrationPending, Channel: ChannelEmail, Enabled: true},
 	}
 	if !reflect.DeepEqual(got, want) {

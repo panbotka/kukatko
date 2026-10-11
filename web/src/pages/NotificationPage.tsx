@@ -15,6 +15,7 @@ import { directEntryState, isFirstEntry } from '../lib/directEntry'
 import { formatDateTime } from '../lib/format'
 import { gridScrollKey } from '../lib/gridScroll'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { useNotificationInbox } from '../notifications/NotificationInboxContext'
 import { isNotFound } from '../services/auth'
 import {
   fetchNotification,
@@ -75,6 +76,7 @@ export function NotificationPage() {
   const navigate = useNavigate()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
+  const { refresh: refreshInbox } = useNotificationInbox()
 
   // Whether this page is where the visit started — a push opening a fresh
   // window, or the sign-in round trip that replaced its way here. Captured at
@@ -116,8 +118,11 @@ export function NotificationPage() {
     }
     // Fire and forget: failing to record the reading is no reason to keep the
     // reader from the photos, and the endpoint is idempotent for the next visit.
-    markNotificationRead(uid).catch(() => undefined)
-  }, [state, uid])
+    // Either way the bell's count is refetched, so its badge drops at once.
+    markNotificationRead(uid)
+      .catch(() => undefined)
+      .finally(refreshInbox)
+  }, [state, uid, refreshInbox])
 
   const sole = state.status === 'ready' ? soleVisiblePhoto(state.detail) : undefined
   useEffect(() => {

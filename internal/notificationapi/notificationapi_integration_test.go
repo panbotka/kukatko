@@ -323,11 +323,21 @@ type preferences struct {
 	Preferences []notification.Preference `json:"preferences"`
 }
 
+// find returns the preference for kind through channel, or the zero value.
+func (p preferences) find(kind notification.Kind, channel notification.Channel) notification.Preference {
+	for _, pref := range p.Preferences {
+		if pref.Kind == kind && pref.Channel == channel {
+			return pref
+		}
+	}
+	return notification.Preference{}
+}
+
 // TestPreferences_readAndReplace checks the read reports the defaults per kind
 // and channel, a replace stores and reports the choice (audited) — an entry
 // without a channel as the push choice an older client means — a pair left out
-// returns to its default, and an unknown kind, a channel the kind lacks or a
-// doubled pair is a 400 that changes nothing.
+// returns to its default, and an unknown kind, an unknown channel or a doubled
+// pair is a 400 that changes nothing.
 func TestPreferences_readAndReplace(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	user := e.login(t, "vera", auth.RoleViewer)
@@ -352,12 +362,12 @@ func TestPreferences_readAndReplace(t *testing.T) {
 		`{"preferences":[{"kind":"tagged","enabled":false},`+
 			`{"kind":"registration_pending","channel":"email","enabled":true}]}`)
 	decode(t, body, &got)
-	if status != http.StatusOK || got.Preferences[0].Kind != notification.KindTagged ||
-		got.Preferences[0].Channel != notification.ChannelPush ||
-		got.Preferences[0].Enabled || got.Preferences[0].IsDefault {
+	if tagged := got.find(notification.KindTagged, notification.ChannelPush); status != http.StatusOK ||
+		tagged.Enabled || tagged.IsDefault {
 		t.Fatalf("replace = %d %s, want tagged/push stored off", status, body)
 	}
-	if email := got.Preferences[2]; email.Channel != notification.ChannelEmail || !email.Enabled || email.IsDefault {
+	if email := got.find(notification.KindRegistrationPending, notification.ChannelEmail); !email.Enabled ||
+		email.IsDefault {
 		t.Fatalf("replace = %s, want registration_pending/email stored on", body)
 	}
 	var audited int
@@ -371,7 +381,7 @@ func TestPreferences_readAndReplace(t *testing.T) {
 
 	for _, bad := range []string{
 		`{"preferences":[{"kind":"nope","enabled":true}]}`,
-		`{"preferences":[{"kind":"tagged","channel":"email","enabled":true}]}`,
+		`{"preferences":[{"kind":"tagged","channel":"sms","enabled":true}]}`,
 		`{"preferences":[{"kind":"tagged","enabled":true},{"kind":"tagged","channel":"push","enabled":false}]}`,
 		`{"preferences":[{"kind":"tagged"}]}`,
 	} {
@@ -381,15 +391,17 @@ func TestPreferences_readAndReplace(t *testing.T) {
 	}
 	_, body = e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
 	decode(t, body, &got)
-	if got.Preferences[0].Enabled || got.Preferences[0].IsDefault || !got.Preferences[2].Enabled {
+	if tagged := got.find(notification.KindTagged, notification.ChannelPush); tagged.IsDefault ||
+		!got.find(notification.KindRegistrationPending, notification.ChannelEmail).Enabled {
 		t.Errorf("after refused replaces %s, want the stored choices unchanged", body)
 	}
 
 	_, body = e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences", `{"preferences":[]}`)
 	decode(t, body, &got)
-	if !got.Preferences[0].IsDefault || !got.Preferences[0].Enabled ||
-		!got.Preferences[2].IsDefault || got.Preferences[2].Enabled {
-		t.Errorf("after an empty replace %s, want every pair back to its default", body)
+	for _, pref := range got.Preferences {
+		if !pref.IsDefault || pref.Enabled {
+			t.Errorf("after an empty replace %+v, want every pair back to its default (off)", pref)
+		}
 	}
 }
 
@@ -534,6 +546,9 @@ func TestRoutes_requireAuth(t *testing.T) {
 		{http.MethodGet, "/api/v1/push/subscriptions"},
 		{http.MethodPost, "/api/v1/push/subscriptions"},
 		{http.MethodDelete, "/api/v1/push/subscriptions?endpoint=x"},
+		{http.MethodGet, "/api/v1/notifications"},
+		{http.MethodGet, "/api/v1/notifications/unread-count"},
+		{http.MethodPost, "/api/v1/notifications/read-all"},
 		{http.MethodGet, "/api/v1/notifications/preferences"},
 		{http.MethodPut, "/api/v1/notifications/preferences"},
 		{http.MethodGet, "/api/v1/notifications/nt1"},

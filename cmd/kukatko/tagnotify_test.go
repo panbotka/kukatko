@@ -9,24 +9,25 @@ import (
 
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
 )
 
-// wantsAll is a preference reader that wants every kind.
+// wantsAll is an audience that receives every kind on every channel.
 type wantsAll struct{}
 
-// WantsTx wants everything.
-func (wantsAll) WantsTx(context.Context, pgx.Tx, string, notification.Kind, notification.Channel) (bool, error) {
-	return true, nil
+// ChannelsTx delivers everywhere.
+func (wantsAll) ChannelsTx(context.Context, pgx.Tx, string, notification.Kind) (notifydeliver.Channels, error) {
+	return notifydeliver.Channels{InApp: true, Push: true, Email: true}, nil
 }
 
-// TestTagNotifyRecorderConfig checks the recorder follows push.enabled and
-// push.tags.window.
+// TestTagNotifyRecorderConfig checks the recorder follows push.tags.window and
+// keeps the audience it is given.
 func TestTagNotifyRecorderConfig(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{Push: config.PushConfig{Enabled: true, Tags: config.PushTagsConfig{Window: 20 * time.Minute}}}
 	got := tagNotifyRecorderConfig(cfg, wantsAll{})
-	if !got.Enabled || got.Window != 20*time.Minute || got.Preferences == nil {
-		t.Fatalf("recorder config = %+v, want push on, a 20m window and the preferences", got)
+	if got.Window != 20*time.Minute || got.Audience == nil {
+		t.Fatalf("recorder config = %+v, want a 20m window and the audience", got)
 	}
 }

@@ -57,7 +57,8 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // There are two shapes of duplicate. idx_jobs_dedup (migrations 0005 and
 // 0044) keys the per-photo types on (type, payload ->> 'photo_uid'); the
 // library-wide types — idx_jobs_family_export_dedup (migration 0075) and
-// idx_jobs_task_digest_dedup (migration 0084) — key on the type alone, since
+// idx_jobs_task_digest_dedup (migration 0084) and
+// idx_jobs_notification_purge_dedup (migration 0096) — key on the type alone, since
 // their payloads name no photo and NULLs would otherwise be distinct. The
 // per-account tag_notify job (idx_jobs_tag_notify_dedup, migration 0089) keys
 // on the payload's user_uid for the same reason.
@@ -66,6 +67,8 @@ var dedupIndexes = map[string]bool{
 	"idx_jobs_family_export_dedup": true,
 	"idx_jobs_task_digest_dedup":   true,
 	"idx_jobs_tag_notify_dedup":    true,
+	// The daily inbox retention purge, keyed on the type alone.
+	"idx_jobs_notification_purge_dedup": true,
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint

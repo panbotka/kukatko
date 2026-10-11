@@ -8,9 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
-	"github.com/panbotka/kukatko/internal/push"
-	"github.com/panbotka/kukatko/internal/pushjob"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -21,32 +22,20 @@ type Beginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-// NotificationRecorder reads the account's preference and records the
-// notification, both on the job's transaction. It is satisfied by
-// *notification.Store.
-type NotificationRecorder interface {
-	PreferenceReader
-	// CreateTx records n on tx and returns the stored notification.
-	CreateTx(ctx context.Context, tx pgx.Tx, n notification.New) (notification.Notification, error)
-}
-
-// PushScheduler schedules one push notification to every device of an account
-// through the caller's executor. It is satisfied by *pushjob.Enqueuer, which
-// itself queues nothing when push is off or the account has no device.
-type PushScheduler interface {
-	// Enqueue schedules n for userUID's devices using exec and returns how many
-	// deliveries it queued.
-	Enqueue(ctx context.Context, exec pushjob.Execer, userUID string, n push.Notification) (int, error)
+// Deliverer delivers one notification to the channels an account wants, on the
+// caller's transaction. It is satisfied by *notifydeliver.Deliverer.
+type Deliverer interface {
+	// Deliver records msg for userUID and fans it out to the wanted channels,
+	// all on tx.
+	Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg notifydeliver.Message) (notifydeliver.Result, error)
 }
 
 // Config bundles the dependencies of New.
 type Config struct {
 	// DB opens the job's transaction. Required.
 	DB Beginner
-	// Notifications records the notification. Required.
-	Notifications NotificationRecorder
-	// Push schedules its delivery. Required.
-	Push PushScheduler
+	// Deliver records the notification and schedules its delivery. Required.
+	Deliver Deliverer
 	// Language is the language the message is written in; empty is Czech, the
 	// instance's language. Accounts carry no language of their own yet.
 	Language notification.Language
@@ -56,19 +45,18 @@ type Config struct {
 
 // Service closes tagging windows: the `tag_notify` job handler.
 type Service struct {
-	db    Beginner
-	notes NotificationRecorder
-	push  PushScheduler
-	lang  notification.Language
-	log   *slog.Logger
+	db      Beginner
+	deliver Deliverer
+	lang    notification.Language
+	log     *slog.Logger
 }
 
 // New returns a Service from cfg. It panics when a required dependency is
 // missing, which is a wiring bug and should fail at startup rather than on the
 // first job.
 func New(cfg Config) *Service {
-	if cfg.DB == nil || cfg.Notifications == nil || cfg.Push == nil {
-		panic("tagnotifyjob: DB, Notifications and Push are required")
+	if cfg.DB == nil || cfg.Deliver == nil {
+		panic("tagnotifyjob: DB and Deliver are required")
 	}
 	lang := cfg.Language
 	if lang == "" {
@@ -78,7 +66,7 @@ func New(cfg Config) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{db: cfg.DB, notes: cfg.Notifications, push: cfg.Push, lang: lang, log: log}
+	return &Service{db: cfg.DB, deliver: cfg.Deliver, lang: lang, log: log}
 }
 
 // consumeSQL reads and deletes every pending notice of the account in one
@@ -113,15 +101,15 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 }
 
 // Close closes userUID's tagging window, in one transaction: it consumes every
-// pending notice, records one notification naming the photos that still
-// qualify, newest first, and schedules its push delivery. Either all of it
+// pending notice and delivers one notification naming the photos that still
+// qualify, newest first, to every channel the account wants. Either all of it
 // commits or none of it does, so a failure part-way leaves the notices for the
 // retry instead of losing them, and a success cannot announce them twice.
 //
 // It sends nothing — and completes — when nothing qualifies (everything was
 // untagged, archived or made private inside the window, or the account is gone
-// and the cascade took its notices), and when the account turned the kind off
-// since the window opened; the notices are consumed either way.
+// and the cascade took its notices), and when the account turned every channel
+// of the kind off since the window opened; the notices are consumed either way.
 func (s *Service) Close(ctx context.Context, userUID string) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -163,38 +151,37 @@ func consume(ctx context.Context, tx pgx.Tx, userUID string) ([]string, error) {
 	return photos, nil
 }
 
-// announce records the notification for photos and schedules its delivery, on
-// tx, unless the account no longer wants the kind. A set over
+// announce delivers the notification for photos on tx, to whichever channels
+// the account still wants (none: nothing is sent). A set over
 // notification.MaxPhotos keeps its newest MaxPhotos photos, and the count says
 // what the set holds, so the message never promises more than tapping it opens.
 func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, photos []string) error {
-	wants, err := s.notes.WantsTx(ctx, tx, userUID, notification.KindTagged, notification.ChannelPush)
-	if err != nil {
-		return fmt.Errorf("tagnotifyjob: reading the preference of %s: %w", userUID, err)
-	}
-	if !wants {
-		s.log.DebugContext(ctx, "tag window closed unannounced: the kind is off", slog.String("user_uid", userUID))
-		return nil
-	}
 	if len(photos) > notification.MaxPhotos {
 		photos = photos[:notification.MaxPhotos]
 	}
-	text := notification.RenderTagged(s.lang, len(photos))
-	record, err := s.notes.CreateTx(ctx, tx, notification.New{
-		UserUID: userUID, Kind: notification.KindTagged, Title: text.Title, Body: text.Body,
-		SelfLink: true, PhotoUIDs: photos,
+	count := len(photos)
+	result, err := s.deliver.Deliver(ctx, tx, userUID, notifydeliver.Message{
+		Kind: notification.KindTagged, Text: notification.RenderTagged(s.lang, count),
+		SelfLink: true, PhotoUIDs: photos, Mail: taggedMail(count),
 	})
 	if err != nil {
-		return fmt.Errorf("tagnotifyjob: recording the notification of %s: %w", userUID, err)
+		return fmt.Errorf("tagnotifyjob: delivering the notification of %s: %w", userUID, err)
 	}
-	devices, err := s.push.Enqueue(ctx, tx, userUID, push.Notification{
-		Title: record.Title, Body: record.Body, URL: record.Link, Kind: string(record.Kind), Tag: record.UID,
-	})
-	if err != nil {
-		return fmt.Errorf("tagnotifyjob: scheduling the push of %s: %w", userUID, err)
+	if result.Notification == nil {
+		s.log.DebugContext(ctx, "tag window closed unannounced: the kind is off", slog.String("user_uid", userUID))
+		return nil
 	}
 	s.log.DebugContext(ctx, "tag window announced",
-		slog.String("user_uid", userUID), slog.String("notification_uid", record.UID),
-		slog.Int("photos", len(photos)), slog.Int("devices", devices))
+		slog.String("user_uid", userUID), slog.String("notification_uid", result.Notification.UID),
+		slog.Int("photos", count), slog.Int("devices", result.Devices),
+		slog.Bool("in_app", result.Channels.InApp), slog.Bool("email", result.Channels.Email))
 	return nil
+}
+
+// taggedMail builds the tagged kind's own e-mail for a set of count photos: the
+// count and the link to the notification's page, which opens exactly that set.
+func taggedMail(count int) notifydeliver.MailBuilder {
+	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
+		return mailjob.Tagged(to.Email, mailer.TaggedData{DisplayName: to.DisplayName, Count: count, URL: url})
+	}
 }

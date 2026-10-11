@@ -13,7 +13,9 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/tagnotifyjob"
@@ -49,15 +51,7 @@ func newFixture(t *testing.T) *fixture {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	f := &fixture{db: db, jobs: jobs.NewStore(db.Pool()), now: time.Now().UTC().Truncate(time.Second)}
-	notes := notification.NewStore(db.Pool())
-	f.recorder = tagnotifyjob.NewRecorder(tagnotifyjob.RecorderConfig{
-		Enabled: true, Window: time.Hour, Preferences: notes, Now: func() time.Time { return f.now },
-	})
-	f.people = people.NewStore(db.Pool()).WithTagObserver(f.recorder)
-	f.svc = tagnotifyjob.New(tagnotifyjob.Config{
-		DB: db.Pool(), Notifications: notes,
-		Push: pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: true}),
-	})
+	f.useDeliverer(true, false)
 	for _, uid := range []string{annaUID, taggerUID} {
 		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, approved_at)
 			VALUES ($1, $2, $3, 'x', 'editor', now())`, uid, uid, uid+"@example.test")
@@ -70,7 +64,33 @@ func newFixture(t *testing.T) *fixture {
 	f.exec(t, "UPDATE users SET subject_uid = $2 WHERE uid = $1", annaUID, f.subject)
 	f.exec(t, `INSERT INTO push_subscriptions (id, user_uid, endpoint, p256dh, auth, user_agent)
 		VALUES ('psanna', $1, 'https://push.example.test/anna', 'key', 'secret', 'test')`, annaUID)
+	// Every channel is off by default; anna opted into the push.
+	f.prefer(t, notification.ChannelPush, true)
 	return f
+}
+
+// useDeliverer rebuilds the recorder, the people store and the handler over a
+// delivery path with push and mail switched on or off instance-wide.
+func (f *fixture) useDeliverer(pushOn, mailOn bool) {
+	deliverer := notifydeliver.New(notifydeliver.Config{
+		Notifications: notification.NewStore(f.db.Pool()),
+		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: pushOn}),
+		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: mailOn}),
+		BaseURL:       "https://kukatko.example.org",
+	})
+	f.recorder = tagnotifyjob.NewRecorder(tagnotifyjob.RecorderConfig{
+		Window: time.Hour, Audience: deliverer, Now: func() time.Time { return f.now },
+	})
+	f.people = people.NewStore(f.db.Pool()).WithTagObserver(f.recorder)
+	f.svc = tagnotifyjob.New(tagnotifyjob.Config{DB: f.db.Pool(), Deliver: deliverer})
+}
+
+// prefer stores anna's choice for the tagged kind through channel.
+func (f *fixture) prefer(t *testing.T, channel notification.Channel, enabled bool) {
+	t.Helper()
+	f.exec(t, `INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES ($1, 'tagged', $2, $3)
+		ON CONFLICT (user_uid, kind, channel) DO UPDATE SET enabled = EXCLUDED.enabled`,
+		annaUID, string(channel), enabled)
 }
 
 // exec runs one statement or fails the test.
@@ -436,7 +456,11 @@ func TestRecordsNothing(t *testing.T) {
 		}},
 		{name: "kind turned off", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()
-			f.exec(t, "INSERT INTO notification_prefs (user_uid, kind, channel, enabled) VALUES ($1, 'tagged', 'push', FALSE)", annaUID)
+			f.prefer(t, notification.ChannelPush, false)
+		}},
+		{name: "never chose anything", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
+			t.Helper()
+			f.exec(t, "DELETE FROM notification_prefs WHERE user_uid = $1", annaUID)
 		}},
 		{name: "subject linked to no account", actor: taggerUID, setup: func(t *testing.T, f *fixture, _ string) {
 			t.Helper()
@@ -466,18 +490,88 @@ func TestRecordsNothing(t *testing.T) {
 }
 
 // TestRecorder_pushOffRecordsNothing checks an instance with push switched off
-// records no notice: nothing would ever be delivered.
+// records no notice for an account that wants the kind only by push: nothing
+// would ever be delivered.
 func TestRecorder_pushOffRecordsNothing(t *testing.T) {
 	f := newFixture(t)
-	off := tagnotifyjob.NewRecorder(tagnotifyjob.RecorderConfig{Preferences: notification.NewStore(f.db.Pool())})
-	store := people.NewStore(f.db.Pool()).WithTagObserver(off)
-	if _, err := store.CreateMarker(t.Context(), people.Marker{
-		PhotoUID: f.addPhoto(t, "p", 0), SubjectUID: &f.subject, W: 0.1, H: 0.1,
-	}); err != nil {
-		t.Fatalf("CreateMarker: %v", err)
-	}
+	f.useDeliverer(false, false)
+	f.tag(t, f.addPhoto(t, "p", 0), taggerUID)
 	if n := f.count(t, "SELECT count(*) FROM tag_notices"); n != 0 {
 		t.Fatalf("notices with push off = %d, want 0", n)
+	}
+}
+
+// TestWindow_inAppOnly checks an account that wants the kind only in-app gets
+// an inbox notification and no push — even with push off instance-wide, since
+// the inbox needs no switch.
+func TestWindow_inAppOnly(t *testing.T) {
+	f := newFixture(t)
+	f.useDeliverer(false, false)
+	f.prefer(t, notification.ChannelPush, false)
+	f.prefer(t, notification.ChannelInApp, true)
+	f.tag(t, f.addPhoto(t, "p", 0), taggerUID)
+	f.closeWindow(t)
+
+	if got := f.sentNotifications(t); len(got) != 1 {
+		t.Fatalf("notifications = %d, want 1", len(got))
+	}
+	if n := f.count(t, "SELECT count(*) FROM notifications WHERE in_app"); n != 1 {
+		t.Errorf("inbox notifications = %d, want 1", n)
+	}
+	if n := f.count(t, "SELECT count(*) FROM jobs WHERE type = $1", jobs.TypePushSend); n != 0 {
+		t.Errorf("push_send jobs = %d, want 0", n)
+	}
+}
+
+// TestWindow_pushOnlyStaysOutOfTheInbox checks the record written for a push
+// alone is not listed in the inbox.
+func TestWindow_pushOnlyStaysOutOfTheInbox(t *testing.T) {
+	f := newFixture(t)
+	f.tag(t, f.addPhoto(t, "p", 0), taggerUID)
+	f.closeWindow(t)
+
+	if n := f.count(t, "SELECT count(*) FROM notifications WHERE NOT in_app"); n != 1 {
+		t.Fatalf("records outside the inbox = %d, want 1", n)
+	}
+}
+
+// TestWindow_emailMailsTheTaggedTemplate checks the e-mail channel queues the
+// tagged kind's own mail, linking to the notification's page.
+func TestWindow_emailMailsTheTaggedTemplate(t *testing.T) {
+	f := newFixture(t)
+	f.useDeliverer(true, true)
+	f.prefer(t, notification.ChannelPush, false)
+	f.prefer(t, notification.ChannelEmail, true)
+	f.tag(t, f.addPhoto(t, "p1", 0), taggerUID)
+	f.tag(t, f.addPhoto(t, "p2", 1), taggerUID)
+	f.closeWindow(t)
+
+	got := f.sentNotifications(t)
+	if len(got) != 1 {
+		t.Fatalf("notifications = %d, want 1", len(got))
+	}
+	var raw json.RawMessage
+	if err := f.db.Pool().QueryRow(t.Context(),
+		"SELECT payload FROM jobs WHERE type = $1", jobs.TypeMailSend).Scan(&raw); err != nil {
+		t.Fatalf("reading the mail_send job (want exactly one): %v", err)
+	}
+	var mail struct {
+		Template string `json:"template"`
+		To       string `json:"to"`
+		Data     struct {
+			Count int    `json:"Count"`
+			URL   string `json:"URL"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &mail); err != nil {
+		t.Fatalf("decoding the mail payload: %v", err)
+	}
+	wantURL := "https://kukatko.example.org" + got[0].link
+	if mail.Template != "tagged" || mail.To != annaUID+"@example.test" || mail.Data.Count != 2 || mail.Data.URL != wantURL {
+		t.Fatalf("mail = %s, want the tagged template to anna, 2 photos, %s", raw, wantURL)
+	}
+	if n := f.count(t, "SELECT count(*) FROM jobs WHERE type = $1", jobs.TypePushSend); n != 0 {
+		t.Errorf("push_send jobs = %d, want 0", n)
 	}
 }
 

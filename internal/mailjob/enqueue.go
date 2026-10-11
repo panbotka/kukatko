@@ -66,6 +66,17 @@ func UsernameChanged(to string, data mailer.UsernameChangedData) Mail {
 	return Mail{Template: mailer.TemplateUsernameChanged, To: to, Data: data}
 }
 
+// Tagged is the e-mail channel of the "you were tagged in photos" notification.
+func Tagged(to string, data mailer.TaggedData) Mail {
+	return Mail{Template: mailer.TemplateTagged, To: to, Data: data}
+}
+
+// Notification is the e-mail channel of a notification kind with no template of
+// its own: its title, body and link.
+func Notification(to string, data mailer.NotificationData) Mail {
+	return Mail{Template: mailer.TemplateNotification, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.
@@ -190,7 +201,8 @@ func knownTemplate(name string) bool {
 	switch name {
 	case mailer.TemplateRegistrationReceived, mailer.TemplateAccountApproved,
 		mailer.TemplateNewRegistrationPending, mailer.TemplatePasswordReset,
-		mailer.TemplateTasksWaitingDigest, mailer.TemplateUsernameChanged:
+		mailer.TemplateTasksWaitingDigest, mailer.TemplateUsernameChanged,
+		mailer.TemplateTagged, mailer.TemplateNotification:
 		return true
 	default:
 		return false

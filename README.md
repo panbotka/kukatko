@@ -499,12 +499,12 @@ app next. Come back after a while and the library greets you with what happened:
 arrived (one click to see them), which albums were started, who was newly named, how many comments
 were written.
 
-And when somebody tags *you* — on a phone or browser where you allowed notifications, and with your
-account saying which person you are — you get **one push per hour, not one per photo**: "Přibylo 12
-fotek, na kterých vás označili." An afternoon of naming faces from a village event is one message.
+And when somebody tags *you* — with your account saying which person you are, and the kind switched on
+for the channels you want (in the app, as a push, by e-mail) — you get **one notification per hour, not
+one per photo**: "Přibylo 12 fotek, na kterých vás označili." An afternoon of naming faces from a village event is one message.
 It never says who did the tagging, never tells you about your own, never counts a private, hidden or
 archived photo, and a tag taken back before the hour is up is taken out of the count. The hour is
-configurable, and the kind can be switched off in your notification settings. Tapping it opens exactly
+configurable, and each channel of the kind is switched on or off in your notification settings. Tapping it opens exactly
 those photos — the set as it was when the message was sent, not a live search a thirteenth tag would
 change: one photo opens straight in the viewer, several as a grid under the message itself, and if some
 have since become private or archived the page says how many are no longer available to you instead of
@@ -519,10 +519,20 @@ phone and computer is turned on on its own; a browser that blocked Kukátko is t
 it rather than handed a button that cannot work), and every device that receives your notifications,
 named the way you would name it ("Chrome na Androidu", with this browser marked) and removable. Then
 **what to notify you about** — a choice of your account that holds on every device: one row per kind
-of message, with a Push and an E-mail switch for each channel that kind is sent through. A channel the
+of message, with an **In-app**, a **Push** and an **E-mail** switch, every kind on every channel. **All
+of them start off** — Kukátko tells you nothing you did not ask for. (This changed on 2026-10-11:
+until then the tagged and registration pushes were on unless switched off. A choice you had saved
+explicitly is kept; if you relied on the old default, switch the push back on.) A channel the
 instance cannot deliver stays visible but disabled with the reason (push or mail switched off, or no
-real address on your account). Administrators also get the row for "a registration is waiting" —
-push on, e-mail off until they choose it; nobody else sees a setting for a message they could never get.
+real address on your account); the in-app one always works. Administrators also get the row for "a
+registration is waiting"; nobody else sees a setting for a message they could never get.
+
+**The bell.** In-app notifications land behind a bell in the top bar (on a phone, beside the menu
+button), with the number of unread ones on its corner — refreshed about once a minute and whenever you
+come back to the tab. Opening it shows the newest few, each with how long ago it came and a dot while
+unread; choosing one marks it read and opens it, „Označit vše jako přečtené" clears them all, and
+„Zobrazit všechna oznámení" leads to the whole inbox — an endless list with an *unread only* filter.
+Read notifications are kept for 30 days, unread ones for 90.
 
 ### Built for small hardware that is sometimes offline
 
@@ -569,10 +579,9 @@ push on, e-mail off until they choose it; nobody else sees a setting for a messa
 - **People can ask for an account themselves.** Switch registration on in the settings, tell the
   family the shared secret, and anybody who knows it can register — the sign-in screen then offers a
   registration form (and offers it only while registration is open) — but nobody gets in until an
-  administrator approves them. They are e-mailed that they are waiting; every administrator, on a
-  device where they allowed notifications, gets a push that opens the user list (unless they turned
-  that kind off), and an administrator who opted into it is also e-mailed, with a link to approve
-  (the e-mail is off until they choose it) — and until the approval the sign-in screen says what is being waited for
+  administrator approves them. They are e-mailed that they are waiting; every administrator is told
+  through the channels they switched on for that kind — in the app, as a push that opens the user list,
+  by e-mail with a link to approve (all off until they choose them) — and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.
 - **An administrator lets them in.** Approving a waiting account activates it and e-mails that
   person the link to sign in. The user list opens on just the accounts that are waiting (one switch,

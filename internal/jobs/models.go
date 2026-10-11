@@ -143,6 +143,12 @@ const (
 	// (migration 0089) keeping at most one queued job per account. See
 	// internal/tagnotifyjob.
 	TypeTagNotify = "tag_notify"
+	// TypeNotificationPurge deletes the notification records past their
+	// retention (read ones after 30 days, unread ones after 90). It runs locally
+	// and is enqueued once a day by the scheduler in internal/notifypurgejob; it
+	// belongs to no photo, so a dedup index of its own (migration 0096) keeps at
+	// most one queued job.
+	TypeNotificationPurge = "notification_purge"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row
 	// is deleted and every marker and cached face that pointed at it is left
 	// unassigned. It runs locally, in the queue rather than in the HTTP request,

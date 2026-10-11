@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
@@ -24,6 +25,9 @@ import (
 // for a queue that will not take a job.
 type failingPush struct{}
 
+// Enabled reports push as on, so the delivery reaches Enqueue.
+func (failingPush) Enabled() bool { return true }
+
 // Enqueue always fails.
 func (failingPush) Enqueue(context.Context, pushjob.Execer, string, push.Notification) (int, error) {
 	return 0, errors.New("the queue is on fire")
@@ -31,21 +35,25 @@ func (failingPush) Enqueue(context.Context, pushjob.Execer, string, push.Notific
 
 // pushRegistration builds a Registration over env wired as production wires it —
 // real mail and push enqueuers inserting real jobs, the real notification store
-// — except that pusher replaces the push enqueuer when it is not nil. The
-// returned buffer collects what the registration logged.
-func pushRegistration(t *testing.T, env *httpEnv, pusher auth.PushScheduler) (*auth.Registration, *bytes.Buffer) {
+// behind the real delivery path — except that pusher replaces the push enqueuer
+// when it is not nil. The returned buffer collects what the registration logged.
+func pushRegistration(
+	t *testing.T, env *httpEnv, pusher notifydeliver.PushScheduler,
+) (*auth.Registration, *bytes.Buffer) {
 	t.Helper()
 	if pusher == nil {
 		pusher = pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: true})
 	}
+	mail := mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true})
 	logs := &bytes.Buffer{}
 	return auth.NewRegistration(auth.RegistrationConfig{
-		Service:       env.svc,
-		Settings:      env.settings,
-		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
-		Notifications: notification.NewStore(env.db.Pool()),
-		Push:          pusher,
-		Logger:        slog.New(slog.NewTextHandler(logs, nil)),
+		Service:  env.svc,
+		Settings: env.settings,
+		Mail:     mail,
+		Notify: notifydeliver.New(notifydeliver.Config{
+			Notifications: notification.NewStore(env.db.Pool()), Push: pusher, Mail: mail,
+		}),
+		Logger: slog.New(slog.NewTextHandler(logs, nil)),
 	}), logs
 }
 
@@ -92,13 +100,14 @@ func choose(t *testing.T, env *httpEnv, userUID string, channel notification.Cha
 // storedNotification is the part of a notifications row these tests read.
 type storedNotification struct {
 	uid, userUID, kind, title, body, link string
+	inApp                                 bool
 }
 
 // storedNotifications returns every notification, ordered by owner.
 func storedNotifications(t *testing.T, env *httpEnv) []storedNotification {
 	t.Helper()
 	rows, err := env.db.Pool().Query(t.Context(),
-		`SELECT uid, user_uid, kind, title, body, link FROM notifications ORDER BY user_uid`)
+		`SELECT uid, user_uid, kind, title, body, link, in_app FROM notifications ORDER BY user_uid`)
 	if err != nil {
 		t.Fatalf("reading notifications: %v", err)
 	}
@@ -106,7 +115,7 @@ func storedNotifications(t *testing.T, env *httpEnv) []storedNotification {
 	var out []storedNotification
 	for rows.Next() {
 		var n storedNotification
-		if err := rows.Scan(&n.uid, &n.userUID, &n.kind, &n.title, &n.body, &n.link); err != nil {
+		if err := rows.Scan(&n.uid, &n.userUID, &n.kind, &n.title, &n.body, &n.link, &n.inApp); err != nil {
 			t.Fatalf("scanning a notification: %v", err)
 		}
 		out = append(out, n)
@@ -162,25 +171,29 @@ func pendingMailTo(t *testing.T, env *httpEnv, addr string) bool {
 	return false
 }
 
-// TestRegister_pushesEveryApproverWhoWantsIt is the push half of the happy path:
-// every enabled admin and maintainer who has not turned the kind's push off gets
-// one notification record, naming the newcomer and opening the approval screen,
-// and one delivery per device; the one who turned the push off gets no record
-// and no delivery, yet the mail they opted into all the same — the channels are
-// chosen independently — while the admins who never chose get no mail; an
-// editor gets nothing at all.
-func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
+// TestRegister_notifiesEveryApproverThroughTheirChannels is the happy path:
+// every enabled admin and maintainer gets the notification through exactly the
+// channels they opted into — boss by push (one record outside the inbox, one
+// delivery per device), keeper in-app (one inbox record, no push), quiet by
+// e-mail only (a record backing the mail's link, kept out of the inbox) — and
+// nobody who never chose gets anything, because every channel is off by
+// default; an editor gets nothing at all.
+func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
 	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
 	quiet := env.mustCreate(t, "quiet", auth.RoleAdmin)
+	silent := env.mustCreate(t, "silent", auth.RoleAdmin)
 	scribe := env.mustCreate(t, "scribe", auth.RoleEditor)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-laptop")
 	subscribeDevice(t, env, quiet.UID, "https://push.example.test/quiet-phone")
+	subscribeDevice(t, env, silent.UID, "https://push.example.test/silent-phone")
 	subscribeDevice(t, env, scribe.UID, "https://push.example.test/scribe-phone")
-	choose(t, env, quiet.UID, notification.ChannelPush, false)
+	choose(t, env, boss.UID, notification.ChannelPush, true)
+	choose(t, env, keeper.UID, notification.ChannelInApp, true)
 	choose(t, env, quiet.UID, notification.ChannelEmail, true)
+	choose(t, env, scribe.UID, notification.ChannelPush, true)
 	openRegistration(t, env)
 	rg, logs := pushRegistration(t, env, nil)
 
@@ -193,8 +206,12 @@ func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	for _, n := range stored {
 		owners[n.userUID] = n
 	}
-	if len(stored) != 2 || owners[boss.UID].uid == "" || owners[keeper.UID].uid == "" {
-		t.Fatalf("notifications = %+v, want one each for boss and keeper", stored)
+	if len(stored) != 3 || owners[boss.UID].uid == "" || owners[keeper.UID].uid == "" || owners[quiet.UID].uid == "" {
+		t.Fatalf("notifications = %+v, want one each for boss, keeper and quiet", stored)
+	}
+	if owners[boss.UID].inApp || !owners[keeper.UID].inApp || owners[quiet.UID].inApp {
+		t.Errorf("in_app flags = boss %v, keeper %v, quiet %v; want only keeper's listed",
+			owners[boss.UID].inApp, owners[keeper.UID].inApp, owners[quiet.UID].inApp)
 	}
 	for _, n := range stored {
 		if n.kind != string(notification.KindRegistrationPending) || n.link != "/users" {
@@ -220,9 +237,9 @@ func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	}
 
 	if !pendingMailTo(t, env, quiet.Email) {
-		t.Error("the admin who turned push off got no mail they opted into; the mail must not depend on push")
+		t.Error("the admin who opted into the e-mail got no mail")
 	}
-	if pendingMailTo(t, env, boss.Email) || pendingMailTo(t, env, keeper.Email) {
+	if pendingMailTo(t, env, boss.Email) || pendingMailTo(t, env, keeper.Email) || pendingMailTo(t, env, silent.Email) {
 		t.Error("an admin who never opted into the e-mail was mailed; it is off by default")
 	}
 	if logs.Len() != 0 {
@@ -230,14 +247,18 @@ func TestRegister_pushesEveryApproverWhoWantsIt(t *testing.T) {
 	}
 }
 
-// TestRegister_failedPushIsLoggedAndRegistrationGoesOn checks the best-effort
-// rule: a push that will not schedule is logged, leaves no half-written record,
-// and neither the account nor any mail is lost.
-func TestRegister_failedPushIsLoggedAndRegistrationGoesOn(t *testing.T) {
+// TestRegister_failedDeliveryIsLoggedAndRegistrationGoesOn checks the
+// best-effort rule: a recipient whose delivery will not schedule is logged and
+// rolled back whole — no record, no mail without the rest — while the account
+// and the other recipients' notifications are kept.
+func TestRegister_failedDeliveryIsLoggedAndRegistrationGoesOn(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.RoleAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
+	choose(t, env, boss.UID, notification.ChannelPush, true)
 	choose(t, env, boss.UID, notification.ChannelEmail, true)
+	choose(t, env, keeper.UID, notification.ChannelEmail, true)
 	openRegistration(t, env)
 	rg, logs := pushRegistration(t, env, failingPush{})
 
@@ -248,18 +269,22 @@ func TestRegister_failedPushIsLoggedAndRegistrationGoesOn(t *testing.T) {
 	if user.ApprovedAt != nil {
 		t.Error("the registered account is approved; it must wait")
 	}
-	if got := storedNotifications(t, env); len(got) != 0 {
-		t.Errorf("notifications = %+v, want none: a record without its delivery must roll back", got)
+	got := storedNotifications(t, env)
+	if len(got) != 1 || got[0].userUID != keeper.UID {
+		t.Errorf("notifications = %+v, want only keeper's: boss's delivery must roll back whole", got)
 	}
-	if !pendingMailTo(t, env, boss.Email) {
-		t.Error("the admin's mail is missing after a failed push")
+	if pendingMailTo(t, env, boss.Email) {
+		t.Error("boss was mailed although their delivery failed; it must roll back whole")
+	}
+	if !pendingMailTo(t, env, keeper.Email) {
+		t.Error("keeper's mail is missing after boss's delivery failed")
 	}
 	if got := countAudit(t, env, audit.ActionUserRegister); got != 1 {
 		t.Errorf("registration audit entries = %d, want 1", got)
 	}
-	if !strings.Contains(logs.String(), "could not push to an administrator") ||
+	if !strings.Contains(logs.String(), "could not notify an administrator") ||
 		!strings.Contains(logs.String(), boss.UID) {
-		t.Errorf("log = %q, want the failed push logged with the recipient", logs)
+		t.Errorf("log = %q, want the failed delivery logged with the recipient", logs)
 	}
 }
 
@@ -270,6 +295,8 @@ func TestRegister_rollbackLeavesNoNotification(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
+	choose(t, env, boss.UID, notification.ChannelPush, true)
+	choose(t, env, boss.UID, notification.ChannelInApp, true)
 	openRegistration(t, env)
 	rg, _ := pushRegistration(t, env, nil)
 
@@ -301,6 +328,7 @@ func TestRegister_closedRegistrationNotifiesNobody(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
+	choose(t, env, boss.UID, notification.ChannelPush, true)
 	rg, _ := pushRegistration(t, env, nil)
 
 	if _, err := registerNewcomer(t, rg, registerEntry()); !errors.Is(err, auth.ErrRegistrationClosed) {
@@ -320,6 +348,7 @@ func TestRegister_pushWithNobodyToNotify(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	retired := env.mustCreate(t, "retired", auth.RoleAdmin)
 	subscribeDevice(t, env, retired.UID, "https://push.example.test/retired-phone")
+	choose(t, env, retired.UID, notification.ChannelPush, true)
 	if _, err := env.svc.SetUserDisabled(t.Context(), retired.UID, true); err != nil {
 		t.Fatalf("disabling the admin: %v", err)
 	}

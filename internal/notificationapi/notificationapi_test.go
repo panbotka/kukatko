@@ -111,6 +111,9 @@ func TestRoutes_withoutUserAre401(t *testing.T) {
 		{http.MethodGet, "/api/v1/push/subscriptions"},
 		{http.MethodPost, "/api/v1/push/subscriptions"},
 		{http.MethodDelete, "/api/v1/push/subscriptions?endpoint=https://push.example/x"},
+		{http.MethodGet, "/api/v1/notifications"},
+		{http.MethodGet, "/api/v1/notifications/unread-count"},
+		{http.MethodPost, "/api/v1/notifications/read-all"},
 		{http.MethodGet, "/api/v1/notifications/preferences"},
 		{http.MethodPut, "/api/v1/notifications/preferences"},
 		{http.MethodGet, "/api/v1/notifications/nt123"},
@@ -284,9 +287,11 @@ func TestDecodePreferences(t *testing.T) {
 		{name: "empty list resets", body: `{"preferences":[]}`, want: []notification.Preference{}},
 		{name: "unknown kind", body: `{"preferences":[{"kind":"nope","enabled":true}]}`, wantErr: "unknown"},
 		{
-			name:    "channel the kind lacks",
-			body:    `{"preferences":[{"kind":"tagged","channel":"email","enabled":true}]}`,
-			wantErr: "not delivered through",
+			name: "in-app channel",
+			body: `{"preferences":[{"kind":"tagged","channel":"in_app","enabled":true}]}`,
+			want: []notification.Preference{
+				{Kind: notification.KindTagged, Channel: notification.ChannelInApp, Enabled: true},
+			},
 		},
 		{
 			name:    "unknown channel",
@@ -369,5 +374,39 @@ func TestToNotificationView_omitsTheOwner(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "us-owner") || !strings.Contains(string(raw), `"read_at":null`) {
 		t.Errorf("view = %s, want no owner and read_at null", raw)
+	}
+}
+
+// TestDecodeListOptions checks the inbox query parameters: absent ones keep
+// the store's defaults, valid ones are read, and malformed ones are errors.
+func TestDecodeListOptions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		query   string
+		want    notification.ListOptions
+		wantErr bool
+	}{
+		{query: ""},
+		{query: "?unread=true&limit=10&offset=20", want: notification.ListOptions{Unread: true, Limit: 10, Offset: 20}},
+		{query: "?unread=0", want: notification.ListOptions{}},
+		{query: "?unread=maybe", wantErr: true},
+		{query: "?limit=0", wantErr: true},
+		{query: "?limit=ten", wantErr: true},
+		{query: "?offset=-1", wantErr: true},
+		{query: "?offset=one", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/notifications"+tt.query, nil)
+			got, err := decodeListOptions(r)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("decodeListOptions(%q) err = %v, wantErr %v", tt.query, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Fatalf("decodeListOptions(%q) = %+v, want %+v", tt.query, got, tt.want)
+			}
+		})
 	}
 }

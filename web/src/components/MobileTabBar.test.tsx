@@ -253,8 +253,10 @@ describe('MobileTabBar on a phone', () => {
     const navbar = container.querySelector<HTMLElement>('.navbar.kukatko-navbar')
     expect(navbar).not.toBeNull()
     expect(within(navbar ?? document.body).queryByRole('button', { name: 'Search' })).toBeNull()
-    // The lone hamburger holds the trailing edge, under the thumb.
-    expect(container.querySelector('.navbar-toggler')).toHaveClass('ms-auto')
+    // The bell and the hamburger hold the trailing edge together, under the
+    // thumb: the bell takes the push, the hamburger follows it.
+    expect(container.querySelector('.kk-bell')?.closest('.dropdown')).toHaveClass('ms-auto')
+    expect(container.querySelector('.navbar-toggler')).not.toHaveClass('ms-auto')
   })
 
   it('opens the palette from the search tab without navigating anywhere', async () => {

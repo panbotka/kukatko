@@ -115,23 +115,18 @@ to `## Package map` in `CLAUDE.md`.
   nothing. `Store.ListApprovalRecipients` reads the enabled admins and maintainers to notify (no
   filtering on the address: skipping a `.invalid` placeholder is `internal/mailjob`'s single decision);
   reading them fails soft, and so does an individual notice that will not schedule — the person's own
-  confirmation is the only mail whose failure fails the registration. **The administrators' mail is
-  opt-in**: `mailApprover` sends `new_registration_pending` only to a recipient for whom
-  `WantsTx(…, KindRegistrationPending, ChannelEmail)` is true (default **off**), each under its own
-  savepoint, and the mail ends with `RegistrationConfig.ApprovalURL` (`mail.base_url` + `ApprovalPath`,
-  built in `cmd/kukatko`; empty leaves the link out). Without a `Notifications` recorder nobody can have
-  opted in, so only the person is mailed. **Each of those recipients is also notified by push**
-  (`schedulePush`, same transaction, after the mails): when
-  `RegistrationConfig.Notifications` (`NotificationRecorder`, satisfied by `*notification.Store`) and
-  `Push` (`PushScheduler`, satisfied by `*pushjob.Enqueuer`) are both set, every recipient who has not
-  turned `registration_pending`'s `push` channel off gets one notification record — the Czech
-  `notification.RenderRegistrationPending` text naming the newcomer (display name, else username),
-  link `/users`, the approval screen — and one `push_send` job per device, tagged with the record's uid.
-  Each recipient runs under its own **savepoint**, because a failed statement would otherwise abort the
-  whole registration: a notification that will not record or schedule is rolled back to it, logged, and
-  the registration goes on (the administrators' mail rule). The two channels are chosen independently —
-  push off does not stop an opted-in mail — and push off instance-wide is `pushjob`'s silent refusal, not
-  a case here (the record is still written). `Push` nil means no push. The audit entry
+  confirmation is the only mail whose failure fails the registration. **The administrators are notified
+  through `internal/notifydeliver`** (`notifyApprovers`, same transaction, after the confirmation): when
+  `RegistrationConfig.Notify` (`Notifier`, satisfied by `*notifydeliver.Deliverer`) is set, every
+  recipient gets one `Deliver` of `KindRegistrationPending` — the Czech
+  `notification.RenderRegistrationPending` text naming the newcomer (display name, else username), link
+  `/users`, the approval screen — through **exactly the channels they opted into** (in-app, push,
+  e-mail; **all off by default**). The e-mail is the detailed `new_registration_pending` template ending
+  with `RegistrationConfig.ApprovalURL` (`mail.base_url` + `ApprovalPath`, built in `cmd/kukatko`;
+  empty leaves the link out). Each recipient runs under its own **savepoint**, because a failed statement
+  would otherwise abort the whole registration: a delivery that will not record or schedule is rolled back
+  to it **whole** (no mail without its record, no record without its push), logged, and the registration
+  goes on. `Notify` nil means only the person is mailed. The audit entry
   (`audit.ActionUserRegister`, `user.register`) names the new account as both actor and target and is
   written in that same transaction. `perAddressLimiter` derives the endpoint's per-address
   `ratelimit.Limiter` from the login budget when the caller supplies none (shared with the
@@ -5475,7 +5470,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     printable rather than raw 8-bit because it needs no `8BITMIME` from the server and it folds the long lines
     the 998-octet limit would otherwise break; the Q-encoded subject is what makes `Váš účet byl schválen`
     survive a server that only takes ASCII headers.
-  - **Six Czech templates**, each a **pure function of its own data struct** returning
+  - **Eight Czech templates**, each a **pure function of its own data struct** returning
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
     expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
     account exists and waits for an administrator), `RenderAccountApproved`
@@ -5496,6 +5491,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     The sixth, `RenderUsernameChanged` (`UsernameChangedData{DisplayName,Username,SignInURL}`), tells somebody an
     administrator renamed their account: the new name in the subject and the body, that the password stays the
     same, and the sign-in link — left out entirely when `SignInURL` is blank.
+    The last two are the **e-mail channel of the notification kinds** (`templates_notification.go`, both
+    informal and closed by a footer saying the mail was switched on in the notification settings and can be
+    switched off there): `RenderTagged` (`TaggedData{DisplayName,Count,URL}` — "označil na jedné fotce /
+    3 fotkách", subject „Označili vás na fotce/fotkách", the link to the notification's page) and the
+    generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,
+    the body (or the title when there is none) and the link), which `internal/notifydeliver` uses for any
+    kind without a template of its own. `internal/mailjob` has a constructor for each (`Tagged`,
+    `Notification`) and renders both.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5679,22 +5682,25 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     completions, and `Enqueue` queuing nothing with push off, without devices or in a rolled-back
     transaction.
 
-- **Notification records (`internal/notification`):** what a push notification **is** once it has been
-  sent — the record tapping it opens, with its frozen photo set — plus each account's choice of which
-  kinds it wants through which delivery channel. It sends nothing and serves nothing: delivery is
-  `internal/pushjob` (and `internal/mailjob` for the e-mail channel), the HTTP surface is
+- **Notification records (`internal/notification`):** what a notification **is** once it has been
+  sent — the record the in-app inbox lists and a tapped push or a mail's link opens, with its frozen
+  photo set — plus each account's choice of which kinds it wants through which delivery channel, and the
+  inbox reads (listing, unread count, mark-all-read). It sends nothing and serves nothing: delivery is
+  `internal/notifydeliver` (over `internal/pushjob` and `internal/mailjob`), the HTTP surface is
   `internal/notificationapi`. Tables `notifications`, `notification_photos`, `notification_prefs`
-  (migrations `0087`, `0093` for the channel, [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape
-  follows `internal/phototask`.
+  (migrations `0087`, `0093` for the channel, `0095` for `notifications.in_app`,
+  [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos) and **`KindRegistrationPending`** ("a registration is waiting for approval", no photos) — in a
-    package registry in display order, each with the **channels** (`Channel`: **`ChannelPush`**,
-    **`ChannelEmail`**) it is delivered through and a default per channel: `tagged` push only (on),
-    `registration_pending` push (on) and e-mail (**off** — the administrators' registration mail is
-    opt-in). `Kinds()`, `Kind.Known()`, `Kind.Channels()` (push before e-mail), `Kind.Supports(channel)`,
-    `Kind.Default(channel)`. A new kind is a constant + a registry entry + a locale string, a new channel a
-    constant + the kinds that offer it; neither `kind` nor `channel` carries a CHECK on its values, so
-    neither costs a migration.
+    package registry in display order, each with the **channels** it is delivered through
+    (`AllChannels()`: **`ChannelInApp`** `in_app`, **`ChannelPush`**, **`ChannelEmail`**, in that order) —
+    **every kind offers all three, and every default is off** (`everyChannelOff()`; the 2026-10-11
+    product decision "nothing unless asked for" replaced the earlier tagged/registration push-on
+    defaults; a stored explicit choice is untouched, only the absent-row default changed). `Kinds()`,
+    `Kind.Known()`, `Kind.Channels()`, `Kind.Supports(channel)`, `Kind.Default(channel)`. A new kind is a
+    constant + a registry entry + a render function (+ optionally a mail template — delivery is
+    `internal/notifydeliver`'s), a new channel a constant + the kinds that offer it; neither `kind` nor
+    `channel` carries a CHECK on its values, so neither costs a migration.
   - **`Store.Create(ctx, New)`** writes the notification **and its whole photo set in one transaction**
     (`unnest … WITH ORDINALITY` → zero-based `position`, so the set keeps the given order; a repeated uid
     keeps its first position). Validation first: an account, a known kind (`ErrUnknownKind`), a non-blank
@@ -5702,8 +5708,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     in-app path (no absolute URL, no `//host`, no `/\host`; ≤ 2048 bytes) — all `ErrInvalid` — and at most
     `MaxPhotos` (5000, `ErrTooManyPhotos`). A missing photograph is `ErrPhotoNotFound`, a missing account
     `ErrUserNotFound`, and either leaves **nothing** written. It does not consult preferences — the caller
-    asks `Wants` first. **`CreateTx(ctx, tx, New)`** and **`WantsTx(ctx, tx, userUID, kind, channel)`** are the same
-    on the caller's open transaction, for a notification that must commit with the mutation that caused
+    asks `Wants` first. **`New.InApp`** lists the record in the owner's inbox (`notifications.in_app`);
+    false writes a record that only backs a push or a mail. **`CreateTx(ctx, tx, New)`**,
+    **`WantsTx(ctx, tx, userUID, kind, channel)`** and **`WantedTx(ctx, tx, userUID, kind)`** (every wanted
+    channel in one read) are the same on the caller's open transaction, for a notification that must commit with the mutation that caused
     it (self-service registration in `internal/auth`); a caller that must survive a failed insert runs
     them under a savepoint. **`New.SelfLink`** stores the notification's own page, **`Path(uid)`** =
     `PathPrefix` (`/n/`) + uid, as its link — the uid is assigned by the store, so a producer cannot spell
@@ -5722,14 +5730,23 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
     foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
     uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is
-    idempotent — `COALESCE` keeps the first reading.
+    idempotent — `COALESCE` keeps the first reading. These answer for any record, listed or not — a push
+    and a mail open them by uid.
+  - **The inbox** (`inbox.go`) reads only `in_app` rows of the owner: **`List(ctx, ownerUID,
+    ListOptions{Unread, Limit, Offset})`** → `Page{Notifications, Total, Limit, Offset}`, newest first
+    (`created_at DESC, uid DESC`, stable across pages), limit defaulting to `DefaultListLimit` (30) and
+    clamped to `MaxListLimit` (100), a negative offset read as 0, an empty inbox an empty non-nil page;
+    **`UnreadCount(ctx, ownerUID)`** (the bell's number); **`MarkAllRead(ctx, ownerUID)`** stamps every
+    unread inbox row and returns how many — an already-read one keeps its first reading, a record outside
+    the inbox and other accounts are untouched. Two partial indexes (migration 0095) serve the page and
+    the count.
   - **`Photos(ctx, ownerUID, uid, Visibility)`** is the only way to read a set, and it makes the caller
     state visibility instead of handing out a raw list to render blindly: the zero `Visibility` drops
     archived, hidden-from-library and private photographs; `IncludeArchived`/`IncludeHidden`/
     `IncludePrivate` let each through. The order is the frozen `position`. A set that is empty or wholly
     deleted yields an empty non-nil slice and no error.
   - **Preferences.** `Preferences(ctx, userUID)` returns one `Preference{Kind, Channel, Enabled,
-    IsDefault}` per known kind and channel it supports, in registry order (push before e-mail), stored
+    IsDefault}` per known kind and channel it supports, in registry order (in-app, push, e-mail), stored
     choices merged over the defaults (a row for a retired kind or channel is ignored);
     `Wants(ctx, userUID, kind, channel)` answers one (`ErrUnknownKind`, or `ErrUnsupportedChannel` for a
     channel the kind lacks). **`ReplacePreferences(ctx, userUID, prefs, audit.Entry)`** replaces every
@@ -5742,21 +5759,23 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - **Retention.** `Purge(ctx, now, Retention{Read, Unread})` deletes read notifications recorded more
     than `Read` ago and unread ones more than `Unread` ago (both measured from `created_at`); `Unread`
     shorter than `Read`, or a non-positive threshold, is `ErrInvalidRetention`. `DefaultRetention()` is
-    30 d / 90 d. **No scheduler is wired** — when to run it is a later decision.
+    30 d / 90 d. It runs daily through the `notification_purge` job (`internal/notifypurgejob`).
   - The wipe (`internal/reset`) empties `notifications` + `notification_photos` and preserves
     `notification_prefs`. Tests: field rules, the registry, preference merge and audit-entry shaping as
     unit tests; over a real database — atomic create (a missing photo or account leaves nothing), the
     order, a photo-less record, foreign uid = not found for every read, idempotent mark-read, visibility
     per flag, a wholly deleted set, the default merge, an audited replace with the acting user, the
-    refused replaces writing neither rows nor audit, the purge at both thresholds, and the account cascade.
+    refused replaces writing neither rows nor audit, the purge at both thresholds, the account cascade,
+    and the inbox — owner-only and in-app-only, newest first, stable paging, the unread filter and clamped
+    bounds, the unread count, mark-all-read keeping first readings and leaving other records alone.
 
 - **Notification HTTP surface (`internal/notificationapi`):** exposes over HTTP what `internal/push` and
   `internal/notification` already do, with **no business logic of its own** — the endpoints are in
   [`API.md`](API.md). Wired by `buildNotificationAPI` (`cmd/kukatko/notification.go`) inside
   `readAPIOptions`, every route behind `RequireAuth` (all roles).
   - **Interfaces, not stores:** `SubscriptionStore` (`Upsert`/`ListForUser`/`DeleteByID` of
-    `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`Photos`/`Preferences`/`ReplacePreferences` of
-    `notification.Store`) and `PhotoStore` (`ListByUIDs`). `Storage` feeds an `internal/mediaurl` builder
+    `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`List`/`UnreadCount`/`MarkAllRead`/`Photos`/
+    `Preferences`/`ReplacePreferences` of `notification.Store`) and `PhotoStore` (`ListByUIDs`). `Storage` feeds an `internal/mediaurl` builder
     that stamps the media URLs on the returned photos.
   - **Two secrets kept out by construction.** `PushSettings{Enabled, PublicKey}` is all of the push
     configuration the package is given — there is no field the VAPID private key could travel in
@@ -5780,24 +5799,27 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     404), unusable subscriptions refused, push off → 503 and nothing stored, the rate limit, preferences
     (defaults, audited replace, refused replaces changing nothing, reset), the detail filtering archived /
     hidden / private in frozen order with counts and media URLs (and un-archiving bringing one back),
-    foreign/unknown uid 404 for read and mark-read, idempotent mark-read, anonymous 401 on every route.
+    foreign/unknown uid 404 for read and mark-read, idempotent mark-read, the inbox (only the caller's
+    in-app records, newest first and paged, the unread filter, the count, read-all leaving another
+    account alone, malformed query → 400), anonymous 401 on every route.
 
 - **Tagging window (`internal/tagnotifyjob`):** "you were tagged in N photos" — one notification per
   **window**, not per photo, so an afternoon of naming faces from a village event is one message, not
   forty. Table `tag_notices` (migration 0088: `(user_uid, photo_uid)` PK, `recorded_at`, both sides
   `ON DELETE CASCADE`), job type `tag_notify` (payload `{user_uid}`, dedup index migration 0089),
   config `push.tags.window` (default **1h**). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
-  - **`Recorder`** (`NewRecorder(RecorderConfig{Enabled, Window, Preferences, Logger, Now})`, panicking
-    without `Preferences`) is the `people.TagObserver`. **`Tagged`** records, for every enabled, approved
+  - **`Recorder`** (`NewRecorder(RecorderConfig{Window, Audience, Logger, Now})`, panicking without
+    `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every enabled, approved
     account linked to the subject (several may be — migration 0060), one notice, and opens the account's
     window when none is open: **`jobs.EnqueueOrSkip`** of `tag_notify` with `RunAfter = now + window`.
-    It records **nothing at all** when push is off, when the acting account is itself linked to the
+    It records **nothing at all** when the acting account is itself linked to the
     subject (nobody hears about their own work — nor does a second account of the same person), when the
     photo is private, hidden or archived (`notification.VisiblePhotoSQL`; a notification would disclose
-    it) or the subject is not actually on it through a valid marker, and for an account that turned
-    `KindTagged` off (so the table does not fill up for somebody who does not want it). The same photo
-    twice is one notice. **`Untagged`** deletes the matching notices of every linked account unless the
-    subject is still on the photo through another valid marker — with push off too.
+    it) or the subject is not actually on it through a valid marker, and for an account that would
+    receive `KindTagged` through **no channel** — every channel off (the default), or only the ones the
+    instance switched off (so the table does not fill up for somebody who would get nothing). The same
+    photo twice is one notice. **`Untagged`** deletes the matching notices of every linked account unless
+    the subject is still on the photo through another valid marker, whatever the channels.
   - **"First notice of a window" = no queued job for the account**, checked under a per-account
     **advisory transaction lock** (`pg_advisory_xact_lock(hashtextextended('tag_notify:'||uid, 0))`)
     that the job takes too. So a tag either lands before the job reads (and is in its notification) or
@@ -5808,28 +5830,70 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - **Best-effort, never costs an assignment:** every call runs under a savepoint of the assignment's
     transaction; a failure rolls back to it, is logged, and the assignment commits. A rolled-back
     assignment announces nothing (notice and job share its transaction).
-  - **`Service.Handle`/`Close`** (`New(Config{DB, Notifications, Push, Language, Logger})`, panicking on a
+  - **`Service.Handle`/`Close`** (`New(Config{DB, Deliver, Language, Logger})`, panicking on a
     missing dependency): in one transaction, take the lock, `DELETE … RETURNING` every notice of the
     account and keep the photos that **still** qualify — visible now and still carrying the account's
     linked person on a valid marker (an archive, a merge or an invalidation inside the window is caught
     here) — **newest photo first** (`taken_at DESC NULLS LAST, created_at DESC`); nothing left → commit
-    and send nothing (never "0 photos"); kind turned off meanwhile → consume and send nothing; otherwise
-    `notification.CreateTx` (`KindTagged`, `RenderTagged`, `SelfLink`, the frozen set capped at
-    `MaxPhotos` with the count matching the set) and `pushjob.Enqueuer.Enqueue` on the same transaction
-    (`Tag` = the record's uid). A crash part-way rolls back and the retry re-runs cleanly. A payload
+    and send nothing (never "0 photos"); otherwise one `notifydeliver.Deliver` on the same transaction
+    (`KindTagged`, `RenderTagged`, `SelfLink`, the frozen set capped at `MaxPhotos` with the count
+    matching the set, and the tagged kind's own mail — `mailer.TemplateTagged` with the count and the
+    absolute link to `/n/<uid>`); every channel turned off meanwhile → consume and send nothing. A crash part-way rolls back and the retry re-runs cleanly. A payload
     naming no account is `worker.Terminal`.
   - Wired in `cmd/kukatko/tagnotify.go`: the recorder into `buildFaceMatch`'s people store and the photo
     API's `Attacher` (a person attached by hand — the only way a video names anybody — is a tagging), the handler
-    registered **unconditionally** (like `push_send`, so a window left open when push was switched off
-    closes; its delivery then queues nothing). Tests: payload, refusals and defaults as unit tests; over a
+    registered **unconditionally** (so a window always closes; a channel switched off instance-wide
+    then delivers nothing). Both share `buildDeliverer` (`cmd/kukatko/notifydeliver.go`). Tests: payload, refusals and defaults as unit tests; over a
     real database — twelve tags collapse into one notification with the right Czech count, newest first,
     its own link and one push per device; a hand attachment records and its detach clears; a second
     window after the first closed; a tag during a run
     opens a new window; an in-flight tag is waited for by the closing job; untagging removes a notice; an
     all-untagged window sends nothing; a photo archived inside the window is left out; nothing recorded
-    for self-assignment, private/hidden/archived photos, the kind off, an unlinked subject, a disabled
-    account, push off, a rolled-back assignment; 300 notices in one transaction queue exactly one job; a
+    for self-assignment, private/hidden/archived photos, the kind off, nothing ever chosen, an unlinked
+    subject, a disabled account, push off for a push-only account, a rolled-back assignment; an in-app-only
+    account gets an inbox record and no push (even with push off), a push-only one a record outside the
+    inbox, an e-mail-only one the tagged mail with the right count and link; 300 notices in one transaction queue exactly one job; a
     deleted account's window finds nothing.
+
+- **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
+  A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail}` and calls
+  **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
+  itself. `New(Config{Notifications, Push, Mail, BaseURL, Logger})` (panicking on a missing dependency;
+  wired once as `buildDeliverer` in `cmd/kukatko/notifydeliver.go` over `notification.Store`, the push
+  and mail enqueuers and `mail.base_url`).
+  - **`ChannelsTx(ctx, tx, userUID, kind)`** → `Channels{InApp, Push, Email}`: the channels the account
+    wants (`notification.Store.WantedTx`, one read) **and** the instance can deliver — push counts only
+    with `push.enabled`, e-mail only with `mail.enabled`, in-app always. The tagging recorder asks it
+    before it collects anything.
+  - **`Deliver`**: no channel → nothing at all, no record (zero `Result`). Otherwise **one record**
+    (`CreateTx`, `InApp` = whether in-app is among the channels) — written for any channel, since the push
+    opens it and the mail links to it, and kept out of the inbox unless in-app was wanted; then the push
+    (`pushjob.Enqueuer.Enqueue`, `Tag` = the record's uid, `URL` = its link) when push is on the list, and
+    the mail when e-mail is: the recipient's address and display name read on `tx`, the message built by
+    `Message.Mail` (or **`GenericMail`**, the `notification` template carrying title, body and the link)
+    with the link made absolute on `BaseURL` (empty without one). An account with a blank address is not
+    mailed and the other channels still deliver; a `.invalid` placeholder is `mailjob`'s skip. Every write
+    joins `tx`; a failure is returned wrapped and leaves `tx` aborted — a best-effort caller runs it under
+    a savepoint. `Result{Channels, Notification, Devices}` says what happened.
+  - Adding a kind = a registry entry in `internal/notification`, a render function for its text and
+    optionally a `MailBuilder` + template; nothing here changes. Producers: `internal/tagnotifyjob` and
+    self-service registration (`internal/auth`). Tests (unit, fakes for the store, both queues and the
+    transaction's recipient read): the fan-out table — none, in-app only, push only, mail only, all — with
+    the record and its in-app flag, the push and generic-mail payloads (absolute link), a kind's own mail
+    builder without a base URL, both instance switches off (no record), a blank address skipping only the
+    mail, the wrapped failures, the required dependencies.
+
+- **Notification retention (`internal/notifypurgejob`):** the `notification_purge` job and its scheduler.
+  `New(Config{Notifications, Retention, Clock, Logger})` — `Handle` runs `notification.Store.Purge` as of
+  the clock with `notification.DefaultRetention()` (read 30 d, unread 90 d) unless a retention is given;
+  a failure goes back to the queue. `NewScheduler(enqueuer, interval, logger)` enqueues through
+  `jobs.Enqueuer.EnqueueNotificationPurge` **at startup and every `Interval` (24 h)** after, until its
+  context ends; a failed enqueue is logged and the loop goes on. Dedup: `idx_jobs_notification_purge_dedup`
+  (migration 0096) keeps at most one **queued** purge, so restarts cannot pile them up. Wired in
+  `cmd/kukatko/notifydeliver.go` (`buildNotifyPurgeService` registered unconditionally,
+  `buildNotifyPurgeScheduler` started by `serve`). Tests: the retention defaulting, the clock, the
+  returned failure, the scheduler's startup + periodic enqueues surviving failures, its defaults; the
+  dedup is covered in `internal/jobs`' integration tests.
 
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`

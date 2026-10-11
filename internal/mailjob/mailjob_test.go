@@ -113,6 +113,18 @@ func TestHandle_rendersEveryTemplate(t *testing.T) {
 			}),
 			wantBody: "jménem „jan.novak“",
 		},
+		{
+			name:     "tagged",
+			mail:     Tagged("jan@example.com", mailer.TaggedData{Count: 3, URL: "https://kukatko.example/n/nt1"}),
+			wantBody: "označil na 3 fotkách.\n\nPodívat se na ně můžeš tady:\n\nhttps://kukatko.example/n/nt1",
+		},
+		{
+			name: "generic notification",
+			mail: Notification("jan@example.com", mailer.NotificationData{
+				Title: "Nové album", Body: "Přibylo album Pouť.", URL: "https://kukatko.example/albums/a1",
+			}),
+			wantBody: "Přibylo album Pouť.\n\nhttps://kukatko.example/albums/a1",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

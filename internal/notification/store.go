@@ -34,7 +34,7 @@ type row interface {
 // selectColumns is the column list every notification read shares, qualified by
 // the n alias. The photo count reads the frozen set as it stands now, so a
 // photograph the cascade removed no longer counts.
-const selectColumns = `n.uid, n.user_uid, n.kind, n.title, n.body, n.link, n.created_at, n.read_at,
+const selectColumns = `n.uid, n.user_uid, n.kind, n.title, n.body, n.link, n.created_at, n.read_at, n.in_app,
 	(SELECT count(*) FROM notification_photos np WHERE np.notification_uid = n.uid)`
 
 // scanNotification reads one notification row, mapping pgx.ErrNoRows to
@@ -44,7 +44,7 @@ func scanNotification(r row) (Notification, error) {
 		n    Notification
 		kind string
 	)
-	err := r.Scan(&n.UID, &n.UserUID, &kind, &n.Title, &n.Body, &n.Link, &n.CreatedAt, &n.ReadAt, &n.PhotoCount)
+	err := r.Scan(&n.UID, &n.UserUID, &kind, &n.Title, &n.Body, &n.Link, &n.CreatedAt, &n.ReadAt, &n.InApp, &n.PhotoCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Notification{}, ErrNotFound
 	}
@@ -57,8 +57,8 @@ func scanNotification(r row) (Notification, error) {
 
 // insertSQL records one notification; its photo set follows in insertPhotosSQL.
 const insertSQL = `
-INSERT INTO notifications (uid, user_uid, kind, title, body, link)
-VALUES ($1, $2, $3, $4, $5, $6)`
+INSERT INTO notifications (uid, user_uid, kind, title, body, link, in_app)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 // insertPhotosSQL writes the frozen set in one statement. WITH ORDINALITY turns
 // the array order into the stored position (zero-based), so the set reads back
@@ -81,7 +81,7 @@ WHERE n.uid = $1 AND n.user_uid = $2`
 // photograph given twice keeps its first position.
 //
 // Create sends nothing and does not consult the account's preferences — the
-// caller asks Wants first.
+// caller asks Wants first (internal/notifydeliver does both).
 func (s *Store) Create(ctx context.Context, n New) (Notification, error) {
 	var out Notification
 	err := s.inTx(ctx, "creating notification", func(tx pgx.Tx) error {
@@ -110,7 +110,8 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 	if err != nil {
 		return Notification{}, err
 	}
-	if _, err := tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid)); err != nil {
+	_, err = tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid), n.InApp)
+	if err != nil {
 		return Notification{}, mapForeignKey(err)
 	}
 	if len(photos) > 0 {

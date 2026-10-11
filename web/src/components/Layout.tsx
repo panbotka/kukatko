@@ -23,6 +23,7 @@ import { JobQueueStatus } from './JobQueueStatus'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { MOBILE_MENU_ID, MobileNavDrawer } from './MobileNavDrawer'
 import { MobileTabBar } from './MobileTabBar'
+import { NotificationBell } from './notifications/NotificationBell'
 import {
   ACCOUNT_ITEM,
   adminItems,
@@ -360,7 +361,11 @@ export function Layout() {
                     it here now hangs off the user menu instead. */}
                 {tools !== null && renderGroup(tools)}
               </Nav>
-              <Nav className="align-items-center">
+              {/* The bell (the in-app inbox) and the shortcuts: two bare icon
+                  buttons, ~39px of the bar's slack for the bell — its badge sits
+                  on the corner and costs no width. */}
+              <Nav className="align-items-center gap-2">
+                <NotificationBell />
                 <KeyboardShortcutsHelp />
               </Nav>
               {user && (
@@ -444,10 +449,14 @@ export function Layout() {
               Úkoly is inside the menu, and a summons behind a closed menu is no
               summons. The children replace react-bootstrap's default glyph, so
               the glyph is restated alongside the badge. */}
+          {/* On a phone the bell stands just before the hamburger: the inbox
+              is news, and news behind a closed menu is no news. It takes the
+              trailing push (`ms-auto`) so the pair sits together at the edge. */}
+          {drawerNav && user && <NotificationBell className="ms-auto me-2" />}
           <Navbar.Toggle
             aria-controls={MOBILE_MENU_ID}
             label={t('nav.openMenu')}
-            className="position-relative ms-auto"
+            className={`position-relative${drawerNav && user ? '' : ' ms-auto'}`}
           >
             <span className="navbar-toggler-icon" />
             <WaitingBadge count={waitingOnMe} over />

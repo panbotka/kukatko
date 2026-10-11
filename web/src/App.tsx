@@ -33,6 +33,7 @@ import { MaintenancePage } from './pages/MaintenancePage'
 import { MapPage } from './pages/MapPage'
 import { MyActivityPage } from './pages/MyActivityPage'
 import { NotificationPage } from './pages/NotificationPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { OutliersPage } from './pages/OutliersPage'
 import { PasswordResetPage } from './pages/PasswordResetPage'
@@ -58,6 +59,7 @@ import { UploadLinkPage } from './pages/UploadLinkPage'
 import { UploadLinksPage } from './pages/UploadLinksPage'
 import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
+import { NotificationInboxProvider } from './notifications/NotificationInboxProvider'
 import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
 
 /**
@@ -128,6 +130,10 @@ export function AppRoutes() {
               to the reader's own notifications server-side. One photograph
               forwards straight to the viewer; several render as a grid. */}
           <Route path="/n/:uid" element={<NotificationPage />} />
+          {/* The whole in-app inbox, which the navbar's bell opens onto. Any
+              signed-in role, scoped to the reader server-side; no nav entry —
+              the bell is its door. */}
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/saved" element={<SavedSearchesPage />} />
           <Route path="/map" element={<MapPage />} />
@@ -233,7 +239,11 @@ export function App() {
                   page's chips. Inside AuthProvider because it fetches only for a
                   signed-in reader; outside the routes because the shell reads it. */}
               <TaskSummaryProvider>
-                <AppRoutes />
+                {/* The in-app inbox's unread count for the navbar's bell; like
+                    the task counts, fetched only for a signed-in reader. */}
+                <NotificationInboxProvider>
+                  <AppRoutes />
+                </NotificationInboxProvider>
               </TaskSummaryProvider>
             </MorphProvider>
           </CapabilitiesProvider>

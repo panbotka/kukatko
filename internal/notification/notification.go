@@ -2,17 +2,19 @@
 // for, what kind it was, the text and deeplink it was sent with, when it was
 // read, and — for the kinds that are about photographs — the frozen, ordered set
 // of photographs tapping it opens. It also keeps each account's choice of which
-// kinds it wants, per delivery channel (push, e-mail).
+// kinds it wants, per delivery channel (in-app, push, e-mail), and serves the
+// in-app inbox: the listing, the unread count and "mark everything read".
 //
 // A notification is a record rather than a transient message because it has to
 // survive being tapped: "you were tagged in 12 photos" opens exactly those 12,
 // even after a thirteenth is tagged and even the next morning. The shape follows
 // internal/phototask, whose question is about a frozen group of photos too.
 //
-// The package sends nothing and serves nothing; delivery (internal/pushjob) and
-// the HTTP surface are separate. Every read is scoped to the owning account, and
-// a foreign uid is indistinguishable from a missing one (ErrNotFound), so a uid
-// cannot be probed for existence.
+// The package sends nothing and serves nothing; delivery (internal/notifydeliver
+// over internal/pushjob and internal/mailjob) and the HTTP surface are
+// separate. Every read is scoped to the owning account, and a foreign uid is
+// indistinguishable from a missing one (ErrNotFound), so a uid cannot be
+// probed for existence.
 package notification
 
 import (
@@ -37,13 +39,17 @@ const (
 	KindRegistrationPending Kind = "registration_pending"
 )
 
-// Channel names how a notification reaches its account: a push to its devices
-// or an e-mail. It is stored verbatim in notification_prefs.channel, which — like
+// Channel names how a notification reaches its account: the in-app inbox, a
+// push to its devices or an e-mail. It is stored verbatim in notification_prefs.channel, which — like
 // the kind columns — carries no CHECK on its values, so adding a channel costs a
 // constant here and the kinds that offer it, never a migration.
 type Channel string
 
 const (
+	// ChannelInApp is the inbox behind the bell in the navbar: the record is
+	// listed there (notifications.in_app) until it is purged. It needs no device
+	// and no instance switch — it is always deliverable.
+	ChannelInApp Channel = "in_app"
 	// ChannelPush is a Web Push notification to every device of the account,
 	// together with the record the notification page reads.
 	ChannelPush Channel = "push"
@@ -58,20 +64,37 @@ type channelDef struct {
 	def     bool
 }
 
+// AllChannels returns every channel, in display order: in-app, push, e-mail. It
+// is a fresh slice.
+func AllChannels() []Channel {
+	return []Channel{ChannelInApp, ChannelPush, ChannelEmail}
+}
+
+// everyChannelOff is the channel list every kind is registered with: all three
+// channels, each off until the account opts in. "Nothing unless asked for" is
+// the product's decision (2026-10-11) — it replaced the earlier defaults, under
+// which the tagged and registration_pending pushes were on. An account that
+// saved an explicit choice keeps it; only the absent-row default changed.
+func everyChannelOff() []channelDef {
+	channels := AllChannels()
+	out := make([]channelDef, 0, len(channels))
+	for _, channel := range channels {
+		out = append(out, channelDef{channel: channel, def: false})
+	}
+	return out
+}
+
 // registry is every known kind in display order, each with the channels it can
-// be delivered through (push before e-mail) and their defaults. The order is the
-// order Preferences reports them in.
+// be delivered through (in-app, push, e-mail) and their defaults. The order is
+// the order Preferences reports them in. Adding a kind is an entry here, a
+// render function for its text and — optionally — a mail template; delivery
+// (internal/notifydeliver) needs nothing else.
 var registry = []struct {
 	kind     Kind
 	channels []channelDef
 }{
-	{kind: KindTagged, channels: []channelDef{{channel: ChannelPush, def: true}}},
-	// The administrators' e-mail is opt-in: before channels existed every
-	// approver was mailed about every registration whether they cared or not.
-	{kind: KindRegistrationPending, channels: []channelDef{
-		{channel: ChannelPush, def: true},
-		{channel: ChannelEmail, def: false},
-	}},
+	{kind: KindTagged, channels: everyChannelOff()},
+	{kind: KindRegistrationPending, channels: everyChannelOff()},
 }
 
 // Kinds returns every known kind, in display order, as a fresh slice.
@@ -89,8 +112,8 @@ func (k Kind) Known() bool {
 	return ok
 }
 
-// Channels returns the channels kind k can be delivered through, push before
-// e-mail, as a fresh slice; nil for an unknown kind.
+// Channels returns the channels kind k can be delivered through, in display
+// order, as a fresh slice; nil for an unknown kind.
 func (k Kind) Channels() []Channel {
 	defs, _ := k.channelDefs()
 	if defs == nil {
@@ -208,6 +231,10 @@ type Notification struct {
 	CreatedAt time.Time `json:"created_at"`
 	// ReadAt is when the owner first read it; nil while unread.
 	ReadAt *time.Time `json:"read_at,omitempty"`
+	// InApp is whether the notification is listed in the owner's inbox. A
+	// record written only to back a push or an e-mail (its deeplink and photo
+	// set) is not; it is still readable by uid.
+	InApp bool `json:"in_app"`
 	// PhotoCount is how many photographs of the frozen set still exist. It
 	// counts deleted ones out (the cascade removed them) but not archived,
 	// hidden or private ones — those are the reader's to filter, see Photos.
@@ -236,6 +263,9 @@ type New struct {
 	// given twice keeps its first position. Nil or empty for a kind with no
 	// photographs.
 	PhotoUIDs []string
+	// InApp lists the notification in the owner's inbox. False records it only
+	// as the target of a push or an e-mail.
+	InApp bool
 }
 
 // PathPrefix is the in-app route of one notification's own page, the uid
@@ -413,10 +443,10 @@ func validatePrefs(prefs []Preference) error {
 }
 
 // effective merges stored choices over the defaults: one Preference per known
-// kind and channel it supports, in registry order (push before e-mail within a
-// kind). A stored row for a kind or channel no longer defined is ignored.
+// kind and channel it supports, in registry order (in-app, push, e-mail within
+// a kind). A stored row for a kind or channel no longer defined is ignored.
 func effective(stored map[prefKey]bool) []Preference {
-	out := make([]Preference, 0, 2*len(registry))
+	out := make([]Preference, 0, len(AllChannels())*len(registry))
 	for _, entry := range registry {
 		for _, def := range entry.channels {
 			enabled, chosen := stored[prefKey{kind: entry.kind, channel: def.channel}]

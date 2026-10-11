@@ -110,7 +110,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`, terminal failure, enqueue inside the caller's transaction)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
-- `internal/mailer` — the only way to send an e-mail: the `Sender` interface + SMTP (stdlib only), a no-op for when mail is off and a socket-free fake for tests; four Czech templates rendered purely; a `.invalid` recipient is refused, never dialled
+- `internal/mailer` — the only way to send an e-mail: the `Sender` interface + SMTP (stdlib only), a no-op for when mail is off and a socket-free fake for tests; Czech templates rendered purely (the notification kinds' mails included); a `.invalid` recipient is refused, never dialled
 - `internal/mailjob` — durable mail delivery: the `mail_send` job (payload = template + data + recipient, rendered when it is sent) and the `Enqueue` helper that refuses to queue anything while mail is off or the recipient is a `.invalid` placeholder
 - `internal/maintenance` — library integrity check & repair; **never deletes originals**
 - `internal/maintenanceapi` — maintainer-only `/maintenance` (scan, repair)
@@ -121,8 +121,10 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
 - `internal/namelessjob` — the nameless catch-all subject repair as queue work: the undo-file format shared with the CLI, the report/schedule service, the `nameless_detach`/`nameless_restore` handlers
-- `internal/notification` — the record behind a push notification: owner-scoped (foreign uid = not found), a frozen ordered photo set read only through caller-stated visibility, per-kind preferences (absent row = default, replace audited in its transaction), retention purge (not scheduled)
-- `internal/notificationapi` — all-authenticated `/push/*` (VAPID public key + push on?, the caller's subscriptions; the write 503s with push off and is rate-limited) and `/notifications/*` (effective preferences, one notification whose frozen photos are filtered by visibility *now*, mark read); foreign uid = 404, never a client key or the private key
+- `internal/notification` — the record behind a notification: owner-scoped (foreign uid = not found), a frozen ordered photo set read only through caller-stated visibility, per-kind × channel (in-app/push/e-mail) preferences (absent row = off, replace audited in its transaction), the in-app inbox (`in_app` rows: list, unread count, read-all), retention purge
+- `internal/notificationapi` — all-authenticated `/push/*` (VAPID public key + push on?, the caller's subscriptions; the write 503s with push off and is rate-limited) and `/notifications/*` (the inbox, its unread count and read-all, effective preferences, one notification whose frozen photos are filtered by visibility *now*, mark read); foreign uid = 404, never a client key or the private key
+- `internal/notifydeliver` — the one way a notification leaves: reads the wanted channels, records once (`in_app` = listed in the inbox), enqueues push and mail, all on the producer's transaction; a channel off instance-wide counts as unwanted
+- `internal/notifypurgejob` — the `notification_purge` job (retention 30 d read / 90 d unread) and its startup + daily scheduler
 - `internal/obs` — structured logging (JSON slog to stderr)
 - `internal/ocrjob` — worker handler `ocr` + backfill: reads the text printed in a photo via the sidecar and stores it for search; stills only, an empty reading is a recorded success
 - `internal/organize` — albums, labels, **per-user** favorites and ratings
@@ -172,7 +174,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/sweepapi` — `GET /faces/sweep` (RequireCurator) streaming NDJSON
 - `internal/system` — aggregation of instance operational state for the admin dashboard
 - `internal/systemapi` — maintainer-only `GET /system/status`
-- `internal/tagnotifyjob` — "you were tagged in N photos": the people store's tag observer records `tag_notices` in the assignment's transaction (never self, never a private/hidden/archived photo, never with the kind off; untag un-announces) and opens a `push.tags.window` window; the `tag_notify` job closes it into one notification + push
+- `internal/tagnotifyjob` — "you were tagged in N photos": the people store's tag observer records `tag_notices` in the assignment's transaction (never self, never a private/hidden/archived photo, never for an account no channel would reach; untag un-announces) and opens a `push.tags.window` window; the `tag_notify` job closes it into one notification delivered through `internal/notifydeliver`
 - `internal/taskdigestjob` — the `task_digest` job + its daily scheduler: one mail per person listing the open tasks whose move is theirs, only when something changed since `users.task_digest_at`; sends through `mail_send`, never itself; on only with `tasks.digest.enabled` **and** mail
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)

@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-// Template names. Each names one of the six messages Kukátko can send and is
+// Template names. Each names one of the messages Kukátko can send and is
 // carried on the Rendered value, so a log line or an audit entry can say which
 // message went out without repeating its subject.
 const (
@@ -27,6 +27,12 @@ const (
 	// TemplateUsernameChanged tells somebody an administrator renamed their
 	// account, so they know which name to sign in with.
 	TemplateUsernameChanged = "username_changed"
+	// TemplateTagged tells somebody they were tagged in photos — the e-mail
+	// channel of the tagged notification kind.
+	TemplateTagged = "tagged"
+	// TemplateNotification is the e-mail channel of any notification kind
+	// without a template of its own: its title, body and link.
+	TemplateNotification = "notification"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.

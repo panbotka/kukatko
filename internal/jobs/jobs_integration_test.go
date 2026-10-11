@@ -202,6 +202,29 @@ func TestEnqueueDedup_taskDigestIsSingletonPerQueuedState(t *testing.T) {
 	}
 }
 
+// TestEnqueueDedup_notificationPurgeIsSingleton verifies migration 0096's
+// index through the Enqueuer: a second purge while one is queued is a silent
+// no-op, so a restart cannot pile them up.
+func TestEnqueueDedup_notificationPurgeIsSingleton(t *testing.T) {
+	store, db := newStore(t)
+	ctx := t.Context()
+	enqueuer := jobs.NewEnqueuer(store)
+
+	for range 2 {
+		if err := enqueuer.EnqueueNotificationPurge(ctx); err != nil {
+			t.Fatalf("EnqueueNotificationPurge: %v", err)
+		}
+	}
+	var queued int
+	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM jobs WHERE type = $1",
+		jobs.TypeNotificationPurge).Scan(&queued); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if queued != 1 {
+		t.Fatalf("queued notification_purge jobs = %d, want 1", queued)
+	}
+}
+
 // userPayload builds a {"user_uid": uid} JSON payload, the shape of a
 // tag_notify job.
 func userPayload(t *testing.T, uid string) json.RawMessage {

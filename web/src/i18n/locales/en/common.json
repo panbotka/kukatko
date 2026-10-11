@@ -530,7 +530,7 @@
     },
     "notifications": {
       "title": "Notifications",
-      "intro": "Kukátko can let you know on your phone, your computer or by e-mail — for example when somebody tags you in a photo.",
+      "intro": "Kukátko can let you know right in the app (the bell at the top), on your phone, your computer or by e-mail — for example when somebody tags you in a photo.",
       "loading": "Loading notification settings…",
       "instanceOff": "Push notifications are not switched on for this instance, so your devices cannot receive them. The e-mails below still apply.",
       "pushTitle": "Push to your devices",
@@ -548,13 +548,14 @@
         "noWorker": "Notifications cannot be set up on this page right now. Reload the page and try again."
       },
       "kindsTitle": "What to notify me about",
-      "kindsScope": "These choices belong to your account: push applies to every device where notifications are on, e-mail goes to your account's address.",
+      "kindsScope": "These choices belong to your account: in-app ones show up under the bell, push applies to every device where notifications are on, e-mail goes to your account's address.",
       "channels": {
+        "inApp": "In-app",
         "push": "Push",
         "email": "E-mail"
       },
       "switchLabel": "{{kind}} — {{channel}}",
-      "emailDefaultOffHint": "The e-mail about a new registration is off by default.",
+      "defaultOffHint": "Everything is off by default — turn on only what you want.",
       "unavailable": {
         "push": "Push notifications are not switched on for this instance.",
         "emailOff": "E-mails are not switched on for this instance.",
@@ -3031,6 +3032,26 @@
     "dropped_one": "{{count}} photo is no longer available to you.",
     "dropped_other": "{{count}} photos are no longer available to you."
   },
+  "inbox": {
+    "title": "Notifications",
+    "bell": "Notifications",
+    "bellUnread_one": "Notifications — {{count}} unread",
+    "bellUnread_other": "Notifications — {{count}} unread",
+    "latest": "Latest notifications",
+    "markAllRead": "Mark all as read",
+    "markAllError": "The notifications could not be marked as read.",
+    "showAll": "Show all notifications",
+    "settings": "Notification settings",
+    "loading": "Loading notifications…",
+    "error": "The notifications could not be loaded.",
+    "empty": "No notifications yet.",
+    "emptyHint": "Choose which notifications land here in your account settings.",
+    "emptyUnread": "You are all caught up.",
+    "unread": "Unread",
+    "filterLabel": "Which notifications to show",
+    "filterAll": "All",
+    "filterUnread": "Unread"
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",
@@ -3487,6 +3508,7 @@
         "mail_send": "Sending an e-mail",
         "push_send": "Sending a browser notification",
         "tag_notify": "Summing up who was tagged in photos",
+        "notification_purge": "Clearing out old notifications",
         "nameless_detach": "Detaching the nameless person",
         "nameless_restore": "Restoring the nameless person",
         "family_export": "Writing the family tree to storage",

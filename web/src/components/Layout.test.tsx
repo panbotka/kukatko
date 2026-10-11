@@ -290,18 +290,23 @@ describe('Layout navbar', () => {
     expect(home.closest('.kk-tabbar')).not.toBeNull()
   })
 
-  it('gives the phone one search: the tab bar opens the palette, the top row is the hamburger', () => {
+  it('gives the phone one search: the tab bar opens the palette, the top row is the bell and the hamburger', () => {
     mockViewport(true)
     renderLayout(auth())
 
     // On a phone the nav folds into the drawer entirely and the magnifier is not
     // rendered: the tab bar's search tab is the palette's door there, so the
-    // top row is the hamburger alone, held at the trailing edge.
+    // top row is the bell and the hamburger, held at the trailing edge.
     const navbar = document.querySelector<HTMLElement>('.navbar.kukatko-navbar')
     expect(navbar).not.toBeNull()
     expect(navbar?.querySelector('.kukatko-search-trigger')).toBeNull()
     const toggle = screen.getByRole('button', { name: /open the menu/i })
-    expect(toggle).toHaveClass('ms-auto')
+    // The bell stands just before the hamburger and takes the trailing push, so
+    // the pair sits together at the edge.
+    const bell = screen.getByRole('button', { name: 'Notifications' })
+    expect(bell.closest('.dropdown')).toHaveClass('ms-auto')
+    expect(toggle).not.toHaveClass('ms-auto')
+    expect(bell.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // Exactly one "Search" button in the shell, and it is the tab bar's.
     const search = screen.getByRole('button', { name: 'Search' })
     expect(search.closest('.kk-tabbar')).not.toBeNull()

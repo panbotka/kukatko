@@ -1,6 +1,7 @@
 import { isAdmin, type Role } from '../../services/auth'
 import {
   EMAIL_CHANNEL,
+  IN_APP_CHANNEL,
   type NotificationChannel,
   type NotificationKind,
   type NotificationPreference,
@@ -44,7 +45,10 @@ const KINDS: Partial<Record<NotificationKind, KindCopy>> = {
 export interface ChannelColumn {
   channel: NotificationChannel
   /** The column header, and the switch's own name on a phone. */
-  label: 'account.notifications.channels.push' | 'account.notifications.channels.email'
+  label:
+    | 'account.notifications.channels.inApp'
+    | 'account.notifications.channels.push'
+    | 'account.notifications.channels.email'
 }
 
 /**
@@ -53,6 +57,7 @@ export interface ChannelColumn {
  * every save (see `withPreference`).
  */
 export const CHANNELS: readonly ChannelColumn[] = [
+  { channel: IN_APP_CHANNEL, label: 'account.notifications.channels.inApp' },
   { channel: PUSH_CHANNEL, label: 'account.notifications.channels.push' },
   { channel: EMAIL_CHANNEL, label: 'account.notifications.channels.email' },
 ]

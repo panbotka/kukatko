@@ -474,25 +474,28 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   several rows per account. No secret lives here — the VAPID private key is in the environment.
   Preserved by `kukatko maintenance reset`: it is account data, next to the password and the profile,
   not library data.
-- **`notifications` + `notification_photos` + `notification_prefs`** — the **record behind a push
-  notification** (migration `0087`, package `internal/notification`). A notification has to survive being
+- **`notifications` + `notification_photos` + `notification_prefs`** — the **record behind a
+  notification** (migration `0087`, package `internal/notification`), whichever channel delivered it. A notification has to survive being
   tapped: "you were tagged in 12 photos" opens exactly those 12, even after a thirteenth is tagged and even
   the next morning, so it is a stored record with a **frozen photo set** — the same reasoning as a task's
   group below, not a transient message. `notifications` holds one as it was sent: a `nt…` `uid`, the
   account (`user_uid` → `users` `ON DELETE CASCADE`), `kind`, `title`/`body` text, the deeplink `link`
-  path, `created_at` and nullable `read_at`. `notification_photos` is the set as
+  path, `created_at`, nullable `read_at` and `in_app` (migration `0095`): one record serves every
+  channel of one notification — the push opens it, the e-mail links to it — and `in_app` says whether the
+  **in-app inbox** lists it, so a record written only behind a push or a mail never turns up behind the
+  bell. `notification_photos` is the set as
   `(notification_uid, photo_uid, position)` rows — `position` unique per notification keeps the order,
   the photo cascades, so a deleted photograph drops out and a notification whose whole set is gone stays a
   legitimate record; an archived, hidden or private one stays in the set and **the reader filters**,
   because who may see it depends on who asks. `notification_prefs` is one `(user_uid, kind, channel,
-  enabled)` row per explicit choice — the channel (`push`, `email`; migration `0093`, earlier rows became
-  `push`) is part of the key, so a kind's push and e-mail are chosen separately; **an absent row means the
-  default for that kind and channel**, and neither `kind` nor `channel` carries a CHECK on its values, so
+  enabled)` row per explicit choice — the channel (`in_app`, `push`, `email`; migration `0093`, earlier
+  rows became `push`) is part of the key, so each channel of a kind is chosen separately; **an absent row
+  means the default for that kind and channel — and every default is off** (since 2026-10-11), and neither `kind` nor `channel` carries a CHECK on its values, so
   a new kind or channel costs a Go constant (and a locale string) — never a migration or a backfill. The wipe
   (`maintenance reset`) empties the two notification tables (they point at photographs) and keeps
   `notification_prefs` (account data, like `push_subscriptions`). Retention is a purge by age — read ones
-  after `DefaultReadRetention` (30 d), unread after the longer `DefaultUnreadRetention` (90 d) — exposed
-  but not scheduled yet.
+  after `DefaultReadRetention` (30 d), unread after the longer `DefaultUnreadRetention` (90 d) — run daily
+  by the `notification_purge` job (`internal/notifypurgejob`, enqueued at startup and every 24 h).
 - **`tag_notices`** — the photos an account is **waiting to hear it was tagged on** (migration `0088`,
   package `internal/tagnotifyjob`): one `(user_uid, photo_uid)` row per photo in the account's open
   tagging window, `recorded_at`, primary key on the pair (tagging one person twice on a photo is one
@@ -832,8 +835,8 @@ lost on restart).
   its data, so the message is rendered when it is delivered rather than when it is scheduled, and a mail
   enqueued while the SMTP server is away still arrives once it is back. It is enqueued **inside the
   transaction of the mutation that caused it** (the way audit rows are written), so a rolled-back registration
-  sends nothing — neither its mails nor the administrators' push notifications, which a registration
-  records and enqueues in that same transaction. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
+  sends nothing — neither its mails nor the administrators' notifications, which a registration
+  delivers (`internal/notifydeliver`) in that same transaction. See `internal/mailjob`. `task_digest` is the once-a-day run that mails every person the open
   tasks whose move is theirs; it is enqueued by a scheduler at `tasks.digest.hour` UTC (only with the digest
   and mail both on), schedules `mail_send` jobs rather than sending, and stamps `users.task_digest_at` so a
   queue that has not moved since the last digest sends nothing. See `internal/taskdigestjob`.
@@ -843,7 +846,7 @@ lost on restart).
   subscription lifecycle — a device the push service reports gone (404/410) is deleted, one whose run of
   consecutive failures reaches the threshold is retired — and an oversized notification is a terminal
   failure. See `internal/pushjob`.
-- **"You were tagged in N photos" — one push per window, not per photo** (`internal/tagnotifyjob`). Somebody
+- **"You were tagged in N photos" — one notification per window, not per photo** (`internal/tagnotifyjob`). Somebody
   naming the faces of a whole village event must not send the people they name forty notifications, so
   tagging is collected per account:
   1. **Every assignment** — face UI, review game, cluster, candidate acceptance, attaching a person by
@@ -856,13 +859,14 @@ lost on restart).
      nothing. The recorder runs under a savepoint, so a failure costs the notice, never the assignment.
   2. **What is never recorded:** the tagger's own person (nobody hears about their own work); a private,
      hidden or archived photo (a notification would disclose that it exists — the same predicate the
-     notification page filters with); anything for an account that turned the kind off (the table must
-     not fill up for somebody who does not want it); anything with push off; a subject no account is
-     linked to. **Untagging before the window closes deletes the notice.**
+     notification page filters with); anything for an account no channel would reach — every channel of
+     the kind off, or only the ones switched off for the instance (the table must not fill up for somebody
+     who would get nothing); a subject no account is linked to. **Untagging before the window closes deletes the notice.**
   3. **The window closes** when the job runs: in one transaction it consumes every notice (`DELETE …
      RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), records
-     one `notifications` row with the frozen set **newest photo first** and the link `/n/<uid>` (the
-     notification's own page), and enqueues its `push_send` deliveries. Nothing left → it sends nothing;
+     one notification with the frozen set **newest photo first** and the link `/n/<uid>` (the
+     notification's own page) through `internal/notifydeliver` — the inbox entry, the `push_send`
+     deliveries and the tagged mail, as the account chose. Nothing left → it sends nothing;
      a crash rolls it all back and the retry re-runs cleanly — never lost, never announced twice.
   4. **Concurrency** is settled by a per-account advisory transaction lock taken by the recorder and the
      job: a tag in flight when the window closes is waited for and included; one landing while the job

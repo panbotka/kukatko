@@ -233,6 +233,20 @@ func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context) error {
 	return nil
 }
 
+// EnqueueNotificationPurge schedules one run of the notification retention
+// purge. Like EnqueueTaskDigest it takes no identifier and no delay, and a job
+// already queued (idx_jobs_notification_purge_dedup, migration 0096) makes it a
+// no-op, so a restart cannot pile up purges.
+func (e *Enqueuer) EnqueueNotificationPurge(ctx context.Context) error {
+	if _, err := e.store.Enqueue(ctx, TypeNotificationPurge, nil, EnqueueOptions{}); err != nil {
+		if errors.Is(err, ErrDuplicate) {
+			return nil
+		}
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeNotificationPurge, err)
+	}
+	return nil
+}
+
 // now returns the current time, indirected through the Enqueuer so tests can pin
 // it. A nil clock (the normal case) reads the wall clock.
 func (e *Enqueuer) now() time.Time {

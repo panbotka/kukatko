@@ -2008,8 +2008,22 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   every route `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
   may use every route**, viewers included — being told you were tagged is not a curation power — and every
   operation is **scoped to the calling account**. Mounted by `server.WithAPI` (`buildNotificationAPI` in
-  `cmd/kukatko/notification.go`). There is **deliberately no "list my notifications" route**: there is no
-  in-app notification centre, and a deeplink only ever needs one record.
+  `cmd/kukatko/notification.go`). **The inbox** (the navbar's bell) lists only the notifications delivered
+  **in-app** (`notifications.in_app`); a record written only to back a push or an e-mail the owner wanted
+  is never listed or counted, but its own `{uid}` routes still answer — that is what the push and the mail
+  open.
+  - **`GET /notifications`** `?unread=true|false` `&limit=` `&offset=` → `200 {notifications:[{uid, kind,
+    title, body, link, created_at, read_at}], total, limit, offset}`: one page of the caller's inbox,
+    **newest first** (`created_at DESC`, uid as the tie-break, so pages never repeat or skip a row).
+    `unread=true` keeps only unread ones; `total` is the size of the whole selection. `limit` defaults to 30
+    and is clamped to 100, `offset` defaults to 0 — the photo listing's paging shape. A non-boolean
+    `unread`, a non-positive or non-numeric `limit`, a negative or non-numeric `offset` → `400`. An empty
+    inbox is `{notifications: [], total: 0, …}`.
+  - **`GET /notifications/unread-count`** → `200 {unread}`: how many inbox notifications are unread — what
+    the bell polls (about once a minute while the tab is visible, and on focus).
+  - **`POST /notifications/read-all`** → `200 {marked}`: stamps every unread inbox notification read and
+    says how many; already-read ones keep their first reading, records outside the inbox and every other
+    account are untouched. Nothing unread → `{marked: 0}`.
   - **`GET /push/config`** → `200 {enabled, public_key}`: whether `push.enabled` is on and the VAPID
     **public** key a browser passes to `pushManager.subscribe` (`""` while push is off). The frontend reads
     it before rendering any push control. **The private key never appears** — the API is never handed it
@@ -2037,10 +2051,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
     somebody else's** is `404`; no `endpoint` → `400`. Works with push off, so a device can always be
     cleaned up.
   - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
-    the **effective** set, one entry per known kind and **delivery channel** it supports, in display order
-    with push before e-mail — `tagged/push` (default on), `registration_pending/push` (default on),
-    `registration_pending/email` (**default off**) — the stored choice or the channel's default
-    (`is_default: true`), so the frontend needs no knowledge of the defaults. Which kinds a role can ever
+    the **effective** set, one entry per known kind and **delivery channel** — every kind offers all three,
+    in display order `in_app`, `push`, `email` (`tagged/in_app`, `tagged/push`, `tagged/email`,
+    `registration_pending/in_app`, …) — the stored choice or the channel's default (`is_default: true`),
+    so the frontend needs no knowledge of the defaults. **Every default is off** (since 2026-10-11;
+    before, the two push channels defaulted on): an account that never chose receives nothing, and an
+    explicit stored choice is kept as it was. Which kinds a role can ever
     receive is the frontend's gating, not the server's. **`PUT /notifications/preferences`** with
     `{preferences:[{kind, channel, enabled}]}` **replaces** the stored choices (a pair left out returns to
     its default, `[]` resets all; `is_default` is accepted and ignored, so a read posts back unchanged;
@@ -2059,7 +2075,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
     filtered out, so the page can explain "10 of 12" honestly. A notification without photos has `photos:
     []`. Reading does **not** mark it read.
   - **`POST /notifications/{uid}/read`** → `200 {uid, kind, title, body, link, created_at, read_at}`;
-    idempotent — marking again keeps the first reading.
+    idempotent — marking again keeps the first reading. Works for any of the caller's records, listed in
+    the inbox or not.
   - **An unknown or foreign `{uid}` is `404`, never `403`**, for both routes (the `savedsearchapi` rule),
     so a uid cannot be probed for existence — an admin cannot read somebody else's notification either.
 - **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**

@@ -542,7 +542,7 @@
     },
     "notifications": {
       "title": "Notifikace",
-      "intro": "Kukátko ti může dát vědět do telefonu, do počítače nebo e-mailem — třeba když tě někdo označí na fotce.",
+      "intro": "Kukátko ti může dát vědět přímo v aplikaci (zvoneček nahoře), do telefonu, do počítače nebo e-mailem — třeba když tě někdo označí na fotce.",
       "loading": "Načítám nastavení oznámení…",
       "instanceOff": "Push notifikace nejsou na této instanci zapnuté, takže je do zařízení dostávat nejde. E-maily níž platí dál.",
       "pushTitle": "Push do zařízení",
@@ -560,13 +560,14 @@
         "noWorker": "Oznámení teď na téhle stránce nejde nastavit. Načti stránku znovu a zkus to ještě jednou."
       },
       "kindsTitle": "O čem mi dávat vědět",
-      "kindsScope": "Tyhle volby patří k tvému účtu: push platí na všech zařízeních, kde máš oznámení zapnutá, e-mail chodí na adresu z tvého účtu.",
+      "kindsScope": "Tyhle volby patří k tvému účtu: v aplikaci je uvidíš pod zvonečkem, push platí na všech zařízeních, kde máš oznámení zapnutá, e-mail chodí na adresu z tvého účtu.",
       "channels": {
+        "inApp": "V aplikaci",
         "push": "Push",
         "email": "E-mail"
       },
       "switchLabel": "{{kind}} — {{channel}}",
-      "emailDefaultOffHint": "E-mail o nové registraci je ve výchozím stavu vypnutý.",
+      "defaultOffHint": "Ve výchozím stavu je všechno vypnuté — zapni si jen to, o co stojíš.",
       "unavailable": {
         "push": "Push notifikace nejsou na této instanci zapnuté.",
         "emailOff": "E-maily nejsou na této instanci zapnuté.",
@@ -3175,6 +3176,28 @@
     "dropped_many": "{{count}} fotky už pro vás nejsou dostupné.",
     "dropped_other": "{{count}} fotek už pro vás není dostupných."
   },
+  "inbox": {
+    "title": "Oznámení",
+    "bell": "Oznámení",
+    "bellUnread_one": "Oznámení – {{count}} nepřečtené",
+    "bellUnread_few": "Oznámení – {{count}} nepřečtená",
+    "bellUnread_many": "Oznámení – {{count}} nepřečteného",
+    "bellUnread_other": "Oznámení – {{count}} nepřečtených",
+    "latest": "Poslední oznámení",
+    "markAllRead": "Označit vše jako přečtené",
+    "markAllError": "Oznámení se nepodařilo označit jako přečtená.",
+    "showAll": "Zobrazit všechna oznámení",
+    "settings": "Nastavení oznámení",
+    "loading": "Načítám oznámení…",
+    "error": "Oznámení se nepodařilo načíst.",
+    "empty": "Zatím tu nejsou žádná oznámení.",
+    "emptyHint": "Která oznámení ti mají chodit sem, si vybereš v nastavení účtu.",
+    "emptyUnread": "Všechno máš přečtené.",
+    "unread": "Nepřečtené",
+    "filterLabel": "Která oznámení zobrazit",
+    "filterAll": "Všechna",
+    "filterUnread": "Nepřečtená"
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",
@@ -3659,6 +3682,7 @@
         "mail_send": "Odeslání e-mailu",
         "push_send": "Odeslání oznámení do prohlížeče",
         "tag_notify": "Souhrnné oznámení o označení na fotkách",
+        "notification_purge": "Mazání starých oznámení",
         "nameless_detach": "Odpojení osoby bez jména",
         "nameless_restore": "Obnovení osoby bez jména",
         "family_export": "Zápis rodokmenu do úložiště",

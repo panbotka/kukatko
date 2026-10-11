@@ -11,31 +11,28 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/people"
 )
 
-// PreferenceReader says whether an account wants a kind of notification, read
-// on the caller's transaction. It is satisfied by *notification.Store.
-type PreferenceReader interface {
-	// WantsTx reports whether userUID wants notifications of kind through
-	// channel, read on tx.
-	WantsTx(
-		ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind, channel notification.Channel,
-	) (bool, error)
+// Audience says through which channels a notification of a kind would reach
+// an account, read on the caller's transaction. It is satisfied by
+// *notifydeliver.Deliverer, which counts a channel the instance switched off as
+// not wanted.
+type Audience interface {
+	// ChannelsTx returns the channels a notification of kind to userUID would be
+	// delivered through, read on tx.
+	ChannelsTx(ctx context.Context, tx pgx.Tx, userUID string, kind notification.Kind) (notifydeliver.Channels, error)
 }
 
 // RecorderConfig bundles what NewRecorder needs.
 type RecorderConfig struct {
-	// Enabled mirrors push.enabled: with push off nothing is recorded, because
-	// nothing would ever be delivered. Untagging still clears notices, so a
-	// window left open when push was switched off never names a photo the person
-	// has since been taken off.
-	Enabled bool
 	// Window is how long a tagging window stays open (push.tags.window); a
 	// non-positive value uses DefaultWindow.
 	Window time.Duration
-	// Preferences reads whether the account wants the tagged kind. Required.
-	Preferences PreferenceReader
+	// Audience reads whether the account would receive the tagged kind through
+	// any channel. Required.
+	Audience Audience
 	// Logger records the notices that could not be recorded; nil uses
 	// slog.Default().
 	Logger *slog.Logger
@@ -53,21 +50,20 @@ type RecorderConfig struct {
 // and the assignment commits all the same. Only a savepoint that cannot be
 // opened or released — a transaction that is already broken — is returned.
 type Recorder struct {
-	enabled bool
-	window  time.Duration
-	prefs   PreferenceReader
-	log     *slog.Logger
-	now     func() time.Time
+	window   time.Duration
+	audience Audience
+	log      *slog.Logger
+	now      func() time.Time
 }
 
 // Recorder satisfies the people store's hook.
 var _ people.TagObserver = (*Recorder)(nil)
 
-// NewRecorder builds a Recorder from cfg. It panics without Preferences, which
-// is a wiring bug and should fail at startup rather than on the first tag.
+// NewRecorder builds a Recorder from cfg. It panics without Audience, which is
+// a wiring bug and should fail at startup rather than on the first tag.
 func NewRecorder(cfg RecorderConfig) *Recorder {
-	if cfg.Preferences == nil {
-		panic("tagnotifyjob: Preferences is required")
+	if cfg.Audience == nil {
+		panic("tagnotifyjob: Audience is required")
 	}
 	window := cfg.Window
 	if window <= 0 {
@@ -81,7 +77,7 @@ func NewRecorder(cfg RecorderConfig) *Recorder {
 	if now == nil {
 		now = time.Now
 	}
-	return &Recorder{enabled: cfg.Enabled, window: window, prefs: cfg.Preferences, log: log, now: now}
+	return &Recorder{window: window, audience: cfg.Audience, log: log, now: now}
 }
 
 // recipientsSQL lists the accounts that are the tagged subject: those linked to
@@ -117,17 +113,15 @@ SELECT EXISTS (SELECT 1 FROM jobs
 
 // Tagged records that t.SubjectUID was tagged on t.PhotoUID for every account
 // linked to that subject, on tx, and opens each account's window when it has
-// none. It records nothing at all when push is off, when the photo is private,
-// hidden or archived (a notification would disclose that it exists), or when
-// the acting account is itself linked to the subject — nobody is told about
-// their own work, and "at all" includes a second account of the same person. An
-// account that turned the tagged kind off gets no notice, so the table does not
-// fill up for somebody who does not want the message; a subject linked to no
-// account produces nothing.
+// none. It records nothing at all when the photo is private, hidden or archived
+// (a notification would disclose that it exists), or when the acting account is
+// itself linked to the subject — nobody is told about their own work, and "at
+// all" includes a second account of the same person. An account that would
+// receive the tagged kind through no channel (every one off, or switched off
+// for the instance) gets no notice, so the table does not fill up for somebody
+// who does not want the message; a subject linked to no account produces
+// nothing.
 func (r *Recorder) Tagged(ctx context.Context, tx pgx.Tx, t people.Tagging) error {
-	if !r.enabled {
-		return nil
-	}
 	return r.underSavepoint(ctx, tx, "recording a tag notice", t, func(sp pgx.Tx) error {
 		return r.record(ctx, sp, t)
 	})
@@ -159,14 +153,15 @@ func (r *Recorder) record(ctx context.Context, sp pgx.Tx, t people.Tagging) erro
 	return nil
 }
 
-// recordFor records photoUID for the account userUID, if it wants the kind, and
-// opens its window when this notice is the first of one.
+// recordFor records photoUID for the account userUID, if it would receive the
+// kind through any channel, and opens its window when this notice is the first
+// of one.
 func (r *Recorder) recordFor(ctx context.Context, sp pgx.Tx, userUID, photoUID string) error {
-	wants, err := r.prefs.WantsTx(ctx, sp, userUID, notification.KindTagged, notification.ChannelPush)
+	channels, err := r.audience.ChannelsTx(ctx, sp, userUID, notification.KindTagged)
 	if err != nil {
-		return fmt.Errorf("reading the preference of %s: %w", userUID, err)
+		return fmt.Errorf("reading the channels of %s: %w", userUID, err)
 	}
-	if !wants {
+	if !channels.Any() {
 		return nil
 	}
 	if _, err := sp.Exec(ctx, lockSQL, userUID); err != nil {
@@ -233,8 +228,8 @@ WHERE u.subject_uid = $1 AND n.user_uid = u.uid AND n.photo_uid = $2
 
 // Untagged un-announces t.PhotoUID for every account linked to t.SubjectUID, on
 // tx, so a notification never names a photo the person is no longer on. It runs
-// with push off too (see RecorderConfig.Enabled), and it leaves a window it
-// empties open: the job then finds nothing and sends nothing.
+// whatever the account's channels, and it leaves a window it empties open: the
+// job then finds nothing and sends nothing.
 func (r *Recorder) Untagged(ctx context.Context, tx pgx.Tx, t people.Tagging) error {
 	return r.underSavepoint(ctx, tx, "clearing a tag notice", t, func(sp pgx.Tx) error {
 		if _, err := sp.Exec(ctx, deleteNoticesSQL, t.SubjectUID, t.PhotoUID); err != nil {

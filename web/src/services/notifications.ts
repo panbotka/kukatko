@@ -38,11 +38,17 @@ export function notificationPath(uid: string): string {
 export type NotificationKind = string
 
 /**
- * How a notification reaches the account (`notification.Channel`): `push` to its
- * devices or `email`. A string rather than a union because the server may grow
+ * How a notification reaches the account (`notification.Channel`): `in_app` (the
+ * inbox behind the bell), `push` to its devices or `email`. A string rather than a union because the server may grow
  * a channel this build does not know; the card simply ignores it.
  */
 export type NotificationChannel = string
+
+/**
+ * The in-app channel: a notification listed in the inbox behind the navbar's
+ * bell. It needs no device and no instance switch.
+ */
+export const IN_APP_CHANNEL: NotificationChannel = 'in_app'
 
 /** The push channel: a notification delivered to the account's registered browsers. */
 export const PUSH_CHANNEL: NotificationChannel = 'push'
@@ -131,6 +137,83 @@ export async function markNotificationRead(uid: string): Promise<NotificationRec
     credentials: 'same-origin',
   })
   return readJson<NotificationRecord>(res)
+}
+
+/**
+ * Where a notification opens: its own link — the notification page for a photo
+ * set, the approval screen for a registration, … — or, for one that carries
+ * none, its own page, which shows its text.
+ */
+export function notificationTarget(n: Pick<NotificationRecord, 'uid' | 'link'>): string {
+  return n.link !== '' ? n.link : notificationPath(n.uid)
+}
+
+/** One page of the inbox, as returned by `GET /notifications` (`listEnvelope`). */
+export interface NotificationPage {
+  /** The page, newest first. */
+  notifications: NotificationRecord[]
+  /** How many notifications the selection holds across all pages. */
+  total: number
+  /** The page size the server actually used (clamped to its maximum). */
+  limit: number
+  /** How many notifications were skipped before this page. */
+  offset: number
+}
+
+/** What one inbox read asks for. Every field is optional. */
+export interface NotificationListQuery {
+  /** Only notifications not read yet. */
+  unread?: boolean
+  /** Page size; the server defaults to 30 and caps it at 100. */
+  limit?: number
+  /** How many to skip. */
+  offset?: number
+}
+
+/**
+ * Reads one page of the caller's inbox — the notifications delivered in-app,
+ * newest first. A record that only backs a push or an e-mail is never listed.
+ */
+export async function fetchNotifications(
+  query: NotificationListQuery = {},
+  signal?: AbortSignal,
+): Promise<NotificationPage> {
+  const params = new URLSearchParams()
+  if (query.unread === true) {
+    params.set('unread', 'true')
+  }
+  if (query.limit !== undefined) {
+    params.set('limit', String(query.limit))
+  }
+  if (query.offset !== undefined && query.offset > 0) {
+    params.set('offset', String(query.offset))
+  }
+  const search = params.toString()
+  const res = await fetch(`${API_BASE}/notifications${search === '' ? '' : `?${search}`}`, {
+    credentials: 'same-origin',
+    signal,
+  })
+  return readJson<NotificationPage>(res)
+}
+
+/** Reads how many notifications in the caller's inbox are unread — the bell's number. */
+export async function fetchUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
+  const res = await fetch(`${API_BASE}/notifications/unread-count`, {
+    credentials: 'same-origin',
+    signal,
+  })
+  const body = await readJson<{ unread: number }>(res)
+  return body.unread
+}
+
+/** Marks every unread notification in the caller's inbox read; resolves to how many it marked. */
+export async function markAllNotificationsRead(): Promise<number> {
+  const res = await fetch(`${API_BASE}/notifications/read-all`, {
+    method: 'POST',
+    credentials: 'same-origin',
+  })
+  const body = await readJson<{ marked: number }>(res)
+  return body.marked
 }
 
 /**

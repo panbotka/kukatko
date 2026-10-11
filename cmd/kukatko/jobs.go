@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/namelessjob"
+	"github.com/panbotka/kukatko/internal/notifypurgejob"
 	"github.com/panbotka/kukatko/internal/ocrjob"
 	"github.com/panbotka/kukatko/internal/placesjob"
 	"github.com/panbotka/kukatko/internal/processapi"
@@ -194,8 +195,9 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc, push: pushSvc,
 		nameless: buildNamelessService(d.db, d.store), storyboard: d.storyboard,
 		cluster: d.cluster, hls: hlsSvc, familyExport: familyExportSvc,
-		taskDigest: buildTaskDigestServiceOrNil(d.cfg, d.db),
-		tagNotify:  buildTagNotifyService(d.cfg, d.db),
+		taskDigest:  buildTaskDigestServiceOrNil(d.cfg, d.db),
+		tagNotify:   buildTagNotifyService(d.cfg, d.db),
+		notifyPurge: buildNotifyPurgeService(d.db),
 	}, maintenanceSvc, nil
 }
 
@@ -224,6 +226,8 @@ type registryServices struct {
 	// tagNotify closes a tagging window into one "you were tagged" notification;
 	// always built, like push.
 	tagNotify *tagnotifyjob.Service
+	// notifyPurge deletes the notifications past their retention; always built.
+	notifyPurge *notifypurgejob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -245,6 +249,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeFaceCluster, svc.cluster.Handle)
 	registry.Register(jobs.TypePushSend, svc.push.Handle)
 	registry.Register(jobs.TypeTagNotify, svc.tagNotify.Handle)
+	registry.Register(jobs.TypeNotificationPurge, svc.notifyPurge.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

@@ -22,6 +22,8 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -66,16 +68,20 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	api := auth.NewAPI(auth.APIConfig{
 		Service: svc,
 		Limiter: limiter,
-		// The real notification store too, so which administrator is mailed
-		// about a registration follows their stored e-mail preference. No push
-		// scheduler: these tests read mail, register_push_integration_test the
-		// pushes.
+		// The real delivery path over the real notification store too, so which
+		// administrator is mailed about a registration follows their stored
+		// e-mail preference. Push is off: these tests read mail,
+		// register_push_integration_test the pushes.
 		Registration: auth.NewRegistration(auth.RegistrationConfig{
-			Service:       svc,
-			Settings:      settingsStore,
-			Mail:          mail,
-			ApprovalURL:   testApprovalURL,
-			Notifications: notification.NewStore(db.Pool()),
+			Service:     svc,
+			Settings:    settingsStore,
+			Mail:        mail,
+			ApprovalURL: testApprovalURL,
+			Notify: notifydeliver.New(notifydeliver.Config{
+				Notifications: notification.NewStore(db.Pool()),
+				Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{}),
+				Mail:          mail,
+			}),
 		}),
 		// The other half of the same flow, wired the same way, so an approval
 		// enqueues a real `mail_send` job a test can read off the queue.

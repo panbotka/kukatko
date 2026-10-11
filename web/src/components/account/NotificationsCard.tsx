@@ -23,7 +23,6 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from '../../pwa/push'
-import { isAdmin } from '../../services/auth'
 import {
   deletePushSubscription,
   fetchNotificationPreferences,
@@ -31,6 +30,7 @@ import {
   type NotificationChannel,
   type NotificationKind,
   type NotificationPreference,
+  IN_APP_CHANNEL,
   PUSH_CHANNEL,
   type PushSubscriptionRecord,
   updateNotificationPreferences,
@@ -348,8 +348,14 @@ export function NotificationsCard() {
     }
   }
 
-  /** Why `channel`'s switches are disabled, or null when they work. */
+  /**
+   * Why `channel`'s switches are disabled, or null when they work. The in-app
+   * inbox needs neither a device nor an instance switch, so it always works.
+   */
   function blockOf(channel: NotificationChannel): ChannelBlock {
+    if (channel === IN_APP_CHANNEL) {
+      return null
+    }
     if (channel === PUSH_CHANNEL) {
       return instanceOn === true ? null : 'account.notifications.unavailable.push'
     }
@@ -387,7 +393,6 @@ export function NotificationsCard() {
   const on = browser?.status === 'subscribed' && serverKnowsThisBrowser
   const rows = prefs.status === 'ready' ? kindRows(prefs.items, role) : []
   const blocks = CHANNELS.map((column) => ({ ...column, block: blockOf(column.channel) }))
-  const admin = role !== null && isAdmin(role)
 
   return (
     <Card text="light" className="mb-4">
@@ -518,11 +523,9 @@ export function NotificationsCard() {
                     </span>
                   ))}
                 </div>
-                {admin && (
-                  <p className="kk-notify-grid__wide text-secondary small text-sm-end mb-0">
-                    {t('account.notifications.emailDefaultOffHint')}
-                  </p>
-                )}
+                <p className="kk-notify-grid__wide text-secondary small text-sm-end mb-0">
+                  {t('account.notifications.defaultOffHint')}
+                </p>
                 {rows.map((row) => (
                   <div key={row.kind} className="kk-notify-grid__row">
                     <span className="kk-notify-grid__label">{t(row.label)}</span>

@@ -79,12 +79,25 @@ const PHONE: PushSubscriptionRecord = {
   last_used_at: '2026-09-25T18:30:00Z',
 }
 
-/** Every kind and channel on its default, as the server reports a fresh account. */
+/**
+ * A mixed set the card has to render: some pairs on, a kind missing a channel.
+ * Not today's server defaults — those are {@link ALL_OFF_PREFS}.
+ */
 const DEFAULT_PREFS: NotificationPreference[] = [
   { kind: 'tagged', channel: 'push', enabled: true, is_default: true },
   { kind: 'registration_pending', channel: 'push', enabled: true, is_default: true },
   { kind: 'registration_pending', channel: 'email', enabled: false, is_default: true },
 ]
+
+/** What the server reports for a fresh account: every kind on every channel, all off. */
+const ALL_OFF_PREFS: NotificationPreference[] = ['tagged', 'registration_pending'].flatMap((kind) =>
+  ['in_app', 'push', 'email'].map((channel) => ({
+    kind,
+    channel,
+    enabled: false,
+    is_default: true,
+  })),
+)
 
 /** The accessible name of one kind's switch on one channel. */
 const TAGGED_PUSH = 'When somebody tags me in a photo — Push'
@@ -244,7 +257,7 @@ describe('NotificationsCard — this browser', () => {
 
     expect(screen.getByText(/applies only to the browser you are using/)).toBeInTheDocument()
     expect(
-      screen.getByText(/belong to your account: push applies to every device/),
+      screen.getByText(/belong to your account: in-app ones show up under the bell/),
     ).toBeInTheDocument()
   })
 })
@@ -286,7 +299,7 @@ describe('NotificationsCard — kinds × channels', () => {
     expect(screen.getByRole('checkbox', { name: REG_EMAIL })).not.toBeChecked()
     expect(screen.getByRole('checkbox', { name: REG_EMAIL })).toBeEnabled()
     expect(
-      screen.getByText('The e-mail about a new registration is off by default.'),
+      screen.getByText('Everything is off by default — turn on only what you want.'),
     ).toBeInTheDocument()
   })
 
@@ -374,14 +387,13 @@ describe('NotificationsCard — kinds × channels', () => {
     )
   })
 
-  it('hides the registration kind (and the admin hint) from a viewer', async () => {
+  it('hides the registration kind from a viewer', async () => {
     mailEnabledMock.mockReturnValue(false)
     renderCard('viewer')
     await loaded()
 
     expect(screen.getByRole('checkbox', { name: TAGGED_PUSH })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /registration/ })).not.toBeInTheDocument()
-    expect(screen.queryByText(/off by default/)).not.toBeInTheDocument()
     // No e-mail switch on the page at all, so no e-mail reason under the grid either.
     expect(screen.queryByText(/E-mails are not switched on/)).not.toBeInTheDocument()
   })
@@ -488,5 +500,48 @@ describe('NotificationsCard — Czech', () => {
       await screen.findByRole('button', { name: 'Zapnout v tomhle prohlížeči' }),
     ).toBeInTheDocument()
     expect(await screen.findByText('Chrome na Androidu')).toBeInTheDocument()
+  })
+})
+
+describe('NotificationsCard — the in-app column', () => {
+  const TAGGED_IN_APP = 'When somebody tags me in a photo — In-app'
+
+  it('offers in-app first, off by default, for every kind the role gets', async () => {
+    prefsMock.mockResolvedValue(ALL_OFF_PREFS)
+    renderCard('admin')
+    await loaded()
+
+    const heads = [...document.querySelectorAll('.kk-notify-grid__channel-head')].map(
+      (head) => head.textContent,
+    )
+    expect(heads).toEqual(['In-app', 'Push', 'E-mail'])
+    for (const name of [
+      TAGGED_IN_APP,
+      'When a new registration is waiting for approval — In-app',
+    ]) {
+      expect(screen.getByRole('checkbox', { name })).not.toBeChecked()
+    }
+    expect(
+      screen.getByText('Everything is off by default — turn on only what you want.'),
+    ).toBeInTheDocument()
+  })
+
+  it('stays usable with push and mail both off for the instance, and saves its channel', async () => {
+    const user = userEvent.setup()
+    enabledMock.mockResolvedValue(false)
+    mailEnabledMock.mockReturnValue(false)
+    prefsMock.mockResolvedValue(ALL_OFF_PREFS)
+    renderCard()
+    await loaded()
+
+    const inApp = screen.getByRole('checkbox', { name: TAGGED_IN_APP })
+    expect(inApp).toBeEnabled()
+    expect(screen.getByRole('checkbox', { name: TAGGED_PUSH })).toBeDisabled()
+    expect(inApp).not.toHaveAttribute('aria-describedby')
+
+    await user.click(inApp)
+    expect(savePrefsMock).toHaveBeenCalledWith([
+      { kind: 'tagged', channel: 'in_app', enabled: true },
+    ])
   })
 })
