@@ -287,7 +287,7 @@ export function SubjectEditModal({ subject, show, onHide, onSaved }: SubjectEdit
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={busy}>
+          <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
             {t('subject.edit.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>

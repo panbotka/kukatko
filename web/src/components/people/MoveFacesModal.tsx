@@ -172,7 +172,7 @@ export function MoveFacesModal({
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide} disabled={running}>
+        <Button variant="outline-secondary" onClick={onHide} disabled={running}>
           {summary === null ? t('subject.move.cancel') : t('subject.move.close')}
         </Button>
       </Modal.Footer>

@@ -122,7 +122,7 @@ export function AlbumEditModal({ album, show, onHide, onSaved }: AlbumEditModalP
           />
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={busy}>
+          <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
             {t('albums.edit.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>

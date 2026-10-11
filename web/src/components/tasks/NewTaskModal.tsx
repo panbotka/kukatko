@@ -296,7 +296,7 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onClose} disabled={busy}>
           {t('confirmModal.cancel')}
         </Button>
         {mode === 'new' && (

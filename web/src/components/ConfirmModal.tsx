@@ -81,7 +81,7 @@ export function ConfirmModal({
       </Modal.Header>
       <Modal.Body>{children}</Modal.Body>
       <Modal.Footer>
-        <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={busy}>
+        <Button ref={cancelRef} variant="outline-secondary" onClick={onCancel} disabled={busy}>
           {cancelLabel ?? t('confirmModal.cancel')}
         </Button>
         <Button variant={variant} onClick={onConfirm} disabled={busy}>

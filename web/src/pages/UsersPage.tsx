@@ -501,7 +501,7 @@ export function UserFormModal({
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={submitting}>
+          <Button variant="outline-secondary" onClick={onHide} disabled={submitting}>
             {t('users.form.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={submitting}>
@@ -627,7 +627,7 @@ function PasswordModal({ user, onHide, onDone }: PasswordModalProps) {
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={submitting}>
+          <Button variant="outline-secondary" onClick={onHide} disabled={submitting}>
             {t('users.form.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={submitting}>
@@ -680,7 +680,7 @@ function ToggleModal({ user, onHide, onConfirm, busy }: ToggleModalProps) {
           : t('users.confirm.disableBody', { username: user.username })}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
           {t('users.form.cancel')}
         </Button>
         <Button variant={enabling ? 'success' : 'danger'} onClick={onConfirm} disabled={busy}>

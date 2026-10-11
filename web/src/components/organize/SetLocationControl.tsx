@@ -193,7 +193,7 @@ export function SetLocationControl({
           />
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={closeDialog} disabled={busy}>
+          <Button variant="outline-secondary" onClick={closeDialog} disabled={busy}>
             {t('batch.cancel')}
           </Button>
           <ReasonedButton variant="primary" disabledReason={applyReason} onClick={apply}>

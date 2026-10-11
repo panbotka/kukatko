@@ -244,7 +244,7 @@ export function AddRelationModal({
         />
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
           {t('family.add.close')}
         </Button>
       </Modal.Footer>

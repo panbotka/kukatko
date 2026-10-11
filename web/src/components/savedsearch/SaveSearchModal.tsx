@@ -104,7 +104,7 @@ export function SaveSearchModal({ search, params, show, onHide, onSaved }: SaveS
               both say so: two greyed buttons and no words is the state a reader
               takes for a broken dialog. */}
           <ReasonedButton
-            variant="secondary"
+            variant="outline-secondary"
             onClick={onHide}
             disabledReason={busy ? t('savedSearches.edit.busy') : undefined}
           >

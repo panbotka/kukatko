@@ -836,7 +836,12 @@ here.
   opened in the viewer painted under the photograph and the image took every click. `app.css` re-declares
   the band on the scale — offcanvas backdrop/panel 1082/1083, modal backdrop/dialog 1084/1085, still under
   the PWA note (1090) and the toasts (1100) — on Bootstrap's own classes, so no dialog needs a line of its
-  own. Guarded by `styles/dialogBand.test.ts`. Tests: `Modal.test.tsx`),
+  own. Guarded by `styles/dialogBand.test.ts`. **A footer has one filled button — the action**
+  (`primary`, or `danger` for a destructive confirm); its cancel/close is `outline-secondary` (or `link`),
+  never a filled `secondary`, whose teal plate weighs as much as the orange primary beside it and makes
+  the two read as equals (UI/UX review 2026-10-11, #33). `styles/modalFooterCancel.test.ts` walks every
+  `<Modal.Footer>` under `src/` and fails on a filled neutral variant (`secondary`/`info`/`light`/`dark`)
+  inside one. Tests: `Modal.test.tsx`),
   `ConfirmModal` (**the single shared confirmation dialog** — replaced the native `window.confirm`
   in four places: `AlbumDetailPage` (deleting an album), `LabelsPage` (deleting a label),
   `SavedSearchesPage` (deleting a saved search).

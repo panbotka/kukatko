@@ -583,7 +583,7 @@ export function BulkEditModal({ show, photoUids, onHide, onDone, prefill }: Bulk
           </Button>
         ) : (
           <>
-            <Button variant="secondary" onClick={onHide} disabled={busy}>
+            <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
               {t('bulkEdit.cancel')}
             </Button>
             <Button

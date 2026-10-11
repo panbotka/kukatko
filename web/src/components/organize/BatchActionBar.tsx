@@ -754,7 +754,7 @@ export function BatchActionBar({
           )}
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={closePicker} disabled={busy}>
+          <Button variant="outline-secondary" onClick={closePicker} disabled={busy}>
             {t('batch.cancel')}
           </Button>
           <Button variant="primary" onClick={applyPicker} disabled={busy || !pickerHasChanges}>

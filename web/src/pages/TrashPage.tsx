@@ -372,7 +372,7 @@ export function TrashPage() {
         </Modal.Body>
         <Modal.Footer>
           <Button
-            variant="secondary"
+            variant="outline-secondary"
             onClick={() => {
               setConfirm(null)
             }}

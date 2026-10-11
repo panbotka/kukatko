@@ -102,7 +102,7 @@ export function LabelEditModal({ label, show, onHide, onSaved }: LabelEditModalP
           </Form.Group>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={busy}>
+          <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
             {t('labels.edit.cancel')}
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>

@@ -170,12 +170,12 @@ export function ResetLinkModal({ user, mailEnabled, onHide }: ResetLinkModalProp
       </Modal.Body>
       <Modal.Footer>
         {stage.kind === 'issued' ? (
-          <Button variant="secondary" onClick={onHide}>
+          <Button variant="outline-secondary" onClick={onHide}>
             {t('users.resetLink.close')}
           </Button>
         ) : (
           <>
-            <Button variant="secondary" onClick={onHide} disabled={busy}>
+            <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
               {t('users.form.cancel')}
             </Button>
             <Button

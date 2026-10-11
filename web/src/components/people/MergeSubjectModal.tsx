@@ -151,7 +151,7 @@ export function MergeSubjectModal({ subject, show, onHide, onMerged }: MergeSubj
             {t('subject.merge.back')}
           </Button>
         )}
-        <Button variant="secondary" onClick={onHide} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onHide} disabled={busy}>
           {t('subject.merge.cancel')}
         </Button>
         <Button

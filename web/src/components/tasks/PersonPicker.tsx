@@ -103,7 +103,7 @@ export function PersonPicker({ show, busy, already, onPick, onClose }: PersonPic
         )}
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onClose} disabled={busy}>
+        <Button variant="outline-secondary" onClick={onClose} disabled={busy}>
           {t('confirmModal.cancel')}
         </Button>
       </Modal.Footer>
