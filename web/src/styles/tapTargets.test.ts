@@ -211,10 +211,54 @@ describe('the task participant remove control', () => {
  * between them has to keep those two boxes from reading as one target.
  */
 describe('the comment row actions', () => {
+  const viewer = readCss('src/components/photo/viewer.css')
+
   it('sit further apart than the edit form’s pair', () => {
-    const viewer = readCss('src/components/photo/viewer.css')
     const row = declarations(ruleBody(viewer, /\.kk-comment__actions\s*(?=\{)/) ?? '')
     expect(row.get('gap')).toBe('var(--kk-space-3)')
+  })
+
+  it('are hidden only behind a hover-capable fine pointer, and come back on focus', () => {
+    // Hover never fires on a phone, so the pair is at full strength there; on a
+    // mouse it surfaces with the comment's hover *or* keyboard focus.
+    const row = declarations(ruleBody(viewer, /\.kk-comment__actions\s*(?=\{)/) ?? '')
+    expect(row.get('opacity')).toBeUndefined()
+
+    const mouse =
+      ruleBody(
+        viewer,
+        /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/,
+        /\.kk-comment__actions/,
+      ) ?? ''
+    const hidden = declarations(ruleBody(mouse, /\.kk-comment__actions\s*(?=\{)/) ?? '')
+    expect(hidden.get('opacity')).toBe('0')
+    expect(mouse).toMatch(/\.kk-comment:focus-within \.kk-comment__actions/)
+    expect(mouse).toMatch(/\.kk-comment:hover \.kk-comment__actions/)
+  })
+
+  it('are both muted, with only delete turning the danger colour when aimed at', () => {
+    const action = declarations(ruleBody(viewer, /\.kk-comment__action\s*(?=\{)/) ?? '')
+    expect(action.get('--bs-btn-color')).toBe('var(--kk-text-muted)')
+    const danger = declarations(ruleBody(viewer, /\.kk-comment__action--danger\s*(?=\{)/) ?? '')
+    expect(danger.get('--bs-btn-color')).toBeUndefined()
+    expect(danger.get('--bs-btn-hover-color')).toBe('var(--kk-danger-text)')
+  })
+})
+
+/**
+ * The composer's send button used to hang bottom-aligned beside a two-line box,
+ * so the two read as misaligned. It is top-aligned and exactly one `sm` control
+ * tall — the height Bootstrap gives a one-line `form-control-sm`.
+ */
+describe('the comment composer', () => {
+  const viewer = readCss('src/components/photo/viewer.css')
+
+  it('aligns the send button with the top of the box, one line tall', () => {
+    const composer = declarations(ruleBody(viewer, /\.kk-comments__composer\s*(?=\{)/) ?? '')
+    expect(composer.get('align-items')).toBe('flex-start')
+    const send = declarations(ruleBody(viewer, /\.kk-comments__send\s*(?=\{)/) ?? '')
+    expect(send.get('height')).toBe('calc(1.5em + 0.5rem + calc(var(--bs-border-width) * 2))')
+    expect(send.get('aspect-ratio')).toBe('1')
   })
 })
 

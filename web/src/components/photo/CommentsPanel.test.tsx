@@ -271,18 +271,41 @@ describe('CommentsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
-  it('keeps the row’s two actions separable by touch', async () => {
+  it('draws the row’s two actions as a matching pair of quiet icon buttons', async () => {
     fetchCommentsMock.mockResolvedValue([comment()])
     renderPanel()
 
-    // Delete gets a box of its own rather than being a second caption word told
-    // apart from Edit only by colour, and both square off at 44px on touch.
+    // A pencil and a bin, named for assistive tech and titled for the mouse —
+    // no caption word and no outlined red box under every comment.
     const edit = await screen.findByRole('button', { name: 'Edit' })
     const remove = screen.getByRole('button', { name: 'Delete' })
-    expect(remove).toHaveClass('btn-outline-danger')
-    expect(remove).not.toHaveClass('btn-link')
-    expect(edit).toHaveClass('kukatko-tap-target-touch')
-    expect(remove).toHaveClass('kukatko-tap-target-touch')
+    expect(edit).toHaveAttribute('title', 'Edit')
+    expect(remove).toHaveAttribute('title', 'Delete')
+    expect(edit).toHaveTextContent('')
+    expect(remove).toHaveTextContent('')
+    expect(edit.querySelector('.bi-pencil')).not.toBeNull()
+    expect(remove.querySelector('.bi-trash')).not.toBeNull()
+
+    // Same size and style: both the muted link variant, delete told apart only
+    // by the danger modifier the stylesheet colours on hover/focus.
+    for (const button of [edit, remove]) {
+      expect(button).toHaveClass('btn-link', 'btn-sm', 'kk-comment__action')
+      expect(button).not.toHaveClass('btn-outline-danger')
+      // Both square off at 44px on touch.
+      expect(button).toHaveClass('kukatko-tap-target-touch')
+    }
+    expect(remove).toHaveClass('kk-comment__action--danger')
+    expect(edit).not.toHaveClass('kk-comment__action--danger')
+  })
+
+  it('hides the row’s actions while the comment is being edited', async () => {
+    const user = userEvent.setup()
+    fetchCommentsMock.mockResolvedValue([comment()])
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }))
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
   })
 
   it('reports the thread length upwards, and again after a post', async () => {

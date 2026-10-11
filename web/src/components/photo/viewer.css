@@ -1098,39 +1098,62 @@
   font-size: var(--kk-font-size-caption);
 }
 
-.kk-comment__actions,
 .kk-comment__edit-actions {
   display: flex;
   gap: var(--kk-space-2);
   align-items: center;
-}
-
-/* The row's two actions sit further apart than the edit form's pair: on a phone
-   each is a 44px box, and at 8px a thumb meant for Edit could still land on
-   Delete. */
-.kk-comment__actions {
-  gap: var(--kk-space-3);
-}
-
-.kk-comment__edit-actions {
   margin-top: var(--kk-space-2);
 }
 
-/* The row's own affordances are quiet by design: they sit under every comment the
-   reader owns, and a thread of ten would otherwise be a wall of buttons. */
+/* The row's own affordances: a pencil and a bin in a column of their own at the
+   comment's top right, so no remark ends in a row of controls. The two sit
+   further apart than the edit form's pair: on a phone each is a 44px box, and
+   at 8px a thumb meant for Edit could still land on Delete. */
+.kk-comment__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--kk-space-3);
+  align-items: center;
+}
+
+/* Quiet by design — same size, same muted ink for both; only aiming at delete
+   (hover or keyboard focus) turns it the danger colour, so a thread of ten
+   does not read as ten warnings. */
 .kk-comment__action {
-  padding: 0;
-  font-size: var(--kk-font-size-caption);
+  --bs-btn-padding-x: var(--kk-space-1);
+  --bs-btn-padding-y: var(--kk-space-1);
+  --bs-btn-color: var(--kk-text-muted);
+  --bs-btn-hover-color: var(--kk-text);
+  --bs-btn-active-color: var(--kk-text);
+  --bs-btn-disabled-color: var(--kk-text-muted);
+
+  line-height: 1;
   text-decoration: none;
 }
 
-/* …except delete, which gets a box: a hairline outline at the same caption size,
-   so it reads as a separate, weightier control without turning the thread into
-   a row of buttons. */
-.kk-comment__delete {
-  --bs-btn-padding-x: var(--kk-space-2);
-  --bs-btn-padding-y: 0;
-  --bs-btn-font-size: var(--kk-font-size-caption);
+.kk-comment__action--danger {
+  --bs-btn-hover-color: var(--kk-danger-text);
+  --bs-btn-active-color: var(--kk-danger-text);
+}
+
+.kk-comment__action--danger:focus-visible {
+  color: var(--kk-danger-text);
+}
+
+/* On a mouse the pair waits for the comment to be pointed at; keyboard focus
+   anywhere in the comment surfaces it too, so a Tab lands on something visible.
+   Hover never fires on a touch screen, so there the pair is simply always shown
+   — nothing outside this query takes the opacity away. */
+@media (hover: hover) and (pointer: fine) {
+  .kk-comment__actions {
+    opacity: 0;
+    transition: opacity var(--kk-duration-fast) var(--kk-ease-standard);
+  }
+
+  .kk-comment:hover .kk-comment__actions,
+  .kk-comment:focus-within .kk-comment__actions {
+    opacity: 1;
+  }
 }
 
 .kk-comments__state,
@@ -1139,14 +1162,21 @@
   color: var(--kk-text-muted);
 }
 
+/* The send button sits level with the top of the box and is exactly as tall as
+   a one-line `form-control-sm` (Bootstrap's own sizing for it), square, so it
+   reads as the box's end cap rather than a button dropped below its corner. On
+   a coarse pointer both lift to the 44px floor together. */
 .kk-comments__composer {
   display: flex;
   gap: var(--kk-space-2);
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 .kk-comments__send {
   flex: 0 0 auto;
+  height: calc(1.5em + 0.5rem + calc(var(--bs-border-width) * 2));
+  aspect-ratio: 1;
+  padding: 0;
 }
 
 /* The task page's composer: the box full width, then a row of two labelled

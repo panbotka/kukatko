@@ -3565,7 +3565,14 @@ here.
   through **one** `ConfirmModal` owned by the panel, not one per row. An admin therefore removes but never
   rewrites — the backend answers 403 to an admin's PATCH, and the UI says the same thing by only offering
   „Smazat". A comment whose author's account is gone reads as „Smazaný uživatel" (the row survives
-  authorless) and nobody may touch it. Writes go through **`hooks/useComments`** (`status`/`comments`/`count`/
+  authorless) and nobody may touch it. The row's two actions are **a quiet pair of icon buttons** (pencil,
+  bin — `aria-label` + `title` „Upravit"/„Smazat") in a column of their own at the comment's top right
+  (`.kk-comment__actions`), not a caption link and a red outline box under every remark: same `sm` link
+  variant, same muted ink (`.kk-comment__action`), delete turning `--kk-danger-text` only on hover/focus
+  (`.kk-comment__action--danger`). Behind `@media (hover: hover) and (pointer: fine)` the pair is at
+  `opacity: 0` until the comment is hovered or anything in it has focus (`:focus-within`, so a Tab lands
+  on a visible control); on touch it is always shown and each is a 44px square
+  (`kukatko-tap-target-touch`); while the row is being edited it is gone. Writes go through **`hooks/useComments`** (`status`/`comments`/`count`/
   `busy`/`failure` + `post`/`edit`/`remove`): it applies **the record the server returns**, not an optimistic
   local guess — the server owns the uid, the timestamps and the author name — and classifies a failure into
   `throttled` (429, the per-user `ratelimit.comment` → „komentáře jdou moc rychle po sobě"), `forbidden`
@@ -3581,7 +3588,11 @@ here.
   photos with the drawer shut would otherwise fetch a hundred threads nobody asked to read, and the empty
   result would overwrite the count the detail payload already gave the badge. **Enter posts, Shift+Enter
   breaks the line** (in the composer and in the in-place editor) — the convention every chat has already
-  taught the reader — with the send button kept for touch and for anyone who does not know it.
+  taught the reader — with the send button kept for touch and for anyone who does not know it. That
+  button is **top-aligned with the box and one `sm` control tall, square** (`.kk-comments__send`: the height
+  Bootstrap gives a one-line `form-control-sm`, 31px; 44px with the box's own floor on a coarse pointer), so
+  it reads as the field's end cap rather than a button hanging below its corner; the task page's stacked
+  two-button row (`--stacked`) is unaffected.
   On a **phone** the thread lives in the existing bottom sheet, and the sheet **lifts clear of the on-screen
   keyboard**: a phone keyboard does not shrink the layout viewport (on iOS it slides over it), so a sheet at
   `bottom: 0` would put the composer *behind* the keyboard meant to fill it. `hooks/useKeyboardInset`
@@ -3589,8 +3600,9 @@ here.
   80 px noise floor, 0 while pinch-zoomed past 1.05, 0 where there is no `visualViewport` at all — jsdom and
   every desktop browser), `PhotoDetailPage` publishes it as `--kk-keyboard-inset` on the viewer root and the
   phone media query reads it into the sheet's `bottom`. Covered by `CommentsPanel.test.tsx` (thread, post,
-  Enter vs Shift+Enter, viewer posts, edit own, delete-with-confirm, admin moderation, empty state, count
-  reported upwards, 429, Czech plural), `useKeyboardInset.test.tsx` and four badge tests in
+  Enter vs Shift+Enter, viewer posts, edit own, delete-with-confirm, admin moderation, the icon-button
+  pair, empty state, count reported upwards, 429, Czech plural; the stylesheet half — hover-only hiding,
+  muted/danger ink, the send button's alignment — in `styles/tapTargets.test.ts`), `useKeyboardInset.test.tsx` and four badge tests in
   `PhotoDetailPage.test.tsx`. **2. Popis a místo**
   (`sections.caption`) = `MetadataPanel` = title/description/ai_note/notes/taken_at/location
   **read-only until the editor clicks a field** — each field is its own inline edit affordance
@@ -7681,7 +7693,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   pointer against 12.9–20.9 × 44.0 without the helper, and unchanged on a fine one. The labels cloud's „…" menu is
   the one exception, sized by its own `.kk-label-chip__menu` coarse rule next to the chip it sits in. A control
   that **dims until hovered** keeps the dimming behind `@media (hover: hover) and (pointer: fine)` — hover never
-  fires on a phone, so a dimmed control there stays dimmed for good (`.kk-task-person__remove`);
+  fires on a phone, so a dimmed control there stays dimmed for good (`.kk-task-person__remove`,
+  `.kk-comment__actions`);
   **Superhero's baked colours** live in `styles/bootstrapBridge.css` (imported between `tokens.css` and
   `app.css`): Bootswatch compiles many colours as literals *inside component rules* (`.card { --bs-card-bg:
   #4e5d6c }`, `.btn-primary { background-color: … }`, white form fields, solid-fill alerts with white text), where

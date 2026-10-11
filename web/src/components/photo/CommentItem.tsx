@@ -2,6 +2,7 @@ import { type SyntheticEvent, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
+import { Icon } from '../Icon'
 import { PersonAvatar } from '../PersonAvatar'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { formatRelativeTime } from '../../lib/relativeTime'
@@ -150,42 +151,49 @@ export function CommentItem({
         ) : (
           <CommentBody body={comment.body} taskUid={comment.task_uid} />
         )}
-
-        {/* Edit stays a quiet link, delete gets a box: two caption words 8px apart
-            told apart only by colour were one target to a thumb. Both carry
-            `kukatko-tap-target-touch`, so each clears a 44px square on a coarse
-            pointer, and the wider gap keeps those squares from touching. */}
-        {!editing && (canEdit || canDelete) && (
-          <div className="kk-comment__actions">
-            {canEdit && (
-              <Button
-                type="button"
-                size="sm"
-                variant="link"
-                className="kk-comment__action kukatko-tap-target-touch"
-                disabled={busy}
-                onClick={() => {
-                  setDraft(comment.body)
-                }}
-              >
-                {t('photo.comments.edit')}
-              </Button>
-            )}
-            {canDelete && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline-danger"
-                className="kk-comment__delete kukatko-tap-target-touch"
-                disabled={busy}
-                onClick={onDelete}
-              >
-                {t('photo.comments.delete')}
-              </Button>
-            )}
-          </div>
-        )}
       </div>
+
+      {/* The row's affordances are two quiet icon buttons in a column of their
+          own, beside the comment rather than under it: a thread of ten would
+          otherwise end every remark with a row of controls. Same size, same muted
+          colour; delete only turns red when it is aimed at (see viewer.css),
+          and on a mouse the pair surfaces with the comment's hover or focus.
+          Both carry `kukatko-tap-target-touch`, so each clears a 44px square on
+          a coarse pointer, where they are always visible. */}
+      {!editing && (canEdit || canDelete) && (
+        <div className="kk-comment__actions">
+          {canEdit && (
+            <Button
+              type="button"
+              size="sm"
+              variant="link"
+              className="kk-comment__action kukatko-tap-target-touch"
+              disabled={busy}
+              aria-label={t('photo.comments.edit')}
+              title={t('photo.comments.edit')}
+              onClick={() => {
+                setDraft(comment.body)
+              }}
+            >
+              <Icon name="pencil" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              type="button"
+              size="sm"
+              variant="link"
+              className="kk-comment__action kk-comment__action--danger kukatko-tap-target-touch"
+              disabled={busy}
+              aria-label={t('photo.comments.delete')}
+              title={t('photo.comments.delete')}
+              onClick={onDelete}
+            >
+              <Icon name="trash" />
+            </Button>
+          )}
+        </div>
+      )}
     </li>
   )
 }
