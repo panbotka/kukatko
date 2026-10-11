@@ -9,7 +9,10 @@ import { hasAnsweredPushPrompt } from '../../lib/pushPromptAnswer'
 import type { Role } from '../../services/auth'
 import type { NotificationPreference, PushSubscriptionRecord } from '../../services/notifications'
 
-import { isKindOffered, NotificationsCard } from './NotificationsCard'
+import { isKindOffered, isReachableEmail, kindRows } from './notificationKinds'
+import { NotificationsCard } from './NotificationsCard'
+
+vi.mock('../../hooks/useMailEnabled', () => ({ useMailEnabled: vi.fn() }))
 
 vi.mock('../../pwa/push', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../pwa/push')>()
@@ -44,6 +47,9 @@ const enabledMock = vi.mocked(push.isPushEnabled)
 const requestMock = vi.mocked(push.requestPushPermission)
 const subscribeMock = vi.mocked(push.subscribeToPush)
 const unsubscribeMock = vi.mocked(push.unsubscribeFromPush)
+
+const { useMailEnabled } = await import('../../hooks/useMailEnabled')
+const mailEnabledMock = vi.mocked(useMailEnabled)
 
 const api = await import('../../services/notifications')
 const devicesMock = vi.mocked(api.fetchPushSubscriptions)
@@ -80,11 +86,16 @@ const DEFAULT_PREFS: NotificationPreference[] = [
   { kind: 'registration_pending', channel: 'email', enabled: false, is_default: true },
 ]
 
-/** Mounts the card for an account of `role`. */
-function renderCard(role: Role = 'viewer') {
+/** The accessible name of one kind's switch on one channel. */
+const TAGGED_PUSH = 'When somebody tags me in a photo — Push'
+const REG_PUSH = 'When a new registration is waiting for approval — Push'
+const REG_EMAIL = 'When a new registration is waiting for approval — E-mail'
+
+/** Mounts the card for an account of `role` with address `email`. */
+function renderCard(role: Role = 'viewer', email = 'anna@example.com') {
   const auth = {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'anna', role },
+    user: { uid: 'u1', username: 'anna', role, email },
     role,
   } as unknown as AuthContextValue
   return render(
@@ -98,7 +109,7 @@ function renderCard(role: Role = 'viewer') {
 
 /** Waits until the card has read the browser, the choices and the devices. */
 async function loaded() {
-  await screen.findByRole('heading', { name: 'Devices receiving notifications' })
+  await screen.findByRole('heading', { name: 'What to notify me about' })
   await waitFor(() => {
     expect(document.querySelector('.spinner-border')).toBeNull()
   })
@@ -108,6 +119,7 @@ beforeEach(async () => {
   await i18n.changeLanguage('en')
   window.localStorage.clear()
   enabledMock.mockResolvedValue(true)
+  mailEnabledMock.mockReturnValue(true)
   iosMock.mockReturnValue(false)
   permissionMock.mockReturnValue('default')
   stateMock.mockResolvedValue({ status: 'prompt', endpoint: null })
@@ -200,7 +212,7 @@ describe('NotificationsCard — this browser', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/site settings/)
     expect(screen.queryByRole('button', { name: /Turn on/ })).not.toBeInTheDocument()
     // The account-wide choices still matter for the other devices.
-    expect(screen.getByRole('checkbox', { name: 'When somebody tags me in a photo' })).toBeVisible()
+    expect(screen.getByRole('checkbox', { name: TAGGED_PUSH })).toBeVisible()
   })
 
   it('shows the blocked explanation when the browser prompt is answered with a block', async () => {
@@ -232,31 +244,58 @@ describe('NotificationsCard — this browser', () => {
 
     expect(screen.getByText(/applies only to the browser you are using/)).toBeInTheDocument()
     expect(
-      screen.getByText(/belong to your account: they apply to every device/),
+      screen.getByText(/belong to your account: push applies to every device/),
     ).toBeInTheDocument()
   })
 })
 
 describe('NotificationsCard — push off instance-wide', () => {
-  it('says so instead of rendering controls', async () => {
+  it('says so in the device part and disables the push column, keeping e-mail', async () => {
     enabledMock.mockResolvedValue(false)
     renderCard('admin')
+    await loaded()
 
-    expect(await screen.findByText(/switched off on this Kukátko instance/)).toBeInTheDocument()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(prefsMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/Push notifications are not switched on for this instance, so/),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Turn on/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Devices receiving notifications' })).toBeNull()
     expect(devicesMock).not.toHaveBeenCalled()
+
+    const taggedPush = screen.getByRole('checkbox', { name: TAGGED_PUSH })
+    expect(taggedPush).toBeDisabled()
+    expect(taggedPush.closest('[title]')).toHaveAttribute(
+      'title',
+      'Push notifications are not switched on for this instance.',
+    )
+    expect(screen.getByRole('checkbox', { name: REG_EMAIL })).toBeEnabled()
   })
 })
 
-describe('NotificationsCard — which messages', () => {
-  it('saves a toggle at once, keeping the other kinds on their defaults', async () => {
+describe('NotificationsCard — kinds × channels', () => {
+  it('renders one row per kind with a switch per channel it is delivered through', async () => {
+    renderCard('admin')
+    await loaded()
+
+    expect(screen.getByRole('checkbox', { name: TAGGED_PUSH })).toBeChecked()
+    // Tagged is push only: no e-mail switch, an empty cell instead.
+    expect(
+      screen.queryByRole('checkbox', { name: 'When somebody tags me in a photo — E-mail' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: REG_PUSH })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: REG_EMAIL })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: REG_EMAIL })).toBeEnabled()
+    expect(
+      screen.getByText('The e-mail about a new registration is off by default.'),
+    ).toBeInTheDocument()
+  })
+
+  it('saves a push toggle at once, keeping the other kinds on their defaults', async () => {
     const user = userEvent.setup()
     renderCard()
     await loaded()
 
-    const tagged = screen.getByRole('checkbox', { name: 'When somebody tags me in a photo' })
+    const tagged = screen.getByRole('checkbox', { name: TAGGED_PUSH })
     expect(tagged).toBeChecked()
 
     await user.click(tagged)
@@ -269,59 +308,82 @@ describe('NotificationsCard — which messages', () => {
     })
   })
 
-  it('shows only the push channel and keeps a stored e-mail choice when saving', async () => {
+  it('saves an e-mail toggle with its channel, sending the stored pairs along', async () => {
     const user = userEvent.setup()
     prefsMock.mockResolvedValue([
-      DEFAULT_PREFS[0],
+      { kind: 'tagged', channel: 'push', enabled: false, is_default: false },
       DEFAULT_PREFS[1],
-      { kind: 'registration_pending', channel: 'email', enabled: true, is_default: false },
+      DEFAULT_PREFS[2],
     ])
     renderCard('admin')
     await loaded()
 
-    const registration = screen.getAllByRole('checkbox', { name: /registration/ })
-    expect(registration).toHaveLength(1)
-    expect(registration[0]).toBeChecked()
-
-    await user.click(registration[0])
+    const email = screen.getByRole('checkbox', { name: REG_EMAIL })
+    await user.click(email)
 
     expect(savePrefsMock).toHaveBeenCalledWith([
+      { kind: 'tagged', channel: 'push', enabled: false },
       { kind: 'registration_pending', channel: 'email', enabled: true },
-      { kind: 'registration_pending', channel: 'push', enabled: false },
     ])
     await waitFor(() => {
-      expect(registration[0]).not.toBeChecked()
+      expect(email).toBeChecked()
     })
+    expect(screen.getByRole('checkbox', { name: REG_PUSH })).toBeChecked()
   })
 
   it('puts the choice back and says so when the save fails', async () => {
     const user = userEvent.setup()
     savePrefsMock.mockRejectedValue(new Error('offline'))
-    renderCard()
-    await loaded()
-
-    const tagged = screen.getByRole('checkbox', { name: 'When somebody tags me in a photo' })
-    await user.click(tagged)
-
-    expect(await screen.findByText(/could not be saved/)).toBeInTheDocument()
-    expect(tagged).toBeChecked()
-  })
-
-  it('hides the registration kind from a viewer', async () => {
-    renderCard('viewer')
-    await loaded()
-
-    expect(screen.getByRole('checkbox', { name: /tags me/ })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: /registration/ })).not.toBeInTheDocument()
-  })
-
-  it('shows the registration kind to an admin', async () => {
     renderCard('admin')
     await loaded()
 
-    expect(
-      screen.getByRole('checkbox', { name: 'When a new registration is waiting for approval' }),
-    ).toBeInTheDocument()
+    const email = screen.getByRole('checkbox', { name: REG_EMAIL })
+    await user.click(email)
+
+    expect(await screen.findByText(/could not be saved/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(email).not.toBeChecked()
+    })
+    expect(email).toBeEnabled()
+  })
+
+  it('disables the e-mail column with the reason when the instance sends no mail', async () => {
+    mailEnabledMock.mockReturnValue(false)
+    renderCard('admin')
+    await loaded()
+
+    const email = screen.getByRole('checkbox', { name: REG_EMAIL })
+    expect(email).toBeDisabled()
+    expect(email.closest('[title]')).toHaveAttribute(
+      'title',
+      'E-mails are not switched on for this instance.',
+    )
+    expect(email).toHaveAccessibleDescription('E-mails are not switched on for this instance.')
+    expect(screen.getByRole('checkbox', { name: REG_PUSH })).toBeEnabled()
+  })
+
+  it('disables the e-mail column for an account with a placeholder address', async () => {
+    renderCard('admin', 'admin@kukatko.invalid')
+    await loaded()
+
+    const email = screen.getByRole('checkbox', { name: REG_EMAIL })
+    expect(email).toBeDisabled()
+    expect(email.closest('[title]')).toHaveAttribute(
+      'title',
+      'Add an e-mail address to your account.',
+    )
+  })
+
+  it('hides the registration kind (and the admin hint) from a viewer', async () => {
+    mailEnabledMock.mockReturnValue(false)
+    renderCard('viewer')
+    await loaded()
+
+    expect(screen.getByRole('checkbox', { name: TAGGED_PUSH })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /registration/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/off by default/)).not.toBeInTheDocument()
+    // No e-mail switch on the page at all, so no e-mail reason under the grid either.
+    expect(screen.queryByText(/E-mails are not switched on/)).not.toBeInTheDocument()
   })
 
   it.each<[Role, boolean]>([
@@ -334,6 +396,29 @@ describe('NotificationsCard — which messages', () => {
     expect(isKindOffered('registration_pending', role)).toBe(offered)
     expect(isKindOffered('tagged', role)).toBe(true)
     expect(isKindOffered('something_new', role)).toBe(false)
+  })
+
+  it('groups the preferences into rows, skipping unknown kinds', () => {
+    const rows = kindRows(
+      [
+        ...DEFAULT_PREFS,
+        { kind: 'something_new', channel: 'push', enabled: true, is_default: true },
+      ],
+      'admin',
+    )
+    expect(rows.map((row) => row.kind)).toEqual(['tagged', 'registration_pending'])
+    expect([...rows[0].byChannel.keys()]).toEqual(['push'])
+    expect([...rows[1].byChannel.keys()]).toEqual(['push', 'email'])
+  })
+
+  it.each<[string | undefined, boolean]>([
+    ['anna@example.com', true],
+    ['', false],
+    ['  ', false],
+    [undefined, false],
+    ['admin@kukatko.invalid', false],
+  ])('treats %j as a reachable address: %s', (email, reachable) => {
+    expect(isReachableEmail(email)).toBe(reachable)
   })
 })
 
@@ -395,7 +480,10 @@ describe('NotificationsCard — Czech', () => {
     await i18n.changeLanguage('cs')
     renderCard()
 
-    expect(await screen.findByRole('heading', { name: 'Oznámení' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Notifikace' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('checkbox', { name: 'Když mě někdo označí na fotce — Push' }),
+    ).toBeInTheDocument()
     expect(
       await screen.findByRole('button', { name: 'Zapnout v tomhle prohlížeči' }),
     ).toBeInTheDocument()

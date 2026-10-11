@@ -9,6 +9,7 @@ import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '../../auth/AuthContext'
+import { useMailEnabled } from '../../hooks/useMailEnabled'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { recordPushPromptAnswer } from '../../lib/pushPromptAnswer'
 import { type DeviceOs, describeUserAgent } from '../../lib/userAgent'
@@ -22,11 +23,12 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
 } from '../../pwa/push'
-import { isAdmin, type Role } from '../../services/auth'
+import { isAdmin } from '../../services/auth'
 import {
   deletePushSubscription,
   fetchNotificationPreferences,
   fetchPushSubscriptions,
+  type NotificationChannel,
   type NotificationKind,
   type NotificationPreference,
   PUSH_CHANNEL,
@@ -38,33 +40,10 @@ import { ConfirmModal } from '../ConfirmModal'
 import { ErrorState } from '../ErrorState'
 import { Icon } from '../Icon'
 
+import { CHANNELS, type ChannelBlock, isReachableEmail, kindRows } from './notificationKinds'
+
 /** A list the card fetches from the server. */
 type Loaded<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: T[] }
-
-/** The i18n key of a kind's checkbox label. */
-type KindLabelKey =
-  | 'account.notifications.kinds.tagged'
-  | 'account.notifications.kinds.registration_pending'
-
-/** What the card knows about one kind: its label, and who can ever receive it. */
-interface KindCopy {
-  label: KindLabelKey
-  /** Only an administrator (or a maintainer, who inherits it) is ever sent this kind. */
-  adminOnly: boolean
-}
-
-/**
- * The kinds the card offers a setting for. A kind the server knows and this
- * client does not is left out rather than shown under its raw name: it will get
- * its words (and its audience) with the release that teaches the client.
- */
-const KINDS: Partial<Record<NotificationKind, KindCopy>> = {
-  tagged: { label: 'account.notifications.kinds.tagged', adminOnly: false },
-  registration_pending: {
-    label: 'account.notifications.kinds.registration_pending',
-    adminOnly: true,
-  },
-}
 
 /** The i18n key of the "on <system>" phrase for each system the summary names. */
 const OS_KEYS = {
@@ -76,18 +55,6 @@ const OS_KEYS = {
   chromeos: 'account.notifications.os.chromeos',
   linux: 'account.notifications.os.linux',
 } as const satisfies Record<DeviceOs, string>
-
-/**
- * Reports whether `kind` gets a checkbox for an account of `role`: nobody is
- * offered a setting for a message they can never receive.
- */
-export function isKindOffered(kind: NotificationKind, role: Role | null): boolean {
-  const copy = KINDS[kind]
-  if (copy === undefined) {
-    return false
-  }
-  return !copy.adminOnly || (role !== null && isAdmin(role))
-}
 
 /** The readable name of a registered browser — "Chrome on Android". */
 function useDeviceName(): (userAgent: string) => string {
@@ -161,9 +128,10 @@ function DeviceRow({
 }
 
 /**
- * The "Notifications" section of the account page: whether **this browser**
- * receives pushes, **which messages** the account wants, and **which devices**
- * are registered.
+ * The "Notifications" section of the account page, in two parts: **push to
+ * devices** (whether this browser receives pushes, and which devices are
+ * registered) and **what to notify about** (one row per kind, one switch per
+ * channel — push and e-mail — the kind is delivered through).
  *
  * # Two scopes, said out loud
  *
@@ -188,20 +156,26 @@ function DeviceRow({
  * so. The account-wide choices and the device list stay, since they still
  * matter for the person's other devices.
  *
- * # Off instance-wide
+ * # Push off instance-wide
  *
  * With push switched off on the server (or its configuration unreadable) the
- * whole section is one sentence saying so: no control that would only fail.
+ * device part is one sentence saying so — no control that would only fail —
+ * and the push column's switches are disabled, while the e-mail column stays.
  *
- * # Which messages
+ * # Which messages, through which channel
  *
- * One checkbox per kind the account can receive; the "registration waiting"
- * kind only for an administrator or a maintainer. A change saves at once.
+ * One row per kind the account can receive (the "registration waiting" kind
+ * only for an administrator or a maintainer), one switch per channel the kind
+ * is delivered through and an empty cell where it is not. A channel the
+ * instance cannot deliver — push off, mail off, or an account without a real
+ * address — keeps its switches but disables them, with the reason as a tooltip
+ * and as a line under the grid (a phone has no hover). A change saves at once.
  */
 export function NotificationsCard() {
   const { t } = useTranslation()
   const { user, role } = useAuth()
   const deviceName = useDeviceName()
+  const mailEnabled = useMailEnabled()
   const userUid = user?.uid ?? null
 
   const [instanceOn, setInstanceOn] = useState<boolean | null>(null)
@@ -210,7 +184,7 @@ export function NotificationsCard() {
   const [devices, setDevices] = useState<Loaded<PushSubscriptionRecord>>({ status: 'loading' })
   const [busy, setBusy] = useState(false)
   const [browserError, setBrowserError] = useState(false)
-  const [savingKind, setSavingKind] = useState<NotificationKind | null>(null)
+  const [saving, setSaving] = useState(false)
   const [prefError, setPrefError] = useState(false)
   const [pendingRemove, setPendingRemove] = useState<PushSubscriptionRecord | null>(null)
   const [removeError, setRemoveError] = useState(false)
@@ -255,9 +229,11 @@ export function NotificationsCard() {
           setBrowser(state)
         }
       })
-      loadPrefs(controller.signal)
       loadDevices(controller.signal)
     })
+    // The choices are the account's on every channel, so they load whether
+    // push is on or not: the e-mail column does not depend on it.
+    loadPrefs(controller.signal)
     return () => {
       controller.abort()
     }
@@ -344,32 +320,43 @@ export function NotificationsCard() {
     }
   }
 
-  async function toggleKind(kind: NotificationKind, enabled: boolean) {
+  async function toggle(kind: NotificationKind, channel: NotificationChannel, enabled: boolean) {
     if (prefs.status !== 'ready') {
       return
     }
     const previous = prefs.items
     setPrefError(false)
-    setSavingKind(kind)
+    setSaving(true)
     setPrefs({
       status: 'ready',
       items: previous.map((pref) =>
-        pref.kind === kind && pref.channel === PUSH_CHANNEL
+        pref.kind === kind && pref.channel === channel
           ? { ...pref, enabled, is_default: false }
           : pref,
       ),
     })
     try {
       const items = await updateNotificationPreferences(
-        withPreference(previous, kind, PUSH_CHANNEL, enabled),
+        withPreference(previous, kind, channel, enabled),
       )
       setPrefs({ status: 'ready', items })
     } catch {
       setPrefError(true)
       setPrefs({ status: 'ready', items: previous })
     } finally {
-      setSavingKind(null)
+      setSaving(false)
     }
+  }
+
+  /** Why `channel`'s switches are disabled, or null when they work. */
+  function blockOf(channel: NotificationChannel): ChannelBlock {
+    if (channel === PUSH_CHANNEL) {
+      return instanceOn === true ? null : 'account.notifications.unavailable.push'
+    }
+    if (!mailEnabled) {
+      return 'account.notifications.unavailable.emailOff'
+    }
+    return isReachableEmail(user?.email) ? null : 'account.notifications.unavailable.emailMissing'
   }
 
   const title = (
@@ -394,32 +381,13 @@ export function NotificationsCard() {
     )
   }
 
-  if (!instanceOn) {
-    return (
-      <Card text="light" className="mb-4">
-        <Card.Body>
-          {title}
-          <Alert variant="secondary" role="status" className="mb-0">
-            <Icon name="slash-circle" className="me-2" />
-            {t('account.notifications.instanceOff')}
-          </Alert>
-        </Card.Body>
-      </Card>
-    )
-  }
-
   const serverKnowsThisBrowser =
     devices.status !== 'ready' ||
     devices.items.some((device) => device.endpoint === browser?.endpoint)
   const on = browser?.status === 'subscribed' && serverKnowsThisBrowser
-  // Only the push channel is shown here; the e-mail choices ride along
-  // untouched (withPreference keeps every stored pair).
-  const offeredKinds =
-    prefs.status === 'ready'
-      ? prefs.items.filter(
-          (pref) => pref.channel === PUSH_CHANNEL && isKindOffered(pref.kind, role),
-        )
-      : []
+  const rows = prefs.status === 'ready' ? kindRows(prefs.items, role) : []
+  const blocks = CHANNELS.map((column) => ({ ...column, block: blockOf(column.channel) }))
+  const admin = role !== null && isAdmin(role)
 
   return (
     <Card text="light" className="mb-4">
@@ -427,32 +395,94 @@ export function NotificationsCard() {
         {title}
         <p className="text-secondary">{t('account.notifications.intro')}</p>
 
-        <section className="mb-4" aria-labelledby="notifications-browser">
-          <h3 id="notifications-browser" className="h6 mb-1">
-            {t('account.notifications.browser.title')}
+        <section className="mb-4" aria-labelledby="notifications-push">
+          <h3 id="notifications-push" className="h6 mb-2">
+            {t('account.notifications.pushTitle')}
           </h3>
-          <p className="text-secondary small">{t('account.notifications.browser.scope')}</p>
 
-          {browserError && (
-            <Alert variant="danger" role="alert">
-              {t('account.notifications.browser.failed')}
+          {!instanceOn && (
+            <Alert variant="secondary" role="status" className="mb-0">
+              <Icon name="slash-circle" className="me-2" />
+              {t('account.notifications.instanceOff')}
             </Alert>
           )}
 
-          <BrowserControl
-            state={browser}
-            on={on}
-            busy={busy}
-            onTurnOn={() => {
-              void turnOn()
-            }}
-            onTurnOff={() => {
-              void turnOff()
-            }}
-          />
+          {instanceOn && (
+            <>
+              <div className="mb-3">
+                <h4 id="notifications-browser" className="h6 small fw-semibold mb-1">
+                  {t('account.notifications.browser.title')}
+                </h4>
+                <p className="text-secondary small">{t('account.notifications.browser.scope')}</p>
+
+                {browserError && (
+                  <Alert variant="danger" role="alert">
+                    {t('account.notifications.browser.failed')}
+                  </Alert>
+                )}
+
+                <BrowserControl
+                  state={browser}
+                  on={on}
+                  busy={busy}
+                  onTurnOn={() => {
+                    void turnOn()
+                  }}
+                  onTurnOff={() => {
+                    void turnOff()
+                  }}
+                />
+              </div>
+
+              <div>
+                <h4 id="notifications-devices" className="h6 small fw-semibold mb-1">
+                  {t('account.notifications.devices.title')}
+                </h4>
+                <p className="text-secondary small">{t('account.notifications.devices.hint')}</p>
+
+                {removeError && (
+                  <Alert variant="danger" role="alert">
+                    {t('account.notifications.devices.removeError')}
+                  </Alert>
+                )}
+                {devices.status === 'loading' && (
+                  <Spinner animation="border" size="sm" role="status">
+                    <span className="visually-hidden">{t('account.notifications.loading')}</span>
+                  </Spinner>
+                )}
+                {devices.status === 'error' && (
+                  <ErrorState
+                    title={t('account.notifications.devices.loadError')}
+                    onRetry={() => {
+                      loadDevices()
+                    }}
+                    size="sm"
+                  />
+                )}
+                {devices.status === 'ready' && devices.items.length === 0 && (
+                  <p className="text-secondary mb-0">{t('account.notifications.devices.empty')}</p>
+                )}
+                {devices.status === 'ready' && devices.items.length > 0 && (
+                  <ListGroup as="ul">
+                    {devices.items.map((device) => (
+                      <DeviceRow
+                        key={device.id}
+                        device={device}
+                        current={
+                          browser?.status === 'subscribed' && device.endpoint === browser.endpoint
+                        }
+                        busy={busy}
+                        onRemove={setPendingRemove}
+                      />
+                    ))}
+                  </ListGroup>
+                )}
+              </div>
+            </>
+          )}
         </section>
 
-        <section className="mb-4" aria-labelledby="notifications-kinds">
+        <section aria-labelledby="notifications-kinds">
           <h3 id="notifications-kinds" className="h6 mb-1">
             {t('account.notifications.kindsTitle')}
           </h3>
@@ -477,64 +507,73 @@ export function NotificationsCard() {
               size="sm"
             />
           )}
-          {offeredKinds.map((pref) => {
-            const copy = KINDS[pref.kind]
-            return copy === undefined ? null : (
-              <Form.Check
-                key={pref.kind}
-                type="checkbox"
-                id={`notification-kind-${pref.kind}`}
-                label={t(copy.label)}
-                checked={pref.enabled}
-                disabled={savingKind !== null}
-                onChange={(event) => {
-                  void toggleKind(pref.kind, event.target.checked)
-                }}
-              />
-            )
-          })}
-        </section>
-
-        <section aria-labelledby="notifications-devices">
-          <h3 id="notifications-devices" className="h6 mb-1">
-            {t('account.notifications.devices.title')}
-          </h3>
-          <p className="text-secondary small">{t('account.notifications.devices.hint')}</p>
-
-          {removeError && (
-            <Alert variant="danger" role="alert">
-              {t('account.notifications.devices.removeError')}
-            </Alert>
-          )}
-          {devices.status === 'loading' && (
-            <Spinner animation="border" size="sm" role="status">
-              <span className="visually-hidden">{t('account.notifications.loading')}</span>
-            </Spinner>
-          )}
-          {devices.status === 'error' && (
-            <ErrorState
-              title={t('account.notifications.devices.loadError')}
-              onRetry={() => {
-                loadDevices()
-              }}
-              size="sm"
-            />
-          )}
-          {devices.status === 'ready' && devices.items.length === 0 && (
-            <p className="text-secondary mb-0">{t('account.notifications.devices.empty')}</p>
-          )}
-          {devices.status === 'ready' && devices.items.length > 0 && (
-            <ListGroup as="ul">
-              {devices.items.map((device) => (
-                <DeviceRow
-                  key={device.id}
-                  device={device}
-                  current={browser?.status === 'subscribed' && device.endpoint === browser.endpoint}
-                  busy={busy}
-                  onRemove={setPendingRemove}
-                />
-              ))}
-            </ListGroup>
+          {rows.length > 0 && (
+            <>
+              <div className="kk-notify-grid">
+                <div className="kk-notify-grid__head" aria-hidden="true">
+                  <span />
+                  {CHANNELS.map((column) => (
+                    <span key={column.channel} className="kk-notify-grid__channel-head small">
+                      {t(column.label)}
+                    </span>
+                  ))}
+                </div>
+                {admin && (
+                  <p className="kk-notify-grid__wide text-secondary small text-sm-end mb-0">
+                    {t('account.notifications.emailDefaultOffHint')}
+                  </p>
+                )}
+                {rows.map((row) => (
+                  <div key={row.kind} className="kk-notify-grid__row">
+                    <span className="kk-notify-grid__label">{t(row.label)}</span>
+                    {blocks.map(({ channel, label, block }) => {
+                      const pref = row.byChannel.get(channel)
+                      if (pref === undefined) {
+                        return <span key={channel} className="kk-notify-grid__cell" />
+                      }
+                      const reason = block === null ? undefined : t(block)
+                      return (
+                        <div key={channel} className="kk-notify-grid__cell" title={reason}>
+                          <Form.Check
+                            type="switch"
+                            id={`notification-${row.kind}-${channel}`}
+                            aria-label={t('account.notifications.switchLabel', {
+                              kind: t(row.label),
+                              channel: t(label),
+                            })}
+                            aria-describedby={
+                              block === null ? undefined : `notifications-unavailable-${channel}`
+                            }
+                            label={
+                              <span className="kk-notify-grid__channel-label" aria-hidden="true">
+                                {t(label)}
+                              </span>
+                            }
+                            checked={pref.enabled}
+                            disabled={saving || block !== null}
+                            onChange={(event) => {
+                              void toggle(row.kind, channel, event.target.checked)
+                            }}
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+              {blocks.map(({ channel, block }) =>
+                block === null || !rows.some((row) => row.byChannel.has(channel)) ? null : (
+                  <p
+                    key={channel}
+                    id={`notifications-unavailable-${channel}`}
+                    className="text-secondary small mt-3 mb-0"
+                  >
+                    <Icon name="info-circle" className="me-2" />
+                    {t(block)}
+                  </p>
+                ),
+              )}
+            </>
           )}
         </section>
       </Card.Body>

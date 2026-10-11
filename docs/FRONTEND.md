@@ -1926,9 +1926,10 @@ here.
   or hidden photo; the card above shows the 400. Tests: `MyPictureCard.test.tsx`,
   **plus `NotificationsCard`** (`components/account/`, right under the Jazyk section — both are about how
   Kukátko talks to this one person; the admin-only `SettingsPage` is about the instance, so it does not
-  belong there): push notifications in three parts, each **saying which scope it is**, because per-browser
-  versus per-account is what people reliably get wrong about web push. **„Tento prohlížeč"** is the master
-  control and says it applies to this browser only — every phone or computer is turned on separately: off
+  belong there): titled „Notifikace", in **two parts**, each **saying which scope it is**, because
+  per-browser versus per-account is what people reliably get wrong about web push. **„Push do zařízení"**
+  holds the per-browser master control and the device list. Its **„Tento prohlížeč"** applies to this
+  browser only — every phone or computer is turned on separately: off
   = a sentence + a button that asks for the permission (only from that click, and only when it is still
   `default`) and calls `subscribeToPush`; on = „V tomhle prohlížeči jsou oznámení zapnutá." + a button that
   calls `unsubscribeFromPush` (browser **and** server). A browser that holds a subscription the server **no
@@ -1938,15 +1939,7 @@ here.
   browser-level **block** is a warning saying to re-allow it in the browser's own site settings,
   **iOS outside the home-screen app** is told to install it (`isIosOutsideInstalledApp`), an unsupported
   browser and a page without a service worker get one sentence each — and the rest of the card stays,
-  because it still matters for the other devices. **„O čem mi dávat vědět"** is the per-kind checkboxes
-  of the **push** channel only (the e-mail entries the server also reports are not shown yet, but kept),
-  worded as an **account** setting that applies to every device; the `registration_pending` kind is offered
-  **only to an admin or a maintainer** (`isKindOffered`, `isAdmin`), and a kind the client has no words for
-  is left out rather than shown by its raw name. A toggle saves at once, optimistically, and puts the box
-  back with an alert on failure; the body (`withPreference(current, kind, channel, enabled)` in
-  `services/notifications.ts`) is the stored choices on every channel plus the changed (kind, channel) —
-  pairs still on their default are **not** posted, since `PUT` replaces the set and posting a default
-  would freeze it into a choice nobody made. **„Zařízení, která dostávají
+  because it still matters for the other devices. Its **„Zařízení, která dostávají
   oznámení"** lists `GET /push/subscriptions` with the user-agent **summarised** by `lib/userAgent.ts`
   (`describeUserAgent` → a browser name + a system key; the "na Androidu"/"ve Windows" phrase is a locale
   string per system, because Czech declines it) — „Chrome na Androidu", never the raw string — plus when it
@@ -1954,11 +1947,34 @@ here.
   prohlížeč". Every row is removable behind a `ConfirmModal`; removing **this** browser is the master
   control's turn-off (a server-only delete would leave the browser believing it is on), any other is
   `DELETE /push/subscriptions?endpoint=` (a 404 counts as done). **Push off instance-wide** (`isPushEnabled`
-  false, which includes an unreadable config) turns the whole card into one sentence, no controls, no
-  further requests. Texts in `account.notifications.*`; `NotificationsCard.test.tsx` covers on/off, the
+  false, which includes an unreadable config) turns this part into one sentence — no browser control, no
+  device list, no subscription request — but **no longer hides the second part**.
+  **„O čem mi dávat vědět"** is a **kind × channel grid** (`.kk-notify-grid` in `app.css`), worded as an
+  **account** setting: one row per kind the account can receive (`kindRows` in
+  `components/account/notificationKinds.ts` groups `GET /notifications/preferences` by kind, in the
+  server's order), one switch per channel in a „Push" and an „E-mail" column (`CHANNELS`), an empty cell
+  where the kind lacks the channel (`tagged` is push only). The `registration_pending` kind is offered
+  **only to an admin or a maintainer** (`isKindOffered`, `isAdmin`) — and they get the hint „E-mail o nové
+  registraci je ve výchozím stavu vypnutý." under the column headers; a kind or channel the client has no
+  words for is left out rather than shown by its raw name (its stored choices still ride along). A
+  channel the instance cannot deliver keeps its switches but **disables** them, with the reason as the
+  cell's `title` tooltip, as the switch's `aria-describedby` and as a line under the grid (a phone has no
+  hover): push off → „Push notifikace nejsou na této instanci zapnuté.", mail off (`useMailEnabled`) →
+  „E-maily nejsou na této instanci zapnuté.", an account without a real address (empty or a `.invalid`
+  placeholder, `isReachableEmail`) → „Doplň si e-mail v účtu.". On a phone (< 576px) the header row goes
+  and each row stacks — the label on its own line, the two switches under it naming their own channel — so
+  nothing scrolls sideways at 390px. Each switch's accessible name is „<kind> — <channel>". A toggle saves
+  at once, optimistically, and puts the switch back with an alert on failure; the body
+  (`withPreference(current, kind, channel, enabled)` in `services/notifications.ts`) is the stored choices
+  on every channel plus the changed (kind, channel) — pairs still on their default are **not** posted,
+  since `PUT` replaces the set and posting a default would freeze it into a choice nobody made. Texts in
+  `account.notifications.*`; `NotificationsCard.test.tsx` covers on/off, the
   already-granted path, the unlisted-subscription case, the browser and prompt blocks, iOS, the scope copy,
-  push off, saving and a failed save, the registration kind per role, the readable device names, the
-  current-browser badge, removal of another device and of this one, and Czech; `userAgent.test.ts` the
+  push off (device part replaced, push column disabled, e-mail column live), the kind × channel grid,
+  saving a push and an e-mail toggle and a failed save, mail off and a placeholder address disabling the
+  e-mail column with its reason, the registration kind per role, `kindRows` and `isReachableEmail`, the
+  readable device names, the current-browser badge, removal of another device and of this one, and Czech;
+  `userAgent.test.ts` the
   summariser,
   **plus `PasskeysCard`** (`components/account/`, directly under the password form — it is the same question,
   how this person gets in, answered better): the account's WebAuthn credentials. It renders **nothing at all**

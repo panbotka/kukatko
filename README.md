@@ -497,12 +497,15 @@ asks once whether to send notifications. "Not now" is remembered and never asked
 on later is a settings matter. On an iPhone the question waits for the app added to the home screen,
 the only place iOS delivers a push.
 The Notifications section of *My account* is that settings matter. It keeps the two things web push
-mixes up apart and says so: the switch for **this browser** (each phone and computer is turned on on
-its own; a browser that blocked Kukátko is told where to re-allow it rather than handed a button that
-cannot work), and **which messages you want** — a choice of your account that holds on every device.
-Below them, every device that receives your notifications, named the way you would name it ("Chrome
-na Androidu", with this browser marked) and removable. Administrators also get the switch for "a
-registration is waiting"; nobody else sees a setting for a message they could never get.
+mixes up apart and says so. First **push to your devices**: the switch for **this browser** (each
+phone and computer is turned on on its own; a browser that blocked Kukátko is told where to re-allow
+it rather than handed a button that cannot work), and every device that receives your notifications,
+named the way you would name it ("Chrome na Androidu", with this browser marked) and removable. Then
+**what to notify you about** — a choice of your account that holds on every device: one row per kind
+of message, with a Push and an E-mail switch for each channel that kind is sent through. A channel the
+instance cannot deliver stays visible but disabled with the reason (push or mail switched off, or no
+real address on your account). Administrators also get the row for "a registration is waiting" —
+push on, e-mail off until they choose it; nobody else sees a setting for a message they could never get.
 
 ### Built for small hardware that is sometimes offline
 

@@ -540,10 +540,11 @@
       "link": "Zobrazit moji aktivitu"
     },
     "notifications": {
-      "title": "Oznámení",
-      "intro": "Kukátko ti může poslat oznámení do telefonu nebo počítače — třeba když tě někdo označí na fotce.",
+      "title": "Notifikace",
+      "intro": "Kukátko ti může dát vědět do telefonu, do počítače nebo e-mailem — třeba když tě někdo označí na fotce.",
       "loading": "Načítám nastavení oznámení…",
-      "instanceOff": "Oznámení jsou na téhle instanci Kukátka vypnutá, takže tu není co nastavit.",
+      "instanceOff": "Push notifikace nejsou na této instanci zapnuté, takže je do zařízení dostávat nejde. E-maily níž platí dál.",
+      "pushTitle": "Push do zařízení",
       "browser": {
         "title": "Tento prohlížeč",
         "scope": "Tenhle přepínač platí jen pro prohlížeč, ve kterém jsi právě teď. Na každém telefonu nebo počítači, kde chceš oznámení dostávat, je musíš zapnout zvlášť.",
@@ -558,7 +559,18 @@
         "noWorker": "Oznámení teď na téhle stránce nejde nastavit. Načti stránku znovu a zkus to ještě jednou."
       },
       "kindsTitle": "O čem mi dávat vědět",
-      "kindsScope": "Tyhle volby patří k tvému účtu: platí na všech zařízeních, kde máš oznámení zapnutá, nejen na tomhle.",
+      "kindsScope": "Tyhle volby patří k tvému účtu: push platí na všech zařízeních, kde máš oznámení zapnutá, e-mail chodí na adresu z tvého účtu.",
+      "channels": {
+        "push": "Push",
+        "email": "E-mail"
+      },
+      "switchLabel": "{{kind}} — {{channel}}",
+      "emailDefaultOffHint": "E-mail o nové registraci je ve výchozím stavu vypnutý.",
+      "unavailable": {
+        "push": "Push notifikace nejsou na této instanci zapnuté.",
+        "emailOff": "E-maily nejsou na této instanci zapnuté.",
+        "emailMissing": "Doplň si e-mail v účtu."
+      },
       "kinds": {
         "tagged": "Když mě někdo označí na fotce",
         "registration_pending": "Když na schválení čeká nová registrace"

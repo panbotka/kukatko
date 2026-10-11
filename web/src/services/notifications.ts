@@ -44,8 +44,11 @@ export type NotificationKind = string
  */
 export type NotificationChannel = string
 
-/** The push channel — the only one the current settings card offers. */
+/** The push channel: a notification delivered to the account's registered browsers. */
 export const PUSH_CHANNEL: NotificationChannel = 'push'
+
+/** The e-mail channel: a notification mailed to the account's address. */
+export const EMAIL_CHANNEL: NotificationChannel = 'email'
 
 /** One notification as its owner reads it (`notificationView`). */
 export interface NotificationRecord {

@@ -84,8 +84,9 @@ function errorKeyFor(error: unknown): AccountErrorKey {
  * that has passkeys configured.
  *
  * Beside the language sits {@link NotificationsCard} — this browser's push
- * switch, which messages the account wants (an account-wide choice) and the
- * devices registered for them. It lives here rather than on the admin-only
+ * switch and the devices registered for pushes, then which messages the
+ * account wants through which channel (push, e-mail; an account-wide choice).
+ * It lives here rather than on the admin-only
  * {@link SettingsPage}, which is about the instance, not about one person.
  *
  * The last section is {@link ApiTokensCard} — the personal API tokens a script
