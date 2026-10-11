@@ -43,7 +43,10 @@ export interface AlbumTileProps {
  *
  * The title is the album's display name: a machine-made English one (`January
  * 2026`, a country) reads in Czech on a Czech UI, everything else verbatim. It
- * is a rendering decision only — the stored title is never touched.
+ * is a rendering decision only — the stored title is never touched. *
+ * The card fills its grid cell (a grid row stretches every cell to the tallest
+ * one) as a flex column with the years and the count pinned to its bottom, so a
+ * row's meta lines align however many lines its titles and descriptions took.
  */
 export function AlbumTile({ album, cover }: AlbumTileProps) {
   const { t, i18n } = useTranslation()
@@ -54,12 +57,12 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
   return (
     <Link
       to={`/albums/${album.uid}`}
-      className="kk-tile d-block text-decoration-none text-body"
+      className="kk-tile d-flex flex-column h-100 text-decoration-none text-body"
       aria-label={title}
       title={title}
     >
       <div
-        className="kk-tile__media mb-1 d-flex align-items-center justify-content-center"
+        className="kk-tile__media mb-1 d-flex flex-shrink-0 align-items-center justify-content-center"
         style={{ aspectRatio: '1 / 1' }}
       >
         {drawn.kind === 'single' && (
@@ -98,17 +101,28 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
           </span>
         )}
       </div>
-      <div className="fw-semibold text-truncate">{title}</div>
+      {/* Up to two lines: one truncated line cut most of a long name off, and
+          the pinned meta block below absorbs the difference either way. */}
+      <div className="fw-semibold kk-prose-clamp text-break">{title}</div>
       {/* Two lines of what the album is, where a title alone often says nothing
           ("Rodáci 2016"). Clamped, because a card grid whose rows are different
           heights reads as broken — the detail page shows all of it. A
           machine-made album has no description and loses no room to this. */}
       {album.description !== '' && (
-        <div className="kk-text-caption kk-prose-clamp text-secondary">{album.description}</div>
+        <div
+          className="kk-text-caption kk-prose-clamp text-break text-secondary"
+          title={album.description}
+        >
+          {album.description}
+        </div>
       )}
-      {range !== '' && <div className="kk-text-caption text-secondary text-nowrap">{range}</div>}
-      <div className="kk-text-caption text-secondary">
-        {t('albums.photoCount', { count: album.photo_count })}
+      {/* Pinned to the bottom of the card: the free space a shorter title or
+          description leaves goes above it, so a row's meta lines align. */}
+      <div className="kk-album-tile__meta mt-auto">
+        {range !== '' && <div className="kk-text-caption text-secondary text-nowrap">{range}</div>}
+        <div className="kk-text-caption text-secondary">
+          {t('albums.photoCount', { count: album.photo_count })}
+        </div>
       </div>
     </Link>
   )

@@ -1550,10 +1550,14 @@ here.
   the tile **shows no date** — the only one it carries is
   in the `alt` text, and even there an **estimated** date is marked (`cca 1950`), so it can't be read as certain;
   the grid/timeline sort doesn't change, it is still `taken_at`,
-  `components/organize/` = `AlbumTile` (an album card: the cover / name / **description**
-  (`.kk-prose-clamp`, two lines then an ellipsis — the detail page shows all of it; a machine-made
-  album has none and loses no room to it) / **year range**
-  via `formatCaptureRange` (only when the album has dated photos) / count → `/albums/{uid}`;
+  `components/organize/` = `AlbumTile` (an album card: the cover / name (`.kk-prose-clamp`, up to
+  two lines) / **description**
+  (`.kk-prose-clamp`, two lines then an ellipsis, the full text in its `title` — the detail page shows
+  all of it; a machine-made album has none and loses no room to it) / **year range**
+  via `formatCaptureRange` (only when the album has dated photos) / count → `/albums/{uid}`; the card
+  is a `h-100` flex column filling its grid cell (a row stretches every cell to the tallest), and the
+  range + count sit in `.kk-album-tile__meta` pinned to the bottom with `mt-auto`, so a row's meta
+  lines align however many lines its titles and descriptions took;
   the cover is the `cover` prop — what `lib/albumCovers` planned for the whole grid — and without it
   the tile plans **for itself alone** (right for a tile rendered on its own, and why a caller rendering
   many must pass it): a `collage` draws four `tile_224` cells into `.kk-tile__collage` (a 2 × 2 grid

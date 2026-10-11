@@ -143,10 +143,51 @@ describe('AlbumTile description', () => {
     // Clamped to two lines: a card grid whose rows are different heights reads
     // as broken, and the detail page shows the whole text.
     expect(note).toHaveClass('kk-prose-clamp')
+    // The clamp hides the rest, so the full text is one hover away.
+    expect(note).toHaveAttribute('title', 'Sjezd rodáků, dva dny, 780 let obce.')
   })
 
   it('spends no line on an album that has no description', () => {
     const { container } = renderTile(album())
-    expect(container.querySelector('.kk-prose-clamp')).toBeNull()
+    expect(container.querySelector('.kk-text-caption.kk-prose-clamp')).toBeNull()
+  })
+})
+
+describe('AlbumTile layout', () => {
+  it('clamps the title at two lines instead of cutting it to one', () => {
+    renderTile(album({ title: 'Sraz rodáků a přátel obce Veselice na návsi u kapličky' }))
+    const title = screen.getByText('Sraz rodáků a přátel obce Veselice na návsi u kapličky')
+    expect(title).toHaveClass('kk-prose-clamp')
+    expect(title).not.toHaveClass('text-truncate')
+  })
+
+  it('fills its grid cell as a flex column with the meta pinned to the bottom', () => {
+    const { container } = renderTile(
+      album({
+        cover_uid: 'ph1',
+        description: 'Sjezd rodáků.',
+        taken_from: '2016-06-01T10:00:00Z',
+        taken_to: '2016-06-02T10:00:00Z',
+      }),
+    )
+    const card = screen.getByRole('link', { name: 'Pouť 2024' })
+    // A grid row stretches every cell to the tallest; the card follows it.
+    expect(card).toHaveClass('d-flex', 'flex-column', 'h-100')
+    const meta = container.querySelector('.kk-album-tile__meta')
+    expect(meta).not.toBeNull()
+    // `mt-auto` hands the spare height to the space above the meta block, so
+    // the years and the count of a row's cards share one baseline.
+    expect(meta).toHaveClass('mt-auto')
+    expect(meta).toBe(card.lastElementChild)
+    expect(meta).toHaveTextContent('2016')
+    expect(meta).toHaveTextContent('3 photos')
+  })
+
+  it('keeps the private badge and the empty state inside the cover box', () => {
+    const { container } = renderTile(album({ photo_count: 0, private: true }))
+    const media = container.querySelector('.kk-tile__media')
+    expect(media).toContainElement(screen.getByTestId('empty-state'))
+    expect(media).toHaveTextContent('Private')
+    expect(container.querySelector('.kk-album-tile__meta')).toHaveTextContent('0 photos')
   })
 })
