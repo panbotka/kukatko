@@ -373,6 +373,30 @@
   }
 }
 
+/* Below a useful width the title goes altogether rather than truncating to a
+   stub. On a tablet with the info panel open (1024 px wide, the drawer taking
+   26rem of it) the toolbar keeps its fixed width and the heading is left a few
+   pixels, so the date's own ellipsis rendered "1…" — a glyph that names nothing.
+   8.75rem (140 px) is the floor: a short date with its year still fits at the
+   desktop size. Under it the line is taken off screen only — the h1 stays in the
+   accessibility tree, and the same date and place are repeated in the open panel.
+   Wide screens only: a phone's heading is narrower by design (96 px for an
+   editor at 393 px) and its stepped-down type is sized to fit a date into
+   exactly that, so the phone keeps the rules above. */
+@media (min-width: 768px) {
+  @container kk-viewer-heading (max-width: 8.75rem) {
+    .kk-viewer__title {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+}
+
 /* The "held back from the library" badges under the title. They wrap rather than
    push the title's ellipsis around, and stay small enough not to compete with
    the photograph — the point is that the state is READABLE somewhere other than

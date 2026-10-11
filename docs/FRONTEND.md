@@ -3043,6 +3043,14 @@ here.
   is untouched: at the 768 px breakpoint the heading still measures ~260 px, well clear of both cuts.
   Guarded by `styles/viewerTitle.test.ts` (the declarations, since jsdom evaluates no container query)
   and `PhotoDetailPage.test.tsx` (the shape: the time is separable and what remains still says 2026).
+  **Below 8.75 rem on a wide screen the title goes altogether** (2026-10-11, UI/UX finding #12): at
+  1024 px with the info panel open the drawer takes 26 rem, the toolbar keeps its 517 px, and the
+  heading was left a 7 px content box — the date's ellipsis rendered `1…`. Under that floor
+  (`@media (min-width: 768px)` → `@container kk-viewer-heading (max-width: 8.75rem)`) the h1 is moved
+  off screen the visually-hidden way (absolute, 1 px, `clip-path: inset(50%)` — never `display: none`,
+  so it still names the page for a screen reader); the back button stays and the same date and place
+  sit in the open panel. Phones are excluded on purpose — their 96 px heading is sized to hold a date.
+  Measured at 1440 px (panel open 423 px, closed 839 px) and 390 px (210 px): title unchanged there.
   **The way out** is `.kk-viewer__back` (a circle at top left, `photo.back`; on a touch device it fades
   with the rest of the chrome and the waking tap brings it back) — **a back arrow, not a ✕** (N6/N20): the drawer carries its own ✕ and on a phone
   the two sat side by side as identical round crosses, so a tap meant for the panel closed the whole

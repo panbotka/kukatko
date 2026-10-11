@@ -93,6 +93,42 @@ describe('viewer header title at phone width', () => {
     expect(tightest).toContain('.kk-viewer__title-date + .kk-viewer__title-muted')
   })
 
+  it('takes the title off screen on a wide bar that leaves it too little room', () => {
+    // A tablet with the info panel open left the heading a few pixels, and the
+    // date's own ellipsis rendered "1…". Below 8.75rem (140 px) the title goes
+    // instead of truncating — wide screens only, as the phone's 96 px heading is
+    // sized to hold a date.
+    const wide = ruleBody(
+      css,
+      /@media \(min-width: 768px\)\s*(?=\{)/,
+      /@container kk-viewer-heading \(max-width: 8\.75rem\)/,
+    )
+    expect(wide).toBeDefined()
+    const collapsed = ruleBody(
+      wide ?? '',
+      /@container kk-viewer-heading \(max-width: 8\.75rem\)\s*(?=\{)/,
+    )
+    const title = declarations(ruleBody(collapsed ?? '', /\.kk-viewer__title\s*(?=\{)/) ?? '')
+    // Off screen, not `display: none`: the h1 still names the page for a screen
+    // reader, and nothing of it is painted.
+    expect(title.get('display')).toBeUndefined()
+    expect(title.get('position')).toBe('absolute')
+    expect(title.get('width')).toBe('1px')
+    expect(title.get('height')).toBe('1px')
+    expect(title.get('overflow')).toBe('hidden')
+    expect(title.get('clip-path')).toBe('inset(50%)')
+  })
+
+  it('never collapses the title on a phone', () => {
+    // Every container rule that hides the whole title sits inside the wide-screen
+    // media query; the phone's own narrow heading must keep showing its date.
+    const unscoped = css.replace(
+      /@media \(min-width: 768px\)\s*\{\s*@container kk-viewer-heading \(max-width: 8\.75rem\)/,
+      '',
+    )
+    expect(unscoped).not.toMatch(/@container kk-viewer-heading \(max-width: 8\.75rem\)/)
+  })
+
   it('steps the title down a size on a phone, which is what makes the date fit', () => {
     const phone = ruleBody(
       css,
