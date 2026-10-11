@@ -2301,7 +2301,17 @@ here.
   uid. Each narrows whatever state filter is already chosen rather than replacing it, so "mine, still
   open" is one click from "everything open" —
   and a search box over the question; all of it round-trips through the URL (`useUrlState`, keys
-  `state`/`answered`/`waiting`/`mine`/`q`) so Back restores the filter. Every signed-in role may read it — a viewer
+  `state`/`answered`/`waiting`/`mine`/`q`) so Back restores the filter. **Below `md` the chips are one
+  sideways-scrolling strip** (since 2026-10-11; left to wrap they took four rows, ~230 px at 390 px, before
+  the first task): `.kk-task-filters__chips` (`role="group"`, „Filtr úkolů") is `nowrap` + `overflow-x:
+  auto` with no scrollbar and a trailing mask fade as the "there is more" hint, the search gets its own
+  full-width row beneath it (`.kk-task-filters` turns from a column into a wrapping row at `md`, where the
+  layout is the old one: chips wrap, search ranged right). Every chip carries `aria-pressed`, and on
+  arrival — once more when the counts land and widen the chips, never on a click — `revealPressedChip`
+  (`lib/chipStrip`) centres the first pressed chip (the state chip) in an overflowing strip, so
+  `?state=rejected` does not open with its chip off-screen; a strip that fits is left alone. Tabbing
+  along the strip scrolls it like any overflow box. CSS shape guarded by `styles/taskFilters.test.ts`.
+  Every signed-in role may read it — a viewer
   who was
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,

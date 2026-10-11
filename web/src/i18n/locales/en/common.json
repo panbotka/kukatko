@@ -1492,6 +1492,7 @@
       "answered": "Answered",
       "waiting": "On me",
       "mine": "Mine",
+      "label": "Filter tasks",
       "search": "Search tasks",
       "searchPlaceholder": "Search the questions…"
     },

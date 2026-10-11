@@ -3193,6 +3193,70 @@ body {
 }
 
 /*
+ * The filter row of the work queue (`pages/TasksPage.tsx`): ten chips and the
+ * question search. Left to wrap on a phone they took four rows — ~230 px at
+ * 390 px wide — before the first task, so there they are one strip that scrolls
+ * sideways instead, and the search gets the full-width row under it.
+ *
+ * The strip says it scrolls without a scrollbar: its trailing edge fades out
+ * (a mask, so it needs no colour of its own — only the gradient's alpha
+ * counts), and the end padding the fade covers lets the last chip scroll clear
+ * of it. The chip that is on is centred on arrival (`revealPressedChip`), and
+ * tabbing along the strip scrolls it like any overflow box. The block and start
+ * padding, taken back by the negative margins, is room for the focus ring,
+ * which an overflow box would otherwise clip.
+ *
+ * From `md` up nothing scrolls: the chips wrap as they always did and the search
+ * is ranged right on the same line.
+ */
+.kk-task-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kk-space-2);
+}
+
+.kk-task-filters__chips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--kk-space-2);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  margin: -0.25rem 0 -0.25rem -0.25rem;
+  padding: 0.25rem 2rem 0.25rem 0.25rem;
+  mask-image: linear-gradient(to right, var(--kk-palette-ink) calc(100% - 2rem), transparent);
+}
+
+.kk-task-filters__chips::-webkit-scrollbar {
+  display: none;
+}
+
+.kk-task-filters__chips > .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .kk-task-filters {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .kk-task-filters__chips {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    margin: 0;
+    padding: 0;
+    mask-image: none;
+  }
+
+  .kk-task-filters__search {
+    margin-inline-start: auto;
+  }
+}
+
+/*
  * One question in the queue (`pages/TasksPage.tsx`). The page is read by
  * scanning it for what to do next, so a row is a surface with a coloured edge
  * rather than a line of text: the stripe down its left side is the task's

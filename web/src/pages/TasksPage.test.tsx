@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -448,5 +448,56 @@ describe('the state is the colour of the row', () => {
 
     // It sits next to a state badge, so it must not read as another state.
     expect(await screen.findByText('New answer')).toHaveClass('kk-task-answered')
+  })
+})
+
+describe('the chip strip', () => {
+  it('holds every chip in one strip and marks the ones that are on', async () => {
+    renderPage('/tasks?state=rejected&mine=1')
+    await screen.findByText(/3 photos/)
+
+    // The strip is what `.kk-task-filters__chips` turns into a sideways scroller
+    // below `md` (guarded in styles/taskFilters.test.ts).
+    const strip = screen.getByRole('group', { name: 'Filter tasks' })
+    expect(strip).toHaveClass('kk-task-filters__chips')
+    expect(within(strip).getAllByRole('button')).toHaveLength(10)
+
+    expect(within(strip).getByRole('button', { name: 'Rejected' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(strip).getByRole('button', { name: /^Mine$/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(strip).getByRole('button', { name: 'Open' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(within(strip).getByRole('button', { name: 'Answered' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    // The search is not in the strip: it gets its own row under it.
+    expect(within(strip).queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Search tasks' })).toBeInTheDocument()
+  })
+
+  it('moves the pressed state with the chip that was picked', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByText(/3 photos/)
+
+    const strip = screen.getByRole('group', { name: 'Filter tasks' })
+    await user.click(within(strip).getByRole('button', { name: 'Done' }))
+
+    expect(within(strip).getByRole('button', { name: 'Done' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(strip).getByRole('button', { name: 'Open' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
   })
 })

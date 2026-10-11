@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Form, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -11,6 +11,7 @@ import { TaskStateBadge } from '../components/tasks/TaskStateBadge'
 import { useAuth } from '../auth/AuthContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { revealPressedChip } from '../lib/chipStrip'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useUrlState } from '../lib/urlState'
 import { thumbUrl } from '../services/photos'
@@ -105,6 +106,19 @@ export function TasksPage() {
     refreshSummary()
   }, [refreshSummary])
 
+  // On a phone the chips scroll sideways, and the one that is on may sit past
+  // the edge — "Zamítnuto" is the seventh. Bring it into view when the page
+  // arrives, and once more when the counts land and every chip grows by its
+  // number. Only then: scrolling on every click would yank the strip back to
+  // the state chip whenever "Moje" is toggled.
+  const stripRef = useRef<HTMLDivElement>(null)
+  const counted = summary !== null
+  useEffect(() => {
+    if (stripRef.current !== null) {
+      revealPressedChip(stripRef.current)
+    }
+  }, [counted])
+
   const params = useMemo<TaskListParams>(() => {
     const states: TaskState[] | undefined =
       view.state === '' || view.state === 'all' ? undefined : [view.state as TaskState]
@@ -189,59 +203,79 @@ export function TasksPage() {
         )}
       </div>
 
-      <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        {FILTER_CHOICES.map((choice) => (
+      {/* On a phone the chips are one sideways-scrolling strip and the search a
+          row of its own beneath it; from `md` up they wrap as one row with the
+          search ranged right (`.kk-task-filters` in `styles/app.css`). Every
+          chip states whether it is on through `aria-pressed`. */}
+      <div className="kk-task-filters mb-3">
+        <div
+          ref={stripRef}
+          className="kk-task-filters__chips"
+          role="group"
+          aria-label={t('tasks.filters.label')}
+        >
+          {FILTER_CHOICES.map((choice) => (
+            <Button
+              key={choice === '' ? 'open' : choice}
+              size="sm"
+              variant={view.state === choice ? 'primary' : 'outline-secondary'}
+              aria-pressed={view.state === choice}
+              onClick={() => {
+                setView({ state: choice })
+              }}
+            >
+              {choice === '' && chip(t('tasks.filters.open'), summary?.open)}
+              {choice === 'all' && chip(t('tasks.filters.all'), totalOf(summary))}
+              {choice !== '' &&
+                choice !== 'all' &&
+                chip(t(`tasks.state.${choice}`), summary?.by_state[choice])}
+            </Button>
+          ))}
           <Button
-            key={choice === '' ? 'open' : choice}
             size="sm"
-            variant={view.state === choice ? 'primary' : 'outline-secondary'}
+            variant={view.answered === '1' ? 'primary' : 'outline-secondary'}
+            aria-pressed={view.answered === '1'}
             onClick={() => {
-              setView({ state: choice })
+              setView({ answered: view.answered === '1' ? '' : '1' })
             }}
           >
-            {choice === '' && chip(t('tasks.filters.open'), summary?.open)}
-            {choice === 'all' && chip(t('tasks.filters.all'), totalOf(summary))}
-            {choice !== '' &&
-              choice !== 'all' &&
-              chip(t(`tasks.state.${choice}`), summary?.by_state[choice])}
+            {chip(t('tasks.filters.answered'), summary?.answered)}
           </Button>
-        ))}
-        <Button
-          size="sm"
-          variant={view.answered === '1' ? 'primary' : 'outline-secondary'}
-          onClick={() => {
-            setView({ answered: view.answered === '1' ? '' : '1' })
-          }}
-        >
-          {chip(t('tasks.filters.answered'), summary?.answered)}
-        </Button>
-        {/* "Whose move is it?" — the tasks that are open, have the reader on
+          {/* "Whose move is it?" — the tasks that are open, have the reader on
             them, and where somebody else acted last. The server evaluates it
             per caller (`waiting=1`), so the page never has to reason about who
             wrote what. */}
-        <Button
-          size="sm"
-          variant={view.waiting === '1' ? 'primary' : 'outline-secondary'}
-          onClick={() => {
-            setView({ waiting: view.waiting === '1' ? '' : '1' })
-          }}
-        >
-          <Icon name="hourglass-split" /> {chip(t('tasks.filters.waiting'), summary?.waiting_on_me)}
-        </Button>
-        {/* "What am I on?" — the questions the reader opened, answered, moved
+          <Button
+            size="sm"
+            variant={view.waiting === '1' ? 'primary' : 'outline-secondary'}
+            aria-pressed={view.waiting === '1'}
+            onClick={() => {
+              setView({ waiting: view.waiting === '1' ? '' : '1' })
+            }}
+          >
+            <Icon name="hourglass-split" />{' '}
+            {chip(t('tasks.filters.waiting'), summary?.waiting_on_me)}
+          </Button>
+          {/* "What am I on?" — the questions the reader opened, answered, moved
             along or was put on. It narrows whatever state filter is already
             chosen rather than replacing it, so "mine, still open" is one click
             from "everything open". */}
-        <Button
-          size="sm"
-          variant={view.mine === '1' ? 'primary' : 'outline-secondary'}
-          onClick={() => {
-            setView({ mine: view.mine === '1' ? '' : '1' })
-          }}
+          <Button
+            size="sm"
+            variant={view.mine === '1' ? 'primary' : 'outline-secondary'}
+            aria-pressed={view.mine === '1'}
+            onClick={() => {
+              setView({ mine: view.mine === '1' ? '' : '1' })
+            }}
+          >
+            <Icon name="person-circle" /> {t('tasks.filters.mine')}
+          </Button>
+        </div>
+        <Form
+          className="kk-task-filters__search d-flex gap-2"
+          onSubmit={submitSearch}
+          role="search"
         >
-          <Icon name="person-circle" /> {t('tasks.filters.mine')}
-        </Button>
-        <Form className="ms-auto d-flex gap-2" onSubmit={submitSearch} role="search">
           <Form.Control
             size="sm"
             type="search"
