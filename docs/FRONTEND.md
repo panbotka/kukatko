@@ -335,9 +335,15 @@ here.
   however many albums are featured the strip costs one row and the page never overflows on a phone; the list
   pads itself (and hands the padding back with a negative margin) because a `.kk-tile` lifts and casts a
   shadow that an `overflow-x` box would otherwise clip. Each card is a `.kk-tile` link to `/albums/{uid}`: a
-  4 : 3 `.kk-tile__media` with the cover's `BlurPlaceholder` (`cover_blurhash`) under a `FadeInImage` of the
-  server-minted `thumb_url` (falling back to `thumbUrl(cover_uid, GRID_THUMB_SIZE)`), the shared `EmptyState`
-  for an album with nothing to show, then the display title (`albumDisplayTitle`) and `albums.photoCount`.
+  4 : 3 `.kk-tile__media` drawing **the same cover as the album's tile on /albums** — `albumCover(album)` over
+  the payload's `cover_uids` rendered by the shared `AlbumCoverMedia`: a 2 × 2 collage of `tile_224` cells, a
+  single photo (a hand-picked cover, or an album with fewer than four photos) or the `EmptyState`. A single
+  photo that is the payload's `cover_uid` uses the server-minted `thumb_url` and paints its `BlurPlaceholder`
+  (`cover_blurhash`); then the display title (`albumDisplayTitle`) and `albums.photoCount`. The album is
+  planned **on its own** (no `taken` set): the /albums grid additionally steers a tile away from photos its
+  neighbours took, so a tile there can differ from its card here when an earlier album shares its newest
+  photos — the plain `albumCover(album)` is identical. A photo hidden from the library is never offered to
+  the strip (see `GET /albums/featured`).
   Loading, a failure and an empty list all render **nothing** — an empty or broken promotion is noise. Colours
   only through the tile tokens. Tests: `FeaturedAlbumsStrip.test.tsx`, plus the show/hide rule in
   `LibraryPage.test.tsx`),
@@ -1619,7 +1625,10 @@ here.
   lines align however many lines its titles and descriptions took;
   the cover is the `cover` prop — what `lib/albumCovers` planned for the whole grid — and without it
   the tile plans **for itself alone** (right for a tile rendered on its own, and why a caller rendering
-  many must pass it): a `collage` draws four `tile_224` cells into `.kk-tile__collage` (a 2 × 2 grid
+  many must pass it); the picture itself is **`AlbumCoverMedia`** (`components/organize/`, also drawn by the
+  homepage's `FeaturedAlbumsStrip`, so the two cannot drift apart — it owns `COLLAGE_THUMB_SIZE`, takes an
+  optional server `singleSrc`/`singleBlurhash` for a single cover, and renders only the picture: the caller
+  owns the well and its badges): a `collage` draws four `tile_224` cells into `.kk-tile__collage` (a 2 × 2 grid
   filling the same square well, so the geometry never differs from a single cover) inside an
   `aria-hidden` wrapper with empty `alt`s — the link is already named after the album, and four
   identical alt texts would only make the page longer to listen to —, a `single` draws one `tile_500`
@@ -6720,7 +6729,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   does: a library made only of month folders opens on **Podle měsíce** instead of on an empty default;
   `albumCovers.ts` = what each album tile draws, so a grid of cards actually differs card to card: the
   `AlbumCover` union (`none` · `single{photoUid}` · `collage{photoUids}`) + `ALBUM_COLLAGE_TILES` (4) +
-  `coverPhotoUids(cover)` + the pure `albumCover(album, taken?)` and `planAlbumCovers(albums)`.
+  `coverPhotoUids(cover)` + the pure `albumCover(album, taken?)` (over `AlbumCoverSource`, the three cover
+  fields `AlbumSummary` and `FeaturedAlbum` share) and `planAlbumCovers(albums)`.
   The cover used to be the album's newest photo, and overlapping albums share exactly that — four albums
   holding one scanned title page all showed it. So an album with at least four candidates
   (`cover_uids`, the backend's `organize.CoverCandidates` newest photos) becomes a **2 × 2 collage**,

@@ -19,13 +19,15 @@ var ErrNotFeaturable = errors.New("organize: only a hand-made album can be featu
 
 // FeaturedAlbum is one album on the homepage's "Doporučujeme" strip: the album
 // (whose FeaturedUntil is always set here, since only active features are
-// listed), when it was featured, how many photos it holds and the photo that
-// stands for it.
+// listed), when it was featured, how many photos it holds and what to draw for
+// it.
 //
-// The cover is resolved exactly as AlbumCovers resolves it — the hand-picked one,
-// else the newest visible member — and carries the photo's file hash and
-// BlurHash so the caller can mint a thumbnail URL and paint a placeholder
-// without fetching the photo.
+// What to draw is exactly what the album index offers for the same album
+// (AlbumSummary): the cover candidates in the index's order, from which the
+// frontend draws the same 2 × 2 collage as the album's tile, and the single
+// cover — the hand-picked one, else the first candidate — with the photo's
+// file hash and BlurHash so the caller can mint a thumbnail URL and paint a
+// placeholder without fetching the photo.
 type FeaturedAlbum struct {
 	Album
 	// FeaturedAt is when the running feature began. Extending a feature keeps it;
@@ -37,6 +39,11 @@ type FeaturedAlbum struct {
 	// CoverUID is the photo standing for the album, nil for an album with
 	// nothing to show.
 	CoverUID *string `json:"cover_uid,omitempty"`
+	// CoverUIDs are the album's first CoverCandidates visible photos, in the
+	// album index's order (coverCandidateOrder) — the same list
+	// AlbumSummary.CoverUIDs carries, and like it never holding a hand-picked
+	// cover. Empty for an album with no visible photo.
+	CoverUIDs []string `json:"cover_uids,omitempty"`
 	// CoverFileHash is the cover's SHA256, the thumbnail cache key. It never
 	// leaves the server: the API turns it into a thumbnail URL.
 	CoverFileHash string `json:"-"`
@@ -151,47 +158,47 @@ func (s *Store) UnfeatureAlbumAudited(ctx context.Context, uid string, entry aud
 }
 
 // listFeaturedAlbumsSQL reads every album featured right now, newest feature
-// first, with its photo count and its cover.
+// first, with its photo count, its cover candidates and its cover.
 //
 // The featured CTE is the whole selection — active, hand-made, and private only
 // when $1 allows it — and everything after it is restricted to that handful of
-// albums up front: the count and the derived cover each scan the membership of
-// the featured albums only, never the library. The derived cover is the same
-// DISTINCT ON albumCoversSQL uses (never a correlated ORDER BY … LIMIT 1, see
-// docs/PERF.md), and a hand-picked cover wins over it. The count agrees with the
-// album index's badge: live photos, one per stack.
+// albums up front: one aggregation over the membership of the featured albums
+// only, never the library, yields both the count and the candidates. The count
+// agrees with the album index's badge (live photos, one per stack). The
+// candidates are the album index's own — the same array_agg in the same
+// coverCandidateOrder, cut to $2 — narrowed by coverVisible, so a photo hidden
+// from the library never headlines the homepage. The derived cover is the first
+// candidate (an aggregate, never a correlated ORDER BY … LIMIT 1, see
+// docs/PERF.md), and a hand-picked cover wins over it.
 const listFeaturedAlbumsSQL = `
 WITH featured AS (
     SELECT uid FROM albums
     WHERE featured_until > now() AND type = 'album' AND ($1::boolean OR NOT private)
 ),
-counts AS (
-    SELECT ap.album_uid, COUNT(*) AS photo_count
+members AS (
+    SELECT ap.album_uid,
+           COUNT(*) AS photo_count,
+           (array_agg(p.uid ORDER BY ` + coverCandidateOrder + `)
+                FILTER (WHERE ` + coverVisible + `))[1:$2::int] AS cover_uids
     FROM album_photos ap
     JOIN photos p ON p.uid = ap.photo_uid
     WHERE ap.album_uid IN (SELECT uid FROM featured)
       AND p.archived_at IS NULL AND (p.stack_uid IS NULL OR p.stack_primary)
     GROUP BY ap.album_uid
-),
-derived AS (
-    SELECT DISTINCT ON (ap.album_uid) ap.album_uid, p.uid AS photo_uid, p.file_hash, p.blurhash
-    FROM album_photos ap
-    JOIN photos p ON p.uid = ap.photo_uid
-    WHERE ap.album_uid IN (SELECT uid FROM featured) AND ` + coverVisible + `
-    ORDER BY ap.album_uid, ` + coverOrder + `
 )
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        a.private, a.created_by, a.created_at, a.updated_at, a.featured_until,
        COALESCE(a.featured_at, a.updated_at),
-       COALESCE(c.photo_count, 0),
-       COALESCE(picked.uid, d.photo_uid),
-       COALESCE(picked.file_hash, d.file_hash),
-       CASE WHEN picked.uid IS NOT NULL THEN picked.blurhash ELSE d.blurhash END
+       COALESCE(m.photo_count, 0),
+       COALESCE(m.cover_uids, '{}'),
+       COALESCE(picked.uid, derived.uid),
+       COALESCE(picked.file_hash, derived.file_hash),
+       CASE WHEN picked.uid IS NOT NULL THEN picked.blurhash ELSE derived.blurhash END
 FROM albums a
 JOIN featured f ON f.uid = a.uid
-LEFT JOIN counts c ON c.album_uid = a.uid
+LEFT JOIN members m ON m.album_uid = a.uid
 LEFT JOIN photos picked ON picked.uid = a.cover_photo_uid
-LEFT JOIN derived d ON d.album_uid = a.uid
+LEFT JOIN photos derived ON derived.uid = m.cover_uids[1]
 ORDER BY a.featured_at DESC NULLS LAST, a.uid`
 
 // ListFeaturedAlbums returns the albums featured on the homepage right now,
@@ -200,7 +207,7 @@ ORDER BY a.featured_at DESC NULLS LAST, a.uid`
 // included only when includePrivate is true (the caller decides who may see
 // them). Nothing featured yields an empty slice and a nil error.
 func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]FeaturedAlbum, error) {
-	rows, err := s.pool.Query(ctx, listFeaturedAlbumsSQL, includePrivate)
+	rows, err := s.pool.Query(ctx, listFeaturedAlbumsSQL, includePrivate, CoverCandidates)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing featured albums: %w", err)
 	}
@@ -213,7 +220,7 @@ func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]
 		if err := rows.Scan(
 			&fa.UID, &fa.Slug, &fa.Title, &fa.Description, &fa.Type, &fa.CoverPhotoUID,
 			&fa.Private, &fa.CreatedBy, &fa.CreatedAt, &fa.UpdatedAt, &fa.FeaturedUntil, &fa.FeaturedAt,
-			&fa.PhotoCount, &fa.CoverUID, &fileHash, &fa.CoverBlurhash,
+			&fa.PhotoCount, &fa.CoverUIDs, &fa.CoverUID, &fileHash, &fa.CoverBlurhash,
 		); err != nil {
 			return nil, fmt.Errorf("organize: scanning featured album: %w", err)
 		}

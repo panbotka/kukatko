@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +185,7 @@ func TestFeaturedList_ok(t *testing.T) {
 		{
 			Album:      organize.Album{UID: "al_1", Title: "Pouť", FeaturedUntil: &until},
 			PhotoCount: 3, CoverUID: &cover, CoverFileHash: "abc",
+			CoverUIDs: []string{"ph_cover", "ph_b", "ph_c", "ph_d", "ph_e"},
 		},
 		{Album: organize.Album{UID: "al_2", Title: "Empty", FeaturedUntil: &until}},
 	}}
@@ -196,10 +198,11 @@ func TestFeaturedList_ok(t *testing.T) {
 	}
 	var body struct {
 		Albums []struct {
-			UID       string `json:"uid"`
-			ThumbURL  string `json:"thumb_url"`
-			CoverHash string `json:"cover_file_hash"`
-			Count     int    `json:"photo_count"`
+			UID       string   `json:"uid"`
+			ThumbURL  string   `json:"thumb_url"`
+			CoverHash string   `json:"cover_file_hash"`
+			CoverUIDs []string `json:"cover_uids"`
+			Count     int      `json:"photo_count"`
 		} `json:"albums"`
 		DefaultDays int `json:"default_days"`
 		MaxDays     int `json:"max_days"`
@@ -212,6 +215,14 @@ func TestFeaturedList_ok(t *testing.T) {
 	}
 	if !strings.HasSuffix(body.Albums[0].ThumbURL, "/photos/ph_cover/thumb/tile_500") {
 		t.Errorf("thumb_url = %q, want the cover's grid thumbnail", body.Albums[0].ThumbURL)
+	}
+	// The collage's candidates travel as the album index sends them; an album
+	// with none omits the list.
+	if want := []string{"ph_cover", "ph_b", "ph_c", "ph_d", "ph_e"}; !slices.Equal(body.Albums[0].CoverUIDs, want) {
+		t.Errorf("cover_uids = %v, want %v", body.Albums[0].CoverUIDs, want)
+	}
+	if body.Albums[1].CoverUIDs != nil {
+		t.Errorf("empty album cover_uids = %v, want absent", body.Albums[1].CoverUIDs)
 	}
 	if body.Albums[0].Count != 3 || body.Albums[1].ThumbURL != "" {
 		t.Errorf("albums = %+v", body.Albums)

@@ -236,9 +236,9 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        a.private, a.created_by, a.created_at, a.updated_at, ` + activeFeaturedUntilA + `,
        COUNT(p.uid) AS photo_count,
        COALESCE(a.cover_photo_uid,
-                (array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)
+                (array_agg(p.uid ORDER BY ` + coverCandidateOrder + `)
                      FILTER (WHERE p.uid IS NOT NULL))[1]) AS cover_uid,
-       COALESCE((array_agg(p.uid ORDER BY p.taken_at DESC NULLS LAST, p.uid)
+       COALESCE((array_agg(p.uid ORDER BY ` + coverCandidateOrder + `)
                      FILTER (WHERE p.uid IS NOT NULL))[1:$1::int], '{}') AS cover_uids,
        MIN(p.taken_at) AS taken_from,
        MAX(p.taken_at) AS taken_to
@@ -249,10 +249,22 @@ LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
 GROUP BY a.uid
 ORDER BY MAX(p.taken_at) DESC NULLS LAST, a.uid`
 
+// coverCandidateOrder ranks an album's photos as cover candidates: newest
+// capture time first, an unknown capture time last, the uid breaking ties. Both
+// keys are total, so the same album yields the same candidates on every request.
+//
+// It is one constant because two statements must agree on it to the letter: the
+// album index (listAlbumsSQL) and the homepage's featured strip
+// (listFeaturedAlbumsSQL) both hand the frontend a cover_uids list it draws the
+// very same collage from, and a strip ordering its candidates differently would
+// show an album with other photos than its tile on /albums.
+const coverCandidateOrder = "p.taken_at DESC NULLS LAST, p.uid"
+
 // CoverCandidates is how many of an album's photos ListAlbums offers as covers
-// in AlbumSummary.CoverUIDs. It is passed to listAlbumsSQL as the array-slice
-// bound rather than written into the statement, so the number lives in exactly
-// one place.
+// in AlbumSummary.CoverUIDs (and ListFeaturedAlbums in FeaturedAlbum.CoverUIDs).
+// It is passed to listAlbumsSQL and listFeaturedAlbumsSQL as the array-slice
+// bound rather than written into either statement, so the number lives in
+// exactly one place.
 //
 // Eight is twice what a 2×2 collage needs, which is the point: two albums built
 // from the same photos can then both fill a collage without sharing a single

@@ -1,22 +1,13 @@
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
-import { EmptyState } from '../EmptyState'
-import { FadeInImage } from '../FadeInImage'
-
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { type AlbumCover, albumCover } from '../../lib/albumCovers'
 import { isFeatured } from '../../lib/featured'
 import { formatCaptureRange } from '../../lib/format'
 import { type AlbumSummary } from '../../services/organize'
-import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
 
-/**
- * Thumbnail size for one cell of a collage cover. A cell is half a tile wide, so
- * the grid size would ship four times the pixels the browser draws — on a page
- * whose whole point is that it loads a lot of covers at once.
- */
-const COLLAGE_THUMB_SIZE = 'tile_224'
+import { AlbumCoverMedia } from './AlbumCoverMedia'
 
 /** Props for {@link AlbumTile}. */
 export interface AlbumTileProps {
@@ -40,7 +31,8 @@ export interface AlbumTileProps {
  * album too small for a collage and for one whose cover was picked by hand;
  * which photos, and why not simply the newest one, is `lib/albumCovers`. A tile
  * falls back to the empty state only when the album genuinely holds nothing to
- * show.
+ * show. The picture itself is drawn by `AlbumCoverMedia`, which the homepage's
+ * featured strip shares, so an album looks the same in both places.
  *
  * The title is the album's display name: a machine-made English one (`January
  * 2026`, a country) reads in Czech on a Czech UI, everything else verbatim. It
@@ -66,33 +58,7 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
         className="kk-tile__media mb-1 d-flex flex-shrink-0 align-items-center justify-content-center"
         style={{ aspectRatio: '1 / 1' }}
       >
-        {drawn.kind === 'single' && (
-          <FadeInImage
-            src={thumbUrl(drawn.photoUid, GRID_THUMB_SIZE)}
-            alt={title}
-            className="w-100 h-100"
-            style={{ objectFit: 'cover' }}
-          />
-        )}
-        {drawn.kind === 'collage' && (
-          // The album is named right below and the link carries the title as its
-          // accessible name, so the cells are decoration: four alt texts reading
-          // the same album name would only make the page longer to listen to.
-          <div className="kk-tile__collage" aria-hidden="true">
-            {drawn.photoUids.map((uid) => (
-              <FadeInImage
-                key={uid}
-                src={thumbUrl(uid, COLLAGE_THUMB_SIZE)}
-                alt=""
-                className="w-100 h-100"
-                style={{ objectFit: 'cover' }}
-              />
-            ))}
-          </div>
-        )}
-        {drawn.kind === 'none' && (
-          <EmptyState size="sm" title={t('albums.noPhotos')} className="kk-tile__placeholder" />
-        )}
+        <AlbumCoverMedia cover={drawn} alt={title} />
         {/* On the homepage right now. Top-left, where the private badge (top-right)
             cannot collide with it; read aloud through the link's own name. */}
         {isFeatured(album) && (

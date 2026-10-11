@@ -29,6 +29,13 @@ export interface CollageAlbumCover {
 /** What an album tile should draw, as decided by {@link albumCover}. */
 export type AlbumCover = NoAlbumCover | SingleAlbumCover | CollageAlbumCover
 
+/**
+ * The fields of an album a cover is decided from. Both the album index's
+ * `AlbumSummary` and the homepage's `FeaturedAlbum` carry them, which is what
+ * lets the two draw one album the same way.
+ */
+export type AlbumCoverSource = Pick<AlbumSummary, 'cover_photo_uid' | 'cover_uid' | 'cover_uids'>
+
 /** Shared empty set for the unclaimed case, so callers need not allocate one. */
 const NOTHING_TAKEN: ReadonlySet<string> = new Set<string>()
 
@@ -50,7 +57,7 @@ export function coverPhotoUids(cover: AlbumCover): string[] {
  * the list is absent, which keeps the tile working against an older payload or a
  * fixture that only sets `cover_uid`.
  */
-function candidates(album: AlbumSummary): string[] {
+function candidates(album: AlbumCoverSource): string[] {
   const list = album.cover_uids?.filter((uid) => uid !== '')
   if (list !== undefined && list.length > 0) {
     return list
@@ -103,7 +110,7 @@ function collagePhotos(list: string[], taken: ReadonlySet<string>): string[] {
  * `taken` is only read, never written; {@link planAlbumCovers} does the claiming.
  */
 export function albumCover(
-  album: AlbumSummary,
+  album: AlbumCoverSource,
   taken: ReadonlySet<string> = NOTHING_TAKEN,
 ): AlbumCover {
   const picked = album.cover_photo_uid

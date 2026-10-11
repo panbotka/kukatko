@@ -3,28 +3,33 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
+import { albumCover } from '../../lib/albumCovers'
 import { type FeaturedAlbum, fetchFeaturedAlbums } from '../../services/featured'
-import { GRID_THUMB_SIZE, thumbUrl } from '../../services/photos'
-import { BlurPlaceholder } from '../BlurPlaceholder'
-import { EmptyState } from '../EmptyState'
-import { FadeInImage } from '../FadeInImage'
+import { AlbumCoverMedia } from '../organize/AlbumCoverMedia'
 
 /** DOM id of the strip's heading, which names the list for a screen reader. */
 const HEADING_ID = 'featured-albums-heading'
 
 /**
- * One card of the strip: the album's cover over its blurred placeholder, its
- * title and its photo count, linking to the album.
+ * One card of the strip: the album's cover, its title and its photo count,
+ * linking to the album.
+ *
+ * The cover is decided and drawn exactly as the album's tile on /albums draws it
+ * — `albumCover` and `AlbumCoverMedia`, a 2 × 2 collage or one photo — so a
+ * featured album is recognisably the album one finds there. It is planned for
+ * the album alone: the albums grid also steers a tile away from photos its
+ * neighbours already show, which the strip, a different set of albums, does
+ * not reproduce.
  */
 function FeaturedCard({ album }: { album: FeaturedAlbum }) {
   const { t, i18n } = useTranslation()
   const title = albumDisplayTitle(album.title, i18n.language)
-  // The server mints the cover's address (a signed edge URL when the bucket is
-  // published); the app's own thumbnail route is the fallback for a payload
-  // that carries a cover but no URL.
-  const src =
-    album.thumb_url ??
-    (album.cover_uid === undefined ? undefined : thumbUrl(album.cover_uid, GRID_THUMB_SIZE))
+  const drawn = albumCover(album)
+  // The server mints the single cover's address (a signed edge URL when the
+  // bucket is published) and ships its placeholder; both describe `cover_uid`,
+  // so they apply only when that is the photo drawn. Anything else falls back
+  // to the app's own thumbnail route.
+  const isServerCover = drawn.kind === 'single' && drawn.photoUid === album.cover_uid
 
   return (
     <li className="kk-featured-strip__item">
@@ -34,19 +39,12 @@ function FeaturedCard({ album }: { album: FeaturedAlbum }) {
         title={title}
       >
         <div className="kk-tile__media kk-featured-card__media mb-1 d-flex align-items-center justify-content-center">
-          {src === undefined ? (
-            <EmptyState size="sm" title={t('albums.noPhotos')} className="kk-tile__placeholder" />
-          ) : (
-            <>
-              <BlurPlaceholder hash={album.cover_blurhash} />
-              <FadeInImage
-                src={src}
-                alt=""
-                className="w-100 h-100"
-                style={{ objectFit: 'cover' }}
-              />
-            </>
-          )}
+          <AlbumCoverMedia
+            cover={drawn}
+            alt=""
+            singleSrc={isServerCover ? album.thumb_url : undefined}
+            singleBlurhash={isServerCover ? album.cover_blurhash : undefined}
+          />
         </div>
         <span className="fw-semibold kk-prose-clamp text-break">{title}</span>
         <span className="kk-text-caption text-secondary">

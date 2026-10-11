@@ -15,14 +15,19 @@ const API_BASE = '/api/v1'
 /**
  * One album on the homepage strip (`organize.FeaturedAlbum` + `thumb_url`).
  * `featured_until` is always set here — only running features are listed.
- * `thumb_url` and `cover_uid` are absent for an album with nothing to show;
- * `cover_blurhash` is absent for a cover catalogued before placeholders existed.
+ * `cover_uids` are the album index's own cover candidates for the album (see
+ * `AlbumSummary`), so the strip draws the same collage as the album's tile;
+ * they, `thumb_url` and `cover_uid` are absent for an album with nothing to
+ * show. `thumb_url` and `cover_blurhash` belong to `cover_uid`, the single
+ * cover; `cover_blurhash` is absent for a photo catalogued before placeholders
+ * existed.
  */
 export interface FeaturedAlbum extends Album {
   featured_until: string
   featured_at: string
   photo_count: number
   cover_uid?: string
+  cover_uids?: string[]
   cover_blurhash?: string
   thumb_url?: string
 }

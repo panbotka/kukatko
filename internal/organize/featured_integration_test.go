@@ -4,6 +4,8 @@ package organize_test
 
 import (
 	"errors"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -226,5 +228,114 @@ func TestFeatureAlbum_rejectsNonAlbumAndMissing(t *testing.T) {
 	if _, err := db.Pool().Exec(ctx,
 		`UPDATE albums SET featured_until = now() + interval '1 day' WHERE uid = $1`, month.UID); err == nil {
 		t.Error("the CHECK let a month album be featured")
+	}
+}
+
+// featuredByUID returns the listed featured album with the given uid, failing
+// the test when the strip does not carry it.
+func featuredByUID(t *testing.T, list []organize.FeaturedAlbum, uid string) organize.FeaturedAlbum {
+	t.Helper()
+	for _, fa := range list {
+		if fa.UID == uid {
+			return fa
+		}
+	}
+	t.Fatalf("album %q missing from the featured strip", uid)
+	return organize.FeaturedAlbum{}
+}
+
+// TestListFeaturedAlbums_coverCandidates pins the cover candidates the strip
+// draws its collage from: the album index's own list for the same album — same
+// order, same cap — so a featured card shows the photos its tile on /albums
+// shows; a hand-picked cover left out of the list; and a photo hidden from the
+// library never among them, nor the derived cover.
+func TestListFeaturedAlbums_coverCandidates(t *testing.T) {
+	store, photoStore, _, _ := newStores(t)
+	ctx := t.Context()
+
+	// Ten photos an hour apart, so the expected order involves no tie-break.
+	base := time.Date(2016, 6, 1, 8, 0, 0, 0, time.UTC)
+	newestFirst := make([]string, 0, 10)
+	for i := range 10 {
+		newestFirst = append(newestFirst,
+			makePhotoAt(t, photoStore, "featcand"+strconv.Itoa(i), base.Add(time.Duration(i)*time.Hour)))
+	}
+	slices.Reverse(newestFirst)
+	// The newest photo of all, but hidden from the library: the homepage never
+	// headlines it.
+	hidden := makePhotoAt(t, photoStore, "featcandHidden", base.Add(100*time.Hour))
+	if _, err := photoStore.SetHiddenFromLibrary(ctx, hidden, true); err != nil {
+		t.Fatalf("SetHiddenFromLibrary: %v", err)
+	}
+
+	full, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Full"})
+	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
+	small, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Small"})
+	hiddenOnly, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Hidden"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "E Empty"})
+	addPhotos(t, store, full.UID, newestFirst...)
+	addPhotos(t, store, pinned.UID, append(slices.Clone(newestFirst), hidden)...)
+	addPhotos(t, store, small.UID, newestFirst[0], newestFirst[1])
+	addPhotos(t, store, hiddenOnly.UID, hidden)
+	oldest := newestFirst[len(newestFirst)-1]
+	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+		t.Fatalf("SetCover: %v", err)
+	}
+	until := time.Now().Add(48 * time.Hour)
+	for _, uid := range []string{full.UID, pinned.UID, small.UID, hiddenOnly.UID, emptyAlbum.UID} {
+		if _, err := store.FeatureAlbumAudited(ctx, uid, until, "",
+			actorEntry("", audit.ActionAlbumFeature, "albums", uid, nil)); err != nil {
+			t.Fatalf("FeatureAlbumAudited %s: %v", uid, err)
+		}
+	}
+
+	strip, err := store.ListFeaturedAlbums(ctx, false)
+	if err != nil {
+		t.Fatalf("ListFeaturedAlbums: %v", err)
+	}
+	index, err := store.ListAlbums(ctx)
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+
+	// A Full: the cap's worth of newest photos, exactly as the index lists them,
+	// with the single cover the head of that list.
+	want := newestFirst[:organize.CoverCandidates]
+	fullGot := featuredByUID(t, strip, full.UID)
+	if !slices.Equal(fullGot.CoverUIDs, want) {
+		t.Errorf("full candidates = %v, want %v", fullGot.CoverUIDs, want)
+	}
+	if indexed := albumByUID(t, index, full.UID).CoverUIDs; !slices.Equal(fullGot.CoverUIDs, indexed) {
+		t.Errorf("strip candidates %v differ from the album index's %v", fullGot.CoverUIDs, indexed)
+	}
+	if fullGot.CoverUID == nil || *fullGot.CoverUID != want[0] || fullGot.CoverFileHash != "featcand9" {
+		t.Errorf("full cover = %v (%q), want the first candidate %q", fullGot.CoverUID, fullGot.CoverFileHash, want[0])
+	}
+
+	// B Pinned: the hand-picked cover stands for the album, stays out of the
+	// candidates, and the hidden member is in neither.
+	pinnedGot := featuredByUID(t, strip, pinned.UID)
+	if pinnedGot.CoverUID == nil || *pinnedGot.CoverUID != oldest {
+		t.Errorf("pinned cover = %v, want hand-picked %q", pinnedGot.CoverUID, oldest)
+	}
+	if !slices.Equal(pinnedGot.CoverUIDs, want) {
+		t.Errorf("pinned candidates = %v, want %v (no hidden photo)", pinnedGot.CoverUIDs, want)
+	}
+
+	// C Small: fewer photos than the cap, fewer candidates.
+	if got := featuredByUID(t, strip, small.UID); !slices.Equal(got.CoverUIDs, newestFirst[:2]) {
+		t.Errorf("small candidates = %v, want %v", got.CoverUIDs, newestFirst[:2])
+	}
+
+	// D Hidden and E Empty: nothing the homepage may show — no candidates, no
+	// cover — although the hidden one still counts its photo, as the index does.
+	for _, uid := range []string{hiddenOnly.UID, emptyAlbum.UID} {
+		got := featuredByUID(t, strip, uid)
+		if len(got.CoverUIDs) != 0 || got.CoverUID != nil {
+			t.Errorf("album %s candidates/cover = %v/%v, want none", got.Title, got.CoverUIDs, got.CoverUID)
+		}
+	}
+	if got := featuredByUID(t, strip, hiddenOnly.UID).PhotoCount; got != 1 {
+		t.Errorf("hidden-only photo count = %d, want 1", got)
 	}
 }

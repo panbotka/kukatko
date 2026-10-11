@@ -1742,10 +1742,15 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   missing album → 404. `DELETE /albums/{uid}/featured` (RequireCurator) clears it (idempotent). Both return
   the refreshed album and are audited in the mutation's transaction (`album.feature` with
   `{title,until,previous_until}`, `album.unfeature` with `{title,previous_until}`). `GET /albums/featured`
-  (RequireAuth) → `{albums:[{...album, featured_at, photo_count, cover_uid?, cover_blurhash?, thumb_url?}],
-  default_days, max_days}`: the albums featured now, **newest feature first** (`featured_at DESC`), each with
-  the cover the album index would draw (hand-picked, else the newest visible member), its BlurHash and its
+  (RequireAuth) → `{albums:[{...album, featured_at, photo_count, cover_uids?, cover_uid?, cover_blurhash?,
+  thumb_url?}], default_days, max_days}`: the albums featured now, **newest feature first** (`featured_at
+  DESC`), each with **`cover_uids`** — the album index's own cover candidates for it (same order, same
+  `organize.CoverCandidates` cap, never the hand-picked cover), so the strip draws **the same 2 × 2 collage as
+  the album's tile** — and the single cover (hand-picked, else the first candidate) with its BlurHash and its
   grid-thumbnail URL (`internal/mediaurl`, a signed edge URL on a published bucket); the count is the index's.
+  Unlike the index, a photo **hidden from the library** is never a candidate nor the cover here (the strip
+  keeps `coverVisible`): the homepage does not headline a scanned receipt. Count and candidates come out of
+  one aggregation over the featured albums' membership only.
   **A private album is listed only for a curator and above** — the album index itself filters nothing by
   `private`, but the homepage strip is the one album surface pushed at everybody who opens the app, so it does
   not broadcast what was marked private. `default_days`/`max_days` let the feature dialog pre-fill and cap its

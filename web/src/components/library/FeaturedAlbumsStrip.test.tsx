@@ -100,13 +100,67 @@ describe('FeaturedAlbumsStrip', () => {
     expect(blur?.style.backgroundImage).toContain(STUB_CANVAS_DATA_URL)
   })
 
+  it('draws an album with enough photos as the 2 × 2 collage its album tile draws', async () => {
+    fetchMock.mockResolvedValue(
+      body([featured({ cover_uids: ['ph1', 'ph2', 'ph3', 'ph4', 'ph5', 'ph6'] })]),
+    )
+    const { container } = renderStrip()
+    await screen.findByRole('heading', { name: 'Featured' })
+
+    const collage = container.querySelector('.kk-tile__collage')
+    expect(collage).not.toBeNull()
+    expect(collage).toHaveAttribute('aria-hidden', 'true')
+    // The album's four newest, in order, each at the collage cell's size — the
+    // same cells AlbumTile draws for the same album.
+    const cells = [...container.querySelectorAll('img')].map((img) => img.getAttribute('src') ?? '')
+    expect(cells.map((src) => /\/photos\/([^/]+)\/thumb\/tile_224/.exec(src)?.[1])).toEqual([
+      'ph1',
+      'ph2',
+      'ph3',
+      'ph4',
+    ])
+    expect(container.querySelector('.kk-media-blur')).toBeNull()
+  })
+
+  it('draws a hand-picked cover alone, whole, however many photos the album has', async () => {
+    fetchMock.mockResolvedValue(
+      body([
+        featured({
+          cover_photo_uid: 'ph_picked',
+          cover_uid: 'ph_picked',
+          cover_uids: ['ph1', 'ph2', 'ph3', 'ph4', 'ph5'],
+          thumb_url: 'https://media.example/thumb/ph_picked.jpg',
+        }),
+      ]),
+    )
+    const { container } = renderStrip()
+    await screen.findByRole('heading', { name: 'Featured' })
+
+    expect(container.querySelector('.kk-tile__collage')).toBeNull()
+    const sources = [...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))
+    expect(sources).toEqual(['https://media.example/thumb/ph_picked.jpg'])
+  })
+
+  it('draws an album too small for a collage as its single newest photo', async () => {
+    fetchMock.mockResolvedValue(
+      body([featured({ cover_uid: 'ph1', cover_uids: ['ph1', 'ph2', 'ph3'], photo_count: 3 })]),
+    )
+    const { container } = renderStrip()
+    await screen.findByRole('heading', { name: 'Featured' })
+
+    expect(container.querySelector('.kk-tile__collage')).toBeNull()
+    const sources = [...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))
+    expect(sources).toEqual(['https://media.example/thumb/ph1.jpg'])
+  })
+
   it('shows an album with nothing to show as the empty state', async () => {
     fetchMock.mockResolvedValue(
       body([featured({ cover_uid: undefined, thumb_url: undefined, photo_count: 0 })]),
     )
-    renderStrip()
+    const { container } = renderStrip()
     await screen.findByRole('heading', { name: 'Featured' })
     expect(screen.getByText('Empty album')).toBeInTheDocument()
+    expect(container.querySelector('img')).toBeNull()
   })
 
   it('renders nothing at all when nothing is featured', async () => {
