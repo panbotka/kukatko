@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, fireEvent, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_IDLE_MS } from './useAutoHideChrome'
@@ -100,14 +100,69 @@ describe('useViewerChrome on a touch device', () => {
   })
 })
 
-describe('useViewerChrome with a mouse', () => {
-  it('keeps the ordinary idle and stays silent', () => {
-    const { result } = renderHook(() => useViewerChrome({ paused: false, touch: false }))
+describe('useViewerChrome on a touch device, with a keyboard', () => {
+  /** Mounts one chrome control and one control outside it, like the viewer. */
+  function mountControls(): { inside: HTMLButtonElement; outside: HTMLButtonElement } {
+    document.body.innerHTML =
+      '<div class="kk-viewer__chrome"><button id="inside">in</button></div>' +
+      '<button id="outside">out</button>'
+    const inside = document.getElementById('inside')
+    const outside = document.getElementById('outside')
+    if (!(inside instanceof HTMLButtonElement) || !(outside instanceof HTMLButtonElement)) {
+      throw new Error('controls not mounted')
+    }
+    return { inside, outside }
+  }
 
-    // Any pointer move brings the chrome back, so there is nothing to teach —
-    // and no hold, either.
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('stays up while keyboard focus is inside the chrome', () => {
+    window.localStorage.setItem('kukatko.viewer.chromeHintSeen', 'true')
+    const { inside, outside } = mountControls()
+    const { result } = renderHook(() => useViewerChrome({ paused: false, touch: true }))
+
+    // Tab into the bar: a focused control may not melt away under its ring.
+    act(() => {
+      fireEvent.keyDown(window, { key: 'Tab' })
+      inside.focus()
+    })
+    tick(DEFAULT_IDLE_MS * 3)
+    expect(result.current.visible).toBe(true)
+
+    // Focus leaves the chrome: the ordinary idle takes over again.
+    act(() => {
+      outside.focus()
+    })
     tick(DEFAULT_IDLE_MS)
     expect(result.current.visible).toBe(false)
+  })
+
+  it('does not pin for the focus a tap leaves behind', () => {
+    // Some mobile browsers focus a tapped button; pinning for that would stop the
+    // chrome ever fading after the first star given.
+    window.localStorage.setItem('kukatko.viewer.chromeHintSeen', 'true')
+    const { inside } = mountControls()
+    const { result } = renderHook(() => useViewerChrome({ paused: false, touch: true }))
+
+    act(() => {
+      fireEvent.pointerDown(inside)
+      inside.focus()
+    })
+    tick(DEFAULT_IDLE_MS)
+    expect(result.current.visible).toBe(false)
+  })
+})
+
+describe('useViewerChrome with a mouse', () => {
+  it('never hides the chrome and stays silent', () => {
+    const { result } = renderHook(() => useViewerChrome({ paused: false, touch: false }))
+
+    // A pointer resting on the page is no reason to take the controls away — so
+    // there is no idle, no hold and nothing to teach.
+    tick(FIRST_RUN_HOLD_MS + DEFAULT_IDLE_MS * 4)
+    expect(result.current.visible).toBe(true)
 
     tick(CHROME_HINT_MS)
     expect(result.current.hintVisible).toBe(false)

@@ -3005,19 +3005,18 @@ here.
   `PhotoDetailPage.test.tsx` asserts the same sentences for both in both locales. What is *not* renamed:
   „Prohlížeč fotek", „Podobné fotky", the library's own counts — the library **is** a photo library, and
   the point was never to purge the word.
-  **Disappearing chrome:** the top action bar's **toggles** (plus the curatorial loop on a mouse),
-  the **‹/› arrows** and the phone's **bottom curation dock**
-  after a short idle **dim away** and return on mouse move / tap / key
-  (`useAutoHideChrome` — an idle timer + a global wake, `paused` when the drawer is open, so a control
-  under your hand doesn't vanish); the transitions run on duration tokens, so `prefers-reduced-motion`
-  turns them off. **Two things in that bar deliberately survive the idle** (N20): the way out and
-  **the photo's title** (`.kk-viewer__heading`, dimmed to `opacity: .72` rather than removed) — with a
-  mouse any move brings the chrome back, but a phone has no such gesture, so an idle screen used to be
-  one photograph plus one unlabelled glyph, with no name for what you were looking at. The bar's
-  darkening wash rides `.kk-viewer__chrome::before` exactly so it can thin to `.55` on its own
-  (a gradient can't be transitioned, an opacity can) and keep the surviving title legible over a
-  blown-out sky; the title's own shadow deepens in that state too. **The hook decides only *whether***
-  — one `data-chrome` flag on the viewer root; `viewer.css` decides **what** answers to it.
+  **Disappearing chrome — touch only, and whole** (2026-10-11, UI/UX review #11): on a **touch** device
+  (`useCoarsePointer`) the whole chrome — the back control, the top bar (title, toggles, the curation
+  loop), the **‹/› arrows** and the phone's **bottom curation dock** — fades **as one** after a short idle
+  and returns on the next tap / key (`useAutoHideChrome` — an idle timer + a global wake, `paused` when the
+  drawer or the library menu is open, so a control under your hand doesn't vanish); the transitions run
+  on duration tokens, so `prefers-reduced-motion` turns them off. It used to leave the back arrow and a
+  dimmed title behind (N20), which read as a broken toolbar rather than an immersive photo. **With a
+  hovering pointer it never auto-hides**: a mouse resting on the page is no reason to take the controls
+  away. **Keyboard focus inside the chrome pins it** on touch too (only focus that arrived by key — a tap
+  that leaves a button focused does not pin). **The hook decides only *whether*** — one `data-chrome`
+  flag on the viewer root; `viewer.css` decides **what** answers to it (`VIEWER_CHROME_SELECTOR` lists
+  the same parts, and a test keeps the two lists in step). The info/faces panels are independent.
   **First time on a phone the vanishing is explained** (2026-09-05): a viewer whose controls have just
   gone looks *broken* to someone who has never been told that a tap brings them back, and a finger has no
   equivalent of a mouse twitch. So on a coarse pointer the chrome is held up 4 s longer the very first
@@ -3044,8 +3043,8 @@ here.
   is untouched: at the 768 px breakpoint the heading still measures ~260 px, well clear of both cuts.
   Guarded by `styles/viewerTitle.test.ts` (the declarations, since jsdom evaluates no container query)
   and `PhotoDetailPage.test.tsx` (the shape: the time is separable and what remains still says 2026).
-  **The persistent way out** is `.kk-viewer__back` (a circle at top left, `photo.back`, **never fades**
-  with the chrome) — **a back arrow, not a ✕** (N6/N20): the drawer carries its own ✕ and on a phone
+  **The way out** is `.kk-viewer__back` (a circle at top left, `photo.back`; on a touch device it fades
+  with the rest of the chrome and the waking tap brings it back) — **a back arrow, not a ✕** (N6/N20): the drawer carries its own ✕ and on a phone
   the two sat side by side as identical round crosses, so a tap meant for the panel closed the whole
   photo. Arrow = leave the photo, cross = close what is over it. It and **Esc**
   always work and return **to the exact previous scroll position**: `navigate(-1)` when you arrived here from
@@ -5885,11 +5884,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   flood of `pointermove` doesn't re-render every frame; `paused` **pins the chrome visible** and doesn't start the
   timer (when the drawer is open). It decides only *whether* the chrome shows — *how* it animates is handled by
   a CSS transition on duration tokens (under `prefers-reduced-motion` ~0) — and it doesn't decide **what** hides
-  either: it sets one `data-chrome` flag on the viewer root and `viewer.css` picks the surfaces that answer to it.
-  Two deliberately don't (N20): the persistent back control and the photo's title, which dim rather than leave, so
-  an idle phone screen is never a photograph with no name and no visible way off it;
+  either: it sets one `data-chrome` flag on the viewer root and `viewer.css` picks the surfaces that answer to it
+  — all of the chrome at once, never half of it;
   `useViewerChrome({paused,touch})` → `{visible,wake,hintVisible}` = the viewer's chrome as the page
-  actually uses it: `useAutoHideChrome` plus the two things that make its disappearance survivable on a
+  actually uses it: `useAutoHideChrome` **gated to touch** (with `touch` false it is held `paused`, so a
+  hovering pointer never loses the controls), **pinned while keyboard focus is inside**
+  `VIEWER_CHROME_SELECTOR` (back, bar, arrows, dock — armed by a keydown, disarmed by a pointerdown, so a
+  tap's leftover focus doesn't pin), plus the two things that make its disappearance survivable on a
   **touch** device, where there is no pointer move to stumble on the answer with. The **first** time such a
   device opens the viewer the chrome is **held up** for `FIRST_RUN_HOLD_MS` (4 s, ridden on the existing
   `paused`, so the ordinary 2600 ms countdown starts only when the hold is released), and the moment it does
@@ -5897,7 +5898,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   controls back — for `CHROME_HINT_MS` (4 s) or until the chrome returns, whichever comes first. Both are
   **once per device**: `lib/viewerChromeHint` persists `kukatko.viewer.chromeHintSeen` in localStorage
   (read once at mount; a missing store reads as "not shown yet"), because a hint that reappears on the
-  fiftieth photograph is worse than no hint. With a mouse (`useCoarsePointer` false) nothing changes and
+  fiftieth photograph is worse than no hint. With a mouse (`useCoarsePointer` false) the chrome never hides and
   **nothing is written**, so the same account still gets the hint on its phone;
   `useGridKeyboardNavigation({count,enabled,resetKey,getColumns,
   scrollToIndex,onOpen,onToggleSelect,onToggleFavorite,hasSelection,onClearSelection})` = grid navigation

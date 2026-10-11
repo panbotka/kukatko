@@ -10,7 +10,7 @@ import { MorphContext, type MorphState } from '../components/morph/MorphContext'
 import { ToastProvider } from '../components/toast/ToastProvider'
 import { NARROW_VIEWPORT_QUERY } from '../hooks/useIsNarrowViewport'
 import { DEFAULT_IDLE_MS } from '../hooks/useAutoHideChrome'
-import { FIRST_RUN_HOLD_MS } from '../hooks/useViewerChrome'
+import { FIRST_RUN_HOLD_MS, VIEWER_CHROME_SELECTOR } from '../hooks/useViewerChrome'
 import { COARSE_POINTER_QUERY } from '../lib/mapGestures'
 import i18n from '../i18n'
 import { clearBlurPlaceholderCache } from '../lib/blurPlaceholder'
@@ -360,13 +360,15 @@ async function openLibrary(user: ReturnType<typeof userEvent.setup>) {
 
 /**
  * Points `window.matchMedia` at a fixed phone/desktop answer for the narrow
- * viewport query alone, so only `useIsNarrowViewport` changes its mind — every
- * other media query (reduced motion, coarse pointer) keeps the shared setup's
- * non-matching default. Reset to desktop after each test.
+ * viewport query and, when `coarse` is set, the coarse-pointer query — so only
+ * `useIsNarrowViewport` / `useCoarsePointer` change their minds and every other
+ * media query (reduced motion) keeps the shared setup's non-matching default.
+ * Reset to a desktop with a mouse before each test.
  */
-function mockViewport(narrow: boolean): void {
+function mockViewport(narrow: boolean, coarse = false): void {
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: narrow && query === NARROW_VIEWPORT_QUERY,
+    matches:
+      (narrow && query === NARROW_VIEWPORT_QUERY) || (coarse && query === COARSE_POINTER_QUERY),
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -753,9 +755,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('pins the chrome while it is open', async () => {
-      // The trigger is chrome, and chrome fades when the viewer goes idle. A menu
-      // whose own trigger melts away under the reader's hand cannot be closed by
-      // the control that opened it — so the idle timer stands down while it is up.
+      // The trigger is chrome, and on a touch device chrome fades when the viewer
+      // goes idle. A menu whose own trigger melts away under the reader's hand
+      // cannot be closed by the control that opened it — so the idle timer stands
+      // down while it is up. (A touched tablet: wide, so the bar keeps the menu.)
+      mockViewport(false, true)
+      // Not this device's first photo: no first-run hold, just the ordinary idle.
+      window.localStorage.setItem('kukatko.viewer.chromeHintSeen', 'true')
       vi.useFakeTimers({ shouldAdvanceTime: true })
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
       try {
@@ -775,6 +781,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         expect(viewer(container)).toHaveAttribute('data-chrome', 'visible')
       } finally {
         vi.useRealTimers()
+        window.localStorage.removeItem('kukatko.viewer.chromeHintSeen')
       }
     })
   })
@@ -1499,53 +1506,44 @@ describe('PhotoDetailPage — immersive viewer', () => {
   })
 
   /**
-   * What the idle timer is allowed to take. On a desktop any mouse move brings the
-   * chrome back; a phone has no such gesture, so an idle screen showing one
-   * photograph and one unlabelled glyph left a reader with no name for what they
-   * were looking at and no hint that anything else was there. The way back and the
-   * title now dim instead of leaving.
+   * What the idle timer takes: everything, at once. The bar used to leave half of
+   * itself behind (the back arrow and a dimmed title), which read as a broken
+   * toolbar rather than as the photograph taking the screen. Hiding only happens
+   * on a touch device (`useViewerChrome`), where a tap brings it all back.
    */
   describe('idle chrome stylesheet', () => {
     const css = readCss('src/components/photo/viewer.css')
+    // `/opacity/`: the arrows carry a second idle rule (keeping their centring),
+    // and the fade is the one asked about.
     const idle = (part: string) =>
       declarations(
-        ruleBody(css, new RegExp(`\\.kk-viewer\\[data-chrome='hidden'\\] \\.${part}\\s*(?=\\{)`)) ??
-          '',
+        ruleBody(
+          css,
+          new RegExp(`\\.kk-viewer\\[data-chrome='hidden'\\] \\.${part}\\s*(?=\\{)`),
+          /opacity/,
+        ) ?? '',
       )
 
-    it('keeps the photo’s title, dimmed rather than removed', () => {
-      const opacity = Number(idle('kk-viewer__heading').get('opacity'))
-      expect(opacity).toBeGreaterThan(0)
-      expect(opacity).toBeLessThan(1)
-    })
+    it.each(VIEWER_CHROME_SELECTOR.split(',').map((part) => part.trim().slice(1)))(
+      'fades %s with the rest and stops it taking taps',
+      (part) => {
+        // The selector the hook pins on keyboard focus and the surfaces the
+        // stylesheet fades are one list: a part missing here would either stay
+        // behind (half a bar) or vanish under a focused control.
+        const rule = idle(part)
+        expect(rule.get('opacity')).toBe('0')
+        expect(rule.get('pointer-events')).toBe('none')
+      },
+    )
 
-    it('never fades the persistent back control at all', () => {
-      // It lives outside the chrome by construction; assert no idle rule reaches
-      // it, so a later refactor cannot quietly fold the one way out into the fade.
-      expect(
-        ruleBody(css, /\.kk-viewer\[data-chrome='hidden'\] \.kk-viewer__back\s*(?=\{)/),
-      ).toBeUndefined()
-    })
-
-    it('still takes the controls and the arrows away', () => {
-      // "Everything else may still hide" — the point is an immersive photo, not a
-      // permanent bar.
-      expect(idle('kk-viewer__actions').get('opacity')).toBe('0')
-      expect(idle('kk-viewer__nav').get('opacity')).toBe('0')
-      expect(idle('kk-viewer__dock').get('opacity')).toBe('0')
-    })
-
-    it('softens the darkening wash instead of dropping it', () => {
-      // The title that stays has to stay LEGIBLE over an unknown photograph, so the
-      // wash behind it thins rather than vanishing. It rides a pseudo-element for
-      // exactly this: a gradient cannot be transitioned, an opacity can.
-      const wash = declarations(
-        ruleBody(css, /\.kk-viewer\[data-chrome='hidden'\] \.kk-viewer__chrome::before\s*(?=\{)/) ??
-          '',
-      )
-      const opacity = Number(wash.get('opacity'))
-      expect(opacity).toBeGreaterThan(0)
-      expect(opacity).toBeLessThan(1)
+    it('leaves no part of the bar behind, dimmed', () => {
+      // The bar fades as a whole, so nothing inside it may carry an idle rule of
+      // its own that would only make sense if the rest of it stayed.
+      for (const part of ['kk-viewer__heading', 'kk-viewer__title', 'kk-viewer__actions']) {
+        expect(
+          ruleBody(css, new RegExp(`\\.kk-viewer\\[data-chrome='hidden'\\] \\.${part}\\s*(?=\\{)`)),
+        ).toBeUndefined()
+      }
     })
   })
 
@@ -4114,16 +4112,7 @@ describe('the first-run chrome hint on a phone', () => {
 
   /** A finger-pointed phone: both the narrow width and the coarse pointer. */
   function mockPhone(): void {
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: query === NARROW_VIEWPORT_QUERY || query === COARSE_POINTER_QUERY,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }))
+    mockViewport(true, true)
   }
 
   /** Runs the clock to the first fade: the first-run hold, then the idle. */
@@ -4183,15 +4172,15 @@ describe('the first-run chrome hint on a phone', () => {
     expect(screen.queryByText(HINT)).toBeNull()
   })
 
-  it('says nothing at all where there is a mouse', async () => {
+  it('says nothing at all where there is a mouse — the chrome never goes', async () => {
     mockViewport(false)
     const { container } = renderPage()
     await screen.findByRole('heading', { name: 'Beach' })
 
     act(() => {
-      vi.advanceTimersByTime(DEFAULT_IDLE_MS)
+      vi.advanceTimersByTime(FIRST_RUN_HOLD_MS + DEFAULT_IDLE_MS)
     })
-    expect(viewer(container)).toHaveAttribute('data-chrome', 'hidden')
+    expect(viewer(container)).toHaveAttribute('data-chrome', 'visible')
     expect(screen.queryByText(HINT)).toBeNull()
   })
 })

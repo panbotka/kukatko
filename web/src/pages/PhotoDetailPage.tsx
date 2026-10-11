@@ -689,11 +689,12 @@ export function PhotoDetailPage() {
     setPanel('info')
   }
 
-  // The chrome (top bar + arrows + the phone's dock) melts away after a short idle
-  // and returns on any activity — except while the drawer is open, when the actions
-  // beside it (and its own toggle) must stay reachable, so it is pinned visible.
-  // On a touch device, once per device, it also stays up longer the very first time
-  // and then explains itself: see `useViewerChrome`.
+  // The chrome (back control + top bar + arrows + the phone's dock) stays put
+  // wherever there is a hovering pointer. On a touch device it melts away as a
+  // whole after a short idle and returns on any tap — except while the drawer is
+  // open or keyboard focus is inside it, when it is pinned visible. Once per
+  // device it also stays up longer the very first time and then explains itself:
+  // see `useViewerChrome`.
   const chrome = useViewerChrome({ paused: panelOpen || libraryOpen, touch })
 
   // Touch: horizontal swipe pages when zoom is not in play (faces/edit on, where
@@ -1464,9 +1465,9 @@ export function PhotoDetailPage() {
       // keyboard; it is 0px on every desktop browser, so nothing moves there.
       style={{ '--kk-keyboard-inset': `${keyboardInset}px` } as CSSProperties}
     >
-      {/* The persistent way out: top-left, never fades with the chrome, so Esc
-          always has a visible twin the pointer can find. Returns to the
-          originating list.
+      {/* The way out: top-left, so Esc always has a visible twin the pointer can
+          find. Chrome like the rest, so on a touch device it fades with the bar
+          and comes back with it. Returns to the originating list.
 
           A BACK ARROW, never a cross. The drawer carries its own ✕, and on a phone
           the two sit on one screen — as two identical round crosses they read as
@@ -1494,8 +1495,7 @@ export function PhotoDetailPage() {
         {/* Came from the sorting game: the way back in words, IN the bar's flow
             rather than floating over it, so the name beside it yields to it
             instead of running underneath — its width is the label's, which no
-            fixed padding can know in every locale. It is exempt from the bar's
-            fade (see viewer.css): this is the one way home. */}
+            fixed padding can know in every locale. */}
         {reviewReturn !== undefined && reviewReturnButton(false)}
         <div className="kk-viewer__heading">
           <h1 className="kk-viewer__title">

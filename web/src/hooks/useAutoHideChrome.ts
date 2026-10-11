@@ -45,10 +45,10 @@ export interface AutoHideChrome {
  * never *how* it animates.
  *
  * It does not decide *what* hides, either: this is one boolean on the viewer root
- * (`data-chrome`), and `viewer.css` picks which surfaces answer to it. Two
- * deliberately do not — the persistent back control and the photo's title, which
- * dim rather than leave, so an idle screen never becomes a photograph with no
- * visible name and no visible way off it.
+ * (`data-chrome`), and `viewer.css` picks which surfaces answer to it — all of the
+ * chrome at once (back control, title, toolbar, arrows, dock), never half of it.
+ * Nor does it decide *where* hiding is wanted: `useViewerChrome` keeps it paused
+ * on any device that is not touched.
  */
 export function useAutoHideChrome(options: UseAutoHideChromeOptions = {}): AutoHideChrome {
   const { idleMs = DEFAULT_IDLE_MS, paused = false } = options

@@ -228,12 +228,13 @@
 
 /* ---- Chrome (auto-hiding) -------------------------------------------- */
 
-/* The top bar's controls + the nav arrows fade together when the viewer is idle.
-   The persistent back button is deliberately NOT in this group — it stays — and
-   neither is the heading, see the idle rules right below. */
+/* The chrome — the back control, the top bar (title, toggles, the curation loop
+   on a mouse), the arrows and the phone's dock — fades as ONE when the viewer is
+   idle, and comes back as one. Half a bar (a back arrow and a dimmed title left
+   behind) read as a broken toolbar rather than as the photograph taking the
+   screen. Idle only happens on a touch device at all (`useViewerChrome`): with a
+   hovering pointer the chrome stays, and there a tap anywhere is what wakes it. */
 .kk-viewer__chrome,
-.kk-viewer__heading,
-.kk-viewer__actions,
 .kk-viewer__nav {
   transition:
     opacity var(--kk-duration-base) var(--kk-ease-standard),
@@ -241,36 +242,15 @@
     right var(--kk-duration-base) var(--kk-ease-standard);
 }
 
-/* Idle. The bar does NOT leave wholesale, and that is the point: with a mouse any
-   move brings it back, but a phone has no such gesture, so an idle screen holding
-   one photograph and one unlabelled glyph tells a reader nothing about how to get
-   anywhere. What melts away is the bar's *controls* and most of its darkening
-   wash; what stays is the way out (the persistent back arrow, which never fades at
-   all) and the photo's name, dimmed to a whisper rather than removed — enough to
-   say "this screen has a title and a way back" without competing with the photo.
-   The bar stops taking pointer events either way: what is left of it is text, and
-   a tap anywhere is what wakes the rest of the chrome back up. */
 .kk-viewer[data-chrome='hidden'] .kk-viewer__chrome {
+  opacity: 0;
+  transform: translateY(-0.5rem);
   pointer-events: none;
 }
 
-.kk-viewer[data-chrome='hidden'] .kk-viewer__chrome::before {
-  opacity: 0.55;
-}
-
-.kk-viewer[data-chrome='hidden'] .kk-viewer__heading {
-  opacity: 0.72;
-}
-
-/* With most of the wash gone the name leans on its own shadow to stay readable —
-   measured over a blown-out sky, which is the case that decides this number. */
-.kk-viewer[data-chrome='hidden'] .kk-viewer__title {
-  text-shadow: 0 1px 4px color-mix(in srgb, var(--kk-shade) 85%, transparent);
-}
-
-.kk-viewer[data-chrome='hidden'] .kk-viewer__actions {
+.kk-viewer[data-chrome='hidden'] .kk-viewer__back {
   opacity: 0;
-  transform: translateY(-0.5rem);
+  pointer-events: none;
 }
 
 .kk-viewer[data-chrome='hidden'] .kk-viewer__nav {
@@ -293,17 +273,15 @@
 }
 
 /* The bar's darkening wash rides a pseudo-element rather than the bar's own
-   background, so it can soften on its own while the title it keeps legible stays
-   put: a gradient cannot be transitioned, an opacity can. Out of flow (so it is
-   not a flex item) and behind the bar's content — `.kk-viewer__chrome` is a
-   positioned, z-indexed stacking context, so `z-index: -1` stays inside it. */
+   background. Out of flow (so it is not a flex item) and behind the bar's
+   content — `.kk-viewer__chrome` is a positioned, z-indexed stacking context, so
+   `z-index: -1` stays inside it. */
 .kk-viewer__chrome::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
   background: var(--kk-viewer-chrome-scrim);
-  transition: opacity var(--kk-duration-base) var(--kk-ease-standard);
 }
 
 /* Title block: left of the actions, truncates instead of shoving them off. It
@@ -572,8 +550,9 @@
   border-color: var(--kk-accent);
 }
 
-/* The persistent way OUT: top-left, always reachable (never fades with the
-   chrome), so Esc has a visible twin the pointer can always find.
+/* The way OUT: top-left, so Esc has a visible twin the pointer can always find.
+   It is chrome like the rest — on a touch device it fades with the bar after an
+   idle, and the tap that wakes the bar brings it back with it.
 
    It wears a BACK ARROW, not a cross, and that is load-bearing. The drawer
    carries its own ✕, and on a phone the two used to sit side by side at the same
@@ -586,6 +565,10 @@
   left: calc(0.75rem + env(safe-area-inset-left, 0px));
   z-index: 5;
   opacity: 0.85;
+  transition:
+    opacity var(--kk-duration-base) var(--kk-ease-standard),
+    background-color var(--kk-duration-fast) var(--kk-ease-standard),
+    border-color var(--kk-duration-fast) var(--kk-ease-standard);
 }
 
 .kk-viewer__back:hover,
@@ -596,8 +579,9 @@
 /* The way back to the sorting game, in words (a photo opened from the game).
    It sits in the top bar's flow, first, so the name yields to it rather than
    running under it; the heading then needs no room cleared for a floating
-   arrow. It never fades and never stops taking taps with the bar: an installed
-   app has no browser Back, so this is the only guaranteed way home. */
+   arrow. An installed app has no browser Back, so this is the only guaranteed
+   way home — which is fine to fade with the bar on a touch device when idle,
+   because the tap that wakes the bar brings it straight back. */
 .kk-viewer__return {
   flex: none;
   gap: 0.45rem;
@@ -605,7 +589,6 @@
   font-size: 0.95rem;
   font-weight: 600;
   white-space: nowrap;
-  pointer-events: auto;
 }
 
 .kk-viewer__return + .kk-viewer__heading {
