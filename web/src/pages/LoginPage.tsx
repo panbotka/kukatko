@@ -1,15 +1,13 @@
 import { type SyntheticEvent, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Card from 'react-bootstrap/Card'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
+import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { mailEnabledFrom } from '../hooks/useMailEnabled'
@@ -147,9 +145,9 @@ function errorKeyFor(error: unknown): LoginErrorKey {
 }
 
 /**
- * Login page: a Superhero-styled card with username + password. Validates that
- * both fields are filled, surfaces invalid-credentials, rate-limit and
- * unreachable-backend errors, and on success redirects to the originally
+ * Login page: username + password in the shared {@link AuthFrame} under the
+ * wordmark. Validates that both fields are filled, surfaces invalid-credentials,
+ * rate-limit and unreachable-backend errors, and on success redirects to the originally
  * requested route (or home).
  *
  * A guarded route with no backend now shows the offline page instead of sending
@@ -238,131 +236,119 @@ export function LoginPage() {
   const unreachable = authStatus === 'unreachable'
 
   return (
-    <Row className="justify-content-center">
-      <Col xs={12} sm={10} md={6} lg={5} xl={4}>
-        <Card text="light" className="mt-4 mt-md-5">
-          <Card.Body>
-            <Card.Title as="h1" className="kk-page-title mb-4 text-center">
-              {t('login.title')}
-            </Card.Title>
+    <AuthFrame title={t('login.title')} width="narrow">
+      {/* The warning yields to a submit error: once they have pressed the
+          button, the sentence about that attempt is the more useful one,
+          and both say the same thing anyway. */}
+      {unreachable && submit.status !== 'error' && (
+        <Alert variant="warning" role="status" data-testid="login-offline-notice">
+          <Icon name="wifi-off" className="me-2" />
+          {t('login.offlineNotice')}
+        </Alert>
+      )}
 
-            {/* The warning yields to a submit error: once they have pressed the
-                button, the sentence about that attempt is the more useful one,
-                and both say the same thing anyway. */}
-            {unreachable && submit.status !== 'error' && (
-              <Alert variant="warning" role="status" data-testid="login-offline-notice">
-                <Icon name="wifi-off" className="me-2" />
-                {t('login.offlineNotice')}
-              </Alert>
+      {submit.status === 'error' && (
+        <Alert variant="danger" role="alert">
+          {t(withoutMailPromise(submit.messageKey, mailEnabled))}
+        </Alert>
+      )}
+
+      <Form
+        noValidate
+        validated={validated}
+        onSubmit={(event) => {
+          void handleSubmit(event)
+        }}
+      >
+        <Form.Group className="mb-3" controlId="login-username">
+          <Form.Label>{t('login.username')}</Form.Label>
+          <Form.Control
+            type="text"
+            name="username"
+            autoComplete="username"
+            autoFocus={!unreachable}
+            required
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value)
+            }}
+            disabled={submitting}
+          />
+          <Form.Control.Feedback type="invalid">
+            {t('login.usernameRequired')}
+          </Form.Control.Feedback>
+        </Form.Group>
+
+        <Form.Group className="mb-4" controlId="login-password">
+          <Form.Label>{t('login.password')}</Form.Label>
+          <Form.Control
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value)
+            }}
+            disabled={submitting}
+          />
+          <Form.Control.Feedback type="invalid">
+            {t('login.passwordRequired')}
+          </Form.Control.Feedback>
+        </Form.Group>
+
+        <div className="d-grid">
+          <Button type="submit" variant="primary" disabled={submitting}>
+            {submitting && submit.method === 'password' && (
+              <Spinner
+                animation="border"
+                size="sm"
+                role="status"
+                aria-hidden="true"
+                className="me-2"
+              />
             )}
+            {t('login.submit')}
+          </Button>
+        </div>
+      </Form>
 
-            {submit.status === 'error' && (
-              <Alert variant="danger" role="alert">
-                {t(withoutMailPromise(submit.messageKey, mailEnabled))}
-              </Alert>
-            )}
-
-            <Form
-              noValidate
-              validated={validated}
-              onSubmit={(event) => {
-                void handleSubmit(event)
+      {passkeyOffered && (
+        <>
+          <div className="d-flex align-items-center gap-3 my-3 text-secondary small">
+            <hr className="flex-grow-1 my-0" />
+            {t('login.passkeyOr')}
+            <hr className="flex-grow-1 my-0" />
+          </div>
+          <div className="d-grid">
+            <Button
+              type="button"
+              variant="outline-light"
+              className="d-inline-flex align-items-center justify-content-center gap-2"
+              disabled={submitting}
+              data-testid="login-passkey-button"
+              onClick={() => {
+                void handlePasskey()
               }}
             >
-              <Form.Group className="mb-3" controlId="login-username">
-                <Form.Label>{t('login.username')}</Form.Label>
-                <Form.Control
-                  type="text"
-                  name="username"
-                  autoComplete="username"
-                  autoFocus={!unreachable}
-                  required
-                  value={username}
-                  onChange={(event) => {
-                    setUsername(event.target.value)
-                  }}
-                  disabled={submitting}
-                />
-                <Form.Control.Feedback type="invalid">
-                  {t('login.usernameRequired')}
-                </Form.Control.Feedback>
-              </Form.Group>
+              {submitting && submit.method === 'passkey' ? (
+                <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
+              ) : (
+                <Icon name="key" />
+              )}
+              {t('login.passkeySubmit')}
+            </Button>
+          </div>
+          <div className="text-secondary small mt-2 text-center">{t('login.passkeyHint')}</div>
+        </>
+      )}
 
-              <Form.Group className="mb-4" controlId="login-password">
-                <Form.Label>{t('login.password')}</Form.Label>
-                <Form.Control
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value)
-                  }}
-                  disabled={submitting}
-                />
-                <Form.Control.Feedback type="invalid">
-                  {t('login.passwordRequired')}
-                </Form.Control.Feedback>
-              </Form.Group>
-
-              <div className="d-grid">
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting && submit.method === 'password' && (
-                    <Spinner
-                      animation="border"
-                      size="sm"
-                      role="status"
-                      aria-hidden="true"
-                      className="me-2"
-                    />
-                  )}
-                  {t('login.submit')}
-                </Button>
-              </div>
-            </Form>
-
-            {passkeyOffered && (
-              <>
-                <div className="d-flex align-items-center gap-3 my-3 text-secondary small">
-                  <hr className="flex-grow-1 my-0" />
-                  {t('login.passkeyOr')}
-                  <hr className="flex-grow-1 my-0" />
-                </div>
-                <div className="d-grid">
-                  <Button
-                    type="button"
-                    variant="outline-light"
-                    className="d-inline-flex align-items-center justify-content-center gap-2"
-                    disabled={submitting}
-                    data-testid="login-passkey-button"
-                    onClick={() => {
-                      void handlePasskey()
-                    }}
-                  >
-                    {submitting && submit.method === 'passkey' ? (
-                      <Spinner animation="border" size="sm" role="status" aria-hidden="true" />
-                    ) : (
-                      <Icon name="key" />
-                    )}
-                    {t('login.passkeySubmit')}
-                  </Button>
-                </div>
-                <div className="text-secondary small mt-2 text-center">
-                  {t('login.passkeyHint')}
-                </div>
-              </>
-            )}
-
-            {registration && (
-              <div className="text-center mt-3" data-testid="login-register-link">
-                <span className="text-secondary me-1">{t('login.registerPrompt')}</span>
-                <Link to="/register">{t('login.registerLink')}</Link>
-              </div>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
+      {registration && (
+        <div className="text-center mt-3" data-testid="login-register-link">
+          <span className="text-secondary me-1">{t('login.registerPrompt')}</span>
+          <Link to="/register">{t('login.registerLink')}</Link>
+        </div>
+      )}
+    </AuthFrame>
   )
 }

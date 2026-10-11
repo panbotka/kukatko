@@ -1,14 +1,12 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Card from 'react-bootstrap/Card'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 
+import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
@@ -199,165 +197,155 @@ export function PasswordResetPage() {
   const tooShort = validated && password.length < MIN_PASSWORD_LENGTH
 
   return (
-    <Row className="justify-content-center">
-      <Col xs={12} sm={10} md={7} lg={6} xl={5}>
-        <Card text="light" className="mt-4 mt-md-5">
-          <Card.Body>
-            <Card.Title as="h1" className="kk-page-title mb-4 text-center">
-              {t('passwordReset.title')}
-            </Card.Title>
+    <AuthFrame title={t('passwordReset.title')}>
+      {link.status === 'checking' && (
+        <div className="text-center py-3" data-testid="password-reset-checking">
+          <Spinner animation="border" role="status">
+            <span className="visually-hidden">{t('passwordReset.checking')}</span>
+          </Spinner>
+        </div>
+      )}
 
-            {link.status === 'checking' && (
-              <div className="text-center py-3" data-testid="password-reset-checking">
-                <Spinner animation="border" role="status">
-                  <span className="visually-hidden">{t('passwordReset.checking')}</span>
-                </Spinner>
-              </div>
-            )}
+      {link.status === 'unusable' && (
+        <div data-testid="password-reset-invalid">
+          <Alert variant="secondary" role="status">
+            <Alert.Heading as="h2" className="h5">
+              <Icon name="slash-circle" className="me-2" />
+              {t('passwordReset.invalidTitle')}
+            </Alert.Heading>
+            <p className="mb-0">{t('passwordReset.invalidBody')}</p>
+          </Alert>
+          <div className="text-center">
+            <Link to="/login">{t('passwordReset.backToLogin')}</Link>
+          </div>
+        </div>
+      )}
 
-            {link.status === 'unusable' && (
-              <div data-testid="password-reset-invalid">
-                <Alert variant="secondary" role="status">
-                  <Alert.Heading as="h2" className="h5">
-                    <Icon name="slash-circle" className="me-2" />
-                    {t('passwordReset.invalidTitle')}
-                  </Alert.Heading>
-                  <p className="mb-0">{t('passwordReset.invalidBody')}</p>
-                </Alert>
-                <div className="text-center">
-                  <Link to="/login">{t('passwordReset.backToLogin')}</Link>
-                </div>
-              </div>
-            )}
+      {link.status === 'unreachable' && (
+        <div data-testid="password-reset-unreachable">
+          <Alert variant="warning" role="status">
+            <Alert.Heading as="h2" className="h5">
+              <Icon name="wifi-off" className="me-2" />
+              {t('passwordReset.checkFailedTitle')}
+            </Alert.Heading>
+            <p className="mb-0">{t('passwordReset.checkFailedBody')}</p>
+          </Alert>
+          <div className="d-grid">
+            <Button variant="primary" onClick={retry}>
+              {t('passwordReset.retry')}
+            </Button>
+          </div>
+          <div className="text-center mt-3">
+            <Link to="/login">{t('passwordReset.backToLogin')}</Link>
+          </div>
+        </div>
+      )}
 
-            {link.status === 'unreachable' && (
-              <div data-testid="password-reset-unreachable">
-                <Alert variant="warning" role="status">
-                  <Alert.Heading as="h2" className="h5">
-                    <Icon name="wifi-off" className="me-2" />
-                    {t('passwordReset.checkFailedTitle')}
-                  </Alert.Heading>
-                  <p className="mb-0">{t('passwordReset.checkFailedBody')}</p>
-                </Alert>
-                <div className="d-grid">
-                  <Button variant="primary" onClick={retry}>
-                    {t('passwordReset.retry')}
-                  </Button>
-                </div>
-                <div className="text-center mt-3">
-                  <Link to="/login">{t('passwordReset.backToLogin')}</Link>
-                </div>
-              </div>
-            )}
+      {link.status === 'usable' && submit.status === 'done' && (
+        <div data-testid="password-reset-done">
+          <Alert variant="success" role="status">
+            <Alert.Heading as="h2" className="h5">
+              <Icon name="shield-lock" className="me-2" />
+              {t('passwordReset.doneTitle')}
+            </Alert.Heading>
+            <p className="mb-0">{t('passwordReset.doneSessions')}</p>
+            <p className="mb-0">{t('passwordReset.doneSignIn')}</p>
+          </Alert>
+          <div className="text-center">
+            <Link to="/login">{t('passwordReset.backToLogin')}</Link>
+          </div>
+        </div>
+      )}
 
-            {link.status === 'usable' && submit.status === 'done' && (
-              <div data-testid="password-reset-done">
-                <Alert variant="success" role="status">
-                  <Alert.Heading as="h2" className="h5">
-                    <Icon name="shield-lock" className="me-2" />
-                    {t('passwordReset.doneTitle')}
-                  </Alert.Heading>
-                  <p className="mb-0">{t('passwordReset.doneSessions')}</p>
-                  <p className="mb-0">{t('passwordReset.doneSignIn')}</p>
-                </Alert>
-                <div className="text-center">
-                  <Link to="/login">{t('passwordReset.backToLogin')}</Link>
-                </div>
-              </div>
-            )}
+      {link.status === 'usable' && submit.status !== 'done' && (
+        <>
+          <p className="mb-1">{t('passwordReset.greeting', { name: link.displayName })}</p>
+          <p className="text-secondary">{t('passwordReset.intro')}</p>
 
-            {link.status === 'usable' && submit.status !== 'done' && (
-              <>
-                <p className="mb-1">{t('passwordReset.greeting', { name: link.displayName })}</p>
-                <p className="text-secondary">{t('passwordReset.intro')}</p>
+          {rejection !== null && rejection.field === null && (
+            <Alert variant="danger" role="alert">
+              {rejectionMessage}
+            </Alert>
+          )}
 
-                {rejection !== null && rejection.field === null && (
-                  <Alert variant="danger" role="alert">
-                    {rejectionMessage}
-                  </Alert>
+          <Form
+            noValidate
+            validated={validated}
+            onSubmit={(event) => {
+              void handleSubmit(event)
+            }}
+          >
+            <Form.Group className="mb-3" controlId="password-reset-password">
+              <Form.Label>{t('passwordReset.password')}</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                autoFocus
+                required
+                minLength={MIN_PASSWORD_LENGTH}
+                isInvalid={tooShort || rejection?.field === 'password'}
+                // react-bootstrap's `isInvalid` only paints the input red;
+                // a screen reader learns nothing from a colour.
+                aria-invalid={tooShort || rejection?.field === 'password' ? true : undefined}
+                aria-describedby="password-reset-password-help"
+                value={password}
+                onChange={(event) => {
+                  change(setPassword)(event.target.value)
+                }}
+                disabled={submitting}
+              />
+              <Form.Text id="password-reset-password-help" className="text-secondary d-block">
+                {t('passwordReset.passwordHint', { min: MIN_PASSWORD_LENGTH })}
+              </Form.Text>
+              <Form.Control.Feedback type="invalid">
+                {rejection?.field === 'password'
+                  ? rejectionMessage
+                  : t('passwordReset.passwordRequired', { min: MIN_PASSWORD_LENGTH })}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3" controlId="password-reset-repeat">
+              <Form.Label>{t('passwordReset.passwordRepeat')}</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                required
+                isInvalid={rejection?.field === 'passwordRepeat'}
+                aria-invalid={rejection?.field === 'passwordRepeat' ? true : undefined}
+                value={passwordRepeat}
+                onChange={(event) => {
+                  change(setPasswordRepeat)(event.target.value)
+                }}
+                disabled={submitting}
+              />
+              <Form.Control.Feedback type="invalid">
+                {rejection?.field === 'passwordRepeat'
+                  ? rejectionMessage
+                  : t('passwordReset.passwordRepeatRequired')}
+              </Form.Control.Feedback>
+            </Form.Group>
+
+            <div className="d-grid mt-4">
+              <Button type="submit" variant="primary" disabled={submitting}>
+                {submitting && (
+                  <Spinner
+                    animation="border"
+                    size="sm"
+                    role="status"
+                    aria-hidden="true"
+                    className="me-2"
+                  />
                 )}
+                {t('passwordReset.submit')}
+              </Button>
+            </div>
+          </Form>
 
-                <Form
-                  noValidate
-                  validated={validated}
-                  onSubmit={(event) => {
-                    void handleSubmit(event)
-                  }}
-                >
-                  <Form.Group className="mb-3" controlId="password-reset-password">
-                    <Form.Label>{t('passwordReset.password')}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      autoComplete="new-password"
-                      autoFocus
-                      required
-                      minLength={MIN_PASSWORD_LENGTH}
-                      isInvalid={tooShort || rejection?.field === 'password'}
-                      // react-bootstrap's `isInvalid` only paints the input red;
-                      // a screen reader learns nothing from a colour.
-                      aria-invalid={tooShort || rejection?.field === 'password' ? true : undefined}
-                      aria-describedby="password-reset-password-help"
-                      value={password}
-                      onChange={(event) => {
-                        change(setPassword)(event.target.value)
-                      }}
-                      disabled={submitting}
-                    />
-                    <Form.Text id="password-reset-password-help" className="text-secondary d-block">
-                      {t('passwordReset.passwordHint', { min: MIN_PASSWORD_LENGTH })}
-                    </Form.Text>
-                    <Form.Control.Feedback type="invalid">
-                      {rejection?.field === 'password'
-                        ? rejectionMessage
-                        : t('passwordReset.passwordRequired', { min: MIN_PASSWORD_LENGTH })}
-                    </Form.Control.Feedback>
-                  </Form.Group>
-
-                  <Form.Group className="mb-3" controlId="password-reset-repeat">
-                    <Form.Label>{t('passwordReset.passwordRepeat')}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      autoComplete="new-password"
-                      required
-                      isInvalid={rejection?.field === 'passwordRepeat'}
-                      aria-invalid={rejection?.field === 'passwordRepeat' ? true : undefined}
-                      value={passwordRepeat}
-                      onChange={(event) => {
-                        change(setPasswordRepeat)(event.target.value)
-                      }}
-                      disabled={submitting}
-                    />
-                    <Form.Control.Feedback type="invalid">
-                      {rejection?.field === 'passwordRepeat'
-                        ? rejectionMessage
-                        : t('passwordReset.passwordRepeatRequired')}
-                    </Form.Control.Feedback>
-                  </Form.Group>
-
-                  <div className="d-grid mt-4">
-                    <Button type="submit" variant="primary" disabled={submitting}>
-                      {submitting && (
-                        <Spinner
-                          animation="border"
-                          size="sm"
-                          role="status"
-                          aria-hidden="true"
-                          className="me-2"
-                        />
-                      )}
-                      {t('passwordReset.submit')}
-                    </Button>
-                  </div>
-                </Form>
-
-                <div className="text-center mt-3">
-                  <Link to="/login">{t('passwordReset.backToLogin')}</Link>
-                </div>
-              </>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
+          <div className="text-center mt-3">
+            <Link to="/login">{t('passwordReset.backToLogin')}</Link>
+          </div>
+        </>
+      )}
+    </AuthFrame>
   )
 }

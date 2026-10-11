@@ -64,6 +64,14 @@ describe('PasswordResetPage', () => {
     statusMock.mockResolvedValue({ valid: true, display_name: 'Anna Nováková' })
   })
 
+  it('opens in the same frame as sign-in, wordmark over the card', () => {
+    statusMock.mockReturnValue(new Promise(() => undefined))
+    renderPage()
+
+    expect(screen.getByTestId('auth-wordmark')).toHaveTextContent('Kukátko')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('New password')
+  })
+
   it('checks the link before it shows anything to fill in', () => {
     // A promise that never settles: the page is caught mid-check, which is where
     // an empty form would be the wrong thing to show.

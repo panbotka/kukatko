@@ -80,6 +80,13 @@ describe('RegisterPage', () => {
     })
   })
 
+  it('opens in the same frame as sign-in, wordmark over the card', () => {
+    renderRegister()
+
+    expect(screen.getByTestId('auth-wordmark')).toHaveTextContent('Kukátko')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Registration')
+  })
+
   it('creates the account and confirms it is waiting, without signing anybody in', async () => {
     const user = userEvent.setup()
     registerMock.mockResolvedValue(created())

@@ -3733,3 +3733,68 @@ body {
     margin-inline-start: auto;
   }
 }
+
+/* ---- Signed-out frame (sign-in, registration, password reset) ----------- */
+
+/* The wordmark and the card, centred in the viewport on desktops and tablets.
+   The height is the shell's own (`100dvh` less the bottom edge `body` already
+   reserves), so a centred card never makes the page scroll. A form taller than
+   the viewport (registration on a short laptop) simply grows the frame: the
+   minimum height is a floor, never a clip. */
+.kk-auth-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100dvh - var(--kk-bottom-edge));
+  padding: var(--kk-space-6) var(--kk-space-4);
+}
+
+/* As wide as the old grid columns made the card at desktop widths (four and five
+   twelfths of a 1440px window), and the full width of a phone less the gutter. */
+.kk-auth-frame-column {
+  width: 100%;
+}
+
+.kk-auth-frame-column--narrow {
+  max-width: 30rem;
+}
+
+.kk-auth-frame-column--wide {
+  max-width: 37.5rem;
+}
+
+/* The app's name over the card: the display step of the type scale in the
+   brand accent, so the one place nobody is signed in yet still says whose door
+   this is. */
+.kk-auth-wordmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kk-space-2);
+  margin-bottom: var(--kk-space-5);
+  color: var(--kk-accent);
+}
+
+.kk-auth-wordmark-mark {
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+.kk-auth-wordmark-glint {
+  fill: var(--kk-palette-base);
+}
+
+/* A phone does not centre: opening the keyboard shrinks the viewport, and a
+   centred card would slide up under the fingers and take the focused field with
+   it. A fixed ~12% of the small viewport (`svh`, which neither the keyboard nor
+   the collapsing browser toolbars resize) keeps it where it was when the page
+   opened. */
+@media (max-width: 575.98px) {
+  .kk-auth-frame {
+    justify-content: flex-start;
+    padding-top: 12vh;
+    padding-top: 12svh;
+  }
+}

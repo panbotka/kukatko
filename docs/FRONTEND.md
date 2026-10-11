@@ -579,6 +579,14 @@ here.
   `--bs-success`/`--bs-danger`/`--kk-accent`), text in `--bs-body-color`. **Outside the provider it returns a
   no-op** (default context), so focused unit tests need no wrapper. First user:
   `BatchActionBar` (success/failure of a bulk action). Tests run via `BatchActionBar.test`,
+  `AuthFrame` (**the frame of the three signed-out pages** — `LoginPage`, `RegisterPage`,
+  `PasswordResetPage` — so they look alike: the „Kukátko" **wordmark** (`documentTitle.app`, the
+  `.kk-display` step in `--kk-accent`, with a small inline peephole SVG, `aria-hidden`, no asset) over
+  a card whose `Card.Title as="h1"` is the `title` prop — the wordmark is deliberately **not a heading**,
+  so the route keeps one `h1`. `width` `'narrow'` (sign-in, max 30rem) or `'wide'` (default, 37.5rem).
+  `.kk-auth-frame` **centres** the pair in `100dvh` less `--kk-bottom-edge` on desktop and tablet; below
+  576px it sits **12svh from the top** instead, so the on-screen keyboard cannot slide the card and its
+  focused field away. Tests: `AuthFrame.test` + one frame assertion per page test),
   `BackLink` (**shared way back** from every detail (album, label, person, photo) to the list
   it belongs to: an `arrow-left` arrow via `Icon` (decorative, `aria-hidden`) + **text naming the
   target** („Zpět na alba" / „Zpět na štítky" / „Zpět na lidi"), which is also the link's accessible
@@ -1760,7 +1768,7 @@ here.
   prefills the add fields on each opening (`/expand` puts the expanded collection there); `onDone` receives
   **`BulkEditOutcome{operations,result}`** — what apply actually sent and per-photo results — so
   the page can edit the list in place instead of refetching),
-  `pages/` (`LoginPage` (username + password in a Superhero card; `errorKeyFor` maps the failure to
+  `pages/` (`LoginPage` (username + password in the `AuthFrame` card, `width="narrow"`; `errorKeyFor` maps the failure to
   a sentence — 401 → `login.errorInvalid`, **403 → `login.errorPendingApproval`** (the account
   registered and is waiting for an administrator: the password was right, so blaming it would send the
   reader off retyping one that works; `withoutMailPromise` swaps in
@@ -1795,7 +1803,7 @@ here.
   without WebAuthn, a successful passkey sign-in returning to the requested address, a cancelled prompt, and
   the borrowed approval sentence),
   `RegisterPage` (route `/register`, **public like sign-in** — nobody registering has a session yet — and
-  laid out as the same Superhero card, one column, so the two read as one flow): username, display name,
+  laid out in the same `AuthFrame`, one column, so the two read as one flow): username, display name,
   e-mail, password, password again and the **registration word** (the instance's shared registration
   secret, `register.secretHint` explaining in one line that it is the word somebody who already uses
   Kukátko told them). All six are required. The e-mail field's hint has **two wordings**: with
@@ -1901,7 +1909,7 @@ here.
   `PasswordResetPage` (route **`/password-reset/:token`**, the landing page of the one-time link
   `POST /admin/users/{uid}/password-reset` mints — **public like sign-in and registration**, because
   whoever follows it is locked out of the very account it belongs to, and laid out as the same
-  one-column Superhero card): the link is checked **before** there is anything to fill in
+  one-column `AuthFrame` card): the link is checked **before** there is anything to fill in
   (`fetchPasswordResetStatus`, a spinner while it is asked, `data-testid="password-reset-checking"`) —
   an empty form that every submit would refuse is worse than no form. A **usable** link greets the
   person by the display name the status carries (`passwordReset.greeting`) and asks for the new

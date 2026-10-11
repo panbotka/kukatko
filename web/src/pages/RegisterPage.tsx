@@ -1,14 +1,12 @@
 import { type SyntheticEvent, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
-import Card from 'react-bootstrap/Card'
-import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
-import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { mailEnabledFrom } from '../hooks/useMailEnabled'
@@ -280,195 +278,183 @@ export function RegisterPage() {
   const submitting = submit.status === 'submitting'
 
   return (
-    <Row className="justify-content-center">
-      <Col xs={12} sm={10} md={7} lg={6} xl={5}>
-        <Card text="light" className="mt-4 mt-md-5">
-          <Card.Body>
-            <Card.Title as="h1" className="kk-page-title mb-4 text-center">
-              {t('register.title')}
-            </Card.Title>
+    <AuthFrame title={t('register.title')}>
+      {registration === 'loading' && (
+        <div className="text-center py-3">
+          <Spinner animation="border" role="status">
+            <span className="visually-hidden">{t('register.loading')}</span>
+          </Spinner>
+        </div>
+      )}
 
-            {registration === 'loading' && (
-              <div className="text-center py-3">
-                <Spinner animation="border" role="status">
-                  <span className="visually-hidden">{t('register.loading')}</span>
-                </Spinner>
+      {registration === 'closed' && (
+        <div data-testid="register-closed">
+          <Alert variant="secondary" role="status">
+            <Icon name="slash-circle" className="me-2" />
+            {t('register.closed')}
+          </Alert>
+          <div className="text-center">
+            <Link to="/login">{t('register.backToLogin')}</Link>
+          </div>
+        </div>
+      )}
+
+      {registration !== 'loading' && registration !== 'closed' && (
+        <>
+          {submit.status === 'done' ? (
+            <div data-testid="register-done">
+              <Alert variant="success" role="status">
+                <Alert.Heading as="h2" className="h5">
+                  <Icon name="person-check" className="me-2" />
+                  {t('register.doneTitle', { username: submit.username })}
+                </Alert.Heading>
+                <p className="mb-0">{t('register.donePending')}</p>
+                <p className="mb-0">
+                  {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
+                </p>
+              </Alert>
+              <div className="text-center">
+                <Link to="/login">{t('register.backToLogin')}</Link>
               </div>
-            )}
+            </div>
+          ) : (
+            <>
+              <p className="text-secondary">
+                {viaLink ? t('register.introLink') : t('register.intro')}
+              </p>
 
-            {registration === 'closed' && (
-              <div data-testid="register-closed">
-                <Alert variant="secondary" role="status">
-                  <Icon name="slash-circle" className="me-2" />
-                  {t('register.closed')}
+              {rejection !== null && rejection.field === null && (
+                <Alert variant="danger" role="alert">
+                  {rejectionMessage}
                 </Alert>
-                <div className="text-center">
-                  <Link to="/login">{t('register.backToLogin')}</Link>
-                </div>
-              </div>
-            )}
+              )}
 
-            {registration !== 'loading' && registration !== 'closed' && (
-              <>
-                {submit.status === 'done' ? (
-                  <div data-testid="register-done">
-                    <Alert variant="success" role="status">
-                      <Alert.Heading as="h2" className="h5">
-                        <Icon name="person-check" className="me-2" />
-                        {t('register.doneTitle', { username: submit.username })}
-                      </Alert.Heading>
-                      <p className="mb-0">{t('register.donePending')}</p>
-                      <p className="mb-0">
-                        {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
-                      </p>
-                    </Alert>
-                    <div className="text-center">
-                      <Link to="/login">{t('register.backToLogin')}</Link>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-secondary">
-                      {viaLink ? t('register.introLink') : t('register.intro')}
-                    </p>
-
-                    {rejection !== null && rejection.field === null && (
-                      <Alert variant="danger" role="alert">
-                        {rejectionMessage}
-                      </Alert>
-                    )}
-
-                    <Form
-                      noValidate
-                      validated={validated}
-                      onSubmit={(event) => {
-                        void handleSubmit(event)
-                      }}
-                    >
-                      <RegisterField
-                        id="register-username"
-                        label={t('register.username')}
-                        type="text"
-                        autoComplete="username"
-                        value={username}
-                        onChange={change(setUsername)}
-                        disabled={submitting}
-                        invalid={rejection?.field === 'username'}
-                        feedback={
-                          rejection?.field === 'username'
-                            ? rejectionMessage
-                            : t('register.usernameRequired')
-                        }
-                        hint={t('register.usernameHint')}
-                        autoFocus
-                      />
-                      <RegisterField
-                        id="register-display-name"
-                        label={t('register.displayName')}
-                        type="text"
-                        autoComplete="name"
-                        value={displayName}
-                        onChange={change(setDisplayName)}
-                        disabled={submitting}
-                        invalid={rejection?.field === 'displayName'}
-                        feedback={
-                          rejection?.field === 'displayName'
-                            ? rejectionMessage
-                            : t('register.displayNameRequired')
-                        }
-                      />
-                      <RegisterField
-                        id="register-email"
-                        label={t('register.email')}
-                        type="email"
-                        autoComplete="email"
-                        value={email}
-                        onChange={change(setEmail)}
-                        disabled={submitting}
-                        invalid={rejection?.field === 'email'}
-                        feedback={
-                          rejection?.field === 'email'
-                            ? rejectionMessage
-                            : t('register.emailRequired')
-                        }
-                        hint={t(mailEnabled ? 'register.emailHint' : 'register.emailHintNoMail')}
-                      />
-                      <RegisterField
-                        id="register-password"
-                        label={t('register.password')}
-                        type="password"
-                        autoComplete="new-password"
-                        value={password}
-                        onChange={change(setPassword)}
-                        disabled={submitting}
-                        minLength={MIN_PASSWORD_LENGTH}
-                        invalid={rejection?.field === 'password'}
-                        feedback={
-                          rejection?.field === 'password'
-                            ? rejectionMessage
-                            : t('register.passwordRequired', { min: MIN_PASSWORD_LENGTH })
-                        }
-                      />
-                      <RegisterField
-                        id="register-password-repeat"
-                        label={t('register.passwordRepeat')}
-                        type="password"
-                        autoComplete="new-password"
-                        value={passwordRepeat}
-                        onChange={change(setPasswordRepeat)}
-                        disabled={submitting}
-                        invalid={rejection?.field === 'passwordRepeat'}
-                        feedback={
-                          rejection?.field === 'passwordRepeat'
-                            ? rejectionMessage
-                            : t('register.passwordRepeatRequired')
-                        }
-                      />
-                      {!viaLink && (
-                        <RegisterField
-                          id="register-secret"
-                          label={t('register.secret')}
-                          type="text"
-                          autoComplete="off"
-                          value={secret}
-                          onChange={change(setSecret)}
-                          disabled={submitting}
-                          invalid={rejection?.field === 'secret'}
-                          feedback={
-                            rejection?.field === 'secret'
-                              ? rejectionMessage
-                              : t('register.secretRequired')
-                          }
-                          hint={t('register.secretHint')}
-                        />
-                      )}
-
-                      <div className="d-grid mt-4">
-                        <Button type="submit" variant="primary" disabled={submitting}>
-                          {submitting && (
-                            <Spinner
-                              animation="border"
-                              size="sm"
-                              role="status"
-                              aria-hidden="true"
-                              className="me-2"
-                            />
-                          )}
-                          {t('register.submit')}
-                        </Button>
-                      </div>
-                    </Form>
-
-                    <div className="text-center mt-3">
-                      <Link to="/login">{t('register.backToLogin')}</Link>
-                    </div>
-                  </>
+              <Form
+                noValidate
+                validated={validated}
+                onSubmit={(event) => {
+                  void handleSubmit(event)
+                }}
+              >
+                <RegisterField
+                  id="register-username"
+                  label={t('register.username')}
+                  type="text"
+                  autoComplete="username"
+                  value={username}
+                  onChange={change(setUsername)}
+                  disabled={submitting}
+                  invalid={rejection?.field === 'username'}
+                  feedback={
+                    rejection?.field === 'username'
+                      ? rejectionMessage
+                      : t('register.usernameRequired')
+                  }
+                  hint={t('register.usernameHint')}
+                  autoFocus
+                />
+                <RegisterField
+                  id="register-display-name"
+                  label={t('register.displayName')}
+                  type="text"
+                  autoComplete="name"
+                  value={displayName}
+                  onChange={change(setDisplayName)}
+                  disabled={submitting}
+                  invalid={rejection?.field === 'displayName'}
+                  feedback={
+                    rejection?.field === 'displayName'
+                      ? rejectionMessage
+                      : t('register.displayNameRequired')
+                  }
+                />
+                <RegisterField
+                  id="register-email"
+                  label={t('register.email')}
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={change(setEmail)}
+                  disabled={submitting}
+                  invalid={rejection?.field === 'email'}
+                  feedback={
+                    rejection?.field === 'email' ? rejectionMessage : t('register.emailRequired')
+                  }
+                  hint={t(mailEnabled ? 'register.emailHint' : 'register.emailHintNoMail')}
+                />
+                <RegisterField
+                  id="register-password"
+                  label={t('register.password')}
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={change(setPassword)}
+                  disabled={submitting}
+                  minLength={MIN_PASSWORD_LENGTH}
+                  invalid={rejection?.field === 'password'}
+                  feedback={
+                    rejection?.field === 'password'
+                      ? rejectionMessage
+                      : t('register.passwordRequired', { min: MIN_PASSWORD_LENGTH })
+                  }
+                />
+                <RegisterField
+                  id="register-password-repeat"
+                  label={t('register.passwordRepeat')}
+                  type="password"
+                  autoComplete="new-password"
+                  value={passwordRepeat}
+                  onChange={change(setPasswordRepeat)}
+                  disabled={submitting}
+                  invalid={rejection?.field === 'passwordRepeat'}
+                  feedback={
+                    rejection?.field === 'passwordRepeat'
+                      ? rejectionMessage
+                      : t('register.passwordRepeatRequired')
+                  }
+                />
+                {!viaLink && (
+                  <RegisterField
+                    id="register-secret"
+                    label={t('register.secret')}
+                    type="text"
+                    autoComplete="off"
+                    value={secret}
+                    onChange={change(setSecret)}
+                    disabled={submitting}
+                    invalid={rejection?.field === 'secret'}
+                    feedback={
+                      rejection?.field === 'secret'
+                        ? rejectionMessage
+                        : t('register.secretRequired')
+                    }
+                    hint={t('register.secretHint')}
+                  />
                 )}
-              </>
-            )}
-          </Card.Body>
-        </Card>
-      </Col>
-    </Row>
+
+                <div className="d-grid mt-4">
+                  <Button type="submit" variant="primary" disabled={submitting}>
+                    {submitting && (
+                      <Spinner
+                        animation="border"
+                        size="sm"
+                        role="status"
+                        aria-hidden="true"
+                        className="me-2"
+                      />
+                    )}
+                    {t('register.submit')}
+                  </Button>
+                </div>
+              </Form>
+
+              <div className="text-center mt-3">
+                <Link to="/login">{t('register.backToLogin')}</Link>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </AuthFrame>
   )
 }

@@ -93,6 +93,13 @@ describe('LoginPage', () => {
     supportedMock.mockReturnValue(true)
   })
 
+  it('opens in the shared frame: the Kukátko wordmark over a card titled Sign in', () => {
+    renderLogin(authValue())
+
+    expect(screen.getByTestId('auth-wordmark')).toHaveTextContent('Kukátko')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Sign in')
+  })
+
   it('does not call login when fields are empty (client-side validation)', async () => {
     const user = userEvent.setup()
     const value = authValue()
