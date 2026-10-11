@@ -1618,7 +1618,8 @@ body {
    up in a column so the chips beside them read as four rows of one table rather
    than as four ragged lines; the width is the longest of the four plus air. On a
    phone the column is dropped: a fixed label column there eats a third of the
-   row, and four rows that each start at the left edge are no harder to read. */
+   row, so the label takes a line of its own above its chips instead of floating
+   beside the first of several wrapped lines. */
 .kk-family-row__label {
   min-width: 5.5rem;
 }
@@ -1626,7 +1627,24 @@ body {
 @media (max-width: 575.98px) {
   .kk-family-row__label {
     min-width: 0;
+    flex-basis: 100%;
   }
+}
+
+/* A relative on the family strip: a neutral surface chip (surface, border, body
+   text) rather than the filled person hue — that rose is the app's danger
+   colour, and a row of it read as a row of warnings. Hover and focus lift the
+   border, as an outline control's would, so the chip still reads as a link. */
+.kk-family-chip {
+  background-color: var(--kk-surface-raised);
+  border: 1px solid var(--kk-surface-border);
+  color: var(--kk-text);
+}
+
+.kk-family-chip:hover,
+.kk-family-chip:focus-visible {
+  border-color: var(--kk-control-border-strong);
+  color: var(--kk-text);
 }
 
 /* Library filter bar. The search field is the visual anchor (it grows to fill

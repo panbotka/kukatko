@@ -4075,7 +4075,8 @@ here.
   on hover is a fact no phone ever sees)), and
   for editors only the review section `Candidates` („Možná je i zde" — untagged photos where the person
   is present by face resemblance, to confirm/reject; the search is **explicit** via a button, not
-  on-load) and below it the page-local `OutliersLink`: a single `btn-outline-secondary` link to
+  on-load); in the header's action group, after „Upravit" and „Sloučit", sits the page-local `OutliersLink`
+  (moved up from the foot of the page, where it read as an orphan): a single `btn-outline-secondary` link to
   `/outliers?subject={uid}` whose accessible name is the count („5 obličejů ke kontrole",
   `subject.outliersLink_*`), read from `fetchOutliers` for this person. Outlier review itself lives only on
   `/outliers` (`OutlierCard` — context crop, enlarge, both verdicts, bulk, keyboard, threshold); the person
@@ -4108,9 +4109,10 @@ here.
   Between the header and the gallery sits the **`FamilyStrip`** (`components/people/FamilyStrip.tsx`): four
   rows of round face chips — *Rodiče · Sourozenci · Partner · Děti* — read in **one** request
   (`fetchRelations` → `GET /subjects/{uid}/relations`, each entry carrying its own cover and photo count, so a
-  family of a dozen is one call and not one per chip). The chip is the photo panel's person chip and not a
-  second way of drawing the same thing (the `ENTITY_STYLE.person` pill, `ps-1 pe-3`, a round face, the name),
-  with the **life span inside it** where anybody recorded one — with eight Nečases in the library the years are
+  family of a dozen is one call and not one per chip). The chip borrows the photo panel's person chip's shape
+  (`ps-1 pe-3` pill, a round face, the name) but is painted **neutral** — `.kk-family-chip` (surface-raised,
+  surface border, body text; the border lifts on hover/focus) and not the `ENTITY_STYLE.person` rose, which
+  reads as danger and turned a family into a row of warnings — with the **life span inside it** where anybody recorded one — with eight Nečases in the library the years are
   what tell two namesakes apart. The face is **`SubjectAvatar`** (`components/people/SubjectAvatar.tsx` →
   `GET /subjects/{uid}/avatar`, the server-cut square), which falls back to `InitialAvatar`'s coloured letter
   for `photo_count === 0` (no request that could only 404) or a rendition that fails: a relative nobody
@@ -4119,7 +4121,8 @@ here.
   `canCurate` every row stays and gains a **`+`** (`person-plus`, the row named in its `aria-label`), because
   there the `+` is the invitation. A strip that fails to load draws nothing at all — it is secondary to the
   page it sits on, and an error banner over a gallery that loaded perfectly well would be louder than what it
-  reports. Each `+` opens **`AddRelationModal`** (`components/people/AddRelationModal.tsx`, mounted **only
+  reports. On a phone (< 576px) each row's label takes a line of its own (`flex-basis: 100%`) above its chips,
+  so it never floats beside the first of several wrapped lines. Each `+` opens **`AddRelationModal`** (`components/people/AddRelationModal.tsx`, mounted **only
   while open** — it loads the whole people list): a four-way role picker (`ToggleButtonGroup`, radio, the rows
   1:1) over `AddAutocomplete` (diacritics- and case-insensitive, the nickname searched too), `onAdd` →
   `addRelation(subjectUid,{role,subject_uid})` and `onCreate` → `{role,new_subject:{name}}`, which the backend

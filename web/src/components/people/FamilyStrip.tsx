@@ -5,7 +5,6 @@ import { Link } from 'react-router-dom'
 
 import { formatLifeSpan } from '../../lib/lifeYears'
 import { fetchRelations, type Relations, type Relative } from '../../services/family'
-import { ENTITY_STYLE } from '../entityStyle'
 import { Icon } from '../Icon'
 
 import { AddRelationModal, type RelationKind } from './AddRelationModal'
@@ -25,11 +24,14 @@ export interface FamilyStripProps {
 const NO_RELATIONS: Relations = { parents: [], siblings: [], partners: [], children: [] }
 
 /**
- * The pill shared by every chip here, and by the person chips of the photo
- * panel: a rounded badge pulled in around its round face so the picture reads as
- * a portrait rather than as a coloured dot beside the text.
+ * The pill every relative is drawn as: a rounded badge pulled in around its
+ * round face so the picture reads as a portrait rather than as a coloured dot
+ * beside the text. `kk-family-chip` paints it neutral — surface, border, body
+ * text — rather than in the person hue: a row of filled rose pills read as a row
+ * of warnings, the hue the app otherwise spends on danger.
  */
-const CHIP_CLASS = 'badge rounded-pill d-inline-flex align-items-center gap-2 ps-1 pe-3'
+const CHIP_CLASS =
+  'badge rounded-pill kk-family-chip d-inline-flex align-items-center gap-2 ps-1 pe-3'
 
 /**
  * One relative as a round face chip linking to their page.
@@ -45,10 +47,7 @@ function RelativeChip({ relative }: { relative: Relative }) {
   const lifeSpan = formatLifeSpan(relative.birth_year, relative.death_year)
 
   return (
-    <Link
-      to={`/people/${relative.uid}`}
-      className={`${CHIP_CLASS} ${ENTITY_STYLE.person.className} text-white text-decoration-none`}
-    >
+    <Link to={`/people/${relative.uid}`} className={`${CHIP_CLASS} text-decoration-none`}>
       <SubjectAvatar uid={relative.uid} name={relative.name} photoCount={relative.photo_count} />
       {relative.name}
       {lifeSpan !== null && <span className="fw-normal">{lifeSpan}</span>}
@@ -111,10 +110,10 @@ function FamilyRow({ label, people, addLabel, canCurate, onAdd }: FamilyRowProps
  * gallery because in nine cases out of ten this — not the full tree — is what a
  * reader wants to know about somebody: who they belong to.
  *
- * The presentation is the photo panel's person chip, deliberately: the app
- * already answers "who is this" with a round face crop and a name, and a second
- * way of drawing the same thing would only be a second thing to keep consistent.
- * A relative with no photograph (see {@link SubjectAvatar}) is an ordinary chip
+ * The presentation borrows the photo panel's person chip — the app already
+ * answers "who is this" with a round face crop and a name — but in a neutral
+ * surface chip rather than the person hue, so a family reads as people and not
+ * as a list of alerts. A relative with no photograph (see {@link SubjectAvatar}) is an ordinary chip
  * with their initials in it.
  *
  * Every list is *derived* from the family rows rather than stored, which is why

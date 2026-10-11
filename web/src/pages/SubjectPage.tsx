@@ -78,6 +78,11 @@ interface OutliersLinkProps {
  * the way of the gallery, and the linked page reports its own failures. The
  * count is kept together with the uid it was read for, so navigating to another
  * person never shows the previous person's number.
+ *
+ * It sits in the header's action group, beside "Edit" and "Merge", in their
+ * outline style: it is one more thing a curator does about this person's record,
+ * and at the foot of the page, under the candidate search, it read as an orphan
+ * nobody scrolled down to.
  */
 function OutliersLink({ subjectUid }: OutliersLinkProps) {
   const { t } = useTranslation()
@@ -101,14 +106,12 @@ function OutliersLink({ subjectUid }: OutliersLinkProps) {
     return null
   }
   return (
-    <p className="mt-4 mb-0">
-      <Link
-        to={`/outliers?subject=${encodeURIComponent(subjectUid)}`}
-        className="btn btn-sm btn-outline-secondary"
-      >
-        <Icon name="exclamation-triangle" /> {t('subject.outliersLink', { count: found.count })}
-      </Link>
-    </p>
+    <Link
+      to={`/outliers?subject=${encodeURIComponent(subjectUid)}`}
+      className="btn btn-sm btn-outline-secondary"
+    >
+      <Icon name="exclamation-triangle" /> {t('subject.outliersLink', { count: found.count })}
+    </Link>
   )
 }
 
@@ -117,8 +120,9 @@ function OutliersLink({ subjectUid }: OutliersLinkProps) {
  * density control — a view preference open to everyone who can see the page),
  * the photo gallery (with a set-cover action for curators), and — for curators —
  * the candidate search (untagged photos where this person likely appears, to
- * confirm/reject) and a link to the outlier review on `/outliers` when this
- * person has faces to check there. The gallery pages through
+ * confirm/reject) and — in the header, beside the other curator actions — a
+ * link to the outlier review on `/outliers` when this person has faces to check
+ * there. The gallery pages through
  * `GET /subjects/{uid}/photos` with a load-more control.
  *
  * Curators can also select photos in the gallery; picking one raises the
@@ -420,6 +424,10 @@ export function SubjectPage() {
               >
                 {t('subject.merge.action')}
               </Button>
+              {/* Outlier review lives on `/outliers`; this is only the way
+                  there, drawn when the person has faces to check — most have
+                  none, and a button promising zero is worse than no button. */}
+              <OutliersLink subjectUid={subject.uid} />
             </>
           )}
         </div>
@@ -429,7 +437,7 @@ export function SubjectPage() {
           of ten that is what a reader came for, and for a curator the row of +
           buttons is where a family tree actually gets filled in. The section
           draws itself only when it has something to show or somebody who can add
-          it, exactly as the outliers link does further down. */}
+          it, exactly as the outliers link in the header does. */}
       <FamilyStrip subjectUid={subject.uid} subjectName={subject.name} canCurate={canCurate} />
 
       <h2 className="kk-section-title">{t('subject.photos')}</h2>
@@ -506,11 +514,6 @@ export function SubjectPage() {
           <Candidates subjectUid={subject.uid} onAssigned={reload} />
         </section>
       )}
-
-      {/* Outlier review lives on `/outliers`; this is only the way there, drawn
-          when the person has faces to check — most have none, and a titled empty
-          box is worse than no box. */}
-      {canCurate && <OutliersLink subjectUid={subject.uid} />}
 
       {bulk.canBulkEdit && selecting && (
         <>

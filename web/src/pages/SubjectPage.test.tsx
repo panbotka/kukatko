@@ -369,7 +369,7 @@ describe('SubjectPage', () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     renderPage(true)
     // Editors get the on-page candidate search (a write action gated exactly like the
-    // outlier link below it); the expensive search waits for the button, not mount.
+    // outlier link in the header); the expensive search waits for the button, not mount.
     expect(await screen.findByRole('button', { name: /Find suggestions/i })).toBeInTheDocument()
   })
 
@@ -1057,6 +1057,20 @@ describe('SubjectPage family strip', () => {
     expect(relationsMock).toHaveBeenCalledTimes(1)
   })
 
+  it('draws relatives as neutral chips, not in the hue that reads as danger', async () => {
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    relationsMock.mockResolvedValue(relations({ parents: [relative('sj_p', 'Marie')] }))
+    renderPage(true)
+
+    const chip = await screen.findByRole('link', { name: 'Marie' })
+    expect(chip).toHaveClass('kk-family-chip')
+    expect(chip).not.toHaveClass('kk-entity-person')
+    // The row's own `+` keeps its outline button.
+    expect(screen.getByRole('button', { name: 'Add a parent' })).toHaveClass(
+      'btn-outline-secondary',
+    )
+  })
+
   it('leaves out the relations nobody recorded', async () => {
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     relationsMock.mockResolvedValue(relations({ children: [relative('sj_c', 'Anna')] }))
@@ -1317,6 +1331,10 @@ describe('SubjectPage outliers link', () => {
 
     const link = await screen.findByRole('link', { name: '2 faces to check' })
     expect(link).toHaveAttribute('href', '/outliers?subject=sj_1')
+    // In the header's action group, a sibling of Edit and Merge — not orphaned
+    // at the foot of the page under the candidate search.
+    expect(link.parentElement).toBe(screen.getByRole('button', { name: 'Edit' }).parentElement)
+    expect(link).toHaveClass('btn-outline-secondary')
     expect(outliersMock).toHaveBeenCalledWith('sj_1', undefined, expect.any(AbortSignal))
     // The review itself is gone from this page: no verdicts, no heading.
     expect(screen.queryByRole('button', { name: 'Not this person' })).not.toBeInTheDocument()
