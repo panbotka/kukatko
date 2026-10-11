@@ -500,11 +500,17 @@ arrived (one click to see them), which albums were started, who was newly named,
 were written.
 
 And when somebody tags *you* — with your account saying which person you are, and the kind switched on
-for the channels you want (in the app, as a push, by e-mail) — you get **one notification per hour, not
-one per photo**: "Přibylo 12 fotek, na kterých vás označili." An afternoon of naming faces from a village event is one message.
+for the channels you want (in the app, as a push, by e-mail) — you get **a notification per album, not
+one per photo**: "Přibylo 5 fotek v albu Pouť 2026, na kterých vás označili." An afternoon of naming faces
+from a village event is one message per album it was filed into, and one more for the photos in no album
+("Přibyly 3 další fotky…"); a photo in two albums is counted in each, an album you may not see (a private
+one, for anybody below curator) counts among the other photos, and past five albums in one hour the rest
+are folded into the other photos too, so the hour never fans out into a dozen pushes. The e-mail is one
+for the whole hour, listing the albums with their counts and a link each.
 It never says who did the tagging, never tells you about your own, never counts a private, hidden or
 archived photo, and a tag taken back before the hour is up is taken out of the count. The hour is
-configurable, and each channel of the kind is switched on or off in your notification settings. Tapping it opens exactly
+configurable, and each channel of the kind is switched on or off in your notification settings. Tapping a
+notification opens exactly
 those photos — the set as it was when the message was sent, not a live search a thirteenth tag would
 change: one photo opens straight in the viewer, several as a grid under the message itself, and if some
 have since become private or archived the page says how many are no longer available to you instead of

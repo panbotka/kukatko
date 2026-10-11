@@ -103,10 +103,10 @@ var (
 	// URL. An enabled sender that quietly dropped every notification would be
 	// worse than none, so it fails startup instead.
 	ErrInvalidPushConfig = errors.New("config: push.enabled is true but its VAPID configuration is invalid")
-	// ErrInvalidPushTagsWindow indicates push.tags.window is not positive: a
+	// ErrInvalidTagsWindow indicates notifications.tags.window is not positive: a
 	// window that never opens would announce every tag on its own, which is the
 	// flood the window exists to prevent.
-	ErrInvalidPushTagsWindow = errors.New("config: push.tags.window must be positive")
+	ErrInvalidTagsWindow = errors.New("config: notifications.tags.window must be positive")
 	// ErrInvalidTaskDigestHour indicates tasks.digest.hour is not an hour of the
 	// day.
 	ErrInvalidTaskDigestHour = errors.New("config: tasks.digest.hour must be between 0 and 23")
@@ -129,13 +129,15 @@ type Config struct {
 	Maps       MapsConfig       `mapstructure:"maps"`
 	Mail       MailConfig       `mapstructure:"mail"`
 	Push       PushConfig       `mapstructure:"push"`
-	Tasks      TasksConfig      `mapstructure:"tasks"`
-	Backup     BackupConfig     `mapstructure:"backup"`
-	Trash      TrashConfig      `mapstructure:"trash"`
-	Duplicate  DuplicateConfig  `mapstructure:"duplicate"`
-	Stacks     StacksConfig     `mapstructure:"stacks"`
-	Sidecar    SidecarConfig    `mapstructure:"sidecar"`
-	MCP        MCPConfig        `mapstructure:"mcp"`
+	// Notifications is what every channel shares; see NotificationsConfig.
+	Notifications NotificationsConfig `mapstructure:"notifications"`
+	Tasks         TasksConfig         `mapstructure:"tasks"`
+	Backup        BackupConfig        `mapstructure:"backup"`
+	Trash         TrashConfig         `mapstructure:"trash"`
+	Duplicate     DuplicateConfig     `mapstructure:"duplicate"`
+	Stacks        StacksConfig        `mapstructure:"stacks"`
+	Sidecar       SidecarConfig       `mapstructure:"sidecar"`
+	MCP           MCPConfig           `mapstructure:"mcp"`
 
 	LocationEstimate LocationEstimateConfig `mapstructure:"location_estimate"`
 
@@ -790,17 +792,49 @@ type MailConfig struct {
 type PushConfig struct {
 	Enabled bool            `mapstructure:"enabled"`
 	VAPID   PushVAPIDConfig `mapstructure:"vapid"`
-	Tags    PushTagsConfig  `mapstructure:"tags"`
 }
 
-// PushTagsConfig configures the "you were tagged in N photos" notification
+// NotificationsConfig configures what the notification kinds share across
+// their channels (in-app, push, e-mail) — the settings of the producers in
+// internal/notification's orbit, as opposed to one channel's transport
+// (mail.*, push.*).
+type NotificationsConfig struct {
+	Tags NotificationTagsConfig `mapstructure:"tags"`
+}
+
+// NotificationTagsConfig configures the "you were tagged" notification
 // (internal/tagnotifyjob): tagging is collected per account and announced once
-// per window rather than once per photo.
-type PushTagsConfig struct {
+// per window — grouped by album — rather than once per photo.
+type NotificationTagsConfig struct {
 	// Window is how long a window stays open: the first tag of a person opens
-	// it, every photo they are tagged on inside it is counted, and one
-	// notification is sent when it closes. It must be positive; default 1h.
+	// it, every photo they are tagged on inside it is counted, and the
+	// notifications are sent when it closes. It must be positive; default
+	// DefaultTagsWindow. Read from notifications.tags.window, or from the
+	// deprecated push.tags.window when only that is set (Load resolves it).
 	Window time.Duration `mapstructure:"window"`
+}
+
+// DefaultTagsWindow is the tagging window when neither notifications.tags.window
+// nor its deprecated alias push.tags.window is set.
+const DefaultTagsWindow = time.Hour
+
+// tagsWindowKey and deprecatedTagsWindowKey are the two names the tagging
+// window is read under: the channel-neutral one, and the one it had while the
+// window was a push-only affair (kept so an existing deployment keeps its
+// setting; it wins only when the new key is absent).
+const (
+	tagsWindowKey           = "notifications.tags.window"
+	deprecatedTagsWindowKey = "push.tags.window"
+)
+
+// validate checks the tagging window is positive (ErrInvalidTagsWindow). It is
+// a plain setting with a default rather than a credential, so it is checked
+// whether any channel is on or off.
+func (n NotificationsConfig) validate() error {
+	if n.Tags.Window <= 0 {
+		return ErrInvalidTagsWindow
+	}
+	return nil
 }
 
 // PushVAPIDConfig is the instance's VAPID identity (RFC 8292), minted once with
@@ -817,17 +851,11 @@ type PushVAPIDConfig struct {
 	Subject string `mapstructure:"subject"`
 }
 
-// validate checks the push settings. The tagging window must be positive
-// whether push is on or off (ErrInvalidPushTagsWindow), because it is a plain
-// setting with a default rather than a credential. A disabled sender is
-// otherwise always valid: it is never consulted, so an instance without push
-// need not mention a single key.
+// validate checks the push settings. A disabled sender is always valid: it is
+// never consulted, so an instance without push need not mention a single key.
 // An enabled one must name all three VAPID keys — every missing one reported at
 // once, names only — and they must form a valid pair with a valid subject.
 func (p PushConfig) validate() error {
-	if p.Tags.Window <= 0 {
-		return ErrInvalidPushTagsWindow
-	}
 	if !p.Enabled {
 		return nil
 	}
@@ -1191,11 +1219,29 @@ func Load(configPath string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("config: decoding configuration: %w", err)
 	}
+	cfg.Notifications.Tags.Window = tagsWindow(v)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// tagsWindow resolves the tagging window from its two names: the channel-neutral
+// notifications.tags.window when the file or the environment sets it, else the
+// deprecated push.tags.window when that is set, else DefaultTagsWindow. Neither
+// key has a viper default, which is what lets "set" be told from "defaulted"
+// (viper's IsSet counts defaults); a value that is not a duration reads as
+// zero and fails validation.
+func tagsWindow(v *viper.Viper) time.Duration {
+	switch {
+	case v.IsSet(tagsWindowKey):
+		return v.GetDuration(tagsWindowKey)
+	case v.IsSet(deprecatedTagsWindowKey):
+		return v.GetDuration(deprecatedTagsWindowKey)
+	default:
+		return DefaultTagsWindow
+	}
 }
 
 // readConfigFile loads the configured YAML file into v, treating a missing file
@@ -1398,7 +1444,8 @@ func setPushDefaults(v *viper.Viper) {
 	v.SetDefault("push.vapid.public_key", "")
 	v.SetDefault("push.vapid.private_key", "")
 	v.SetDefault("push.vapid.subject", "")
-	v.SetDefault("push.tags.window", "1h")
+	// The tagging window has no viper default on purpose: its two names are
+	// resolved by tagsWindow, which must tell "set" from "defaulted".
 }
 
 func setMapsDefaults(v *viper.Viper) {
@@ -1654,6 +1701,9 @@ func (c *Config) validateSections() error {
 		return err
 	}
 	if err := c.Push.validate(); err != nil {
+		return err
+	}
+	if err := c.Notifications.validate(); err != nil {
 		return err
 	}
 	if err := c.Tasks.Digest.validate(); err != nil {

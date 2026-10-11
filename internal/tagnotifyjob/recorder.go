@@ -27,7 +27,7 @@ type Audience interface {
 
 // RecorderConfig bundles what NewRecorder needs.
 type RecorderConfig struct {
-	// Window is how long a tagging window stays open (push.tags.window); a
+	// Window is how long a tagging window stays open (notifications.tags.window); a
 	// non-positive value uses DefaultWindow.
 	Window time.Duration
 	// Audience reads whether the account would receive the tagged kind through

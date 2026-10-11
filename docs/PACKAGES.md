@@ -5493,8 +5493,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     same, and the sign-in link — left out entirely when `SignInURL` is blank.
     The last two are the **e-mail channel of the notification kinds** (`templates_notification.go`, both
     informal and closed by a footer saying the mail was switched on in the notification settings and can be
-    switched off there): `RenderTagged` (`TaggedData{DisplayName,Count,URL}` — "označil na jedné fotce /
-    3 fotkách", subject „Označili vás na fotce/fotkách", the link to the notification's page) and the
+    switched off there): `RenderTagged` (`TaggedData{DisplayName,Count,URL,Groups}` — "označil na jedné
+    fotce / 3 fotkách", subject „Označili vás na fotce/fotkách", the link to the notification's page; with
+    `Groups` (`TaggedGroup{Album,Count,URL}`, the tagging window split by album) one mail all the same: the
+    total, "Podle alb:", then one line per album — title, "5 fotek" and its link — and the photos outside
+    the albums last as "Další fotky", `Groups` winning over `URL`) and the
     generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,
     the body (or the title when there is none) and the link), which `internal/notifydeliver` uses for any
     kind without a template of its own. `internal/mailjob` has a constructor for each (`Tagged`,
@@ -5726,7 +5729,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     **`RenderTagged(Language, count)`** ("Označili vás na fotce/fotkách", "Přibyla 1 fotka / Přibyly 3
     fotky / Přibylo 12 fotek, na kterých vás označili." — all three Czech plural forms with the verb
     agreeing, CLDR categories; `LanguageEnglish` "You were tagged in a photo / in 12 photos."; any other
-    language is Czech). It names **nobody**: several people may tag inside one window.
+    language is Czech). It names **nobody**: several people may tag inside one window. Its two siblings
+    for the window grouped by album: **`RenderTaggedInAlbum(Language, count, album)`** ("Označili vás na
+    fotkách v albu Pouť 2026", "Přibylo 5 fotek v albu Pouť 2026, na kterých vás označili."; the album's
+    title trimmed and cut at `MaxAlbumNameLen` (60) with an ellipsis so the title stays under
+    `MaxTitleLen`, a blank title reading "(bez názvu)"/"(untitled)") and **`RenderTaggedOther(Language,
+    count)`** ("Označili vás na dalších fotkách", "Přibyly 3 další fotky, na kterých vás označili."), used
+    only beside at least one album notification.
   - **Owner-scoped reads.** `Get(ctx, ownerUID, uid)`, `MarkRead` and `Photos` all filter by owner, and a
     foreign uid is the **same `ErrNotFound`** as a missing one (the `internal/savedsearchapi` rule), so a
     uid cannot be probed. `Notification.PhotoCount` is how many set members still exist. `MarkRead` is
@@ -5803,11 +5812,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     in-app records, newest first and paged, the unread filter, the count, read-all leaving another
     account alone, malformed query → 400), anonymous 401 on every route.
 
-- **Tagging window (`internal/tagnotifyjob`):** "you were tagged in N photos" — one notification per
-  **window**, not per photo, so an afternoon of naming faces from a village event is one message, not
-  forty. Table `tag_notices` (migration 0088: `(user_uid, photo_uid)` PK, `recorded_at`, both sides
-  `ON DELETE CASCADE`), job type `tag_notify` (payload `{user_uid}`, dedup index migration 0089),
-  config `push.tags.window` (default **1h**). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
+- **Tagging window (`internal/tagnotifyjob`):** "you were tagged" — a handful of notifications per
+  **window**, grouped by album, not one per photo, so an afternoon of naming faces from a village event is
+  one message per album it was filed into, not forty. Table `tag_notices` (migration 0088:
+  `(user_uid, photo_uid)` PK, `recorded_at`, both sides `ON DELETE CASCADE`), job type `tag_notify`
+  (payload `{user_uid}`, dedup index migration 0089), config `notifications.tags.window` (default **1h**;
+  `push.tags.window` is its deprecated alias). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
   - **`Recorder`** (`NewRecorder(RecorderConfig{Window, Audience, Logger, Now})`, panicking without
     `Audience` — `*notifydeliver.Deliverer`'s `ChannelsTx`) is the `people.TagObserver`. **`Tagged`** records, for every enabled, approved
     account linked to the subject (several may be — migration 0060), one notice, and opens the account's
@@ -5831,15 +5841,29 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     transaction; a failure rolls back to it, is logged, and the assignment commits. A rolled-back
     assignment announces nothing (notice and job share its transaction).
   - **`Service.Handle`/`Close`** (`New(Config{DB, Deliver, Language, Logger})`, panicking on a
-    missing dependency): in one transaction, take the lock, `DELETE … RETURNING` every notice of the
-    account and keep the photos that **still** qualify — visible now and still carrying the account's
-    linked person on a valid marker (an archive, a merge or an invalidation inside the window is caught
-    here) — **newest photo first** (`taken_at DESC NULLS LAST, created_at DESC`); nothing left → commit
-    and send nothing (never "0 photos"); otherwise one `notifydeliver.Deliver` on the same transaction
-    (`KindTagged`, `RenderTagged`, `SelfLink`, the frozen set capped at `MaxPhotos` with the count
-    matching the set, and the tagged kind's own mail — `mailer.TemplateTagged` with the count and the
-    absolute link to `/n/<uid>`); every channel turned off meanwhile → consume and send nothing. A crash part-way rolls back and the retry re-runs cleanly. A payload
-    naming no account is `worker.Terminal`.
+    missing dependency; `Deliver` is `*notifydeliver.Deliverer`'s `Deliver` + `Absolute`): in one
+    transaction, take the lock, `DELETE … RETURNING` every notice of the account and keep the photos that
+    **still** qualify — visible now and still carrying the account's linked person on a valid marker (an
+    archive, a merge or an invalidation inside the window is caught here) — **newest photo first**
+    (`taken_at DESC NULLS LAST, created_at DESC`); nothing left → commit and send nothing (never "0
+    photos"). Otherwise **`collect`** reads the recipient's role and, for the surviving photos, the
+    hand-made albums (`albums.type = 'album'`, as `whatsnew` and the featured strip count them) each is
+    in, and **`groupByAlbum`** (pure, `group.go`) splits the window: one group per album — a **private
+    album only when the recipient `CanCurate`**, the rule the album surfaces apply — ordered by the newest
+    tagged photo (ties by title, then uid), a photo in two albums in each, only the first
+    **`MaxAlbumGroups` (5)** albums kept, then one **"other photos"** group of everything no kept album
+    names (no album, an album the recipient may not see, an album past the cap), in the window's order and
+    never repeating a photo already named; a window without albums is one plain group. **`announce`**
+    delivers one `notifydeliver.Deliver` per group on the same transaction (`KindTagged`, `SelfLink`, the
+    group's set capped at `MaxPhotos` with the count matching the set): `RenderTaggedInAlbum` for an album
+    group, `RenderTagged` for the only group of a window without albums, `RenderTaggedOther` beside album
+    groups. The **e-mail is one per window**: every delivery but the last sets `SkipMail`, and the last
+    one's mail (`mailer.TaggedData` with `Groups` — title, count and the absolute link of every group's
+    notification, built with `Absolute`; the plain `Count` + `URL` shape for a window without albums) lists
+    them all. Every channel turned off meanwhile → consume and send nothing. A crash part-way rolls back
+    and the retry re-runs cleanly. A payload naming no account is `worker.Terminal`. **Why a constant
+    cap:** it is a sanity bound on a fan-out, not a tuning knob — a window announcing 40 albums separately
+    would be the per-photo spam the window exists to prevent, and nobody should need to turn it.
   - Wired in `cmd/kukatko/tagnotify.go`: the recorder into `buildFaceMatch`'s people store and the photo
     API's `Attacher` (a person attached by hand — the only way a video names anybody — is a tagging), the handler
     registered **unconditionally** (so a window always closes; a channel switched off instance-wide
@@ -5853,10 +5877,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     subject, a disabled account, push off for a push-only account, a rolled-back assignment; an in-app-only
     account gets an inbox record and no push (even with push off), a push-only one a record outside the
     inbox, an e-mail-only one the tagged mail with the right count and link; 300 notices in one transaction queue exactly one job; a
-    deleted account's window finds nothing.
+    deleted account's window finds nothing. Grouping (`albums_integration_test.go`): a window of photos in
+    no, one and two albums plus a private one, closed for a viewer (the private album is "other") and for a
+    curator (its own group), each notification with its own frozen set and page and one push; no albums =
+    one plain notification; every photo in one album = no "other"; a folder/moment is not an album; seven
+    albums collapse to `MaxAlbumGroups` + "other" with nothing repeated; an untag inside the window still
+    un-announces; one `mail_send` per window listing the groups in delivery order with their counts and
+    links. Unit (`group_test.go`): the grouping rules, the cap, the order, the mail builder, the wording.
 
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
-  A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail}` and calls
+  A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and calls
   **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
   itself. `New(Config{Notifications, Push, Mail, BaseURL, Logger})` (panicking on a missing dependency;
   wired once as `buildDeliverer` in `cmd/kukatko/notifydeliver.go` over `notification.Store`, the push

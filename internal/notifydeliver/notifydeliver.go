@@ -99,6 +99,12 @@ type Message struct {
 	// Mail builds the e-mail. Nil uses the generic notification mail (title,
 	// body, link), so every kind can be mailed.
 	Mail MailBuilder
+	// SkipMail leaves the e-mail channel out of this delivery, whatever the
+	// account wants: a producer that records several notifications for one
+	// event (the tagging window, one per album) mails once, from the last of
+	// them, so nobody gets five mails for one afternoon of tagging. The other
+	// channels deliver as usual; Result.Channels.Email is then false.
+	SkipMail bool
 }
 
 // Channels is what one delivery will do: which channels are both wanted by the
@@ -225,7 +231,8 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 			return Result{}, fmt.Errorf("notifydeliver: scheduling the push of %s: %w", userUID, err)
 		}
 	}
-	if channels.Email {
+	result.Channels.Email = false
+	if channels.Email && !msg.SkipMail {
 		mailed, err := d.sendMail(ctx, tx, record, msg.Mail)
 		if err != nil {
 			return Result{}, err
@@ -259,7 +266,7 @@ func (d *Deliverer) sendMail(
 	if build == nil {
 		build = GenericMail
 	}
-	if err := d.mail.Enqueue(ctx, tx, build(to, record, d.absolute(record.Link))); err != nil {
+	if err := d.mail.Enqueue(ctx, tx, build(to, record, d.Absolute(record.Link))); err != nil {
 		return false, fmt.Errorf("notifydeliver: scheduling the mail of %s: %w", record.UserUID, err)
 	}
 	return true, nil
@@ -278,9 +285,12 @@ func readRecipient(ctx context.Context, tx pgx.Tx, userUID string) (Recipient, e
 	return to, nil
 }
 
-// absolute returns link under the configured public address, or "" when there
-// is no link or no address to put it under.
-func (d *Deliverer) absolute(link string) string {
+// Absolute returns the in-app link under the configured public address
+// (mail.base_url), or "" when there is no link or no address to put it under.
+// It is what a MailBuilder receives as url; a producer whose one mail names
+// several notifications (the tagging window's per-album summary) builds the
+// other links with it.
+func (d *Deliverer) Absolute(link string) string {
 	if link == "" || d.baseURL == "" {
 		return ""
 	}

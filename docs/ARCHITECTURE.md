@@ -854,7 +854,7 @@ lost on restart).
      which reports it to its **tag observer** inside the assignment's transaction. For each account linked
      to the tagged subject (`users.subject_uid`) the recorder writes a `tag_notices (user_uid, photo_uid)`
      row, and **when the account has no window open** (no queued `tag_notify` job) enqueues one with
-     `run_after = now + push.tags.window` (default 1 h). Later tags inside the window add rows and find
+     `run_after = now + notifications.tags.window` (default 1 h). Later tags inside the window add rows and find
      the job queued. Both writes share the assignment's transaction: a rolled-back assignment announces
      nothing. The recorder runs under a savepoint, so a failure costs the notice, never the assignment.
   2. **What is never recorded:** the tagger's own person (nobody hears about their own work); a private,
@@ -863,10 +863,19 @@ lost on restart).
      the kind off, or only the ones switched off for the instance (the table must not fill up for somebody
      who would get nothing); a subject no account is linked to. **Untagging before the window closes deletes the notice.**
   3. **The window closes** when the job runs: in one transaction it consumes every notice (`DELETE …
-     RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), records
-     one notification with the frozen set **newest photo first** and the link `/n/<uid>` (the
-     notification's own page) through `internal/notifydeliver` — the inbox entry, the `push_send`
-     deliveries and the tagged mail, as the account chose. Nothing left → it sends nothing;
+     RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), and
+     **groups them by album** — the hand-made albums (`type = 'album'`) the photos are in, a private one
+     only when the recipient may curate (the rule the album surfaces apply), a photo in two albums counted
+     in each, the albums ordered by their newest tagged photo. It records **one notification per album**
+     ("Označili vás na fotkách v albu Pouť 2026", the frozen set **newest photo first**, the link
+     `/n/<uid>` to that notification's own page) and **one for the other photos** — those in no album, in
+     an album the recipient may not see, or in an album past the cap of **`MaxAlbumGroups` (5)** albums per
+     window, beyond which the remaining albums collapse into "other" so one afternoon cannot fan out into
+     a dozen pushes; a photo already announced under an album is never "other" as well. A window without
+     albums is the plain "Označili vás na fotkách" as before. Every notification goes through
+     `internal/notifydeliver` — the inbox entry and the `push_send` deliveries per notification, but the
+     **e-mail once per window**: the last delivery carries the tagged mail listing every album with its
+     count and link, the earlier ones skip the mail. Nothing left → it sends nothing;
      a crash rolls it all back and the retry re-runs cleanly — never lost, never announced twice.
   4. **Concurrency** is settled by a per-account advisory transaction lock taken by the recorder and the
      job: a tag in flight when the window closes is waited for and included; one landing while the job

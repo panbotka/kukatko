@@ -1,7 +1,7 @@
-// Package tagnotifyjob turns face tagging into one "you were tagged in N photos"
-// notification per window, instead of one per photo, delivered to whichever
-// channels (in-app, push, e-mail) the account wants through
-// internal/notifydeliver.
+// Package tagnotifyjob turns face tagging into a handful of "you were tagged"
+// notifications per window — one per album the photos are in, plus one for the
+// rest — instead of one per photo, delivered to whichever channels (in-app,
+// push, e-mail) the account wants through internal/notifydeliver.
 //
 // When somebody uploads an album from a village event and spends an afternoon
 // naming the faces on it, the people they name must not receive forty separate
@@ -11,14 +11,18 @@
 //     assignment's own transaction (it is the people store's TagObserver),
 //     records one tag_notices row per (account, photo) and — when the account has
 //     no window open yet — enqueues a `tag_notify` job whose run_after is one
-//     window (push.tags.window) into the future.
+//     window (notifications.tags.window) into the future.
 //   - Everything tagged inside the window is counted: later tags add rows and
 //     find the job already queued.
-//   - When the window closes, Service.Handle consumes the account's rows and
-//     delivers one notification with the frozen photo set, newest photo first,
-//     to the account's channels, and deletes the rows — all in one
-//     transaction, so a crash part-way re-runs cleanly instead of losing the
-//     notices or announcing them twice.
+//   - When the window closes, Service.Handle consumes the account's rows,
+//     groups the photos by the hand-made albums they are in (a private album
+//     only for a recipient who may curate; at most MaxAlbumGroups albums, the
+//     rest collapse) and delivers one notification per album — "you were
+//     tagged in 5 photos in the album Pouť 2026", its frozen photo set newest
+//     first — then one for the photos no album notification names, to the
+//     account's channels; the e-mail is one for the whole window, listing the
+//     albums with their counts. All in one transaction, so a crash part-way
+//     re-runs cleanly instead of losing the notices or announcing them twice.
 //
 // The rules the recorder enforces are what keeps the message honest: an account
 // is never told about its own work, a photo it may not see (private, hidden,
@@ -42,7 +46,7 @@ import (
 )
 
 // DefaultWindow is how long a tagging window stays open when the configuration
-// does not say (push.tags.window).
+// does not say (notifications.tags.window).
 const DefaultWindow = time.Hour
 
 // lockSQL serialises one account's window between the tagging transactions and

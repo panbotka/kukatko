@@ -234,7 +234,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"push.vapid.private_key", cfg.Push.VAPID.PrivateKey, ""},
 		{"push.vapid.subject", cfg.Push.VAPID.Subject, ""},
 		// Tagging is announced once per hour-long window, not once per photo.
-		{"push.tags.window", cfg.Push.Tags.Window, time.Hour},
+		{"notifications.tags.window", cfg.Notifications.Tags.Window, time.Hour},
 		// The daily tasks digest is off out of the box and, once on, goes out at
 		// 07:00 UTC.
 		{"tasks.digest.enabled", cfg.Tasks.Digest.Enabled, false},
@@ -1522,7 +1522,7 @@ func pushEnv(t *testing.T) map[string]string {
 // environment, the nested VAPID ones included.
 func TestLoad_pushEnvOverride(t *testing.T) {
 	env := pushEnv(t)
-	env["KUKATKO_PUSH_TAGS_WINDOW"] = "15m"
+	env["KUKATKO_NOTIFICATIONS_TAGS_WINDOW"] = "15m"
 	setMinimalEnv(t)
 	for k, v := range env {
 		t.Setenv(k, v)
@@ -1532,11 +1532,62 @@ func TestLoad_pushEnvOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if !cfg.Push.Enabled || cfg.Push.Tags.Window != 15*time.Minute ||
+	if !cfg.Push.Enabled || cfg.Notifications.Tags.Window != 15*time.Minute ||
 		cfg.Push.VAPID.PublicKey != env["KUKATKO_PUSH_VAPID_PUBLIC_KEY"] ||
 		cfg.Push.VAPID.PrivateKey != env["KUKATKO_PUSH_VAPID_PRIVATE_KEY"] ||
 		cfg.Push.VAPID.Subject != "mailto:ops@example.com" {
 		t.Fatalf("push = %+v, want every key from the environment", cfg.Push)
+	}
+}
+
+// TestLoad_tagsWindowAlias verifies the tagging window's two names: the
+// channel-neutral notifications.tags.window wins when set, the deprecated
+// push.tags.window still applies when only it is set — from the environment or
+// the file — and neither set means the hour-long default.
+func TestLoad_tagsWindowAlias(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		yaml string
+		want time.Duration
+	}{
+		{name: "neither: default", want: time.Hour},
+		{name: "new name from env", env: map[string]string{"KUKATKO_NOTIFICATIONS_TAGS_WINDOW": "20m"}, want: 20 * time.Minute},
+		{name: "deprecated name from env", env: map[string]string{"KUKATKO_PUSH_TAGS_WINDOW": "30m"}, want: 30 * time.Minute},
+		{
+			name: "both set: the new name wins",
+			env:  map[string]string{"KUKATKO_NOTIFICATIONS_TAGS_WINDOW": "20m", "KUKATKO_PUSH_TAGS_WINDOW": "30m"},
+			want: 20 * time.Minute,
+		},
+		{name: "deprecated name from the file", yaml: "push:\n  tags:\n    window: 45m\n", want: 45 * time.Minute},
+		{name: "new name from the file", yaml: "notifications:\n  tags:\n    window: 10m\n", want: 10 * time.Minute},
+		{
+			name: "env under the new name beats the file under the old",
+			env:  map[string]string{"KUKATKO_NOTIFICATIONS_TAGS_WINDOW": "5m"},
+			yaml: "push:\n  tags:\n    window: 45m\n", want: 5 * time.Minute,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			path := ""
+			if tt.yaml != "" {
+				path = filepath.Join(t.TempDir(), "config.yaml")
+				if err := os.WriteFile(path, []byte(tt.yaml), 0o600); err != nil {
+					t.Fatalf("writing config: %v", err)
+				}
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load returned error: %v", err)
+			}
+			if cfg.Notifications.Tags.Window != tt.want {
+				t.Fatalf("notifications.tags.window = %s, want %s", cfg.Notifications.Tags.Window, tt.want)
+			}
+		})
 	}
 }
 
@@ -1577,11 +1628,16 @@ func TestLoad_pushValidation(t *testing.T) {
 			wantErr: ErrInvalidPushConfig,
 		},
 		{name: "bare address subject", env: with("KUKATKO_PUSH_VAPID_SUBJECT", "ops@example.com"), wantErr: ErrInvalidPushConfig},
-		{name: "zero tags window", env: with("KUKATKO_PUSH_TAGS_WINDOW", "0s"), wantErr: ErrInvalidPushTagsWindow},
+		{name: "zero tags window", env: with("KUKATKO_NOTIFICATIONS_TAGS_WINDOW", "0s"), wantErr: ErrInvalidTagsWindow},
 		{
 			name:    "negative tags window with push off",
-			env:     map[string]string{"KUKATKO_PUSH_ENABLED": "false", "KUKATKO_PUSH_TAGS_WINDOW": "-1h"},
-			wantErr: ErrInvalidPushTagsWindow,
+			env:     map[string]string{"KUKATKO_PUSH_ENABLED": "false", "KUKATKO_NOTIFICATIONS_TAGS_WINDOW": "-1h"},
+			wantErr: ErrInvalidTagsWindow,
+		},
+		{
+			name:    "zero window under the deprecated name",
+			env:     map[string]string{"KUKATKO_PUSH_ENABLED": "false", "KUKATKO_PUSH_TAGS_WINDOW": "0s"},
+			wantErr: ErrInvalidTagsWindow,
 		},
 	}
 	for _, tt := range tests {

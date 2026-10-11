@@ -11,7 +11,7 @@ func TestRenderTagged(t *testing.T) {
 	t.Parallel()
 
 	got := RenderTagged(TaggedData{DisplayName: "Anna", Count: 1, URL: "https://kukatko.example/n/nt1"})
-	if got.Template != TemplateTagged || got.Subject != "Označili vás na fotce" {
+	if got.Template != TemplateTagged || got.Subject != taggedSubjectOne {
 		t.Errorf("template %q, subject %q", got.Template, got.Subject)
 	}
 	want := "Ahoj, Anna,\n" +
@@ -31,12 +31,53 @@ func TestRenderTagged(t *testing.T) {
 
 	for count, phrase := range map[int]string{3: "na 3 fotkách.", 7: "na 7 fotkách."} {
 		r := RenderTagged(TaggedData{Count: count})
-		if r.Subject != "Označili vás na fotkách" || !strings.Contains(r.Body, phrase) {
+		if r.Subject != taggedSubject || !strings.Contains(r.Body, phrase) {
 			t.Errorf("count %d: subject %q, body %q; want %q", count, r.Subject, r.Body, phrase)
 		}
 		if strings.Contains(r.Body, "tady:") || !strings.HasPrefix(r.Body, "Ahoj,\n") {
 			t.Errorf("count %d without link or name: body %q", count, r.Body)
 		}
+	}
+}
+
+// TestRenderTagged_groups pins the per-album breakdown: one mail for the whole
+// window with the total, one line per album with its count and link, and the
+// photos outside the listed albums last under "Další fotky".
+func TestRenderTagged_groups(t *testing.T) {
+	t.Parallel()
+
+	got := RenderTagged(TaggedData{DisplayName: "Anna", Count: 8, Groups: []TaggedGroup{
+		{Album: "Pouť 2026", Count: 5, URL: "https://k.example/n/a"},
+		{Album: " Hasiči ", Count: 2, URL: "https://k.example/n/b"},
+		{Count: 1, URL: "https://k.example/n/c"},
+	}})
+	if got.Template != TemplateTagged || got.Subject != taggedSubject {
+		t.Errorf("template %q, subject %q", got.Template, got.Subject)
+	}
+	want := "Ahoj, Anna,\n" +
+		"\n" +
+		"v Kukátku vás někdo označil na 8 fotkách. Podle alb:\n" +
+		"\n" +
+		"Pouť 2026 – 5 fotek\n" +
+		"https://k.example/n/a\n" +
+		"\n" +
+		"Hasiči – 2 fotky\n" +
+		"https://k.example/n/b\n" +
+		"\n" +
+		"Další fotky – 1 fotka\n" +
+		"https://k.example/n/c\n" +
+		"\n" +
+		notificationFooter + "\n" +
+		"\n" +
+		"Kukátko\n"
+	if got.Body != want {
+		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
+	}
+
+	// Groups win over URL, and a group without a link has no link line.
+	r := RenderTagged(TaggedData{Count: 1, URL: "https://k.example/n/x", Groups: []TaggedGroup{{Album: "A", Count: 1}}})
+	if strings.Contains(r.Body, "/n/x") || !strings.Contains(r.Body, "A – 1 fotka\n\n") {
+		t.Errorf("groups without link: body %q", r.Body)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
@@ -23,11 +24,15 @@ type Beginner interface {
 }
 
 // Deliverer delivers one notification to the channels an account wants, on the
-// caller's transaction. It is satisfied by *notifydeliver.Deliverer.
+// caller's transaction, and knows the public address its links live under. It
+// is satisfied by *notifydeliver.Deliverer.
 type Deliverer interface {
 	// Deliver records msg for userUID and fans it out to the wanted channels,
 	// all on tx.
 	Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg notifydeliver.Message) (notifydeliver.Result, error)
+	// Absolute returns an in-app link under the instance's public address, or
+	// "" when there is no address to put it under.
+	Absolute(link string) string
 }
 
 // Config bundles the dependencies of New.
@@ -101,10 +106,14 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 }
 
 // Close closes userUID's tagging window, in one transaction: it consumes every
-// pending notice and delivers one notification naming the photos that still
-// qualify, newest first, to every channel the account wants. Either all of it
-// commits or none of it does, so a failure part-way leaves the notices for the
-// retry instead of losing them, and a success cannot announce them twice.
+// pending notice, keeps the photos that still qualify, groups them by album
+// and delivers one notification per group — one per album the photos are in
+// (visible to the account; at most MaxAlbumGroups of them), then one for the
+// photos outside those albums — each with its frozen photo set, newest first,
+// to every channel the account wants; the e-mail is one for the whole window.
+// Either all of it commits or none of it does, so a failure part-way leaves the
+// notices for the retry instead of losing them, and a success cannot announce
+// them twice.
 //
 // It sends nothing — and completes — when nothing qualifies (everything was
 // untagged, archived or made private inside the window, or the account is gone
@@ -128,7 +137,11 @@ func (s *Service) Close(ctx context.Context, userUID string) error {
 		return err
 	}
 	if len(photos) > 0 {
-		if err := s.announce(ctx, tx, userUID, photos); err != nil {
+		groups, err := collect(ctx, tx, userUID, photos)
+		if err != nil {
+			return err
+		}
+		if err := s.announce(ctx, tx, userUID, groups, len(photos)); err != nil {
 			return err
 		}
 	}
@@ -151,37 +164,136 @@ func consume(ctx context.Context, tx pgx.Tx, userUID string) ([]string, error) {
 	return photos, nil
 }
 
-// announce delivers the notification for photos on tx, to whichever channels
-// the account still wants (none: nothing is sent). A set over
-// notification.MaxPhotos keeps its newest MaxPhotos photos, and the count says
-// what the set holds, so the message never promises more than tapping it opens.
-func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, photos []string) error {
-	if len(photos) > notification.MaxPhotos {
-		photos = photos[:notification.MaxPhotos]
+// albumsSQL reads, for the window's photos, the albums each is in — the
+// hand-made ones (type album), the ones a person knows by name, as the "what's
+// new" digest and the featured strip count them — with what decides whether
+// the recipient may be told about them.
+const albumsSQL = `
+SELECT ap.photo_uid, a.uid, a.title, a.private
+FROM album_photos ap
+JOIN albums a ON a.uid = ap.album_uid
+WHERE ap.photo_uid = ANY($1) AND a.type = 'album'
+ORDER BY ap.photo_uid, a.title, a.uid`
+
+// roleSQL reads the recipient's role, which decides whether a private album may
+// be named to them.
+const roleSQL = `SELECT role FROM users WHERE uid = $1`
+
+// collect reads on tx what the grouping needs — the albums of photos and
+// whether userUID may see a private one (a curator or above, the rule the
+// album surfaces apply) — and returns the window's groups. photos is the
+// window's order, newest first, which the groups keep.
+func collect(ctx context.Context, tx pgx.Tx, userUID string, photos []string) ([]group, error) {
+	var role string
+	if err := tx.QueryRow(ctx, roleSQL, userUID).Scan(&role); err != nil {
+		return nil, fmt.Errorf("tagnotifyjob: reading the role of %s: %w", userUID, err)
 	}
-	count := len(photos)
-	result, err := s.deliver.Deliver(ctx, tx, userUID, notifydeliver.Message{
-		Kind: notification.KindTagged, Text: notification.RenderTagged(s.lang, count),
-		SelfLink: true, PhotoUIDs: photos, Mail: taggedMail(count),
-	})
+	rows, err := tx.Query(ctx, albumsSQL, photos)
 	if err != nil {
-		return fmt.Errorf("tagnotifyjob: delivering the notification of %s: %w", userUID, err)
+		return nil, fmt.Errorf("tagnotifyjob: reading the albums of the photos of %s: %w", userUID, err)
 	}
-	if result.Notification == nil {
-		s.log.DebugContext(ctx, "tag window closed unannounced: the kind is off", slog.String("user_uid", userUID))
+	albums := make(map[string][]albumRef)
+	var photoUID string
+	var ref albumRef
+	if _, err := pgx.ForEachRow(rows, []any{&photoUID, &ref.UID, &ref.Title, &ref.Private}, func() error {
+		albums[photoUID] = append(albums[photoUID], ref)
 		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("tagnotifyjob: reading the albums of the photos of %s: %w", userUID, err)
 	}
-	s.log.DebugContext(ctx, "tag window announced",
-		slog.String("user_uid", userUID), slog.String("notification_uid", result.Notification.UID),
-		slog.Int("photos", count), slog.Int("devices", result.Devices),
-		slog.Bool("in_app", result.Channels.InApp), slog.Bool("email", result.Channels.Email))
+	tagged := make([]taggedPhoto, len(photos))
+	for i, uid := range photos {
+		tagged[i] = taggedPhoto{UID: uid, Albums: albums[uid]}
+	}
+	return groupByAlbum(tagged, auth.Role(role).CanCurate(), MaxAlbumGroups), nil
+}
+
+// mailGroup is one line of the window's single e-mail: a delivered group with
+// the absolute link to its notification.
+type mailGroup struct {
+	group
+	url string
+}
+
+// announce delivers one notification per group on tx, in order, to whichever
+// channels the account still wants (none: nothing is sent). A group's set over
+// notification.MaxPhotos keeps its newest MaxPhotos photos, and its count says
+// what the set holds, so no message promises more than tapping it opens. The
+// e-mail is one per window: every delivery but the last skips the mail, and
+// the last one's mail lists every group with its count and link. total is how
+// many distinct photos the window holds, which the mail reports.
+func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, groups []group, total int) error {
+	delivered := make([]mailGroup, 0, len(groups))
+	for i, g := range groups {
+		if len(g.Photos) > notification.MaxPhotos {
+			g.Photos = g.Photos[:notification.MaxPhotos]
+		}
+		last := i == len(groups)-1
+		msg := notifydeliver.Message{
+			Kind: notification.KindTagged, Text: s.text(g, len(groups)), SelfLink: true, PhotoUIDs: g.Photos,
+			SkipMail: !last,
+		}
+		if last {
+			msg.Mail = s.taggedMail(delivered, g, total)
+		}
+		result, err := s.deliver.Deliver(ctx, tx, userUID, msg)
+		if err != nil {
+			return fmt.Errorf("tagnotifyjob: delivering the notification of %s: %w", userUID, err)
+		}
+		if result.Notification == nil {
+			s.log.DebugContext(ctx, "tag window closed unannounced: the kind is off", slog.String("user_uid", userUID))
+			return nil
+		}
+		delivered = append(delivered, mailGroup{group: g, url: s.deliver.Absolute(result.Notification.Link)})
+		s.log.DebugContext(ctx, "tag window announced",
+			slog.String("user_uid", userUID), slog.String("notification_uid", result.Notification.UID),
+			slog.String("album", albumUID(g)), slog.Int("photos", len(g.Photos)), slog.Int("devices", result.Devices),
+			slog.Bool("in_app", result.Channels.InApp), slog.Bool("email", result.Channels.Email))
+	}
 	return nil
 }
 
-// taggedMail builds the tagged kind's own e-mail for a set of count photos: the
-// count and the link to the notification's page, which opens exactly that set.
-func taggedMail(count int) notifydeliver.MailBuilder {
+// text is what a group's notification says: the album's wording for an album
+// group; for the other-photos group the plain wording when it is the window's
+// only group, and "other photos" when album notifications stand beside it.
+func (s *Service) text(g group, groups int) notification.Text {
+	switch {
+	case g.Album != nil:
+		return notification.RenderTaggedInAlbum(s.lang, len(g.Photos), g.Album.Title)
+	case groups == 1:
+		return notification.RenderTagged(s.lang, len(g.Photos))
+	default:
+		return notification.RenderTaggedOther(s.lang, len(g.Photos))
+	}
+}
+
+// albumUID names a group's album for the log; "" for the other-photos group.
+func albumUID(g group) string {
+	if g.Album == nil {
+		return ""
+	}
+	return g.Album.UID
+}
+
+// taggedMail builds the window's one e-mail, sent with its last notification:
+// a window of one group that is no album carries the count and the link to that
+// notification's page; any window with an album lists every group — the ones
+// delivered before plus last, whose link the builder receives — with its title,
+// count and link, total being the window's distinct photos.
+func (s *Service) taggedMail(before []mailGroup, last group, total int) notifydeliver.MailBuilder {
 	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
-		return mailjob.Tagged(to.Email, mailer.TaggedData{DisplayName: to.DisplayName, Count: count, URL: url})
+		data := mailer.TaggedData{DisplayName: to.DisplayName, Count: total}
+		if len(before) == 0 && last.Album == nil {
+			data.URL = url
+			return mailjob.Tagged(to.Email, data)
+		}
+		for _, g := range append(before, mailGroup{group: last, url: url}) {
+			line := mailer.TaggedGroup{Count: len(g.Photos), URL: g.url}
+			if g.Album != nil {
+				line.Album = g.Album.Title
+			}
+			data.Groups = append(data.Groups, line)
+		}
+		return mailjob.Tagged(to.Email, data)
 	}
 }

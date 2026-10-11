@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -73,6 +74,14 @@ func (fakeDeliver) Deliver(
 	return notifydeliver.Result{}, nil
 }
 
+// Absolute puts link under a fixed address.
+func (fakeDeliver) Absolute(link string) string {
+	if link == "" {
+		return ""
+	}
+	return "https://k.example" + link
+}
+
 // ChannelsTx wants every channel.
 func (fakeDeliver) ChannelsTx(context.Context, pgx.Tx, string, notification.Kind) (notifydeliver.Channels, error) {
 	return notifydeliver.Channels{InApp: true, Push: true, Email: true}, nil
@@ -127,18 +136,57 @@ func TestNewRecorder_defaults(t *testing.T) {
 	NewRecorder(RecorderConfig{})
 }
 
-// TestTaggedMail checks the tagged kind's e-mail carries the count, the
-// recipient's name and the link, addressed to the recipient.
+// TestTaggedMail checks the window's one e-mail: a window of plain photos
+// carries the count and the link, a window with albums lists every group — the
+// ones delivered before and the last, whose link the builder receives — with
+// title, count and link, under the window's total.
 func TestTaggedMail(t *testing.T) {
 	t.Parallel()
 
-	mail := taggedMail(3)(notifydeliver.Recipient{Email: "anna@example.org", DisplayName: "Anna"},
-		notification.Notification{}, "https://k.example/n/nt1")
-	if mail.Template != mailer.TemplateTagged || mail.To != "anna@example.org" {
-		t.Fatalf("mail = %+v, want the tagged template to anna", mail)
+	svc := New(Config{DB: panicDB{t: t}, Deliver: fakeDeliver{}})
+	to := notifydeliver.Recipient{Email: "anna@example.org", DisplayName: "Anna"}
+	plain := svc.taggedMail(nil, group{Photos: []string{"p1", "p2", "p3"}}, 3)(to, notification.Notification{}, "https://k.example/n/nt1")
+	if plain.Template != mailer.TemplateTagged || plain.To != "anna@example.org" {
+		t.Fatalf("mail = %+v, want the tagged template to anna", plain)
 	}
 	want := mailer.TaggedData{DisplayName: "Anna", Count: 3, URL: "https://k.example/n/nt1"}
-	if mail.Data != want {
-		t.Fatalf("data = %+v, want %+v", mail.Data, want)
+	if !reflect.DeepEqual(plain.Data, want) {
+		t.Fatalf("plain data = %+v, want %+v", plain.Data, want)
+	}
+
+	fair := albumRef{UID: "al-fair", Title: "Pouť 2026"}
+	before := []mailGroup{{group: group{Album: &fair, Photos: []string{"p1", "p2"}}, url: "https://k.example/n/a"}}
+	grouped := svc.taggedMail(before, group{Photos: []string{"p3"}}, 3)(to, notification.Notification{}, "https://k.example/n/b")
+	wantGrouped := mailer.TaggedData{DisplayName: "Anna", Count: 3, Groups: []mailer.TaggedGroup{
+		{Album: "Pouť 2026", Count: 2, URL: "https://k.example/n/a"},
+		{Count: 1, URL: "https://k.example/n/b"},
+	}}
+	if !reflect.DeepEqual(grouped.Data, wantGrouped) {
+		t.Fatalf("grouped data = %+v, want %+v", grouped.Data, wantGrouped)
+	}
+
+	// A single album group is still the breakdown: the album deserves its name.
+	only := svc.taggedMail(nil, group{Album: &fair, Photos: []string{"p1"}}, 1)(to, notification.Notification{}, "https://k.example/n/a")
+	if data, ok := only.Data.(mailer.TaggedData); !ok || len(data.Groups) != 1 || data.URL != "" || data.Groups[0].Album != "Pouť 2026" {
+		t.Fatalf("single album data = %+v, want one group named Pouť 2026", only.Data)
+	}
+}
+
+// TestServiceText checks which wording a group gets: the album's for an album
+// group, the plain one for the only group of a window without albums, and
+// "other photos" beside album groups.
+func TestServiceText(t *testing.T) {
+	t.Parallel()
+
+	svc := New(Config{DB: panicDB{t: t}, Deliver: fakeDeliver{}})
+	fair := albumRef{UID: "al-fair", Title: "Pouť 2026"}
+	if got := svc.text(group{Album: &fair, Photos: []string{"p1", "p2"}}, 2); got.Title != "Označili vás na fotkách v albu Pouť 2026" {
+		t.Errorf("album group title = %q", got.Title)
+	}
+	if got := svc.text(group{Photos: []string{"p1"}}, 1); got.Title != "Označili vás na fotce" {
+		t.Errorf("only group title = %q", got.Title)
+	}
+	if got := svc.text(group{Photos: []string{"p1"}}, 2); got.Title != "Označili vás na další fotce" {
+		t.Errorf("other group title = %q", got.Title)
 	}
 }

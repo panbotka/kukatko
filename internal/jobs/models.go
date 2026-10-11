@@ -136,9 +136,10 @@ const (
 	TypeTaskDigest = "task_digest"
 	// TypeTagNotify closes one account's tagging window: it reads every photo
 	// the account's linked person was tagged on since the window opened (the
-	// tag_notices rows) and turns them into one "you were tagged in N photos"
-	// notification plus its push delivery. The first tag of a window enqueues it
-	// with run_after one window (push.tags.window) into the future. Its payload
+	// tag_notices rows) and turns them into "you were tagged" notifications, one
+	// per album the photos are in plus one for the rest, delivered to the
+	// account's channels. The first tag of a window enqueues it with run_after
+	// one window (notifications.tags.window) into the future. Its payload
 	// names an account, not a photo, so it has a dedup index of its own
 	// (migration 0089) keeping at most one queued job per account. See
 	// internal/tagnotifyjob.

@@ -231,6 +231,38 @@ func TestDeliver_customMailAndNoBaseURL(t *testing.T) {
 	}
 }
 
+// TestDeliver_skipMail checks SkipMail leaves only the e-mail out: the record
+// is written and listed, the push goes, nothing is mailed and the result says
+// so — the producer that mails once for several notifications relies on it.
+// Absolute is what that producer builds the other links with.
+func TestDeliver_skipMail(t *testing.T) {
+	t.Parallel()
+
+	notes := &fakeNotes{wanted: notification.AllChannels()}
+	pusher := &fakePush{on: true}
+	mail := &fakeMail{on: true}
+	d := New(Config{Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example/"})
+	msg := message()
+	msg.SkipMail = true
+	got, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", name: "Anna"}, "us1", msg)
+	if err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if got.Notification == nil || !got.Notification.InApp || len(pusher.sent) != 1 || len(mail.sent) != 0 {
+		t.Fatalf("result = %+v (pushes %d, mails %d), want a listed record, one push and no mail",
+			got, len(pusher.sent), len(mail.sent))
+	}
+	if want := (Channels{InApp: true, Push: true}); got.Channels != want {
+		t.Errorf("channels = %+v, want %+v", got.Channels, want)
+	}
+	if u := d.Absolute(got.Notification.Link); u != "https://k.example/n/nt1" {
+		t.Errorf("Absolute = %q, want the link under the base URL", u)
+	}
+	if u := d.Absolute(""); u != "" {
+		t.Errorf("Absolute of no link = %q, want empty", u)
+	}
+}
+
 // TestDeliver_instanceSwitches checks a channel switched off for the instance
 // counts as not wanted: no push, no mail, and no record for them alone.
 func TestDeliver_instanceSwitches(t *testing.T) {

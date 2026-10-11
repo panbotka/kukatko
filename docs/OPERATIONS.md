@@ -2117,14 +2117,25 @@ other type; values ≤ 0 are ignored and a type
   was made for the public key. Delivery always goes **through the job queue** (`push_send`, one job per
   subscribed device, `internal/pushjob`); unlike `mail_send` its handler is registered **even with push
   off**, so a job left over from when push was on completes unsent instead of waiting for a claimant, and
-  nothing new is enqueued while it is off. `tags.window` (duration, **default `1h`**) is how long a
+  nothing new is enqueued while it is off. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
+  `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`. (`push.tags.window` used to live here;
+  it is now `notifications.tags.window`, below, and the old name is still read as a deprecated alias.)
+- **Notification keys (`notifications.*`, `internal/config` + the producers around
+  `internal/notification`):** what the notification kinds share across their channels, as opposed to one
+  channel's transport (`mail.*`, `push.*`). `tags.window` (duration, **default `1h`**) is how long a
   **tagging window** stays open: the first time somebody's linked person is tagged, a window opens, every
-  photo they are tagged on inside it is counted, and when it closes one "you were tagged in N photos"
-  notification is sent (the `tag_notify` job, `internal/tagnotifyjob`) — not one per photo. It must be
-  positive, checked **whether push is on or off** (`ErrInvalidPushTagsWindow`); the window governs every
-  channel (in-app, push, e-mail), and nothing is recorded for an account no channel would reach — with
-  push off, an account that chose only push. Env: `KUKATKO_PUSH_ENABLED`, `KUKATKO_PUSH_VAPID_PUBLIC_KEY`,
-  `KUKATKO_PUSH_VAPID_PRIVATE_KEY`, `KUKATKO_PUSH_VAPID_SUBJECT`, `KUKATKO_PUSH_TAGS_WINDOW`.
+  photo they are tagged on inside it is counted, and when it closes the account gets **one "you were
+  tagged" notification per album** the photos are in (hand-made albums only; a private album only for a
+  curator or above; at most **5** albums per window — `tagnotifyjob.MaxAlbumGroups`, a constant, not a
+  key: it is a sanity cap on the fan-out, beyond which the remaining albums fold into the "other photos"
+  notification) plus one for the photos outside those albums, and **one e-mail** listing them all (the
+  `tag_notify` job, `internal/tagnotifyjob`) — never one per photo. It must be positive, checked whether
+  any channel is on or off (`ErrInvalidTagsWindow`); nothing is recorded for an account no channel would
+  reach. **Deprecated alias:** `push.tags.window` (`KUKATKO_PUSH_TAGS_WINDOW`), the key's name while the
+  window was push-only, is still read when `notifications.tags.window` is absent — from the file or the
+  environment — so an existing deployment keeps its setting; when both are set the new name wins. Neither
+  name has a viper default (that is what lets "set" be told from "defaulted"); the default is applied in
+  `Load`. Env: `KUKATKO_NOTIFICATIONS_TAGS_WINDOW`.
 - **Tasks digest keys (`tasks.digest.*`, `internal/taskdigestjob`):** the one message the task queue sends
   outside the app — once a day, every person is e-mailed the open tasks whose move is theirs (the listing's
   „Na mně"), up to 20 of them with a link each and „…a dalších M" for the rest, plus a link to

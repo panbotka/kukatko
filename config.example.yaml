@@ -600,13 +600,21 @@ push:
     # How a push service reaches the operator: a mailto: or an https: URL,
     # e.g. "mailto:admin@example.org".
     subject: ""
-  # "You were tagged in N photos": tagging is announced once per window, not
-  # once per photo. The first time somebody tags a person, a window opens for
-  # the account linked to that person; every photo they are tagged on inside it
-  # is counted, and one notification is sent when it closes. Nobody is told
-  # about their own tagging, nor about a private, hidden or archived photo.
+
+# What the notification kinds share across their channels (in the app, push,
+# e-mail); each channel's transport is configured above (mail.*, push.*).
+notifications:
+  # "You were tagged": tagging is announced once per window, not once per
+  # photo. The first time somebody tags a person, a window opens for the
+  # account linked to that person; every photo they are tagged on inside it is
+  # counted, and when it closes the account gets one notification per album
+  # the photos are in (at most five albums; a private album only for a curator
+  # or above) plus one for the photos outside those albums — and one e-mail
+  # listing them all. Nobody is told about their own tagging, nor about a
+  # private, hidden or archived photo.
   tags:
-    # How long a window stays open. Must be positive.
+    # How long a window stays open. Must be positive. (The former name of this
+    # key, push.tags.window, is still read when this one is absent.)
     window: 1h
 
 # The task queue's one message that leaves the app: a daily e-mail to every
