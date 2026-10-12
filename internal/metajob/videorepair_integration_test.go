@@ -148,7 +148,7 @@ func TestReextract_repairsVideoTechnicalMetadata(t *testing.T) {
 	if err := env.svc.Reextract(ctx, before.UID); err != nil {
 		t.Fatalf("Reextract: %v", err)
 	}
-	after, err := env.store.GetByUID(ctx, before.UID)
+	after, err := env.store.GetForJob(ctx, before.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestReextract_videoRepairKeepsCuratedValues(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("Reextract: %v", err)
 	}
-	after, err := env.store.GetByUID(ctx, photo.UID)
+	after, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestReextract_videoRepairKeepsADisownedDate(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("Reextract: %v", err)
 	}
-	after, err := env.store.GetByUID(ctx, photo.UID)
+	after, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestReextract_completeVideoIsUntouched(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("first Reextract: %v", err)
 	}
-	repaired, err := env.store.GetByUID(ctx, photo.UID)
+	repaired, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestReextract_completeVideoIsUntouched(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("second Reextract: %v", err)
 	}
-	again, err := env.store.GetByUID(ctx, photo.UID)
+	again, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("second GetByUID: %v", err)
 	}

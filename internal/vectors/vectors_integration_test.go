@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -289,7 +290,7 @@ func TestListPhotosMissingEmbedding_excludesArchived(t *testing.T) {
 
 	live := makePhoto(t, photoStore, "live")
 	archived := makePhoto(t, photoStore, "archived")
-	if _, err := photoStore.Archive(ctx, archived); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

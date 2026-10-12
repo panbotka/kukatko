@@ -353,3 +353,80 @@ func TestDecorateOne_downloadIsNamedAfterTheOriginal(t *testing.T) {
 		t.Errorf("dl = %q, want %q", got, want)
 	}
 }
+
+// counting is a publishing backend that also counts how many URLs it signed, so
+// a test can prove the builder signed nothing at all rather than merely
+// returning nothing.
+type counting struct {
+	publishing
+	// signed counts URL calls.
+	signed *int
+}
+
+// URL counts the call and returns the published address of relPath.
+func (c counting) URL(relPath string) string {
+	*c.signed++
+	return c.publishing.URL(relPath)
+}
+
+// TestDecorateOne_projectCheck proves the builder's own project check: a row of
+// the request's project is addressed, a row of another project — or one that
+// cannot say which project it belongs to — gets no address and no signature,
+// and a request with no project is not checked.
+func TestDecorateOne_projectCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		current   string
+		rowProj   string
+		wantURLs  bool
+		wantSigns int
+	}{
+		{name: "row of the request's project", current: "pj_a", rowProj: "pj_a", wantURLs: true, wantSigns: 3},
+		{name: "row of another project", current: "pj_a", rowProj: "pj_b", wantURLs: false, wantSigns: 0},
+		{name: "row without a project", current: "pj_a", rowProj: "", wantURLs: false, wantSigns: 0},
+		{name: "request without a project", current: "", rowProj: "pj_b", wantURLs: true, wantSigns: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			signed := 0
+			builder := mediaurl.NewBuilder(counting{publishing: publishing{prefix: "https://media.example/"}, signed: &signed})
+			photo := photos.Photo{
+				UID: "ph1", FileHash: testHash, FilePath: "2024/05/one.jpg", ProjectID: tt.rowProj,
+				// Stale addresses must not survive a refusal.
+				ThumbURL: "stale", PreviewURL: "stale", DownloadURL: "stale",
+			}
+
+			builder.DecorateForProject(t.Context(), tt.current, &photo)
+
+			got := photo.ThumbURL != "" && photo.PreviewURL != "" && photo.DownloadURL != ""
+			none := photo.ThumbURL == "" && photo.PreviewURL == "" && photo.DownloadURL == ""
+			if tt.wantURLs && !got {
+				t.Errorf("want every address, got %+v", photo)
+			}
+			if !tt.wantURLs && !none {
+				t.Errorf("want no address, got thumb=%q preview=%q download=%q",
+					photo.ThumbURL, photo.PreviewURL, photo.DownloadURL)
+			}
+			if signed != tt.wantSigns {
+				t.Errorf("signed %d URLs, want %d", signed, tt.wantSigns)
+			}
+		})
+	}
+}
+
+// TestDecorateOne_noProjectInContextIsUnchecked proves the exported path reads
+// the project from the request: a bare context carries none, so a row of any
+// project is addressed exactly as before projects existed.
+func TestDecorateOne_noProjectInContextIsUnchecked(t *testing.T) {
+	t.Parallel()
+
+	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
+	photo := photos.Photo{UID: "ph1", FileHash: testHash, FilePath: "2024/05/one.jpg", ProjectID: "pj_b"}
+	builder.DecorateOne(t.Context(), &photo)
+	if photo.ThumbURL == "" || photo.DownloadURL == "" {
+		t.Fatalf("not decorated: %+v", photo)
+	}
+}

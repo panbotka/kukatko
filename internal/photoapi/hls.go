@@ -85,7 +85,11 @@ func (a *API) handleHLSMaster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no streaming renditions for this photo")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	list, err := a.hls.ListForPhoto(r.Context(), uid)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading streaming renditions failed")
@@ -133,7 +137,11 @@ func (a *API) handleHLSMedia(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	enc, err := a.hls.Get(r.Context(), chi.URLParam(r, "uid"), rendition)
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	enc, err := a.hls.Get(r.Context(), photo.UID, rendition)
 	if err != nil {
 		if errors.Is(err, hlsjob.ErrRenditionNotFound) {
 			writeError(w, http.StatusNotFound, "no such streaming rendition")
@@ -175,9 +183,8 @@ func (a *API) handleHLSSegment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such segment")
 		return
 	}
-	photo, err := a.store.GetByUID(r.Context(), chi.URLParam(r, "uid"))
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 	has, err := a.hls.Has(r.Context(), photo.UID, rendition)

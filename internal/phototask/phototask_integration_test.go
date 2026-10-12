@@ -521,7 +521,7 @@ func TestTaskScope_listsStackMembers(t *testing.T) {
 
 	jpeg := f.makePhoto(t, "shot")
 	raw := f.makePhoto(t, "shotraw")
-	if _, err := f.photos.CreateStack(ctx, jpeg.UID, []string{jpeg.UID, raw.UID}); err != nil {
+	if _, err := f.photos.CreateStack(ctx, project.BootstrapUID, jpeg.UID, []string{jpeg.UID, raw.UID}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 

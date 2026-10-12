@@ -17,16 +17,17 @@ type rowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// UpdateMetadataAudited applies the metadata update to the photo identified by
-// uid and writes entry to the audit log in the same transaction, so the audit
-// row commits atomically with the change and rolls back with it on failure (the
-// durable-audit convention; see internal/audit). entry's TargetUID is set to
-// uid. It returns the refreshed photo or ErrPhotoNotFound.
+// UpdateMetadataAudited applies the metadata update to the project's photo
+// identified by uid and writes entry to the audit log in the same transaction,
+// so the audit row commits atomically with the change and rolls back with it on
+// failure (the durable-audit convention; see internal/audit). entry's TargetUID
+// is set to uid. It returns the refreshed photo or ErrPhotoNotFound — also for
+// a photo of another project, which is left untouched and gets no audit row.
 func (s *Store) UpdateMetadataAudited(
-	ctx context.Context, uid string, m MetadataUpdate, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, m MetadataUpdate, entry audit.Entry,
 ) (Photo, error) {
-	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
-		return updateMetadataRow(ctx, tx, uid, m)
+	return s.mutateAudited(ctx, projectUID, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		return updateMetadataRow(ctx, tx, projectUID, uid, m)
 	})
 }
 
@@ -36,12 +37,12 @@ func (s *Store) UpdateMetadataAudited(
 // LeaveStackTx), in the same transaction, so its still-live siblings are not
 // hidden by the (stack_uid IS NULL OR stack_primary) visibility gate. It returns
 // the refreshed photo or ErrPhotoNotFound.
-func (s *Store) ArchiveAudited(ctx context.Context, uid string, entry audit.Entry) (Photo, error) {
-	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+func (s *Store) ArchiveAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) (Photo, error) {
+	return s.mutateAudited(ctx, projectUID, uid, entry, func(tx pgx.Tx) (Photo, error) {
 		if err := LeaveStackTx(ctx, tx, uid); err != nil {
 			return Photo{}, err
 		}
-		return setArchivedRow(ctx, tx, uid, true)
+		return setArchivedRow(ctx, tx, projectUID, uid, true)
 	})
 }
 
@@ -49,9 +50,9 @@ func (s *Store) ArchiveAudited(ctx context.Context, uid string, entry audit.Entr
 // writes entry to the audit log in the same transaction. See
 // UpdateMetadataAudited for the atomicity guarantee. It returns the refreshed
 // photo or ErrPhotoNotFound.
-func (s *Store) UnarchiveAudited(ctx context.Context, uid string, entry audit.Entry) (Photo, error) {
-	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
-		return setArchivedRow(ctx, tx, uid, false)
+func (s *Store) UnarchiveAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) (Photo, error) {
+	return s.mutateAudited(ctx, projectUID, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		return setArchivedRow(ctx, tx, projectUID, uid, false)
 	})
 }
 
@@ -62,10 +63,10 @@ func (s *Store) UnarchiveAudited(ctx context.Context, uid string, entry audit.En
 // alone: hiding is a visibility toggle on one photo, not a state its siblings
 // have to be rescued from. It returns the refreshed photo or ErrPhotoNotFound.
 func (s *Store) SetHiddenFromLibraryAudited(
-	ctx context.Context, uid string, hidden bool, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, hidden bool, entry audit.Entry,
 ) (Photo, error) {
-	return s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
-		return setHiddenRow(ctx, tx, uid, hidden)
+	return s.mutateAudited(ctx, projectUID, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		return setHiddenRow(ctx, tx, projectUID, uid, hidden)
 	})
 }
 
@@ -78,8 +79,11 @@ func (s *Store) SetHiddenFromLibraryAudited(
 // siblings in a primary-less stack that no default view shows and no re-stacking
 // can reach. It returns ErrPhotoNotFound when no row matched, in which case
 // nothing is deleted and no audit entry is written.
+//
+// It is not project-scoped yet: the purge (internal/trash) is scoped in its own
+// step, so it runs runAudited without a project to prove.
 func (s *Store) DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error {
-	_, err := s.mutateAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+	_, err := s.runAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
 		if err := LeaveStackTx(ctx, tx, uid); err != nil {
 			return Photo{}, err
 		}
@@ -95,11 +99,32 @@ func (s *Store) DeleteAudited(ctx context.Context, uid string, entry audit.Entry
 	return err
 }
 
-// mutateAudited opens a transaction, runs mutate, writes entry (with TargetUID
+// mutateAudited is runAudited for a write on one project's photo: before mutate
+// runs, the same transaction proves that uid is a photo of projectUID
+// (requirePhotosInProject), so a foreign uid is ErrPhotoNotFound before any
+// row — a stack it would leave, say — is touched, and no audit row is written.
+// entry's ProjectUID defaults to projectUID. An empty projectUID is
+// ErrNoProject.
+func (s *Store) mutateAudited(
+	ctx context.Context, projectUID, uid string, entry audit.Entry, mutate func(tx pgx.Tx) (Photo, error),
+) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	entry = withProject(entry, projectUID)
+	return s.runAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+		if err := requirePhotosInProject(ctx, tx, projectUID, []string{uid}); err != nil {
+			return Photo{}, err
+		}
+		return mutate(tx)
+	})
+}
+
+// runAudited opens a transaction, runs mutate, writes entry (with TargetUID
 // defaulted to uid) on the same transaction and commits, so the mutation and its
 // audit row are atomic. If mutate or the audit write fails the transaction rolls
 // back and neither change persists. It returns the photo mutate produced.
-func (s *Store) mutateAudited(
+func (s *Store) runAudited(
 	ctx context.Context, uid string, entry audit.Entry, mutate func(tx pgx.Tx) (Photo, error),
 ) (Photo, error) {
 	tx, err := s.pool.Begin(ctx)

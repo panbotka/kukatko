@@ -29,6 +29,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -229,7 +230,7 @@ func (h *harness) storeRealPhotoAt(t *testing.T, name string, seed uint8, lat, l
 	if err != nil {
 		t.Fatalf("photos.Create(%s): %v", name, err)
 	}
-	if _, err := h.photos.CreateFile(ctx, photos.PhotoFile{
+	if _, err := h.photos.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: created.UID, FilePath: stored.RelPath, FileHash: stored.Hash,
 		FileSize: stored.Size, FileMime: "image/jpeg", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {
@@ -323,7 +324,7 @@ func (h *harness) catalogueMissingOriginal(t *testing.T) photos.Photo {
 	if err != nil {
 		t.Fatalf("Create(missing): %v", err)
 	}
-	if _, err := h.photos.CreateFile(ctx, photos.PhotoFile{
+	if _, err := h.photos.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: created.UID, FilePath: "2098/01/missing.jpg", FileHash: seededHash,
 		FileSize: 100, FileMime: "image/jpeg", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {

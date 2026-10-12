@@ -38,7 +38,7 @@ func seedTimelineBuckets(t *testing.T, store *photos.Store, fixtures []timelineB
 		})
 		uids[f.hash] = photo.UID
 		if f.archived {
-			if _, err := store.Archive(ctx, photo.UID); err != nil {
+			if _, err := store.Archive(ctx, project.BootstrapUID, photo.UID); err != nil {
 				t.Fatalf("Archive(%s): %v", f.hash, err)
 			}
 		}

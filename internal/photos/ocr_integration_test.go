@@ -230,7 +230,7 @@ func TestOCR_backfillCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create archived: %v", err)
 	}
-	if _, err := store.Archive(ctx, archived.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

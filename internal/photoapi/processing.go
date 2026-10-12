@@ -60,13 +60,16 @@ func (a *API) handleRunProcessingStep(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "processing is not available")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
 	step, ok := processing.ParseStep(chi.URLParam(r, "step"))
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unknown processing step")
 		return
 	}
-	status, err := a.processing.Run(r.Context(), uid, step)
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	status, err := a.processing.Run(r.Context(), photo.UID, step)
 	if err != nil {
 		writeProcessingError(w, err)
 		return

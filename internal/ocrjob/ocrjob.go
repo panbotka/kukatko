@@ -67,8 +67,10 @@ var ErrBackfillUnavailable = errors.New("ocrjob: OCR backfill not configured")
 // PhotoStore is the subset of the photo catalogue the handler needs: loading the
 // photo and storing what was read from it. It is satisfied by *photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo identified by uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 	// SaveOCR stores the recognised text and stamps the photo as OCR'd.
 	SaveOCR(ctx context.Context, uid string, result photos.OCR) error
 }
@@ -219,7 +221,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // without consuming a retry attempt; any other sidecar or storage failure is
 // returned as an ordinary (retryable) error.
 func (s *Service) Recognize(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("ocrjob: loading photo %s: %w", photoUID, err)
 	}

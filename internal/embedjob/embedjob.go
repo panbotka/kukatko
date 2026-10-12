@@ -52,8 +52,10 @@ var ErrMissingPhotoUID = errors.New("embedjob: payload missing photo_uid")
 
 // PhotoStore is the subset of photos.Store the service reads.
 type PhotoStore interface {
-	// GetByUID returns the photo with the given uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo with the given uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
 // VectorStore is the subset of vectors.Store the service uses to read, write and
@@ -224,7 +226,7 @@ func (s *Service) embed(ctx context.Context, photoUID string, force bool) error 
 		}
 	}
 
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("embedjob: loading photo %s: %w", photoUID, err)
 	}

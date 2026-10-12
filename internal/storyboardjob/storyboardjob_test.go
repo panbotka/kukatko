@@ -22,8 +22,8 @@ type fakePhotos struct {
 	err  error
 }
 
-// GetByUID returns the stored row, the configured error, or ErrPhotoNotFound.
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetForJob returns the stored row, the configured error, or ErrPhotoNotFound.
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	if f.err != nil {
 		return photos.Photo{}, f.err
 	}

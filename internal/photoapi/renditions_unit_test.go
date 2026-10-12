@@ -74,6 +74,7 @@ func TestRenditionViews_emptyIsAList(t *testing.T) {
 // storyboardRebuildRouter mounts the forced rebuild without any auth middleware,
 // so the handler's own answers can be exercised directly.
 func storyboardRebuildRouter(api *API) http.Handler {
+	api = withFinder(api)
 	r := chi.NewRouter()
 	r.Post("/photos/{uid}/regenerate-storyboard", api.handleRegenerateStoryboard)
 	return r

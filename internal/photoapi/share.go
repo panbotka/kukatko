@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -85,7 +86,7 @@ func (a *API) handleShareManifest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "no photos to share")
 		return
 	}
-	list, err := a.store.ListByUIDs(r.Context(), req.PhotoUIDs)
+	list, err := a.store.ListByUIDsInProject(r.Context(), auth.ProjectUIDFromContext(r.Context()), req.PhotoUIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "collecting photos failed")
 		return

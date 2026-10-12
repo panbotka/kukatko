@@ -291,7 +291,7 @@ func (a *API) handleGetPhoto(
 		return nil, photoDetail{}, err
 	}
 	uid := strings.TrimSpace(in.UID)
-	photo, err := a.photos.GetByUID(ctx, uid)
+	photo, err := a.photos.GetByUIDInProject(ctx, c.projectUID, uid)
 	if err != nil {
 		if errors.Is(err, photos.ErrPhotoNotFound) {
 			return nil, photoDetail{}, fmt.Errorf("no photo with uid %q", uid)
@@ -416,8 +416,12 @@ func (a *API) handleFindSimilar(
 			"similarity search is not available on this library: it has no image embeddings",
 		)
 	}
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, similarResult{}, err
+	}
 	uid := strings.TrimSpace(in.UID)
-	if _, err := a.photos.GetByUID(ctx, uid); err != nil {
+	if _, err := a.photos.GetByUIDInProject(ctx, c.projectUID, uid); err != nil {
 		if errors.Is(err, photos.ErrPhotoNotFound) {
 			return nil, similarResult{}, fmt.Errorf("no photo with uid %q", uid)
 		}
@@ -462,7 +466,11 @@ func (a *API) resolveSimilar(
 	if len(uids) == 0 {
 		return []similarPhoto{}, nil
 	}
-	list, err := a.photos.ListByUIDs(ctx, uids)
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := a.photos.ListByUIDsInProject(ctx, c.projectUID, uids)
 	if err != nil {
 		return nil, fmt.Errorf("loading similar photos: %w", err)
 	}

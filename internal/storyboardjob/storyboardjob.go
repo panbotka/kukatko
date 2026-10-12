@@ -49,8 +49,10 @@ var ErrCannotRender = errors.New("storyboardjob: nothing here can render a sprit
 // PhotoStore is the subset of the photo catalogue this package needs: loading one
 // photo. It is satisfied by *photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo identified by uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
 // Generator renders and reads storyboard sprites. It is satisfied by
@@ -150,7 +152,7 @@ type Status struct {
 // session. Anything else is StatePending until the sprite lands, then StateReady
 // with the layout. A missing photo returns photos.ErrPhotoNotFound.
 func (s *Service) Status(ctx context.Context, photoUID string) (Status, error) {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return Status{}, fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -184,7 +186,7 @@ func (s *Service) Status(ctx context.Context, photoUID string) (Status, error) {
 // no preview), ErrNotAVideo or storyboard.ErrNoDuration when the photo can never
 // have one, and photos.ErrPhotoNotFound for an unknown photo.
 func (s *Service) Open(ctx context.Context, photoUID string) (io.ReadCloser, storyboard.Spec, error) {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return nil, storyboard.Spec{}, fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -203,7 +205,7 @@ func (s *Service) Open(ctx context.Context, photoUID string) (io.ReadCloser, sto
 // that serves the bytes can build a strong ETag without a second catalogue read.
 // It returns photos.ErrPhotoNotFound for an unknown photo.
 func (s *Service) FileHash(ctx context.Context, photoUID string) (string, error) {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return "", fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -235,7 +237,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // known duration) is a no-op rather than an error: the job was scheduled from a
 // state that has since changed, and failing it would only dead-letter noise.
 func (s *Service) Generate(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}
@@ -267,7 +269,7 @@ func (s *Service) Generate(ctx context.Context, photoUID string) error {
 // one, and photos.ErrPhotoNotFound for an unknown photo. It renders nothing
 // itself: the sprite costs a full decode of its clip and belongs in the queue.
 func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("storyboardjob: loading photo %s: %w", photoUID, err)
 	}

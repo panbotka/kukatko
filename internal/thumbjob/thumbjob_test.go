@@ -47,7 +47,7 @@ func (f *fakePhotos) MarkThumbnailsPresent(context.Context, string) error {
 	return f.stampErr
 }
 
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	if f.getErr != nil {
 		return photos.Photo{}, f.getErr
 	}

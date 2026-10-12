@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 )
@@ -128,7 +126,11 @@ func (a *API) handleSetRating(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	if err := a.applyRating(r.Context(), user.UID, uid, body); err != nil {
 		writeRatingError(w, err)
 		return
@@ -150,7 +152,11 @@ func (a *API) handleClearRating(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	if err := a.ratings.ClearRating(r.Context(), user.UID, uid); err != nil {
 		writeError(w, http.StatusInternalServerError, "clearing rating failed")
 		return

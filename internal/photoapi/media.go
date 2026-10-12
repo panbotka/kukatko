@@ -83,16 +83,14 @@ func redirectToMedia(w http.ResponseWriter, r *http.Request, target string) {
 // behaviour. So on a publishing backend the object this route redirects to is
 // there.
 func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
 	size := chi.URLParam(r, "size")
 	if !thumb.IsValidSize(size) {
 		writeError(w, http.StatusBadRequest, "unknown thumbnail size")
 		return
 	}
 
-	photo, err := a.store.GetByUID(r.Context(), uid)
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 
@@ -139,10 +137,8 @@ func (a *API) openThumb(r *http.Request, photo photos.Photo, size string) (io.Re
 // chunk (never buffered whole); an edited image is rendered into memory because a
 // transform cannot be streamed.
 func (a *API) handleDownload(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	photo, err := a.store.GetByUID(r.Context(), uid)
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 

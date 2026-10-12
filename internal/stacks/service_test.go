@@ -7,6 +7,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // createCall records one stack-creating invocation together with the audit entry
@@ -44,7 +45,7 @@ func (f *fakeStore) StackInfoByUIDs(_ context.Context, uids []string) ([]photos.
 }
 
 func (f *fakeStore) CreateStackAudited(
-	_ context.Context, primary string, members []string, entry audit.Entry,
+	_ context.Context, _, primary string, members []string, entry audit.Entry,
 ) (string, error) {
 	f.created = append(f.created, createCall{primary: primary, members: members, entry: entry})
 	return "st-fake", nil
@@ -71,15 +72,15 @@ func (f *fakeStore) record(method string, entry audit.Entry) (string, error) {
 	return "st-fake", nil
 }
 
-func (f *fakeStore) SetStackPrimaryAudited(_ context.Context, _ string, entry audit.Entry) (string, error) {
+func (f *fakeStore) SetStackPrimaryAudited(_ context.Context, _, _ string, entry audit.Entry) (string, error) {
 	return f.record("set_primary", entry)
 }
 
-func (f *fakeStore) UnstackMemberAudited(_ context.Context, _ string, entry audit.Entry) (string, error) {
+func (f *fakeStore) UnstackMemberAudited(_ context.Context, _, _ string, entry audit.Entry) (string, error) {
 	return f.record("unstack", entry)
 }
 
-func (f *fakeStore) UnstackAllAudited(_ context.Context, _ string, entry audit.Entry) (string, error) {
+func (f *fakeStore) UnstackAllAudited(_ context.Context, _, _ string, entry audit.Entry) (string, error) {
 	return f.record("unstack_all", entry)
 }
 
@@ -149,13 +150,13 @@ func TestService_StackSelection_validation(t *testing.T) {
 	}}
 	svc := New(store, Config{Enabled: true})
 
-	if _, err := svc.StackSelection(t.Context(), []string{"a", "a"}, testEntry(audit.ActionPhotosStack)); !errors.Is(err, photos.ErrStackTooSmall) {
+	if _, err := svc.StackSelection(t.Context(), project.BootstrapUID, []string{"a", "a"}, testEntry(audit.ActionPhotosStack)); !errors.Is(err, photos.ErrStackTooSmall) {
 		t.Errorf("duplicate selection error = %v, want ErrStackTooSmall", err)
 	}
-	if _, err := svc.StackSelection(t.Context(), []string{"a", "missing"}, testEntry(audit.ActionPhotosStack)); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := svc.StackSelection(t.Context(), project.BootstrapUID, []string{"a", "missing"}, testEntry(audit.ActionPhotosStack)); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("missing member error = %v, want ErrPhotoNotFound", err)
 	}
-	if _, err := svc.StackSelection(t.Context(), []string{"a", "b"}, testEntry(audit.ActionPhotosStack)); err != nil {
+	if _, err := svc.StackSelection(t.Context(), project.BootstrapUID, []string{"a", "b"}, testEntry(audit.ActionPhotosStack)); err != nil {
 		t.Fatalf("valid selection: %v", err)
 	}
 	if len(store.created) != 1 || store.created[0].primary == "" {
@@ -199,7 +200,7 @@ func TestService_mutations_carryTheAuditEntry(t *testing.T) {
 			name:   "set primary",
 			action: audit.ActionStackSetPrimary,
 			call: func(svc *Service, entry audit.Entry) error {
-				_, err := svc.SetPrimary(t.Context(), "ph1", entry)
+				_, err := svc.SetPrimary(t.Context(), project.BootstrapUID, "ph1", entry)
 				return err
 			},
 		},
@@ -207,7 +208,7 @@ func TestService_mutations_carryTheAuditEntry(t *testing.T) {
 			name:   "unstack",
 			action: audit.ActionStackUngroup,
 			call: func(svc *Service, entry audit.Entry) error {
-				_, err := svc.Unstack(t.Context(), "ph1", entry)
+				_, err := svc.Unstack(t.Context(), project.BootstrapUID, "ph1", entry)
 				return err
 			},
 		},
@@ -215,7 +216,7 @@ func TestService_mutations_carryTheAuditEntry(t *testing.T) {
 			name:   "unstack all",
 			action: audit.ActionStackUngroupAll,
 			call: func(svc *Service, entry audit.Entry) error {
-				_, err := svc.UnstackWhole(t.Context(), "ph1", entry)
+				_, err := svc.UnstackWhole(t.Context(), project.BootstrapUID, "ph1", entry)
 				return err
 			},
 		},
@@ -247,7 +248,7 @@ func TestService_StackSelection_carriesTheAuditEntry(t *testing.T) {
 	}}
 	svc := New(store, Config{Enabled: true})
 
-	if _, err := svc.StackSelection(t.Context(), []string{"a", "b"}, testEntry(audit.ActionPhotosStack)); err != nil {
+	if _, err := svc.StackSelection(t.Context(), project.BootstrapUID, []string{"a", "b"}, testEntry(audit.ActionPhotosStack)); err != nil {
 		t.Fatalf("StackSelection: %v", err)
 	}
 	if len(store.created) != 1 {

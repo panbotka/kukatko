@@ -323,7 +323,7 @@ func (a *API) handleSetPhotoMetadata(
 	uid := strings.TrimSpace(in.UID)
 	// Read-modify-write: the store's metadata update replaces the whole record,
 	// so anything not read back here would be silently blanked.
-	current, err := a.photos.GetByUID(ctx, uid)
+	current, err := a.photos.GetByUIDInProject(ctx, c.projectUID, uid)
 	if err != nil {
 		if errors.Is(err, photos.ErrPhotoNotFound) {
 			return nil, photoText{}, fmt.Errorf("no photo with uid %q", uid)
@@ -343,7 +343,7 @@ func (a *API) handleSetPhotoMetadata(
 	details := map[string]any{"fields": changedFields(in), "via": viaMCP}
 	metadataChanges(current, upd).StampInto(details)
 	entry := c.entry(audit.ActionPhotoUpdate, "photos", uid, details)
-	updated, err := a.photos.UpdateMetadataAudited(ctx, uid, upd, entry)
+	updated, err := a.photos.UpdateMetadataAudited(ctx, c.projectUID, uid, upd, entry)
 	if err != nil {
 		return nil, photoText{}, fmt.Errorf("updating the photo: %w", err)
 	}

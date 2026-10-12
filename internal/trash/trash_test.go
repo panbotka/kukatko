@@ -52,8 +52,8 @@ func (f *fakePhotoStore) GetByUID(_ context.Context, uid string) (photos.Photo, 
 	return p, nil
 }
 
-// ListFiles returns the seeded files for uid.
-func (f *fakePhotoStore) ListFiles(_ context.Context, uid string) ([]photos.PhotoFile, error) {
+// FilesForJob returns the seeded files for uid.
+func (f *fakePhotoStore) FilesForJob(_ context.Context, uid string) ([]photos.PhotoFile, error) {
 	return f.files[uid], nil
 }
 

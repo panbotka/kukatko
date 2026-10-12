@@ -37,8 +37,8 @@ type fakePhotos struct {
 	repaired  []photos.VideoRepair
 }
 
-// GetByUID returns the configured photo, or the configured error.
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetForJob returns the configured photo, or the configured error.
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	if f.getErr != nil {
 		return photos.Photo{}, f.getErr
 	}

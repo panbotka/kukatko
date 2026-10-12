@@ -58,7 +58,7 @@ func TestMerge_archivedCopyLeavesItsStack(t *testing.T) {
 
 	// The copy is the primary of a two-member stack that has nothing to do with
 	// the duplicate group; merging must not strand its sibling.
-	if _, err := store.CreateStack(ctx, copyUID, []string{copyUID, sibling}); err != nil {
+	if _, err := store.CreateStack(ctx, project.BootstrapUID, copyUID, []string{copyUID, sibling}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 

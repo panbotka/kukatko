@@ -29,6 +29,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/video"
@@ -226,7 +227,7 @@ func TestIngest_singleCreatesEverything(t *testing.T) {
 		t.Errorf("dimensions = %dx%d, want 64x48", photo.FileWidth, photo.FileHeight)
 	}
 
-	files, err := env.store.ListFiles(ctx, res.PhotoUID)
+	files, err := env.store.ListFiles(ctx, project.BootstrapUID, res.PhotoUID)
 	if err != nil || len(files) != 1 || !files[0].IsPrimary || files[0].Role != photos.RoleOriginal {
 		t.Fatalf("ListFiles = %+v, %v; want one primary original", files, err)
 	}

@@ -119,7 +119,7 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 		Title:   "Old attic",
 		TakenAt: ptrOf(time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 	})
-	if _, err := store.Archive(ctx, attic.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, attic.UID); err != nil {
 		t.Fatalf("Archive(attic): %v", err)
 	}
 
@@ -417,11 +417,11 @@ func TestQueryLanguage_uid(t *testing.T) {
 	ctx := t.Context()
 
 	// shelf leaves the library view; attic is archived by the fixture already.
-	if _, err := lib.store.SetHiddenFromLibrary(ctx, lib.uids["shelf"], true); err != nil {
+	if _, err := lib.store.SetHiddenFromLibrary(ctx, project.BootstrapUID, lib.uids["shelf"], true); err != nil {
 		t.Fatalf("SetHiddenFromLibrary(shelf): %v", err)
 	}
 	// clip becomes a non-primary member of a stack behind beach.
-	if _, err := lib.store.CreateStack(ctx, lib.uids["beach"],
+	if _, err := lib.store.CreateStack(ctx, project.BootstrapUID, lib.uids["beach"],
 		[]string{lib.uids["beach"], lib.uids["clip"]}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}

@@ -244,7 +244,7 @@ func TestSearch_updatedTitleChangesResults(t *testing.T) {
 		t.Fatalf("Search(rivers) before update = %v, want 0 results", got)
 	}
 
-	if _, err := store.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "rivers"}); err != nil {
+	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, photo.UID, photos.MetadataUpdate{Title: "rivers"}); err != nil {
 		t.Fatalf("UpdateMetadata: %v", err)
 	}
 

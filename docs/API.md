@@ -37,7 +37,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   so far (the photo read side): `GET /photos` (every ordering, offset and `task=`), `/search`,
   `/favorites`, `/photos/{uid}` and its read sub-routes (`/faces`, `/edit`, `/renditions`, `/similar`;
   the `/comments` listing answers a foreign photo with the empty thread a missing one gets), `/photos/timeline`, `/years`, `/uploaders`, and `GET /search/global`'s
-  photo group and photo/marker/stack/PhotoPrism direct hits. Every `q=` filter key is evaluated inside
+  photo group and photo/marker/stack/PhotoPrism direct hits. **The photo write side and the media
+  bytes** too: every per-photo write — `PATCH /photos/{uid}`, `PUT`/`DELETE …/rating`, `PUT`/`DELETE
+  …/favorite`, `POST …/archive|unarchive|hide|unhide`, `PUT …/edit`, `POST …/comments` and
+  `PATCH`/`DELETE …/comments/{commentUID}`, the stack routes, `POST …/people`, `…/faces/assign` and the
+  rebuild/processing/regenerate routes — answers a foreign photo with the missing photo's 404 and changes
+  nothing (no row, no audit entry); `POST /photos/stack` with a foreign uid among the members is the
+  missing-member 404 and never forms a cross-project stack; and every media route — `…/thumb/{size}`,
+  `…/download`, `…/face`, `…/video`, `…/hls/…` (master, media playlist, segment), `…/storyboard` and
+  `…/storyboard/sprite` — looks the photo up **inside the project before serving a byte or minting a
+  signed URL**, `RequireAuthOrDownloadToken` routes included. A foreign uid in the `photo_uids` of
+  `POST /photos/share` and `POST /photos/zip` is dropped like a missing one. Note: `DELETE …/rating` and
+  `DELETE …/favorite` on a uid that names no photo are now `404` rather than the idempotent `204` (a
+  missing photo and a foreign one must answer alike); a photo of the project still clears idempotently. Every `q=` filter key is evaluated inside
   the project, including the name/id lookups of `album:`, `label:`, `person:`, `family:`, `task:`,
   `uid:` and the reference photo of `near:` — `album:<another project's album uid>` matches nothing.
   The remaining groups are scoped step by step (see `docs/PACKAGES.md`, `internal/photos`).
@@ -541,12 +553,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   closer), `?limit` (default 24, max 100); the source photo is excluded from the result. A photo without
   an embedding or without a similar backend → empty `{similar:[]}` (200), 404 for a missing photo;
   **per-user favourites** `PUT`/`DELETE /photos/{uid}/favorite` (any authenticated user, idempotent → 204,
-  404 missing photo, 503 without a backend) + `GET /favorites` (the current user's favourites in the shape
+  404 missing photo — the `DELETE` too — 503 without a backend) + `GET /favorites` (the current user's favourites in the shape
   of the list endpoint, filters/sorting/pagination as for `/photos`);
   **per-user rating** `PUT /photos/{uid}/rating` `{rating?:0..5, flag?:none|pick|reject|eye}` (a personal
   mark: `pick`=👍, `reject`=👎, `eye`=👁; any
   authenticated user, at least one value → 204, 400 invalid, 404 missing photo, 503 without a backend) +
-  `DELETE /photos/{uid}/rating` (idempotent clear → 204); `GET /photos/{uid}/faces` (authenticated) — a
+  `DELETE /photos/{uid}/rating` (idempotent clear → 204, 404 for a uid that names no photo of the project); `GET /photos/{uid}/faces` (authenticated) — a
   photo's faces with bbox, assignment (marker/subject), action (`create_marker`/`assign_person`/`already_done`)
   and identity **suggestions** **for every face** with an embedding — for an unnamed one, naming
   candidates; for an assigned one, **alternatives for reassignment** (the person the face already carries,

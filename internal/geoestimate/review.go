@@ -49,7 +49,8 @@ type CatalogueStore interface {
 	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
 	// UpdateMetadataAudited overwrites a photo's editable metadata, writing entry
 	// in the same transaction.
-	UpdateMetadataAudited(ctx context.Context, uid string, m photos.MetadataUpdate,
+	// The project is the photo's own (Photo.ProjectID).
+	UpdateMetadataAudited(ctx context.Context, projectUID, uid string, m photos.MetadataUpdate,
 		entry audit.Entry) (photos.Photo, error)
 }
 
@@ -216,7 +217,7 @@ func (r *Reviewer) decide(
 	apply(&update)
 	details := map[string]any{"via": audit.ViaReview, "lat": current.Lat, "lng": current.Lng}
 	entry := meta.Entry(action, "photos", photoUID, details)
-	if _, err := r.catalogue.UpdateMetadataAudited(ctx, photoUID, update, entry); err != nil {
+	if _, err := r.catalogue.UpdateMetadataAudited(ctx, current.ProjectID, photoUID, update, entry); err != nil {
 		return fmt.Errorf("geoestimate: applying location verdict to %s: %w", photoUID, err)
 	}
 	return nil

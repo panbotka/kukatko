@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // yearsResp mirrors the years endpoint's JSON body.
@@ -78,7 +79,7 @@ func TestYears(t *testing.T) {
 	env.seedPhoto(t, photos.Photo{Title: "Undated"}, "undated.jpg", 90, 90, 90)
 	archived := env.seedPhoto(t, photos.Photo{Title: "Gone", TakenAt: ptrTime(y2019), TakenAtSource: "exif"},
 		"gone.jpg", 120, 120, 120)
-	if _, err := env.store.Archive(t.Context(), archived.UID); err != nil {
+	if _, err := env.store.Archive(t.Context(), project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

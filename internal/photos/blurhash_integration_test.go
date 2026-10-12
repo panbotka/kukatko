@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestBlurhashRoundTrip verifies a stored placeholder comes back on the photo and
@@ -74,7 +75,7 @@ func TestBlurhashSurvivesAMetadataUpdate(t *testing.T) {
 		t.Fatalf("SaveBlurhash: %v", err)
 	}
 
-	updated, err := store.UpdateMetadata(ctx, created.UID, photos.MetadataUpdate{Title: "Renamed"})
+	updated, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{Title: "Renamed"})
 	if err != nil {
 		t.Fatalf("UpdateMetadata: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestListPhotosMissingBlurhash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create archived: %v", err)
 	}
-	if _, err := store.Archive(ctx, archived.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // featuredUIDs returns the uids of the listed featured albums in order.
@@ -264,7 +265,7 @@ func TestListFeaturedAlbums_coverCandidates(t *testing.T) {
 	// The newest photo of all, but hidden from the library: the homepage never
 	// headlines it.
 	hidden := makePhotoAt(t, photoStore, "featcandHidden", base.Add(100*time.Hour))
-	if _, err := photoStore.SetHiddenFromLibrary(ctx, hidden, true); err != nil {
+	if _, err := photoStore.SetHiddenFromLibrary(ctx, project.BootstrapUID, hidden, true); err != nil {
 		t.Fatalf("SetHiddenFromLibrary: %v", err)
 	}
 

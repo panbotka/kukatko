@@ -62,8 +62,10 @@ var ErrBackfillUnavailable = errors.New("thumbjob: thumbnail backfill not config
 // photo and reading/writing its perceptual hashes. It is satisfied by
 // *photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo identified by uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 	// GetPhash returns the photo's perceptual hashes, or photos.ErrPhashNotFound.
 	GetPhash(ctx context.Context, photoUID string) (photos.Phash, error)
 	// SetPhash upserts the photo's perceptual hashes.
@@ -235,7 +237,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // as an error so the job dead-letters rather than looping on a uid that will
 // never resolve.
 func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("thumbjob: loading photo %s: %w", photoUID, err)
 	}
@@ -265,7 +267,7 @@ func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 // ErrRegenerateFailed (mapped to 422); a storage/database failure is an ordinary
 // wrapped error (mapped to 500).
 func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]string, error) {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("thumbjob: loading photo %s: %w", photoUID, err)
 	}

@@ -414,10 +414,30 @@ to `## Package map` in `CLAUDE.md`.
   added); the single-row lookups `GetByUIDInProject`, `GetByFileHashInProject`, `GetByPhotoprismUID`,
   `GetByPhotoprismFileHash`, `GetByPhotosorterUID`, `GetByPhotoprismAlias` (the alias table's own
   `project_id` in the sub-select); `ListByUIDsInProject`, `ListStackMembers`, `StackCounts`, `GetOCR`.
-  **Transitional, still unscoped** (their callers are the write side, the media bytes and the worker
-  loaders, scoped in the next step): `GetByUID`, `GetByFileHash`, `ListByUIDs` and the write/maintenance
-  methods — the listing, search, detail and per-photo read routes never call them (the media-byte
-  routes, the zip/share manifests and the write handlers still do, until that step). The pure builders are tested through
+  **Writes** follow the same rule: a mutation takes `projectUID` after `ctx` and touches a row only
+  inside that project — `UpdateMetadata`(`Audited`), `Archive`/`Unarchive`(`Audited`),
+  `SetHiddenFromLibrary`(`Audited`) carry `projectClause` in the `UPDATE`'s `WHERE` (0 rows =
+  `ErrPhotoNotFound`); the child-table writers `SetEdit` and `CreateFile` (the `photo_files` writer of
+  ingest, which passes the fresh row's `ProjectID`) insert through `INSERT … SELECT … FROM photos WHERE
+  uid = $1 AND project_id = $n`, so the parent is proved in the same statement; the transactional ones —
+  the audited mutations (`mutateAudited`) and the stack operations `CreateStack`(`Audited`),
+  `SetStackPrimary`/`UnstackMember`/`UnstackAll`(`Audited`, through `inProjectTx`) — first run
+  `requirePhotosInProject` on their own transaction, so a foreign uid is refused before a stack it would
+  leave is touched, writes no audit row, and **a stack never spans projects**. An audited write defaults
+  the entry's `ProjectUID` to the project (`withProject`). `ListFiles(ctx, projectUID, uid)` is scoped by
+  an `EXISTS` on the parent. **Worker loaders:** a background job has no request and so no project;
+  it loads through the explicitly named, unscoped **`GetForJob(ctx, uid)`** / **`FilesForJob(ctx, uid)`**
+  and learns the project from the row — every read now fills **`Photo.ProjectID`** (`photos.project_id`
+  is the last of `photoColumns`; `json:"-"`, it never leaves the server). `thumbjob`, `embedjob`, `facejob`,
+  `metajob`, `ocrjob`, `sidecarjob`, `placesjob`, `storyboardjob`, `hlsjob` and the purge (`internal/trash`)
+  use them (`tagnotifyjob` reads its rows with its own SQL). `forjob_guard_test.go` walks every
+  `internal/*api` package's non-test source and fails on `ForJob(` / `.…ForJob`: a handler loads through
+  the scoped lookups, never these. The job-side write-backs keyed by a uid the job just loaded
+  (`SaveBlurhash`, `SetPhash`, `MarkThumbnailsBuilt`, `FillFileMetadata`, `SaveOCR`, `MarkSidecarWritten`,
+  …) stay unscoped for the same reason. **Still unscoped, for callers scoped in later steps:** `GetByUID`
+  (trash, profile picture, avatar, directory import, geoestimate review, face matching), `GetByFileHash`
+  (ingest), `ListByUIDs` (people/review/candidates/expand/duplicates/notifications), `Delete`/`DeleteAudited`
+  (the purge), `CreateStacksAudited` (stack detection) and the maintenance scans. The pure builders are tested through
   `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
   reading as the filter they test while the scope itself is asserted on the real output.
   Typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
@@ -874,6 +894,13 @@ to `## Package map` in `CLAUDE.md`.
   percent-encoded into the route. The payload carries **two** thumbnails, because the client picks between them
   by shape: `thumb.GridSize` (`tile_500`, the square crop a medallion or a card draws) and `thumb.PreviewSize`
   (`fit_720`, the aspect-preserving rendition the justified photo wall draws).
+  **Project check:** `DecorateOne` reads the request's project (`auth.ProjectUIDFromContext`) and addresses a row
+  only when `Photo.ProjectID` equals it (`mayAddress`); a row of another project — or one with no `ProjectID`, which
+  no catalogue read produces — gets its three fields **cleared and nothing signed**. The callers already pass rows
+  they filtered; this is the defensive second lock, so a signed URL is never minted for a photo of a project the
+  request did not address. A request with **no** project (an instance route such as the notifications inbox) is
+  not checked here — what it may see is its handler's rule. Tested through `decorateForProject` (`export_test.go`)
+  and, with a real principal, `project_integration_test.go`.
   **Authorization guards discovery**: a URL is minted only into a response the caller was already entitled to; the object
   is then guarded by the signature the Worker verifies. The package doc comment says so explicitly, because **an older design
   with a public bucket** made the archive just a presentation filter — that **no longer holds**,
@@ -6234,7 +6261,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     jar of its own on `apitest.Client()`'s pool-free transport (the spec's `*apitest.Client` is that
     client: `apitest` exports a function, not a type). The fixture remembers each client's side and
     server, so the HTTP helpers take a bare path. `f.PathFor(side, suffix)` = `/api/v1/p/<slug>/<suffix>`;
-    `f.Get(t, client, path)` returns a response whose body is already buffered.
+    `f.Get(t, client, path)` returns a response whose body is already buffered;
+    `f.Send(t, client, method, path, body)` is its write twin (JSON body, nil for none), so a test fires
+    a PATCH/PUT/POST/DELETE at the other side's row and compares it with `AssertSameShape`.
   - Assertions (all take `testing.TB`): `f.AssertInvisible(t, client, path)` — 404, and the body names
     none of the **other** side's `UIDs()` (a uid the path itself carries is exempt — echoing the request
     leaks nothing); `f.AssertListExcludes(t, client, path, otherUIDs...)` — 200 and none of the given
@@ -6246,9 +6275,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - Tests: the assertions' failure paths through a recording `testing.TB` against canned servers; the
     seed's shape and membership against the DB; `AssertStoreScoped` over every seeded root table; the
     real project guard (each member enters its own project as admin, the other is a 404 identical to an
-    unknown slug). Worked example in a package: `internal/photoapi/isolation_integration_test.go`
-    (its test env mounts the photo routes under `/p/{project}` too); the foreign-photo case is skipped
-    with "unscoped until the photos step" until that step scopes the store.
+    unknown slug). Worked examples in a package: `internal/photoapi/isolation_integration_test.go`
+    (reads; its test env mounts the photo routes under `/p/{project}` too) and
+    `write_isolation_integration_test.go` (writes and media bytes, plus the row left unchanged).
 
 - **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
   behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in

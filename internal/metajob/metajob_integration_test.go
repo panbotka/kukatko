@@ -172,7 +172,7 @@ func TestReextract_fillsLegacyPhoto(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("Reextract: %v", err)
 	}
-	filled, err := env.store.GetByUID(ctx, photo.UID)
+	filled, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestReextract_fillsLegacyPhoto(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("second Reextract: %v", err)
 	}
-	again, err := env.store.GetByUID(ctx, photo.UID)
+	again, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("second GetByUID: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestReextract_neverClobbersUserEdits(t *testing.T) {
 	if err := env.svc.Reextract(ctx, photo.UID); err != nil {
 		t.Fatalf("Reextract: %v", err)
 	}
-	got, err := env.store.GetByUID(ctx, photo.UID)
+	got, err := env.store.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestReextract_missingOriginalIsSkipped(t *testing.T) {
 	if err := env.svc.Reextract(ctx, created.UID); err != nil {
 		t.Fatalf("Reextract over a missing original = %v, want nil (skip)", err)
 	}
-	got, err := env.store.GetByUID(ctx, created.UID)
+	got, err := env.store.GetForJob(ctx, created.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

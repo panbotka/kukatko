@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/hlsjob"
@@ -152,7 +150,11 @@ func (a *API) handleRegenerateStoryboard(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusServiceUnavailable, "storyboards are not available")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	if err := a.storyboards.Regenerate(r.Context(), uid); err != nil {
 		writeStoryboardRebuildError(w, err)
 		return

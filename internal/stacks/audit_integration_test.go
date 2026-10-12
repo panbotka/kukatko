@@ -107,7 +107,7 @@ func TestIntegration_StackSelectionIsAudited(t *testing.T) {
 	b := makePhoto(t, store, "aud_b", "B.jpg", "image/jpeg", 6000, 4000) // highest resolution
 
 	svc := stacks.New(store, stacks.Config{Enabled: true})
-	stackUID, err := svc.StackSelection(ctx, []string{a.UID, b.UID}, actorEntry(actor, audit.ActionPhotosStack))
+	stackUID, err := svc.StackSelection(ctx, project.BootstrapUID, []string{a.UID, b.UID}, actorEntry(actor, audit.ActionPhotosStack))
 	if err != nil {
 		t.Fatalf("StackSelection: %v", err)
 	}
@@ -134,11 +134,11 @@ func TestIntegration_SetPrimaryIsAudited(t *testing.T) {
 	b := makePhoto(t, store, "aud_pb", "B.jpg", "image/jpeg", 6000, 4000)
 
 	svc := stacks.New(store, stacks.Config{Enabled: true})
-	stackUID, err := svc.StackSelection(ctx, []string{a.UID, b.UID}, actorEntry(actor, audit.ActionPhotosStack))
+	stackUID, err := svc.StackSelection(ctx, project.BootstrapUID, []string{a.UID, b.UID}, actorEntry(actor, audit.ActionPhotosStack))
 	if err != nil {
 		t.Fatalf("StackSelection: %v", err)
 	}
-	if _, err := svc.SetPrimary(ctx, a.UID, actorEntry(actor, audit.ActionStackSetPrimary)); err != nil {
+	if _, err := svc.SetPrimary(ctx, project.BootstrapUID, a.UID, actorEntry(actor, audit.ActionStackSetPrimary)); err != nil {
 		t.Fatalf("SetPrimary: %v", err)
 	}
 
@@ -165,11 +165,11 @@ func TestIntegration_UngroupIsAudited(t *testing.T) {
 	c := makePhoto(t, store, "aud_uc", "C.jpg", "image/jpeg", 3000, 2000)
 
 	svc := stacks.New(store, stacks.Config{Enabled: true})
-	stackUID, err := svc.StackSelection(ctx, []string{a.UID, b.UID, c.UID}, actorEntry(actor, audit.ActionPhotosStack))
+	stackUID, err := svc.StackSelection(ctx, project.BootstrapUID, []string{a.UID, b.UID, c.UID}, actorEntry(actor, audit.ActionPhotosStack))
 	if err != nil {
 		t.Fatalf("StackSelection: %v", err)
 	}
-	if _, err := svc.Unstack(ctx, c.UID, actorEntry(actor, audit.ActionStackUngroup)); err != nil {
+	if _, err := svc.Unstack(ctx, project.BootstrapUID, c.UID, actorEntry(actor, audit.ActionStackUngroup)); err != nil {
 		t.Fatalf("Unstack: %v", err)
 	}
 
@@ -183,7 +183,7 @@ func TestIntegration_UngroupIsAudited(t *testing.T) {
 
 	// Dissolving the remnant lists the members it had — once the rows are
 	// standalone again, nothing else records that they ever belonged together.
-	if _, err := svc.UnstackWhole(ctx, a.UID, actorEntry(actor, audit.ActionStackUngroupAll)); err != nil {
+	if _, err := svc.UnstackWhole(ctx, project.BootstrapUID, a.UID, actorEntry(actor, audit.ActionStackUngroupAll)); err != nil {
 		t.Fatalf("UnstackWhole: %v", err)
 	}
 	whole := oneAuditRow(t, ctx, auditStore, audit.ActionStackUngroupAll, actor, a.UID)
@@ -235,7 +235,7 @@ func TestIntegration_RefusedStackOperationLeavesNoTrail(t *testing.T) {
 	svc := stacks.New(store, stacks.Config{Enabled: true})
 	// An unstacked photo has no primary to set: the mutation rolls back, and the
 	// audit row must roll back with it.
-	if _, err := svc.SetPrimary(ctx, lone.UID, actorEntry(actor, audit.ActionStackSetPrimary)); !errors.Is(
+	if _, err := svc.SetPrimary(ctx, project.BootstrapUID, lone.UID, actorEntry(actor, audit.ActionStackSetPrimary)); !errors.Is(
 		err, photos.ErrPhotoNotStacked,
 	) {
 		t.Fatalf("SetPrimary on an unstacked photo = %v, want ErrPhotoNotStacked", err)

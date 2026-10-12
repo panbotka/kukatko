@@ -31,12 +31,12 @@ type Store interface {
 	ListStackCandidates(ctx context.Context) ([]photos.StackCandidate, error)
 	StackInfoByUIDs(ctx context.Context, uids []string) ([]photos.StackCandidate, error)
 	CreateStackAudited(
-		ctx context.Context, primaryUID string, memberUIDs []string, entry audit.Entry,
+		ctx context.Context, projectUID, primaryUID string, memberUIDs []string, entry audit.Entry,
 	) (string, error)
 	CreateStacksAudited(ctx context.Context, plans []photos.StackPlan, entry audit.Entry) ([]string, error)
-	SetStackPrimaryAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
-	UnstackMemberAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
-	UnstackAllAudited(ctx context.Context, memberUID string, entry audit.Entry) (string, error)
+	SetStackPrimaryAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
+	UnstackMemberAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
+	UnstackAllAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
 }
 
 // Service detects stacks over the library and carries out the manual stacking
@@ -105,9 +105,11 @@ func planComponent(candidates []photos.StackCandidate, component []int) photos.S
 // rules miss, choosing the primary with PickPrimary, and returns the new
 // stack_uid. The grouping is recorded under entry in the same transaction. It
 // returns photos.ErrStackTooSmall for fewer than two distinct photos and
-// photos.ErrPhotoNotFound when one is missing or archived — neither writes an
-// entry, because neither changes anything.
-func (s *Service) StackSelection(ctx context.Context, uids []string, entry audit.Entry) (string, error) {
+// photos.ErrPhotoNotFound when one is missing, archived or not a photo of the
+// project projectUID — none writes an entry, because none changes anything.
+func (s *Service) StackSelection(
+	ctx context.Context, projectUID string, uids []string, entry audit.Entry,
+) (string, error) {
 	distinct := distinctStrings(uids)
 	if len(distinct) < 2 {
 		return "", photos.ErrStackTooSmall
@@ -119,17 +121,18 @@ func (s *Service) StackSelection(ctx context.Context, uids []string, entry audit
 	if len(info) != len(distinct) {
 		return "", photos.ErrPhotoNotFound
 	}
-	stackUID, err := s.store.CreateStackAudited(ctx, PickPrimary(info), distinct, entry)
+	stackUID, err := s.store.CreateStackAudited(ctx, projectUID, PickPrimary(info), distinct, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: stacking selection: %w", err)
 	}
 	return stackUID, nil
 }
 
-// SetPrimary makes uid the primary of its stack, returning the stack_uid and
-// recording the change under entry in the same transaction.
-func (s *Service) SetPrimary(ctx context.Context, uid string, entry audit.Entry) (string, error) {
-	stackUID, err := s.store.SetStackPrimaryAudited(ctx, uid, entry)
+// SetPrimary makes the project's photo uid the primary of its stack, returning
+// the stack_uid and recording the change under entry in the same transaction. A
+// photo of another project is photos.ErrPhotoNotFound and changes nothing.
+func (s *Service) SetPrimary(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.SetStackPrimaryAudited(ctx, projectUID, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: setting primary: %w", err)
 	}
@@ -138,9 +141,9 @@ func (s *Service) SetPrimary(ctx context.Context, uid string, entry audit.Entry)
 
 // Unstack removes uid from its stack, turning it back into a standalone photo,
 // returning the stack_uid it left and recording the change under entry in the
-// same transaction.
-func (s *Service) Unstack(ctx context.Context, uid string, entry audit.Entry) (string, error) {
-	stackUID, err := s.store.UnstackMemberAudited(ctx, uid, entry)
+// same transaction. A photo of another project is photos.ErrPhotoNotFound.
+func (s *Service) Unstack(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.UnstackMemberAudited(ctx, projectUID, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: unstacking member: %w", err)
 	}
@@ -148,9 +151,10 @@ func (s *Service) Unstack(ctx context.Context, uid string, entry audit.Entry) (s
 }
 
 // UnstackWhole dissolves the entire stack uid belongs to, returning its stack_uid
-// and recording the change under entry in the same transaction.
-func (s *Service) UnstackWhole(ctx context.Context, uid string, entry audit.Entry) (string, error) {
-	stackUID, err := s.store.UnstackAllAudited(ctx, uid, entry)
+// and recording the change under entry in the same transaction. A photo of
+// another project is photos.ErrPhotoNotFound.
+func (s *Service) UnstackWhole(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error) {
+	stackUID, err := s.store.UnstackAllAudited(ctx, projectUID, uid, entry)
 	if err != nil {
 		return "", fmt.Errorf("stacks: dissolving stack: %w", err)
 	}

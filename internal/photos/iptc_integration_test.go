@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -131,7 +132,7 @@ func TestUpdateMetadata_editableIPTCFields(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	updated, err := store.UpdateMetadata(ctx, created.UID, photos.MetadataUpdate{
+	updated, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{
 		Title:     "Lake",
 		Subject:   "Autumn at the lake",
 		Keywords:  "lake,autumn",

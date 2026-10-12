@@ -22,6 +22,7 @@ import (
 	"github.com/panbotka/kukatko/internal/feedbackapi"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -403,7 +404,7 @@ func TestIntegration_archivedPhotosAreNotOffered(t *testing.T) {
 	h := newIntHarness(t)
 
 	photoUID, _, _ := h.seedGroup(t, "hash-f", "Marie", 2)
-	if _, err := h.photos.Archive(t.Context(), photoUID); err != nil {
+	if _, err := h.photos.Archive(t.Context(), project.BootstrapUID, photoUID); err != nil {
 		t.Fatalf("archiving photo: %v", err)
 	}
 

@@ -104,6 +104,7 @@ func (f *fakeRebuildEnqueuer) record(queue *[]string, uid string) (jobs.ForceOut
 // rebuildRouter mounts the three rebuild handlers without any guard, so the
 // handler logic can be exercised directly.
 func rebuildRouter(api *API) http.Handler {
+	api = withFinder(api)
 	r := chi.NewRouter()
 	r.Post("/photos/{uid}/reembed", api.handleReembed)
 	r.Post("/photos/{uid}/redetect-faces", api.handleRedetectFaces)

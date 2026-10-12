@@ -80,7 +80,11 @@ func (a *API) handleAttachPerson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	photoUID := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	photoUID := photo.UID
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPersonAttach, "markers", "", map[string]any{
 		"photo_uid":   photoUID,
 		"subject_uid": subjectUID,
@@ -108,7 +112,11 @@ func (a *API) handleDetachPerson(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	photoUID := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	photoUID := photo.UID
 	subjectUID := chi.URLParam(r, "subjectUID")
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPersonDetach, "subjects", subjectUID,
 		map[string]any{"photo_uid": photoUID})

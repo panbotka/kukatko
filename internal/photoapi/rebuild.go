@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
@@ -191,7 +189,11 @@ func (a *API) runRebuild(w http.ResponseWriter, r *http.Request, spec rebuildSpe
 		writeError(w, http.StatusServiceUnavailable, "rebuilding "+spec.step+" is not available")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	faces, err := spec.run(r.Context(), uid)
 	switch {
 	case err == nil:

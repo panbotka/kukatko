@@ -26,6 +26,18 @@
 // said. That is no longer true and must not be reintroduced. **The archive is a
 // real security boundary.** A handler that hands out a media URL for a photo the
 // caller may not see has published the photo, and no TTL makes that acceptable.
+//
+// # Projects
+//
+// The same holds across projects, and here the builder checks rather than
+// trusts. The caller passes rows it has already confined to the request's
+// project, but DecorateOne refuses on its own as well: a request that carries a
+// project (auth.ProjectUIDFromContext) gets addresses only for rows whose
+// Photo.ProjectID is that project. A row of another project — which only a bug
+// upstream could hand it — leaves the builder with no address at all, so a
+// signed URL is never minted for a photo of a project the caller did not
+// address. A request with no project (an instance route) is not checked here;
+// what it may see is its own handler's rule.
 package mediaurl
 
 import (
@@ -183,8 +195,31 @@ func (b *Builder) Decorate(ctx context.Context, list []photos.Photo) {
 // between them by shape: a square crop for anything drawn in a square box (a
 // medallion, a card), the aspect-preserving rendition for the justified photo
 // wall, whose tiles are as wide as their photographs.
+//
+// A photo of another project than the request's (see "Projects" above) gets no
+// address: the three fields are cleared and nothing is signed.
 func (b *Builder) DecorateOne(ctx context.Context, photo *photos.Photo) {
+	b.decorateForProject(ctx, auth.ProjectUIDFromContext(ctx), photo)
+}
+
+// decorateForProject is DecorateOne with the request's project uid already
+// resolved: current is "" for a request without a project. A row of another
+// project than current gets its three addresses cleared and nothing signed.
+func (b *Builder) decorateForProject(ctx context.Context, current string, photo *photos.Photo) {
+	if !mayAddress(current, photo) {
+		photo.ThumbURL, photo.PreviewURL, photo.DownloadURL = "", "", ""
+		return
+	}
 	photo.ThumbURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.GridSize)
 	photo.PreviewURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.PreviewSize)
 	photo.DownloadURL = b.Download(ctx, photo.UID, photo.FilePath, photo.FileName)
+}
+
+// mayAddress reports whether photo may be given media addresses on a request
+// whose project is current: always when the request carries no project (current
+// is empty), otherwise only when the row belongs to exactly that project. A row
+// with no ProjectID cannot prove it, so it is refused too — every row read from
+// the catalogue carries one.
+func mayAddress(current string, photo *photos.Photo) bool {
+	return current == "" || photo.ProjectID == current
 }

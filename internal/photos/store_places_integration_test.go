@@ -52,7 +52,7 @@ func seedPlaces(
 			}
 		}
 		if f.archived {
-			if _, err := store.Archive(ctx, photo.UID); err != nil {
+			if _, err := store.Archive(ctx, project.BootstrapUID, photo.UID); err != nil {
 				t.Fatalf("Archive(%s): %v", f.hash, err)
 			}
 		}

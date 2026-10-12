@@ -58,8 +58,10 @@ var ErrBackfillUnavailable = errors.New("metajob: metadata backfill not configur
 // photo and filling its still-empty metadata columns. It is satisfied by
 // *photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo identified by uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 	// FillFileMetadata writes m into the photo's empty metadata columns — never over
 	// a value already there — stamps the extraction marker, and reports whether any
 	// column was filled.
@@ -188,7 +190,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // would only dead-letter it and make a library-wide backfill look broken. Every
 // other storage or database failure is returned so the queue retries it.
 func (s *Service) Reextract(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("metajob: loading photo %s: %w", photoUID, err)
 	}

@@ -316,7 +316,7 @@ func (e *env) seedPhoto(t *testing.T, template photos.Photo, name string, r, g, 
 	if err != nil {
 		t.Fatalf("store.Create(%s): %v", name, err)
 	}
-	if _, err := e.store.CreateFile(t.Context(), photos.PhotoFile{
+	if _, err := e.store.CreateFile(t.Context(), project.BootstrapUID, photos.PhotoFile{
 		PhotoUID:  created.UID,
 		FilePath:  created.FilePath,
 		FileHash:  created.FileHash,
@@ -979,10 +979,10 @@ func TestTrashPurgeRBAC(t *testing.T) {
 	// admin purges successfully.
 	forEditor := env.seedPhoto(t, photos.Photo{Title: "A", TakenAtSource: "unknown"}, "a.jpg", 5, 5, 200)
 	forAdmin := env.seedPhoto(t, photos.Photo{Title: "B", TakenAtSource: "unknown"}, "b.jpg", 6, 6, 200)
-	if _, err := env.store.Archive(ctx, forEditor.UID); err != nil {
+	if _, err := env.store.Archive(ctx, project.BootstrapUID, forEditor.UID); err != nil {
 		t.Fatalf("archive %s: %v", forEditor.UID, err)
 	}
-	if _, err := env.store.Archive(ctx, forAdmin.UID); err != nil {
+	if _, err := env.store.Archive(ctx, project.BootstrapUID, forAdmin.UID); err != nil {
 		t.Fatalf("archive %s: %v", forAdmin.UID, err)
 	}
 
@@ -1046,7 +1046,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	archivedB := env.seedPhoto(t, photos.Photo{Title: "B", TakenAtSource: "unknown"}, "b.jpg", 6, 6, 200)
 	live := env.seedPhoto(t, photos.Photo{Title: "C", TakenAtSource: "unknown"}, "c.jpg", 7, 7, 200)
 	for _, uid := range []string{archivedA.UID, archivedB.UID} {
-		if _, err := env.store.Archive(ctx, uid); err != nil {
+		if _, err := env.store.Archive(ctx, project.BootstrapUID, uid); err != nil {
 			t.Fatalf("archive %s: %v", uid, err)
 		}
 	}
@@ -1271,7 +1271,7 @@ func TestTimeline(t *testing.T) {
 		"jun.jpg", 10, 10, 200)
 	archived := env.seedPhoto(t, photos.Photo{Title: "Old", TakenAt: ptrTime(dec), TakenAtSource: "exif"},
 		"old.jpg", 30, 30, 30)
-	if _, err := env.store.Archive(t.Context(), archived.UID); err != nil {
+	if _, err := env.store.Archive(t.Context(), project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

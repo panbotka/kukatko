@@ -88,7 +88,7 @@ func TestPhotoLifecycle(t *testing.T) {
 	}
 
 	newTaken := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
-	updated, err := store.UpdateMetadata(ctx, created.UID, photos.MetadataUpdate{
+	updated, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{
 		Title:         "Sunset",
 		Description:   "On the coast",
 		Notes:         "keeper",
@@ -118,14 +118,14 @@ func TestPhotoLifecycle(t *testing.T) {
 		t.Errorf("UpdateMetadata lat = %v, want 49.0", updated.Lat)
 	}
 
-	archived, err := store.Archive(ctx, created.UID)
+	archived, err := store.Archive(ctx, project.BootstrapUID, created.UID)
 	if err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	if archived.ArchivedAt == nil {
 		t.Error("Archive did not set archived_at")
 	}
-	unarchived, err := store.Unarchive(ctx, created.UID)
+	unarchived, err := store.Unarchive(ctx, project.BootstrapUID, created.UID)
 	if err != nil {
 		t.Fatalf("Unarchive: %v", err)
 	}
@@ -142,10 +142,10 @@ func TestPhotoNotFound(t *testing.T) {
 	if _, err := store.GetByUID(ctx, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByUID error = %v, want ErrPhotoNotFound", err)
 	}
-	if _, err := store.UpdateMetadata(ctx, "missing", photos.MetadataUpdate{}); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, "missing", photos.MetadataUpdate{}); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("UpdateMetadata error = %v, want ErrPhotoNotFound", err)
 	}
-	if _, err := store.Archive(ctx, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.Archive(ctx, project.BootstrapUID, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("Archive error = %v, want ErrPhotoNotFound", err)
 	}
 	if err := store.Delete(ctx, "missing"); !errors.Is(err, photos.ErrPhotoNotFound) {
@@ -332,7 +332,7 @@ func TestList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create l4: %v", err)
 	}
-	if _, err := store.Archive(ctx, archived.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive l4: %v", err)
 	}
 
@@ -371,7 +371,7 @@ func TestPhotoFiles(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	primary, err := store.CreateFile(ctx, photos.PhotoFile{
+	primary, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: "2023/06/files.jpg", FileHash: "files",
 		FileMime: "image/jpeg", IsPrimary: true, Role: photos.RoleOriginal,
 	})
@@ -382,28 +382,28 @@ func TestPhotoFiles(t *testing.T) {
 		t.Error("CreateFile did not assign an id")
 	}
 
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: "2023/06/files.xmp", Role: photos.RoleSidecar,
 	}); err != nil {
 		t.Fatalf("CreateFile sidecar: %v", err)
 	}
 
 	// Same path again violates the (photo_uid, file_path) unique constraint.
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: "2023/06/files.jpg", Role: photos.RoleEdited,
 	}); !errors.Is(err, photos.ErrFilePathTaken) {
 		t.Errorf("duplicate path error = %v, want ErrFilePathTaken", err)
 	}
 
 	// A second primary violates the one-primary-per-photo index.
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: "2023/06/files-edited.jpg",
 		IsPrimary: true, Role: photos.RoleEdited,
 	}); !errors.Is(err, photos.ErrPrimaryFileExists) {
 		t.Errorf("second primary error = %v, want ErrPrimaryFileExists", err)
 	}
 
-	files, err := store.ListFiles(ctx, photo.UID)
+	files, err := store.ListFiles(ctx, project.BootstrapUID, photo.UID)
 	if err != nil {
 		t.Fatalf("ListFiles: %v", err)
 	}
@@ -456,7 +456,7 @@ func TestPhashAndEditRoundTrip(t *testing.T) {
 		CropX:    new(0.25), CropY: new(0.25), CropW: new(0.5), CropH: new(0.5),
 		Rotation: 90, Brightness: 0.5, Contrast: -0.25,
 	}
-	if err := store.SetEdit(ctx, edit); err != nil {
+	if err := store.SetEdit(ctx, project.BootstrapUID, edit); err != nil {
 		t.Fatalf("SetEdit: %v", err)
 	}
 	gotEdit, err := store.GetEdit(ctx, photo.UID)
@@ -522,7 +522,7 @@ func TestCascadeDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: "2023/06/casc.jpg", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {
 		t.Fatalf("CreateFile: %v", err)
@@ -530,7 +530,7 @@ func TestCascadeDelete(t *testing.T) {
 	if err := store.SetPhash(ctx, photos.Phash{PhotoUID: photo.UID, Phash: 1, Dhash: 2}); err != nil {
 		t.Fatalf("SetPhash: %v", err)
 	}
-	if err := store.SetEdit(ctx, photos.Edit{PhotoUID: photo.UID, Rotation: 180}); err != nil {
+	if err := store.SetEdit(ctx, project.BootstrapUID, photos.Edit{PhotoUID: photo.UID, Rotation: 180}); err != nil {
 		t.Fatalf("SetEdit: %v", err)
 	}
 
@@ -541,7 +541,7 @@ func TestCascadeDelete(t *testing.T) {
 	if _, err := store.GetByUID(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("photo still present after delete: %v", err)
 	}
-	files, err := store.ListFiles(ctx, photo.UID)
+	files, err := store.ListFiles(ctx, project.BootstrapUID, photo.UID)
 	if err != nil {
 		t.Fatalf("ListFiles: %v", err)
 	}

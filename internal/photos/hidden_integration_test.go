@@ -243,7 +243,7 @@ func TestHiddenFromLibrary_setToggles(t *testing.T) {
 	lib := newHiddenLibrary(t)
 	ctx := t.Context()
 
-	shown, err := lib.store.SetHiddenFromLibrary(ctx, lib.scan.UID, false)
+	shown, err := lib.store.SetHiddenFromLibrary(ctx, project.BootstrapUID, lib.scan.UID, false)
 	if err != nil {
 		t.Fatalf("SetHiddenFromLibrary(false): %v", err)
 	}
@@ -255,7 +255,7 @@ func TestHiddenFromLibrary_setToggles(t *testing.T) {
 		t.Errorf("Count after unhide = %d, %v, want 2", total, err)
 	}
 
-	if _, err = lib.store.SetHiddenFromLibrary(ctx, lib.visible.UID, true); err != nil {
+	if _, err = lib.store.SetHiddenFromLibrary(ctx, project.BootstrapUID, lib.visible.UID, true); err != nil {
 		t.Fatalf("SetHiddenFromLibrary(true): %v", err)
 	}
 	total, err = lib.store.Count(ctx, project.BootstrapUID, photos.ListParams{})
@@ -263,7 +263,7 @@ func TestHiddenFromLibrary_setToggles(t *testing.T) {
 		t.Errorf("Count after hide = %d, %v, want 1", total, err)
 	}
 
-	if _, err = lib.store.SetHiddenFromLibrary(ctx, "nope", true); err == nil {
+	if _, err = lib.store.SetHiddenFromLibrary(ctx, project.BootstrapUID, "nope", true); err == nil {
 		t.Error("SetHiddenFromLibrary on a missing photo returned no error")
 	}
 }

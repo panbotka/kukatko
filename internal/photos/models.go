@@ -363,6 +363,13 @@ type Photo struct {
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// ProjectID is the uid of the project the photo belongs to. Every read fills
+	// it in, so a worker that loaded the row unscoped (GetForJob) learns which
+	// project it is working for, and internal/mediaurl can refuse to mint an
+	// address for a row of a project other than the request's. It never leaves
+	// the server: a client already knows its project from the URL it called.
+	ProjectID string `json:"-"`
 }
 
 // PhotoFile is an original or derivative file belonging to a photo. At most one

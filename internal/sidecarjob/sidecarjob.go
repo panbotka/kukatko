@@ -48,8 +48,9 @@ var ErrBackfillUnavailable = errors.New("sidecarjob: backfill not available")
 // PhotoStore reads the catalogue row a sidecar describes and records that the
 // file was written. It is satisfied by photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo, or ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo in whichever project holds it (the row
+	// carries its ProjectID), or ErrPhotoNotFound: a job has no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 	// GetEdit returns the photo's non-destructive edit, or ErrEditNotFound when it
 	// has none.
 	GetEdit(ctx context.Context, photoUID string) (photos.Edit, error)
@@ -215,7 +216,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // almost certainly purged between the enqueue and the run, which is a race the
 // queue is expected to lose gracefully.
 func (s *Service) Export(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		if errors.Is(err, photos.ErrPhotoNotFound) {
 			s.log.WarnContext(ctx, "sidecar export skipped: photo is gone",

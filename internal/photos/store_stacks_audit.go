@@ -27,11 +27,17 @@ import (
 // stack_uid. entry's TargetUID defaults to the primary and its details are
 // filled with the stack uid, the primary and every member. It behaves like
 // CreateStack otherwise — ErrStackTooSmall for fewer than two distinct members,
-// ErrPhotoNotFound when one is missing or archived — and each of those rolls
-// back, writing no audit row.
+// ErrPhotoNotFound when one is missing, archived or a photo of another project
+// than projectUID — and each of those rolls back, writing no audit row.
+// entry's ProjectUID defaults to projectUID; an empty projectUID is
+// ErrNoProject.
 func (s *Store) CreateStackAudited(
-	ctx context.Context, primaryUID string, memberUIDs []string, entry audit.Entry,
+	ctx context.Context, projectUID, primaryUID string, memberUIDs []string, entry audit.Entry,
 ) (string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return "", err
+	}
+	entry = withProject(entry, projectUID)
 	plan, err := StackPlan{PrimaryUID: primaryUID, MemberUIDs: memberUIDs}.normalize()
 	if err != nil {
 		return "", err
@@ -41,6 +47,9 @@ func (s *Store) CreateStackAudited(
 		return "", err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := requirePhotosInProject(ctx, tx, projectUID, plan.MemberUIDs); err != nil {
+			return err
+		}
 		if err := applyNewStackTx(ctx, tx, stackUID, plan.PrimaryUID, plan.MemberUIDs); err != nil {
 			return err
 		}
@@ -116,10 +125,11 @@ func (s *Store) CreateStacksAudited(
 // returns ErrPhotoNotFound or ErrPhotoNotStacked, each rolling the entry back
 // with the mutation.
 func (s *Store) SetStackPrimaryAudited(
-	ctx context.Context, memberUID string, entry audit.Entry,
+	ctx context.Context, projectUID, memberUID string, entry audit.Entry,
 ) (string, error) {
+	entry = withProject(entry, projectUID)
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, previous, err := setStackPrimaryTx(ctx, tx, memberUID)
 		if err != nil {
 			return err
@@ -143,10 +153,11 @@ func (s *Store) SetStackPrimaryAudited(
 // remaining stack is repaired exactly as in UnstackMember. It returns
 // ErrPhotoNotFound or ErrPhotoNotStacked.
 func (s *Store) UnstackMemberAudited(
-	ctx context.Context, memberUID string, entry audit.Entry,
+	ctx context.Context, projectUID, memberUID string, entry audit.Entry,
 ) (string, error) {
+	entry = withProject(entry, projectUID)
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, err := unstackMemberTx(ctx, tx, memberUID)
 		if err != nil {
 			return err
@@ -170,10 +181,11 @@ func (s *Store) UnstackMemberAudited(
 // the grouping once the rows are standalone again. It returns ErrPhotoNotFound
 // or ErrPhotoNotStacked.
 func (s *Store) UnstackAllAudited(
-	ctx context.Context, memberUID string, entry audit.Entry,
+	ctx context.Context, projectUID, memberUID string, entry audit.Entry,
 ) (string, error) {
+	entry = withProject(entry, projectUID)
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, members, err := unstackAllTx(ctx, tx, memberUID)
 		if err != nil {
 			return err
@@ -214,6 +226,15 @@ func stackEntry(entry audit.Entry, targetUID string, facts map[string]any) audit
 	entry.Details = details
 	if entry.TargetUID == "" {
 		entry.TargetUID = targetUID
+	}
+	return entry
+}
+
+// withProject returns entry with its ProjectUID defaulted to projectUID, so an
+// audited write on a project's photos is recorded under that project.
+func withProject(entry audit.Entry, projectUID string) audit.Entry {
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
 	}
 	return entry
 }

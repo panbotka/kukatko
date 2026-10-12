@@ -296,10 +296,10 @@ func TestExport_reflectsAnEditRatherThanTheStateThatTriggeredIt(t *testing.T) {
 	ctx := t.Context()
 
 	photo := makePhoto(t, fix.photos, "e2elate01")
-	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "První"}); err != nil {
+	if _, err := fix.photos.UpdateMetadata(ctx, project.BootstrapUID, photo.UID, photos.MetadataUpdate{Title: "První"}); err != nil {
 		t.Fatalf("UpdateMetadata returned error: %v", err)
 	}
-	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "Poslední"}); err != nil {
+	if _, err := fix.photos.UpdateMetadata(ctx, project.BootstrapUID, photo.UID, photos.MetadataUpdate{Title: "Poslední"}); err != nil {
 		t.Fatalf("UpdateMetadata returned error: %v", err)
 	}
 	// One export, standing in for the single debounced job the two edits collapse
@@ -339,7 +339,7 @@ func TestExport_editWhileJobRunningSchedulesAFreshWrite(t *testing.T) {
 	photo := makePhoto(t, fix.photos, "e2erunedit01")
 
 	// The in-flight job read P and wrote the sidecar for the pre-edit title.
-	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "První"}); err != nil {
+	if _, err := fix.photos.UpdateMetadata(ctx, project.BootstrapUID, photo.UID, photos.MetadataUpdate{Title: "První"}); err != nil {
 		t.Fatalf("first edit: %v", err)
 	}
 	if err := fix.svc.Export(ctx, photo.UID); err != nil {
@@ -363,7 +363,7 @@ func TestExport_editWhileJobRunningSchedulesAFreshWrite(t *testing.T) {
 
 	// The user commits an edit and the mutation enqueues a sidecar rewrite while
 	// the job above is still running.
-	if _, err := fix.photos.UpdateMetadata(ctx, photo.UID, photos.MetadataUpdate{Title: "Poslední"}); err != nil {
+	if _, err := fix.photos.UpdateMetadata(ctx, project.BootstrapUID, photo.UID, photos.MetadataUpdate{Title: "Poslední"}); err != nil {
 		t.Fatalf("second edit: %v", err)
 	}
 	if err := enq.EnqueueSidecar(ctx, photo.UID); err != nil {

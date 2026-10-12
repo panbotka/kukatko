@@ -153,8 +153,15 @@ func (s *Store) StackCounts(ctx context.Context, projectUID string, stackUIDs []
 // members that already belonged to another stack are moved out, and any stack
 // they leave is repaired (a singleton remnant is dissolved, a primary-less
 // remnant re-elects one). It returns ErrStackTooSmall for fewer than two distinct
-// members, ErrPhotoNotFound when a member (or the primary) is missing or archived.
-func (s *Store) CreateStack(ctx context.Context, primaryUID string, memberUIDs []string) (string, error) {
+// members, ErrPhotoNotFound when a member (or the primary) is missing, archived
+// or a photo of another project than projectUID — a stack never spans projects
+// — and ErrNoProject for an empty projectUID.
+func (s *Store) CreateStack(
+	ctx context.Context, projectUID, primaryUID string, memberUIDs []string,
+) (string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return "", err
+	}
 	plan, err := StackPlan{PrimaryUID: primaryUID, MemberUIDs: memberUIDs}.normalize()
 	if err != nil {
 		return "", err
@@ -164,6 +171,9 @@ func (s *Store) CreateStack(ctx context.Context, primaryUID string, memberUIDs [
 		return "", err
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := requirePhotosInProject(ctx, tx, projectUID, plan.MemberUIDs); err != nil {
+			return err
+		}
 		return applyNewStackTx(ctx, tx, stackUID, plan.PrimaryUID, plan.MemberUIDs)
 	})
 	if err != nil {
@@ -231,11 +241,12 @@ func applyNewStackTx(ctx context.Context, tx pgx.Tx, stackUID, primaryUID string
 // SetStackPrimary makes memberUID the primary of its stack and returns the
 // stack_uid. It clears the previous primary and sets the new one in two
 // statements so the one-primary-per-stack index never sees two primaries at once.
-// It returns ErrPhotoNotFound when the photo does not exist and ErrPhotoNotStacked
-// when it is not a member of any stack.
-func (s *Store) SetStackPrimary(ctx context.Context, memberUID string) (string, error) {
+// It returns ErrPhotoNotFound when the photo does not exist in projectUID (a
+// photo of another project is left untouched) and ErrPhotoNotStacked when it is
+// not a member of any stack.
+func (s *Store) SetStackPrimary(ctx context.Context, projectUID, memberUID string) (string, error) {
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, _, err := setStackPrimaryTx(ctx, tx, memberUID)
 		stackUID = su
 		return err
@@ -292,11 +303,11 @@ func stackPrimaryTx(ctx context.Context, tx pgx.Tx, stackUID string) (string, er
 // UnstackMember removes memberUID from its stack, turning it back into an ordinary
 // standalone photo, and returns the stack_uid it left. The remaining stack is
 // repaired: a two-member stack that drops to one is dissolved entirely, and a
-// stack that loses its primary re-elects one. It returns ErrPhotoNotFound or
-// ErrPhotoNotStacked.
-func (s *Store) UnstackMember(ctx context.Context, memberUID string) (string, error) {
+// stack that loses its primary re-elects one. It returns ErrPhotoNotFound (a
+// photo of another project than projectUID included) or ErrPhotoNotStacked.
+func (s *Store) UnstackMember(ctx context.Context, projectUID, memberUID string) (string, error) {
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, err := unstackMemberTx(ctx, tx, memberUID)
 		stackUID = su
 		return err
@@ -328,10 +339,11 @@ func unstackMemberTx(ctx context.Context, tx pgx.Tx, memberUID string) (string, 
 
 // UnstackAll dissolves the entire stack that memberUID belongs to — every member
 // becomes a standalone photo again — and returns the dissolved stack_uid. It
-// returns ErrPhotoNotFound or ErrPhotoNotStacked.
-func (s *Store) UnstackAll(ctx context.Context, memberUID string) (string, error) {
+// returns ErrPhotoNotFound (a photo of another project than projectUID
+// included) or ErrPhotoNotStacked.
+func (s *Store) UnstackAll(ctx context.Context, projectUID, memberUID string) (string, error) {
 	var stackUID string
-	err := s.inTx(ctx, func(tx pgx.Tx) error {
+	err := s.inProjectTx(ctx, projectUID, memberUID, func(tx pgx.Tx) error {
 		su, _, err := unstackAllTx(ctx, tx, memberUID)
 		stackUID = su
 		return err
@@ -413,6 +425,24 @@ func LeaveStackTx(ctx context.Context, tx pgx.Tx, uid string) error {
 		return fmt.Errorf("photos: unstacking leaving member: %w", err)
 	}
 	return repairStackTx(ctx, tx, *stackUID)
+}
+
+// inProjectTx is inTx for a mutation addressed through one photo of a project:
+// the transaction first proves memberUID is a photo of projectUID
+// (requirePhotosInProject) and only then runs fn, so a foreign uid is
+// ErrPhotoNotFound before any row is touched. A stack never spans projects, so
+// proving the member proves the siblings fn reaches through it. An empty
+// projectUID is ErrNoProject.
+func (s *Store) inProjectTx(ctx context.Context, projectUID, memberUID string, fn func(tx pgx.Tx) error) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := requirePhotosInProject(ctx, tx, projectUID, []string{memberUID}); err != nil {
+			return err
+		}
+		return fn(tx)
+	})
 }
 
 // inTx runs fn inside a transaction, committing on success and rolling back on

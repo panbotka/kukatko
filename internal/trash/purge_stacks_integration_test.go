@@ -25,7 +25,7 @@ func TestPurgeExpired_repairsStack(t *testing.T) {
 	// rows), then archive the primary long enough ago to be past retention.
 	primary, _, _ := env.seedPhoto(t, "stack-primary", nil)
 	sibling, _, _ := env.seedPhoto(t, "stack-sibling", nil)
-	if _, err := env.store.CreateStack(ctx, primary.UID, []string{primary.UID, sibling.UID}); err != nil {
+	if _, err := env.store.CreateStack(ctx, project.BootstrapUID, primary.UID, []string{primary.UID, sibling.UID}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 	if _, err := env.db.Pool().Exec(ctx,

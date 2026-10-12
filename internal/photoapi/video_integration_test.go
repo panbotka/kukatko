@@ -12,6 +12,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // seedVideo stores raw bytes as a video original and catalogues a video photo
@@ -36,7 +37,7 @@ func (e *env) seedVideo(t *testing.T, name string, data []byte) photos.Photo {
 	if err != nil {
 		t.Fatalf("store.Create(%s): %v", name, err)
 	}
-	if _, err := e.store.CreateFile(t.Context(), photos.PhotoFile{
+	if _, err := e.store.CreateFile(t.Context(), project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: created.UID, FilePath: created.FilePath, FileHash: created.FileHash,
 		FileSize: created.FileSize, FileMime: "video/mp4", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {

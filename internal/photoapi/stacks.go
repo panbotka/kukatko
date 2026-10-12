@@ -22,22 +22,24 @@ import (
 // transaction as the change, so none of them can alter what the library shows
 // without leaving a trace.
 type Stacker interface {
-	// StackSelection groups the given photos into one new stack and returns its
-	// stack_uid.
-	StackSelection(ctx context.Context, uids []string, entry audit.Entry) (string, error)
+	// StackSelection groups the given photos of the project into one new stack
+	// and returns its stack_uid; a photo of another project is
+	// photos.ErrPhotoNotFound.
+	StackSelection(ctx context.Context, projectUID string, uids []string, entry audit.Entry) (string, error)
 	// SetPrimary makes the photo the primary of its stack and returns the stack_uid.
-	SetPrimary(ctx context.Context, uid string, entry audit.Entry) (string, error)
+	SetPrimary(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error)
 	// Unstack removes the photo from its stack and returns the stack_uid it left.
-	Unstack(ctx context.Context, uid string, entry audit.Entry) (string, error)
+	Unstack(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error)
 	// UnstackWhole dissolves the entire stack the photo belongs to.
-	UnstackWhole(ctx context.Context, uid string, entry audit.Entry) (string, error)
+	UnstackWhole(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error)
 }
 
 // stackOp is one stack mutation addressed through a single photo: it applies the
 // change, records it under entry in the same transaction and answers with the
 // stack uid involved. The three single-photo endpoints differ only in which one
 // they pick off the Stacker.
-type stackOp func(ctx context.Context, uid string, entry audit.Entry) (string, error)
+// A photo of another project than projectUID is photos.ErrPhotoNotFound.
+type stackOp func(ctx context.Context, projectUID, uid string, entry audit.Entry) (string, error)
 
 // stackMember is one file of a stack as presented in the detail response's
 // variants strip: enough to render a thumbnail, its format and size, and to link
@@ -130,7 +132,7 @@ func (a *API) handleStackSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPhotosStack, "photos", "", nil)
-	stackUID, err := a.stacker.StackSelection(r.Context(), req.PhotoUIDs, entry)
+	stackUID, err := a.stacker.StackSelection(r.Context(), auth.ProjectUIDFromContext(r.Context()), req.PhotoUIDs, entry)
 	if err != nil {
 		writeStackError(w, err, "stacking photos failed")
 		return
@@ -185,13 +187,14 @@ func (a *API) runStackMutation(
 		return
 	}
 	uid := chi.URLParam(r, "uid")
+	projectUID := auth.ProjectUIDFromContext(r.Context())
 	entry := audit.FromRequest(r, user.UID).Entry(action, "photos", uid, nil)
-	if _, err := pick(a.stacker)(r.Context(), uid, entry); err != nil {
+	if _, err := pick(a.stacker)(r.Context(), projectUID, uid, entry); err != nil {
 		writeStackError(w, err, failMsg)
 		return
 	}
 	a.enqueueSidecar(r.Context(), uid)
-	photo, err := a.store.GetByUID(r.Context(), uid)
+	photo, err := a.store.GetByUIDInProject(r.Context(), projectUID, uid)
 	if err != nil {
 		writePhotoError(w, err, failMsg)
 		return

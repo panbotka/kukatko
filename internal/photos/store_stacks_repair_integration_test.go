@@ -26,7 +26,7 @@ func makeStack(t *testing.T, store *photos.Store, ctx context.Context, hashes [2
 	if err != nil {
 		t.Fatalf("create %s: %v", hashes[1], err)
 	}
-	stackUID, err := store.CreateStack(ctx, primary.UID, []string{primary.UID, other.UID})
+	stackUID, err := store.CreateStack(ctx, project.BootstrapUID, primary.UID, []string{primary.UID, other.UID})
 	if err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestArchiveRepairsStack(t *testing.T) {
 
 	primaryUID, otherUID, _ := makeStack(t, store, ctx, [2]string{"stk1", "stk2"})
 
-	if _, err := store.Archive(ctx, primaryUID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, primaryUID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
@@ -99,11 +99,11 @@ func TestArchiveReelectsPrimary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create third: %v", err)
 	}
-	if _, err := store.CreateStack(ctx, primaryUID, []string{primaryUID, otherUID, third.UID}); err != nil {
+	if _, err := store.CreateStack(ctx, project.BootstrapUID, primaryUID, []string{primaryUID, otherUID, third.UID}); err != nil {
 		t.Fatalf("CreateStack (3 members): %v", err)
 	}
 
-	if _, err := store.Archive(ctx, primaryUID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, primaryUID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
@@ -129,7 +129,7 @@ func TestArchiveAuditedRepairsStack(t *testing.T) {
 	primaryUID, otherUID, _ := makeStack(t, store, ctx, [2]string{"stk6", "stk7"})
 
 	entry := audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos"}
-	if _, err := store.ArchiveAudited(ctx, primaryUID, entry); err != nil {
+	if _, err := store.ArchiveAudited(ctx, project.BootstrapUID, primaryUID, entry); err != nil {
 		t.Fatalf("ArchiveAudited: %v", err)
 	}
 
@@ -205,11 +205,11 @@ func TestArchiveNonMemberIsUnaffected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create third: %v", err)
 	}
-	if _, err := store.CreateStack(ctx, primaryUID, []string{primaryUID, otherUID, third.UID}); err != nil {
+	if _, err := store.CreateStack(ctx, project.BootstrapUID, primaryUID, []string{primaryUID, otherUID, third.UID}); err != nil {
 		t.Fatalf("CreateStack (3 members): %v", err)
 	}
 
-	if _, err := store.Archive(ctx, otherUID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, otherUID); err != nil {
 		t.Fatalf("Archive non-primary: %v", err)
 	}
 
@@ -231,10 +231,10 @@ func TestUnarchiveLeavesPhotoStandalone(t *testing.T) {
 
 	primaryUID, otherUID, _ := makeStack(t, store, ctx, [2]string{"stkf", "stkg"})
 
-	if _, err := store.Archive(ctx, primaryUID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, primaryUID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
-	restored, err := store.Unarchive(ctx, primaryUID)
+	restored, err := store.Unarchive(ctx, project.BootstrapUID, primaryUID)
 	if err != nil {
 		t.Fatalf("Unarchive: %v", err)
 	}

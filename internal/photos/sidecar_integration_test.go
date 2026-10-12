@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -108,7 +109,7 @@ func TestListPhotosMissingSidecar_staleAfterEdit(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 
-	if _, err := store.UpdateMetadata(ctx, created.UID, photos.MetadataUpdate{Title: "Nový titulek"}); err != nil {
+	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{Title: "Nový titulek"}); err != nil {
 		t.Fatalf("UpdateMetadata returned error: %v", err)
 	}
 	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
@@ -131,7 +132,7 @@ func TestListPhotosMissingSidecar_excludesArchived(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
-	if _, err := store.Archive(ctx, created.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, created.UID); err != nil {
 		t.Fatalf("Archive returned error: %v", err)
 	}
 	uids, err := store.ListPhotosMissingSidecar(ctx, 0)

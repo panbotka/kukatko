@@ -57,8 +57,10 @@ var ErrNoRenditions = errors.New("hlsjob: no renditions configured")
 // PhotoStore is the subset of the photo catalogue this package needs: loading one
 // photo. It is satisfied by *photos.Store.
 type PhotoStore interface {
-	// GetByUID returns the photo identified by uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo identified by uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
 // ObjectStore is the subset of the original store this package needs: a local
@@ -226,7 +228,7 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 // rendition that failed. Renditions already finished by the same run stay: each
 // is independently valid, and the retry redoes only what is missing.
 func (s *Service) Transcode(ctx context.Context, photoUID string) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("hlsjob: loading photo %s: %w", photoUID, err)
 	}

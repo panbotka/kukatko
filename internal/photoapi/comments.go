@@ -121,7 +121,11 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	photoUID := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	photoUID := photo.UID
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionCommentCreate, "photos", photoUID, nil)
 	created, err := a.comments.Create(r.Context(), comments.PhotoSubject(photoUID), user.UID, body.Body, entry)
 	if err != nil {
@@ -213,12 +217,16 @@ func (a *API) resolveComment(w http.ResponseWriter, r *http.Request) (comments.C
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return comments.Comment{}, auth.User{}, false
 	}
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return comments.Comment{}, auth.User{}, false
+	}
 	existing, err := a.comments.Get(r.Context(), chi.URLParam(r, "commentUID"))
 	if err != nil {
 		writeCommentError(w, err, "reading comment failed")
 		return comments.Comment{}, auth.User{}, false
 	}
-	if existing.PhotoUID != chi.URLParam(r, "uid") {
+	if existing.PhotoUID != photo.UID {
 		writeError(w, http.StatusNotFound, "comment not found")
 		return comments.Comment{}, auth.User{}, false
 	}

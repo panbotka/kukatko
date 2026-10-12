@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -174,7 +172,11 @@ func (a *API) runFavoriteToggle(
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	if err := op(r.Context(), user.UID, uid); err != nil {
 		writeFavoriteError(w, err)
 		return

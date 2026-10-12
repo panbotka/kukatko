@@ -145,7 +145,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 		TakenAtEstimated: true, TakenAtNote: "podle babičky",
 		TakenAtPrecision: current.TakenAtPrecision,
 	}
-	if _, err := env.photos.UpdateMetadata(ctx, uid, update); err != nil {
+	if _, err := env.photos.UpdateMetadata(ctx, project.BootstrapUID, uid, update); err != nil {
 		t.Fatalf("seed note: %v", err)
 	}
 
@@ -271,7 +271,7 @@ func TestBulk_setTakenAtLandsInTheRightPeriod(t *testing.T) {
 	// everything would be indistinguishable from one that counted the right rows.
 	other := env.seedPhoto(t, "other")
 	otherTaken := time.Date(2019, time.August, 3, 12, 0, 0, 0, time.UTC)
-	if _, err := env.photos.UpdateMetadata(ctx, other, photos.MetadataUpdate{
+	if _, err := env.photos.UpdateMetadata(ctx, project.BootstrapUID, other, photos.MetadataUpdate{
 		TakenAt: &otherTaken, TakenAtSource: "exif", TakenAtPrecision: photos.TakenAtPrecisionDay,
 	}); err != nil {
 		t.Fatalf("date the control photo: %v", err)
@@ -377,7 +377,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 	scannedIn := time.Date(2011, time.March, 8, 10, 15, 0, 0, time.UTC)
 	uids := []string{env.seedPhoto(t, "wrong1"), env.seedPhoto(t, "wrong2")}
 	for _, uid := range uids {
-		if _, err := env.photos.UpdateMetadata(ctx, uid, photos.MetadataUpdate{
+		if _, err := env.photos.UpdateMetadata(ctx, project.BootstrapUID, uid, photos.MetadataUpdate{
 			TakenAt: &scannedIn, TakenAtSource: "exif",
 			TakenAtPrecision: photos.TakenAtPrecisionYear,
 			TakenAtEstimated: true, TakenAtNote: "podle babičky svatba",
@@ -387,7 +387,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 	}
 	// A photo outside the batch proves the operation touches only its targets.
 	control := env.seedPhoto(t, "control")
-	if _, err := env.photos.UpdateMetadata(ctx, control, photos.MetadataUpdate{
+	if _, err := env.photos.UpdateMetadata(ctx, project.BootstrapUID, control, photos.MetadataUpdate{
 		TakenAt: &scannedIn, TakenAtSource: "exif", TakenAtPrecision: photos.TakenAtPrecisionDay,
 	}); err != nil {
 		t.Fatalf("date the control photo: %v", err)
@@ -454,7 +454,7 @@ func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 	never := env.seedPhoto(t, "neverdated")
 	cleared := env.seedPhoto(t, "alreadycleared")
 	scannedIn := time.Date(2011, time.March, 8, 10, 15, 0, 0, time.UTC)
-	if _, err := env.photos.UpdateMetadata(ctx, cleared, photos.MetadataUpdate{
+	if _, err := env.photos.UpdateMetadata(ctx, project.BootstrapUID, cleared, photos.MetadataUpdate{
 		TakenAt: &scannedIn, TakenAtSource: "exif", TakenAtPrecision: photos.TakenAtPrecisionDay,
 	}); err != nil {
 		t.Fatalf("seed the wrong date: %v", err)

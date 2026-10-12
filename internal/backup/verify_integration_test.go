@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/backup"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -46,7 +47,7 @@ func insertPhoto(t *testing.T, store *photos.Store, hash, key string) {
 	if err != nil {
 		t.Fatalf("Create(%s): %v", hash, err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID:  photo.UID,
 		FilePath:  key,
 		FileHash:  hash,

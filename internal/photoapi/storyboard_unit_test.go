@@ -64,6 +64,7 @@ func (f *fakeStoryboards) Regenerate(_ context.Context, uid string) error {
 // storyboardRouter mounts only the two storyboard handlers (no auth middleware)
 // so the handler logic can be exercised directly.
 func storyboardRouter(api *API) http.Handler {
+	api = withFinder(api)
 	r := chi.NewRouter()
 	r.Get("/photos/{uid}/storyboard", api.handleStoryboard)
 	r.Get("/photos/{uid}/storyboard/sprite", api.handleStoryboardSprite)

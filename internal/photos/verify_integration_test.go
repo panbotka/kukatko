@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestCountPhotosAndListFilePaths exercises the post-restore integrity helpers:
@@ -27,7 +28,7 @@ func TestCountPhotosAndListFilePaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(a): %v", err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID:  created.UID,
 		FilePath:  "2023/06/count-a.jpg",
 		FileHash:  "count-a",
@@ -38,7 +39,7 @@ func TestCountPhotosAndListFilePaths(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateFile(primary a): %v", err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID:  created.UID,
 		FilePath:  "2023/06/sidecar-a.mov",
 		FileHash:  "sidecar-a",
@@ -53,7 +54,7 @@ func TestCountPhotosAndListFilePaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(b): %v", err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID:  secondPhoto.UID,
 		FilePath:  "2023/06/count-b.jpg",
 		FileHash:  "count-b",
@@ -65,7 +66,7 @@ func TestCountPhotosAndListFilePaths(t *testing.T) {
 		t.Fatalf("CreateFile(primary b): %v", err)
 	}
 	// Archiving must not drop the photo from the count; its original still exists.
-	if _, err := store.Archive(ctx, created.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, created.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

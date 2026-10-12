@@ -495,9 +495,9 @@ func (s *Service) resolveRace(ctx context.Context, filename string, stored stora
 }
 
 // createPrimaryFile inserts the original file as the photo's primary
-// photo_files row.
+// photo_files row, in the project the freshly created photo was catalogued in.
 func (s *Service) createPrimaryFile(ctx context.Context, photo photos.Photo, stored storage.StoredFile) error {
-	_, err := s.photos.CreateFile(ctx, photos.PhotoFile{
+	_, err := s.photos.CreateFile(ctx, photo.ProjectID, photos.PhotoFile{
 		PhotoUID:  photo.UID,
 		FilePath:  stored.RelPath,
 		FileHash:  stored.Hash,

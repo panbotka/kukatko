@@ -149,7 +149,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 	}
 
 	// Unstacking the whole stack restores both rows fully.
-	if _, err := detector(store).UnstackWhole(ctx, jpg.UID, actorEntry("", audit.ActionStackUngroupAll)); err != nil {
+	if _, err := detector(store).UnstackWhole(ctx, project.BootstrapUID, jpg.UID, actorEntry("", audit.ActionStackUngroupAll)); err != nil {
 		t.Fatalf("UnstackWhole: %v", err)
 	}
 	assertCounts(t, store, org, ppl, subject.UID, album.UID, label.UID, 2)
@@ -173,7 +173,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 	c := makePhoto(t, store, "man_c", "C.jpg", "image/jpeg", 3000, 2000)
 
 	svc := stacks.New(store, stacks.Config{Enabled: true})
-	stackUID, err := svc.StackSelection(ctx, []string{a.UID, b.UID, c.UID}, actorEntry("", audit.ActionPhotosStack))
+	stackUID, err := svc.StackSelection(ctx, project.BootstrapUID, []string{a.UID, b.UID, c.UID}, actorEntry("", audit.ActionPhotosStack))
 	if err != nil || stackUID == "" {
 		t.Fatalf("StackSelection: %q err %v", stackUID, err)
 	}
@@ -183,7 +183,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 	}
 
 	// Set-primary moves the primary to A.
-	if _, err := svc.SetPrimary(ctx, a.UID, actorEntry("", audit.ActionStackSetPrimary)); err != nil {
+	if _, err := svc.SetPrimary(ctx, project.BootstrapUID, a.UID, actorEntry("", audit.ActionStackSetPrimary)); err != nil {
 		t.Fatalf("SetPrimary: %v", err)
 	}
 	if visible := listUIDs(t, store); len(visible) != 1 || !visible[a.UID] {
@@ -191,7 +191,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 	}
 
 	// Unstacking C returns it to standalone; A and B stay stacked.
-	if _, err := svc.Unstack(ctx, c.UID, actorEntry("", audit.ActionStackUngroup)); err != nil {
+	if _, err := svc.Unstack(ctx, project.BootstrapUID, c.UID, actorEntry("", audit.ActionStackUngroup)); err != nil {
 		t.Fatalf("Unstack: %v", err)
 	}
 	if visible := listUIDs(t, store); len(visible) != 2 || !visible[a.UID] || !visible[c.UID] {
@@ -199,7 +199,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 	}
 
 	// Removing B leaves A alone: a one-member remnant dissolves, so all stand alone.
-	if _, err := svc.Unstack(ctx, b.UID, actorEntry("", audit.ActionStackUngroup)); err != nil {
+	if _, err := svc.Unstack(ctx, project.BootstrapUID, b.UID, actorEntry("", audit.ActionStackUngroup)); err != nil {
 		t.Fatalf("Unstack B: %v", err)
 	}
 	aGot, _ := store.GetByUID(ctx, a.UID)

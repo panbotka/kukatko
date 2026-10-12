@@ -282,7 +282,7 @@ func TestAlbumListOrder(t *testing.T) {
 	newest := makePhotoAt(t, photoStore, "or2", time.Date(2020, 6, 7, 8, 0, 0, 0, time.UTC))
 	middle := makePhotoAt(t, photoStore, "or3", time.Date(2005, 1, 2, 3, 0, 0, 0, time.UTC))
 	future := makePhotoAt(t, photoStore, "or4", time.Date(2050, 1, 1, 0, 0, 0, 0, time.UTC))
-	if _, err := photoStore.Archive(ctx, future); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, future); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	undatedPhoto := makePhoto(t, photoStore, "or5")
@@ -370,7 +370,7 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 	oldest := makePhotoAt(t, photoStore, "cr1", time.Date(1998, 5, 1, 10, 0, 0, 0, time.UTC))
 	newest := makePhotoAt(t, photoStore, "cr2", time.Date(1999, 8, 2, 11, 0, 0, 0, time.UTC))
 	archived := makePhotoAt(t, photoStore, "cr3", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC))
-	if _, err := photoStore.Archive(ctx, archived); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	undated := makePhoto(t, photoStore, "cr4")
@@ -471,7 +471,7 @@ func TestAlbumListCoverStackAndTieBreak(t *testing.T) {
 	tieTwo := makePhotoAt(t, photoStore, "tie2", shared)
 	oldest := makePhotoAt(t, photoStore, "stk1", time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC))
 	newestHidden := makePhotoAt(t, photoStore, "stk2", time.Date(2020, 6, 1, 0, 0, 0, 0, time.UTC))
-	if _, err := photoStore.CreateStack(ctx, oldest, []string{oldest, newestHidden}); err != nil {
+	if _, err := photoStore.CreateStack(ctx, project.BootstrapUID, oldest, []string{oldest, newestHidden}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 
@@ -524,7 +524,7 @@ func TestAlbumListCoverCandidates(t *testing.T) {
 
 	// The newest photo of all, and hidden: neither the cover nor any candidate.
 	archived := makePhotoAt(t, photoStore, "candArchived", base.Add(100*time.Hour))
-	if _, err := photoStore.Archive(ctx, archived); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

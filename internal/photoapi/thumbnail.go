@@ -6,8 +6,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -86,7 +84,11 @@ func (a *API) handleRegenerateThumbnail(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusServiceUnavailable, "thumbnail regeneration is not available")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	sizes, err := a.regenerator.ForceRegenerate(r.Context(), uid)
 	if err != nil {
 		writeRegenerateError(w, err)

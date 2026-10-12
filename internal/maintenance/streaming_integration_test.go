@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -38,7 +39,7 @@ func (h *harness) storeVideo(t *testing.T, name string, seed uint8) photos.Photo
 	if err != nil {
 		t.Fatalf("photos.Create(%s): %v", name, err)
 	}
-	if _, err := h.photos.CreateFile(ctx, photos.PhotoFile{
+	if _, err := h.photos.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: created.UID, FilePath: stored.RelPath, FileHash: stored.Hash,
 		FileSize: stored.Size, FileMime: "video/mp4", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {

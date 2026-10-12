@@ -97,9 +97,8 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	current, err := a.store.GetByUID(r.Context(), uid)
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	current, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 
@@ -112,7 +111,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	details := map[string]any{"fields": presentFields(present)}
 	metadataChanges(current, update).StampInto(details)
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPhotoUpdate, "photos", uid, details)
-	updated, err := a.store.UpdateMetadataAudited(r.Context(), uid, update, entry)
+	updated, err := a.store.UpdateMetadataAudited(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid, update, entry)
 	if err != nil {
 		writePhotoError(w, err, "updating photo failed")
 		return

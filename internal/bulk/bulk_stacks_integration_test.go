@@ -52,7 +52,7 @@ func TestApply_archiveRepairsStack(t *testing.T) {
 
 	primary := seedPhoto(t, store, "bk01")
 	sibling := seedPhoto(t, store, "bk02")
-	if _, err := store.CreateStack(ctx, primary, []string{primary, sibling}); err != nil {
+	if _, err := store.CreateStack(ctx, project.BootstrapUID, primary, []string{primary, sibling}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestApply_unarchiveLeavesStacksAlone(t *testing.T) {
 
 	primary := seedPhoto(t, store, "bk03")
 	sibling := seedPhoto(t, store, "bk04")
-	if _, err := store.CreateStack(ctx, primary, []string{primary, sibling}); err != nil {
+	if _, err := store.CreateStack(ctx, project.BootstrapUID, primary, []string{primary, sibling}); err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestListPrimaryFiles verifies ListPrimaryFiles returns one row per photo for
@@ -23,14 +24,14 @@ func TestListPrimaryFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(a): %v", err)
 	}
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photoA.UID, FilePath: "2023/06/prim-a.jpg", FileHash: "prim-a",
 		FileSize: 10, FileMime: "image/jpeg", IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {
 		t.Fatalf("CreateFile(primary a): %v", err)
 	}
 	// A sidecar must not appear in the primary listing.
-	if _, err := store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photoA.UID, FilePath: "2023/06/prim-a.mov", FileHash: "prim-a-mov",
 		FileSize: 20, FileMime: "video/quicktime", IsPrimary: false, Role: photos.RoleSidecar,
 	}); err != nil {
@@ -76,7 +77,7 @@ func TestListPhotosMissingPhash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(archived): %v", err)
 	}
-	if _, err := store.Archive(ctx, archived.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
@@ -123,7 +124,7 @@ func TestListActiveUIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create(archived): %v", err)
 	}
-	if _, err := store.Archive(ctx, archived.UID); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

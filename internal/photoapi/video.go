@@ -12,8 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/video"
 )
@@ -41,10 +40,8 @@ type videoSource struct {
 // the whole clip) and is memory-bounded — it copies in fixed-size chunks from a
 // seekable file rather than buffering it.
 func (a *API) handleVideo(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	photo, err := a.store.GetByUID(r.Context(), uid)
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 	src, ok, err := a.videoFile(r.Context(), photo)
@@ -118,7 +115,7 @@ func (a *API) videoFile(ctx context.Context, photo photos.Photo) (videoSource, b
 	case photos.MediaVideo:
 		return videoSource{relPath: photo.FilePath, mime: photo.FileMime}, true, nil
 	case photos.MediaLive:
-		files, err := a.store.ListFiles(ctx, photo.UID)
+		files, err := a.store.ListFiles(ctx, auth.ProjectUIDFromContext(ctx), photo.UID)
 		if err != nil {
 			return videoSource{}, false, fmt.Errorf("photoapi: listing photo files: %w", err)
 		}

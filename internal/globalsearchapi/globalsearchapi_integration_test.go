@@ -223,10 +223,10 @@ func newUIDEnv(t *testing.T) uidEnv {
 	if err != nil {
 		t.Fatalf("Create archived photo: %v", err)
 	}
-	if _, err := photoStore.Archive(ctx, archived.UID); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
-	stackUID, err := photoStore.CreateStack(ctx, photo.UID, []string{photo.UID, variant.UID})
+	stackUID, err := photoStore.CreateStack(ctx, project.BootstrapUID, photo.UID, []string{photo.UID, variant.UID})
 	if err != nil {
 		t.Fatalf("CreateStack: %v", err)
 	}

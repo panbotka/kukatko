@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // uploadersResp mirrors the uploader facet's JSON body.
@@ -170,7 +171,7 @@ func TestUploaders(t *testing.T) {
 	})
 
 	t.Run("archived photos follow the caller's visibility", func(t *testing.T) {
-		if _, err := env.store.Archive(t.Context(), tomasThird.UID); err != nil {
+		if _, err := env.store.Archive(t.Context(), project.BootstrapUID, tomasThird.UID); err != nil {
 			t.Fatalf("Archive: %v", err)
 		}
 		if counts := uploaderCounts(getUploaders(t, client, base, "")); counts[tomasUID] != 2 {
@@ -182,7 +183,7 @@ func TestUploaders(t *testing.T) {
 		}
 		// Restored here rather than in a cleanup: the subtests below share this
 		// library, and a photo left archived would quietly shrink their counts.
-		if _, err := env.store.Unarchive(t.Context(), tomasThird.UID); err != nil {
+		if _, err := env.store.Unarchive(t.Context(), project.BootstrapUID, tomasThird.UID); err != nil {
 			t.Fatalf("Unarchive: %v", err)
 		}
 	})

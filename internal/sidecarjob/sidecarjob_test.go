@@ -28,7 +28,7 @@ type fakePhotos struct {
 	getCalls int
 }
 
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	f.getCalls++
 	if f.getErr != nil {
 		return photos.Photo{}, f.getErr

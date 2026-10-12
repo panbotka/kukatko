@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
@@ -72,7 +70,11 @@ func (a *API) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, storyboardResponse{Status: string(storyboardjob.StateUnavailable)})
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	status, err := a.storyboards.Status(r.Context(), uid)
 	if err != nil {
 		writePhotoError(w, err, "resolving storyboard failed")
@@ -106,7 +108,11 @@ func (a *API) handleStoryboardSprite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no storyboard for this photo")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	uid := photo.UID
 	reader, _, err := a.storyboards.Open(r.Context(), uid)
 	if err != nil {
 		writeStoryboardError(w, err)

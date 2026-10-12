@@ -68,8 +68,10 @@ var errBudgetExhausted = errors.New("placesjob: geocode credit budget exhausted"
 
 // PhotoStore is the subset of photos.Store the service reads.
 type PhotoStore interface {
-	// GetByUID returns the photo with the given uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetForJob returns the photo with the given uid in whichever project holds
+	// it (the row carries its ProjectID), or photos.ErrPhotoNotFound. A job has no
+	// request and so no project to scope by.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
 // PlaceStore is the subset of places.Store the service uses to read and write the
@@ -250,7 +252,7 @@ func (s *Service) ForceGeocode(ctx context.Context, photoUID string) error {
 // body of Geocode and ForceGeocode, so the two differ in exactly one thing —
 // whether the cached answer is a reason to stop.
 func (s *Service) geocode(ctx context.Context, photoUID string, force bool) error {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetForJob(ctx, photoUID)
 	if err != nil {
 		return fmt.Errorf("placesjob: loading photo %s: %w", photoUID, err)
 	}

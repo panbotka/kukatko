@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -115,7 +116,7 @@ func TestListPhotosMissingPlaces(t *testing.T) {
 	if _, err := store.SavePlace(ctx, places.Place{PhotoUID: geoDone.UID, City: "Done"}); err != nil {
 		t.Fatalf("seed place: %v", err)
 	}
-	if _, err := photoStore.Archive(ctx, archived.UID); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 

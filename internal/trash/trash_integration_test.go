@@ -18,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
@@ -103,7 +104,7 @@ func (e *purgeEnv) seedPhoto(t *testing.T, name string, at *time.Time) (photos.P
 	if err != nil {
 		t.Fatalf("store.Create: %v", err)
 	}
-	if _, err := e.store.CreateFile(ctx, photos.PhotoFile{
+	if _, err := e.store.CreateFile(ctx, project.BootstrapUID, photos.PhotoFile{
 		PhotoUID: photo.UID, FilePath: stored.RelPath, FileHash: stored.Hash,
 		FileSize: stored.Size, FileMime: stored.MIME, IsPrimary: true, Role: photos.RoleOriginal,
 	}); err != nil {
@@ -155,7 +156,7 @@ func (e *purgeEnv) assertGone(t *testing.T, photo photos.Photo, originalAbs, thu
 	if _, err := e.vectors.GetEmbedding(ctx, photo.UID); !errors.Is(err, vectors.ErrEmbeddingNotFound) {
 		t.Errorf("embedding row survives (cascade failed): err = %v", err)
 	}
-	if files, err := e.store.ListFiles(ctx, photo.UID); err != nil || len(files) != 0 {
+	if files, err := e.store.ListFiles(ctx, project.BootstrapUID, photo.UID); err != nil || len(files) != 0 {
 		t.Errorf("photo_files survive: files=%v err=%v", files, err)
 	}
 	if _, err := os.Stat(originalAbs); !errors.Is(err, os.ErrNotExist) {

@@ -79,6 +79,7 @@ func TestHandleRunProcessingStep_unwiredIs503(t *testing.T) {
 // returns the recorder.
 func runStep(t *testing.T, api *API, uid, step string) *httptest.ResponseRecorder {
 	t.Helper()
+	api = withFinder(api)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(
 		t.Context(), http.MethodPost, "/photos/"+uid+"/process/"+step, nil)

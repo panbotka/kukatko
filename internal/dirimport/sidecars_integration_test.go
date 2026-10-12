@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/dirimport"
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // takenAt is the capture time the Takeout sidecars in this file record — the one
@@ -233,7 +234,7 @@ func TestImport_sidecarNeverOverwritesAUserEdit(t *testing.T) {
 	// The user dates and captions the photo by hand, as they would in the UI.
 	edited := time.Date(2016, 6, 7, 9, 0, 0, 0, time.UTC)
 	lake := photoByName(t, env, "lake.jpg")
-	if _, err := env.photos.UpdateMetadata(t.Context(), lake.UID, photos.MetadataUpdate{
+	if _, err := env.photos.UpdateMetadata(t.Context(), project.BootstrapUID, lake.UID, photos.MetadataUpdate{
 		Description:   "My own caption",
 		TakenAt:       &edited,
 		TakenAtSource: "manual",

@@ -48,8 +48,9 @@ func TestInsertPhotoSQL_consistency(t *testing.T) {
 	if !strings.HasSuffix(insertPhotoSQL, "RETURNING "+photoColumns) {
 		t.Errorf("insertPhotoSQL does not return photoColumns; got %q", insertPhotoSQL)
 	}
-	// photoColumns adds created_at and updated_at to the insert columns.
-	if got, want := strings.Count(photoColumns, ",")+1, len(photoInsertColumns)+2; got != want {
+	// photoColumns adds created_at, updated_at and the owning project to the
+	// insert columns.
+	if got, want := strings.Count(photoColumns, ",")+1, len(photoInsertColumns)+3; got != want {
 		t.Errorf("photoColumns has %d columns, want %d", got, want)
 	}
 }

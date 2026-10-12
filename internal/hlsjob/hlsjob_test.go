@@ -27,8 +27,8 @@ type fakePhotos struct {
 	rows map[string]photos.Photo
 }
 
-// GetByUID returns the stored row or photos.ErrPhotoNotFound.
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetForJob returns the stored row or photos.ErrPhotoNotFound.
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	row, ok := f.rows[uid]
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound

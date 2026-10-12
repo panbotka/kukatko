@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -109,7 +107,11 @@ func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	req.PhotoUID = chi.URLParam(r, "uid")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	req.PhotoUID = photo.UID
 
 	result, err := a.faces.Apply(r.Context(), req, audit.FromRequest(r, user.UID))
 	if err != nil {

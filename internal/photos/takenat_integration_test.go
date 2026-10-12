@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // scannedIn is the wrong date the fixture photo carries: the day a scan went
@@ -23,7 +24,7 @@ func setTakenAt(t *testing.T, store *photos.Store, ctx context.Context, uid stri
 	if at != nil {
 		source = photos.TakenAtSourceManual
 	}
-	updated, err := store.UpdateMetadata(ctx, uid, photos.MetadataUpdate{
+	updated, err := store.UpdateMetadata(ctx, project.BootstrapUID, uid, photos.MetadataUpdate{
 		TakenAt:          at,
 		TakenAtSource:    source,
 		TakenAtPrecision: photos.TakenAtPrecisionDay,
@@ -136,7 +137,7 @@ func TestTakenAtCleared_survivesAnUnrelatedEdit(t *testing.T) {
 	cleared := setTakenAt(t, store, ctx, created.UID, nil)
 	mustBeforeUnknown(t, cleared, &scannedIn, "after clearing")
 
-	retitled, err := store.UpdateMetadata(ctx, created.UID, photos.MetadataUpdate{
+	retitled, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{
 		Title:            "Svatba",
 		TakenAt:          cleared.TakenAt,
 		TakenAtSource:    cleared.TakenAtSource,

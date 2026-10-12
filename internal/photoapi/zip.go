@@ -116,7 +116,7 @@ func (a *API) collectZipPhotos(ctx context.Context, req zipDownloadRequest) ([]p
 	}
 
 	if len(req.PhotoUIDs) > 0 {
-		explicit, err := a.store.ListByUIDs(ctx, req.PhotoUIDs)
+		explicit, err := a.store.ListByUIDsInProject(ctx, auth.ProjectUIDFromContext(ctx), req.PhotoUIDs)
 		if err != nil {
 			return nil, fmt.Errorf("photoapi: listing photos by uid: %w", err)
 		}

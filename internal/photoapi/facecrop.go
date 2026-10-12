@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -68,9 +66,8 @@ func (a *API) handleFaceCrop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	photo, err := a.store.GetByUID(r.Context(), chi.URLParam(r, "uid"))
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 

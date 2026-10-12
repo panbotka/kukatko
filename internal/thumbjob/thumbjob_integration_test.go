@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -148,7 +149,7 @@ func TestRegenerate_storesAPlaceholder(t *testing.T) {
 	if err := svc.Regenerate(ctx, photo.UID); err != nil {
 		t.Fatalf("Regenerate: %v", err)
 	}
-	got, err := h.photos.GetByUID(ctx, photo.UID)
+	got, err := h.photos.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestRegenerate_storesAPlaceholder(t *testing.T) {
 	if err := svc.Regenerate(ctx, photo.UID); err != nil {
 		t.Fatalf("Regenerate again: %v", err)
 	}
-	again, err := h.photos.GetByUID(ctx, photo.UID)
+	again, err := h.photos.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID again: %v", err)
 	}
@@ -185,13 +186,13 @@ func TestRegenerate_placeholderDescribesThePhoto(t *testing.T) {
 		}
 	}
 
-	gotRed, err := h.photos.GetByUID(ctx, red.UID)
+	gotRed, err := h.photos.GetForJob(ctx, red.UID)
 	if err != nil {
-		t.Fatalf("GetByUID(red): %v", err)
+		t.Fatalf("GetForJob(red): %v", err)
 	}
-	gotBlue, err := h.photos.GetByUID(ctx, blue.UID)
+	gotBlue, err := h.photos.GetForJob(ctx, blue.UID)
 	if err != nil {
-		t.Fatalf("GetByUID(blue): %v", err)
+		t.Fatalf("GetForJob(blue): %v", err)
 	}
 	if gotRed.Blurhash == "" || gotBlue.Blurhash == "" {
 		t.Fatalf("placeholders = %q, %q; want both computed", gotRed.Blurhash, gotBlue.Blurhash)
@@ -218,7 +219,7 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 		t.Fatalf("SaveBlurhash: %v", err)
 	}
 	archived := h.storeJPEG(t, "four", color.RGBA{R: 100, G: 100, A: 255})
-	if _, err := h.photos.Archive(ctx, archived.UID); err != nil {
+	if _, err := h.photos.Archive(ctx, project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
@@ -270,9 +271,9 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 	}
 	if got := h.photos; got != nil {
 		for _, uid := range want {
-			photo, err := got.GetByUID(ctx, uid)
+			photo, err := got.GetForJob(ctx, uid)
 			if err != nil {
-				t.Fatalf("GetByUID(%s): %v", uid, err)
+				t.Fatalf("GetForJob(%s): %v", uid, err)
 			}
 			if photo.Blurhash == "" {
 				t.Errorf("photo %s has no placeholder after its job ran", uid)
@@ -297,7 +298,7 @@ func TestForceRegenerate_replacesTheStoredPlaceholder(t *testing.T) {
 	if _, err := svc.ForceRegenerate(ctx, photo.UID); err != nil {
 		t.Fatalf("ForceRegenerate: %v", err)
 	}
-	got, err := h.photos.GetByUID(ctx, photo.UID)
+	got, err := h.photos.GetForJob(ctx, photo.UID)
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}

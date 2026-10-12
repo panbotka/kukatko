@@ -35,7 +35,11 @@ import (
 // caller (the auth subsystem) so this package depends on auth for the caller's
 // identity, not its wiring.
 type API struct {
-	store   *photos.Store
+	store *photos.Store
+	// finder is the project-scoped single-photo lookup every per-photo route
+	// gates on (photoInProject). NewAPI sets it to the store; a unit test swaps
+	// in a fake so a gated route can be driven without a database.
+	finder  photoFinder
 	storage storage.Storage
 	// media mints the client-facing thumb/download addresses stamped onto every
 	// photo payload, and tells the media routes whether to redirect or stream.
@@ -249,6 +253,7 @@ type Config struct {
 func NewAPI(cfg Config) *API {
 	return &API{
 		store:             cfg.Store,
+		finder:            finderOf(cfg.Store),
 		storage:           cfg.Storage,
 		media:             mediaurl.NewBuilder(cfg.Storage),
 		thumbnailer:       cfg.Thumbnailer,
@@ -783,7 +788,7 @@ func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
 // has with the response, so a body missing albums/labels/files would strip them
 // from the page. The metadata PATCH shares it for exactly that reason.
 func (a *API) writeDetail(w http.ResponseWriter, r *http.Request, userUID string, photo photos.Photo) {
-	files, err := a.store.ListFiles(r.Context(), photo.UID)
+	files, err := a.store.ListFiles(r.Context(), auth.ProjectUIDFromContext(r.Context()), photo.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "fetching photo files failed")
 		return
@@ -927,22 +932,24 @@ func (a *API) handleUnhide(w http.ResponseWriter, r *http.Request) {
 // setHidden binds the target library-visibility value to the audited store call,
 // yielding the transition signature runStateChange drives — so hide and unhide
 // share one handler body, as archive and unarchive do.
-func (a *API) setHidden(
-	hidden bool,
-) func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error) {
-	return func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error) {
-		return a.store.SetHiddenFromLibraryAudited(ctx, uid, hidden, entry)
+func (a *API) setHidden(hidden bool) stateChange {
+	return func(ctx context.Context, projectUID, uid string, entry audit.Entry) (photos.Photo, error) {
+		return a.store.SetHiddenFromLibraryAudited(ctx, projectUID, uid, hidden, entry)
 	}
 }
+
+// stateChange is one audited photo-state transition (archive/restore,
+// hide/unhide) on the photo uid of the project projectUID: the store answers a
+// photo of another project with ErrPhotoNotFound and changes nothing.
+type stateChange func(ctx context.Context, projectUID, uid string, entry audit.Entry) (photos.Photo, error)
 
 // runStateChange applies the audited photo-state transition op (archive/restore,
 // hide/unhide) to the photo named in the request path and writes the refreshed
 // photo, recording action in the audit log within the mutation transaction. It
-// maps a missing photo to 404 and any other failure to 500 with failMsg.
+// maps a missing photo — and a photo of another project, which the store refuses
+// to touch — to 404 and any other failure to 500 with failMsg.
 func (a *API) runStateChange(
-	w http.ResponseWriter, r *http.Request, action string,
-	op func(ctx context.Context, uid string, entry audit.Entry) (photos.Photo, error),
-	failMsg string,
+	w http.ResponseWriter, r *http.Request, action string, op stateChange, failMsg string,
 ) {
 	uid := chi.URLParam(r, "uid")
 	user, ok := auth.UserFromContext(r.Context())
@@ -951,7 +958,7 @@ func (a *API) runStateChange(
 		return
 	}
 	entry := audit.FromRequest(r, user.UID).Entry(action, "photos", uid, nil)
-	photo, err := op(r.Context(), uid, entry)
+	photo, err := op(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid, entry)
 	if err != nil {
 		writePhotoError(w, err, failMsg)
 		return
@@ -961,18 +968,39 @@ func (a *API) runStateChange(
 	writeJSON(w, http.StatusOK, photo)
 }
 
+// photoFinder is the project-scoped single-photo lookup the per-photo routes
+// gate on; *photos.Store satisfies it.
+type photoFinder interface {
+	// GetByUIDInProject returns the photo uid if it belongs to projectUID, and
+	// photos.ErrPhotoNotFound otherwise — also for a photo of another project.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
+}
+
+// finderOf returns store as the API's photoFinder, or nil when no store is
+// wired, so a missing store is a nil interface rather than one wrapping a nil
+// pointer (which a test's own finder could then not replace).
+func finderOf(store *photos.Store) photoFinder {
+	if store == nil {
+		return nil
+	}
+	return store
+}
+
 // photoInProject loads the photo named by the {uid} path parameter inside the
 // request's project and reports whether it could; when it could not, the answer
 // is already written. A photo of another project is ErrPhotoNotFound from the
 // store, so it is answered with the very 404 a photo that does not exist gets —
 // status, content type and body alike — and a tenant cannot probe for another
-// project's uids. Every per-photo read route gates on it before reading anything
-// keyed by the uid (faces, edits, renditions, similar): those child rows carry
-// no project of their own and are scoped through the photo. (The comments
+// project's uids. Every per-photo route gates on it before reading or writing
+// anything keyed by the uid — the reads (faces, edits, renditions, similar), the
+// writes (metadata, rating, favourite, comment, edit, people, rebuilds) and the
+// media bytes (thumbnail, download, face crop, video, HLS, storyboard), the
+// latter before a byte is served or a signed URL minted: their rows and objects
+// carry no project of their own and are scoped through the photo. (The comments
 // listing gates the same way but answers a miss with an empty thread.)
 func (a *API) photoInProject(w http.ResponseWriter, r *http.Request) (photos.Photo, bool) {
 	ctx := r.Context()
-	photo, err := a.store.GetByUIDInProject(ctx, auth.ProjectUIDFromContext(ctx), chi.URLParam(r, "uid"))
+	photo, err := a.finder.GetByUIDInProject(ctx, auth.ProjectUIDFromContext(ctx), chi.URLParam(r, "uid"))
 	if err != nil {
 		writePhotoError(w, err, "fetching photo failed")
 		return photos.Photo{}, false

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named by
@@ -182,7 +183,7 @@ func TestApplyImportMetadata_notesAreGapFilledOnly(t *testing.T) {
 	ctx := t.Context()
 	photo := blankPhoto(t, store, "imp-4")
 
-	if _, err := store.UpdateMetadata(ctx, photo.UID,
+	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, photo.UID,
 		photos.MetadataUpdate{Notes: "moje poznámka"}); err != nil {
 		t.Fatalf("UpdateMetadata: %v", err)
 	}

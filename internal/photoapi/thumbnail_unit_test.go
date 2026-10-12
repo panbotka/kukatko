@@ -44,6 +44,7 @@ func regenDeny(http.Handler) http.Handler {
 // regenRouter mounts only the regenerate handler (no auth middleware) so the
 // handler logic can be exercised directly.
 func regenRouter(api *API) http.Handler {
+	api = withFinder(api)
 	r := chi.NewRouter()
 	r.Post("/photos/{uid}/regenerate-thumbnail", api.handleRegenerateThumbnail)
 	return r
@@ -146,6 +147,7 @@ func TestRegenerateThumbnailRBAC(t *testing.T) {
 		fake := &fakeRegenerator{sizes: []string{"tile_500"}}
 		api := &API{
 			regenerator:       fake,
+			finder:            anyPhoto{},
 			requireAuth:       regenPass,
 			requireCurator:    regenPass,
 			requireWrite:      regenPass,

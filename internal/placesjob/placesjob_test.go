@@ -19,8 +19,8 @@ type fakePhotos struct {
 	byUID map[string]photos.Photo
 }
 
-// GetByUID returns the canned photo or photos.ErrPhotoNotFound.
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetForJob returns the canned photo or photos.ErrPhotoNotFound.
+func (f *fakePhotos) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	p, ok := f.byUID[uid]
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -163,7 +164,7 @@ func TestListPhotosMissingFaces(t *testing.T) {
 	if err := store.RecordFaceDetection(ctx, processed, vectors.Detection{Model: "buffalo_l"}); err != nil {
 		t.Fatalf("RecordFaceDetection: %v", err)
 	}
-	if _, err := photoStore.Archive(ctx, archived); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archived); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
@@ -187,7 +188,7 @@ func TestCountVideosMissingFaces(t *testing.T) {
 	makeClip(t, photoStore, "cv_clip_1")
 	makeClip(t, photoStore, "cv_clip_2")
 	archivedClip := makeClip(t, photoStore, "cv_clip_archived")
-	if _, err := photoStore.Archive(ctx, archivedClip); err != nil {
+	if _, err := photoStore.Archive(ctx, project.BootstrapUID, archivedClip); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

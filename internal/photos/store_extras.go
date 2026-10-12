@@ -26,18 +26,29 @@ func scanFile(row pgx.Row) (PhotoFile, error) {
 	return f, nil
 }
 
-// CreateFile inserts f and returns it refreshed with the database-assigned id
-// and created_at. It returns ErrFilePathTaken if the photo already has a file at
-// that path, ErrPrimaryFileExists if f.IsPrimary collides with an existing
-// primary file, or a wrapped error otherwise.
-func (s *Store) CreateFile(ctx context.Context, f PhotoFile) (PhotoFile, error) {
-	const q = `INSERT INTO photo_files
+// CreateFile inserts f for the project's photo f.PhotoUID and returns it
+// refreshed with the database-assigned id and created_at. photo_files carries no
+// project of its own, so the INSERT proves the parent in the same statement: it
+// inserts only when f.PhotoUID is a photo of projectUID, and ErrPhotoNotFound
+// otherwise — a photo of another project included. It returns ErrFilePathTaken
+// if the photo already has a file at that path, ErrPrimaryFileExists if
+// f.IsPrimary collides with an existing primary file, ErrNoProject for an empty
+// projectUID, or a wrapped error otherwise.
+func (s *Store) CreateFile(ctx context.Context, projectUID string, f PhotoFile) (PhotoFile, error) {
+	if err := requireProject(projectUID); err != nil {
+		return PhotoFile{}, err
+	}
+	q := `INSERT INTO photo_files
 		(photo_uid, file_path, file_hash, file_size, file_mime, is_primary, role)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		SELECT photos.uid, $2, $3, $4, $5, $6, $7 FROM photos
+		WHERE photos.uid = $1 AND ` + projectClause("$8") + `
 		RETURNING ` + fileColumns
 	created, err := scanFile(s.pool.QueryRow(ctx, q,
-		f.PhotoUID, f.FilePath, f.FileHash, f.FileSize, f.FileMime, f.IsPrimary, f.Role))
+		f.PhotoUID, f.FilePath, f.FileHash, f.FileSize, f.FileMime, f.IsPrimary, f.Role, projectUID))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return PhotoFile{}, ErrPhotoNotFound
+		}
 		if name, ok := isUniqueViolation(err); ok {
 			if strings.Contains(name, "one_primary") {
 				return PhotoFile{}, ErrPrimaryFileExists
@@ -49,13 +60,35 @@ func (s *Store) CreateFile(ctx context.Context, f PhotoFile) (PhotoFile, error) 
 	return created, nil
 }
 
-// ListFiles returns every file belonging to the photo identified by photoUID,
-// primary first then by id. The slice is empty (not nil) when the photo has no
-// files.
-func (s *Store) ListFiles(ctx context.Context, photoUID string) ([]PhotoFile, error) {
+// ListFiles returns every file belonging to the project's photo identified by
+// photoUID, primary first then by id. The slice is empty (not nil) when the
+// photo has no files — and when it is a photo of another project, whose files
+// are never read. An empty projectUID is ErrNoProject.
+func (s *Store) ListFiles(ctx context.Context, projectUID, photoUID string) ([]PhotoFile, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	q := "SELECT " + fileColumns + " FROM photo_files WHERE photo_uid = $1 " +
+		"AND EXISTS (SELECT 1 FROM photos WHERE photos.uid = photo_files.photo_uid AND " +
+		projectClause("$2") + ") ORDER BY is_primary DESC, id"
+	return s.queryFiles(ctx, q, photoUID, projectUID)
+}
+
+// FilesForJob returns every file belonging to the photo identified by photoUID
+// in whichever project holds it, primary first then by id; empty (not nil) when
+// it has none. It is the unscoped loader of a background job, the photo_files
+// twin of GetForJob, and the same rule holds: nothing serving an HTTP request
+// may call it.
+func (s *Store) FilesForJob(ctx context.Context, photoUID string) ([]PhotoFile, error) {
 	q := "SELECT " + fileColumns + " FROM photo_files WHERE photo_uid = $1 " +
 		"ORDER BY is_primary DESC, id"
-	rows, err := s.pool.Query(ctx, q, photoUID)
+	return s.queryFiles(ctx, q, photoUID)
+}
+
+// queryFiles runs q and scans every row as a photo file, empty (not nil) when
+// there are none.
+func (s *Store) queryFiles(ctx context.Context, q string, args ...any) ([]PhotoFile, error) {
+	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying files: %w", err)
 	}
@@ -194,23 +227,34 @@ func (s *Store) ListActivePhashes(ctx context.Context) ([]Phash, error) {
 	return hashes, nil
 }
 
-// SetEdit upserts the non-destructive edits for e.PhotoUID, replacing any
-// existing row and bumping updated_at. The all-or-nothing crop and the rotation
-// allow-list are enforced by SQL CHECK constraints. It returns a wrapped error
-// on failure.
-func (s *Store) SetEdit(ctx context.Context, e Edit) error {
-	const q = `INSERT INTO photo_edits
+// SetEdit upserts the non-destructive edits for the project's photo e.PhotoUID,
+// replacing any existing row and bumping updated_at. photo_edits carries no
+// project of its own, so the upsert proves the parent in the same statement: a
+// photo of another project — or no photo at all — writes nothing and is
+// ErrPhotoNotFound. The all-or-nothing crop and the rotation allow-list are
+// enforced by SQL CHECK constraints. An empty projectUID is ErrNoProject; any
+// other failure is a wrapped error.
+func (s *Store) SetEdit(ctx context.Context, projectUID string, e Edit) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	q := `INSERT INTO photo_edits
 		(photo_uid, crop_x, crop_y, crop_w, crop_h, rotation, brightness, contrast, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+		SELECT photos.uid, $2, $3, $4, $5, $6, $7, $8, now() FROM photos
+		WHERE photos.uid = $1 AND ` + projectClause("$9") + `
 		ON CONFLICT (photo_uid) DO UPDATE SET
 			crop_x = EXCLUDED.crop_x, crop_y = EXCLUDED.crop_y,
 			crop_w = EXCLUDED.crop_w, crop_h = EXCLUDED.crop_h,
 			rotation = EXCLUDED.rotation, brightness = EXCLUDED.brightness,
 			contrast = EXCLUDED.contrast, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, q,
-		e.PhotoUID, e.CropX, e.CropY, e.CropW, e.CropH, e.Rotation, e.Brightness, e.Contrast,
-	); err != nil {
+	tag, err := s.pool.Exec(ctx, q,
+		e.PhotoUID, e.CropX, e.CropY, e.CropW, e.CropH, e.Rotation, e.Brightness, e.Contrast, projectUID,
+	)
+	if err != nil {
 		return fmt.Errorf("photos: upserting edit: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrPhotoNotFound
 	}
 	return nil
 }

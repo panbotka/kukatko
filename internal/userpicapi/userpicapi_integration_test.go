@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/userpic"
 	"github.com/panbotka/kukatko/internal/userpicapi"
 )
@@ -328,7 +329,7 @@ func TestPicture_pickRoundTripsAndFallsBackWhenThePhotoGoes(t *testing.T) {
 
 	// The photo is archived afterwards; nothing else in the chain answers, so the
 	// account goes back to the coloured initial rather than keeping the picture.
-	if _, err := env.photos.Archive(t.Context(), photo.UID); err != nil {
+	if _, err := env.photos.Archive(t.Context(), project.BootstrapUID, photo.UID); err != nil {
 		t.Fatalf("archiving the photo: %v", err)
 	}
 	gone := env.avatarOf(t, client, uid, "")

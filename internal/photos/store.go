@@ -44,8 +44,12 @@ var photoInsertColumns = []string{
 }
 
 // photoColumns is the canonical, ordered column list for photo reads (the insert
-// columns plus the database-managed timestamps), matched by scanPhoto.
-var photoColumns = strings.Join(photoInsertColumns, ", ") + ", created_at, updated_at"
+// columns plus the database-managed timestamps and the owning project), matched
+// by scanPhoto. project_id is qualified because a read may filter on a table
+// that carries a column of the same name; it is not an insert column, since
+// Create leaves it to the column's default (the bootstrap project) until the
+// upload pipeline is scoped.
+var photoColumns = strings.Join(photoInsertColumns, ", ") + ", created_at, updated_at, photos.project_id"
 
 // insertPhotoSQL is the INSERT … RETURNING statement used by Create, built once
 // from photoInsertColumns so the column list and placeholders cannot drift.
@@ -111,9 +115,9 @@ func scanPhotoRow(row pgx.Row, extra ...any) (Photo, error) {
 	// which the model carries as the empty string.
 	var blurhash *string
 	// Capacity: the photo's own columns (the insert columns plus the two
-	// database-managed timestamps, exactly what photoColumns lists) and whatever
-	// the caller's query appended after them.
-	dest := append(make([]any, 0, len(photoInsertColumns)+2+len(extra)),
+	// database-managed timestamps and the project, exactly what photoColumns
+	// lists) and whatever the caller's query appended after them.
+	dest := append(make([]any, 0, len(photoInsertColumns)+3+len(extra)),
 		&p.UID, &p.FileHash, &p.FilePath, &p.FileName, &p.FileSize, &p.FileMime,
 		&p.FileWidth, &p.FileHeight, &p.FileOrientation, &p.MediaType, &p.DurationMs,
 		&p.VideoCodec, &p.AudioCodec, &p.HasAudio, &p.FPS, &p.TakenAt, &p.TakenAtSource,
@@ -125,7 +129,7 @@ func scanPhotoRow(row pgx.Row, extra ...any) (Photo, error) {
 		&exif, &p.Private, &p.ArchivedAt, &p.UploadedBy, &p.PhotoprismUID,
 		&p.PhotoprismFileHash, &p.PhotosorterUID, &p.MetadataExtractedAt,
 		&p.StackUID, &p.StackPrimary, &p.TitleEdited, &p.HiddenFromLibrary, &blurhash,
-		&p.CreatedAt, &p.UpdatedAt,
+		&p.CreatedAt, &p.UpdatedAt, &p.ProjectID,
 	)
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return Photo{}, fmt.Errorf("photos: scanning photo: %w", err)
@@ -203,11 +207,24 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 // GetByUID returns the photo with the given UID in whichever project holds it,
 // or ErrPhotoNotFound.
 //
-// It is the unscoped load, kept for the callers that have no project to give:
-// the worker loaders (a per-photo job learns its project from the photo) and
-// the write side, both scoped in a later step. A handler answering a reader
-// uses GetByUIDInProject, so a foreign uid is a plain miss.
+// It is the unscoped load kept for the callers not scoped yet (trash, the
+// profile picture, the directory import), each moved to a scoped lookup in its
+// own step. A handler answering a reader uses GetByUIDInProject, so a foreign
+// uid is a plain miss; a background job uses GetForJob, which says so.
 func (s *Store) GetByUID(ctx context.Context, uid string) (Photo, error) {
+	return s.getPhoto(ctx, "uid", uid)
+}
+
+// GetForJob returns the photo with the given UID in whichever project holds it,
+// or ErrPhotoNotFound — the unscoped loader of a background job handler. A job
+// runs without a request and so without a project: its payload names a photo,
+// and the photo names its project (Photo.ProjectID, which the row carries), so
+// the handler learns from the row which project it is working for.
+//
+// The name is the guard. Nothing serving an HTTP request may call it — a
+// handler loads through GetByUIDInProject — and a unit test fails the build if
+// "ForJob(" appears anywhere in an internal/*api package.
+func (s *Store) GetForJob(ctx context.Context, uid string) (Photo, error) {
 	return s.getPhoto(ctx, "uid", uid)
 }
 
@@ -409,18 +426,26 @@ func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) 
 	return s.queryPhotos(ctx, "listing by uids", q, uids)
 }
 
-// UpdateMetadata applies the user-editable metadata in m to the photo identified
-// by uid, bumps updated_at, and returns the refreshed photo. It returns
-// ErrPhotoNotFound if no such photo exists.
-func (s *Store) UpdateMetadata(ctx context.Context, uid string, m MetadataUpdate) (Photo, error) {
-	return updateMetadataRow(ctx, s.pool, uid, m)
+// UpdateMetadata applies the user-editable metadata in m to the project's photo
+// identified by uid, bumps updated_at, and returns the refreshed photo. It
+// returns ErrPhotoNotFound if no such photo exists in the project — a photo of
+// another project is left untouched and answered exactly like a missing one —
+// and ErrNoProject for an empty projectUID.
+func (s *Store) UpdateMetadata(ctx context.Context, projectUID, uid string, m MetadataUpdate) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	return updateMetadataRow(ctx, s.pool, projectUID, uid, m)
 }
 
 // updateMetadataRow runs the metadata UPDATE on q, which may be the pool or an
 // open transaction, and returns the refreshed photo or ErrPhotoNotFound. The
 // transaction form backs UpdateMetadataAudited, which writes an audit row in the
-// same transaction.
-func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m MetadataUpdate) (Photo, error) {
+// same transaction. The UPDATE is confined to projectUID, so a foreign uid
+// matches no row.
+func updateMetadataRow(
+	ctx context.Context, q rowQuerier, projectUID, uid string, m MetadataUpdate,
+) (Photo, error) {
 	sql := `UPDATE photos SET
 		title = $2, description = $3, notes = $4, ai_note = $5, taken_at = $6, taken_at_source = $7,
 		lat = $8, lng = $9, altitude = $10, private = $11,
@@ -429,13 +454,13 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 		taken_at_precision = $22,
 		` + TakenAtBeforeUnknownAssignment("$6") + `,
 		updated_at = now()
-		WHERE uid = $1 RETURNING ` + photoColumns
+		WHERE uid = $1 AND ` + projectClause("$23") + ` RETURNING ` + photoColumns
 	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid,
 		m.Title, m.Description, m.Notes, m.AiNote, m.TakenAt, m.TakenAtSource,
 		m.Lat, m.Lng, m.Altitude, m.Private,
 		m.Subject, m.Keywords, m.Artist, m.Copyright, m.License, m.Scan,
 		m.TakenAtEstimated, m.TakenAtNote, m.LocationSource, m.TitleEdited,
-		takenAtPrecisionOrDay(m.TakenAtPrecision)))
+		takenAtPrecisionOrDay(m.TakenAtPrecision), projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound
@@ -445,18 +470,26 @@ func updateMetadataRow(ctx context.Context, q rowQuerier, uid string, m Metadata
 	return photo, nil
 }
 
-// Archive marks the photo identified by uid archived (sets archived_at to now)
-// and returns the refreshed photo, or ErrPhotoNotFound. Archiving an
+// Archive marks the project's photo identified by uid archived (sets
+// archived_at to now) and returns the refreshed photo, or ErrPhotoNotFound —
+// also for a photo of another project, which is left untouched. Archiving an
 // already-archived photo refreshes its archived_at. A stacked photo leaves its
 // stack in the same transaction (see LeaveStackTx), so archiving a primary never
-// hides the still-live members it leaves behind.
-func (s *Store) Archive(ctx context.Context, uid string) (Photo, error) {
+// hides the still-live members it leaves behind. An empty projectUID is
+// ErrNoProject.
+func (s *Store) Archive(ctx context.Context, projectUID, uid string) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
 	var photo Photo
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := requirePhotosInProject(ctx, tx, projectUID, []string{uid}); err != nil {
+			return err
+		}
 		if err := LeaveStackTx(ctx, tx, uid); err != nil {
 			return err
 		}
-		p, err := setArchivedRow(ctx, tx, uid, true)
+		p, err := setArchivedRow(ctx, tx, projectUID, uid, true)
 		if err != nil {
 			return err
 		}
@@ -469,24 +502,30 @@ func (s *Store) Archive(ctx context.Context, uid string) (Photo, error) {
 	return photo, nil
 }
 
-// Unarchive clears the archived state of the photo identified by uid and returns
-// the refreshed photo, or ErrPhotoNotFound. The photo comes back as a standalone
-// one: archiving unstacked it, and rejoining a stack is a deliberate act.
-func (s *Store) Unarchive(ctx context.Context, uid string) (Photo, error) {
-	return setArchivedRow(ctx, s.pool, uid, false)
+// Unarchive clears the archived state of the project's photo identified by uid
+// and returns the refreshed photo, or ErrPhotoNotFound (a photo of another
+// project included). The photo comes back as a standalone one: archiving
+// unstacked it, and rejoining a stack is a deliberate act. An empty projectUID
+// is ErrNoProject.
+func (s *Store) Unarchive(ctx context.Context, projectUID, uid string) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	return setArchivedRow(ctx, s.pool, projectUID, uid, false)
 }
 
 // setArchivedRow sets or clears archived_at on q, which may be the pool or an
 // open transaction, and returns the refreshed photo or ErrPhotoNotFound. The
-// transaction form backs ArchiveAudited/UnarchiveAudited.
-func setArchivedRow(ctx context.Context, q rowQuerier, uid string, archived bool) (Photo, error) {
+// transaction form backs ArchiveAudited/UnarchiveAudited. The UPDATE is confined
+// to projectUID, so a foreign uid matches no row.
+func setArchivedRow(ctx context.Context, q rowQuerier, projectUID, uid string, archived bool) (Photo, error) {
 	expr := "NULL"
 	if archived {
 		expr = "now()"
 	}
 	sql := "UPDATE photos SET archived_at = " + expr + ", updated_at = now() " +
-		"WHERE uid = $1 RETURNING " + photoColumns
-	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid))
+		"WHERE uid = $1 AND " + projectClause("$2") + " RETURNING " + photoColumns
+	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound
@@ -496,22 +535,28 @@ func setArchivedRow(ctx context.Context, q rowQuerier, uid string, archived bool
 	return photo, nil
 }
 
-// SetHiddenFromLibrary hides the photo identified by uid from the library
-// firehose (hidden true) or brings it back (false) and returns the refreshed
-// photo, or ErrPhotoNotFound. Unlike Archive it is a pure visibility toggle: it
-// touches nothing else, leaves the photo's stack alone and never puts it on a
-// path to deletion. See Photo.HiddenFromLibrary and migration 0049.
-func (s *Store) SetHiddenFromLibrary(ctx context.Context, uid string, hidden bool) (Photo, error) {
-	return setHiddenRow(ctx, s.pool, uid, hidden)
+// SetHiddenFromLibrary hides the project's photo identified by uid from the
+// library firehose (hidden true) or brings it back (false) and returns the
+// refreshed photo, or ErrPhotoNotFound (a photo of another project included).
+// Unlike Archive it is a pure visibility toggle: it touches nothing else, leaves
+// the photo's stack alone and never puts it on a path to deletion. See
+// Photo.HiddenFromLibrary and migration 0049. An empty projectUID is
+// ErrNoProject.
+func (s *Store) SetHiddenFromLibrary(ctx context.Context, projectUID, uid string, hidden bool) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	return setHiddenRow(ctx, s.pool, projectUID, uid, hidden)
 }
 
 // setHiddenRow writes hidden_from_library on q, which may be the pool or an open
 // transaction, and returns the refreshed photo or ErrPhotoNotFound. The
-// transaction form backs SetHiddenFromLibraryAudited.
-func setHiddenRow(ctx context.Context, q rowQuerier, uid string, hidden bool) (Photo, error) {
+// transaction form backs SetHiddenFromLibraryAudited. The UPDATE is confined to
+// projectUID, so a foreign uid matches no row.
+func setHiddenRow(ctx context.Context, q rowQuerier, projectUID, uid string, hidden bool) (Photo, error) {
 	sql := "UPDATE photos SET hidden_from_library = $2, updated_at = now() " +
-		"WHERE uid = $1 RETURNING " + photoColumns
-	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid, hidden))
+		"WHERE uid = $1 AND " + projectClause("$3") + " RETURNING " + photoColumns
+	photo, err := scanPhoto(q.QueryRow(ctx, sql, uid, hidden, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

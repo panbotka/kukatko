@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/geoestimate"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Positions used by the seeded fixtures. The two Prague points are ~2 km apart
@@ -217,7 +218,7 @@ func TestBackfill_neverReEstimatesAClearedLocation(t *testing.T) {
 	update := metadataFrom(cleared)
 	update.Lat, update.Lng = nil, nil
 	update.LocationSource = photos.LocationSourceManual
-	if _, err := env.store.UpdateMetadata(t.Context(), target.UID, update); err != nil {
+	if _, err := env.store.UpdateMetadata(t.Context(), project.BootstrapUID, target.UID, update); err != nil {
 		t.Fatalf("clearing the estimate: %v", err)
 	}
 

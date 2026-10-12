@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // zipURL is the bulk ZIP download endpoint under the API base path.
@@ -216,7 +217,7 @@ func TestDownloadZip_albumExpandsToLivePhotos(t *testing.T) {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}
-	if _, err := env.store.Archive(t.Context(), archived.UID); err != nil {
+	if _, err := env.store.Archive(t.Context(), project.BootstrapUID, archived.UID); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 

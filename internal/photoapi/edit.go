@@ -78,8 +78,7 @@ func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := a.store.GetByUID(r.Context(), uid); err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	if _, ok := a.photoInProject(w, r); !ok {
 		return
 	}
 
@@ -93,7 +92,7 @@ func (a *API) handlePutEdit(w http.ResponseWriter, r *http.Request) {
 		Brightness: body.Brightness,
 		Contrast:   body.Contrast,
 	}
-	if err := a.store.SetEdit(r.Context(), edit); err != nil {
+	if err := a.store.SetEdit(r.Context(), auth.ProjectUIDFromContext(r.Context()), edit); err != nil {
 		writeError(w, http.StatusInternalServerError, "saving edit failed")
 		return
 	}

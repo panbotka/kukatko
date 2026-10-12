@@ -64,8 +64,9 @@ const (
 type PhotoStore interface {
 	// GetByUID returns the photo with uid, or photos.ErrPhotoNotFound.
 	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
-	// ListFiles returns every stored file (original and sidecars) for the photo.
-	ListFiles(ctx context.Context, photoUID string) ([]photos.PhotoFile, error)
+	// FilesForJob returns every stored file (original and sidecars) for the
+	// photo, in whichever project holds it: the purge runs without a request.
+	FilesForJob(ctx context.Context, photoUID string) ([]photos.PhotoFile, error)
 	// DeleteAudited removes the photo row (cascading its satellite rows) and writes
 	// entry to the audit log in the same transaction, so the permanent deletion and
 	// its audit record commit atomically. It returns photos.ErrPhotoNotFound when no
@@ -290,7 +291,7 @@ func (s *Service) purgeBatch(
 // dangling files; a hard artifact error aborts before the row is deleted so the
 // next run retries it.
 func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, source string) error {
-	files, err := s.photos.ListFiles(ctx, uid)
+	files, err := s.photos.FilesForJob(ctx, uid)
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)
 	}

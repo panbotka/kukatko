@@ -31,6 +31,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 const testPassword = "correct horse battery staple"
@@ -494,7 +495,7 @@ func TestMCPSearchReturnsCompactShape(t *testing.T) {
 	// make the leak assertion pass by luck.
 	for _, hash := range []string{"bb01", "bb02", "bb03", "bb04"} {
 		uid := e.seedPhoto(t, hash)
-		_, err := e.photos.UpdateMetadata(t.Context(), uid, photos.MetadataUpdate{Title: "babička v zahradě"})
+		_, err := e.photos.UpdateMetadata(t.Context(), project.BootstrapUID, uid, photos.MetadataUpdate{Title: "babička v zahradě"})
 		if err != nil {
 			t.Fatalf("UpdateMetadata: %v", err)
 		}
@@ -568,7 +569,7 @@ func TestMCPSearchUsesTheQueryLanguage(t *testing.T) {
 // setTaken stamps a capture time on a photo.
 func setTaken(t *testing.T, e *env, uid string, at time.Time) {
 	t.Helper()
-	if _, err := e.photos.UpdateMetadata(t.Context(), uid, photos.MetadataUpdate{TakenAt: &at}); err != nil {
+	if _, err := e.photos.UpdateMetadata(t.Context(), project.BootstrapUID, uid, photos.MetadataUpdate{TakenAt: &at}); err != nil {
 		t.Fatalf("setting taken_at: %v", err)
 	}
 }
@@ -714,7 +715,7 @@ func TestMCPSetMetadataDoesNotBlankOtherFields(t *testing.T) {
 
 	taken := time.Date(1965, 6, 1, 12, 0, 0, 0, time.UTC)
 	lat, lng := 50.08, 14.43
-	_, err := e.photos.UpdateMetadata(t.Context(), photoUID, photos.MetadataUpdate{
+	_, err := e.photos.UpdateMetadata(t.Context(), project.BootstrapUID, photoUID, photos.MetadataUpdate{
 		Title: "old", Description: "keep me", Notes: "keep me too",
 		Keywords: "rodina", TakenAt: &taken, Lat: &lat, Lng: &lng, LocationSource: "manual",
 	})

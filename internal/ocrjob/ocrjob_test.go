@@ -26,8 +26,8 @@ type fakePhotoStore struct {
 	saveErr error
 }
 
-// GetByUID returns the stored photo or photos.ErrPhotoNotFound.
-func (f *fakePhotoStore) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetForJob returns the stored photo or photos.ErrPhotoNotFound.
+func (f *fakePhotoStore) GetForJob(_ context.Context, uid string) (photos.Photo, error) {
 	p, ok := f.photos[uid]
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound

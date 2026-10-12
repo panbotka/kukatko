@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestListActivePhashes returns hashes of live photos only, ordered by uid, and
@@ -23,7 +24,7 @@ func TestListActivePhashes(t *testing.T) {
 			t.Fatalf("SetPhash(%s): %v", uid, err)
 		}
 	}
-	if _, err := store.Archive(ctx, archived); err != nil {
+	if _, err := store.Archive(ctx, project.BootstrapUID, archived); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 
