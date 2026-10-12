@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
+import Offcanvas from 'react-bootstrap/Offcanvas'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { type ListRange } from 'react-virtuoso'
@@ -26,6 +27,7 @@ import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { FeatureAlbumModal } from '../components/organize/FeatureAlbumModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
 import { DownloadZipButton } from '../components/organize/DownloadZipButton'
+import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useAlbumFaceCount } from '../hooks/useAlbumFaces'
 import { useBulkEdit } from '../hooks/useBulkEdit'
@@ -42,6 +44,7 @@ import { ALBUM_DEFAULTS, ALBUM_SORTS, type LibraryView, viewToParams } from '../
 import { newLinkForAlbum } from '../lib/uploadLinks'
 import { useUrlState } from '../lib/urlState'
 import { isNotFound } from '../services/auth'
+import { albumSubject } from '../services/comments'
 import { unfeatureAlbum } from '../services/featured'
 import {
   type Album,
@@ -61,7 +64,7 @@ type State =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'missing' }
-  | { status: 'ready'; album: Album }
+  | { status: 'ready'; album: Album; commentCount: number }
 
 /**
  * Where the back link leads. The albums index keeps no view state of its own in
@@ -79,6 +82,20 @@ const ALBUMS_PATH = '/albums'
  * exactly right, because either renumbers every position.
  */
 const ANCHOR_PARAM = 'at'
+
+/**
+ * Query param naming the open side panel; `comments` is the album's thread. In
+ * the URL, like every other bit of view state, so Back closes the panel and a
+ * mention notification (`/albums/<uid>?panel=comments#comment-<uid>`) opens the
+ * album with the thread already showing the comment it is about.
+ */
+const PANEL_PARAM = 'panel'
+
+/** The {@link PANEL_PARAM} value of the comment thread. */
+const COMMENTS_PANEL = 'comments'
+
+/** DOM id of the comment drawer, which the header button controls. */
+const COMMENTS_DRAWER_ID = 'album-comments'
 
 /**
  * How much time an album has to span before it is given a timeline rail: two
@@ -115,10 +132,16 @@ const TIMELINE_MIN_MONTHS = 24
  * on the library), and picking the first photo raises the same floating batch
  * bar the library uses — with the album's own actions (set cover, remove from
  * album) merged into it, so the page never shows two competing toolbars.
+ *
+ * The album's comment thread — the conversation about the whole event — is the
+ * very {@link CommentsPanel} the photo viewer and the task page use, opened in a
+ * side drawer from a header button that carries the comment count. A drawer and
+ * not a section above the grid, so the photos never move down for it; every
+ * signed-in role may read and post, exactly like on a photo.
  */
 export function AlbumDetailPage() {
   const { t, i18n } = useTranslation()
-  const { canCurate } = useAuth()
+  const { canCurate, user, isAdmin } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
@@ -180,8 +203,8 @@ export function AlbumDetailPage() {
     const controller = new AbortController()
     setState({ status: 'loading' })
     fetchAlbum(uid, controller.signal)
-      .then((album) => {
-        setState({ status: 'ready', album })
+      .then(({ comment_count: commentCount, ...album }) => {
+        setState({ status: 'ready', album, commentCount: commentCount ?? 0 })
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -230,7 +253,7 @@ export function AlbumDetailPage() {
         private: album.private,
         cover_photo_uid: photoUid,
       })
-      setState({ status: 'ready', album: updated })
+      setState((prev) => (prev.status === 'ready' ? { ...prev, album: updated } : prev))
       leaveMode()
     } catch {
       setActionError(true)
@@ -275,7 +298,8 @@ export function AlbumDetailPage() {
     }
     setActionError(false)
     try {
-      setState({ status: 'ready', album: await unfeatureAlbum(state.album.uid) })
+      const updated = await unfeatureAlbum(state.album.uid)
+      setState((prev) => (prev.status === 'ready' ? { ...prev, album: updated } : prev))
     } catch {
       setActionError(true)
     }
@@ -314,6 +338,28 @@ export function AlbumDetailPage() {
   )
   const [searchParams, setSearchParams] = useSearchParams()
   const anchor = searchParams.get(ANCHOR_PARAM) ?? ''
+  const commentsOpen = searchParams.get(PANEL_PARAM) === COMMENTS_PANEL
+  // Opening pushes a history entry, so Back closes the drawer; closing drops the
+  // param (and with it a comment anchor that has done its job).
+  const setCommentsOpen = useCallback(
+    (open: boolean) => {
+      const next = new URLSearchParams(searchParams)
+      if (open) {
+        next.set(PANEL_PARAM, COMMENTS_PANEL)
+      } else {
+        next.delete(PANEL_PARAM)
+      }
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
+  const onCommentCount = useCallback((count: number) => {
+    setState((prev) =>
+      prev.status === 'ready' && prev.commentCount !== count
+        ? { ...prev, commentCount: count }
+        : prev,
+    )
+  }, [])
   // Off for now (see TIMELINE_SCRUBBER_ENABLED): no rail, no lane, no timeline fetch.
   const showScrubber = TIMELINE_SCRUBBER_ENABLED && !selecting
   const jumpTo = useCallback(
@@ -363,6 +409,7 @@ export function AlbumDetailPage() {
   }
 
   const album = state.status === 'ready' ? state.album : null
+  const commentCount = state.status === 'ready' ? state.commentCount : 0
   // Only a hand-made album can go on the homepage (the server refuses the
   // machine-made folders, months, moments and places), so only one offers it.
   const canFeature = canCurate && album?.type === 'album'
@@ -404,6 +451,25 @@ export function AlbumDetailPage() {
               photos.length > 0 && (
                 <SlideshowStart key="slideshow" scope={scope} view={view} count={total} />
               ),
+              <Button
+                key="comments"
+                variant="outline-secondary"
+                size="sm"
+                aria-expanded={commentsOpen}
+                aria-controls={commentsOpen ? COMMENTS_DRAWER_ID : undefined}
+                aria-label={t('albumDetail.commentsToggle', { count: commentCount })}
+                onClick={() => {
+                  setCommentsOpen(true)
+                }}
+              >
+                <Icon name="chat-left-text" className="me-1" />
+                {t('albumDetail.comments')}
+                {commentCount > 0 && (
+                  <Badge bg="secondary" pill className="ms-1">
+                    {commentCount}
+                  </Badge>
+                )}
+              </Button>,
             ]}
             secondary={[
               canCurate && (
@@ -572,6 +638,33 @@ export function AlbumDetailPage() {
         <BatchActionBar bulk={bulk} onSelectAll={selectAllInView} extraActions={extraActions} />
       )}
 
+      {album && (
+        <Offcanvas
+          id={COMMENTS_DRAWER_ID}
+          show={commentsOpen}
+          onHide={() => {
+            setCommentsOpen(false)
+          }}
+          placement="end"
+          aria-labelledby={`${COMMENTS_DRAWER_ID}-title`}
+        >
+          <Offcanvas.Header closeButton closeLabel={t('albumDetail.commentsClose')}>
+            <Offcanvas.Title as="h2" className="h5 mb-0" id={`${COMMENTS_DRAWER_ID}-title`}>
+              {t('photo.comments.title')}
+            </Offcanvas.Title>
+          </Offcanvas.Header>
+          <Offcanvas.Body>
+            <CommentsPanel
+              subject={albumSubject(album.uid)}
+              currentUserUid={user?.uid ?? null}
+              canModerate={isAdmin}
+              onCountChange={onCommentCount}
+              heading={false}
+            />
+          </Offcanvas.Body>
+        </Offcanvas>
+      )}
+
       {canCurate && album && (
         <AlbumEditModal
           album={album}
@@ -580,7 +673,7 @@ export function AlbumDetailPage() {
             setEditing(false)
           }}
           onSaved={(updated) => {
-            setState({ status: 'ready', album: updated })
+            setState((prev) => (prev.status === 'ready' ? { ...prev, album: updated } : prev))
             setEditing(false)
           }}
         />
@@ -594,7 +687,7 @@ export function AlbumDetailPage() {
             setFeaturing(false)
           }}
           onSaved={(updated) => {
-            setState({ status: 'ready', album: updated })
+            setState((prev) => (prev.status === 'ready' ? { ...prev, album: updated } : prev))
             setFeaturing(false)
           }}
         />

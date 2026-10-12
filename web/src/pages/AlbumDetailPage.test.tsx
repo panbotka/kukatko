@@ -138,6 +138,11 @@ vi.mock('../services/organize', async (importOriginal) => {
   }
 })
 
+vi.mock('../services/comments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/comments')>()
+  return { ...actual, fetchComments: vi.fn(), createComment: vi.fn() }
+})
+
 vi.mock('../services/featured', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/featured')>()
   return {
@@ -162,6 +167,9 @@ const unfeatureMock = vi.mocked(unfeatureAlbum)
 const { fetchAlbum, deleteAlbum, removeAlbumPhotos, fetchAlbums, fetchLabels } =
   await import('../services/organize')
 const fetchPhotosMock = vi.mocked(fetchPhotos)
+const { fetchComments, createComment } = await import('../services/comments')
+const fetchCommentsMock = vi.mocked(fetchComments)
+const createCommentMock = vi.mocked(createComment)
 const timelineMock = vi.mocked(fetchTimeline)
 const fetchAlbumMock = vi.mocked(fetchAlbum)
 const deleteAlbumMock = vi.mocked(deleteAlbum)
@@ -282,6 +290,10 @@ function renderPage(canWrite: boolean | Role = true, entry = '/albums/al_1') {
 }
 
 beforeEach(async () => {
+  // A fresh desktop `matchMedia` per test: `restoreMocks` empties the shared
+  // stub after the first one, and the comment drawer (an Offcanvas) asks it
+  // for its breakpoint.
+  mockViewport(false)
   await i18n.changeLanguage('en')
   window.sessionStorage.clear()
   grid.restoredFrom = null
@@ -302,6 +314,81 @@ beforeEach(async () => {
   featureMock.mockReset()
   unfeatureMock.mockReset()
   featuredListMock.mockResolvedValue({ albums: [], default_days: 61, max_days: 366 })
+  fetchCommentsMock.mockReset()
+  fetchCommentsMock.mockResolvedValue([])
+  createCommentMock.mockReset()
+})
+
+/** One comment on the test album's thread. */
+function albumComment(uid: string, body: string) {
+  return {
+    uid,
+    album_uid: 'al_1',
+    author_uid: 'u2',
+    author_name: 'Anna',
+    mentions: [],
+    body,
+    created_at: '2026-10-01T10:00:00Z',
+  }
+}
+
+describe('AlbumDetailPage comments', () => {
+  it('badges the thread with its count and opens it in a drawer, viewers included', async () => {
+    fetchAlbumMock.mockResolvedValue({ ...album(), comment_count: 2 })
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    fetchCommentsMock.mockResolvedValue([
+      albumComment('c1', 'Who else was at the wedding?'),
+      albumComment('c2', 'Uncle Karel, left.'),
+    ])
+    const user = userEvent.setup()
+    renderPage(false)
+
+    const toggle = await screen.findByRole('button', { name: 'Album comments (2)' })
+    expect(fetchCommentsMock).not.toHaveBeenCalled()
+    await user.click(toggle)
+
+    const drawer = await screen.findByRole('dialog')
+    expect(await within(drawer).findByText('Who else was at the wedding?')).toBeInTheDocument()
+    expect(fetchCommentsMock).toHaveBeenCalledWith(
+      { kind: 'album', uid: 'al_1' },
+      expect.anything(),
+    )
+    // In the URL, so Back closes it and a notification link can open it.
+    expect(currentSearch()).toContain('panel=comments')
+    // The grid stays where it was: the thread is beside it, not above it.
+    expect(screen.getByRole('link', { name: /a\.jpg/ })).toBeInTheDocument()
+  })
+
+  it('posts a comment to the album thread', async () => {
+    fetchAlbumMock.mockResolvedValue({ ...album(), comment_count: 0 })
+    fetchPhotosMock.mockResolvedValue(page([]))
+    createCommentMock.mockResolvedValue(albumComment('c9', 'Lovely day'))
+    const user = userEvent.setup()
+    renderPage(false, '/albums/al_1?panel=comments')
+
+    const drawer = await screen.findByRole('dialog')
+    await user.type(within(drawer).getByLabelText('New comment'), 'Lovely day')
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({ kind: 'album', uid: 'al_1' }, 'Lovely day')
+    })
+    expect(await within(drawer).findByText('Lovely day')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Album comments (1)' })).toBeInTheDocument()
+  })
+
+  it('closing the drawer drops the panel from the URL', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderPage(true, '/albums/al_1?panel=comments')
+
+    const drawer = await screen.findByRole('dialog')
+    await user.click(within(drawer).getByRole('button', { name: 'Close comments' }))
+    await waitFor(() => {
+      expect(currentSearch()).not.toContain('panel=comments')
+    })
+  })
 })
 
 describe('AlbumDetailPage', () => {

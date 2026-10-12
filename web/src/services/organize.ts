@@ -150,9 +150,19 @@ export async function fetchAlbums(signal?: AbortSignal): Promise<AlbumSummary[]>
   return body.albums
 }
 
+/**
+ * One album as its detail route answers it (`organizeapi.albumDetail`): the
+ * album plus the number of live comments on its thread, so the page can badge
+ * the thread without fetching it.
+ */
+export interface AlbumDetail extends Album {
+  /** Absent from a server older than album comments; read as 0. */
+  comment_count?: number
+}
+
 /** Fetches one album by UID; throws ApiError 404 when missing. */
-export async function fetchAlbum(uid: string, signal?: AbortSignal): Promise<Album> {
-  return getJSON<Album>(`/albums/${encodeURIComponent(uid)}`, signal)
+export async function fetchAlbum(uid: string, signal?: AbortSignal): Promise<AlbumDetail> {
+  return getJSON<AlbumDetail>(`/albums/${encodeURIComponent(uid)}`, signal)
 }
 
 /** Creates an album from the editable fields and returns the stored record. */

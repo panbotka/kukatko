@@ -2284,6 +2284,13 @@ here.
   URL state) — under the heading it renders the album's **`description`** (`.kk-prose-note`: a readable
   measure, `white-space: pre-line`, so the line breaks the writer typed survive), which was stored,
   editable and shown to nobody until now;
+  beside **Promítání**, for every role, a **Komentáře** button carrying the thread's count (`comment_count`
+  from `GET /albums/{uid}`, kept true by `CommentsPanel`'s `onCountChange`) opens the album's thread — the
+  **same `CommentsPanel`** the viewer and the task page use, with an `albumSubject` and `heading={false}` —
+  in an end-placed `Offcanvas` drawer, so the grid never moves down for it; the open drawer is
+  `?panel=comments` in the URL (opening pushes, so Back closes it, and a mention notification's
+  `?panel=comments#comment-<uid>` opens the album with the comment scrolled into view); tests: the
+  "AlbumDetailPage comments" block of `AlbumDetailPage.test.tsx`;
   the header row is a **`HeaderActions`** group with **one primary action**: on desktop it shows
   **Promítání** and **Upravit** (the latter in the filled `primary` style, so something on the row stands
   out — the UI/UX review of 2026-10-11 found six equal outline buttons) and a „…" menu holding

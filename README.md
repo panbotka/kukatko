@@ -391,7 +391,11 @@ rebuilt? — and the only person who knows is usually not the person editing the
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and
   small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
   pasted into a comment renders the same way, on a photo's thread as on a task's.
-- **Mention somebody with `@`.** In any comment — on a photo or on a task — type `@` and pick a person
+- **Talk about a whole album.** Next to the slideshow every album has a **Komentáře** button carrying
+  the number of comments; it opens the same thread a photo has, in a side drawer, so the photos stay where
+  they are — the place for "the wedding — who else was there?". Everybody who can open the album may
+  write, viewers included, and `@`-mentions work there too („… v komentáři u alba Svatba 1987").
+- **Mention somebody with `@`.** In any comment — on a photo, a task or an album — type `@` and pick a person
   from the list (accents do not matter: `@tom` finds Tomáš). The name shows as a highlighted chip, links to
   that person's page when their account is linked to one, and your own name stands out, so you can see at a
   glance where a thread is talking to you. The person mentioned gets a notification („Pan Botka tě

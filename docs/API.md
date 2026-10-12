@@ -993,6 +993,17 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`ON DELETE SET NULL`) and therefore editable by nobody. **MCP deliberately exposes no comment tool** (see
   [`MCP.md`](MCP.md)). Table `comments` (migration `0052_photo_comments.sql`, renamed and given a second subject by
   `0080_comments_subject.sql`); 503 when no comments backend is wired.
+- **Album comments (`/api/v1`, `internal/organizeapi` + `internal/comments`, migration `0099`):** an
+  album has the very same thread as a photo and a task — the conversation about a whole event ("the
+  wedding — who else was there?"). `GET /albums/{uid}/comments`, `POST /albums/{uid}/comments` `{body}`,
+  `PATCH`/`DELETE /albums/{uid}/comments/{commentUID}`: the same payload (`album_uid` in place of
+  `photo_uid`), the same guards (**`RequireAuth`** — whoever can open the album may read and join its
+  conversation, viewers included; `albums.private` is a badge, so it hides nothing here either), the same
+  author-only edit / author-or-admin delete, the same soft delete and the same audit actions (target
+  `albums/<uid>`, the comment's uid in the details). The posting route carries the per-user `ratelimit.comment` limit in a bucket of its own. A
+  comment of another album addressed through this path is 404; an unknown album is 404 on every route.
+  `@`-mentions work exactly as on a photo: the notification reads "… v komentáři u alba <title>" and links
+  to `/albums/<uid>?panel=comments#comment-<uid>`. Deleting the album cascades its thread away.
 - **Tasks API (`/api/v1`, `internal/phototaskapi` + `internal/phototask`):** the **work queue** — a
   question about a frozen group of photographs ("in which year was house no. 2 rebuilt?"), with the state
   of play and the conversation that settles it. It exists because curating an inherited library arrives in
@@ -1744,7 +1755,8 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   photo does not affect the order. The ordering is **not a user choice**: the endpoint has no `sort`/`order`
   parameter and the frontend does not change the server's order. `POST /albums`
   (RequireCurator) → 201 from `{title,description?,type?,cover_photo_uid?,private?}` (empty
-  title / invalid type → 400); `GET /albums/{uid}` (RequireAuth, 404); `PATCH /albums/{uid}`
+  title / invalid type → 400); `GET /albums/{uid}` (RequireAuth, 404; the album plus
+  **`comment_count`**, the live comments on its thread, via the bulk `CountsAmong`); `PATCH /albums/{uid}`
   (RequireCurator) edits title/description/cover_photo_uid/private (**`type` is preserved**,
   not editable); `DELETE /albums/{uid}` (RequireCurator → 204); membership
   `POST /albums/{uid}/photos` `{photo_uids:[…]}` (adds), `DELETE /albums/{uid}/photos`

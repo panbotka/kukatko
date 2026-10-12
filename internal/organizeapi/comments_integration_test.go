@@ -59,16 +59,12 @@ func newCommentEnv(t *testing.T, burst int) *env {
 	}
 }
 
-// createAlbum makes an album over HTTP as c and returns its uid.
-func (e *env) createAlbum(t *testing.T, c *http.Client, title string) string {
+// newAlbum makes an album titled title over HTTP as c and returns its uid,
+// through the featured tests' createAlbum.
+func (e *env) newAlbum(t *testing.T, c *http.Client, title string) string {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodPost, "/api/v1/albums", []byte(`{"title":"`+title+`"}`))
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create album status = %d, want 201", resp.StatusCode)
-	}
-	var created organize.Album
-	decodeBody(t, resp, &created)
-	return created.UID
+	body, _ := json.Marshal(map[string]string{"title": title})
+	return e.createAlbum(t, c, string(body)).UID
 }
 
 // postComment writes body on the album's thread as c and returns the status and
@@ -122,7 +118,7 @@ func TestAlbumCommentsAPI_everyRoleReadsAndWrites(t *testing.T) {
 	env := newCommentEnv(t, 10)
 	curator := env.login(t, "curator", auth.RoleCurator)
 	viewer := env.login(t, "viewer", auth.RoleViewer)
-	album := env.createAlbum(t, curator, "Svatba 1987")
+	album := env.newAlbum(t, curator, "Svatba 1987")
 
 	if got := env.albumCommentCount(t, viewer, album); got != 0 {
 		t.Fatalf("comment_count before = %d, want 0", got)
@@ -177,8 +173,8 @@ func TestAlbumCommentsAPI_ownershipAndAudit(t *testing.T) {
 	curator := env.login(t, "curator", auth.RoleCurator)
 	viewer := env.login(t, "viewer", auth.RoleViewer)
 	admin := env.login(t, "admin", auth.RoleAdmin)
-	album := env.createAlbum(t, curator, "Svatba")
-	other := env.createAlbum(t, curator, "Pouť")
+	album := env.newAlbum(t, curator, "Svatba")
+	other := env.newAlbum(t, curator, "Pouť")
 	_, own := env.postComment(t, viewer, album, "moje")
 	_, foreign := env.postComment(t, curator, album, "cizí")
 
@@ -230,7 +226,7 @@ func TestAlbumCommentsAPI_ownershipAndAudit(t *testing.T) {
 func TestAlbumCommentsAPI_validationAndCascade(t *testing.T) {
 	env := newCommentEnv(t, 10)
 	curator := env.login(t, "curator", auth.RoleCurator)
-	album := env.createAlbum(t, curator, "Svatba")
+	album := env.newAlbum(t, curator, "Svatba")
 
 	for name, body := range map[string]string{"blank": "   ", "long": string(make([]rune, 2001))} {
 		if status, _ := env.postComment(t, curator, album, body); status != http.StatusBadRequest {
@@ -265,7 +261,7 @@ func TestAlbumCommentsAPI_rateLimitPerUser(t *testing.T) {
 	env := newCommentEnv(t, 2)
 	curator := env.login(t, "curator", auth.RoleCurator)
 	viewer := env.login(t, "viewer", auth.RoleViewer)
-	album := env.createAlbum(t, curator, "Svatba")
+	album := env.newAlbum(t, curator, "Svatba")
 
 	for i := range 2 {
 		if status, _ := env.postComment(t, viewer, album, "x"); status != http.StatusCreated {

@@ -936,6 +936,8 @@ require `editor`/`admin`**.
 | `ctl albums delete <uid>` | `DELETE /albums/{uid}` — needs `--yes`; the photos stay |
 | `ctl albums add-photos <album-uid> [<photo-uid>…]` | `POST /albums/{uid}/photos` — appends **after** the existing ones |
 | `ctl albums remove-photos <album-uid> [<photo-uid>…]` | `DELETE /albums/{uid}/photos`; a non-member = no-op |
+| `ctl albums comments <uid>` | `GET /albums/{uid}/comments` — the album's thread, oldest first, rendered as prose like `ctl comments list` |
+| `ctl albums comment <uid> <text>` | `POST /albums/{uid}/comments` — plain text under your own account, at most 2000 characters |
 
 `--type` is `album` (default), `folder`, `moment`, `state`, or `month`; only `album` makes sense
 manually, the server generates the rest. `add-photos`/`remove-photos` read uids from arguments, or **from

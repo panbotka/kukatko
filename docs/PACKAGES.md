@@ -1467,8 +1467,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   query joined to the author's name, soft-deleted rows excluded, a map keyed by subject uid with no entry
   for a thread that has none — the task-scoped listing's `last_comment` is built from it —
   the `comments` table from migration `0052_photo_comments.sql`,
-  renamed and given a second subject by `0080_comments_subject.sql` (a comment hangs off a photo **or** a
-  task, exactly one of the two, enforced by `comments_one_subject`; the store takes a `Subject` and builds
+  renamed and given a second subject by `0080_comments_subject.sql` and a third by
+  `0099_comments_album.sql` (a comment hangs off a photo, a task **or an album** — `album_uid` FK
+  **CASCADE**, partial index `(album_uid, created_at)` — exactly one of the three, enforced by
+  `comments_one_subject` via `num_nonnulls`; `AlbumSubject(uid)`, the album thread's endpoints in
+  `internal/organizeapi/comments.go`, its mention text "… v komentáři u alba" in `internal/mentionnotify`; the store takes a `Subject` and builds
   its per-kind statements once at package initialisation, so no request ever assembles SQL):
   `uid PK` (prefix `cm`), `photo_uid` FK **CASCADE** (purging a photo takes its thread with it), `author_uid`
   FK **SET NULL** (a comment outlives its author's account: authorless, and thereafter editable by nobody),

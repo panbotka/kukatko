@@ -5,12 +5,13 @@ import { type TaskState } from './tasks'
 
 /**
  * Comments client, mirroring the backend JSON shapes of `internal/comments` and
- * the comment routes of `internal/photoapi` and `internal/phototaskapi`. A comment
+ * the comment routes of `internal/photoapi`, `internal/phototaskapi` and
+ * `internal/organizeapi`. A comment
  * is one short plain-text note by one user on one subject: a photograph — the
  * family conversation around a picture — or a task, where it is the answer to the
- * question the task asks.
+ * question the task asks — or an album, where a family talks about a whole event.
  *
- * Which of the two a thread belongs to is a {@link CommentSubject}; everything
+ * Which of the three a thread belongs to is a {@link CommentSubject}; everything
  * below it is identical, because server-side it is one table and one set of rules.
  *
  * Two properties of the backend shape the whole client:
@@ -39,8 +40,8 @@ const API_BASE = '/api/v1'
  */
 export const MAX_COMMENT_LENGTH = 2000
 
-/** What a comment thread hangs off: a photograph, or a task. */
-export type CommentSubjectKind = 'photo' | 'task'
+/** What a comment thread hangs off: a photograph, a task, or an album. */
+export type CommentSubjectKind = 'photo' | 'task' | 'album'
 
 /** The one thing a thread is about — the kind, and the uid of that row. */
 export interface CommentSubject {
@@ -58,10 +59,16 @@ export function taskSubject(uid: string): CommentSubject {
   return { kind: 'task', uid }
 }
 
+/** Names the thread of an album — the conversation about a whole event. */
+export function albumSubject(uid: string): CommentSubject {
+  return { kind: 'album', uid }
+}
+
 /**
  * One stored comment as read back from the API (`comments.Comment`).
  *
- * Exactly one of `photo_uid` and `task_uid` is set, matching the row's one subject.
+ * Exactly one of `photo_uid`, `task_uid` and `album_uid` is set, matching the
+ * row's one subject.
  *
  * `author_uid` and `author_name` are **empty strings** for a comment whose author's
  * account has since been deleted: the row survives authorless, and nobody may edit
@@ -73,6 +80,8 @@ export interface Comment {
   photo_uid?: string
   /** The task this comment is on; absent on a photo thread. */
   task_uid?: string
+  /** The album this comment is on; absent on a photo or task thread. */
+  album_uid?: string
   author_uid: string
   /** The author's display name (falling back to the username), resolved server-side. */
   author_name: string
@@ -154,12 +163,19 @@ async function send<T>(
   return (text === '' ? undefined : JSON.parse(text)) as T
 }
 
+/** The collection each subject's thread lives under on the API. */
+const THREAD_COLLECTION: Record<CommentSubjectKind, string> = {
+  photo: 'photos',
+  task: 'tasks',
+  album: 'albums',
+}
+
 /**
- * Builds the thread path for a subject, escaping the uid. The two collections are
- * the only difference between a photo thread and a task thread.
+ * Builds the thread path for a subject, escaping the uid. The collection is the
+ * only difference between a photo, a task and an album thread.
  */
 function threadPath(subject: CommentSubject): string {
-  const collection = subject.kind === 'task' ? 'tasks' : 'photos'
+  const collection = THREAD_COLLECTION[subject.kind]
   return `/${collection}/${encodeURIComponent(subject.uid)}/comments`
 }
 
