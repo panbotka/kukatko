@@ -23,6 +23,12 @@ export interface MapFeatureProperties {
   media_type: string
   thumb: string
   /**
+   * The photo's BlurHash placeholder, painted inside its map tile (and its
+   * panel thumbnail) while the real image loads. Absent until the backend has
+   * computed one.
+   */
+  blurhash?: string
+  /**
    * Whether the pin's position was inferred from photos taken nearby in time
    * rather than measured. Estimated photos are on the map by default — putting
    * them there is the point of estimating them — but a pin that looks identical to

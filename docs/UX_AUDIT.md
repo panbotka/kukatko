@@ -277,6 +277,54 @@ implemented**, per the task's conservative-changes rule.
   starts at **121 px** and is **597 px, 70 % of the screen**, with no scrolling at all. The heading
   stays visible here — unlike the library's, the map is not a tab-bar destination. ✅
 
+#### Map as a way to browse photos (2026-10-12) — design note
+
+The map was a pin chart: orange dots, coloured count bubbles, a popup per pin. The target is Apple
+Photos' map — **a way to browse the photos by place**. What was built, and why:
+
+- **Layout.** The map is the page on every screen (`.kk-map-fill`, footer dropped, nothing scrolls).
+  The header is one row: the title and a *quiet* filter row (small date fields, the archive select,
+  the coverage sentence in muted type) — on a phone the usual single Filtry button. The base-map
+  switch floats over the map's top-right corner, opposite the zoom buttons; on a phone it folds
+  behind one layers button.
+
+  ```
+  desktop                                         phone
+  ┌ Mapa      [od]–[do] [archiv]  2 456 z 20 421 ┐  ┌ Mapa   [Filtry] 2 456 z 20 421 ┐
+  │┌──────────────────────────┐ ┌──────────────┐│  │┌──────────────────────────────┐│
+  ││ +            [Zákl|Tur|Let]│ │2 289 fotek v ││  ││ +                        [≡] ││
+  ││ −   ▣²⁵                   │ │této oblasti >││  ││      ▣²⁵      ▣              ││
+  ││        ▣      ▣⁹⁹⁹⁺       │ │▢ ▢ ▢         ││  ││          ▣⁹⁹⁹⁺               ││
+  ││   ▣¹⁵    ▣²⁴⁵             │ │▢ ▢ ▢  (grid) ││  │├──────────── ═══ ─────────────┤│
+  │└──────────────────────────┘ └──────────────┘│  ││ 2 289 fotek v této oblasti   ││
+  └─────────────────────────────────────────────┘  ││ ▢ ▢ ▢ ▢ ▢ →  (peek strip)    ││
+                                                   └──────────────────────────────┘
+  ```
+
+- **Clusters are photos.** A tile is a 56 px rounded square of the cluster's **newest** photo
+  (newest, not "best": ratings and favourites are per user and not in the feed, and the grid opens on
+  the same photo), a light frame, a soft shadow, a second frame peeking out behind a cluster, the count
+  in an accent badge on the corner (999+). A single photo is the same tile without a badge; an
+  estimated position is a **dashed** frame. The blurhash is painted first, the thumbnail fades in
+  over it. The cluster radius is the tile plus 12 px, so tiles touch rather than pile up. Each tile is
+  a focusable button named „12 fotek, 2019–2023" / „Fotka, 5. 3. 2021"; hover, focus and the
+  highlight lift it, focus and highlight ring it in the accent.
+- **Tap rules.** A cluster zooms to its photos; one **no zoom can split** (same spot, down to the
+  deepest zoom) opens its photos as a grid in the panel („N fotek na tomto místě", with „Celá
+  oblast" back); a photo opens the viewer. The z19 tiles are scaled up at z20, so that deepest zoom
+  is never an empty well.
+- **The area panel.** Desktop: a 22 rem column beside the map, collapsible into a floating
+  „Fotky v oblasti N" button. Phone: a bottom sheet with **peek** (count + a strip of the newest
+  24), **half** and **full**, draggable by its grip (a flick goes one stop further), the handle a
+  button for the keyboard. Content: the photos inside the viewport, newest first, re-listed 200 ms
+  after the map rests, a virtualized grid scrolling inside the panel; a photo opens the viewer, which
+  pages through exactly that list (`bbox`). Hovering a photo marks its tile on the map.
+- **URL.** Viewport, filters, mapset, `panel` (closed/half/full), `sel` (an opened cluster, pushed —
+  Back closes it), `photo` (highlight; "Zobrazit na mapě" in a photo's location panel lands here at
+  street level) and `area` (the viewer's Back link fits it). Back always works.
+- **Motion.** Leaflet's zoom and markercluster's split animations; both off under reduced motion.
+  Numbers in `docs/PERF.md` § 6. ✅
+
 ---
 
 ## Organize

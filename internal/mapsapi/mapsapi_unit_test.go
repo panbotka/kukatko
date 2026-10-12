@@ -1,6 +1,7 @@
 package mapsapi_test
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -374,7 +375,7 @@ func TestGeoJSON_shapeAndFilters(t *testing.T) {
 	t.Parallel()
 	lat1, lng1 := 50.0, 14.0
 	lister := &fakeLister{photos: []photos.Photo{
-		{UID: "ph_a", Title: "A", Lat: &lat1, Lng: &lng1},
+		{UID: "ph_a", Title: "A", Lat: &lat1, Lng: &lng1, Blurhash: "LEHV6nWB2yk8pyo0adR*.7kCMdnj"},
 		{UID: "ph_b"}, // no coordinates: must be skipped
 	}}
 	ts := newTestServer(t, lister, func(w http.ResponseWriter, _ *http.Request) {
@@ -396,8 +397,9 @@ func TestGeoJSON_shapeAndFilters(t *testing.T) {
 				Coordinates [2]float64 `json:"coordinates"`
 			} `json:"geometry"`
 			Properties struct {
-				UID   string `json:"uid"`
-				Thumb string `json:"thumb"`
+				UID      string `json:"uid"`
+				Thumb    string `json:"thumb"`
+				Blurhash string `json:"blurhash"`
 			} `json:"properties"`
 		} `json:"features"`
 	}
@@ -413,6 +415,9 @@ func TestGeoJSON_shapeAndFilters(t *testing.T) {
 	}
 	if f.Geometry.Coordinates != [2]float64{lng1, lat1} {
 		t.Errorf("coordinates = %v, want [lng,lat]=[%v,%v]", f.Geometry.Coordinates, lng1, lat1)
+	}
+	if f.Properties.Blurhash != "LEHV6nWB2yk8pyo0adR*.7kCMdnj" {
+		t.Errorf("blurhash = %q, want the photo's placeholder", f.Properties.Blurhash)
 	}
 	if !strings.Contains(f.Properties.Thumb, "ph_a/thumb/") {
 		t.Errorf("thumb = %q, want a thumb path for ph_a", f.Properties.Thumb)
@@ -501,5 +506,48 @@ func TestGeoJSON_badFilter(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+}
+
+// TestGeoJSON_gzip checks the feed is compressed for a client that accepts it:
+// it is the whole located library in one document, and nothing in front of the
+// app compresses it on the way out.
+func TestGeoJSON_gzip(t *testing.T) {
+	t.Parallel()
+	lat, lng := 50.0, 14.0
+	list := make([]photos.Photo, 0, 200)
+	for i := range 200 {
+		list = append(list, photos.Photo{UID: "ph_" + strings.Repeat("x", i%7), Lat: &lat, Lng: &lng})
+	}
+	ts := newTestServer(t, &fakeLister{photos: list}, func(w http.ResponseWriter, _ *http.Request) {})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		ts.server.URL+"/api/v1/map/photos", nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	// Setting the header by hand turns off the transport's transparent
+	// decompression, so the encoding the server chose is visible here.
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := apitest.Client().Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	zr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	var fc struct {
+		Features []json.RawMessage `json:"features"`
+	}
+	if err := json.NewDecoder(zr).Decode(&fc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(fc.Features) != len(list) {
+		t.Errorf("features = %d, want %d", len(fc.Features), len(list))
 	}
 }

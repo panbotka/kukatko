@@ -36,6 +36,7 @@ const leaflet = vi.hoisted(() => {
     addLayer: vi.fn(),
     getCenter: () => ({ lat: 50, lng: 14 }),
     getZoom: () => 7,
+    getBounds: () => ({}),
     fitBounds: vi.fn((latlngs: unknown) => {
       calls.fitBounds.push(latlngs)
     }),
@@ -116,6 +117,22 @@ const leaflet = vi.hoisted(() => {
 
 vi.mock('leaflet', () => ({ default: leaflet.L }))
 vi.mock('leaflet.markercluster', () => ({}))
+
+// The photo-tile layer is exercised against real Leaflet in its own test; here
+// it only has to show that the map hands it the features and the highlight.
+const photoLayer = vi.hoisted(() => ({
+  setFeatures: vi.fn((): unknown => null),
+  setHighlight: vi.fn(),
+  destroy: vi.fn(),
+  handlers: null as null | (() => { thumbSize: string; onOpenPhoto: (uid: string) => void }),
+}))
+vi.mock('../../lib/mapPhotoLayer', () => ({
+  createPhotoLayer: vi.fn((_map: unknown, handlers: typeof photoLayer.handlers) => {
+    photoLayer.handlers = handlers
+    return photoLayer
+  }),
+  toGeoBounds: () => ({ south: 49, west: 16, north: 50, east: 17 }),
+}))
 
 const { DEFAULT_MAP_HEIGHT, LeafletMap } = await import('./LeafletMap')
 const { buildPopupElement } = await import('../../lib/mapPopup')
@@ -522,5 +539,91 @@ describe('LeafletMap sizing', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('LeafletMap photo tiles', () => {
+  afterEach(() => {
+    photoLayer.setFeatures.mockClear()
+    photoLayer.setHighlight.mockClear()
+    photoLayer.destroy.mockClear()
+  })
+
+  const tiles = { onOpenPhoto: vi.fn(), onOpenCluster: vi.fn(), describe: vi.fn(() => '') }
+
+  it('plots the features as photo tiles instead of pins, and marks the highlight', () => {
+    const features = [feature('ph1', 'One', 14, 50)]
+    const { rerender, unmount } = render(
+      <LeafletMap
+        features={features}
+        mapset="basic"
+        viewport={{ lat: 50, lng: 14, zoom: 12 }}
+        onViewportChange={vi.fn()}
+        photoTiles={tiles}
+        highlightUid="ph1"
+        thumbAlt="photo"
+      />,
+    )
+    expect(photoLayer.setFeatures).toHaveBeenCalledWith(features)
+    expect(photoLayer.setHighlight).toHaveBeenLastCalledWith('ph1')
+    expect(leaflet.L.markerClusterGroup).not.toHaveBeenCalled()
+
+    rerender(
+      <LeafletMap
+        features={features}
+        mapset="basic"
+        viewport={{ lat: 50, lng: 14, zoom: 12 }}
+        onViewportChange={vi.fn()}
+        photoTiles={tiles}
+        highlightUid={null}
+        thumbAlt="photo"
+      />,
+    )
+    expect(photoLayer.setHighlight).toHaveBeenLastCalledWith(null)
+
+    // The layer's handlers reach the page's latest callbacks.
+    photoLayer.handlers?.().onOpenPhoto('ph1')
+    expect(tiles.onOpenPhoto).toHaveBeenCalledWith('ph1')
+    expect(photoLayer.handlers?.().thumbSize).toMatch(/^tile_/)
+
+    unmount()
+    expect(photoLayer.destroy).toHaveBeenCalled()
+  })
+
+  it('reports the visible box once at start, so the area panel has something to list', () => {
+    const onBoundsChange = vi.fn()
+    render(
+      <LeafletMap
+        features={[]}
+        mapset="basic"
+        viewport={{ lat: 50, lng: 14, zoom: 12 }}
+        onViewportChange={vi.fn()}
+        onBoundsChange={onBoundsChange}
+        photoTiles={tiles}
+        thumbAlt="photo"
+      />,
+    )
+    expect(onBoundsChange).toHaveBeenCalledWith({ south: 49, west: 16, north: 50, east: 17 })
+  })
+
+  it('fits a load-time area instead of the markers when no viewport is given', () => {
+    const before = leaflet.calls.fitBounds.length
+    render(
+      <LeafletMap
+        features={[]}
+        mapset="basic"
+        viewport={null}
+        initialBounds={{ south: 49, west: 16, north: 50, east: 17 }}
+        onViewportChange={vi.fn()}
+        photoTiles={tiles}
+        thumbAlt="photo"
+      />,
+    )
+    expect(leaflet.calls.fitBounds.slice(before)).toEqual([
+      [
+        [49, 16],
+        [50, 17],
+      ],
+    ])
   })
 })

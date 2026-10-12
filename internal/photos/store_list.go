@@ -116,6 +116,11 @@ type ListParams struct {
 	// HasGPS, when non-nil, keeps photos that have (true) or lack (false) both a
 	// latitude and a longitude.
 	HasGPS *bool
+	// BBox, when non-nil, keeps photos whose coordinates fall inside the box
+	// (edges inclusive). Photos without a location never match. It is the map's
+	// "photos in this area": the viewer pages through exactly the photos the map
+	// panel lists, so the filter has to live on the list path itself.
+	BBox *BBox
 	// Camera, when non-empty, keeps photos whose make or model contains it
 	// (case-insensitive substring match).
 	Camera string
@@ -399,6 +404,7 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, scalarClauses(params, bind)...)
 	where = append(where, yearClauses(params, bind)...)
 	where = append(where, gpsClauses(params)...)
+	where = append(where, bboxClauses(params, bind)...)
 	where = append(where, textClauses(params, bind)...)
 	where = append(where, ftsClauses(params, bind)...)
 	where = append(where, membershipClauses(params, bind)...)
@@ -657,6 +663,23 @@ func gpsClauses(params ListParams) []string {
 		return []string{"lat IS NOT NULL AND lng IS NOT NULL"}
 	}
 	return []string{"(lat IS NULL OR lng IS NULL)"}
+}
+
+// bboxClauses returns the bounding-box filter, binding the four edges through
+// bind. A box whose west edge lies east of its east edge crosses the
+// antimeridian, so its longitude test becomes the union of the two halves
+// instead of a range nothing could satisfy. NULL coordinates fail every
+// comparison, so a photo without a location is never in a box.
+func bboxClauses(params ListParams, bind func(any) string) []string {
+	box := params.BBox
+	if box == nil {
+		return nil
+	}
+	lat := "lat BETWEEN " + bind(box.South) + " AND " + bind(box.North)
+	if box.West <= box.East {
+		return []string{lat, "lng BETWEEN " + bind(box.West) + " AND " + bind(box.East)}
+	}
+	return []string{lat, "(lng >= " + bind(box.West) + " OR lng <= " + bind(box.East) + ")"}
 }
 
 // textClauses returns the case- and accent-insensitive substring filters

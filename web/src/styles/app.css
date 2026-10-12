@@ -2523,10 +2523,10 @@ body {
   height: 70vh;
 }
 
-/* The map page where the shell owes the bottom tab bar (`MapPage` puts
-   `.kk-map-fill` on its root below `lg`): the map IS the page. The fixed `70dvh`
-   above left a phone's map ending around 600px of an 844px screen, with the
-   footer and bare background between it and the tab bar.
+/* The map page: the map IS the page, on every screen (`MapPage` wears
+   `.kk-map-fill`). A fixed `70dvh` map left a phone's map ending around 600px of
+   an 844px screen, with the footer and bare background between it and the tab
+   bar, and on a desktop pushed the photos it exists to show below the fold.
 
    So the shell's minimum height becomes its height — the same dynamic-viewport
    span minus the taken bottom edge that `body` reserves as scroll clearance, so
@@ -2564,24 +2564,522 @@ body {
   display: none;
 }
 
-.kk-map-fill > .kk-map-stage > .kukatko-map {
+/* The page header: the title and the filter bar on one row. */
+.kk-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--kk-space-2) var(--kk-space-4);
+  margin-bottom: var(--kk-space-3);
+}
+
+/* The stage: the map, and beside it (desktop) the area column. A row on a
+   desktop; on a phone the sheet floats over the map inside it, so the stage is
+   the sheet's positioning box and clips it — nothing may scroll sideways. */
+.kk-map-fill > .kk-map-stage {
+  flex-direction: row;
+  gap: var(--kk-space-3);
+}
+
+.kk-map-fill > .kk-map-stage--sheet {
+  position: relative;
+  overflow: hidden;
+}
+
+.kk-map-canvas {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--kk-radius-md);
+  overflow: hidden;
+}
+
+.kk-map-canvas > .kukatko-map {
   flex: 1 1 0;
   min-height: 0;
 }
 
-/* The map page's control bar. Its bottom rhythm lives here rather than in an
-   `mb-3` utility because the two layouts want different things: on desktop the
-   1rem the utility gave it, above a bar of stacked control rows; on a phone
-   nothing at all, because there the bar is a single Filters button that the
-   page's own header row holds beside the title — and that row owns the gap down
-   to the map. */
+/* A phone's map is full-bleed and meets the tab bar: no rounding. The sheet
+   brings its own top corners. */
+.kk-map-stage--sheet > .kk-map-canvas {
+  border-radius: 0;
+}
+
+/* The tile warning floats over the top of the map instead of pushing it down. */
+.kk-map-tile-warning {
+  position: absolute;
+  top: var(--kk-space-2);
+  left: 50%;
+  z-index: 1001;
+  width: min(36rem, calc(100% - 2 * var(--kk-space-3)));
+  transform: translateX(-50%);
+  box-shadow: var(--kk-shadow-3);
+}
+
+/* Loading / empty notices: a small pill centred over the map's top edge. */
+.kk-map-status {
+  position: absolute;
+  top: var(--kk-space-2);
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  max-width: 90%;
+  padding: var(--kk-space-1) var(--kk-space-3);
+  border-radius: var(--kk-radius-pill);
+  color: var(--kk-on-photo);
+  background-color: color-mix(in srgb, var(--kk-shade) 78%, transparent);
+  box-shadow: var(--kk-shadow-2);
+  transform: translateX(-50%);
+}
+
+.kk-map-status--empty {
+  border-radius: var(--kk-radius-md);
+}
+
+/* ── Photo tiles (`lib/mapTile`, `lib/mapPhotoLayer`) ───────────────────────
+   Clusters and single photos are pictures, not circles: a rounded square of
+   the representative photo inside a light frame, a soft shadow lifting it off
+   the tiles, the count in a badge on the corner. The icon element itself is
+   Leaflet's focusable `role="button"`; it is sized by `iconSize` and stays
+   transparent — the frame inside draws everything. */
+.kukatko-map .kk-map-tile-icon {
+  background: none;
+  border: 0;
+  border-radius: var(--kk-radius-md);
+  outline: none;
+}
+
+.kk-map-tile {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  transition: transform var(--kk-duration-fast) var(--kk-ease-standard);
+}
+
+.kk-map-tile-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 3px solid var(--kk-on-photo);
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-sunken);
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--kk-shade) 55%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--kk-shade) 25%, transparent);
+}
+
+/* A stack, for a cluster: a second frame peeking out behind the first says
+   "more than one" before the badge is even read. */
+.kk-map-tile--cluster::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-on-photo);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--kk-shade) 50%, transparent);
+  transform: translate(4px, -4px);
+}
+
+.kk-map-tile-frame .kk-media-blur {
+  border-radius: 0;
+}
+
+.kk-map-tile-img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--kk-duration-base) var(--kk-ease-standard);
+}
+
+.kk-map-tile-img.is-loaded {
+  opacity: 1;
+}
+
+.kk-map-tile-img.is-failed {
+  visibility: hidden;
+}
+
+/* The count: the accent, the one colour that says "act on me" everywhere else
+   in the app, riding the frame's top-right corner. */
+.kk-map-tile-count {
+  position: absolute;
+  top: -8px;
+  right: -10px;
+  min-width: 1.5rem;
+  padding: 0.125rem 0.4rem;
+  border-radius: var(--kk-radius-pill);
+  color: var(--kk-on-accent);
+  background-color: var(--kk-accent-solid);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--kk-shade) 60%, transparent);
+  font-size: var(--kk-font-size-caption);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.kk-map-tile-play {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  color: var(--kk-on-photo);
+  font-size: 0.875rem;
+  text-shadow: 0 0 3px var(--kk-shade);
+}
+
+/* An estimated position is a different frame, not just a different colour: a
+   dashed border says "about here" at a glance and survives a greyscale print. */
+.kk-map-tile--estimated .kk-map-tile-frame {
+  border-style: dashed;
+}
+
+/* Hover, keyboard focus and the highlight (the deep-linked photo, or the one
+   under the pointer in the area panel) all lift the tile; focus and highlight
+   also ring it in the accent. */
+.kukatko-map .kk-map-tile-icon:hover .kk-map-tile,
+.kukatko-map .kk-map-tile-icon:focus-visible .kk-map-tile,
+.kukatko-map .kk-map-tile-icon.is-highlighted .kk-map-tile {
+  transform: scale(1.12);
+}
+
+.kukatko-map .kk-map-tile-icon:focus-visible .kk-map-tile-frame,
+.kukatko-map .kk-map-tile-icon.is-highlighted .kk-map-tile-frame {
+  border-color: var(--kk-accent);
+  box-shadow:
+    0 0 0 2px var(--kk-on-photo),
+    0 4px 12px color-mix(in srgb, var(--kk-shade) 65%, transparent);
+}
+
+.kukatko-map .kk-map-tile-icon.is-highlighted {
+  z-index: 10000 !important; /* over Leaflet's inline per-marker z-index */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-map-tile,
+  .kk-map-tile-img {
+    transition: none;
+  }
+}
+
+/* ── The base-map switch (`MapsetControl`) ──────────────────────────────────
+   A small segmented control in the map's top-right corner, on the same dark
+   overlay surface as the zoom buttons opposite it. */
+.kk-map-mapset {
+  position: absolute;
+  top: var(--kk-space-2);
+  right: var(--kk-space-2);
+  z-index: 1000;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-overlay);
+  box-shadow: var(--kk-shadow-2);
+}
+
+.kk-map-mapset--compact {
+  flex-direction: column;
+}
+
+.kk-map-mapset-option,
+.kk-map-mapset-toggle {
+  min-height: 2rem;
+  padding: var(--kk-space-1) var(--kk-space-3);
+  border: 0;
+  color: var(--kk-text-muted);
+  background: none;
+  font-size: var(--kk-font-size-caption);
+}
+
+.kk-map-mapset-option + .kk-map-mapset-option {
+  border-left: 1px solid var(--kk-surface-border);
+}
+
+.kk-map-mapset--compact .kk-map-mapset-option {
+  border-left: 0;
+  border-top: 1px solid var(--kk-surface-border);
+  text-align: left;
+}
+
+.kk-map-mapset-option:hover,
+.kk-map-mapset-option:focus-visible,
+.kk-map-mapset-toggle:hover,
+.kk-map-mapset-toggle:focus-visible {
+  color: var(--kk-text);
+}
+
+.kk-map-mapset-option.is-active {
+  color: var(--kk-accent);
+}
+
+.kk-map-mapset-toggle {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  font-size: 1.125rem;
+}
+
+@media (pointer: coarse) {
+  .kk-map-mapset-option {
+    min-height: 2.75rem;
+  }
+}
+
+/* ── The area panel (`MapAreaPanel`) ────────────────────────────────────────
+   Desktop: a column beside the map. Phone: a bottom sheet over it. Both list
+   the area's photos as a grid of square thumbnails. */
+.kk-map-area {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 22rem;
+  min-height: 0;
+  border: 1px solid var(--kk-surface-border);
+  border-radius: var(--kk-radius-md);
+  background-color: var(--kk-surface-1);
+  overflow: hidden;
+}
+
+.kk-map-area-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--kk-space-2);
+  padding: var(--kk-space-3) var(--kk-space-2) var(--kk-space-2) var(--kk-space-3);
+}
+
+.kk-map-area-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.kk-map-area-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.kk-map-area-back {
+  padding: 0;
+  font-size: var(--kk-font-size-caption);
+}
+
+.kk-map-area-collapse {
+  padding: var(--kk-space-1) var(--kk-space-2);
+  color: var(--kk-text-muted);
+}
+
+.kk-map-area-collapse:hover,
+.kk-map-area-collapse:focus-visible {
+  color: var(--kk-text);
+}
+
+/* Collapsed: one small button over the map's right edge brings it back. */
+.kk-map-area-reopen {
+  position: absolute;
+  right: var(--kk-space-3);
+  bottom: var(--kk-space-5);
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--kk-space-2);
+  box-shadow: var(--kk-shadow-3);
+}
+
+.kk-map-area-reopen-count {
+  color: var(--kk-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.kk-map-area-scroller {
+  flex: 1 1 0;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.kk-map-area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 3px;
+  padding: 0 var(--kk-space-2) var(--kk-space-3);
+}
+
+.kk-map-area-cell {
+  aspect-ratio: 1;
+  min-width: 0;
+}
+
+.kk-map-area-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--kk-radius-sm);
+  background-color: var(--kk-surface-sunken);
+}
+
+.kk-map-area-thumb .kk-media-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The ring is an overlay, not an outline: the image is positioned (it has to
+   be, to paint over its blur) and would cover an inset outline. */
+.kk-map-area-thumb:focus-visible {
+  outline: none;
+}
+
+.kk-map-area-thumb:focus-visible::after,
+.kk-map-area-thumb.is-highlighted::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 3px solid var(--kk-accent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.kk-map-area-video {
+  position: absolute;
+  right: var(--kk-space-1);
+  bottom: var(--kk-space-1);
+  color: var(--kk-on-photo);
+  text-shadow: 0 0 3px var(--kk-shade);
+}
+
+.kk-map-area-empty {
+  padding: var(--kk-space-3);
+}
+
+/* The phone sheet: anchored to the stage's bottom, its height the stop (or the
+   finger, mid-drag). Its top corners round off and a shadow lifts it off the map. */
+.kk-map-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--kk-radius-lg) var(--kk-radius-lg) 0 0;
+  background-color: var(--kk-surface-1);
+  box-shadow: 0 -4px 16px color-mix(in srgb, var(--kk-shade) 55%, transparent);
+  transition: height var(--kk-duration-base) var(--kk-ease-standard);
+  overflow: hidden;
+}
+
+.kk-map-sheet.is-dragging {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kk-map-sheet {
+    transition: none;
+  }
+}
+
+/* The grip claims the vertical drag; nothing else in the sheet does, so the
+   grid below still scrolls with a finger. */
+.kk-map-sheet-grip {
+  flex: 0 0 auto;
+  padding: 0 var(--kk-space-3) var(--kk-space-2);
+  touch-action: none;
+  user-select: none;
+}
+
+.kk-map-sheet-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.kk-map-sheet-bar {
+  width: 2.5rem;
+  height: 0.3125rem;
+  border-radius: var(--kk-radius-pill);
+  background-color: var(--kk-text-muted);
+}
+
+.kk-map-sheet-handle:focus-visible .kk-map-sheet-bar {
+  background-color: var(--kk-accent);
+}
+
+.kk-map-sheet-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* The peeking sheet's strip: one sideways row of the newest photos. It scrolls
+   on its own axis only; the page around it never moves sideways. */
+.kk-map-area-strip {
+  display: flex;
+  gap: 3px;
+  padding: 0 var(--kk-space-3);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.kk-map-area-strip .kk-map-area-thumb {
+  flex: 0 0 4.5rem;
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+/* The page's control bar. On desktop it is one quiet row beside the title; on
+   a phone a single Filters button that the header row holds beside the title. */
 .kukatko-map-filter-bar {
-  margin-bottom: var(--kk-space-4);
+  margin-bottom: 0;
+}
+
+.kukatko-map-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--kk-space-2) var(--kk-space-3);
+}
+
+.kukatko-map-filter-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--kk-space-1);
+}
+
+.kukatko-map-filter-inline .form-control,
+.kukatko-map-filter-inline .form-select {
+  width: auto;
+  color: var(--kk-text-muted);
+  background-color: transparent;
 }
 
 @media (max-width: 767.98px) {
+  .kk-map-header {
+    margin-bottom: var(--kk-space-2);
+  }
+
   .kukatko-map-filter-bar {
-    margin-bottom: 0;
     /* The page container carries no horizontal padding on a phone — the photo
        grid and this map are deliberately full-bleed — so the coverage line
        would otherwise end on the very last pixel column. The bar keeps itself

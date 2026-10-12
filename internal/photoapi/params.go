@@ -270,6 +270,12 @@ func applyFilters(q url.Values, params *photos.ListParams) error {
 	}
 	params.HasGPS = hasGPS
 
+	box, err := bboxParam(q, "bbox")
+	if err != nil {
+		return err
+	}
+	params.BBox = box
+
 	year, err := yearParam(q, "year")
 	if err != nil {
 		return err
@@ -396,6 +402,24 @@ func boolParam(q url.Values, name string) (*bool, error) {
 		return nil, fmt.Errorf("%s must be true or false", name)
 	}
 	return &b, nil
+}
+
+// bboxParam parses the named bounding-box query parameter
+// ("south,west,north,east", see photos.ParseBBox), returning nil when it is
+// absent (no filter) and a descriptive error when present but malformed. It is
+// how the map's area panel hands its viewport to the viewer, so prev/next page
+// through exactly the photos the panel listed.
+func bboxParam(q url.Values, name string) (*photos.BBox, error) {
+	raw := q.Get(name)
+	if raw == "" {
+		// An absent optional filter legitimately yields no value and no error.
+		return nil, nil //nolint:nilnil
+	}
+	box, err := photos.ParseBBox(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return &box, nil
 }
 
 // timeParam parses the named timestamp query parameter, accepting either a full

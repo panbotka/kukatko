@@ -1289,7 +1289,8 @@
       "label": "Base map",
       "basic": "Basic",
       "outdoor": "Outdoor",
-      "aerial": "Aerial"
+      "aerial": "Aerial",
+      "switch": "Change the base map"
     },
     "filters": {
       "toggle": "Filters",
@@ -1323,7 +1324,33 @@
       "error": "Map tiles could not be loaded.",
       "hint": "Photos are still shown on the empty background."
     },
-    "estimatedTitle": "Estimated location, from photos taken the same day"
+    "estimatedTitle": "Estimated location, from photos taken the same day",
+    "tile": {
+      "cluster_one": "{{count}} photo, {{range}}",
+      "cluster_other": "{{count}} photos, {{range}}",
+      "clusterUndated_one": "{{count}} photo",
+      "clusterUndated_other": "{{count}} photos",
+      "photo": "Photo, {{date}}",
+      "photoUndated": "Undated photo",
+      "estimated": "estimated location"
+    },
+    "area": {
+      "title_one": "{{shown}} photo in this area",
+      "title_other": "{{shown}} photos in this area",
+      "spotTitle_one": "{{shown}} photo at this spot",
+      "spotTitle_other": "{{shown}} photos at this spot",
+      "label": "Photos in the map area",
+      "backToArea": "Whole area",
+      "collapse": "Hide the photo panel",
+      "expand": "Photos in this area",
+      "grow": "Enlarge the photo panel",
+      "shrink": "Shrink the photo panel",
+      "emptyTitle": "No photos here",
+      "emptyHint": "Pan or zoom out the map.",
+      "photoAlt": "Photo from {{date}}",
+      "photoAltUndated": "Undated photo",
+      "video": "Video"
+    }
   },
   "similar": {
     "title": "Similar photos",
@@ -2752,7 +2779,8 @@
       "clear": "Clear location",
       "unknownPlace": "The place is not known yet.",
       "lookupBusy": "The place is being looked up — one moment.",
-      "clearBusy": "The location is being cleared — one moment."
+      "clearBusy": "The location is being cleared — one moment.",
+      "showOnMap": "Show on map"
     },
     "edit": {
       "title": "Edits",

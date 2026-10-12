@@ -4553,43 +4553,41 @@ here.
   selection — suspended while the lightbox is open, which owns the arrows then); config (type/collection/threshold/limit) in the URL (Back/refresh restores the search); states
   idle/loading/error/**no-embeddings** (its own message — embeddings are computed once the box is online;
   distinct from zero-matches)/empty-collection/zero-matches (advises lowering the threshold)/all-handled,
-  `MapPage` = `/map` a map view: geotagged photos as clustered markers over mapy.com
-  tiles (Leaflet), a base-layer toggle + filters (date/archive/private) in `MapFilterBar`,
-  state (mapset/viewport/filters) in the URL — panning/zoom writes the viewport without a refetch, a filter change
-  fetches the GeoJSON; a click on a marker → the photo detail; loading/empty/error states; a **tile failure**
-  (`onTileError` from `LeafletMap`) is diagnosed by `probeTileFailure` and explained with a **dismissible
-  warning** (`map.tiles.*`, typically „mapový klíč byl odmítnut") instead of an unexplained grey grid —
-  the map stays usable, markers/clusters keep drawing over the empty base; the probe is
-  **debounced** (a whole batch of `tileerror` = one query) and switching the mapset resets the warning;
-  photos with an **estimated location** (`location_estimated` on the feature) are on the map **by default** — that's what
-  the estimate is for — but drawn with a **different pin shape** (`estimatedMarkerIcon` in `LeafletMap`: a hollow
-  dashed ring, **not** just a different color — that wouldn't survive a color-blind view or a black-and-white print) plus
-  a `title` from the `estimatedTitle` prop, which says the same in words to a screen reader; a pin that looks the same
-  as a measured one would let the map claim a precision it doesn't have; the feed's **`coverage`** member is
-  stated in words by `MapFilterBar` (`map.coverage`, counts grouped through `formatCount`) — a map holding
-  11 % of a library and saying nothing reads as broken rather than sparse — and an **editor** additionally gets
-  `map.coverageAction`, a link to `` `${LIBRARY_PATH}?has_gps=false` `` (= `/?has_gps=false`; an in-app
-  link never detours through the retired `/library`), the photos a location can be set on (never a
-  button that would run an estimate over the library on their behalf); a viewer is told the same number and
-  sent nowhere;
-  **on a phone the page spends one row on everything that is not the map** (`useIsNarrowViewport`):
-  the three mapset tabs, the two date pickers, the archive select and the coverage sentence stacked to
-  382 px of a 853 px screen — 45 % of the viewport gone before the map began — so they fold into
-  `MapFilterBar`'s drawer and the page lays the title and that one Filters button out side by side
-  (`d-flex justify-content-between`, the pair wrapping onto two lines below ~360 px). The heading
-  **stays visible** here, unlike `LibraryPage`'s: the map is not a tab-bar destination, so its `h1` is
-  the only thing that says where the reader is.
-  **Below `lg` (wherever the shell owes the tab bar, `useIsNavDrawerViewport`) the map IS the page**:
-  the root wears `.kk-map-fill` and the map sits in `.kk-map-stage`; the shell's sheet answers through
-  `:has()` — `.kukatko-shell` gets a *height* (not just its minimum) of `100dvh` minus `--kk-bottom-edge`,
-  every column down to the map flexes with `min-height: 0`, the footer and `.kukatko-main`'s bottom gutter
-  go, and the map's zero flex basis overrules its inline `70dvh` (guarded by `styles/mapFill.test.ts`).
-  The fixed `70dvh` had a 390×844 phone's map end ~600 px down, with the footer and bare background
-  between it and the tab bar; now it runs from the header row (y=121) to the tab bar (y=790) and the page
-  never scrolls — on an 820×1180 tablet from y=267 to 1126. So the footer's `display: flex` and the main
-  column's bottom padding live in `app.css`, not in `d-flex`/`pb-4` utilities, whose `!important` would
-  beat the drop. With nothing to scroll past, the map gets **`fillsViewport`**, i.e. one finger pans it.
-  A desktop keeps the `70dvh` map with the page and footer around it,
+  `MapPage` = `/map` **browsing the photos by place, in the style of Apple Photos** (design note:
+  `docs/UX_AUDIT.md` § "Map as a way to browse photos"). Every geotagged photo is a **photo tile** over the
+  mapy.com tiles (Leaflet): a cluster is the thumbnail of its **newest** photo with a count badge, a single
+  photo the same tile without one (`LeafletMap`'s `photoTiles` mode → `lib/mapPhotoLayer`). Tapping a
+  cluster zooms to its photos; one **no zoom can split** (its photos share a spot) is opened as a grid —
+  `sel=south,west,north,east` pushed into the URL, so Back closes it; tapping a photo opens the viewer.
+  Beside the map (desktop, a collapsible column) or over it (phone, a bottom sheet) the **area panel**
+  (`MapAreaPanel`) lists the photos inside the settled viewport — `photosInBounds(features, bounds)`
+  (`lib/mapArea`, feed order = newest first), re-listed `AREA_DEBOUNCE_MS` (200 ms) after the map
+  reports a new box (`onBoundsChange`); every photo link carries `mapDetailQuery(view, box)`
+  (`lib/mapDetail`: `bbox` + the map's filters), so the viewer pages through exactly the panel's list
+  (`GET /photos?bbox=`) and its Back link returns to the map fitted to the box (`area=`).
+  **Everything is in the URL** (`MapView`, `lib/mapView`): mapset, `lat`/`lng`/`z` (replace on pan),
+  the filters, **`panel`** (`''` = desktop column open / phone sheet peeking, `closed`, `half`, `full`;
+  `sheetStateFromView`/`panelValueForSheet`/`panelOpenFromView`, written with replace), **`sel`** (an
+  opened cluster), **`photo`** (a highlighted tile — where "show on map" from `PhotoLocation` lands,
+  `photoMapHref` = centre + `z=17` + `photo=`, the archive brought along for an archived photo) and
+  **`area`** (a box to fit on load while no centre/zoom is set; cleared by the first viewport write).
+  The panel's hover marks the photo's tile on the map too (`highlightUid` = hover ?? `photo`). The
+  **map is the page on every screen** — `.kk-map-fill` on the root; the shell's sheet answers through
+  `:has()`: `.kukatko-shell` gets a *height* of `100dvh` minus `--kk-bottom-edge`, every column flexes
+  with `min-height: 0`, the footer and `.kukatko-main`'s bottom gutter go, the stage (`.kk-map-stage`, a
+  row: `.kk-map-canvas` + the column) and the canvas flex, and the map's zero flex basis overrules its
+  inline `70dvh` (guarded by `styles/mapFill.test.ts`); with nothing to scroll past, the map gets
+  **`fillsViewport`** (one finger pans). The header is **one row** (`.kk-map-header`: the title + a quiet
+  `MapFilterBar`); the base-map switch floats over the map's corner (`MapsetControl`); loading/empty
+  notices and the **tile failure** warning (`onTileError` → `probeTileFailure`, debounced, re-armed on a
+  mapset switch, `map.tiles.*`) float over the map's top edge instead of pushing it down. The feed's
+  **`coverage`** is stated in words by `MapFilterBar` (`map.coverage`, an editor additionally gets
+  `map.coverageAction` → `` `${LIBRARY_PATH}?has_gps=false` ``); estimated locations are tiles with a
+  **dashed frame** and the estimate named in the tile's label. On a phone (`useIsNarrowViewport`) the
+  filters fold into `MapFilterBar`'s drawer behind one Filters button, the title stays visible (the map
+  is not a tab-bar destination), the panel is the sheet and the initial fit keeps the peeking sheet's
+  height clear (`bottomInset`). Reduced motion turns Leaflet's zoom and markercluster's split animations
+  off (`animate`). Tests: `MapPage.test.tsx` (a fake `LeafletMap` driving `photoTiles`/`onBoundsChange`),
   `PlacesPage` = `/places` browsing the library by locality: a single `fetchPlaces()` fetch pulls
   the countries→cities hierarchy with counts and per-place `cover_uid`; a **drill in the URL**
   (`?country=&city=` via `useUrlState` over
@@ -5448,7 +5446,24 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (the key stays server-side, `{r}`→`@2x` on retina),
   the **mandatory mapy.com elements** — the attribution „© Seznam.cz a.s. a další" → `/copyright` and a clickable
   **logo** bottom-left → `mapy.com`; `leaflet.markercluster` clusters (a click zooms in), markers
-  from GeoJSON, a popup with a preview → the photo detail; a one-off setup, a swap of the tile URL when the
+  from GeoJSON, a popup with a preview → the photo detail (pin mode, the detail's mini-map); in
+  **photo-tile mode** (`photoTiles={onOpenPhoto,onOpenCluster,describe}`, fixed at mount) the pin cluster is
+  replaced by `lib/mapPhotoLayer.createPhotoLayer` (markercluster with `maxClusterRadius` =
+  `MAP_CLUSTER_RADIUS` (the 56 px tile + 12), `chunkedLoading`, `removeOutsideVisibleBounds` and its **own**
+  activation — click, Enter or Space zooms to the cluster, or calls `onOpenCluster` when `clusterCanSplit`
+  (markercluster's own single-child-chain test) says no zoom will separate the photos; icons are
+  `lazyTileIcon`s built on first draw, so an off-screen photo never requests its thumbnail) over
+  `lib/mapTile` (`buildMapTile`: the tile as plain DOM inside Leaflet's focusable `role="button"` icon — the
+  blur via `blurPlaceholderUrl` (`BlurPlaceholder`'s own decoder; a React root per icon would cost more than
+  the picture), a lazy `img` of `mapTileThumbSize()` (`tile_100` up to 2×) fading in on load, the count badge
+  (`aria-hidden`, 999+ cap) and a visually hidden label from `tileLabel` — „12 fotek, 2019–2023",
+  „Fotka, 5. 3. 2021, odhadovaná poloha"; `summarizeTile` = the newest photo by feed rank + the date span),
+  plus `highlightUid` (marks the tile — or the cluster —
+  holding a photo), `onBoundsChange` (the visible box after every settle and once at start),
+  `initialBounds` (fit an area on load when no viewport is given), `animate` and `bottomInset` (fit padding
+  for a sheet floating over the map's bottom); the tile layer's `maxNativeZoom` is 19 (`basic`/`outdoor`
+  answer 404 at z20, so z20 scales z19 up instead of an empty well — one less on a retina screen, whose
+  `detectRetina` asks one zoom deeper); a one-off setup, a swap of the tile URL when the
   mapset changes, a rebuild of the markers when the photos change, fit-bounds onto the markers; the optional **`onTileError`**
   prop receives the URL of a tile that failed to load (Leaflet `tileerror`), so the parent can
   find out **why** — it fires per tile, the parent debounces;
@@ -5492,16 +5507,32 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   holds one**, so Leaflet never owns two containers for one pin, and the dialog's footer reads the picked
   coordinate back plus repeats clear/done, because the field itself is behind it. Tests:
   `LocationPicker.test.tsx` (a fake `leaflet` module, as in `LeafletMap.test.tsx`)),
-  `MapFilterBar` (a basemap toggle
-  basic/outdoor/aerial — inactive buttons are `outline-light`, since Superhero's `secondary` navy on this
-  page's near-black reads as disabled — + date from/to, archived, the coverage sentence with the
-  editor's "fill in locations" link, clear filters. **Two layouts, one set of controls**
-  (`MapsetSwitch`/`PhotoFilters` take a `stacked` flag, and exactly one layout is rendered, so no control
-  is ever in the document twice): on desktop everything sits above the map as before; on a phone
+  `MapsetControl` (the base-map switch **floating over the map's top-right corner**: three
+  `aria-pressed` buttons in a `role="group"` on the overlay surface the zoom buttons use; `compact` (a phone)
+  folds them behind one `layers` button that folds away again once a mapset is picked),
+  `BottomSheet` (the phone's sheet over the map: **peek / half / full**, controlled by `state`; it measures its
+  stage (offset parent) for the stops — `lib/bottomSheet`: `sheetStops` (peek `SHEET_PEEK_PX` = 148, half,
+  full = the stage minus 24 px), `snapSheet` (nearest stop; a release faster than 0.5 px/ms is a flick one stop
+  on), `nextSheetState`. Only the grip (handle + header) claims the drag (`touch-action: none` there alone, so
+  the grid still scrolls); the height follows the finger without a React render and the pointer is captured
+  only after 6 px of movement — capturing on `pointerdown` swallows the handle's click. The handle is a real
+  button stepping through the stops (`aria-expanded`), the whole interface for a keyboard),
+  `MapAreaPanel` ("photos in this area": `layout="side"` = an `aside` column beside the map, collapsible into a
+  floating "Fotky v oblasti N" button; `layout="sheet"` = a `BottomSheet` peeking with the count and a strip of
+  the 24 newest photos, raised to the grid. The grid is a `VirtuosoGrid` scrolling **inside** the panel
+  (never the window), square `tile_*` thumbnails over `FadeInImage`'s blur, each a `Link` into the viewer with
+  the area's query; pointer/focus report the photo (`onHoverPhoto`) so the map marks its tile; `mode="spot"`
+  names an opened cluster („N fotek na tomto místě") with a way back to the whole area; an empty area says
+  what to do),
+  `MapFilterBar` (date from/to, archived, the coverage sentence with the editor's "fill in locations" link,
+  clear filters — the base-map switch moved onto the map as `MapsetControl`. **Two layouts, one set of
+  controls** (`PhotoFilters` takes a `stacked` flag, and exactly one layout is rendered, so no control is ever
+  in the document twice): on desktop **one quiet row** beside the title (`InlinePhotoFilters`: small fields whose
+  captions are their `aria-label`s, muted coverage, a link-styled "clear"); on a phone
   (`useIsNarrowViewport`) the bar is **one `Filters` button** — `outline-primary`, `primary` once open or
   filtered, badged with `activeMapFilterCount(view)` (`lib/mapView`: the five photo filters the URL can
   carry, `album`/`label` included, never the mapset or the viewport) — opening an `Offcanvas` that holds
-  the basemap group, the dates and the archive select, all at the 44 px touch floor
+  the dates and the archive select, all at the 44 px touch floor
   (`.kukatko-map-filter-panel`). It closes on the same sticky-footer pattern the library drawer uses
   (`.kukatko-filter-footer`): a primary button carrying the live marker count (`map.filters.apply`, the
   figure grouped by `formatCount` so it matches the coverage line above it; `map.filters.applyEmpty` at

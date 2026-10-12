@@ -380,6 +380,12 @@ export interface PhotoListParams {
   archived?: ArchivedFilter
   /** Tri-state filter: 'true', 'false', or '' / undefined for no filter. */
   has_gps?: string
+  /**
+   * Geographic box `south,west,north,east` (see `lib/mapArea`): only photos
+   * located inside it. The map's area panel hands its viewport to the viewer
+   * this way, so prev/next page through exactly the photos the panel listed.
+   */
+  bbox?: string
   camera?: string
   q?: string
   /**
@@ -519,6 +525,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
   set('seed', params.seed)
   set('archived', params.archived)
   set('has_gps', params.has_gps)
+  set('bbox', params.bbox)
   set('camera', params.camera)
   set('q', params.q)
   set('taken_after', params.taken_after)

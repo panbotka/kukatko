@@ -77,3 +77,28 @@ describe('the task scope', () => {
     expect(detailQueryString({ ...DETAIL_DEFAULTS, task: 'tk1' })).toBe('task=tk1')
   })
 })
+
+describe('the map area scope', () => {
+  const bbox = '49.10000,16.50000,49.40000,16.90000'
+
+  it('pages through the photos inside the box the map panel listed', () => {
+    expect(detailToParams({ ...DETAIL_DEFAULTS, bbox }).bbox).toBe(bbox)
+    expect(detailToParams(DETAIL_DEFAULTS).bbox).toBeUndefined()
+  })
+
+  it('goes back to the map fitted to the area, with the map filters it carried', () => {
+    const href = backHref({ ...DETAIL_DEFAULTS, bbox, archived: 'only', album: 'al_1' })
+    const url = new URL(href, 'http://x')
+    expect(url.pathname).toBe('/map')
+    expect(url.searchParams.get('area')).toBe(bbox)
+    expect(url.searchParams.get('archived')).toBe('only')
+    // The album is a map filter here, not the album page: the photo came from the map.
+    expect(url.searchParams.get('album')).toBe('al_1')
+  })
+
+  it('writes the box into the detail link and lets list pages leave it out', () => {
+    expect(detailQueryString({ ...DETAIL_DEFAULTS, bbox })).toBe(`bbox=${encodeURIComponent(bbox)}`)
+    const { bbox: _omitted, ...withoutBox } = DETAIL_DEFAULTS
+    expect(detailQueryString(withoutBox)).toBe('')
+  })
+})

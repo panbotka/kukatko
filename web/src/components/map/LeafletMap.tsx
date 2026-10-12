@@ -6,8 +6,11 @@ import 'leaflet.markercluster'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 
+import { type GeoBounds } from '../../lib/mapArea'
 import { enableTwoFingerPan, prefersTouchGestures } from '../../lib/mapGestures'
+import { createPhotoLayer, type PhotoLayer, toGeoBounds } from '../../lib/mapPhotoLayer'
 import { buildPopupElement } from '../../lib/mapPopup'
+import { mapTileThumbSize, type TileSummary } from '../../lib/mapTile'
 import { type MapViewport } from '../../lib/mapView'
 import { type MapFeature, type Mapset, mapsetNeedsDimming, tileLayerUrl } from '../../services/map'
 
@@ -29,6 +32,13 @@ const MAPY_LOGO_HREF = 'https://mapy.com'
 const DEFAULT_CENTER: [number, number] = [49.8, 15.5]
 const DEFAULT_ZOOM = 7
 const MAX_ZOOM = 20
+/**
+ * The deepest zoom mapy.com draws for every mapset: `basic` and `outdoor` stop
+ * at 19 (z20 answers 404, measured over the proxy), so beyond it Leaflet scales
+ * the z19 tiles up rather than showing an empty well — which is exactly where a
+ * cluster of photos taken on one spot is finally opened as a grid.
+ */
+const MAX_NATIVE_ZOOM = 19
 
 /**
  * Default map height. `dvh` — the *dynamic* viewport height — is the share of
@@ -93,6 +103,33 @@ export interface LeafletPicker {
   onPick: (lat: number, lng: number) => void
 }
 
+/**
+ * Turns the plotted features into **photo tiles** (the map page): clusters show
+ * the thumbnail of their newest photo with a count badge, single photos the same
+ * tile without one (see `lib/mapPhotoLayer`). Omitted, features are plain pins
+ * with a popup (the detail page's mini-map). Fixed for the map's lifetime; the
+ * callbacks may change.
+ */
+export interface LeafletPhotoTiles {
+  /** A single photo's tile was activated. */
+  onOpenPhoto: (uid: string) => void
+  /** A cluster no zoom can split was activated: open its photos as a grid. */
+  onOpenCluster: (bounds: GeoBounds) => void
+  /** The accessible name of a tile (see `lib/mapTile`'s `tileLabel`). */
+  describe: (summary: TileSummary, estimated: boolean) => string
+}
+
+/** Room left around fitted markers (px), so no tile sits on the map's edge. */
+const FIT_PADDING_PX = 48
+
+/** Fit padding keeping `bottomInset` pixels of the map's bottom edge clear too. */
+function fitPadding(bottomInset: number): L.FitBoundsOptions {
+  return {
+    paddingTopLeft: [FIT_PADDING_PX, FIT_PADDING_PX],
+    paddingBottomRight: [FIT_PADDING_PX, FIT_PADDING_PX + bottomInset],
+  }
+}
+
 /** Props for {@link LeafletMap}. */
 export interface LeafletMapProps {
   /** Geotagged photos to plot as clustered markers. */
@@ -103,8 +140,31 @@ export interface LeafletMapProps {
   viewport: MapViewport | null
   /** Called when the user pans/zooms, so the URL can track the viewport. */
   onViewportChange: (viewport: MapViewport) => void
-  /** Called when a marker's popup link is clicked, with the photo UID. */
-  onSelectPhoto: (uid: string) => void
+  /** Called when a marker's popup link is clicked, with the photo UID (pin mode). */
+  onSelectPhoto?: (uid: string) => void
+  /** Photo-tile mode; see {@link LeafletPhotoTiles}. */
+  photoTiles?: LeafletPhotoTiles
+  /** The photo whose tile (or the cluster holding it) is marked; photo-tile mode. */
+  highlightUid?: string | null
+  /**
+   * Called with the visible bounds whenever the view settles (after a pan, a
+   * zoom, a resize and once at start), so the page can list the photos in
+   * the area.
+   */
+  onBoundsChange?: (bounds: GeoBounds) => void
+  /**
+   * A box to fit on load when no `viewport` is given (the viewer's Back link
+   * knows the area a photo came from, not its zoom). Without either, the map
+   * fits all its markers once they arrive.
+   */
+  initialBounds?: GeoBounds | null
+  /** Whether zooms and cluster splits animate (off for reduced motion). */
+  animate?: boolean
+  /**
+   * Pixels along the map's bottom edge that something floats over (the phone's
+   * peeking sheet), kept clear when the map fits its markers or an area.
+   */
+  bottomInset?: number
   /** Alt text for a thumbnail without its own title. */
   thumbAlt: string
   /**
@@ -167,6 +227,12 @@ export function LeafletMap({
   viewport,
   onViewportChange,
   onSelectPhoto,
+  photoTiles,
+  highlightUid = null,
+  onBoundsChange,
+  initialBounds = null,
+  animate = true,
+  bottomInset = 0,
   thumbAlt,
   estimatedTitle,
   height = DEFAULT_MAP_HEIGHT,
@@ -179,6 +245,8 @@ export function LeafletMap({
   const mapRef = useRef<L.Map | null>(null)
   const tileLayerRef = useRef<L.TileLayer | null>(null)
   const clusterRef = useRef<L.MarkerClusterGroup | null>(null)
+  // The photo-tile layer, in photo-tile mode (replaces the pin cluster).
+  const photoLayerRef = useRef<PhotoLayer | null>(null)
   // The picker's single draggable marker, created lazily once a position exists.
   const pickerMarkerRef = useRef<L.Marker | null>(null)
   // When true, the next position change came from a click/drag (already where the
@@ -194,6 +262,14 @@ export function LeafletMap({
   onViewportChangeRef.current = onViewportChange
   const onSelectRef = useRef(onSelectPhoto)
   onSelectRef.current = onSelectPhoto
+  const photoTilesRef = useRef(photoTiles)
+  photoTilesRef.current = photoTiles
+  const onBoundsChangeRef = useRef(onBoundsChange)
+  onBoundsChangeRef.current = onBoundsChange
+  const initialBoundsRef = useRef(initialBounds)
+  const animateRef = useRef(animate)
+  const bottomInsetRef = useRef(bottomInset)
+  bottomInsetRef.current = bottomInset
   const thumbAltRef = useRef(thumbAlt)
   thumbAltRef.current = thumbAlt
   const estimatedTitleRef = useRef(estimatedTitle)
@@ -238,16 +314,35 @@ export function LeafletMap({
       // `lib/mapGestures`). A mouse keeps drag-to-pan exactly as before.
       dragging: !gestureHandling,
       touchZoom: true,
+      zoomAnimation: animateRef.current,
+      markerZoomAnimation: animateRef.current,
     })
     mapRef.current = map
     // An explicit viewport means the user chose this position; do not override it
     // by fitting to the markers later.
     didFitRef.current = initial !== null
+    // The viewer's Back link brings an area instead of a centre/zoom: fit it,
+    // and let it stand in for the markers fit as well.
+    const area = initialBoundsRef.current
+    if (initial === null && area !== null) {
+      map.fitBounds(
+        [
+          [area.south, area.west],
+          [area.north, area.east],
+        ],
+        { animate: false, ...fitPadding(bottomInsetRef.current) },
+      )
+      didFitRef.current = true
+    }
 
     const tileLayer = L.tileLayer(tileLayerUrl(initialMapsetRef.current), {
       attribution: MAPY_ATTRIBUTION,
       detectRetina: true,
       maxZoom: MAX_ZOOM,
+      // `detectRetina` asks a retina screen's tiles one zoom deeper than the
+      // grid's, so its deepest grid zoom is one shallower (Leaflet's own
+      // retina test is this same device-pixel ratio check).
+      maxNativeZoom: window.devicePixelRatio > 1 ? MAX_NATIVE_ZOOM - 1 : MAX_NATIVE_ZOOM,
     })
     // A tile that fails to load leaves nothing but a grey square, and the <img>
     // keeps its response status to itself — so hand the URL to the parent, which
@@ -281,14 +376,37 @@ export function LeafletMap({
     }
     logoControl.addTo(map)
 
-    const cluster = L.markerClusterGroup({ chunkedLoading: true })
-    map.addLayer(cluster)
-    clusterRef.current = cluster
+    if (photoTilesRef.current !== undefined) {
+      const thumbSize = mapTileThumbSize(window.devicePixelRatio)
+      photoLayerRef.current = createPhotoLayer(
+        map,
+        () => {
+          const tiles = photoTilesRef.current
+          return {
+            onOpenPhoto: (uid) => tiles?.onOpenPhoto(uid),
+            onOpenCluster: (bounds) => tiles?.onOpenCluster(bounds),
+            describe: (summary, estimated) => tiles?.describe(summary, estimated) ?? '',
+            thumbSize,
+          }
+        },
+        { animate: animateRef.current },
+      )
+    } else {
+      const cluster = L.markerClusterGroup({ chunkedLoading: true })
+      map.addLayer(cluster)
+      clusterRef.current = cluster
+    }
 
+    const reportBounds = () => {
+      onBoundsChangeRef.current?.(toGeoBounds(map.getBounds()))
+    }
     map.on('moveend', () => {
       const center = map.getCenter()
       onViewportChangeRef.current({ lat: center.lat, lng: center.lng, zoom: map.getZoom() })
+      reportBounds()
     })
+    // The view the map was built with never fired a moveend this listener saw.
+    reportBounds()
 
     // In picker mode a click on the map places the marker at that point.
     if (pickerEnabledRef.current) {
@@ -314,10 +432,12 @@ export function LeafletMap({
 
     return () => {
       resizeObserver?.disconnect()
+      photoLayerRef.current?.destroy()
       map.remove()
       mapRef.current = null
       tileLayerRef.current = null
       clusterRef.current = null
+      photoLayerRef.current = null
     }
   }, [])
 
@@ -388,8 +508,21 @@ export function LeafletMap({
 
   // Rebuild the clustered markers whenever the features change.
   useEffect(() => {
-    const cluster = clusterRef.current
     const map = mapRef.current
+    const photoLayer = photoLayerRef.current
+    if (map !== null && photoLayer !== null) {
+      const bounds = photoLayer.setFeatures(features)
+      if (!didFitRef.current && bounds !== null) {
+        map.fitBounds(bounds, {
+          ...fitPadding(bottomInsetRef.current),
+          maxZoom: 16,
+          animate: false,
+        })
+        didFitRef.current = true
+      }
+      return
+    }
+    const cluster = clusterRef.current
     if (cluster === null || map === null) {
       return
     }
@@ -404,7 +537,15 @@ export function LeafletMap({
         title: estimated ? estimatedTitleRef.current : undefined,
       })
       // Lazy popup content: built only when the marker is opened.
-      marker.bindPopup(() => buildPopupElement(feature, onSelectRef.current, thumbAltRef.current))
+      marker.bindPopup(() =>
+        buildPopupElement(
+          feature,
+          (uid) => {
+            onSelectRef.current?.(uid)
+          },
+          thumbAltRef.current,
+        ),
+      )
       cluster.addLayer(marker)
       points.push([lat, lng])
     }
@@ -414,6 +555,12 @@ export function LeafletMap({
       didFitRef.current = true
     }
   }, [features])
+
+  // Photo-tile mode: move the highlight with the prop (the deep-linked photo,
+  // or the one under the pointer in the area panel).
+  useEffect(() => {
+    photoLayerRef.current?.setHighlight(highlightUid)
+  }, [highlightUid, features])
 
   // Picker mode: keep the draggable marker in sync with the controlled position.
   // Depends on the primitive lat/lng so it re-runs whenever the parent moves the

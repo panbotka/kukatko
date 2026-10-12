@@ -14,30 +14,61 @@ import { MapPage } from './MapPage'
 /** The tile URL the fake map reports as failed when the test clicks "fail tile". */
 const FAILED_TILE_URL = '/api/v1/map/tiles/basic/7/70/44'
 
-// Stand in for the imperative Leaflet map: render each feature as a link so we
-// can assert markers reach the map and a marker click navigates to the detail,
-// plus a button that fires a tile-load failure the way Leaflet's tileerror does.
+/** The visible box the fake map reports when the test clicks "report bounds". */
+const VIEWPORT = { south: 49, west: 14, north: 51, east: 16 }
+
+/** The box the fake map hands over when the test clicks "open cluster". */
+const SPOT = { south: 50.08, west: 14.42, north: 50.08, east: 14.42 }
+
+// Stand in for the imperative Leaflet map: render each feature as a button
+// that activates its photo tile, plus buttons that report a settled viewport,
+// open an unsplittable cluster and fire a tile-load failure the way Leaflet's
+// tileerror does. What the page hands the map is mirrored onto data attributes.
 vi.mock('../components/map/LeafletMap', () => ({
   LeafletMap: ({
     features,
     mapset,
-    onSelectPhoto,
+    photoTiles,
+    onBoundsChange,
     onTileError,
+    highlightUid,
+    initialBounds,
     fillsViewport = false,
   }: LeafletMapProps) => (
-    <div data-testid="leaflet-map" data-mapset={mapset} data-fills={String(fillsViewport)}>
+    <div
+      data-testid="leaflet-map"
+      data-mapset={mapset}
+      data-fills={String(fillsViewport)}
+      data-highlight={highlightUid ?? ''}
+      data-area={initialBounds === null || initialBounds === undefined ? '' : 'set'}
+    >
       {features.map((f) => (
-        <a
+        <button
+          type="button"
           key={f.properties.uid}
-          href={`/photos/${f.properties.uid}`}
-          onClick={(e) => {
-            e.preventDefault()
-            onSelectPhoto(f.properties.uid)
+          onClick={() => {
+            photoTiles?.onOpenPhoto(f.properties.uid)
           }}
         >
           {f.properties.uid}
-        </a>
+        </button>
       ))}
+      <button
+        type="button"
+        onClick={() => {
+          onBoundsChange?.(VIEWPORT)
+        }}
+      >
+        report bounds
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          photoTiles?.onOpenCluster(SPOT)
+        }}
+      >
+        open cluster
+      </button>
       <button
         type="button"
         onClick={() => {
@@ -59,10 +90,10 @@ vi.mock('../services/map', async (importOriginal) => {
 const { fetchMapPhotos } = await import('../services/map')
 const fetchMock = vi.mocked(fetchMapPhotos)
 
-function feature(uid: string): MapFeature {
+function feature(uid: string, lng = 14.42, lat = 50.08): MapFeature {
   return {
     type: 'Feature',
-    geometry: { type: 'Point', coordinates: [14.42, 50.08] },
+    geometry: { type: 'Point', coordinates: [lng, lat] },
     properties: {
       uid,
       title: uid,
@@ -125,8 +156,8 @@ describe('MapPage', () => {
     fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')]))
     renderMap()
 
-    expect(await screen.findByRole('link', { name: 'ph1' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'ph2' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'ph1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ph2' })).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -147,7 +178,7 @@ describe('MapPage', () => {
     fetchMock.mockResolvedValueOnce(collection([feature('ph1')]))
     await user.click(screen.getByRole('button', { name: 'Try again' }))
 
-    expect(await screen.findByRole('link', { name: 'ph1' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'ph1' })).toBeInTheDocument()
   })
 
   it('refetches the feed when a filter changes', async () => {
@@ -155,7 +186,7 @@ describe('MapPage', () => {
     const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     await user.selectOptions(screen.getByLabelText('Archived'), 'true')
@@ -173,7 +204,7 @@ describe('MapPage', () => {
     const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'basic')
 
     await user.click(screen.getByRole('button', { name: 'Aerial' }))
@@ -186,20 +217,26 @@ describe('MapPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('navigates to the photo detail when a marker is clicked', async () => {
+  it('opens a photo tile in the viewer, paging through the visible area', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
     const user = userEvent.setup()
-    renderMap()
+    renderMap('/map?archived=only')
 
-    await user.click(await screen.findByRole('link', { name: 'ph1' }))
-    expect(screen.getByTestId('location')).toHaveTextContent('/photos/ph1')
+    await user.click(await screen.findByRole('button', { name: 'report bounds' }))
+    // The page lists the area only once the map has rested (debounced).
+    await screen.findByRole('heading', { name: '1 photo in this area' })
+    await user.click(screen.getByRole('button', { name: 'ph1' }))
+    const location = screen.getByTestId('location').textContent
+    expect(location).toMatch(/^\/photos\/ph1\?/)
+    expect(location).toContain('bbox=49.00000%2C14.00000%2C51.00000%2C16.00000')
+    expect(location).toContain('archived=only')
   })
 
   it('reproduces the mapset and filters from a shared URL', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
     renderMap('/map?mapset=outdoor&archived=only')
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'outdoor')
     expect(fetchMock.mock.calls[0][0].archived).toBe('only')
   })
@@ -301,7 +338,7 @@ describe('MapPage narrow viewport (phone)', () => {
     fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2')], 20906))
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
 
     // The map is not a tab-bar destination, so the heading is the only thing
     // that says where the reader is and stays visible…
@@ -325,17 +362,13 @@ describe('MapPage narrow viewport (phone)', () => {
     const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     const drawer = await openMapFilterDrawer(user)
 
     // The controls are not merely somewhere on the page — they are inside the
     // drawer, which is the only place a phone can reach them now.
     expect(within(drawer).getByLabelText('Taken from')).toBeInTheDocument()
     expect(within(drawer).getByLabelText('Taken until')).toBeInTheDocument()
-    await user.click(within(drawer).getByRole('button', { name: 'Aerial' }))
-    await waitFor(() => {
-      expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'aerial')
-    })
 
     await user.selectOptions(within(drawer).getByLabelText('Archived'), 'only')
     await waitFor(() => {
@@ -350,7 +383,7 @@ describe('MapPage narrow viewport (phone)', () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
     renderMap('/map?taken_after=2019-06-01&archived=only')
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     // Two filters are on and every control is hidden: without the badge the
     // reader has no way to tell a sparse map from a filtered one.
     expect(screen.getByRole('button', { name: 'Filters 2' })).toBeInTheDocument()
@@ -362,7 +395,7 @@ describe('MapPage narrow viewport (phone)', () => {
     const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     const drawer = await openMapFilterDrawer(user)
 
     expect(
@@ -378,7 +411,7 @@ describe('MapPage narrow viewport (phone)', () => {
     const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     const drawer = await openMapFilterDrawer(user)
 
     // The count is read *inside* the drawer, before the trip back out.
@@ -432,8 +465,9 @@ function mockWidth(width: number): void {
 }
 
 /**
- * The map as the whole page below `lg`. On a phone the map used to end around
- * 600 px of an 844 px screen, with the footer and empty background under it; the
+ * The map as the whole page, on every screen. On a phone the map used to end
+ * around 600 px of an 844 px screen, with the footer and empty background under
+ * it, and on a desktop a fixed 70dvh map pushed the photos below the fold; the
  * page now wears the class the shell's stylesheet answers by sizing the column
  * to the viewport, dropping the footer and flexing the map into the rest (the
  * CSS half is guarded by `styles/mapFill.test.ts`).
@@ -455,27 +489,146 @@ describe('MapPage full-height layout', () => {
   it.each([
     ['a phone', 390],
     ['a portrait tablet', 820],
+    ['a desktop', 1440],
   ])('fills the viewport with the map on %s', async (_name, width) => {
     mockWidth(width)
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
+    await screen.findByRole('button', { name: 'ph1' })
     expect(pageRoot()).toHaveClass('kk-map-fill')
-    // The map sits in the stage the stylesheet flexes down to the tab bar…
-    expect(screen.getByTestId('leaflet-map').parentElement).toHaveClass('kk-map-stage')
+    // The map sits in the canvas the stylesheet flexes down to the bottom edge…
+    const canvas = screen.getByTestId('leaflet-map').parentElement
+    expect(canvas).toHaveClass('kk-map-canvas')
+    expect(canvas?.parentElement).toHaveClass('kk-map-stage')
     // …and, with no page left to scroll, takes a one-finger swipe itself.
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-fills', 'true')
   })
+})
 
-  it('keeps the desktop page as it was: a 70dvh map with the page around it', async () => {
-    mockWidth(1440)
-    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+/**
+ * The area panel: the photos inside the settled viewport, newest first, as a
+ * grid — a column beside the map on a desktop, a bottom sheet on a phone.
+ */
+describe('MapPage area panel', () => {
+  afterEach(() => {
+    mockViewport(false)
+  })
+
+  it('lists only the photos inside the visible area', async () => {
+    fetchMock.mockResolvedValue(
+      collection([feature('ph1'), feature('ph2'), feature('far', -73.98, 40.75)]),
+    )
+    const user = userEvent.setup()
     renderMap()
 
-    await screen.findByRole('link', { name: 'ph1' })
-    expect(pageRoot()).not.toHaveClass('kk-map-fill')
-    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-fills', 'false')
+    await user.click(await screen.findByRole('button', { name: 'report bounds' }))
+    expect(
+      await screen.findByRole('heading', { name: '2 photos in this area' }),
+    ).toBeInTheDocument()
+  })
+
+  it('opens an unsplittable cluster as its own grid, and Back to the area', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1'), feature('ph2', 14.5, 50.1)]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'report bounds' }))
+    await screen.findByRole('heading', { name: '2 photos in this area' })
+    await user.click(screen.getByRole('button', { name: 'open cluster' }))
+
+    expect(await screen.findByRole('heading', { name: '1 photo at this spot' })).toBeInTheDocument()
+    expect(screen.getByTestId('location')).toHaveTextContent('sel=50.08000%2C14.42000')
+
+    await user.click(screen.getByRole('button', { name: /Whole area/ }))
+    expect(
+      await screen.findByRole('heading', { name: '2 photos in this area' }),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('location')).not.toHaveTextContent('sel=')
+  })
+
+  it('collapses the desktop column into the URL and brings it back', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'Hide the photo panel' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('panel=closed')
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Photos in this area/ }))
+    expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
+    expect(
+      screen.getByRole('complementary', { name: 'Photos in the map area' }),
+    ).toBeInTheDocument()
+  })
+
+  it('restores a collapsed column from a shared URL', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap('/map?panel=closed')
+
+    expect(await screen.findByRole('button', { name: /Photos in this area/ })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+
+  it('peeks on a phone with a strip of photos, and the handle raises the sheet', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'report bounds' }))
+    const sheet = await screen.findByRole('region', { name: 'Photos in the map area' })
+    expect(sheet).toHaveAttribute('data-state', 'peek')
+    // The strip's photo links into the viewer with the area's query.
+    const link = await within(sheet).findByRole('link', { name: 'Undated photo' })
+    expect(link.getAttribute('href')).toContain('/photos/ph1?bbox=')
+
+    await user.click(within(sheet).getByRole('button', { name: 'Enlarge the photo panel' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('panel=half')
+    expect(sheet).toHaveAttribute('data-state', 'half')
+  })
+
+  it('raises a peeking sheet when a cluster opens as a grid', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await user.click(await screen.findByRole('button', { name: 'open cluster' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('panel=half')
+  })
+
+  it('switches the base map from the folded phone control', async () => {
+    mockViewport(true)
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    const user = userEvent.setup()
+    renderMap()
+
+    await screen.findByRole('button', { name: 'ph1' })
+    await user.click(screen.getByRole('button', { name: 'Change the base map' }))
+    await user.click(screen.getByRole('button', { name: 'Aerial' }))
+    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'aerial')
+    // Picking folds the choices away again.
+    expect(screen.queryByRole('button', { name: 'Outdoor' })).not.toBeInTheDocument()
+  })
+})
+
+describe('MapPage deep links', () => {
+  it('highlights the photo "show on map" pointed at', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap('/map?lat=50.08&lng=14.42&z=17&photo=ph1')
+
+    await screen.findByRole('button', { name: 'ph1' })
+    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-highlight', 'ph1')
+  })
+
+  it('hands the area of a viewer Back link to the map to fit', async () => {
+    fetchMock.mockResolvedValue(collection([feature('ph1')]))
+    renderMap('/map?area=49%2C14%2C51%2C16')
+
+    await screen.findByRole('button', { name: 'ph1' })
+    expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-area', 'set')
   })
 })
 
@@ -504,7 +657,7 @@ describe('MapPage tile failures', () => {
     ).toBeInTheDocument()
     // The map itself must stay usable: the markers still render on the empty
     // background.
-    expect(screen.getByRole('link', { name: 'ph1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ph1' })).toBeInTheDocument()
   })
 
   it('dismisses the warning when the user closes it', async () => {

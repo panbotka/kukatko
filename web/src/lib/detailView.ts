@@ -10,6 +10,7 @@ import {
   type TaskView,
   viewToParams,
 } from './libraryView'
+import { MAP_DEFAULTS, type MapView } from './mapView'
 import { searchHref } from './searchView'
 import { writeUrlState } from './urlState'
 
@@ -43,6 +44,14 @@ export type DetailView = LibraryView & {
    * left, not on the wall. Meaningless — and always `''` — outside a task scope.
    */
   view: string
+  /**
+   * The map area the photo was opened from (`south,west,north,east`, see
+   * `lib/mapArea`), or `''`. Set only by the map's area panel: prev/next then
+   * page through the photos inside that box — the very list the panel showed —
+   * and Back returns to the map fitted to it. Like `mode` it is not a library
+   * filter, so it lives here rather than in {@link LibraryView}.
+   */
+  bbox: string
 }
 
 /** Defaults: the library defaults plus an empty (no) search scope. */
@@ -50,6 +59,7 @@ export const DETAIL_DEFAULTS: DetailView = {
   ...LIBRARY_DEFAULTS,
   mode: '',
   view: '',
+  bbox: '',
 }
 
 /**
@@ -58,7 +68,8 @@ export const DETAIL_DEFAULTS: DetailView = {
  * them, all carried by {@link viewToParams}.
  */
 export function detailToParams(view: DetailView): PhotoListParams {
-  return viewToParams(view)
+  const params = viewToParams(view)
+  return view.bbox === '' ? params : { ...params, bbox: view.bbox }
 }
 
 /**
@@ -66,8 +77,12 @@ export function detailToParams(view: DetailView): PhotoListParams {
  * navigating from a list (or via prev/next) preserves the originating order and
  * scope. Values equal to a default are omitted.
  */
-export function detailQueryString(view: DetailView): string {
-  return writeUrlState(view, DETAIL_DEFAULTS).toString()
+export function detailQueryString(
+  view: Omit<DetailView, 'bbox'> & Partial<Pick<DetailView, 'bbox'>>,
+): string {
+  // `bbox` is optional here: only the map sets it, and every list page
+  // spreading its own library view in would otherwise have to name it.
+  return writeUrlState({ ...view, bbox: view.bbox ?? '' }, DETAIL_DEFAULTS).toString()
 }
 
 /**
@@ -84,6 +99,9 @@ export function detailQueryString(view: DetailView): string {
  * search query and mode.
  */
 export function backHref(view: DetailView): string {
+  if (view.bbox !== '') {
+    return mapBackHref(view)
+  }
   const albums = parseFilterList(view.album)
   const labels = parseFilterList(view.label)
   const tasks = parseFilterList(view.task)
@@ -113,6 +131,27 @@ export function backHref(view: DetailView): string {
     return `/favorites${libraryQuery({ ...view, favorite: '' })}`
   }
   return `${LIBRARY_PATH}${libraryQuery(view)}`
+}
+
+/**
+ * The Back link of a photo opened from the map's area panel: the map, fitted to
+ * the area the photo was opened from and carrying the photo filters the map
+ * understands, with the photo highlighted so the eye finds where it came from.
+ * The zoom itself is not known here — only the box — hence `area`, which the
+ * map fits on load.
+ */
+function mapBackHref(view: DetailView): string {
+  const map: MapView = {
+    ...MAP_DEFAULTS,
+    area: view.bbox,
+    taken_after: view.taken_after,
+    taken_before: view.taken_before,
+    archived: view.archived,
+    album: view.album,
+    label: view.label,
+  }
+  const query = writeUrlState(map, MAP_DEFAULTS).toString()
+  return query === '' ? '/map' : `/map?${query}`
 }
 
 /**

@@ -57,6 +57,16 @@ func TestParseListParams_valid(t *testing.T) {
 			},
 		},
 		{
+			name:  "bbox from the map's area panel",
+			query: "bbox=49.1,16.5,49.4,16.9",
+			check: func(t *testing.T, p photos.ListParams) {
+				want := photos.BBox{South: 49.1, West: 16.5, North: 49.4, East: 16.9}
+				if p.BBox == nil || *p.BBox != want {
+					t.Errorf("bbox = %+v, want %+v", p.BBox, want)
+				}
+			},
+		},
+		{
 			name:  "limit and offset",
 			query: "limit=20&offset=40",
 			check: func(t *testing.T, p photos.ListParams) {
@@ -430,6 +440,8 @@ func TestParseListParams_invalid(t *testing.T) {
 		{name: "unknown order", query: "order=sideways"},
 		{name: "unknown archived", query: "archived=maybe"},
 		{name: "non-bool has_gps", query: "has_gps=42"},
+		{name: "malformed bbox", query: "bbox=49,16,50"},
+		{name: "bbox south above north", query: "bbox=50,16,49,17"},
 		{name: "non-integer year", query: "year=nineteen"},
 		{name: "year below the four-digit range", query: "year=42"},
 		{name: "year above the four-digit range", query: "year=12023"},

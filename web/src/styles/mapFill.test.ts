@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { declarations, readCss, ruleBody } from '../test/css'
 
 /**
- * The map page as the whole screen below `lg`. On a 390x844 phone the map ended
+ * The map page as the whole screen, on every viewport. On a 390x844 phone the map ended
  * around 600px from the top, and the footer plus bare background filled the
  * rest down to the tab bar. `MapPage` now wears `.kk-map-fill` there, and the
  * shell's stylesheet answers with a chain in which every link is load-bearing:
@@ -45,9 +45,24 @@ describe('the full-viewport map page', () => {
   })
 
   it('lets the map take what is left instead of its inline 70dvh', () => {
-    const map = rule(/\.kk-map-fill > \.kk-map-stage > \.kukatko-map\s*(?=\{)/)
+    // The stage is a row (the map beside the desktop area column); the canvas
+    // in it flexes, and the map flexes inside the canvas.
+    // The chain rule above ends in the same selector, so find the stage's own.
+    const stage = ruleBody(css, /\.kk-map-fill > \.kk-map-stage\s*(?=\{)/, /gap:/)
+    expect(stage === undefined ? undefined : declarations(stage).get('flex-direction')).toBe('row')
+    const canvas = rule(/\.kk-map-canvas\s*(?=\{)/)
+    expect(canvas.get('flex')).toBe('1 1 0')
+    expect(canvas.get('min-height')).toBe('0')
+    expect(canvas.get('min-width')).toBe('0')
+    const map = rule(/\.kk-map-canvas > \.kukatko-map\s*(?=\{)/)
     expect(map.get('flex')).toBe('1 1 0')
     expect(map.get('min-height')).toBe('0')
+  })
+
+  it('clips the phone sheet to the stage, so nothing scrolls sideways', () => {
+    const stage = rule(/\.kk-map-fill > \.kk-map-stage--sheet\s*(?=\{)/)
+    expect(stage.get('position')).toBe('relative')
+    expect(stage.get('overflow')).toBe('hidden')
   })
 
   it('drops the footer and the bottom gutter, so the map meets the tab bar', () => {

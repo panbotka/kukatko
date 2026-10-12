@@ -2,7 +2,6 @@ import type { TFunction } from 'i18next'
 import { useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
-import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Col from 'react-bootstrap/Col'
 import Form from 'react-bootstrap/Form'
 import Offcanvas from 'react-bootstrap/Offcanvas'
@@ -15,7 +14,7 @@ import { formatCount } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { activeMapFilterCount, MAP_DEFAULTS, type MapView } from '../../lib/mapView'
 import { type SetUrlState } from '../../lib/urlState'
-import { type MapCoverage, type Mapset, MAPSETS } from '../../services/map'
+import { type MapCoverage } from '../../services/map'
 import { Icon } from '../Icon'
 
 /** DOM id of the phone's offcanvas control panel. */
@@ -40,8 +39,6 @@ const NO_LOCATION_LIBRARY = `${LIBRARY_PATH}?has_gps=false`
 export interface MapFilterBarProps {
   view: MapView
   onChange: SetUrlState<MapView>
-  /** The active mapset (selected button). */
-  mapset: Mapset
   /** Number of geotagged photos currently plotted. */
   count: number
   /**
@@ -60,14 +57,16 @@ export interface MapFilterBarProps {
 }
 
 /**
- * Controls for the map view: the mapset switch (basic / outdoor / aerial) plus
- * the photo filters the GeoJSON feed honours (date range, archived).
- * Every control writes through `onChange` into the URL, so Back/Forward and a
- * shared link reproduce the map. The mapset and filters push history entries;
- * the date inputs do too (they are discrete choices, not live-typed text).
+ * Controls for the map view: the photo filters the GeoJSON feed honours (date
+ * range, archived) and the sentence saying how much of the library is on the
+ * map. Every control writes through `onChange` into the URL, so Back/Forward and
+ * a shared link reproduce the map. The filters push history entries; the date
+ * inputs do too (they are discrete choices, not live-typed text). The base-map
+ * switch is not here: it floats over the map itself (`MapsetControl`).
  *
- * On desktop everything is laid out above the map: the mapset row, the filter
- * row, and a footer saying how much of the library is actually on the map.
+ * On desktop the bar is **one quiet row** beside the page title: small date and
+ * archive fields and the coverage sentence in muted type. The map and its
+ * photos are the page; the controls are there when wanted and recede otherwise.
  *
  * **On a phone the bar is one button.** Stacked out on a 390 px screen those
  * three rows came to 382 px — 45 % of the viewport spent before the map even
@@ -91,7 +90,6 @@ export interface MapFilterBarProps {
 export function MapFilterBar({
   view,
   onChange,
-  mapset,
   count,
   coverage,
   canWrite = false,
@@ -113,15 +111,10 @@ export function MapFilterBar({
   }
 
   // Every control, defined once and placed in exactly one of the two layouts —
-  // inline above the map on desktop, inside the drawer on a phone — so no
+  // inline beside the title on desktop, inside the drawer on a phone — so no
   // control is ever in the document twice. `stacked` is the only difference:
   // full-width, finger-sized fields in the drawer, the compact row on desktop.
-  const controls = (
-    <>
-      <MapsetSwitch mapset={mapset} onChange={onChange} stacked={narrow} />
-      <PhotoFilters view={view} onChange={onChange} stacked={narrow} />
-    </>
-  )
+  const controls = <PhotoFilters view={view} onChange={onChange} stacked={narrow} />
 
   return (
     <Form className="kukatko-map-filter-bar" aria-label={t('map.filters.label')}>
@@ -153,17 +146,15 @@ export function MapFilterBar({
           <CoverageStatement coverage={coverage} count={count} compact announce />
         </div>
       ) : (
-        <>
+        <div className="kukatko-map-filter-row">
           {controls}
-          <div className="d-flex align-items-center justify-content-between gap-2 mt-2 flex-wrap">
-            <CoverageStatement coverage={coverage} count={count} canWrite={canWrite} announce />
-            {activeFilters > 0 && (
-              <Button type="button" size="sm" variant="outline-secondary" onClick={clearFilters}>
-                {t('map.filters.clear')}
-              </Button>
-            )}
-          </div>
-        </>
+          <CoverageStatement coverage={coverage} count={count} canWrite={canWrite} announce />
+          {activeFilters > 0 && (
+            <Button type="button" size="sm" variant="link" onClick={clearFilters}>
+              {t('map.filters.clear')}
+            </Button>
+          )}
+        </div>
       )}
 
       {narrow && (
@@ -206,57 +197,6 @@ export function MapFilterBar({
 }
 
 /**
- * The base-map switch. Three mutually exclusive choices, so a button group in
- * both placements — only the sizing changes: a compact `sm` row above the map on
- * desktop, and in the drawer a full-width group under a visible caption, sized
- * for a thumb.
- */
-function MapsetSwitch({
-  mapset,
-  onChange,
-  stacked,
-}: {
-  mapset: Mapset
-  onChange: SetUrlState<MapView>
-  stacked: boolean
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className={stacked ? 'mb-3' : 'mb-2'}>
-      {/* A plain caption, not a `<label>`: a button group is nothing that can be
-          labelled *for*. It names itself to assistive technology through the
-          group's own `aria-label`, which is why the caption is only drawn where
-          there is room for it. */}
-      {stacked && <div className="small mb-1">{t('map.mapset.label')}</div>}
-      <ButtonGroup
-        size={stacked ? undefined : 'sm'}
-        className={stacked ? 'w-100' : undefined}
-        aria-label={t('map.mapset.label')}
-      >
-        {MAPSETS.map((id) => (
-          <Button
-            key={id}
-            type="button"
-            // The inactive style is `outline-light`, not `outline-secondary`:
-            // Superhero's secondary is a desaturated navy that on this page's
-            // near-black background reads as an unlit button, and the two
-            // unchosen mapsets then look disabled rather than available.
-            variant={id === mapset ? 'primary' : 'outline-light'}
-            active={id === mapset}
-            aria-pressed={id === mapset}
-            onClick={() => {
-              onChange({ mapset: id })
-            }}
-          >
-            {t(`map.mapset.${id}`)}
-          </Button>
-        ))}
-      </ButtonGroup>
-    </div>
-  )
-}
-
-/**
  * The filters the GeoJSON feed honours: the capture-date range and the archive
  * selector. `stacked` is the drawer's layout — the two dates side by side, the
  * archive select on its own full-width row, all of them finger-sized
@@ -272,9 +212,12 @@ function PhotoFilters({
   stacked: boolean
 }) {
   const { t } = useTranslation()
+  if (!stacked) {
+    return <InlinePhotoFilters view={view} onChange={onChange} />
+  }
   return (
-    <Row className={stacked ? 'kukatko-map-filter-panel g-3' : 'g-2 align-items-end'}>
-      <Col xs={6} sm={stacked ? 6 : 3} md={stacked ? 6 : 2}>
+    <Row className="kukatko-map-filter-panel g-3">
+      <Col xs={6}>
         <Form.Group controlId="map-taken-after">
           <Form.Label className="small mb-1">{t('map.filters.takenAfter')}</Form.Label>
           <Form.Control
@@ -287,7 +230,7 @@ function PhotoFilters({
         </Form.Group>
       </Col>
 
-      <Col xs={6} sm={stacked ? 6 : 3} md={stacked ? 6 : 2}>
+      <Col xs={6}>
         <Form.Group controlId="map-taken-before">
           <Form.Label className="small mb-1">{t('map.filters.takenBefore')}</Form.Label>
           <Form.Control
@@ -300,7 +243,7 @@ function PhotoFilters({
         </Form.Group>
       </Col>
 
-      <Col xs={stacked ? 12 : 6} sm={stacked ? 12 : 3} md={stacked ? 12 : 2}>
+      <Col xs={12}>
         <Form.Group controlId="map-archived">
           <Form.Label className="small mb-1">{t('map.filters.archived')}</Form.Label>
           <Form.Select
@@ -316,6 +259,54 @@ function PhotoFilters({
         </Form.Group>
       </Col>
     </Row>
+  )
+}
+
+/**
+ * The desktop's filters: three small fields in one row, their captions folded
+ * into the fields' accessible names (`aria-label`) and a muted prefix, so the
+ * row is one line tall beside the title instead of a form above the map.
+ */
+function InlinePhotoFilters({ view, onChange }: { view: MapView; onChange: SetUrlState<MapView> }) {
+  const { t } = useTranslation()
+  return (
+    <div className="kukatko-map-filter-inline">
+      <Form.Control
+        size="sm"
+        type="date"
+        aria-label={t('map.filters.takenAfter')}
+        title={t('map.filters.takenAfter')}
+        value={view.taken_after}
+        onChange={(e) => {
+          onChange({ taken_after: e.target.value })
+        }}
+      />
+      <span className="text-secondary small" aria-hidden="true">
+        –
+      </span>
+      <Form.Control
+        size="sm"
+        type="date"
+        aria-label={t('map.filters.takenBefore')}
+        title={t('map.filters.takenBefore')}
+        value={view.taken_before}
+        onChange={(e) => {
+          onChange({ taken_before: e.target.value })
+        }}
+      />
+      <Form.Select
+        size="sm"
+        aria-label={t('map.filters.archived')}
+        value={view.archived}
+        onChange={(e) => {
+          onChange({ archived: e.target.value })
+        }}
+      >
+        <option value="false">{t('map.archived.hide')}</option>
+        <option value="true">{t('map.archived.show')}</option>
+        <option value="only">{t('map.archived.only')}</option>
+      </Form.Select>
+    </div>
   )
 }
 

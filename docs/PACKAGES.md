@@ -479,7 +479,11 @@ to `## Package map` in `CLAUDE.md`.
   GPS, ratings, favorites, or `ai_note`. `ErrPhotoNotFound`)/
   `Archive`/`Unarchive`/`Delete`/`List`+`Count` (filters archived/
   uploader (`UploadedBy` a user uid, or **`NoUploader`** = `uploaded_by IS NULL`, the imported photos;
-  `NoUploader` wins over `UploadedBy` the way `OnlyArchived` wins over `IncludeArchived`)/has-GPS/date-range `taken_after`+`taken_before`/camera/lens/substring search +
+  `NoUploader` wins over `UploadedBy` the way `OnlyArchived` wins over `IncludeArchived`)/has-GPS/**bounding box** (`BBox *BBox` — `bboxClauses`: `lat BETWEEN` + `lng BETWEEN`, or the
+  OR of the two halves for a box whose west edge lies east of its east edge, i.e. across the antimeridian;
+  `ParseBBox` reads the `south,west,north,east` form and returns `ErrInvalidBBox` for anything but four
+  in-range numbers with south ≤ north; it is the map's "photos in this area", which the viewer pages
+  through)/date-range `taken_after`+`taken_before`/camera/lens/substring search +
   **album/label scope** `AlbumUID`/`LabelUID` via a correlated `EXISTS` over `album_photos`/`photo_labels`
   — the basis of the shared scoped listing of an album's/label's photos through `GET /photos?album=`/`?label=`,
   plus **person/subject scope** `SubjectUIDs` (multi, AND combination: one correlated `EXISTS` over
@@ -4092,7 +4096,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **FeatureCollection**, `parseGeoParams` forces `HasGPS=true` + honours `taken_after`/`taken_before`/
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, ordering taken_at desc; every feature is a
   `Point` with an RFC 7946 `[lng,lat]` coordinate and the properties `uid`/`title`/`taken_at`/`media_type`/
-  the relative `thumb` path `tile_224`, photos missing either coordinate are skipped; the collection also
+  the relative `thumb` path `tile_224` and the photo's `blurhash` (omitted when none — the map's photo tiles
+  paint it while the thumbnail loads), photos missing either coordinate are skipped; the route alone is wrapped
+  in chi's `middleware.Compress` (gzip level 5, `geoCompressLevel`) — ~0.8 MB of JSON for prod's located
+  library, ~0.18 MB on the wire (docs/PERF.md § 6); the collection also
   carries the foreign member `coverage:{located,total}` — the markers drawn against one extra `Count` over the
   **same** params with `HasGPS` lifted and paging stripped, so the map can say what it is leaving out instead
   of showing 11 % of a library in silence; a failing count is a 500, not a collection quietly claiming the

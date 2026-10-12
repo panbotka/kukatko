@@ -81,6 +81,11 @@ describe('buildPhotoQuery', () => {
     expect(query.has('has_gps')).toBe(false)
   })
 
+  it('sends the map area as one bbox value, never split on its commas', () => {
+    const query = buildPhotoQuery({ bbox: '49.1,16.5,49.4,16.9' })
+    expect(query.getAll('bbox')).toEqual(['49.1,16.5,49.4,16.9'])
+  })
+
   it('expands a comma-joined album/label list into repeated params', () => {
     const query = buildPhotoQuery({ album: 'al_1,al_2', label: 'lb_1' })
     // The backend parses repeated params (?album=a&album=b) and ANDs them.

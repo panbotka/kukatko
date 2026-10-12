@@ -7,21 +7,33 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
-import { LeafletMap } from '../components/map/LeafletMap'
+import { LeafletMap, type LeafletPhotoTiles } from '../components/map/LeafletMap'
+import { MapAreaPanel } from '../components/map/MapAreaPanel'
 import { MapFilterBar } from '../components/map/MapFilterBar'
+import { MapsetControl } from '../components/map/MapsetControl'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { useIsNarrowViewport, useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
+import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useMapPhotos } from '../hooks/useMapPhotos'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import { SHEET_PEEK_PX } from '../lib/bottomSheet'
+import { formatBBox, type GeoBounds, parseBBox, photosInBounds, sameBBox } from '../lib/mapArea'
+import { mapDetailQuery } from '../lib/mapDetail'
+import { tileLabel } from '../lib/mapTile'
 import {
   MAP_DEFAULTS,
+  MAP_PANEL_CLOSED,
   type MapView,
   mapsetFromView,
   mapViewToParams,
   type MapViewport,
+  panelOpenFromView,
+  panelValueForSheet,
+  type SheetState,
+  sheetStateFromView,
   viewportFromView,
 } from '../lib/mapView'
 import { useUrlState } from '../lib/urlState'
-import { probeTileFailure, type TileFailure } from '../services/map'
+import { type Mapset, probeTileFailure, type TileFailure } from '../services/map'
 
 /** The i18n key explaining each tile failure. */
 const TILE_FAILURE_MESSAGES = {
@@ -32,48 +44,50 @@ const TILE_FAILURE_MESSAGES = {
 } as const satisfies Record<TileFailure, string>
 
 /**
- * The map view: geotagged photos plotted as clustered markers over mapy.com
- * tiles (served through the backend proxy, so the API key stays server-side).
- * The mapset, viewport and photo filters all live in the URL, so Back/Forward
- * restore the exact map and a shared link reproduces it. Panning/zooming updates
- * the URL without refetching; changing a filter refetches the GeoJSON feed.
+ * How long the map must rest before the area panel re-lists (ms). Leaflet
+ * already reports only settled views (`moveend`), but a fling or a run of wheel
+ * zooms settles several times in a row; re-filtering and re-rendering the grid
+ * for each would make the panel flicker through states nobody looked at.
+ */
+export const AREA_DEBOUNCE_MS = 200
+
+/**
+ * The map: a way to **browse the photos by place**. Every geotagged photo is on
+ * it as a photo tile — clusters are the thumbnail of their newest photo with a
+ * count badge, single photos the same tile without one — over mapy.com tiles
+ * served through the backend proxy (the key stays server-side). Tapping a
+ * cluster zooms into it; one that no zoom can split (its photos share a spot)
+ * opens its photos as a grid instead; tapping a photo opens it in the viewer.
+ *
+ * Beside the map (desktop) or over it as a bottom sheet (phone), the **area
+ * panel** lists the photos inside the current viewport, newest first, re-listed
+ * as the map settles; opening one from there lets the viewer page through
+ * exactly that list (`bbox` in the detail URL, see `lib/mapDetail`).
+ *
+ * Everything that shapes the view lives in the URL — the mapset, centre and
+ * zoom, the filters, the panel's state, an opened cluster and a highlighted
+ * photo (where "show on map" from a photo lands) — so Back/Forward restore the
+ * exact map and a shared link reproduces it. Panning only writes the URL; a
+ * filter change refetches the feed.
+ *
+ * The map **is** the page on every screen: `.kk-map-fill` sizes the column to
+ * the dynamic viewport and drops the footer (see `app.css`), the header is one
+ * row (the title and the quiet filter bar; on a phone the bar folds into a
+ * drawer behind one button), and the base-map switch floats over the map's
+ * corner. With nothing around the map to scroll, a one-finger swipe belongs to
+ * the map ({@link LeafletMap}'s `fillsViewport`).
  *
  * When the tiles fail to load — most likely because mapy.com is rejecting the
- * server's API key — the page says so in a dismissible warning instead of showing
- * an unexplained grey grid. The map itself stays up: the markers, clusters and
- * popups all keep working over the empty background.
- *
- * The feed also reports how much of the filtered library carries a location at
- * all, which the filter bar states in words; on this collection the map speaks
- * for about one photo in nine, and saying so is the difference between a sparse
- * map and a map that looks broken.
- *
- * On a phone the page spends **one row** on everything that is not the map. The
- * three mapset tabs, the two date pickers, the archive select and the coverage
- * sentence used to stack to 382 px of a 853 px screen — 45 % of the viewport
- * gone before the map began — so they fold into {@link MapFilterBar}'s drawer
- * and the page puts what is left, the title and that one button, side by side.
- * The heading stays visible here (unlike the library's, which the bottom tab bar
- * names): the map is not a tab, so this `h1` is the only thing that says where
- * the reader is.
- *
- * Wherever the shell owes the bottom tab bar (a phone, a portrait tablet), the
- * map **is** the page: it runs from the header row down to the tab bar and the
- * page itself never scrolls. The fixed `70dvh` it keeps on a desktop left a
- * phone's map ending around 600 px of an 844 px screen, with the footer and bare
- * background under it — so here the page wears `.kk-map-fill`, which the shell's
- * stylesheet answers by sizing the column to the dynamic viewport, dropping the
- * footer and letting the map flex into every pixel that is left (see
- * `.kk-map-fill` in `app.css`). With nothing to scroll past, a one-finger swipe
- * belongs to the map again ({@link LeafletMap}'s `fillsViewport`).
+ * server's API key — the page says so in a dismissible warning instead of an
+ * unexplained grey grid; the photo tiles keep working over the empty background.
  */
 export function MapPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   useDocumentTitle(t('map.title'))
   const navigate = useNavigate()
   const { canWrite } = useAuth()
   const narrow = useIsNarrowViewport()
-  const fill = useIsNavDrawerViewport()
+  const reducedMotion = usePrefersReducedMotion()
   const [view, setView] = useUrlState<MapView>(MAP_DEFAULTS)
   const [tileFailure, setTileFailure] = useState<TileFailure | null>(null)
   const [warningDismissed, setWarningDismissed] = useState(false)
@@ -85,42 +99,109 @@ export function MapPage() {
 
   // Only the feed filters drive a refetch — memoise on those fields (not the
   // whole view) so panning (which writes lat/lng/zoom into the URL) does not
-  // reload every marker. Reconstructing from the primitive fields keeps the memo
-  // callback free of the `view` object, so its dependency list is exact.
+  // reload every marker.
   const { taken_after, taken_before, archived, album, label } = view
-  const params = useMemo(
-    () =>
-      mapViewToParams({
-        ...MAP_DEFAULTS,
-        taken_after,
-        taken_before,
-        archived,
-        album,
-        label,
-      }),
+  const filterView = useMemo(
+    () => ({ ...MAP_DEFAULTS, taken_after, taken_before, archived, album, label }),
     [taken_after, taken_before, archived, album, label],
   )
+  const params = useMemo(() => mapViewToParams(filterView), [filterView])
   const { features, coverage, status, retry } = useMapPhotos(params)
 
   const mapset = mapsetFromView(view)
   const viewport = viewportFromView(view)
+  // Read once: the area to fit on load (the viewer's Back link), never re-fit.
+  const [initialArea] = useState(() => parseBBox(view.area))
+
+  // The visible box, debounced; null until the map has reported one.
+  const [bounds, setBounds] = useState<GeoBounds | null>(null)
+  const boundsTimer = useRef<number | undefined>(undefined)
+  const handleBoundsChange = useCallback((next: GeoBounds) => {
+    window.clearTimeout(boundsTimer.current)
+    boundsTimer.current = window.setTimeout(() => {
+      setBounds((prev) => (sameBBox(prev, next) ? prev : next))
+    }, AREA_DEBOUNCE_MS)
+  }, [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(boundsTimer.current)
+    },
+    [],
+  )
+
+  // A cluster opened as a grid replaces the viewport as the panel's subject.
+  const spot = useMemo(() => parseBBox(view.sel), [view.sel])
+  const listBounds = spot ?? bounds
+  const areaPhotos = useMemo(() => photosInBounds(features, listBounds), [features, listBounds])
+  const detailQuery = useMemo(
+    () => (listBounds === null ? '' : mapDetailQuery(filterView, listBounds)),
+    [filterView, listBounds],
+  )
+
+  const [hoverUid, setHoverUid] = useState<string | null>(null)
+  const highlightUid = hoverUid ?? (view.photo === '' ? null : view.photo)
 
   const handleViewportChange = useCallback(
     (next: MapViewport) => {
       // Replace (not push) so live panning does not flood the history stack.
+      // The load-time area has served its purpose once the map has a view.
       setView(
-        { lat: next.lat.toFixed(5), lng: next.lng.toFixed(5), z: String(next.zoom) },
+        { lat: next.lat.toFixed(5), lng: next.lng.toFixed(5), z: String(next.zoom), area: '' },
         { replace: true },
       )
     },
     [setView],
   )
 
-  const handleSelectPhoto = useCallback(
-    (uid: string) => {
-      void navigate(`/photos/${uid}`)
+  // Latest values for the map's long-lived tile callbacks.
+  const latest = useRef({ bounds, filterView, narrow, view })
+  latest.current = { bounds, filterView, narrow, view }
+
+  const photoTiles = useMemo<LeafletPhotoTiles>(
+    () => ({
+      onOpenPhoto: (uid) => {
+        const { bounds: area, filterView: filters } = latest.current
+        const query = area === null ? '' : `?${mapDetailQuery(filters, area)}`
+        void navigate(`/photos/${encodeURIComponent(uid)}${query}`)
+      },
+      onOpenCluster: (box) => {
+        const { narrow: phone, view: current } = latest.current
+        // Pushed, so Back closes the cluster's grid again. A peeking sheet
+        // rises to show it; a collapsed desktop column opens.
+        const peeking = sheetStateFromView(current) === 'peek'
+        setView({
+          sel: formatBBox(box),
+          panel: phone ? (peeking ? panelValueForSheet('half') : current.panel) : '',
+        })
+      },
+      describe: (summary, estimated) => tileLabel(t, i18n.language, summary, estimated),
+    }),
+    [navigate, setView, t, i18n.language],
+  )
+
+  const handleBackToArea = useCallback(() => {
+    setView({ sel: '' })
+  }, [setView])
+
+  const handlePanelOpen = useCallback(
+    (open: boolean) => {
+      setView({ panel: open ? '' : MAP_PANEL_CLOSED }, { replace: true })
     },
-    [navigate],
+    [setView],
+  )
+
+  const handleSheetState = useCallback(
+    (state: SheetState) => {
+      setView({ panel: panelValueForSheet(state) }, { replace: true })
+    },
+    [setView],
+  )
+
+  const handleMapset = useCallback(
+    (next: Mapset) => {
+      setView({ mapset: next })
+    },
+    [setView],
   )
 
   // Leaflet only reports *that* a tile failed; ask the proxy why, so the warning
@@ -149,86 +230,91 @@ export function MapPage() {
     setWarningDismissed(false)
   }, [mapset])
 
-  const filterBar = (
-    <MapFilterBar
-      view={view}
-      onChange={setView}
-      mapset={mapset}
-      count={features.length}
-      coverage={coverage}
-      canWrite={canWrite}
-    />
-  )
-
   return (
-    <div className={fill ? 'kk-map-page kk-map-fill' : 'kk-map-page'}>
-      {narrow ? (
-        // One row for the whole page header: the title on the left, the bar —
-        // which on a phone is a single Filters button plus the short coverage —
-        // on the right, wrapping under the title only on a screen too narrow for
-        // the pair.
-        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-          <h1 className="kk-page-title mb-0">{t('map.title')}</h1>
-          {filterBar}
-        </div>
-      ) : (
-        <>
-          <h1 className="kk-page-title mb-3">{t('map.title')}</h1>
-          {filterBar}
-        </>
-      )}
+    <div className="kk-map-page kk-map-fill">
+      {/* One row for the whole page header: the title, and the bar — on a phone
+          a single Filters button plus the short coverage, on a desktop the quiet
+          filter row — wrapping under the title only when there is no room. */}
+      <div className="kk-map-header">
+        <h1 className="kk-page-title mb-0">{t('map.title')}</h1>
+        <MapFilterBar
+          view={view}
+          onChange={setView}
+          count={features.length}
+          coverage={coverage}
+          canWrite={canWrite}
+        />
+      </div>
 
       {status === 'error' ? (
         <ErrorState title={t('map.error.load')} onRetry={retry} />
       ) : (
-        <div className="position-relative kk-map-stage">
-          {tileFailure !== null && !warningDismissed && (
-            <Alert
-              variant="warning"
-              dismissible
-              onClose={() => {
-                setWarningDismissed(true)
-              }}
-            >
-              <div>{t(TILE_FAILURE_MESSAGES[tileFailure])}</div>
-              <div className="small mb-0">{t('map.tiles.hint')}</div>
-            </Alert>
-          )}
+        <div className={narrow ? 'kk-map-stage kk-map-stage--sheet' : 'kk-map-stage'}>
+          <div className="kk-map-canvas">
+            {tileFailure !== null && !warningDismissed && (
+              <Alert
+                variant="warning"
+                dismissible
+                className="kk-map-tile-warning"
+                onClose={() => {
+                  setWarningDismissed(true)
+                }}
+              >
+                <div>{t(TILE_FAILURE_MESSAGES[tileFailure])}</div>
+                <div className="small mb-0">{t('map.tiles.hint')}</div>
+              </Alert>
+            )}
 
-          <LeafletMap
-            features={features}
-            mapset={mapset}
-            viewport={viewport}
-            onViewportChange={handleViewportChange}
-            onSelectPhoto={handleSelectPhoto}
-            thumbAlt={t('map.thumbAlt')}
-            estimatedTitle={t('map.estimatedTitle')}
-            twoFingerHint={t('map.gesture.twoFingers')}
-            onTileError={handleTileError}
-            fillsViewport={fill}
-          />
+            <LeafletMap
+              features={features}
+              mapset={mapset}
+              viewport={viewport}
+              initialBounds={initialArea}
+              onViewportChange={handleViewportChange}
+              onBoundsChange={handleBoundsChange}
+              photoTiles={photoTiles}
+              highlightUid={highlightUid}
+              animate={!reducedMotion}
+              bottomInset={narrow ? SHEET_PEEK_PX : 0}
+              thumbAlt={t('map.thumbAlt')}
+              estimatedTitle={t('map.estimatedTitle')}
+              twoFingerHint={t('map.gesture.twoFingers')}
+              onTileError={handleTileError}
+              fillsViewport
+            />
 
-          {status === 'loading' && (
-            <div
-              className="position-absolute top-0 start-50 translate-middle-x mt-2 px-3 py-1 rounded bg-dark text-light small d-flex align-items-center gap-2"
-              style={{ zIndex: 1000 }}
-              aria-live="polite"
-            >
-              <Spinner animation="border" size="sm" role="status" />
-              {t('map.loading')}
-            </div>
-          )}
+            <MapsetControl mapset={mapset} onChange={handleMapset} compact={narrow} />
 
-          {status === 'ready' && features.length === 0 && (
-            <div
-              className="position-absolute top-0 start-50 translate-middle-x mt-2 px-3 rounded bg-dark text-light"
-              style={{ zIndex: 1000, maxWidth: '90%' }}
-              aria-live="polite"
-            >
-              {/* Compact variant: this floats over the map rather than filling
-                  the space a collection would occupy. */}
-              <EmptyState size="sm" title={t('map.empty.title')} hint={t('map.empty.hint')} />
-            </div>
+            {status === 'loading' && (
+              <div className="kk-map-status" aria-live="polite">
+                <Spinner animation="border" size="sm" role="status" />
+                {t('map.loading')}
+              </div>
+            )}
+
+            {status === 'ready' && features.length === 0 && (
+              <div className="kk-map-status kk-map-status--empty" aria-live="polite">
+                {/* Compact variant: this floats over the map rather than filling
+                    the space a collection would occupy. */}
+                <EmptyState size="sm" title={t('map.empty.title')} hint={t('map.empty.hint')} />
+              </div>
+            )}
+          </div>
+
+          {status === 'ready' && features.length > 0 && (
+            <MapAreaPanel
+              layout={narrow ? 'sheet' : 'side'}
+              photos={areaPhotos}
+              mode={spot === null ? 'area' : 'spot'}
+              detailQuery={detailQuery}
+              onBackToArea={handleBackToArea}
+              onHoverPhoto={setHoverUid}
+              highlightUid={highlightUid}
+              open={panelOpenFromView(view)}
+              onOpenChange={handlePanelOpen}
+              sheetState={sheetStateFromView(view)}
+              onSheetStateChange={handleSheetState}
+            />
           )}
         </div>
       )}

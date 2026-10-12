@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -62,6 +63,10 @@ const (
 	// defaultMaxGeoPhotos caps how many geotagged photos one GeoJSON response may
 	// carry, bounding the work a single request can demand.
 	defaultMaxGeoPhotos = 50000
+	// geoCompressLevel is the gzip level of the GeoJSON feed: the default
+	// speed/size trade-off, since level 9 saves a few percent more of a document
+	// that is mostly repeated keys and costs several times the CPU.
+	geoCompressLevel = 5
 )
 
 // TileFetcher fetches a single map tile. mapy.Client satisfies it; a test fake
@@ -234,7 +239,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.tileRateLimit, a.requireAuth).Get("/tiles/{mapset}/{z}/{x}/{y}", a.handleTile)
 		r.With(a.requireAuth).Get("/rgeocode", a.handleReverseGeocode)
 		r.With(a.requireAuth).Get("/geocode", a.handleGeocode)
-		r.With(a.requireAuth).Get("/photos", a.handlePhotos)
+		// The feed is the whole located library in one JSON document — ~0.8 MB
+		// for prod's 2 456 photos — and nothing in front of the app compresses
+		// it, so the route does: gzip takes it to ~0.18 MB (docs/PERF.md).
+		r.With(a.requireAuth, middleware.Compress(geoCompressLevel, "application/json")).
+			Get("/photos", a.handlePhotos)
 	})
 }
 

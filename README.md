@@ -422,8 +422,14 @@ rebuilt? — and the only person who knows is usually not the person editing the
 
 ### Places and video
 
-- A **map** with clustering that says out loud how much of the library carries a location at all,
-  browsing by place (country → city, with a preview photo on every row), and reverse geocoding. A
+- A **map to browse the photos by place**, the way Apple Photos does it: clusters are the photos
+  themselves — the newest picture of each group with a count on its corner — splitting as you zoom
+  into smaller groups and finally single photos. A tap zooms into a group, or opens it as a grid when
+  its photos were all taken on one spot. Beside the map (on a phone, in a sheet you drag up from the
+  bottom) a grid lists the photos in the area you are looking at, newest first, and the viewer pages
+  through exactly those. "Show on map" on any photo lands there, zoomed in with the photo marked. The
+  map says out loud how much of the library carries a location at all. Plus browsing by place
+  (country → city, with a preview photo on every row), and reverse geocoding. A
   missing location can be estimated from photos taken near it in time — and only when those
   neighbours cluster tightly, always marked as an estimate. **A photo uploaded with coordinates gets
   its place name on its own**: the reverse geocode is queued at upload and drains within the metered
@@ -468,8 +474,8 @@ rebuilt? — and the only person who knows is usually not the person editing the
 
 The phone is the first screen, not the leftover one: the library's header there is the search field
 and a Filters button, with sort, density and the pickers folded into a drawer, and the map is the
-map — its base-layer tabs, dates and archive switch fold away the same way, so seven tenths of the
-screen is the map itself rather than the controls above it. **"Add to Home
+map — its dates and archive switch fold away the same way, the base layers hide behind one button
+on the map, and the photos in the area wait in a sheet peeking from the bottom. **"Add to Home
 Screen"** installs it with its own icon and no browser chrome; a service worker keeps the app shell
 on the device so it opens instantly. It caches nothing else, so nothing you see is ever stale — and
 it says exactly that: opening the app with no signal gets you a page explaining that the photos need

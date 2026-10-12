@@ -65,6 +65,7 @@ export type IconName =
   | 'images'
   | 'info-circle'
   | 'key'
+  | 'layers'
   | 'lightning-charge-fill'
   | 'link-45deg'
   | 'list-ul'

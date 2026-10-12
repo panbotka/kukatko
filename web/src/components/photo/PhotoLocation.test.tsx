@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -64,11 +65,13 @@ function renderLocation(props: {
 }) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <PhotoLocation
-        photo={props.photo ?? photo()}
-        canWrite={props.canWrite ?? true}
-        onUpdated={props.onUpdated ?? vi.fn()}
-      />
+      <MemoryRouter>
+        <PhotoLocation
+          photo={props.photo ?? photo()}
+          canWrite={props.canWrite ?? true}
+          onUpdated={props.onUpdated ?? vi.fn()}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -96,6 +99,21 @@ describe('PhotoLocation', () => {
     expect(screen.queryByText('50.08000, 14.42000')).not.toBeInTheDocument()
     const line = screen.getByText('Špilberk, Brno, Česko')
     expect(line).toHaveAttribute('title', '50.08000, 14.42000')
+  })
+
+  it('links to the big map centred on the photo with its tile highlighted', () => {
+    renderLocation({})
+
+    const link = screen.getByRole('link', { name: 'Show on map' })
+    expect(link).toHaveAttribute('href', '/map?lat=50.08000&lng=14.42000&z=17&photo=b')
+  })
+
+  it('brings the archive along for an archived photo', () => {
+    renderLocation({ photo: photo({ archived_at: '2026-02-01T00:00:00Z' }) })
+
+    expect(screen.getByRole('link', { name: 'Show on map' }).getAttribute('href')).toContain(
+      'archived=true',
+    )
   })
 
   it('says the place is unknown rather than falling back to the numbers', () => {

@@ -2,6 +2,7 @@ import { fireEvent, getDefaultNormalizer, render, screen, waitFor } from '@testi
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../../i18n'
@@ -189,11 +190,13 @@ function renderPanel(
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MetadataPanel
-        photo={props.photo ?? photo()}
-        canWrite={props.canWrite ?? true}
-        onUpdated={props.onUpdated ?? vi.fn()}
-      />
+      <MemoryRouter>
+        <MetadataPanel
+          photo={props.photo ?? photo()}
+          canWrite={props.canWrite ?? true}
+          onUpdated={props.onUpdated ?? vi.fn()}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -201,7 +204,9 @@ function renderPanel(
 function renderHarness(initial: PhotoDetail) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <DetailHarness initial={initial} />
+      <MemoryRouter>
+        <DetailHarness initial={initial} />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -258,7 +263,9 @@ describe('MetadataPanel edit form', () => {
     try {
       const { container } = render(
         <I18nextProvider i18n={i18n}>
-          <MetadataPanel photo={photo()} canWrite onUpdated={vi.fn()} footer={footer} />
+          <MemoryRouter>
+            <MetadataPanel photo={photo()} canWrite onUpdated={vi.fn()} footer={footer} />
+          </MemoryRouter>
         </I18nextProvider>,
       )
       await user.click(screen.getByRole('button', { name: 'Edit Title' }))

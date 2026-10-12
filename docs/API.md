@@ -362,6 +362,12 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   select several albums/labels at once, combined with **AND** — a photo must be in **all** selected
   albums and carry **all** selected labels (each UID = its own correlated `EXISTS`). A single value
   (`?album={uid}`) is a backward-compatible single-album scope;
+  the **`bbox` filter** (`?bbox=south,west,north,east`, degrees, edges inclusive; `photos.ParseBBox`
+  → 400 for anything but four in-range numbers with south ≤ north) keeps only photos located inside the
+  box — a west edge east of the east edge is a box **across the antimeridian** (the two longitude
+  halves, OR-ed). It is the map's "photos in this area": the area panel hands its viewport to the
+  viewer as `bbox` (plus the map's filters, newest first = the feed's own order), so prev/next page
+  through exactly the photos the panel listed; a photo without a location never matches;
   the **`task` scope** (`?task={uid}`, multi-valued on the same terms) narrows the listing to one
   task's **frozen group** — the photographs a question is about. It is how a task's own page reads its
   grid, so the group is browsed with every ordinary filter, sort and page on top of it rather than
@@ -2262,10 +2268,16 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   budget = one limiter); the cache key = the casefolded query + `limit`, **diacritics are
   preserved** (`veseli` and `veselí` are different queries at that level). `GET /map/photos` — a **GeoJSON FeatureCollection** of geotagged photos
   (coordinates `[lng,lat]`), honouring the filters `taken_after`/`taken_before`/`album`/`label`/`archived`,
-  a feature carries `uid`/`title`/`taken_at`/`media_type`/a relative `thumb` and, for an estimated location,
+  a feature carries `uid`/`title`/`taken_at`/`media_type`/a relative `thumb`, the photo's **`blurhash`**
+  (omitted when none is computed yet — the map paints it inside a photo tile while the thumbnail loads) and, for an estimated location,
   `location_estimated: true` (otherwise the key is **not sent at all**). Estimated photos are in the feed
   **by default** — that is what the estimate is for — but a pin that looks the same as a measured one is a silent lie, so
   the client draws them in a **different shape** (dashed, not just a different colour) + a `title`. The collection
+  The features come **newest first** (`taken_at` descending — the list's own order, which the map
+  relies on: the newest photo of a cluster is its picture, and the area panel's order is the viewer's).
+  The route is **gzip-compressed** for a client that accepts it (`middleware.Compress`, level 5): the feed
+  is the whole located library in one document — prod's 2 456 photos are ~0.8 MB raw, ~0.18 MB gzipped
+  (docs/PERF.md) — and nothing in front of the app compresses it. The collection
   also carries the foreign member `coverage: {located, total}` (RFC 7946 §6.1 permits foreign members):
   `located` = markers actually drawn, `total` = photos matching **the same filters** with the has-GPS
   restriction lifted (one extra `photos.Store.Count`, paging stripped). It is computed server-side because

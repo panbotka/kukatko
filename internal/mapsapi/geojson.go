@@ -56,14 +56,20 @@ type pointGeometry struct {
 }
 
 // featureProps carries the per-photo marker metadata: the UID, a title, the
-// capture time, the media type, a ready-to-use thumbnail path and whether the
-// pin's position is an estimate.
+// capture time, the media type, a ready-to-use thumbnail path, the blurred
+// placeholder and whether the pin's position is an estimate.
 type featureProps struct {
 	UID       string           `json:"uid"`
 	Title     string           `json:"title,omitempty"`
 	TakenAt   *time.Time       `json:"taken_at,omitempty"`
 	MediaType photos.MediaType `json:"media_type,omitempty"`
 	Thumb     string           `json:"thumb"`
+	// Blurhash is the photo's placeholder (see photos.Photo.Blurhash): the map
+	// paints it inside a photo tile while the thumbnail is still on its way, so a
+	// freshly revealed cluster is a blurred picture, not a grey square. Omitted
+	// when the photo has none yet. About thirty characters a photo — the one field
+	// the tiles need that the uid cannot be turned into on the client.
+	Blurhash string `json:"blurhash,omitempty"`
 	// LocationEstimated marks a pin whose coordinates were inferred from photos
 	// taken nearby in time rather than measured. Estimated photos are on the map by
 	// default — putting them there is the point of estimating them — but a pin that
@@ -145,6 +151,7 @@ func toFeature(p *photos.Photo) (feature, bool) {
 			TakenAt:           p.TakenAt,
 			MediaType:         p.MediaType,
 			Thumb:             thumbPathPrefix + url.PathEscape(p.UID) + "/thumb/" + geoThumbSize,
+			Blurhash:          p.Blurhash,
 			LocationEstimated: p.LocationSource == photos.LocationSourceEstimate,
 		},
 	}, true

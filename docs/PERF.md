@@ -1293,3 +1293,66 @@ re-orders a signed URL, and the rendition picking only ever changes *which* size
 is asked for, never how its address is built. The bytes the Worker serves are
 cached by the edge under their own headers; a client that outlives the signature
 re-reads a fresh one from the photo payload (`useThumbSrc`).
+
+---
+
+## 6. The map at library scale (`/map`, 2026-10-12)
+
+The map shows **every** located photo at once, so its cost scales with the library, not with a page.
+Measured against production (read-only account, `GET /api/v1/map/photos`; a throwaway Vite proxy
+serving the working tree, built with `vite build` and served by `vite preview` — dev-mode React is
+several times slower and its numbers mean nothing here) in the Pi's own Chromium. There is no CPU
+throttling: the Pi 5's Cortex-A76 cores are themselves in mid-range-phone territory.
+
+### The feed
+
+| | value |
+| --- | --- |
+| photos on the map / in the library | **2 456 / 20 421** (1 524 distinct coordinates, at most 34 photos on one) |
+| GeoJSON as served before this change | **765 536 B** (~312 B a photo), **not compressed** — nothing in front of the app gzips it; 0.57–0.60 s |
+| the same, gzip | 107 300 B |
+| + `blurhash` (~30 chars a photo, high-entropy) | 883 224 B raw → **176 798 B** with the route's own gzip (level 5) |
+| alternative: compact `[uid,lat,lng,taken_at,blurhash]` arrays | 257 359 B raw → 131 610 B gzip |
+
+Decision: **keep GeoJSON, add `blurhash`, gzip the route** (`middleware.Compress` on
+`/map/photos` only). Compression takes the wire size to under a quarter of what it was before the
+change, blurhash included; a bespoke array format would save another ~45 KB (25 %) at the price of a
+non-standard document every client has to decode by position. Not worth it at this size; worth
+revisiting if the located share grows towards the whole library (20 000 photos ≈ 1.4 MB gzipped
+by the same ratio).
+
+**No thumbnail URL rides in the feed.** A signed CDN URL is ~200 high-entropy bytes a photo (+0.5 MB
+for prod) and expires; instead a tile asks the thumbnail route for its uid
+(`/photos/{uid}/thumb/tile_100`), which mints the signed URL lazily and answers **302** (~0.1 s,
+`no-store` on the redirect itself, the CDN object cached). Only tiles actually drawn ask.
+
+### What is drawn
+
+- Markers are added with `chunkedLoading`; markercluster keeps only clusters inside the viewport in
+  the DOM (`removeOutsideVisibleBounds`), and a tile's DOM — and so its `<img>` — is built on its first
+  draw (`lazyTileIcon`). Measured: the initial fit of the whole country draws **6 tiles = 6 thumbnail
+  requests**; zooming into the Brno cluster draws 11 and requests **7** new thumbnails (all
+  `tile_100`: a 56 px tile up to DPR 2); a village at z16 on a phone draws 44.
+- A cluster's summary (newest photo by feed rank + the date span) is computed once per cluster —
+  markercluster caches the icon until the cluster's children change.
+- The area panel's list is a plain filter over the feed: **0.6 ms** for 2 456 photos, 2 ms for
+  50 000 (node, same predicate). The grid is virtualized inside the panel.
+
+### Long tasks (`PerformanceObserver('longtask')`, production build)
+
+| action | long tasks |
+| --- | --- |
+| first render, phone layout, sheet at half | 67, 84 ms |
+| zoom in one step × 4 (phone, sheet at half) | 90, 89, 91, 92 ms |
+| zoom out one step × 6 (phone) | 114, 70, 132, 52 ms |
+| zoom in × 4, desktop, panel open | 54–104 ms |
+| zoom in × 4, desktop, panel collapsed | 61–150 ms |
+| tap the 2 289-photo cluster (zoom to it), desktop | 61 ms |
+
+Every zoom step settles in one task of ~50–150 ms, after the animation (markercluster re-clusters on
+`zoomend`, the URL takes the new viewport, the panel re-lists 200 ms later); the open panel adds
+nothing measurable. The same tap in a **dev** build was 326 ms — measure a production bundle.
+
+Reproduce: `curl` the feed with a session cookie for the sizes; for the long tasks, build with a
+throwaway `vite.config` proxying `/api` to production (`changeOrigin`, `cookieDomainRewrite: ''`),
+`vite preview` it, sign in and run the observer around `.leaflet-control-zoom-in` clicks.

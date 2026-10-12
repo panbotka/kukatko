@@ -2035,7 +2035,8 @@
       "label": "Podkladová mapa",
       "basic": "Základní",
       "outdoor": "Turistická",
-      "aerial": "Letecká"
+      "aerial": "Letecká",
+      "switch": "Změnit podkladovou mapu"
     },
     "filters": {
       "toggle": "Filtry",
@@ -2071,7 +2072,41 @@
       "error": "Mapové podklady se nepodařilo načíst.",
       "hint": "Fotky se na prázdném podkladu zobrazují dál."
     },
-    "estimatedTitle": "Odhadovaná poloha podle fotek z téhož dne"
+    "estimatedTitle": "Odhadovaná poloha podle fotek z téhož dne",
+    "tile": {
+      "cluster_one": "{{count}} fotka, {{range}}",
+      "cluster_few": "{{count}} fotky, {{range}}",
+      "cluster_many": "{{count}} fotek, {{range}}",
+      "cluster_other": "{{count}} fotek, {{range}}",
+      "clusterUndated_one": "{{count}} fotka",
+      "clusterUndated_few": "{{count}} fotky",
+      "clusterUndated_many": "{{count}} fotek",
+      "clusterUndated_other": "{{count}} fotek",
+      "photo": "Fotka, {{date}}",
+      "photoUndated": "Fotka bez data",
+      "estimated": "odhadovaná poloha"
+    },
+    "area": {
+      "title_one": "{{shown}} fotka v této oblasti",
+      "title_few": "{{shown}} fotky v této oblasti",
+      "title_many": "{{shown}} fotek v této oblasti",
+      "title_other": "{{shown}} fotek v této oblasti",
+      "spotTitle_one": "{{shown}} fotka na tomto místě",
+      "spotTitle_few": "{{shown}} fotky na tomto místě",
+      "spotTitle_many": "{{shown}} fotek na tomto místě",
+      "spotTitle_other": "{{shown}} fotek na tomto místě",
+      "label": "Fotky v oblasti mapy",
+      "backToArea": "Celá oblast",
+      "collapse": "Skrýt panel s fotkami",
+      "expand": "Fotky v oblasti",
+      "grow": "Zvětšit panel s fotkami",
+      "shrink": "Zmenšit panel s fotkami",
+      "emptyTitle": "Tady žádné fotky nejsou",
+      "emptyHint": "Posuňte mapu nebo ji oddalte.",
+      "photoAlt": "Fotka z {{date}}",
+      "photoAltUndated": "Fotka bez data",
+      "video": "Video"
+    }
   },
   "similar": {
     "title": "Podobné fotky",
@@ -2874,7 +2909,8 @@
       "clear": "Vymazat polohu",
       "unknownPlace": "Místo zatím neurčeno.",
       "lookupBusy": "Místo se právě zjišťuje — chvilku strpení.",
-      "clearBusy": "Poloha se právě maže — chvilku strpení."
+      "clearBusy": "Poloha se právě maže — chvilku strpení.",
+      "showOnMap": "Zobrazit na mapě"
     },
     "edit": {
       "title": "Úpravy",
