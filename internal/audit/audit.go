@@ -448,6 +448,23 @@ const (
 	// being replaced (the storage move). The target is the project; the details
 	// carry the old and the new prefix.
 	ActionProjectStoragePrefix = "project.storage_prefix"
+	// ActionProjectMemberAdd records an account being added to a project. The
+	// target is the account (target type "project_member"); the details carry
+	// project_uid, the role and whether the membership starts approved.
+	ActionProjectMemberAdd = "project.member.add"
+	// ActionProjectMemberRole records a member's project role being changed. The
+	// details carry project_uid, the new role and the previous one.
+	ActionProjectMemberRole = "project.member.role"
+	// ActionProjectMemberApprove records a project admin approving a member. The
+	// details carry project_uid and the member's role.
+	ActionProjectMemberApprove = "project.member.approve"
+	// ActionProjectMemberRemove records an account being removed from a project.
+	// The details carry project_uid and the role it held.
+	ActionProjectMemberRemove = "project.member.remove"
+	// ActionProjectMemberSubject records a member's "this is me" person in a
+	// project being set or cleared. The details carry project_uid, the role and
+	// the previous and new subject uid.
+	ActionProjectMemberSubject = "project.member.subject"
 	// ActionAuditPurge records a maintainer purging old audit entries by retention
 	// (deleting rows older than a cutoff). The applied cutoff, the retention window
 	// in days and the number of deleted rows are recorded in the entry's details.
@@ -506,7 +523,9 @@ var knownActions = map[string]struct{}{
 	ActionUploadLinkUpload: {}, ActionUploadLinkRestoreCode: {}, ActionUploadLinkRotateCode: {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
-	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {},
+	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectMemberAdd: {},
+	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
+	ActionProjectMemberSubject: {},
 }
 
 // KnownAction reports whether action is one of the trail's own action labels. An

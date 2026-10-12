@@ -602,7 +602,21 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `max_file_bytes`/`max_total_bytes` (NULL = no limit). The migration inserts the **bootstrap project**
   `pj0000000000000000veselice` / `v` / Veselice that everything existing today belongs to; created projects
   get `projects/<uid>/`. Store: `internal/project`. It is an account-side table — a reset keeps it.
-  **The model is completed in later steps** (membership, `project_id` on the catalogue tables, routing,
+- **`project_members`** (migration 0101) — who belongs to which project: PK `(project_uid, user_uid)`, both
+  FKs `ON DELETE CASCADE`, index on `user_uid`; `role` on the project ladder `viewer`/`curator`/`editor`/`admin`
+  (**no maintainer** — that stays the instance role), `approved_at` (NULL = waiting for a project admin),
+  `subject_uid` ("this is me" in this project, FK to `subjects` `ON DELETE SET NULL`, constraint
+  `project_members_subject_uid_fkey`, which the reset lifts and restores like the users one), `last_seen_at`,
+  `visit_reference_at`, `task_digest_at` (the per-project visit/digest clocks), `created_at`. The migration
+  backfills one bootstrap-project row per existing account (`maintainer` → `admin`, the other five columns
+  copied 1:1, `ON CONFLICT DO NOTHING`) and adds **`users.last_project_uid`** (FK `projects`, `ON DELETE SET
+  NULL`, backfilled to the bootstrap uid). A project keeps at least one admin (`ErrLastAdmin` in the store).
+  Store: `internal/project`. Preserved by a reset.
+  **Transitional:** `users.role`, `approved_at`, `subject_uid`, `last_seen_at`, `visit_reference_at` and
+  `task_digest_at` still exist and are **still what today's code reads**; the membership is a copy taken at
+  migration time. Later steps move each reader to `project_members`, and only the step that finishes the
+  move drops the `users` columns (never in the migration that adds the new ones, so a rollback stays possible).
+  **The model is completed in later steps** (membership readers, `project_id` on the catalogue tables, routing,
   per-project storage, limits); the design is
   [`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
 

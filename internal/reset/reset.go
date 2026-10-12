@@ -602,46 +602,86 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 	return nil
 }
 
-// The wipe's one piece of surgery, in three statements around the truncation.
+// The wipe's one piece of surgery, in three steps around the truncation.
 //
-// users.subject_uid is the only pointer a preserved table holds into the library:
-// the person an account says it is. Postgres refuses to TRUNCATE a table that an
-// unlisted table references — structurally, whatever the rows say — so that one
-// foreign key would make the whole wipe fail, and TRUNCATE … CASCADE, which would
-// take the accounts with it, is the one escape this command must never use.
+// users.subject_uid and project_members.subject_uid are the only pointers
+// preserved tables hold into the library: the person an account says it is
+// (instance-wide today, per project in the membership that replaces it).
+// Postgres refuses to TRUNCATE a table that an unlisted table references —
+// structurally, whatever the rows say — so those foreign keys would make the
+// whole wipe fail, and TRUNCATE … CASCADE, which would take the accounts with it,
+// is the one escape this command must never use.
 //
-// So the constraint is dropped, the column is nulled, the catalogue is truncated
-// and the constraint goes straight back, all inside the transaction that also
-// writes the audit entry. Postgres makes DDL transactional, so a failure anywhere
-// in that sequence rolls the constraint back into place along with everything
-// else; there is no window in which the database is left without it.
+// So each constraint is dropped, its column is nulled, the catalogue is
+// truncated and the constraints go straight back, all inside the transaction
+// that also writes the audit entry. Postgres makes DDL transactional, so a
+// failure anywhere in that sequence rolls the constraints back into place along
+// with everything else; there is no window in which the database is left without
+// them.
 //
-// Nulling the column is also what the truth requires rather than a way round the
-// error: the person that link named is about to stop existing. Everything that
-// makes an account an account — credentials, role, note, its history — survives
-// untouched.
+// Nulling the columns is also what the truth requires rather than a way round
+// the error: the person each link named is about to stop existing. Everything
+// that makes an account an account — credentials, role, note, its history, its
+// memberships and their roles — survives untouched.
 //
-// The constraint is named in migration 0060; renaming it there without renaming
-// it here breaks the reset.
-const (
-	// dropSubjectFKSQL removes the foreign key for the duration of the wipe.
-	dropSubjectFKSQL = `ALTER TABLE users DROP CONSTRAINT users_subject_uid_fkey`
-	// clearUserSubjectsSQL unlinks every account from the person it named.
-	clearUserSubjectsSQL = `UPDATE users SET subject_uid = NULL WHERE subject_uid IS NOT NULL`
-	// restoreSubjectFKSQL puts the foreign key back, against the now-empty table.
-	restoreSubjectFKSQL = `ALTER TABLE users ADD CONSTRAINT users_subject_uid_fkey
-		FOREIGN KEY (subject_uid) REFERENCES subjects (uid) ON DELETE SET NULL`
-)
+// The constraints are named in migrations 0060 and 0101; renaming one there
+// without renaming it here breaks the reset.
 
-// unlinkAccounts clears the accounts' links to people and lifts the foreign key
-// that would otherwise refuse the truncation, on tx so it commits or rolls back
-// with the wipe itself.
+// subjectLink is one preserved table's foreign key into subjects, which the wipe
+// lifts, clears and restores.
+type subjectLink struct {
+	// table owns the column; it is a preserved table.
+	table string
+	// constraint is the foreign key's name, fixed by its migration.
+	constraint string
+}
+
+// subjectLinks are every preserved table's links into subjects.
+var subjectLinks = []subjectLink{
+	{table: "users", constraint: "users_subject_uid_fkey"},
+	{table: "project_members", constraint: "project_members_subject_uid_fkey"},
+}
+
+// dropSQL removes the foreign key for the duration of the wipe.
+func (l subjectLink) dropSQL() string {
+	return "ALTER TABLE " + pgx.Identifier{l.table}.Sanitize() +
+		" DROP CONSTRAINT " + pgx.Identifier{l.constraint}.Sanitize()
+}
+
+// clearSQL unlinks every row from the person it named.
+func (l subjectLink) clearSQL() string {
+	return "UPDATE " + pgx.Identifier{l.table}.Sanitize() +
+		" SET subject_uid = NULL WHERE subject_uid IS NOT NULL"
+}
+
+// restoreSQL puts the foreign key back, against the now-empty table.
+func (l subjectLink) restoreSQL() string {
+	return "ALTER TABLE " + pgx.Identifier{l.table}.Sanitize() +
+		" ADD CONSTRAINT " + pgx.Identifier{l.constraint}.Sanitize() +
+		" FOREIGN KEY (subject_uid) REFERENCES subjects (uid) ON DELETE SET NULL"
+}
+
+// unlinkAccounts clears the accounts' and memberships' links to people and
+// lifts the foreign keys that would otherwise refuse the truncation, on tx so it
+// commits or rolls back with the wipe itself.
 func unlinkAccounts(ctx context.Context, tx pgx.Tx) error {
-	if _, err := tx.Exec(ctx, dropSubjectFKSQL); err != nil {
-		return fmt.Errorf("reset: lifting the accounts' link constraint: %w", err)
+	for _, link := range subjectLinks {
+		if _, err := tx.Exec(ctx, link.dropSQL()); err != nil {
+			return fmt.Errorf("reset: lifting %s's link constraint: %w", link.table, err)
+		}
+		if _, err := tx.Exec(ctx, link.clearSQL()); err != nil {
+			return fmt.Errorf("reset: clearing %s's linked people: %w", link.table, err)
+		}
 	}
-	if _, err := tx.Exec(ctx, clearUserSubjectsSQL); err != nil {
-		return fmt.Errorf("reset: clearing the accounts' linked people: %w", err)
+	return nil
+}
+
+// relinkAccounts restores the foreign keys unlinkAccounts lifted, on tx.
+func relinkAccounts(ctx context.Context, tx pgx.Tx) error {
+	for _, link := range subjectLinks {
+		if _, err := tx.Exec(ctx, link.restoreSQL()); err != nil {
+			return fmt.Errorf("reset: restoring %s's link constraint: %w", link.table, err)
+		}
 	}
 	return nil
 }
@@ -653,8 +693,8 @@ func unlinkAccounts(ctx context.Context, tx pgx.Tx) error {
 // catalogue tables is inside the list, so the statement succeeds as written; if a
 // future migration adds a table that references one of them without being
 // classified here, Postgres refuses the statement instead of quietly extending
-// the blast radius. The single reference from outside the list is cleared first —
-// see clearUserSubjectsSQL.
+// the blast radius. The only references from outside the list are cleared
+// first — see subjectLinks.
 func (s *Service) truncate(ctx context.Context, opts Options, before Counts, stored StorageResult) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -672,8 +712,8 @@ func (s *Service) truncate(ctx context.Context, opts Options, before Counts, sto
 	if _, err := tx.Exec(ctx, "TRUNCATE TABLE "+strings.Join(quoted, ", ")+" RESTART IDENTITY"); err != nil {
 		return fmt.Errorf("reset: truncating the catalogue: %w", err)
 	}
-	if _, err := tx.Exec(ctx, restoreSubjectFKSQL); err != nil {
-		return fmt.Errorf("reset: restoring the accounts' link constraint: %w", err)
+	if err := relinkAccounts(ctx, tx); err != nil {
+		return err
 	}
 	if err := audit.Write(ctx, tx, s.auditEntry(opts, before, stored)); err != nil {
 		return fmt.Errorf("reset: recording the wipe: %w", err)

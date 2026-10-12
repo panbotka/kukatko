@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/familyexport"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/reset"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -146,6 +147,10 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 	e.exec(t, `INSERT INTO subjects (uid, slug, name, type) VALUES ($1,$2,$3,'person')`,
 		"sbj000000001", "babicka", "Babička")
 	e.exec(t, `UPDATE users SET subject_uid = $1 WHERE uid = $2`, "sbj000000001", "usr000000001")
+	// The same account as a member of the bootstrap project, linked to the same
+	// person there: the membership's own pointer into the library.
+	e.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
+		VALUES ($1, $2, 'admin', now(), $3)`, project.BootstrapUID, "usr000000001", "sbj000000001")
 }
 
 // writeObject writes a placeholder object into the store at key.

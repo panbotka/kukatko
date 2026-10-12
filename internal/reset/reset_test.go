@@ -39,6 +39,7 @@ func TestPreservedTables_holdTheEssentials(t *testing.T) {
 	preserved := PreservedTables()
 	for _, name := range []string{
 		"users", "sessions", "api_tokens", "schema_migrations", "announcements", "audit_log", "projects",
+		"project_members",
 	} {
 		if !slices.Contains(preserved, name) {
 			t.Errorf("table %q must be preserved by a reset, but is not in the list", name)

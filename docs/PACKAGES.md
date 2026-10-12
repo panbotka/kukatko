@@ -6080,8 +6080,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
 
 - **Projects (`internal/project`):** the first step of multi-tenancy
   ([design](superpowers/specs/2026-10-11-multi-tenancy-design.md)) — the `projects` table (migration
-  0100) and its store. A project is one independent library of the instance; nothing else references it
-  yet (no `project_id`, no membership, no HTTP route — later steps).
+  0100), its store, and since migration 0101 the **membership** (`project_members`) and its store. A
+  project is one independent library of the instance; the catalogue does not reference it yet (no
+  `project_id`, no HTTP route — later steps), and nothing reads the membership yet either.
   - `models.go` — `Project` (mirrors the row), `CreateParams`, `UpdatePatch`, `Usage`; the constants
     `BootstrapUID = "pj0000000000000000veselice"` / `BootstrapSlug = "v"` (the row migration 0100 inserts:
     Veselice, active, `storage_prefix = ''`, no limits — the library as it was before multi-tenancy),
@@ -6105,7 +6106,34 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     prefix changes, meant for the storage move. `Usage(uid)` = photo rows + `sum(file_size)` (archived
     included: their originals are still stored until purged); until `photos.project_id` exists the whole
     library counts for `BootstrapUID` and every other project is empty (a `TODO multi-tenancy` marks it).
-  - `internal/reset` keeps `projects` among the **preserved** tables (account-side, like `users`), and
+  - `member.go` — the per-project `Role` (`RoleViewer` < `RoleCurator` < `RoleEditor` < `RoleAdmin`, a
+    strict ladder like `internal/auth`'s **without maintainer**, which stays the instance role on `users`):
+    `ParseRole` (anything else, `maintainer` included = `ErrInvalidRole`), `Valid`, `CanCurate` (curator+),
+    `CanWrite` (editor+), `IsAdmin` (admin only) — each predicate names its roles explicitly. `Member` (the
+    row joined with `users.username`/`display_name`/`last_login_at`), `MembershipSummary` (`ProjectUID`,
+    `Slug`, `Name`, `Active`, `Role`, `Approved` — what the project chooser will list),
+    `MemberTargetType = "project_member"`. Sentinels `ErrNotMember`, `ErrAlreadyMember`, `ErrLastAdmin`,
+    `ErrUserNotFound`, `ErrSubjectNotFound`.
+  - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
+    one; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
+    (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included). Writes, each
+    **audited in its transaction** with the caller's `audit.Meta` (target type `project_member`, target uid =
+    the account, details `project_uid` + the role): `AddMember(…, role, approved)` → `project.member.add`
+    (an existing row is left untouched and `ErrAlreadyMember` returned, nothing audited; unknown project =
+    `ErrNotFound`, unknown account = `ErrUserNotFound`); `SetRole` → `project.member.role` (+
+    `previous_role`); `Approve` → `project.member.approve` (an approved member keeps its original time);
+    `RemoveMember` → `project.member.remove`; `SetSubject(…, *string)` → `project.member.subject` (+
+    `previous_subject_uid`; nil clears; unknown subject = `ErrSubjectNotFound`). A change to nothing writes
+    neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
+    to one project's members are serialised and the **last-admin guard** cannot be raced: `SetRole` away
+    from admin and `RemoveMember` of an admin return `ErrLastAdmin` when no other admin would remain
+    (who may remove whom — themselves included — is the HTTP layer's rule, later).
+    `TouchLastProject(userUID, projectUID)` writes `users.last_project_uid` (not audited, no membership
+    check; unknown account = `ErrUserNotFound`, unknown project = `ErrNotFound`).
+  - `internal/reset` keeps `projects` and `project_members` among the **preserved** tables (account-side,
+    like `users`); `project_members.subject_uid` points into the wiped `subjects`, so the reset lifts,
+    nulls and restores `project_members_subject_uid_fkey` exactly like `users_subject_uid_fkey`
+    (`subjectLinks` in `reset.go`), and
     `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
     like a freshly migrated one.
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
