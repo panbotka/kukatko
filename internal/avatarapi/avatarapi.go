@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -40,17 +41,19 @@ const cacheControl = "private, max-age=600, must-revalidate"
 // Subjects is the subset of people.Store the endpoint reads: which picture stands
 // for a subject. It is an interface so the handler is unit-testable with a fake.
 type Subjects interface {
-	// SubjectAvatar returns the subject's cover photo or best face, or
-	// people.ErrSubjectNotFound / people.ErrNoAvatar.
-	SubjectAvatar(ctx context.Context, uid string) (people.AvatarSource, error)
+	// SubjectAvatar returns the project's subject's cover photo or best face, or
+	// people.ErrSubjectNotFound (also for a subject of another project) /
+	// people.ErrNoAvatar.
+	SubjectAvatar(ctx context.Context, projectUID, uid string) (people.AvatarSource, error)
 }
 
 // Photos is the subset of photos.Store the endpoint reads: the record behind the
 // avatar's photo, which carries the file hash the cache is keyed by and the frame
 // the crop is measured against.
 type Photos interface {
-	// GetByUID returns one photo or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetByUIDInProject returns one photo of the project or
+	// photos.ErrPhotoNotFound.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
 }
 
 // Renderer cuts and caches the avatar itself. It is satisfied by
@@ -109,17 +112,22 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // exist, has no picture at all, or whose picture names a photo that has since
 // gone answers 404 — the people index draws its placeholder for all three, so
 // they are the same answer to it. A caller presenting the current ETag gets 304.
+//
+// Both lookups run inside the request's project, so a subject of another project
+// is the same 404 as a missing one, and no byte of another project's photo is
+// ever cut into an avatar.
 func (a *API) handleAvatar(w http.ResponseWriter, r *http.Request) {
 	if a.renderer == nil {
 		writeError(w, http.StatusServiceUnavailable, "avatars not available")
 		return
 	}
-	source, err := a.subjects.SubjectAvatar(r.Context(), chi.URLParam(r, "uid"))
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	source, err := a.subjects.SubjectAvatar(r.Context(), projectUID, chi.URLParam(r, "uid"))
 	if err != nil {
 		writeSourceError(w, err)
 		return
 	}
-	photo, err := a.photos.GetByUID(r.Context(), source.PhotoUID)
+	photo, err := a.photos.GetByUIDInProject(r.Context(), projectUID, source.PhotoUID)
 	if err != nil {
 		writeSourceError(w, err)
 		return

@@ -121,12 +121,19 @@ func insertAuditedAttempt[T any](
 // (the durable-audit convention; see internal/audit). entry's TargetUID defaults
 // to the subject's generated UID. It behaves like CreateSubject otherwise (unique
 // slug, ErrInvalidType for a bad type, ErrInvalidLifeYears for an impossible
-// birth/death year).
-func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry audit.Entry) (Subject, error) {
+// birth/death year). The subject is created in projectUID, which also defaults
+// the entry's ProjectUID.
+func (s *Store) CreateSubjectAudited(
+	ctx context.Context, projectUID string, subj Subject, entry audit.Entry,
+) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
 		return Subject{}, err
 	}
+	entry = withProject(entry, projectUID)
 	if entry.TargetUID == "" {
 		entry.TargetUID = prepared.UID
 	}
@@ -135,7 +142,7 @@ func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry au
 		return scanSubject(tx.QueryRow(ctx, insertSubjectSQL,
 			prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
 			prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
-			prepared.BirthYear, prepared.DeathYear))
+			prepared.BirthYear, prepared.DeathYear, projectUID))
 	})
 }
 
@@ -144,14 +151,19 @@ func (s *Store) CreateSubjectAudited(ctx context.Context, subj Subject, entry au
 // UpdateSubject otherwise — re-slugging from the new name, refreshing the cached
 // subject_name on the photo's faces, and returning ErrSubjectNotFound (writing no
 // audit row) if no such subject exists, ErrInvalidType for a bad type, or
-// ErrInvalidLifeYears for an impossible birth/death year.
+// ErrInvalidLifeYears for an impossible birth/death year. A subject of another
+// project than projectUID is not found.
 func (s *Store) UpdateSubjectAudited(
-	ctx context.Context, uid string, upd SubjectUpdate, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, upd SubjectUpdate, entry audit.Entry,
 ) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	upd, err := prepareSubjectUpdate(upd)
 	if err != nil {
 		return Subject{}, err
 	}
+	entry = withProject(entry, projectUID)
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
@@ -159,7 +171,7 @@ func (s *Store) UpdateSubjectAudited(
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Subject, error) {
 		row, err := scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
 			uid, slug, upd.Name, upd.Nickname, upd.Type, upd.Favorite, upd.Private,
-			upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
+			upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear, projectUID))
 		if err != nil {
 			return Subject{}, err
 		}
@@ -180,12 +192,16 @@ func (s *Store) UpdateSubjectAudited(
 // the same transaction. entry's TargetUID defaults to uid. It behaves like
 // DeleteSubject otherwise (detaching markers, dropping the hand-attached links,
 // clearing the faces cache). A missing subject returns ErrSubjectNotFound and
-// writes no audit row.
-func (s *Store) DeleteSubjectAudited(ctx context.Context, uid string, entry audit.Entry) error {
+// writes no audit row — so does a subject of another project than projectUID.
+func (s *Store) DeleteSubjectAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
+	entry = withProject(entry, projectUID)
 	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+		if err := requireSubjectInProject(ctx, tx, projectUID, uid); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx,
 			"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
 		); err != nil {
@@ -210,8 +226,15 @@ func (s *Store) DeleteSubjectAudited(ctx context.Context, uid string, entry audi
 // commit atomically. entry's TargetUID defaults to the marker's UID. It behaves
 // like CreateMarker otherwise (type/bounds validation, faces cache refresh when a
 // subject is named, ErrSubjectNotFound for a missing subject). A marker naming a
-// subject is reported to the tag observer as a tagging by entry.ActorUID.
-func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.Entry) (Marker, error) {
+// subject is reported to the tag observer as a tagging by entry.ActorUID. The
+// photo and the subject must belong to projectUID (ErrPhotoNotFound /
+// ErrSubjectNotFound otherwise, writing nothing).
+func (s *Store) CreateMarkerAudited(
+	ctx context.Context, projectUID string, m Marker, entry audit.Entry,
+) (Marker, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Marker{}, err
+	}
 	if m.Type == "" {
 		m.Type = MarkerFace
 	}
@@ -231,8 +254,9 @@ func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.E
 	if entry.TargetUID == "" {
 		entry.TargetUID = m.UID
 	}
+	entry = withProject(entry, projectUID)
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return s.insertMarkerTx(ctx, tx, m, entry.ActorUID)
+		return s.insertMarkerTx(ctx, tx, projectUID, m, entry.ActorUID)
 	})
 }
 
@@ -241,15 +265,17 @@ func (s *Store) CreateMarkerAudited(ctx context.Context, m Marker, entry audit.E
 // who made it commit atomically. entry's TargetUID defaults to markerUID. It behaves
 // like AssignSubject otherwise (refreshing the faces cache, ErrMarkerNotFound or
 // ErrSubjectNotFound when either side is missing — each rolls back, writing no
-// audit row). The tag observer hears the change as made by entry.ActorUID.
+// audit row; a marker or subject of another project than projectUID is missing).
+// The tag observer hears the change as made by entry.ActorUID.
 func (s *Store) AssignSubjectAudited(
-	ctx context.Context, markerUID, subjectUID string, entry audit.Entry,
+	ctx context.Context, projectUID, markerUID, subjectUID string, entry audit.Entry,
 ) (Marker, error) {
 	if entry.TargetUID == "" {
 		entry.TargetUID = markerUID
 	}
+	entry = withProject(entry, projectUID)
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return s.assignSubjectTx(ctx, tx, markerUID, subjectUID, entry.ActorUID)
+		return s.assignSubjectTx(ctx, tx, projectUID, markerUID, subjectUID, entry.ActorUID)
 	})
 }
 
@@ -263,15 +289,17 @@ func (s *Store) AssignSubjectAudited(
 // decision is reversible by setting the flag back. That is deliberate — every
 // listing that means "a real face" already filters on invalid = FALSE, and
 // detaching the subject here would make an invalidation indistinguishable from an
-// unassignment. A missing marker returns ErrMarkerNotFound and writes no audit row.
+// unassignment. A missing marker — or one of another project than projectUID —
+// returns ErrMarkerNotFound and writes no audit row.
 func (s *Store) SetMarkerInvalidAudited(
-	ctx context.Context, uid string, invalid bool, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, invalid bool, entry audit.Entry,
 ) (Marker, error) {
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
+	entry = withProject(entry, projectUID)
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return setMarkerInvalid(ctx, tx, uid, invalid)
+		return setMarkerInvalid(ctx, tx, projectUID, uid, invalid)
 	})
 }
 
@@ -279,14 +307,25 @@ func (s *Store) SetMarkerInvalidAudited(
 // and writes entry in the same transaction. entry's TargetUID defaults to markerUID.
 // It behaves like UnassignSubject otherwise (resetting the faces cache,
 // ErrMarkerNotFound for a missing marker — which rolls back, writing no audit row).
-// The tag observer hears the untagging as made by entry.ActorUID.
+// The tag observer hears the untagging as made by entry.ActorUID. A marker of
+// another project than projectUID is missing.
 func (s *Store) UnassignSubjectAudited(
-	ctx context.Context, markerUID string, entry audit.Entry,
+	ctx context.Context, projectUID, markerUID string, entry audit.Entry,
 ) (Marker, error) {
 	if entry.TargetUID == "" {
 		entry.TargetUID = markerUID
 	}
+	entry = withProject(entry, projectUID)
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Marker, error) {
-		return s.unassignSubjectTx(ctx, tx, markerUID, entry.ActorUID)
+		return s.unassignSubjectTx(ctx, tx, projectUID, markerUID, entry.ActorUID)
 	})
+}
+
+// withProject returns entry with its ProjectUID defaulted to projectUID, so every
+// audited people write records the project it happened in.
+func withProject(entry audit.Entry, projectUID string) audit.Entry {
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
+	return entry
 }

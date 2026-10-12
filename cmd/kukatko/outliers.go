@@ -18,7 +18,7 @@ import (
 func buildOutlierAPI(db *database.DB, authAPI *auth.API) *outlierapi.API {
 	svc := outliers.New(outliers.Config{
 		Faces:    vectors.NewStore(db.Pool()),
-		People:   people.NewStore(db.Pool()),
+		People:   requestProjectPeople{people.NewStore(db.Pool())},
 		Feedback: feedback.NewStore(db.Pool()),
 	})
 	return outlierapi.NewAPI(outlierapi.Config{

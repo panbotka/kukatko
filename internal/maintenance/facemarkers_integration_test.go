@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -32,11 +33,11 @@ func (h *harness) seedDuplicateMarker(t *testing.T, name string, seed uint8) (ph
 	ctx := context.Background()
 
 	photo := h.storeRealPhoto(t, name, seed)
-	subject, err := h.people.CreateSubject(ctx, people.Subject{Name: "Tomáš " + name})
+	subject, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Tomáš " + name})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	marker, err := h.people.CreateMarker(ctx, people.Marker{
+	marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: tomasMarkerBox[0], Y: tomasMarkerBox[1], W: tomasMarkerBox[2], H: tomasMarkerBox[3],
 	})
@@ -128,7 +129,7 @@ func TestScanAndRepairFaceMarkers(t *testing.T) {
 		}
 	}
 	// The marker itself is untouched — only the cache columns move.
-	if _, err := h.people.GetMarkerByUID(ctx, marker.UID); err != nil {
+	if _, err := h.people.GetMarkerByUID(ctx, project.BootstrapUID, marker.UID); err != nil {
 		t.Errorf("GetMarkerByUID after repair: %v", err)
 	}
 
@@ -160,11 +161,11 @@ func TestRepairFaceMarkersLeavesSingleLinks(t *testing.T) {
 	photo := h.storeRealPhoto(t, "twomarkers", 0x66)
 	markers := make([]people.Marker, 0, 2)
 	for _, name := range []string{"Anna", "Bara"} {
-		subject, err := h.people.CreateSubject(ctx, people.Subject{Name: name})
+		subject, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: name})
 		if err != nil {
 			t.Fatalf("CreateSubject(%s): %v", name, err)
 		}
-		marker, err := h.people.CreateMarker(ctx, people.Marker{
+		marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 			PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 			X: tomasMarkerBox[0], Y: tomasMarkerBox[1], W: tomasMarkerBox[2], H: tomasMarkerBox[3],
 		})

@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 	"github.com/panbotka/kukatko/internal/sweep"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -55,6 +56,88 @@ func newReviewHarness(t *testing.T) *reviewHarness {
 	}
 }
 
+// The review game and the services it composes still speak project-less
+// signatures; cmd/kukatko adapts the real stores to the request's project. The
+// bootstrap* adapters below do the same for the bootstrap project, which every
+// row these tests seed lands in.
+
+// bootstrapVectors adapts *vectors.Store to the project-less similarity searches
+// of candidates and expand.
+type bootstrapVectors struct {
+	*vectors.Store
+}
+
+// FindSimilar searches the bootstrap project.
+func (v bootstrapVectors) FindSimilar(
+	ctx context.Context, q []float32, limit int, maxDistance float64,
+) ([]vectors.Match, error) {
+	return v.Store.FindSimilar(ctx, project.BootstrapUID, q, limit, maxDistance)
+}
+
+// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
+func (v bootstrapVectors) FindSimilarUnassignedFaceCandidates(
+	ctx context.Context, q []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+) ([]vectors.FaceCandidate, error) {
+	return v.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, q, limit, maxDistance, exclude)
+}
+
+// bootstrapPeople adapts *people.Store to the project-less subject and marker
+// reads of candidates, outliers, sweep and review.
+type bootstrapPeople struct {
+	*people.Store
+}
+
+// GetSubjectByUID reads the subject inside the bootstrap project.
+func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
+	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
+}
+
+// GetMarkerByUID reads the marker inside the bootstrap project.
+func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
+	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
+}
+
+// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
+func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
+	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
+}
+
+// ListSubjects lists the subjects of the bootstrap project.
+func (p bootstrapPeople) ListSubjects(ctx context.Context) ([]people.SubjectCount, error) {
+	return p.Store.ListSubjects(ctx, project.BootstrapUID)
+}
+
+// bootstrapFeedback adapts *feedback.Store to the project-less face opinions the
+// review game records.
+type bootstrapFeedback struct {
+	*feedback.Store
+}
+
+// RejectFace records the rejection inside the bootstrap project.
+func (f bootstrapFeedback) RejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
+	return f.Store.RejectFace(ctx, project.BootstrapUID, key, entry)
+}
+
+// ConfirmFace records the confirmation inside the bootstrap project.
+func (f bootstrapFeedback) ConfirmFace(
+	ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry,
+) error {
+	return f.Store.ConfirmFace(ctx, project.BootstrapUID, key, entry)
+}
+
+// bootstrapAssigner adapts *facematch.Service to the project-less Apply of the
+// review game.
+type bootstrapAssigner struct {
+	*facematch.Service
+}
+
+// Apply performs the transition inside the bootstrap project.
+func (a bootstrapAssigner) Apply(
+	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
+) (facematch.AssignResult, error) {
+	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
+}
+
 // service composes a fresh review service over the harness stores — a fresh
 // instance means a cold cache and empty sessions, like a server restart.
 func (h *reviewHarness) service() *review.Service {
@@ -65,13 +148,13 @@ func (h *reviewHarness) service() *review.Service {
 // stand on the far side of a cooling-off period. A nil clock means time.Now.
 func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 	candSvc := candidates.New(candidates.Config{
-		Faces: h.vectors, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Faces: bootstrapVectors{h.vectors}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
-	sweepSvc := sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 2})
+	sweepSvc := sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 2})
 	expandSvc := expand.New(expand.Config{
-		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})
@@ -81,8 +164,8 @@ func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 		Expander:   expandSvc,
 		Organize:   h.organize,
 		Faces:      h.vectors,
-		Feedback:   h.feedback,
-		Assigner:   matchSvc,
+		Feedback:   bootstrapFeedback{h.feedback},
+		Assigner:   bootstrapAssigner{matchSvc},
 		Skips:      review.NewSkipRecorder(h.db.Pool()),
 		KindShares: allKinds(),
 		BandMin:    0.45, BandMax: 0.75,
@@ -169,14 +252,14 @@ func (h *reviewHarness) face(t *testing.T, hash string, face vectors.Face) strin
 // so the sweep (which scans subjects with markers) picks it up.
 func (h *reviewHarness) namedSubject(t *testing.T, name, hash string, exemplar []float32) people.Subject {
 	t.Helper()
-	subj, err := h.people.CreateSubject(context.Background(), people.Subject{Name: name})
+	subj, err := h.people.CreateSubject(context.Background(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject(%s): %v", name, err)
 	}
 	photoUID := h.face(t, hash, vectors.Face{
 		FaceIndex: 0, Vector: exemplar, DetScore: 0.95, SubjectUID: &subj.UID,
 	})
-	if _, err := h.people.CreateMarker(context.Background(), people.Marker{
+	if _, err := h.people.CreateMarker(context.Background(), project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
 		X: 0.3, Y: 0.3, W: 0.3, H: 0.3,
 	}); err != nil {
@@ -234,7 +317,7 @@ func bandFace() []float32 { return vec(map[int]float32{0: 0.6, 1: 0.8}) }
 func TestReviewQueue_faceTiersAndExclusionsDB(t *testing.T) {
 	h := newReviewHarness(t)
 	alice := h.namedSubject(t, "Alice", "alice-src", vec(map[int]float32{0: 1}))
-	bob, err := h.people.CreateSubject(context.Background(), people.Subject{Name: "Bob"})
+	bob, err := h.people.CreateSubject(context.Background(), project.BootstrapUID, people.Subject{Name: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateSubject(Bob): %v", err)
 	}
@@ -263,7 +346,9 @@ func TestReviewQueue_faceTiersAndExclusionsDB(t *testing.T) {
 		FaceIndex: 0, Vector: vec(map[int]float32{0: 0.6, 2: 0.8}), DetScore: 0.9,
 	})
 	rejKey := feedback.FaceRejectionKey{PhotoUID: rejectedPhoto, FaceIndex: 0, SubjectUID: alice.UID}
-	if err := h.feedback.RejectFace(context.Background(), rejKey, audit.Entry{Action: "face.reject"}); err != nil {
+	if err := h.feedback.RejectFace(
+		context.Background(), project.BootstrapUID, rejKey, audit.Entry{Action: "face.reject"},
+	); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
@@ -325,7 +410,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	if answer.Result != "assigned" || answer.Answered != 1 || answer.Remaining != 0 {
 		t.Fatalf("answer = %+v, want assigned 1/0", answer)
 	}
-	markers, err := h.people.ListMarkersByPhoto(context.Background(), bandPhoto)
+	markers, err := h.people.ListMarkersByPhoto(context.Background(), project.BootstrapUID, bandPhoto)
 	if err != nil {
 		t.Fatalf("ListMarkersByPhoto: %v", err)
 	}
@@ -350,7 +435,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	if fresh.Result != "assigned" {
 		t.Errorf("cold repeat = %+v, want assigned (idempotent short-circuit)", fresh)
 	}
-	markers, err = h.people.ListMarkersByPhoto(context.Background(), bandPhoto)
+	markers, err = h.people.ListMarkersByPhoto(context.Background(), project.BootstrapUID, bandPhoto)
 	if err != nil {
 		t.Fatalf("ListMarkersByPhoto: %v", err)
 	}
@@ -400,13 +485,13 @@ func TestReviewAnswer_faceYesTagsAuditViaReview(t *testing.T) {
 	// An ordinary assignment through the same facematch state machine must NOT
 	// carry the via marker.
 	matchSvc := facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})
-	bob, err := h.people.CreateSubject(context.Background(), people.Subject{Name: "Bob"})
+	bob, err := h.people.CreateSubject(context.Background(), project.BootstrapUID, people.Subject{Name: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateSubject(Bob): %v", err)
 	}
 	plainPhoto := h.face(t, "plain", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{3: 1}), DetScore: 0.9})
 	faceIdx, box := 0, reviewableBox
-	if _, err := matchSvc.Apply(context.Background(), facematch.AssignRequest{
+	if _, err := matchSvc.Apply(context.Background(), project.BootstrapUID, facematch.AssignRequest{
 		PhotoUID: plainPhoto, Action: facematch.ActionCreateMarker,
 		SubjectUID: bob.UID, FaceIndex: &faceIdx, BBox: &box,
 	}, audit.Meta{}); err != nil {

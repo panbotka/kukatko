@@ -29,6 +29,9 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // Tagging is one person put on (or taken off) one photo by a marker change.
 type Tagging struct {
+	// ProjectUID is the project the photo and the subject belong to — the
+	// project the store method was called in.
+	ProjectUID string
 	// PhotoUID is the photo the marker is on.
 	PhotoUID string
 	// SubjectUID is the subject the marker was assigned to (or taken from).

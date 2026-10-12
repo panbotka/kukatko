@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 )
 
 // handleFaceReject records that the face in the request body is NOT the given
@@ -20,7 +21,7 @@ func (a *API) handleFaceReject(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionFaceReject, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
-	if err := a.store.RejectFace(r.Context(), key, entry); err != nil {
+	if err := a.store.RejectFace(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -41,7 +42,7 @@ func (a *API) handleFaceUnreject(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionFaceUnreject, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
-	if err := a.store.UnrejectFace(r.Context(), key, entry); err != nil {
+	if err := a.store.UnrejectFace(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -63,7 +64,7 @@ func (a *API) handleFaceConfirm(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionFaceConfirm, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
-	if err := a.store.ConfirmFace(r.Context(), key, entry); err != nil {
+	if err := a.store.ConfirmFace(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -84,7 +85,7 @@ func (a *API) handleFaceUnconfirm(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionFaceUnconfirm, "subjects", key.SubjectUID, map[string]any{
 		"photo_uid": key.PhotoUID, "face_index": key.FaceIndex,
 	})
-	if err := a.store.UnconfirmFace(r.Context(), key, entry); err != nil {
+	if err := a.store.UnconfirmFace(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return

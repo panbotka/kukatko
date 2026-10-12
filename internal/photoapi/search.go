@@ -245,7 +245,7 @@ func (a *API) embedQuery(ctx context.Context, query string) (vec []float32, ok b
 func (a *API) semanticRanking(
 	ctx context.Context, vec []float32, params photos.ListParams, pool int,
 ) ([]string, map[string]photos.Photo, error) {
-	matches, err := a.similar.FindSimilar(ctx, vec, pool, 0)
+	matches, err := a.similar.FindSimilar(ctx, auth.ProjectUIDFromContext(ctx), vec, pool, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("photoapi: semantic search: %w", err)
 	}

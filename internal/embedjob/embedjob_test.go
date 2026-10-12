@@ -58,7 +58,7 @@ func (f *fakeVectorStore) SaveEmbedding(_ context.Context, emb vectors.Embedding
 
 // FindSimilar returns the canned similar matches.
 func (f *fakeVectorStore) FindSimilar(
-	_ context.Context, _ []float32, _ int, _ float64,
+	_ context.Context, _ string, _ []float32, _ int, _ float64,
 ) ([]vectors.Match, error) {
 	return append([]vectors.Match(nil), f.similar...), nil
 }

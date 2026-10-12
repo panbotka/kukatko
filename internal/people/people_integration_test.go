@@ -17,6 +17,10 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
+// testProject is the project every row these tests seed lands in: photos made
+// without an explicit project belong to the bootstrap project.
+const testProject = project.BootstrapUID
+
 // These tests run only under `make test-integration` against the database named
 // by KUKATKO_TEST_DATABASE_URL. They share one database and truncate between
 // cases, so they intentionally do not run in parallel.
@@ -97,7 +101,7 @@ func TestSubjectCRUD(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	created, err := store.CreateSubject(ctx, people.Subject{Name: "Anna Nováková", Notes: "sister"})
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Anna Nováková", Notes: "sister"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -105,16 +109,16 @@ func TestSubjectCRUD(t *testing.T) {
 		t.Fatalf("unexpected created subject: %+v", created)
 	}
 
-	byUID, err := store.GetSubjectByUID(ctx, created.UID)
+	byUID, err := store.GetSubjectByUID(ctx, testProject, created.UID)
 	if err != nil || byUID.UID != created.UID {
 		t.Fatalf("GetSubjectByUID = %+v, %v", byUID, err)
 	}
-	bySlug, err := store.GetSubjectBySlug(ctx, "anna-novakova")
+	bySlug, err := store.GetSubjectBySlug(ctx, testProject, "anna-novakova")
 	if err != nil || bySlug.UID != created.UID {
 		t.Fatalf("GetSubjectBySlug = %+v, %v", bySlug, err)
 	}
 
-	updated, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+	updated, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
 		Name: "Bobík", Type: people.SubjectPet, Favorite: true,
 	})
 	if err != nil {
@@ -124,13 +128,13 @@ func TestSubjectCRUD(t *testing.T) {
 		t.Fatalf("unexpected updated subject: %+v", updated)
 	}
 
-	if err := store.DeleteSubject(ctx, created.UID); err != nil {
+	if err := store.DeleteSubject(ctx, testProject, created.UID); err != nil {
 		t.Fatalf("DeleteSubject: %v", err)
 	}
-	if _, err := store.GetSubjectByUID(ctx, created.UID); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := store.GetSubjectByUID(ctx, testProject, created.UID); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("GetSubjectByUID after delete = %v, want ErrSubjectNotFound", err)
 	}
-	if err := store.DeleteSubject(ctx, created.UID); !errors.Is(err, people.ErrSubjectNotFound) {
+	if err := store.DeleteSubject(ctx, testProject, created.UID); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("DeleteSubject missing = %v, want ErrSubjectNotFound", err)
 	}
 }
@@ -143,7 +147,7 @@ func TestSubjectUniqueSlug(t *testing.T) {
 	want := []string{"alice", "alice-2", "alice-3"}
 	names := []string{"Alice", "Alice", "Alíce!"}
 	for i, name := range names {
-		got, err := store.CreateSubject(ctx, people.Subject{Name: name})
+		got, err := store.CreateSubject(ctx, testProject, people.Subject{Name: name})
 		if err != nil {
 			t.Fatalf("CreateSubject %d: %v", i, err)
 		}
@@ -158,14 +162,14 @@ func TestSubjectInvalidType(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	if _, err := store.CreateSubject(ctx, people.Subject{Name: "X", Type: "robot"}); !errors.Is(err, people.ErrInvalidType) {
+	if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "X", Type: "robot"}); !errors.Is(err, people.ErrInvalidType) {
 		t.Fatalf("CreateSubject bad type = %v, want ErrInvalidType", err)
 	}
-	created, err := store.CreateSubject(ctx, people.Subject{Name: "Y"})
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Y"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	if _, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{Name: "Y", Type: "alien"}); !errors.Is(err, people.ErrInvalidType) {
+	if _, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{Name: "Y", Type: "alien"}); !errors.Is(err, people.ErrInvalidType) {
 		t.Fatalf("UpdateSubject bad type = %v, want ErrInvalidType", err)
 	}
 }
@@ -178,7 +182,7 @@ func TestSubjectLifeYearsRoundTrip(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	created, err := store.CreateSubject(ctx, people.Subject{
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{
 		Name: "Jarmila", BirthYear: new(1923), DeathYear: new(1998),
 	})
 	if err != nil {
@@ -186,13 +190,13 @@ func TestSubjectLifeYearsRoundTrip(t *testing.T) {
 	}
 	assertLifeYears(t, "created", created, 1923, 1998)
 
-	fetched, err := store.GetSubjectByUID(ctx, created.UID)
+	fetched, err := store.GetSubjectByUID(ctx, testProject, created.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
 	assertLifeYears(t, "fetched", fetched, 1923, 1998)
 
-	listed, err := store.ListSubjects(ctx)
+	listed, err := store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -203,7 +207,7 @@ func TestSubjectLifeYearsRoundTrip(t *testing.T) {
 
 	// Only the birth year is known now: the death has to come back as unknown,
 	// not as the value it used to hold.
-	half, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+	half, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
 		Name: "Jarmila", BirthYear: new(1923),
 	})
 	if err != nil {
@@ -214,7 +218,7 @@ func TestSubjectLifeYearsRoundTrip(t *testing.T) {
 			half.BirthYear, half.DeathYear)
 	}
 
-	cleared, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{Name: "Jarmila"})
+	cleared, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{Name: "Jarmila"})
 	if err != nil {
 		t.Fatalf("UpdateSubject clearing both years: %v", err)
 	}
@@ -254,20 +258,20 @@ func TestSubjectLifeYearsValidation(t *testing.T) {
 		{name: "death before birth", birth: new(1998), death: new(1923)},
 	}
 
-	created, err := store.CreateSubject(ctx, people.Subject{Name: "Ludmila", BirthYear: new(1930)})
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Ludmila", BirthYear: new(1930)})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
 	for _, tt := range bad {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := store.CreateSubject(ctx, people.Subject{
+			_, err := store.CreateSubject(ctx, testProject, people.Subject{
 				Name: "Rejected " + tt.name, BirthYear: tt.birth, DeathYear: tt.death,
 			})
 			if !errors.Is(err, people.ErrInvalidLifeYears) {
 				t.Errorf("CreateSubject = %v, want ErrInvalidLifeYears", err)
 			}
-			_, err = store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+			_, err = store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
 				Name: "Ludmila", BirthYear: tt.birth, DeathYear: tt.death,
 			})
 			if !errors.Is(err, people.ErrInvalidLifeYears) {
@@ -277,7 +281,7 @@ func TestSubjectLifeYearsValidation(t *testing.T) {
 	}
 
 	// A rejected edit must not have touched the stored record on its way out.
-	after, err := store.GetSubjectByUID(ctx, created.UID)
+	after, err := store.GetSubjectByUID(ctx, testProject, created.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
@@ -295,15 +299,15 @@ func TestListSubjectsCounts(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "list_counts")
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
-	bob, _ := store.CreateSubject(ctx, people.Subject{Name: "Bob"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
+	bob, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Bob"})
 
 	// Two valid markers for Alice, one invalid (excluded), none for Bob.
 	mkMarker(t, store, photoUID, &alice.UID, false)
 	mkMarker(t, store, photoUID, &alice.UID, false)
 	mkMarker(t, store, photoUID, &alice.UID, true)
 
-	list, err := store.ListSubjects(ctx)
+	list, err := store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -332,7 +336,7 @@ func TestListSubjectsPhotoCountMatchesGallery(t *testing.T) {
 	store, photoStore, _, db := newStores(t)
 	ctx := t.Context()
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 
 	twice := makePhoto(t, photoStore, "gallery_twice")
 	once := makePhoto(t, photoStore, "gallery_once")
@@ -349,7 +353,7 @@ func TestListSubjectsPhotoCountMatchesGallery(t *testing.T) {
 		t.Fatalf("archiving photo: %v", err)
 	}
 
-	gallery, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	gallery, err := store.ListPhotoUIDsBySubject(ctx, testProject, alice.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}
@@ -376,7 +380,7 @@ func mkFace(
 	box [4]float64, score int, invalid bool,
 ) string {
 	t.Helper()
-	m, err := store.CreateMarker(t.Context(), people.Marker{
+	m, err := store.CreateMarker(t.Context(), testProject, people.Marker{
 		PhotoUID:   photoUID,
 		SubjectUID: &subjectUID,
 		Type:       people.MarkerFace,
@@ -394,7 +398,7 @@ func mkFace(
 // unless there is exactly one.
 func firstSubject(t *testing.T, store *people.Store) people.SubjectCount {
 	t.Helper()
-	list, err := store.ListSubjects(t.Context())
+	list, err := store.ListSubjects(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -412,7 +416,7 @@ func TestListSubjectsCoverFaceBiggestWins(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makeSizedPhoto(t, photoStore, "cover_big", 4000, 3000)
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	// The small face is the more confident one: score must not outrank area, or a
 	// pin-sharp speck would take the tile from a large, merely good face.
 	mkFace(t, store, photoUID, alice.UID, [4]float64{0.8, 0.8, 0.05, 0.05}, 99, false)
@@ -441,7 +445,7 @@ func TestListSubjectsCoverFaceScoreBreaksTies(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "cover_score")
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	mkFace(t, store, photoUID, alice.UID, [4]float64{0.1, 0.1, 0.2, 0.2}, 40, false)
 	mkFace(t, store, photoUID, alice.UID, [4]float64{0.5, 0.5, 0.2, 0.2}, 90, false)
 
@@ -461,7 +465,7 @@ func TestListSubjectsCoverFaceSkipsInvalid(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "cover_invalid")
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	mkFace(t, store, photoUID, alice.UID, [4]float64{0, 0, 0.9, 0.9}, 99, true)
 	mkFace(t, store, photoUID, alice.UID, [4]float64{0.1, 0.1, 0.2, 0.2}, 10, false)
 
@@ -483,24 +487,24 @@ func TestListSubjectsCoverFaceNone(t *testing.T) {
 	ctx := t.Context()
 
 	// A subject with no markers whatsoever.
-	if _, err := store.CreateSubject(ctx, people.Subject{Name: "Bare"}); err != nil {
+	if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Bare"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
-	invalidOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "InvalidOnly"})
+	invalidOnly, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "InvalidOnly"})
 	mkFace(t, store, makePhoto(t, photoStore, "none_invalid"), invalidOnly.UID,
 		[4]float64{0.1, 0.1, 0.3, 0.3}, 90, true)
 
-	labelOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "LabelOnly"})
+	labelOnly, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "LabelOnly"})
 	labelPhoto := makePhoto(t, photoStore, "none_label")
-	if _, err := store.CreateMarker(ctx, people.Marker{
+	if _, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: labelPhoto, SubjectUID: &labelOnly.UID, Type: people.MarkerLabel,
 		X: 0.1, Y: 0.1, W: 0.5, H: 0.5, Score: 90,
 	}); err != nil {
 		t.Fatalf("CreateMarker label: %v", err)
 	}
 
-	archivedOnly, _ := store.CreateSubject(ctx, people.Subject{Name: "ArchivedOnly"})
+	archivedOnly, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "ArchivedOnly"})
 	archivedPhoto := makePhoto(t, photoStore, "none_archived")
 	mkFace(t, store, archivedPhoto, archivedOnly.UID, [4]float64{0.1, 0.1, 0.3, 0.3}, 90, false)
 	if _, err := db.Pool().Exec(ctx,
@@ -508,7 +512,7 @@ func TestListSubjectsCoverFaceNone(t *testing.T) {
 		t.Fatalf("archiving photo: %v", err)
 	}
 
-	list, err := store.ListSubjects(ctx)
+	list, err := store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -531,7 +535,7 @@ func TestListPhotoUIDsBySubject(t *testing.T) {
 	p2 := makePhoto(t, photoStore, "subj_p2")
 	p3 := makePhoto(t, photoStore, "subj_p3")
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 
 	// p1 has two valid markers (must appear once), p2 one valid marker, p3 only an
 	// invalid marker (must be excluded).
@@ -540,7 +544,7 @@ func TestListPhotoUIDsBySubject(t *testing.T) {
 	mkMarker(t, store, p2, &alice.UID, false)
 	mkMarker(t, store, p3, &alice.UID, true)
 
-	uids, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	uids, err := store.ListPhotoUIDsBySubject(ctx, testProject, alice.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}
@@ -569,7 +573,7 @@ func TestSubjectPhotosMatchLibraryPersonFacet(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
 
-	alice, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 
 	// Five undated photos, each carrying a non-invalid marker for Alice.
 	hashes := []string{"match_p0", "match_p1", "match_p2", "match_p3", "match_p4"}
@@ -578,7 +582,7 @@ func TestSubjectPhotosMatchLibraryPersonFacet(t *testing.T) {
 		mkMarker(t, store, uid, &alice.UID, false)
 	}
 
-	gallery, err := store.ListPhotoUIDsBySubject(ctx, alice.UID)
+	gallery, err := store.ListPhotoUIDsBySubject(ctx, testProject, alice.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}
@@ -609,7 +613,7 @@ func TestSubjectPhotosMatchLibraryPersonFacet(t *testing.T) {
 // flag, returning its uid.
 func mkMarker(t *testing.T, store *people.Store, photoUID string, subjectUID *string, invalid bool) string {
 	t.Helper()
-	m, err := store.CreateMarker(t.Context(), people.Marker{
+	m, err := store.CreateMarker(t.Context(), testProject, people.Marker{
 		PhotoUID:   photoUID,
 		SubjectUID: subjectUID,
 		Type:       people.MarkerFace,
@@ -626,7 +630,7 @@ func mkMarker(t *testing.T, store *people.Store, photoUID string, subjectUID *st
 func TestMarkerCreateBounds(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	photoUID := makePhoto(t, photoStore, "bounds")
-	_, err := store.CreateMarker(t.Context(), people.Marker{
+	_, err := store.CreateMarker(t.Context(), testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 1.5, W: 0.2, H: 0.2,
 	})
 	if !errors.Is(err, people.ErrInvalidBounds) {
@@ -641,11 +645,11 @@ func TestMarkerAssignUnassignUpdatesFaceCache(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "assign")
 
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	marker, err := store.CreateMarker(ctx, people.Marker{
+	marker, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.3, H: 0.3,
 	})
 	if err != nil {
@@ -658,7 +662,7 @@ func TestMarkerAssignUnassignUpdatesFaceCache(t *testing.T) {
 		t.Fatalf("face cache before assign = %v/%q, want nil/empty", uid, name)
 	}
 
-	assigned, err := store.AssignSubject(ctx, marker.UID, subject.UID)
+	assigned, err := store.AssignSubject(ctx, testProject, marker.UID, subject.UID)
 	if err != nil {
 		t.Fatalf("AssignSubject: %v", err)
 	}
@@ -669,7 +673,7 @@ func TestMarkerAssignUnassignUpdatesFaceCache(t *testing.T) {
 		t.Fatalf("face cache after assign = %v/%q, want %s/Alice", uid, name, subject.UID)
 	}
 
-	unassigned, err := store.UnassignSubject(ctx, marker.UID)
+	unassigned, err := store.UnassignSubject(ctx, testProject, marker.UID)
 	if err != nil {
 		t.Fatalf("UnassignSubject: %v", err)
 	}
@@ -688,11 +692,11 @@ func TestMarkerCreateWithSubjectUpdatesFaceCache(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "create_assigned")
 
-	subject, _ := store.CreateSubject(ctx, people.Subject{Name: "Bob"})
+	subject, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Bob"})
 	// The face must be linked first; CreateMarker generates the marker uid, so we
 	// assign after to exercise the create-with-subject path on a fresh marker, then
 	// confirm the rename path refreshes the cache name.
-	marker, err := store.CreateMarker(ctx, people.Marker{
+	marker, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})
@@ -702,11 +706,11 @@ func TestMarkerCreateWithSubjectUpdatesFaceCache(t *testing.T) {
 	saveLinkedFace(t, vecStore, photoUID, marker.UID)
 
 	// Renaming the subject must refresh the cached name on the linked face.
-	if _, err := store.UpdateSubject(ctx, subject.UID, people.SubjectUpdate{Name: "Bobby"}); err != nil {
+	if _, err := store.UpdateSubject(ctx, testProject, subject.UID, people.SubjectUpdate{Name: "Bobby"}); err != nil {
 		t.Fatalf("UpdateSubject: %v", err)
 	}
 	// Re-link via assign so the face picks up the (now renamed) subject.
-	if _, err := store.AssignSubject(ctx, marker.UID, subject.UID); err != nil {
+	if _, err := store.AssignSubject(ctx, testProject, marker.UID, subject.UID); err != nil {
 		t.Fatalf("AssignSubject: %v", err)
 	}
 	if uid, name := faceCache(t, vecStore, photoUID); uid == nil || *uid != subject.UID || name != "Bobby" {
@@ -720,13 +724,13 @@ func TestAssignSubjectMissing(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "assign_missing")
 
-	subject, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
-	marker, _ := store.CreateMarker(ctx, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
+	subject, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
+	marker, _ := store.CreateMarker(ctx, testProject, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
 
-	if _, err := store.AssignSubject(ctx, "mkmissing", subject.UID); !errors.Is(err, people.ErrMarkerNotFound) {
+	if _, err := store.AssignSubject(ctx, testProject, "mkmissing", subject.UID); !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("AssignSubject missing marker = %v, want ErrMarkerNotFound", err)
 	}
-	if _, err := store.AssignSubject(ctx, marker.UID, "sumissing"); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := store.AssignSubject(ctx, testProject, marker.UID, "sumissing"); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("AssignSubject missing subject = %v, want ErrSubjectNotFound", err)
 	}
 }
@@ -737,23 +741,23 @@ func TestMarkerFlagsAndList(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "flags")
 
-	marker, _ := store.CreateMarker(ctx, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
+	marker, _ := store.CreateMarker(ctx, testProject, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
 
-	invalid, err := store.SetMarkerInvalid(ctx, marker.UID, true)
+	invalid, err := store.SetMarkerInvalid(ctx, testProject, marker.UID, true)
 	if err != nil || !invalid.Invalid {
 		t.Fatalf("SetMarkerInvalid = %+v, %v", invalid, err)
 	}
-	reviewed, err := store.SetMarkerReviewed(ctx, marker.UID, true)
+	reviewed, err := store.SetMarkerReviewed(ctx, testProject, marker.UID, true)
 	if err != nil || !reviewed.Reviewed {
 		t.Fatalf("SetMarkerReviewed = %+v, %v", reviewed, err)
 	}
 
-	list, err := store.ListMarkersByPhoto(ctx, photoUID)
+	list, err := store.ListMarkersByPhoto(ctx, testProject, photoUID)
 	if err != nil || len(list) != 1 || !list[0].Invalid || !list[0].Reviewed {
 		t.Fatalf("ListMarkersByPhoto = %+v, %v", list, err)
 	}
 
-	if _, err := store.SetMarkerInvalid(ctx, "mkmissing", true); !errors.Is(err, people.ErrMarkerNotFound) {
+	if _, err := store.SetMarkerInvalid(ctx, testProject, "mkmissing", true); !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("SetMarkerInvalid missing = %v, want ErrMarkerNotFound", err)
 	}
 }
@@ -764,11 +768,11 @@ func TestMarkerCascadeDeleteOnPhoto(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "cascade")
 
-	marker, _ := store.CreateMarker(ctx, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
+	marker, _ := store.CreateMarker(ctx, testProject, people.Marker{PhotoUID: photoUID, Type: people.MarkerFace})
 	if err := photoStore.Delete(ctx, photoUID); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	if _, err := store.GetMarkerByUID(ctx, marker.UID); !errors.Is(err, people.ErrMarkerNotFound) {
+	if _, err := store.GetMarkerByUID(ctx, testProject, marker.UID); !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("marker survived photo delete: %v", err)
 	}
 }
@@ -779,7 +783,7 @@ func TestSubjectCoverSetNullOnPhotoDelete(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "cover")
 
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice", CoverPhotoUID: &photoUID})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice", CoverPhotoUID: &photoUID})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -789,7 +793,7 @@ func TestSubjectCoverSetNullOnPhotoDelete(t *testing.T) {
 	if err := photoStore.Delete(ctx, photoUID); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	got, err := store.GetSubjectByUID(ctx, subject.UID)
+	got, err := store.GetSubjectByUID(ctx, testProject, subject.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
@@ -805,19 +809,19 @@ func TestSubjectDeleteDetachesMarkers(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "detach")
 
-	subject, _ := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
-	marker, _ := store.CreateMarker(ctx, people.Marker{
+	subject, _ := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
+	marker, _ := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})
 	saveLinkedFace(t, vecStore, photoUID, marker.UID)
-	if _, err := store.AssignSubject(ctx, marker.UID, subject.UID); err != nil {
+	if _, err := store.AssignSubject(ctx, testProject, marker.UID, subject.UID); err != nil {
 		t.Fatalf("AssignSubject: %v", err)
 	}
 
-	if err := store.DeleteSubject(ctx, subject.UID); err != nil {
+	if err := store.DeleteSubject(ctx, testProject, subject.UID); err != nil {
 		t.Fatalf("DeleteSubject: %v", err)
 	}
-	got, err := store.GetMarkerByUID(ctx, marker.UID)
+	got, err := store.GetMarkerByUID(ctx, testProject, marker.UID)
 	if err != nil {
 		t.Fatalf("GetMarkerByUID: %v", err)
 	}

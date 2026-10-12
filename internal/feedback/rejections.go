@@ -42,12 +42,12 @@ ORDER BY photo_uid, face_index`
 // entry.ActorUID (empty stored as NULL). It never mutates the face — no marker is
 // unassigned and no row is deleted. It returns ErrEmptyKey if the key lacks a photo
 // or subject UID, or a wrapped error if the subject/photo foreign keys reject the
-// row.
-func (s *Store) RejectFace(ctx context.Context, key FaceRejectionKey, entry audit.Entry) error {
+// row. A photo or subject of another project than projectUID is ErrTargetNotFound.
+func (s *Store) RejectFace(ctx context.Context, projectUID string, key FaceRejectionKey, entry audit.Entry) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, insertFaceRejectionSQL,
 			key.PhotoUID, key.FaceIndex, key.SubjectUID, nullable(entry.ActorUID))
 		if isForeignKeyViolation(err) {
@@ -64,12 +64,13 @@ func (s *Store) RejectFace(ctx context.Context, key FaceRejectionKey, entry audi
 // UnrejectFace removes the face rejection identified by key and writes entry in the
 // same transaction, letting a user take a rejection back. Un-rejecting a pair that
 // was never rejected still records the action but changes no rows. It returns
-// ErrEmptyKey if the key lacks a photo or subject UID.
-func (s *Store) UnrejectFace(ctx context.Context, key FaceRejectionKey, entry audit.Entry) error {
+// ErrEmptyKey if the key lacks a photo or subject UID, and ErrTargetNotFound —
+// recording nothing — if the photo or the subject is not one of projectUID.
+func (s *Store) UnrejectFace(ctx context.Context, projectUID string, key FaceRejectionKey, entry audit.Entry) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, deleteFaceRejectionSQL, key.PhotoUID, key.FaceIndex, key.SubjectUID)
 		if err != nil {
 			return fmt.Errorf("feedback: un-rejecting face %s#%d for %s: %w",

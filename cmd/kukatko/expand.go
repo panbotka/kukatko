@@ -36,7 +36,7 @@ func buildExpandService(
 	cfg *config.Config, db *database.DB, mediaStore storage.Storage,
 ) *expand.Service {
 	return expand.New(expand.Config{
-		Vectors:     vectors.NewStore(db.Pool()),
+		Vectors:     requestProjectVectors{vectors.NewStore(db.Pool())},
 		Organize:    organize.NewStore(db.Pool()),
 		Feedback:    feedback.NewStore(db.Pool()),
 		Photos:      photos.NewStore(db.Pool()),

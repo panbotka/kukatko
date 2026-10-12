@@ -28,6 +28,7 @@ import (
 	"github.com/panbotka/kukatko/internal/expand"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/mediaurl"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 	"github.com/panbotka/kukatko/internal/sweep"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -53,7 +54,7 @@ func (c *countingFaces) FindSimilarUnassignedFaceCandidates(
 	c.mu.Lock()
 	c.knn++
 	c.mu.Unlock()
-	return c.Store.FindSimilarUnassignedFaceCandidates(ctx, vec, limit, maxDistance, exclude)
+	return c.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, vec, limit, maxDistance, exclude)
 }
 
 // queries returns the kNN tally under the lock.
@@ -69,20 +70,20 @@ func (c *countingFaces) queries() int {
 func (h *reviewHarness) instrumentedService(cfg review.Config) (*review.Service, *countingFaces) {
 	faces := &countingFaces{Store: h.vectors}
 	candSvc := candidates.New(candidates.Config{
-		Faces: faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Faces: faces, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
-	cfg.Sweeper = sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 4})
+	cfg.Sweeper = sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 4})
 	cfg.Expander = expand.New(expand.Config{
-		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})
 	cfg.Organize = h.organize
 	cfg.Faces = h.vectors
-	cfg.Feedback = h.feedback
-	cfg.Assigner = facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})
+	cfg.Feedback = bootstrapFeedback{h.feedback}
+	cfg.Assigner = bootstrapAssigner{facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})}
 	cfg.BandMin, cfg.BandMax = 0.45, 0.75
 	return review.New(cfg), faces
 }

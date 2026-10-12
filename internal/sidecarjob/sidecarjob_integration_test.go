@@ -143,18 +143,18 @@ func TestExport_writesRealCurationToRealStorage(t *testing.T) {
 	if err := fix.organize.SetRating(ctx, userUID, photo.UID, 4); err != nil {
 		t.Fatalf("SetRating returned error: %v", err)
 	}
-	subject, err := fix.people.CreateSubject(ctx, people.Subject{Name: "Jana Nováková", Type: people.SubjectPerson})
+	subject, err := fix.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Jana Nováková", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject returned error: %v", err)
 	}
-	marker, err := fix.people.CreateMarker(ctx, people.Marker{
+	marker, err := fix.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, Type: people.MarkerFace,
 		X: 0.25, Y: 0.1, W: 0.2, H: 0.3, Score: 88,
 	})
 	if err != nil {
 		t.Fatalf("CreateMarker returned error: %v", err)
 	}
-	if _, err := fix.people.AssignSubject(ctx, marker.UID, subject.UID); err != nil {
+	if _, err := fix.people.AssignSubject(ctx, project.BootstrapUID, marker.UID, subject.UID); err != nil {
 		t.Fatalf("AssignSubject returned error: %v", err)
 	}
 

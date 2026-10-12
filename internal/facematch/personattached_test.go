@@ -35,7 +35,7 @@ func TestPhotoPeople_ignoresHandAttached(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	onPhoto, err := svc.PhotoPeople(ctx, "p1")
+	onPhoto, err := svc.PhotoPeople(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoPeople: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPhotoFaces_ignoresHandAttached(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestPhotoFaces_handAttachedStaysSuggestable(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}

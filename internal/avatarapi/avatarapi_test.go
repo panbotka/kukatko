@@ -22,8 +22,8 @@ type fakeSubjects struct {
 	err    error
 }
 
-// SubjectAvatar returns the canned source and error regardless of subject.
-func (f *fakeSubjects) SubjectAvatar(_ context.Context, _ string) (people.AvatarSource, error) {
+// SubjectAvatar returns the canned source and error regardless of project and subject.
+func (f *fakeSubjects) SubjectAvatar(_ context.Context, _, _ string) (people.AvatarSource, error) {
 	return f.source, f.err
 }
 
@@ -33,8 +33,8 @@ type fakePhotos struct {
 	err   error
 }
 
-// GetByUID returns the canned photo and error regardless of uid.
-func (f *fakePhotos) GetByUID(_ context.Context, _ string) (photos.Photo, error) {
+// GetByUIDInProject returns the canned photo and error regardless of project and uid.
+func (f *fakePhotos) GetByUIDInProject(_ context.Context, _, _ string) (photos.Photo, error) {
 	return f.photo, f.err
 }
 

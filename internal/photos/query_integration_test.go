@@ -161,7 +161,7 @@ func seedQueryOrganisation(
 		lib.org["label:"+name] = label.UID
 	}
 
-	alice, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	alice, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -173,7 +173,7 @@ func seedQueryOrganisation(
 		{PhotoUID: winter.UID, Type: people.MarkerFace, X: 0.5, Y: 0.5, W: 0.2, H: 0.2, Invalid: true},
 	}
 	for i, m := range markers {
-		if _, err := ppl.CreateMarker(ctx, m); err != nil {
+		if _, err := ppl.CreateMarker(ctx, project.BootstrapUID, m); err != nil {
 			t.Fatalf("CreateMarker(%d): %v", i, err)
 		}
 	}

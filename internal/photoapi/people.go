@@ -27,16 +27,16 @@ const maxAttachBody = 4 << 10
 // detail reports an empty list.
 type PeopleAttacher interface {
 	// ListPhotoSubjects returns the people attached to the photo by hand.
-	ListPhotoSubjects(ctx context.Context, photoUID string) ([]people.PhotoSubject, error)
+	ListPhotoSubjects(ctx context.Context, projectUID, photoUID string) ([]people.PhotoSubject, error)
 	// AttachSubjectToPhoto links a subject to the photo, auditing it in the same
 	// transaction, and returns the resulting list. It is idempotent.
 	AttachSubjectToPhoto(
-		ctx context.Context, photoUID, subjectUID string, entry audit.Entry,
+		ctx context.Context, projectUID, photoUID, subjectUID string, entry audit.Entry,
 	) ([]people.PhotoSubject, error)
 	// DetachSubjectFromPhoto removes the link, auditing it in the same
 	// transaction, and returns the remaining list.
 	DetachSubjectFromPhoto(
-		ctx context.Context, photoUID, subjectUID string, entry audit.Entry,
+		ctx context.Context, projectUID, photoUID, subjectUID string, entry audit.Entry,
 	) ([]people.PhotoSubject, error)
 }
 
@@ -89,7 +89,8 @@ func (a *API) handleAttachPerson(w http.ResponseWriter, r *http.Request) {
 		"photo_uid":   photoUID,
 		"subject_uid": subjectUID,
 	})
-	attached, err := a.attacher.AttachSubjectToPhoto(r.Context(), photoUID, subjectUID, entry)
+	attached, err := a.attacher.AttachSubjectToPhoto(
+		r.Context(), auth.ProjectUIDFromContext(r.Context()), photoUID, subjectUID, entry)
 	if err != nil {
 		writeAttachError(w, err, "attaching the person failed")
 		return
@@ -120,7 +121,8 @@ func (a *API) handleDetachPerson(w http.ResponseWriter, r *http.Request) {
 	subjectUID := chi.URLParam(r, "subjectUID")
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionPersonDetach, "subjects", subjectUID,
 		map[string]any{"photo_uid": photoUID})
-	remaining, err := a.attacher.DetachSubjectFromPhoto(r.Context(), photoUID, subjectUID, entry)
+	remaining, err := a.attacher.DetachSubjectFromPhoto(
+		r.Context(), auth.ProjectUIDFromContext(r.Context()), photoUID, subjectUID, entry)
 	if err != nil {
 		writeAttachError(w, err, "detaching the person failed")
 		return
@@ -169,7 +171,7 @@ func (a *API) resolveAttachedPeople(ctx context.Context, photoUID string) []peop
 	if a.attacher == nil {
 		return []people.PhotoSubject{}
 	}
-	attached, err := a.attacher.ListPhotoSubjects(ctx, photoUID)
+	attached, err := a.attacher.ListPhotoSubjects(ctx, auth.ProjectUIDFromContext(ctx), photoUID)
 	if err != nil {
 		log.Printf("photoapi: listing attached people of %s: %v", photoUID, err)
 		return []people.PhotoSubject{}

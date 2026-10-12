@@ -85,7 +85,7 @@ func (f *treeFixture) makeUser(t *testing.T, db *database.DB) string {
 // subject inserts a person and returns their uid.
 func (f *treeFixture) subject(t *testing.T, name string, birth *int) string {
 	t.Helper()
-	subj, err := f.people.CreateSubject(context.Background(), people.Subject{Name: name, BirthYear: birth})
+	subj, err := f.people.CreateSubject(context.Background(), project.BootstrapUID, people.Subject{Name: name, BirthYear: birth})
 	if err != nil {
 		t.Fatalf("creating subject %s: %v", name, err)
 	}

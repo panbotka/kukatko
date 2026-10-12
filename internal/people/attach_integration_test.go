@@ -35,7 +35,7 @@ type attachFixture struct {
 func newAttachFixture(t *testing.T) attachFixture {
 	t.Helper()
 	store, photoStore, _, db := newStores(t)
-	subject, err := store.CreateSubject(t.Context(), people.Subject{Name: "Marie Dvořáková"})
+	subject, err := store.CreateSubject(t.Context(), testProject, people.Subject{Name: "Marie Dvořáková"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -60,7 +60,7 @@ func (f attachFixture) attachSubject(t *testing.T, subjectUID string) []people.P
 	t.Helper()
 	entry := actorEntry(f.actorUID, audit.ActionPersonAttach, "markers", "",
 		map[string]any{"photo_uid": f.photoUID, "subject_uid": subjectUID})
-	attached, err := f.store.AttachSubjectToPhoto(t.Context(), f.photoUID, subjectUID, entry)
+	attached, err := f.store.AttachSubjectToPhoto(t.Context(), testProject, f.photoUID, subjectUID, entry)
 	if err != nil {
 		t.Fatalf("AttachSubjectToPhoto: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestAttachSubjectToPhoto_roundTrip(t *testing.T) {
 		t.Fatalf("attached = %+v, want a marker uid and a timestamp", got)
 	}
 
-	listed, err := f.store.ListPhotoSubjects(ctx, f.photoUID)
+	listed, err := f.store.ListPhotoSubjects(ctx, testProject, f.photoUID)
 	if err != nil {
 		t.Fatalf("ListPhotoSubjects: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestAttachSubjectToPhoto_roundTrip(t *testing.T) {
 
 	entry := actorEntry(f.actorUID, audit.ActionPersonDetach, "subjects", f.subjectUID,
 		map[string]any{"photo_uid": f.photoUID})
-	remaining, err := f.store.DetachSubjectFromPhoto(ctx, f.photoUID, f.subjectUID, entry)
+	remaining, err := f.store.DetachSubjectFromPhoto(ctx, testProject, f.photoUID, f.subjectUID, entry)
 	if err != nil {
 		t.Fatalf("DetachSubjectFromPhoto: %v", err)
 	}
@@ -138,10 +138,10 @@ func TestAttachSubjectToPhoto_idempotent(t *testing.T) {
 	}
 
 	entry := actorEntry(f.actorUID, audit.ActionPersonDetach, "subjects", f.subjectUID, nil)
-	if _, err := f.store.DetachSubjectFromPhoto(t.Context(), f.photoUID, f.subjectUID, entry); err != nil {
+	if _, err := f.store.DetachSubjectFromPhoto(t.Context(), testProject, f.photoUID, f.subjectUID, entry); err != nil {
 		t.Fatalf("first detach: %v", err)
 	}
-	if _, err := f.store.DetachSubjectFromPhoto(t.Context(), f.photoUID, f.subjectUID, entry); err != nil {
+	if _, err := f.store.DetachSubjectFromPhoto(t.Context(), testProject, f.photoUID, f.subjectUID, entry); err != nil {
 		t.Fatalf("second detach = %v, want success (the state already holds)", err)
 	}
 }
@@ -166,11 +166,11 @@ func TestAttachSubjectToPhoto_missing(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := actorEntry(f.actorUID, audit.ActionPersonAttach, "markers", "", nil)
-			if _, err := f.store.AttachSubjectToPhoto(ctx, tc.photoUID, tc.subjectUID, entry); !errors.Is(err, tc.want) {
+			if _, err := f.store.AttachSubjectToPhoto(ctx, testProject, tc.photoUID, tc.subjectUID, entry); !errors.Is(err, tc.want) {
 				t.Errorf("attach = %v, want %v", err, tc.want)
 			}
 			entry = actorEntry(f.actorUID, audit.ActionPersonDetach, "subjects", tc.subjectUID, nil)
-			if _, err := f.store.DetachSubjectFromPhoto(ctx, tc.photoUID, tc.subjectUID, entry); !errors.Is(err, tc.want) {
+			if _, err := f.store.DetachSubjectFromPhoto(ctx, testProject, tc.photoUID, tc.subjectUID, entry); !errors.Is(err, tc.want) {
 				t.Errorf("detach = %v, want %v", err, tc.want)
 			}
 		})
@@ -199,7 +199,7 @@ func TestAttachSubjectToPhoto_audited(t *testing.T) {
 
 	entry := actorEntry(f.actorUID, audit.ActionPersonDetach, "subjects", f.subjectUID,
 		map[string]any{"photo_uid": f.photoUID})
-	if _, err := f.store.DetachSubjectFromPhoto(ctx, f.photoUID, f.subjectUID, entry); err != nil {
+	if _, err := f.store.DetachSubjectFromPhoto(ctx, testProject, f.photoUID, f.subjectUID, entry); err != nil {
 		t.Fatalf("DetachSubjectFromPhoto: %v", err)
 	}
 	rec = requireOneAudit(t, ctx, auditStore, audit.ActionPersonDetach, f.actorUID, f.subjectUID)
@@ -216,7 +216,7 @@ func TestAttachSubjectToPhoto_countsAndGallery(t *testing.T) {
 	ctx := t.Context()
 	f.attach(t)
 
-	uids, err := f.store.ListPhotoUIDsBySubject(ctx, f.subjectUID)
+	uids, err := f.store.ListPhotoUIDsBySubject(ctx, testProject, f.subjectUID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestAttachSubjectToPhoto_countsAndGallery(t *testing.T) {
 		t.Fatalf("subject gallery = %v, want the attached photo", uids)
 	}
 
-	subjects, err := f.store.ListSubjects(ctx)
+	subjects, err := f.store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestAttachSubjectToPhoto_countsAndGallery(t *testing.T) {
 		t.Errorf("cover_face = %+v, want none: there is no box to crop a tile from", subjects[0].CoverFace)
 	}
 
-	stats, err := f.store.SubjectStats(ctx, f.subjectUID)
+	stats, err := f.store.SubjectStats(ctx, testProject, f.subjectUID)
 	if err != nil {
 		t.Fatalf("SubjectStats: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestAttachSubjectToPhoto_noAvatar(t *testing.T) {
 	f := newAttachFixture(t)
 	f.attach(t)
 
-	if _, err := f.store.SubjectAvatar(t.Context(), f.subjectUID); !errors.Is(err, people.ErrNoAvatar) {
+	if _, err := f.store.SubjectAvatar(t.Context(), testProject, f.subjectUID); !errors.Is(err, people.ErrNoAvatar) {
 		t.Fatalf("SubjectAvatar = %v, want ErrNoAvatar", err)
 	}
 }
@@ -270,7 +270,7 @@ func TestAttachSubjectToPhoto_cover(t *testing.T) {
 	f := newAttachFixture(t)
 	f.attach(t)
 
-	covers, err := f.store.SubjectCovers(t.Context(), []string{f.subjectUID})
+	covers, err := f.store.SubjectCovers(t.Context(), testProject, []string{f.subjectUID})
 	if err != nil {
 		t.Fatalf("SubjectCovers: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestAttachSubjectToPhoto_deletedSubject(t *testing.T) {
 	f := newAttachFixture(t)
 	f.attach(t)
 
-	if err := f.store.DeleteSubject(t.Context(), f.subjectUID); err != nil {
+	if err := f.store.DeleteSubject(t.Context(), testProject, f.subjectUID); err != nil {
 		t.Fatalf("DeleteSubject: %v", err)
 	}
 	if n := countPersonMarkers(t, f.db); n != 0 {
@@ -319,7 +319,7 @@ func TestAttachSubjectToPhoto_deletedSubjectAudited(t *testing.T) {
 	f.attach(t)
 
 	entry := actorEntry(f.actorUID, audit.ActionSubjectDelete, "subjects", f.subjectUID, nil)
-	if err := f.store.DeleteSubjectAudited(t.Context(), f.subjectUID, entry); err != nil {
+	if err := f.store.DeleteSubjectAudited(t.Context(), testProject, f.subjectUID, entry); err != nil {
 		t.Fatalf("DeleteSubjectAudited: %v", err)
 	}
 	if n := countPersonMarkers(t, f.db); n != 0 {
@@ -370,7 +370,7 @@ func TestAttachSubjectToPhoto_merge(t *testing.T) {
 	f := newAttachFixture(t)
 	ctx := t.Context()
 
-	other, err := f.store.CreateSubject(ctx, people.Subject{Name: "Marie D."})
+	other, err := f.store.CreateSubject(ctx, testProject, people.Subject{Name: "Marie D."})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -385,11 +385,11 @@ func TestAttachSubjectToPhoto_merge(t *testing.T) {
 	onlyOther.attach(t)
 
 	entry := actorEntry(f.actorUID, audit.ActionSubjectMerge, "subjects", f.subjectUID, nil)
-	if _, err := f.store.MergeSubjectsAudited(ctx, other.UID, f.subjectUID, entry); err != nil {
+	if _, err := f.store.MergeSubjectsAudited(ctx, testProject, other.UID, f.subjectUID, entry); err != nil {
 		t.Fatalf("MergeSubjectsAudited: %v", err)
 	}
 
-	uids, err := f.store.ListPhotoUIDsBySubject(ctx, f.subjectUID)
+	uids, err := f.store.ListPhotoUIDsBySubject(ctx, testProject, f.subjectUID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestAttachSubjectToPhoto_noFaceRow(t *testing.T) {
 func TestAttachSubjectToPhoto_noBox(t *testing.T) {
 	f := newAttachFixture(t)
 
-	_, err := f.store.CreateMarker(t.Context(), people.Marker{
+	_, err := f.store.CreateMarker(t.Context(), testProject, people.Marker{
 		PhotoUID: f.photoUID, SubjectUID: &f.subjectUID,
 		Type: people.MarkerPerson, X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})

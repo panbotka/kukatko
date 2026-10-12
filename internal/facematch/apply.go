@@ -21,14 +21,26 @@ import (
 // change. An unknown action returns ErrInvalidAction; missing required fields return
 // the matching ErrMissing* sentinel; a missing marker or subject is surfaced
 // (wrapped) for the HTTP layer to map to 404.
-func (s *Service) Apply(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
+//
+// Everything happens inside projectUID: the request's photo, its marker and its
+// subject must belong to it — one of another project is missing (photos.
+// ErrPhotoNotFound, people.ErrMarkerNotFound, people.ErrSubjectNotFound), and
+// nothing is written — and a subject created by name is created there.
+func (s *Service) Apply(
+	ctx context.Context, projectUID string, req AssignRequest, meta audit.Meta,
+) (AssignResult, error) {
+	if req.PhotoUID != "" {
+		if _, err := s.photos.GetByUIDInProject(ctx, projectUID, req.PhotoUID); err != nil {
+			return AssignResult{}, fmt.Errorf("facematch: loading photo %s: %w", req.PhotoUID, err)
+		}
+	}
 	switch req.Action {
 	case ActionCreateMarker:
-		return s.applyCreateMarker(ctx, req, meta)
+		return s.applyCreateMarker(ctx, projectUID, req, meta)
 	case ActionAssignPerson:
-		return s.applyAssignPerson(ctx, req, meta)
+		return s.applyAssignPerson(ctx, projectUID, req, meta)
 	case ActionUnassignPerson:
-		return s.applyUnassign(ctx, req, meta)
+		return s.applyUnassign(ctx, projectUID, req, meta)
 	default:
 		return AssignResult{}, fmt.Errorf("%w: %q", ErrInvalidAction, req.Action)
 	}
@@ -37,17 +49,19 @@ func (s *Service) Apply(ctx context.Context, req AssignRequest, meta audit.Meta)
 // applyCreateMarker creates a face marker for the request's box, assigns it the
 // resolved subject, and links the named face to it. The new marker is the audit
 // entry's target (its UID is stamped by the store).
-func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
+func (s *Service) applyCreateMarker(
+	ctx context.Context, projectUID string, req AssignRequest, meta audit.Meta,
+) (AssignResult, error) {
 	if req.BBox == nil {
 		return AssignResult{}, ErrMissingBBox
 	}
-	subject, err := s.resolveSubject(ctx, req)
+	subject, err := s.resolveSubject(ctx, projectUID, req)
 	if err != nil {
 		return AssignResult{}, err
 	}
 	box := clampBox(*req.BBox)
 	entry := meta.Entry(audit.ActionFaceAssign, "markers", "", assignDetails(req, subject))
-	marker, err := s.people.CreateMarkerAudited(ctx, people.Marker{
+	marker, err := s.people.CreateMarkerAudited(ctx, projectUID, people.Marker{
 		PhotoUID:   req.PhotoUID,
 		SubjectUID: &subject.UID,
 		Type:       people.MarkerFace,
@@ -63,19 +77,21 @@ func (s *Service) applyCreateMarker(ctx context.Context, req AssignRequest, meta
 
 // applyAssignPerson assigns the resolved subject to an existing marker, marks the
 // marker reviewed, and links the named face to it.
-func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
+func (s *Service) applyAssignPerson(
+	ctx context.Context, projectUID string, req AssignRequest, meta audit.Meta,
+) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
 	}
-	subject, err := s.resolveSubject(ctx, req)
+	subject, err := s.resolveSubject(ctx, projectUID, req)
 	if err != nil {
 		return AssignResult{}, err
 	}
 	entry := meta.Entry(audit.ActionFaceAssign, "markers", req.MarkerUID, assignDetails(req, subject))
-	if _, err := s.people.AssignSubjectAudited(ctx, req.MarkerUID, subject.UID, entry); err != nil {
+	if _, err := s.people.AssignSubjectAudited(ctx, projectUID, req.MarkerUID, subject.UID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: assigning subject: %w", err)
 	}
-	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, true)
+	marker, err := s.people.SetMarkerReviewed(ctx, projectUID, req.MarkerUID, true)
 	if err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: marking reviewed: %w", err)
 	}
@@ -86,15 +102,17 @@ func (s *Service) applyAssignPerson(ctx context.Context, req AssignRequest, meta
 // applyUnassign clears a marker's subject and its reviewed flag. The face keeps its
 // marker_uid link (the region is still valid), only the subject cache is cleared,
 // which UnassignSubjectAudited does for every face tied to the marker.
-func (s *Service) applyUnassign(ctx context.Context, req AssignRequest, meta audit.Meta) (AssignResult, error) {
+func (s *Service) applyUnassign(
+	ctx context.Context, projectUID string, req AssignRequest, meta audit.Meta,
+) (AssignResult, error) {
 	if req.MarkerUID == "" {
 		return AssignResult{}, ErrMissingMarker
 	}
 	entry := meta.Entry(audit.ActionFaceUnassign, "markers", req.MarkerUID, unassignDetails(req))
-	if _, err := s.people.UnassignSubjectAudited(ctx, req.MarkerUID, entry); err != nil {
+	if _, err := s.people.UnassignSubjectAudited(ctx, projectUID, req.MarkerUID, entry); err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: unassigning subject: %w", err)
 	}
-	marker, err := s.people.SetMarkerReviewed(ctx, req.MarkerUID, false)
+	marker, err := s.people.SetMarkerReviewed(ctx, projectUID, req.MarkerUID, false)
 	if err != nil {
 		return AssignResult{}, fmt.Errorf("facematch: marking unreviewed: %w", err)
 	}
@@ -147,9 +165,9 @@ func unassignDetails(req AssignRequest) map[string]any {
 // SubjectUID, or — failing that — found-or-created from SubjectName. A request
 // naming neither — including one whose name identifies nobody, such as
 // punctuation alone — returns ErrMissingSubject.
-func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people.Subject, error) {
+func (s *Service) resolveSubject(ctx context.Context, projectUID string, req AssignRequest) (people.Subject, error) {
 	if req.SubjectUID != "" {
-		subj, err := s.people.GetSubjectByUID(ctx, req.SubjectUID)
+		subj, err := s.people.GetSubjectByUID(ctx, projectUID, req.SubjectUID)
 		if err != nil {
 			return people.Subject{}, fmt.Errorf("facematch: loading subject %s: %w", req.SubjectUID, err)
 		}
@@ -159,7 +177,7 @@ func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people
 	if people.NameSlug(name) == "" {
 		return people.Subject{}, ErrMissingSubject
 	}
-	return s.findOrCreateSubject(ctx, name)
+	return s.findOrCreateSubject(ctx, projectUID, name)
 }
 
 // findOrCreateSubject returns the subject whose slug matches name's slug, creating a
@@ -170,16 +188,16 @@ func (s *Service) resolveSubject(ctx context.Context, req AssignRequest) (people
 // identifies somebody; resolveSubject rejects the rest. Keying on Slugify would
 // send every unusable name to the one slug it falls back to, quietly assigning
 // unrelated faces to whichever subject got there first.
-func (s *Service) findOrCreateSubject(ctx context.Context, name string) (people.Subject, error) {
+func (s *Service) findOrCreateSubject(ctx context.Context, projectUID, name string) (people.Subject, error) {
 	slug := people.NameSlug(name)
-	subj, err := s.people.GetSubjectBySlug(ctx, slug)
+	subj, err := s.people.GetSubjectBySlug(ctx, projectUID, slug)
 	if err == nil {
 		return subj, nil
 	}
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		return people.Subject{}, fmt.Errorf("facematch: looking up subject %q: %w", name, err)
 	}
-	created, err := s.people.CreateSubject(ctx, people.Subject{Name: name})
+	created, err := s.people.CreateSubject(ctx, projectUID, people.Subject{Name: name})
 	if err != nil {
 		return people.Subject{}, fmt.Errorf("facematch: creating subject %q: %w", name, err)
 	}

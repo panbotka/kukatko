@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/namelessjob"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -141,7 +142,7 @@ func (e *namelessEnv) do(t *testing.T, c *http.Client, method, path string, body
 func (e *namelessEnv) plantCatchAll(t *testing.T) (subject people.Subject, markerUID string) {
 	t.Helper()
 	ctx := t.Context()
-	subject, err := e.people.CreateSubject(ctx, people.Subject{Name: ""})
+	subject, err := e.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: ""})
 	if err != nil {
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
@@ -152,7 +153,7 @@ func (e *namelessEnv) plantCatchAll(t *testing.T) (subject people.Subject, marke
 	if err != nil {
 		t.Fatalf("creating photo: %v", err)
 	}
-	marker, err := e.people.CreateMarker(ctx, people.Marker{
+	marker, err := e.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.3, H: 0.3,
 	})
 	if err != nil {
@@ -165,7 +166,7 @@ func (e *namelessEnv) plantCatchAll(t *testing.T) (subject people.Subject, marke
 	}}); err != nil {
 		t.Fatalf("SaveFaces: %v", err)
 	}
-	if _, err := e.people.AssignSubject(ctx, marker.UID, subject.UID); err != nil {
+	if _, err := e.people.AssignSubject(ctx, project.BootstrapUID, marker.UID, subject.UID); err != nil {
 		t.Fatalf("AssignSubject: %v", err)
 	}
 	return subject, marker.UID
@@ -305,7 +306,7 @@ func TestNamelessDetachRefusesWithoutADeliverableSnapshot(t *testing.T) {
 	if n := env.countJobs(t, jobs.TypeNamelessDetach); n != 0 {
 		t.Errorf("scheduled %d detach job(s) with no undo file, want none", n)
 	}
-	if _, err := env.people.GetSubjectByUID(t.Context(), subject.UID); err != nil {
+	if _, err := env.people.GetSubjectByUID(t.Context(), project.BootstrapUID, subject.UID); err != nil {
 		t.Errorf("the subject was removed despite the refusal: %v", err)
 	}
 	if sub := markerSubjectUID(t, env, markerUID); sub == nil || *sub != subject.UID {
@@ -332,7 +333,7 @@ func TestNamelessDetachDeliversUndoDetachesAndAudits(t *testing.T) {
 		t.Fatalf("ran %d detach job(s), want 1", ran)
 	}
 
-	if _, err := env.people.GetSubjectByUID(t.Context(), subject.UID); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := env.people.GetSubjectByUID(t.Context(), project.BootstrapUID, subject.UID); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("GetSubjectByUID after the detach = %v, want ErrSubjectNotFound", err)
 	}
 	if sub := markerSubjectUID(t, env, markerUID); sub != nil {
@@ -372,7 +373,7 @@ func TestNamelessRestoreReplaysTheUndoFile(t *testing.T) {
 		t.Fatalf("ran %d restore job(s), want 1", ran)
 	}
 
-	restored, err := env.people.GetSubjectByUID(t.Context(), subject.UID)
+	restored, err := env.people.GetSubjectByUID(t.Context(), project.BootstrapUID, subject.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID after the undo: %v", err)
 	}
@@ -432,7 +433,7 @@ func detachAndReadUndo(
 // markerSubjectUID returns the subject a marker is assigned to, or nil.
 func markerSubjectUID(t *testing.T, env *namelessEnv, markerUID string) *string {
 	t.Helper()
-	marker, err := env.people.GetMarkerByUID(t.Context(), markerUID)
+	marker, err := env.people.GetMarkerByUID(t.Context(), project.BootstrapUID, markerUID)
 	if err != nil {
 		t.Fatalf("GetMarkerByUID: %v", err)
 	}
@@ -442,7 +443,7 @@ func markerSubjectUID(t *testing.T, env *namelessEnv, markerUID string) *string 
 // facePhotoUID returns the photo a marker sits on.
 func facePhotoUID(t *testing.T, env *namelessEnv, markerUID string) string {
 	t.Helper()
-	marker, err := env.people.GetMarkerByUID(t.Context(), markerUID)
+	marker, err := env.people.GetMarkerByUID(t.Context(), project.BootstrapUID, markerUID)
 	if err != nil {
 		t.Fatalf("GetMarkerByUID: %v", err)
 	}

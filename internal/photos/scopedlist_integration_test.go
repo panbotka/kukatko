@@ -172,7 +172,7 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 // the person filter joins them — through a named marker in the markers table.
 func mustMarker(t *testing.T, ppl *people.Store, photoUID, subjectUID string, rejected bool) {
 	t.Helper()
-	if _, err := ppl.CreateMarker(t.Context(), people.Marker{
+	if _, err := ppl.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Invalid: rejected,
 	}); err != nil {
@@ -209,7 +209,7 @@ func TestList_subjectScope(t *testing.T) {
 		FileHash: "s-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg", Title: "without",
 	})
 
-	subject, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -263,11 +263,11 @@ func TestList_multipleSubjectsAND(t *testing.T) {
 		FileHash: "ms-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "alice-only",
 	})
 
-	alice, err := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	alice, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject(alice): %v", err)
 	}
-	bob, err := ppl.CreateSubject(ctx, people.Subject{Name: "Bob", Type: people.SubjectPerson})
+	bob, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bob", Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("CreateSubject(bob): %v", err)
 	}

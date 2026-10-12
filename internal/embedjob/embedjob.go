@@ -66,8 +66,11 @@ type VectorStore interface {
 	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
 	// SaveEmbedding stores (or overwrites) a photo's image embedding.
 	SaveEmbedding(ctx context.Context, emb vectors.Embedding) (vectors.Embedding, error)
-	// FindSimilar returns embeddings nearest to vec within maxDistance.
-	FindSimilar(ctx context.Context, vec []float32, limit int, maxDistance float64) ([]vectors.Match, error)
+	// FindSimilar returns the project's embeddings nearest to vec within
+	// maxDistance.
+	FindSimilar(
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+	) ([]vectors.Match, error)
 	// ListPhotosMissingEmbedding returns uids of non-archived photos with no
 	// embedding yet (limit <= 0 returns all).
 	ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error)
@@ -317,7 +320,9 @@ func (s *Service) Duplicates(ctx context.Context, photoUID string) ([]vectors.Ma
 	if err != nil {
 		return nil, fmt.Errorf("embedjob: loading embedding for %s: %w", photoUID, err)
 	}
-	matches, err := s.vectors.FindSimilar(ctx, emb.Vector, dupCandidateLimit, s.dupMaxDist)
+	// A duplicate is only ever looked for inside the photo's own project, which
+	// the embedding row carries.
+	matches, err := s.vectors.FindSimilar(ctx, emb.ProjectID, emb.Vector, dupCandidateLimit, s.dupMaxDist)
 	if err != nil {
 		return nil, fmt.Errorf("embedjob: finding duplicates for %s: %w", photoUID, err)
 	}

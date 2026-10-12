@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -29,6 +30,20 @@ type expandHarness struct {
 	svc      *expand.Service
 }
 
+// bootstrapVectors adapts *vectors.Store to the project-less expand.VectorStore,
+// searching the bootstrap project the test photos land in (cmd/kukatko wires the
+// request's project instead).
+type bootstrapVectors struct {
+	*vectors.Store
+}
+
+// FindSimilar searches the bootstrap project.
+func (v bootstrapVectors) FindSimilar(
+	ctx context.Context, vec []float32, limit int, maxDistance float64,
+) ([]vectors.Match, error) {
+	return v.Store.FindSimilar(ctx, project.BootstrapUID, vec, limit, maxDistance)
+}
+
 // newExpandHarness returns a harness over a truncated integration database, with the
 // given source-set cap (0 uses the package default).
 func newExpandHarness(t *testing.T, sourceCap int) expandHarness {
@@ -42,7 +57,8 @@ func newExpandHarness(t *testing.T, sourceCap int) expandHarness {
 	return expandHarness{
 		vectors: vectorStore, organize: organizeStore, feedback: feedbackStore, photos: photoStore,
 		svc: expand.New(expand.Config{
-			Vectors: vectorStore, Organize: organizeStore, Feedback: feedbackStore, Photos: photoStore,
+			Vectors: bootstrapVectors{vectorStore}, Organize: organizeStore,
+			Feedback: feedbackStore, Photos: photoStore,
 			Media:       mediaurl.NewBuilder(nil),
 			MaxDistance: 0.5, SearchLimit: 200, SourceCap: sourceCap, Concurrency: 4,
 		}),

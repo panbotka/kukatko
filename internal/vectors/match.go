@@ -90,33 +90,45 @@ func (s *Store) ListDuplicateFaceMarkers(ctx context.Context) ([]DuplicateFaceMa
 	return duplicates, nil
 }
 
-// findSimilarFaceCandidatesSQL ranks face embeddings by cosine distance to the
-// query vector, keeping only those within $2 and returning the $3 nearest, with
-// the cached assignment columns and the bounding box needed to build suggestions.
+// findSimilarFaceCandidatesSQL ranks the face embeddings of one project ($4) by
+// cosine distance to the query vector, keeping only those within $2 and returning
+// the $3 nearest, with the cached assignment columns and the bounding box needed
+// to build suggestions. The shape — project filter inside the HNSW scan, re-sort
+// and distance cutoff outside it — is findSimilarSQL's (see project.go).
 const findSimilarFaceCandidatesSQL = `
-SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
-       subject_uid, subject_name, marker_uid
-FROM faces
-WHERE (embedding <=> $1) <= $2
-ORDER BY embedding <=> $1
-LIMIT $3`
+WITH nearest AS MATERIALIZED (
+    SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
+           subject_uid, subject_name, marker_uid
+    FROM faces
+    WHERE project_id = $4
+    ORDER BY embedding <=> $1
+    LIMIT $3
+)
+SELECT photo_uid, face_index, distance, bbox, subject_uid, subject_name, marker_uid
+FROM nearest
+WHERE distance <= $2
+ORDER BY distance, photo_uid, face_index`
 
-// FindSimilarFaceCandidates returns the faces whose embedding is closest to vec
-// by cosine distance, nearest first, each carrying its cached subject assignment
-// and bounding box. limit and maxDistance behave as in FindSimilarFaces. The query
-// runs in a read-only transaction with hnsw.ef_search tuned for recall. It returns
-// ErrDimMismatch if vec is not FaceDim long. It backs the face-suggestion logic,
-// which aggregates the assigned neighbours by subject.
+// FindSimilarFaceCandidates returns the faces of projectUID whose embedding is
+// closest to vec by cosine distance, nearest first, each carrying its cached
+// subject assignment and bounding box. limit and maxDistance behave as in
+// FindSimilarFaces, and so does the transaction. It returns ErrNoProject without
+// a project and ErrDimMismatch if vec is not FaceDim long. It backs the
+// face-suggestion logic, which aggregates the assigned neighbours by subject — so
+// a face is only ever suggested a subject named in its own project.
 func (s *Store) FindSimilarFaceCandidates(
-	ctx context.Context, vec []float32, limit int, maxDistance float64,
+	ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 ) ([]FaceCandidate, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if len(vec) != FaceDim {
 		return nil, fmt.Errorf("%w: got %d, want %d", ErrDimMismatch, len(vec), FaceDim)
 	}
 	var candidates []FaceCandidate
-	err := s.withReadTx(ctx, func(tx pgx.Tx) error {
+	err := s.withProjectReadTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, findSimilarFaceCandidatesSQL,
-			ToHalfVec(vec), normalizeMaxDistance(maxDistance), normalizeLimit(limit))
+			ToHalfVec(vec), normalizeMaxDistance(maxDistance), normalizeLimit(limit), projectUID)
 		if err != nil {
 			return fmt.Errorf("querying similar face candidates: %w", err)
 		}
@@ -137,15 +149,16 @@ func (s *Store) FindSimilarFaceCandidates(
 	return candidates, nil
 }
 
-// findSimilarUnassignedFaceCandidatesSQL ranks the face embeddings that are not yet
-// assigned to any subject (subject_uid IS NULL) by cosine distance to the query
-// vector, excluding any (photo_uid, face_index) pair present in the exclusion arrays
-// ($3 photo uids, $4 face indexes), and returns the $2 nearest. The exclusion is a
-// NOT EXISTS anti-join over the two parallel arrays unnested into rows, so it filters
-// in SQL — before the LIMIT — and an empty exclusion set unnests to no rows (matching
-// everything). Run under an iterative HNSW scan (see withFilteredReadTx), the LIMIT is
-// filled from rows that pass the filter instead of shrinking to whatever survives the
-// first ef_search candidates.
+// findSimilarUnassignedFaceCandidatesSQL ranks the face embeddings of one project
+// ($5) that are not yet assigned to any subject (subject_uid IS NULL) by cosine
+// distance to the query vector, excluding any (photo_uid, face_index) pair present in
+// the exclusion arrays ($3 photo uids, $4 face indexes), and returns the $2 nearest.
+// The exclusion is a NOT EXISTS anti-join over the two parallel arrays unnested into
+// rows, so it filters in SQL — before the LIMIT — and an empty exclusion set unnests
+// to no rows (matching everything). Run under an iterative HNSW scan (see
+// withProjectReadTx), the LIMIT is filled from rows that pass the filters instead of
+// shrinking to whatever survives the first ef_search candidates; the outer query
+// re-sorts them, because the scan runs in relaxed order.
 //
 // There is deliberately NO distance predicate here; the caller cuts the ordered rows
 // at maxDistance instead. A `(embedding <=> $1) <= 0.4` in this WHERE clause is
@@ -155,16 +168,22 @@ func (s *Store) FindSimilarFaceCandidates(
 // 50 410-face library: 90 ms with the predicate, 10 ms without it, same 32 rows out.
 // See docs/PERF.md.
 const findSimilarUnassignedFaceCandidatesSQL = `
-SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
-       subject_uid, subject_name, marker_uid
-FROM faces
-WHERE subject_uid IS NULL
-  AND NOT EXISTS (
-      SELECT 1
-      FROM unnest($3::text[], $4::int[]) AS ex(photo_uid, face_index)
-      WHERE ex.photo_uid = faces.photo_uid AND ex.face_index = faces.face_index)
-ORDER BY embedding <=> $1
-LIMIT $2`
+WITH nearest AS MATERIALIZED (
+    SELECT photo_uid, face_index, embedding <=> $1 AS distance, bbox,
+           subject_uid, subject_name, marker_uid
+    FROM faces
+    WHERE project_id = $5
+      AND subject_uid IS NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM unnest($3::text[], $4::int[]) AS ex(photo_uid, face_index)
+          WHERE ex.photo_uid = faces.photo_uid AND ex.face_index = faces.face_index)
+    ORDER BY embedding <=> $1
+    LIMIT $2
+)
+SELECT photo_uid, face_index, distance, bbox, subject_uid, subject_name, marker_uid
+FROM nearest
+ORDER BY distance, photo_uid, face_index`
 
 // FindSimilarUnassignedFaceCandidates returns the faces whose embedding is closest
 // to vec by cosine distance, nearest first, restricted to faces not yet assigned to
@@ -180,20 +199,24 @@ LIMIT $2`
 // a real bug. maxDistance is the one filter applied here rather than in SQL: the
 // rows arrive ordered by distance, so cutting at the first row beyond it yields
 // exactly the same set as a SQL predicate would, without blinding the index scan
-// (see findSimilarUnassignedFaceCandidatesSQL). It returns ErrDimMismatch if vec is
+// (see findSimilarUnassignedFaceCandidatesSQL). Only faces of projectUID are
+// searched. It returns ErrNoProject without a project and ErrDimMismatch if vec is
 // not FaceDim long.
 func (s *Store) FindSimilarUnassignedFaceCandidates(
-	ctx context.Context, vec []float32, limit int, maxDistance float64, exclude []FaceKey,
+	ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64, exclude []FaceKey,
 ) ([]FaceCandidate, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if len(vec) != FaceDim {
 		return nil, fmt.Errorf("%w: got %d, want %d", ErrDimMismatch, len(vec), FaceDim)
 	}
 	excludePhotos, excludeIndexes := splitFaceKeys(exclude)
 	cutoff := normalizeMaxDistance(maxDistance)
 	var candidates []FaceCandidate
-	err := s.withFilteredReadTx(ctx, func(tx pgx.Tx) error {
+	err := s.withProjectReadTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, findSimilarUnassignedFaceCandidatesSQL,
-			ToHalfVec(vec), normalizeLimit(limit), excludePhotos, excludeIndexes)
+			ToHalfVec(vec), normalizeLimit(limit), excludePhotos, excludeIndexes, projectUID)
 		if err != nil {
 			return fmt.Errorf("querying similar unassigned face candidates: %w", err)
 		}

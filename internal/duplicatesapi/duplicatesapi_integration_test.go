@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -138,7 +139,7 @@ func (e *env) makeLabel(t *testing.T, name string) string {
 // makeSubject creates a subject (person) and returns its UID.
 func (e *env) makeSubject(t *testing.T, name string) string {
 	t.Helper()
-	s, err := e.people.CreateSubject(t.Context(), people.Subject{Name: name})
+	s, err := e.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("create subject %s: %v", name, err)
 	}
@@ -164,7 +165,7 @@ func (e *env) attachLabel(t *testing.T, photoUID, labelUID string) {
 // tagPerson creates a face marker linking subjectUID to photoUID.
 func (e *env) tagPerson(t *testing.T, photoUID, subjectUID string) {
 	t.Helper()
-	_, err := e.people.CreateMarker(t.Context(), people.Marker{
+	_, err := e.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})
@@ -426,7 +427,7 @@ func assertLabelHas(t *testing.T, ctx context.Context, env *env, labelUID, photo
 // assertSubjectHas fails unless the subject's gallery includes the photo.
 func assertSubjectHas(t *testing.T, ctx context.Context, env *env, subjectUID, photoUID string) {
 	t.Helper()
-	uids, err := env.people.ListPhotoUIDsBySubject(ctx, subjectUID)
+	uids, err := env.people.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
 	if err != nil {
 		t.Fatalf("list subject photos: %v", err)
 	}

@@ -48,7 +48,7 @@ func newMergeEnv(t *testing.T) mergeEnv {
 // makeSubject creates a named subject and returns it.
 func makeSubject(t *testing.T, store *people.Store, name string) people.Subject {
 	t.Helper()
-	subj, err := store.CreateSubject(context.Background(), people.Subject{Name: name})
+	subj, err := store.CreateSubject(context.Background(), testProject, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject %s: %v", name, err)
 	}
@@ -59,7 +59,7 @@ func makeSubject(t *testing.T, store *people.Store, name string) people.Subject 
 // its uid.
 func markPhoto(t *testing.T, store *people.Store, photoUID, subjectUID string) string {
 	t.Helper()
-	m, err := store.CreateMarker(context.Background(), people.Marker{
+	m, err := store.CreateMarker(context.Background(), testProject, people.Marker{
 		PhotoUID:   photoUID,
 		SubjectUID: &subjectUID,
 		Type:       people.MarkerFace,
@@ -107,7 +107,7 @@ func countBySubject(t *testing.T, env mergeEnv, table, subjectUID string) int {
 // deterministic order, so a test can say exactly who a photo is tagged with.
 func markerSubjects(t *testing.T, env mergeEnv, photoUID string) []string {
 	t.Helper()
-	markers, err := env.people.ListMarkersByPhoto(context.Background(), photoUID)
+	markers, err := env.people.ListMarkersByPhoto(context.Background(), testProject, photoUID)
 	if err != nil {
 		t.Fatalf("ListMarkersByPhoto %s: %v", photoUID, err)
 	}
@@ -144,25 +144,25 @@ func TestMergeSubjects_movesEverything(t *testing.T) {
 	keeper := makeSubject(t, env.people, "Anna Nováková")
 	// The source is the richer record: it is favorited, has notes and a cover, all
 	// of which the bare keeper should inherit.
-	if _, err := env.people.UpdateSubject(ctx, source.UID, people.SubjectUpdate{
+	if _, err := env.people.UpdateSubject(ctx, testProject, source.UID, people.SubjectUpdate{
 		Name: source.Name, Type: people.SubjectPerson, Favorite: true,
 		Notes: "sister", CoverPhotoUID: &p1,
 	}); err != nil {
 		t.Fatalf("preparing source subject: %v", err)
 	}
-	source, _ = env.people.GetSubjectByUID(ctx, source.UID)
+	source, _ = env.people.GetSubjectByUID(ctx, testProject, source.UID)
 
 	sourceMarker := markPhoto(t, env.people, p1, source.UID)
 	cacheFace(t, env.vectors, p1, sourceMarker, source)
 	markPhoto(t, env.people, p2, keeper.UID)
 
 	// One opinion of each kind, all recorded for the source.
-	if err := env.feedback.ConfirmFace(ctx,
+	if err := env.feedback.ConfirmFace(ctx, testProject,
 		feedback.FaceConfirmationKey{PhotoUID: p1, FaceIndex: 0, SubjectUID: source.UID},
 		actorEntry(actor, audit.ActionFaceConfirm, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("ConfirmFace: %v", err)
 	}
-	if err := env.feedback.RejectFace(ctx,
+	if err := env.feedback.RejectFace(ctx, testProject,
 		feedback.FaceRejectionKey{PhotoUID: p2, FaceIndex: 1, SubjectUID: source.UID},
 		actorEntry(actor, audit.ActionFaceReject, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("RejectFace: %v", err)
@@ -173,7 +173,7 @@ func TestMergeSubjects_movesEverything(t *testing.T) {
 		t.Fatalf("DismissDuplicateMarkers: %v", err)
 	}
 
-	res, err := env.people.MergeSubjectsAudited(ctx, source.UID, keeper.UID,
+	res, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, keeper.UID,
 		mergeEntry(actor, source.UID, keeper.UID))
 	if err != nil {
 		t.Fatalf("MergeSubjectsAudited: %v", err)
@@ -183,7 +183,7 @@ func TestMergeSubjects_movesEverything(t *testing.T) {
 		t.Errorf("merge result = %+v, want one of each moved and no shared photo", res)
 	}
 
-	if _, err := env.people.GetSubjectByUID(ctx, source.UID); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := env.people.GetSubjectByUID(ctx, testProject, source.UID); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("source subject after merge: err = %v, want ErrSubjectNotFound", err)
 	}
 
@@ -216,7 +216,7 @@ func TestMergeSubjects_movesEverything(t *testing.T) {
 	}
 
 	// The keeper inherited the fields it had none of; nothing points at the source.
-	merged, err := env.people.GetSubjectByUID(ctx, keeper.UID)
+	merged, err := env.people.GetSubjectByUID(ctx, testProject, keeper.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID(keeper): %v", err)
 	}
@@ -259,7 +259,7 @@ func TestMergeSubjects_samePhotoKeepsBothMarkers(t *testing.T) {
 		t.Fatalf("DismissDuplicateMarkers: %v", err)
 	}
 
-	res, err := env.people.MergeSubjectsAudited(ctx, source.UID, keeper.UID,
+	res, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, keeper.UID,
 		mergeEntry(actor, source.UID, keeper.UID))
 	if err != nil {
 		t.Fatalf("MergeSubjectsAudited: %v", err)
@@ -298,24 +298,24 @@ func TestMergeSubjects_conflictingFeedback(t *testing.T) {
 	// The source is assigned to a face the keeper says is not them.
 	marker := markPhoto(t, env.people, assigned, source.UID)
 	cacheFace(t, env.vectors, assigned, marker, source)
-	if err := env.feedback.RejectFace(ctx,
+	if err := env.feedback.RejectFace(ctx, testProject,
 		feedback.FaceRejectionKey{PhotoUID: assigned, FaceIndex: 0, SubjectUID: keeper.UID},
 		actorEntry(actor, audit.ActionFaceReject, "subjects", keeper.UID, nil)); err != nil {
 		t.Fatalf("RejectFace(keeper): %v", err)
 	}
 	// And the source says a face the keeper has confirmed is not them.
-	if err := env.feedback.ConfirmFace(ctx,
+	if err := env.feedback.ConfirmFace(ctx, testProject,
 		feedback.FaceConfirmationKey{PhotoUID: confirmed, FaceIndex: 0, SubjectUID: keeper.UID},
 		actorEntry(actor, audit.ActionFaceConfirm, "subjects", keeper.UID, nil)); err != nil {
 		t.Fatalf("ConfirmFace(keeper): %v", err)
 	}
-	if err := env.feedback.RejectFace(ctx,
+	if err := env.feedback.RejectFace(ctx, testProject,
 		feedback.FaceRejectionKey{PhotoUID: confirmed, FaceIndex: 0, SubjectUID: source.UID},
 		actorEntry(actor, audit.ActionFaceReject, "subjects", source.UID, nil)); err != nil {
 		t.Fatalf("RejectFace(source): %v", err)
 	}
 
-	res, err := env.people.MergeSubjectsAudited(ctx, source.UID, keeper.UID,
+	res, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, keeper.UID,
 		mergeEntry(actor, source.UID, keeper.UID))
 	if err != nil {
 		t.Fatalf("MergeSubjectsAudited: %v", err)
@@ -354,7 +354,7 @@ func TestMergeSubjects_lifeYearsTravelAsAPair(t *testing.T) {
 
 	dated := func(name string, birth, death *int) people.Subject {
 		t.Helper()
-		subj, err := env.people.CreateSubject(ctx, people.Subject{
+		subj, err := env.people.CreateSubject(ctx, testProject, people.Subject{
 			Name: name, BirthYear: birth, DeathYear: death,
 		})
 		if err != nil {
@@ -366,11 +366,11 @@ func TestMergeSubjects_lifeYearsTravelAsAPair(t *testing.T) {
 	// The keeper knows nothing, the source knows both years: the pair moves.
 	source := dated("Marie (dup)", new(1923), new(1998))
 	keeper := dated("Marie", nil, nil)
-	if _, err := env.people.MergeSubjectsAudited(ctx, source.UID, keeper.UID,
+	if _, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, keeper.UID,
 		mergeEntry(actor, source.UID, keeper.UID)); err != nil {
 		t.Fatalf("MergeSubjectsAudited: %v", err)
 	}
-	filled, err := env.people.GetSubjectByUID(ctx, keeper.UID)
+	filled, err := env.people.GetSubjectByUID(ctx, testProject, keeper.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
@@ -384,11 +384,11 @@ func TestMergeSubjects_lifeYearsTravelAsAPair(t *testing.T) {
 	// grafted onto it, as it would claim a death six years before that birth.
 	source2 := dated("Josef (dup)", new(1910), new(1929))
 	keeper2 := dated("Josef", new(1935), nil)
-	if _, err := env.people.MergeSubjectsAudited(ctx, source2.UID, keeper2.UID,
+	if _, err := env.people.MergeSubjectsAudited(ctx, testProject, source2.UID, keeper2.UID,
 		mergeEntry(actor, source2.UID, keeper2.UID)); err != nil {
 		t.Fatalf("MergeSubjectsAudited into a dated keeper: %v", err)
 	}
-	kept, err := env.people.GetSubjectByUID(ctx, keeper2.UID)
+	kept, err := env.people.GetSubjectByUID(ctx, testProject, keeper2.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
@@ -410,16 +410,16 @@ func TestMergeSubjects_rejected(t *testing.T) {
 	source := makeSubject(t, env.people, "Eva")
 	markPhoto(t, env.people, photo, source.UID)
 
-	if _, err := env.people.MergeSubjectsAudited(ctx, source.UID, source.UID,
+	if _, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, source.UID,
 		mergeEntry(actor, source.UID, source.UID)); !errors.Is(err, people.ErrMergeIntoSelf) {
 		t.Errorf("merging into itself: err = %v, want ErrMergeIntoSelf", err)
 	}
-	if _, err := env.people.MergeSubjectsAudited(ctx, source.UID, "su_missing",
+	if _, err := env.people.MergeSubjectsAudited(ctx, testProject, source.UID, "su_missing",
 		mergeEntry(actor, source.UID, "su_missing")); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("merging into a missing subject: err = %v, want ErrSubjectNotFound", err)
 	}
 
-	if _, err := env.people.GetSubjectByUID(ctx, source.UID); err != nil {
+	if _, err := env.people.GetSubjectByUID(ctx, testProject, source.UID); err != nil {
 		t.Errorf("subject after a refused merge: err = %v, want it untouched", err)
 	}
 	if n := countBySubject(t, env, "markers", source.UID); n != 1 {

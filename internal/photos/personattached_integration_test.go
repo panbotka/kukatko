@@ -35,11 +35,11 @@ func TestList_handAttachedPerson(t *testing.T) {
 		Title: "detected",
 	})
 
-	subject, err := ppl.CreateSubject(ctx, people.Subject{Name: "Zdena"})
+	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Zdena"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	if _, err := ppl.AttachSubjectToPhoto(ctx, attached.UID, subject.UID, audit.Entry{
+	if _, err := ppl.AttachSubjectToPhoto(ctx, project.BootstrapUID, attached.UID, subject.UID, audit.Entry{
 		Action: audit.ActionPersonAttach, TargetType: "markers",
 	}); err != nil {
 		t.Fatalf("AttachSubjectToPhoto: %v", err)
@@ -105,11 +105,11 @@ func TestList_handAttachedPersonOnAVideo(t *testing.T) {
 		MediaType: photos.MediaVideo, Title: "clip",
 	})
 
-	subject, err := ppl.CreateSubject(ctx, people.Subject{Name: "Vojta"})
+	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Vojta"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	if _, err := ppl.AttachSubjectToPhoto(ctx, clip.UID, subject.UID, audit.Entry{
+	if _, err := ppl.AttachSubjectToPhoto(ctx, project.BootstrapUID, clip.UID, subject.UID, audit.Entry{
 		Action: audit.ActionPersonAttach, TargetType: "markers",
 	}); err != nil {
 		t.Fatalf("AttachSubjectToPhoto: %v", err)
@@ -124,7 +124,7 @@ func TestList_handAttachedPersonOnAVideo(t *testing.T) {
 		t.Fatalf("person: filter = %v, want the clip", set)
 	}
 
-	uids, err := ppl.ListPhotoUIDsBySubject(ctx, subject.UID)
+	uids, err := ppl.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subject.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDsBySubject: %v", err)
 	}

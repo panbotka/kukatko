@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -35,7 +36,8 @@ func decodePeople(t *testing.T, resp *http.Response) peopleBody {
 // seedSubject inserts a named subject and returns its uid.
 func (e *env) seedSubject(t *testing.T, name string) string {
 	t.Helper()
-	subject, err := people.NewStore(e.db.Pool()).CreateSubject(t.Context(), people.Subject{Name: name})
+	subject, err := people.NewStore(e.db.Pool()).
+		CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject(%s): %v", name, err)
 	}

@@ -1580,7 +1580,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   **not** rewrite the affected photos' metadata sidecars; `POST /process/sidecars?all=true` does.
   Not exposed over MCP. `GET
   /subjects/{uid}/photos` (RequireAuth) → a paginated gallery of the subject's photos
-  `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500). Mounted
+  `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500); a subject
+  that does not exist — or belongs to another project — is the same 404 as `GET /subjects/{uid}` (it used
+  to answer an empty page). Every subject route reads and writes inside the request's project only. Mounted
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records
   build on `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markers → photo uid).
 - **Family / genealogy API (`/api/v1/p/{project}`, `internal/familyapi`):** the genealogy over subjects —
@@ -1914,7 +1916,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{photo_uid,label_uid}` → 204 (rejects "this photo should NOT have this label"),
   `DELETE /feedback/label-rejections` (same body) → 204 (undo) — DELETE too carries a body (like a
   label-detach); `POST /feedback/face-confirmations` `{photo_uid,face_index,subject_uid}` → 204
-  and `DELETE /feedback/face-confirmations` (same body) → 204;
+  and `DELETE /feedback/face-confirmations` (same body) → 204; the four face routes answer **404** when
+  the face's photo or the subject is not one of the request's project (or does not exist — the `DELETE`s
+  included, which used to answer 204 for a missing target), recording nothing;
   `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 ("these two photos are NOT
   duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo);
   `POST /feedback/duplicate-confirmations` (same body) → 204 ("yes, this really IS the same photo twice")

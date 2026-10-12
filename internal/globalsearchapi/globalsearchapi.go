@@ -64,18 +64,19 @@ type Organizer interface {
 
 // PeopleSearcher is the subset of people.Store the endpoint needs: name search
 // over subjects (people/pets/other), plus the uid lookups a pasted id resolves
-// through.
+// through. Every method answers inside the project it is given: a subject or
+// marker of another project is missing.
 type PeopleSearcher interface {
 	// SearchSubjects returns up to limit subjects whose name matches q.
-	SearchSubjects(ctx context.Context, q string, limit int) ([]people.Subject, error)
+	SearchSubjects(ctx context.Context, projectUID, q string, limit int) ([]people.Subject, error)
 	// GetSubjectByUID resolves one subject by its uid, or people.ErrSubjectNotFound.
-	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
+	GetSubjectByUID(ctx context.Context, projectUID, uid string) (people.Subject, error)
 	// GetMarkerByUID resolves one marker by its uid, or people.ErrMarkerNotFound.
 	// A marker id stands for the photo it sits on.
-	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
+	GetMarkerByUID(ctx context.Context, projectUID, uid string) (people.Marker, error)
 	// SubjectCovers returns the cover photo of every named subject, in one query
 	// for the whole batch. Subjects with no cover are absent from the map.
-	SubjectCovers(ctx context.Context, uids []string) (map[string]people.Cover, error)
+	SubjectCovers(ctx context.Context, projectUID string, uids []string) (map[string]people.Cover, error)
 }
 
 // PhotoSearcher is the subset of photos.Store the endpoint needs: the existing
@@ -270,7 +271,7 @@ func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) 
 		writeError(w, http.StatusInternalServerError, "searching labels failed")
 		return
 	}
-	subjects, err := a.people.SearchSubjects(ctx, query, a.limit)
+	subjects, err := a.people.SearchSubjects(ctx, auth.ProjectUIDFromContext(ctx), query, a.limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching people failed")
 		return

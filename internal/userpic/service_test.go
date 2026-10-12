@@ -67,7 +67,7 @@ type fakeSubjects struct {
 	err    error
 }
 
-func (f fakeSubjects) SubjectAvatar(_ context.Context, _ string) (people.AvatarSource, error) {
+func (f fakeSubjects) LinkedSubjectAvatar(_ context.Context, _ string) (people.AvatarSource, error) {
 	if f.err != nil {
 		return people.AvatarSource{}, f.err
 	}

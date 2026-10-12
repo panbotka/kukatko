@@ -30,7 +30,9 @@ type SimilarSearcher interface {
 	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
 	// FindSimilar returns embeddings nearest to vec by cosine distance, nearest
 	// first; maxDistance <= 0 disables the distance filter.
-	FindSimilar(ctx context.Context, vec []float32, limit int, maxDistance float64) ([]vectors.Match, error)
+	FindSimilar(
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+	) ([]vectors.Match, error)
 }
 
 // similarPhoto is one entry in the similar-photos response: the full photo
@@ -74,7 +76,7 @@ func (a *API) handleSimilar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch one extra so removing the source still leaves a full page.
-	matches, err := a.similar.FindSimilar(r.Context(), emb.Vector, limit+1, 0)
+	matches, err := a.similar.FindSimilar(r.Context(), auth.ProjectUIDFromContext(r.Context()), emb.Vector, limit+1, 0)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "similarity search failed")
 		return

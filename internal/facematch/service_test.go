@@ -12,13 +12,20 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
+// testProject is the project every unit test acts in; the fakes ignore it.
+const testProject = "pr_test"
+
 // fakePhotos is an in-memory PhotoStore.
 type fakePhotos struct {
 	photo photos.Photo
 	err   error
 }
 
-func (f *fakePhotos) GetByUID(_ context.Context, _ string) (photos.Photo, error) {
+func (f *fakePhotos) GetByUIDInProject(_ context.Context, _, _ string) (photos.Photo, error) {
+	return f.photo, f.err
+}
+
+func (f *fakePhotos) GetForJob(_ context.Context, _ string) (photos.Photo, error) {
 	return f.photo, f.err
 }
 
@@ -40,7 +47,7 @@ func (f *fakeFaces) ListFaces(_ context.Context, _ string) ([]vectors.Face, erro
 }
 
 func (f *fakeFaces) FindSimilarFaceCandidates(
-	_ context.Context, _ []float32, _ int, maxDistance float64,
+	_ context.Context, _ string, _ []float32, _ int, maxDistance float64,
 ) ([]vectors.FaceCandidate, error) {
 	f.searchDists = append(f.searchDists, maxDistance)
 	return f.candidates, nil
@@ -70,12 +77,12 @@ type fakePeople struct {
 	lastEntry      audit.Entry
 }
 
-func (f *fakePeople) ListMarkersByPhoto(_ context.Context, _ string) ([]people.Marker, error) {
+func (f *fakePeople) ListMarkersByPhoto(_ context.Context, _, _ string) ([]people.Marker, error) {
 	return f.markers, nil
 }
 
 func (f *fakePeople) CreateMarkerAudited(
-	_ context.Context, m people.Marker, entry audit.Entry,
+	_ context.Context, _ string, m people.Marker, entry audit.Entry,
 ) (people.Marker, error) {
 	m.UID = "mk_new"
 	f.createdMarker = &m
@@ -84,7 +91,7 @@ func (f *fakePeople) CreateMarkerAudited(
 }
 
 func (f *fakePeople) AssignSubjectAudited(
-	_ context.Context, markerUID, subjectUID string, entry audit.Entry,
+	_ context.Context, _, markerUID, subjectUID string, entry audit.Entry,
 ) (people.Marker, error) {
 	f.assigned = [2]string{markerUID, subjectUID}
 	f.lastEntry = entry
@@ -92,33 +99,33 @@ func (f *fakePeople) AssignSubjectAudited(
 }
 
 func (f *fakePeople) UnassignSubjectAudited(
-	_ context.Context, markerUID string, entry audit.Entry,
+	_ context.Context, _, markerUID string, entry audit.Entry,
 ) (people.Marker, error) {
 	f.unassigned = markerUID
 	f.lastEntry = entry
 	return people.Marker{UID: markerUID}, nil
 }
 
-func (f *fakePeople) SetMarkerReviewed(_ context.Context, uid string, reviewed bool) (people.Marker, error) {
+func (f *fakePeople) SetMarkerReviewed(_ context.Context, _, uid string, reviewed bool) (people.Marker, error) {
 	f.reviewed = &reviewed
 	return people.Marker{UID: uid, Reviewed: reviewed}, nil
 }
 
-func (f *fakePeople) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (f *fakePeople) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	if s, ok := f.subjectsByUID[uid]; ok {
 		return s, nil
 	}
 	return people.Subject{}, people.ErrSubjectNotFound
 }
 
-func (f *fakePeople) GetSubjectBySlug(_ context.Context, slug string) (people.Subject, error) {
+func (f *fakePeople) GetSubjectBySlug(_ context.Context, _, slug string) (people.Subject, error) {
 	if s, ok := f.subjectsBySlug[slug]; ok {
 		return s, nil
 	}
 	return people.Subject{}, people.ErrSubjectNotFound
 }
 
-func (f *fakePeople) CreateSubject(_ context.Context, s people.Subject) (people.Subject, error) {
+func (f *fakePeople) CreateSubject(_ context.Context, _ string, s people.Subject) (people.Subject, error) {
 	f.nextUID++
 	s.UID = "su_created"
 	s.Slug = people.Slugify(s.Name)
@@ -150,7 +157,7 @@ func TestPhotoFaces_actions(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -180,7 +187,7 @@ func TestPhotoFaces_createMarkerAndSuggestions(t *testing.T) {
 	pe := &fakePeople{} // no markers
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -220,7 +227,7 @@ func TestPhotoFaces_suggestionsForAssignedFace(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -258,7 +265,7 @@ func TestPhotoFaces_assignedFaceDoesNotWidenSearch(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "p1")
+	resp, err := svc.PhotoFaces(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}
@@ -283,7 +290,7 @@ func TestApply_createMarkerFindOrCreate(t *testing.T) {
 
 	idx := 0
 	box := [4]float64{0.1, 0.1, 0.2, 0.2}
-	res, err := svc.Apply(ctx, AssignRequest{
+	res, err := svc.Apply(ctx, testProject, AssignRequest{
 		PhotoUID: "p1", Action: ActionCreateMarker, SubjectName: "New Person",
 		FaceIndex: &idx, BBox: &box,
 	}, audit.Meta{ActorUID: "usr_actor"})
@@ -320,7 +327,7 @@ func TestApply_findExistingSubjectBySlug(t *testing.T) {
 	}
 	svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
 
-	res, err := svc.Apply(ctx, AssignRequest{
+	res, err := svc.Apply(ctx, testProject, AssignRequest{
 		PhotoUID: "p1", Action: ActionAssignPerson, MarkerUID: "mk1", SubjectName: "Anna",
 	}, audit.Meta{ActorUID: "usr_actor"})
 	if err != nil {
@@ -351,7 +358,7 @@ func TestApply_unassignClearsReviewed(t *testing.T) {
 	pe := &fakePeople{}
 	svc := newService(&fakePhotos{}, &fakeFaces{}, pe)
 
-	res, err := svc.Apply(ctx, AssignRequest{
+	res, err := svc.Apply(ctx, testProject, AssignRequest{
 		PhotoUID: "p1", Action: ActionUnassignPerson, MarkerUID: "mk1",
 	}, audit.Meta{ActorUID: "usr_actor"})
 	if err != nil {
@@ -412,7 +419,7 @@ func TestApply_validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := svc.Apply(ctx, tt.req, audit.Meta{}); !errors.Is(err, tt.wantErr) {
+			if _, err := svc.Apply(ctx, testProject, tt.req, audit.Meta{}); !errors.Is(err, tt.wantErr) {
 				t.Errorf("Apply(%+v) err = %v, want %v", tt.req, err, tt.wantErr)
 			}
 		})

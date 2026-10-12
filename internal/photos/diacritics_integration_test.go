@@ -102,13 +102,13 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 		t.Fatalf("AttachLabel: %v", err)
 	}
 
-	subject, err := ppl.CreateSubject(ctx, people.Subject{
+	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{
 		Name: "Tomáš Nečas", Nickname: "Křeček", Type: people.SubjectPerson,
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	if _, err := ppl.CreateMarker(ctx, people.Marker{
+	if _, err := ppl.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: lib.accented, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {

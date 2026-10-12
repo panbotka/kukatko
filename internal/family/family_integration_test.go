@@ -37,7 +37,7 @@ func stores(t *testing.T) (*family.Store, *people.Store, *photos.Store, *databas
 // makeSubject inserts a named person and returns its uid.
 func makeSubject(t *testing.T, store *people.Store, name string) string {
 	t.Helper()
-	subj, err := store.CreateSubject(context.Background(), people.Subject{Name: name})
+	subj, err := store.CreateSubject(context.Background(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("creating subject %s: %v", name, err)
 	}
@@ -138,7 +138,7 @@ func TestRelations_areDerivedFromTheFamilyRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating photo: %v", err)
 	}
-	if _, err := ppl.CreateMarker(ctx, people.Marker{
+	if _, err := ppl.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &v.anna, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {

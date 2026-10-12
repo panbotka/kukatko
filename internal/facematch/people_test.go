@@ -32,7 +32,7 @@ func TestPhotoPeople_namedAndUnassigned(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	onPhoto, err := svc.PhotoPeople(ctx, "p1")
+	onPhoto, err := svc.PhotoPeople(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoPeople: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestPhotoPeople_isReadOnly(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	if _, err := svc.PhotoPeople(ctx, "p1"); err != nil {
+	if _, err := svc.PhotoPeople(ctx, testProject, "p1"); err != nil {
 		t.Fatalf("PhotoPeople: %v", err)
 	}
 	if ff.updates != 0 {
@@ -113,7 +113,7 @@ func TestPhotoPeople_handDrawnMarker(t *testing.T) {
 	}
 	svc := newService(fp, ff, pe)
 
-	onPhoto, err := svc.PhotoPeople(ctx, "p1")
+	onPhoto, err := svc.PhotoPeople(ctx, testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoPeople: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestPhotoPeople_empty(t *testing.T) {
 	t.Parallel()
 
 	svc := newService(&fakePhotos{}, &fakeFaces{}, &fakePeople{})
-	onPhoto, err := svc.PhotoPeople(context.Background(), "p1")
+	onPhoto, err := svc.PhotoPeople(context.Background(), testProject, "p1")
 	if err != nil {
 		t.Fatalf("PhotoPeople: %v", err)
 	}

@@ -4,6 +4,7 @@ package clusterapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/clusterapi"
@@ -23,6 +25,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -44,6 +47,20 @@ type env struct {
 	svc     *cluster.Service
 }
 
+// bootstrapAssigner adapts *facematch.Service to the project-less
+// cluster.FaceAssigner, applying every transition in the bootstrap project the
+// test photos land in (cmd/kukatko wires the request's project instead).
+type bootstrapAssigner struct {
+	*facematch.Service
+}
+
+// Apply runs the transition inside the bootstrap project.
+func (a bootstrapAssigner) Apply(
+	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
+) (facematch.AssignResult, error) {
+	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
+}
+
 // newEnv builds the HTTP test environment over a freshly truncated database.
 func newEnv(t *testing.T) *env {
 	t.Helper()
@@ -58,7 +75,9 @@ func newEnv(t *testing.T) *env {
 	vectorStore := vectors.NewStore(db.Pool())
 	peopleStore := people.NewStore(db.Pool())
 	matchSvc := facematch.New(facematch.Config{Photos: photoStore, Faces: vectorStore, People: peopleStore})
-	svc := cluster.New(cluster.Config{Store: cluster.NewStore(db.Pool()), Faces: vectorStore, Assigner: matchSvc})
+	svc := cluster.New(cluster.Config{
+		Store: cluster.NewStore(db.Pool()), Faces: vectorStore, Assigner: bootstrapAssigner{matchSvc},
+	})
 
 	jobStore := jobs.NewStore(db.Pool())
 	api := clusterapi.NewAPI(clusterapi.Config{

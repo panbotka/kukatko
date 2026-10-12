@@ -60,7 +60,7 @@ func TestClampSearchLimit(t *testing.T) {
 // TestSearchSubjectsSQL_matchesNameAndNickname pins down the predicate the subject
 // search is built from: both the name and the nickname are compared, each folded
 // through immutable_unaccent on both sides, and both read the SAME bound pattern
-// so a third bind of one value is never paid for.
+// so a second bind of one value is never paid for.
 func TestSearchSubjectsSQL_matchesNameAndNickname(t *testing.T) {
 	t.Parallel()
 
@@ -73,10 +73,13 @@ func TestSearchSubjectsSQL_matchesNameAndNickname(t *testing.T) {
 			t.Errorf("searchSubjectsSQL missing %q: %q", want, searchSubjectsSQL)
 		}
 	}
-	// A second placeholder for the pattern would mean the value is bound twice;
-	// $2 is the limit and must stay the last parameter.
-	if strings.Contains(searchSubjectsSQL, "$3") {
-		t.Errorf("searchSubjectsSQL binds a third parameter: %q", searchSubjectsSQL)
+	// A second placeholder for the pattern would mean the value is bound twice:
+	// $2 is the limit and $3 the project, and nothing else is bound.
+	if strings.Contains(searchSubjectsSQL, "$4") {
+		t.Errorf("searchSubjectsSQL binds a fourth parameter: %q", searchSubjectsSQL)
+	}
+	if strings.Count(searchSubjectsSQL, "$3") != 1 || !strings.Contains(searchSubjectsSQL, "project_id = $3") {
+		t.Errorf("searchSubjectsSQL does not scope by the bound project alone: %q", searchSubjectsSQL)
 	}
 	if !strings.Contains(searchSubjectsSQL, "LIMIT $2") {
 		t.Errorf("searchSubjectsSQL does not end in the bound limit: %q", searchSubjectsSQL)

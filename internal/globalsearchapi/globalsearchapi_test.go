@@ -86,7 +86,7 @@ func (f *fakeSearcher) GetLabelByUID(_ context.Context, uid string) (organize.La
 }
 
 // GetSubjectByUID answers from subjectsByID.
-func (f *fakeSearcher) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (f *fakeSearcher) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	subject, ok := f.subjectsByID[uid]
 	if !ok {
 		return people.Subject{}, people.ErrSubjectNotFound
@@ -95,7 +95,7 @@ func (f *fakeSearcher) GetSubjectByUID(_ context.Context, uid string) (people.Su
 }
 
 // GetMarkerByUID answers from markersByID.
-func (f *fakeSearcher) GetMarkerByUID(_ context.Context, uid string) (people.Marker, error) {
+func (f *fakeSearcher) GetMarkerByUID(_ context.Context, _, uid string) (people.Marker, error) {
 	marker, ok := f.markersByID[uid]
 	if !ok {
 		return people.Marker{}, people.ErrMarkerNotFound
@@ -148,7 +148,7 @@ func (f *fakeSearcher) LabelCovers(_ context.Context, uids []string) (map[string
 
 // SubjectCovers returns the canned subject covers, recording the batch it was
 // asked for.
-func (f *fakeSearcher) SubjectCovers(_ context.Context, uids []string) (map[string]people.Cover, error) {
+func (f *fakeSearcher) SubjectCovers(_ context.Context, _ string, uids []string) (map[string]people.Cover, error) {
 	f.recordCovers("people", uids)
 	return f.subjectCovers, f.err
 }
@@ -169,7 +169,7 @@ func (f *fakeSearcher) SearchLabels(_ context.Context, _ string, _ int) ([]organ
 }
 
 // SearchSubjects returns the canned subjects or error.
-func (f *fakeSearcher) SearchSubjects(_ context.Context, _ string, _ int) ([]people.Subject, error) {
+func (f *fakeSearcher) SearchSubjects(_ context.Context, _, _ string, _ int) ([]people.Subject, error) {
 	return f.subjects, f.err
 }
 

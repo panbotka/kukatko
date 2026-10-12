@@ -118,7 +118,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 
 	album, _ := org.CreateAlbum(ctx, organize.Album{Title: "Trip"})
 	label, _ := org.CreateLabel(ctx, organize.Label{Name: "beach"})
-	subject, _ := ppl.CreateSubject(ctx, people.Subject{Name: "Alice", Type: people.SubjectPerson})
+	subject, _ := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	for _, uid := range []string{raw.UID, jpg.UID} {
 		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
@@ -139,7 +139,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 	}
 	// Every count drops to one; only the JPEG primary appears in the gallery.
 	assertCounts(t, store, org, ppl, subject.UID, album.UID, label.UID, 1)
-	if gallery, _ := ppl.ListPhotoUIDsBySubject(ctx, subject.UID); len(gallery) != 1 || gallery[0] != jpg.UID {
+	if gallery, _ := ppl.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subject.UID); len(gallery) != 1 || gallery[0] != jpg.UID {
 		t.Errorf("subject gallery = %v, want [%s]", gallery, jpg.UID)
 	}
 	// The duplicates node universe drops the hidden RAW, so the same-stack pair
@@ -214,7 +214,7 @@ func TestIntegration_ManualStackingLifecycle(t *testing.T) {
 // mustMarker attaches a valid non-invalid marker for subject on photo.
 func mustMarker(t *testing.T, ppl *people.Store, photoUID, subjectUID string) {
 	t.Helper()
-	if _, err := ppl.CreateMarker(t.Context(), people.Marker{
+	if _, err := ppl.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
 	}); err != nil {
@@ -274,7 +274,7 @@ func labelCount(t *testing.T, org *organize.Store, labelUID string) int {
 
 func markerCount(t *testing.T, ppl *people.Store, subjectUID string) int {
 	t.Helper()
-	list, err := ppl.ListSubjects(t.Context())
+	list, err := ppl.ListSubjects(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}

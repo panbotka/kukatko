@@ -30,7 +30,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // subject) and not yet in a cluster — with the data the algorithm needs, ordered
 // by id so re-clustering is deterministic.
 const listUnclusteredFacesSQL = `
-SELECT id, photo_uid, face_index, embedding, bbox, det_score, model
+SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, project_id
 FROM faces
 WHERE subject_uid IS NULL AND cluster_uid IS NULL
 ORDER BY id`
@@ -68,7 +68,7 @@ func (s *Store) CountClusterableFaces(ctx context.Context, limit int) (int, erro
 
 // listClusterFacesSQL selects every face belonging to one cluster, ordered by id.
 const listClusterFacesSQL = `
-SELECT id, photo_uid, face_index, embedding, bbox, det_score, model
+SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, project_id
 FROM faces
 WHERE cluster_uid = $1
 ORDER BY id`
@@ -103,14 +103,17 @@ func (s *Store) queryFaces(ctx context.Context, query string, args ...any) ([]Fa
 }
 
 // scanFace reads one face row (id, photo_uid, face_index, embedding, bbox,
-// det_score, model), decoding the halfvec embedding and the bounding-box array.
+// det_score, model, project_id), decoding the halfvec embedding and the
+// bounding-box array.
 func scanFace(rows pgx.Rows) (Face, error) {
 	var (
 		face Face
 		hv   pgvector.HalfVector
 		bbox []float64
 	)
-	if err := rows.Scan(&face.ID, &face.PhotoUID, &face.FaceIndex, &hv, &bbox, &face.DetScore, &face.Model); err != nil {
+	if err := rows.Scan(
+		&face.ID, &face.PhotoUID, &face.FaceIndex, &hv, &bbox, &face.DetScore, &face.Model, &face.ProjectID,
+	); err != nil {
 		return Face{}, fmt.Errorf("cluster: scanning face: %w", err)
 	}
 	face.Vector = vectors.FromHalfVec(hv)

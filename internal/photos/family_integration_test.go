@@ -70,13 +70,13 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 		"vojtech": "Vojtěch Souček",
 	}
 	for key, name := range names {
-		subj, err := ppl.CreateSubject(ctx, people.Subject{Name: name})
+		subj, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: name})
 		if err != nil {
 			t.Fatalf("creating subject %s: %v", name, err)
 		}
 		c.subject[key] = subj.UID
 		c.photo[key] = mustCreatePhoto(t, store, "family-"+key)
-		if _, err := ppl.CreateMarker(ctx, people.Marker{
+		if _, err := ppl.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 			PhotoUID: c.photo[key], SubjectUID: &subj.UID, Type: people.MarkerFace,
 			X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 		}); err != nil {

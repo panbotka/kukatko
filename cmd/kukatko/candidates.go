@@ -37,8 +37,8 @@ func buildCandidatesService(
 	cfg *config.Config, db *database.DB, mediaStore storage.Storage,
 ) *candidates.Service {
 	return candidates.New(candidates.Config{
-		Faces:         vectors.NewStore(db.Pool()),
-		People:        people.NewStore(db.Pool()),
+		Faces:         requestProjectVectors{vectors.NewStore(db.Pool())},
+		People:        requestProjectPeople{people.NewStore(db.Pool())},
 		Feedback:      feedback.NewStore(db.Pool()),
 		Photos:        photos.NewStore(db.Pool()),
 		Media:         mediaurl.NewBuilder(mediaStore),

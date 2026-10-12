@@ -117,7 +117,7 @@ func TestAuditSubjectMutations(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_audp", "audp")
 
-	created, err := store.CreateSubjectAudited(ctx, people.Subject{Name: "Anna Nováková"},
+	created, err := store.CreateSubjectAudited(ctx, testProject, people.Subject{Name: "Anna Nováková"},
 		actorEntry(actor, audit.ActionSubjectCreate, "subjects", "",
 			map[string]any{"name": "Anna Nováková", "type": "person"}))
 	if err != nil {
@@ -128,7 +128,7 @@ func TestAuditSubjectMutations(t *testing.T) {
 		t.Errorf("create details = %v, want name/type", rec.Details)
 	}
 
-	if _, err := store.UpdateSubjectAudited(ctx, created.UID,
+	if _, err := store.UpdateSubjectAudited(ctx, testProject, created.UID,
 		people.SubjectUpdate{Name: "Anna B", Type: people.SubjectPerson},
 		actorEntry(actor, audit.ActionSubjectUpdate, "subjects", created.UID,
 			map[string]any{"name": "Anna B", "type": "person"})); err != nil {
@@ -136,7 +136,7 @@ func TestAuditSubjectMutations(t *testing.T) {
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionSubjectUpdate, actor, created.UID)
 
-	if err := store.DeleteSubjectAudited(ctx, created.UID,
+	if err := store.DeleteSubjectAudited(ctx, testProject, created.UID,
 		actorEntry(actor, audit.ActionSubjectDelete, "subjects", created.UID,
 			map[string]any{"name": "Anna B", "type": "person"})); err != nil {
 		t.Fatalf("DeleteSubjectAudited: %v", err)
@@ -155,7 +155,7 @@ func TestAuditSubjectRollback(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_audp", "audp")
 
-	_, err := store.UpdateSubjectAudited(ctx, "su_missing",
+	_, err := store.UpdateSubjectAudited(ctx, testProject, "su_missing",
 		people.SubjectUpdate{Name: "Ghost", Type: people.SubjectPerson},
 		actorEntry(actor, audit.ActionSubjectUpdate, "subjects", "su_missing", nil))
 	if !errors.Is(err, people.ErrSubjectNotFound) {
@@ -163,7 +163,7 @@ func TestAuditSubjectRollback(t *testing.T) {
 	}
 	requireNoAudit(t, ctx, auditStore, audit.ActionSubjectUpdate)
 
-	err = store.DeleteSubjectAudited(ctx, "su_missing",
+	err = store.DeleteSubjectAudited(ctx, testProject, "su_missing",
 		actorEntry(actor, audit.ActionSubjectDelete, "subjects", "su_missing", nil))
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("DeleteSubjectAudited err = %v, want ErrSubjectNotFound", err)
@@ -181,13 +181,13 @@ func TestAuditFaceMutations(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_audf", "audf")
 	photoUID := makePhoto(t, photoStore, "auditfacephoto")
-	subj, err := store.CreateSubject(ctx, people.Subject{Name: "Face Subject"})
+	subj, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Face Subject"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
 	// create_marker: a new marker is inserted already naming the subject.
-	m1, err := store.CreateMarkerAudited(ctx, people.Marker{
+	m1, err := store.CreateMarkerAudited(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}, actorEntry(actor, audit.ActionFaceAssign, "markers", "",
@@ -205,14 +205,14 @@ func TestAuditFaceMutations(t *testing.T) {
 
 	// assign_person: an existing, unassigned marker is pointed at the subject, and
 	// the linked face's cache follows in the same transaction.
-	m2, err := store.CreateMarker(ctx, people.Marker{
+	m2, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 0.4, Y: 0.4, W: 0.2, H: 0.2,
 	})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
 	saveLinkedFace(t, vectorStore, photoUID, m2.UID)
-	if _, err := store.AssignSubjectAudited(ctx, m2.UID, subj.UID,
+	if _, err := store.AssignSubjectAudited(ctx, testProject, m2.UID, subj.UID,
 		actorEntry(actor, audit.ActionFaceAssign, "markers", m2.UID,
 			map[string]any{"action": "assign_person", "subject_uid": subj.UID})); err != nil {
 		t.Fatalf("AssignSubjectAudited: %v", err)
@@ -226,7 +226,7 @@ func TestAuditFaceMutations(t *testing.T) {
 	}
 
 	// unassign: the marker's subject is cleared.
-	if _, err := store.UnassignSubjectAudited(ctx, m2.UID,
+	if _, err := store.UnassignSubjectAudited(ctx, testProject, m2.UID,
 		actorEntry(actor, audit.ActionFaceUnassign, "markers", m2.UID,
 			map[string]any{"marker_uid": m2.UID})); err != nil {
 		t.Fatalf("UnassignSubjectAudited: %v", err)
@@ -246,11 +246,11 @@ func TestAuditMarkerInvalidate(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_audi", "audi")
 	photoUID := makePhoto(t, photoStore, "auditinvalidphoto")
-	subj, err := store.CreateSubject(ctx, people.Subject{Name: "Invalid Subject"})
+	subj, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Invalid Subject"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	marker, err := store.CreateMarker(ctx, people.Marker{
+	marker, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})
@@ -258,7 +258,7 @@ func TestAuditMarkerInvalidate(t *testing.T) {
 		t.Fatalf("CreateMarker: %v", err)
 	}
 
-	updated, err := store.SetMarkerInvalidAudited(ctx, marker.UID, true,
+	updated, err := store.SetMarkerInvalidAudited(ctx, testProject, marker.UID, true,
 		actorEntry(actor, audit.ActionMarkerInvalidate, "markers", "",
 			map[string]any{"photo_uid": photoUID}))
 	if err != nil {
@@ -276,7 +276,7 @@ func TestAuditMarkerInvalidate(t *testing.T) {
 	}
 
 	// A missing marker rolls back and leaves no second row behind.
-	if _, err := store.SetMarkerInvalidAudited(ctx, "mk_missing", true,
+	if _, err := store.SetMarkerInvalidAudited(ctx, testProject, "mk_missing", true,
 		actorEntry(actor, audit.ActionMarkerInvalidate, "markers", "mk_missing", nil),
 	); !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("SetMarkerInvalidAudited err = %v, want ErrMarkerNotFound", err)
@@ -293,19 +293,19 @@ func TestAuditFaceRollback(t *testing.T) {
 	ctx := t.Context()
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_audf", "audf")
-	subj, err := store.CreateSubject(ctx, people.Subject{Name: "Rollback Subject"})
+	subj, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Rollback Subject"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
-	_, err = store.AssignSubjectAudited(ctx, "mk_missing", subj.UID,
+	_, err = store.AssignSubjectAudited(ctx, testProject, "mk_missing", subj.UID,
 		actorEntry(actor, audit.ActionFaceAssign, "markers", "mk_missing", nil))
 	if !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("AssignSubjectAudited err = %v, want ErrMarkerNotFound", err)
 	}
 	requireNoAudit(t, ctx, auditStore, audit.ActionFaceAssign)
 
-	_, err = store.UnassignSubjectAudited(ctx, "mk_missing",
+	_, err = store.UnassignSubjectAudited(ctx, testProject, "mk_missing",
 		actorEntry(actor, audit.ActionFaceUnassign, "markers", "mk_missing", nil))
 	if !errors.Is(err, people.ErrMarkerNotFound) {
 		t.Fatalf("UnassignSubjectAudited err = %v, want ErrMarkerNotFound", err)

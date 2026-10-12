@@ -212,7 +212,11 @@ func (a *API) lookupLabel(ctx context.Context, in lookupIn) (organize.Label, err
 func (a *API) handleListSubjects(
 	ctx context.Context, _ *mcp.CallToolRequest, in listIn,
 ) (*mcp.CallToolResult, subjectList, error) {
-	list, err := a.people.ListSubjects(ctx)
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, subjectList{}, err
+	}
+	list, err := a.people.ListSubjects(ctx, c.projectUID)
 	if err != nil {
 		return nil, subjectList{}, fmt.Errorf("listing people: %w", err)
 	}
@@ -233,16 +237,17 @@ func (a *API) handleListSubjects(
 func (a *API) handleGetSubject(
 	ctx context.Context, _ *mcp.CallToolRequest, in lookupIn,
 ) (*mcp.CallToolResult, subjectInfo, error) {
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, subjectInfo{}, err
+	}
 	uid, slug := strings.TrimSpace(in.UID), strings.TrimSpace(in.Slug)
-	var (
-		subj people.Subject
-		err  error
-	)
+	var subj people.Subject
 	switch {
 	case uid != "":
-		subj, err = a.people.GetSubjectByUID(ctx, uid)
+		subj, err = a.people.GetSubjectByUID(ctx, c.projectUID, uid)
 	case slug != "":
-		subj, err = a.people.GetSubjectBySlug(ctx, slug)
+		subj, err = a.people.GetSubjectBySlug(ctx, c.projectUID, slug)
 	default:
 		return nil, subjectInfo{}, errNeedUIDOrSlug
 	}
@@ -252,7 +257,7 @@ func (a *API) handleGetSubject(
 		}
 		return nil, subjectInfo{}, fmt.Errorf("fetching person: %w", err)
 	}
-	uids, err := a.people.ListPhotoUIDsBySubject(ctx, subj.UID)
+	uids, err := a.people.ListPhotoUIDsBySubject(ctx, c.projectUID, subj.UID)
 	if err != nil {
 		return nil, subjectInfo{}, fmt.Errorf("counting the person's photos: %w", err)
 	}

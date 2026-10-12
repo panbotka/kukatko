@@ -32,12 +32,16 @@ type fakeStore struct {
 	entry        audit.Entry
 }
 
-func (f *fakeStore) RejectFace(_ context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
+func (f *fakeStore) RejectFace(
+	_ context.Context, _ string, key feedback.FaceRejectionKey, entry audit.Entry,
+) error {
 	f.called, f.faceKey, f.entry = "RejectFace", key, entry
 	return f.err
 }
 
-func (f *fakeStore) UnrejectFace(_ context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
+func (f *fakeStore) UnrejectFace(
+	_ context.Context, _ string, key feedback.FaceRejectionKey, entry audit.Entry,
+) error {
 	f.called, f.faceKey, f.entry = "UnrejectFace", key, entry
 	return f.err
 }
@@ -52,12 +56,16 @@ func (f *fakeStore) UnrejectLabel(_ context.Context, key feedback.LabelRejection
 	return f.err
 }
 
-func (f *fakeStore) ConfirmFace(_ context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error {
+func (f *fakeStore) ConfirmFace(
+	_ context.Context, _ string, key feedback.FaceConfirmationKey, entry audit.Entry,
+) error {
 	f.called, f.confirmKey, f.entry = "ConfirmFace", key, entry
 	return f.err
 }
 
-func (f *fakeStore) UnconfirmFace(_ context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error {
+func (f *fakeStore) UnconfirmFace(
+	_ context.Context, _ string, key feedback.FaceConfirmationKey, entry audit.Entry,
+) error {
 	f.called, f.confirmKey, f.entry = "UnconfirmFace", key, entry
 	return f.err
 }

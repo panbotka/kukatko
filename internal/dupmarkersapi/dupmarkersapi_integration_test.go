@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/dupmarkers"
@@ -44,7 +45,9 @@ type intHarness struct {
 
 // newIntHarness returns a harness over a truncated integration database, with the
 // repeated-marker routes and the feedback routes mounted on one router behind
-// pass-through guards.
+// guards that admit every request into the bootstrap project — where every row
+// these tests seed lands — as an anonymous caller (so audit rows keep a NULL actor).
+// The project-scoped stores refuse to run without a project.
 func newIntHarness(t *testing.T) intHarness {
 	t.Helper()
 	db := dbtest.New(t)
@@ -63,18 +66,24 @@ func newIntHarness(t *testing.T) intHarness {
 		Dismissals: feedbackStore,
 	})
 
+	bootstrap, err := project.NewStore(db.Pool()).Get(t.Context(), project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("loading the bootstrap project: %v", err)
+	}
+	admit := auth.AdmitInProject(auth.User{}, bootstrap, project.RoleAdmin)
+
 	r := chi.NewRouter()
 	dupmarkersapi.NewAPI(dupmarkersapi.Config{
 		Service:        svc,
 		Markers:        peopleStore,
 		Assigner:       matchSvc,
-		RequireAuth:    passthrough,
-		RequireCurator: passthrough,
+		RequireAuth:    admit,
+		RequireCurator: admit,
 	}).RegisterRoutes(r)
 	feedbackapi.NewAPI(feedbackapi.Config{
 		Store:          feedbackStore,
-		RequireCurator: passthrough,
-		RequireWrite:   passthrough,
+		RequireCurator: admit,
+		RequireWrite:   admit,
 	}).RegisterRoutes(r)
 
 	return intHarness{
@@ -106,7 +115,7 @@ func (h intHarness) makePhoto(t *testing.T, hash string) string {
 // makeSubject inserts a named subject and returns its uid.
 func (h intHarness) makeSubject(t *testing.T, name string) string {
 	t.Helper()
-	subj, err := h.people.CreateSubject(t.Context(), people.Subject{Name: name})
+	subj, err := h.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("creating subject %s: %v", name, err)
 	}
@@ -117,7 +126,7 @@ func (h intHarness) makeSubject(t *testing.T, name string) string {
 // returns its uid.
 func (h intHarness) makeMarker(t *testing.T, photoUID, subjectUID string, x float64) string {
 	t.Helper()
-	m, err := h.people.CreateMarker(t.Context(), people.Marker{
+	m, err := h.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID:   photoUID,
 		SubjectUID: &subjectUID,
 		Type:       people.MarkerFace,
@@ -205,7 +214,7 @@ func TestIntegration_listSurfacesOnlyRepeatedNamedFaceMarkers(t *testing.T) {
 	other := h.makeSubject(t, "Jan")
 	h.makeMarker(t, photoUID, other, 0.9)
 	// The nameless catch-all subject must never surface, however many boxes it has.
-	nameless, err := h.people.CreateSubject(ctx, people.Subject{Name: ""})
+	nameless, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: ""})
 	if err != nil {
 		t.Fatalf("creating nameless subject: %v", err)
 	}
@@ -244,7 +253,7 @@ func TestIntegration_keepDetachesTheOthersWithoutDeletingThem(t *testing.T) {
 	}
 
 	for _, uid := range markerUIDs {
-		marker, err := h.people.GetMarkerByUID(ctx, uid)
+		marker, err := h.people.GetMarkerByUID(ctx, project.BootstrapUID, uid)
 		if err != nil {
 			// The whole point of "detach, don't delete": the region survives, so a
 			// curator can hand it to whoever it really belongs to.
@@ -288,7 +297,7 @@ func TestIntegration_invalidFlagsOneMarkerAndShrinksTheGroup(t *testing.T) {
 		t.Fatalf("invalid status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	flagged, err := h.people.GetMarkerByUID(ctx, markerUIDs[2])
+	flagged, err := h.people.GetMarkerByUID(ctx, project.BootstrapUID, markerUIDs[2])
 	if err != nil {
 		t.Fatalf("flagged marker no longer exists: %v", err)
 	}
@@ -344,7 +353,7 @@ func TestIntegration_dismissedGroupDoesNotComeBack(t *testing.T) {
 	}
 	// Dismissing is an opinion: both markers must be untouched.
 	for _, uid := range markerUIDs {
-		marker, err := h.people.GetMarkerByUID(ctx, uid)
+		marker, err := h.people.GetMarkerByUID(ctx, project.BootstrapUID, uid)
 		if err != nil {
 			t.Fatalf("marker %s no longer exists: %v", uid, err)
 		}
@@ -428,7 +437,7 @@ func TestIntegration_keepRefusesAMarkerFromAnotherGroup(t *testing.T) {
 	}
 
 	for _, uid := range markerUIDs {
-		marker, err := h.people.GetMarkerByUID(ctx, uid)
+		marker, err := h.people.GetMarkerByUID(ctx, project.BootstrapUID, uid)
 		if err != nil {
 			t.Fatalf("marker %s no longer exists: %v", uid, err)
 		}

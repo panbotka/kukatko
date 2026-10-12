@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sweep"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -34,6 +35,46 @@ type sweepHarness struct {
 	svc      *sweep.Service
 }
 
+// bootstrapFaces adapts *vectors.Store to the project-less candidates.FaceStore,
+// searching the bootstrap project the test photos land in (cmd/kukatko wires the
+// request's project instead).
+type bootstrapFaces struct {
+	*vectors.Store
+}
+
+// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
+func (f bootstrapFaces) FindSimilarUnassignedFaceCandidates(
+	ctx context.Context, v []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+) ([]vectors.FaceCandidate, error) {
+	return f.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, v, limit, maxDistance, exclude)
+}
+
+// bootstrapPeople adapts *people.Store to the project-less
+// candidates.PeopleStore and sweep.SubjectLister, reading the bootstrap project.
+type bootstrapPeople struct {
+	*people.Store
+}
+
+// GetSubjectByUID reads the subject inside the bootstrap project.
+func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
+	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
+}
+
+// GetMarkerByUID reads the marker inside the bootstrap project.
+func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
+	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
+}
+
+// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
+func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
+	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
+}
+
+// ListSubjects lists the subjects of the bootstrap project.
+func (p bootstrapPeople) ListSubjects(ctx context.Context) ([]people.SubjectCount, error) {
+	return p.Store.ListSubjects(ctx, project.BootstrapUID)
+}
+
 // newSweepHarness returns a harness over a truncated integration database, wiring the
 // real candidate service as the sweep's finder.
 func newSweepHarness(t *testing.T) sweepHarness {
@@ -45,12 +86,13 @@ func newSweepHarness(t *testing.T) sweepHarness {
 	feedbackStore := feedback.NewStore(db.Pool())
 	photoStore := photos.NewStore(db.Pool())
 	cand := candidates.New(candidates.Config{
-		Faces: faceStore, People: peopleStore, Feedback: feedbackStore, Photos: photoStore,
+		Faces: bootstrapFaces{faceStore}, People: bootstrapPeople{peopleStore},
+		Feedback: feedbackStore, Photos: photoStore,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
 	})
 	svc := sweep.New(sweep.Config{
-		Subjects:    peopleStore,
+		Subjects:    bootstrapPeople{peopleStore},
 		Finder:      cand,
 		Concurrency: 3,
 		MaxSubjects: 500,
@@ -109,7 +151,7 @@ func (h sweepHarness) exemplar(t *testing.T, hash, subjectUID string, v []float3
 	t.Helper()
 	ctx := context.Background()
 	photoUID := h.makePhoto(t, hash)
-	marker, err := h.people.CreateMarker(ctx, people.Marker{
+	marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID, Type: people.MarkerFace,
 		X: 0.3, Y: 0.3, W: 0.3, H: 0.3, Reviewed: true,
 	})
@@ -167,15 +209,15 @@ func summary(t *testing.T, events []sweep.Event) sweep.Summary {
 func TestSweep_onlyMatchingSubjectAppearsDB(t *testing.T) {
 	h := newSweepHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject Alice: %v", err)
 	}
-	bob, err := h.people.CreateSubject(ctx, people.Subject{Name: "Bob"})
+	bob, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateSubject Bob: %v", err)
 	}
-	if _, err = h.people.CreateSubject(ctx, people.Subject{Name: "Cara"}); err != nil {
+	if _, err = h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Cara"}); err != nil {
 		t.Fatalf("CreateSubject Cara: %v", err)
 	}
 	// Alice has an exemplar at e0 and one unnamed lookalike nearby; Bob has an exemplar
@@ -204,7 +246,7 @@ func TestSweep_onlyMatchingSubjectAppearsDB(t *testing.T) {
 func TestSweep_rejectedCandidateNotShownDB(t *testing.T) {
 	h := newSweepHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -214,7 +256,7 @@ func TestSweep_rejectedCandidateNotShownDB(t *testing.T) {
 
 	entry := audit.Entry{Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: alice.UID}
 	key := feedback.FaceRejectionKey{PhotoUID: rejected, FaceIndex: 0, SubjectUID: alice.UID}
-	if err := h.feedback.RejectFace(ctx, key, entry); err != nil {
+	if err := h.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
@@ -236,7 +278,7 @@ func TestSweep_rejectedCandidateNotShownDB(t *testing.T) {
 // and no error, and is not counted among scanned subjects.
 func TestSweep_noFacesSubjectSkippedDB(t *testing.T) {
 	h := newSweepHarness(t)
-	if _, err := h.people.CreateSubject(t.Context(), people.Subject{Name: "Nobody"}); err != nil {
+	if _, err := h.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: "Nobody"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 

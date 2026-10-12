@@ -58,6 +58,10 @@ var (
 	// ErrFaceIndexTaken is returned by SaveFaces when two faces in the same batch
 	// share a face_index, violating the UNIQUE(photo_uid, face_index) constraint.
 	ErrFaceIndexTaken = errors.New("vectors: duplicate face index for photo")
+	// ErrNoProject indicates a project-filtered similarity search was called
+	// without a project — a programming error, never "search the whole
+	// instance".
+	ErrNoProject = errors.New("vectors: no project given")
 )
 
 // Embedding is a single image embedding row: one SigLIP 2 vector per photo plus
@@ -75,6 +79,10 @@ type Embedding struct {
 	Dim int
 	// CreatedAt is when the row was last written (set by the database).
 	CreatedAt time.Time
+	// ProjectID is the denormalised project of the owning photo, filled on
+	// read (ignored on save, which copies it from the photo). A similarity
+	// search seeded from this embedding searches inside this project.
+	ProjectID string
 }
 
 // Face is a single detected face: its embedding, bounding box and the cached
@@ -108,6 +116,10 @@ type Face struct {
 	PhotoWidth  int
 	PhotoHeight int
 	Orientation int
+	// ProjectID is the denormalised project of the owning photo, filled on
+	// read (ignored on save, which copies it from the photo). A neighbour search
+	// seeded from this face searches inside this project.
+	ProjectID string
 }
 
 // Detection is one completed face-detection run over a photo, as recorded by

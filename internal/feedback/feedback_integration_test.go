@@ -67,7 +67,7 @@ func (f *fixtures) makePhoto(t *testing.T, hash string) string {
 // makeSubject inserts a person subject and returns its uid.
 func (f *fixtures) makeSubject(t *testing.T, name string) string {
 	t.Helper()
-	subj, err := f.people.CreateSubject(context.Background(),
+	subj, err := f.people.CreateSubject(context.Background(), project.BootstrapUID,
 		people.Subject{Name: name, Type: people.SubjectPerson})
 	if err != nil {
 		t.Fatalf("creating subject %s: %v", name, err)
@@ -128,11 +128,11 @@ func TestFaceRejectionLifecycle(t *testing.T) {
 	key := feedback.FaceRejectionKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: subject}
 	entry := audit.Entry{Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: subject}
 
-	if err := f.feedback.RejectFace(ctx, key, entry); err != nil {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 	// Rejecting again is a no-op, not an error, and leaves exactly one row.
-	if err := f.feedback.RejectFace(ctx, key, entry); err != nil {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectFace (repeat): %v", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM face_rejections"); n != 1 {
@@ -142,14 +142,14 @@ func TestFaceRejectionLifecycle(t *testing.T) {
 		t.Fatalf("IsFaceRejected = %v, %v, want true, nil", ok, err)
 	}
 
-	if err := f.feedback.UnrejectFace(ctx, key, entry); err != nil {
+	if err := f.feedback.UnrejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnrejectFace: %v", err)
 	}
 	if ok, _ := f.feedback.IsFaceRejected(ctx, key); ok {
 		t.Fatalf("IsFaceRejected after unreject = true, want false")
 	}
 	// Un-rejecting what is not rejected is a no-op, not an error.
-	if err := f.feedback.UnrejectFace(ctx, key, entry); err != nil {
+	if err := f.feedback.UnrejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnrejectFace (repeat): %v", err)
 	}
 }
@@ -196,7 +196,7 @@ func TestBulkLookups(t *testing.T) {
 
 	reject := func(photo string, idx int, subj string) {
 		key := feedback.FaceRejectionKey{PhotoUID: photo, FaceIndex: idx, SubjectUID: subj}
-		if err := f.feedback.RejectFace(ctx, key, entry); err != nil {
+		if err := f.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 			t.Fatalf("RejectFace: %v", err)
 		}
 	}
@@ -246,7 +246,7 @@ func TestRejectedByAndAudit(t *testing.T) {
 		Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: subject, ActorUID: actor,
 	}
 
-	if err := f.feedback.RejectFace(ctx, key, entry); err != nil {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
@@ -279,7 +279,7 @@ func TestForeignKeyCascades(t *testing.T) {
 
 	faceKey := feedback.FaceRejectionKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: subject}
 	labelKey := feedback.LabelRejectionKey{PhotoUID: photo, LabelUID: label}
-	if err := f.feedback.RejectFace(ctx, faceKey, entry); err != nil {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, faceKey, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 	if err := f.feedback.RejectLabel(ctx, labelKey, entry); err != nil {
@@ -318,11 +318,11 @@ func TestRejectMissingTarget(t *testing.T) {
 	entry := audit.Entry{Action: audit.ActionFaceReject}
 
 	badSubject := feedback.FaceRejectionKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: "no_such_subject"}
-	if err := f.feedback.RejectFace(ctx, badSubject, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, badSubject, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("RejectFace missing subject = %v, want ErrTargetNotFound", err)
 	}
 	badPhoto := feedback.FaceRejectionKey{PhotoUID: "no_such_photo", FaceIndex: 0, SubjectUID: subject}
-	if err := f.feedback.RejectFace(ctx, badPhoto, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, badPhoto, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("RejectFace missing photo = %v, want ErrTargetNotFound", err)
 	}
 	badLabel := feedback.LabelRejectionKey{PhotoUID: photo, LabelUID: "no_such_label"}
@@ -348,11 +348,11 @@ func TestFaceConfirmationLifecycle(t *testing.T) {
 		ActorUID: user, Action: audit.ActionFaceConfirm, TargetType: "subjects", TargetUID: subject,
 	}
 
-	if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+	if err := f.feedback.ConfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("ConfirmFace: %v", err)
 	}
 	// Confirming again is a no-op, not an error, and leaves exactly one row.
-	if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+	if err := f.feedback.ConfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("ConfirmFace (repeat): %v", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM face_confirmations"); n != 1 {
@@ -370,14 +370,14 @@ func TestFaceConfirmationLifecycle(t *testing.T) {
 		t.Fatalf("audit rows = %d, want 2 (one per ConfirmFace call)", n)
 	}
 
-	if err := f.feedback.UnconfirmFace(ctx, key, entry); err != nil {
+	if err := f.feedback.UnconfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnconfirmFace: %v", err)
 	}
 	if ok, _ := f.feedback.IsFaceConfirmed(ctx, key); ok {
 		t.Fatalf("IsFaceConfirmed after unconfirm = true, want false")
 	}
 	// Un-confirming what is not confirmed is a no-op, not an error.
-	if err := f.feedback.UnconfirmFace(ctx, key, entry); err != nil {
+	if err := f.feedback.UnconfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnconfirmFace (repeat): %v", err)
 	}
 }
@@ -395,7 +395,7 @@ func TestFaceConfirmationBulkLookup(t *testing.T) {
 
 	confirm := func(photo string, idx int, subj string) {
 		key := feedback.FaceConfirmationKey{PhotoUID: photo, FaceIndex: idx, SubjectUID: subj}
-		if err := f.feedback.ConfirmFace(ctx, key, entry); err != nil {
+		if err := f.feedback.ConfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 			t.Fatalf("ConfirmFace: %v", err)
 		}
 	}
@@ -429,11 +429,11 @@ func TestConfirmMissingTarget(t *testing.T) {
 	entry := audit.Entry{Action: audit.ActionFaceConfirm}
 
 	badSubject := feedback.FaceConfirmationKey{PhotoUID: photo, FaceIndex: 0, SubjectUID: "no_such_subject"}
-	if err := f.feedback.ConfirmFace(ctx, badSubject, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.ConfirmFace(ctx, project.BootstrapUID, badSubject, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("ConfirmFace missing subject = %v, want ErrTargetNotFound", err)
 	}
 	badPhoto := feedback.FaceConfirmationKey{PhotoUID: "no_such_photo", FaceIndex: 0, SubjectUID: subject}
-	if err := f.feedback.ConfirmFace(ctx, badPhoto, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.ConfirmFace(ctx, project.BootstrapUID, badPhoto, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("ConfirmFace missing photo = %v, want ErrTargetNotFound", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM face_confirmations"); n != 0 {

@@ -59,15 +59,18 @@ FROM subjects s
 LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
 LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
-WHERE s.uid = $1
+WHERE s.uid = $1 AND s.project_id = $2
 GROUP BY s.uid, s.name`
 
 // SubjectStats returns the subject's photo count and year span. It returns
 // ErrSubjectNotFound when no subject carries that uid, and a wrapped error on
-// any query failure.
-func (s *Store) SubjectStats(ctx context.Context, subjectUID string) (SubjectStats, error) {
+// any query failure. A subject of another project than projectUID is not found.
+func (s *Store) SubjectStats(ctx context.Context, projectUID, subjectUID string) (SubjectStats, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SubjectStats{}, err
+	}
 	var stats SubjectStats
-	err := s.pool.QueryRow(ctx, subjectStatsSQL, subjectUID).Scan(
+	err := s.pool.QueryRow(ctx, subjectStatsSQL, subjectUID, projectUID).Scan(
 		&stats.UID, &stats.Name, &stats.PhotoCount, &stats.OldestYear, &stats.NewestYear,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

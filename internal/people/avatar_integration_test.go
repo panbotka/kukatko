@@ -20,7 +20,7 @@ func markFace(
 	t *testing.T, store *people.Store, photoUID, subjectUID string, x, y, w, h float64,
 ) {
 	t.Helper()
-	if _, err := store.CreateMarker(context.Background(), people.Marker{
+	if _, err := store.CreateMarker(context.Background(), testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID,
 		X: x, Y: y, W: w, H: h, Score: 90,
 	}); err != nil {
@@ -37,14 +37,14 @@ func TestSubjectAvatar_picksTheBiggestFace(t *testing.T) {
 
 	small := makePhoto(t, photoStore, "av-small")
 	big := makePhoto(t, photoStore, "av-big")
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	markFace(t, store, small, subject.UID, 0.1, 0.1, 0.05, 0.05)
 	markFace(t, store, big, subject.UID, 0.4, 0.3, 0.2, 0.25)
 
-	source, err := store.SubjectAvatar(ctx, subject.UID)
+	source, err := store.SubjectAvatar(ctx, testProject, subject.UID)
 	if err != nil {
 		t.Fatalf("SubjectAvatar: %v", err)
 	}
@@ -67,13 +67,13 @@ func TestSubjectAvatar_handPickedCoverWins(t *testing.T) {
 
 	cover := makePhoto(t, photoStore, "av-cover")
 	other := makePhoto(t, photoStore, "av-other")
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice", CoverPhotoUID: &cover})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice", CoverPhotoUID: &cover})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	markFace(t, store, other, subject.UID, 0.4, 0.3, 0.2, 0.2)
 
-	source, err := store.SubjectAvatar(ctx, subject.UID)
+	source, err := store.SubjectAvatar(ctx, testProject, subject.UID)
 	if err != nil {
 		t.Fatalf("SubjectAvatar: %v", err)
 	}
@@ -94,11 +94,11 @@ func TestSubjectAvatar_skipsRejectedAndHidden(t *testing.T) {
 
 	rejected := makePhoto(t, photoStore, "av-bad")
 	archived := makePhoto(t, photoStore, "av-hid")
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	marker, err := store.CreateMarker(ctx, people.Marker{
+	marker, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: rejected, SubjectUID: &subject.UID,
 		X: 0.1, Y: 0.1, W: 0.3, H: 0.3, Score: 90,
 	})
@@ -114,7 +114,7 @@ func TestSubjectAvatar_skipsRejectedAndHidden(t *testing.T) {
 		t.Fatalf("archiving the photo: %v", err)
 	}
 
-	if _, err := store.SubjectAvatar(ctx, subject.UID); !errors.Is(err, people.ErrNoAvatar) {
+	if _, err := store.SubjectAvatar(ctx, testProject, subject.UID); !errors.Is(err, people.ErrNoAvatar) {
 		t.Errorf("SubjectAvatar error = %v, want ErrNoAvatar", err)
 	}
 }
@@ -124,7 +124,7 @@ func TestSubjectAvatar_skipsRejectedAndHidden(t *testing.T) {
 func TestSubjectAvatar_unknownSubject(t *testing.T) {
 	store, _, _, _ := newStores(t)
 
-	_, err := store.SubjectAvatar(context.Background(), "su_nothing")
+	_, err := store.SubjectAvatar(context.Background(), testProject, "su_nothing")
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("SubjectAvatar error = %v, want ErrSubjectNotFound", err)
 	}

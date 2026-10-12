@@ -83,20 +83,20 @@ func TestWriteAttachError(t *testing.T) {
 type failingAttacher struct{}
 
 // ListPhotoSubjects always fails.
-func (failingAttacher) ListPhotoSubjects(context.Context, string) ([]people.PhotoSubject, error) {
+func (failingAttacher) ListPhotoSubjects(context.Context, string, string) ([]people.PhotoSubject, error) {
 	return nil, errors.New("database is on fire")
 }
 
 // AttachSubjectToPhoto is unused by these tests.
 func (failingAttacher) AttachSubjectToPhoto(
-	context.Context, string, string, audit.Entry,
+	context.Context, string, string, string, audit.Entry,
 ) ([]people.PhotoSubject, error) {
 	return nil, errors.New("unused")
 }
 
 // DetachSubjectFromPhoto is unused by these tests.
 func (failingAttacher) DetachSubjectFromPhoto(
-	context.Context, string, string, audit.Entry,
+	context.Context, string, string, string, audit.Entry,
 ) ([]people.PhotoSubject, error) {
 	return nil, errors.New("unused")
 }

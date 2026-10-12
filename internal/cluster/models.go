@@ -57,6 +57,9 @@ type Face struct {
 	DetScore float64
 	// Model is the sidecar's face model identifier, recorded on the cluster.
 	Model string
+	// ProjectID is the face's denormalised project: its neighbours are searched
+	// inside it, so a cluster never joins faces of two projects.
+	ProjectID string
 }
 
 // Ref identifies one face by its photo and per-photo index, used when adding

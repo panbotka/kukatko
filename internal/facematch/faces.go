@@ -14,10 +14,11 @@ import (
 // for an assigned one the alternatives to reassign it to. Faces and markers are
 // paired exclusively by IoU (see matchMarkers) and each pairing is cached on the
 // face row. Markers that matched no detected face are appended so the detail UI can
-// render manually drawn regions too. A missing photo yields photos.ErrPhotoNotFound
-// (wrapped), which the HTTP layer maps to 404.
-func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesResponse, error) {
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+// render manually drawn regions too. A missing photo — or one of another project
+// than projectUID — yields photos.ErrPhotoNotFound (wrapped), which the HTTP layer
+// maps to 404. Suggestions only ever name subjects of projectUID.
+func (s *Service) PhotoFaces(ctx context.Context, projectUID, photoUID string) (FacesResponse, error) {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return FacesResponse{}, fmt.Errorf("facematch: loading photo %s: %w", photoUID, err)
 	}
@@ -25,14 +26,15 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 	if err != nil {
 		return FacesResponse{}, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}
-	markers, err := s.people.ListMarkersByPhoto(ctx, photoUID)
+	markers, err := s.people.ListMarkersByPhoto(ctx, projectUID, photoUID)
 	if err != nil {
 		return FacesResponse{}, fmt.Errorf("facematch: listing markers for %s: %w", photoUID, err)
 	}
 
 	matched := matchMarkers(faces, markers, s.iouThreshold)
-	names := s.assignedSubjectNames(ctx, markers)
+	names := s.assignedSubjectNames(ctx, projectUID, markers)
 	state := photoPairing{
+		project: projectUID,
 		pairs:   matched,
 		claimed: matched.claims(),
 		surplus: surplusFaces(faces, matched),
@@ -58,8 +60,9 @@ func (s *Service) PhotoFaces(ctx context.Context, photoUID string) (FacesRespons
 // photoPairing is the per-photo matching state a face view is built from: the
 // exclusive pairing, its inverse (marker → claiming face), the faces whose cached
 // link is surplus, the photo's markers by uid, and the subject names/exclusions
-// shared by every face on the photo.
+// shared by every face on the photo, plus the project the suggestions search in.
 type photoPairing struct {
+	project string
 	pairs   pairing
 	claimed map[string]int
 	surplus map[int]bool
@@ -103,7 +106,7 @@ func (s *Service) buildFaceView(ctx context.Context, face vectors.Face, state ph
 	case state.surplus[face.FaceIndex]:
 		s.cacheFaceLink(ctx, face, "", "", "")
 	}
-	view.Suggestions = s.suggestForFace(ctx, face, state.exclude, view.SubjectUID == "")
+	view.Suggestions = s.suggestForFace(ctx, state.project, face, state.exclude, view.SubjectUID == "")
 	return view
 }
 
@@ -175,14 +178,16 @@ func appendUnmatchedMarkers(
 // repeated with no distance cutoff to fill the remaining slots — pass it only for an
 // unnamed face, which needs candidates at any distance; an assigned one only wants
 // alternatives that are genuinely close. An empty embedding or any search error yields
-// no suggestions (the box being offline must not fail the faces view).
+// no suggestions (the box being offline must not fail the faces view). Only faces
+// of projectUID are searched, so only its subjects are ever suggested.
 func (s *Service) suggestForFace(
-	ctx context.Context, face vectors.Face, exclude map[string]bool, widen bool,
+	ctx context.Context, projectUID string, face vectors.Face, exclude map[string]bool, widen bool,
 ) []Suggestion {
 	if len(face.Vector) == 0 {
 		return []Suggestion{}
 	}
-	primary, err := s.faces.FindSimilarFaceCandidates(ctx, face.Vector, suggestionSearchLimit, s.maxDistance)
+	primary, err := s.faces.FindSimilarFaceCandidates(
+		ctx, projectUID, face.Vector, suggestionSearchLimit, s.maxDistance)
 	if err != nil {
 		return []Suggestion{}
 	}
@@ -190,7 +195,7 @@ func (s *Service) suggestForFace(
 	if !widen || len(suggestions) >= s.suggestionLimit {
 		return suggestions
 	}
-	return s.fillSuggestions(ctx, face, exclude, suggestions)
+	return s.fillSuggestions(ctx, projectUID, face, exclude, suggestions)
 }
 
 // fillSuggestions widens the suggestion search to no distance cutoff and appends any
@@ -198,9 +203,9 @@ func (s *Service) suggestForFace(
 // distance-threshold fallback so a face always gets some candidates when any named
 // neighbour exists.
 func (s *Service) fillSuggestions(
-	ctx context.Context, face vectors.Face, exclude map[string]bool, have []Suggestion,
+	ctx context.Context, projectUID string, face vectors.Face, exclude map[string]bool, have []Suggestion,
 ) []Suggestion {
-	fallback, err := s.faces.FindSimilarFaceCandidates(ctx, face.Vector, suggestionSearchLimit, 0)
+	fallback, err := s.faces.FindSimilarFaceCandidates(ctx, projectUID, face.Vector, suggestionSearchLimit, 0)
 	if err != nil {
 		return have
 	}
@@ -224,7 +229,9 @@ func (s *Service) fillSuggestions(
 // letting it into the exclusion set would suppress the one suggestion the user
 // wants: when detection later does produce a face, the person already attached
 // by hand is the likeliest answer for it, not the one candidate to hide.
-func (s *Service) assignedSubjectNames(ctx context.Context, markers []people.Marker) map[string]string {
+func (s *Service) assignedSubjectNames(
+	ctx context.Context, projectUID string, markers []people.Marker,
+) map[string]string {
 	names := make(map[string]string)
 	for i := range markers {
 		uid := derefSubject(markers[i].SubjectUID)
@@ -234,7 +241,7 @@ func (s *Service) assignedSubjectNames(ctx context.Context, markers []people.Mar
 		if _, seen := names[uid]; seen {
 			continue
 		}
-		subj, err := s.people.GetSubjectByUID(ctx, uid)
+		subj, err := s.people.GetSubjectByUID(ctx, projectUID, uid)
 		if err != nil {
 			names[uid] = ""
 			continue

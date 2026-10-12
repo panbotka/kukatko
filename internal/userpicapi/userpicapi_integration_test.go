@@ -368,11 +368,11 @@ func TestPicture_theLinkedSubjectIsTheDefault(t *testing.T) {
 	env := newEnv(t)
 	uid, client := env.login(t, "linked")
 	photo := env.catalogue(t, "4444444444444444444444444444444444444444444444444444444444444444", nil)
-	subject, err := env.people.CreateSubject(t.Context(), people.Subject{Name: "Anna"})
+	subject, err := env.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: "Anna"})
 	if err != nil {
 		t.Fatalf("creating the subject: %v", err)
 	}
-	if _, err := env.people.CreateMarker(t.Context(), people.Marker{
+	if _, err := env.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID,
 		X: 0.4, Y: 0.3, W: 0.2, H: 0.25, Score: 90,
 	}); err != nil {

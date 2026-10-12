@@ -41,15 +41,20 @@ SELECT s.uid, s.slug, s.name, s.type, m.uid, m.created_at
 FROM markers m
 JOIN subjects s ON s.uid = m.subject_uid
 WHERE m.photo_uid = $1 AND m.type = 'person' AND m.invalid = FALSE
+  AND s.project_id = $2
 ORDER BY s.name, s.uid`
 
 // ListPhotoSubjects returns the subjects attached to photoUID by hand, ordered by
 // name. A photo with no hand-attached person — and a uid that names nothing —
 // yields an empty, non-nil slice and a nil error, because "nobody is attached"
 // and "no such photo" are the same answer to a reader and the caller that cares
-// checks the photo itself.
-func (s *Store) ListPhotoSubjects(ctx context.Context, photoUID string) ([]PhotoSubject, error) {
-	return listPhotoSubjects(ctx, s.pool, photoUID)
+// checks the photo itself. A photo of another project than projectUID lists
+// nobody.
+func (s *Store) ListPhotoSubjects(ctx context.Context, projectUID, photoUID string) ([]PhotoSubject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return listPhotoSubjects(ctx, s.pool, projectUID, photoUID)
 }
 
 // rowsQuerier is the one method the hand-attached listing needs. Both
@@ -60,8 +65,8 @@ type rowsQuerier interface {
 }
 
 // listPhotoSubjects runs listPhotoSubjectsSQL over q and collects the rows.
-func listPhotoSubjects(ctx context.Context, q rowsQuerier, photoUID string) ([]PhotoSubject, error) {
-	rows, err := q.Query(ctx, listPhotoSubjectsSQL, photoUID)
+func listPhotoSubjects(ctx context.Context, q rowsQuerier, projectUID, photoUID string) ([]PhotoSubject, error) {
+	rows, err := q.Query(ctx, listPhotoSubjectsSQL, photoUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: listing attached subjects of %s: %w", photoUID, err)
 	}
@@ -104,16 +109,17 @@ RETURNING uid`
 // store's tag observer as a tagging by entry.ActorUID; a repeat one is not.
 // entry's TargetUID defaults to
 // the marker recording the link. A missing photo returns ErrPhotoNotFound and a
-// missing subject ErrSubjectNotFound; both roll back, writing no audit row.
+// missing subject ErrSubjectNotFound; both roll back, writing no audit row. Both
+// must belong to projectUID — a foreign one is missing.
 func (s *Store) AttachSubjectToPhoto(
-	ctx context.Context, photoUID, subjectUID string, entry audit.Entry,
+	ctx context.Context, projectUID, photoUID, subjectUID string, entry audit.Entry,
 ) ([]PhotoSubject, error) {
 	markerUID, err := newMarkerUID()
 	if err != nil {
 		return nil, err
 	}
-	return s.auditedAttachTx(ctx, photoUID, entry, func(tx pgx.Tx) (string, error) {
-		if err := requireLinkable(ctx, tx, photoUID, subjectUID); err != nil {
+	return s.auditedAttachTx(ctx, projectUID, photoUID, entry, func(tx pgx.Tx) (string, error) {
+		if err := requireLinkable(ctx, tx, projectUID, photoUID, subjectUID); err != nil {
 			return "", err
 		}
 		var stored string
@@ -125,7 +131,7 @@ func (s *Store) AttachSubjectToPhoto(
 		// somebody on the photo who was not on it by hand already.
 		if stored == markerUID {
 			if err := s.tagged(ctx, tx, Tagging{
-				PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
+				ProjectUID: projectUID, PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
 			}); err != nil {
 				return "", err
 			}
@@ -148,12 +154,13 @@ DELETE FROM markers WHERE photo_uid = $1 AND subject_uid = $2 AND type = 'person
 // attached is not an error, because the caller asked for a state ("this person is
 // not on this photo") that already holds. entry's TargetUID defaults to the
 // subject. A missing photo returns ErrPhotoNotFound and a missing subject
-// ErrSubjectNotFound; both roll back, writing no audit row.
+// ErrSubjectNotFound; both roll back, writing no audit row. Both must belong to
+// projectUID.
 func (s *Store) DetachSubjectFromPhoto(
-	ctx context.Context, photoUID, subjectUID string, entry audit.Entry,
+	ctx context.Context, projectUID, photoUID, subjectUID string, entry audit.Entry,
 ) ([]PhotoSubject, error) {
-	return s.auditedAttachTx(ctx, photoUID, entry, func(tx pgx.Tx) (string, error) {
-		if err := requireLinkable(ctx, tx, photoUID, subjectUID); err != nil {
+	return s.auditedAttachTx(ctx, projectUID, photoUID, entry, func(tx pgx.Tx) (string, error) {
+		if err := requireLinkable(ctx, tx, projectUID, photoUID, subjectUID); err != nil {
 			return "", err
 		}
 		tag, err := tx.Exec(ctx, detachSubjectSQL, photoUID, subjectUID)
@@ -162,7 +169,7 @@ func (s *Store) DetachSubjectFromPhoto(
 		}
 		if tag.RowsAffected() > 0 {
 			if err := s.untagged(ctx, tx, Tagging{
-				PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
+				ProjectUID: projectUID, PhotoUID: photoUID, SubjectUID: subjectUID, ActorUID: entry.ActorUID,
 			}); err != nil {
 				return "", err
 			}
@@ -181,8 +188,12 @@ func (s *Store) DetachSubjectFromPhoto(
 // marker, and that marker — not the one this call would have created — is what
 // the trail must point at.
 func (s *Store) auditedAttachTx(
-	ctx context.Context, photoUID string, entry audit.Entry, write func(tx pgx.Tx) (string, error),
+	ctx context.Context, projectUID, photoUID string, entry audit.Entry, write func(tx pgx.Tx) (string, error),
 ) ([]PhotoSubject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	entry = withProject(entry, projectUID)
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("people: begin audited transaction: %w", err)
@@ -199,7 +210,7 @@ func (s *Store) auditedAttachTx(
 	if err := audit.Write(ctx, tx, entry); err != nil {
 		return nil, fmt.Errorf("people: writing audit entry: %w", err)
 	}
-	out, err := listPhotoSubjects(ctx, tx, photoUID)
+	out, err := listPhotoSubjects(ctx, tx, projectUID, photoUID)
 	if err != nil {
 		return nil, err
 	}
@@ -212,17 +223,13 @@ func (s *Store) auditedAttachTx(
 // requireLinkable returns ErrPhotoNotFound or ErrSubjectNotFound unless both ends
 // of the link exist. The check runs inside the mutation's transaction so a
 // missing end is answered as a 404 rather than surfacing later as a foreign-key
-// violation — or, for a detach, as a silent no-op.
-func requireLinkable(ctx context.Context, tx pgx.Tx, photoUID, subjectUID string) error {
-	var exists bool
-	err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM photos WHERE uid = $1)", photoUID).Scan(&exists)
-	if err != nil {
-		return fmt.Errorf("people: looking up photo %s: %w", photoUID, err)
+// violation — or, for a detach, as a silent no-op. An end of another project than
+// projectUID is missing.
+func requireLinkable(ctx context.Context, tx pgx.Tx, projectUID, photoUID, subjectUID string) error {
+	if err := requirePhotoInProject(ctx, tx, projectUID, photoUID); err != nil {
+		return err
 	}
-	if !exists {
-		return ErrPhotoNotFound
-	}
-	_, err = subjectName(ctx, tx, subjectUID)
+	_, err := subjectName(ctx, tx, projectUID, subjectUID)
 	return err
 }
 

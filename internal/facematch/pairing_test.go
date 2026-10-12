@@ -209,7 +209,7 @@ func TestPhotoFaces_exclusiveMarkerPerFace(t *testing.T) {
 	}
 	svc := newService(&fakePhotos{}, ff, pe)
 
-	resp, err := svc.PhotoFaces(ctx, "ph9a09ujh1p4qfalm4eigm4h7a")
+	resp, err := svc.PhotoFaces(ctx, testProject, "ph9a09ujh1p4qfalm4eigm4h7a")
 	if err != nil {
 		t.Fatalf("PhotoFaces: %v", err)
 	}

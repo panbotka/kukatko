@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/family"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestExport_readsTheWholeGenealogy verifies the export read returns every
@@ -132,7 +133,7 @@ func TestExport_carriesWhatARebuildNeeds(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	if _, err := ppl.UpdateSubject(ctx, v.bohumil, people.SubjectUpdate{
+	if _, err := ppl.UpdateSubject(ctx, project.BootstrapUID, v.bohumil, people.SubjectUpdate{
 		Name:      "Bohumil Nečas st.",
 		Nickname:  "Bohouš",
 		Type:      people.SubjectPerson,

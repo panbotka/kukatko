@@ -20,7 +20,7 @@ func TestCreateSubjectTx_joinsTheCallersTransaction(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()
 
-	if _, err := store.CreateSubject(ctx, people.Subject{Name: "Marie Nečasová"}); err != nil {
+	if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Marie Nečasová"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 
@@ -28,7 +28,7 @@ func TestCreateSubjectTx_joinsTheCallersTransaction(t *testing.T) {
 	var created people.Subject
 	inTx(t, db.Pool(), func(tx pgx.Tx) error {
 		var err error
-		created, err = people.CreateSubjectTx(ctx, tx, people.Subject{Name: "Marie Nečasová"})
+		created, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nečasová"})
 		if err != nil {
 			return err
 		}
@@ -42,14 +42,14 @@ func TestCreateSubjectTx_joinsTheCallersTransaction(t *testing.T) {
 	var rolledBack people.Subject
 	inTx(t, db.Pool(), func(tx pgx.Tx) error {
 		var err error
-		rolledBack, err = people.CreateSubjectTx(ctx, tx, people.Subject{Name: "Marie Nečasová"})
+		rolledBack, err = people.CreateSubjectTx(ctx, tx, testProject, people.Subject{Name: "Marie Nečasová"})
 		return err
 	})
-	if _, err := store.GetSubjectByUID(ctx, rolledBack.UID); err == nil {
+	if _, err := store.GetSubjectByUID(ctx, testProject, rolledBack.UID); err == nil {
 		t.Error("a subject created in a rolled-back transaction survived it")
 	}
 
-	subjects, err := store.ListSubjects(ctx)
+	subjects, err := store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}

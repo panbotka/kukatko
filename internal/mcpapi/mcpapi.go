@@ -84,8 +84,11 @@ audit trail against the token you are using.`
 type SimilarSearcher interface {
 	// GetEmbedding returns a photo's image embedding, or vectors.ErrEmbeddingNotFound.
 	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
-	// FindSimilar returns the nearest neighbours of vec by cosine distance.
-	FindSimilar(ctx context.Context, vec []float32, limit int, maxDistance float64) ([]vectors.Match, error)
+	// FindSimilar returns the project's nearest neighbours of vec by cosine
+	// distance.
+	FindSimilar(
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+	) ([]vectors.Match, error)
 }
 
 // EncodeReporter answers where each per-photo computation of one photo stands.

@@ -770,14 +770,14 @@ func TestMCPListAndLookupCollections(t *testing.T) {
 	if _, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: "Vánoce"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	subj, err := e.people.CreateSubject(t.Context(), people.Subject{Name: "Babička"})
+	subj, err := e.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: "Babička"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	// Two of her faces on the one photo, so the listing's two counters cannot be
 	// mistaken for each other.
 	for _, box := range [][4]float64{{0.1, 0.1, 0.2, 0.2}, {0.5, 0.1, 0.2, 0.2}} {
-		if _, err := e.people.CreateMarker(t.Context(), people.Marker{
+		if _, err := e.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{
 			PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
 			X: box[0], Y: box[1], W: box[2], H: box[3],
 		}); err != nil {

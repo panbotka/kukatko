@@ -39,22 +39,22 @@ func buildReviewAPI(
 	matchSvc *facematch.Service,
 ) *reviewapi.API {
 	sweepSvc := sweep.New(sweep.Config{
-		Subjects:    people.NewStore(db.Pool()),
+		Subjects:    requestProjectPeople{people.NewStore(db.Pool())},
 		Finder:      buildCandidatesService(cfg, db, mediaStore),
 		Concurrency: cfg.Sweep.Concurrency,
 		MaxSubjects: cfg.Sweep.MaxSubjects,
 	})
 	photoStore := photos.NewStore(db.Pool())
 	vectorStore := vectors.NewStore(db.Pool())
-	peopleStore := people.NewStore(db.Pool())
+	peopleStore := requestProjectPeople{people.NewStore(db.Pool())}
 	organizeStore := organize.NewStore(db.Pool())
 	svc := review.New(review.Config{
 		Sweeper:    sweepSvc,
 		Expander:   buildExpandService(cfg, db, mediaStore),
 		Organize:   organizeStore,
 		Faces:      vectorStore,
-		Feedback:   feedback.NewStore(db.Pool()),
-		Assigner:   matchSvc,
+		Feedback:   requestProjectFeedback{feedback.NewStore(db.Pool())},
+		Assigner:   requestProjectAssigner{matchSvc},
 		Skips:      review.NewSkipRecorder(db.Pool()),
 		Places:     buildPlaceReviewerOrNil(cfg, db),
 		Duplicates: buildReviewDuplicatesOrNil(cfg, db, vectorStore),
@@ -151,7 +151,7 @@ func buildReviewDuplicatesOrNil(
 func buildOutlierService(db *database.DB) *outliers.Service {
 	return outliers.New(outliers.Config{
 		Faces:    vectors.NewStore(db.Pool()),
-		People:   people.NewStore(db.Pool()),
+		People:   requestProjectPeople{people.NewStore(db.Pool())},
 		Feedback: feedback.NewStore(db.Pool()),
 	})
 }

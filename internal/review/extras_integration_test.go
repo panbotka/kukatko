@@ -32,6 +32,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 	"github.com/panbotka/kukatko/internal/sweep"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -43,22 +44,22 @@ import (
 // actually runs rather than in a one-kind special case.
 func (h *reviewHarness) checksService() *review.Service {
 	candSvc := candidates.New(candidates.Config{
-		Faces: h.vectors, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Faces: bootstrapVectors{h.vectors}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
 	expandSvc := expand.New(expand.Config{
-		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})
 	return review.New(review.Config{
-		Sweeper:  sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 2}),
+		Sweeper:  sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 2}),
 		Expander: expandSvc,
 		Organize: h.organize,
 		Faces:    h.vectors,
-		Feedback: h.feedback,
-		Assigner: facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people}),
+		Feedback: bootstrapFeedback{h.feedback},
+		Assigner: bootstrapAssigner{facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})},
 		Places: geoestimate.NewReviewer(geoestimate.ReviewConfig{
 			Catalogue: h.photos, Places: places.NewStore(h.db.Pool()),
 		}),
@@ -67,9 +68,9 @@ func (h *reviewHarness) checksService() *review.Service {
 			PhashMaxDiff: 8, EmbeddingMaxDist: 0.1,
 		}),
 		Outliers: outliers.New(outliers.Config{
-			Faces: h.vectors, People: h.people, Feedback: h.feedback,
+			Faces: h.vectors, People: bootstrapPeople{h.people}, Feedback: h.feedback,
 		}),
-		Subjects:   h.people,
+		Subjects:   bootstrapPeople{h.people},
 		Photos:     h.photos,
 		KindShares: allKinds(),
 		BandMin:    0.45, BandMax: 0.75,
@@ -330,7 +331,7 @@ func TestReviewDuplicateCheck_noDismissesAndTheGroupStopsComingBackDB(t *testing
 func (h *reviewHarness) misassigned(t *testing.T) (people.Subject, string) {
 	t.Helper()
 	ctx := context.Background()
-	subj, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subj, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -355,7 +356,7 @@ func (h *reviewHarness) assignedFace(t *testing.T, subj people.Subject, hash str
 	photoUID := h.face(t, hash, vectors.Face{
 		FaceIndex: 0, Vector: v, DetScore: 0.95, SubjectUID: &subj.UID,
 	})
-	marker, err := h.people.CreateMarker(ctx, people.Marker{
+	marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subj.UID, Type: people.MarkerFace,
 		X: 0.3, Y: 0.3, W: 0.3, H: 0.3, Reviewed: true,
 	})
@@ -408,7 +409,7 @@ func TestReviewOutlierCheck_noDetachesThePersonAndKeepsTheMarkerDB(t *testing.T)
 	if faces[0].MarkerUID == nil || *faces[0].MarkerUID == "" {
 		t.Errorf("marker link dropped, want the marker kept")
 	}
-	markers, err := h.people.ListMarkersByPhoto(ctx, odd)
+	markers, err := h.people.ListMarkersByPhoto(ctx, project.BootstrapUID, odd)
 	if err != nil {
 		t.Fatalf("ListMarkersByPhoto: %v", err)
 	}
@@ -463,7 +464,7 @@ func TestReviewOutlierCheck_yesConfirmsAndStopsSurfacingDB(t *testing.T) {
 	// And the /outliers page agrees: the confirmed face is excluded there too,
 	// because both views read the same feedback set.
 	ranked, err := outliers.New(outliers.Config{
-		Faces: h.vectors, People: h.people, Feedback: h.feedback,
+		Faces: h.vectors, People: bootstrapPeople{h.people}, Feedback: h.feedback,
 	}).Outliers(ctx, subj.UID, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)

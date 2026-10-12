@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -81,7 +82,7 @@ func (a *API) stampLabelCovers(ctx context.Context, hits []labelHit) error {
 
 // stampSubjectCovers fills Cover and ThumbURL on every person hit that has one.
 func (a *API) stampSubjectCovers(ctx context.Context, hits []subjectHit) error {
-	covers, err := a.people.SubjectCovers(ctx, hitUIDs(hits))
+	covers, err := a.people.SubjectCovers(ctx, auth.ProjectUIDFromContext(ctx), hitUIDs(hits))
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading subject covers: %w", err)
 	}

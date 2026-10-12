@@ -52,7 +52,7 @@ type fakeMarkers struct {
 }
 
 // ListMarkersByPhoto implements dupmarkersapi.MarkerStore.
-func (f *fakeMarkers) ListMarkersByPhoto(_ context.Context, photoUID string) ([]people.Marker, error) {
+func (f *fakeMarkers) ListMarkersByPhoto(_ context.Context, _, photoUID string) ([]people.Marker, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -66,7 +66,7 @@ func (f *fakeMarkers) ListMarkersByPhoto(_ context.Context, photoUID string) ([]
 }
 
 // GetMarkerByUID implements dupmarkersapi.MarkerStore.
-func (f *fakeMarkers) GetMarkerByUID(_ context.Context, uid string) (people.Marker, error) {
+func (f *fakeMarkers) GetMarkerByUID(_ context.Context, _, uid string) (people.Marker, error) {
 	if f.getErr != nil {
 		return people.Marker{}, f.getErr
 	}
@@ -80,7 +80,7 @@ func (f *fakeMarkers) GetMarkerByUID(_ context.Context, uid string) (people.Mark
 
 // SetMarkerInvalidAudited implements dupmarkersapi.MarkerStore.
 func (f *fakeMarkers) SetMarkerInvalidAudited(
-	_ context.Context, uid string, invalid bool, entry audit.Entry,
+	_ context.Context, _, uid string, invalid bool, entry audit.Entry,
 ) (people.Marker, error) {
 	if f.invalidErr != nil {
 		return people.Marker{}, f.invalidErr
@@ -104,7 +104,7 @@ type fakeAssigner struct {
 
 // Apply implements dupmarkersapi.Assigner.
 func (f *fakeAssigner) Apply(
-	_ context.Context, req facematch.AssignRequest, _ audit.Meta,
+	_ context.Context, _ string, req facematch.AssignRequest, _ audit.Meta,
 ) (facematch.AssignResult, error) {
 	if f.err != nil {
 		return facematch.AssignResult{}, f.err

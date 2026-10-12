@@ -3,15 +3,18 @@
 package cluster_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -45,11 +48,25 @@ func newEnv(t *testing.T) *env {
 	svc := cluster.New(cluster.Config{
 		Store:    cluster.NewStore(db.Pool()),
 		Faces:    vectorStore,
-		Assigner: matchSvc,
+		Assigner: bootstrapAssigner{matchSvc},
 	})
 	return &env{
 		pool: db.Pool(), photos: photoStore, vectors: vectorStore, people: peopleStore, svc: svc,
 	}
+}
+
+// bootstrapAssigner adapts *facematch.Service to the project-less
+// cluster.FaceAssigner, applying every transition in the bootstrap project the
+// test photos land in (cmd/kukatko wires the request's project instead).
+type bootstrapAssigner struct {
+	*facematch.Service
+}
+
+// Apply runs the transition inside the bootstrap project.
+func (a bootstrapAssigner) Apply(
+	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
+) (facematch.AssignResult, error) {
+	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
 }
 
 // makePhoto inserts a photo with stored dimensions and returns its uid.
@@ -188,7 +205,7 @@ func TestAssignCluster_CreatesMarkersForAllFaces(t *testing.T) {
 	// Every photo now has a face marker assigned to Alice, and its face row caches
 	// the subject.
 	for _, uid := range photoUIDs {
-		markers, mErr := env.people.ListMarkersByPhoto(ctx, uid)
+		markers, mErr := env.people.ListMarkersByPhoto(ctx, project.BootstrapUID, uid)
 		if mErr != nil {
 			t.Fatalf("ListMarkersByPhoto %s: %v", uid, mErr)
 		}
@@ -270,7 +287,7 @@ func TestCluster_SuggestsNearestNamedSubject(t *testing.T) {
 	env := newEnv(t)
 	ctx := t.Context()
 
-	subj, err := env.people.CreateSubject(ctx, people.Subject{Name: "Bob"})
+	subj, err := env.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}

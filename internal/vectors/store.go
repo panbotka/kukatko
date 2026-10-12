@@ -31,17 +31,6 @@ const (
 // for better recall; SET LOCAL scopes it to the current transaction only.
 var efSearchStmt = "SET LOCAL hnsw.ef_search = " + strconv.Itoa(efSearch)
 
-// iterativeScanStmt enables pgvector's iterative HNSW index scan for the current
-// transaction. With it, a WHERE-filtered similarity search keeps visiting graph
-// neighbours until LIMIT rows pass the filter instead of stopping at the first
-// ef_search candidates; strict_order preserves exact distance ordering. SET LOCAL
-// scopes it to the current transaction only. It is what lets the unassigned-face
-// search still return the requested number of candidates when the subject_uid IS
-// NULL filter and the rejection exclusion set remove many of the nearest
-// neighbours — the "silent shrink" bug the design forbids. Requires pgvector >= 0.8
-// (the deployment ships 0.8.1).
-var iterativeScanStmt = "SET LOCAL hnsw.iterative_scan = strict_order"
-
 // Store is the database access layer for embeddings and faces. It owns no
 // connection; it borrows the shared pgx pool supplied at construction.
 type Store struct {
@@ -91,7 +80,7 @@ func (s *Store) SaveEmbedding(ctx context.Context, emb Embedding) (Embedding, er
 
 // getEmbeddingSQL reads the full image-embedding row for one photo.
 const getEmbeddingSQL = `
-SELECT photo_uid, embedding, model, pretrained, dim, created_at
+SELECT photo_uid, embedding, model, pretrained, dim, created_at, project_id
 FROM embeddings
 WHERE photo_uid = $1`
 
@@ -103,7 +92,7 @@ func (s *Store) GetEmbedding(ctx context.Context, photoUID string) (Embedding, e
 		hv  pgvector.HalfVector
 	)
 	err := s.pool.QueryRow(ctx, getEmbeddingSQL, photoUID).Scan(
-		&emb.PhotoUID, &hv, &emb.Model, &emb.Pretrained, &emb.Dim, &emb.CreatedAt)
+		&emb.PhotoUID, &hv, &emb.Model, &emb.Pretrained, &emb.Dim, &emb.CreatedAt, &emb.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Embedding{}, ErrEmbeddingNotFound
 	}
@@ -169,16 +158,6 @@ func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl string, limit int) ([]s
 // callers can attribute them to the query itself.
 func (s *Store) withReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return s.withTunedReadTx(ctx, false, fn)
-}
-
-// withFilteredReadTx runs fn inside a read-only transaction that, on top of the
-// hnsw.ef_search tuning, enables pgvector's iterative HNSW index scan. Use it for a
-// similarity search with a selective WHERE filter (for example subject_uid IS NULL
-// plus a rejection exclusion set), so the LIMIT is filled from rows that pass the
-// filter rather than silently shrinking to whatever survives the first ef_search
-// candidates.
-func (s *Store) withFilteredReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
-	return s.withTunedReadTx(ctx, true, fn)
 }
 
 // withTunedReadTx opens a read-only transaction, applies the HNSW tuning (always

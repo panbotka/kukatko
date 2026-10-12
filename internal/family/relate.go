@@ -160,7 +160,7 @@ func addRelation(
 	if err := requireSubjects(ctx, tx, subjectUID); err != nil {
 		return AddResult{}, err
 	}
-	otherUID, created, err := resolveOther(ctx, tx, rel)
+	otherUID, created, err := resolveOther(ctx, tx, subjectUID, rel)
 	if err != nil {
 		return AddResult{}, err
 	}
@@ -185,15 +185,21 @@ func addRelation(
 
 // resolveOther returns the UID of the person on the other side of the relation,
 // creating the subject first when the request described one instead of naming it,
-// and reporting which of the two happened.
-func resolveOther(ctx context.Context, tx pgx.Tx, rel AddRelation) (string, bool, error) {
+// and reporting which of the two happened. A created subject lands in the project
+// of anchorUID, the person the relation is added to.
+func resolveOther(ctx context.Context, tx pgx.Tx, anchorUID string, rel AddRelation) (string, bool, error) {
 	if rel.New == nil {
 		if err := requireSubjects(ctx, tx, rel.SubjectUID); err != nil {
 			return "", false, err
 		}
 		return rel.SubjectUID, false, nil
 	}
-	subj, err := people.CreateSubjectTx(ctx, tx, people.Subject{
+	var projectUID string
+	if err := tx.QueryRow(ctx, "SELECT project_id FROM subjects WHERE uid = $1", anchorUID).
+		Scan(&projectUID); err != nil {
+		return "", false, fmt.Errorf("family: reading the project of %s: %w", anchorUID, err)
+	}
+	subj, err := people.CreateSubjectTx(ctx, tx, projectUID, people.Subject{
 		Name:      strings.TrimSpace(rel.New.Name),
 		Type:      people.SubjectType(rel.New.Type),
 		Notes:     rel.New.Notes,

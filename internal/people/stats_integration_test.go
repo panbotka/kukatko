@@ -52,7 +52,7 @@ func TestSubjectStats_countsVisiblePhotosAndTheirYears(t *testing.T) {
 	// An invalid marker is not one of the person's faces, here as everywhere else.
 	mkFace(t, store, mid, anna.UID, box, 90, true)
 
-	stats, err := store.SubjectStats(ctx, anna.UID)
+	stats, err := store.SubjectStats(ctx, testProject, anna.UID)
 	if err != nil {
 		t.Fatalf("SubjectStats: %v", err)
 	}
@@ -74,14 +74,14 @@ func TestSubjectStats_aPersonWithNoPhotosAndAMissingOne(t *testing.T) {
 	ctx := context.Background()
 
 	empty := makeSubject(t, store, "Nikdo")
-	stats, err := store.SubjectStats(ctx, empty.UID)
+	stats, err := store.SubjectStats(ctx, testProject, empty.UID)
 	if err != nil {
 		t.Fatalf("SubjectStats: %v", err)
 	}
 	if stats.PhotoCount != 0 || stats.OldestYear != 0 || stats.NewestYear != 0 {
 		t.Errorf("stats = %+v, want zeroes for a subject with no photos", stats)
 	}
-	if _, err := store.SubjectStats(ctx, "nosuchsubject"); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := store.SubjectStats(ctx, testProject, "nosuchsubject"); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("SubjectStats of an unknown uid = %v, want ErrSubjectNotFound", err)
 	}
 }

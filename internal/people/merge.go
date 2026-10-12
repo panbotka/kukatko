@@ -50,7 +50,7 @@ type MergeResult struct {
 // two merges naming the same pair in opposite directions take the locks in the
 // same order and queue instead of deadlocking.
 const lockMergePairSQL = "SELECT " + subjectColumns +
-	" FROM subjects WHERE uid = $1 OR uid = $2 ORDER BY uid FOR UPDATE"
+	" FROM subjects WHERE (uid = $1 OR uid = $2) AND project_id = $3 ORDER BY uid FOR UPDATE"
 
 // sharedPhotoUIDsSQL lists the photos that carry a region of both subjects. It
 // must run before the markers move, while the two subjects are still distinct.
@@ -220,17 +220,24 @@ WHERE uid = $1`
 // marker there. Those groups are new, nobody has judged them yet, and carrying a
 // dismissal about a different pair of boxes onto them would hide precisely the
 // duplicates this merge just created.
+//
+// Both subjects must belong to projectUID: a subject of another project is
+// ErrSubjectNotFound, so a merge never moves anything across projects.
 func (s *Store) MergeSubjectsAudited(
-	ctx context.Context, sourceUID, keeperUID string, entry audit.Entry,
+	ctx context.Context, projectUID, sourceUID, keeperUID string, entry audit.Entry,
 ) (MergeResult, error) {
+	if err := requireProject(projectUID); err != nil {
+		return MergeResult{}, err
+	}
 	if sourceUID == keeperUID {
 		return MergeResult{}, ErrMergeIntoSelf
 	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = keeperUID
 	}
+	entry = withProject(entry, projectUID)
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (MergeResult, error) {
-		return mergeSubjectsTx(ctx, tx, sourceUID, keeperUID)
+		return mergeSubjectsTx(ctx, tx, projectUID, sourceUID, keeperUID)
 	})
 }
 
@@ -245,8 +252,8 @@ func (s *Store) MergeSubjectsAudited(
 //   - then the assignments move, so the rest of the feedback sees the merged
 //     person's evidence as one set;
 //   - and only then is the source removed.
-func mergeSubjectsTx(ctx context.Context, tx pgx.Tx, sourceUID, keeperUID string) (MergeResult, error) {
-	source, keeper, err := lockMergePair(ctx, tx, sourceUID, keeperUID)
+func mergeSubjectsTx(ctx context.Context, tx pgx.Tx, projectUID, sourceUID, keeperUID string) (MergeResult, error) {
+	source, keeper, err := lockMergePair(ctx, tx, projectUID, sourceUID, keeperUID)
 	if err != nil {
 		return MergeResult{}, err
 	}
@@ -277,8 +284,8 @@ func mergeSubjectsTx(ctx context.Context, tx pgx.Tx, sourceUID, keeperUID string
 // the transaction, so a concurrent merge or edit of either cannot interleave with
 // this one. A pair where either side is missing (or where both uids resolve to
 // one row) returns ErrSubjectNotFound.
-func lockMergePair(ctx context.Context, tx pgx.Tx, sourceUID, keeperUID string) (Subject, Subject, error) {
-	rows, err := tx.Query(ctx, lockMergePairSQL, sourceUID, keeperUID)
+func lockMergePair(ctx context.Context, tx pgx.Tx, projectUID, sourceUID, keeperUID string) (Subject, Subject, error) {
+	rows, err := tx.Query(ctx, lockMergePairSQL, sourceUID, keeperUID, projectUID)
 	if err != nil {
 		return Subject{}, Subject{}, fmt.Errorf("people: locking merge pair: %w", err)
 	}

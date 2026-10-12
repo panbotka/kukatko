@@ -12,7 +12,11 @@ to `## Package map` in `CLAUDE.md`.
   adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
   `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
   transition alias, removed in the alias-removal step. Each group is built once, so a limiter or cache is
-  shared by both mounts. A package with routes on both sides exposes the halves separately:
+  shared by both mounts. **`projectshim.go`** (transition) adapts the project-scoped people, vector,
+  face-matching and feedback stores to the project-less interfaces of the packages scoped in a later step
+  (candidates, outliers, sweep, review, the cluster assignment, expand): each adapter reads the request's
+  project (`auth.ProjectUIDFromContext`), so those calls already run inside the caller's project, and goes
+  away when its consumer passes the project itself. A package with routes on both sides exposes the halves separately:
   `auth` `RegisterInstanceRoutes`/`RegisterDirectoryRoutes`, `notificationapi`
   `RegisterPushRoutes`/`RegisterInboxRoutes`, `uploadlinkapi` `RegisterManagementRoutes`/
   `RegisterPublicRoutes`, `buildIngest` an `ingestRoutes` triple),
@@ -435,8 +439,8 @@ to `## Package map` in `CLAUDE.md`.
   the scoped lookups, never these. The job-side write-backs keyed by a uid the job just loaded
   (`SaveBlurhash`, `SetPhash`, `MarkThumbnailsBuilt`, `FillFileMetadata`, `SaveOCR`, `MarkSidecarWritten`,
   …) stay unscoped for the same reason. **Still unscoped, for callers scoped in later steps:** `GetByUID`
-  (trash, profile picture, avatar, directory import, geoestimate review, face matching), `GetByFileHash`
-  (ingest), `ListByUIDs` (people/review/candidates/expand/duplicates/notifications), `Delete`/`DeleteAudited`
+  (trash, profile picture, directory import, geoestimate review), `GetByFileHash`
+  (ingest), `ListByUIDs` (review/candidates/expand/duplicates/notifications), `Delete`/`DeleteAudited`
   (the purge), `CreateStacksAudited` (stack detection) and the maintenance scans. The pure builders are tested through
   `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
   reading as the filter they test while the scope itself is asserted on the real output.
@@ -1868,9 +1872,26 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `halfvec` instead of `vector` halves the HNSW index memory at a negligible recall loss on
   normalized SigLIP/ArcFace vectors (important on the Pi); both tables carry a **denormalised
   `project_id`** (migration 0102) that the two writers (the embedding upsert and the face insert behind
-  `SaveFaces`/`RecordFaceDetection`) copy from the photo's row, so a project-filtered kNN needs no join;
+  `SaveFaces`/`RecordFaceDetection`) copy from the photo's row, so a project-filtered kNN needs no join.
+  **Project scope of the kNN (`project.go`):** every similarity search — `FindSimilar`, `FindSimilarFaces`,
+  `FindSimilarFaceCandidates`, `FindSimilarUnassignedFaceCandidates` — takes `projectUID` after `ctx`, never
+  defaulted (empty = `ErrNoProject`), and filters `project_id = $n` **inside** the statement the HNSW index
+  serves: a `WITH nearest AS MATERIALIZED (… WHERE project_id = $n … ORDER BY embedding <=> $1 LIMIT $k)`,
+  re-sorted by `distance` (then uid) outside the CTE, where the distance cutoff is applied too — inside it
+  the cutoff would blind the iterative scan (`TestKNNQueriesFilterTheProjectInsideTheScan` guards the shape).
+  Each runs in `withProjectReadTx`: `hnsw.ef_search = 100` plus `SET LOCAL hnsw.iterative_scan =
+  relaxed_order` **when the installed pgvector supports it** — `iterativeScanSupported` reads
+  `pg_extension.extversion` once per process and caches the answer (`supportsIterativeScan`: ≥ 0.8.0; a
+  failed probe is not cached). The iterative scan is what keeps a small project's neighbours complete next
+  to a big one: without it the filter would discard whatever of the first `ef_search` candidates belongs to
+  another project. The planner picks the btree `idx_faces_project`/`idx_embeddings_project` + an exact sort
+  for a small project and the HNSW scan with the filter for a big one (plans in `docs/PERF.md` §1). `Face`
+  and `Embedding` carry `ProjectID` on read, so a job or a later-scoped caller searches the neighbours of a
+  face inside that face's own project (`embedjob`'s duplicate pass, `internal/cluster`). Everything keyed by
+  a photo uid (`ListFaces`, `SaveFaces`, `UpdateFaceMarker`, …) stays unscoped — child rows of a photo the
+  caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) is not scoped yet.
   `Store` = `NewStore(pool)` over the shared pgx pool:
-  `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
+  `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(projectUID,vec,limit,maxDistance)`
   for 1152-dim image embeddings (768 until migration `0057` swapped the image tower),
   `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
   `ListFacesBySubject(subjectUID)` (faces with the given `subject_uid`, ordered `(photo_uid,
@@ -1883,11 +1904,12 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   embedding per row, which is how one request reached 10.9 GB — see `docs/PERF.md` §3)/
   `DeleteFaces`/`FindSimilarFaces`/`FindSimilarFaceCandidates` (like `FindSimilarFaces`, but
   also returns the cache `subject_uid`/`subject_name`/`marker_uid` + `bbox` — the basis of identity suggestions)/
-  `FindSimilarUnassignedFaceCandidates(vec,limit,maxDistance,exclude)` (like the previous one, but only
+  `FindSimilarUnassignedFaceCandidates(projectUID,vec,limit,maxDistance,exclude)` (like the previous one, but only
   **unassigned** faces `subject_uid IS NULL` and with an **exclusion set** `[]FaceKey` filtered out
   directly in SQL (an anti-join via `unnest` of two parallel arrays) — the basis of finding a person among
   untagged photos, the recognition sweep and the review game; the exclusion filters **before** `LIMIT` and
-  runs under `hnsw.iterative_scan = strict_order`, so the caller gets `limit` candidates even when rejections
+  runs under the iterative scan (`relaxed_order`, re-sorted outside the CTE), so the caller gets `limit` candidates
+  even when rejections
   take away the nearest neighbours — filtering only after the HNSW limit would silently shrink the result, which is a real
   bug. `subject_uid IS NULL` is served by the **partial index** `idx_faces_unassigned_hnsw` (migration 0047),
   whose predicate is this `WHERE` clause verbatim; keep the two in step or the search costs 9× again.
@@ -2192,8 +2214,24 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   were gone),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
-  photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`: `subjects`
-  = `uid PK` (prefix `su`), `slug UNIQUE`, `name`, `nickname` (`TEXT NOT NULL DEFAULT ''`, migration
+  photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`.
+  **Project scope (`store_project.go`, the photos convention):** `subjects` is a root table; a marker
+  belongs to the project of its photo (`markerProjectClause` = an `EXISTS` on `photos.project_id`). Every
+  subject, marker, gallery, avatar, cover, search, stats, attach/detach and merge method takes
+  `projectUID` after `ctx`, never defaulted (`ErrNoProject`), and a row of another project is the same
+  error as a missing one (`ErrSubjectNotFound`/`ErrMarkerNotFound`/`ErrPhotoNotFound`, an empty list).
+  A marker write proves its marker — or, for `CreateMarker`(`Audited`), its photo
+  (`requirePhotoInProject`) — inside the project on its own transaction, and resolves the subject it names
+  through the scoped `subjectName`, so **a marker never points across projects** and a refused write
+  leaves no audit row; the audited writes default the entry's `ProjectUID`. The slug is unique **per
+  project** (`(project_id, slug)`), so `GetSubjectBySlug` and the find-or-create of a face assignment work
+  inside one project. `Tagging` carries `ProjectUID`, so the tag observer (`internal/tagnotifyjob`) hears
+  which project a tagging happened in. Deliberately unscoped: `LinkedSubjectAvatar` (an account's
+  profile picture, served instance-wide), `ListMarkersWithSubjects` (the sidecar job, keyed by the photo
+  it loaded), the nameless repair (`ListNamelessSubjects`/`SnapshotSubject`/`DetachSubject`/
+  `RestoreSubject`, scoped in the next step) and `CreateSubjectTx`, which takes the project from its
+  caller (`internal/family` passes the anchor subject's). `subjects`
+  = `uid PK` (prefix `su`), `slug UNIQUE (project_id, slug)`, `name`, `nickname` (`TEXT NOT NULL DEFAULT ''`, migration
   `0074`), `type IN (person|pet|other)`, `favorite`,
   `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
   `birth_year`/`death_year` (nullable INTEGER, migration `0051`), timestamps; `markers` =
@@ -2362,7 +2400,14 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   changes **nothing but the flag**: the row survives and keeps its subject, so the decision is reversible and an
   invalidation stays distinguishable from an unassignment), `internal/facematch/`
   (linking detected faces to markers/subjects + identity suggestions, all behind the interfaces
-  `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testable with fakes without a DB): `Service` =
+  `PhotoStore`/`FaceStore`/`PeopleStore` (unit-testable with fakes without a DB). **Project scope:**
+  `Apply`, `PhotoFaces` and `PhotoPeople` take `projectUID` after `ctx`; `Apply` first loads the request's
+  photo with `GetByUIDInProject` (a foreign photo = `photos.ErrPhotoNotFound`, nothing written), every
+  marker/subject read and write goes through the project-scoped people store, a subject auto-created by
+  name lands in the project, and the suggestion search (`FindSimilarFaceCandidates`) runs inside it — so
+  a face is never suggested a person of another project. `ClearSurplusLinks` is the one request-less
+  method (the maintenance repair sweeps the instance): it loads the photo through `GetForJob` and works in
+  the photo's own project. `Service` =
   `New(Config{Photos,Faces,People,IoUThreshold,SuggestionLimit,SuggestionMaxDistance,MinFaceSize})`;
   **IoU geometry** `IoU(a,b [4]float64)` (a pure function, Intersection-over-Union of normalized
   boxes `[x,y,w,h]`); **`matchMarkers`** (`pairing.go`, pure) pairs a photo's faces with its **face**
@@ -3181,7 +3226,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   UserFromContext`, `is_me` on the own row, entries never null); 503 without a backend; mounted
   in `serve` (`buildReviewAPI` in `cmd/kukatko/review.go`)),
   `internal/peopleapi/`
-  (a read/curation HTTP API over subjects (people/animals/other) — the basis of the People UI: the interfaces
+  (a read/curation HTTP API over subjects (people/animals/other) — the basis of the People UI. **Project
+  scope:** every handler passes `auth.ProjectUIDFromContext` to the store, so a subject of another project
+  answers the same 404 as a missing one; the gallery (`GET /subjects/{uid}/photos`) loads the subject first
+  (a missing or foreign subject is a 404, no longer an empty page) and resolves the page through
+  `ListByUIDsInProject`. The interfaces
   `SubjectStore` (a subset of `people.Store`: `ListSubjects`/`GetSubjectByUID`/`CreateSubjectAudited`/
   `UpdateSubjectAudited`/`DeleteSubjectAudited`/`MergeSubjectsAudited`/`ListPhotoUIDsBySubject` — each mutation
   takes an `audit.Entry`
@@ -3212,7 +3261,8 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   moves their place in it — so `families.yaml` would otherwise describe people who no longer exist that way.
   Like the sidecar enqueues it is best-effort and never fails the edit),
   `internal/avatar/`
-  (the **small square picture of a face**, cut server-side: the subject avatar the people index draws
+  (the **small square picture of a face**, cut server-side — handed a photo its caller has already loaded
+  inside the request's project, so it has no project of its own; its cache is keyed by the file hash: the subject avatar the people index draws
   (`internal/avatarapi`) and, by the same renderer, any single face a page shows as a square
   (`GET /photos/{uid}/face`, `internal/photoapi/facecrop.go`) — it takes a photo and a plain box and knows
   nothing about subjects. A tile is a
@@ -3236,8 +3286,10 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   duplicated decode and never a torn file. `ErrInvalidHash` (a hash that cannot address the cache),
   `ErrRenderFailed`),
   `internal/avatarapi/`
-  (an HTTP API over it: the interfaces `Subjects` (`people.Store.SubjectAvatar`), `Photos`
-  (`photos.Store.GetByUID`) and `Renderer` (`*avatar.Renderer`, nil → 503) → unit-testable with fakes and no
+  (an HTTP API over it: the interfaces `Subjects` (`people.Store.SubjectAvatar(projectUID, uid)`), `Photos`
+  (`photos.Store.GetByUIDInProject`) and `Renderer`; both lookups run in the request's project, so the
+  avatar of another project's subject is the same 404 as a missing one, and no byte of another project's
+  photo is cut into an avatar (`*avatar.Renderer`, nil → 503) → unit-testable with fakes and no
   disk; `NewAPI(Config{Subjects,Photos,Renderer,RequireAuth})`+`RegisterRoutes` mounts the **flat**
   `GET /subjects/{uid}/avatar` (RequireAuth — it illustrates the subject list, which any signed-in user
   reads), coexisting with `peopleapi`'s `/subjects` group and `outlierapi`'s `/subjects/{uid}/outliers`.
@@ -3469,7 +3521,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   album; `Config.Now` pins the clock in tests)),
   `internal/feedback/`
   (the DB layer for **persisted rejections** (negative feedback) — a permanent user "no" to a face↔subject
-  or photo↔label guess; it closes the gap where a rejection wasn't kept and the same
+  or photo↔label guess. **Project scope of the face opinions (`project.go`):** `RejectFace`/`UnrejectFace`/
+  `ConfirmFace`/`UnconfirmFace` take `projectUID` after `ctx` and, on their own transaction, prove the face's
+  photo and the subject both belong to it (`requireFaceTargetInProject`) — otherwise `ErrTargetNotFound`
+  (also for an un-reject/un-confirm of a missing target, which used to be a silent no-op), with no row and no
+  audit entry; the entry's `ProjectUID` is defaulted. The reads keyed by a subject the caller resolved in
+  its project (`FaceRejectionsForSubject`, `FaceConfirmationsForSubject`, the `Is…` probes) stay keyed by uid; it closes the gap where a rejection wasn't kept and the same
   wrong face was offered endlessly, so the review work never shrank; tables `face_rejections`/
   `label_rejections` in migration `0031_feedback_rejections.sql`: `face_rejections` keyed by the face identity
   (`photo_uid`+`face_index`, as in `internal/facematch` and the `faces` table) + `subject_uid`,
@@ -3547,6 +3604,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   clicking past it),
   `internal/feedbackapi/`
   (an HTTP API over rejections — the `Store` interface (a subset of `feedback.Store`) → unit-testable with fakes;
+  the four face routes pass `auth.ProjectUIDFromContext`, so an opinion about another project's face or
+  subject is a 404;
   `NewAPI(Config{Store,RequireCurator,RequireWrite})`+`RegisterRoutes` mounts the subrouter `/feedback`
   (the face, label and repeated-marker routes behind `RequireCurator`, the four near-duplicate-photo ones —
   `duplicate-dismissals`, `duplicate-confirmations` — behind `RequireWrite`):

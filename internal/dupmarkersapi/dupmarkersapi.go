@@ -47,16 +47,17 @@ type Service interface {
 
 // MarkerStore is the marker access the repairs need: reading a photo's markers to
 // resolve a group server-side, and the audited invalid-flag write. It is satisfied
-// by *people.Store.
+// by *people.Store. Every method works inside the project it is given; a marker
+// of another project is missing.
 type MarkerStore interface {
 	// ListMarkersByPhoto returns every marker on a photo.
-	ListMarkersByPhoto(ctx context.Context, photoUID string) ([]people.Marker, error)
+	ListMarkersByPhoto(ctx context.Context, projectUID, photoUID string) ([]people.Marker, error)
 	// GetMarkerByUID returns one marker, or people.ErrMarkerNotFound.
-	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
+	GetMarkerByUID(ctx context.Context, projectUID, uid string) (people.Marker, error)
 	// SetMarkerInvalidAudited flips a marker's invalid flag, audited in the same
 	// transaction.
 	SetMarkerInvalidAudited(
-		ctx context.Context, uid string, invalid bool, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, invalid bool, entry audit.Entry,
 	) (people.Marker, error)
 }
 
@@ -66,7 +67,9 @@ type MarkerStore interface {
 // cleared, faces cache refreshed, audited). *facematch.Service satisfies it.
 type Assigner interface {
 	// Apply performs one assignment-state transition, audited.
-	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
+	Apply(
+		ctx context.Context, projectUID string, req facematch.AssignRequest, meta audit.Meta,
+	) (facematch.AssignResult, error)
 }
 
 // API exposes the repeated-marker endpoints over HTTP.
@@ -205,7 +208,7 @@ func (a *API) handleKeep(w http.ResponseWriter, r *http.Request) {
 // machine, so the write is identical to unassigning the face from anywhere else in
 // the app — including its audit entry.
 func (a *API) detach(ctx context.Context, photoUID, markerUID string, meta audit.Meta) error {
-	if _, err := a.assigner.Apply(ctx, facematch.AssignRequest{
+	if _, err := a.assigner.Apply(ctx, auth.ProjectUIDFromContext(ctx), facematch.AssignRequest{
 		Action:    facematch.ActionUnassignPerson,
 		PhotoUID:  photoUID,
 		MarkerUID: markerUID,
@@ -220,7 +223,7 @@ func (a *API) detach(ctx context.Context, photoUID, markerUID string, meta audit
 // order only decides how `detached` reads back; which markers are detached does not
 // depend on it.
 func (a *API) groupMarkers(ctx context.Context, photoUID, subjectUID string) ([]people.Marker, error) {
-	all, err := a.markers.ListMarkersByPhoto(ctx, photoUID)
+	all, err := a.markers.ListMarkersByPhoto(ctx, auth.ProjectUIDFromContext(ctx), photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("dupmarkersapi: listing markers of %s: %w", photoUID, err)
 	}
@@ -264,7 +267,7 @@ func (a *API) handleInvalid(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	existing, err := a.markers.GetMarkerByUID(r.Context(), in.MarkerUID)
+	existing, err := a.markers.GetMarkerByUID(r.Context(), auth.ProjectUIDFromContext(r.Context()), in.MarkerUID)
 	if err != nil {
 		status, msg := markerStatus(err)
 		writeError(w, status, msg)
@@ -273,7 +276,8 @@ func (a *API) handleInvalid(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	entry := audit.FromRequest(r, user.UID).
 		Entry(audit.ActionMarkerInvalidate, "markers", existing.UID, invalidDetails(existing))
-	if _, err := a.markers.SetMarkerInvalidAudited(r.Context(), in.MarkerUID, true, entry); err != nil {
+	if _, err := a.markers.SetMarkerInvalidAudited(
+		r.Context(), auth.ProjectUIDFromContext(r.Context()), in.MarkerUID, true, entry); err != nil {
 		status, msg := markerStatus(err)
 		writeError(w, status, msg)
 		return

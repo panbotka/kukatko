@@ -18,6 +18,7 @@ func TestEmptyKeyValidation(t *testing.T) {
 	store := feedback.NewStore(nil)
 	ctx := context.Background()
 	entry := audit.Entry{Action: audit.ActionFaceReject}
+	const projectUID = "pr_test" // never reached: the key check comes first
 
 	faceKey := feedback.FaceRejectionKey{FaceIndex: 0}       // no photo/subject UID
 	labelKey := feedback.LabelRejectionKey{}                 // no photo/label UID
@@ -28,12 +29,12 @@ func TestEmptyKeyValidation(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"RejectFace", store.RejectFace(ctx, faceKey, entry)},
-		{"UnrejectFace", store.UnrejectFace(ctx, faceKey, entry)},
+		{"RejectFace", store.RejectFace(ctx, projectUID, faceKey, entry)},
+		{"UnrejectFace", store.UnrejectFace(ctx, projectUID, faceKey, entry)},
 		{"RejectLabel", store.RejectLabel(ctx, labelKey, entry)},
 		{"UnrejectLabel", store.UnrejectLabel(ctx, labelKey, entry)},
-		{"ConfirmFace", store.ConfirmFace(ctx, confirmKey, entry)},
-		{"UnconfirmFace", store.UnconfirmFace(ctx, confirmKey, entry)},
+		{"ConfirmFace", store.ConfirmFace(ctx, projectUID, confirmKey, entry)},
+		{"UnconfirmFace", store.UnconfirmFace(ctx, projectUID, confirmKey, entry)},
 		{"DismissDuplicateMarkers", store.DismissDuplicateMarkers(ctx, markerKey, entry)},
 		{"UndismissDuplicateMarkers", store.UndismissDuplicateMarkers(ctx, markerKey, entry)},
 	}

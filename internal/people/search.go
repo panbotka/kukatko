@@ -28,16 +28,20 @@ const subjectMatchCond = "(immutable_unaccent(name) ILIKE immutable_unaccent($1)
 // accent-insensitively (immutable_unaccent + ILIKE), ordered by name then uid for
 // a stable result, capped at the bound limit. The pattern in $1 is a pre-escaped
 // "contains" ILIKE pattern.
-const searchSubjectsSQL = "SELECT " + subjectColumns + " FROM subjects " +
-	"WHERE " + subjectMatchCond + " " +
+var searchSubjectsSQL = "SELECT " + subjectColumns + " FROM subjects " +
+	"WHERE " + subjectMatchCond + " AND " + subjectProjectClause("$3") + " " +
 	"ORDER BY name, uid LIMIT $2"
 
 // SearchSubjects returns up to limit subjects whose name or nickname contains q,
 // matched case- and accent-insensitively, ordered by name. A non-positive limit
 // falls back to defaultSearchLimit. It backs the grouped global-search endpoint.
-// The result is empty (not nil) when nothing matches.
-func (s *Store) SearchSubjects(ctx context.Context, q string, limit int) ([]Subject, error) {
-	rows, err := s.pool.Query(ctx, searchSubjectsSQL, likePattern(q), clampSearchLimit(limit))
+// The result is empty (not nil) when nothing matches. Only subjects of
+// projectUID are searched.
+func (s *Store) SearchSubjects(ctx context.Context, projectUID, q string, limit int) ([]Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, searchSubjectsSQL, likePattern(q), clampSearchLimit(limit), projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: searching subjects: %w", err)
 	}

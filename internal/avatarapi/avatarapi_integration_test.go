@@ -15,11 +15,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/avatarapi"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -58,8 +61,17 @@ func (p *previewSource) OpenOrGenerate(_ context.Context, _ photos.Photo, _ stri
 	return io.NopCloser(bytes.NewReader(p.data)), nil
 }
 
-// passThroughGuard is a no-op read guard: authorization is auth's own test's job.
-func passThroughGuard(next http.Handler) http.Handler { return next }
+// admitBootstrap returns a read guard admitting every request into the bootstrap
+// project — where every row these tests seed lands. Authorization is auth's own
+// test's job; the project-scoped stores only need the project.
+func admitBootstrap(t *testing.T, db *database.DB) func(http.Handler) http.Handler {
+	t.Helper()
+	p, err := project.NewStore(db.Pool()).Get(t.Context(), project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("loading the bootstrap project: %v", err)
+	}
+	return auth.AdmitInProject(auth.User{}, p, project.RoleViewer)
+}
 
 // TestAvatarRoute_rendersFromTheCatalogue drives the whole chain against a real
 // database: a subject with a marker on a real photo row → the avatar source query
@@ -81,12 +93,12 @@ func TestAvatarRoute_rendersFromTheCatalogue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating the photo: %v", err)
 	}
-	subject, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Anna"})
+	subject, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Anna"})
 	if err != nil {
 		t.Fatalf("creating the subject: %v", err)
 	}
 	// A face on the white right-hand half of the frame.
-	if _, err := peopleStore.CreateMarker(ctx, people.Marker{
+	if _, err := peopleStore.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID,
 		X: 0.7, Y: 0.4, W: 0.15, H: 0.2, Score: 90,
 	}); err != nil {
@@ -97,7 +109,7 @@ func TestAvatarRoute_rendersFromTheCatalogue(t *testing.T) {
 		Subjects:    peopleStore,
 		Photos:      photoStore,
 		Renderer:    avatar.New(&previewSource{data: sourceJPEG(t)}, t.TempDir()),
-		RequireAuth: passThroughGuard,
+		RequireAuth: admitBootstrap(t, db),
 	})
 	router := chi.NewRouter()
 	api.RegisterRoutes(router)
@@ -141,7 +153,7 @@ func TestAvatarRoute_subjectWithoutAPictureIs404(t *testing.T) {
 	ctx := context.Background()
 	peopleStore := people.NewStore(db.Pool())
 
-	subject, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Nobody"})
+	subject, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Nobody"})
 	if err != nil {
 		t.Fatalf("creating the subject: %v", err)
 	}
@@ -150,7 +162,7 @@ func TestAvatarRoute_subjectWithoutAPictureIs404(t *testing.T) {
 		Subjects:    peopleStore,
 		Photos:      photos.NewStore(db.Pool()),
 		Renderer:    avatar.New(&previewSource{data: sourceJPEG(t)}, t.TempDir()),
-		RequireAuth: passThroughGuard,
+		RequireAuth: admitBootstrap(t, db),
 	})
 	router := chi.NewRouter()
 	api.RegisterRoutes(router)

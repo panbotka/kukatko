@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -30,6 +31,41 @@ type candHarness struct {
 	feedback *feedback.Store
 	photos   *photos.Store
 	svc      *candidates.Service
+}
+
+// bootstrapFaces adapts *vectors.Store to the project-less candidates.FaceStore,
+// searching the bootstrap project the test photos land in (cmd/kukatko wires the
+// request's project instead).
+type bootstrapFaces struct {
+	*vectors.Store
+}
+
+// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
+func (f bootstrapFaces) FindSimilarUnassignedFaceCandidates(
+	ctx context.Context, v []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+) ([]vectors.FaceCandidate, error) {
+	return f.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, v, limit, maxDistance, exclude)
+}
+
+// bootstrapPeople adapts *people.Store to the project-less
+// candidates.PeopleStore, reading the bootstrap project.
+type bootstrapPeople struct {
+	*people.Store
+}
+
+// GetSubjectByUID reads the subject inside the bootstrap project.
+func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
+	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
+}
+
+// GetMarkerByUID reads the marker inside the bootstrap project.
+func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
+	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
+}
+
+// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
+func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
+	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
 }
 
 // newCandHarness returns a harness over a truncated integration database.
@@ -47,7 +83,8 @@ func newCandHarness(t *testing.T) candHarness {
 		feedback: feedbackStore,
 		photos:   photoStore,
 		svc: candidates.New(candidates.Config{
-			Faces: faceStore, People: peopleStore, Feedback: feedbackStore, Photos: photoStore,
+			Faces: bootstrapFaces{faceStore}, People: bootstrapPeople{peopleStore},
+			Feedback: feedbackStore, Photos: photoStore,
 			Media:       mediaurl.NewBuilder(nil),
 			MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
 		}),
@@ -111,11 +148,11 @@ func (h candHarness) exemplarFor(t *testing.T, hash, subjectUID string, v []floa
 func TestFind_plantedUnassignedFaceFoundDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	bob, err := h.people.CreateSubject(ctx, people.Subject{Name: "Bob"})
+	bob, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bob"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -149,7 +186,7 @@ func TestFind_plantedUnassignedFaceFoundDB(t *testing.T) {
 func TestFind_rejectedFaceNotReturnedDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -161,7 +198,7 @@ func TestFind_rejectedFaceNotReturnedDB(t *testing.T) {
 
 	entry := audit.Entry{Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: alice.UID}
 	key := feedback.FaceRejectionKey{PhotoUID: rejected, FaceIndex: 0, SubjectUID: alice.UID}
-	if err := h.feedback.RejectFace(ctx, key, entry); err != nil {
+	if err := h.feedback.RejectFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
@@ -184,7 +221,7 @@ func TestFind_rejectedFaceNotReturnedDB(t *testing.T) {
 func TestFind_negativeExemplarDroppedDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -193,7 +230,7 @@ func TestFind_negativeExemplarDroppedDB(t *testing.T) {
 	// A rejected face sits on e1 (unassigned; rejected for Alice).
 	rejected := h.saveFace(t, "rej", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{1: 1}), DetScore: 0.9})
 	entry := audit.Entry{Action: audit.ActionFaceReject, TargetType: "subjects", TargetUID: alice.UID}
-	if err := h.feedback.RejectFace(ctx,
+	if err := h.feedback.RejectFace(ctx, project.BootstrapUID,
 		feedback.FaceRejectionKey{PhotoUID: rejected, FaceIndex: 0, SubjectUID: alice.UID}, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
@@ -224,7 +261,7 @@ func TestFind_negativeExemplarDroppedDB(t *testing.T) {
 func TestFind_voteRuleFiltersDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	subj, err := h.people.CreateSubject(ctx, people.Subject{Name: "Multi"})
+	subj, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Multi"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -259,14 +296,14 @@ func TestFind_voteRuleFiltersDB(t *testing.T) {
 func TestFind_alreadyDoneClassifiedDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	alice, err := h.people.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	h.exemplarFor(t, "alice-src", alice.UID, vec(map[int]float32{0: 1}))
 
 	stalePhoto := h.makePhoto(t, "stale")
-	marker, err := h.people.CreateMarker(ctx, people.Marker{
+	marker, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: stalePhoto, SubjectUID: &alice.UID, Type: people.MarkerFace,
 		X: 0.3, Y: 0.3, W: 0.3, H: 0.3, Reviewed: true,
 	})
@@ -299,7 +336,7 @@ func TestFind_alreadyDoneClassifiedDB(t *testing.T) {
 func TestFind_zeroFacesEmptyDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	subj, err := h.people.CreateSubject(ctx, people.Subject{Name: "Nobody"})
+	subj, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Nobody"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -332,7 +369,7 @@ func TestFind_subjectNotFoundDB(t *testing.T) {
 func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
 	h := newCandHarness(t)
 	ctx := t.Context()
-	subject, err := h.people.CreateSubject(ctx, people.Subject{Name: "Crowded"})
+	subject, err := h.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Crowded"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -373,7 +410,7 @@ func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
 	// The same search with a hydration ceiling so large that every exemplar asks for
 	// the store's maximum — the answer the cap must not change.
 	unbounded := candidates.New(candidates.Config{
-		Faces: h.faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
+		Faces: bootstrapFaces{h.faces}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 5000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
 		MaxCandidates: 5000,

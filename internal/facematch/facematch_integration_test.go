@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -209,7 +210,7 @@ func (e *env) saveFace(t *testing.T, photoUID string, index int, vec []float32, 
 // createSubject inserts a subject and returns it.
 func (e *env) createSubject(t *testing.T, name string) people.Subject {
 	t.Helper()
-	subj, err := e.people.CreateSubject(t.Context(), people.Subject{Name: name})
+	subj, err := e.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject %s: %v", name, err)
 	}
@@ -223,7 +224,7 @@ func (e *env) createMarker(t *testing.T, photoUID, subjectUID string, bbox [4]fl
 	if subjectUID != "" {
 		m.SubjectUID = &subjectUID
 	}
-	created, err := e.people.CreateMarker(t.Context(), m)
+	created, err := e.people.CreateMarker(t.Context(), project.BootstrapUID, m)
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
@@ -406,7 +407,7 @@ func TestAssign_createUnassignReuseSubject(t *testing.T) {
 	if !re.Marker.Reviewed {
 		t.Errorf("reassigned marker not reviewed: %+v", re.Marker)
 	}
-	subs, err := env.people.ListSubjects(ctx)
+	subs, err := env.people.ListSubjects(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}

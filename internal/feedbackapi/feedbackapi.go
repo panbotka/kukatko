@@ -34,9 +34,9 @@ import (
 // audit.Entry the store writes in the same transaction as the change.
 type Store interface {
 	// RejectFace records that a face is NOT a subject, idempotently and audited.
-	RejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error
+	RejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
 	// UnrejectFace takes a face rejection back, idempotently and audited.
-	UnrejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error
+	UnrejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
 	// RejectLabel records that a photo should NOT have a label, idempotently and
 	// audited.
 	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
@@ -44,9 +44,9 @@ type Store interface {
 	UnrejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
 	// ConfirmFace records that a face really IS a subject, idempotently and
 	// audited.
-	ConfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	ConfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
 	// UnconfirmFace takes a face confirmation back, idempotently and audited.
-	UnconfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	UnconfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
 	// DismissDuplicate records that two photos are NOT duplicates of each other,
 	// idempotently and audited.
 	DismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error

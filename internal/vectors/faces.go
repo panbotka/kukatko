@@ -29,7 +29,7 @@ RETURNING id, created_at`
 // listFacesSQL reads every face of a photo in face_index order.
 const listFacesSQL = `
 SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id
 FROM faces
 WHERE photo_uid = $1
 ORDER BY face_index`
@@ -39,7 +39,7 @@ ORDER BY face_index`
 // a stable tie-break.
 const listFacesBySubjectSQL = `
 SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id
 FROM faces
 WHERE subject_uid = $1
 ORDER BY photo_uid, face_index`
@@ -63,7 +63,7 @@ ORDER BY photo_uid, face_index`
 const sampleFacesBySubjectSQL = `
 WITH ranked AS (
     SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-           marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation,
+           marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id,
            row_number() OVER (ORDER BY photo_uid, face_index) AS rn,
            count(*) OVER () AS total,
            dense_rank() OVER (ORDER BY photo_uid) AS photo_rank
@@ -73,7 +73,7 @@ WITH ranked AS (
     SELECT ranked.*, max(photo_rank) OVER () AS photos FROM ranked
 )
 SELECT id, photo_uid, face_index, embedding, bbox, det_score, model, dim, created_at,
-       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation,
+       marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id,
        total, photos
 FROM tallied
 WHERE $2 <= 0 OR total <= $2
@@ -87,7 +87,7 @@ ORDER BY photo_uid, face_index`
 const facesByKeysSQL = `
 SELECT f.id, f.photo_uid, f.face_index, f.embedding, f.bbox, f.det_score, f.model, f.dim,
        f.created_at, f.marker_uid, f.subject_uid, f.subject_name,
-       f.photo_width, f.photo_height, f.orientation
+       f.photo_width, f.photo_height, f.orientation, f.project_id
 FROM faces f
 JOIN unnest($1::text[], $2::int[]) AS k(photo_uid, face_index)
   ON k.photo_uid = f.photo_uid AND k.face_index = f.face_index`
@@ -421,7 +421,7 @@ func scanSampledFace(rows pgx.Rows) (Face, int, int, error) {
 	err := rows.Scan(
 		&face.ID, &face.PhotoUID, &face.FaceIndex, &hv, &bbox, &face.DetScore,
 		&face.Model, &face.Dim, &face.CreatedAt, &face.MarkerUID, &face.SubjectUID,
-		&face.SubjectName, &face.PhotoWidth, &face.PhotoHeight, &face.Orientation,
+		&face.SubjectName, &face.PhotoWidth, &face.PhotoHeight, &face.Orientation, &face.ProjectID,
 		&total, &photos)
 	if err != nil {
 		return Face{}, 0, 0, fmt.Errorf("scanning sampled face row: %w", err)
@@ -466,7 +466,7 @@ func scanFace(rows pgx.Rows) (Face, error) {
 	err := rows.Scan(
 		&face.ID, &face.PhotoUID, &face.FaceIndex, &hv, &bbox, &face.DetScore,
 		&face.Model, &face.Dim, &face.CreatedAt, &face.MarkerUID, &face.SubjectUID,
-		&face.SubjectName, &face.PhotoWidth, &face.PhotoHeight, &face.Orientation)
+		&face.SubjectName, &face.PhotoWidth, &face.PhotoHeight, &face.Orientation, &face.ProjectID)
 	if err != nil {
 		return Face{}, fmt.Errorf("scanning face row: %w", err)
 	}

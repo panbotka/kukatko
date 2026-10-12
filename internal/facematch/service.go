@@ -30,8 +30,13 @@ const (
 
 // PhotoStore resolves a photo to its stored display dimensions and orientation.
 type PhotoStore interface {
-	// GetByUID returns the photo with the given uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetByUIDInProject returns the photo of the project with the given uid, or
+	// photos.ErrPhotoNotFound (also for a photo of another project).
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
+	// GetForJob returns the photo with the given uid in whatever project it
+	// belongs to — the explicit, unscoped loader of background work, used only
+	// by ClearSurplusLinks, which the maintenance repair runs across the instance.
+	GetForJob(ctx context.Context, uid string) (photos.Photo, error)
 }
 
 // FaceStore is the subset of vectors.Store the service uses to read a photo's
@@ -39,9 +44,10 @@ type PhotoStore interface {
 type FaceStore interface {
 	// ListFaces returns every stored face of the photo, ordered by face index.
 	ListFaces(ctx context.Context, photoUID string) ([]vectors.Face, error)
-	// FindSimilarFaceCandidates returns nearest faces with their cached assignment.
+	// FindSimilarFaceCandidates returns the project's nearest faces with their
+	// cached assignment.
 	FindSimilarFaceCandidates(
-		ctx context.Context, vec []float32, limit int, maxDistance float64,
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 	) ([]vectors.FaceCandidate, error)
 	// UpdateFaceMarker caches the marker/subject assignment on one face.
 	UpdateFaceMarker(
@@ -52,31 +58,37 @@ type FaceStore interface {
 // PeopleStore is the subset of people.Store the service uses to read markers and to
 // drive the subject/marker assignment state machine. The marker-mutating methods
 // take an audit.Entry the store writes in the same transaction as the change, so a
-// face assignment and the record of who made it commit atomically.
+// face assignment and the record of who made it commit atomically. Every method
+// works inside one project: a marker, subject or photo of another project is
+// missing.
 type PeopleStore interface {
 	// ListMarkersByPhoto returns every marker on the photo, oldest first.
-	ListMarkersByPhoto(ctx context.Context, photoUID string) ([]people.Marker, error)
+	ListMarkersByPhoto(ctx context.Context, projectUID, photoUID string) ([]people.Marker, error)
 	// CreateMarkerAudited inserts a marker (optionally already naming a subject),
 	// auditing the change.
-	CreateMarkerAudited(ctx context.Context, m people.Marker, entry audit.Entry) (people.Marker, error)
+	CreateMarkerAudited(
+		ctx context.Context, projectUID string, m people.Marker, entry audit.Entry,
+	) (people.Marker, error)
 	// AssignSubjectAudited points a marker at a subject, refreshes the faces cache
 	// and audits the change.
 	AssignSubjectAudited(
-		ctx context.Context, markerUID, subjectUID string, entry audit.Entry,
+		ctx context.Context, projectUID, markerUID, subjectUID string, entry audit.Entry,
 	) (people.Marker, error)
 	// UnassignSubjectAudited clears a marker's subject and the faces cache, auditing
 	// the change.
-	UnassignSubjectAudited(ctx context.Context, markerUID string, entry audit.Entry) (people.Marker, error)
+	UnassignSubjectAudited(
+		ctx context.Context, projectUID, markerUID string, entry audit.Entry,
+	) (people.Marker, error)
 	// SetMarkerReviewed sets or clears the reviewed flag on a marker.
-	SetMarkerReviewed(ctx context.Context, uid string, reviewed bool) (people.Marker, error)
+	SetMarkerReviewed(ctx context.Context, projectUID, uid string, reviewed bool) (people.Marker, error)
 	// GetSubjectByUID returns a subject by uid, or people.ErrSubjectNotFound.
-	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
+	GetSubjectByUID(ctx context.Context, projectUID, uid string) (people.Subject, error)
 	// GetSubjectBySlug returns a subject by slug, or people.ErrSubjectNotFound.
-	GetSubjectBySlug(ctx context.Context, slug string) (people.Subject, error)
+	GetSubjectBySlug(ctx context.Context, projectUID, slug string) (people.Subject, error)
 	// CreateSubject inserts a subject, generating a unique slug from its name. The
 	// auto-create-by-name path is incidental to a face assignment (which carries its
 	// own audit entry naming the subject), so it is not separately audited.
-	CreateSubject(ctx context.Context, s people.Subject) (people.Subject, error)
+	CreateSubject(ctx context.Context, projectUID string, s people.Subject) (people.Subject, error)
 }
 
 // Config bundles the Service's collaborators and tunables. The three stores are
@@ -153,12 +165,20 @@ func markerBox(m people.Marker) [4]float64 {
 // deletes a face or a marker and never touches a face whose link is the only one
 // on its marker — only the denormalised marker_uid/subject_uid/subject_name
 // columns of the surplus faces.
+//
+// It is the one method that runs without a request: the maintenance repair
+// sweeps the whole instance, so it loads the photo through the unscoped job
+// loader and works inside the photo's own project.
 func (s *Service) ClearSurplusLinks(ctx context.Context, photoUID string) (int, error) {
+	photo, err := s.photos.GetForJob(ctx, photoUID)
+	if err != nil {
+		return 0, fmt.Errorf("facematch: loading photo %s: %w", photoUID, err)
+	}
 	faces, err := s.faces.ListFaces(ctx, photoUID)
 	if err != nil {
 		return 0, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}
-	markers, err := s.people.ListMarkersByPhoto(ctx, photoUID)
+	markers, err := s.people.ListMarkersByPhoto(ctx, photo.ProjectID, photoUID)
 	if err != nil {
 		return 0, fmt.Errorf("facematch: listing markers for %s: %w", photoUID, err)
 	}

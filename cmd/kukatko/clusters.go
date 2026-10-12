@@ -26,7 +26,7 @@ func buildClusterAPI(
 	clusterSvc := cluster.New(cluster.Config{
 		Store:                 cluster.NewStore(db.Pool()),
 		Faces:                 vectors.NewStore(db.Pool()),
-		Assigner:              faceSvc,
+		Assigner:              requestProjectAssigner{faceSvc},
 		Threshold:             cfg.Cluster.Threshold,
 		MinSize:               cfg.Cluster.MinSize,
 		SuggestionMaxDistance: cfg.Cluster.SuggestionMaxDistance,

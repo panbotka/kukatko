@@ -43,12 +43,15 @@ ORDER BY photo_uid, face_index`
 // from entry.ActorUID (empty stored as NULL). It never mutates the face — the
 // assignment already exists; this only remembers the "yes" so outlier review can
 // exclude the face. It returns ErrEmptyKey if the key lacks a photo or subject
-// UID, or ErrTargetNotFound if the subject/photo foreign keys reject the row.
-func (s *Store) ConfirmFace(ctx context.Context, key FaceConfirmationKey, entry audit.Entry) error {
+// UID, or ErrTargetNotFound if the subject/photo foreign keys reject the row — or
+// either is not one of projectUID.
+func (s *Store) ConfirmFace(
+	ctx context.Context, projectUID string, key FaceConfirmationKey, entry audit.Entry,
+) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, insertFaceConfirmationSQL,
 			key.PhotoUID, key.FaceIndex, key.SubjectUID, nullable(entry.ActorUID))
 		if isForeignKeyViolation(err) {
@@ -65,12 +68,16 @@ func (s *Store) ConfirmFace(ctx context.Context, key FaceConfirmationKey, entry 
 // UnconfirmFace removes the face confirmation identified by key and writes entry
 // in the same transaction, letting a user take a confirmation back. Un-confirming
 // a pair that was never confirmed still records the action but changes no rows.
-// It returns ErrEmptyKey if the key lacks a photo or subject UID.
-func (s *Store) UnconfirmFace(ctx context.Context, key FaceConfirmationKey, entry audit.Entry) error {
+// It returns ErrEmptyKey if the key lacks a photo or subject UID, and
+// ErrTargetNotFound — recording nothing — if the photo or the subject is not one
+// of projectUID.
+func (s *Store) UnconfirmFace(
+	ctx context.Context, projectUID string, key FaceConfirmationKey, entry audit.Entry,
+) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inProjectAuditedTx(ctx, projectUID, key.PhotoUID, key.SubjectUID, entry, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, deleteFaceConfirmationSQL, key.PhotoUID, key.FaceIndex, key.SubjectUID)
 		if err != nil {
 			return fmt.Errorf("feedback: un-confirming face %s#%d for %s: %w",

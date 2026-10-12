@@ -27,11 +27,11 @@ func TestPersonFilter_nickname(t *testing.T) {
 	withNickname := mustCreatePhoto(t, store, "nick-bohous")
 	withoutNickname := mustCreatePhoto(t, store, "nick-anna")
 
-	bohous, err := ppl.CreateSubject(ctx, people.Subject{Name: "Bohumil Nečas", Nickname: "Bohouš"})
+	bohous, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Bohumil Nečas", Nickname: "Bohouš"})
 	if err != nil {
 		t.Fatalf("CreateSubject(Bohumil): %v", err)
 	}
-	anna, err := ppl.CreateSubject(ctx, people.Subject{Name: "Anna Nováková"})
+	anna, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Anna Nováková"})
 	if err != nil {
 		t.Fatalf("CreateSubject(Anna): %v", err)
 	}
@@ -41,7 +41,7 @@ func TestPersonFilter_nickname(t *testing.T) {
 		{PhotoUID: withoutNickname, SubjectUID: &anna.UID, Type: people.MarkerFace,
 			X: 0.1, Y: 0.1, W: 0.2, H: 0.2},
 	} {
-		if _, err := ppl.CreateMarker(ctx, m); err != nil {
+		if _, err := ppl.CreateMarker(ctx, project.BootstrapUID, m); err != nil {
 			t.Fatalf("CreateMarker on %s: %v", m.PhotoUID, err)
 		}
 	}

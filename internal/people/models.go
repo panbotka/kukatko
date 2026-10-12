@@ -37,6 +37,10 @@ var (
 	// ErrInvalidLifeYears indicates a birth/death year outside the accepted range
 	// or a death that precedes the birth.
 	ErrInvalidLifeYears = errors.New("people: invalid birth or death year")
+	// ErrNoProject indicates a scoped Store method was called without a project.
+	// It is a programming error — every request carries its project — never an
+	// invitation to read across the whole instance.
+	ErrNoProject = errors.New("people: no project given")
 )
 
 // MinLifeYear is the earliest birth or death year a subject may carry. It sits

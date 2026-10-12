@@ -44,14 +44,14 @@ type fakeSubjects struct {
 }
 
 // ListSubjects returns the canned subject list or error.
-func (f *fakeSubjects) ListSubjects(_ context.Context) ([]people.SubjectCount, error) {
+func (f *fakeSubjects) ListSubjects(_ context.Context, _ string) ([]people.SubjectCount, error) {
 	return f.list, f.listErr
 }
 
 // GetSubjectByUID returns the subject registered under uid when the fake was
 // given a map (the merge handler looks two different subjects up), otherwise the
 // single canned subject, or the canned error.
-func (f *fakeSubjects) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (f *fakeSubjects) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	if f.getErr != nil {
 		return people.Subject{}, f.getErr
 	}
@@ -68,7 +68,7 @@ func (f *fakeSubjects) GetSubjectByUID(_ context.Context, uid string) (people.Su
 // CreateSubjectAudited records the input and audit entry and returns the canned
 // created subject or error.
 func (f *fakeSubjects) CreateSubjectAudited(
-	_ context.Context, subj people.Subject, entry audit.Entry,
+	_ context.Context, _ string, subj people.Subject, entry audit.Entry,
 ) (people.Subject, error) {
 	f.lastCreate = subj
 	f.lastEntry = entry
@@ -78,7 +78,7 @@ func (f *fakeSubjects) CreateSubjectAudited(
 // UpdateSubjectAudited records the update and audit entry and returns the canned
 // updated subject or error.
 func (f *fakeSubjects) UpdateSubjectAudited(
-	_ context.Context, _ string, upd people.SubjectUpdate, entry audit.Entry,
+	_ context.Context, _, _ string, upd people.SubjectUpdate, entry audit.Entry,
 ) (people.Subject, error) {
 	f.lastUpdate = upd
 	f.lastEntry = entry
@@ -87,7 +87,7 @@ func (f *fakeSubjects) UpdateSubjectAudited(
 
 // DeleteSubjectAudited records the deleted UID and audit entry and returns the
 // canned error.
-func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, uid string, entry audit.Entry) error {
+func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, _, uid string, entry audit.Entry) error {
 	f.deletedUID = uid
 	f.lastEntry = entry
 	return f.deleteErr
@@ -96,7 +96,7 @@ func (f *fakeSubjects) DeleteSubjectAudited(_ context.Context, uid string, entry
 // MergeSubjectsAudited records both uids and the audit entry and returns the
 // canned merge result or error.
 func (f *fakeSubjects) MergeSubjectsAudited(
-	_ context.Context, sourceUID, keeperUID string, entry audit.Entry,
+	_ context.Context, _, sourceUID, keeperUID string, entry audit.Entry,
 ) (people.MergeResult, error) {
 	f.mergeSource = sourceUID
 	f.mergeKeeper = keeperUID
@@ -105,7 +105,7 @@ func (f *fakeSubjects) MergeSubjectsAudited(
 }
 
 // ListPhotoUIDsBySubject returns the canned UID slice or error.
-func (f *fakeSubjects) ListPhotoUIDsBySubject(_ context.Context, _ string) ([]string, error) {
+func (f *fakeSubjects) ListPhotoUIDsBySubject(_ context.Context, _, _ string) ([]string, error) {
 	return f.photoUIDs, f.photosErr
 }
 
@@ -116,9 +116,9 @@ type fakePhotos struct {
 	err   error
 }
 
-// ListByUIDs returns the photos for uids in reverse request order (to exercise
-// the handler's reordering), or the canned error.
-func (f fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+// ListByUIDsInProject returns the photos for uids in reverse request order (to
+// exercise the handler's reordering), or the canned error.
+func (f fakePhotos) ListByUIDsInProject(_ context.Context, _ string, uids []string) ([]photos.Photo, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

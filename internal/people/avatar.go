@@ -49,7 +49,16 @@ type Box struct {
 // The cover join is LEFT so a subject whose cover_photo_uid points at a photo that
 // has since been archived still falls back to its best face instead of answering
 // with a photo the reader cannot open.
-const subjectAvatarSQL = `
+const subjectAvatarSQL = subjectAvatarSelect + " AND " + "s.project_id = $2"
+
+// linkedSubjectAvatarSQL is subjectAvatarSQL without the project predicate, for
+// the one caller that resolves a subject outside any project: an account's
+// profile picture, served instance-wide (see LinkedSubjectAvatar).
+const linkedSubjectAvatarSQL = subjectAvatarSelect
+
+// subjectAvatarSelect is the statement both avatar reads share, ending in the
+// WHERE clause that names the subject so the scoped variant can extend it.
+const subjectAvatarSelect = `
 WITH best_face AS (
     SELECT m.photo_uid, m.x, m.y, m.w, m.h
     FROM markers m
@@ -77,11 +86,29 @@ WHERE s.uid = $1`
 // names nothing and ErrNoAvatar for a subject with neither.
 //
 // The order is the people index's own: an explicitly chosen cover is a decision
-// and a detected face is a guess, so the guess never overrides it.
-func (s *Store) SubjectAvatar(ctx context.Context, uid string) (AvatarSource, error) {
+// and a detected face is a guess, so the guess never overrides it. A subject of
+// another project than projectUID is ErrSubjectNotFound.
+func (s *Store) SubjectAvatar(ctx context.Context, projectUID, uid string) (AvatarSource, error) {
+	if err := requireProject(projectUID); err != nil {
+		return AvatarSource{}, err
+	}
+	return s.readAvatar(ctx, subjectAvatarSQL, uid, projectUID)
+}
+
+// LinkedSubjectAvatar is SubjectAvatar for the subject an account is linked to,
+// read without a project: an account (and so its profile picture, served at the
+// instance-wide GET /users/{uid}/avatar) belongs to no single project, and the
+// link itself names the subject. Nothing that serves a project's catalogue may
+// call it — that is what SubjectAvatar is for.
+func (s *Store) LinkedSubjectAvatar(ctx context.Context, uid string) (AvatarSource, error) {
+	return s.readAvatar(ctx, linkedSubjectAvatarSQL, uid)
+}
+
+// readAvatar runs one of the avatar statements with args and maps its row.
+func (s *Store) readAvatar(ctx context.Context, query, uid string, args ...any) (AvatarSource, error) {
 	var coverUID, facePhotoUID *string
 	var x, y, w, h *float64
-	err := s.pool.QueryRow(ctx, subjectAvatarSQL, uid).
+	err := s.pool.QueryRow(ctx, query, append([]any{uid}, args...)...).
 		Scan(&coverUID, &facePhotoUID, &x, &y, &w, &h)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return AvatarSource{}, ErrSubjectNotFound

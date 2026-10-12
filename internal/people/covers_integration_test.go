@@ -64,7 +64,7 @@ func june(day int) time.Time {
 // markPerson puts a valid face marker for subjectUID on photoUID.
 func markPerson(t *testing.T, store *people.Store, photoUID, subjectUID string) {
 	t.Helper()
-	if _, err := store.CreateMarker(context.Background(), people.Marker{
+	if _, err := store.CreateMarker(context.Background(), testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subjectUID,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
 	}); err != nil {
@@ -81,23 +81,23 @@ func TestSubjectCovers(t *testing.T) {
 
 	older := makeDatedPhoto(t, photoStore, "su-old", june(1))
 	newer := makeDatedPhoto(t, photoStore, "su-new", june(2))
-	seen, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	seen, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	markPerson(t, store, older, seen.UID)
 	markPerson(t, store, newer, seen.UID)
-	unseen, err := store.CreateSubject(ctx, people.Subject{Name: "Nobody"})
+	unseen, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Nobody"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	picked, err := store.CreateSubject(ctx, people.Subject{Name: "Chosen", CoverPhotoUID: &older})
+	picked, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Chosen", CoverPhotoUID: &older})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	markPerson(t, store, newer, picked.UID)
 
-	covers, err := store.SubjectCovers(ctx, []string{seen.UID, unseen.UID, picked.UID, "su-nothing"})
+	covers, err := store.SubjectCovers(ctx, testProject, []string{seen.UID, unseen.UID, picked.UID, "su-nothing"})
 	if err != nil {
 		t.Fatalf("SubjectCovers: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestSubjectCovers_skipsRejectedAndHidden(t *testing.T) {
 	kept := makeDatedPhoto(t, photoStore, "sk-keep", june(1))
 	rejected := makeDatedPhoto(t, photoStore, "sk-bad", june(2))
 	hidden := makeDatedPhoto(t, photoStore, "sk-hid", june(3))
-	subject, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -135,18 +135,18 @@ func TestSubjectCovers_skipsRejectedAndHidden(t *testing.T) {
 		"UPDATE photos SET hidden_from_library = true WHERE uid = $1", hidden); err != nil {
 		t.Fatalf("hiding %s: %v", hidden, err)
 	}
-	marker, err := store.CreateMarker(ctx, people.Marker{
+	marker, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: rejected, SubjectUID: &subject.UID,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2, Score: 90,
 	})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
-	if _, err := store.SetMarkerInvalid(ctx, marker.UID, true); err != nil {
+	if _, err := store.SetMarkerInvalid(ctx, testProject, marker.UID, true); err != nil {
 		t.Fatalf("SetMarkerInvalid: %v", err)
 	}
 
-	covers, err := store.SubjectCovers(ctx, []string{subject.UID})
+	covers, err := store.SubjectCovers(ctx, testProject, []string{subject.UID})
 	if err != nil {
 		t.Fatalf("SubjectCovers: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestSubjectCovers_oneQueryPerBatch(t *testing.T) {
 	photoUID := makeDatedPhoto(t, photoStore, "nq-one", june(1))
 	uids := make([]string, 0, 5)
 	for i := range 5 {
-		subject, err := store.CreateSubject(ctx, people.Subject{Name: "Person " + string(rune('a'+i))})
+		subject, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Person " + string(rune('a'+i))})
 		if err != nil {
 			t.Fatalf("CreateSubject: %v", err)
 		}
@@ -175,11 +175,11 @@ func TestSubjectCovers_oneQueryPerBatch(t *testing.T) {
 	traced, tracer := tracedStore(t)
 	// Run once to warm the connection — pgx loads its type information lazily,
 	// and those statements are not the ones under test — then count the second.
-	if _, err := traced.SubjectCovers(ctx, uids); err != nil {
+	if _, err := traced.SubjectCovers(ctx, testProject, uids); err != nil {
 		t.Fatalf("SubjectCovers warm-up: %v", err)
 	}
 	tracer.queries.Store(0)
-	if _, err := traced.SubjectCovers(ctx, uids); err != nil {
+	if _, err := traced.SubjectCovers(ctx, testProject, uids); err != nil {
 		t.Fatalf("SubjectCovers: %v", err)
 	}
 	if got := tracer.queries.Load(); got != 1 {

@@ -29,14 +29,14 @@ func seedAssignedFace(
 ) (photoUID, markerUID string) {
 	t.Helper()
 	photoUID = makePhoto(t, photoStore, hash)
-	marker, err := store.CreateMarker(t.Context(), people.Marker{
+	marker, err := store.CreateMarker(t.Context(), testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.3, H: 0.3,
 	})
 	if err != nil {
 		t.Fatalf("CreateMarker on %s: %v", hash, err)
 	}
 	saveLinkedFace(t, vecStore, photoUID, marker.UID)
-	if _, err := store.AssignSubject(t.Context(), marker.UID, subjectUID); err != nil {
+	if _, err := store.AssignSubject(t.Context(), testProject, marker.UID, subjectUID); err != nil {
 		t.Fatalf("AssignSubject %s: %v", marker.UID, err)
 	}
 	return photoUID, marker.UID
@@ -46,7 +46,7 @@ func seedAssignedFace(
 // unassigned.
 func markerSubject(t *testing.T, store *people.Store, markerUID string) *string {
 	t.Helper()
-	marker, err := store.GetMarkerByUID(t.Context(), markerUID)
+	marker, err := store.GetMarkerByUID(t.Context(), testProject, markerUID)
 	if err != nil {
 		t.Fatalf("GetMarkerByUID %s: %v", markerUID, err)
 	}
@@ -62,18 +62,18 @@ func TestListNamelessSubjects(t *testing.T) {
 
 	// The catch-all as production has it: an empty name, created by an importer
 	// that keyed find-or-create on the fallback slug.
-	catchAll, err := store.CreateSubject(ctx, people.Subject{Name: ""})
+	catchAll, err := store.CreateSubject(ctx, testProject, people.Subject{Name: ""})
 	if err != nil {
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
 	if catchAll.Slug != "subject" {
 		t.Fatalf("nameless subject slug = %q, want the fallback %q", catchAll.Slug, "subject")
 	}
-	punctuation, err := store.CreateSubject(ctx, people.Subject{Name: "!!!"})
+	punctuation, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "!!!"})
 	if err != nil {
 		t.Fatalf("CreateSubject punctuation: %v", err)
 	}
-	alice, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject Alice: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestListNamelessSubjects(t *testing.T) {
 		t.Errorf("catch-all counts = %d markers / %d faces, want 2/2", got.MarkerCount, got.FaceCount)
 	}
 	// Read-only: the dry run must not have moved anything.
-	if _, err := store.GetSubjectByUID(ctx, catchAll.UID); err != nil {
+	if _, err := store.GetSubjectByUID(ctx, testProject, catchAll.UID); err != nil {
 		t.Errorf("the dry run deleted the subject: %v", err)
 	}
 }
@@ -118,11 +118,11 @@ func TestDetachSubject_roundTripsThroughItsSnapshot(t *testing.T) {
 	ctx := t.Context()
 	actor := makeUser(t, db, "usr_detach0000000000000000000", "detacher")
 
-	catchAll, err := store.CreateSubject(ctx, people.Subject{Name: "", Notes: "importer artefact"})
+	catchAll, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "", Notes: "importer artefact"})
 	if err != nil {
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
-	alice, err := store.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	alice, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject Alice: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestDetachSubject_roundTripsThroughItsSnapshot(t *testing.T) {
 	if len(snap.MarkerUIDs) != 2 || len(snap.Faces) != 2 {
 		t.Fatalf("snapshot = %d markers / %d faces, want 2/2", len(snap.MarkerUIDs), len(snap.Faces))
 	}
-	if _, err := store.GetSubjectByUID(ctx, catchAll.UID); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := store.GetSubjectByUID(ctx, testProject, catchAll.UID); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Errorf("subject after detach = %v, want ErrSubjectNotFound", err)
 	}
 	for _, uid := range []string{markerA, markerB} {
@@ -212,7 +212,7 @@ func TestRestoreSubject_slugTakenSinceTheSnapshot(t *testing.T) {
 	ctx := t.Context()
 	actor := makeUser(t, db, "usr_detach0000000000000000002", "detacher3")
 
-	catchAll, err := store.CreateSubject(ctx, people.Subject{Name: ""})
+	catchAll, err := store.CreateSubject(ctx, testProject, people.Subject{Name: ""})
 	if err != nil {
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRestoreSubject_slugTakenSinceTheSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DetachSubject: %v", err)
 	}
-	squatter, err := store.CreateSubject(ctx, people.Subject{Name: "", Notes: "took the slug"})
+	squatter, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "", Notes: "took the slug"})
 	if err != nil {
 		t.Fatalf("CreateSubject squatter: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestSnapshotSubject_readsWhatADetachWouldRemove(t *testing.T) {
 	store, photoStore, vecStore, _ := newStores(t)
 	ctx := t.Context()
 
-	catchAll, err := store.CreateSubject(ctx, people.Subject{Name: "", Notes: "importer artefact"})
+	catchAll, err := store.CreateSubject(ctx, testProject, people.Subject{Name: "", Notes: "importer artefact"})
 	if err != nil {
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestSnapshotSubject_readsWhatADetachWouldRemove(t *testing.T) {
 			t.Errorf("marker %s after the snapshot = %v, want still %s", uid, got, catchAll.UID)
 		}
 	}
-	if _, err := store.GetSubjectByUID(ctx, catchAll.UID); err != nil {
+	if _, err := store.GetSubjectByUID(ctx, testProject, catchAll.UID); err != nil {
 		t.Errorf("the snapshot removed the subject: %v", err)
 	}
 }

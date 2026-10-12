@@ -38,18 +38,21 @@ type PersonOnPhoto struct {
 // face) and no rewriting of the cached face↔marker link. That makes it cheap
 // enough to answer a detail request with, and keeps a plain read a plain read.
 // A photo with no faces and no markers yields an empty, non-nil slice.
-func (s *Service) PhotoPeople(ctx context.Context, photoUID string) ([]PersonOnPhoto, error) {
+//
+// The markers and subjects are read inside projectUID; a photo of another
+// project lists nobody (the caller gates on a scoped load of the photo).
+func (s *Service) PhotoPeople(ctx context.Context, projectUID, photoUID string) ([]PersonOnPhoto, error) {
 	faces, err := s.faces.ListFaces(ctx, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("facematch: listing faces for %s: %w", photoUID, err)
 	}
-	markers, err := s.people.ListMarkersByPhoto(ctx, photoUID)
+	markers, err := s.people.ListMarkersByPhoto(ctx, projectUID, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("facematch: listing markers for %s: %w", photoUID, err)
 	}
 
 	matched := matchMarkers(faces, markers, s.iouThreshold)
-	names := s.assignedSubjectNames(ctx, markers)
+	names := s.assignedSubjectNames(ctx, projectUID, markers)
 	byUID := markersByUID(markers)
 
 	onPhoto := make([]PersonOnPhoto, 0, len(faces)+len(markers))

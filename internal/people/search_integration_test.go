@@ -16,13 +16,13 @@ func TestSearchSubjects(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"Tomáš Novák", "Tereza", "Tomík", "Anna"} {
-		if _, err := store.CreateSubject(ctx, people.Subject{Name: name}); err != nil {
+		if _, err := store.CreateSubject(ctx, testProject, people.Subject{Name: name}); err != nil {
 			t.Fatalf("CreateSubject %q: %v", name, err)
 		}
 	}
 
 	t.Run("accent- and case-insensitive contains", func(t *testing.T) {
-		got, err := store.SearchSubjects(ctx, "TOMA", 10)
+		got, err := store.SearchSubjects(ctx, testProject, "TOMA", 10)
 		if err != nil {
 			t.Fatalf("SearchSubjects: %v", err)
 		}
@@ -33,7 +33,7 @@ func TestSearchSubjects(t *testing.T) {
 	})
 
 	t.Run("limit caps the result set", func(t *testing.T) {
-		got, err := store.SearchSubjects(ctx, "tom", 1)
+		got, err := store.SearchSubjects(ctx, testProject, "tom", 1)
 		if err != nil {
 			t.Fatalf("SearchSubjects: %v", err)
 		}
@@ -44,7 +44,7 @@ func TestSearchSubjects(t *testing.T) {
 	})
 
 	t.Run("no match yields empty", func(t *testing.T) {
-		got, err := store.SearchSubjects(ctx, "zzz-nothing", 10)
+		got, err := store.SearchSubjects(ctx, testProject, "zzz-nothing", 10)
 		if err != nil {
 			t.Fatalf("SearchSubjects: %v", err)
 		}

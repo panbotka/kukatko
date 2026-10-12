@@ -23,8 +23,8 @@ const subjectColumns = "uid, slug, name, nickname, type, favorite, private, note
 // insertSubjectSQL inserts a subject and returns the stored row.
 const insertSubjectSQL = `
 INSERT INTO subjects (uid, slug, name, nickname, type, favorite, private, notes,
-                      cover_photo_uid, birth_year, death_year)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                      cover_photo_uid, birth_year, death_year, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING ` + subjectColumns
 
 // scanSubject reads one subject row in subjectColumns order, wrapping any scan
@@ -44,8 +44,12 @@ func scanSubject(row pgx.Row) (Subject, error) {
 // CreateSubject inserts subj and returns it refreshed with the generated UID,
 // unique slug and timestamps. The slug is derived from subj.Name (Slugify) and a
 // numeric suffix is appended on collision. An empty type defaults to
-// SubjectPerson; an unrecognised type returns ErrInvalidType.
-func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error) {
+// SubjectPerson; an unrecognised type returns ErrInvalidType. The subject is
+// created in projectUID, and its slug is unique within that project only.
+func (s *Store) CreateSubject(ctx context.Context, projectUID string, subj Subject) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
 		return Subject{}, err
@@ -55,7 +59,7 @@ func (s *Store) CreateSubject(ctx context.Context, subj Subject) (Subject, error
 		return scanSubject(s.pool.QueryRow(ctx, insertSubjectSQL,
 			prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
 			prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
-			prepared.BirthYear, prepared.DeathYear))
+			prepared.BirthYear, prepared.DeathYear, projectUID))
 	})
 }
 
@@ -103,22 +107,28 @@ func insertWithUniqueSlug[T any](base string, write func(slug string) (T, error)
 	return zero, ErrSlugExhausted
 }
 
-// GetSubjectByUID returns the subject with the given UID, or ErrSubjectNotFound.
-func (s *Store) GetSubjectByUID(ctx context.Context, uid string) (Subject, error) {
-	return s.getSubject(ctx, "uid", uid)
+// GetSubjectByUID returns the subject of projectUID with the given UID, or
+// ErrSubjectNotFound — also for a subject of another project.
+func (s *Store) GetSubjectByUID(ctx context.Context, projectUID, uid string) (Subject, error) {
+	return s.getSubject(ctx, projectUID, "uid", uid)
 }
 
-// GetSubjectBySlug returns the subject with the given slug, or ErrSubjectNotFound.
-func (s *Store) GetSubjectBySlug(ctx context.Context, slug string) (Subject, error) {
-	return s.getSubject(ctx, "slug", slug)
+// GetSubjectBySlug returns the subject of projectUID with the given slug, or
+// ErrSubjectNotFound. Slugs are unique per project, so the same slug may name a
+// different subject in another project.
+func (s *Store) GetSubjectBySlug(ctx context.Context, projectUID, slug string) (Subject, error) {
+	return s.getSubject(ctx, projectUID, "slug", slug)
 }
 
-// getSubject fetches a single subject filtered by an equality on the trusted
-// column name col (an internal constant, never user input), translating
-// pgx.ErrNoRows into ErrSubjectNotFound.
-func (s *Store) getSubject(ctx context.Context, col, val string) (Subject, error) {
-	q := "SELECT " + subjectColumns + " FROM subjects WHERE " + col + " = $1"
-	subj, err := scanSubject(s.pool.QueryRow(ctx, q, val))
+// getSubject fetches a single subject of projectUID filtered by an equality on
+// the trusted column name col (an internal constant, never user input),
+// translating pgx.ErrNoRows into ErrSubjectNotFound.
+func (s *Store) getSubject(ctx context.Context, projectUID, col, val string) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
+	q := "SELECT " + subjectColumns + " FROM subjects WHERE " + col + " = $1 AND " + subjectProjectClause("$2")
+	subj, err := scanSubject(s.pool.QueryRow(ctx, q, val, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Subject{}, ErrSubjectNotFound
@@ -134,7 +144,7 @@ const updateSubjectSQL = `
 UPDATE subjects SET
     slug = $2, name = $3, nickname = $4, type = $5, favorite = $6, private = $7,
     notes = $8, cover_photo_uid = $9, birth_year = $10, death_year = $11, updated_at = now()
-WHERE uid = $1
+WHERE uid = $1 AND project_id = $12
 RETURNING ` + subjectColumns
 
 // prepareSubjectUpdate defaults and validates upd before either update path
@@ -158,8 +168,11 @@ func prepareSubjectUpdate(upd SubjectUpdate) (SubjectUpdate, error) {
 // new name (kept unique), rewrites the editable fields, and refreshes the cached
 // subject_name on the photo's faces. It returns ErrSubjectNotFound if no such
 // subject exists, ErrInvalidType for an unrecognised type, or ErrInvalidLifeYears
-// for an impossible birth/death year.
-func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate) (Subject, error) {
+// for an impossible birth/death year. A subject of another project is not found.
+func (s *Store) UpdateSubject(ctx context.Context, projectUID, uid string, upd SubjectUpdate) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	upd, err := prepareSubjectUpdate(upd)
 	if err != nil {
 		return Subject{}, err
@@ -170,7 +183,7 @@ func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	updated, err := updateSubjectTx(ctx, tx, uid, upd)
+	updated, err := updateSubjectTx(ctx, tx, projectUID, uid, upd)
 	if err != nil {
 		return Subject{}, err
 	}
@@ -187,12 +200,12 @@ func (s *Store) UpdateSubject(ctx context.Context, uid string, upd SubjectUpdate
 
 // updateSubjectTx performs the slug-unique UPDATE inside tx, translating a missing
 // row to ErrSubjectNotFound. It is the transactional core of UpdateSubject.
-func updateSubjectTx(ctx context.Context, tx pgx.Tx, uid string, upd SubjectUpdate) (Subject, error) {
+func updateSubjectTx(ctx context.Context, tx pgx.Tx, projectUID, uid string, upd SubjectUpdate) (Subject, error) {
 	base := Slugify(upd.Name)
 	updated, err := insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		return scanSubject(tx.QueryRow(ctx, updateSubjectSQL,
 			uid, slug, upd.Name, upd.Nickname, upd.Type, upd.Favorite,
-			upd.Private, upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear))
+			upd.Private, upd.Notes, upd.CoverPhotoUID, upd.BirthYear, upd.DeathYear, projectUID))
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subject{}, ErrSubjectNotFound
@@ -254,6 +267,7 @@ WITH best_face AS (
       AND p.archived_at IS NULL
       AND (p.stack_uid IS NULL OR p.stack_primary)
       AND p.file_width > 0 AND p.file_height > 0
+      AND p.project_id = $1
     ORDER BY m.subject_uid, m.w * m.h DESC, m.score DESC, m.uid
 )
 SELECT s.uid, s.slug, s.name, s.nickname, s.type, s.favorite, s.private, s.notes,
@@ -267,6 +281,7 @@ LEFT JOIN markers m ON m.subject_uid = s.uid AND m.invalid = FALSE
 LEFT JOIN photos p ON p.uid = m.photo_uid AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
 LEFT JOIN best_face bf ON bf.subject_uid = s.uid
+WHERE s.project_id = $1
 GROUP BY s.uid, bf.photo_uid, bf.x, bf.y, bf.w, bf.h,
          bf.file_width, bf.file_height, bf.file_orientation
 ORDER BY s.name, s.uid`
@@ -313,12 +328,15 @@ func deref[T any](ptr *T) T {
 	return *ptr
 }
 
-// ListSubjects returns every subject together with how many non-invalid markers
-// reference it, on how many photos those markers sit, and the face picked to
-// illustrate it, ordered by name then uid. A store with no subjects yields an
-// empty slice and a nil error.
-func (s *Store) ListSubjects(ctx context.Context) ([]SubjectCount, error) {
-	rows, err := s.pool.Query(ctx, listSubjectsSQL)
+// ListSubjects returns every subject of projectUID together with how many
+// non-invalid markers reference it, on how many photos those markers sit, and the
+// face picked to illustrate it, ordered by name then uid. A project with no
+// subjects yields an empty slice and a nil error.
+func (s *Store) ListSubjects(ctx context.Context, projectUID string) ([]SubjectCount, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listSubjectsSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: listing subjects: %w", err)
 	}
@@ -356,14 +374,20 @@ FROM markers m
 JOIN photos p ON p.uid = m.photo_uid
 WHERE m.subject_uid = $1 AND m.invalid = FALSE AND p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
+  AND p.project_id = $2
 ORDER BY p.taken_at DESC NULLS LAST, m.photo_uid DESC`
 
 // ListPhotoUIDsBySubject returns the UIDs of every non-archived photo that has a
 // non-invalid marker assigned to the subject identified by subjectUID, ordered
 // newest first. A subject with no such photos yields an empty slice and a nil
-// error. The caller paginates and resolves the UIDs to full photo records.
-func (s *Store) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, listSubjectPhotoUIDsSQL, subjectUID)
+// error. The caller paginates and resolves the UIDs to full photo records. Only
+// photos of projectUID are listed, so a subject of another project yields none;
+// a caller that must tell "foreign" from "empty" loads the subject first.
+func (s *Store) ListPhotoUIDsBySubject(ctx context.Context, projectUID, subjectUID string) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listSubjectPhotoUIDsSQL, subjectUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: listing photos for subject %s: %w", subjectUID, err)
 	}
@@ -387,13 +411,18 @@ func (s *Store) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) (
 // DeleteSubject removes the subject identified by uid. Its markers are detached
 // (markers.subject_uid is set NULL by the foreign key) and the cached
 // subject_uid/subject_name on any faces pointing at it are cleared in the same
-// transaction. It returns ErrSubjectNotFound if no such subject exists.
-func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
+// transaction. It returns ErrSubjectNotFound if no such subject exists in
+// projectUID, changing nothing.
+func (s *Store) DeleteSubject(ctx context.Context, projectUID, uid string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("people: begin delete subject: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := requireSubjectInProject(ctx, tx, projectUID, uid); err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx,
 		"UPDATE faces SET subject_uid = NULL, subject_name = '' WHERE subject_uid = $1", uid,
@@ -425,19 +454,23 @@ func (s *Store) DeleteSubject(ctx context.Context, uid string) error {
 // That difference is the point: it lets another package create a subject as part
 // of a larger mutation of its own, so the subject and whatever it was created for
 // commit or roll back together. internal/family uses it to record a relation to a
-// person who does not exist yet without ever leaving an orphan behind.
+// person who does not exist yet without ever leaving an orphan behind. The
+// subject is created in projectUID.
 //
 // Each slug attempt runs in a nested transaction (a savepoint), because a
 // colliding insert aborts the statement's transaction and the caller's work must
 // survive the collision.
-func CreateSubjectTx(ctx context.Context, tx pgx.Tx, subj Subject) (Subject, error) {
+func CreateSubjectTx(ctx context.Context, tx pgx.Tx, projectUID string, subj Subject) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	prepared, base, err := prepareSubjectInsert(subj)
 	if err != nil {
 		return Subject{}, err
 	}
 	return insertWithUniqueSlug(base, func(slug string) (Subject, error) {
 		prepared.Slug = slug
-		return insertSubjectInSavepoint(ctx, tx, prepared)
+		return insertSubjectInSavepoint(ctx, tx, projectUID, prepared)
 	})
 }
 
@@ -445,7 +478,7 @@ func CreateSubjectTx(ctx context.Context, tx pgx.Tx, subj Subject) (Subject, err
 // so a slug collision rolls back only the failed attempt. The insert's error is
 // returned unwrapped by this helper's own layer so insertWithUniqueSlug can still
 // recognise a unique violation.
-func insertSubjectInSavepoint(ctx context.Context, tx pgx.Tx, prepared Subject) (Subject, error) {
+func insertSubjectInSavepoint(ctx context.Context, tx pgx.Tx, projectUID string, prepared Subject) (Subject, error) {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		return Subject{}, fmt.Errorf("people: begin subject savepoint: %w", err)
@@ -455,7 +488,7 @@ func insertSubjectInSavepoint(ctx context.Context, tx pgx.Tx, prepared Subject) 
 	subj, err := scanSubject(sp.QueryRow(ctx, insertSubjectSQL,
 		prepared.UID, prepared.Slug, prepared.Name, prepared.Nickname, prepared.Type,
 		prepared.Favorite, prepared.Private, prepared.Notes, prepared.CoverPhotoUID,
-		prepared.BirthYear, prepared.DeathYear))
+		prepared.BirthYear, prepared.DeathYear, projectUID))
 	if err != nil {
 		return Subject{}, err
 	}

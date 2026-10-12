@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/outliers"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -30,6 +31,18 @@ type harness struct {
 	svc      *outliers.Service
 }
 
+// bootstrapPeople adapts *people.Store to the project-less outliers.PeopleStore,
+// reading the bootstrap project the test subjects land in (cmd/kukatko wires the
+// request's project instead).
+type bootstrapPeople struct {
+	*people.Store
+}
+
+// GetSubjectByUID reads the subject inside the bootstrap project.
+func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
+	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
+}
+
 // newHarness returns a harness over a truncated integration database.
 func newHarness(t *testing.T) harness {
 	t.Helper()
@@ -44,7 +57,7 @@ func newHarness(t *testing.T) harness {
 		photos:   photos.NewStore(db.Pool()),
 		feedback: feedbackStore,
 		svc: outliers.New(outliers.Config{
-			Faces: faceStore, People: peopleStore, Feedback: feedbackStore,
+			Faces: faceStore, People: bootstrapPeople{peopleStore}, Feedback: feedbackStore,
 		}),
 	}
 }
@@ -96,7 +109,7 @@ func (h harness) assignFace(t *testing.T, hash, subjectUID string, vec []float32
 // makeSubject inserts a person subject and returns its uid.
 func (h harness) makeSubject(t *testing.T, name string) string {
 	t.Helper()
-	subj, err := h.people.CreateSubject(t.Context(), people.Subject{Name: name})
+	subj, err := h.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject(%s): %v", name, err)
 	}
@@ -227,7 +240,7 @@ func TestOutliers_confirmedFaceExcludedDB(t *testing.T) {
 
 	key := feedback.FaceConfirmationKey{PhotoUID: plantedA, FaceIndex: 0, SubjectUID: subj}
 	entry := audit.Entry{Action: audit.ActionFaceConfirm, TargetType: "subjects", TargetUID: subj}
-	if err := h.feedback.ConfirmFace(ctx, key, entry); err != nil {
+	if err := h.feedback.ConfirmFace(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("ConfirmFace: %v", err)
 	}
 
@@ -263,7 +276,7 @@ func TestOutliers_noEmbeddingCountDB(t *testing.T) {
 	h.assignFace(t, "embedded", subj, faceVec(map[int]float32{0: 1}))
 
 	bare := makePhoto(t, h.photos, "no-embedding")
-	if _, err := h.people.CreateMarker(ctx, people.Marker{
+	if _, err := h.people.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: bare, SubjectUID: &subj, X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {
 		t.Fatalf("CreateMarker: %v", err)

@@ -316,7 +316,7 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the photo's labels: %w", err)
 	}
-	subjects, err := a.subjectsForPhoto(ctx, photo.UID)
+	subjects, err := a.subjectsForPhoto(ctx, c.projectUID, photo.UID)
 	if err != nil {
 		return photoDetail{}, err
 	}
@@ -380,8 +380,8 @@ func soundOf(p photos.Photo) *bool {
 // name. Rejected markers and unnamed faces are not people the photo shows, so
 // they are left out; a person attached by hand is one, box or no box, and is
 // included exactly like a named face.
-func (a *API) subjectsForPhoto(ctx context.Context, photoUID string) ([]ref, error) {
-	markers, err := a.people.ListMarkersByPhoto(ctx, photoUID)
+func (a *API) subjectsForPhoto(ctx context.Context, projectUID, photoUID string) ([]ref, error) {
+	markers, err := a.people.ListMarkersByPhoto(ctx, projectUID, photoUID)
 	if err != nil {
 		return nil, fmt.Errorf("fetching the photo's faces: %w", err)
 	}
@@ -395,7 +395,7 @@ func (a *API) subjectsForPhoto(ctx context.Context, photoUID string) ([]ref, err
 			continue
 		}
 		seen[*m.SubjectUID] = struct{}{}
-		subj, err := a.people.GetSubjectByUID(ctx, *m.SubjectUID)
+		subj, err := a.people.GetSubjectByUID(ctx, projectUID, *m.SubjectUID)
 		if err != nil {
 			if errors.Is(err, people.ErrSubjectNotFound) {
 				continue
@@ -438,7 +438,7 @@ func (a *API) handleFindSimilar(
 	}
 	limit := a.clampLimit(in.Limit)
 	// Ask for one extra: a photo is always its own nearest neighbour.
-	matches, err := a.similar.FindSimilar(ctx, emb.Vector, limit+1, 0)
+	matches, err := a.similar.FindSimilar(ctx, c.projectUID, emb.Vector, limit+1, 0)
 	if err != nil {
 		return nil, similarResult{}, fmt.Errorf("searching for similar photos: %w", err)
 	}
@@ -509,7 +509,7 @@ func (a *API) handleLibraryStats(
 	if err != nil {
 		return nil, libraryStats{}, fmt.Errorf("counting labels: %w", err)
 	}
-	subjects, err := a.people.ListSubjects(ctx)
+	subjects, err := a.people.ListSubjects(ctx, c.projectUID)
 	if err != nil {
 		return nil, libraryStats{}, fmt.Errorf("counting people: %w", err)
 	}

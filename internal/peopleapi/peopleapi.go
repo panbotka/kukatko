@@ -36,38 +36,43 @@ const maxPageLimit = 500
 // SubjectStore is the subset of people.Store the API needs. It is an interface so
 // peopleapi depends on the behaviour rather than the concrete store, which keeps
 // the handlers unit-testable with fakes. Every mutation takes an audit.Entry the
-// store writes in the same transaction as the change.
+// store writes in the same transaction as the change. Every method works inside
+// the project it is given — the request's, from auth.ProjectUIDFromContext — and
+// treats a subject of another project as missing.
 type SubjectStore interface {
 	// ListSubjects returns every subject with its non-invalid marker count.
-	ListSubjects(ctx context.Context) ([]people.SubjectCount, error)
+	ListSubjects(ctx context.Context, projectUID string) ([]people.SubjectCount, error)
 	// GetSubjectByUID returns one subject or people.ErrSubjectNotFound.
-	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
+	GetSubjectByUID(ctx context.Context, projectUID, uid string) (people.Subject, error)
 	// CreateSubjectAudited inserts a subject (auditing the change) and returns it
 	// with its generated UID/slug.
-	CreateSubjectAudited(ctx context.Context, subj people.Subject, entry audit.Entry) (people.Subject, error)
+	CreateSubjectAudited(
+		ctx context.Context, projectUID string, subj people.Subject, entry audit.Entry,
+	) (people.Subject, error)
 	// UpdateSubjectAudited rewrites a subject's editable fields (auditing the
 	// change), or returns people.ErrSubjectNotFound.
 	UpdateSubjectAudited(
-		ctx context.Context, uid string, upd people.SubjectUpdate, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, upd people.SubjectUpdate, entry audit.Entry,
 	) (people.Subject, error)
 	// DeleteSubjectAudited removes a subject (auditing the change), or returns
 	// people.ErrSubjectNotFound.
-	DeleteSubjectAudited(ctx context.Context, uid string, entry audit.Entry) error
+	DeleteSubjectAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error
 	// MergeSubjectsAudited merges the source subject into the keeper and deletes
 	// it (auditing the change), or returns people.ErrSubjectNotFound /
 	// people.ErrMergeIntoSelf.
 	MergeSubjectsAudited(
-		ctx context.Context, sourceUID, keeperUID string, entry audit.Entry,
+		ctx context.Context, projectUID, sourceUID, keeperUID string, entry audit.Entry,
 	) (people.MergeResult, error)
 	// ListPhotoUIDsBySubject returns the subject's photo UIDs, newest first.
-	ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error)
+	ListPhotoUIDsBySubject(ctx context.Context, projectUID, subjectUID string) ([]string, error)
 }
 
 // PhotoStore is the subset of photos.Store the API needs to resolve a page of
 // subject photo UIDs into full photo records.
 type PhotoStore interface {
-	// ListByUIDs returns the photos for the given UIDs in unspecified order.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photos for the given UIDs in
+	// unspecified order.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
 }
 
 // API exposes the subject endpoints over HTTP. The auth middlewares are supplied

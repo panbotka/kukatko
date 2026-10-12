@@ -73,14 +73,16 @@ func TestTagObserver_hearsEveryMarkerChange(t *testing.T) {
 	bert := makeSubject(t, store, "Bert")
 	entry := audit.Entry{Action: audit.ActionFaceAssign, TargetType: "markers", ActorUID: "us-actor"}
 
-	marker, err := store.CreateMarkerAudited(ctx, people.Marker{
+	marker, err := store.CreateMarkerAudited(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &anna.UID, W: 0.1, H: 0.1,
 	}, entry)
 	if err != nil {
 		t.Fatalf("CreateMarkerAudited: %v", err)
 	}
 	onPhoto := func(kind, subject, actor string) tagEvent {
-		return tagEvent{kind: kind, tag: people.Tagging{PhotoUID: photoUID, SubjectUID: subject, ActorUID: actor}}
+		return tagEvent{kind: kind, tag: people.Tagging{
+			ProjectUID: testProject, PhotoUID: photoUID, SubjectUID: subject, ActorUID: actor,
+		}}
 	}
 	steps := []struct {
 		name string
@@ -90,22 +92,22 @@ func TestTagObserver_hearsEveryMarkerChange(t *testing.T) {
 		{name: "create with a subject", run: func() error { return nil },
 			want: []tagEvent{onPhoto("tagged", anna.UID, "us-actor")}},
 		{name: "re-assign to the same subject", run: func() error {
-			_, err := store.AssignSubjectAudited(ctx, marker.UID, anna.UID, entry)
+			_, err := store.AssignSubjectAudited(ctx, testProject, marker.UID, anna.UID, entry)
 			return err
 		}},
 		{name: "re-assign to another subject", run: func() error {
-			_, err := store.AssignSubjectAudited(ctx, marker.UID, bert.UID, entry)
+			_, err := store.AssignSubjectAudited(ctx, testProject, marker.UID, bert.UID, entry)
 			return err
 		}, want: []tagEvent{onPhoto("untagged", anna.UID, "us-actor"), onPhoto("tagged", bert.UID, "us-actor")}},
 		{name: "unassign", run: func() error {
-			_, err := store.UnassignSubjectAudited(ctx, marker.UID, entry)
+			_, err := store.UnassignSubjectAudited(ctx, testProject, marker.UID, entry)
 			return err
 		}, want: []tagEvent{onPhoto("untagged", bert.UID, "us-actor")}},
 		{name: "plain assign has no actor", run: func() error {
-			_, err := store.AssignSubject(ctx, marker.UID, anna.UID)
+			_, err := store.AssignSubject(ctx, testProject, marker.UID, anna.UID)
 			return err
 		}, want: []tagEvent{onPhoto("tagged", anna.UID, "")}},
-		{name: "delete", run: func() error { return store.DeleteMarker(ctx, marker.UID) },
+		{name: "delete", run: func() error { return store.DeleteMarker(ctx, testProject, marker.UID) },
 			want: []tagEvent{onPhoto("untagged", anna.UID, "")}},
 	}
 	for _, step := range steps {
@@ -128,16 +130,16 @@ func TestTagObserver_failureRollsBackAssignment(t *testing.T) {
 
 	photoUID := makePhoto(t, photoStore, "tagobsfail")
 	anna := makeSubject(t, store, "Anna")
-	marker, err := base.CreateMarker(ctx, people.Marker{PhotoUID: photoUID, W: 0.1, H: 0.1})
+	marker, err := base.CreateMarker(ctx, testProject, people.Marker{PhotoUID: photoUID, W: 0.1, H: 0.1})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
-	if _, err := store.AssignSubjectAudited(ctx, marker.UID, anna.UID, audit.Entry{
+	if _, err := store.AssignSubjectAudited(ctx, testProject, marker.UID, anna.UID, audit.Entry{
 		Action: audit.ActionFaceAssign, TargetType: "markers",
 	}); !errors.Is(err, boom) {
 		t.Fatalf("AssignSubjectAudited = %v, want the observer's error", err)
 	}
-	got, err := base.GetMarkerByUID(ctx, marker.UID)
+	got, err := base.GetMarkerByUID(ctx, testProject, marker.UID)
 	if err != nil {
 		t.Fatalf("GetMarkerByUID: %v", err)
 	}
@@ -159,7 +161,9 @@ func TestTagObserver_hearsHandAttachment(t *testing.T) {
 	anna := makeSubject(t, store, "Anna")
 	entry := audit.Entry{Action: audit.ActionFaceAssign, TargetType: "markers"}
 	want := func(kind string) []tagEvent {
-		return []tagEvent{{kind: kind, tag: people.Tagging{PhotoUID: photoUID, SubjectUID: anna.UID}}}
+		return []tagEvent{{kind: kind, tag: people.Tagging{
+			ProjectUID: testProject, PhotoUID: photoUID, SubjectUID: anna.UID,
+		}}}
 	}
 	steps := []struct {
 		name string
@@ -167,19 +171,19 @@ func TestTagObserver_hearsHandAttachment(t *testing.T) {
 		want []tagEvent
 	}{
 		{name: "attach", want: want("tagged"), run: func() error {
-			_, err := store.AttachSubjectToPhoto(ctx, photoUID, anna.UID, entry)
+			_, err := store.AttachSubjectToPhoto(ctx, testProject, photoUID, anna.UID, entry)
 			return err
 		}},
 		{name: "repeat attach", run: func() error {
-			_, err := store.AttachSubjectToPhoto(ctx, photoUID, anna.UID, entry)
+			_, err := store.AttachSubjectToPhoto(ctx, testProject, photoUID, anna.UID, entry)
 			return err
 		}},
 		{name: "detach", want: want("untagged"), run: func() error {
-			_, err := store.DetachSubjectFromPhoto(ctx, photoUID, anna.UID, entry)
+			_, err := store.DetachSubjectFromPhoto(ctx, testProject, photoUID, anna.UID, entry)
 			return err
 		}},
 		{name: "repeat detach", run: func() error {
-			_, err := store.DetachSubjectFromPhoto(ctx, photoUID, anna.UID, entry)
+			_, err := store.DetachSubjectFromPhoto(ctx, testProject, photoUID, anna.UID, entry)
 			return err
 		}},
 	}

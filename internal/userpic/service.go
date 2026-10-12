@@ -52,9 +52,10 @@ type Users interface {
 // lookup the subject avatar endpoint makes, so an inherited face is exactly the
 // face the people index draws. It is satisfied by *people.Store.
 type Subjects interface {
-	// SubjectAvatar returns the subject's cover photo or best face, or
-	// people.ErrSubjectNotFound / people.ErrNoAvatar.
-	SubjectAvatar(ctx context.Context, uid string) (people.AvatarSource, error)
+	// LinkedSubjectAvatar returns the cover photo or best face of the subject an
+	// account is linked to, or people.ErrSubjectNotFound / people.ErrNoAvatar. It
+	// reads without a project: an account's picture is instance-wide.
+	LinkedSubjectAvatar(ctx context.Context, uid string) (people.AvatarSource, error)
 }
 
 // Photos reads the record behind a picked photo: whether it still exists, and
@@ -167,7 +168,7 @@ func (s *Service) resolveSubject(ctx context.Context, userUID string) (Source, O
 	if user.SubjectUID == nil || *user.SubjectUID == "" {
 		return Source{}, OriginNone, ErrNoPicture
 	}
-	avatar, err := s.subjects.SubjectAvatar(ctx, *user.SubjectUID)
+	avatar, err := s.subjects.LinkedSubjectAvatar(ctx, *user.SubjectUID)
 	if errors.Is(err, people.ErrSubjectNotFound) || errors.Is(err, people.ErrNoAvatar) {
 		return Source{}, OriginNone, ErrNoPicture
 	}

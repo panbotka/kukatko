@@ -15,14 +15,14 @@ type stubSearcher struct{}
 
 // FindSimilarFaces returns no neighbours.
 func (stubSearcher) FindSimilarFaces(
-	context.Context, []float32, int, float64,
+	context.Context, string, []float32, int, float64,
 ) ([]vectors.FaceMatch, error) {
 	return nil, nil
 }
 
 // FindSimilarFaceCandidates returns no candidates.
 func (stubSearcher) FindSimilarFaceCandidates(
-	context.Context, []float32, int, float64,
+	context.Context, string, []float32, int, float64,
 ) ([]vectors.FaceCandidate, error) {
 	return nil, nil
 }

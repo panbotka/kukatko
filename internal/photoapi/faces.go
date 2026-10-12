@@ -20,15 +20,17 @@ import (
 type FaceService interface {
 	// PhotoFaces returns the photo's faces with their marker assignment and ranked
 	// subject suggestions (to name an unnamed face, or to reassign an assigned one).
-	PhotoFaces(ctx context.Context, photoUID string) (facematch.FacesResponse, error)
+	PhotoFaces(ctx context.Context, projectUID, photoUID string) (facematch.FacesResponse, error)
 	// PhotoPeople returns who is on the photo — the markers naming a subject and
 	// the detections nobody has named yet — without the suggestion search, so a
 	// detail response can carry it.
-	PhotoPeople(ctx context.Context, photoUID string) ([]facematch.PersonOnPhoto, error)
+	PhotoPeople(ctx context.Context, projectUID, photoUID string) ([]facematch.PersonOnPhoto, error)
 	// Apply runs one assignment-state transition (create_marker / assign_person /
 	// unassign_person), recording an audit entry stamped with meta in the same
 	// transaction as the change.
-	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
+	Apply(
+		ctx context.Context, projectUID string, req facematch.AssignRequest, meta audit.Meta,
+	) (facematch.AssignResult, error)
 }
 
 // handleFaces returns the faces detected on a photo together with their marker
@@ -44,7 +46,7 @@ func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	resp, err := a.faces.PhotoFaces(r.Context(), photo.UID)
+	resp, err := a.faces.PhotoFaces(r.Context(), auth.ProjectUIDFromContext(r.Context()), photo.UID)
 	if err != nil {
 		writeFaceError(w, err, "fetching faces failed")
 		return
@@ -76,7 +78,7 @@ func (a *API) resolveFaces(r *http.Request, uid string) *[]facematch.PersonOnPho
 	if err != nil || want == nil || !*want {
 		return nil
 	}
-	onPhoto, err := a.faces.PhotoPeople(r.Context(), uid)
+	onPhoto, err := a.faces.PhotoPeople(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid)
 	if err != nil {
 		log.Printf("photoapi: resolving people of %s: %v", uid, err)
 		return nil
@@ -113,7 +115,8 @@ func (a *API) handleFaceAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	req.PhotoUID = photo.UID
 
-	result, err := a.faces.Apply(r.Context(), req, audit.FromRequest(r, user.UID))
+	result, err := a.faces.Apply(
+		r.Context(), auth.ProjectUIDFromContext(r.Context()), req, audit.FromRequest(r, user.UID))
 	if err != nil {
 		writeFaceError(w, err, "applying face assignment failed")
 		return
@@ -133,7 +136,7 @@ func writeFaceError(w http.ResponseWriter, err error, failMsg string) {
 		errors.Is(err, people.ErrInvalidBounds),
 		errors.Is(err, people.ErrInvalidType):
 		writeError(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, photos.ErrPhotoNotFound):
+	case errors.Is(err, photos.ErrPhotoNotFound), errors.Is(err, people.ErrPhotoNotFound):
 		writeError(w, http.StatusNotFound, "photo not found")
 	case errors.Is(err, people.ErrMarkerNotFound):
 		writeError(w, http.StatusNotFound, "marker not found")

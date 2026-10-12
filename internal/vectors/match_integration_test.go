@@ -5,6 +5,7 @@ package vectors_test
 import (
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -64,7 +65,7 @@ func TestFindSimilarFaceCandidates(t *testing.T) {
 	}
 
 	query := faceVec(map[int]float32{0: 1, 1: 0.1})
-	got, err := store.FindSimilarFaceCandidates(ctx, query, 10, 0)
+	got, err := store.FindSimilarFaceCandidates(ctx, project.BootstrapUID, query, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSimilarFaceCandidates: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestFindSimilarFaceCandidates(t *testing.T) {
 		t.Errorf("candidate bbox = %v, want [0.1 0.2 0.3 0.4]", first.BBox)
 	}
 
-	filtered, err := store.FindSimilarFaceCandidates(ctx, query, 10, 0.5)
+	filtered, err := store.FindSimilarFaceCandidates(ctx, project.BootstrapUID, query, 10, 0.5)
 	if err != nil {
 		t.Fatalf("FindSimilarFaceCandidates filtered: %v", err)
 	}

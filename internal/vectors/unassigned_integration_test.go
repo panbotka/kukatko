@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -58,7 +59,7 @@ func TestFindSimilarUnassignedFaceCandidates_skipsAssigned(t *testing.T) {
 	}
 
 	query := faceVec(map[int]float32{0: 1})
-	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 20, 0, nil)
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, query, 20, 0, nil)
 	if err != nil {
 		t.Fatalf("FindSimilarUnassignedFaceCandidates: %v", err)
 	}
@@ -100,7 +101,7 @@ func TestFindSimilarUnassignedFaceCandidates_exclusionKeepsLimit(t *testing.T) {
 		{PhotoUID: photo, FaceIndex: 2},
 	}
 	query := faceVec(map[int]float32{0: 1})
-	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 5, 0, exclude)
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, query, 5, 0, exclude)
 	if err != nil {
 		t.Fatalf("FindSimilarUnassignedFaceCandidates: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestFindSimilarUnassignedFaceCandidates_maxDistanceCut(t *testing.T) {
 	query := faceVec(map[int]float32{0: 1})
 	// Take every neighbour first, so the cut can be expressed against real distances
 	// instead of a guess about the embedding geometry.
-	all, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 20, 0, nil)
+	all, err := store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, query, 20, 0, nil)
 	if err != nil {
 		t.Fatalf("FindSimilarUnassignedFaceCandidates(no cutoff): %v", err)
 	}
@@ -149,7 +150,7 @@ func TestFindSimilarUnassignedFaceCandidates_maxDistanceCut(t *testing.T) {
 	}
 	cutoff := all[2].Distance // admits the three nearest, excludes the rest
 
-	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 20, cutoff, nil)
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, query, 20, cutoff, nil)
 	if err != nil {
 		t.Fatalf("FindSimilarUnassignedFaceCandidates(cutoff): %v", err)
 	}
@@ -186,7 +187,7 @@ func TestFindSimilarUnassignedFaceCandidates_limitCutsWithinDistance(t *testing.
 
 	query := faceVec(map[int]float32{0: 1})
 	// A cutoff every face clears, so only the limit can cut the result.
-	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, query, 2, 0.5, nil)
+	got, err := store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, query, 2, 0.5, nil)
 	if err != nil {
 		t.Fatalf("FindSimilarUnassignedFaceCandidates: %v", err)
 	}
@@ -225,7 +226,7 @@ func TestUnassignedFaceHNSWIndexExists(t *testing.T) {
 func TestFindSimilarUnassignedFaceCandidates_dimMismatch(t *testing.T) {
 	store, _, _ := newStore(t)
 	if _, err := store.FindSimilarUnassignedFaceCandidates(
-		t.Context(), []float32{1, 2, 3}, 5, 0, nil); !errors.Is(err, vectors.ErrDimMismatch) {
+		t.Context(), project.BootstrapUID, []float32{1, 2, 3}, 5, 0, nil); !errors.Is(err, vectors.ErrDimMismatch) {
 		t.Fatalf("dim mismatch = %v, want ErrDimMismatch", err)
 	}
 }

@@ -17,7 +17,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	created, err := store.CreateSubject(ctx, people.Subject{
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{
 		Name: "Bohumil Nečas", Nickname: "Bohouš",
 	})
 	if err != nil {
@@ -30,7 +30,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 		t.Fatalf("created slug = %q, want it derived from the name alone", created.Slug)
 	}
 
-	got, err := store.GetSubjectByUID(ctx, created.UID)
+	got, err := store.GetSubjectByUID(ctx, testProject, created.UID)
 	if err != nil {
 		t.Fatalf("GetSubjectByUID: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 		t.Errorf("read-back nickname = %q, want Bohouš", got.Nickname)
 	}
 
-	listed, err := store.ListSubjects(ctx)
+	listed, err := store.ListSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListSubjects: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 		t.Errorf("listed = %+v, want the nickname on the people index row", listed)
 	}
 
-	changed, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+	changed, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
 		Name: "Bohumil Nečas", Nickname: "Bohoušek", Type: people.SubjectPerson,
 	})
 	if err != nil {
@@ -59,7 +59,7 @@ func TestSubjectNicknameRoundTrip(t *testing.T) {
 		t.Errorf("slug moved to %q on a nickname edit, want %q kept", changed.Slug, created.Slug)
 	}
 
-	cleared, err := store.UpdateSubject(ctx, created.UID, people.SubjectUpdate{
+	cleared, err := store.UpdateSubject(ctx, testProject, created.UID, people.SubjectUpdate{
 		Name: "Bohumil Nečas", Type: people.SubjectPerson,
 	})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestSearchSubjectsByNickname(t *testing.T) {
 		{Name: "Anna Nováková"},
 		{Name: "Marie Dvořáková", Nickname: "Máňa"},
 	} {
-		if _, err := store.CreateSubject(ctx, subj); err != nil {
+		if _, err := store.CreateSubject(ctx, testProject, subj); err != nil {
 			t.Fatalf("CreateSubject %q: %v", subj.Name, err)
 		}
 	}
@@ -104,7 +104,7 @@ func TestSearchSubjectsByNickname(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			found, err := store.SearchSubjects(ctx, tt.query, 10)
+			found, err := store.SearchSubjects(ctx, testProject, tt.query, 10)
 			if err != nil {
 				t.Fatalf("SearchSubjects(%q): %v", tt.query, err)
 			}
@@ -129,14 +129,14 @@ func TestSubjectNicknameInSidecar(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
 
-	subject, err := store.CreateSubject(ctx, people.Subject{
+	subject, err := store.CreateSubject(ctx, testProject, people.Subject{
 		Name: "Bohumil Nečas", Nickname: "Bohouš",
 	})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	photoUID := makePhoto(t, photoStore, "hash-nickname")
-	if _, err := store.CreateMarker(ctx, people.Marker{
+	if _, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {
@@ -163,7 +163,7 @@ func TestSubjectNicknameUnassignedMarkerHasNoNickname(t *testing.T) {
 	ctx := t.Context()
 
 	photoUID := makePhoto(t, photoStore, "hash-nickname-unassigned")
-	if _, err := store.CreateMarker(ctx, people.Marker{
+	if _, err := store.CreateMarker(ctx, testProject, people.Marker{
 		PhotoUID: photoUID, Type: people.MarkerFace, X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {
 		t.Fatalf("CreateMarker: %v", err)
@@ -194,7 +194,7 @@ func TestAuditSubjectNicknameChange(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, db, "usr_nick", "nick")
 
-	created, err := store.CreateSubject(ctx, people.Subject{
+	created, err := store.CreateSubject(ctx, testProject, people.Subject{
 		Name: "Bohumil Nečas", Nickname: "Bohouš",
 	})
 	if err != nil {
@@ -210,7 +210,7 @@ func TestAuditSubjectNicknameChange(t *testing.T) {
 	changes.Add("nickname", created.Nickname, upd.Nickname)
 	changes.StampInto(details)
 
-	if _, err := store.UpdateSubjectAudited(ctx, created.UID, upd,
+	if _, err := store.UpdateSubjectAudited(ctx, testProject, created.UID, upd,
 		actorEntry(actor, audit.ActionSubjectUpdate, "subjects", created.UID, details)); err != nil {
 		t.Fatalf("UpdateSubjectAudited: %v", err)
 	}

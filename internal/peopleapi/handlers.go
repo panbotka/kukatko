@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -53,7 +54,7 @@ type photosResponse struct {
 // handleList returns every subject together with its non-invalid marker count,
 // ordered by name. It answers 500 if the store fails.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
-	subjects, err := a.subjects.ListSubjects(r.Context())
+	subjects, err := a.subjects.ListSubjects(r.Context(), auth.ProjectUIDFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing subjects failed")
 		return
@@ -71,7 +72,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	toCreate := in.toSubject()
 	entry := a.auditEntry(r, audit.ActionSubjectCreate, "", subjectDetails(toCreate.Name, toCreate.Type))
-	subj, err := a.subjects.CreateSubjectAudited(r.Context(), toCreate, entry)
+	subj, err := a.subjects.CreateSubjectAudited(r.Context(), auth.ProjectUIDFromContext(r.Context()), toCreate, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -82,7 +83,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleGet returns the subject identified by the path UID, or 404 if missing.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
-	subj, err := a.subjects.GetSubjectByUID(r.Context(), chi.URLParam(r, "uid"))
+	subj, err := a.subjects.GetSubjectByUID(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -98,7 +99,7 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 // malformed body or invalid type answers 400.
 func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.subjects.GetSubjectByUID(r.Context(), uid)
+	existing, err := a.subjects.GetSubjectByUID(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -113,7 +114,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	details := subjectDetails(upd.Name, upd.Type)
 	subjectChanges(existing, upd).StampInto(details)
 	entry := a.auditEntry(r, audit.ActionSubjectUpdate, uid, details)
-	subj, err := a.subjects.UpdateSubjectAudited(r.Context(), uid, upd, entry)
+	subj, err := a.subjects.UpdateSubjectAudited(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid, upd, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -148,14 +149,15 @@ func subjectChanges(before people.Subject, after people.SubjectUpdate) *audit.Ch
 // clean 404 before the audited delete runs.
 func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.subjects.GetSubjectByUID(r.Context(), uid)
+	existing, err := a.subjects.GetSubjectByUID(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionSubjectDelete, uid, subjectDetails(existing.Name, existing.Type))
-	if err := a.subjects.DeleteSubjectAudited(r.Context(), uid, entry); err != nil {
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	if err := a.subjects.DeleteSubjectAudited(r.Context(), projectUID, uid, entry); err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
 		return
@@ -195,7 +197,8 @@ func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionSubjectMerge, keeper.UID, mergeDetails(source, keeper))
-	result, err := a.subjects.MergeSubjectsAudited(r.Context(), source.UID, keeper.UID, entry)
+	result, err := a.subjects.MergeSubjectsAudited(
+		r.Context(), auth.ProjectUIDFromContext(r.Context()), source.UID, keeper.UID, entry)
 	if err != nil {
 		status, msg := subjectStatus(err)
 		writeError(w, status, msg)
@@ -224,7 +227,7 @@ func (a *API) loadMergePair(
 		uid  string
 		into *people.Subject
 	}{{uid: sourceUID, into: &source}, {uid: keeperUID, into: &keeper}} {
-		subj, err := a.subjects.GetSubjectByUID(r.Context(), load.uid)
+		subj, err := a.subjects.GetSubjectByUID(r.Context(), auth.ProjectUIDFromContext(r.Context()), load.uid)
 		if err != nil {
 			status, msg := subjectStatus(err)
 			writeError(w, status, msg)
@@ -249,14 +252,23 @@ func mergeDetails(source, keeper people.Subject) map[string]any {
 
 // handlePhotos returns the requested page of the subject's photos, newest first,
 // plus the total and next-page offset for infinite scroll. Invalid pagination
-// answers 400.
+// answers 400. The subject is loaded inside the request's project first, so a
+// subject that does not exist — or belongs to another project — answers the
+// same 404 as GET /subjects/{uid}.
 func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 	limit, offset, err := parsePagination(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	uids, err := a.subjects.ListPhotoUIDsBySubject(r.Context(), chi.URLParam(r, "uid"))
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	subj, err := a.subjects.GetSubjectByUID(r.Context(), projectUID, chi.URLParam(r, "uid"))
+	if err != nil {
+		status, msg := subjectStatus(err)
+		writeError(w, status, msg)
+		return
+	}
+	uids, err := a.subjects.ListPhotoUIDsBySubject(r.Context(), projectUID, subj.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing subject photos failed")
 		return
@@ -274,7 +286,7 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 // newest-first UID order (ListByUIDs returns rows in unspecified order) and
 // stamps on the media URLs the client fetches.
 func (a *API) resolvePhotos(r *http.Request, page []string) ([]photos.Photo, error) {
-	list, err := a.photos.ListByUIDs(r.Context(), page)
+	list, err := a.photos.ListByUIDsInProject(r.Context(), auth.ProjectUIDFromContext(r.Context()), page)
 	if err != nil {
 		return nil, fmt.Errorf("peopleapi: loading subject photos: %w", err)
 	}

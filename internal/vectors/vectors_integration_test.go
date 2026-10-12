@@ -192,7 +192,7 @@ func TestFindSimilar(t *testing.T) {
 
 	query := imageVec(map[int]float32{0: 1, 1: 0.1})
 
-	matches, err := store.FindSimilar(ctx, query, 10, 0)
+	matches, err := store.FindSimilar(ctx, project.BootstrapUID, query, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSimilar: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestFindSimilar(t *testing.T) {
 	}
 
 	// maxDistance excludes the far match (distance ~0.9) but keeps near and mid.
-	filtered, err := store.FindSimilar(ctx, query, 10, 0.5)
+	filtered, err := store.FindSimilar(ctx, project.BootstrapUID, query, 10, 0.5)
 	if err != nil {
 		t.Fatalf("FindSimilar filtered: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestFindSimilar_dimMismatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := store.FindSimilar(t.Context(), tt.vec, 5, 0)
+			_, err := store.FindSimilar(t.Context(), project.BootstrapUID, tt.vec, 5, 0)
 			if !errors.Is(err, vectors.ErrDimMismatch) {
 				t.Fatalf("FindSimilar %d-element query = %v, want ErrDimMismatch", len(tt.vec), err)
 			}

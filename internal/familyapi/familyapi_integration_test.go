@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/family"
 	"github.com/panbotka/kukatko/internal/familyapi"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -138,7 +139,7 @@ func (e *env) decode(t *testing.T, c *http.Client, method, path string, body []b
 // subject inserts a named subject and returns its UID.
 func (e *env) subject(t *testing.T, name string) string {
 	t.Helper()
-	subj, err := e.people.CreateSubject(t.Context(), people.Subject{Name: name})
+	subj, err := e.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: name})
 	if err != nil {
 		t.Fatalf("CreateSubject(%s): %v", name, err)
 	}

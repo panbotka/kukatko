@@ -125,13 +125,13 @@ func (a *API) resolveLabel(ctx context.Context, hit *directHit) error {
 
 // resolvePerson fills hit from the subject with its uid.
 func (a *API) resolvePerson(ctx context.Context, hit *directHit) error {
-	subject, err := a.people.GetSubjectByUID(ctx, hit.UID)
+	subject, err := a.people.GetSubjectByUID(ctx, auth.ProjectUIDFromContext(ctx), hit.UID)
 	if err != nil {
 		return skipNotFound(err, people.ErrSubjectNotFound)
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityPerson), subject.UID
 	hit.Title = subject.Name
-	covers, err := a.people.SubjectCovers(ctx, []string{subject.UID})
+	covers, err := a.people.SubjectCovers(ctx, auth.ProjectUIDFromContext(ctx), []string{subject.UID})
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading subject cover %s: %w", subject.UID, err)
 	}
@@ -176,7 +176,7 @@ func (a *API) lookupPhoto(ctx context.Context, ref query.UIDRef) (photos.Photo, 
 	case query.EntityPhoto:
 		return getPhoto(a.photos.GetByUIDInProject(ctx, project, ref.UID))
 	case query.EntityMarker:
-		marker, err := a.people.GetMarkerByUID(ctx, ref.UID)
+		marker, err := a.people.GetMarkerByUID(ctx, project, ref.UID)
 		if err != nil {
 			if errors.Is(err, people.ErrMarkerNotFound) {
 				return photos.Photo{}, false, nil

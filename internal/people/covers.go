@@ -54,23 +54,26 @@ SELECT s.uid,
 FROM subjects s
 LEFT JOIN photos picked ON picked.uid = s.cover_photo_uid
 LEFT JOIN derived ON derived.subject_uid = s.uid
-WHERE s.uid = ANY($1)`
+WHERE s.uid = ANY($1) AND s.project_id = $2`
 
 // SubjectCovers returns, per subject uid, the photo that stands for it: the
 // hand-picked cover when one is set, otherwise the newest visible photo the
 // subject appears on. A subject shown on no visible photo is simply absent from
 // the map — as is a uid that names nothing — so a caller reads "no cover" the
 // same way either way. An empty input yields an empty map without touching the
-// database.
+// database. Only subjects of projectUID are answered; a foreign uid is absent.
 //
 // It answers the whole batch in ONE query on purpose, so a caller drawing a page
 // of people never turns the previews into a query per row.
-func (s *Store) SubjectCovers(ctx context.Context, uids []string) (map[string]Cover, error) {
+func (s *Store) SubjectCovers(ctx context.Context, projectUID string, uids []string) (map[string]Cover, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	out := make(map[string]Cover, len(uids))
 	if len(uids) == 0 {
 		return out, nil
 	}
-	rows, err := s.pool.Query(ctx, subjectCoversSQL, uids)
+	rows, err := s.pool.Query(ctx, subjectCoversSQL, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: listing subject covers: %w", err)
 	}

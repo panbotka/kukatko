@@ -54,14 +54,15 @@ const (
 // nearest neighbours (for the clustering graph) and a centroid's nearest named
 // candidates (for suggestions).
 type FaceSearcher interface {
-	// FindSimilarFaces returns the faces closest to vec by cosine distance.
+	// FindSimilarFaces returns the project's faces closest to vec by cosine
+	// distance.
 	FindSimilarFaces(
-		ctx context.Context, vec []float32, limit int, maxDistance float64,
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 	) ([]vectors.FaceMatch, error)
-	// FindSimilarFaceCandidates returns the nearest faces with their cached subject
-	// assignment, used to find the nearest already-named subject.
+	// FindSimilarFaceCandidates returns the project's nearest faces with their
+	// cached subject assignment, used to find the nearest already-named subject.
 	FindSimilarFaceCandidates(
-		ctx context.Context, vec []float32, limit int, maxDistance float64,
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 	) ([]vectors.FaceCandidate, error)
 }
 

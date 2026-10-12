@@ -158,7 +158,7 @@ func (s *Service) summarize(ctx context.Context, centroidVec []float32, faces []
 	return Summary{
 		Representative: exampleOf(faces[rep]),
 		Examples:       exampleFaces(faces, rep),
-		Suggestion:     s.suggestForCluster(ctx, centroidVec),
+		Suggestion:     s.suggestForCluster(ctx, faces[rep].ProjectID, centroidVec),
 	}
 }
 
@@ -193,12 +193,15 @@ func exampleOf(f Face) ExampleFace {
 // centroid as a suggestion, or nil when no named neighbour is within the
 // suggestion distance cutoff (or the centroid is empty, or the box is offline so
 // the candidate search fails — a missing suggestion must never fail the pass).
-func (s *Service) suggestForCluster(ctx context.Context, centroidVec []float32) *Suggestion {
+//
+// The search runs in projectUID — the project of the cluster's faces — so a
+// cluster is only ever suggested a subject of its own project.
+func (s *Service) suggestForCluster(ctx context.Context, projectUID string, centroidVec []float32) *Suggestion {
 	if len(centroidVec) == 0 {
 		return nil
 	}
 	candidates, err := s.faces.FindSimilarFaceCandidates(
-		ctx, centroidVec, suggestionSearchLimit, s.suggestionMaxDistance)
+		ctx, projectUID, centroidVec, suggestionSearchLimit, s.suggestionMaxDistance)
 	if err != nil {
 		return nil
 	}

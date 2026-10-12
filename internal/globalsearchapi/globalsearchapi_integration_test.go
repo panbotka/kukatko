@@ -103,7 +103,7 @@ func newEnv(t *testing.T, limit int) *httptest.Server {
 	if _, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "Dovolená"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if _, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Dovolená s Tomášem"}); err != nil {
+	if _, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Dovolená s Tomášem"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	if _, err := photoStore.Create(ctx, photos.Photo{
@@ -239,11 +239,11 @@ func newUIDEnv(t *testing.T) uidEnv {
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	subject, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Alice"})
+	subject, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	marker, err := peopleStore.CreateMarker(ctx, people.Marker{
+	marker, err := peopleStore.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	})
@@ -420,17 +420,17 @@ func newCoverEnv(t *testing.T) *httptest.Server {
 	if _, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "coverless"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	subject, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Cover Alice"})
+	subject, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Cover Alice"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	if _, err := peopleStore.CreateMarker(ctx, people.Marker{
+	if _, err := peopleStore.CreateMarker(ctx, project.BootstrapUID, people.Marker{
 		PhotoUID: photo.UID, SubjectUID: &subject.UID, Type: people.MarkerFace,
 		X: 0.1, Y: 0.1, W: 0.2, H: 0.2,
 	}); err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
-	if _, err := peopleStore.CreateSubject(ctx, people.Subject{Name: "Cover Nobody"}); err != nil {
+	if _, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Cover Nobody"}); err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 

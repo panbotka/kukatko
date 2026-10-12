@@ -54,7 +54,8 @@ func (s *Service) buildEdges(ctx context.Context, faces []Face) ([][2]int, error
 	}
 	var edges [][2]int
 	for i := range faces {
-		matches, err := s.faces.FindSimilarFaces(ctx, faces[i].Vector, neighborSearchLimit, s.threshold)
+		matches, err := s.faces.FindSimilarFaces(
+			ctx, faces[i].ProjectID, faces[i].Vector, neighborSearchLimit, s.threshold)
 		if err != nil {
 			return nil, fmt.Errorf("cluster: searching neighbours of face %d: %w", faces[i].ID, err)
 		}

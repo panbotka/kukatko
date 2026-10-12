@@ -59,7 +59,7 @@ func newFixture(t *testing.T) *fixture {
 		f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
 			VALUES ($1, $2, 'editor', now())`, project.BootstrapUID, uid)
 	}
-	subject, err := f.people.CreateSubject(t.Context(), people.Subject{Name: "Anna"})
+	subject, err := f.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: "Anna"})
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
@@ -128,7 +128,7 @@ func (f *fixture) addPhoto(t *testing.T, name string, daysAgo int) string {
 // audited, by actor — and returns the marker uid.
 func (f *fixture) tag(t *testing.T, photoUID, actor string) string {
 	t.Helper()
-	marker, err := f.people.CreateMarkerAudited(t.Context(), people.Marker{
+	marker, err := f.people.CreateMarkerAudited(t.Context(), project.BootstrapUID, people.Marker{
 		PhotoUID: photoUID, SubjectUID: &f.subject, W: 0.1, H: 0.1,
 	}, audit.Entry{Action: audit.ActionFaceAssign, TargetType: "markers", ActorUID: actor})
 	if err != nil {
@@ -140,7 +140,7 @@ func (f *fixture) tag(t *testing.T, photoUID, actor string) string {
 // untag clears the subject of markerUID the audited way.
 func (f *fixture) untag(t *testing.T, markerUID string) {
 	t.Helper()
-	if _, err := f.people.UnassignSubjectAudited(t.Context(), markerUID, audit.Entry{
+	if _, err := f.people.UnassignSubjectAudited(t.Context(), project.BootstrapUID, markerUID, audit.Entry{
 		Action: audit.ActionFaceUnassign, TargetType: "markers", ActorUID: taggerUID,
 	}); err != nil {
 		t.Fatalf("untagging %s: %v", markerUID, err)
@@ -329,7 +329,7 @@ func TestWindow_inFlightTagWaitsForTheClosingJob(t *testing.T) {
 	f := newFixture(t)
 	f.tag(t, f.addPhoto(t, "early", 1), taggerUID)
 	late := f.addPhoto(t, "late", 0)
-	marker, err := f.people.CreateMarker(t.Context(), people.Marker{PhotoUID: late, W: 0.2, H: 0.2})
+	marker, err := f.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{PhotoUID: late, W: 0.2, H: 0.2})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
@@ -406,13 +406,13 @@ func TestHandAttachment_isATagging(t *testing.T) {
 	f := newFixture(t)
 	photoUID := f.addPhoto(t, "clip", 0)
 	entry := audit.Entry{Action: audit.ActionFaceAssign, TargetType: "markers", ActorUID: taggerUID}
-	if _, err := f.people.AttachSubjectToPhoto(t.Context(), photoUID, f.subject, entry); err != nil {
+	if _, err := f.people.AttachSubjectToPhoto(t.Context(), project.BootstrapUID, photoUID, f.subject, entry); err != nil {
 		t.Fatalf("AttachSubjectToPhoto: %v", err)
 	}
 	if n := f.notices(t); n != 1 || len(f.queuedJobs(t)) != 1 {
 		t.Fatalf("after attaching: notices %d, queued jobs %d, want 1 and 1", n, len(f.queuedJobs(t)))
 	}
-	if _, err := f.people.DetachSubjectFromPhoto(t.Context(), photoUID, f.subject, entry); err != nil {
+	if _, err := f.people.DetachSubjectFromPhoto(t.Context(), project.BootstrapUID, photoUID, f.subject, entry); err != nil {
 		t.Fatalf("DetachSubjectFromPhoto: %v", err)
 	}
 	if n := f.notices(t); n != 0 {
@@ -583,7 +583,7 @@ func TestWindow_emailMailsTheTaggedTemplate(t *testing.T) {
 func TestRecorder_rolledBackAssignmentAnnouncesNothing(t *testing.T) {
 	f := newFixture(t)
 	photoUID := f.addPhoto(t, "p", 0)
-	marker, err := f.people.CreateMarker(t.Context(), people.Marker{PhotoUID: photoUID, W: 0.1, H: 0.1})
+	marker, err := f.people.CreateMarker(t.Context(), project.BootstrapUID, people.Marker{PhotoUID: photoUID, W: 0.1, H: 0.1})
 	if err != nil {
 		t.Fatalf("CreateMarker: %v", err)
 	}
