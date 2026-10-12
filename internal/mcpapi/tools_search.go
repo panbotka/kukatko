@@ -155,11 +155,11 @@ func (a *API) handleSearchPhotos(
 		return nil, photoPage{}, err
 	}
 
-	total, err := a.photos.Count(ctx, params)
+	total, err := a.photos.Count(ctx, c.projectUID, params)
 	if err != nil {
 		return nil, photoPage{}, fmt.Errorf("counting matches: %w", err)
 	}
-	list, err := a.runSearch(ctx, params, ranked)
+	list, err := a.runSearch(ctx, c.projectUID, params, ranked)
 	if err != nil {
 		return nil, photoPage{}, err
 	}
@@ -168,16 +168,19 @@ func (a *API) handleSearchPhotos(
 
 // runSearch picks the ranked full-text path or the plain list path. Free text
 // with no explicit sort ranks by relevance, which is what an agent asking a
-// question wants; anything else keeps the requested order.
-func (a *API) runSearch(ctx context.Context, params photos.ListParams, ranked bool) ([]photos.Photo, error) {
+// question wants; anything else keeps the requested order. Both are confined to
+// the project.
+func (a *API) runSearch(
+	ctx context.Context, projectUID string, params photos.ListParams, ranked bool,
+) ([]photos.Photo, error) {
 	var (
 		list []photos.Photo
 		err  error
 	)
 	if ranked {
-		list, err = a.photos.Search(ctx, params)
+		list, err = a.photos.Search(ctx, projectUID, params)
 	} else {
-		list, err = a.photos.List(ctx, params)
+		list, err = a.photos.List(ctx, projectUID, params)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("searching photos: %w", err)
@@ -530,7 +533,7 @@ func (a *API) countPhotos(ctx context.Context, c caller) (libraryStats, error) {
 	counts[4].into = &stats.Favorites
 
 	for _, counter := range counts {
-		n, err := a.photos.Count(ctx, counter.params)
+		n, err := a.photos.Count(ctx, c.projectUID, counter.params)
 		if err != nil {
 			return libraryStats{}, fmt.Errorf("counting %s: %w", counter.what, err)
 		}

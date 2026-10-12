@@ -103,23 +103,23 @@ func (f *fakeSearcher) GetMarkerByUID(_ context.Context, uid string) (people.Mar
 	return marker, nil
 }
 
-// GetByUID answers from byUID.
-func (f *fakeSearcher) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// GetByUIDInProject answers from byUID.
+func (f *fakeSearcher) GetByUIDInProject(_ context.Context, _, uid string) (photos.Photo, error) {
 	return lookupPhoto(f.byUID, uid)
 }
 
 // GetByPhotoprismUID answers from byPPUID.
-func (f *fakeSearcher) GetByPhotoprismUID(_ context.Context, uid string) (photos.Photo, error) {
+func (f *fakeSearcher) GetByPhotoprismUID(_ context.Context, _, uid string) (photos.Photo, error) {
 	return lookupPhoto(f.byPPUID, uid)
 }
 
 // GetByPhotoprismAlias answers from byPPAlias.
-func (f *fakeSearcher) GetByPhotoprismAlias(_ context.Context, uid string) (photos.Photo, error) {
+func (f *fakeSearcher) GetByPhotoprismAlias(_ context.Context, _, uid string) (photos.Photo, error) {
 	return lookupPhoto(f.byPPAlias, uid)
 }
 
 // ListStackMembers answers from stacks, primary first as the real store does.
-func (f *fakeSearcher) ListStackMembers(_ context.Context, stackUID string) ([]photos.Photo, error) {
+func (f *fakeSearcher) ListStackMembers(_ context.Context, _, stackUID string) ([]photos.Photo, error) {
 	return f.stacks[stackUID], nil
 }
 
@@ -175,7 +175,7 @@ func (f *fakeSearcher) SearchSubjects(_ context.Context, _ string, _ int) ([]peo
 
 // Search returns the canned photos or error, ignoring the list params beyond
 // what the handler set on them.
-func (f *fakeSearcher) Search(_ context.Context, _ photos.ListParams) ([]photos.Photo, error) {
+func (f *fakeSearcher) Search(_ context.Context, _ string, _ photos.ListParams) ([]photos.Photo, error) {
 	return f.photos, f.err
 }
 

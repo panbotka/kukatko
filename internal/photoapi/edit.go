@@ -37,11 +37,11 @@ type editBody struct {
 // the path, or a neutral (zero-value) edit when none has been saved yet, so the
 // editor UI always has a value to seed its controls. A missing photo is 404.
 func (a *API) handleGetEdit(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	if _, err := a.store.GetByUID(r.Context(), uid); err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
+	uid := photo.UID
 
 	edit, err := a.store.GetEdit(r.Context(), uid)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // timelineBucketFixture is one seeded photo for the timeline tests: a capture time (nil
@@ -66,7 +67,7 @@ func TestTimelineBuckets(t *testing.T) {
 		{hash: "tl-f", takenAt: nil},                       // no bucket, still in total
 	})
 
-	timeline, err := store.TimelineBuckets(ctx, photos.ListParams{})
+	timeline, err := store.TimelineBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("TimelineBuckets: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestTimelineBuckets(t *testing.T) {
 
 	// Cumulative must index into the default (newest-first) list: the photo at
 	// position Cumulative falls inside the bucket's month.
-	list, err := store.List(ctx, photos.ListParams{Limit: 100})
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{Limit: 100})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 	}
 
 	params := photos.ListParams{AlbumUIDs: []string{album.UID}}
-	timeline, err := store.TimelineBuckets(ctx, params)
+	timeline, err := store.TimelineBuckets(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("TimelineBuckets(album): %v", err)
 	}
@@ -154,7 +155,7 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 
 	// The scoped histogram must agree with the scoped list: same total, and the
 	// bucket count sum equals the number of dated photos the list returns.
-	total, err := store.Count(ctx, params)
+	total, err := store.Count(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("Count(album): %v", err)
 	}
@@ -183,7 +184,7 @@ func TestTimelineBuckets_chronologyOrder(t *testing.T) {
 	})
 
 	params := photos.ListParams{Sort: photos.SortByChronology, Order: photos.OrderAsc}
-	timeline, err := store.TimelineBuckets(ctx, params)
+	timeline, err := store.TimelineBuckets(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("TimelineBuckets(chronology): %v", err)
 	}
@@ -211,7 +212,7 @@ func TestTimelineBuckets_chronologyOrder(t *testing.T) {
 		t.Fatalf("first bucket = %d-%02d, want 2022-01", first.Year, first.Month)
 	}
 
-	list, err := store.List(ctx, photos.ListParams{
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{
 		Sort: photos.SortByChronology, Order: photos.OrderAsc, Limit: 100,
 	})
 	if err != nil {
@@ -245,7 +246,7 @@ func TestTimelineBuckets_implausibleYear(t *testing.T) {
 		{hash: "tli-b", takenAt: new(june)},
 	})
 
-	timeline, err := store.TimelineBuckets(ctx, photos.ListParams{})
+	timeline, err := store.TimelineBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("TimelineBuckets: %v", err)
 	}

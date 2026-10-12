@@ -25,7 +25,7 @@ func passthrough(next http.Handler) http.Handler { return next }
 // withCaller would have built it.
 func callerCtx(role project.Role) context.Context {
 	return context.WithValue(context.Background(), callerKey{},
-		caller{user: auth.User{UID: "user-1"}, role: role})
+		caller{user: auth.User{UID: "user-1"}, role: role, projectUID: project.BootstrapUID})
 }
 
 // TestRegisterRoutesDisabledAnswers404 pins the config switch's contract: off

@@ -235,8 +235,11 @@ type ListParams struct {
 // slice is empty (not nil) when nothing matches. Each standalone video carries
 // its streaming flag (Photo.HLS), computed in this same query rather than asked
 // per row; see photoListColumns.
-func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
-	query, args := buildListQuery(params)
+func (s *Store) List(ctx context.Context, projectUID string, params ListParams) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	query, args := buildListQuery(projectUID, params)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying photos: %w", err)
@@ -266,11 +269,14 @@ func (s *Store) List(ctx context.Context, params ListParams) ([]Photo, error) {
 // it with Count (which shares the filters) for the total. The slice is empty
 // (not nil) when nothing matches. Like List, each standalone video carries its
 // streaming flag (Photo.HLS) from the same query.
-func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) {
+func (s *Store) Search(ctx context.Context, projectUID string, params ListParams) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if params.FullText == "" {
 		return nil, ErrEmptySearch
 	}
-	query, args := buildSearchQuery(params)
+	query, args := buildSearchQuery(projectUID, params)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("photos: searching photos: %w", err)
@@ -300,14 +306,17 @@ func (s *Store) Search(ctx context.Context, params ListParams) ([]Photo, error) 
 // params' ordering, pagination and FullText query are ignored — semantic
 // relevance, not full-text rank, drives a similarity search. An empty input
 // returns an empty slice without querying.
-func (s *Store) FilterUIDs(ctx context.Context, uids []string, params ListParams) ([]Photo, error) {
+func (s *Store) FilterUIDs(ctx context.Context, projectUID string, uids []string, params ListParams) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if len(uids) == 0 {
 		return []Photo{}, nil
 	}
 	// FullText would add a tsquery filter; a semantic search must not require a
 	// full-text match, so clear it before building the WHERE clause.
 	params.FullText = ""
-	where, args := buildWhere(params)
+	where, args := buildWhere(projectUID, params)
 	args = append(args, uids)
 	where = append(where, "uid = ANY($"+strconv.Itoa(len(args))+")")
 	query := "SELECT " + photoListColumns + " FROM photos WHERE " + strings.Join(where, " AND ")
@@ -334,8 +343,11 @@ func (s *Store) FilterUIDs(ctx context.Context, uids []string, params ListParams
 
 // Count returns the number of photos matching params' filters, ignoring its
 // limit, offset and ordering. It powers the total used by paginated listings.
-func (s *Store) Count(ctx context.Context, params ListParams) (int, error) {
-	query, args := buildCountQuery(params)
+func (s *Store) Count(ctx context.Context, projectUID string, params ListParams) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	query, args := buildCountQuery(projectUID, params)
 	var total int
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
 		return 0, fmt.Errorf("photos: counting photos: %w", err)
@@ -365,8 +377,11 @@ type MediaCounts struct {
 // how many of them are videos, ignoring limit, offset and ordering. It is Count
 // plus one filtered aggregate over the same scan, so a listing can say what its
 // total is actually made of without paying for a second pass over the table.
-func (s *Store) CountMedia(ctx context.Context, params ListParams) (MediaCounts, error) {
-	query, args := buildMediaCountQuery(params)
+func (s *Store) CountMedia(ctx context.Context, projectUID string, params ListParams) (MediaCounts, error) {
+	if err := requireProject(projectUID); err != nil {
+		return MediaCounts{}, err
+	}
+	query, args := buildMediaCountQuery(projectUID, params)
 	var counts MediaCounts
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(&counts.Total, &counts.Videos); err != nil {
 		return MediaCounts{}, fmt.Errorf("photos: counting photos by media type: %w", err)
@@ -376,29 +391,35 @@ func (s *Store) CountMedia(ctx context.Context, params ListParams) (MediaCounts,
 
 // buildWhere assembles the parameterised WHERE filters shared by List and
 // Count. It returns the filter clauses (to be joined with AND) and the bound
-// argument values in matching positional order, starting at $1. The bind closure
-// appends a value and yields its placeholder so every caller value is bound, not
-// interpolated.
-func buildWhere(params ListParams) (where []string, args []any) {
+// argument values in matching positional order, starting at $1 — which is always
+// projectUID, bound by the project predicate that opens the clause set. The bind
+// closure appends a value and yields its placeholder so every caller value is
+// bound, not interpolated.
+func buildWhere(projectUID string, params ListParams) (where []string, args []any) {
 	bind := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
-	return whereClauses(params, bind), args
+	return whereClauses(projectUID, params, bind), args
 }
 
 // whereClauses returns every WHERE filter implied by params, binding each value
-// through bind. It is shared by buildWhere (which owns the bind closure) and by
-// buildSearchQuery (which needs to interleave its own binds for the ts_rank
-// ordering), so the filter set stays identical across list, count and search.
-func whereClauses(params ListParams, bind func(any) string) []string {
+// through bind. The first clause is always the project predicate, bound first
+// (so as $1 under buildWhere), and its placeholder is handed on to the query
+// language compiler so the filters that resolve a name against another root
+// table (album:, label:, person:, family:, task:, uid:) resolve it inside the
+// same project. The filter set is identical across list, count, search and the
+// aggregations, which all go through buildWhere.
+func whereClauses(projectUID string, params ListParams, bind func(any) string) []string {
+	project := bind(projectUID)
+	where := []string{projectClause(project)}
 	if params.MatchNone {
-		// An unsatisfiable scope short-circuits the whole clause set: nothing
-		// matches, so every other filter is beside the point and the planner gets
-		// a constant it can prove false without touching a row.
-		return []string{"FALSE"}
+		// An unsatisfiable scope short-circuits the rest of the clause set:
+		// nothing matches, so every other filter is beside the point and the
+		// planner gets a constant it can prove false without touching a row.
+		return append(where, "FALSE")
 	}
-	where := archivedClauses(params)
+	where = append(where, archivedClauses(params)...)
 	where = append(where, stackClauses(params)...)
 	where = append(where, hiddenClauses(params)...)
 	where = append(where, scalarClauses(params, bind)...)
@@ -412,7 +433,7 @@ func whereClauses(params ListParams, bind func(any) string) []string {
 	where = append(where, placeClauses(params, bind)...)
 	where = append(where, favoriteClauses(params, bind)...)
 	where = append(where, ratingClauses(params, bind)...)
-	where = append(where, queryClauses(params, bind)...)
+	where = append(where, queryClauses(params, bind, project)...)
 	return where
 }
 
@@ -734,8 +755,8 @@ func tsQueryExpr(placeholder string) string {
 // buildListQuery assembles the parameterised SELECT for List: the WHERE filters,
 // the validated ORDER BY, and the LIMIT/OFFSET. All caller values are bound as
 // parameters; ordering is chosen from an allow-list, never interpolated raw.
-func buildListQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildListQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	// Continue binding from where buildWhere left off so the rating sort's
 	// correlated subquery can bind the RatedBy user after the filter parameters.
 	bind := func(value any) string {
@@ -763,8 +784,8 @@ func buildListQuery(params ListParams) (string, []any) {
 
 // buildCountQuery assembles the parameterised SELECT count(*) for Count, reusing
 // List's WHERE filters but omitting ordering and pagination.
-func buildCountQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildCountQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	query := "SELECT count(*) FROM photos"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -777,8 +798,8 @@ func buildCountQuery(params ListParams) (string, []any) {
 // that counts the video rows among them. The media type is bound like every
 // other value rather than interpolated, so the query text never depends on a
 // Go constant's contents.
-func buildMediaCountQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildMediaCountQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	args = append(args, string(MediaVideo))
 	videos := "count(*) FILTER (WHERE media_type = $" + strconv.Itoa(len(args)) + ")"
 	query := "SELECT count(*), " + videos + " FROM photos"
@@ -800,8 +821,8 @@ func buildMediaCountQuery(params ListParams) (string, []any) {
 // replaying a search asked for a random order outright, and ranking it by
 // relevance instead would quietly ignore that. Every other sort leaves the
 // full-text ranking alone, which is what a search is for.
-func buildSearchQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildSearchQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	bind := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/embedding"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -124,11 +125,11 @@ func (a *API) runSearch(
 // fulltextSearch runs the existing Czech-aware full-text search, returning the
 // requested page and the total matching the filters.
 func (a *API) fulltextSearch(ctx context.Context, params photos.ListParams) (searchResult, error) {
-	list, err := a.store.Search(ctx, params)
+	list, err := a.store.Search(ctx, auth.ProjectUIDFromContext(ctx), params)
 	if err != nil {
 		return searchResult{}, fmt.Errorf("photoapi: full-text search: %w", err)
 	}
-	counts, err := a.store.CountMedia(ctx, params)
+	counts, err := a.store.CountMedia(ctx, auth.ProjectUIDFromContext(ctx), params)
 	if err != nil {
 		return searchResult{}, fmt.Errorf("photoapi: counting search results: %w", err)
 	}
@@ -169,7 +170,7 @@ func (a *API) hybridSearch(ctx context.Context, query string, params photos.List
 	ftParams := params
 	ftParams.Limit = fusionPool
 	ftParams.Offset = 0
-	ftList, err := a.store.Search(ctx, ftParams)
+	ftList, err := a.store.Search(ctx, auth.ProjectUIDFromContext(ctx), ftParams)
 	if err != nil {
 		return searchResult{}, fmt.Errorf("photoapi: full-text search: %w", err)
 	}
@@ -252,7 +253,7 @@ func (a *API) semanticRanking(
 	for _, m := range matches {
 		uids = append(uids, m.PhotoUID)
 	}
-	filtered, err := a.store.FilterUIDs(ctx, uids, params)
+	filtered, err := a.store.FilterUIDs(ctx, auth.ProjectUIDFromContext(ctx), uids, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("photoapi: filtering semantic candidates: %w", err)
 	}

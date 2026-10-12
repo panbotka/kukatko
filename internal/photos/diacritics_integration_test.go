@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -143,7 +144,7 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 func runDiacritics(t *testing.T, lib diacriticsLibrary, input string) []string {
 	t.Helper()
 	parsed := query.Parse(input)
-	list, err := lib.store.List(t.Context(), photos.ListParams{
+	list, err := lib.store.List(t.Context(), project.BootstrapUID, photos.ListParams{
 		Search:       parsed.PlainText(),
 		SearchNot:    parsed.NotTerms(),
 		QueryFilters: parsed.Filters,

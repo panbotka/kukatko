@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
@@ -79,23 +80,26 @@ type PeopleSearcher interface {
 
 // PhotoSearcher is the subset of photos.Store the endpoint needs: the existing
 // Czech-aware full-text search, driven through ListParams.FullText, plus the
-// exact lookups that resolve a pasted photo/stack/PhotoPrism id. The lookups are
-// unscoped on purpose — an explicit id must find an archived, hidden or stacked
-// photo too.
+// exact lookups that resolve a pasted photo/stack/PhotoPrism id. The lookups
+// ignore the library-view state on purpose — an explicit id must find an
+// archived, hidden or stacked photo too — but every method is confined to the
+// project named by projectUID: another tenant's id is a plain miss.
 type PhotoSearcher interface {
-	// Search returns the photos whose search vector matches params.FullText,
-	// honouring params' limit for the per-group cap.
-	Search(ctx context.Context, params photos.ListParams) ([]photos.Photo, error)
-	// GetByUID resolves one photo by its uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
-	// GetByPhotoprismUID resolves the photo imported under a PhotoPrism source
-	// uid, or photos.ErrPhotoNotFound.
-	GetByPhotoprismUID(ctx context.Context, ppUID string) (photos.Photo, error)
-	// GetByPhotoprismAlias resolves a PhotoPrism source uid whose bytes were
-	// already catalogued under another uid, or photos.ErrPhotoNotFound.
-	GetByPhotoprismAlias(ctx context.Context, ppUID string) (photos.Photo, error)
-	// ListStackMembers returns a stack's photos, the primary first.
-	ListStackMembers(ctx context.Context, stackUID string) ([]photos.Photo, error)
+	// Search returns the project's photos whose search vector matches
+	// params.FullText, honouring params' limit for the per-group cap.
+	Search(ctx context.Context, projectUID string, params photos.ListParams) ([]photos.Photo, error)
+	// GetByUIDInProject resolves one of the project's photos by its uid, or
+	// photos.ErrPhotoNotFound.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
+	// GetByPhotoprismUID resolves the project's photo imported under a
+	// PhotoPrism source uid, or photos.ErrPhotoNotFound.
+	GetByPhotoprismUID(ctx context.Context, projectUID, ppUID string) (photos.Photo, error)
+	// GetByPhotoprismAlias resolves a PhotoPrism source uid whose bytes the
+	// project already catalogued under another uid, or photos.ErrPhotoNotFound.
+	GetByPhotoprismAlias(ctx context.Context, projectUID, ppUID string) (photos.Photo, error)
+	// ListStackMembers returns the project's photos of a stack, the primary
+	// first.
+	ListStackMembers(ctx context.Context, projectUID, stackUID string) ([]photos.Photo, error)
 }
 
 // API exposes the grouped global-search endpoint over HTTP. The auth guard is
@@ -271,7 +275,8 @@ func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) 
 		writeError(w, http.StatusInternalServerError, "searching people failed")
 		return
 	}
-	matchedPhotos, err := a.photos.Search(ctx, photos.ListParams{FullText: query, Limit: a.limit})
+	matchedPhotos, err := a.photos.Search(ctx, auth.ProjectUIDFromContext(ctx),
+		photos.ListParams{FullText: query, Limit: a.limit})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return

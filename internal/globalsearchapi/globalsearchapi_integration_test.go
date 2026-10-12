@@ -11,13 +11,16 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/apitest"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/globalsearchapi"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -65,8 +68,18 @@ type globalHit struct {
 	} `json:"photos"`
 }
 
-// passthrough admits every request, isolating the handler from real auth.
-func passthrough(next http.Handler) http.Handler { return next }
+// admitBootstrap returns a guard admitting every request as a member of the
+// bootstrap project — where every row these tests seed lands — isolating the
+// handler from real auth while still giving the project-scoped stores the
+// project they refuse to run without.
+func admitBootstrap(t *testing.T, pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	t.Helper()
+	p, err := project.NewStore(pool).Get(t.Context(), project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("loading the bootstrap project: %v", err)
+	}
+	return auth.AdmitInProject(auth.User{UID: "us-test"}, p, project.RoleAdmin)
+}
 
 // newEnv truncates the integration database, seeds one accent-bearing match of
 // each kind (plus extras to exercise the per-group cap), and returns a running
@@ -101,7 +114,7 @@ func newEnv(t *testing.T, limit int) *httptest.Server {
 
 	api := globalsearchapi.NewAPI(globalsearchapi.Config{
 		Organizer: organizeStore, People: peopleStore, Photos: photoStore,
-		Limit: limit, RequireAuth: passthrough,
+		Limit: limit, RequireAuth: admitBootstrap(t, db.Pool()),
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
@@ -246,7 +259,7 @@ func newUIDEnv(t *testing.T) uidEnv {
 
 	api := globalsearchapi.NewAPI(globalsearchapi.Config{
 		Organizer: organizeStore, People: peopleStore, Photos: photoStore,
-		Limit: 10, RequireAuth: passthrough,
+		Limit: 10, RequireAuth: admitBootstrap(t, db.Pool()),
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
@@ -423,7 +436,7 @@ func newCoverEnv(t *testing.T) *httptest.Server {
 
 	api := globalsearchapi.NewAPI(globalsearchapi.Config{
 		Organizer: organizeStore, People: peopleStore, Photos: photoStore,
-		Limit: 10, RequireAuth: passthrough,
+		Limit: 10, RequireAuth: admitBootstrap(t, db.Pool()),
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)

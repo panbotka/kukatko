@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -227,27 +228,27 @@ func TestExternalIDLookups(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	byPP, err := store.GetByPhotoprismUID(ctx, "pp0123456789abcd")
+	byPP, err := store.GetByPhotoprismUID(ctx, project.BootstrapUID, "pp0123456789abcd")
 	if err != nil || byPP.UID != created.UID {
 		t.Errorf("GetByPhotoprismUID = %+v, %v", byPP, err)
 	}
 	if byPP.PhotoprismFileHash == nil || *byPP.PhotoprismFileHash != *p.PhotoprismFileHash {
 		t.Errorf("photoprism_file_hash not round-tripped: %v", byPP.PhotoprismFileHash)
 	}
-	byPS, err := store.GetByPhotosorterUID(ctx, "ps_legacy_001")
+	byPS, err := store.GetByPhotosorterUID(ctx, project.BootstrapUID, "ps_legacy_001")
 	if err != nil || byPS.UID != created.UID {
 		t.Errorf("GetByPhotosorterUID = %+v, %v", byPS, err)
 	}
 
-	byFile, err := store.GetByPhotoprismFileHash(ctx, "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+	byFile, err := store.GetByPhotoprismFileHash(ctx, project.BootstrapUID, "da39a3ee5e6b4b0d3255bfef95601890afd80709")
 	if err != nil || byFile.UID != created.UID {
 		t.Errorf("GetByPhotoprismFileHash = %+v, %v", byFile, err)
 	}
 
-	if _, err := store.GetByPhotoprismUID(ctx, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetByPhotoprismUID(ctx, project.BootstrapUID, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByPhotoprismUID(nope) = %v, want ErrPhotoNotFound", err)
 	}
-	if _, err := store.GetByPhotoprismFileHash(ctx, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetByPhotoprismFileHash(ctx, project.BootstrapUID, "nope"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetByPhotoprismFileHash(nope) = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -275,7 +276,7 @@ func TestSetPhotoprismFileHash(t *testing.T) {
 	if updated.PhotoprismUID != nil {
 		t.Errorf("photoprism_uid = %v, want nil (a sibling never claims the source photo)", updated.PhotoprismUID)
 	}
-	found, err := store.GetByPhotoprismFileHash(ctx, "sha1raw")
+	found, err := store.GetByPhotoprismFileHash(ctx, project.BootstrapUID, "sha1raw")
 	if err != nil || found.UID != created.UID {
 		t.Errorf("GetByPhotoprismFileHash after backfill = %+v, %v", found, err)
 	}
@@ -307,7 +308,7 @@ func TestSetPhotoprismRef(t *testing.T) {
 		updated.PhotoprismFileHash == nil || *updated.PhotoprismFileHash != "sha1hash" {
 		t.Errorf("refs = %v / %v, want ppNEWuid / sha1hash", updated.PhotoprismUID, updated.PhotoprismFileHash)
 	}
-	byPP, err := store.GetByPhotoprismUID(ctx, "ppNEWuid")
+	byPP, err := store.GetByPhotoprismUID(ctx, project.BootstrapUID, "ppNEWuid")
 	if err != nil || byPP.UID != created.UID {
 		t.Errorf("GetByPhotoprismUID after backfill = %+v, %v", byPP, err)
 	}
@@ -335,7 +336,7 @@ func TestList(t *testing.T) {
 		t.Fatalf("Archive l4: %v", err)
 	}
 
-	live, err := store.List(ctx, photos.ListParams{})
+	live, err := store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List live: %v", err)
 	}
@@ -343,7 +344,7 @@ func TestList(t *testing.T) {
 		t.Errorf("List live count = %d, want 3", len(live))
 	}
 
-	onlyArchived, err := store.List(ctx, photos.ListParams{OnlyArchived: true})
+	onlyArchived, err := store.List(ctx, project.BootstrapUID, photos.ListParams{OnlyArchived: true})
 	if err != nil {
 		t.Fatalf("List archived: %v", err)
 	}
@@ -351,7 +352,7 @@ func TestList(t *testing.T) {
 		t.Errorf("List archived = %+v, want only %s", onlyArchived, archived.UID)
 	}
 
-	page, err := store.List(ctx, photos.ListParams{IncludeArchived: true, Limit: 2})
+	page, err := store.List(ctx, project.BootstrapUID, photos.ListParams{IncludeArchived: true, Limit: 2})
 	if err != nil {
 		t.Fatalf("List paged: %v", err)
 	}

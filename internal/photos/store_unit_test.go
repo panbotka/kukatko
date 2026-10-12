@@ -146,7 +146,7 @@ func TestBuildListQuery(t *testing.T) {
 
 	t.Run("default excludes archived and paginates", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{})
+		query, args := unscopedListQuery(ListParams{})
 		if !strings.Contains(query, "WHERE archived_at IS NULL") {
 			t.Errorf("query missing live-only filter: %q", query)
 		}
@@ -161,7 +161,7 @@ func TestBuildListQuery(t *testing.T) {
 
 	t.Run("only-archived overrides include", func(t *testing.T) {
 		t.Parallel()
-		query, _ := buildListQuery(ListParams{OnlyArchived: true, IncludeArchived: false})
+		query, _ := unscopedListQuery(ListParams{OnlyArchived: true, IncludeArchived: false})
 		if !strings.Contains(query, "archived_at IS NOT NULL") {
 			t.Errorf("query missing archived-only filter: %q", query)
 		}
@@ -169,7 +169,7 @@ func TestBuildListQuery(t *testing.T) {
 
 	t.Run("include-archived adds no archive filter", func(t *testing.T) {
 		t.Parallel()
-		query, _ := buildListQuery(ListParams{IncludeArchived: true})
+		query, _ := unscopedListQuery(ListParams{IncludeArchived: true})
 		// archived_at appears in the SELECT column list; assert only that it is
 		// not used as a filter.
 		if strings.Contains(query, "archived_at IS") {
@@ -179,7 +179,7 @@ func TestBuildListQuery(t *testing.T) {
 
 	t.Run("uploader filter binds params", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
+		query, args := unscopedListQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
 		if !strings.Contains(query, "uploaded_by = $1") {
 			t.Errorf("query missing bound filters: %q", query)
 		}
@@ -190,7 +190,7 @@ func TestBuildListQuery(t *testing.T) {
 
 	t.Run("no-uploader filter needs no bind and wins over a named uploader", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{NoUploader: true, UploadedBy: "us123"})
+		query, args := unscopedListQuery(ListParams{NoUploader: true, UploadedBy: "us123"})
 		if !strings.Contains(query, "uploaded_by IS NULL") {
 			t.Errorf("query missing no-uploader filter: %q", query)
 		}
@@ -207,7 +207,7 @@ func TestBuildListQuery(t *testing.T) {
 		t.Parallel()
 		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 		before := time.Date(2023, 12, 31, 0, 0, 0, 0, time.UTC)
-		query, args := buildListQuery(ListParams{
+		query, args := unscopedListQuery(ListParams{
 			TakenAfter:  &after,
 			TakenBefore: &before,
 			HasGPS:      &yes,
@@ -238,7 +238,7 @@ func TestBuildListQuery(t *testing.T) {
 	t.Run("has-gps false matches missing coordinates", func(t *testing.T) {
 		t.Parallel()
 		no := false
-		query, _ := buildListQuery(ListParams{HasGPS: &no})
+		query, _ := unscopedListQuery(ListParams{HasGPS: &no})
 		if !strings.Contains(query, "(lat IS NULL OR lng IS NULL)") {
 			t.Errorf("query missing absent-gps filter: %q", query)
 		}
@@ -306,11 +306,11 @@ func TestHiddenClauses(t *testing.T) {
 func TestBuildListQuery_hiddenFromLibrary(t *testing.T) {
 	t.Parallel()
 
-	got, _ := buildListQuery(ListParams{})
+	got, _ := unscopedListQuery(ListParams{})
 	if !strings.Contains(got, "NOT hidden_from_library") {
 		t.Errorf("default list query missing the visibility filter: %q", got)
 	}
-	scoped, _ := buildListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
+	scoped, _ := unscopedListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
 	if strings.Contains(scoped, "NOT hidden_from_library") {
 		t.Errorf("album-scoped list query must not hide: %q", scoped)
 	}
@@ -322,7 +322,7 @@ func TestBuildListQuery_hiddenFromLibrary(t *testing.T) {
 func TestBuildListQuery_hiddenQueryFilterCompiles(t *testing.T) {
 	t.Parallel()
 
-	got, _ := buildListQuery(ListParams{QueryFilters: boolFilters(query.KeyHidden, true)})
+	got, _ := unscopedListQuery(ListParams{QueryFilters: boolFilters(query.KeyHidden, true)})
 	if !strings.Contains(got, "(hidden_from_library)") {
 		t.Errorf("query missing the hidden:yes predicate: %q", got)
 	}
@@ -384,11 +384,11 @@ func TestBuildListQuery_taskScopeKeepsStackMembers(t *testing.T) {
 	// The bare column name is in every SELECT list, so match the predicate.
 	const collapse = "(stack_uid IS NULL OR stack_primary)"
 
-	scoped, _ := buildListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
+	scoped, _ := unscopedListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
 	if strings.Contains(scoped, collapse) {
 		t.Errorf("task-scoped list query still collapses stacks: %q", scoped)
 	}
-	unscoped, _ := buildListQuery(ListParams{})
+	unscoped, _ := unscopedListQuery(ListParams{})
 	if !strings.Contains(unscoped, collapse) {
 		t.Errorf("default list query missing the stack filter: %q", unscoped)
 	}
@@ -438,7 +438,7 @@ func TestUIDLookupLiftsScopes(t *testing.T) {
 func TestUIDCond(t *testing.T) {
 	t.Parallel()
 
-	q, args := buildListQuery(ListParams{QueryFilters: uidFilters("ph_1")})
+	q, args := unscopedListQuery(ListParams{QueryFilters: uidFilters("ph_1")})
 	for _, want := range []string{
 		"photos.uid = $", "photos.photoprism_uid = $", "FROM photoprism_aliases pa",
 	} {
@@ -459,7 +459,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("task scope binds the uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
+		query, args := unscopedListQuery(ListParams{TaskUIDs: []string{"tk_1"}})
 		want := "EXISTS (SELECT 1 FROM photo_task_photos tp " +
 			"WHERE tp.photo_uid = photos.uid AND tp.task_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -472,7 +472,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("album scope binds the uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
+		query, args := unscopedListQuery(ListParams{AlbumUIDs: []string{"al_1"}})
 		want := "EXISTS (SELECT 1 FROM album_photos ap " +
 			"WHERE ap.photo_uid = photos.uid AND ap.album_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -485,7 +485,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("label scope binds the uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{LabelUIDs: []string{"lb_1"}})
+		query, args := unscopedListQuery(ListParams{LabelUIDs: []string{"lb_1"}})
 		want := "EXISTS (SELECT 1 FROM photo_labels pl " +
 			"WHERE pl.photo_uid = photos.uid AND pl.label_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -498,7 +498,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("several albums and labels each emit an EXISTS bound in order", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{
+		query, args := unscopedListQuery(ListParams{
 			AlbumUIDs: []string{"al_1", "al_2"},
 			LabelUIDs: []string{"lb_1", "lb_2"},
 		})
@@ -524,7 +524,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("scope applies after the other filters and keeps the archive guard", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{AlbumUIDs: []string{"al_2"}, UploadedBy: "us123"})
+		query, args := unscopedListQuery(ListParams{AlbumUIDs: []string{"al_2"}, UploadedBy: "us123"})
 		if !strings.Contains(query, "uploaded_by = $1") {
 			t.Errorf("query missing uploader filter: %q", query)
 		}
@@ -542,7 +542,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("favorite scope binds the user uid", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{FavoriteOf: "us_1"})
+		query, args := unscopedListQuery(ListParams{FavoriteOf: "us_1"})
 		want := "EXISTS (SELECT 1 FROM user_favorites uf " +
 			"WHERE uf.photo_uid = photos.uid AND uf.user_uid = $1)"
 		if !strings.Contains(query, want) {
@@ -555,7 +555,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("subject scope binds the uid and guards invalid markers", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{SubjectUIDs: []string{"su_1"}})
+		query, args := unscopedListQuery(ListParams{SubjectUIDs: []string{"su_1"}})
 		want := "EXISTS (SELECT 1 FROM markers m " +
 			"WHERE m.photo_uid = photos.uid AND m.subject_uid = $1 AND m.invalid = FALSE)"
 		if !strings.Contains(query, want) {
@@ -568,7 +568,7 @@ func TestBuildListQuery_membershipScope(t *testing.T) {
 
 	t.Run("several subjects each emit an EXISTS bound in order (AND)", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{SubjectUIDs: []string{"su_1", "su_2"}})
+		query, args := unscopedListQuery(ListParams{SubjectUIDs: []string{"su_1", "su_2"}})
 		if strings.Count(query, "FROM markers m") != 2 {
 			t.Errorf("query missing one EXISTS per subject: %q", query)
 		}
@@ -590,7 +590,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 	t.Run("min rating binds the user and the threshold", func(t *testing.T) {
 		t.Parallel()
 		three := 3
-		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), MinRating: &three})
+		query, args := unscopedListQuery(ListParams{RatedBy: new("us_1"), MinRating: &three})
 		want := "EXISTS (SELECT 1 FROM user_ratings ur " +
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1 AND ur.rating >= $2)"
 		if !strings.Contains(query, want) {
@@ -604,7 +604,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 	t.Run("non-positive min rating adds no filter", func(t *testing.T) {
 		t.Parallel()
 		zero := 0
-		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), MinRating: &zero})
+		query, args := unscopedListQuery(ListParams{RatedBy: new("us_1"), MinRating: &zero})
 		if strings.Contains(query, "user_ratings") {
 			t.Errorf("query should not filter on user_ratings for min rating 0: %q", query)
 		}
@@ -615,7 +615,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 
 	t.Run("flag filter binds pick", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{RatedBy: new("us_1"), Flag: new("pick")})
+		query, args := unscopedListQuery(ListParams{RatedBy: new("us_1"), Flag: new("pick")})
 		want := "EXISTS (SELECT 1 FROM user_ratings ur " +
 			"WHERE ur.photo_uid = photos.uid AND ur.user_uid = $1 AND ur.flag = $2)"
 		if !strings.Contains(query, want) {
@@ -628,7 +628,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 
 	t.Run("flag none adds no filter", func(t *testing.T) {
 		t.Parallel()
-		query, _ := buildListQuery(ListParams{RatedBy: new("us_1"), Flag: new("none")})
+		query, _ := unscopedListQuery(ListParams{RatedBy: new("us_1"), Flag: new("none")})
 		if strings.Contains(query, "user_ratings") {
 			t.Errorf("query should not filter on user_ratings for flag none: %q", query)
 		}
@@ -637,7 +637,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 	t.Run("rating filters need a rated-by user", func(t *testing.T) {
 		t.Parallel()
 		five := 5
-		query, _ := buildListQuery(ListParams{MinRating: &five, Flag: new("pick")})
+		query, _ := unscopedListQuery(ListParams{MinRating: &five, Flag: new("pick")})
 		if strings.Contains(query, "user_ratings") {
 			t.Errorf("query should not filter on user_ratings without RatedBy: %q", query)
 		}
@@ -646,7 +646,7 @@ func TestBuildListQuery_ratingFilters(t *testing.T) {
 	t.Run("rating sort binds the user after the filters", func(t *testing.T) {
 		t.Parallel()
 		two := 2
-		query, args := buildListQuery(ListParams{
+		query, args := unscopedListQuery(ListParams{
 			RatedBy: new("us_1"), MinRating: &two, Sort: SortByRating,
 		})
 		if !strings.Contains(query, "ur.rating >= $2") {
@@ -670,7 +670,7 @@ func TestBuildSearchQuery(t *testing.T) {
 
 	t.Run("ranks by ts_rank and binds the query", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildSearchQuery(ListParams{FullText: "tomas", Limit: 20, Offset: 40})
+		query, args := unscopedSearchQuery(ListParams{FullText: "tomas", Limit: 20, Offset: 40})
 		for _, want := range []string{
 			"fts @@ websearch_to_tsquery('simple', immutable_unaccent($1))",
 			"ORDER BY ts_rank(fts, websearch_to_tsquery('simple', immutable_unaccent($2))) DESC, uid DESC",
@@ -692,7 +692,7 @@ func TestBuildSearchQuery(t *testing.T) {
 
 	t.Run("keeps list filters alongside the full-text match", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildSearchQuery(ListParams{FullText: "beach", UploadedBy: "us123"})
+		query, args := unscopedSearchQuery(ListParams{FullText: "beach", UploadedBy: "us123"})
 		if !strings.Contains(query, "uploaded_by = $1") {
 			t.Errorf("query missing uploader filter: %q", query)
 		}
@@ -707,7 +707,7 @@ func TestBuildSearchQuery(t *testing.T) {
 
 	t.Run("defaults the limit when unset", func(t *testing.T) {
 		t.Parallel()
-		_, args := buildSearchQuery(ListParams{FullText: "x"})
+		_, args := unscopedSearchQuery(ListParams{FullText: "x"})
 		// fts(WHERE) + fts(rank) + limit + offset, with the default limit applied.
 		if len(args) != 4 || args[2] != defaultListLimit {
 			t.Errorf("args = %v, want default limit %d at index 2", args, defaultListLimit)
@@ -718,7 +718,7 @@ func TestBuildSearchQuery(t *testing.T) {
 	// relevance ranking — and the same random order on every page.
 	t.Run("the random sort replaces the relevance ranking", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildSearchQuery(ListParams{FullText: "x", Sort: SortByRandom, Seed: "s7"})
+		query, args := unscopedSearchQuery(ListParams{FullText: "x", Sort: SortByRandom, Seed: "s7"})
 		if !strings.Contains(query, "ORDER BY md5(uid || $2), uid") {
 			t.Errorf("query missing the seeded random order: %q", query)
 		}
@@ -737,7 +737,7 @@ func TestBuildSearchQuery(t *testing.T) {
 func TestBuildCountQuery(t *testing.T) {
 	t.Parallel()
 
-	query, args := buildCountQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
+	query, args := unscopedCountQuery(ListParams{UploadedBy: "us123", Limit: 10, Offset: 5})
 	if !strings.HasPrefix(query, "SELECT count(*) FROM photos") {
 		t.Errorf("count query has wrong prefix: %q", query)
 	}
@@ -761,7 +761,7 @@ func TestMatchNone(t *testing.T) {
 
 	t.Run("the list matches nothing", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildListQuery(ListParams{MatchNone: true, UploadedBy: "us123"})
+		query, args := unscopedListQuery(ListParams{MatchNone: true, UploadedBy: "us123"})
 		if !strings.Contains(query, "WHERE FALSE") {
 			t.Errorf("query missing the impossible filter: %q", query)
 		}
@@ -777,7 +777,7 @@ func TestMatchNone(t *testing.T) {
 
 	t.Run("the count matches nothing", func(t *testing.T) {
 		t.Parallel()
-		query, args := buildCountQuery(ListParams{MatchNone: true})
+		query, args := unscopedCountQuery(ListParams{MatchNone: true})
 		if !strings.Contains(query, "WHERE FALSE") {
 			t.Errorf("count query missing the impossible filter: %q", query)
 		}

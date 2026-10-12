@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 )
 
@@ -65,12 +66,28 @@ type commentListResponse struct {
 // handleListComments returns the photo's live comments, oldest first, each with
 // its author's resolved name. Every authenticated role may read a thread. It
 // answers 503 when no comments backend is wired.
+//
+// A photo that does not exist has an empty thread rather than a 404 (the
+// documented contract), and so does a photo of another project: the thread is
+// read only after the photo is found inside the request's project, so a foreign
+// photo's comments never leave it and its answer is the missing photo's, byte
+// for byte.
 func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 	if a.comments == nil {
 		writeError(w, http.StatusServiceUnavailable, "comments backend not configured")
 		return
 	}
-	list, err := a.comments.List(r.Context(), comments.PhotoSubject(chi.URLParam(r, "uid")))
+	ctx := r.Context()
+	photo, err := a.store.GetByUIDInProject(ctx, auth.ProjectUIDFromContext(ctx), chi.URLParam(r, "uid"))
+	if errors.Is(err, photos.ErrPhotoNotFound) {
+		writeJSON(w, http.StatusOK, commentListResponse{Comments: []comments.Comment{}})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "fetching photo failed")
+		return
+	}
+	list, err := a.comments.List(ctx, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing comments failed")
 		return

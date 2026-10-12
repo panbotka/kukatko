@@ -218,12 +218,12 @@ func (a *API) writeFavoritePage(
 	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, hints pageHints,
 ) {
 	params.RatedBy = &userUID
-	list, err := a.store.List(r.Context(), params)
+	list, err := a.store.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
 		return
 	}
-	counts, err := a.store.CountMedia(r.Context(), params)
+	counts, err := a.store.CountMedia(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return

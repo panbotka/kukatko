@@ -654,12 +654,12 @@ func (a *API) writeRankedSearch(
 func (a *API) writeFilterPage(
 	w http.ResponseWriter, r *http.Request, userUID string, params photos.ListParams, hints pageHints,
 ) {
-	list, err := a.store.List(r.Context(), params)
+	list, err := a.store.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
 		return
 	}
-	counts, err := a.store.CountMedia(r.Context(), params)
+	counts, err := a.store.CountMedia(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "counting photos failed")
 		return
@@ -761,15 +761,13 @@ type photoDetail struct {
 // handleDetail returns a photo's full detail, including its file list and the
 // current user's is_favorite flag. A missing photo is answered with 404.
 func (a *API) handleDetail(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	photo, err := a.store.GetByUID(r.Context(), uid)
-	if err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
 	a.writeDetail(w, r, user.UID, photo)
@@ -845,7 +843,7 @@ func (a *API) resolveOCR(ctx context.Context, uid string) string {
 	if a.store == nil {
 		return ""
 	}
-	result, err := a.store.GetOCR(ctx, uid)
+	result, err := a.store.GetOCR(ctx, auth.ProjectUIDFromContext(ctx), uid)
 	if err != nil {
 		return ""
 	}
@@ -961,6 +959,25 @@ func (a *API) runStateChange(
 	a.enqueueSidecar(r.Context(), uid)
 	a.media.DecorateOne(r.Context(), &photo)
 	writeJSON(w, http.StatusOK, photo)
+}
+
+// photoInProject loads the photo named by the {uid} path parameter inside the
+// request's project and reports whether it could; when it could not, the answer
+// is already written. A photo of another project is ErrPhotoNotFound from the
+// store, so it is answered with the very 404 a photo that does not exist gets —
+// status, content type and body alike — and a tenant cannot probe for another
+// project's uids. Every per-photo read route gates on it before reading anything
+// keyed by the uid (faces, edits, renditions, similar): those child rows carry
+// no project of their own and are scoped through the photo. (The comments
+// listing gates the same way but answers a miss with an empty thread.)
+func (a *API) photoInProject(w http.ResponseWriter, r *http.Request) (photos.Photo, bool) {
+	ctx := r.Context()
+	photo, err := a.store.GetByUIDInProject(ctx, auth.ProjectUIDFromContext(ctx), chi.URLParam(r, "uid"))
+	if err != nil {
+		writePhotoError(w, err, "fetching photo failed")
+		return photos.Photo{}, false
+	}
+	return photo, true
 }
 
 // writePhotoError maps a store error to an HTTP response: 404 for a missing

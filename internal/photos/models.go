@@ -34,6 +34,12 @@ var (
 	// ErrEmptySearch indicates Search was called without a full-text query, which
 	// would otherwise rank every photo with a zero score.
 	ErrEmptySearch = errors.New("photos: empty full-text search query")
+	// ErrNoProject indicates a project-scoped read was called with an empty
+	// project uid. It is a programming error, never a user one: a scoped method
+	// never defaults the project, because defaulting is exactly how one tenant
+	// would end up reading another's library. Handlers pass
+	// auth.ProjectUIDFromContext.
+	ErrNoProject = errors.New("photos: no project given")
 	// ErrStackTooSmall indicates an attempt to form a stack from fewer than two
 	// distinct photos; a single photo is not a stack.
 	ErrStackTooSmall = errors.New("photos: a stack needs at least two members")

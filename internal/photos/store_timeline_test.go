@@ -91,7 +91,7 @@ func TestFlagImplausible(t *testing.T) {
 func TestBuildTimelineQuery(t *testing.T) {
 	t.Parallel()
 
-	query, args := buildTimelineQuery(ListParams{})
+	query, args := unscopedTimelineQuery(ListParams{})
 	if len(args) != 0 {
 		t.Fatalf("default params args = %v, want none", args)
 	}
@@ -107,7 +107,7 @@ func TestBuildTimelineQuery(t *testing.T) {
 	}
 
 	// A scoped filter binds its value and is ANDed onto the guard.
-	scoped, scopedArgs := buildTimelineQuery(ListParams{AlbumUIDs: []string{"al1"}})
+	scoped, scopedArgs := unscopedTimelineQuery(ListParams{AlbumUIDs: []string{"al1"}})
 	if len(scopedArgs) != 1 || scopedArgs[0] != "al1" {
 		t.Fatalf("album scope args = %v, want [al1]", scopedArgs)
 	}
@@ -159,7 +159,7 @@ func TestBuildTimelineQuery_followsGridOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			query, _ := buildTimelineQuery(tt.params)
+			query, _ := unscopedTimelineQuery(tt.params)
 			for _, want := range tt.want {
 				if !strings.Contains(query, want) {
 					t.Errorf("query %q missing %q", query, want)

@@ -101,40 +101,34 @@ func scanStackCandidates(rows pgx.Rows) ([]StackCandidate, error) {
 
 // ListStackMembers returns every photo belonging to the stack, the primary first
 // then by uid, each as a full row so callers can present the variants strip and
-// re-elect a primary. The result is empty (not nil) when no photo carries the uid.
-func (s *Store) ListStackMembers(ctx context.Context, stackUID string) ([]Photo, error) {
-	q := "SELECT " + photoColumns + " FROM photos WHERE stack_uid = $1 ORDER BY stack_primary DESC, uid"
-	rows, err := s.pool.Query(ctx, q, stackUID)
-	if err != nil {
-		return nil, fmt.Errorf("photos: querying stack members: %w", err)
+// re-elect a primary. The result is empty (not nil) when no photo of the project
+// carries the uid — a stack of another project reads as no stack at all. An
+// empty projectUID is ErrNoProject.
+func (s *Store) ListStackMembers(ctx context.Context, projectUID, stackUID string) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
 	}
-	defer rows.Close()
-
-	out := make([]Photo, 0)
-	for rows.Next() {
-		p, err := scanPhoto(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("photos: iterating stack members: %w", err)
-	}
-	return out, nil
+	q := "SELECT " + photoColumns + " FROM photos WHERE " + projectClause("$1") +
+		" AND stack_uid = $2 ORDER BY stack_primary DESC, uid"
+	return s.queryPhotos(ctx, "querying stack members", q, projectUID, stackUID)
 }
 
 // StackCounts returns, for each of the given stack uids that exists, how many
 // members it has. Uids with no rows are simply absent from the map. It backs the
-// grid's member-count badge, resolving a whole page's stacks in one query. An
-// empty input yields an empty map.
-func (s *Store) StackCounts(ctx context.Context, stackUIDs []string) (map[string]int, error) {
+// grid's member-count badge, resolving a whole page's stacks in one query. Only
+// the project's photos are counted. An empty input yields an empty map; an
+// empty projectUID is ErrNoProject.
+func (s *Store) StackCounts(ctx context.Context, projectUID string, stackUIDs []string) (map[string]int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	counts := make(map[string]int, len(stackUIDs))
 	if len(stackUIDs) == 0 {
 		return counts, nil
 	}
-	const q = `SELECT stack_uid, count(*) FROM photos WHERE stack_uid = ANY($1) GROUP BY stack_uid`
-	rows, err := s.pool.Query(ctx, q, stackUIDs)
+	const q = `SELECT stack_uid, count(*) FROM photos
+		WHERE photos.project_id = $1 AND stack_uid = ANY($2) GROUP BY stack_uid`
+	rows, err := s.pool.Query(ctx, q, projectUID, stackUIDs)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying stack counts: %w", err)
 	}

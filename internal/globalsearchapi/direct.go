@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -165,10 +166,15 @@ func (a *API) resolvePhotoRef(ctx context.Context, ref query.UIDRef, hit *direct
 
 // lookupPhoto resolves one photo-ish id to its photo row. found is false when
 // nothing carries the id; an error means the store failed.
+//
+// Every photo lookup is confined to the request's project, so another tenant's
+// id — a photo, a stack, a PhotoPrism uid, or a marker sitting on another
+// tenant's photo — resolves to nothing, the answer a non-existent id gets.
 func (a *API) lookupPhoto(ctx context.Context, ref query.UIDRef) (photos.Photo, bool, error) {
+	project := auth.ProjectUIDFromContext(ctx)
 	switch ref.Kind {
 	case query.EntityPhoto:
-		return getPhoto(a.photos.GetByUID(ctx, ref.UID))
+		return getPhoto(a.photos.GetByUIDInProject(ctx, project, ref.UID))
 	case query.EntityMarker:
 		marker, err := a.people.GetMarkerByUID(ctx, ref.UID)
 		if err != nil {
@@ -177,11 +183,11 @@ func (a *API) lookupPhoto(ctx context.Context, ref query.UIDRef) (photos.Photo, 
 			}
 			return photos.Photo{}, false, fmt.Errorf("globalsearchapi: resolving marker %s: %w", ref.UID, err)
 		}
-		return getPhoto(a.photos.GetByUID(ctx, marker.PhotoUID))
+		return getPhoto(a.photos.GetByUIDInProject(ctx, project, marker.PhotoUID))
 	case query.EntityStack:
-		return a.stackPrimary(ctx, ref.UID)
+		return a.stackPrimary(ctx, project, ref.UID)
 	case query.EntityPhotoprism:
-		return a.photoprismPhoto(ctx, ref.UID)
+		return a.photoprismPhoto(ctx, project, ref.UID)
 	case query.EntityAlbum, query.EntityLabel, query.EntityPerson:
 		return photos.Photo{}, false, fmt.Errorf("globalsearchapi: %s is not a photo reference", ref.Kind)
 	default:
@@ -190,10 +196,10 @@ func (a *API) lookupPhoto(ctx context.Context, ref query.UIDRef) (photos.Photo, 
 }
 
 // stackPrimary returns the primary photo of a stack. ListStackMembers orders the
-// primary first, so the first row is it; an empty stack (no photo carries the
-// uid) is a miss.
-func (a *API) stackPrimary(ctx context.Context, stackUID string) (photos.Photo, bool, error) {
-	members, err := a.photos.ListStackMembers(ctx, stackUID)
+// primary first, so the first row is it; an empty stack (no photo of the project
+// carries the uid) is a miss.
+func (a *API) stackPrimary(ctx context.Context, projectUID, stackUID string) (photos.Photo, bool, error) {
+	members, err := a.photos.ListStackMembers(ctx, projectUID, stackUID)
 	if err != nil {
 		return photos.Photo{}, false, fmt.Errorf("globalsearchapi: listing stack %s: %w", stackUID, err)
 	}
@@ -205,13 +211,14 @@ func (a *API) stackPrimary(ctx context.Context, stackUID string) (photos.Photo, 
 
 // photoprismPhoto resolves a PhotoPrism source uid: first the row imported under
 // it, then — for a source photo whose bytes were already catalogued under
-// another uid — the alias recorded for it (see migration 0046).
-func (a *API) photoprismPhoto(ctx context.Context, ppUID string) (photos.Photo, bool, error) {
-	photo, found, err := getPhoto(a.photos.GetByPhotoprismUID(ctx, ppUID))
+// another uid — the alias recorded for it (see migration 0046). Both halves are
+// confined to the project.
+func (a *API) photoprismPhoto(ctx context.Context, projectUID, ppUID string) (photos.Photo, bool, error) {
+	photo, found, err := getPhoto(a.photos.GetByPhotoprismUID(ctx, projectUID, ppUID))
 	if err != nil || found {
 		return photo, found, err
 	}
-	return getPhoto(a.photos.GetByPhotoprismAlias(ctx, ppUID))
+	return getPhoto(a.photos.GetByPhotoprismAlias(ctx, projectUID, ppUID))
 }
 
 // getPhoto turns a photo lookup's (photo, error) into the (photo, found, error)

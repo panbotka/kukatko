@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/ocrjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -160,7 +161,7 @@ func TestRecognize_storesAndMakesSearchable(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Errorf("sidecar calls = %d, want 1", calls.Load())
 	}
-	got, err := h.photos.GetOCR(ctx, photo.UID)
+	got, err := h.photos.GetOCR(ctx, project.BootstrapUID, photo.UID)
 	if err != nil {
 		t.Fatalf("GetOCR: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestRecognize_storesAndMakesSearchable(t *testing.T) {
 		t.Errorf("stored OCR = %+v", got)
 	}
 
-	found, err := h.photos.Search(ctx, photos.ListParams{FullText: "veselice"})
+	found, err := h.photos.Search(ctx, project.BootstrapUID, photos.ListParams{FullText: "veselice"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -221,7 +222,7 @@ func TestRecognize_offlineSidecarDefersTheJob(t *testing.T) {
 	if !errors.As(err, &retry) {
 		t.Fatalf("err = %v, want a worker.RetryAfterError", err)
 	}
-	if _, err := h.photos.GetOCR(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := h.photos.GetOCR(ctx, project.BootstrapUID, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetOCR = %v, want nothing stored while the box is down", err)
 	}
 	pending, err := h.photos.ListPhotosMissingOCR(ctx, 0)

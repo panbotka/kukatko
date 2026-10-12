@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // uidSet collects the UIDs of a photo slice into a set for order-independent
@@ -63,7 +64,7 @@ func TestList_albumScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the album's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil {
 			t.Fatalf("List(album): %v", err)
 		}
@@ -71,7 +72,7 @@ func TestList_albumScope(t *testing.T) {
 		if len(set) != 3 || set[outsider.UID] {
 			t.Fatalf("album scope = %v, want the 3 members without the outsider", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}})
+		total, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{AlbumUIDs: []string{album.UID}})
 		if err != nil || total != 3 {
 			t.Fatalf("Count(album) = %d, %v, want 3", total, err)
 		}
@@ -79,7 +80,7 @@ func TestList_albumScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		sep := time.Date(2023, 9, 1, 0, 0, 0, 0, time.UTC)
-		list, err := store.List(ctx, photos.ListParams{AlbumUIDs: []string{album.UID}, TakenBefore: &sep})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{AlbumUIDs: []string{album.UID}, TakenBefore: &sep})
 		if err != nil {
 			t.Fatalf("List(album, taken_before): %v", err)
 		}
@@ -91,7 +92,7 @@ func TestList_albumScope(t *testing.T) {
 
 	t.Run("scope honours sort and pagination", func(t *testing.T) {
 		// Oldest-first, first page of one: the album's earliest photo.
-		list, err := store.List(ctx, photos.ListParams{
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{
 			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 0,
 		})
 		if err != nil {
@@ -101,7 +102,7 @@ func TestList_albumScope(t *testing.T) {
 			t.Fatalf("first oldest page = %v, want [older]", list)
 		}
 		// Second page advances to the next-oldest member.
-		list, err = store.List(ctx, photos.ListParams{
+		list, err = store.List(ctx, project.BootstrapUID, photos.ListParams{
 			AlbumUIDs: []string{album.UID}, Sort: photos.SortByTakenAt, Order: photos.OrderAsc, Limit: 1, Offset: 1,
 		})
 		if err != nil {
@@ -152,7 +153,7 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 	}
 
 	params := photos.ListParams{AlbumUIDs: []string{first.UID, second.UID}}
-	list, err := store.List(ctx, params)
+	list, err := store.List(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("List(both albums): %v", err)
 	}
@@ -160,7 +161,7 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 	if len(set) != 1 || !set[inBoth.UID] {
 		t.Fatalf("multi-album AND = %v, want only the photo in both albums", set)
 	}
-	total, err := store.Count(ctx, params)
+	total, err := store.Count(ctx, project.BootstrapUID, params)
 	if err != nil || total != 1 {
 		t.Fatalf("Count(both albums) = %d, %v, want 1", total, err)
 	}
@@ -219,7 +220,7 @@ func TestList_subjectScope(t *testing.T) {
 	mustMarker(t, ppl, rejected.UID, subject.UID, true)
 
 	t.Run("scope keeps only photos containing the subject", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{SubjectUIDs: []string{subject.UID}})
 		if err != nil {
 			t.Fatalf("List(subject): %v", err)
 		}
@@ -227,7 +228,7 @@ func TestList_subjectScope(t *testing.T) {
 		if len(set) != 2 || set[rejected.UID] || set[without.UID] {
 			t.Fatalf("subject scope = %v, want the 2 photos with a valid marker", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}})
+		total, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{SubjectUIDs: []string{subject.UID}})
 		if err != nil || total != 2 {
 			t.Fatalf("Count(subject) = %d, %v, want 2", total, err)
 		}
@@ -235,7 +236,7 @@ func TestList_subjectScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}, TakenAfter: &after})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{SubjectUIDs: []string{subject.UID}, TakenAfter: &after})
 		if err != nil {
 			t.Fatalf("List(subject, taken_after): %v", err)
 		}
@@ -275,7 +276,7 @@ func TestList_multipleSubjectsAND(t *testing.T) {
 	mustMarker(t, ppl, onlyAlice.UID, alice.UID, false)
 
 	params := photos.ListParams{SubjectUIDs: []string{alice.UID, bob.UID}}
-	list, err := store.List(ctx, params)
+	list, err := store.List(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("List(both subjects): %v", err)
 	}
@@ -283,7 +284,7 @@ func TestList_multipleSubjectsAND(t *testing.T) {
 	if len(set) != 1 || !set[both.UID] {
 		t.Fatalf("multi-subject AND = %v, want only the photo containing both people", set)
 	}
-	total, err := store.Count(ctx, params)
+	total, err := store.Count(ctx, project.BootstrapUID, params)
 	if err != nil || total != 1 {
 		t.Fatalf("Count(both subjects) = %d, %v, want 1", total, err)
 	}
@@ -323,7 +324,7 @@ func TestList_labelScope(t *testing.T) {
 	}
 
 	t.Run("scope keeps only the label's photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil {
 			t.Fatalf("List(label): %v", err)
 		}
@@ -331,7 +332,7 @@ func TestList_labelScope(t *testing.T) {
 		if len(set) != 2 || set[untagged.UID] {
 			t.Fatalf("label scope = %v, want the 2 tagged photos", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{LabelUIDs: []string{label.UID}})
+		total, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{LabelUIDs: []string{label.UID}})
 		if err != nil || total != 2 {
 			t.Fatalf("Count(label) = %d, %v, want 2", total, err)
 		}
@@ -339,7 +340,7 @@ func TestList_labelScope(t *testing.T) {
 
 	t.Run("scope combines with a metadata filter", func(t *testing.T) {
 		after := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-		list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{label.UID}, TakenAfter: &after})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{LabelUIDs: []string{label.UID}, TakenAfter: &after})
 		if err != nil {
 			t.Fatalf("List(label, taken_after): %v", err)
 		}
@@ -384,7 +385,7 @@ func TestList_multipleLabelsAND(t *testing.T) {
 		t.Fatalf("AttachLabel(onlyBeach, beach): %v", err)
 	}
 
-	list, err := store.List(ctx, photos.ListParams{LabelUIDs: []string{beach.UID, sunset.UID}})
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{LabelUIDs: []string{beach.UID, sunset.UID}})
 	if err != nil {
 		t.Fatalf("List(both labels): %v", err)
 	}

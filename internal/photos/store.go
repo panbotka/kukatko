@@ -200,21 +200,45 @@ func (s *Store) Create(ctx context.Context, p Photo) (Photo, error) {
 	return created, nil
 }
 
-// GetByUID returns the photo with the given UID, or ErrPhotoNotFound.
+// GetByUID returns the photo with the given UID in whichever project holds it,
+// or ErrPhotoNotFound.
+//
+// It is the unscoped load, kept for the callers that have no project to give:
+// the worker loaders (a per-photo job learns its project from the photo) and
+// the write side, both scoped in a later step. A handler answering a reader
+// uses GetByUIDInProject, so a foreign uid is a plain miss.
 func (s *Store) GetByUID(ctx context.Context, uid string) (Photo, error) {
 	return s.getPhoto(ctx, "uid", uid)
 }
 
-// GetByFileHash returns the photo with the given SHA256 file hash, or
-// ErrPhotoNotFound. It is the primary dedup lookup.
+// GetByUIDInProject returns the photo with the given UID if it belongs to the
+// project, or ErrPhotoNotFound — the same error for a photo of another project
+// as for one that does not exist, so the two cannot be told apart. An empty
+// projectUID is ErrNoProject.
+func (s *Store) GetByUIDInProject(ctx context.Context, projectUID, uid string) (Photo, error) {
+	return s.getPhotoInProject(ctx, projectUID, "uid", uid)
+}
+
+// GetByFileHash returns the photo with the given SHA256 file hash in whichever
+// project holds it, or ErrPhotoNotFound. It is the unscoped dedup lookup of the
+// upload pipeline, which is scoped together with the write side; since the
+// hash is unique per project only, it answers for one arbitrary holder when
+// several projects catalogued the same bytes.
 func (s *Store) GetByFileHash(ctx context.Context, hash string) (Photo, error) {
 	return s.getPhoto(ctx, "file_hash", hash)
 }
 
-// GetByPhotoprismUID returns the photo imported from the given PhotoPrism UID,
-// or ErrPhotoNotFound.
-func (s *Store) GetByPhotoprismUID(ctx context.Context, ppUID string) (Photo, error) {
-	return s.getPhoto(ctx, "photoprism_uid", ppUID)
+// GetByFileHashInProject returns the project's photo with the given SHA256 file
+// hash, or ErrPhotoNotFound — also when only another project holds those bytes.
+// An empty projectUID is ErrNoProject.
+func (s *Store) GetByFileHashInProject(ctx context.Context, projectUID, hash string) (Photo, error) {
+	return s.getPhotoInProject(ctx, projectUID, "file_hash", hash)
+}
+
+// GetByPhotoprismUID returns the project's photo imported from the given
+// PhotoPrism UID, or ErrPhotoNotFound. An empty projectUID is ErrNoProject.
+func (s *Store) GetByPhotoprismUID(ctx context.Context, projectUID, ppUID string) (Photo, error) {
+	return s.getPhotoInProject(ctx, projectUID, "photoprism_uid", ppUID)
 }
 
 // GetByPhotoprismFileHash returns the photo holding the PhotoPrism file with the
@@ -224,14 +248,16 @@ func (s *Store) GetByPhotoprismUID(ctx context.Context, ppUID string) (Photo, er
 // grouped in one stack, and only the displayable one carries the photoprism_uid.
 // It is how a RAW sibling is still identifiable by its source file after the
 // PhotoPrism import that created it was retired.
-func (s *Store) GetByPhotoprismFileHash(ctx context.Context, ppFileHash string) (Photo, error) {
-	return s.getPhoto(ctx, "photoprism_file_hash", ppFileHash)
+//
+// The lookup is confined to the project; an empty projectUID is ErrNoProject.
+func (s *Store) GetByPhotoprismFileHash(ctx context.Context, projectUID, ppFileHash string) (Photo, error) {
+	return s.getPhotoInProject(ctx, projectUID, "photoprism_file_hash", ppFileHash)
 }
 
-// GetByPhotosorterUID returns the photo migrated from the given photo-sorter
-// UID, or ErrPhotoNotFound.
-func (s *Store) GetByPhotosorterUID(ctx context.Context, psUID string) (Photo, error) {
-	return s.getPhoto(ctx, "photosorter_uid", psUID)
+// GetByPhotosorterUID returns the project's photo migrated from the given
+// photo-sorter UID, or ErrPhotoNotFound. An empty projectUID is ErrNoProject.
+func (s *Store) GetByPhotosorterUID(ctx context.Context, projectUID, psUID string) (Photo, error) {
+	return s.getPhotoInProject(ctx, projectUID, "photosorter_uid", psUID)
 }
 
 // SetPhotoprismRef stamps the PhotoPrism external identifiers (the photo's
@@ -310,23 +336,51 @@ func (s *Store) getPhoto(ctx context.Context, col, val string) (Photo, error) {
 	return photo, nil
 }
 
-// ListByUIDs returns the photos whose uid is in uids, in unspecified order. It
-// is a batch lookup for callers that already hold a set of uids (for example the
-// similar-photos endpoint, which resolves vector matches to photo records) and
-// want to avoid issuing one query per uid. Missing uids are simply absent from
-// the result; an empty input returns an empty slice without querying.
-func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) {
+// getPhotoInProject is getPhoto confined to one project: a row of another
+// project is ErrPhotoNotFound exactly like a missing one. col is a trusted
+// internal constant, never user input; an empty projectUID is ErrNoProject.
+func (s *Store) getPhotoInProject(ctx context.Context, projectUID, col, val string) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	q := "SELECT " + photoColumns + " FROM photos WHERE " + projectClause("$1") + " AND " + col + " = $2"
+	photo, err := scanPhoto(s.pool.QueryRow(ctx, q, projectUID, val))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Photo{}, ErrPhotoNotFound
+		}
+		return Photo{}, err
+	}
+	return photo, nil
+}
+
+// ListByUIDsInProject returns the photos of the project whose uid is in uids,
+// in unspecified order: ListByUIDs with every foreign uid dropped as if it were
+// missing. It is what a reader-facing handler resolves a set of candidate uids
+// with (the similar photos, say), so a candidate from another project's vectors
+// can never surface. An empty input returns an empty slice without querying; an
+// empty projectUID is ErrNoProject.
+func (s *Store) ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if len(uids) == 0 {
 		return []Photo{}, nil
 	}
-	q := "SELECT " + photoColumns + " FROM photos WHERE uid = ANY($1)"
-	rows, err := s.pool.Query(ctx, q, uids)
+	q := "SELECT " + photoColumns + " FROM photos WHERE " + projectClause("$1") + " AND uid = ANY($2)"
+	return s.queryPhotos(ctx, "listing by uids in project", q, projectUID, uids)
+}
+
+// queryPhotos runs q and scans every row as a full photo, wrapping a failure
+// with what (the operation, for the error message).
+func (s *Store) queryPhotos(ctx context.Context, what, q string, args ...any) ([]Photo, error) {
+	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("photos: listing by uids: %w", err)
+		return nil, fmt.Errorf("photos: %s: %w", what, err)
 	}
 	defer rows.Close()
 
-	out := make([]Photo, 0, len(uids))
+	out := make([]Photo, 0)
 	for rows.Next() {
 		photo, err := scanPhoto(rows)
 		if err != nil {
@@ -335,9 +389,24 @@ func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) 
 		out = append(out, photo)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("photos: iterating by uids: %w", err)
+		return nil, fmt.Errorf("photos: iterating (%s): %w", what, err)
 	}
 	return out, nil
+}
+
+// ListByUIDs returns the photos whose uid is in uids, in unspecified order. It
+// is a batch lookup for callers that already hold a set of uids (for example the
+// similar-photos endpoint, which resolves vector matches to photo records) and
+// want to avoid issuing one query per uid. Missing uids are simply absent from
+// the result; an empty input returns an empty slice without querying. It is
+// unscoped — kept for the callers that are scoped in later steps; a reader-
+// facing handler uses ListByUIDsInProject.
+func (s *Store) ListByUIDs(ctx context.Context, uids []string) ([]Photo, error) {
+	if len(uids) == 0 {
+		return []Photo{}, nil
+	}
+	q := "SELECT " + photoColumns + " FROM photos WHERE uid = ANY($1)"
+	return s.queryPhotos(ctx, "listing by uids", q, uids)
 }
 
 // UpdateMetadata applies the user-editable metadata in m to the photo identified

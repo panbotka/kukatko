@@ -55,16 +55,21 @@ func (s *Store) SaveOCR(ctx context.Context, uid string, result OCR) error {
 }
 
 // getOCRSQL reads one photo's stored OCR result.
-const getOCRSQL = `SELECT ocr_text, ocr_model FROM photos WHERE uid = $1 AND ocr_at IS NOT NULL`
+const getOCRSQL = `SELECT ocr_text, ocr_model FROM photos
+WHERE photos.project_id = $1 AND uid = $2 AND ocr_at IS NOT NULL`
 
 // GetOCR returns the OCR result stored for the photo identified by uid. It
 // returns ErrPhotoNotFound both when the photo does not exist and when it has
 // never been OCR'd — from a reader's point of view there is no result either way,
 // and the caller that needs to tell them apart is the backfill, which asks by
-// listing rather than by uid.
-func (s *Store) GetOCR(ctx context.Context, uid string) (OCR, error) {
+// listing rather than by uid. A photo of another project is ErrPhotoNotFound
+// too; an empty projectUID is ErrNoProject.
+func (s *Store) GetOCR(ctx context.Context, projectUID, uid string) (OCR, error) {
+	if err := requireProject(projectUID); err != nil {
+		return OCR{}, err
+	}
 	var out OCR
-	if err := s.pool.QueryRow(ctx, getOCRSQL, uid).Scan(&out.Text, &out.Model); err != nil {
+	if err := s.pool.QueryRow(ctx, getOCRSQL, projectUID, uid).Scan(&out.Text, &out.Model); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return OCR{}, ErrPhotoNotFound
 		}

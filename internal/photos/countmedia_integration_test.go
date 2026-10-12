@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestCountMedia_splitsVideosFromStills is the guarantee the library listing's
@@ -68,7 +69,7 @@ func TestCountMedia_splitsVideosFromStills(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			counts, err := store.CountMedia(ctx, tt.params)
+			counts, err := store.CountMedia(ctx, project.BootstrapUID, tt.params)
 			if err != nil {
 				t.Fatalf("CountMedia: %v", err)
 			}
@@ -76,7 +77,7 @@ func TestCountMedia_splitsVideosFromStills(t *testing.T) {
 				t.Fatalf("CountMedia = {Total:%d Videos:%d}, want {Total:%d Videos:%d}",
 					counts.Total, counts.Videos, tt.wantTotal, tt.wantVideos)
 			}
-			total, err := store.Count(ctx, tt.params)
+			total, err := store.Count(ctx, project.BootstrapUID, tt.params)
 			if err != nil {
 				t.Fatalf("Count: %v", err)
 			}

@@ -107,7 +107,7 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 // matched, sorted so a comparison does not depend on the ordering.
 func matchedUIDs(t *testing.T, store *photos.Store, filters []query.Filter) []string {
 	t.Helper()
-	list, err := store.List(t.Context(), photos.ListParams{QueryFilters: filters})
+	list, err := store.List(t.Context(), project.BootstrapUID, photos.ListParams{QueryFilters: filters})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

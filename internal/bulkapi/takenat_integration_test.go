@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -283,7 +284,7 @@ func TestBulk_setTakenAtLandsInTheRightPeriod(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	years, err := env.photos.YearBuckets(ctx, photos.ListParams{})
+	years, err := env.photos.YearBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("YearBuckets: %v", err)
 	}
@@ -296,7 +297,7 @@ func TestBulk_setTakenAtLandsInTheRightPeriod(t *testing.T) {
 
 	// The timeline groups by the same anchor, so the two scans have to sit in
 	// January 1974 rather than in whatever month the library was imported in.
-	buckets, err := env.photos.TimelineBuckets(ctx, photos.ListParams{})
+	buckets, err := env.photos.TimelineBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("TimelineBuckets: %v", err)
 	}
@@ -346,7 +347,7 @@ func assertListedUIDs(
 	t *testing.T, ctx context.Context, env *env, params photos.ListParams, want []string,
 ) {
 	t.Helper()
-	got, err := env.photos.List(ctx, params)
+	got, err := env.photos.List(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

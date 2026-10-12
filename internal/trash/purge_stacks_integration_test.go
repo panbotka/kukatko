@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestPurgeExpired_repairsStack covers the regression where the retention purge
@@ -51,7 +52,7 @@ func TestPurgeExpired_repairsStack(t *testing.T) {
 		t.Error("dissolved sibling is still flagged stack_primary")
 	}
 
-	list, err := env.store.List(ctx, photos.ListParams{})
+	list, err := env.store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

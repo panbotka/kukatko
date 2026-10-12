@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named by
@@ -26,14 +27,14 @@ func TestPhotoprismAlias_resolvesToTheHoldingPhoto(t *testing.T) {
 		t.Fatalf("AddPhotoprismAlias: %v", err)
 	}
 
-	got, err := store.GetByPhotoprismAlias(ctx, "ppDup")
+	got, err := store.GetByPhotoprismAlias(ctx, project.BootstrapUID, "ppDup")
 	if err != nil {
 		t.Fatalf("GetByPhotoprismAlias: %v", err)
 	}
 	if got.UID != winner.UID {
 		t.Errorf("alias resolved to %q, want %q", got.UID, winner.UID)
 	}
-	if _, err := store.GetByPhotoprismAlias(ctx, "ppUnknown"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetByPhotoprismAlias(ctx, project.BootstrapUID, "ppUnknown"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("unaliased uid error = %v, want ErrPhotoNotFound", err)
 	}
 
@@ -90,7 +91,7 @@ func TestPhotoprismAlias_cascadesWithTheHoldingPhoto(t *testing.T) {
 	if err := store.Delete(ctx, winner.UID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := store.GetByPhotoprismAlias(ctx, "ppDup"); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetByPhotoprismAlias(ctx, project.BootstrapUID, "ppDup"); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("alias error after delete = %v, want ErrPhotoNotFound", err)
 	}
 }

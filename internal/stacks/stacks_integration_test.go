@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/stacks"
 )
 
@@ -56,7 +57,7 @@ func detector(store *photos.Store) *stacks.Service {
 // listUIDs returns the uids the default (visible-only) list returns.
 func listUIDs(t *testing.T, store *photos.Store) map[string]bool {
 	t.Helper()
-	list, err := store.List(t.Context(), photos.ListParams{})
+	list, err := store.List(t.Context(), project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestIntegration_DetectStacksBackfill(t *testing.T) {
 	if !visible[jpg.UID] || !visible[other.UID] || visible[raw.UID] {
 		t.Errorf("visible list = %v, want jpg+other without raw", visible)
 	}
-	if n, err := store.Count(ctx, photos.ListParams{}); err != nil || n != 2 {
+	if n, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{}); err != nil || n != 2 {
 		t.Errorf("Count = %d (err %v), want 2", n, err)
 	}
 
@@ -236,7 +237,7 @@ func assertCounts(
 	if got := markerCount(t, ppl, subjectUID); got != want {
 		t.Errorf("subject marker count = %d, want %d", got, want)
 	}
-	if years, err := store.YearBuckets(t.Context(), photos.ListParams{}); err != nil || years.Total != want {
+	if years, err := store.YearBuckets(t.Context(), project.BootstrapUID, photos.ListParams{}); err != nil || years.Total != want {
 		t.Errorf("year-facet total = %d (err %v), want %d", years.Total, err, want)
 	}
 }

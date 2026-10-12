@@ -54,17 +54,27 @@ func (s *Store) AddPhotoprismAlias(ctx context.Context, ppUID, photoUID, ppFileH
 // content. The alias is reached by a scalar subquery rather than a join, because
 // photos and photoprism_aliases share three column names (photoprism_uid,
 // photoprism_file_hash, created_at) and photoColumns is deliberately unqualified.
+//
+// Both halves are confined to the project ($1): an alias is keyed by
+// (project_id, photoprism_uid), so the same source uid may be recorded once per
+// project, and only this project's record — pointing at this project's photo —
+// may answer.
 var getByPhotoprismAliasSQL = `SELECT ` + photoColumns + `
 FROM photos
-WHERE uid = (SELECT photo_uid FROM photoprism_aliases WHERE photoprism_uid = $1)`
+WHERE photos.project_id = $1
+  AND uid = (SELECT photo_uid FROM photoprism_aliases WHERE project_id = $1 AND photoprism_uid = $2)`
 
 // GetByPhotoprismAlias returns the catalogue photo holding the content of a
 // PhotoPrism photo that collapsed onto it, or ErrPhotoNotFound when the uid is not
 // aliased. It is the second half of resolving a source uid: GetByPhotoprismUID
 // answers for a source photo with a row of its own, this one for a source photo
-// whose content is already catalogued under another uid.
-func (s *Store) GetByPhotoprismAlias(ctx context.Context, ppUID string) (Photo, error) {
-	photo, err := scanPhoto(s.pool.QueryRow(ctx, getByPhotoprismAliasSQL, ppUID))
+// whose content is already catalogued under another uid. The lookup is confined
+// to the project; an empty projectUID is ErrNoProject.
+func (s *Store) GetByPhotoprismAlias(ctx context.Context, projectUID, ppUID string) (Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Photo{}, err
+	}
+	photo, err := scanPhoto(s.pool.QueryRow(ctx, getByPhotoprismAliasSQL, projectUID, ppUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Photo{}, ErrPhotoNotFound

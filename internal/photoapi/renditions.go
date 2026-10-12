@@ -73,11 +73,11 @@ type renditionsResponse struct {
 // RequireAuth: it is a read, and it tells the caller nothing they could not learn
 // by fetching the master playlist they are already allowed to play.
 func (a *API) handleRenditions(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	if _, err := a.store.GetByUID(r.Context(), uid); err != nil {
-		writePhotoError(w, err, "loading photo failed")
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
+	uid := photo.UID
 	if a.hls == nil {
 		writeJSON(w, http.StatusOK, renditionsResponse{Renditions: []renditionView{}})
 		return

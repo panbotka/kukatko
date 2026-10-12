@@ -528,7 +528,7 @@ func TestTaskScope_listsStackMembers(t *testing.T) {
 	task := f.mustCreate(t, "Přepočítat RAW", raw.UID)
 	scope := photos.ListParams{TaskUIDs: []string{task.UID}}
 
-	listed, err := f.photos.List(ctx, scope)
+	listed, err := f.photos.List(ctx, project.BootstrapUID, scope)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestTaskScope_listsStackMembers(t *testing.T) {
 		t.Errorf("task-scoped listing = %v, want the stacked RAW %s", listedUIDs(listed), raw.UID)
 	}
 
-	count, err := f.photos.Count(ctx, scope)
+	count, err := f.photos.Count(ctx, project.BootstrapUID, scope)
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -544,7 +544,7 @@ func TestTaskScope_listsStackMembers(t *testing.T) {
 		t.Errorf("grid count = %d but the header says %d", count, task.PhotoCount)
 	}
 
-	library, err := f.photos.List(ctx, photos.ListParams{})
+	library, err := f.photos.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List(library): %v", err)
 	}

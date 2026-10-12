@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -584,7 +585,7 @@ func TestSubjectPhotosMatchLibraryPersonFacet(t *testing.T) {
 
 	// The person facet with the default (newest) sort — exactly what the viewer's
 	// neighbours hook pages when a photo is opened from the subject gallery.
-	list, err := photoStore.List(ctx, photos.ListParams{
+	list, err := photoStore.List(ctx, project.BootstrapUID, photos.ListParams{
 		SubjectUIDs: []string{alice.UID},
 		Limit:       100,
 	})

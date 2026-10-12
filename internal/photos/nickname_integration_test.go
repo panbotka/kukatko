@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -85,7 +86,7 @@ func TestPersonFilter_nickname(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			parsed := query.Parse(tt.query)
-			list, err := store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+			list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 			if err != nil {
 				t.Fatalf("List(%q): %v", tt.query, err)
 			}

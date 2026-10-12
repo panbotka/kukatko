@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -314,7 +315,7 @@ func TestLibraryStats_ListedMatchesTheLibraryGrid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}
-	grid, err := photos.NewStore(db.Pool()).Count(t.Context(), photos.ListParams{})
+	grid, err := photos.NewStore(db.Pool()).Count(t.Context(), project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("counting the library listing: %v", err)
 	}

@@ -65,7 +65,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 	t.Run("min rating keeps photos at or above the threshold", func(t *testing.T) {
 		three := 3
 		params := photos.ListParams{RatedBy: &alice, MinRating: &three}
-		list, err := store.List(ctx, params)
+		list, err := store.List(ctx, project.BootstrapUID, params)
 		if err != nil {
 			t.Fatalf("List(min rating): %v", err)
 		}
@@ -73,7 +73,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 		if len(set) != 1 || !set[high.UID] {
 			t.Fatalf("min rating 3 = %v, want only high", set)
 		}
-		total, err := store.Count(ctx, params)
+		total, err := store.Count(ctx, project.BootstrapUID, params)
 		if err != nil || total != 1 {
 			t.Fatalf("Count(min rating) = %d, %v, want 1", total, err)
 		}
@@ -82,7 +82,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 	t.Run("min rating is per-user", func(t *testing.T) {
 		one := 1
 		// Bob has rated nothing, so even rating >= 1 matches nothing for him.
-		list, err := store.List(ctx, photos.ListParams{RatedBy: &bob, MinRating: &one})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{RatedBy: &bob, MinRating: &one})
 		if err != nil {
 			t.Fatalf("List(bob min rating): %v", err)
 		}
@@ -93,7 +93,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 
 	t.Run("flag filter keeps only the flagged photos", func(t *testing.T) {
 		pick := "pick"
-		list, err := store.List(ctx, photos.ListParams{RatedBy: &alice, Flag: &pick})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{RatedBy: &alice, Flag: &pick})
 		if err != nil {
 			t.Fatalf("List(flag pick): %v", err)
 		}
@@ -103,7 +103,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 		}
 
 		reject := "reject"
-		list, err = store.List(ctx, photos.ListParams{RatedBy: &alice, Flag: &reject})
+		list, err = store.List(ctx, project.BootstrapUID, photos.ListParams{RatedBy: &alice, Flag: &reject})
 		if err != nil {
 			t.Fatalf("List(flag reject): %v", err)
 		}
@@ -114,7 +114,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 	})
 
 	t.Run("rating sort orders by the user's rating with unrated last", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{
 			RatedBy: &alice, Sort: photos.SortByRating, Order: photos.OrderDesc,
 		})
 		if err != nil {
@@ -131,7 +131,7 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 	})
 
 	t.Run("rating sort ascending keeps unrated last", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{
 			RatedBy: &alice, Sort: photos.SortByRating, Order: photos.OrderAsc,
 		})
 		if err != nil {
@@ -184,7 +184,7 @@ func TestList_eyeFlagFilter(t *testing.T) {
 
 	eye := "eye"
 	t.Run("flag filter keeps only the eye-marked photo", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{RatedBy: &alice, Flag: &eye})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{RatedBy: &alice, Flag: &eye})
 		if err != nil {
 			t.Fatalf("List(flag eye): %v", err)
 		}
@@ -195,7 +195,7 @@ func TestList_eyeFlagFilter(t *testing.T) {
 	})
 
 	t.Run("eye mark is per-user", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{RatedBy: &bob, Flag: &eye})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{RatedBy: &bob, Flag: &eye})
 		if err != nil {
 			t.Fatalf("List(bob flag eye): %v", err)
 		}

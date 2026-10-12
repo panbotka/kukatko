@@ -11,12 +11,15 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/apitest"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/mapsapi"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -53,13 +56,26 @@ func newGeoEnv(t *testing.T) *geoEnv {
 	photoStore := photos.NewStore(db.Pool())
 	api := mapsapi.NewAPI(mapsapi.Config{
 		Photos:      photoStore,
-		RequireAuth: passthroughAuth,
+		RequireAuth: admitBootstrap(t, db.Pool()),
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", api.RegisterRoutes)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
 	return &geoEnv{server: srv, photos: photoStore, organize: organize.NewStore(db.Pool())}
+}
+
+// admitBootstrap returns a guard admitting every request as a member of the
+// bootstrap project, where every photo these tests seed lands: the handler is
+// under test, not authorisation, but the photo store refuses to run without a
+// project.
+func admitBootstrap(t *testing.T, pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	t.Helper()
+	p, err := project.NewStore(pool).Get(t.Context(), project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("loading the bootstrap project: %v", err)
+	}
+	return auth.AdmitInProject(auth.User{UID: "us-test"}, p, project.RoleAdmin)
 }
 
 // seedGeo catalogues a photo with the given coordinates (nil lat/lng for a

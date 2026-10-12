@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // filterUIDSet runs FilterUIDs and returns the surviving uids as a set, for
 // order-independent membership assertions (the method's order is unspecified).
 func filterUIDSet(t *testing.T, store *photos.Store, uids []string, params photos.ListParams) map[string]bool {
 	t.Helper()
-	got, err := store.FilterUIDs(t.Context(), uids, params)
+	got, err := store.FilterUIDs(t.Context(), project.BootstrapUID, uids, params)
 	if err != nil {
 		t.Fatalf("FilterUIDs(%v, %+v): %v", uids, params, err)
 	}
@@ -73,7 +74,7 @@ func TestFilterUIDs_appliesFiltersAndIgnoresUnknown(t *testing.T) {
 	})
 
 	t.Run("empty input returns empty without error", func(t *testing.T) {
-		got, err := store.FilterUIDs(ctx, nil, photos.ListParams{})
+		got, err := store.FilterUIDs(ctx, project.BootstrapUID, nil, photos.ListParams{})
 		if err != nil || len(got) != 0 {
 			t.Fatalf("FilterUIDs(nil) = %v, %v, want empty/nil", got, err)
 		}

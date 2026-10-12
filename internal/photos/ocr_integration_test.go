@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -34,7 +35,7 @@ func ocrPhoto(hash, title string) photos.Photo {
 func listUIDsByQuery(t *testing.T, store *photos.Store, input string) []string {
 	t.Helper()
 	parsed := query.Parse(input)
-	list, err := store.List(t.Context(), photos.ListParams{
+	list, err := store.List(t.Context(), project.BootstrapUID, photos.ListParams{
 		Search:       parsed.PlainText(),
 		SearchNot:    parsed.NotTerms(),
 		QueryFilters: parsed.Filters,
@@ -169,13 +170,13 @@ func TestOCR_saveAndRead(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := store.GetOCR(ctx, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if _, err := store.GetOCR(ctx, project.BootstrapUID, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Fatalf("GetOCR before any run = %v, want ErrPhotoNotFound", err)
 	}
 	if err := store.SaveOCR(ctx, photo.UID, photos.OCR{Text: "PRVNÍ", Model: "v1"}); err != nil {
 		t.Fatalf("SaveOCR: %v", err)
 	}
-	got, err := store.GetOCR(ctx, photo.UID)
+	got, err := store.GetOCR(ctx, project.BootstrapUID, photo.UID)
 	if err != nil {
 		t.Fatalf("GetOCR: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestOCR_saveAndRead(t *testing.T) {
 	if err := store.SaveOCR(ctx, photo.UID, photos.OCR{Text: "DRUHÉ", Model: "v2"}); err != nil {
 		t.Fatalf("SaveOCR again: %v", err)
 	}
-	if got, _ = store.GetOCR(ctx, photo.UID); got.Text != "DRUHÉ" || got.Model != "v2" {
+	if got, _ = store.GetOCR(ctx, project.BootstrapUID, photo.UID); got.Text != "DRUHÉ" || got.Model != "v2" {
 		t.Errorf("GetOCR after re-run = %+v, want DRUHÉ/v2", got)
 	}
 
@@ -195,7 +196,7 @@ func TestOCR_saveAndRead(t *testing.T) {
 	if err := store.SaveOCR(ctx, photo.UID, photos.OCR{Model: "v2"}); err != nil {
 		t.Fatalf("SaveOCR empty: %v", err)
 	}
-	if got, err = store.GetOCR(ctx, photo.UID); err != nil || got.Text != "" {
+	if got, err = store.GetOCR(ctx, project.BootstrapUID, photo.UID); err != nil || got.Text != "" {
 		t.Errorf("GetOCR after empty reading = %+v, %v; want an empty stored text", got, err)
 	}
 

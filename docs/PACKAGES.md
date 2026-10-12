@@ -391,7 +391,36 @@ to `## Package map` in `CLAUDE.md`.
   ES256 key producing real attestation objects, assertions and signatures, because every step of a
   ceremony *is* a signature and a stub that answered "verified" would test the stub),
   `internal/photos/`
-  (the photo-catalog core: typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
+  (the photo-catalog core.
+  **Project scope — the canonical convention every multi-tenancy scoping step follows**
+  (`store_project.go`): a store method that reads a **root table** (one carrying `project_id`,
+  see `docs/superpowers/specs/2026-10-11-multi-tenancy-design.md` §2.4) takes `projectUID string` as
+  its **first argument after `ctx`** and **never defaults it** — an empty value is the typed
+  `ErrNoProject` (`requireProject`), a programming error, never "the whole instance". The predicate is
+  `projectClause` = `photos.project_id = $n` (qualified, so it stays unambiguous next to a joined table
+  that carries `project_id` too). A row of another project is **the same error as a missing row**
+  (`ErrPhotoNotFound`, an empty list), so the HTTP layer answers it with the very 404 a missing uid
+  gets. Handlers pass `auth.ProjectUIDFromContext(ctx)`; nothing else may name the project. **Child
+  tables** (`photo_files`, `photo_edits`, markers, comments, renditions…) carry no column and are scoped
+  through their root: a reader keyed by a photo uid stays unscoped, and the handler gates on a scoped
+  load of the photo first (`photoapi.photoInProject`). Scoped so far: the whole listing path —
+  `List`/`Search`/`FilterUIDs`/`Count`/`CountMedia`/`TimelineBuckets`/`YearBuckets`/`UploaderBuckets`
+  share `buildWhere(projectUID, params)`, whose **first clause is always the project predicate bound as
+  `$1`** (also under `MatchNone`), and whose placeholder `whereClauses` hands to the query-language
+  compiler (`condEnv.project`): every condition that resolves a name or an id against another root table
+  — `album:`, `label:`, `task:`, `person:`, `family:` (the root of the walk, kept uncorrelated), the
+  alias arm of `uid:`, the reference photo of `near:` — confines that lookup to the project too
+  (`TestQueryKeys_compileInsideTheProject` walks `query.Keys()`, so a new key is covered the day it is
+  added); the single-row lookups `GetByUIDInProject`, `GetByFileHashInProject`, `GetByPhotoprismUID`,
+  `GetByPhotoprismFileHash`, `GetByPhotosorterUID`, `GetByPhotoprismAlias` (the alias table's own
+  `project_id` in the sub-select); `ListByUIDsInProject`, `ListStackMembers`, `StackCounts`, `GetOCR`.
+  **Transitional, still unscoped** (their callers are the write side, the media bytes and the worker
+  loaders, scoped in the next step): `GetByUID`, `GetByFileHash`, `ListByUIDs` and the write/maintenance
+  methods — the listing, search, detail and per-photo read routes never call them (the media-byte
+  routes, the zip/share manifests and the write handlers still do, until that step). The pure builders are tested through
+  `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
+  reading as the filter they test while the scope itself is asserted on the real output.
+  Typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
   (`Photo` also carries per-user annotation fields `Rating int`/`Flag string` — JSON `rating`/`flag`,
   analogous to `is_favorite`; they are not stored in `photos`, HTTP handlers fill them from `organize.Store`;
   `Photo` further carries **IPTC/XMP credits** `Subject`/`Keywords`/`Artist`/`Copyright`/`License`/`Scan`

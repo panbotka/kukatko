@@ -7,8 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
-
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -53,11 +52,11 @@ type similarResponse struct {
 // server with no search backend wired) returns an empty list with 200, while a
 // genuinely missing photo returns 404.
 func (a *API) handleSimilar(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	if _, err := a.store.GetByUID(r.Context(), uid); err != nil {
-		writePhotoError(w, err, "fetching photo failed")
+	source, ok := a.photoInProject(w, r)
+	if !ok {
 		return
 	}
+	uid := source.UID
 	if a.similar == nil {
 		writeJSON(w, http.StatusOK, similarResponse{Similar: []similarPhoto{}})
 		return
@@ -107,7 +106,9 @@ func (a *API) resolveSimilar(
 		}
 	}
 
-	loaded, err := a.store.ListByUIDs(ctx, uids)
+	// The vector index spans every project; resolving the candidates inside the
+	// request's project is what keeps another tenant's photos out of the strip.
+	loaded, err := a.store.ListByUIDsInProject(ctx, auth.ProjectUIDFromContext(ctx), uids)
 	if err != nil {
 		return nil, fmt.Errorf("photoapi: loading similar photos: %w", err)
 	}

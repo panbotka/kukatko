@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -46,7 +47,7 @@ func TestList_handAttachedPerson(t *testing.T) {
 	mustMarker(t, ppl, detected.UID, subject.UID, false)
 
 	t.Run("person scope finds the attached photo", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{SubjectUIDs: []string{subject.UID}})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{SubjectUIDs: []string{subject.UID}})
 		if err != nil {
 			t.Fatalf("List(person): %v", err)
 		}
@@ -58,7 +59,7 @@ func TestList_handAttachedPerson(t *testing.T) {
 
 	t.Run("person: filter finds the attached photo", func(t *testing.T) {
 		parsed := query.Parse("person:Zdena")
-		list, err := store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 		if err != nil {
 			t.Fatalf("List(person:): %v", err)
 		}
@@ -69,7 +70,7 @@ func TestList_handAttachedPerson(t *testing.T) {
 
 	t.Run("faces: counts only real faces", func(t *testing.T) {
 		parsed := query.Parse("faces:no")
-		list, err := store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 		if err != nil {
 			t.Fatalf("List(faces:no): %v", err)
 		}
@@ -79,7 +80,7 @@ func TestList_handAttachedPerson(t *testing.T) {
 		}
 
 		parsed = query.Parse("faces:yes")
-		list, err = store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+		list, err = store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 		if err != nil {
 			t.Fatalf("List(faces:yes): %v", err)
 		}
@@ -115,7 +116,7 @@ func TestList_handAttachedPersonOnAVideo(t *testing.T) {
 	}
 
 	parsed := query.Parse("person:Vojta")
-	list, err := store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 	if err != nil {
 		t.Fatalf("List(person:): %v", err)
 	}

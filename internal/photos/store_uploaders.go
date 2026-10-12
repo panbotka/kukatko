@@ -56,8 +56,13 @@ ORDER BY b.cnt DESC, b.uploaded_by ASC NULLS LAST`
 // add up to Count over the same filters. Ties in the count are broken by UID so
 // the order is total and a facet does not reshuffle between two requests. The
 // slice is empty (not nil) when nothing matches.
-func (s *Store) UploaderBuckets(ctx context.Context, params ListParams) ([]UploaderBucket, error) {
-	query, args := buildUploadersQuery(params)
+func (s *Store) UploaderBuckets(
+	ctx context.Context, projectUID string, params ListParams,
+) ([]UploaderBucket, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	query, args := buildUploadersQuery(projectUID, params)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying uploaders: %w", err)
@@ -97,8 +102,8 @@ func derefString(value *string) string {
 // UploaderBuckets, reusing List's WHERE filters so the buckets stay in step with
 // List/Count. Grouping and ordering are fixed by the query, never taken from
 // params.
-func buildUploadersQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildUploadersQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	var filter string
 	if len(where) > 0 {
 		filter = "\n    WHERE " + strings.Join(where, " AND ")

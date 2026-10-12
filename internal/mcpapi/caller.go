@@ -40,7 +40,10 @@ type caller struct {
 	// role is the caller's role in the request's project; it decides whether
 	// the caller may write.
 	role project.Role
-	meta audit.Meta
+	// projectUID is the uid of the request's project: every catalogue read a
+	// tool makes is confined to it.
+	projectUID string
+	meta       audit.Meta
 }
 
 // entry builds an audit entry for a mutation this caller is making, so every
@@ -68,7 +71,10 @@ func (a *API) withCaller(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		c := caller{user: user, role: auth.ProjectRoleFromContext(r.Context()), meta: audit.FromRequest(r, user.UID)}
+		c := caller{
+			user: user, role: auth.ProjectRoleFromContext(r.Context()),
+			projectUID: auth.ProjectUIDFromContext(r.Context()), meta: audit.FromRequest(r, user.UID),
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, c)))
 	})
 }

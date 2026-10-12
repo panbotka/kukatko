@@ -49,7 +49,7 @@ func (a *API) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// an aggregation — the list reports it.
 	applyMeTokens(&params, user)
 
-	timeline, err := a.store.TimelineBuckets(r.Context(), params)
+	timeline, err := a.store.TimelineBuckets(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "building timeline failed")
 		return

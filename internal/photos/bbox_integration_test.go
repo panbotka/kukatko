@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestListBBox verifies the map's "photos in this area" filter: inclusive edges,
@@ -47,7 +48,7 @@ func TestListBBox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			params := photos.ListParams{BBox: &tt.box}
-			list, err := store.List(ctx, params)
+			list, err := store.List(ctx, project.BootstrapUID, params)
 			if err != nil {
 				t.Fatalf("List: %v", err)
 			}
@@ -61,7 +62,7 @@ func TestListBBox(t *testing.T) {
 			if !slices.Equal(got, want) {
 				t.Errorf("List(bbox %+v) = %v, want %v", tt.box, got, want)
 			}
-			count, err := store.Count(ctx, params)
+			count, err := store.Count(ctx, project.BootstrapUID, params)
 			if err != nil {
 				t.Fatalf("Count: %v", err)
 			}

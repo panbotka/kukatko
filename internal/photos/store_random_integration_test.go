@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // randomPageSize is the page size the shuffle paging test walks the library
@@ -39,7 +40,7 @@ func walkShuffled(t *testing.T, store *photos.Store, seed string, pages int) []s
 	t.Helper()
 	var out []string
 	for page := range pages {
-		list, err := store.List(t.Context(), photos.ListParams{
+		list, err := store.List(t.Context(), project.BootstrapUID, photos.ListParams{
 			Sort: photos.SortByRandom, Seed: seed,
 			Limit: randomPageSize, Offset: page * randomPageSize,
 		})

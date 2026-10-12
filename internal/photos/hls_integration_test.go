@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // hlsVideo builds a catalogued standalone video with a distinct file hash.
@@ -170,19 +171,19 @@ func TestList_carriesStreamingFlag(t *testing.T) {
 	}
 	uids := []string{created.UID, waiting.UID, photo.UID}
 
-	listed, err := store.List(ctx, photos.ListParams{})
+	listed, err := store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	assertStreamingFlags(t, "List", listed, want)
 
-	found, err := store.Search(ctx, photos.ListParams{FullText: "Pelhrimov"})
+	found, err := store.Search(ctx, project.BootstrapUID, photos.ListParams{FullText: "Pelhrimov"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	assertStreamingFlags(t, "Search", found, want)
 
-	filtered, err := store.FilterUIDs(ctx, uids, photos.ListParams{})
+	filtered, err := store.FilterUIDs(ctx, project.BootstrapUID, uids, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("FilterUIDs: %v", err)
 	}

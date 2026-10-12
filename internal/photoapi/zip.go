@@ -12,6 +12,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -102,7 +103,7 @@ func (a *API) collectZipPhotos(ctx context.Context, req zipDownloadRequest) ([]p
 	seen := make(map[string]struct{})
 
 	if req.AlbumUID != "" {
-		albumPhotos, err := a.store.List(ctx, photos.ListParams{
+		albumPhotos, err := a.store.List(ctx, auth.ProjectUIDFromContext(ctx), photos.ListParams{
 			AlbumUIDs: []string{req.AlbumUID},
 			Sort:      photos.SortByChronology,
 			Order:     photos.OrderAsc,

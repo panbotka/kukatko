@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -43,7 +44,7 @@ func seedMatchLibrary(t *testing.T, fixtures map[string]photos.Photo) matchLibra
 func (lib matchLibrary) search(t *testing.T, input string) []string {
 	t.Helper()
 	parsed := query.Parse(input)
-	list, err := lib.store.List(t.Context(), photos.ListParams{
+	list, err := lib.store.List(t.Context(), project.BootstrapUID, photos.ListParams{
 		Search:       parsed.PlainText(),
 		SearchNot:    parsed.NotTerms(),
 		QueryFilters: parsed.Filters,
@@ -167,7 +168,7 @@ func TestQueryMatching_yearBoundaryAgreesWithTaken(t *testing.T) {
 
 	t.Run("year param", func(t *testing.T) {
 		year := 2019
-		list, err := lib.store.List(t.Context(), photos.ListParams{Year: &year})
+		list, err := lib.store.List(t.Context(), project.BootstrapUID, photos.ListParams{Year: &year})
 		if err != nil {
 			t.Fatalf("List(year=2019): %v", err)
 		}
@@ -177,7 +178,7 @@ func TestQueryMatching_yearBoundaryAgreesWithTaken(t *testing.T) {
 	})
 
 	t.Run("year buckets", func(t *testing.T) {
-		years, err := lib.store.YearBuckets(t.Context(), photos.ListParams{})
+		years, err := lib.store.YearBuckets(t.Context(), project.BootstrapUID, photos.ListParams{})
 		if err != nil {
 			t.Fatalf("YearBuckets: %v", err)
 		}

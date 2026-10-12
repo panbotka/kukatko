@@ -126,7 +126,7 @@ func TestBoundsCond_fractionalSlack(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			user := "us_1"
-			sql, args := buildCountQuery(ListParams{
+			sql, args := unscopedCountQuery(ListParams{
 				RatedBy:      &user,
 				QueryFilters: query.Parse(tt.input).Filters,
 			})
@@ -175,7 +175,7 @@ func nearlyEqual(got, want float64) bool {
 func TestTextClauses_escapesLikeMetacharacters(t *testing.T) {
 	t.Parallel()
 
-	sql, args := buildCountQuery(ListParams{
+	sql, args := unscopedCountQuery(ListParams{
 		Camera:    "EOS_5D",
 		Lens:      "50%",
 		Search:    "a_b",
@@ -250,7 +250,7 @@ func TestUploaderCond(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			sql, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
 			for _, want := range tt.contains {
 				if !strings.Contains(sql, want) {
 					t.Errorf("query missing %q: %q", want, sql)
@@ -284,7 +284,7 @@ func TestUploaderCond(t *testing.T) {
 func TestTaskCond(t *testing.T) {
 	t.Parallel()
 
-	sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse("task:dům").Filters})
+	sql, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse("task:dům").Filters})
 	for _, want := range []string{
 		"EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid",
 		"tp.photo_uid = photos.uid",
@@ -332,7 +332,7 @@ func TestPersonCond(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			sql, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
 			for _, want := range tt.contains {
 				if !strings.Contains(sql, want) {
 					t.Errorf("query missing %q: %q", want, sql)
@@ -393,7 +393,7 @@ func TestFamilyCond(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sql, args := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			sql, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
 			for _, want := range tt.contains {
 				if !strings.Contains(sql, want) {
 					t.Errorf("query missing %q: %q", want, sql)
@@ -477,7 +477,7 @@ func TestVideoFilterClauses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			sql, _ := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			sql, _ := unscopedCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
 			for _, want := range tt.want {
 				if !strings.Contains(sql, want) {
 					t.Errorf("query missing %q:\n%s", want, sql)
@@ -494,7 +494,7 @@ func TestVideoFilterClauses(t *testing.T) {
 func TestDurationCond_bindsIntegers(t *testing.T) {
 	t.Parallel()
 
-	_, args := buildCountQuery(ListParams{QueryFilters: query.Parse("duration:1m-2m").Filters})
+	_, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse("duration:1m-2m").Filters})
 	want := []int64{60_000, 179_999}
 	got := make([]int64, 0, len(args))
 	for _, a := range args {
@@ -519,7 +519,7 @@ func TestDurationCond_bindsIntegers(t *testing.T) {
 func TestFPSCond_ntscSlack(t *testing.T) {
 	t.Parallel()
 
-	_, args := buildCountQuery(ListParams{QueryFilters: query.Parse("fps:30").Filters})
+	_, args := unscopedCountQuery(ListParams{QueryFilters: query.Parse("fps:30").Filters})
 	bounds := floatArgs(args)
 	if len(bounds) != 2 {
 		t.Fatalf("fps bounds = %v, want two", bounds)
@@ -585,7 +585,7 @@ func TestQueryTextFilters_foldAccentsOnBothSides(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
-			sql, _ := buildCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
+			sql, _ := unscopedCountQuery(ListParams{QueryFilters: query.Parse(tt.input).Filters})
 			for _, want := range tt.want {
 				if !strings.Contains(sql, want) {
 					t.Errorf("compiled %q missing %q: %q", tt.input, want, sql)
@@ -609,7 +609,7 @@ func TestQueryTextFilters_foldAccentsOnBothSides(t *testing.T) {
 func TestFreeTextClauses_foldAccentsOnBothSides(t *testing.T) {
 	t.Parallel()
 
-	sql, _ := buildCountQuery(ListParams{Search: "dum", SearchNot: []string{"kostel"}})
+	sql, _ := unscopedCountQuery(ListParams{Search: "dum", SearchNot: []string{"kostel"}})
 	for _, want := range []string{
 		"immutable_unaccent(title) ILIKE immutable_unaccent($1)",
 		"immutable_unaccent(description) ILIKE immutable_unaccent($1)",

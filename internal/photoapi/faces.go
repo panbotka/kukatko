@@ -34,15 +34,19 @@ type FaceService interface {
 }
 
 // handleFaces returns the faces detected on a photo together with their marker
-// assignment and per-face subject suggestions, for the detail UI. It answers 404
-// for a missing photo and 503 when no face backend is wired.
+// assignment and per-face subject suggestions, for the detail UI. It answers 503
+// when no face backend is wired and 404 for a photo that is missing or belongs
+// to another project.
 func (a *API) handleFaces(w http.ResponseWriter, r *http.Request) {
 	if a.faces == nil {
 		writeError(w, http.StatusServiceUnavailable, "face matching not available")
 		return
 	}
-	uid := chi.URLParam(r, "uid")
-	resp, err := a.faces.PhotoFaces(r.Context(), uid)
+	photo, ok := a.photoInProject(w, r)
+	if !ok {
+		return
+	}
+	resp, err := a.faces.PhotoFaces(r.Context(), photo.UID)
 	if err != nil {
 		writeFaceError(w, err, "fetching faces failed")
 		return

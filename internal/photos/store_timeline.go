@@ -69,8 +69,11 @@ ORDER BY year %[3]s, month %[3]s`
 // returned Total is Count over the same filters and includes photos with an
 // unknown capture time, which belong to no bucket unless the chronology sort
 // gives them one.
-func (s *Store) TimelineBuckets(ctx context.Context, params ListParams) (Timeline, error) {
-	query, args := buildTimelineQuery(params)
+func (s *Store) TimelineBuckets(ctx context.Context, projectUID string, params ListParams) (Timeline, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Timeline{}, err
+	}
+	query, args := buildTimelineQuery(projectUID, params)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return Timeline{}, fmt.Errorf("photos: querying timeline: %w", err)
@@ -91,7 +94,7 @@ func (s *Store) TimelineBuckets(ctx context.Context, params ListParams) (Timelin
 	accumulate(buckets)
 	flagImplausible(buckets)
 
-	total, err := s.Count(ctx, params)
+	total, err := s.Count(ctx, projectUID, params)
 	if err != nil {
 		return Timeline{}, err
 	}
@@ -103,8 +106,8 @@ func (s *Store) TimelineBuckets(ctx context.Context, params ListParams) (Timelin
 // with List/Count) and adding the guard that keeps rows without a date out of the
 // grouping. The grouping is always by month; the date it groups on and the
 // direction it walks come from params, so the buckets stay in step with the grid.
-func buildTimelineQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildTimelineQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	var filter string
 	if len(where) > 0 {
 		filter = " AND " + strings.Join(where, " AND ")

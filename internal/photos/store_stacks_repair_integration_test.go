@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // makeStack creates two photos, stacks them with the first as the primary and
@@ -35,7 +36,7 @@ func makeStack(t *testing.T, store *photos.Store, ctx context.Context, hashes [2
 // listedUIDs returns the uids the default (live, stack-collapsed) listing shows.
 func listedUIDs(t *testing.T, store *photos.Store, ctx context.Context) []string {
 	t.Helper()
-	list, err := store.List(ctx, photos.ListParams{})
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

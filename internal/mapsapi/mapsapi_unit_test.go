@@ -36,13 +36,13 @@ type fakeLister struct {
 }
 
 // List records params and returns the canned photos (or error).
-func (f *fakeLister) List(_ context.Context, params photos.ListParams) ([]photos.Photo, error) {
+func (f *fakeLister) List(_ context.Context, _ string, params photos.ListParams) ([]photos.Photo, error) {
 	f.gotParams = params
 	return f.photos, f.err
 }
 
 // Count records params and returns the canned total (or error).
-func (f *fakeLister) Count(_ context.Context, params photos.ListParams) (int, error) {
+func (f *fakeLister) Count(_ context.Context, _ string, params photos.ListParams) (int, error) {
 	f.countParams = params
 	return f.total, f.countErr
 }

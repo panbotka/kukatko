@@ -74,7 +74,7 @@ func (a *API) annotateStacks(ctx context.Context, views []photoView) error {
 	if len(stackUIDs) == 0 {
 		return nil
 	}
-	counts, err := a.store.StackCounts(ctx, stackUIDs)
+	counts, err := a.store.StackCounts(ctx, auth.ProjectUIDFromContext(ctx), stackUIDs)
 	if err != nil {
 		return fmt.Errorf("photoapi: resolving stack counts: %w", err)
 	}
@@ -93,7 +93,7 @@ func (a *API) stackMembers(ctx context.Context, photo photos.Photo) ([]stackMemb
 	if photo.StackUID == nil {
 		return nil, nil
 	}
-	members, err := a.store.ListStackMembers(ctx, *photo.StackUID)
+	members, err := a.store.ListStackMembers(ctx, auth.ProjectUIDFromContext(ctx), *photo.StackUID)
 	if err != nil {
 		return nil, fmt.Errorf("photoapi: listing stack members: %w", err)
 	}
@@ -202,7 +202,7 @@ func (a *API) runStackMutation(
 // writePrimaryDetail answers with the full detail of the stack's primary member,
 // used after manual stacking so the client can present the surviving tile.
 func (a *API) writePrimaryDetail(w http.ResponseWriter, r *http.Request, userUID, stackUID string) {
-	members, err := a.store.ListStackMembers(r.Context(), stackUID)
+	members, err := a.store.ListStackMembers(r.Context(), auth.ProjectUIDFromContext(r.Context()), stackUID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "loading stack failed")
 		return

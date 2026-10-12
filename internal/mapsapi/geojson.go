@@ -96,7 +96,7 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := a.photos.List(r.Context(), params)
+	list, err := a.photos.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing photos failed")
 		return
@@ -132,7 +132,7 @@ func (a *API) countCoverage(ctx context.Context, params photos.ListParams, locat
 	countParams.Limit = 0
 	countParams.Offset = 0
 
-	total, err := a.photos.Count(ctx, countParams)
+	total, err := a.photos.Count(ctx, auth.ProjectUIDFromContext(ctx), countParams)
 	if err != nil {
 		return coverage{}, fmt.Errorf("mapsapi: counting photos for coverage: %w", err)
 	}

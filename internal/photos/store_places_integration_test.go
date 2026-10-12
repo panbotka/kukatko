@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // placeFixture is one seeded photo and the place to cache for it. An empty
@@ -165,7 +166,7 @@ func TestList_placeScope(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("country scope keeps that country's live photos", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{Country: "Czechia"})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{Country: "Czechia"})
 		if err != nil {
 			t.Fatalf("List(country): %v", err)
 		}
@@ -174,14 +175,14 @@ func TestList_placeScope(t *testing.T) {
 		if len(set) != 3 || set[uids["pp-d"]] || set[uids["pp-e"]] {
 			t.Fatalf("country scope = %v, want pp-a/b/c only", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{Country: "Czechia"})
+		total, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{Country: "Czechia"})
 		if err != nil || total != 3 {
 			t.Fatalf("Count(country) = %d, %v, want 3", total, err)
 		}
 	})
 
 	t.Run("country and city scope narrows to one city", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{Country: "Czechia", City: "Praha"})
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{Country: "Czechia", City: "Praha"})
 		if err != nil {
 			t.Fatalf("List(country, city): %v", err)
 		}
@@ -189,14 +190,14 @@ func TestList_placeScope(t *testing.T) {
 		if len(set) != 2 || !set[uids["pp-a"]] || !set[uids["pp-b"]] {
 			t.Fatalf("city scope = %v, want pp-a and pp-b", set)
 		}
-		total, err := store.Count(ctx, photos.ListParams{Country: "Czechia", City: "Praha"})
+		total, err := store.Count(ctx, project.BootstrapUID, photos.ListParams{Country: "Czechia", City: "Praha"})
 		if err != nil || total != 2 {
 			t.Fatalf("Count(country, city) = %d, %v, want 2", total, err)
 		}
 	})
 
 	t.Run("archived photos are included only when requested", func(t *testing.T) {
-		list, err := store.List(ctx, photos.ListParams{
+		list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{
 			Country: "Czechia", City: "Praha", OnlyArchived: true,
 		})
 		if err != nil {

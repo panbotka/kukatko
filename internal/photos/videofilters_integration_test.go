@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -86,7 +87,7 @@ func runVideoQuery(t *testing.T, lib videoLibrary, input string) []string {
 	if len(parsed.Unknown) != 0 {
 		t.Fatalf("Parse(%q) did not understand %v", input, parsed.Unknown)
 	}
-	list, err := lib.store.List(t.Context(), photos.ListParams{
+	list, err := lib.store.List(t.Context(), project.BootstrapUID, photos.ListParams{
 		Search:       parsed.PlainText(),
 		SearchNot:    parsed.NotTerms(),
 		QueryFilters: parsed.Filters,

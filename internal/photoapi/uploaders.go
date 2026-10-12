@@ -76,7 +76,7 @@ func (a *API) handleUploaders(w http.ResponseWriter, r *http.Request) {
 	// The facet offers every uploader, whichever one is currently selected.
 	params.UploadedBy, params.NoUploader = "", false
 
-	buckets, err := a.store.UploaderBuckets(r.Context(), params)
+	buckets, err := a.store.UploaderBuckets(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "aggregating uploaders failed")
 		return

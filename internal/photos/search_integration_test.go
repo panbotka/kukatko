@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -30,7 +31,7 @@ func textPhoto(hash, fileName, title, description, notes string) photos.Photo {
 // searchUIDs runs Search and returns the resulting photo UIDs in rank order.
 func searchUIDs(t *testing.T, store *photos.Store, params photos.ListParams) []string {
 	t.Helper()
-	got, err := store.Search(t.Context(), params)
+	got, err := store.Search(t.Context(), project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("Search(%+v): %v", params, err)
 	}
@@ -196,7 +197,7 @@ func TestSearch_pagination(t *testing.T) {
 	}
 
 	params := photos.ListParams{FullText: "garden"}
-	total, err := store.Count(ctx, params)
+	total, err := store.Count(ctx, project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestSearch_updatedTitleChangesResults(t *testing.T) {
 // than ranking every photo.
 func TestSearch_emptyQuery(t *testing.T) {
 	store, _ := newStore(t)
-	if _, err := store.Search(t.Context(), photos.ListParams{}); err == nil {
+	if _, err := store.Search(t.Context(), project.BootstrapUID, photos.ListParams{}); err == nil {
 		t.Fatal("Search with empty query returned nil error, want ErrEmptySearch")
 	}
 }

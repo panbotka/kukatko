@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -235,7 +236,7 @@ func runLanguage(t *testing.T, lib queryLibrary, input string) []string {
 		QueryFilters: parsed.Filters,
 		RatedBy:      &lib.user,
 	}
-	list, err := lib.store.List(t.Context(), params)
+	list, err := lib.store.List(t.Context(), project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("List(%q): %v", input, err)
 	}
@@ -474,11 +475,11 @@ func TestQueryLanguage_countMatchesList(t *testing.T) {
 	lib := seedQueryLibrary(t)
 	parsed := query.Parse("year:2024 label:cat|dog")
 	params := photos.ListParams{QueryFilters: parsed.Filters, RatedBy: &lib.user}
-	list, err := lib.store.List(t.Context(), params)
+	list, err := lib.store.List(t.Context(), project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	total, err := lib.store.Count(t.Context(), params)
+	total, err := lib.store.Count(t.Context(), project.BootstrapUID, params)
 	if err != nil {
 		t.Fatalf("Count: %v", err)
 	}

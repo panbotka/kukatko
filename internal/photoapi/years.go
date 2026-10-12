@@ -54,7 +54,7 @@ func (a *API) handleYears(w http.ResponseWriter, r *http.Request) {
 	// The facet offers every year, whichever one is currently selected.
 	params.Year = nil
 
-	years, err := a.store.YearBuckets(r.Context(), params)
+	years, err := a.store.YearBuckets(r.Context(), auth.ProjectUIDFromContext(r.Context()), params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "aggregating years failed")
 		return

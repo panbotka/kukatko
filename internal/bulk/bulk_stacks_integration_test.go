@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -72,7 +73,7 @@ func TestApply_archiveRepairsStack(t *testing.T) {
 		t.Errorf("sibling still carries stack_uid = %q, want NULL", *survivor.StackUID)
 	}
 
-	list, err := store.List(ctx, photos.ListParams{})
+	list, err := store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

@@ -29,6 +29,18 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Unknown or foreign project:** `/api/v1/p/<slug>/…` with a slug nobody uses, a project the caller is
   no member of, or a deactivated one (non-maintainer) answers **404 `{"error":"project not found"}`**,
   byte-for-byte the same in all three cases (see *Project resolution* below).
+- **Another project's row is a missing row.** Inside a project, a uid that belongs to a different
+  project is answered **exactly like a uid that does not exist**: the same status (404 for a
+  single-row route), the same `Content-Type` and a byte-identical body — `GET /photos/{uid}` of a
+  foreign photo is `404 {"error":"photo not found"}`, as for a made-up uid — and a listing simply does
+  not contain the row. A tenant can therefore neither read nor probe for another project's ids. Scoped
+  so far (the photo read side): `GET /photos` (every ordering, offset and `task=`), `/search`,
+  `/favorites`, `/photos/{uid}` and its read sub-routes (`/faces`, `/edit`, `/renditions`, `/similar`;
+  the `/comments` listing answers a foreign photo with the empty thread a missing one gets), `/photos/timeline`, `/years`, `/uploaders`, and `GET /search/global`'s
+  photo group and photo/marker/stack/PhotoPrism direct hits. Every `q=` filter key is evaluated inside
+  the project, including the name/id lookups of `album:`, `label:`, `person:`, `family:`, `task:`,
+  `uid:` and the reference photo of `near:` — `album:<another project's album uid>` matches nothing.
+  The remaining groups are scoped step by step (see `docs/PACKAGES.md`, `internal/photos`).
 - **Links follow the prefix.** Every URL a response carries to another project-scoped route — a photo's
   `thumb_url`/`preview_url`/`download_url` when the store mints no signed URL, a GeoJSON feature's
   `thumb`, a search hit's cover — is built on `auth.APIBase(ctx)`: `/api/v1/p/<slug>/photos/…` when the
@@ -1001,7 +1013,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   statement), so the client can draw a face instead of an initial. It is **absent** for an authorless
   comment, an unlinked account, and a linked person with no cover photo — the common case, which is why
   the initials fallback is the normal rendering rather than an error path.
-  A photo with no comments — or one that does not exist — is an empty array,
+  A photo with no comments — or one that does not exist, or one of another project — is an empty array,
   not a 404. `POST /photos/{uid}/comments` `{body}` → **201** with the created comment; guarded by
   **`RequireAuth`, not `RequireWrite` — the one deliberate exception to the read-only rule: a viewer may
   comment.** Commenting is social participation, not curation of the library (a viewer still cannot retitle a

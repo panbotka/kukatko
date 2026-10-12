@@ -13,10 +13,16 @@ import (
 const defaultNearRadiusKm = 5.0
 
 // condEnv carries the per-query context a condition builder needs: the shared
-// bind closure, the caller's UID for the per-user filters (favorite:, rating:,
-// flag:) and the km radius for near:.
+// bind closure, the placeholder the project uid is already bound to, the
+// caller's UID for the per-user filters (favorite:, rating:, flag:) and the km
+// radius for near:.
 type condEnv struct {
-	bind     func(any) string
+	bind func(any) string
+	// project is the placeholder of the request's project uid. A condition that
+	// resolves a name or an id against another root table (an album's title, a
+	// person's name, a PhotoPrism alias) confines that lookup to the project
+	// with it, so `album:Svatba` never means another tenant's wedding.
+	project  string
 	ratedBy  *string
 	radiusKm float64
 }
@@ -24,10 +30,14 @@ type condEnv struct {
 // queryClauses returns the WHERE filters implied by the parsed search query
 // language: the '-term' free-text exclusions plus one AND-ed clause per
 // key:value filter. Every value is bound through bind — the AST is compiled,
-// never string-concatenated from user input.
-func queryClauses(params ListParams, bind func(any) string) []string {
+// never string-concatenated from user input. project is the placeholder the
+// project uid is bound to (see condEnv).
+func queryClauses(params ListParams, bind func(any) string, project string) []string {
 	where := searchNotClauses(params, bind)
-	env := condEnv{bind: bind, ratedBy: params.RatedBy, radiusKm: queryRadiusKm(params.QueryFilters)}
+	env := condEnv{
+		bind: bind, project: project, ratedBy: params.RatedBy,
+		radiusKm: queryRadiusKm(params.QueryFilters),
+	}
 	for _, f := range params.QueryFilters {
 		if clause, ok := queryFilterClause(f, env); ok {
 			where = append(where, clause)
@@ -331,7 +341,8 @@ func uidCond(v query.Value, env condEnv) (string, bool) {
 	uid := env.bind(v.Text)
 	return "(photos.uid = " + uid + " OR photos.photoprism_uid = " + uid +
 		" OR EXISTS (SELECT 1 FROM photoprism_aliases pa" +
-		" WHERE pa.photoprism_uid = " + uid + " AND pa.photo_uid = photos.uid))", true
+		" WHERE pa.project_id = " + env.project +
+		" AND pa.photoprism_uid = " + uid + " AND pa.photo_uid = photos.uid))", true
 }
 
 // albumCond matches membership in an album by title pattern or exact UID. The
@@ -341,7 +352,8 @@ func albumCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM album_photos ap JOIN albums a ON a.uid = ap.album_uid " +
-		"WHERE ap.photo_uid = photos.uid AND (" + unaccentLike("a.title", p) + " OR a.uid = " + uid + "))", true
+		"WHERE ap.photo_uid = photos.uid AND a.project_id = " + env.project +
+		" AND (" + unaccentLike("a.title", p) + " OR a.uid = " + uid + "))", true
 }
 
 // labelCond matches a carried label by name pattern or exact UID, accent-folded
@@ -350,7 +362,8 @@ func labelCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_labels pl JOIN labels l ON l.uid = pl.label_uid " +
-		"WHERE pl.photo_uid = photos.uid AND (" + unaccentLike("l.name", p) + " OR l.uid = " + uid + "))", true
+		"WHERE pl.photo_uid = photos.uid AND l.project_id = " + env.project +
+		" AND (" + unaccentLike("l.name", p) + " OR l.uid = " + uid + "))", true
 }
 
 // taskCond matches membership in a task by question pattern or exact UID. Closed
@@ -360,7 +373,8 @@ func taskCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM photo_task_photos tp JOIN photo_tasks t ON t.uid = tp.task_uid " +
-		"WHERE tp.photo_uid = photos.uid AND (" + unaccentLike("t.title", p) + " OR t.uid = " + uid + "))", true
+		"WHERE tp.photo_uid = photos.uid AND t.project_id = " + env.project +
+		" AND (" + unaccentLike("t.title", p) + " OR t.uid = " + uid + "))", true
 }
 
 // personCond matches a contained subject by name or nickname pattern, or by exact
@@ -380,8 +394,8 @@ func personCond(v query.Value, env condEnv) (string, bool) {
 	p := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM markers m JOIN subjects s ON s.uid = m.subject_uid " +
-		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE " +
-		"AND (" + unaccentLike("s.name", p) + " OR " + unaccentLike("s.nickname", p) +
+		"WHERE m.photo_uid = photos.uid AND m.invalid = FALSE AND s.project_id = " + env.project +
+		" AND (" + unaccentLike("s.name", p) + " OR " + unaccentLike("s.nickname", p) +
 		" OR s.uid = " + uid + "))", true
 }
 
@@ -420,23 +434,27 @@ func familyCond(v query.Value, env condEnv) (string, bool) {
 	pattern := env.bind(likePattern(v.TextPattern()))
 	uid := env.bind(v.Text)
 	return "EXISTS (SELECT 1 FROM markers m WHERE m.photo_uid = photos.uid AND m.invalid = FALSE" +
-		" AND m.subject_uid IN (" + familyMembersSQL(pattern, uid) + "))", true
+		" AND m.subject_uid IN (" + familyMembersSQL(pattern, uid, env.project) + "))", true
 }
 
 // familyMembersSQL renders the sub-select yielding one column of subject UIDs:
 // the roots matching the pattern or the UID, everybody descended from them, and
-// the partners of that whole set. pattern and uid are placeholders the caller
-// already bound, never user values. The root arms are accent-folded like
-// personCond's — `family:necas` names the Nečas family.
+// the partners of that whole set. pattern, uid and project are placeholders the
+// caller already bound, never user values. The root arms are accent-folded like
+// personCond's — `family:necas` names the Nečas family — and confined to the
+// project, so the walk starts from this library's Nečas and never another's;
+// the project is a bound value rather than a reference to the outer row, which
+// keeps the sub-select uncorrelated (built once, see familyCond).
 //
 // UNION rather than UNION ALL is load-bearing in the recursive term: when
 // cousins marry — which in a village they do — the same person is reachable by
 // two paths, and UNION ALL would duplicate the rows and, with only the depth
 // guard to stop it, explode combinatorially.
-func familyMembersSQL(pattern, uid string) string {
+func familyMembersSQL(pattern, uid, project string) string {
 	return "WITH RECURSIVE descendants(uid, depth) AS (" +
-		" SELECT s.uid, 0 FROM subjects s WHERE " + unaccentLike("s.name", pattern) +
-		" OR " + unaccentLike("s.nickname", pattern) + " OR s.uid = " + uid +
+		" SELECT s.uid, 0 FROM subjects s WHERE s.project_id = " + project +
+		" AND (" + unaccentLike("s.name", pattern) +
+		" OR " + unaccentLike("s.nickname", pattern) + " OR s.uid = " + uid + ")" +
 		" UNION" +
 		" SELECT c.child_uid, d.depth + 1 FROM descendants d" +
 		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
@@ -813,12 +831,14 @@ func faceNewCond(_ query.Value, _ condEnv) (string, bool) {
 // nearCond keeps photos within the query's km radius of the given photo's
 // coordinates, using the spherical law of cosines (clamped into acos's domain)
 // on an Earth radius of 6371 km. The reference photo itself matches (it is
-// zero km away). Photos or references without coordinates never match.
+// zero km away). Photos or references without coordinates never match, and
+// neither does a reference in another project: its location is that tenant's
+// to know, and "near" it would be a way of asking.
 func nearCond(v query.Value, env condEnv) (string, bool) {
 	uid := env.bind(v.Text)
 	radius := env.bind(env.radiusKm)
 	return "(photos.lat IS NOT NULL AND photos.lng IS NOT NULL AND EXISTS (" +
-		"SELECT 1 FROM photos ref WHERE ref.uid = " + uid +
+		"SELECT 1 FROM photos ref WHERE ref.uid = " + uid + " AND ref.project_id = " + env.project +
 		" AND ref.lat IS NOT NULL AND ref.lng IS NOT NULL" +
 		" AND 6371.0 * acos(least(1.0, greatest(-1.0," +
 		" sin(radians(ref.lat)) * sin(radians(photos.lat)) +" +

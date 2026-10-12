@@ -45,8 +45,11 @@ ORDER BY year DESC`
 // the histogram is always grouped by year. The returned Total is Count over the
 // same filters and includes photos with an unknown capture time, which belong to
 // no bucket. The slice is empty (not nil) when nothing matches.
-func (s *Store) YearBuckets(ctx context.Context, params ListParams) (Years, error) {
-	query, args := buildYearsQuery(params)
+func (s *Store) YearBuckets(ctx context.Context, projectUID string, params ListParams) (Years, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Years{}, err
+	}
+	query, args := buildYearsQuery(projectUID, params)
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return Years{}, fmt.Errorf("photos: querying years: %w", err)
@@ -65,7 +68,7 @@ func (s *Store) YearBuckets(ctx context.Context, params ListParams) (Years, erro
 		return Years{}, fmt.Errorf("photos: iterating year buckets: %w", err)
 	}
 
-	total, err := s.Count(ctx, params)
+	total, err := s.Count(ctx, projectUID, params)
 	if err != nil {
 		return Years{}, err
 	}
@@ -76,8 +79,8 @@ func (s *Store) YearBuckets(ctx context.Context, params ListParams) (Years, erro
 // YearBuckets, reusing List's WHERE filters (so the histogram stays in step with
 // List/Count) and adding the taken_at IS NOT NULL guard. Ordering and grouping
 // are fixed by the query, never taken from params.
-func buildYearsQuery(params ListParams) (string, []any) {
-	where, args := buildWhere(params)
+func buildYearsQuery(projectUID string, params ListParams) (string, []any) {
+	where, args := buildWhere(projectUID, params)
 	var filter string
 	if len(where) > 0 {
 		filter = " AND " + strings.Join(where, " AND ")

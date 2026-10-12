@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -83,7 +84,7 @@ func TestHiddenFromLibrary_absentFromTheLibrary(t *testing.T) {
 	lib := newHiddenLibrary(t)
 	ctx := t.Context()
 
-	list, err := lib.store.List(ctx, photos.ListParams{})
+	list, err := lib.store.List(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -91,12 +92,12 @@ func TestHiddenFromLibrary_absentFromTheLibrary(t *testing.T) {
 		t.Errorf("List = %v, want only the visible photo", set)
 	}
 
-	total, err := lib.store.Count(ctx, photos.ListParams{})
+	total, err := lib.store.Count(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil || total != 1 {
 		t.Errorf("Count = %d, %v, want 1", total, err)
 	}
 
-	found, err := lib.store.Search(ctx, photos.ListParams{FullText: "tiraz"})
+	found, err := lib.store.Search(ctx, project.BootstrapUID, photos.ListParams{FullText: "tiraz"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestHiddenFromLibrary_absentFromTheLibrary(t *testing.T) {
 	// The visible photo's title is indexed the same way, so this is what keeps the
 	// assertion above from passing for the wrong reason (a search that matches
 	// nothing at all).
-	found, err = lib.store.Search(ctx, photos.ListParams{FullText: "sunset"})
+	found, err = lib.store.Search(ctx, project.BootstrapUID, photos.ListParams{FullText: "sunset"})
 	if err != nil {
 		t.Fatalf("Search(sunset): %v", err)
 	}
@@ -114,7 +115,7 @@ func TestHiddenFromLibrary_absentFromTheLibrary(t *testing.T) {
 		t.Errorf("Search(sunset) = %v, want the visible photo", set)
 	}
 
-	years, err := lib.store.YearBuckets(ctx, photos.ListParams{})
+	years, err := lib.store.YearBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("YearBuckets: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestHiddenFromLibrary_absentFromTheLibrary(t *testing.T) {
 		t.Errorf("YearBuckets = %+v, want one year holding one photo", years)
 	}
 
-	timeline, err := lib.store.TimelineBuckets(ctx, photos.ListParams{})
+	timeline, err := lib.store.TimelineBuckets(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil {
 		t.Fatalf("TimelineBuckets: %v", err)
 	}
@@ -150,14 +151,14 @@ func TestHiddenFromLibrary_visibleWhereItWasFiled(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := lib.store.List(ctx, tt.params)
+			list, err := lib.store.List(ctx, project.BootstrapUID, tt.params)
 			if err != nil {
 				t.Fatalf("List(%s): %v", tt.name, err)
 			}
 			if !uidSet(list)[lib.scan.UID] {
 				t.Errorf("List(%s) = %v, want the hidden photo present", tt.name, uidSet(list))
 			}
-			total, err := lib.store.Count(ctx, tt.params)
+			total, err := lib.store.Count(ctx, project.BootstrapUID, tt.params)
 			if err != nil {
 				t.Fatalf("Count(%s): %v", tt.name, err)
 			}
@@ -200,7 +201,7 @@ func TestHiddenFromLibrary_queryLanguage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			parsed := query.Parse(tt.input)
-			list, err := lib.store.List(ctx, photos.ListParams{QueryFilters: parsed.Filters})
+			list, err := lib.store.List(ctx, project.BootstrapUID, photos.ListParams{QueryFilters: parsed.Filters})
 			if err != nil {
 				t.Fatalf("List(%s): %v", tt.input, err)
 			}
@@ -249,7 +250,7 @@ func TestHiddenFromLibrary_setToggles(t *testing.T) {
 	if shown.HiddenFromLibrary {
 		t.Error("SetHiddenFromLibrary(false) left the photo hidden")
 	}
-	total, err := lib.store.Count(ctx, photos.ListParams{})
+	total, err := lib.store.Count(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil || total != 2 {
 		t.Errorf("Count after unhide = %d, %v, want 2", total, err)
 	}
@@ -257,7 +258,7 @@ func TestHiddenFromLibrary_setToggles(t *testing.T) {
 	if _, err = lib.store.SetHiddenFromLibrary(ctx, lib.visible.UID, true); err != nil {
 		t.Fatalf("SetHiddenFromLibrary(true): %v", err)
 	}
-	total, err = lib.store.Count(ctx, photos.ListParams{})
+	total, err = lib.store.Count(ctx, project.BootstrapUID, photos.ListParams{})
 	if err != nil || total != 1 {
 		t.Errorf("Count after hide = %d, %v, want 1", total, err)
 	}
