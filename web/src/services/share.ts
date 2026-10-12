@@ -2,6 +2,7 @@ import { SHARE_PREVIEW_SIZES, type ShareManifestFile } from '../lib/photoShare'
 
 import { ApiError } from './auth'
 import { downloadUrl, thumbUrl } from './photos'
+import { apiPath } from './api'
 
 /**
  * Client of everything sharing photos out of the library needs from the backend:
@@ -16,8 +17,6 @@ import { downloadUrl, thumbUrl } from './photos'
  * feature would silently fail, so the streaming is explicit here rather than
  * assumed.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope (`internal/photoapi/http.go`). */
 interface ErrorBody {
@@ -58,7 +57,7 @@ export async function fetchShareManifest(
   photoUids: string[],
   signal?: AbortSignal,
 ): Promise<ShareManifestFile[]> {
-  const res = await fetch(`${API_BASE}/photos/share-manifest`, {
+  const res = await fetch(apiPath('/photos/share-manifest'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',

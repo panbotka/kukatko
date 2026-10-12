@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react'
 
+import { useAuth } from '../auth/AuthContext'
 import { fetchCapabilities } from '../services/capabilities'
 
 import {
@@ -24,6 +25,10 @@ const REFRESH_INTERVAL_MS = 60_000
  * place; the flags are a hint, never load-bearing, so an offline backend simply
  * keeps the last state rather than erroring.
  *
+ * The flags belong to the signed-in project (the route is project-scoped and
+ * behind authentication), so nothing is fetched until the session is
+ * authenticated; signing in starts the polling, signing out stops it.
+ *
  * What a failed fetch must NOT do is look like a successful one reporting an
  * absent feature, so `known` flips to true only on a response that arrived and
  * stays true afterwards: once the instance has told us what it can do, a later
@@ -32,8 +37,12 @@ const REFRESH_INTERVAL_MS = 60_000
  */
 export function CapabilitiesProvider({ children }: { children: ReactNode }) {
   const [capabilities, setCapabilities] = useState<CapabilitiesState>(CAPABILITIES_DEFAULT)
+  const enabled = useAuth().status === 'authenticated'
 
   useEffect(() => {
+    if (!enabled) {
+      return
+    }
     let active = true
     let controller: AbortController | null = null
     let timer: number | null = null
@@ -86,7 +95,7 @@ export function CapabilitiesProvider({ children }: { children: ReactNode }) {
       stopTimer()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [])
+  }, [enabled])
 
   return (
     <CapabilitiesContext.Provider value={capabilities}>{children}</CapabilitiesContext.Provider>

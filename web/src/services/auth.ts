@@ -1,3 +1,5 @@
+import { instancePath } from './api'
+
 /**
  * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
  * ladder `viewer < curator < editor < admin < maintainer` where each role inherits
@@ -88,6 +90,24 @@ export interface AuthSession {
 }
 
 /**
+ * The project a session works in: the one the account last entered, else its
+ * first membership, else none. `GET /auth/me` reports "no last project" as `""`.
+ *
+ * Transition: the next step reads the project from the route instead; until
+ * then `AuthProvider` hands this to `setCurrentProjectSlug`.
+ */
+export function projectSlugOf(session: AuthSession | null): string | null {
+  if (session === null) {
+    return null
+  }
+  const last = session.last_project_slug
+  if (last !== undefined && last !== '') {
+    return last
+  }
+  return session.projects?.[0]?.slug ?? null
+}
+
+/**
  * Error carrying the HTTP status of a failed API call so callers can map
  * specific statuses (401, 429, …) to user-facing, translated messages.
  */
@@ -131,8 +151,6 @@ export function isNotFound(err: unknown): boolean {
   return err instanceof ApiError && err.status === 404
 }
 
-const API_BASE = '/api/v1'
-
 /** Standard backend error envelope (`internal/auth/http.go`). */
 interface ErrorBody {
   error?: string
@@ -161,7 +179,7 @@ async function readErrorMessage(res: Response): Promise<string> {
  */
 async function apiFetch(path: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(`${API_BASE}${path}`, init)
+    return await fetch(instancePath(path), init)
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error

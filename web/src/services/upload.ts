@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Non-fatal condition reported alongside a created photo, mirroring the backend
@@ -60,8 +61,6 @@ export interface UploadFileOptions {
  * different endpoint, so {@link useUploadQueue} can drive either.
  */
 export type UploadFn = (file: File, options?: UploadFileOptions) => Promise<UploadFileResult>
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope (`internal/ingest/http.go`). */
 interface ErrorBody {
@@ -150,7 +149,7 @@ function errorMessage(body: unknown): string | undefined {
  *   {@link isAbortError}).
  */
 export function uploadFile(file: File, options: UploadFileOptions = {}): Promise<UploadFileResult> {
-  const { onProgress, signal, url = `${API_BASE}/upload`, fields = {} } = options
+  const { onProgress, signal, url = apiPath('/upload'), fields = {} } = options
 
   return new Promise<UploadFileResult>((resolve, reject) => {
     if (signal?.aborted) {

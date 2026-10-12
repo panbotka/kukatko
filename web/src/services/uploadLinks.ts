@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { uploadFile, type UploadFn } from './upload'
+import { apiPath, instancePath } from './api'
 
 /**
  * Upload links (`internal/uploadlinkapi`): a short link a curator posts to a
@@ -10,8 +11,6 @@ import { uploadFile, type UploadFn } from './upload'
  * (`/u/<code>`) needs no session at all, and its upload goes through the same
  * XHR {@link uploadFile} the curator upload uses, pointed at the link.
  */
-
-const API_BASE = '/api/v1'
 
 /** Where a link stands in its life (`uploadlink.State`). */
 export type UploadLinkState = 'active' | 'expired' | 'revoked'
@@ -129,7 +128,7 @@ async function sendJSON<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -236,7 +235,7 @@ export async function fetchPublicUploadLink(
   code: string,
   signal?: AbortSignal,
 ): Promise<PublicUploadLink> {
-  const res = await fetch(`${API_BASE}/u/${encodeURIComponent(code)}`, {
+  const res = await fetch(instancePath(`/u/${encodeURIComponent(code)}`), {
     credentials: 'same-origin',
     signal,
   })
@@ -259,7 +258,7 @@ export function linkUploader(code: string, uploaderName: () => string): UploadFn
   return (file, options = {}) =>
     uploadFile(file, {
       ...options,
-      url: `${API_BASE}/u/${encodeURIComponent(code)}/upload`,
+      url: instancePath(`/u/${encodeURIComponent(code)}/upload`),
       fields: { name: uploaderName().trim() },
     })
 }

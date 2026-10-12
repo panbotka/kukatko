@@ -16,7 +16,7 @@ describe('FaceCrop', () => {
 
     const img = screen.getByRole('img', { name: 'Anna' })
     const src = img.getAttribute('src') ?? ''
-    expect(src).toBe('/api/v1/photos/p1/face?box=0.3125%2C0.2500%2C0.2000%2C0.2000')
+    expect(src).toBe('/api/v1/p/v/photos/p1/face?box=0.3125%2C0.2500%2C0.2000%2C0.2000')
     expect(src).not.toContain('/thumb/')
   })
 

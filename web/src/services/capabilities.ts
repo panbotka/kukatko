@@ -1,5 +1,4 @@
-/** Base path all versioned backend endpoints share. */
-const API_BASE = '/api/v1'
+import { apiPath } from './api'
 
 /**
  * The running binary's build metadata (`version.Info`), as the backend reports
@@ -58,7 +57,7 @@ export interface Capabilities {
  * @throws Error if the response status is not 2xx.
  */
 export async function fetchCapabilities(signal?: AbortSignal): Promise<Capabilities> {
-  const res = await fetch(`${API_BASE}/capabilities`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath('/capabilities'), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new Error(`capabilities request failed: ${res.status}`)
   }

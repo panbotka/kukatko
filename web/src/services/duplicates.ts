@@ -1,6 +1,5 @@
 import { ApiError } from './auth'
-
-const API_BASE = '/api/v1'
+import { apiPath } from './api'
 
 /** Why a group's members were detected as duplicates of each other. */
 export type DuplicateReason = 'phash' | 'embedding' | 'both'
@@ -108,7 +107,7 @@ export async function fetchDuplicates(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  const res = await fetch(`${API_BASE}/duplicates?${query.toString()}`, {
+  const res = await fetch(apiPath(`/duplicates?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -130,7 +129,7 @@ export async function mergeDuplicates(
   input: MergeInput,
   signal?: AbortSignal,
 ): Promise<MergeResult> {
-  const res = await fetch(`${API_BASE}/duplicates/merge`, {
+  const res = await fetch(apiPath('/duplicates/merge'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

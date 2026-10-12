@@ -72,17 +72,17 @@ describe('management calls', () => {
       valid_days: 7,
     })
     expect(created.code).toBe('Ab3dEf7h')
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/upload-links')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/p/v/upload-links')
 
     const extendFetch = stubFetch(200, { link: { uid: 'ul1', state: 'active' } })
     await expect(extendUploadLink('ul1', 14)).resolves.toMatchObject({ uid: 'ul1' })
-    expect(extendFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/extend')
+    expect(extendFetch.mock.calls[0][0]).toBe('/api/v1/p/v/upload-links/ul1/extend')
     const init = extendFetch.mock.calls[0][1] as RequestInit
     expect(JSON.parse(init.body as string)).toEqual({ valid_days: 14 })
 
     const revokeFetch = stubFetch(200, { link: { uid: 'ul1', state: 'revoked' } })
     await expect(revokeUploadLink('ul1')).resolves.toMatchObject({ state: 'revoked' })
-    expect(revokeFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/revoke')
+    expect(revokeFetch.mock.calls[0][0]).toBe('/api/v1/p/v/upload-links/ul1/revoke')
   })
 
   it('restores a code and draws a new one through the code routes', async () => {
@@ -92,13 +92,13 @@ describe('management calls', () => {
     await expect(restoreUploadLinkCode('ul1', 'Ab3dEf7h')).resolves.toMatchObject({
       path: '/u/Ab3dEf7h',
     })
-    expect(restoreFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/restore-code')
+    expect(restoreFetch.mock.calls[0][0]).toBe('/api/v1/p/v/upload-links/ul1/restore-code')
     const init = restoreFetch.mock.calls[0][1] as RequestInit
     expect(JSON.parse(init.body as string)).toEqual({ code: 'Ab3dEf7h' })
 
     const newFetch = stubFetch(200, { link: { uid: 'ul1', code: 'Nw5cDe9k', path: '/u/Nw5cDe9k' } })
     await expect(newUploadLinkCode('ul1')).resolves.toMatchObject({ code: 'Nw5cDe9k' })
-    expect(newFetch.mock.calls[0][0]).toBe('/api/v1/upload-links/ul1/new-code')
+    expect(newFetch.mock.calls[0][0]).toBe('/api/v1/p/v/upload-links/ul1/new-code')
   })
 
   it('surfaces the backend message as an ApiError', async () => {

@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * One city within a country, with the number of non-archived photos taken there
@@ -32,8 +33,6 @@ export interface PlaceCountry {
   cover_uid?: string
   cities: PlaceCity[]
 }
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope (`internal/placesapi`). */
 interface ErrorBody {
@@ -73,7 +72,7 @@ export async function fetchPlaces(country?: string, signal?: AbortSignal): Promi
     query.set('country', country)
   }
   const suffix = query.toString() === '' ? '' : `?${query.toString()}`
-  const res = await fetch(`${API_BASE}/places${suffix}`, {
+  const res = await fetch(apiPath(`/places${suffix}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,

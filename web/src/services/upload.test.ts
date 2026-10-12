@@ -89,7 +89,7 @@ describe('uploadFile', () => {
 
     const xhr = xhrs.instances[0]
     expect(xhr.method).toBe('POST')
-    expect(xhr.url).toBe('/api/v1/upload')
+    expect(xhr.url).toBe('/api/v1/p/v/upload')
     expect(xhr.sent).toBeInstanceOf(FormData)
 
     xhr.respond(200, created('a.jpg'))

@@ -156,7 +156,12 @@ function feature(uid: string, title: string, lng: number, lat: number): MapFeatu
   return {
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [lng, lat] },
-    properties: { uid, title, media_type: 'image', thumb: `/api/v1/photos/${uid}/thumb/tile_224` },
+    properties: {
+      uid,
+      title,
+      media_type: 'image',
+      thumb: `/api/v1/p/v/photos/${uid}/thumb/tile_224`,
+    },
   }
 }
 
@@ -194,7 +199,7 @@ describe('LeafletMap tile layer', () => {
   it('points the tile layer at the backend proxy and carries no API key', () => {
     renderMap()
     const tile = leaflet.calls.tiles[0]
-    expect(tile.url).toBe('/api/v1/map/tiles/basic/{z}/{x}/{y}{r}')
+    expect(tile.url).toBe('/api/v1/p/v/map/tiles/basic/{z}/{x}/{y}{r}')
     expect(tile.url).not.toMatch(/api[_-]?key/i)
     expect(tile.url).not.toContain('mapy.com')
     expect(tile.options.detectRetina).toBe(true)
@@ -213,7 +218,7 @@ describe('LeafletMap tile layer', () => {
         thumbAlt="Photo on the map"
       />,
     )
-    expect(tile.setUrl).toHaveBeenCalledWith('/api/v1/map/tiles/aerial/{z}/{x}/{y}{r}')
+    expect(tile.setUrl).toHaveBeenCalledWith('/api/v1/p/v/map/tiles/aerial/{z}/{x}/{y}{r}')
   })
 })
 
@@ -266,18 +271,18 @@ describe('LeafletMap tile failures', () => {
 
     const tile = leaflet.calls.tiles[0]
     const img = document.createElement('img')
-    img.src = '/api/v1/map/tiles/basic/7/70/44'
+    img.src = '/api/v1/p/v/map/tiles/basic/7/70/44'
     tile.handlers.tileerror({ tile: img })
 
     expect(onTileError).toHaveBeenCalledTimes(1)
-    expect(String(onTileError.mock.calls[0][0])).toContain('/api/v1/map/tiles/basic/7/70/44')
+    expect(String(onTileError.mock.calls[0][0])).toContain('/api/v1/p/v/map/tiles/basic/7/70/44')
   })
 
   it('stays silent when no tile-error handler is given', () => {
     renderMap()
     const tile = leaflet.calls.tiles[0]
     const img = document.createElement('img')
-    img.src = '/api/v1/map/tiles/basic/7/70/44'
+    img.src = '/api/v1/p/v/map/tiles/basic/7/70/44'
 
     // The map is also used without an error handler (the photo-detail mini-map);
     // a failing tile there must not blow up.
@@ -338,7 +343,9 @@ describe('LeafletMap markers and clustering', () => {
     const el = popupFn()
     const link = el.tagName === 'A' ? (el as HTMLAnchorElement) : el.querySelector('a')
     expect(link?.getAttribute('href')).toBe('/photos/ph1')
-    expect(el.querySelector('img')?.getAttribute('src')).toBe('/api/v1/photos/ph1/thumb/tile_224')
+    expect(el.querySelector('img')?.getAttribute('src')).toBe(
+      '/api/v1/p/v/photos/ph1/thumb/tile_224',
+    )
 
     // A plain click navigates within the SPA instead of following the href.
     link?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))

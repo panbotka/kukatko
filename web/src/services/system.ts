@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import type { ImportRun } from './import'
+import { instancePath } from './api'
 
 /**
  * System client, mirroring the backend JSON shapes from `internal/systemapi` and
@@ -16,8 +17,6 @@ import type { ImportRun } from './import'
  * (same-origin); every call throws {@link ApiError} on a non-OK response so
  * callers can branch on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -39,7 +38,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(instancePath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -52,7 +51,7 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 /** Issues a POST and returns nothing useful, throwing ApiError on a non-OK status. */
 async function postVoid(path: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(instancePath(path), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -64,7 +63,7 @@ async function postVoid(path: string, signal?: AbortSignal): Promise<void> {
 
 /** Issues a POST and parses the JSON body, throwing ApiError on a non-OK status. */
 async function postJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(instancePath(path), {
     method: 'POST',
     credentials: 'same-origin',
     signal,

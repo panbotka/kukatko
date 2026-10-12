@@ -109,7 +109,7 @@ describe('buildMapTile', () => {
     const blur = tile.querySelector<HTMLElement>('.kk-media-blur')
     expect(blur?.style.backgroundImage).toContain('data:image/png;base64,LEHV6n')
     const img = tile.querySelector('img')
-    expect(img?.getAttribute('src')).toBe('/api/v1/photos/ph1/thumb/tile_100')
+    expect(img?.getAttribute('src')).toBe('/api/v1/p/v/photos/ph1/thumb/tile_100')
     expect(img?.getAttribute('loading')).toBe('lazy')
     expect(img?.getAttribute('alt')).toBe('')
     // The button's name is the sentence, not the badge's digits.

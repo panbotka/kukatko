@@ -1,5 +1,4 @@
-/** Base path all versioned backend endpoints share. */
-const API_BASE = '/api/v1'
+import { apiPath } from './api'
 
 /** A newly created album the digest links to. */
 export interface WhatsNewAlbum {
@@ -69,7 +68,7 @@ export interface WhatsNew {
  * @throws Error if the response status is not 2xx.
  */
 export async function fetchWhatsNew(signal?: AbortSignal): Promise<WhatsNew> {
-  const res = await fetch(`${API_BASE}/whats-new`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath('/whats-new'), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new Error(`whats-new request failed: ${res.status}`)
   }

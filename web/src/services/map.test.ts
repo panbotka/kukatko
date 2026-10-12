@@ -23,7 +23,7 @@ const COLLECTION: MapFeatureCollection = {
         title: 'Prague',
         taken_at: '2026-01-01T00:00:00Z',
         media_type: 'image',
-        thumb: '/api/v1/photos/ph1/thumb/tile_224',
+        thumb: '/api/v1/p/v/photos/ph1/thumb/tile_224',
       },
     },
   ],
@@ -55,13 +55,13 @@ describe('buildMapQuery', () => {
 describe('tileLayerUrl', () => {
   it('points at the backend proxy and carries no API key', () => {
     const url = tileLayerUrl('basic')
-    expect(url).toBe('/api/v1/map/tiles/basic/{z}/{x}/{y}{r}')
+    expect(url).toBe('/api/v1/p/v/map/tiles/basic/{z}/{x}/{y}{r}')
     expect(url).not.toMatch(/api[_-]?key/i)
     expect(url).not.toContain('mapy.com')
   })
 
   it('switches the mapset segment', () => {
-    expect(tileLayerUrl('aerial')).toBe('/api/v1/map/tiles/aerial/{z}/{x}/{y}{r}')
+    expect(tileLayerUrl('aerial')).toBe('/api/v1/p/v/map/tiles/aerial/{z}/{x}/{y}{r}')
   })
 })
 
@@ -84,7 +84,7 @@ describe('fetchMapPhotos', () => {
     )
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/api/v1/map/photos?')
+    expect(url).toContain('/api/v1/p/v/map/photos?')
     expect(url).toContain('album=al1')
     expect(url).toContain('taken_after=2026-01-01')
     expect(init.credentials).toBe('same-origin')
@@ -96,7 +96,7 @@ describe('fetchMapPhotos', () => {
 
     await fetchMapPhotos({})
     const [url] = fetchMock.mock.calls[0] as [string]
-    expect(url).toBe('/api/v1/map/photos')
+    expect(url).toBe('/api/v1/p/v/map/photos')
   })
 
   it('throws ApiError carrying the status on a non-OK response', async () => {
@@ -110,7 +110,7 @@ describe('fetchMapPhotos', () => {
 })
 
 describe('probeTileFailure', () => {
-  const TILE_URL = '/api/v1/map/tiles/basic/7/70/44'
+  const TILE_URL = '/api/v1/p/v/map/tiles/basic/7/70/44'
 
   /** Stubs fetch with a tile-proxy response of the given status. */
   function stubTileStatus(status: number): void {

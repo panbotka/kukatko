@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type Photo } from './photos'
+import { apiPath } from './api'
 
 /**
  * Collection-expansion client for the /expand page, mirroring the backend JSON
@@ -11,8 +12,6 @@ import { type Photo } from './photos'
  * session cookie is sent automatically (same-origin); every call throws
  * {@link ApiError} on a non-OK response.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -34,7 +33,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON reply, throwing on non-OK. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath(path), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }

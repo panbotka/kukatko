@@ -166,8 +166,8 @@ function photo(overrides: Partial<PhotoDetail> = {}): PhotoDetail {
     file_height: 3000,
     taken_at: '2026-01-02T10:00:00Z',
     taken_at_source: 'exif',
-    thumb_url: '/api/v1/photos/b/thumb/tile_500',
-    download_url: '/api/v1/photos/b/download?original=true',
+    thumb_url: '/api/v1/p/v/photos/b/thumb/tile_500',
+    download_url: '/api/v1/p/v/photos/b/download?original=true',
     title: 'Beach',
     description: 'A sunny day',
     notes: '',
@@ -3116,9 +3116,9 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await screen.findByRole('link', { name: 'Next' })
 
       await waitFor(() => {
-        expect(preloaded()).toContain(`/api/v1/photos/a/thumb/${STAGE_SIZE}`)
+        expect(preloaded()).toContain(`/api/v1/p/v/photos/a/thumb/${STAGE_SIZE}`)
       })
-      expect(preloaded()).toContain(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+      expect(preloaded()).toContain(`/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`)
       expect(preloaded().some((url) => url.includes('/photos/c/thumb/'))).toBe(false)
     })
     it('closes to the source list with Escape', async () => {
@@ -3647,7 +3647,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         await user.click(screen.getByRole('button', { name: 'Rotate right' }))
 
         const main = screen.getByRole('img', { name: 'Beach' })
-        const plain = `/api/v1/photos/b/thumb/${STAGE_SIZE}`
+        const plain = `/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`
         const rebuilt = `${plain}?v=1`
         expect(main).toHaveAttribute('src', plain)
 
@@ -3694,7 +3694,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         })
 
         const main = screen.getByRole('img', { name: 'Beach' })
-        expect(main).toHaveAttribute('src', `/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+        expect(main).toHaveAttribute('src', `/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`)
         expect(main).toHaveStyle({ transform: 'rotate(90deg)' })
         expect(stageFigure()).toHaveAttribute('data-turned', 'true')
         expect(preloaded().some((url) => url.includes('v=1'))).toBe(false)
@@ -3712,7 +3712,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         await screen.findByRole('heading', { name: 'Beach' })
         loadPreview()
 
-        const plain = `/api/v1/photos/b/thumb/${STAGE_SIZE}`
+        const plain = `/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`
         const rebuilt = `${plain}?v=1`
         expect(screen.getByRole('img', { name: 'Beach' })).toHaveAttribute('src', plain)
 
@@ -3924,11 +3924,11 @@ describe('PhotoDetailPage — immersive viewer', () => {
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
-        expect(preloaded()).toContain(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+        expect(preloaded()).toContain(`/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`)
       })
 
       act(() => {
-        StubImage.finish(`/api/v1/photos/b/thumb/${STAGE_SIZE}`)
+        StubImage.finish(`/api/v1/p/v/photos/b/thumb/${STAGE_SIZE}`)
       })
       await waitFor(() => {
         expect(underImage()).toBeNull()

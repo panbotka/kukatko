@@ -1,6 +1,7 @@
 import { ApiError } from './auth'
 import { type Candidate, type CandidateCounts } from './faces'
 import { type Subject } from './people'
+import { apiPath } from './api'
 
 /**
  * Client for the recognition sweep (`GET /api/v1/faces/sweep`), which scans every
@@ -13,8 +14,6 @@ import { type Subject } from './people'
  * rejecting one through {@link import('./feedback').rejectFace}. The sweep never
  * auto-assigns; confidence only narrows the list.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -91,7 +90,7 @@ export async function streamSweep(
   signal?: AbortSignal,
 ): Promise<void> {
   const query = `confidence=${String(params.confidence)}&limit=${String(params.limit)}`
-  const res = await fetch(`${API_BASE}/faces/sweep?${query}`, {
+  const res = await fetch(apiPath(`/faces/sweep?${query}`), {
     credentials: 'same-origin',
     signal,
   })

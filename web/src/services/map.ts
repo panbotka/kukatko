@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type ArchivedFilter } from './photos'
+import { apiPath } from './api'
 
 /**
  * GeoJSON `Point` geometry as returned by the map feed
@@ -89,8 +90,6 @@ export interface MapPhotoParams {
   label?: string
 }
 
-const API_BASE = '/api/v1'
-
 /** Standard backend error envelope (`internal/mapsapi`). */
 interface ErrorBody {
   error?: string
@@ -142,7 +141,7 @@ export async function fetchMapPhotos(
 ): Promise<MapFeatureCollection> {
   const query = buildMapQuery(params)
   const suffix = query.toString() === '' ? '' : `?${query.toString()}`
-  const res = await fetch(`${API_BASE}/map/photos${suffix}`, {
+  const res = await fetch(apiPath(`/map/photos${suffix}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -194,7 +193,7 @@ export function mapsetNeedsDimming(mapset: Mapset): boolean {
  * hi-DPI variant for the mapsets that support it).
  */
 export function tileLayerUrl(mapset: Mapset): string {
-  return `${API_BASE}/map/tiles/${mapset}/{z}/{x}/{y}{r}`
+  return apiPath(`/map/tiles/${mapset}/{z}/{x}/{y}{r}`)
 }
 
 /**
@@ -282,7 +281,7 @@ export async function reverseGeocode(
   signal?: AbortSignal,
 ): Promise<GeocodeResult> {
   const query = new URLSearchParams({ lat: String(lat), lng: String(lng) })
-  const res = await fetch(`${API_BASE}/map/rgeocode?${query.toString()}`, {
+  const res = await fetch(apiPath(`/map/rgeocode?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -345,7 +344,7 @@ export async function searchPlaces(
   if (limit !== undefined) {
     params.set('limit', String(limit))
   }
-  const res = await fetch(`${API_BASE}/map/geocode?${params.toString()}`, {
+  const res = await fetch(apiPath(`/map/geocode?${params.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,

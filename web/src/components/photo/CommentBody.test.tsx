@@ -153,7 +153,7 @@ describe('CommentBody', () => {
     expect(thumbs[0]).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
     expect(within(thumbs[0]).getByRole('presentation')).toHaveAttribute(
       'src',
-      `/api/v1/photos/${uid(1)}/thumb/tile_100`,
+      `/api/v1/p/v/photos/${uid(1)}/thumb/tile_100`,
     )
     expect(within(strip).getByText('+3')).toBeInTheDocument()
   })

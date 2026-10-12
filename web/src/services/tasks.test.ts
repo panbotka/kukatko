@@ -94,7 +94,7 @@ describe('fetchTasks', () => {
   it('sends no parameters for the bare listing', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ tasks: [], total: 0, limit: 50, offset: 0 }))
     await fetchTasks()
-    expect(lastUrl()).toBe('/api/v1/tasks')
+    expect(lastUrl()).toBe('/api/v1/p/v/tasks')
   })
 
   it('joins the states and carries the flags', async () => {
@@ -126,7 +126,7 @@ describe('task mutations', () => {
   it('escapes the uid in the path', async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ uid: 'tk/1' }))
     await fetchTask('tk/1')
-    expect(lastUrl()).toBe('/api/v1/tasks/tk%2F1')
+    expect(lastUrl()).toBe('/api/v1/p/v/tasks/tk%2F1')
   })
 
   it('sends the whole input when opening a task', async () => {
@@ -157,7 +157,7 @@ describe('task mutations', () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse({ changed: 1, task: { uid: 'tk1' } }))
     await addTaskPhotos('tk1', ['ph1', 'ph2'])
 
-    expect(lastUrl()).toBe('/api/v1/tasks/tk1/photos')
+    expect(lastUrl()).toBe('/api/v1/p/v/tasks/tk1/photos')
     expect(lastBody()).toEqual({ photo_uids: ['ph1', 'ph2'] })
   })
 })

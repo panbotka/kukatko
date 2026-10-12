@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * The people of the library: the accounts a signed-in person may name.
@@ -12,8 +13,6 @@ import { ApiError } from './auth'
  * the directory every role may read, and it carries only what a comment already
  * shows everybody: a name, and the uid its picture is fetched by.
  */
-
-const API_BASE = '/api/v1'
 
 /** One account as everybody may see it (`auth.DirectoryEntry`). */
 export interface DirectoryUser {
@@ -33,7 +32,7 @@ interface DirectoryResponse {
  * @throws ApiError on a non-OK response (401 when the session has expired).
  */
 export async function listDirectory(signal?: AbortSignal): Promise<DirectoryUser[]> {
-  const res = await fetch(`${API_BASE}/users`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath('/users'), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new ApiError(res.status, res.statusText || `request failed: ${res.status}`)
   }

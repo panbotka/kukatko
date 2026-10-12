@@ -1,3 +1,5 @@
+import { instancePath } from '../services/api'
+
 /**
  * Browser half of Web Push: whether this browser can receive a push at all,
  * the notification permission, and the subscription this browser holds with
@@ -38,8 +40,6 @@
  * reported as `unsupported` too — so the UI can say "install the app first"
  * instead of showing a broken button.
  */
-
-const API_BASE = '/api/v1'
 
 /** The notification permission, or `unsupported` where the browser cannot push. */
 export type PushPermission = 'default' | 'granted' | 'denied' | 'unsupported'
@@ -189,7 +189,7 @@ export async function getPushState(): Promise<PushState> {
 /** Reads the instance's push configuration, or null when the request fails. */
 async function fetchPushConfig(): Promise<PushConfig | null> {
   try {
-    const res = await fetch(`${API_BASE}/push/config`, { credentials: 'same-origin' })
+    const res = await fetch(instancePath('/push/config'), { credentials: 'same-origin' })
     if (!res.ok) {
       return null
     }
@@ -305,7 +305,7 @@ async function subscriptionFor(
 /** Registers `subscription` with the server; resolves with the response status (0 on a network error). */
 async function registerWithServer(subscription: PushSubscription): Promise<number> {
   try {
-    const res = await fetch(`${API_BASE}/push/subscriptions`, {
+    const res = await fetch(instancePath('/push/subscriptions'), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -391,7 +391,7 @@ export async function unsubscribeFromPush(): Promise<PushState> {
 
   try {
     await fetch(
-      `${API_BASE}/push/subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`,
+      instancePath(`/push/subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`),
       { method: 'DELETE', credentials: 'same-origin' },
     )
   } catch {

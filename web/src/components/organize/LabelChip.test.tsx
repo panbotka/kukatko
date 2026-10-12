@@ -42,7 +42,7 @@ describe('LabelChip', () => {
     const { container } = renderChip(label({ cover_uid: 'ph9' }))
 
     const img = container.querySelector('img')
-    expect(img).toHaveAttribute('src', '/api/v1/photos/ph9/thumb/tile_100')
+    expect(img).toHaveAttribute('src', '/api/v1/p/v/photos/ph9/thumb/tile_100')
     // Decoration: the link is already named after the label, and a cloud of a
     // hundred chips must not fetch a hundred images before it can be read.
     expect(img).toHaveAttribute('aria-hidden', 'true')

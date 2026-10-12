@@ -356,11 +356,11 @@ describe('ReviewPage', () => {
     const crop = within(screen.getByTestId('review-enlarge')).getByAltText('')
     expect(crop).toHaveAttribute(
       'src',
-      '/api/v1/photos/p-q1/face?box=0.4000%2C0.3000%2C0.2000%2C0.2000',
+      '/api/v1/p/v/photos/p-q1/face?box=0.4000%2C0.3000%2C0.2000%2C0.2000',
     )
     expect(screen.getByTestId('review-face-pair-avatar')).toHaveAttribute(
       'src',
-      '/api/v1/subjects/s-q1/avatar',
+      '/api/v1/p/v/subjects/s-q1/avatar',
     )
     // The person is named under their picture, and the photograph with the
     // highlighted box is still the stage below.

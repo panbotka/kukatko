@@ -1,7 +1,5 @@
 import { ApiError } from './auth'
-
-/** Base path all versioned backend endpoints share. */
-const API_BASE = '/api/v1'
+import { apiPath, instancePath } from './api'
 
 /**
  * The three facts about this instance an anonymous visitor may learn
@@ -44,7 +42,7 @@ export interface PublicSettings {
  *   registration "we could not ask" is not "the door is shut".
  */
 export async function fetchPublicSettings(signal?: AbortSignal): Promise<PublicSettings> {
-  const res = await fetch(`${API_BASE}/settings/public`, { signal })
+  const res = await fetch(instancePath('/settings/public'), { signal })
   if (!res.ok) {
     throw new Error(`public settings request failed: ${res.status}`)
   }
@@ -102,7 +100,7 @@ async function readErrorMessage(res: Response): Promise<string> {
  * @throws ApiError when the response status is not 2xx.
  */
 export async function fetchInstanceSettings(signal?: AbortSignal): Promise<InstanceSettings> {
-  const res = await fetch(`${API_BASE}/settings`, {
+  const res = await fetch(apiPath('/settings'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -131,7 +129,7 @@ export async function updateInstanceSettings(
   update: InstanceSettingsUpdate,
   signal?: AbortSignal,
 ): Promise<InstanceSettings> {
-  const res = await fetch(`${API_BASE}/settings`, {
+  const res = await fetch(apiPath('/settings'), {
     method: 'PUT',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -167,7 +165,7 @@ export interface WelcomeSettings {
  * @throws ApiError when the response status is not 2xx.
  */
 export async function fetchWelcomeMarkdown(signal?: AbortSignal): Promise<string> {
-  const res = await fetch(`${API_BASE}/settings/welcome`, {
+  const res = await fetch(apiPath('/settings/welcome'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,

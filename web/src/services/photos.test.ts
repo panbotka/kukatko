@@ -25,8 +25,8 @@ const RESPONSE: PhotoListResponse = {
       file_width: 800,
       file_height: 600,
       taken_at_source: 'exif',
-      thumb_url: '/api/v1/photos/ph1/thumb/tile_500',
-      download_url: '/api/v1/photos/ph1/download?original=true',
+      thumb_url: '/api/v1/p/v/photos/ph1/thumb/tile_500',
+      download_url: '/api/v1/p/v/photos/ph1/download?original=true',
       title: '',
       description: '',
       camera_make: '',
@@ -118,7 +118,7 @@ describe('fetchPhotos', () => {
     ).resolves.toEqual(RESPONSE)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/api/v1/photos?')
+    expect(url).toContain('/api/v1/p/v/photos?')
     expect(url).toContain('sort=oldest')
     expect(url).toContain('limit=50')
     expect(url).toContain('offset=50')
@@ -148,7 +148,7 @@ describe('searchPhotos', () => {
     expect(got.mode).toBe('hybrid')
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/api/v1/search?')
+    expect(url).toContain('/api/v1/p/v/search?')
     expect(url).toContain('q=beach')
     expect(url).toContain('mode=semantic')
     expect(init.credentials).toBe('same-origin')
@@ -185,7 +185,7 @@ describe('fetchSimilar', () => {
     expect(got[0].distance).toBe(0.12)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/photos/ph1/similar')
+    expect(url).toBe('/api/v1/p/v/photos/ph1/similar')
     expect(init.credentials).toBe('same-origin')
   })
 
@@ -195,7 +195,7 @@ describe('fetchSimilar', () => {
 
     await fetchSimilar('ph1', 12)
     const [url] = fetchMock.mock.calls[0] as [string]
-    expect(url).toBe('/api/v1/photos/ph1/similar?limit=12')
+    expect(url).toBe('/api/v1/p/v/photos/ph1/similar?limit=12')
   })
 
   it('throws ApiError carrying the status on a non-OK response', async () => {
@@ -222,7 +222,7 @@ describe('fetchTimeline', () => {
     ).resolves.toEqual(TIMELINE)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/api/v1/photos/timeline?')
+    expect(url).toContain('/api/v1/p/v/photos/timeline?')
     expect(url).toContain('camera=Canon')
     expect(url).toContain('has_gps=true')
     expect(init.credentials).toBe('same-origin')
@@ -240,16 +240,18 @@ describe('fetchTimeline', () => {
 
 describe('thumbUrl', () => {
   it('builds the thumbnail path for a uid and size', () => {
-    expect(thumbUrl('ph1', 'tile_500')).toBe('/api/v1/photos/ph1/thumb/tile_500')
+    expect(thumbUrl('ph1', 'tile_500')).toBe('/api/v1/p/v/photos/ph1/thumb/tile_500')
   })
 
   it('appends a download token when provided', () => {
-    expect(thumbUrl('ph1', 'tile_500', 'tok 1')).toBe('/api/v1/photos/ph1/thumb/tile_500?t=tok%201')
+    expect(thumbUrl('ph1', 'tile_500', 'tok 1')).toBe(
+      '/api/v1/p/v/photos/ph1/thumb/tile_500?t=tok%201',
+    )
   })
 
   it('omits the token when null or empty', () => {
-    expect(thumbUrl('ph1', 'tile_500', null)).toBe('/api/v1/photos/ph1/thumb/tile_500')
-    expect(thumbUrl('ph1', 'tile_500', '')).toBe('/api/v1/photos/ph1/thumb/tile_500')
+    expect(thumbUrl('ph1', 'tile_500', null)).toBe('/api/v1/p/v/photos/ph1/thumb/tile_500')
+    expect(thumbUrl('ph1', 'tile_500', '')).toBe('/api/v1/p/v/photos/ph1/thumb/tile_500')
   })
 })
 

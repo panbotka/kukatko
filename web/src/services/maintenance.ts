@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { instancePath } from './api'
 
 /**
  * Admin library-maintenance client, mirroring the backend JSON shapes from
@@ -7,8 +8,6 @@ import { ApiError } from './auth'
  * session cookie is sent automatically (same-origin); every call throws
  * {@link ApiError} on a non-OK response so callers can branch on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -93,7 +92,7 @@ export interface RepairResult {
 
 /** Runs an integrity scan and returns the report. */
 export async function fetchMaintenanceScan(signal?: AbortSignal): Promise<ScanReport> {
-  const res = await fetch(`${API_BASE}/maintenance/scan`, {
+  const res = await fetch(instancePath('/maintenance/scan'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -109,7 +108,7 @@ export async function runMaintenanceRepair(
   options: RepairOptions,
   signal?: AbortSignal,
 ): Promise<RepairResult> {
-  const res = await fetch(`${API_BASE}/maintenance/repair`, {
+  const res = await fetch(instancePath('/maintenance/repair'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -138,7 +137,7 @@ export async function purgeAuditLog(
   olderThanDays: number,
   signal?: AbortSignal,
 ): Promise<AuditPurgeResult> {
-  const res = await fetch(`${API_BASE}/maintenance/audit/purge`, {
+  const res = await fetch(instancePath('/maintenance/audit/purge'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -176,7 +175,7 @@ export interface NamelessReport {
 
 /** Runs the read-only nameless-subject report. Safe: it never writes. */
 export async function fetchNamelessSubjects(signal?: AbortSignal): Promise<NamelessReport> {
-  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects`, {
+  const res = await fetch(instancePath('/maintenance/nameless-subjects'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -221,7 +220,7 @@ function attachmentName(res: Response, fallback: string): string {
  *   or 5xx so the caller can render the matching message.
  */
 export async function detachNamelessSubjects(signal?: AbortSignal): Promise<NamelessUndoFile> {
-  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects/detach`, {
+  const res = await fetch(instancePath('/maintenance/nameless-subjects/detach'), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -256,7 +255,7 @@ export async function restoreNamelessSubjects(
   file: File,
   signal?: AbortSignal,
 ): Promise<NamelessRestoreResult> {
-  const res = await fetch(`${API_BASE}/maintenance/nameless-subjects/restore`, {
+  const res = await fetch(instancePath('/maintenance/nameless-subjects/restore'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

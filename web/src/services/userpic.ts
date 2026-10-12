@@ -1,6 +1,5 @@
 import { ApiError, NetworkError } from './auth'
-
-const API_BASE = '/api/v1'
+import { instancePath } from './api'
 
 /**
  * Which source currently answers for an account's picture, as the server
@@ -46,7 +45,7 @@ export const PICTURE_ACCEPT = 'image/jpeg,image/png,image/webp'
  * two.
  */
 export function userAvatarUrl(uid: string, version = 0): string {
-  const url = `${API_BASE}/users/${encodeURIComponent(uid)}/avatar`
+  const url = instancePath(`/users/${encodeURIComponent(uid)}/avatar`)
   return version === 0 ? url : `${url}?v=${String(version)}`
 }
 
@@ -112,7 +111,7 @@ export async function clearMyPicture(signal?: AbortSignal): Promise<void> {
 /** Issues one request, turning a transport failure into a NetworkError. */
 async function request(path: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(`${API_BASE}${path}`, { credentials: 'same-origin', ...init })
+    return await fetch(instancePath(path), { credentials: 'same-origin', ...init })
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error

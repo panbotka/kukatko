@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Persisted-feedback client, mirroring `internal/feedbackapi`. A rejection is an
@@ -9,8 +10,6 @@ import { ApiError } from './auth'
  * automatically (same-origin); every call throws {@link ApiError} on a non-OK
  * response.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -37,7 +36,7 @@ async function send(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import { writeLanguagePreference } from '../i18n/accountLanguage'
+import { getCurrentProjectSlug, setCurrentProjectSlug } from '../services/api'
 import { ApiError, NetworkError, type AuthSession } from '../services/auth'
 import { PasskeyError } from '../services/passkeys'
 
@@ -303,5 +304,100 @@ describe('AuthProvider browser state', () => {
     await waitFor(() => {
       expect(screen.getByTestId('lang')).toHaveTextContent('cs')
     })
+  })
+})
+
+/** A membership of SESSION's account in the project `slug`. */
+function membership(slug: string) {
+  return {
+    uid: `pj-${slug}`,
+    slug,
+    name: slug,
+    active: true,
+    role: 'editor' as const,
+    approved: true,
+  }
+}
+
+describe('AuthProvider current project', () => {
+  beforeEach(() => {
+    setCurrentProjectSlug(null)
+  })
+
+  it('works in the project /auth/me last saw the account in', async () => {
+    fetchMe.mockResolvedValue({
+      ...SESSION,
+      projects: [membership('a'), membership('rodina')],
+      last_project_slug: 'rodina',
+    })
+    renderProvider()
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBe('rodina')
+  })
+
+  it('falls back to the first membership when no last project is remembered', async () => {
+    // The backend reports "none remembered" as an empty string, not a missing key.
+    fetchMe.mockResolvedValue({
+      ...SESSION,
+      projects: [membership('v'), membership('rodina')],
+      last_project_slug: '',
+    })
+    renderProvider()
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBe('v')
+  })
+
+  it('has no project for an account without memberships, nor for a visitor', async () => {
+    fetchMe.mockResolvedValue({ ...SESSION, projects: [], last_project_slug: '' })
+    const { unmount } = renderProvider()
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBeNull()
+    unmount()
+
+    setCurrentProjectSlug('v')
+    fetchMe.mockResolvedValue(null)
+    renderProvider()
+    expect(await screen.findByText('unauthenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBeNull()
+  })
+
+  it('reads /auth/me after a sign-in, whose answer names no project', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValueOnce(null).mockResolvedValue({
+      ...SESSION,
+      projects: [membership('v')],
+      last_project_slug: 'v',
+    })
+    signIn.mockResolvedValue(SESSION)
+    render(
+      <AuthProvider>
+        <PasskeyProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByText('unauthenticated')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'passkey' }))
+
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(fetchMe).toHaveBeenCalledTimes(2)
+    expect(getCurrentProjectSlug()).toBe('v')
+  })
+
+  it('forgets the project on sign-out', async () => {
+    const user = userEvent.setup()
+    fetchMe.mockResolvedValue({ ...SESSION, projects: [membership('v')], last_project_slug: 'v' })
+    signOut.mockResolvedValue(undefined)
+    render(
+      <AuthProvider>
+        <SignOutProbe />
+      </AuthProvider>,
+    )
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBe('v')
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }))
+
+    expect(await screen.findByText('unauthenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBeNull()
   })
 })

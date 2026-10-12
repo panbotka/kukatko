@@ -2,6 +2,7 @@ import { notifyTaskChanged } from '../lib/taskChanges'
 
 import { ApiError } from './auth'
 import { type TaskState } from './tasks'
+import { apiPath } from './api'
 
 /**
  * Comments client, mirroring the backend JSON shapes of `internal/comments` and
@@ -30,8 +31,6 @@ import { type TaskState } from './tasks'
  * `status`: 403 (someone else's comment), 404 (already deleted), 429 (the per-user
  * rate limit) and 400 (empty or over-long body) all mean different things to a reader.
  */
-
-const API_BASE = '/api/v1'
 
 /**
  * The longest comment body the backend accepts, in characters (runes, not bytes),
@@ -146,7 +145,7 @@ async function send<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Organisation client for albums and labels, mirroring the backend JSON shapes
@@ -6,8 +7,6 @@ import { ApiError } from './auth'
  * automatically (same-origin); every call throws {@link ApiError} on a non-OK
  * response so callers can branch on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -29,7 +28,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -51,7 +50,7 @@ async function sendJSON<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

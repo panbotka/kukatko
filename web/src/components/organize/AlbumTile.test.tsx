@@ -95,10 +95,10 @@ describe('AlbumTile', () => {
     })
 
     expect(sources(container)).toEqual([
-      '/api/v1/photos/p1/thumb/tile_224',
-      '/api/v1/photos/p2/thumb/tile_224',
-      '/api/v1/photos/p3/thumb/tile_224',
-      '/api/v1/photos/p4/thumb/tile_224',
+      '/api/v1/p/v/photos/p1/thumb/tile_224',
+      '/api/v1/p/v/photos/p2/thumb/tile_224',
+      '/api/v1/p/v/photos/p3/thumb/tile_224',
+      '/api/v1/p/v/photos/p4/thumb/tile_224',
     ])
     // The cells are decoration: the link is already named after the album, and
     // four identical alt texts would only make the page longer to listen to.
@@ -112,10 +112,10 @@ describe('AlbumTile', () => {
       album({ cover_uid: 'p1', cover_uids: ['p1', 'p2', 'p3', 'p4', 'p5'], photo_count: 5 }),
     )
     expect(sources(container)).toEqual([
-      '/api/v1/photos/p1/thumb/tile_224',
-      '/api/v1/photos/p2/thumb/tile_224',
-      '/api/v1/photos/p3/thumb/tile_224',
-      '/api/v1/photos/p4/thumb/tile_224',
+      '/api/v1/p/v/photos/p1/thumb/tile_224',
+      '/api/v1/p/v/photos/p2/thumb/tile_224',
+      '/api/v1/p/v/photos/p3/thumb/tile_224',
+      '/api/v1/p/v/photos/p4/thumb/tile_224',
     ])
   })
 
@@ -123,7 +123,7 @@ describe('AlbumTile', () => {
     const { container } = renderTile(
       album({ cover_uid: 'p1', cover_uids: ['p1', 'p2'], photo_count: 2 }),
     )
-    expect(sources(container)).toEqual(['/api/v1/photos/p1/thumb/tile_500'])
+    expect(sources(container)).toEqual(['/api/v1/p/v/photos/p1/thumb/tile_500'])
     expect(screen.getByRole('img', { name: 'Pouť 2024' })).toBeInTheDocument()
   })
 

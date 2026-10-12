@@ -67,7 +67,7 @@ describe('fetchShareManifest', () => {
 
     expect(files).toEqual([photo])
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/v1/photos/share-manifest')
+    expect(url).toBe('/api/v1/p/v/photos/share-manifest')
     expect(init?.method).toBe('POST')
     expect(init?.body).toBe(JSON.stringify({ photo_uids: ['ph1'] }))
   })
@@ -93,7 +93,9 @@ describe('fetchShareFile', () => {
     expect(file.type).toBe('image/jpeg')
     // proxy=true is what keeps the bytes readable by the page: without it the route
     // may answer with a redirect to the object store, which fetch cannot read.
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/photos/ph1/download?original=true&proxy=true')
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/v1/p/v/photos/ph1/download?original=true&proxy=true',
+    )
   })
 
   it('fetches a RAW as its largest cached preview', async () => {
@@ -103,7 +105,7 @@ describe('fetchShareFile', () => {
 
     expect(file.name).toBe('IMG_0007.jpg')
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/photos/ph2/thumb/fit_3840?proxy=true')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/p/v/photos/ph2/thumb/fit_3840?proxy=true')
   })
 
   it('falls back down the preview sizes when the largest is not there', async () => {
@@ -116,9 +118,9 @@ describe('fetchShareFile', () => {
 
     expect(file.name).toBe('IMG_0007.jpg')
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      '/api/v1/photos/ph2/thumb/fit_3840?proxy=true',
-      '/api/v1/photos/ph2/thumb/fit_2560?proxy=true',
-      '/api/v1/photos/ph2/thumb/fit_1920?proxy=true',
+      '/api/v1/p/v/photos/ph2/thumb/fit_3840?proxy=true',
+      '/api/v1/p/v/photos/ph2/thumb/fit_2560?proxy=true',
+      '/api/v1/p/v/photos/ph2/thumb/fit_1920?proxy=true',
     ])
   })
 

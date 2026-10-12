@@ -2,6 +2,7 @@ import { ApiError } from './auth'
 import { type Label } from './organize'
 import { type Bbox, type Subject } from './people'
 import { type Photo } from './photos'
+import { apiPath } from './api'
 
 /**
  * Review-game client, mirroring `internal/reviewapi`: `GET /review/queue` hands
@@ -10,8 +11,6 @@ import { type Photo } from './photos'
  * applies one verdict through the existing write paths. The session cookie is sent automatically (same-origin);
  * every call throws {@link ApiError} on a non-OK response.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -33,7 +32,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -46,7 +45,7 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 /** Issues a JSON POST and parses the body, throwing ApiError on a non-OK status. */
 async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

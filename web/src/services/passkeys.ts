@@ -1,7 +1,5 @@
 import { type AuthSession } from './auth'
-
-/** Base path all versioned backend endpoints share. */
-const API_BASE = '/api/v1'
+import { instancePath } from './api'
 
 /**
  * Longest passkey name the backend accepts (`auth.MaxPasskeyNameLen`, counted in
@@ -311,7 +309,7 @@ async function passkeyFetch(
 ): Promise<Response> {
   let res: Response
   try {
-    res = await fetch(`${API_BASE}${path}`, { credentials: 'same-origin', ...init })
+    res = await fetch(instancePath(path), { credentials: 'same-origin', ...init })
   } catch (error: unknown) {
     throw new PasskeyError('offline', 'the server could not be reached', { cause: error })
   }

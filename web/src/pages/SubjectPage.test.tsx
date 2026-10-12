@@ -89,8 +89,8 @@ function photo(uid: string, name: string): Photo {
     file_width: 1,
     file_height: 1,
     taken_at_source: 'exif',
-    thumb_url: `/api/v1/photos/${uid}/thumb/tile_500`,
-    download_url: `/api/v1/photos/${uid}/download?original=true`,
+    thumb_url: `/api/v1/p/v/photos/${uid}/thumb/tile_500`,
+    download_url: `/api/v1/p/v/photos/${uid}/download?original=true`,
     title: '',
     description: '',
     camera_make: '',
@@ -1120,7 +1120,7 @@ describe('SubjectPage family strip', () => {
     expect(within(missing).getByText('M')).toBeInTheDocument()
     // Somebody who is on photographs still gets their face.
     const pictured = screen.getByRole('link', { name: 'Anna' })
-    expect(pictured.querySelector('img')).toHaveAttribute('src', '/api/v1/subjects/sj_c/avatar')
+    expect(pictured.querySelector('img')).toHaveAttribute('src', '/api/v1/p/v/subjects/sj_c/avatar')
   })
 
   it('shows the life span inside the chip, which is what tells two namesakes apart', async () => {

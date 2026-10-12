@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type Photo } from './photos'
+import { apiPath, instancePath } from './api'
 
 /**
  * Notifications client, mirroring `internal/notification` and
@@ -14,8 +15,6 @@ import { type Photo } from './photos'
  * `404`, never a `403`, so both throw {@link ApiError} with that status and a
  * page tells "gone" apart from "could not be loaded" through `isNotFound`.
  */
-
-const API_BASE = '/api/v1'
 
 /**
  * The in-app route of one notification's own page — the deeplink its push
@@ -91,7 +90,7 @@ export interface NotificationDetail extends NotificationRecord {
 
 /** Builds the endpoint of one notification, escaping the uid. */
 function endpoint(uid: string): string {
-  return `${API_BASE}/notifications/${encodeURIComponent(uid)}`
+  return apiPath(`/notifications/${encodeURIComponent(uid)}`)
 }
 
 /** Reads the JSON body of a response, or throws {@link ApiError} with its status. */
@@ -189,7 +188,7 @@ export async function fetchNotifications(
     params.set('offset', String(query.offset))
   }
   const search = params.toString()
-  const res = await fetch(`${API_BASE}/notifications${search === '' ? '' : `?${search}`}`, {
+  const res = await fetch(apiPath(`/notifications${search === '' ? '' : `?${search}`}`), {
     credentials: 'same-origin',
     signal,
   })
@@ -198,7 +197,7 @@ export async function fetchNotifications(
 
 /** Reads how many notifications in the caller's inbox are unread — the bell's number. */
 export async function fetchUnreadNotificationCount(signal?: AbortSignal): Promise<number> {
-  const res = await fetch(`${API_BASE}/notifications/unread-count`, {
+  const res = await fetch(apiPath('/notifications/unread-count'), {
     credentials: 'same-origin',
     signal,
   })
@@ -208,7 +207,7 @@ export async function fetchUnreadNotificationCount(signal?: AbortSignal): Promis
 
 /** Marks every unread notification in the caller's inbox read; resolves to how many it marked. */
 export async function markAllNotificationsRead(): Promise<number> {
-  const res = await fetch(`${API_BASE}/notifications/read-all`, {
+  const res = await fetch(apiPath('/notifications/read-all'), {
     method: 'POST',
     credentials: 'same-origin',
   })
@@ -241,7 +240,7 @@ export interface PushSubscriptionRecord {
 export async function fetchPushSubscriptions(
   signal?: AbortSignal,
 ): Promise<PushSubscriptionRecord[]> {
-  const res = await fetch(`${API_BASE}/push/subscriptions`, {
+  const res = await fetch(instancePath('/push/subscriptions'), {
     credentials: 'same-origin',
     signal,
   })
@@ -259,7 +258,7 @@ export async function fetchPushSubscriptions(
  */
 export async function deletePushSubscription(endpoint: string): Promise<void> {
   const res = await fetch(
-    `${API_BASE}/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`,
+    instancePath(`/push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`),
     { method: 'DELETE', credentials: 'same-origin' },
   )
   if (res.ok || res.status === 404) {
@@ -302,7 +301,7 @@ interface PreferencesBody {
 export async function fetchNotificationPreferences(
   signal?: AbortSignal,
 ): Promise<NotificationPreference[]> {
-  const res = await fetch(`${API_BASE}/notifications/preferences`, {
+  const res = await fetch(apiPath('/notifications/preferences'), {
     credentials: 'same-origin',
     signal,
   })
@@ -319,7 +318,7 @@ export async function fetchNotificationPreferences(
 export async function updateNotificationPreferences(
   preferences: NotificationPreferenceInput[],
 ): Promise<NotificationPreference[]> {
-  const res = await fetch(`${API_BASE}/notifications/preferences`, {
+  const res = await fetch(apiPath('/notifications/preferences'), {
     method: 'PUT',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

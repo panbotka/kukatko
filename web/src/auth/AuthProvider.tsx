@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 
 import i18n from '../i18n'
 import { useAccountLanguage } from '../i18n/accountLanguage'
+import { setCurrentProjectSlug } from '../services/api'
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
 import {
@@ -11,6 +12,7 @@ import {
   isAdmin,
   isMaintainer,
   NetworkError,
+  projectSlugOf,
   type AuthSession,
 } from '../services/auth'
 
@@ -40,9 +42,25 @@ const INITIAL_STATE: AuthState = { status: 'loading', session: null }
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(INITIAL_STATE)
 
+  // The project is set before the state, so the first render of a signed-in
+  // tree can already build project-scoped URLs (see services/api).
   const applySession = useCallback((session: AuthSession | null) => {
+    setCurrentProjectSlug(projectSlugOf(session))
     setState({ status: session ? 'authenticated' : 'unauthenticated', session })
   }, [])
+
+  /**
+   * Publishes a session a sign-in returned. A sign-in answer carries no
+   * projects (only `GET /auth/me` does), so the session is re-read to learn
+   * which project to work in; should that read find no session after all, the
+   * sign-in answer stands.
+   */
+  const applySignIn = useCallback(
+    async (session: AuthSession) => {
+      applySession(session.projects ? session : ((await authService.fetchMe()) ?? session))
+    },
+    [applySession],
+  )
 
   /**
    * Reads `GET /auth/me` and files the outcome under the right status.
@@ -82,10 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (username: string, password: string) => {
-      const session = await authService.login(username, password)
-      applySession(session)
+      await applySignIn(await authService.login(username, password))
     },
-    [applySession],
+    [applySignIn],
   )
 
   /**
@@ -94,8 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * the same `AuthSession` the password endpoint returns, applied the same way.
    */
   const loginWithPasskey = useCallback(async () => {
-    applySession(await signInWithPasskey())
-  }, [applySession])
+    await applySignIn(await signInWithPasskey())
+  }, [applySignIn])
 
   // The storage is cleared whether or not the server heard the sign-out: the
   // person clicking it is leaving this browser either way.

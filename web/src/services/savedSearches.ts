@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Saved-searches ("smart albums") client, mirroring the backend JSON shapes from
@@ -8,8 +9,6 @@ import { ApiError } from './auth'
  * cookie is sent automatically), so this client never sends an owner. Each call
  * throws {@link ApiError} on a non-OK response so callers can branch on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /**
  * Opaque view-state blob stored with a saved search. It is exactly the object the
@@ -59,7 +58,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -81,7 +80,7 @@ async function sendJSON<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

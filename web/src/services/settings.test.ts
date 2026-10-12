@@ -53,7 +53,7 @@ describe('fetchInstanceSettings', () => {
     await expect(fetchInstanceSettings()).resolves.toEqual(adminRecord)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/settings')
+    expect(url).toBe('/api/v1/p/v/settings')
     expect(init.method).toBe('GET')
     // Admin-only server-side, so the session has to travel with the request.
     expect(init.credentials).toBe('same-origin')
@@ -84,7 +84,7 @@ describe('updateInstanceSettings', () => {
     ).resolves.toEqual(adminRecord)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/settings')
+    expect(url).toBe('/api/v1/p/v/settings')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body as string)).toEqual({
       registration_enabled: true,

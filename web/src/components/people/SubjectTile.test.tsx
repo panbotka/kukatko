@@ -146,7 +146,7 @@ describe('SubjectTile picture', () => {
     // is cut server-side now, so a tile fetches the pixels it paints.
     renderTile({ cover_face: coverFace(0.3) })
     const src = screen.getByRole('img', { name: 'Anna' }).getAttribute('src')
-    expect(src).toBe('/api/v1/subjects/s1/avatar')
+    expect(src).toBe('/api/v1/p/v/subjects/s1/avatar')
     expect(src).not.toContain('/thumb/')
   })
 
@@ -156,7 +156,7 @@ describe('SubjectTile picture', () => {
     renderTile({ cover_photo_uid: 'p9' })
     expect(screen.getByRole('img', { name: 'Anna' })).toHaveAttribute(
       'src',
-      '/api/v1/subjects/s1/avatar',
+      '/api/v1/p/v/subjects/s1/avatar',
     )
   })
 

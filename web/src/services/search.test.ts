@@ -32,7 +32,7 @@ describe('globalSearch', () => {
     await expect(globalSearch('beach')).resolves.toEqual(RESULT)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/api/v1/search/global?')
+    expect(url).toContain('/api/v1/p/v/search/global?')
     expect(url).toContain('q=beach')
     expect(init.credentials).toBe('same-origin')
   })

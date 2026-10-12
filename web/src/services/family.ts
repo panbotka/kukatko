@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type SubjectType } from './people'
+import { apiPath } from './api'
 
 /**
  * Genealogy client, mirroring `internal/familyapi` / `internal/family`. It reads
@@ -19,8 +20,6 @@ import { type SubjectType } from './people'
  * backend distinguishes a refusal about the *state* of the tree (409: a cycle, a
  * second parentage) from a malformed request (400).
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -42,7 +41,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON reply, throwing on non-OK. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath(path), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
@@ -56,7 +55,7 @@ async function sendJSON<T>(
   body: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

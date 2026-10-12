@@ -1,6 +1,7 @@
 import { type TakenPrecision } from '../lib/takenDate'
 
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Bulk-metadata client for `POST /api/v1/photos/bulk` (`internal/bulkapi`):
@@ -10,8 +11,6 @@ import { ApiError } from './auth'
  * photos from the library and toggle the per-user favorite — all in one call —
  * and to render the per-photo result summary the endpoint returns.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -188,7 +187,7 @@ export async function fetchBulkLocationSummary(
   photoUids: string[],
   signal?: AbortSignal,
 ): Promise<BulkLocationSummary> {
-  const res = await fetch(`${API_BASE}/photos/bulk/location-summary`, {
+  const res = await fetch(apiPath('/photos/bulk/location-summary'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -211,7 +210,7 @@ export async function fetchBulkMembershipSummary(
   photoUids: string[],
   signal?: AbortSignal,
 ): Promise<BulkMembershipSummary> {
-  const res = await fetch(`${API_BASE}/photos/bulk/membership-summary`, {
+  const res = await fetch(apiPath('/photos/bulk/membership-summary'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -235,7 +234,7 @@ export async function bulkUpdatePhotos(
   operations: BulkOperations,
   signal?: AbortSignal,
 ): Promise<BulkResult> {
-  const res = await fetch(`${API_BASE}/photos/bulk`, {
+  const res = await fetch(apiPath('/photos/bulk'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Search-history client, mirroring the backend JSON shapes from
@@ -13,8 +14,6 @@ import { ApiError } from './auth'
  * Each call throws {@link ApiError} on a non-OK response so callers can branch on
  * `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** How many entries the backend keeps (`searchhistory.MaxEntries`). */
 export const SEARCH_HISTORY_LIMIT = 20
@@ -55,7 +54,7 @@ async function readErrorMessage(res: Response): Promise<string> {
  * {@link SEARCH_HISTORY_LIMIT} of them.
  */
 export async function fetchSearchHistory(signal?: AbortSignal): Promise<SearchHistoryEntry[]> {
-  const res = await fetch(`${API_BASE}/search-history`, {
+  const res = await fetch(apiPath('/search-history'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -73,7 +72,7 @@ export async function fetchSearchHistory(signal?: AbortSignal): Promise<SearchHi
  * duplicating — and the response carries no body.
  */
 export async function recordSearch(query: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/search-history`, {
+  const res = await fetch(apiPath('/search-history'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -87,7 +86,7 @@ export async function recordSearch(query: string, signal?: AbortSignal): Promise
 
 /** Forgets the current user's whole search history. Idempotent. */
 export async function clearSearchHistory(signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/search-history`, {
+  const res = await fetch(apiPath('/search-history'), {
     method: 'DELETE',
     credentials: 'same-origin',
     signal,

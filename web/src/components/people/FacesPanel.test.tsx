@@ -240,7 +240,7 @@ describe('FacesPanel', () => {
     // Its own server-cut rendition, not a window onto a whole-frame preview:
     // a row of little faces must not cost a photograph apiece.
     for (const crop of crops) {
-      expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/photos\/ph_1\/face\?box=/)
+      expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/p\/v\/photos\/ph_1\/face\?box=/)
     }
     // The number survives as the cross-reference to the box on the photo…
     expect(screen.getByRole('button', { name: 'Select face #1: No name' })).toHaveTextContent('1')
@@ -255,7 +255,7 @@ describe('FacesPanel', () => {
     renderPanel(facesResult({ faces: [face], selected: face }))
 
     const crop = screen.getByRole('img', { name: 'The face being named' })
-    expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/photos\/ph_1\/face\?box=/)
+    expect(crop.getAttribute('src')).toMatch(/^\/api\/v1\/p\/v\/photos\/ph_1\/face\?box=/)
     // Inside the naming panel, not merely somewhere on the page.
     expect(screen.getByLabelText('Name this face')).toContainElement(crop)
   })

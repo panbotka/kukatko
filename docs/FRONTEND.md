@@ -8474,6 +8474,51 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   "written as A, not honoured as B" case per key in `AnnouncementBanner`, `WhatsNewPanel`, `reviewRounds`,
   `ReviewPage`, `gridScroll`, `useGridScrollMemory`, `accountLanguage` and `LanguageSwitcher` tests.
 
+## API paths
+
+Every URL a service fetches or hands to an `<img>`/`<video>` is built by one of two helpers in
+`web/src/services/api.ts`. **A new service never hardcodes `/api/v1`** — not as a literal, not
+as a module-local `API_BASE` constant (there are none left).
+
+- **`apiPath(path)`** → `/api/v1/p/<slug>` + `path`, for every **project-scoped** route: anything that
+  reads or writes a library's catalogue — photos, search, albums, labels, people, faces, family,
+  tasks, comments, duplicates, map, places, uploads and upload-link management, saved searches,
+  search history, what's new, the notification inbox and its preferences, capabilities, the
+  settings record and welcome text, announcement, the `/users` name directory, import history,
+  process backfills. It **throws** `Error('no current project …')` when no project is set: that is
+  a bug (a signed-out page asking a project route), not a state to render.
+- **`instancePath(path)`** → `/api/v1` + `path`, for the **instance-wide** routes the backend mounts
+  once: `/auth/*` (sign-in, the account, tokens, passkeys, password reset, `/auth/picture`),
+  `/admin/users`, `/users/{uid}/avatar`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
+  `/restore`, `/audit`, the public upload-link page `/u/{code}` and the anonymous
+  `/settings/public` read (instance-level until the per-project settings step).
+
+The split follows the backend's (`cmd/kukatko/projectapi.go`), so a module that has both halves
+splits **by call, not by module**: `notifications.ts` reads the inbox with `apiPath` and the push
+subscriptions with `instancePath`; `import.ts` reads import runs with `apiPath` and the job stats
+with `instancePath`; `settings.ts` reads `/settings/public` with `instancePath` and the rest with
+`apiPath`; `uploadLinks.ts` manages links with `apiPath` and serves the public page with
+`instancePath`. URLs the **backend** builds (`thumb_url`, `download_url`) already carry the prefix
+the request came through and are used as they are.
+
+**The current project** is module state, not a context, so a service stays a plain function:
+`setCurrentProjectSlug(slug | null)` / `getCurrentProjectSlug()`. `AuthProvider` sets it in
+`applySession` — before the state that renders the signed-in tree — from `projectSlugOf(session)`
+(`services/auth.ts`: `last_project_slug`, which `/auth/me` reports as `""` for none, else the first
+of `projects`, else `null`), and to `null` on sign-out. A sign-in answer (password or passkey)
+carries no projects, so `login`/`loginWithPasskey` re-read `GET /auth/me` before publishing the
+session. Transition: the next step reads the slug from the `/p/:slug` route instead. Because a
+project route needs a session, `CapabilitiesProvider` fetches only while `status` is
+`authenticated` (as `TaskSummaryProvider` and `NotificationInboxProvider` already did).
+
+The anonymous pages (`/login`, `/register`, `/password-reset/:token`, `/u/:code`) call only
+instance routes. Tests: `api.test.ts` (both helpers, the throw, the setter/getter),
+`AuthProvider.test.tsx` (the slug from `/auth/me`, the `""` fallback, the re-read after a sign-in,
+`null` on sign-out), `pages/AnonymousPages.test.tsx` (each anonymous page renders with no project,
+never calls `apiPath` and fetches only unprefixed routes). `src/test/setup.ts` starts every test in
+project `v`, so component and service tests expect `/api/v1/p/v/…` for project routes; a test about
+the signed-out state sets `null` itself.
+
 ## Theming / changing the palette
 
 The whole colour scheme hangs off **five role-named custom properties** at the top of

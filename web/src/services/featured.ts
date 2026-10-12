@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type Album } from './organize'
+import { apiPath } from './api'
 
 /**
  * Client for the homepage's featured albums ("Doporučujeme"), mirroring
@@ -8,9 +9,6 @@ import { type Album } from './organize'
  * featured entity, such as labels — depends on nothing but this surface.
  * Every call throws {@link ApiError} on a non-OK response.
  */
-
-/** Base path all versioned backend endpoints share. */
-const API_BASE = '/api/v1'
 
 /**
  * One album on the homepage strip (`organize.FeaturedAlbum` + `thumb_url`).
@@ -64,7 +62,7 @@ async function request<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

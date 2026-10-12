@@ -14,7 +14,7 @@ describe('fetchCapabilities', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchCapabilities()).resolves.toEqual(payload)
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/capabilities', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/p/v/capabilities', {
       credentials: 'same-origin',
       signal: undefined,
     })

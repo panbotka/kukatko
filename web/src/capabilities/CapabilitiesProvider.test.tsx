@@ -1,6 +1,8 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+
 import { CapabilitiesProvider } from './CapabilitiesProvider'
 import { useCapabilities } from './CapabilitiesContext'
 
@@ -23,13 +25,25 @@ function Probe() {
   )
 }
 
-/** Renders a Probe inside the provider under test. */
-function renderProvider() {
-  return render(
-    <CapabilitiesProvider>
-      <Probe />
-    </CapabilitiesProvider>,
+/** The slice of the auth context the provider reads: only the status. */
+function auth(status: AuthContextValue['status']): AuthContextValue {
+  return { status } as unknown as AuthContextValue
+}
+
+/** Renders a Probe inside the provider under test, signed in unless told otherwise. */
+function renderProvider(status: AuthContextValue['status'] = 'authenticated') {
+  const tree = (current: AuthContextValue['status']) => (
+    <AuthContext.Provider value={auth(current)}>
+      <CapabilitiesProvider>
+        <Probe />
+      </CapabilitiesProvider>
+    </AuthContext.Provider>
   )
+  const view = render(tree(status))
+  const rerenderAs = (next: AuthContextValue['status']) => {
+    view.rerender(tree(next))
+  }
+  return { ...view, rerenderAs }
 }
 
 /** Flushes the microtasks that settle the mocked fetch and its state update. */
@@ -108,5 +122,20 @@ describe('CapabilitiesProvider', () => {
     // un-learn it: the instance has already said what it can do.
     expect(screen.getByTestId('semantic')).toHaveTextContent('true')
     expect(screen.getByTestId('known')).toHaveTextContent('true')
+  })
+
+  it('fetches nothing until the session is authenticated, then starts', async () => {
+    // The route is project-scoped: with no session there is no project to ask.
+    const { rerenderAs } = renderProvider('loading')
+    await flush()
+    rerenderAs('unauthenticated')
+    await flush()
+    expect(capsMock).not.toHaveBeenCalled()
+    expect(screen.getByTestId('known')).toHaveTextContent('false')
+
+    rerenderAs('authenticated')
+    await flush()
+    expect(capsMock).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('semantic')).toHaveTextContent('true')
   })
 })

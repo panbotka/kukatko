@@ -1,7 +1,9 @@
 import '@testing-library/jest-dom/vitest'
 
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+
+import { setCurrentProjectSlug } from '../services/api'
 
 // jsdom does not implement `window.matchMedia`, which react-bootstrap and any
 // responsive component may touch. Provide a non-matching stub by default so
@@ -95,6 +97,14 @@ if (typeof Element !== 'undefined') {
   const proto = Element.prototype as unknown as { scrollIntoView?: () => void }
   proto.scrollIntoView ??= () => undefined
 }
+
+// The app learns its project from `GET /auth/me`; a test renders a signed-in
+// tree without one, so every test starts in the bootstrap project `v`, the
+// project the unprefixed API served before. A test about the anonymous state
+// (or another project) sets its own slug.
+beforeEach(() => {
+  setCurrentProjectSlug('v')
+})
 
 // React Testing Library does not auto-clean between tests under Vitest's
 // default config, so unmount rendered trees after each test to avoid leakage.

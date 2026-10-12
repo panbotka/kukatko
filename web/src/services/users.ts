@@ -1,4 +1,5 @@
 import { ApiError, type Role, type User } from './auth'
+import { instancePath } from './api'
 
 /**
  * Admin user-management client, mirroring the backend JSON shapes from
@@ -11,8 +12,6 @@ import { ApiError, type Role, type User } from './auth'
  * Password hashes never cross the wire: the backend excludes them from every
  * payload, so no type here has a place to put one.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -39,7 +38,7 @@ async function request(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<Response> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(instancePath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

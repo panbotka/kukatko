@@ -1,6 +1,7 @@
 import { notifyTaskChanged } from '../lib/taskChanges'
 
 import { ApiError } from './auth'
+import { apiPath } from './api'
 
 /**
  * Tasks client, mirroring `internal/phototask` and `internal/phototaskapi`.
@@ -26,8 +27,6 @@ import { ApiError } from './auth'
  * `status`: 403 (a viewer trying to curate), 404 (deleted since) and 400 (a state
  * that does not exist, or closing without saying how it ended) all read differently.
  */
-
-const API_BASE = '/api/v1'
 
 /** Whose move it is. The last two are the closed states, and both are results. */
 export type TaskState = 'question' | 'working' | 'review' | 'done' | 'rejected'
@@ -310,7 +309,7 @@ async function send<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },

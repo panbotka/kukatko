@@ -70,7 +70,7 @@ describe('DiscussPhotosModal', () => {
     const strip = screen.getByRole('list', { name: '29 photos' })
     const thumbs = within(strip).getAllByRole('presentation')
     expect(thumbs).toHaveLength(DISCUSS_PREVIEW_MAX)
-    expect(thumbs[0]).toHaveAttribute('src', `/api/v1/photos/${uid(1)}/thumb/tile_100`)
+    expect(thumbs[0]).toHaveAttribute('src', `/api/v1/p/v/photos/${uid(1)}/thumb/tile_100`)
     expect(within(strip).getByText('+5')).toBeInTheDocument()
   })
 

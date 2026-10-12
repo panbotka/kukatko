@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type Bbox } from './people'
+import { apiPath } from './api'
 
 /**
  * Client for the repeated-marker review (`internal/dupmarkersapi`): the photos
@@ -12,8 +13,6 @@ import { type Bbox } from './people'
  * lives in `services/feedback`. The session cookie is sent automatically
  * (same-origin); every call throws {@link ApiError} on a non-OK response.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -103,7 +102,7 @@ export async function fetchDuplicateMarkers(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
-  const res = await fetch(`${API_BASE}/duplicate-markers?${query.toString()}`, {
+  const res = await fetch(apiPath(`/duplicate-markers?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -127,7 +126,7 @@ export async function keepMarker(
   input: { photo_uid: string; subject_uid: string; keep_marker_uid: string },
   signal?: AbortSignal,
 ): Promise<KeepMarkerResult> {
-  const res = await fetch(`${API_BASE}/duplicate-markers/keep`, {
+  const res = await fetch(apiPath('/duplicate-markers/keep'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -147,7 +146,7 @@ export async function keepMarker(
  * skip it.
  */
 export async function invalidateMarker(markerUid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/duplicate-markers/invalid`, {
+  const res = await fetch(apiPath('/duplicate-markers/invalid'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { type Photo } from './photos'
+import { apiPath } from './api'
 
 /**
  * Grouped global-search client, mirroring the backend JSON shape from
@@ -11,8 +12,6 @@ import { type Photo } from './photos'
  * search on `/search` (`searchPhotos` in `photos.ts`), which stays the main photo
  * result set.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -157,7 +156,7 @@ export function directHitRoute(direct: GlobalSearchDirect): string | null {
  */
 export async function globalSearch(q: string, signal?: AbortSignal): Promise<GlobalSearchResult> {
   const query = new URLSearchParams({ q })
-  const res = await fetch(`${API_BASE}/search/global?${query.toString()}`, {
+  const res = await fetch(apiPath(`/search/global?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -229,7 +228,7 @@ interface QuerySchemaBody {
  * @throws ApiError when the request is refused (401 for a signed-out caller).
  */
 export async function fetchQuerySchema(signal?: AbortSignal): Promise<QueryFilterKey[]> {
-  const res = await fetch(`${API_BASE}/search/schema`, {
+  const res = await fetch(apiPath('/search/schema'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,

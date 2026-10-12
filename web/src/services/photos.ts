@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import type { PhotoSubject } from './people'
+import { apiPath } from './api'
 
 /**
  * A photo in the catalogue, mirroring the backend `photos.Photo` JSON shape
@@ -468,8 +469,6 @@ export interface PhotoListParams {
   flag?: string
 }
 
-const API_BASE = '/api/v1'
-
 /** Standard backend error envelope (`internal/photoapi/http.go`). */
 interface ErrorBody {
   error?: string
@@ -555,7 +554,7 @@ export async function fetchPhotos(
   signal?: AbortSignal,
 ): Promise<PhotoListResponse> {
   const query = buildPhotoQuery(params)
-  const res = await fetch(`${API_BASE}/photos?${query.toString()}`, {
+  const res = await fetch(apiPath(`/photos?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -586,7 +585,7 @@ export async function searchPhotos(
   if (mode !== undefined) {
     query.set('mode', mode)
   }
-  const res = await fetch(`${API_BASE}/search?${query.toString()}`, {
+  const res = await fetch(apiPath(`/search?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -838,7 +837,7 @@ export async function updatePhoto(
   patch: PhotoMetadataUpdate,
   signal?: AbortSignal,
 ): Promise<PhotoDetail> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}`), {
     method: 'PATCH',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -877,7 +876,7 @@ export interface PhotoEdit {
  * @throws ApiError with `status` 404 (no such photo) or 5xx.
  */
 export async function fetchEdit(uid: string, signal?: AbortSignal): Promise<PhotoEdit> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/edit`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/edit`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -916,7 +915,7 @@ export async function saveEdit(
     brightness: edit.brightness,
     contrast: edit.contrast,
   }
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/edit`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/edit`), {
     method: 'PUT',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -962,7 +961,7 @@ export function downloadUrl(
     query.set('t', options.token)
   }
   const suffix = query.toString() === '' ? '' : `?${query.toString()}`
-  return `${API_BASE}/photos/${encodeURIComponent(uid)}/download${suffix}`
+  return apiPath(`/photos/${encodeURIComponent(uid)}/download${suffix}`)
 }
 
 /**
@@ -999,7 +998,7 @@ export interface ZipDownloadRequest {
  */
 export async function downloadPhotosZip(req: ZipDownloadRequest): Promise<void> {
   const date = todayStamp()
-  const res = await fetch(`${API_BASE}/photos/download-zip`, {
+  const res = await fetch(apiPath('/photos/download-zip'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
@@ -1051,7 +1050,7 @@ function saveBlob(blob: Blob, filename: string): void {
  *   render the matching message.
  */
 export async function fetchPhoto(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -1098,7 +1097,7 @@ export async function fetchSimilar(
     query.set('limit', String(limit))
   }
   const suffix = query.toString() === '' ? '' : `?${query.toString()}`
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/similar${suffix}`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/similar${suffix}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -1133,7 +1132,7 @@ export function thumbUrl(
   downloadToken?: string | null,
   options: { proxy?: boolean } = {},
 ): string {
-  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/thumb/${encodeURIComponent(size)}`
+  const url = apiPath(`/photos/${encodeURIComponent(uid)}/thumb/${encodeURIComponent(size)}`)
   const params: string[] = []
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
     params.push(`t=${encodeURIComponent(downloadToken)}`)
@@ -1157,7 +1156,7 @@ export function thumbUrl(
  * playback of a long clip never outlives one.
  */
 export function videoUrl(uid: string, downloadToken?: string | null): string {
-  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/video`
+  const url = apiPath(`/photos/${encodeURIComponent(uid)}/video`)
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
     return `${url}?t=${encodeURIComponent(downloadToken)}`
   }
@@ -1176,7 +1175,7 @@ export function videoUrl(uid: string, downloadToken?: string | null): string {
  * behind them in a cookie-less context.
  */
 export function hlsMasterUrl(uid: string, downloadToken?: string | null): string {
-  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/hls/master.m3u8`
+  const url = apiPath(`/photos/${encodeURIComponent(uid)}/hls/master.m3u8`)
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
     return `${url}?t=${encodeURIComponent(downloadToken)}`
   }
@@ -1219,7 +1218,7 @@ export interface Storyboard {
  * @throws ApiError with `status` 404 (no such photo) or 5xx.
  */
 export async function fetchStoryboard(uid: string, signal?: AbortSignal): Promise<Storyboard> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/storyboard`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/storyboard`), {
     credentials: 'same-origin',
     signal,
   })
@@ -1240,7 +1239,7 @@ export async function fetchStoryboard(uid: string, signal?: AbortSignal): Promis
  * this route.
  */
 export function storyboardSpriteUrl(uid: string, downloadToken?: string | null): string {
-  const url = `${API_BASE}/photos/${encodeURIComponent(uid)}/storyboard/sprite`
+  const url = apiPath(`/photos/${encodeURIComponent(uid)}/storyboard/sprite`)
   if (downloadToken !== undefined && downloadToken !== null && downloadToken !== '') {
     return `${url}?t=${encodeURIComponent(downloadToken)}`
   }
@@ -1261,7 +1260,7 @@ export async function favoritePhoto(
   favorite: boolean,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/favorite`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/favorite`), {
     method: favorite ? 'PUT' : 'DELETE',
     credentials: 'same-origin',
     signal,
@@ -1295,7 +1294,7 @@ export async function regenerateThumbnail(
   uid: string,
   signal?: AbortSignal,
 ): Promise<RegenerateThumbnailResult> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/regenerate-thumbnail`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/regenerate-thumbnail`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1325,7 +1324,7 @@ export async function runProcessingStep(
   signal?: AbortSignal,
 ): Promise<PhotoProcessing> {
   const res = await fetch(
-    `${API_BASE}/photos/${encodeURIComponent(uid)}/process/${encodeURIComponent(step)}`,
+    apiPath(`/photos/${encodeURIComponent(uid)}/process/${encodeURIComponent(step)}`),
     { method: 'POST', credentials: 'same-origin', signal },
   )
   if (!res.ok) {
@@ -1359,7 +1358,7 @@ export async function ratePhoto(
   update: RatingUpdate,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/rating`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/rating`), {
     method: 'PUT',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -1380,7 +1379,7 @@ export async function ratePhoto(
  *   unwired) or 5xx, so the caller can roll back an optimistic update.
  */
 export async function clearRating(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/rating`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/rating`), {
     method: 'DELETE',
     credentials: 'same-origin',
     signal,
@@ -1399,7 +1398,7 @@ export async function clearRating(uid: string, signal?: AbortSignal): Promise<vo
  * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
  */
 export async function archivePhoto(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/archive`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/archive`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1417,7 +1416,7 @@ export async function archivePhoto(uid: string, signal?: AbortSignal): Promise<v
  * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
  */
 export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/unarchive`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/unarchive`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1438,7 +1437,7 @@ export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise
  * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
  */
 export async function hidePhoto(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/hide`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/hide`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1456,7 +1455,7 @@ export async function hidePhoto(uid: string, signal?: AbortSignal): Promise<void
  * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
  */
 export async function unhidePhoto(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/unhide`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/unhide`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1475,7 +1474,7 @@ export async function unhidePhoto(uid: string, signal?: AbortSignal): Promise<vo
  *   missing), 403 (not an editor), 503 (stacking disabled) or 5xx.
  */
 export async function stackPhotos(photoUids: string[], signal?: AbortSignal): Promise<PhotoDetail> {
-  const res = await fetch(`${API_BASE}/photos/stack`, {
+  const res = await fetch(apiPath('/photos/stack'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
@@ -1497,7 +1496,7 @@ export async function stackPhotos(photoUids: string[], signal?: AbortSignal): Pr
  *   (not an editor), 503 (stacking disabled) or 5xx.
  */
 export async function setStackPrimary(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
-  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/stack/primary`, signal)
+  return postStackMutation(apiPath(`/photos/${encodeURIComponent(uid)}/stack/primary`), signal)
 }
 
 /**
@@ -1506,7 +1505,7 @@ export async function setStackPrimary(uid: string, signal?: AbortSignal): Promis
  * Editor/admin only.
  */
 export async function unstackMember(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
-  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/unstack`, signal)
+  return postStackMutation(apiPath(`/photos/${encodeURIComponent(uid)}/unstack`), signal)
 }
 
 /**
@@ -1515,7 +1514,7 @@ export async function unstackMember(uid: string, signal?: AbortSignal): Promise<
  * Editor/admin only.
  */
 export async function unstackAll(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
-  return postStackMutation(`${API_BASE}/photos/${encodeURIComponent(uid)}/unstack-all`, signal)
+  return postStackMutation(apiPath(`/photos/${encodeURIComponent(uid)}/unstack-all`), signal)
 }
 
 /**
@@ -1540,7 +1539,7 @@ async function postStackMutation(url: string, signal?: AbortSignal): Promise<Pho
  *   (purge backend unwired) or 5xx.
  */
 export async function purgePhoto(uid: string, signal?: AbortSignal): Promise<void> {
-  const res = await fetch(`${API_BASE}/photos/${encodeURIComponent(uid)}/purge?confirm=true`, {
+  const res = await fetch(apiPath(`/photos/${encodeURIComponent(uid)}/purge?confirm=true`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1564,7 +1563,7 @@ export interface PurgeResult {
  * @throws ApiError with `status` 503 (purge backend unwired) or 5xx.
  */
 export async function emptyTrash(signal?: AbortSignal): Promise<PurgeResult> {
-  const res = await fetch(`${API_BASE}/trash/empty?confirm=true`, {
+  const res = await fetch(apiPath('/trash/empty?confirm=true'), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1590,7 +1589,7 @@ export async function purgeTrashOlderThan(
   signal?: AbortSignal,
 ): Promise<PurgeResult> {
   const query = new URLSearchParams({ days: String(days), confirm: 'true' })
-  const res = await fetch(`${API_BASE}/trash/purge-older?${query.toString()}`, {
+  const res = await fetch(apiPath(`/trash/purge-older?${query.toString()}`), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -1613,7 +1612,7 @@ export interface TrashInfo {
  * @throws ApiError on a non-2xx response.
  */
 export async function fetchTrashInfo(signal?: AbortSignal): Promise<TrashInfo> {
-  const res = await fetch(`${API_BASE}/trash/info`, { credentials: 'same-origin', signal })
+  const res = await fetch(apiPath('/trash/info'), { credentials: 'same-origin', signal })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
@@ -1670,7 +1669,7 @@ export async function fetchTimeline(
   signal?: AbortSignal,
 ): Promise<Timeline> {
   const query = buildPhotoQuery(params)
-  const res = await fetch(`${API_BASE}/photos/timeline?${query.toString()}`, {
+  const res = await fetch(apiPath(`/photos/timeline?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -1722,7 +1721,7 @@ export async function fetchPhotoYears(
   signal?: AbortSignal,
 ): Promise<YearsResponse> {
   const query = buildPhotoQuery(params)
-  const res = await fetch(`${API_BASE}/photos/years?${query.toString()}`, {
+  const res = await fetch(apiPath(`/photos/years?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -1774,7 +1773,7 @@ export async function fetchPhotoUploaders(
   signal?: AbortSignal,
 ): Promise<UploadersResponse> {
   const query = buildPhotoQuery(params)
-  const res = await fetch(`${API_BASE}/photos/uploaders?${query.toString()}`, {
+  const res = await fetch(apiPath(`/photos/uploaders?${query.toString()}`), {
     method: 'GET',
     credentials: 'same-origin',
     signal,

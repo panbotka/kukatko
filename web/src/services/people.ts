@@ -1,5 +1,6 @@
 import { ApiError } from './auth'
 import { buildPhotoQuery, type Photo, type PhotoListParams, type PhotoListResponse } from './photos'
+import { apiPath } from './api'
 
 /**
  * People/face client for the subject catalogue, on-photo face assignment, the
@@ -9,8 +10,6 @@ import { buildPhotoQuery, type Photo, type PhotoListParams, type PhotoListRespon
  * automatically (same-origin); every call throws {@link ApiError} on a non-OK
  * response so callers can branch on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -32,7 +31,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -54,7 +53,7 @@ async function sendJSON<T>(
   body?: unknown,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method,
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
@@ -204,7 +203,7 @@ export async function fetchSubjects(signal?: AbortSignal): Promise<SubjectCount[
  * picture at all answers 404, so ask `subjectTileImage` before rendering one.
  */
 export function subjectAvatarUrl(uid: string): string {
-  return `${API_BASE}/subjects/${encodeURIComponent(uid)}/avatar`
+  return apiPath(`/subjects/${encodeURIComponent(uid)}/avatar`)
 }
 
 /**
@@ -236,7 +235,7 @@ const FACE_BOX_PRECISION = 4
  */
 export function faceCropUrl(photoUid: string, bbox: Bbox): string {
   const box = bbox.map((value) => value.toFixed(FACE_BOX_PRECISION)).join(',')
-  return `${API_BASE}/photos/${encodeURIComponent(photoUid)}/face?box=${encodeURIComponent(box)}`
+  return apiPath(`/photos/${encodeURIComponent(photoUid)}/face?box=${encodeURIComponent(box)}`)
 }
 
 /** Fetches one subject by UID; throws ApiError 404 when missing. */

@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { apiPath, instancePath } from './api'
 
 /**
  * Admin import client, mirroring the backend JSON shapes from `internal/importapi`
@@ -10,8 +11,6 @@ import { ApiError } from './auth'
  * every call throws {@link ApiError} on a non-OK response so callers can branch
  * on `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -31,9 +30,12 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
-async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+/**
+ * Issues a GET to `url` (built by `apiPath`/`instancePath`) and parses the JSON
+ * body, throwing ApiError on a non-OK status.
+ */
+async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -104,12 +106,12 @@ export interface JobStats {
 
 /** Fetches the import-run history, most recently started first. */
 export async function fetchImportRuns(signal?: AbortSignal): Promise<ImportRunsResponse> {
-  return getJSON<ImportRunsResponse>('/import/runs', signal)
+  return getJSON<ImportRunsResponse>(apiPath('/import/runs'), signal)
 }
 
 /** Fetches the aggregate job-queue stats (counts by state and type). */
 export async function fetchJobStats(signal?: AbortSignal): Promise<JobStats> {
-  return getJSON<JobStats>('/jobs/stats', signal)
+  return getJSON<JobStats>(instancePath('/jobs/stats'), signal)
 }
 
 /** The import step a failure happened in (`importer.Stage`). */
@@ -162,5 +164,8 @@ export async function fetchImportFailures(
   if (opts.unresolvedOnly) params.set('unresolved', 'true')
   if (opts.limit) params.set('limit', String(opts.limit))
   const query = params.toString()
-  return getJSON<ImportFailuresResponse>(`/import/failures${query ? `?${query}` : ''}`, signal)
+  return getJSON<ImportFailuresResponse>(
+    apiPath(`/import/failures${query ? `?${query}` : ''}`),
+    signal,
+  )
 }

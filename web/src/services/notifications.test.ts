@@ -65,7 +65,7 @@ describe('updateNotificationPreferences', () => {
 
     const input = [{ kind: 'registration_pending', channel: 'email', enabled: true }]
     await expect(updateNotificationPreferences(input)).resolves.toEqual(DEFAULTS)
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/notifications/preferences', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/p/v/notifications/preferences', {
       method: 'PUT',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -97,9 +97,9 @@ describe('inbox requests', () => {
     await fetchNotifications({ unread: false, offset: 0 })
 
     expect(fetchMock.mock.calls.map((call) => call[0] as string)).toEqual([
-      '/api/v1/notifications',
-      '/api/v1/notifications?unread=true&limit=8&offset=30',
-      '/api/v1/notifications',
+      '/api/v1/p/v/notifications',
+      '/api/v1/p/v/notifications?unread=true&limit=8&offset=30',
+      '/api/v1/p/v/notifications',
     ])
   })
 
@@ -112,9 +112,9 @@ describe('inbox requests', () => {
 
     await expect(fetchUnreadNotificationCount()).resolves.toBe(4)
     await expect(markAllNotificationsRead()).resolves.toBe(4)
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/notifications/unread-count')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/p/v/notifications/unread-count')
     expect(fetchMock.mock.calls[1]).toEqual([
-      '/api/v1/notifications/read-all',
+      '/api/v1/p/v/notifications/read-all',
       { method: 'POST', credentials: 'same-origin' },
     ])
   })

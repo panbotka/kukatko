@@ -55,8 +55,8 @@ function photo(uid: string): Photo {
     file_width: 1,
     file_height: 1,
     taken_at_source: 'exif',
-    thumb_url: `/api/v1/photos/${uid}/thumb/tile_500`,
-    download_url: `/api/v1/photos/${uid}/download?original=true`,
+    thumb_url: `/api/v1/p/v/photos/${uid}/thumb/tile_500`,
+    download_url: `/api/v1/p/v/photos/${uid}/download?original=true`,
     title: '',
     description: '',
     camera_make: '',
@@ -221,16 +221,16 @@ describe('PlacesPage', () => {
     await screen.findByRole('button', { name: /Czechia/ })
     const covers = container.querySelectorAll('img')
     expect([...covers].map((img) => img.getAttribute('src'))).toEqual([
-      '/api/v1/photos/cz/thumb/tile_224',
-      '/api/v1/photos/it/thumb/tile_224',
+      '/api/v1/p/v/photos/cz/thumb/tile_224',
+      '/api/v1/p/v/photos/it/thumb/tile_224',
     ])
 
     await user.click(screen.getByRole('button', { name: /Czechia/ }))
 
     await screen.findByRole('button', { name: /Prague/ })
     expect([...container.querySelectorAll('img')].map((img) => img.getAttribute('src'))).toEqual([
-      '/api/v1/photos/pr/thumb/tile_224',
-      '/api/v1/photos/bo/thumb/tile_224',
+      '/api/v1/p/v/photos/pr/thumb/tile_224',
+      '/api/v1/p/v/photos/bo/thumb/tile_224',
     ])
   })
 

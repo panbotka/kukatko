@@ -18,7 +18,7 @@ function boxOf(url: string): string {
 describe('faceCropUrl', () => {
   it('addresses the photo and carries the box as four numbers', () => {
     const url = faceCropUrl('ph_1', [0.1, 0.2, 0.3, 0.4])
-    expect(url.startsWith('/api/v1/photos/ph_1/face?')).toBe(true)
+    expect(url.startsWith('/api/v1/p/v/photos/ph_1/face?')).toBe(true)
     expect(boxOf(url)).toBe('0.1000,0.2000,0.3000,0.4000')
   })
 
@@ -36,15 +36,15 @@ describe('faceCropUrl', () => {
   })
 
   it('escapes a photo uid that would otherwise change the path', () => {
-    expect(faceCropUrl('a/b?c', [0, 0, 1, 1]).startsWith('/api/v1/photos/a%2Fb%3Fc/face?')).toBe(
-      true,
-    )
+    expect(
+      faceCropUrl('a/b?c', [0, 0, 1, 1]).startsWith('/api/v1/p/v/photos/a%2Fb%3Fc/face?'),
+    ).toBe(true)
   })
 })
 
 describe('subjectAvatarUrl', () => {
   it('addresses the subject avatar route', () => {
-    expect(subjectAvatarUrl('su_1')).toBe('/api/v1/subjects/su_1/avatar')
+    expect(subjectAvatarUrl('su_1')).toBe('/api/v1/p/v/subjects/su_1/avatar')
   })
 })
 
@@ -74,7 +74,7 @@ describe('attachPerson', () => {
     await expect(attachPerson('ph_1', 'su_a')).resolves.toEqual([ALICE])
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/photos/ph_1/people')
+    expect(url).toBe('/api/v1/p/v/photos/ph_1/people')
     expect(init.method).toBe('POST')
     expect(init.body).toBe(JSON.stringify({ subject_uid: 'su_a' }))
   })
@@ -96,7 +96,7 @@ describe('detachPerson', () => {
     await expect(detachPerson('ph_1', 'su_a')).resolves.toEqual([])
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/photos/ph_1/people/su_a')
+    expect(url).toBe('/api/v1/p/v/photos/ph_1/people/su_a')
     expect(init.method).toBe('DELETE')
   })
 
@@ -106,6 +106,6 @@ describe('detachPerson', () => {
 
     await detachPerson('a/b', 'c?d')
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/photos/a%2Fb/people/c%3Fd')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/p/v/photos/a%2Fb/people/c%3Fd')
   })
 })

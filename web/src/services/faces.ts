@@ -1,6 +1,7 @@
 import { ApiError } from './auth'
 import { type Bbox } from './people'
 import { type Photo } from './photos'
+import { apiPath } from './api'
 
 /**
  * Candidate-search client for the "find a person among untagged photos" page,
@@ -12,8 +13,6 @@ import { type Photo } from './photos'
  * call throws {@link ApiError} on a non-OK response so callers can branch on
  * `status`.
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -35,7 +34,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a POST with a JSON body and parses the JSON reply, throwing on non-OK. */
 async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiPath(path), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

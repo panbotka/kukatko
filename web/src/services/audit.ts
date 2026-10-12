@@ -1,4 +1,5 @@
 import { ApiError } from './auth'
+import { instancePath } from './api'
 
 /**
  * Audit-log client, mirroring the backend JSON shapes from `internal/auditapi`
@@ -14,8 +15,6 @@ import { ApiError } from './auth'
  * (`user`, `entity_type`, `entity_uid`) while the returned records use the
  * underlying column names (`actor_uid`, `target_type`, `target_uid`).
  */
-
-const API_BASE = '/api/v1'
 
 /** Standard backend error envelope shared by every API group. */
 interface ErrorBody {
@@ -37,7 +36,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 
 /** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(instancePath(path), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
