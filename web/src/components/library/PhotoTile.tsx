@@ -257,12 +257,17 @@ export function PhotoTile({
         </span>
       )}
       {thumb.failed && (
+        // The fallback keeps to the band between the tile's corner controls —
+        // the select circle above, the favourite heart below — and drops its
+        // words, then its glyph, as the tile shrinks (`.kk-tile__unavailable`
+        // in `styles/tokens.css`). Its name says it all at any size.
         <span
-          className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary kk-text-caption p-2 text-center"
+          className="kk-tile__unavailable text-secondary"
           role="img"
           aria-label={t('library.tile.unavailable')}
         >
-          {t('library.tile.unavailable')}
+          <Icon name="image" className="kk-tile__unavailable-icon" />
+          <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
         </span>
       )}
       {isPlayableClip(photo) && (

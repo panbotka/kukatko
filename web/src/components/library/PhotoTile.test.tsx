@@ -162,6 +162,24 @@ describe('PhotoTile thumbnail source', () => {
 
     expect(await screen.findByText('Preview unavailable')).toBeInTheDocument()
   })
+
+  it('draws the fallback in the band the corner controls leave free', async () => {
+    // The layout is the stylesheet's (`styles/tileUnavailable.test.ts` pins the
+    // band against the heart and the select circle); what the tile owes it is
+    // the hooks: the band itself, and words and glyph as separate children so
+    // each can be dropped on its own as the tile shrinks.
+    fetchPhotoMock.mockResolvedValue(detail())
+    renderTile(photo({ media_type: 'image' }), true)
+
+    fireEvent.error(screen.getByRole('img', { name: 'Clip' }))
+
+    const fallback = await screen.findByRole('img', { name: 'Preview unavailable' })
+    expect(fallback).toHaveClass('kk-tile__unavailable')
+    expect(screen.getByText('Preview unavailable')).toHaveClass('kk-tile__unavailable-text')
+    expect(fallback.querySelector('.kk-tile__unavailable-icon')).toBeInTheDocument()
+    // The heart is the tile's, not the fallback's: it stays a sibling of the link.
+    expect(fallback).not.toContainElement(screen.getByRole('button', { name: /favorite/i }))
+  })
 })
 
 describe('PhotoTile video badge', () => {

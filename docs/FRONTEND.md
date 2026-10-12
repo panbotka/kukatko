@@ -1090,7 +1090,13 @@ here.
   layout shift — the photograph's **own** blurred stand-in while the thumbnail is on the way
   (`photo.blurhash` → `FadeInImage`'s `blurhash` → `BlurPlaceholder`), the neutral well for a photo
   that carries no hash, and the neutral well again once the thumbnail is beyond saving (the failed
-  tile unmounts the image and the blur with it, so the „unavailable" label stays readable); a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
+  tile unmounts the image and the blur with it, so the „unavailable" label stays readable). That label
+  (`.kk-tile__unavailable`, shared with `TrashCard`) is an image glyph plus the words, kept to the
+  band between the corner controls — its top/bottom insets reserve the select circle and the heart,
+  so neither can sit on the text — and fitted to that band as a size container: two lines of words
+  where they fit (from a ~120px tile), the glyph alone below that, nothing on the tiniest tiles
+  (the `aria-label` still names it); it is out of flow, so the tile link's underline never reaches
+  it (`styles/tileUnavailable.test.ts` pins the reserve to the controls' sizes); a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
   `--kk-tile-scrim`, only on hover/focus, `aria-hidden` because the same date is already carried by the image alt,
   not shown on touch — without a date it doesn't render); on hover the **image** zooms in discreetly
   (`scale`, inside `overflow:hidden`, no layout shift); an optional **favorite heart** overlay

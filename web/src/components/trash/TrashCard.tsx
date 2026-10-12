@@ -10,6 +10,7 @@ import { photoLabel } from '../../lib/photoTitle'
 import { purgeCountdown } from '../../lib/trashCountdown'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
+import { Icon } from '../Icon'
 
 /** Props for {@link TrashCard}. */
 export interface TrashCardProps {
@@ -77,8 +78,15 @@ export function TrashCard({
             />
           )}
           {thumb.failed && (
-            <span className="d-flex w-100 h-100 align-items-center justify-content-center text-secondary small p-2 text-center">
-              {t('library.tile.unavailable')}
+            // The library tile's fallback, which keeps clear of the corner
+            // checkbox and countdown badge the same way it does of the heart.
+            <span
+              className="kk-tile__unavailable text-secondary"
+              role="img"
+              aria-label={t('library.tile.unavailable')}
+            >
+              <Icon name="image" className="kk-tile__unavailable-icon" />
+              <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
             </span>
           )}
         </Link>

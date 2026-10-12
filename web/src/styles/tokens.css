@@ -668,6 +668,9 @@
 .kk-tile__media {
   position: relative;
   overflow: hidden;
+  /* The media box is usually a link, and a link's underline would run under
+     anything textual drawn inside it (the "no preview" fallback below). */
+  text-decoration: none;
   border-radius: var(--kk-radius-md);
   background-color: var(--kk-surface-sunken);
   box-shadow: var(--kk-shadow-1);
@@ -880,6 +883,84 @@
 .kk-tile__pending {
   font-size: 0.85em;
   opacity: 0.75;
+}
+
+/*
+ * A tile whose thumbnail could not be loaded: a quiet image glyph and the words
+ * "no preview available", centred in the tile. The tile's overlay controls sit
+ * in its corners — the select circle top-start (1.65rem), a clip/stack badge
+ * top-end, the favourite heart bottom-end (a 2.75rem disc) — so the padding
+ * reserves a band clear of all of them: the top inset clears the circle, the
+ * bottom one the heart, each with its `--kk-space-1` margin and half as much
+ * again for air — every rem spent here is a rem a ~120px tile cannot spend on
+ * its two lines of text. Nothing inside can reach a corner control however wide the text runs,
+ * because the band and the corners never share a row.
+ *
+ * The band is the size container the content is fitted to. The stepper allows
+ * tiles far too small for words (ten columns, a short justified row), so the
+ * text shows only where two lines of it fit, the glyph only where it fits on
+ * its own, and both together on a roomy tile; a tile too small for either is
+ * the plain well, still named by its `aria-label`. Absolutely positioned, so it
+ * fills the media box whatever sized it and — out of flow — inherits no link
+ * underline from it either.
+ */
+.kk-tile__unavailable {
+  container: kk-tile-unavailable / size;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kk-space-1);
+  padding: calc(var(--kk-space-1) * 1.5 + 1.65rem) var(--kk-space-2)
+    calc(var(--kk-space-1) * 1.5 + 2.75rem);
+  overflow: hidden;
+  text-align: center;
+  text-decoration: none;
+}
+
+.kk-tile__unavailable-icon {
+  display: none;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.kk-tile__unavailable-text {
+  display: none;
+  font-size: var(--kk-font-size-caption);
+  line-height: var(--kk-line-height-caption);
+  overflow-wrap: anywhere;
+}
+
+/* Room for the glyph alone. */
+@container kk-tile-unavailable (min-height: 1.25rem) {
+  .kk-tile__unavailable-icon {
+    display: block;
+  }
+}
+
+/* Room for two lines of words (2 × 0.8125rem × 1.4): they win over the glyph. The clamp keeps a third
+   line (a narrow tile, a longer translation) from spilling out of the band. */
+@container kk-tile-unavailable (min-width: 5rem) and (min-height: 2.3rem) {
+  .kk-tile__unavailable-icon {
+    display: none;
+  }
+
+  .kk-tile__unavailable-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+}
+
+/* Room for both: the glyph, the gap and two lines. */
+@container kk-tile-unavailable (min-width: 5rem) and (min-height: 3.8rem) {
+  .kk-tile__unavailable-icon {
+    display: block;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
