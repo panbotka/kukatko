@@ -102,7 +102,7 @@ func (a *API) resolveAlbum(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading album cover %s: %w", album.UID, err)
 	}
-	a.stampDirect(hit, covers[album.UID].PhotoUID, covers[album.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[album.UID].PhotoUID, covers[album.UID].FileHash)
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (a *API) resolveLabel(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading label cover %s: %w", label.UID, err)
 	}
-	a.stampDirect(hit, covers[label.UID].PhotoUID, covers[label.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[label.UID].PhotoUID, covers[label.UID].FileHash)
 	return nil
 }
 
@@ -134,19 +134,19 @@ func (a *API) resolvePerson(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading subject cover %s: %w", subject.UID, err)
 	}
-	a.stampDirect(hit, covers[subject.UID].PhotoUID, covers[subject.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[subject.UID].PhotoUID, covers[subject.UID].FileHash)
 	return nil
 }
 
 // stampDirect puts a resolved cover onto a direct hit, doing nothing when the
 // entity has none — an absent map entry reads back as the zero cover, and an
 // empty photo uid is what says so.
-func (a *API) stampDirect(hit *directHit, photoUID, fileHash string) {
+func (a *API) stampDirect(ctx context.Context, hit *directHit, photoUID, fileHash string) {
 	if photoUID == "" {
 		return
 	}
 	hit.Cover = &photoUID
-	hit.ThumbURL = a.coverThumb(photoUID, fileHash)
+	hit.ThumbURL = a.coverThumb(ctx, photoUID, fileHash)
 }
 
 // resolvePhotoRef fills hit from whichever photo the id stands for: the photo
@@ -157,7 +157,7 @@ func (a *API) resolvePhotoRef(ctx context.Context, ref query.UIDRef, hit *direct
 	if err != nil || !found {
 		return err
 	}
-	a.media.DecorateOne(&photo)
+	a.media.DecorateOne(ctx, &photo)
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityPhoto), photo.UID
 	hit.Title, hit.Photo, hit.States = photoTitle(photo), &photo, photoStates(photo)
 	return nil

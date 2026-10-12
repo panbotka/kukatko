@@ -171,7 +171,17 @@ func NewAPI(cfg Config) *API {
 //	PUT    /notifications/preferences    replace them
 //	GET    /notifications/{uid}          one notification with its visible photos
 //	POST   /notifications/{uid}/read     mark it read
+//
+// The server mounts the two halves apart: RegisterPushRoutes once (a device
+// belongs to an account, not a project), RegisterInboxRoutes with the
+// project-scoped API, under /api/v1/p/{project} and its transition alias.
 func (a *API) RegisterRoutes(r chi.Router) {
+	a.RegisterPushRoutes(r)
+	a.RegisterInboxRoutes(r)
+}
+
+// RegisterPushRoutes mounts the instance-wide /push/* half of RegisterRoutes.
+func (a *API) RegisterPushRoutes(r chi.Router) {
 	r.Route("/push", func(r chi.Router) {
 		r.Use(a.requireAuth)
 		r.Get("/config", a.handlePushConfig)
@@ -179,6 +189,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.With(a.throttle).Post("/subscriptions", a.handleSubscribe)
 		r.Delete("/subscriptions", a.handleUnsubscribe)
 	})
+}
+
+// RegisterInboxRoutes mounts the project-scoped /notifications/* half of
+// RegisterRoutes: the inbox, its preferences and one notification.
+func (a *API) RegisterInboxRoutes(r chi.Router) {
 	r.Route("/notifications", func(r chi.Router) {
 		r.Use(a.requireAuth)
 		r.Get("/", a.handleList)

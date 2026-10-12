@@ -1,6 +1,7 @@
 package mcpapi
 
 import (
+	"context"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/organize"
@@ -210,9 +211,9 @@ type libraryStats struct {
 }
 
 // summarize projects photos onto the compact list shape, stamping thumbnail URLs
-// on the way out.
-func (a *API) summarize(list []photos.Photo) []photoSummary {
-	a.media.Decorate(list)
+// on the way out — built on the API base ctx's request came through.
+func (a *API) summarize(ctx context.Context, list []photos.Photo) []photoSummary {
+	a.media.Decorate(ctx, list)
 	out := make([]photoSummary, 0, len(list))
 	for i := range list {
 		out = append(out, photoSummary{

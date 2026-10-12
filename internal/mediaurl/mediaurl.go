@@ -29,17 +29,28 @@
 package mediaurl
 
 import (
+	"context"
 	"net/url"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
-// photosPath is the API path prefix under which this application serves photo
-// media itself. It is the fallback target for a backend that mints no URLs, and
-// it mirrors the base path the server mounts the API on (/api/v1).
-const photosPath = "/api/v1/photos/"
+// photosPath is the path, below the request's API base (auth.APIBase), under
+// which this application serves photo media itself. It is the fallback target
+// for a backend that mints no URLs. The base is the prefix the request came
+// through — /api/v1/p/<slug> for a project-prefixed route, /api/v1 through the
+// transition alias — so a client that addressed one project fetches the media
+// from that project too.
+const photosPath = "/photos/"
+
+// ownPhotoPath returns this application's route for uid's media below the
+// request's API base, ending in a slash.
+func ownPhotoPath(ctx context.Context, uid string) string {
+	return auth.APIBase(ctx) + photosPath + url.PathEscape(uid) + "/"
+}
 
 // downloadParam is the query parameter by which the edge Worker is asked to
 // answer with Content-Disposition: attachment, valued with the name to save the
@@ -88,26 +99,28 @@ func (b *Builder) ThumbObject(fileHash, size string) string {
 
 // Thumb returns where a client fetches the photo's thumbnail at size: the signed
 // edge URL when the backend publishes one, otherwise this application's thumb
-// route for uid, which streams the bytes (generating them on a cache miss).
-func (b *Builder) Thumb(uid, fileHash, size string) string {
+// route for uid, which streams the bytes (generating them on a cache miss),
+// below the API base ctx's request came through.
+func (b *Builder) Thumb(ctx context.Context, uid, fileHash, size string) string {
 	if signed := b.ThumbObject(fileHash, size); signed != "" {
 		return signed
 	}
-	return photosPath + url.PathEscape(uid) + "/thumb/" + url.PathEscape(size)
+	return ownPhotoPath(ctx, uid) + "thumb/" + url.PathEscape(size)
 }
 
 // Download returns where a client fetches the photo's untouched original bytes:
 // the signed edge URL of the stored object when the backend publishes one,
-// otherwise this application's download route for uid. The route is asked for
+// otherwise this application's download route for uid below the API base ctx's
+// request came through. The route is asked for
 // ?original=true so both answers mean the same thing — the stored original,
 // never a rendering of a non-destructive edit, which only the application can
 // produce and which the plain download route would serve instead. Either answer
 // downloads rather than displays: see DownloadObject.
-func (b *Builder) Download(uid, filePath, fileName string) string {
+func (b *Builder) Download(ctx context.Context, uid, filePath, fileName string) string {
 	if signed := b.DownloadObject(filePath, fileName); signed != "" {
 		return signed
 	}
-	return photosPath + url.PathEscape(uid) + "/download?original=true"
+	return ownPhotoPath(ctx, uid) + "download?original=true"
 }
 
 // DownloadObject returns the signed URL of the stored object at filePath asking
@@ -156,12 +169,12 @@ func withDownloadParam(signed, fileName string) string {
 }
 
 // Decorate fills in the media addresses (see DecorateOne) on every photo in
-// list, in place.
+// list, in place; ctx is the request's, whose API base the own routes use.
 // Call it on any page of photos on its way into a JSON response: a payload
 // without these is a photo the client cannot render.
-func (b *Builder) Decorate(list []photos.Photo) {
+func (b *Builder) Decorate(ctx context.Context, list []photos.Photo) {
 	for i := range list {
-		b.DecorateOne(&list[i])
+		b.DecorateOne(ctx, &list[i])
 	}
 }
 
@@ -170,8 +183,8 @@ func (b *Builder) Decorate(list []photos.Photo) {
 // between them by shape: a square crop for anything drawn in a square box (a
 // medallion, a card), the aspect-preserving rendition for the justified photo
 // wall, whose tiles are as wide as their photographs.
-func (b *Builder) DecorateOne(photo *photos.Photo) {
-	photo.ThumbURL = b.Thumb(photo.UID, photo.FileHash, thumb.GridSize)
-	photo.PreviewURL = b.Thumb(photo.UID, photo.FileHash, thumb.PreviewSize)
-	photo.DownloadURL = b.Download(photo.UID, photo.FilePath, photo.FileName)
+func (b *Builder) DecorateOne(ctx context.Context, photo *photos.Photo) {
+	photo.ThumbURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.GridSize)
+	photo.PreviewURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.PreviewSize)
+	photo.DownloadURL = b.Download(ctx, photo.UID, photo.FilePath, photo.FileName)
 }

@@ -37,13 +37,17 @@ import (
 // The processing service is what a re-upload of an already-catalogued file
 // schedules the photo's missing steps through, so a photo whose first upload was
 // cut short is completed by sending it again.
+//
+// It returns the routes in the three groups the server mounts apart: the
+// signed-in upload and the upload-link management are project-scoped, the
+// public link page and upload instance-wide.
 func buildIngest(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, enqueuer *jobs.Enqueuer,
 	sidecar ingest.SidecarEnqueuer, reg *metrics.Registry,
-) (func(chi.Router), error) {
+) (ingestRoutes, error) {
 	store, err := newStorage(cfg)
 	if err != nil {
-		return nil, err
+		return ingestRoutes{}, err
 	}
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
@@ -69,10 +73,21 @@ func buildIngest(
 	// limiter's burst was never meant to stop.
 	ingestAPI := ingest.NewAPI(svc, authAPI.RequireAuth, uploadLimit.MiddlewareExcept(auth.RateLimitExempt))
 	linkAPI := buildUploadLinkAPI(cfg, db, authAPI, svc, sidecar)
-	return func(r chi.Router) {
-		ingestAPI.RegisterRoutes(r)
-		linkAPI.RegisterRoutes(r)
+	return ingestRoutes{
+		upload:      ingestAPI.RegisterRoutes,
+		uploadLinks: linkAPI.RegisterManagementRoutes,
+		public:      linkAPI.RegisterPublicRoutes,
 	}, nil
+}
+
+// ingestRoutes is the upload subsystem's routes, split by where they mount.
+type ingestRoutes struct {
+	// upload is the signed-in POST /upload (project-scoped).
+	upload func(chi.Router)
+	// uploadLinks is the curators' /upload-links management (project-scoped).
+	uploadLinks func(chi.Router)
+	// public is the public /u/{code} page and upload (instance-wide).
+	public func(chi.Router)
 }
 
 // buildUploadLinkAPI assembles the upload links: the curators' management

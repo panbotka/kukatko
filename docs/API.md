@@ -3,14 +3,47 @@
 Descriptive reference overview of the HTTP endpoints under `/api/v1`. **These are not rules** —
 the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoint here.
 
+## Project prefix
+
+Kukátko is becoming multi-tenant: every endpoint that reads or writes catalogue data is
+**project-scoped** and lives under **`/api/v1/p/{project}/…`**, where `{project}` is the project's slug
+(`v` is the bootstrap project, the library that existed before projects). The sections below show a
+project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/v1`.
+
+- **Two mounts of one API (transition).** `cmd/kukatko/projectapi.go` builds every project-scoped group
+  once and mounts it twice (`mountProjectAPI`): under `/api/v1/p/{project}`, where `auth.WithProject`
+  names the project from the slug, and **unprefixed under `/api/v1`** — the *transition alias* the
+  embedded frontend, `kukatko ctl` and MCP clients still call. A request through the alias addresses the
+  bootstrap project `v`. The alias is removed in the alias-removal step; until then both paths answer
+  with the same bytes.
+- **Project-scoped:** photos (incl. trash, stacks, comments, edits, media), `/search/*`, albums and
+  labels, subjects/people, families, subject avatars, face clusters, review, sweep, candidates, outliers,
+  duplicates, duplicate markers, expand, bulk, tasks, feedback, saved searches, search history,
+  `/whats-new`, places, maps (`/map/*`), `POST /upload`, the `/upload-links` management, the
+  `/notifications` inbox, `/capabilities`, `/settings`, `/announcement`, the name directory
+  `GET /users`, `/import/*`, `/process/*` and `/mcp`.
+- **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`),
+  `/admin/users`, `/users/{uid}/avatar`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
+  `/restore`, `/audit`, the public `/u/{code}` (for now against `v`; the link will name its own
+  project), plus `/metrics` and `/healthz` outside `/api/v1`.
+- **Unknown or foreign project:** `/api/v1/p/<slug>/…` with a slug nobody uses, a project the caller is
+  no member of, or a deactivated one (non-maintainer) answers **404 `{"error":"project not found"}`**,
+  byte-for-byte the same in all three cases (see *Project resolution* below).
+- **Links follow the prefix.** Every URL a response carries to another project-scoped route — a photo's
+  `thumb_url`/`preview_url`/`download_url` when the store mints no signed URL, a GeoJSON feature's
+  `thumb`, a search hit's cover — is built on `auth.APIBase(ctx)`: `/api/v1/p/<slug>/photos/…` when the
+  request came through the prefix, `/api/v1/photos/…` through the alias. Signed edge URLs are unaffected.
+
+## Endpoints
+
 <!-- BODY BEGIN -->
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
   sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
   `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below).
-  **`GET /users`** (RequireAuth) → `{users:[{uid,name}]}`, the people of the library ordered by the name
-  each is known under, disabled and not-yet-approved accounts left out. It is the directory a *name* is
+  **`GET /api/v1/p/{project}/users`** (project-scoped, RequireAuth) → `{users:[{uid,name}]}`, the
+  people of the library ordered by the name each is known under, disabled and not-yet-approved accounts left out. It is the directory a *name* is
   picked from — putting somebody on a task is how a question reaches the one relative who would know — and
   it is deliberately **not** the administrative view below: no addresses, no roles, no approval state, no
   notes. Widening it to every signed-in role exposes nothing a thread does not already, since every comment
@@ -337,7 +370,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `oauth-authorization-server` or `openid-configuration` metadata has to be told "nothing here". Answering
   `200` with `index.html` made such a client parse a web page as JSON and fail incomprehensibly instead of
   concluding that this server has no OAuth. Ordinary client-side routes still reach the SPA unchanged.
-- **Upload API (`/api/v1`):** `POST /upload` (every signed-in role, viewers included, via `RequireAuth`, **then** the per-IP
+- **Upload API (`/api/v1/p/{project}`):** `POST /upload` (every signed-in role, viewers included, via `RequireAuth`, **then** the per-IP
   `ratelimit.upload` throttle — the limiter moved *behind* the auth guard so it can see who the caller is and
   let an `unlimited` API token through; the bucket key is still the client IP for everyone else, and an
   unauthenticated flood now pays one indexed credential lookup before its 401) — `multipart/form-data`
@@ -367,7 +400,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   for failing a decode. A byte-identical duplicate is answered before that decode. The accepted
   extensions are `imgconvert.SupportedExtensions()`; the web pickers' `accept` list is
   `web/src/lib/mediaFormats.json`, pinned to it by a test.
-- **Photos API (`/api/v1`, `internal/photoapi`):** `GET /photos` (authenticated) — list with filters/
+- **Photos API (`/api/v1/p/{project}`, `internal/photoapi`):** `GET /photos` (authenticated) — list with filters/
   sorting/pagination (query params, invalid → 400) → `{photos,total,limit,offset,next_offset}`;
   **`video_total`** rides beside `total` on every page response (list and search alike): how many of
   `total` are standalone video clips, so the client can word its count line for what the set holds
@@ -958,7 +991,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   new arrives unassigned. Audited as `photo.embedding` / `photo.faces` / `photo.place` with the outcome (and
   the face count) in details.
   Mounted by the third `server.WithAPI` (`buildPhotoAPI` in `cmd/kukatko/photos.go`).
-- **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
+- **Comments API (`/api/v1/p/{project}`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
   family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn
   burned down"). `GET /photos/{uid}/comments` (authenticated) →
   `{comments:[{uid,photo_uid,author_uid,author_name,author_photo_uid?,body,created_at,edited_at?,mentions}]}`, **oldest first** (a
@@ -1020,7 +1053,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`ON DELETE SET NULL`) and therefore editable by nobody. **MCP deliberately exposes no comment tool** (see
   [`MCP.md`](MCP.md)). Table `comments` (migration `0052_photo_comments.sql`, renamed and given a second subject by
   `0080_comments_subject.sql`); 503 when no comments backend is wired.
-- **Album comments (`/api/v1`, `internal/organizeapi` + `internal/comments`, migration `0099`):** an
+- **Album comments (`/api/v1/p/{project}`, `internal/organizeapi` + `internal/comments`, migration `0099`):** an
   album has the very same thread as a photo and a task — the conversation about a whole event ("the
   wedding — who else was there?"). `GET /albums/{uid}/comments`, `POST /albums/{uid}/comments` `{body}`,
   `PATCH`/`DELETE /albums/{uid}/comments/{commentUID}`: the same payload (`album_uid` in place of
@@ -1031,7 +1064,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   comment of another album addressed through this path is 404; an unknown album is 404 on every route.
   `@`-mentions work exactly as on a photo: the notification reads "… v komentáři u alba <title>" and links
   to `/albums/<uid>?panel=comments#comment-<uid>`. Deleting the album cascades its thread away.
-- **Tasks API (`/api/v1`, `internal/phototaskapi` + `internal/phototask`):** the **work queue** — a
+- **Tasks API (`/api/v1/p/{project}`, `internal/phototaskapi` + `internal/phototask`):** the **work queue** — a
   question about a frozen group of photographs ("in which year was house no. 2 rebuilt?"), with the state
   of play and the conversation that settles it. It exists because curating an inherited library arrives in
   batches that end at something only a person can answer, and until now that question had nowhere to live.
@@ -1182,7 +1215,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `places` (`placesjob.Service`, `buildPlacesServiceOrNil` in `cmd/kukatko/places.go`), and also
   builds — and `serve` starts — a **background worker** (`internal/worker`) for the whole life of the
   process (`startWorker`, stopped on shutdown via ctx).
-- **Clusters API (`/api/v1`, `internal/clusterapi`, curator and above via `RequireCurator`):**
+- **Clusters API (`/api/v1/p/{project}`, `internal/clusterapi`, curator and above via `RequireCurator`):**
   `GET /faces/clusters?limit&offset` → `{clusters:[{uid,size,representative,examples,suggestion?}],
   total,pending,grouping,limit,offset,next_offset}` (one **page** of the clusters of unassigned faces
   from auto-clustering, newest first; `suggestion` = the nearest named subject). `limit` defaults to 24
@@ -1201,7 +1234,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` detaches a stray face before
   naming → the refreshed cluster (or `null` when it is orphaned); 503 without a backend, 400/404/409 per the
   sentinels. Mounted by the fourth `server.WithAPI` (`buildClusterAPI` in `cmd/kukatko/clusters.go`).
-- **Outliers API (`/api/v1`, `internal/outlierapi`, curator and above via `RequireCurator`):**
+- **Outliers API (`/api/v1/p/{project}`, `internal/outlierapi`, curator and above via `RequireCurator`):**
   `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,avg_distance,no_embedding,
   faces:[{photo_uid,face_index,bbox,det_score,distance,marker_uid?,width,height,orientation}]}`
   (a person's faces sorted descending by cosine distance from the **trimmed** centroid of their
@@ -1219,7 +1252,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   user** (see Feedback API below) are excluded from the result, so repeated passes converge instead of
   offering the same false alarms over and over. Mounted by `server.WithAPI` (`buildOutlierAPI` in
   `cmd/kukatko/outliers.go`).
-- **Candidates API (`/api/v1`, `internal/candidatesapi`, curator and above via `RequireCurator`):**
+- **Candidates API (`/api/v1/p/{project}`, `internal/candidatesapi`, curator and above via `RequireCurator`):**
   "find a person among untagged photos". `POST /subjects/{uid}/candidates` with an **optional** body
   `{threshold?,limit?}` (`threshold` = max cosine distance, default `candidates.max_distance`;
   `limit` 0 = as many as `candidates.max_candidates` allows; `DisallowUnknownFields` + 64 KiB, negative
@@ -1245,7 +1278,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   or `"no_embeddings"` (tagged, but the faces have no embedding — the box was offline); the box being offline
   otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject.
   Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
-- **Recognition sweep API (`/api/v1`, `internal/sweepapi`, curator and above via `RequireCurator`):**
+- **Recognition sweep API (`/api/v1/p/{project}`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.
   `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>`. `confidence`: a value
@@ -1267,7 +1300,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   **before** the first line (listing subjects failed) → clean 500 JSON; an error **mid**-stream (the client
   disconnected) only logs (200 has already been sent). 503 without a backend. Mounted by `server.WithAPI`
   (`buildSweepAPI` in `cmd/kukatko/sweep.go`), sharing `candidates.Service` with the candidates endpoint.
-- **Expand-a-collection API (`/api/v1`, `internal/expandapi`, curator and above via `RequireCurator`):**
+- **Expand-a-collection API (`/api/v1/p/{project}`, `internal/expandapi`, curator and above via `RequireCurator`):**
   "find photos similar to a whole album / label" — filling out a half-tagged collection. `GET /albums/{uid}/similar`
   and `GET /labels/{uid}/similar` with query `?threshold=&limit=` (`threshold` = max cosine distance,
   default `expand.max_distance` = 0.20, i.e. 80 % similarity — re-derived for SigLIP 2, it was 0.30 under
@@ -1290,7 +1323,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `"no_source_embeddings"`. A collection of **one** photo degenerates into per-photo similarity. **Read-only** —
   adding the found photos goes through the existing `POST /photos/bulk`. 503 without a backend, 404 missing
   album/label. Mounted by `server.WithAPI` (`buildExpandAPI` in `cmd/kukatko/expand.go`).
-- **MCP server (`POST /api/v1/mcp`, `internal/mcpapi`, via `RequireAuth` + per-tool RBAC):** the library
+- **MCP server (`POST /api/v1/p/{project}/mcp`, `internal/mcpapi`, via `RequireAuth` + per-tool RBAC):** the library
   exposed to an **AI agent** via the **Model Context Protocol** — it searches, reads, organizes ("find all
   photos of grandma from the sixties and put them in an album"). Transport **Streamable HTTP, stateless**, response
   `application/json` (not SSE), the body is JSON-RPC 2.0 (`initialize`, `tools/list`, `tools/call`, `ping`);
@@ -1326,7 +1359,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   by retention), restore, backup, user management or admin surface; `bulk_edit_photos` therefore
   omits even `Archive` and `Location`, which the bulk service otherwise supports. Mounted by `server.WithAPI`
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`). In detail: [`docs/MCP.md`](MCP.md).
-- **Review game API (`/api/v1`, `internal/reviewapi`, curator and above via `RequireCurator`):** a "game" for
+- **Review game API (`/api/v1/p/{project}`, `internal/reviewapi`, curator and above via `RequireCurator`):** a "game" for
   tidying up the library — one question at a time, answer yes/no/skip. There are **five kinds of question**:
   `face` ("Is this Tomáš?"), `label` ("Should this photo have the label Ostatky?"), `place` ("Was this photo
   taken in Brno?" over a location the geo-estimator guessed), `duplicate` ("Is this the same photo?" over a
@@ -1462,7 +1495,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   zone's offset from UTC is a whole number of hours. Served by
   `review.LeaderboardStore` over the shared pool; the partial index `idx_audit_log_review_actor`
   (migration `0037`) keeps both scans cheap.
-- **People/Subjects API (`/api/v1`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
+- **People/Subjects API (`/api/v1/p/{project}`, `internal/peopleapi`):** `GET /subjects` (RequireAuth) →
   `{subjects:[{...subject, marker_count, photo_count, cover_face?}]}` (ordered by name). Both counts
   cover only non-invalid markers on visible photos and they are **not interchangeable**:
   `marker_count` counts markers (the figure the face tools want), `photo_count` counts **distinct
@@ -1526,7 +1559,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `{photos,total,limit,offset,next_offset}` (newest-first, non-archived only, `limit`≤500). Mounted
   by `server.WithAPI` (`buildPeopleAPI` in `cmd/kukatko/people.go`). The subject's photo records
   build on `people.Store.ListPhotoUIDsBySubject` (distinct non-invalid markers → photo uid).
-- **Family / genealogy API (`/api/v1`, `internal/familyapi`):** the genealogy over subjects —
+- **Family / genealogy API (`/api/v1/p/{project}`, `internal/familyapi`):** the genealogy over subjects —
   `internal/family`, where **the family is the node** (a couple, a lone parent, or — since migration `0076` —
   nobody at all, plus their children) and parents, siblings, partners and children are all *derived* from it,
   so they cannot contradict each other.
@@ -1611,7 +1644,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `/subjects/{uid}`, since all three change what the tree says. The schedule is best-effort: it never fails
   the edit, which is safely in Postgres either way. Mounted by
   `server.WithAPI` (`buildFamilyAPI` in `cmd/kukatko/family.go`, in `readAPIOptions`). Not exposed over MCP.
-- **Subject avatar (`/api/v1`, `internal/avatarapi`):** `GET /subjects/{uid}/avatar` (RequireAuth) → the
+- **Subject avatar (`/api/v1/p/{project}`, `internal/avatarapi`):** `GET /subjects/{uid}/avatar` (RequireAuth) → the
   square **`image/jpeg`** that stands for the subject: 320 px, ~15 kB measured against real 24 Mpx
   originals (a `fit_1280` of one is ~190 kB). It is the people index's picture,
   cut server-side by `internal/avatar` — a hand-picked `cover_photo_uid` centre-cropped, otherwise the
@@ -1659,7 +1692,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   512 px; the submitted original is never kept. Nothing here adds a `storekeys` Kind, so backup, storage
   migration and the library wipe are unchanged. Mounted by `server.WithAPI` (`buildUserPicAPI` in
   `cmd/kukatko/userpic.go`). Not exposed over MCP.
-- **Process API (`/api/v1`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
+- **Process API (`/api/v1/p/{project}`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
   `POST /process/faces` → `{enqueued, skipped_videos}` (backfill `face_detect` for the **stills** without
   face detection; a video is never scheduled — detection does not run on footage — and the count of the
@@ -1762,7 +1795,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `location_source: "manual"` without coordinates — a tombstone, not a gap).
   Thumbnails and metadata are computed **locally**, so the backfill works even when the box is offline; the job queue
   deduplicates, so a repeated run is idempotent. Mounted by `server.WithAPI` (`buildJobs`).
-- **Albums & Labels API (`/api/v1`, `internal/organizeapi`):** **albums** `GET /albums`
+- **Albums & Labels API (`/api/v1/p/{project}`, `internal/organizeapi`):** **albums** `GET /albums`
   (RequireAuth) → `{albums:[{...album, photo_count, cover_uid?, cover_uids?, taken_from?, taken_to?}]}`
   (`organize.AlbumSummary`): `cover_uid` is the **effective cover** — a manually chosen
   `cover_photo_uid`, otherwise the **newest live photo of the album** (deterministically: `taken_at DESC NULLS
@@ -1844,7 +1877,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Every mutation (create/update/delete of an album or label, add/remove of photos, attach/detach) writes an audit entry
   (`album.*`/`label.*`) **in the same transaction** as the change — the responses do not change. Mounted by another `server.WithAPI`
   (`buildOrganizeAPI` in `cmd/kukatko/organize.go`).
-- **Feedback / Rejections API (`/api/v1`, `internal/feedbackapi`):** persisted feedback —
+- **Feedback / Rejections API (`/api/v1/p/{project}`, `internal/feedbackapi`):** persisted feedback —
   a user's "no" (and now also "yes") to a face↔subject or photo↔label estimate, and its undo.
   **Feedback is an opinion — it never mutates** the underlying data (does not detach a marker, remove a label,
   archive anything). Twelve endpoints, viewer 403 on all of them: the eight face, label and repeated-marker
@@ -1894,7 +1927,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   Mounted by another `server.WithAPI` (`buildFeedbackAPI` in
   `cmd/kukatko/feedback.go`). The consumers (find a person among untagged ones, recognition sweep, the review game)
   come in later tasks.
-- **Places API (`/api/v1`, `internal/placesapi`, authenticated via `RequireAuth`):** browsing the
+- **Places API (`/api/v1/p/{project}`, `internal/placesapi`, authenticated via `RequireAuth`):** browsing the
   reverse-geocoded place hierarchy + scoping the photo listing to a locality. `GET /places` →
   `{places:[{country, count, cover_uid, cities:[{city, count, cover_uid}]}]}` — counts aggregated over
   **non-archived**
@@ -1913,7 +1946,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   (`Country`/`City` exact match via a correlated `EXISTS` over `photo_places` in `buildWhere`, so `Count` matches;
   the same shape + the other filters/sorting/pagination, archived ones outside the default listing). Mounted by
   `server.WithAPI` (`buildPlacesAPI` in `cmd/kukatko/places.go`).
-- **Saved Searches API (`/api/v1`, `internal/savedsearchapi` + `internal/savedsearch`, authenticated via
+- **Saved Searches API (`/api/v1/p/{project}`, `internal/savedsearchapi` + `internal/savedsearch`, authenticated via
   `RequireAuth`):** per-user **saved searches** ("smart albums") — a named, owner's private
   definition of a filter/search. `GET /saved-searches` → `{saved_searches:[{uid,name,params,created_at,
   updated_at}]}` (only the current user, newest-first); `POST /saved-searches` `{name,params}` →
@@ -1923,8 +1956,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   context — a saved search of another owner is **always reported as 404** (never disclosed), the body
   `DisallowUnknownFields` + a 1 MiB limit. The `saved_searches` table (migration `0017_saved_searches.sql`).
   Mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`).
-- **Upload Links API (`/api/v1`, `internal/uploadlinkapi` + `internal/uploadlink`):** short links
-  (`/u/<code>`) through which anybody — signed in or not — uploads photos into preset albums and labels.
+- **Upload Links API (`/api/v1/p/{project}`, `internal/uploadlinkapi` + `internal/uploadlink`):** short links
+  (`/u/<code>`; the public `GET|POST /api/v1/u/{code}…` pair is instance-wide, only the management is
+  project-scoped) through which anybody — signed in or not — uploads photos into preset albums and labels.
   **Management (`RequireCurator`):** `GET /upload-links` → `{links:[…], default_days, max_days}`, the
   caller's own links newest-first (an **admin/maintainer sees all**); each link is
   `{uid,title,note,created_by,created_by_name,created_at,expires_at,revoked_at,upload_count,
@@ -1987,7 +2021,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   marks their photos for `POST /auth/register` with
   `upload_link`. A dead link answers 404/410 to the upload too. Mounted with the signed-in upload
   (`buildIngest` → `buildUploadLinkAPI` in `cmd/kukatko/ingest.go`).
-- **Search History API (`/api/v1`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
+- **Search History API (`/api/v1/p/{project}`, `internal/searchhistoryapi` + `internal/searchhistory`, authenticated via
   `RequireAuth`):** each user's **recent searches** — the short ordered list the search box offers back (whole
   while it is empty, as prefix matches once something is typed) and the command palette offers while empty. It
   lives server-side, not in the browser, so a query composed on a laptop is offered on the phone. Only a query
@@ -2009,7 +2043,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   a private convenience list is not a library mutation. The `search_history` table (migration
   `0056_search_history.sql`). Mounted by `server.WithAPI` (`buildSearchHistoryAPI` in
   `cmd/kukatko/searchhistory.go`).
-- **Announcement API (`/api/v1`, `internal/announcementapi` + `internal/announcement`, dual-guard):**
+- **Announcement API (`/api/v1/p/{project}`, `internal/announcementapi` + `internal/announcement`, dual-guard):**
   a single **instance-wide announcement** (a banner for everyone logged in). `GET /announcement` behind `RequireAuth`
   (anyone authenticated reads) → `{message, level?, author_uid?, updated_at?}`; **when nothing is published it returns
   `200 {"message":""}`** (not 404 — friendlier for a polling banner client). `PUT /announcement`
@@ -2020,7 +2054,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   as the change; `author_uid` = the actor from the auth context. The single-row `announcements` table (migration
   `0039_announcement.sql`). Mounted by `server.WithAPI` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`).
-- **Instance settings API (`/api/v1`, `internal/settingsapi` + `internal/settings`, three audiences):**
+- **Instance settings API (`/api/v1/p/{project}`, `internal/settingsapi` + `internal/settings`, three audiences):**
   the three instance-wide values an **administrator** changes at runtime without a redeploy — whether
   self-service registration is open, the shared secret registration asks for, and the Markdown greeting
   shown on a first sign-in. The registration secret is stored **readable, not hashed** (an administrator has
@@ -2048,7 +2082,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   secret and a greeting are set — **never the secret itself**. The single-row `instance_settings` table
   (migration `0062_instance_settings.sql`, seeded so every read finds a row). Mounted by `server.WithAPI`
   (`buildSettingsAPI` in `cmd/kukatko/settings.go`).
-- **What's New API (`/api/v1`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
+- **What's New API (`/api/v1/p/{project}`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
   `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,
   people:[{uid,name}], person_count, tasks}`. **`tasks`** is the one number in the digest that asks something
@@ -2079,8 +2113,9 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   visit) and a non-invalid marker. It is **0** both for an unlinked account and for a visit where none
   of the new photographs was of them, and the client shows no line for it either way; being a subset of
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
-- **Notification API (`/api/v1`, `internal/notificationapi` over `internal/push` + `internal/notification`,
-  every route `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
+- **Notification API (`/api/v1/p/{project}` for `/notifications/*`, `/api/v1` for the instance-wide
+  `/push/*`, `internal/notificationapi` over `internal/push` + `internal/notification`, every route
+  `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
   may use every route**, viewers included — being told you were tagged is not a curation power — and every
   operation is **scoped to the calling account**. Mounted by `server.WithAPI` (`buildNotificationAPI` in
   `cmd/kukatko/notification.go`). **The inbox** (the navbar's bell) lists only the notifications delivered
@@ -2154,7 +2189,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
     the inbox or not.
   - **An unknown or foreign `{uid}` is `404`, never `403`**, for both routes (the `savedsearchapi` rule),
     so a uid cannot be probed for existence — an admin cannot read somebody else's notification either.
-- **Global Search API (`/api/v1`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
+- **Global Search API (`/api/v1/p/{project}`, `internal/globalsearchapi`, authenticated via `RequireAuth`):**
   grouped **cross-entity search** for the navbar quick-results and the search page. `GET /search/global?q=` →
   `{query, albums:[{uid,title,cover?,thumb_url?,photo_count}], labels:[{uid,name,cover?,thumb_url?,photo_count}],
   people:[{uid,name,nickname?,cover?,thumb_url?}], photos:[…usual photo shape…]}` — albums/labels/people matched
@@ -2202,7 +2237,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   moment the two lists disagree. The answer is compiled into the binary (no store is touched), so a client
   fetches it once and keeps it; the command palette completes filter keys and values from it, which is how
   it can never offer a filter the parser would reject.
-- **Bulk metadata API (`/api/v1`, `internal/bulkapi`, the apply curator and above via `RequireCurator`
+- **Bulk metadata API (`/api/v1/p/{project}`, `internal/bulkapi`, the apply curator and above via `RequireCurator`
   **limited on its fields** (below), the location summary editor/admin via `RequireWrite`, the membership
   summary curator and above via `RequireCurator`; each **then** the
   per-IP `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly
@@ -2269,7 +2304,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   keeping. Sending it together with `set_taken_at` → **400**: one states a date, the other states that
   nobody knows it. The cleared photos are then reachable as `dated:no`.
   Mounted by another `server.WithAPI` (`buildBulkAPI` in `cmd/kukatko/bulk.go`).
-- **Maps API (`/api/v1`, `internal/mapsapi` + `internal/mapy`, authenticated via `RequireAuth`):**
+- **Maps API (`/api/v1/p/{project}`, `internal/mapsapi` + `internal/mapy`, authenticated via `RequireAuth`):**
   a backend proxy to mapy.com (**the key never reaches the client** — only the `X-Mapy-Api-Key` header) +
   a GeoJSON feed. `GET /map/tiles/{mapset}/{z}/{x}/{y}` — a tile proxy, **streamed** with a long
   immutable `Cache-Control`; the `mapset` allowlist `basic|outdoor|aerial|winter` (other → 400, still
@@ -2311,7 +2346,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   section `maps`). Without `maps.mapy_api_key`, tile/rgeocode/geocode return 503 (the location editor shows this
   as „vyhledávání míst není dostupné“ and continues on coordinates and a click into the map), GeoJSON
   works. Mounted by `server.WithAPI` (`buildMapsAPI` in `cmd/kukatko/maps.go`).
-- **Import API (`/api/v1`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** the
+- **Import API (`/api/v1/p/{project}`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** the
   **read-only** bookkeeping of imports — there is nothing here to trigger. `GET /import/runs` →
   `{runs,limit,offset}` — a page of `import_runs` newest-started-first (query `limit`≤200/`offset`,
   invalid → 400). The only source still written is **`folder`** (`kukatko import dir`,
@@ -2520,7 +2555,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `restore db`, it would pull the tables out from under a running server, so it lives only in the CLI. It is
   still audited (`library.reset`, written in the truncation's own transaction), so it shows up in `GET /audit`
   like everything else.
-- **Duplicates API (`/api/v1`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin via
+- **Duplicates API (`/api/v1/p/{project}`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin via
   `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
   groups of likely duplicates from pHash Hamming distance (`duplicate.phash_max_diff`,
   banded-LSH) **and/or** embedding cosine distance (`duplicate.embedding_max_dist`, HNSW), merged by
@@ -2546,7 +2581,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   `merge=nil` → 503. A group that would **archive across the still/video boundary** → 400 with the reason in the
   body (`dupmerge.ErrCrossKindGroup`), from `Preview` as well as `Merge`: detection never offers such a group, so
   this is a guard against a request from anywhere else, and it fails the whole merge rather than skipping the copy. The `merge` route runs even with detection off. Mounted always by `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
-- **Repeated-marker API (`/api/v1`, `internal/dupmarkersapi` + `internal/dupmarkers`):** the other kind of
+- **Repeated-marker API (`/api/v1/p/{project}`, `internal/dupmarkersapi` + `internal/dupmarkers`):** the other kind of
   duplicate — not two photos, but **one person marked more than once on one photo**. On a group shot the
   matcher puts the same name on two or three neighbouring boxes, so the people beside her lose their tag and
   her own face count is inflated; it is always a mistake.
@@ -2727,7 +2762,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   window of zeroes, not an error. A failed aggregation → **500** (never empty series, which would draw as an
   empty library). Mounted **always** (`buildSystemAPI`). The frontend renders it on **Statistiky**
   (`/stats`, all roles) below the counts; `SystemStatusPage` does not read it.
-- **Capabilities API (`/api/v1`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
+- **Capabilities API (`/api/v1/p/{project}`, `internal/capabilitiesapi`, authenticated via `RequireAuth`):**
   `GET /capabilities` → `{semantic_search:bool, passkeys:bool, video_streaming:bool,
   version:{version,commit}}` — a small object
   saying what this

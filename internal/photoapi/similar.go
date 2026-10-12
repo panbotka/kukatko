@@ -127,7 +127,7 @@ func (a *API) resolveSimilar(
 		if photo.StackUID != nil && !photo.StackPrimary {
 			continue
 		}
-		a.media.DecorateOne(&photo)
+		a.media.DecorateOne(ctx, &photo)
 		out = append(out, similarPhoto{Photo: photo, Distance: m.Distance})
 	}
 	return out, nil

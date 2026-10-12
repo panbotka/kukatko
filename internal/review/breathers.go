@@ -160,13 +160,13 @@ func (s *Service) breathersFor(ctx context.Context, userUID string, sequence int
 		s.log.WarnContext(ctx, "review: loading breather photos failed", "error", err)
 		return nil
 	}
-	return s.breatherCards(turn, byUID)
+	return s.breatherCards(ctx, turn, byUID)
 }
 
 // breatherCards turns the round's picks into cards, dropping any whose photo has
 // gone or has since been hidden from the library.
 func (s *Service) breatherCards(
-	picks []BreatherPick, byUID map[string]photos.Photo,
+	ctx context.Context, picks []BreatherPick, byUID map[string]photos.Photo,
 ) []Breather {
 	cards := make([]Breather, 0, len(picks))
 	for _, pick := range picks {
@@ -174,7 +174,7 @@ func (s *Service) breatherCards(
 		if !ok || photo.HiddenFromLibrary {
 			continue
 		}
-		s.media.DecorateOne(&photo)
+		s.media.DecorateOne(ctx, &photo)
 		cards = append(cards, Breather{
 			Kind:   BreatherKind,
 			Photo:  photo,

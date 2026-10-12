@@ -97,11 +97,12 @@ func runServe(cmd *cobra.Command) error {
 	geocodeBudget := newGeocodeBudget(cfg)
 	geocodeBudgetMetrics(reg, geocodeBudget)
 
-	apis, bg, err := buildServices(cfg, db, authAPI, reg, mapsHealth, geocodeBudget)
+	apis, projectAPIs, bg, err := buildServices(cfg, db, authAPI, reg, mapsHealth, geocodeBudget)
 	if err != nil {
 		return err
 	}
-	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, reg, mapsHealth, geocodeBudget)
+	apis, backupSvc, reachChecker, err := appendOpsAPIs(cfg, db, authAPI, apis, projectAPIs, reg, mapsHealth,
+		geocodeBudget)
 	if err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func runServe(cmd *cobra.Command) error {
 
 	apis = append(apis, observabilityOptions(reg, logger)...)
 
-	apis = append(apis, requestOptions(cfg, db, logger)...)
+	apis = append(apis, requestOptions(cfg, db, logger, projectAPIs)...)
 
 	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 	srv := server.New(addr, apis...)
@@ -238,16 +239,17 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 	return authAPI, nil
 }
 
-// appendOpsAPIs mounts the always-on backup, restore, system-status and
-// capabilities APIs onto apis. The backup API self-reports "not configured" and
-// the restore service is nil (503) when no destination is set; the returned
+// appendOpsAPIs mounts the always-on backup, restore and system-status APIs
+// onto apis and puts the capabilities API — project-scoped — into projectAPIs.
+// The backup API self-reports "not configured" and the restore service is nil
+// (503) when no destination is set; the returned
 // backup service drives the scheduler (nil when not configured). It also builds
 // the embeddings-reachability checker that both backs GET /capabilities and the
 // caller starts as a background loop, returning it for that purpose. It also
 // registers the library-content and platform /metrics collectors over the system
 // service it builds, so the gauges and the dashboard share one aggregation.
 func appendOpsAPIs(
-	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option,
+	cfg *config.Config, db *database.DB, authAPI *auth.API, apis []server.Option, projectAPIs *projectAPI,
 	reg *metrics.Registry, mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
 ) ([]server.Option, *backup.Service, *reachability.Checker, error) {
 	backupSvc, err := buildBackupService(cfg)
@@ -274,19 +276,22 @@ func appendOpsAPIs(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	apis = append(apis, server.WithAPI(buildCapabilitiesAPI(cfg, reachChecker, authAPI).RegisterRoutes))
+	projectAPIs.capabilities = buildCapabilitiesAPI(cfg, reachChecker, authAPI).RegisterRoutes
 	return apis, backupSvc, reachChecker, nil
 }
 
 // requestOptions builds the server options that decide who and where a request
-// is: the trusted proxies that may rename the client, and auth.WithProject in
-// front of every /api/v1 route, which names the request's project before any
-// Require* guard runs (the bootstrap project while no route carries
-// {project}).
-func requestOptions(cfg *config.Config, db *database.DB, logger *slog.Logger) []server.Option {
+// is: the trusted proxies that may rename the client, auth.WithProject in front
+// of every /api/v1 route, which names the request's project before any Require*
+// guard runs (the bootstrap project for a route without {project}), and the
+// project-scoped API mounted under /api/v1/p/{project} plus its unprefixed
+// transition alias (see projectRoutes).
+func requestOptions(cfg *config.Config, db *database.DB, logger *slog.Logger, api *projectAPI) []server.Option {
+	projects := project.NewStore(db.Pool())
 	return []server.Option{
 		server.WithTrustedProxies(trustedProxies(cfg, logger)),
-		server.WithAPIMiddleware(auth.WithProject(project.NewStore(db.Pool()))),
+		server.WithAPIMiddleware(auth.WithProject(projects)),
+		projectRoutes(projects, api),
 	}
 }
 
@@ -326,32 +331,32 @@ type backgroundServices struct {
 func buildServices(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, reg *metrics.Registry,
 	mapsHealth *mapy.Health, geocodeBudget *placesjob.WindowBudget,
-) ([]server.Option, backgroundServices, error) {
+) ([]server.Option, *projectAPI, backgroundServices, error) {
 	jobStore := jobs.NewStore(db.Pool())
 	enqueuer := jobs.NewEnqueuer(jobStore)
 	registerJobQueueMetrics(reg, jobStore)
 	// The queue, or no-ops when an export is off (see exportSchedulersFor).
 	exports := exportSchedulersFor(cfg, enqueuer)
-	uploadRoutes, err := buildIngest(cfg, db, authAPI, enqueuer, exports.sidecar, reg)
+	uploads, err := buildIngest(cfg, db, authAPI, enqueuer, exports.sidecar, reg)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	embedSvc, vectorStore, embedClient, err := buildEmbedService(cfg, db, enqueuer, reg)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	faceSvc, err := buildFaceService(cfg, db, enqueuer, vectorStore, embedClient)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	matchSvc := buildFaceMatch(cfg, db)
 	trashSvc, err := buildTrashService(cfg, db)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	mediaStore, err := newStorage(cfg)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	// One storyboard service for both readers: the photo API answers "is there a
 	// scrub preview" (and schedules it), the worker renders what it scheduled.
@@ -362,7 +367,7 @@ func buildServices(
 	// spends its mapy.com credit against the same budget and limiter the queue does.
 	placesSvc, err := buildPlacesServiceOrNil(cfg, db, enqueuer, geocodeBudget, reg)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	rebuilders := photoRebuilders{embed: embedSvc, face: faceSvc, places: placesSvc}
 	photoAPI := buildPhotoAPI(cfg, db, authAPI, mediaStore, vectorStore, embedClient, matchSvc,
@@ -370,97 +375,98 @@ func buildServices(
 	clusterAPI, clusterSvc := buildClusterAPI(cfg, db, jobStore, authAPI, matchSvc)
 	mapsAPI, err := buildMapsAPI(cfg, db, authAPI, mapsHealth)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
 	jobWorker, jobAPI, processAPI, maintenanceAPI, err := buildJobs(cfg, db, jobStore, authAPI, enqueuer,
 		embedSvc, faceSvc, clusterSvc, storyboardSvc, embedClient, reg, placesSvc)
 	if err != nil {
-		return nil, backgroundServices{}, err
+		return nil, nil, backgroundServices{}, err
 	}
-	opts := slices.Concat([]server.Option{
-		server.WithAPI(authAPI.RegisterRoutes),
-		server.WithAPI(uploadRoutes),
-		server.WithAPI(photoAPI.RegisterRoutes),
-		server.WithAPI(clusterAPI.RegisterRoutes),
-		server.WithAPI(buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes),
-		server.WithAPI(buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes),
-		server.WithAPI(mapsAPI.RegisterRoutes),
-		server.WithAPI(jobAPI.RegisterRoutes),
-		server.WithAPI(processAPI.RegisterRoutes),
-		server.WithAPI(maintenanceAPI.RegisterRoutes),
-		server.WithAPI(buildImportAPI(db, authAPI).RegisterRoutes),
-	}, discoveryAPIOptions(cfg, db, authAPI, mediaStore, matchSvc), readAPIOptions(cfg, db, authAPI, mediaStore, exports))
-	return opts, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
+	api := &projectAPI{
+		photos: photoAPI.RegisterRoutes, clusters: clusterAPI.RegisterRoutes, maps: mapsAPI.RegisterRoutes,
+		bulk:       buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes,
+		duplicates: buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes,
+		process:    processAPI.RegisterRoutes, imports: buildImportAPI(db, authAPI).RegisterRoutes,
+		upload: uploads.upload, uploadLinks: uploads.uploadLinks, users: authAPI.RegisterDirectoryRoutes,
+	}
+	opts := slices.Concat([]server.Option{ // the instance-wide groups; the rest mount with projectRoutes
+		server.WithAPI(authAPI.RegisterInstanceRoutes), server.WithAPI(uploads.public),
+		server.WithAPI(jobAPI.RegisterRoutes), server.WithAPI(maintenanceAPI.RegisterRoutes),
+	}, discoveryAPIOptions(api, cfg, db, authAPI, mediaStore, matchSvc),
+		readAPIOptions(api, cfg, db, authAPI, mediaStore, exports))
+	return opts, api, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
 }
 
-// readAPIOptions builds the server options for the read/curation API groups that
-// need little more than the shared pool and the auth guard: per-subject face
-// outliers, the people (subject) catalogue and the genealogy over it, albums and
-// labels, the places browse
-// hierarchy, per-user saved searches and search history, the announcement banner,
-// the instance settings, the returning-reader digest, the notification surface
-// (push subscriptions, preferences, one notification), the grouped global search
-// and the audit log. Route
-// groups mount on distinct paths, so their relative order does not matter.
-// Splitting them out keeps buildServices within the function-length limit.
-//
-// The groups that return photo records take mediaStore, which decides where their
-// clients fetch each photo's thumbnail and original. The instance settings take
-// cfg for one boolean: whether mail is enabled, which its public response reports
-// so the screens around registration promise an e-mail only where one is sent.
-// discoveryAPIOptions builds the server options for the API groups that need the
-// config, the pool, the auth guard and the media store together: the editor-only
-// discovery APIs riding the vector indexes (per-subject candidates, the
-// recognition sweep, collection expansion, the review game and repeated-marker
-// review), the MCP server that lets an AI agent drive the library, and — the one
-// read here open to everybody — the people index's subject avatars, which are in
-// this group because rendering one needs the config's derived-media cache path — as do the
-// profile pictures beside them, which cut the same square for an account. The review
-// game and repeated-marker review additionally reuse the photo API's facematch
-// service so their face writes go through the one assign state machine; the MCP
-// server is off unless mcp.enabled is set.
+// discoveryAPIOptions fills api with the project-scoped groups that need the
+// config, the pool, the auth guard and the media store together: the
+// editor-only discovery APIs riding the vector indexes (per-subject candidates,
+// the recognition sweep, collection expansion, the review game and
+// repeated-marker review), the MCP server that lets an AI agent drive the
+// library, and — the one read here open to everybody — the people index's
+// subject avatars, which are in this group because rendering one needs the
+// config's derived-media cache path. It returns the one instance-wide group
+// built from the same parts: the profile pictures, which cut the same square
+// for an account (GET /users/{uid}/avatar, /auth/picture). The review game and
+// repeated-marker review additionally reuse the photo API's facematch service so
+// their face writes go through the one assign state machine; the MCP server is
+// off unless mcp.enabled is set.
 func discoveryAPIOptions(
-	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	api *projectAPI, cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	matchSvc *facematch.Service,
 ) []server.Option {
-	return []server.Option{
-		server.WithAPI(buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes),
-		// Repeated-marker review shares the same assign state machine, so a marker
-		// detached there is detached exactly as it is on the photo detail.
-		server.WithAPI(buildDupMarkersAPI(db, authAPI, matchSvc).RegisterRoutes),
-		// The MCP server mounts nothing unless mcp.enabled is set.
-		server.WithAPI(buildMCPAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildAvatarAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		// The same crop, for an account rather than a person: it shares the
-		// avatar renderer and its cache, so a photo cut for one is not cut twice.
-		server.WithAPI(buildUserPicAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-	}
+	api.candidates = buildCandidatesAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	api.sweep = buildSweepAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	api.expand = buildExpandAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	api.review = buildReviewAPI(cfg, db, authAPI, mediaStore, matchSvc).RegisterRoutes
+	// Repeated-marker review shares the same assign state machine, so a marker
+	// detached there is detached exactly as it is on the photo detail.
+	api.dupMarkers = buildDupMarkersAPI(db, authAPI, matchSvc).RegisterRoutes
+	// The MCP server mounts nothing but its 404 unless mcp.enabled is set.
+	api.mcp = buildMCPAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	api.avatars = buildAvatarAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
+	// The same crop, for an account rather than a person: it shares the
+	// avatar renderer and its cache, so a photo cut for one is not cut twice.
+	return []server.Option{server.WithAPI(buildUserPicAPI(cfg, db, authAPI, mediaStore).RegisterRoutes)}
 }
 
+// readAPIOptions fills api with the project-scoped read/curation groups that
+// need little more than the shared pool and the auth guard: per-subject face
+// outliers, the people (subject) catalogue and the genealogy over it, albums
+// and labels, feedback, the places browse hierarchy, the task queue, per-user
+// saved searches and search history, the announcement banner, the instance
+// settings, the returning-reader digest, the notification inbox and the
+// grouped global search. It returns the instance-wide groups built alongside:
+// the push subscriptions (the other half of the notification API) and the audit
+// log. Splitting them out keeps buildServices within the function-length limit.
+//
+// The groups that return photo records take mediaStore, which decides where
+// their clients fetch each photo's thumbnail and original. The instance
+// settings take cfg for one boolean: whether mail is enabled, which its public
+// response reports so the screens around registration promise an e-mail only
+// where one is sent.
 func readAPIOptions(
-	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
+	api *projectAPI, cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 	exports exportSchedulers,
 ) []server.Option {
+	api.outliers = buildOutlierAPI(db, authAPI).RegisterRoutes
+	api.people = buildPeopleAPI(db, authAPI, mediaStore, exports.family).RegisterRoutes
+	// The family routes hang off the same /subjects prefix, flat like the
+	// outlier one, so they mount alongside rather than under peopleapi.
+	api.family = buildFamilyAPI(db, authAPI, exports.family).RegisterRoutes
+	api.organize = buildOrganizeAPI(cfg, db, authAPI, mediaStore, exports.sidecar).RegisterRoutes
+	api.feedback = buildFeedbackAPI(db, authAPI).RegisterRoutes
+	api.places = buildPlacesAPI(db, authAPI).RegisterRoutes
+	api.tasks = buildPhotoTaskAPI(cfg, db, authAPI).RegisterRoutes
+	api.savedSearches = buildSavedSearchAPI(db, authAPI).RegisterRoutes
+	api.searchHistory = buildSearchHistoryAPI(db, authAPI).RegisterRoutes
+	api.announcement = buildAnnouncementAPI(db, authAPI).RegisterRoutes
+	api.settings = buildSettingsAPI(cfg, db, authAPI).RegisterRoutes
+	api.whatsNew = buildWhatsNewAPI(db, authAPI).RegisterRoutes
+	api.globalSearch = buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes
+	notifications := buildNotificationAPI(cfg, db, authAPI, mediaStore)
+	api.notifications = notifications.RegisterInboxRoutes
 	return []server.Option{
-		server.WithAPI(buildOutlierAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPeopleAPI(db, authAPI, mediaStore, exports.family).RegisterRoutes),
-		// The family routes hang off the same /subjects prefix, flat like the
-		// outlier one, so they mount alongside rather than under peopleapi.
-		server.WithAPI(buildFamilyAPI(db, authAPI, exports.family).RegisterRoutes),
-		server.WithAPI(buildOrganizeAPI(cfg, db, authAPI, mediaStore, exports.sidecar).RegisterRoutes),
-		server.WithAPI(buildFeedbackAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPlacesAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildPhotoTaskAPI(cfg, db, authAPI).RegisterRoutes),
-		server.WithAPI(buildSavedSearchAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildSearchHistoryAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildAnnouncementAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildSettingsAPI(cfg, db, authAPI).RegisterRoutes),
-		server.WithAPI(buildWhatsNewAPI(db, authAPI).RegisterRoutes),
-		server.WithAPI(buildNotificationAPI(cfg, db, authAPI, mediaStore).RegisterRoutes),
-		server.WithAPI(buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes),
+		server.WithAPI(notifications.RegisterPushRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 	}
 }

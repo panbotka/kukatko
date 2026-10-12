@@ -163,7 +163,7 @@ func (a *API) handleSearchPhotos(
 	if err != nil {
 		return nil, photoPage{}, err
 	}
-	return nil, page(a.summarize(list), total, params.Offset), nil
+	return nil, page(a.summarize(ctx, list), total, params.Offset), nil
 }
 
 // runSearch picks the ranked full-text path or the plain list path. Free text
@@ -325,7 +325,7 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the rating: %w", err)
 	}
-	a.media.DecorateOne(&photo)
+	a.media.DecorateOne(ctx, &photo)
 
 	detail := toPhotoDetail(photo)
 	detail.EncodeState = a.encodeState(ctx, photo)
@@ -464,7 +464,7 @@ func (a *API) resolveSimilar(
 		return nil, fmt.Errorf("loading similar photos: %w", err)
 	}
 	byUID := make(map[string]photoSummary, len(list))
-	for _, sum := range a.summarize(list) {
+	for _, sum := range a.summarize(ctx, list) {
 		byUID[sum.UID] = sum
 	}
 	out := make([]similarPhoto, 0, len(uids))

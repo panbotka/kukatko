@@ -199,7 +199,7 @@ func (a *API) handleGetNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ordered := orderByUIDs(uids, list)
-	a.media.Decorate(ordered)
+	a.media.Decorate(r.Context(), ordered)
 	writeJSON(w, http.StatusOK, detailView{
 		notificationView: toNotificationView(n),
 		Photos:           ordered,

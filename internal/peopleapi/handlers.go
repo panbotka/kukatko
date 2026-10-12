@@ -279,7 +279,7 @@ func (a *API) resolvePhotos(r *http.Request, page []string) ([]photos.Photo, err
 		return nil, fmt.Errorf("peopleapi: loading subject photos: %w", err)
 	}
 	ordered := orderByUIDs(page, list)
-	a.media.Decorate(ordered)
+	a.media.Decorate(r.Context(), ordered)
 	return ordered, nil
 }
 

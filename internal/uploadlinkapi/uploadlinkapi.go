@@ -195,7 +195,19 @@ func NewAPI(cfg Config) *API {
 // The public pair is throttled per client IP ahead of everything else, so an
 // unknown code costs a guesser their budget before it costs a lookup; the
 // upload is additionally throttled per link once the link is known.
+//
+// The server mounts the two halves apart: RegisterManagementRoutes with the
+// project-scoped API (under /api/v1/p/{project} and its transition alias),
+// RegisterPublicRoutes once — a public link will resolve its own project from
+// the link row.
 func (a *API) RegisterRoutes(r chi.Router) {
+	a.RegisterManagementRoutes(r)
+	a.RegisterPublicRoutes(r)
+}
+
+// RegisterManagementRoutes mounts the curators' /upload-links half of
+// RegisterRoutes.
+func (a *API) RegisterManagementRoutes(r chi.Router) {
 	r.Route("/upload-links", func(r chi.Router) {
 		r.Use(a.requireCurator)
 		r.Get("/", a.handleList)
@@ -205,6 +217,11 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/{uid}/restore-code", a.handleRestoreCode)
 		r.Post("/{uid}/new-code", a.handleNewCode)
 	})
+}
+
+// RegisterPublicRoutes mounts the public /u/{code} half of RegisterRoutes: the
+// page and the upload behind a short link, with no session required.
+func (a *API) RegisterPublicRoutes(r chi.Router) {
 	r.Route("/u/{code}", func(r chi.Router) {
 		r.Use(a.ipLimit.Middleware)
 		r.With(a.optionalAuth).Get("/", a.handlePublic)

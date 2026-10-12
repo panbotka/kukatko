@@ -959,7 +959,7 @@ func (a *API) runStateChange(
 		return
 	}
 	a.enqueueSidecar(r.Context(), uid)
-	a.media.DecorateOne(&photo)
+	a.media.DecorateOne(r.Context(), &photo)
 	writeJSON(w, http.StatusOK, photo)
 }
 

@@ -13,14 +13,26 @@ Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in
 
 | | |
 | --- | --- |
-| **Path** | `/api/v1/mcp` — a client only ever POSTs to it |
+| **Path** | `/api/v1/p/{project}/mcp` — a client only ever POSTs to it; `/api/v1/mcp` is the transition alias (project `v`) |
 | **Transport** | Streamable HTTP, **stateless**, `application/json` response (not SSE) |
 | **Guard** | `RequireAuth` (the same auth as the rest of `/api/v1`) |
 | **Default** | **disabled** — `mcp.enabled: false` |
 | **Library** | [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk) — pure Go, keeps `CGO_ENABLED=0` |
 
-The path is `/api/v1/mcp` because **all** of Kukátko's routes live under `/api/v1` (`server.WithAPI`
-mounts into a single subrouter). It has no top-level `/mcp` of its own.
+The path is `/api/v1/p/{project}/mcp` because the MCP server is **project-scoped** like every catalogue
+route (see `docs/API.md` → *Project prefix*): the slug in the URL picks the library the agent works in,
+and its tools are unchanged and scoped by it. An agent connector is therefore configured with the
+project's URL, e.g. `https://…/api/v1/p/v/mcp`. Until the alias-removal step the same server also answers
+at the unprefixed **`/api/v1/mcp`** (the transition alias, which addresses the bootstrap project `v`), so
+an existing connector keeps working. A slug that is unknown or names a project the token's owner is no
+member of answers **404**, exactly like every other project route. There is no top-level `/mcp`.
+
+Both paths advertise themselves identically, because nothing the endpoint advertises carries a URL: the
+401 challenge is the bare `WWW-Authenticate: Bearer` (no `resource_metadata`), and there is no
+protected-resource metadata document (see below). The thumbnail URLs in tool results are built on
+`auth.APIBase(ctx)`, so they lead back through the prefix the call came through. When a URL is ever
+advertised (`resource_metadata="…"`), it must be built from `auth.APIBase(ctx)` too, so a client
+discovers the endpoint it actually called.
 
 The route is registered with `chi.Handle`, i.e. for **every** method, and the SDK's handler decides what
 each one means: `POST` is the protocol, a `GET` (which in a session-ful server would open the SSE stream)

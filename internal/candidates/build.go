@@ -42,7 +42,7 @@ func (s *Service) loadPhotos(ctx context.Context, survivors []votedCandidate) (m
 	if err != nil {
 		return nil, fmt.Errorf("loading candidate photos: %w", err)
 	}
-	s.media.Decorate(list)
+	s.media.Decorate(ctx, list)
 	byUID := make(map[string]photos.Photo, len(list))
 	for i := range list {
 		byUID[list[i].UID] = list[i]

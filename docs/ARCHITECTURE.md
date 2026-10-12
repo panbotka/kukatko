@@ -638,8 +638,15 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `project.BootstrapUID` with a `TODO multi-tenancy` marker), `idx_photos_file_hash` serves the unscoped
   file-hash lookups until then, and a final step drops the defaults.
 
-**The model is completed in later steps** (membership readers, scoped reads, routing, per-project storage,
-limits); the design is
+- **Routing** — every project-scoped API group is mounted under **`/api/v1/p/{project}`** (the slug picks
+  the project, `auth.WithProject`) and, until the alias-removal step, a second time unprefixed under
+  `/api/v1` as the **transition alias** for project `v` (`cmd/kukatko/projectapi.go`); instance-wide
+  routes (`/auth/*`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`, `/restore`, `/audit`, the public
+  `/u/{code}`) are mounted once. Links a response carries follow the prefix the request came through
+  (`auth.APIBase`). Details: `docs/API.md` → *Project prefix*.
+
+**The model is completed in later steps** (membership readers, scoped reads, per-project storage,
+limits, removing the alias); the design is
 [`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
 
 ### 5.3 Identity mapping (provenance)

@@ -76,7 +76,7 @@ func jsonFields(t *testing.T, payload any) map[string]any {
 func TestSummarize_carriesDuration(t *testing.T) {
 	t.Parallel()
 
-	list := shapeAPI(nil).summarize([]photos.Photo{stillPhoto(), loudVideo(), silentVideo()})
+	list := shapeAPI(nil).summarize(t.Context(), []photos.Photo{stillPhoto(), loudVideo(), silentVideo()})
 	if len(list) != 3 {
 		t.Fatalf("summaries = %d, want 3", len(list))
 	}

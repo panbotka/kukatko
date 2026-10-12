@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -72,7 +73,7 @@ func TestThumb_publishingBackendReturnsObjectURL(t *testing.T) {
 		t.Fatalf("thumb.RelPath: %v", err)
 	}
 
-	got := builder.Thumb("ph1", testHash, thumb.GridSize)
+	got := builder.Thumb(t.Context(), "ph1", testHash, thumb.GridSize)
 	want := "https://media.example/" + rel + "?sig=deadbeef"
 	if got != want {
 		t.Errorf("Thumb() = %q, want %q", got, want)
@@ -86,7 +87,7 @@ func TestDownload_publishingBackendReturnsObjectURL(t *testing.T) {
 
 	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
 
-	got := builder.Download("ph1", "2024/05/photo.jpg", "photo.jpg")
+	got := builder.Download(t.Context(), "ph1", "2024/05/photo.jpg", "photo.jpg")
 	want := "https://media.example/2024/05/photo.jpg?dl=photo.jpg&sig=deadbeef"
 	if got != want {
 		t.Errorf("Download() = %q, want %q", got, want)
@@ -105,12 +106,46 @@ func TestThumb_filesystemBackendFallsBackToRoute(t *testing.T) {
 	}
 	builder := mediaurl.NewBuilder(fs)
 
-	if got, want := builder.Thumb("ph1", testHash, "tile_100"), "/api/v1/photos/ph1/thumb/tile_100"; got != want {
+	if got, want := builder.Thumb(t.Context(), "ph1", testHash, "tile_100"), "/api/v1/photos/ph1/thumb/tile_100"; got != want {
 		t.Errorf("Thumb() = %q, want %q", got, want)
 	}
-	down := builder.Download("ph1", "2024/05/x.jpg", "x.jpg")
+	down := builder.Download(t.Context(), "ph1", "2024/05/x.jpg", "x.jpg")
 	if want := "/api/v1/photos/ph1/download?original=true"; down != want {
 		t.Errorf("Download() = %q, want %q", down, want)
+	}
+}
+
+// TestOwnRoutes_followTheRequestsAPIBase proves the application's own media
+// routes are built on the prefix the request came through: the project's when
+// it was addressed by slug, the bare /api/v1 through the transition alias.
+func TestOwnRoutes_followTheRequestsAPIBase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{name: "alias", base: "/api/v1", want: "/api/v1/photos/ph1/"},
+		{name: "project prefix", base: "/api/v1/p/v", want: "/api/v1/p/v/photos/ph1/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := auth.ContextWithAPIBase(t.Context(), tt.base)
+			var builder *mediaurl.Builder
+			photo := photos.Photo{UID: "ph1", FileHash: testHash, FilePath: "2024/05/x.jpg", FileName: "x.jpg"}
+			builder.DecorateOne(ctx, &photo)
+			for field, got := range map[string]string{
+				"ThumbURL":    photo.ThumbURL,
+				"PreviewURL":  photo.PreviewURL,
+				"DownloadURL": photo.DownloadURL,
+			} {
+				if !strings.HasPrefix(got, tt.want) {
+					t.Errorf("%s = %q, want it under %q", field, got, tt.want)
+				}
+			}
+		})
 	}
 }
 
@@ -122,7 +157,7 @@ func TestNilBuilder_fallsBackToRoutes(t *testing.T) {
 
 	var builder *mediaurl.Builder
 
-	if got := builder.Thumb("ph1", testHash, "tile_100"); got != "/api/v1/photos/ph1/thumb/tile_100" {
+	if got := builder.Thumb(t.Context(), "ph1", testHash, "tile_100"); got != "/api/v1/photos/ph1/thumb/tile_100" {
 		t.Errorf("Thumb() = %q", got)
 	}
 	if got := builder.Object("2024/05/x.jpg"); got != "" {
@@ -145,7 +180,7 @@ func TestThumbObject_invalidHashYieldsNoURL(t *testing.T) {
 		t.Errorf("ThumbObject(unknown size) = %q, want empty", got)
 	}
 	// The route fallback still addresses the photo by UID, which always works.
-	if got := builder.Thumb("ph1", "zz", thumb.GridSize); got != "/api/v1/photos/ph1/thumb/tile_500" {
+	if got := builder.Thumb(t.Context(), "ph1", "zz", thumb.GridSize); got != "/api/v1/photos/ph1/thumb/tile_500" {
 		t.Errorf("Thumb(short hash) = %q", got)
 	}
 }
@@ -157,7 +192,7 @@ func TestThumb_escapesUIDAndSize(t *testing.T) {
 
 	var builder *mediaurl.Builder
 
-	got := builder.Thumb("../etc", testHash, "tile_100")
+	got := builder.Thumb(t.Context(), "../etc", testHash, "tile_100")
 	if strings.Contains(got, "../") {
 		t.Errorf("Thumb() = %q, want the UID escaped", got)
 	}
@@ -181,7 +216,7 @@ func TestDecorate_stampsEveryPhoto(t *testing.T) {
 		{UID: "ph2", FileHash: testHash, FilePath: "2024/06/two.jpg"},
 	}
 
-	builder.Decorate(list)
+	builder.Decorate(t.Context(), list)
 
 	for i, photo := range list {
 		if photo.ThumbURL == "" || photo.PreviewURL == "" || photo.DownloadURL == "" {
@@ -205,7 +240,7 @@ func TestDecorateOne_previewIsTheAspectPreservingRendition(t *testing.T) {
 	var builder *mediaurl.Builder
 
 	photo := photos.Photo{UID: "ph1", FileHash: testHash, FilePath: "2024/05/one.jpg"}
-	builder.DecorateOne(&photo)
+	builder.DecorateOne(t.Context(), &photo)
 
 	if !strings.HasSuffix(photo.ThumbURL, "/thumb/"+thumb.GridSize) {
 		t.Errorf("ThumbURL = %q, want the grid size", photo.ThumbURL)
@@ -236,7 +271,7 @@ func TestDownload_asksTheEdgeForAnAttachment(t *testing.T) {
 
 	builder := mediaurl.NewBuilder(publishing{prefix: "https://media.example/"})
 
-	got := builder.Download("ph1", "2024/05/photo.jpg", "Vánoce 2024.jpg")
+	got := builder.Download(t.Context(), "ph1", "2024/05/photo.jpg", "Vánoce 2024.jpg")
 	parsed, err := url.Parse(got)
 	if err != nil {
 		t.Fatalf("url.Parse(%q): %v", got, err)
@@ -263,7 +298,7 @@ func TestDownload_inlineAddressesKeepNoDownloadParam(t *testing.T) {
 
 	for name, got := range map[string]string{
 		"Object":      builder.Object("2024/05/photo.jpg"),
-		"Thumb":       builder.Thumb("ph1", testHash, thumb.GridSize),
+		"Thumb":       builder.Thumb(t.Context(), "ph1", testHash, thumb.GridSize),
 		"ThumbObject": builder.ThumbObject(testHash, thumb.GridSize),
 	} {
 		if strings.Contains(got, "dl=") {
@@ -308,7 +343,7 @@ func TestDecorateOne_downloadIsNamedAfterTheOriginal(t *testing.T) {
 		FileName: "race.jpg",
 	}
 
-	builder.DecorateOne(&photo)
+	builder.DecorateOne(t.Context(), &photo)
 
 	parsed, err := url.Parse(photo.DownloadURL)
 	if err != nil {

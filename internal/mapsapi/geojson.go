@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -15,10 +16,11 @@ import (
 // crop-square tile suits a marker preview.
 const geoThumbSize = "tile_224"
 
-// thumbPathPrefix is the API path under which photo thumbnails are served. The
-// whole API mounts under /api/v1 (see internal/server), so a feature can carry a
-// ready-to-use relative thumbnail URL.
-const thumbPathPrefix = "/api/v1/photos/"
+// thumbPath is the path, below the request's API base (auth.APIBase), under
+// which photo thumbnails are served, so a feature carries a ready-to-use
+// relative thumbnail URL leading back through the prefix the feed was asked
+// through (/api/v1/p/<slug> or the /api/v1 transition alias).
+const thumbPath = "/photos/"
 
 // featureCollection is a GeoJSON FeatureCollection (RFC 7946).
 type featureCollection struct {
@@ -101,8 +103,9 @@ func (a *API) handlePhotos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fc := featureCollection{Type: "FeatureCollection", Features: make([]feature, 0, len(list))}
+	apiBase := auth.APIBase(r.Context())
 	for i := range list {
-		if f, ok := toFeature(&list[i]); ok {
+		if f, ok := toFeature(apiBase, &list[i]); ok {
 			fc.Features = append(fc.Features, f)
 		}
 	}
@@ -136,9 +139,10 @@ func (a *API) countCoverage(ctx context.Context, params photos.ListParams, locat
 	return coverage{Located: located, Total: total}, nil
 }
 
-// toFeature converts a photo to a GeoJSON feature, reporting false when the photo
-// lacks either coordinate (and so cannot be placed on the map).
-func toFeature(p *photos.Photo) (feature, bool) {
+// toFeature converts a photo to a GeoJSON feature whose thumbnail URL is built
+// on apiBase, reporting false when the photo lacks either coordinate (and so
+// cannot be placed on the map).
+func toFeature(apiBase string, p *photos.Photo) (feature, bool) {
 	if p.Lat == nil || p.Lng == nil {
 		return feature{}, false
 	}
@@ -150,7 +154,7 @@ func toFeature(p *photos.Photo) (feature, bool) {
 			Title:             p.Title,
 			TakenAt:           p.TakenAt,
 			MediaType:         p.MediaType,
-			Thumb:             thumbPathPrefix + url.PathEscape(p.UID) + "/thumb/" + geoThumbSize,
+			Thumb:             apiBase + thumbPath + url.PathEscape(p.UID) + "/thumb/" + geoThumbSize,
 			Blurhash:          p.Blurhash,
 			LocationEstimated: p.LocationSource == photos.LocationSourceEstimate,
 		},

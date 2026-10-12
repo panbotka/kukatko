@@ -33,7 +33,7 @@ func (s *Service) build(ctx context.Context, cands []votedCandidate) ([]Candidat
 		if photo.StackUID != nil && !photo.StackPrimary {
 			continue // a non-primary stack member surfaces only through its primary
 		}
-		s.media.DecorateOne(&photo)
+		s.media.DecorateOne(ctx, &photo)
 		out = append(out, Candidate{
 			Photo:      photo,
 			Distance:   candidate.distance,

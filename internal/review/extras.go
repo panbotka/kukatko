@@ -58,7 +58,7 @@ func (s *Service) placeQuestions(ctx context.Context, need int) ([]Question, int
 		if name == "" || photo.Lat == nil || photo.Lng == nil {
 			continue
 		}
-		s.media.DecorateOne(&photo)
+		s.media.DecorateOne(ctx, &photo)
 		questions = append(questions, Question{
 			ID:    placeQuestionID(photo.UID),
 			Kind:  KindPlace,
@@ -110,7 +110,7 @@ func (s *Service) duplicateQuestions(ctx context.Context, need int) ([]Question,
 	}
 	questions := make([]Question, 0, len(pairs))
 	for _, group := range pairs {
-		question, ok := s.duplicateQuestion(group, byUID)
+		question, ok := s.duplicateQuestion(ctx, group, byUID)
 		if ok {
 			questions = append(questions, question)
 		}
@@ -148,7 +148,7 @@ func pairUIDs(groups []duplicates.Group) []string {
 // keep and therefore the one the player is comparing against. It reports ok=false
 // when either photo has gone since the scan.
 func (s *Service) duplicateQuestion(
-	group duplicates.Group, byUID map[string]photos.Photo,
+	ctx context.Context, group duplicates.Group, byUID map[string]photos.Photo,
 ) (Question, bool) {
 	keeper, other := group.Members[0], group.Members[1]
 	if other.IsKeeper {
@@ -162,8 +162,8 @@ func (s *Service) duplicateQuestion(
 	if !ok {
 		return Question{}, false
 	}
-	s.media.DecorateOne(&first)
-	s.media.DecorateOne(&second)
+	s.media.DecorateOne(ctx, &first)
+	s.media.DecorateOne(ctx, &second)
 	return Question{
 		ID:         duplicateQuestionID(first.UID, second.UID),
 		Kind:       KindDuplicate,
@@ -327,7 +327,7 @@ func (s *Service) outlierQuestionsFor(
 			if !ok || photo.HiddenFromLibrary {
 				continue
 			}
-			s.media.DecorateOne(&photo)
+			s.media.DecorateOne(ctx, &photo)
 			faceIndex := face.FaceIndex
 			box := faceBoxOf(face.BBox, photo)
 			questions = append(questions, Question{

@@ -64,16 +64,23 @@ type projectRequestKey struct{}
 // parameter, a request without it addresses the bootstrap project
 // (project.BootstrapSlug), so every unprefixed route keeps meaning the library
 // that existed before multi-tenancy.
+//
+// It also records the path prefix the request came through (see APIBase), so
+// the URLs a handler builds lead back through the same prefix. Applied twice —
+// once in front of the whole /api/v1 group, once more under /p/{project} — the
+// inner one wins.
 func WithProject(store *project.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			slug := chi.URLParam(r, ProjectURLParam)
+			param := chi.URLParam(r, ProjectURLParam)
+			slug := param
 			if slug == "" {
 				slug = project.BootstrapSlug // transition: removed in the alias-removal step
 			}
 			p, err := store.GetBySlug(r.Context(), slug)
 			req := projectRequest{store: store, project: p, err: err}
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), projectRequestKey{}, req)))
+			ctx := ContextWithAPIBase(context.WithValue(r.Context(), projectRequestKey{}, req), apiBaseFor(param))
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

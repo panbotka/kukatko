@@ -130,7 +130,7 @@ func TestPhotoDetailNeverCarriesExif(t *testing.T) {
 	}
 	for name, payload := range map[string]any{
 		"detail":  toPhotoDetail(photo),
-		"summary": (&API{}).summarize([]photos.Photo{photo}),
+		"summary": (&API{}).summarize(t.Context(), []photos.Photo{photo}),
 	} {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
@@ -147,7 +147,7 @@ func TestPhotoDetailNeverCarriesExif(t *testing.T) {
 // TestSummarizeShape checks a list row carries the four useful fields and stops.
 func TestSummarizeShape(t *testing.T) {
 	taken := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
-	got := (&API{}).summarize([]photos.Photo{{
+	got := (&API{}).summarize(t.Context(), []photos.Photo{{
 		UID: "p1", Title: "t", TakenAt: &taken, MediaType: photos.MediaImage,
 	}})
 	if len(got) != 1 {

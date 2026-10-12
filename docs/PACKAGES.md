@@ -5,7 +5,17 @@ in [`CLAUDE.md`](../CLAUDE.md). Record a new or changed package here and add one
 to `## Package map` in `CLAUDE.md`.
 
 <!-- BODY BEGIN -->
-- **Layout:** `cmd/kukatko/` (thin Cobra entrypoint: root + `serve` + `migrate` + `version`),
+- **Layout:** `cmd/kukatko/` (thin Cobra entrypoint: root + `serve` + `migrate` + `version`; the
+  serve wiring splits the API groups by where they mount: `buildServices`, `discoveryAPIOptions`,
+  `readAPIOptions` and `appendOpsAPIs` fill one `projectAPI` struct with every **project-scoped** group
+  (`projectapi.go`) and return the **instance-wide** ones as `server.WithAPI` options; `requestOptions`
+  adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
+  `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
+  transition alias, removed in the alias-removal step. Each group is built once, so a limiter or cache is
+  shared by both mounts. A package with routes on both sides exposes the halves separately:
+  `auth` `RegisterInstanceRoutes`/`RegisterDirectoryRoutes`, `notificationapi`
+  `RegisterPushRoutes`/`RegisterInboxRoutes`, `uploadlinkapi` `RegisterManagementRoutes`/
+  `RegisterPublicRoutes`, `buildIngest` an `ingestRoutes` triple),
   `internal/server/` (chi HTTP server, graceful shutdown, `WithTrustedProxies` →
   `clientip.Middleware` in place of chi's `middleware.RealIP`; the SPA catch-all
   `router.NotFound(web.Handler())` is carved out for **`/.well-known`** and **`/.well-known/*`**,
@@ -51,6 +61,10 @@ to `## Package map` in `CLAUDE.md`.
   decides access after authentication (unknown/foreign/deactivated → identical 404, unapproved → 403
   `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), throttles
   `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole`.
+  `WithProject` also records the prefix the request came through: **`APIBase(ctx)`** (`apibase.go`) is
+  `/api/v1/p/<slug>` under the project prefix and `APIBasePath` (`/api/v1`) through the transition alias,
+  an instance-wide route or a router without `WithProject`; every handler that links to another
+  project-scoped route builds the link on it (`ContextWithAPIBase` sets it in tests).
   `ProjectFromContext`/`ProjectUIDFromContext`/`ProjectRoleFromContext` are the **only** way a handler
   or store learns the current project. A `User` carries `Role` (instance), `ProjectRole` (bootstrap
   membership, read by a correlated subquery in `userColumns` — transition) and the derived `AccountRole`
@@ -803,12 +817,13 @@ to `## Package map` in `CLAUDE.md`.
   up with a length check against `Kinds()`),
   `internal/mediaurl/`
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
-  backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(uid,fileHash,size)` /
-  `Download(uid,filePath,fileName)` (the client address: the signed Worker URL, otherwise a fallback to the own
-  route `/api/v1/photos/...`), `Object(relPath)` / `ThumbObject(fileHash,size)` (the **raw** backend
+  backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(ctx,uid,fileHash,size)` /
+  `Download(ctx,uid,filePath,fileName)` (the client address: the signed Worker URL, otherwise a fallback to the own
+  route `<auth.APIBase(ctx)>/photos/...` — `/api/v1/p/<slug>/photos/...` through the project prefix,
+  `/api/v1/photos/...` through the alias), `Object(relPath)` / `ThumbObject(fileHash,size)` (the **raw** backend
   response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this),
   `DownloadObject(filePath,fileName)` (the same raw answer for an **original**, decorated to download)
-  and `Decorate(list)` / `DecorateOne(&photo)`, which fill `Photo.ThumbURL`+`Photo.PreviewURL`+`Photo.DownloadURL`.
+  and `Decorate(ctx,list)` / `DecorateOne(ctx,&photo)`, which fill `Photo.ThumbURL`+`Photo.PreviewURL`+`Photo.DownloadURL`.
   `Download` forces `?original=true` on the fallback so both branches mean the same thing (the stored original,
   never the rendering of a non-destructive edit).
   **The signed download asks the edge for an attachment** (`downloadParam` = `dl`, valued with
@@ -4126,7 +4141,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **FeatureCollection**, `parseGeoParams` forces `HasGPS=true` + honours `taken_after`/`taken_before`/
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, ordering taken_at desc; every feature is a
   `Point` with an RFC 7946 `[lng,lat]` coordinate and the properties `uid`/`title`/`taken_at`/`media_type`/
-  the relative `thumb` path `tile_224` and the photo's `blurhash` (omitted when none — the map's photo tiles
+  the relative `thumb` path `tile_224` (built on `auth.APIBase(ctx)`, so it follows the project prefix or
+  the alias the feed was asked through) and the photo's `blurhash` (omitted when none — the map's photo tiles
   paint it while the thumbnail loads), photos missing either coordinate are skipped; the route alone is wrapped
   in chi's `middleware.Compress` (gzip level 5, `geoCompressLevel`) — ~0.8 MB of JSON for prod's located
   library, ~0.18 MB on the wire (docs/PERF.md § 6); the collection also

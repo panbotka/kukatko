@@ -34,7 +34,21 @@ import "github.com/go-chi/chi/v5"
 //	POST   /admin/users/{uid}/disable    RequireAdmin
 //	POST   /admin/users/{uid}/password   RequireAdmin
 //	POST   /admin/users/{uid}/password-reset RequireAdmin
+//
+// The server mounts the two halves apart: RegisterInstanceRoutes once under
+// /api/v1, RegisterDirectoryRoutes with the project-scoped API (under
+// /api/v1/p/{project} and its transition alias). RegisterRoutes mounts both on
+// one router, for a test or any caller with no project prefix to tell apart.
 func (a *API) RegisterRoutes(r chi.Router) {
+	a.RegisterInstanceRoutes(r)
+	a.RegisterDirectoryRoutes(r)
+}
+
+// RegisterInstanceRoutes mounts the instance-wide half of RegisterRoutes: every
+// /auth/* route and the /admin/users account administration. They belong to
+// an account, not to a project, so they are mounted once, without the project
+// prefix.
+func (a *API) RegisterInstanceRoutes(r chi.Router) {
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/login", a.handleLogin)
 		// A write an anonymous caller may perform (the password-reset pair
@@ -93,12 +107,6 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		})
 	})
 
-	// The people of the library, for every signed-in role: uid and name only.
-	// It sits beside /users/{uid}/avatar (internal/userpicapi), which is the
-	// picture for the same uid, and deliberately apart from /admin/users below,
-	// which is the administrative record of an account.
-	r.With(a.RequireAuth).Get("/users", a.handleDirectory)
-
 	r.Route("/admin/users", func(r chi.Router) {
 		r.Use(a.RequireAdmin)
 		r.Get("/", a.handleListUsers)
@@ -110,4 +118,13 @@ func (a *API) RegisterRoutes(r chi.Router) {
 		r.Post("/{uid}/password", a.handleResetPassword)
 		r.Post("/{uid}/password-reset", a.handleIssuePasswordReset)
 	})
+}
+
+// RegisterDirectoryRoutes mounts the project-scoped half of RegisterRoutes:
+// GET /users, the people of the library for every signed-in role — uid and
+// name only. It sits beside /users/{uid}/avatar (internal/userpicapi), which
+// is the picture for the same uid, and deliberately apart from /admin/users,
+// which is the administrative record of an account.
+func (a *API) RegisterDirectoryRoutes(r chi.Router) {
+	r.With(a.RequireAuth).Get("/users", a.handleDirectory)
 }

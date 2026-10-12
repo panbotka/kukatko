@@ -100,7 +100,7 @@ func (a *API) stackMembers(ctx context.Context, photo photos.Photo) ([]stackMemb
 	out := make([]stackMember, len(members))
 	for i := range members {
 		m := members[i]
-		a.media.DecorateOne(&m)
+		a.media.DecorateOne(ctx, &m)
 		out[i] = stackMember{
 			UID: m.UID, FileName: m.FileName, MediaType: string(m.MediaType), FileMime: m.FileMime,
 			FileWidth: m.FileWidth, FileHeight: m.FileHeight, FileSize: m.FileSize,

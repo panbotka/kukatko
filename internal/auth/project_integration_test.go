@@ -30,6 +30,7 @@ type projectEnv struct {
 type projectProbe struct {
 	ProjectUID string `json:"project_uid"`
 	Role       string `json:"role"`
+	APIBase    string `json:"api_base"`
 }
 
 // writeProjectProbe is the handler behind the probe routes.
@@ -38,6 +39,7 @@ func writeProjectProbe(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(projectProbe{
 		ProjectUID: auth.ProjectUIDFromContext(r.Context()),
 		Role:       string(auth.ProjectRoleFromContext(r.Context())),
+		APIBase:    auth.APIBase(r.Context()),
 	})
 }
 
@@ -132,6 +134,29 @@ func TestProject_bootstrapFallback(t *testing.T) {
 	}
 	if status, _ := env.get(t, client, "/api/v1/p/v/probe/auth"); status != http.StatusOK {
 		t.Errorf("the bootstrap project by slug = %d, want 200", status)
+	}
+}
+
+// TestProject_apiBaseFollowsTheRoute proves the API base a handler builds its
+// links on is the prefix the request came through: the project's when it was
+// addressed by slug, the bare /api/v1 through the unprefixed alias — for the
+// same project and the same caller.
+func TestProject_apiBaseFollowsTheRoute(t *testing.T) {
+	env := newProjectEnv(t)
+	client, _ := env.signIn(t, "eva", auth.AccountEditor)
+
+	for path, want := range map[string]string{
+		"/api/v1/probe/auth":      "/api/v1",
+		"/api/v1/p/v/probe/auth":  "/api/v1/p/v",
+		"/api/v1/p/v/probe/media": "/api/v1/p/v",
+	} {
+		status, body := env.get(t, client, path)
+		if status != http.StatusOK {
+			t.Fatalf("%s = %d, body %s", path, status, body)
+		}
+		if got := decodeProbe(t, body); got.APIBase != want || got.ProjectUID != project.BootstrapUID {
+			t.Errorf("%s probe = %+v, want api_base %q in the bootstrap project", path, got, want)
+		}
 	}
 }
 

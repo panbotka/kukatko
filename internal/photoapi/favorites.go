@@ -93,7 +93,7 @@ func (a *API) annotate(
 		// Normalise the raw catalogue default (empty flag) to "none" so a photo
 		// without a rating row still reports a valid flag.
 		p.Flag = string(organize.FlagNone)
-		a.media.DecorateOne(&p)
+		a.media.DecorateOne(ctx, &p)
 		views[i] = photoView{Photo: p}
 	}
 	if len(list) == 0 {

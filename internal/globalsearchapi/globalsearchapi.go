@@ -276,7 +276,7 @@ func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) 
 		writeError(w, http.StatusInternalServerError, "searching photos failed")
 		return
 	}
-	a.media.Decorate(matchedPhotos)
+	a.media.Decorate(r.Context(), matchedPhotos)
 
 	out := response{
 		Query:  query,
