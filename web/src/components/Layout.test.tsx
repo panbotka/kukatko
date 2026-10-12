@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
+import type { ProjectMembership } from '../services/auth'
 import { TaskSummaryContext, type TaskSummaryState } from '../tasks/TaskSummaryContext'
 
 import { Layout } from './Layout'
@@ -891,5 +893,88 @@ describe('the tasks-waiting badge', () => {
     const hamburger = screen.getByRole('button', { name: 'Open the menu' })
     expect(within(hamburger).getByTestId('waiting-badge')).toHaveTextContent('2')
     expect(within(hamburger).getByTestId('waiting-badge')).toHaveClass('kk-waiting-badge--over')
+  })
+})
+
+describe('the project switcher in the bar', () => {
+  /** An approved editor membership of the active project `slug`. */
+  function member(slug: string, name: string): ProjectMembership {
+    return { uid: `p-${slug}`, slug, name, active: true, role: 'editor', approved: true }
+  }
+
+  /** The shell inside the first of `projects`, at `path`. */
+  function renderInProject(projects: ProjectMembership[], path = '/p/v/people') {
+    const project: ProjectContextValue = {
+      project: projects[0],
+      projects,
+      status: 'ready',
+      inAddress: true,
+      switchProject: vi.fn(),
+    }
+    return render(
+      <I18nextProvider i18n={i18n}>
+        <AuthContext.Provider value={auth()}>
+          <CapabilitiesContext.Provider value={CAPABILITIES_DEFAULT}>
+            <ProjectContext.Provider value={project}>
+              <MemoryRouter initialEntries={[path]}>
+                <Routes>
+                  <Route element={<Layout />}>
+                    <Route path={path} element={<div>page content</div>} />
+                  </Route>
+                </Routes>
+              </MemoryRouter>
+            </ProjectContext.Provider>
+          </CapabilitiesContext.Provider>
+        </AuthContext.Provider>
+      </I18nextProvider>,
+    )
+  }
+
+  it('leads the bar with the project, a menu of the others', async () => {
+    const user = userEvent.setup()
+    const { container } = renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina')])
+
+    const toggle = screen.getByRole('button', { name: 'Veselice' })
+    expect(toggle).toHaveClass('dropdown-toggle')
+    // The leading block: before every link of the inline bar.
+    const collapse = container.querySelector('.navbar-collapse')
+    if (collapse === null) {
+      throw new Error('the inline bar is not rendered')
+    }
+    expect(precedes(toggle, collapse)).toBe(true)
+
+    await user.click(toggle)
+    expect(await screen.findByRole('link', { name: /Rodina/ })).toHaveAttribute(
+      'href',
+      '/p/rodina/people',
+    )
+    expect(screen.getByRole('link', { name: 'All projects…' })).toHaveAttribute('href', '/projects')
+  })
+
+  it('is the bare name for a single project', () => {
+    renderInProject([member('v', 'Veselice')])
+
+    const switcher = screen.getByTestId('project-switcher')
+    expect(switcher).toHaveTextContent('Veselice')
+    expect(switcher.querySelector('.dropdown-toggle')).toBeNull()
+  })
+
+  it('is the bare name on a phone, where the drawer does the switching', () => {
+    mockViewport(true)
+    renderInProject([member('v', 'Veselice'), member('rodina', 'Rodina')])
+
+    const switcher = screen.getByTestId('project-switcher')
+    expect(switcher).toHaveTextContent('Veselice')
+    expect(screen.queryByRole('button', { name: 'Veselice' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the account name in the user menu’s accessible name', () => {
+    renderInProject([member('v', 'Veselice')])
+
+    // The stylesheet hides it visually in the tight band; the toggle must still
+    // say whose menu it is.
+    const name = screen.getByText('User One')
+    expect(name).toHaveClass('kk-user-menu__name')
+    expect(document.getElementById('user-menu')).toHaveTextContent('User One')
   })
 })

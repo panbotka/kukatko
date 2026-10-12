@@ -1,11 +1,21 @@
-import { useEffect } from 'react'
+import { useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { ProjectContext } from '../project/ProjectContext'
 
 /**
  * Names the browser tab after the page it shows: `document.title` becomes
- * `<page> · Kukátko` (`documentTitle.page`) while the calling component is
- * mounted, and falls back to the bare app name (`documentTitle.app`) when there
- * is nothing to say yet.
+ * `<page> · <project> · Kukátko` (`documentTitle.projectPage`) on a page of a
+ * project, `<page> · Kukátko` (`documentTitle.page`) on an instance page such as
+ * the account or the chooser, while the calling component is mounted, and falls
+ * back to the bare app name (`documentTitle.app`) when there is nothing to say
+ * yet.
+ *
+ * The project's name is there because a person in two libraries keeps both open
+ * in two tabs: „Alba" twice says nothing about which is which. It is read from
+ * the `ProjectContext`, and only when the address itself names the project
+ * (`inAddress`) — on `/account` the context's project is a fallback the page
+ * does not belong to. Outside a provider (an isolated test) there is none.
  *
  * The tab title is not decoration — it is what the **browser history**, a second
  * tab and a bookmark are labelled with. A gallery is browsed by "find the photo I
@@ -36,12 +46,20 @@ export function useDocumentTitle(title: string | null | undefined): void {
   // Normalize before the dependency array: a page that recomputes an equal
   // string on every render must not re-run the effect.
   const page = title?.trim() ?? ''
+  const ctx = useContext(ProjectContext)
+  const project = ctx?.inAddress === true ? (ctx.project?.name.trim() ?? '') : ''
 
   useEffect(() => {
     const appName = t('documentTitle.app')
-    document.title = page === '' ? appName : t('documentTitle.page', { title: page })
+    if (page === '') {
+      document.title = appName
+    } else if (project === '') {
+      document.title = t('documentTitle.page', { title: page })
+    } else {
+      document.title = t('documentTitle.projectPage', { title: page, project })
+    }
     return () => {
       document.title = appName
     }
-  }, [page, t])
+  }, [page, project, t])
 }

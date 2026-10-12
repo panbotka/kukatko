@@ -48,6 +48,7 @@ export type IconName =
   | 'eye-slash'
   | 'files'
   | 'fire'
+  | 'folder2-open'
   | 'funnel'
   | 'gear'
   | 'geo-alt'

@@ -5,9 +5,11 @@ import type { ProjectMembership } from '../services/auth'
 import {
   entryProjectSlug,
   isInstancePath,
+  KEEP_ON_SWITCH,
   projectPathFor,
   projectRoleOf,
   projectSlugInPath,
+  routeAfterSwitch,
   stripProjectPrefix,
 } from './paths'
 
@@ -130,5 +132,65 @@ describe('projectRoleOf', () => {
     expect(projectRoleOf('maintainer', member('v', { role: 'viewer' }))).toBe('maintainer')
     expect(projectRoleOf('maintainer', null)).toBe('maintainer')
     expect(projectRoleOf('user', null)).toBeNull()
+  })
+})
+
+describe('routeAfterSwitch', () => {
+  it('keeps a list page, which every project has', () => {
+    expect(routeAfterSwitch('/p/v/albums', 'v', 'rodina')).toBe('/p/rodina/albums')
+    expect(routeAfterSwitch('/p/v/people', 'v', 'rodina')).toBe('/p/rodina/people')
+    expect(routeAfterSwitch('/p/v/notifications', 'v', 'rodina')).toBe('/p/rodina/notifications')
+    for (const page of KEEP_ON_SWITCH) {
+      const from = page === '' ? '/p/v' : `/p/v/${page}`
+      const to = page === '' ? '/p/rodina' : `/p/rodina/${page}`
+      expect(routeAfterSwitch(from, 'v', 'rodina')).toBe(to)
+    }
+  })
+
+  it('keeps the library, the project home, as the home', () => {
+    expect(routeAfterSwitch('/p/v', 'v', 'rodina')).toBe('/p/rodina')
+    expect(routeAfterSwitch('/p/v/', 'v', 'rodina')).toBe('/p/rodina')
+  })
+
+  it('tolerates a trailing slash on a list page', () => {
+    expect(routeAfterSwitch('/p/v/search/', 'v', 'rodina')).toBe('/p/rodina/search')
+  })
+
+  it('drops the query and the hash, which may name uids of the old library', () => {
+    expect(routeAfterSwitch('/p/v/search?q=person:abc#x', 'v', 'rodina')).toBe('/p/rodina/search')
+    expect(routeAfterSwitch('/p/v?album=abc', 'v', 'rodina')).toBe('/p/rodina')
+  })
+
+  it('goes home from any page that carries a uid', () => {
+    for (const page of [
+      '/photos/abc',
+      '/albums/abc',
+      '/albums/abc/faces',
+      '/labels/abc',
+      '/people/abc',
+      '/people/abc/tree',
+      '/tasks/abc',
+      '/n/abc',
+      '/people/clusters',
+    ]) {
+      expect(routeAfterSwitch(`/p/v${page}`, 'v', 'rodina')).toBe('/p/rodina')
+    }
+  })
+
+  it('goes home from a page that is not a list (tools, admin, the slideshow)', () => {
+    for (const page of ['/review', '/duplicates', '/users', '/settings', '/slideshow', '/nope']) {
+      expect(routeAfterSwitch(`/p/v${page}`, 'v', 'rodina')).toBe('/p/rodina')
+    }
+  })
+
+  it('goes home from an instance page or an address outside the source project', () => {
+    expect(routeAfterSwitch('/account', 'v', 'rodina')).toBe('/p/rodina')
+    expect(routeAfterSwitch('/account/activity', 'v', 'rodina')).toBe('/p/rodina')
+    expect(routeAfterSwitch('/projects', 'v', 'rodina')).toBe('/p/rodina')
+    expect(routeAfterSwitch('/p/other/albums', 'v', 'rodina')).toBe('/p/rodina')
+  })
+
+  it('encodes the destination slug like every other project link', () => {
+    expect(routeAfterSwitch('/p/v/albums', 'v', 'a b')).toBe('/p/a%20b/albums')
   })
 })

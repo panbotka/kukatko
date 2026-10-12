@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { AuthContext, type AuthContextValue, useAuth } from '../auth/AuthContext'
@@ -130,5 +131,68 @@ describe('ProjectProvider', () => {
     expect(screen.getByTestId('role')).toHaveTextContent('-')
     expect(screen.getByTestId('link')).toHaveTextContent('/projects')
     expect(getCurrentProjectSlug()).toBeNull()
+  })
+
+  describe('switchProject', () => {
+    /** Switches to `rodina` on a click, and prints where the app went. */
+    function Switch() {
+      const { switchProject, inAddress } = useProject()
+      const { pathname } = useLocation()
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              switchProject('rodina')
+            }}
+          >
+            switch
+          </button>
+          <span data-testid="where">{pathname}</span>
+          <span data-testid="in-address">{String(inAddress)}</span>
+        </>
+      )
+    }
+
+    function renderSwitch(path: string) {
+      return render(
+        <AuthContext.Provider value={auth()}>
+          <MemoryRouter initialEntries={[path]}>
+            <ProjectProvider>
+              <Switch />
+            </ProjectProvider>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      )
+    }
+
+    it('keeps a list page every project has', async () => {
+      const user = userEvent.setup()
+      renderSwitch('/p/v/people')
+      expect(screen.getByTestId('in-address')).toHaveTextContent('true')
+
+      await user.click(screen.getByRole('button', { name: 'switch' }))
+
+      expect(screen.getByTestId('where')).toHaveTextContent(/^\/p\/rodina\/people$/)
+    })
+
+    it('goes to the destination home from a page with a uid', async () => {
+      const user = userEvent.setup()
+      renderSwitch('/p/v/people/s1')
+
+      await user.click(screen.getByRole('button', { name: 'switch' }))
+
+      expect(screen.getByTestId('where')).toHaveTextContent(/^\/p\/rodina$/)
+    })
+
+    it('goes home from an instance page, which no project owns', async () => {
+      const user = userEvent.setup()
+      renderSwitch('/account')
+      expect(screen.getByTestId('in-address')).toHaveTextContent('false')
+
+      await user.click(screen.getByRole('button', { name: 'switch' }))
+
+      expect(screen.getByTestId('where')).toHaveTextContent(/^\/p\/rodina$/)
+    })
   })
 })

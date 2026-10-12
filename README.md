@@ -205,6 +205,12 @@ shared library is tidied by more than one person.
   `/n/…`) is forwarded to the same page in the project you last worked in, filters and all. An
   account in several projects without a remembered one gets a short list to pick from at
   `/projects`; a project you do not belong to looks exactly like a page that does not exist.
+- **Which project you are in is always on screen.** The project's name leads the top bar (and the
+  phone menu, and the browser tab's title). In more than one project it opens a menu of the others:
+  switching keeps the page you were on when it is a list — albums stay albums, the people stay the
+  people — and opens the other library's home when you were looking at one photo, album or person.
+  *Všechny projekty…* leads to `/projects`, a card per project with its description and your role
+  there, including the ones you cannot open yet and why.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

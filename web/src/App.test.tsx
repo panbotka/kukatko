@@ -412,17 +412,18 @@ describe('routing', () => {
   it('names the browser tab after the route, and re-names it on navigation', async () => {
     // Browser history is how "the photo I saw last week" is found again, so each
     // entry has to be labelled with the page it is — and, crucially, stop being
-    // labelled with it the moment the reader moves on.
+    // labelled with it the moment the reader moves on. Inside a project the
+    // project's name rides along, so two libraries in two tabs are told apart.
     const user = userEvent.setup()
     renderRoutes(['/', '/stats'])
 
     await screen.findByRole('heading', { level: 1, name: 'Library statistics' })
-    expect(document.title).toBe('Library statistics · Kukátko')
+    expect(document.title).toBe('Library statistics · Veselice · Kukátko')
 
     await user.click(screen.getByRole('button', { name: '__back' }))
 
     await screen.findByRole('heading', { name: 'Library' })
-    expect(document.title).toBe('Library · Kukátko')
+    expect(document.title).toBe('Library · Veselice · Kukátko')
   })
 
   it('replaces the /library history entry so Back does not bounce', async () => {

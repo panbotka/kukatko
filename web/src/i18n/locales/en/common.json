@@ -5,6 +5,7 @@
   "documentTitle": {
     "app": "Kukátko",
     "page": "{{title}} · Kukátko",
+    "projectPage": "{{title}} · {{project}} · Kukátko",
     "album": "Album {{name}}",
     "label": "Label {{name}}",
     "search": "Search “{{query}}”",
@@ -3098,9 +3099,24 @@
   "projects": {
     "title": "Projects",
     "intro": "The libraries you belong to. Pick the one to open.",
-    "empty": "You do not belong to any project yet. Ask the administrator of a project for an invitation.",
-    "unavailable": "unavailable",
-    "pending": "awaiting approval"
+    "empty": "You are not a member of any project. Ask a project administrator for an invitation.",
+    "unavailable": "Unavailable",
+    "unavailableTitle": "The project is switched off and cannot be opened.",
+    "pending": "Awaiting approval",
+    "pendingTitle": "A project administrator still has to approve your membership.",
+    "open": "Open the project {{name}}",
+    "manage": "Manage projects",
+    "manageTitle": "Create, edit and switch off projects",
+    "account": "Account",
+    "logout": "Sign out"
+  },
+  "projectSwitcher": {
+    "heading": "Project",
+    "current": "Project {{name}}",
+    "title": "Project {{name}} — switch to another",
+    "switchTo": "Switch to the project {{name}}",
+    "all": "All projects…",
+    "allTitle": "Show all your projects"
   },
   "notFound": {
     "title": "Page not found",

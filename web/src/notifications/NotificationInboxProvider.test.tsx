@@ -56,7 +56,7 @@ function inProject(slug: string): ProjectContextValue {
     role: 'viewer',
     approved: true,
   }
-  return { project, projects: [project], status: 'ready', switchProject: vi.fn() }
+  return { project, projects: [project], status: 'ready', inAddress: true, switchProject: vi.fn() }
 }
 
 /** Mounts the provider inside the project `slug`; `rerender` with another to switch. */

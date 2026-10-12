@@ -104,6 +104,61 @@ export function stripProjectPrefix(pathname: string): string {
   return rest === '' ? '/' : rest
 }
 
+/**
+ * The pages that read the same in every project — a listing, a search, a tool
+ * with no subject of its own — named by their single path segment (`''` is the
+ * library, the project's home). Switching projects on one of these keeps the
+ * page; see {@link routeAfterSwitch}. "My activity" is not here: it is
+ * `/account/activity`, an instance page, which carries no project to switch.
+ */
+export const KEEP_ON_SWITCH: ReadonlySet<string> = new Set([
+  '',
+  'favorites',
+  'albums',
+  'labels',
+  'tasks',
+  'search',
+  'saved',
+  'map',
+  'places',
+  'people',
+  'leaderboard',
+  'upload',
+  'stats',
+  'help',
+  'notifications',
+])
+
+/**
+ * Where the project switcher takes the reader who moves from the project
+ * `fromSlug` to `toSlug` while on `currentPath` (a pathname, optionally with
+ * its query and hash).
+ *
+ * A **list** page (see {@link KEEP_ON_SWITCH}) — the albums, the people, the
+ * search — exists in every project, so the reader lands on the same page of the
+ * destination: `/p/v/albums` → `/p/rodina/albums`. Anything deeper carries a
+ * uid (a photo, an album, a person, a task, a notification, a cluster…) or is a
+ * tool scoped to one (`/people/clusters`, `/people/:uid/tree`), and a uid of one
+ * library names nothing in another, so those land on the destination's home.
+ * So does an instance page (`/account`) or an address outside `fromSlug`.
+ *
+ * The query and the hash are dropped on purpose: they hold filters, and those
+ * name albums, people and labels by uid just as often as they hold free text.
+ */
+export function routeAfterSwitch(currentPath: string, fromSlug: string, toSlug: string): string {
+  const home = projectPathFor(toSlug, '/')
+  const path = pathPart(currentPath)
+  if (projectSlugInPath(path) !== fromSlug) {
+    return home
+  }
+  const page = stripProjectPrefix(path).replace(/\/+$/, '')
+  const segment = page.replace(/^\//, '')
+  if (segment.includes('/') || !KEEP_ON_SWITCH.has(segment)) {
+    return home
+  }
+  return projectPathFor(toSlug, segment === '' ? '/' : `/${segment}`)
+}
+
 /** The membership fields the entry rule and the role predicates read. */
 export interface SessionProjects {
   projects?: ProjectMembership[]

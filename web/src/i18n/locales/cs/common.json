@@ -5,6 +5,7 @@
   "documentTitle": {
     "app": "Kukátko",
     "page": "{{title}} · Kukátko",
+    "projectPage": "{{title}} · {{project}} · Kukátko",
     "album": "Album {{name}}",
     "label": "Štítek {{name}}",
     "search": "Hledání „{{query}}“",
@@ -3252,9 +3253,24 @@
   "projects": {
     "title": "Projekty",
     "intro": "Knihovny, do kterých patříte. Vyberte, kterou chcete otevřít.",
-    "empty": "Zatím nepatříte do žádného projektu. Požádejte správce některého projektu o pozvánku.",
-    "unavailable": "nedostupný",
-    "pending": "čeká na schválení"
+    "empty": "Nejste členem žádného projektu. Požádejte správce projektu o pozvánku.",
+    "unavailable": "Nedostupné",
+    "unavailableTitle": "Projekt je vypnutý, nelze ho otevřít.",
+    "pending": "Čeká na schválení",
+    "pendingTitle": "Vaše členství ještě musí schválit správce projektu.",
+    "open": "Otevřít projekt {{name}}",
+    "manage": "Správa projektů",
+    "manageTitle": "Zakládat, upravovat a vypínat projekty",
+    "account": "Účet",
+    "logout": "Odhlásit se"
+  },
+  "projectSwitcher": {
+    "heading": "Projekt",
+    "current": "Projekt {{name}}",
+    "title": "Projekt {{name}} — přepnout do jiného",
+    "switchTo": "Přepnout do projektu {{name}}",
+    "all": "Všechny projekty…",
+    "allTitle": "Zobrazit všechny vaše projekty"
   },
   "notFound": {
     "title": "Stránka nenalezena",

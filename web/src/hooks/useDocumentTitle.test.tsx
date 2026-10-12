@@ -1,8 +1,9 @@
 import { render } from '@testing-library/react'
 import { I18nextProvider } from 'react-i18next'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 
 import { useDocumentTitle } from './useDocumentTitle'
 
@@ -100,5 +101,57 @@ describe('useDocumentTitle', () => {
     )
 
     expect(document.title).toBe('Library · Kukátko')
+  })
+
+  describe('inside a project', () => {
+    /** A provider value: the project „Veselice", named by the address or not. */
+    function projectValue(inAddress: boolean): ProjectContextValue {
+      const project = {
+        uid: 'p1',
+        slug: 'v',
+        name: 'Veselice',
+        active: true,
+        role: 'viewer' as const,
+        approved: true,
+      }
+      return { project, projects: [project], status: 'ready', inAddress, switchProject: vi.fn() }
+    }
+
+    it('names the project between the page and the app', () => {
+      render(
+        <I18nextProvider i18n={i18n}>
+          <ProjectContext.Provider value={projectValue(true)}>
+            <Page title="Alba" />
+          </ProjectContext.Provider>
+        </I18nextProvider>,
+      )
+
+      expect(document.title).toBe('Alba · Veselice · Kukátko')
+    })
+
+    it('leaves the project out on an instance page, which belongs to none', () => {
+      // `/account`: the context still holds the entry project as a fallback.
+      render(
+        <I18nextProvider i18n={i18n}>
+          <ProjectContext.Provider value={projectValue(false)}>
+            <Page title="Účet" />
+          </ProjectContext.Provider>
+        </I18nextProvider>,
+      )
+
+      expect(document.title).toBe('Účet · Kukátko')
+    })
+
+    it('still falls back to the bare app name while the page has no name', () => {
+      render(
+        <I18nextProvider i18n={i18n}>
+          <ProjectContext.Provider value={projectValue(true)}>
+            <Page title={null} />
+          </ProjectContext.Provider>
+        </I18nextProvider>,
+      )
+
+      expect(document.title).toBe('Kukátko')
+    })
   })
 })

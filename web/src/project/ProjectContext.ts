@@ -26,7 +26,16 @@ export interface ProjectContextValue {
   /** Every membership `GET /auth/me` listed, entered or not. */
   projects: ProjectMembership[]
   status: ProjectStatus
-  /** Moves to the home page of the project `slug`. */
+  /**
+   * True when the address itself names `project` (`/p/:slug`, a member): the
+   * page belongs to it. False on an instance page, where `project` is only the
+   * entry-rule fallback — the tab title and the switcher's links read this.
+   */
+  inAddress: boolean
+  /**
+   * Moves to the project `slug`: the same page when it is a list every project
+   * has, the project's home otherwise (see `routeAfterSwitch`).
+   */
   switchProject: (slug: string) => void
 }
 

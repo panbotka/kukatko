@@ -43,6 +43,7 @@ import {
   UPLOAD_ITEM,
 } from './navItems'
 import { PersonAvatar } from './PersonAvatar'
+import { ProjectSwitcher } from './ProjectSwitcher'
 import { PushPrompt } from './push/PushPrompt'
 import { SearchCommand } from './search/SearchCommand'
 import { WaitingBadge } from './tasks/WaitingBadge'
@@ -340,6 +341,13 @@ export function Layout({ children }: { children?: ReactNode }) {
             onOpenChange={setPaletteOpen}
             showTrigger={!drawerNav}
           />
+          {/* Where the reader stands: the current project's name, and on `lg`+
+              a menu of the others when there are others. It is the one item of
+              the row that gives way to a long name (it shrinks and ellipsises,
+              see `.kk-project-switcher`). Below `lg` it is the name alone, at
+              the leading edge the phone row otherwise leaves empty; switching
+              there is the drawer's first section. */}
+          <ProjectSwitcher variant="bar" menu={!drawerNav} />
           {/* The inline bar is the `lg`+ navigation only: below that the same
               items are the drawer's, so rendering both would duplicate every
               link in the DOM. */}
@@ -390,7 +398,12 @@ export function Layout({ children }: { children?: ReactNode }) {
                           userUid={user.uid}
                           className="kk-avatar--sm"
                         />
-                        {user.display_name || user.username}
+                        {/* Out of sight (not out of the accessible name) in
+                            the 992–1399px band, where the project switcher
+                            took its width; see `.kk-user-menu__name`. */}
+                        <span className="kk-user-menu__name">
+                          {user.display_name || user.username}
+                        </span>
                       </span>
                     }
                     id="user-menu"

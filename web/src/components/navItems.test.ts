@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { PRIMARY_ITEMS, TOOLS_GROUP, toolsGroup } from './navItems'
+import { isInstancePath, projectPathFor } from '../project/paths'
+
+import { PRIMARY_ITEMS, PROJECTS_ITEM, TOOLS_GROUP, toolsGroup } from './navItems'
 
 /** The routes of a narrowed group, or null when there is none. */
 function routes(roles: { canCurate: boolean; canWrite: boolean }): string[] | null {
@@ -44,5 +46,17 @@ describe('PRIMARY_ITEMS', () => {
     const search = PRIMARY_ITEMS.find((entry) => entry.to === '/search')
     expect(search?.labelKey).toBe('nav.search')
     expect(search?.icon).toBe('search')
+  })
+})
+
+describe('PROJECTS_ITEM', () => {
+  it('leads to the chooser, an instance page no project prefix is put on', () => {
+    // The switcher's last entry: the shell resolves every entry through
+    // `useProjectPath`, which must leave this one alone in every project.
+    expect(PROJECTS_ITEM.to).toBe('/projects')
+    expect(isInstancePath(PROJECTS_ITEM.to)).toBe(true)
+    expect(projectPathFor('v', PROJECTS_ITEM.to)).toBe('/projects')
+    expect(PROJECTS_ITEM.labelKey).toBe('projectSwitcher.all')
+    expect(PROJECTS_ITEM.icon).toBe('folder2-open')
   })
 })

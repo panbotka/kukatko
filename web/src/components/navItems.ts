@@ -1,6 +1,7 @@
 import type { ParseKeys } from 'i18next'
 
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { PROJECTS_PATH } from '../project/paths'
 
 /**
  * The work queue's route. Named because the shell singles it out: it is the
@@ -366,6 +367,19 @@ export const HELP_ITEM: NavEntry = {
   labelKey: 'nav.help',
   titleKey: 'nav.titles.help',
   icon: 'question-circle',
+}
+
+/**
+ * The project chooser, the last entry of the project switcher (the bar's
+ * dropdown and the drawer's first section). It is an instance page, so the
+ * shell's `useProjectPath` leaves it as it is — `/projects`, never under a
+ * project.
+ */
+export const PROJECTS_ITEM: NavEntry = {
+  to: PROJECTS_PATH,
+  labelKey: 'projectSwitcher.all',
+  titleKey: 'projectSwitcher.allTitle',
+  icon: 'folder2-open',
 }
 
 /**

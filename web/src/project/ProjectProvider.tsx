@@ -5,7 +5,7 @@ import { AuthContext } from '../auth/AuthContext'
 import { setCurrentProjectSlug } from '../services/api'
 
 import { ProjectContext, type ProjectContextValue, type ProjectStatus } from './ProjectContext'
-import { entryProjectSlug, isEnterable, projectPathFor, projectSlugInPath } from './paths'
+import { entryProjectSlug, isEnterable, projectSlugInPath, routeAfterSwitch } from './paths'
 
 /**
  * Provides the current project to the app, directly under `AuthProvider`.
@@ -54,16 +54,21 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setCurrentProjectSlug(project?.slug ?? null)
   }
 
+  const currentSlug = project?.slug ?? ''
   const switchProject = useCallback(
     (slug: string) => {
-      void navigate(projectPathFor(slug, '/'))
+      void navigate(routeAfterSwitch(pathname, currentSlug, slug))
     },
-    [navigate],
+    [navigate, pathname, currentSlug],
   )
 
+  // The project is the page's own only when the address names it and the
+  // account belongs to it; on `/account` it is merely the entry-rule fallback.
+  const inAddress = status === 'ready' && urlSlug !== null
+
   const value = useMemo<ProjectContextValue>(
-    () => ({ project, projects, status, switchProject }),
-    [project, projects, status, switchProject],
+    () => ({ project, projects, status, inAddress, switchProject }),
+    [project, projects, status, inAddress, switchProject],
   )
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>

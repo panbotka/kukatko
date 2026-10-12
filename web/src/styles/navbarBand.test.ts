@@ -70,3 +70,31 @@ describe('the navbar band between the drawer and a roomy container', () => {
     expect(band).not.toMatch(/\.nav-link\s*\{[^}]*display:\s*none/)
   })
 })
+
+describe('the project switcher’s width', () => {
+  it('is the one item of the bar that shrinks, never below a readable stub', () => {
+    const base = declarations(ruleBody(css, /\.kk-project-switcher(?=\s*\{)/) ?? '')
+    expect(base.get('min-width')).toBe('0')
+    const name = declarations(ruleBody(css, /\.kk-project-switcher__name(?=\s*\{)/) ?? '')
+    expect(name.get('text-overflow')).toBe('ellipsis')
+    const lg = ruleBody(css, /@media \(min-width: 992px\)(?=\s*\{)/, /\.kk-project-switcher/)
+    const atLg = declarations(ruleBody(lg ?? '', /\.kk-project-switcher(?=\s*\{)/) ?? '')
+    expect(atLg.get('flex')).toBe('0 1 auto')
+    expect(atLg.get('min-width')).toBe('3.5rem')
+    expect(atLg.get('max-width')).toBe('14rem')
+  })
+
+  it('is paid for by the user menu’s name, hidden visually only up to 1400px', () => {
+    const band = ruleBody(
+      css,
+      /@media \(min-width: 992px\) and \(max-width: 1399\.98px\)/,
+      /\.kk-user-menu__name/,
+    )
+    const hidden = declarations(ruleBody(band ?? '', /\.kk-user-menu__name(?=\s*\{)/) ?? '')
+    // Clipped, not `display: none`: the menu toggle keeps the name as its
+    // accessible name.
+    expect(hidden.get('position')).toBe('absolute')
+    expect(hidden.get('clip')).toBe('rect(0, 0, 0, 0)')
+    expect(hidden.has('display')).toBe(false)
+  })
+})

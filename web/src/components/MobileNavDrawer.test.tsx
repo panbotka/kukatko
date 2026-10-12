@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { CAPABILITIES_DEFAULT, CapabilitiesContext } from '../capabilities/CapabilitiesContext'
 import i18n from '../i18n'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
+import type { ProjectMembership } from '../services/auth'
 import { TaskSummaryContext } from '../tasks/TaskSummaryContext'
 import { declarations, readCss, ruleBody } from '../test/css'
 
@@ -47,6 +49,9 @@ function auth(
       subject_uid: opts.subjectUid ?? null,
     },
     role,
+    // What the project overlay of `useAuth()` reads the maintainer from, once
+    // a test runs the shell inside a project.
+    instanceRole: isMaintainer ? 'maintainer' : 'user',
     downloadToken: null,
     canCurate: canCurate || canWrite || isAdmin,
     canWrite: canWrite || isAdmin,
@@ -77,23 +82,59 @@ function mockViewport(narrow: boolean): void {
   }))
 }
 
-/** Renders the shell with a few real destinations, starting at `path`. */
-function renderShell(value: AuthContextValue, path = '/p/v', caps = CAPABILITIES_DEFAULT) {
+/** An approved membership of the active project `slug`. */
+function member(slug: string, name: string): ProjectMembership {
+  return { uid: `p-${slug}`, slug, name, active: true, role: 'editor', approved: true }
+}
+
+/** The account's two projects: it works in Veselice, and may switch to Rodina. */
+const TWO_PROJECTS = [member('v', 'Veselice'), member('rodina', 'Rodina')]
+
+/**
+ * Renders the shell with a few real destinations, starting at `path`. With
+ * `projects` the shell runs inside a project (the first one), as the app does;
+ * without, there is no project context and the switcher is absent.
+ */
+function renderShell(
+  value: AuthContextValue,
+  path = '/p/v',
+  caps = CAPABILITIES_DEFAULT,
+  projects?: ProjectMembership[],
+) {
+  const routes = (
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/p/v" element={<div>home page</div>} />
+          <Route path="/p/v/albums" element={<div>albums page</div>} />
+          <Route path="/p/v/albums/:uid" element={<div>album detail</div>} />
+          <Route path="/p/v/people" element={<div>people page</div>} />
+          <Route path="/p/rodina" element={<div>rodina home</div>} />
+          <Route path="/p/rodina/albums" element={<div>rodina albums</div>} />
+          <Route path="/login" element={<div>login page</div>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>
+  )
+  const project: ProjectContextValue | null =
+    projects === undefined
+      ? null
+      : {
+          project: projects[0],
+          projects,
+          status: 'ready',
+          inAddress: true,
+          switchProject: vi.fn(),
+        }
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
         <CapabilitiesContext.Provider value={caps}>
-          <MemoryRouter initialEntries={[path]}>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/p/v" element={<div>home page</div>} />
-                <Route path="/p/v/albums" element={<div>albums page</div>} />
-                <Route path="/p/v/albums/:uid" element={<div>album detail</div>} />
-                <Route path="/p/v/people" element={<div>people page</div>} />
-                <Route path="/login" element={<div>login page</div>} />
-              </Route>
-            </Routes>
-          </MemoryRouter>
+          {project === null ? (
+            routes
+          ) : (
+            <ProjectContext.Provider value={project}>{routes}</ProjectContext.Provider>
+          )}
         </CapabilitiesContext.Provider>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -128,6 +169,52 @@ afterEach(() => {
 })
 
 describe('MobileNavDrawer', () => {
+  it('leads with the project: its name, the other projects and the chooser', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/p/v/albums', CAPABILITIES_DEFAULT, TWO_PROJECTS)
+    const drawer = await openDrawer(user)
+
+    const project = within(drawer).getByRole('region', { name: 'Project' })
+    // The first block of the drawer, before the everyday one.
+    const main = within(drawer).getByRole('region', { name: 'Main' })
+    expect(
+      project.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0)
+    expect(within(project).getByText('Veselice')).toBeInTheDocument()
+    // Albums is a list every project has, so switching keeps it.
+    expect(within(project).getByRole('link', { name: /Rodina/ })).toHaveAttribute(
+      'href',
+      '/p/rodina/albums',
+    )
+    expect(within(project).getByRole('link', { name: 'All projects…' })).toHaveAttribute(
+      'href',
+      '/projects',
+    )
+  })
+
+  it('closes when a project row is followed', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/p/v/albums', CAPABILITIES_DEFAULT, TWO_PROJECTS)
+    const drawer = await openDrawer(user)
+
+    await user.click(within(drawer).getByRole('link', { name: /Rodina/ }))
+
+    expect(await screen.findByText('rodina albums')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  it('names a lone project without offering a switch', async () => {
+    const user = userEvent.setup()
+    renderShell(auth(), '/p/v', CAPABILITIES_DEFAULT, [member('v', 'Veselice')])
+    const drawer = await openDrawer(user)
+
+    const project = within(drawer).getByRole('region', { name: 'Project' })
+    expect(within(project).getByText('Veselice')).toBeInTheDocument()
+    expect(within(project).queryByRole('link')).not.toBeInTheDocument()
+  })
+
   it('opens the hamburger as a dismissible drawer, not an inline collapse', async () => {
     const user = userEvent.setup()
     const { container } = renderShell(auth())
@@ -223,13 +310,16 @@ describe('MobileNavDrawer', () => {
 
   it('carries the maintainer’s complete set of destinations', async () => {
     const user = userEvent.setup()
-    renderShell(auth({ isMaintainer: true }))
+    renderShell(auth({ isMaintainer: true }), '/p/v', CAPABILITIES_DEFAULT, TWO_PROJECTS)
     const drawer = await openDrawer(user)
 
-    // The whole navbar, drawer-shaped: the everyday block, browse, the editor's
-    // tools and the account block that replaces the user menu — administration
-    // included, at the end of it exactly as the desktop menu carries it.
+    // The whole navbar, drawer-shaped: the project switcher first, then the
+    // everyday block, browse, the editor's tools and the account block that
+    // replaces the user menu — administration included, at the end of it
+    // exactly as the desktop menu carries it.
     expect(drawerHrefs(drawer)).toEqual([
+      '/p/rodina',
+      '/projects',
       '/p/v',
       '/p/v/albums',
       '/p/v/labels',

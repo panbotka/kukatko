@@ -27,6 +27,7 @@ import {
   toolsGroup,
   UPLOAD_ITEM,
 } from './navItems'
+import { ProjectSwitcher } from './ProjectSwitcher'
 import { WaitingBadge } from './tasks/WaitingBadge'
 
 /**
@@ -75,6 +76,11 @@ interface DrawerSection {
  * menu, between the account entries and sign-out, holding what used to be the
  * bar's two admin dropdowns. Its rows are gated one by one (`adminItems`), so an
  * admin who is not a maintainer gets the two governance rows and nothing else.
+ *
+ * **The project comes first**: a „Projekt" section ({@link ProjectSwitcher}'s
+ * drawer variant) names the library every row below opens in and, for an
+ * account with more than one membership, lists the other enterable projects and
+ * „Všechny projekty…" as rows of their own.
  *
  * Mounted by {@link Layout} only below the breakpoint, so the desktop DOM keeps a
  * single set of nav links; navigating closes it (both via `Layout`'s pathname
@@ -166,6 +172,10 @@ export function MobileNavDrawer({
         <Offcanvas.Title id={TITLE_ID}>{t('nav.menu')}</Offcanvas.Title>
       </Offcanvas.Header>
       <Offcanvas.Body className="kk-navdrawer__body">
+        {/* The project leads: which library every row below opens in, and —
+            with more than one membership — the way to the others, as plain
+            rows (a dropdown inside a drawer would be a menu in a menu). */}
+        <ProjectSwitcher variant="drawer" onNavigate={onHide} />
         {sections.map((section) => (
           <section
             key={section.id}

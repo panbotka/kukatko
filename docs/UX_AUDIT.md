@@ -132,6 +132,19 @@ implemented**, per the task's conservative-changes rule.
   `/account`. An empty catalog gets its own empty state pointing at Upload, distinct from the
   "no photos match these filters" one. `App.test.tsx` covers the routing.
 
+### Projects (`/projects`) & the project switcher
+- **Clarity:** with several libraries on one instance, the question "which one am I in?" needs an
+  answer on every screen. ✅ **Done (2026-10-12):** the current project's name leads the navbar
+  (a dropdown of the other projects + „Všechny projekty…" when there are others, plain text when
+  there is one), heads the phone drawer, and is in the tab title (`<page> · <project> · Kukátko`),
+  so two projects open in two tabs are told apart. Switching keeps a list page (albums stay
+  albums) and goes home from a page about one photo/album/person, which would not exist in the
+  other library. The chooser at `/projects` shows every membership as a card — name, description,
+  role — and says plainly why one cannot be opened („Nedostupné", „Čeká na schválení"); an account
+  with none is told to ask for an invitation, and always has Account and sign-out at hand. The
+  navbar's width budget was re-measured: the user menu shows only the avatar between 992 and
+  1399px to make room. 🟡🟡
+
 ### Account (`/account`)
 - **Clarity/States:** Clear two-section layout (identity + change password). Thorough inline
   validation and mapped error messages.

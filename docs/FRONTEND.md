@@ -159,7 +159,9 @@ here.
   (53px left) and in the 1248px collapse at 1400px (233px left) — nothing wraps, nothing scrolls, and the
   document stays exactly as wide as the viewport at every width. The badge takes no margin of its own so it
   costs only its 17px plus the link's `gap`. Guarded by the "tasks-waiting
-  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`,
+  badge" cases in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`. **Since 2026-10-12 the project
+  switcher leads the bar** and the user menu shows only its avatar from 992 to 1399px to pay for it —
+  the re-measured budget is under "Projects in the address bar" below,
   `MobileNavDrawer` (**the phone menu, as a real drawer** — `components/MobileNavDrawer.tsx`, rendered by
   `Layout` only below the navbar's `lg` breakpoint — a phone's menu, and a portrait tablet's — and opened by
   the hamburger, whose `aria-controls` points at
@@ -169,7 +171,8 @@ here.
   react-bootstrap `Offcanvas` (`placement="end"`), so sliding, the backdrop (tap outside = dismiss), Escape,
   the focus trap and the body scroll-lock come from Bootstrap; the header adds a labelled close button
   (`nav.closeMenu`) and the title `nav.menu`. The body is **labelled sections**, each a `<section>` +
-  `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Hlavní**
+  `<h2>` heading (so it is a named `region` for assistive tech and for tests): **Projekt** first
+  (`ProjectSwitcher variant="drawer"`, see "Projects in the address bar"), then **Hlavní**
   (`nav.sections.main` — Knihovna/Alba/Štítky/Hledání + Třídění and Nahrát when `canCurate`,
   the last keeping the bar's filled CTA look), **Procházet**, **Nástroje** (the same per-item
   `toolsGroup()` as the bar, dropped when it comes back `null`),
@@ -6234,8 +6237,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useReloadKey()` = `[key, reload]`, a string counter for a photo list's `reloadKey` — a single `reload()`
   replays the list **in the background** (a refetch of the first page without blanking into a skeleton, the photos stay
   pinned); `reload` is stable and goes straight into `useBulkEdit({onEdited})`;
-  `useDocumentTitle(title)` = **the browser tab's name**, `<page> · Kukátko` while the caller is
-  mounted. Every page calls it (`hooks/useDocumentTitle.ts`) — one hook, not a router-side table,
+  `useDocumentTitle(title)` = **the browser tab's name**, `<page> · <project> · Kukátko`
+  (`documentTitle.projectPage`) on a page of a project and `<page> · Kukátko` on an instance page,
+  while the caller is mounted. The project name comes from the `ProjectContext` only when its
+  `inAddress` is true (the address names the project) — on `/account` the context's project is just
+  the entry-rule fallback; with no provider (an isolated test) there is none. Every page calls it (`hooks/useDocumentTitle.ts`) — one hook, not a router-side table,
   because the titles worth having are a photo's name, a person's, an album's, i.e. data only the page
   holds. `null`/`undefined`/blank (a detail still loading) → the bare app name, never a stale or
   invented one; the string is trimmed before it reaches the dependency array, so a page recomputing an
@@ -8591,15 +8597,68 @@ membership's role — and `canCurate`/`canWrite`/`isAdmin` derive from it; `isMa
 directly sees) keeps the role `/auth/me` reported. `RequireRole` refuses a signed-in user with no
 role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
 
-**`/projects`** (`pages/ProjectsPage.tsx`): a placeholder list of the account's memberships, each an
-entry link to `/p/<slug>`; a deactivated project or an unapproved membership is listed without a
-link and says why; none at all says to ask a project's administrator (`projects.*` keys). The real
-chooser and the header switcher are the next step. **PWA:** `start_url` stays `/` (the entry rule
+**`/projects` — the chooser** (`pages/ProjectsPage.tsx`, signed in, no project `Layout`): a grid
+(`Row xs=1 md=2 xl=3`) of one `Card` per membership — the name, the description clamped to three
+lines (`.kk-project-card__description`, `line-clamp: 3`; `ProjectMembership.description` is optional
+because `GET /auth/me` does not send it yet, and an empty one draws nothing) and the role as a badge
+(`roles.*`). An enterable card (approved, active) is one big target: the name is a `stretched-link`
+to `/p/<slug>`, hover/focus-within lights the border. A deactivated project is greyed
+(`.kk-project-card--inactive`: muted text, no surface, dashed edge — not `opacity`, which would drag
+the badges under AA) with „Nedostupné"; an unapproved membership says „Čeká na schválení"; both are
+`aria-disabled` and carry no link. No membership at all is an `EmptyState` „Nejste členem žádného
+projektu. Požádejte správce projektu o pozvánku." The page header holds the ways out an account needs
+whatever it belongs to — **Účet** and **Odhlásit se** — and, for a maintainer, **Správa projektů** →
+`/system/projects` (`PROJECT_ADMIN_PATH`; the page arrives in a later step, until then the link lands
+on the not-found page).
+
+**The header switcher** (`components/ProjectSwitcher.tsx`). It reads `ProjectContext` directly and
+renders nothing outside a provider or for an account with no project. `variant="bar"` sits in the
+navbar's leading block, right after the search button: the current project's name — a
+`Dropdown` (`#project-switcher`) when the account has **more than one membership**, listing the
+other *enterable* projects (name + role badge) and, after a divider, **Všechny projekty…** →
+`/projects` (`PROJECTS_ITEM` in `navItems.ts`, icon `folder2-open`); with **exactly one** membership
+it is static text (`.navbar-text`, no caret, no menu). Below `lg` the shell passes `menu={false}`: a
+navbar dropdown cannot float there, so the phone row shows the bare name at its otherwise empty
+leading edge and switching is the drawer's first section (`variant="drawer"`: a „Projekt" `<section>`
+with the name as text, then the other projects and „Všechny projekty…" as ordinary rows that close
+the drawer). Every entry is a **link** (opens in a new tab), its target `routeAfterSwitch(…)`.
+
+**`routeAfterSwitch(currentPath, fromSlug, toSlug)`** (`project/paths.ts`, pure): a **list** page
+(`KEEP_ON_SWITCH`: the library, favorites, albums, labels, tasks, search, saved, map, places,
+people, leaderboard, upload, stats, help, notifications — single segment only) is kept, `/p/v/albums`
+→ `/p/rodina/albums`; anything deeper carries a uid or is scoped to one (a photo, album, label,
+person and its tree, task, notification, `/people/clusters`), as is any other page (tools, admin,
+the slideshow), an instance page (`/account`, `/account/activity` — „my activity" is instance-level)
+or an address outside `fromSlug` → the destination's home `/p/<to>`. The query and hash are dropped:
+filters name uids as often as free text. `ProjectProvider.switchProject(slug)` navigates through the
+same function; the switcher passes `fromSlug = ''` when `inAddress` is false, so from an instance
+page every project opens at its home. `ProjectContextValue.inAddress` is that flag: the address
+names the project and the account belongs to it.
+
+**Width** (Chromium over the real `Layout`, maintainer „Tomáš Kozák", Czech labels, 3 tasks
+waiting, 2026-10-12). The bar had ~11px of slack left at 1200px, so the switcher pays its way: the
+user menu's display name is hidden **visually only** between 992 and 1399.98px
+(`.kk-user-menu__name`, clipped — the toggle keeps it as its accessible name; the avatar stays), and
+the switcher is the one item of the row that may shrink (`flex: 0 1 auto; min-width: 3.5rem;
+max-width: 14rem`, `min-width: 0` down to the ellipsised `.kk-project-switcher__name`, full name in
+the `title`), with 6px inline padding instead of the links' 8px. Result: one 53px row, no container
+or document overflow at 992/1100/1200/1280/1366/1400/1600px; „Veselice" with its caret is 83px and
+whole at every width (static, one membership: 59px); a long name gets 96px at 992, 84px at
+1200–1399 and 165px from 1400 before it ellipsises. Below `lg` the name takes what the row leaves
+beside the bell and the hamburger (`flex: 1 1 0`, never wraps them). Guarded by the „project
+switcher's width" cases in `styles/navbarBand.test.ts`.
+
+**PWA:** `start_url` stays `/` (the entry rule
 does the rest); the service worker answers every navigation outside `/api/`, `/healthz`,
 `/metrics` with the shell, `/p/*` included.
 
 Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last cases,
-`projectPathFor`, prefix parsing, `projectRoleOf`), `project/ProjectProvider.test.tsx` (current
+`projectPathFor`, prefix parsing, `projectRoleOf`, `routeAfterSwitch`: every kept list page, uid
+pages, query/hash dropped, instance pages), `components/ProjectSwitcher.test.tsx` (static vs
+dropdown, enterable-only, list route kept vs home, `menu={false}`, the drawer variant),
+`pages/ProjectsPage.test.tsx` (normal / inactive / pending / empty, the maintainer link, the tab
+title), the „project switcher in the bar" cases in `Layout.test.tsx`, the drawer's „Projekt" section
+and enumeration in `MobileNavDrawer.test.tsx`, `switchProject` in `ProjectProvider.test.tsx`, `project/ProjectProvider.test.tsx` (current
 project from the URL, predicates from the project role, the maintainer, `not-member`, instance
 pages, a visitor), `App.test.tsx` "routing — projects" (`/` → `/p/v`; `/photos/abc?x=1#h` →
 `/p/v/photos/abc?x=1#h`; → `/projects` without a project; a foreign slug renders the not-found
