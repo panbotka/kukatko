@@ -116,8 +116,8 @@ func (e *env) albumCommentCount(t *testing.T, c *http.Client, albumUID string) i
 // detail counts the thread; nobody signed out gets anything.
 func TestAlbumCommentsAPI_everyRoleReadsAndWrites(t *testing.T) {
 	env := newCommentEnv(t, 10)
-	curator := env.login(t, "curator", auth.RoleCurator)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	curator := env.login(t, "curator", auth.AccountCurator)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	album := env.newAlbum(t, curator, "Svatba 1987")
 
 	if got := env.albumCommentCount(t, viewer, album); got != 0 {
@@ -170,9 +170,9 @@ func TestAlbumCommentsAPI_everyRoleReadsAndWrites(t *testing.T) {
 // another's, a comment addressed through the wrong album is 404.
 func TestAlbumCommentsAPI_ownershipAndAudit(t *testing.T) {
 	env := newCommentEnv(t, 10)
-	curator := env.login(t, "curator", auth.RoleCurator)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	curator := env.login(t, "curator", auth.AccountCurator)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 	album := env.newAlbum(t, curator, "Svatba")
 	other := env.newAlbum(t, curator, "Pouť")
 	_, own := env.postComment(t, viewer, album, "moje")
@@ -225,7 +225,7 @@ func TestAlbumCommentsAPI_ownershipAndAudit(t *testing.T) {
 // with it while a photo's comment stays.
 func TestAlbumCommentsAPI_validationAndCascade(t *testing.T) {
 	env := newCommentEnv(t, 10)
-	curator := env.login(t, "curator", auth.RoleCurator)
+	curator := env.login(t, "curator", auth.AccountCurator)
 	album := env.newAlbum(t, curator, "Svatba")
 
 	for name, body := range map[string]string{"blank": "   ", "long": string(make([]rune, 2001))} {
@@ -259,8 +259,8 @@ func TestAlbumCommentsAPI_validationAndCascade(t *testing.T) {
 // out into 429 while another user's bucket is untouched and reads stay free.
 func TestAlbumCommentsAPI_rateLimitPerUser(t *testing.T) {
 	env := newCommentEnv(t, 2)
-	curator := env.login(t, "curator", auth.RoleCurator)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	curator := env.login(t, "curator", auth.AccountCurator)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	album := env.newAlbum(t, curator, "Svatba")
 
 	for i := range 2 {

@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/metrics"
 	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/reachability"
 	"github.com/panbotka/kukatko/internal/server"
 	"github.com/panbotka/kukatko/internal/storage"
@@ -114,7 +115,7 @@ func runServe(cmd *cobra.Command) error {
 
 	apis = append(apis, observabilityOptions(reg, logger)...)
 
-	apis = append(apis, server.WithTrustedProxies(trustedProxies(cfg, logger)))
+	apis = append(apis, requestOptions(cfg, db, logger)...)
 
 	addr := net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port))
 	srv := server.New(addr, apis...)
@@ -275,6 +276,18 @@ func appendOpsAPIs(
 	}
 	apis = append(apis, server.WithAPI(buildCapabilitiesAPI(cfg, reachChecker, authAPI).RegisterRoutes))
 	return apis, backupSvc, reachChecker, nil
+}
+
+// requestOptions builds the server options that decide who and where a request
+// is: the trusted proxies that may rename the client, and auth.WithProject in
+// front of every /api/v1 route, which names the request's project before any
+// Require* guard runs (the bootstrap project while no route carries
+// {project}).
+func requestOptions(cfg *config.Config, db *database.DB, logger *slog.Logger) []server.Option {
+	return []server.Option{
+		server.WithTrustedProxies(trustedProxies(cfg, logger)),
+		server.WithAPIMiddleware(auth.WithProject(project.NewStore(db.Pool()))),
+	}
 }
 
 // observabilityOptions builds the server options that install observability: the

@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/obs"
 )
 
 // TestFromRequest_ip verifies the audited IP is the address internal/clientip
@@ -150,4 +152,42 @@ func TestFilterBuildWhere(t *testing.T) {
 			t.Errorf("buildWhere() args = %v, want [[face.assign label.attach]]", args)
 		}
 	})
+}
+
+// TestMetaEntry_actorRole verifies a meta carrying an actor role records it as
+// the "actor_role" detail on a copy of the details, never in the caller's map,
+// and that a meta without one leaves the details alone.
+func TestMetaEntry_actorRole(t *testing.T) {
+	t.Parallel()
+
+	details := map[string]any{"name": "x"}
+	got := Meta{ActorUID: "us1", ActorRole: "maintainer"}.Entry("a", "t", "uid", details)
+	if want := map[string]any{"name": "x", "actor_role": "maintainer"}; !reflect.DeepEqual(got.Details, want) {
+		t.Errorf("details = %v, want %v", got.Details, want)
+	}
+	if _, leaked := details["actor_role"]; leaked {
+		t.Error("Entry modified the caller's details map")
+	}
+	if plain := (Meta{ActorUID: "us1"}).Entry("a", "t", "uid", details); !reflect.DeepEqual(plain.Details, details) {
+		t.Errorf("details without an actor role = %v, want %v", plain.Details, details)
+	}
+	if nilDetails := (Meta{ActorRole: "maintainer"}).Entry("a", "t", "", nil); nilDetails.Details["actor_role"] != "maintainer" {
+		t.Errorf("nil details with an actor role = %v", nilDetails.Details)
+	}
+}
+
+// TestFromRequest_actorRole verifies FromRequest picks up the actor role the
+// request's observability fields carry.
+func TestFromRequest_actorRole(t *testing.T) {
+	t.Parallel()
+
+	var meta Meta
+	handler := obs.AccessLog(slog.New(slog.DiscardHandler))(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		obs.SetActorRole(r.Context(), "maintainer")
+		meta = FromRequest(r, "us1")
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
+	if meta.ActorRole != "maintainer" {
+		t.Errorf("ActorRole = %q, want maintainer", meta.ActorRole)
+	}
 }

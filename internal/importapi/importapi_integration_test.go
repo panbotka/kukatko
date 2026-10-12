@@ -72,7 +72,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -113,7 +113,7 @@ type failuresBody struct {
 // recently started first.
 func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	ctx := t.Context()
 
 	// A finished migration run: nothing writes this source any more, but the row
@@ -167,7 +167,7 @@ func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 // answers over HTTP, filters by source, and marks the run `partial`.
 func TestImportFailures_servesFolderFailures(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	ctx := t.Context()
 
 	run, err := env.runs.Start(ctx, importer.SourceFolder)
@@ -216,7 +216,7 @@ func TestImportFailures_servesFolderFailures(t *testing.T) {
 // maintainer — the role that used to be allowed to run them — gets 404.
 func TestImportAPI_hasNoTriggers(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 
 	for _, path := range []string{"/import/photoprism", "/import/photosorter", "/import/photosorter-feeds"} {
 		resp := do(t, maint, http.MethodPost, env.baseURL+"/api/v1"+path, nil)
@@ -236,7 +236,7 @@ func TestImportAPI_hasNoTriggers(t *testing.T) {
 // maintainer guard: import bookkeeping is an operations surface.
 func TestImportRuns_requiresMaintainer(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 
 	for _, path := range []string{"/import/runs", "/import/failures"} {
 		resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1"+path, nil)

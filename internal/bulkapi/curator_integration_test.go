@@ -17,7 +17,7 @@ import (
 // album and under a label, and may set its own per-user marks alongside.
 func TestBulk_curatorFilesIntoAlbumsAndLabels(t *testing.T) {
 	env := newEnv(t, 1000)
-	curator, curatorUID := env.login(t, "curator", auth.RoleCurator)
+	curator, curatorUID := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
 	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Pouť"})
@@ -66,7 +66,7 @@ func TestBulk_curatorFilesIntoAlbumsAndLabels(t *testing.T) {
 // even the album membership riding along with it is not applied.
 func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 	env := newEnv(t, 1000)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
 	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Mixed"})
@@ -118,7 +118,7 @@ func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 // curator: an editor's mixed batch goes through.
 func TestBulk_editorUnaffectedByFieldRule(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	uid := env.seedPhoto(t, "edmix1")
 
 	body, _ := json.Marshal(map[string]any{
@@ -140,7 +140,7 @@ func TestBulk_editorUnaffectedByFieldRule(t *testing.T) {
 // not use.
 func TestBulkLocationSummary_curatorForbidden(t *testing.T) {
 	env := newEnv(t, 1000)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	uid := env.seedPhoto(t, "cursum1")
 
 	body, _ := json.Marshal(map[string]any{"photo_uids": []string{uid}})

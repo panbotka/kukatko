@@ -14,8 +14,8 @@ import (
 func TestRateLimitExempt(t *testing.T) {
 	t.Parallel()
 
-	admin := User{UID: "us_admin", Role: RoleAdmin}
-	viewer := User{UID: "us_viewer", Role: RoleViewer}
+	admin := User{UID: "us_admin", Role: RoleUser}
+	viewer := User{UID: "us_viewer", Role: RoleUser}
 
 	tests := []struct {
 		name      string

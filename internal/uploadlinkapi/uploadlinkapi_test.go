@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/ingest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
@@ -245,8 +246,14 @@ func currentUser(r *http.Request) (auth.User, bool) {
 	if value == "" {
 		return auth.User{}, false
 	}
-	uid, role, _ := strings.Cut(value, ":")
-	return auth.User{UID: uid, Role: auth.Role(role)}, true
+	uid, _, _ := strings.Cut(value, ":")
+	return auth.User{UID: uid, Role: auth.RoleUser}, true
+}
+
+// currentRole reads the caller's project role from the same "uid:role" header.
+func currentRole(r *http.Request) project.Role {
+	_, role, _ := strings.Cut(r.Header.Get(userHeader), ":")
+	return project.Role(role)
 }
 
 // passThrough is a no-op guard.
@@ -277,7 +284,7 @@ func newHarness(t *testing.T, tweak func(*uploadlinkapi.Config)) *harness {
 	}
 	cfg := uploadlinkapi.Config{
 		Store: h.store, Ingest: h.ingest, Sidecar: h.sidecar,
-		RequireCurator: passThrough, OptionalAuth: passThrough, CurrentUser: currentUser,
+		RequireCurator: passThrough, OptionalAuth: passThrough, CurrentUser: currentUser, CurrentRole: currentRole,
 		Now: func() time.Time { return now },
 	}
 	if tweak != nil {
@@ -322,7 +329,7 @@ func TestList_scopes(t *testing.T) {
 	}{
 		{"curator sees own", "us_c:curator", "us_c"},
 		{"admin sees all", "us_a:admin", ""},
-		{"maintainer sees all", "us_m:maintainer", ""},
+		{"a maintainer, the admin of every project, sees all", "us_m:admin", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

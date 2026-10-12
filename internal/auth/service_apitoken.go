@@ -34,7 +34,7 @@ func (s *Service) CreateAPIToken(
 	if err != nil {
 		return APIToken{}, "", err
 	}
-	if in.Unlimited && !actor.Role.IsAdmin() {
+	if in.Unlimited && !actor.governs() {
 		return APIToken{}, "", ErrAPITokenUnlimitedForbidden
 	}
 	now := s.now()
@@ -83,7 +83,7 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id string, actor User, ent
 	if err != nil {
 		return err
 	}
-	if tok.UserUID != actor.UID && !actor.Role.IsAdmin() {
+	if tok.UserUID != actor.UID && !actor.governs() {
 		return ErrAPITokenNotFound
 	}
 	if entry.Details == nil {
@@ -109,7 +109,7 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id string, actor User, ent
 func (s *Service) SetAPITokenUnlimited(
 	ctx context.Context, id string, unlimited bool, actor User, entry audit.Entry,
 ) (bool, error) {
-	if !actor.Role.IsAdmin() {
+	if !actor.governs() {
 		return false, ErrAPITokenUnlimitedForbidden
 	}
 	tok, err := s.store.GetAPITokenByID(ctx, id)

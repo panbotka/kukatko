@@ -62,7 +62,7 @@ func TestTagObserver_hearsEveryMarkerChange(t *testing.T) {
 	ctx := t.Context()
 	// The audit trail's actor is a foreign key, so the acting account must exist.
 	if _, err := db.Pool().Exec(ctx, `INSERT INTO users (uid, username, email, password_hash, role)
-		VALUES ('us-actor', 'actor', 'actor@example.test', 'x', 'editor')`); err != nil {
+		VALUES ('us-actor', 'actor', 'actor@example.test', 'x', 'user')`); err != nil {
 		t.Fatalf("seeding the actor: %v", err)
 	}
 	observer := &recordingObserver{}

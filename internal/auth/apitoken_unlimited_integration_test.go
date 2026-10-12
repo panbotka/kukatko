@@ -67,8 +67,8 @@ func (e *tokenEnv) countTokens(t *testing.T, userUID string) int {
 // carrying the flag and an audit entry recording it.
 func TestHTTP_apiTokenUnlimitedCreate(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	editor := env.user(t, "editor", auth.RoleEditor)
-	admin := env.user(t, "admin", auth.RoleAdmin)
+	editor := env.user(t, "editor", auth.AccountEditor)
+	admin := env.user(t, "admin", auth.AccountAdmin)
 
 	editorCookie := env.login(t, "editor")
 	status, body := env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", editorCookie,
@@ -125,8 +125,8 @@ func TestHTTP_apiTokenUnlimitedCreate(t *testing.T) {
 // admin.
 func TestHTTP_apiTokenUnlimitedPatch(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	editor := env.user(t, "editor", auth.RoleEditor)
-	admin := env.user(t, "admin", auth.RoleAdmin)
+	editor := env.user(t, "editor", auth.AccountEditor)
+	admin := env.user(t, "admin", auth.AccountAdmin)
 
 	editorToken, _ := env.mintToken(t, editor, "editor's", nil)
 	adminToken, _ := env.mintToken(t, admin, "admin's", nil)
@@ -186,7 +186,7 @@ func TestHTTP_apiTokenUnlimitedPatch(t *testing.T) {
 // else's — the exemption belongs to the credential, not to the role.
 func TestHTTP_unlimitedTokenSkipsTheRateLimiter(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	admin := env.user(t, "admin", auth.RoleAdmin)
+	admin := env.user(t, "admin", auth.AccountAdmin)
 	adminCookie := env.login(t, "admin")
 
 	status, body := env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", adminCookie,

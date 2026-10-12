@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/tagnotifyjob"
 )
@@ -54,7 +55,9 @@ func newFixture(t *testing.T) *fixture {
 	f.useDeliverer(true, false)
 	for _, uid := range []string{annaUID, taggerUID} {
 		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, approved_at)
-			VALUES ($1, $2, $3, 'x', 'editor', now())`, uid, uid, uid+"@example.test")
+			VALUES ($1, $2, $3, 'x', 'user', now())`, uid, uid, uid+"@example.test")
+		f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
+			VALUES ($1, $2, 'editor', now())`, project.BootstrapUID, uid)
 	}
 	subject, err := f.people.CreateSubject(t.Context(), people.Subject{Name: "Anna"})
 	if err != nil {

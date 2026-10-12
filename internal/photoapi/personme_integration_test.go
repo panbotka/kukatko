@@ -53,7 +53,7 @@ func linkAccount(t *testing.T, client *http.Client, base, subjectUID string) {
 // of the language.
 func TestPersonMe_linkedCallerSeesTheirOwnPhotos(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "me-linked", auth.RoleViewer)
+	client, _ := env.login(t, "me-linked", auth.AccountViewer)
 	base := env.server.URL
 
 	env.addSubject(t, "sub_me", "Babička")
@@ -91,7 +91,7 @@ func TestPersonMe_linkedCallerSeesTheirOwnPhotos(t *testing.T) {
 // never the whole library and never a free-text search for the word "me".
 func TestPersonMe_unlinkedCallerGetsNothingAndAReason(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "me-unlinked", auth.RoleViewer)
+	client, _ := env.login(t, "me-unlinked", auth.AccountViewer)
 	base := env.server.URL
 
 	env.seedPhoto(t, photos.Photo{Title: "somebody"}, "a.jpg", 10, 0, 0)
@@ -131,7 +131,7 @@ func TestPersonMe_unlinkedCallerGetsNothingAndAReason(t *testing.T) {
 // answers the unlinked way rather than 500-ing or matching everything.
 func TestPersonMe_survivesTheSubjectBeingDeleted(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "me-deleted", auth.RoleViewer)
+	client, _ := env.login(t, "me-deleted", auth.AccountViewer)
 	base := env.server.URL
 
 	env.addSubject(t, "sub_gone", "Babička")

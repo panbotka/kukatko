@@ -19,7 +19,7 @@ func seedUser(t *testing.T, db *database.DB, uid, username, displayName string) 
 	t.Helper()
 	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, DisplayName: displayName, Email: username + "@example.test",
-		PasswordHash: "x", Role: auth.RoleViewer,
+		PasswordHash: "x", Role: auth.RoleUser,
 	}); err != nil {
 		t.Fatalf("seeding user %s: %v", uid, err)
 	}

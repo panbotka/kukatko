@@ -13,11 +13,21 @@ import (
 // refreshed row. updated_at moves with it: an administrator letting somebody in
 // *is* an administrator editing that account, which is exactly what the
 // user-administration screens read that column as.
-const approveUserQuery = `UPDATE users SET approved_at = $2, updated_at = now()
+//
+// The approval that matters is the membership's: the same statement stamps the
+// account's still-pending membership of the project $3. users.approved_at is
+// stamped too during the transition, so the readers not yet moved to the
+// membership (sign-in, the admin listing) keep working.
+const approveUserQuery = `WITH member AS (
+	UPDATE project_members SET approved_at = $2
+	WHERE user_uid = $1 AND project_uid = $3 AND approved_at IS NULL
+)
+UPDATE users SET approved_at = $2, updated_at = now()
 	WHERE uid = $1 RETURNING ` + userColumns
 
 // ApproveUserAudited stamps at into approved_at for the account identified by
-// uid and writes entry in the same transaction, returning the refreshed user.
+// uid and its membership of the project projectUID, and writes entry in the
+// same transaction, returning the refreshed user.
 // See CreateUserAudited for the atomicity guarantee. entry's TargetUID defaults
 // to uid. alongside, when non-nil, runs on the same transaction with the
 // approved account, after the update and before the audit entry — it is how the
@@ -34,7 +44,7 @@ const approveUserQuery = `UPDATE users SET approved_at = $2, updated_at = now()
 // approval do it as a side effect would hide which of the two the administrator
 // meant.
 func (s *Store) ApproveUserAudited(
-	ctx context.Context, uid string, at time.Time, entry audit.Entry,
+	ctx context.Context, uid, projectUID string, at time.Time, entry audit.Entry,
 	alongside func(ctx context.Context, tx pgx.Tx, user User) error,
 ) (User, error) {
 	if entry.TargetUID == "" {
@@ -55,7 +65,7 @@ func (s *Store) ApproveUserAudited(
 			// transaction back and reports success.
 			return errNoAuditableChange
 		}
-		approved, err := scanUpdatedUser(ctx, tx, approveUserQuery, uid, at)
+		approved, err := scanUpdatedUser(ctx, tx, approveUserQuery, uid, at, projectUID)
 		if err != nil {
 			return err
 		}

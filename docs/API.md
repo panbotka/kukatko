@@ -17,10 +17,31 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   in the library is shown with its author's name and picture; the columns that make the list an
   administrative record never leave the database, because the query selects two of them. It sits beside
   `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
+  **`GET /auth/me`** → the login payload (`user` + `download_token`) plus `instance_role`
+  (`user`|`maintainer`), `projects: [{uid, slug, name, active, role, approved}]` (every membership,
+  inactive projects included, by name) and `last_project_slug` (the project the account last entered,
+  `""` when none). `user.role` is the caller's role **in the request's project** (the bootstrap project
+  while routes carry no `{project}`) and `"maintainer"` for a maintainer, so the frontend's maintainer
+  screens keep working; `user.instance_role` repeats the instance role.
+  **Project resolution (every guarded route):** the project comes from the `{project}` URL slug, or is
+  the bootstrap project `v` when the route has none (transition). After authentication: an unknown slug,
+  a project the caller is no member of and a deactivated project (except for a maintainer) all answer
+  **404 `{"error":"project not found"}`** — byte-for-byte the same, so a tenant cannot probe for other
+  projects; an anonymous caller gets 401 before any of it. A membership nobody approved yet answers
+  **403 `{"error":"pending_approval"}`**. A maintainer enters every project as `admin`.
+  `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin` then check the **project** role,
+  `RequireMaintainer`/`RequireImport` the **instance** role (checked before the project, so a
+  non-maintainer always gets the same 403).
   Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `PUT /admin/users/{uid}/username` (rename, see below),
   `POST /admin/users/{uid}/approve`, `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
+  **Roles on the admin user endpoints (transition):** `role` in the bodies and responses is still the
+  five-rung `viewer|curator|editor|admin|maintainer`: `maintainer` sets `users.role = 'maintainer'` (and
+  an admin membership of the bootstrap project), any other value sets `users.role = 'user'` and the
+  account's bootstrap membership to that role (created when missing). A registration creates a `user`
+  with an **unapproved viewer membership**; `POST /admin/users/{uid}/approve` approves that membership
+  and also stamps `users.approved_at`.
   Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400

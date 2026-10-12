@@ -42,8 +42,8 @@ func (e *env) uidOf(t *testing.T, c *http.Client) string {
 // it, so answering has to be what puts them on it.
 func TestParticipants_answeringPutsAViewerOnTheTask(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 	viewerUID := e.uidOf(t, viewer)
 
 	task := e.openTask(t, editor, "V kterém roce?")
@@ -87,8 +87,8 @@ func TestParticipants_answeringPutsAViewerOnTheTask(t *testing.T) {
 // against a question is curation, while answering one is not.
 func TestParticipants_assignIsForWriters(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 	viewerUID := e.uidOf(t, viewer)
 	task := e.openTask(t, editor, "Kdo je ta žena vlevo?")
 
@@ -134,7 +134,7 @@ func TestParticipants_assignIsForWriters(t *testing.T) {
 // 404 rather than a 500 from the foreign key.
 func TestParticipants_refusesAnUnknownAccount(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 	task := e.openTask(t, editor, "Kdy?")
 
 	body, _ := json.Marshal(map[string]string{"user_uid": "us-nobody"})
@@ -151,8 +151,8 @@ func TestParticipants_refusesAnUnknownAccount(t *testing.T) {
 // names and uids but nothing administrative.
 func TestDirectory_namesEverybodyToASignedInReader(t *testing.T) {
 	e := newEnv(t)
-	e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 
 	var body struct {
 		Users []map[string]any `json:"users"`

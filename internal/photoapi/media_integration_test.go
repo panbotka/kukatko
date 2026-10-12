@@ -88,7 +88,7 @@ func assertSignedURL(t *testing.T, raw, wantKey string) *url.URL {
 // breaks for a deployment that never moved to object storage.
 func TestThumbRoute_filesystemBackendStreamsBytes(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Local", TakenAtSource: "unknown"}, "local.jpg", 10, 20, 30)
 
 	resp := mustDo(t, client, http.MethodGet,
@@ -116,7 +116,7 @@ func TestThumbRoute_filesystemBackendStreamsBytes(t *testing.T) {
 // signature verifies. No image bytes cross the application.
 func TestThumbRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	client = noRedirectClient(client)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "remote.jpg", 40, 50, 60)
 
@@ -153,7 +153,7 @@ func TestThumbRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 // would only display the photo, because <a download> means nothing off-origin.
 func TestDownloadRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	client = noRedirectClient(client)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "orig.jpg", 70, 80, 90)
 
@@ -175,7 +175,7 @@ func TestDownloadRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 // seekable local file http.ServeContent needed is no longer materialized.
 func TestVideoRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	client = noRedirectClient(client)
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Clip", TakenAtSource: "unknown", MediaType: photos.MediaVideo,
@@ -201,7 +201,7 @@ func TestVideoRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 // nothing, so a local deployment keeps working with the same frontend code.
 func TestPhotoPayload_carriesRouteURLsOnFilesystemBackend(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Local", TakenAtSource: "unknown"}, "local.jpg", 11, 22, 33)
 
 	view := fetchFirstPhoto(t, env, client)
@@ -219,7 +219,7 @@ func TestPhotoPayload_carriesRouteURLsOnFilesystemBackend(t *testing.T) {
 // rendered without the application transferring the thumbnail.
 func TestPhotoPayload_carriesSignedURLsOnPublishedBackend(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "remote.jpg", 12, 23, 34)
 
 	view := fetchFirstPhoto(t, env, client)

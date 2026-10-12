@@ -52,12 +52,12 @@ func fetchUploadLink(t *testing.T, client *http.Client, base, uid string) *detai
 func TestDetailUploadLink(t *testing.T) {
 	env := newEnv(t)
 	base := env.server.URL
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
-	admin, _ := env.login(t, "admin", auth.RoleAdmin)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
+	admin, _ := env.login(t, "admin", auth.AccountAdmin)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	guest, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: "jana", Email: "jana@example.test", Password: testPassword,
-		DisplayName: "Jana Nováková", Role: auth.RoleViewer,
+		DisplayName: "Jana Nováková", Role: auth.AccountViewer,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(guest): %v", err)

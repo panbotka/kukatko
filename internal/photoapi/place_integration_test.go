@@ -28,7 +28,7 @@ type placeRef struct {
 // geocodes: a geotagged photo with no cached place still has none afterwards.
 func TestDetailPlace(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	decodePlace := func(t *testing.T, uid string) (*placeRef, bool) {

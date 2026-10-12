@@ -35,8 +35,10 @@ type CreateUserInput struct {
 	Password    string
 	DisplayName string
 	Email       string
-	Role        Role
-	Note        string
+	// Role is the account's role in the five-rung transitional vocabulary:
+	// maintainer, or the role in the bootstrap project (see AccountRole.Split).
+	Role AccountRole
+	Note string
 	// SubjectUID optionally names the person of the library this account is;
 	// nil (or empty) leaves the account unlinked, which is the default.
 	SubjectUID *string
@@ -53,9 +55,11 @@ type CreateUserInput struct {
 type UpdateUserInput struct {
 	DisplayName string
 	Email       string
-	Role        Role
-	Disabled    bool
-	Note        *string
+	// Role replaces the account's instance role and its role in the bootstrap
+	// project, in the five-rung transitional vocabulary (see AccountRole.Split).
+	Role     AccountRole
+	Disabled bool
+	Note     *string
 	// SubjectUID is the person of the library this account is. Unlike Note it is
 	// part of the profile the update *replaces*, so nil clears the link — an
 	// administrator who unlinks somebody does it by sending no subject, exactly
@@ -102,7 +106,7 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Boo
 		// bootstrap maintainer gets an undeliverable placeholder and changes it
 		// from there. A first start must not need a mailbox.
 		Email: placeholderEmail(normalizeUsername(username)),
-		Role:  RoleMaintainer,
+		Role:  AccountMaintainer,
 	}); err != nil {
 		return BootstrapSkippedNoCredentials, err
 	}
@@ -176,7 +180,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (User, err
 func (s *Service) CreateUserAudited(
 	ctx context.Context, in CreateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
-	if err := s.guardMaintainerBoundary(ctx, actor, "", in.Role); err != nil {
+	if err := s.guardMaintainerBoundary(ctx, actor, "", instanceRoleOf(in.Role)); err != nil {
 		return User{}, err
 	}
 	user, err := s.prepareNewUser(in)
@@ -187,7 +191,7 @@ func (s *Service) CreateUserAudited(
 		entry.Details = map[string]any{}
 	}
 	entry.Details["username"] = user.Username
-	entry.Details["role"] = string(user.Role)
+	entry.Details["role"] = string(user.AccountRole)
 	if uid := normalizeSubjectUID(user.SubjectUID); uid != nil {
 		// Only when it was actually set: an account created without a link has
 		// nothing to say here, and a null in every entry reads as noise.
@@ -207,6 +211,7 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 	if !in.Role.Valid() {
 		return User{}, ErrInvalidRole
 	}
+	instance, inProject := in.Role.Split()
 	username := normalizeUsername(in.Username)
 	// Login rejects an over-long username outright and nobody can type an
 	// empty one, so an account with either could never be used; refuse to
@@ -234,7 +239,9 @@ func (s *Service) prepareNewUser(in CreateUserInput) (User, error) {
 		Username:     username,
 		DisplayName:  in.DisplayName,
 		Email:        email,
-		Role:         in.Role,
+		Role:         instance,
+		ProjectRole:  inProject,
+		AccountRole:  in.Role,
 		PasswordHash: hash,
 		Note:         in.Note,
 		SubjectUID:   in.SubjectUID,
@@ -338,7 +345,7 @@ func (s *Service) UpdateUser(ctx context.Context, uid string, in UpdateUserInput
 func (s *Service) UpdateUserAudited(
 	ctx context.Context, uid string, in UpdateUserInput, actor Role, entry audit.Entry,
 ) (User, error) {
-	if err := s.guardMaintainerBoundary(ctx, actor, uid, in.Role); err != nil {
+	if err := s.guardMaintainerBoundary(ctx, actor, uid, instanceRoleOf(in.Role)); err != nil {
 		return User{}, err
 	}
 	in, err := validateUserUpdate(in)

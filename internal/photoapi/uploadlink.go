@@ -47,8 +47,7 @@ func (a *API) resolveUploadLink(r *http.Request, photoUID string) *uploadLinkRef
 	if a.uploadLinks == nil {
 		return nil
 	}
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok || !user.Role.CanCurate() {
+	if !auth.ProjectRoleFromContext(r.Context()).CanCurate() {
 		return nil
 	}
 	prov, err := a.uploadLinks.Provenance(r.Context(), photoUID)

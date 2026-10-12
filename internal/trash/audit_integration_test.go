@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named by
@@ -30,7 +31,7 @@ func makeActor(t *testing.T, db *database.DB, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleAdmin,
+		Role:         auth.RoleUser, ProjectRole: project.RoleAdmin,
 	}); err != nil {
 		t.Fatalf("creating actor %s: %v", username, err)
 	}

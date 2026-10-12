@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // makeAccount inserts an account that can sign in — approved, and disabled only
@@ -22,7 +23,7 @@ func (f *fixture) makeAccount(t *testing.T, uid, username string, disabled bool)
 	approved := time.Now().Add(-time.Hour)
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, Email: username + "@example.test",
-		DisplayName: "Osoba " + username, PasswordHash: "x", Role: auth.RoleViewer,
+		DisplayName: "Osoba " + username, PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
 		Disabled: disabled, ApprovedAt: &approved,
 	}); err != nil {
 		t.Fatalf("creating account %s: %v", username, err)

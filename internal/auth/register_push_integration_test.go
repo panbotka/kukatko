@@ -180,11 +180,11 @@ func pendingMailTo(t *testing.T, env *httpEnv, addr string) bool {
 // default; an editor gets nothing at all.
 func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
-	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
-	quiet := env.mustCreate(t, "quiet", auth.RoleAdmin)
-	silent := env.mustCreate(t, "silent", auth.RoleAdmin)
-	scribe := env.mustCreate(t, "scribe", auth.RoleEditor)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
+	quiet := env.mustCreate(t, "quiet", auth.AccountAdmin)
+	silent := env.mustCreate(t, "silent", auth.AccountAdmin)
+	scribe := env.mustCreate(t, "scribe", auth.AccountEditor)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-laptop")
 	subscribeDevice(t, env, quiet.UID, "https://push.example.test/quiet-phone")
@@ -253,8 +253,8 @@ func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 // and the other recipients' notifications are kept.
 func TestRegister_failedDeliveryIsLoggedAndRegistrationGoesOn(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
-	keeper := env.mustCreate(t, "keeper", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.AccountAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
 	choose(t, env, boss.UID, notification.ChannelPush, true)
 	choose(t, env, boss.UID, notification.ChannelEmail, true)
@@ -293,7 +293,7 @@ func TestRegister_failedDeliveryIsLoggedAndRegistrationGoesOn(t *testing.T) {
 // written leaves no account, no notification and nothing queued.
 func TestRegister_rollbackLeavesNoNotification(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
 	choose(t, env, boss.UID, notification.ChannelPush, true)
 	choose(t, env, boss.UID, notification.ChannelInApp, true)
@@ -326,7 +326,7 @@ func TestRegister_rollbackLeavesNoNotification(t *testing.T) {
 // that really leaves somebody waiting produces a notification.
 func TestRegister_closedRegistrationNotifiesNobody(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
 	subscribeDevice(t, env, boss.UID, "https://push.example.test/boss-phone")
 	choose(t, env, boss.UID, notification.ChannelPush, true)
 	rg, _ := pushRegistration(t, env, nil)
@@ -346,7 +346,7 @@ func TestRegister_closedRegistrationNotifiesNobody(t *testing.T) {
 // disabled: nothing is recorded or queued, and the registration succeeds.
 func TestRegister_pushWithNobodyToNotify(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	retired := env.mustCreate(t, "retired", auth.RoleAdmin)
+	retired := env.mustCreate(t, "retired", auth.AccountAdmin)
 	subscribeDevice(t, env, retired.UID, "https://push.example.test/retired-phone")
 	choose(t, env, retired.UID, notification.ChannelPush, true)
 	if _, err := env.svc.SetUserDisabled(t.Context(), retired.UID, true); err != nil {

@@ -46,7 +46,7 @@ func TestList_taskScopeCarriesLastComment(t *testing.T) {
 	env := newEnv(t)
 	editor, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: "editor", Email: "editor@example.test", Password: testPassword,
-		Role: auth.RoleEditor, DisplayName: "Editor E.",
+		Role: auth.AccountEditor, DisplayName: "Editor E.",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)

@@ -44,7 +44,7 @@ func (d stackDetailResp) primaryUID() string {
 
 func TestIntegration_StackHTTPEndpoints(t *testing.T) {
 	e := newEnv(t)
-	editor, _ := e.login(t, "editor", auth.RoleEditor)
+	editor, _ := e.login(t, "editor", auth.AccountEditor)
 	// A RAW next to its JPEG: the .CR2 extension makes the JPEG the primary.
 	raw := e.seedPhoto(t, photos.Photo{Title: "shot"}, "IMG_9.CR2", 10, 20, 30)
 	jpg := e.seedPhoto(t, photos.Photo{Title: "shot"}, "IMG_9.jpg", 40, 50, 60)
@@ -121,7 +121,7 @@ func (e *env) lastAudit(t *testing.T, action string) audit.Record {
 
 func TestIntegration_StackForbiddenForViewer(t *testing.T) {
 	e := newEnv(t)
-	viewer, _ := e.login(t, "viewer", auth.RoleViewer)
+	viewer, _ := e.login(t, "viewer", auth.AccountViewer)
 	a := e.seedPhoto(t, photos.Photo{Title: "a"}, "A.jpg", 1, 2, 3)
 	b := e.seedPhoto(t, photos.Photo{Title: "b"}, "B.jpg", 4, 5, 6)
 

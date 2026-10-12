@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // fakeComments is a controllable CommentStore for the handler unit tests.
@@ -82,23 +83,23 @@ func TestCanEditComment(t *testing.T) {
 	}{
 		{
 			name: "the author may edit",
-			user: auth.User{UID: "us_1", Role: auth.RoleViewer},
+			user: auth.User{UID: "us_1", ProjectRole: project.RoleViewer},
 			c:    comments.Comment{AuthorUID: "us_1"},
 			want: true,
 		},
 		{
 			name: "another user may not",
-			user: auth.User{UID: "us_2", Role: auth.RoleEditor},
+			user: auth.User{UID: "us_2", ProjectRole: project.RoleEditor},
 			c:    comments.Comment{AuthorUID: "us_1"},
 		},
 		{
 			name: "an admin may not edit someone else's",
-			user: auth.User{UID: "us_2", Role: auth.RoleAdmin},
+			user: auth.User{UID: "us_2", ProjectRole: project.RoleAdmin},
 			c:    comments.Comment{AuthorUID: "us_1"},
 		},
 		{
 			name: "an authorless comment belongs to nobody",
-			user: auth.User{UID: "", Role: auth.RoleAdmin},
+			user: auth.User{UID: "", ProjectRole: project.RoleAdmin},
 			c:    comments.Comment{AuthorUID: ""},
 		},
 	}
@@ -125,16 +126,16 @@ func TestCanDeleteComment(t *testing.T) {
 		c    comments.Comment
 		want bool
 	}{
-		{name: "the author", user: auth.User{UID: "us_1", Role: auth.RoleViewer}, c: someone, want: true},
-		{name: "an admin", user: auth.User{UID: "us_2", Role: auth.RoleAdmin}, c: someone, want: true},
-		{name: "a maintainer", user: auth.User{UID: "us_2", Role: auth.RoleMaintainer}, c: someone, want: true},
-		{name: "an editor who is not the author", user: auth.User{UID: "us_2", Role: auth.RoleEditor}, c: someone},
-		{name: "a viewer who is not the author", user: auth.User{UID: "us_2", Role: auth.RoleViewer}, c: someone},
+		{name: "the author", user: auth.User{UID: "us_1", ProjectRole: project.RoleViewer}, c: someone, want: true},
+		{name: "an admin", user: auth.User{UID: "us_2", ProjectRole: project.RoleAdmin}, c: someone, want: true},
+		{name: "a maintainer (an admin in every project)", user: auth.User{UID: "us_2", ProjectRole: project.RoleAdmin}, c: someone, want: true},
+		{name: "an editor who is not the author", user: auth.User{UID: "us_2", ProjectRole: project.RoleEditor}, c: someone},
+		{name: "a viewer who is not the author", user: auth.User{UID: "us_2", ProjectRole: project.RoleViewer}, c: someone},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := canDeleteComment(tt.user, tt.c); got != tt.want {
+			if got := canDeleteComment(tt.user, tt.user.ProjectRole, tt.c); got != tt.want {
 				t.Errorf("canDeleteComment(%+v) = %v, want %v", tt.user, got, tt.want)
 			}
 		})

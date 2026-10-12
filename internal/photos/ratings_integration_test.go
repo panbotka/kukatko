@@ -8,6 +8,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // makeRatingUser inserts a viewer account so rating rows have a valid user FK.
@@ -18,7 +19,7 @@ func makeRatingUser(t *testing.T, store *auth.Store, uid string) string {
 		Username:     uid,
 		Email:        uid + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleViewer,
+		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", uid, err)
 	}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // roleGuard stands in for one of auth's role middlewares as a single signed-in
@@ -43,7 +43,7 @@ func TestGuards_curatorPlaysTheGame(t *testing.T) {
 		{http.MethodGet, "/review/queue", true},
 		{http.MethodPost, "/review/answer", true},
 	}
-	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleCurator, auth.RoleEditor} {
+	for _, role := range []project.Role{project.RoleViewer, project.RoleCurator, project.RoleEditor} {
 		router := chi.NewRouter()
 		router.Route("/api/v1", NewAPI(Config{
 			RequireCurator: roleGuard(role.CanCurate()),
@@ -51,7 +51,7 @@ func TestGuards_curatorPlaysTheGame(t *testing.T) {
 		}).RegisterRoutes)
 		for _, route := range routes {
 			want := http.StatusForbidden
-			if role.CanWrite() || (role == auth.RoleCurator && route.curator) {
+			if role.CanWrite() || (role == project.RoleCurator && route.curator) {
 				want = http.StatusNoContent
 			}
 			rec := httptest.NewRecorder()

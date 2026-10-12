@@ -131,33 +131,33 @@ func TestValidateUserUpdate(t *testing.T) {
 	}{
 		{
 			name:      "valid update is normalized",
-			in:        UpdateUserInput{Email: "  Jan@Example.COM ", Role: RoleViewer},
+			in:        UpdateUserInput{Email: "  Jan@Example.COM ", Role: AccountViewer},
 			wantEmail: "Jan@example.com",
 			wantErr:   nil,
 		},
 		{
 			name:    "missing address is rejected",
-			in:      UpdateUserInput{Role: RoleViewer},
+			in:      UpdateUserInput{Role: AccountViewer},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "whitespace-only address is rejected",
-			in:      UpdateUserInput{Email: " \t ", Role: RoleViewer},
+			in:      UpdateUserInput{Email: " \t ", Role: AccountViewer},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "malformed address is rejected",
-			in:      UpdateUserInput{Email: "jan(at)example.com", Role: RoleViewer},
+			in:      UpdateUserInput{Email: "jan(at)example.com", Role: AccountViewer},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "unknown role is rejected before the address",
-			in:      UpdateUserInput{Email: "jan@example.com", Role: Role("root")},
+			in:      UpdateUserInput{Email: "jan@example.com", Role: AccountRole("root")},
 			wantErr: ErrInvalidRole,
 		},
 		{
 			name:    "over-length note is rejected",
-			in:      UpdateUserInput{Email: "jan@example.com", Role: RoleViewer, Note: &longNote},
+			in:      UpdateUserInput{Email: "jan@example.com", Role: AccountViewer, Note: &longNote},
 			wantErr: ErrNoteTooLong,
 		},
 	}

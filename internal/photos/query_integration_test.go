@@ -202,7 +202,7 @@ func seedQueryOrganisation(
 
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO users (uid, username, email, password_hash, role)
-		 VALUES ($1, 'ql-user', 'ql-user@example.test', 'x', 'editor')`,
+		 VALUES ($1, 'ql-user', 'ql-user@example.test', 'x', 'user')`,
 		lib.user); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}

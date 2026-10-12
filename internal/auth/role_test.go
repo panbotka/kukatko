@@ -3,11 +3,13 @@ package auth
 import (
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
-// TestRole_Valid verifies role validity classification for the strict ladder
-// viewer < curator < editor < admin < maintainer, and that the retired 'ai' role
-// is rejected.
+// TestRole_Valid verifies the instance roles: user and maintainer are valid,
+// every retired ladder value (and garbage) is not.
 func TestRole_Valid(t *testing.T) {
 	t.Parallel()
 
@@ -15,17 +17,13 @@ func TestRole_Valid(t *testing.T) {
 		role Role
 		want bool
 	}{
-		{RoleViewer, true},
-		{RoleCurator, true},
-		{RoleEditor, true},
-		{RoleAdmin, true},
+		{RoleUser, true},
 		{RoleMaintainer, true},
+		{Role("admin"), false},
+		{Role("editor"), false},
+		{Role("viewer"), false},
 		{Role("ai"), false},
 		{Role(""), false},
-		{Role("root"), false},
-		{Role("Admin"), false},
-		{Role("Maintainer"), false},
-		{Role("Curator"), false},
 	}
 	for _, tt := range tests {
 		if got := tt.role.Valid(); got != tt.want {
@@ -34,94 +32,134 @@ func TestRole_Valid(t *testing.T) {
 	}
 }
 
-// TestRole_Predicates verifies the privilege helpers across the five roles on
-// the ladder: curate is curator and up, write is editor and up, admin
-// (governance) is admin and up, and both maintain (operations) and import
-// require maintainer. A curator fails every predicate but CanCurate.
+// TestRole_Predicates verifies the instance operations belong to a maintainer
+// alone.
 func TestRole_Predicates(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		role            Role
-		wantCurate      bool
-		wantWrite       bool
-		wantIsAdmin     bool
-		wantCanMaintain bool
-		wantCanImport   bool
+		role Role
+		want bool
 	}{
-		{RoleViewer, false, false, false, false, false},
-		{RoleCurator, true, false, false, false, false},
-		{RoleEditor, true, true, false, false, false},
-		{RoleAdmin, true, true, true, false, false},
-		{RoleMaintainer, true, true, true, true, true},
-		{Role("bogus"), false, false, false, false, false},
+		{RoleMaintainer, true},
+		{RoleUser, false},
+		{Role(""), false},
 	}
 	for _, tt := range tests {
-		if got := tt.role.CanCurate(); got != tt.wantCurate {
-			t.Errorf("Role(%q).CanCurate() = %v, want %v", tt.role, got, tt.wantCurate)
+		if got := tt.role.CanMaintain(); got != tt.want {
+			t.Errorf("Role(%q).CanMaintain() = %v, want %v", tt.role, got, tt.want)
 		}
-		if got := tt.role.CanWrite(); got != tt.wantWrite {
-			t.Errorf("Role(%q).CanWrite() = %v, want %v", tt.role, got, tt.wantWrite)
-		}
-		if got := tt.role.IsAdmin(); got != tt.wantIsAdmin {
-			t.Errorf("Role(%q).IsAdmin() = %v, want %v", tt.role, got, tt.wantIsAdmin)
-		}
-		if got := tt.role.CanMaintain(); got != tt.wantCanMaintain {
-			t.Errorf("Role(%q).CanMaintain() = %v, want %v", tt.role, got, tt.wantCanMaintain)
-		}
-		if got := tt.role.CanImport(); got != tt.wantCanImport {
-			t.Errorf("Role(%q).CanImport() = %v, want %v", tt.role, got, tt.wantCanImport)
+		if got := tt.role.CanImport(); got != tt.want {
+			t.Errorf("Role(%q).CanImport() = %v, want %v", tt.role, got, tt.want)
 		}
 	}
 }
 
-// TestAuthorize pins the whole RBAC decision matrix: every role on the ladder
-// against every requirement, one row per role. It proves the ladder inheritance
-// (a maintainer satisfies requireAdmin, every writer satisfies requireCurate)
-// and that the inserted curator rung satisfies requireCurate and nothing above
-// it. Invalid roles satisfy nothing, not even requireAuth.
+// TestAccountRole_Split verifies the transitional five-rung vocabulary maps
+// onto the instance role and the project role, and folds back unchanged.
+func TestAccountRole_Split(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		account      AccountRole
+		wantValid    bool
+		wantInstance Role
+		wantProject  project.Role
+	}{
+		{AccountMaintainer, true, RoleMaintainer, project.RoleAdmin},
+		{AccountAdmin, true, RoleUser, project.RoleAdmin},
+		{AccountEditor, true, RoleUser, project.RoleEditor},
+		{AccountCurator, true, RoleUser, project.RoleCurator},
+		{AccountViewer, true, RoleUser, project.RoleViewer},
+		{AccountRole("ai"), false, RoleUser, project.Role("ai")},
+		{AccountRole(""), false, RoleUser, project.Role("")},
+	}
+	for _, tt := range tests {
+		if got := tt.account.Valid(); got != tt.wantValid {
+			t.Errorf("AccountRole(%q).Valid() = %v, want %v", tt.account, got, tt.wantValid)
+		}
+		instance, inProject := tt.account.Split()
+		if instance != tt.wantInstance || inProject != tt.wantProject {
+			t.Errorf("AccountRole(%q).Split() = %q, %q, want %q, %q",
+				tt.account, instance, inProject, tt.wantInstance, tt.wantProject)
+		}
+		if tt.wantValid {
+			if back := accountRoleOf(instance, inProject); back != tt.account {
+				t.Errorf("accountRoleOf(Split(%q)) = %q", tt.account, back)
+			}
+		}
+	}
+}
+
+// TestAccountRoleOf_maintainerWins verifies a maintainer reports "maintainer"
+// whatever its membership says, and a user without one reports nothing.
+func TestAccountRoleOf_maintainerWins(t *testing.T) {
+	t.Parallel()
+
+	if got := accountRoleOf(RoleMaintainer, project.RoleViewer); got != AccountMaintainer {
+		t.Errorf("maintainer with a viewer membership = %q, want maintainer", got)
+	}
+	if got := accountRoleOf(RoleMaintainer, ""); got != AccountMaintainer {
+		t.Errorf("maintainer without membership = %q, want maintainer", got)
+	}
+	if got := accountRoleOf(RoleUser, ""); got != "" {
+		t.Errorf("user without membership = %q, want empty", got)
+	}
+}
+
+// TestAuthorize verifies the guards read the project role for the four
+// project-level requirements and the instance role for the two instance-level
+// ones, and that no project role (or an invalid one) satisfies nothing
+// project-level.
 func TestAuthorize(t *testing.T) {
 	t.Parallel()
 
-	// want lists the decision for each requirement in the column order below.
-	reqs := []struct {
-		name string
-		req  requirement
-	}{
-		{"auth", requireAuth},
-		{"curate", requireCurate},
-		{"write", requireWrite},
-		{"admin", requireAdmin},
-		{"maintain", requireMaintain},
-		{"import", requireImport},
-	}
+	reqs := []requirement{requireAuth, requireCurate, requireWrite, requireAdmin, requireMaintain, requireImport}
 	tests := []struct {
-		role Role
-		want [6]bool // auth, curate, write, admin, maintain, import
+		instance  Role
+		inProject project.Role
+		want      []bool // in reqs order
 	}{
-		{RoleViewer, [6]bool{true, false, false, false, false, false}},
-		{RoleCurator, [6]bool{true, true, false, false, false, false}},
-		{RoleEditor, [6]bool{true, true, true, false, false, false}},
-		{RoleAdmin, [6]bool{true, true, true, true, false, false}},
-		{RoleMaintainer, [6]bool{true, true, true, true, true, true}},
-		{Role("ai"), [6]bool{}},
-		{Role("x"), [6]bool{}},
+		{RoleUser, project.RoleViewer, []bool{true, false, false, false, false, false}},
+		{RoleUser, project.RoleCurator, []bool{true, true, false, false, false, false}},
+		{RoleUser, project.RoleEditor, []bool{true, true, true, false, false, false}},
+		{RoleUser, project.RoleAdmin, []bool{true, true, true, true, false, false}},
+		{RoleUser, "", []bool{false, false, false, false, false, false}},
+		{RoleUser, project.Role("maintainer"), []bool{false, false, false, false, false, false}},
+		{RoleMaintainer, project.RoleAdmin, []bool{true, true, true, true, true, true}},
+		{RoleMaintainer, "", []bool{false, false, false, false, true, true}},
+		{Role("admin"), project.RoleViewer, []bool{true, false, false, false, false, false}},
 	}
 	for _, tt := range tests {
-		for i, rq := range reqs {
-			t.Run(string(tt.role)+"/"+rq.name, func(t *testing.T) {
-				t.Parallel()
-				if got := authorize(tt.role, rq.req); got != tt.want[i] {
-					t.Errorf("authorize(%q, %s) = %v, want %v", tt.role, rq.name, got, tt.want[i])
-				}
-			})
+		for i, req := range reqs {
+			if got := authorize(tt.instance, tt.inProject, req); got != tt.want[i] {
+				t.Errorf("authorize(%q, %q, %d) = %v, want %v", tt.instance, tt.inProject, req, got, tt.want[i])
+			}
+		}
+	}
+	if authorize(RoleMaintainer, project.RoleAdmin, requirement(99)) {
+		t.Error("an unknown requirement must never be satisfied")
+	}
+}
+
+// TestRequirement_instanceLevel verifies only the maintainer and import
+// requirements are decided by the instance role.
+func TestRequirement_instanceLevel(t *testing.T) {
+	t.Parallel()
+
+	for req, want := range map[requirement]bool{
+		requireAuth: false, requireCurate: false, requireWrite: false, requireAdmin: false,
+		requireMaintain: true, requireImport: true,
+	} {
+		if got := req.instanceLevel(); got != want {
+			t.Errorf("requirement(%d).instanceLevel() = %v, want %v", req, got, want)
 		}
 	}
 }
 
 // TestAuthorizeUserManagement verifies the maintainer boundary on user-management
 // actions: only a maintainer may grant the maintainer role or touch an account
-// that already holds it, while every other viewer/editor/admin action is allowed.
+// that already holds it, while every other action is allowed.
 func TestAuthorizeUserManagement(t *testing.T) {
 	t.Parallel()
 
@@ -132,20 +170,15 @@ func TestAuthorizeUserManagement(t *testing.T) {
 		newRole Role
 		wantErr error
 	}{
-		{"admin creates viewer", RoleAdmin, "", RoleViewer, nil},
-		{"admin creates admin", RoleAdmin, "", RoleAdmin, nil},
-		{"admin creates curator", RoleAdmin, "", RoleCurator, nil},
-		{"admin promotes curator to editor", RoleAdmin, RoleCurator, RoleEditor, nil},
-		{"admin promotes curator to maintainer", RoleAdmin, RoleCurator, RoleMaintainer, ErrMaintainerRequired},
-		{"admin creates maintainer", RoleAdmin, "", RoleMaintainer, ErrMaintainerRequired},
-		{"admin promotes editor to maintainer", RoleAdmin, RoleEditor, RoleMaintainer, ErrMaintainerRequired},
-		{"admin modifies maintainer", RoleAdmin, RoleMaintainer, RoleMaintainer, ErrMaintainerRequired},
-		{"admin disables maintainer (no role change)", RoleAdmin, RoleMaintainer, "", ErrMaintainerRequired},
-		{"editor-actor creates maintainer", RoleEditor, "", RoleMaintainer, ErrMaintainerRequired},
+		{"user creates user", RoleUser, "", RoleUser, nil},
+		{"user changes a user", RoleUser, RoleUser, RoleUser, nil},
+		{"user creates maintainer", RoleUser, "", RoleMaintainer, ErrMaintainerRequired},
+		{"user promotes a user to maintainer", RoleUser, RoleUser, RoleMaintainer, ErrMaintainerRequired},
+		{"user modifies maintainer", RoleUser, RoleMaintainer, RoleMaintainer, ErrMaintainerRequired},
+		{"user disables maintainer (no role change)", RoleUser, RoleMaintainer, "", ErrMaintainerRequired},
 		{"maintainer creates maintainer", RoleMaintainer, "", RoleMaintainer, nil},
-		{"maintainer promotes editor to maintainer", RoleMaintainer, RoleEditor, RoleMaintainer, nil},
+		{"maintainer promotes a user", RoleMaintainer, RoleUser, RoleMaintainer, nil},
 		{"maintainer modifies maintainer", RoleMaintainer, RoleMaintainer, RoleMaintainer, nil},
-		{"admin demotes an admin to viewer", RoleAdmin, RoleAdmin, RoleViewer, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,5 +188,36 @@ func TestAuthorizeUserManagement(t *testing.T) {
 					tt.actor, tt.current, tt.newRole, got, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestLastProjectThrottle_due verifies the last-project write happens once per
+// interval per account, at once on a project switch, and that stale entries
+// are dropped.
+func TestLastProjectThrottle_due(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
+	var th lastProjectThrottle
+	steps := []struct {
+		name    string
+		user    string
+		project string
+		at      time.Time
+		want    bool
+	}{
+		{"first sight", "us1", "pj1", start, true},
+		{"again within the minute", "us1", "pj1", start.Add(30 * time.Second), false},
+		{"another account", "us2", "pj1", start.Add(30 * time.Second), true},
+		{"a project switch", "us1", "pj2", start.Add(40 * time.Second), true},
+		{"after the interval", "us1", "pj2", start.Add(40*time.Second + lastProjectTouchInterval), true},
+	}
+	for _, s := range steps {
+		if got := th.due(s.user, s.project, s.at); got != s.want {
+			t.Errorf("%s: due = %v, want %v", s.name, got, s.want)
+		}
+	}
+	if _, ok := th.seen["us2"]; ok {
+		t.Error("an entry older than the interval should have been dropped")
 	}
 }

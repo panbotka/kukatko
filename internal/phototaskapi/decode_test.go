@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestParseFilter verifies a listing's parameters reach the store filter, and
@@ -169,9 +170,9 @@ func TestUpdateRequestToUpdate(t *testing.T) {
 func TestCommentPolicy(t *testing.T) {
 	t.Parallel()
 
-	author := auth.User{UID: "us1", Role: auth.RoleViewer}
-	stranger := auth.User{UID: "us2", Role: auth.RoleEditor}
-	admin := auth.User{UID: "us3", Role: auth.RoleAdmin}
+	author := auth.User{UID: "us1", ProjectRole: project.RoleViewer}
+	stranger := auth.User{UID: "us2", ProjectRole: project.RoleEditor}
+	admin := auth.User{UID: "us3", ProjectRole: project.RoleAdmin}
 	mine := comments.Comment{AuthorUID: "us1"}
 	orphan := comments.Comment{}
 
@@ -194,7 +195,7 @@ func TestCommentPolicy(t *testing.T) {
 			if got := canEditComment(tt.comment, tt.user); got != tt.canEdit {
 				t.Errorf("canEditComment = %v, want %v", got, tt.canEdit)
 			}
-			if got := canDeleteComment(tt.comment, tt.user); got != tt.canDelete {
+			if got := canDeleteComment(tt.comment, tt.user, tt.user.ProjectRole); got != tt.canDelete {
 				t.Errorf("canDeleteComment = %v, want %v", got, tt.canDelete)
 			}
 		})

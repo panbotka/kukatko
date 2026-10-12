@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/stacks"
 )
 
@@ -31,7 +32,7 @@ func makeActor(t *testing.T, db *database.DB, uid string) string {
 		Username:     uid,
 		Email:        uid + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleEditor,
+		Role:         auth.RoleUser, ProjectRole: project.RoleEditor,
 	}); err != nil {
 		t.Fatalf("creating actor %s: %v", uid, err)
 	}

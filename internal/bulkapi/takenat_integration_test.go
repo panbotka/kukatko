@@ -43,7 +43,7 @@ func clearTakenAtBody(uids ...string) []byte {
 // coarser than a day is marked an estimate.
 func TestBulk_setTakenAtEachPrecision(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	tests := []struct {
 		name          string
@@ -123,7 +123,7 @@ func TestBulk_setTakenAtEachPrecision(t *testing.T) {
 // a note only lives beside a date flagged as a guess.
 func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	uid := env.seedPhoto(t, "guessed")
@@ -175,7 +175,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 // anything is written, so no photo comes out of it half-dated.
 func TestBulk_setTakenAtIsTransactional(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	p1 := env.seedPhoto(t, "batch1")
 	p2 := env.seedPhoto(t, "batch2")
@@ -213,7 +213,7 @@ func TestBulk_setTakenAtIsTransactional(t *testing.T) {
 // must never be guessed at from a half-parsed value.
 func TestBulk_setTakenAtRejectsABadDate(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	uid := env.seedPhoto(t, "badvalue")
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
@@ -236,7 +236,7 @@ func TestBulk_setTakenAtRejectsABadDate(t *testing.T) {
 // viewer cannot re-date the library.
 func TestBulk_setTakenAtViewerForbidden(t *testing.T) {
 	env := newEnv(t, 1000)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	uid := env.seedPhoto(t, "viewerdate")
 	resp := env.mustDo(t, viewer, http.MethodPost, "/api/v1/photos/bulk",
@@ -262,7 +262,7 @@ func TestBulk_setTakenAtViewerForbidden(t *testing.T) {
 // bounds the library's picker sends.
 func TestBulk_setTakenAtLandsInTheRightPeriod(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	scanned := []string{env.seedPhoto(t, "sc1"), env.seedPhoto(t, "sc2")}
@@ -370,7 +370,7 @@ func assertListedUIDs(
 // single-photo PATCH clear would stamp it.
 func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, actorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, actorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	scannedIn := time.Date(2011, time.March, 8, 10, 15, 0, 0, time.UTC)
@@ -447,7 +447,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 // already put away.
 func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	never := env.seedPhoto(t, "neverdated")
@@ -491,7 +491,7 @@ func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 // request carrying both is a 400 and changes nothing.
 func TestBulk_clearTakenAtRejectsSetTakenAt(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	uid := env.seedPhoto(t, "contradiction")
 	body, _ := json.Marshal(map[string]any{

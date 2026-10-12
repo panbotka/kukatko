@@ -57,8 +57,8 @@ func (e *env) unread(t *testing.T, s session) int {
 // covers only the unread ones; "read all" clears them and nobody else's.
 func TestInbox_listCountAndReadAll(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	vera := e.login(t, "vera", auth.RoleViewer)
-	ada := e.login(t, "ada", auth.RoleAdmin)
+	vera := e.login(t, "vera", auth.AccountViewer)
+	ada := e.login(t, "ada", auth.AccountAdmin)
 	e.seedInbox(t, vera.uid, "older", true, 30)
 	e.seedInbox(t, vera.uid, "push only", false, 20)
 	newest := e.seedInbox(t, vera.uid, "newest", true, 10)
@@ -114,7 +114,7 @@ func TestInbox_listCountAndReadAll(t *testing.T) {
 // TestInbox_refusesBadQuery checks malformed paging and filter values are 400s.
 func TestInbox_refusesBadQuery(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	vera := e.login(t, "vera", auth.RoleViewer)
+	vera := e.login(t, "vera", auth.AccountViewer)
 	for _, query := range []string{"?unread=perhaps", "?limit=0", "?limit=x", "?offset=-1", "?offset=x"} {
 		if status, body := e.do(t, vera, http.MethodGet, "/api/v1/notifications"+query, ""); status != 400 {
 			t.Errorf("GET /notifications%s = %d, want 400: %s", query, status, body)

@@ -3,6 +3,8 @@ package auth
 import (
 	"errors"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Sentinel errors returned by the store and service so callers (handlers, tests)
@@ -20,7 +22,7 @@ var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	// ErrSessionExpired indicates the session existed but has passed its expiry.
 	ErrSessionExpired = errors.New("auth: session expired")
-	// ErrInvalidRole indicates a role value outside viewer/curator/editor/admin/maintainer.
+	// ErrInvalidRole indicates an account role value outside viewer/curator/editor/admin/maintainer.
 	ErrInvalidRole = errors.New("auth: invalid role")
 	// ErrMaintainerRequired indicates a non-maintainer tried to grant the
 	// maintainer role or to modify an account that already holds it. Only a
@@ -102,15 +104,24 @@ const MaxUsernameLen = 64
 // tag exposure); the JSON form is used by the HTTP layer for user-management
 // responses, which omit the hash.
 type User struct {
-	UID         string     `json:"uid"`
-	Username    string     `json:"username"`
-	DisplayName string     `json:"display_name"`
-	Email       string     `json:"email"`
-	Role        Role       `json:"role"`
-	Disabled    bool       `json:"disabled"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	UID         string `json:"uid"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	// Role is the account's instance role (users.role): user or maintainer.
+	Role Role `json:"instance_role"`
+	// ProjectRole is the account's role in the bootstrap project, or "" when it
+	// is not a member there. Transition: read alongside the account until the
+	// users.* readers move to the per-project membership; the request's own
+	// project role is ProjectRoleFromContext.
+	ProjectRole project.Role `json:"-"`
+	// AccountRole is the transitional five-rung "role" the frontend still reads
+	// (see AccountRole): "maintainer" for a maintainer, otherwise ProjectRole.
+	AccountRole AccountRole `json:"role"`
+	Disabled    bool        `json:"disabled"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	LastLoginAt *time.Time  `json:"last_login_at,omitempty"`
 	// PasswordHash holds the bcrypt hash; it is excluded from JSON output.
 	PasswordHash string `json:"-"`
 	// Note is a free-text administrative note. It is excluded from JSON output
@@ -157,14 +168,13 @@ type User struct {
 
 // Session is an authenticated session bound to a user. Token is the opaque value
 // stored in the HttpOnly cookie; DownloadToken authorises media-download URLs
-// separately. Role caches the user's role at creation so authorization does not
-// require a user lookup on every request.
+// separately. It caches no role: authorization reads the live account and its
+// membership of the request's project on every request.
 type Session struct {
 	ID            string    `json:"-"`
 	Token         string    `json:"-"`
 	DownloadToken string    `json:"download_token"`
 	UserUID       string    `json:"user_uid"`
-	Role          Role      `json:"role"`
 	CreatedAt     time.Time `json:"created_at"`
 	ExpiresAt     time.Time `json:"expires_at"`
 }
@@ -191,4 +201,13 @@ func slideExpiry(created, current, now time.Time, ttl, maxLifetime time.Duration
 		return current, false
 	}
 	return candidate, true
+}
+
+// governs reports whether u holds the governance privileges of an
+// account-wide decision that is not about one project — the rate-limit exemption
+// on API tokens, revoking somebody else's token: a maintainer, or an admin of the
+// bootstrap project. Transition: account-wide governance becomes the
+// maintainer's alone once projects have admins of their own.
+func (u User) governs() bool {
+	return u.Role.CanMaintain() || u.ProjectRole.IsAdmin()
 }

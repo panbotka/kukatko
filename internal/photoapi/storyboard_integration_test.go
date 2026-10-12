@@ -93,7 +93,7 @@ func TestStoryboard_pendingThenReady(t *testing.T) {
 	env := newEnv(t)
 	// A viewer, deliberately: whoever may watch the video may see its scrub
 	// previews, and the status endpoint must not be write-gated.
-	client, token := env.login(t, "viewer", auth.RoleViewer)
+	client, token := env.login(t, "viewer", auth.AccountViewer)
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
 	statusURL := env.server.URL + "/api/v1/photos/" + video.UID + "/storyboard"
 	spriteURL := statusURL + "/sprite?t=" + token
@@ -155,7 +155,7 @@ func TestStoryboard_pendingThenReady(t *testing.T) {
 // not quietly enqueue a job per photo in the library.
 func TestStoryboard_unavailableForStills(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "viewer", auth.RoleViewer)
+	client, token := env.login(t, "viewer", auth.AccountViewer)
 	still := env.seedPhoto(t, photos.Photo{TakenAtSource: "unknown"}, "still.jpg", 10, 20, 30)
 
 	body := getStoryboard(t, client, env.server.URL+"/api/v1/photos/"+still.UID+"/storyboard")
@@ -178,7 +178,7 @@ func TestStoryboard_unavailableForStills(t *testing.T) {
 // rather than a state the client would act on.
 func TestStoryboard_missingPhoto(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "viewer", auth.RoleViewer)
+	client, token := env.login(t, "viewer", auth.AccountViewer)
 
 	for _, path := range []string{"/storyboard", "/storyboard/sprite?t=" + token} {
 		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos/ph_missing"+path, nil)

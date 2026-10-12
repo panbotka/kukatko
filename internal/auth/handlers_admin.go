@@ -26,12 +26,12 @@ func adminAuditMeta(r *http.Request) audit.Meta {
 // are optional and default to empty. Its shape mirrors CreateUserInput so the
 // handler can convert directly.
 type createUserRequest struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	Role        Role   `json:"role"`
-	Note        string `json:"note"`
+	Username    string      `json:"username"`
+	Password    string      `json:"password"`
+	DisplayName string      `json:"display_name"`
+	Email       string      `json:"email"`
+	Role        AccountRole `json:"role"`
+	Note        string      `json:"note"`
 	// SubjectUID optionally says, at creation time, which person of the library
 	// the account is; omitted or null leaves it unlinked.
 	SubjectUID *string `json:"subject_uid"`
@@ -42,11 +42,11 @@ type createUserRequest struct {
 // stored note untouched while an explicit "" clears it. Its shape mirrors
 // UpdateUserInput so the handler can convert directly.
 type updateUserRequest struct {
-	DisplayName string  `json:"display_name"`
-	Email       string  `json:"email"`
-	Role        Role    `json:"role"`
-	Disabled    bool    `json:"disabled"`
-	Note        *string `json:"note"`
+	DisplayName string      `json:"display_name"`
+	Email       string      `json:"email"`
+	Role        AccountRole `json:"role"`
+	Disabled    bool        `json:"disabled"`
+	Note        *string     `json:"note"`
 	// SubjectUID is part of the replaced profile, not a partial update like the
 	// note: an omitted or null value clears the account's link to a person.
 	SubjectUID *string `json:"subject_uid"`

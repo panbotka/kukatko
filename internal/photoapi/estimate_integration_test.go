@@ -18,7 +18,7 @@ import (
 // as the flag is cleared.
 func TestUpdateMetadata_takenAtEstimate(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Babička na dvoře", TakenAtSource: "manual",
@@ -70,7 +70,7 @@ func TestUpdateMetadata_takenAtEstimate(t *testing.T) {
 // estimate, with the note carrying the whole meaning.
 func TestUpdateMetadata_takenAtEstimateUndated(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	seeded := env.seedPhoto(t, photos.Photo{TakenAtSource: "unknown"}, "undated.jpg", 12, 22, 32)
 	url := env.server.URL + "/api/v1/photos/" + seeded.UID
@@ -90,8 +90,8 @@ func TestUpdateMetadata_takenAtEstimateUndated(t *testing.T) {
 // refused.
 func TestUpdateMetadata_takenAtEstimateValidation(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	seeded := env.seedPhoto(t, photos.Photo{TakenAtSource: "exif"}, "estimate-limits.jpg", 13, 23, 33)
 	url := env.server.URL + "/api/v1/photos/" + seeded.UID

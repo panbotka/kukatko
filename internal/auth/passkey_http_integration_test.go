@@ -90,7 +90,7 @@ func newTestPasskeys(t *testing.T, svc *auth.Service, enabled bool) *auth.Passke
 }
 
 // user creates an approved account through the service.
-func (e *passkeyEnv) user(t *testing.T, username string, role auth.Role) auth.User {
+func (e *passkeyEnv) user(t *testing.T, username string, role auth.AccountRole) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -215,7 +215,7 @@ func decodePasskey(t *testing.T, body []byte) map[string]any {
 // with it from a browser that has no session at all, then remove it.
 func TestHTTP_passkeyRegisterListLoginDelete(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -337,7 +337,7 @@ func assertPasskeySignIn(t *testing.T, env *passkeyEnv, device *virtualAuthentic
 // build that has never heard of them.
 func TestHTTP_passkeyNotConfigured(t *testing.T) {
 	env := newPasskeyEnv(t, 50, false)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 
 	owner := newClient(t)
 	env.signInWithPassword(t, owner, "alice")
@@ -391,7 +391,7 @@ func TestHTTP_passkeyLoginRateLimited(t *testing.T) {
 // they finish.
 func TestHTTP_passkeyLoginBeginHasItsOwnBudget(t *testing.T) {
 	env := newPasskeyEnv(t, 2, true)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -419,7 +419,7 @@ func TestHTTP_passkeyLoginBeginHasItsOwnBudget(t *testing.T) {
 // because a captured response would otherwise be a reusable credential.
 func TestHTTP_passkeyCeremonyIsOneShot(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -454,7 +454,7 @@ func TestHTTP_passkeyCeremonyIsOneShot(t *testing.T) {
 // registrable here, however well-formed it is.
 func TestHTTP_passkeyRegisterRejectsAForeignOrigin(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -478,7 +478,7 @@ func TestHTTP_passkeyRegisterRejectsAForeignOrigin(t *testing.T) {
 // can say "you already added this one" instead of blaming the request.
 func TestHTTP_passkeyRegisterRefusesTheSameKeyTwice(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -495,7 +495,7 @@ func TestHTTP_passkeyRegisterRefusesTheSameKeyTwice(t *testing.T) {
 // chooses freely.
 func TestHTTP_passkeyRegisterRejectsAnOverLongName(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)
@@ -512,8 +512,8 @@ func TestHTTP_passkeyRegisterRejectsAnOverLongName(t *testing.T) {
 // stopped working.
 func TestHTTP_passkeyDeleteBelongsToItsOwner(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	env.user(t, "alice", auth.RoleEditor)
-	env.user(t, "bob", auth.RoleAdmin)
+	env.user(t, "alice", auth.AccountEditor)
+	env.user(t, "bob", auth.AccountAdmin)
 
 	owner := newClient(t)
 	env.signInWithPassword(t, owner, "alice")
@@ -543,7 +543,7 @@ func TestHTTP_passkeyDeleteBelongsToItsOwner(t *testing.T) {
 // told what it is waiting for — the same distinction a password login draws.
 func TestHTTP_passkeyLoginRefusesABlockedAccount(t *testing.T) {
 	env := newPasskeyEnv(t, 50, true)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	device := newVirtualAuthenticator(t)
 
 	owner := newClient(t)

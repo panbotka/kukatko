@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/version"
 )
@@ -171,5 +174,43 @@ func TestSPAFallbackStillOwnsUnknownPaths(t *testing.T) {
 				t.Errorf("GET %s was answered by handleNotFound; only /.well-known is carved out", path)
 			}
 		})
+	}
+}
+
+// TestWithAPIMiddleware_wrapsOnlyTheAPIGroup verifies an API middleware runs in
+// front of every route a WithAPI register mounts — in the order given — and
+// never in front of the routes outside /api/v1.
+func TestWithAPIMiddleware_wrapsOnlyTheAPIGroup(t *testing.T) {
+	t.Parallel()
+
+	stamp := func(name string) func(http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add("X-Seen", name)
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+	srv := New("",
+		WithAPIMiddleware(stamp("first")),
+		WithAPIMiddleware(stamp("second")),
+		WithAPI(func(r chi.Router) {
+			r.Get("/probe", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+		}),
+	).Handler()
+
+	tests := []struct {
+		path string
+		want []string
+	}{
+		{"/api/v1/probe", []string{"first", "second"}},
+		{"/healthz", nil},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, tt.path, nil))
+		if got := rec.Header().Values("X-Seen"); !slices.Equal(got, tt.want) {
+			t.Errorf("GET %s ran %v, want %v", tt.path, got, tt.want)
+		}
 	}
 }

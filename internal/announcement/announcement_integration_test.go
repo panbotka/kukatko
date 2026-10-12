@@ -36,7 +36,7 @@ func makeUser(t *testing.T, store *auth.Store, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleMaintainer,
+		Role:         auth.RoleMaintainer, ProjectRole: project.RoleAdmin,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}

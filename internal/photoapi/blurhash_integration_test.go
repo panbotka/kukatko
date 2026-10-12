@@ -47,7 +47,7 @@ func fetchObject(t *testing.T, client *http.Client, url string) map[string]json.
 // which a value served only on the detail could never do.
 func TestBlurhash_servedInListAndDetail(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Beach"}, "beach.jpg", 10, 20, 30)
 	const hash = "LEHV6nWB2yk8pyo0adR*.7kCMdnj"
@@ -91,7 +91,7 @@ func TestBlurhash_servedInListAndDetail(t *testing.T) {
 // there rather than having to tell an empty string from a real value.
 func TestBlurhash_omittedWhenNotComputed(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Unhashed"}, "unhashed.jpg", 40, 50, 60)
 	detail := fetchObject(t, client, env.server.URL+"/api/v1/photos/"+photo.UID)

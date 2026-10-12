@@ -1118,12 +1118,29 @@ is the primary system and imports from nothing but the disk.
 
 ## 11. Auth and security
 
-- **Users:** roles viewer/curator/editor/admin/maintainer (a strict ladder, each inherits the lower one);
-  curation of the catalogue (faces, people, albums, labels) from `curator` up, write from `editor` up,
-  `maintainer` is the top (operations: imports/maintenance/backup/…). The ladder is enforced by explicit
-  predicates in `internal/auth` (`CanCurate`/`CanWrite`/…), never by rank arithmetic, so an inserted rung
-  inherits nothing by accident. Design of the curator rung:
-  `docs/superpowers/specs/2026-09-26-curator-role-design.md`. Bcrypt cost 12.
+- **Users — two ladders** (multi-tenancy, design
+  `docs/superpowers/specs/2026-10-11-multi-tenancy-design.md` §2.3/§3.1):
+  - the **instance role** on the account, `users.role` = `user` | `maintainer` (`auth.Role`). A
+    maintainer ("system admin" in the UI) operates the instance — imports, maintenance, system status,
+    backup, restore, jobs, processing — and is **implicitly the admin of every project**, member or not,
+    active or not; `RequireMaintainer`/`RequireImport` read only this role;
+  - the **project role** of a membership, `project_members.role` = viewer < curator < editor < admin
+    (`project.Role`, strict ladder): curation (faces, people, albums, labels) from `curator`, write from
+    `editor`, the project's governance at `admin`. `RequireAuth`/`RequireCurator`/`RequireWrite`/
+    `RequireAdmin` read only this role, of the request's project.
+
+  Both ladders are explicit predicates, never rank arithmetic, so an inserted rung inherits nothing by
+  accident (curator rung: `docs/superpowers/specs/2026-09-26-curator-role-design.md`). **The request's
+  project** is named by `auth.WithProject` (the `{project}` URL slug; while no route carries one, the
+  bootstrap project `v` — a transition rule removed with the unprefixed aliases) and decided by the guard
+  after authentication: unknown slug, a project the caller is not a member of and — for non-maintainers —
+  a deactivated one all answer the **same 404**, so a tenant never learns another project exists; an
+  unapproved membership is 403 `pending_approval`; a maintainer enters as admin and the access log and
+  `audit.FromRequest` entries carry `actor_role=maintainer`. `auth.ProjectFromContext` /
+  `ProjectUIDFromContext` / `ProjectRoleFromContext` are the only way handlers and stores learn it.
+  During the transition the admin user endpoints and the `role` field of a user payload still speak the
+  old five-rung vocabulary (`auth.AccountRole`: maintainer, or the role in the bootstrap project), so the
+  frontend keeps working until it reads `instance_role` and the memberships. Bcrypt cost 12.
   Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
 - **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
   **Improvements over the previous system:**

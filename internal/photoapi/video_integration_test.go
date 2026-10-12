@@ -50,7 +50,7 @@ func (e *env) seedVideo(t *testing.T, name string, data []byte) photos.Photo {
 // advertises Accept-Ranges, and serves the whole file on an unranged request.
 func TestVideoStream_rangeRequest(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	// A payload several KiB long so a sub-range is a meaningful slice.
 	data := make([]byte, 8192)
@@ -95,7 +95,7 @@ func TestVideoStream_rangeRequest(t *testing.T) {
 // clip with the right content type and advertises range support.
 func TestVideoStream_fullAndMime(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	data := bytes.Repeat([]byte("kukatko-video"), 64)
 	video := env.seedVideo(t, "movie.mp4", data)
@@ -126,7 +126,7 @@ func TestVideoStream_fullAndMime(t *testing.T) {
 // has no playable video.
 func TestVideoStream_notAVideo(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	image := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
 	url := env.server.URL + "/api/v1/photos/" + image.UID + "/video"

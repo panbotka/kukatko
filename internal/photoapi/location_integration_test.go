@@ -27,7 +27,7 @@ const (
 // keeps the on-disk catalogue current — are scheduled.
 func TestUpdateMetadata_pickLocation(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Svatba u kostela", TakenAtSource: "manual",
@@ -62,7 +62,7 @@ func TestUpdateMetadata_pickLocation(t *testing.T) {
 // accepting or discarding.
 func TestUpdateMetadata_pickLocationOverEstimate(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	guessLat, guessLng := 50.08804, 14.42076
 	seeded := env.seedPhoto(t, photos.Photo{
@@ -87,7 +87,7 @@ func TestUpdateMetadata_pickLocationOverEstimate(t *testing.T) {
 // the photo back out of the places hierarchy.
 func TestUpdateMetadata_removeLocation(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	lat, lng := veseliLat, veseliLng
 	seeded := env.seedPhoto(t, photos.Photo{
@@ -108,7 +108,7 @@ func TestUpdateMetadata_removeLocation(t *testing.T) {
 // geocode costs a metered mapy.com credit, so retitling a photo may not spend one.
 func TestUpdateMetadata_untouchedLocationSchedulesNoGeocode(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	lat, lng := veseliLat, veseliLng
 	seeded := env.seedPhoto(t, photos.Photo{

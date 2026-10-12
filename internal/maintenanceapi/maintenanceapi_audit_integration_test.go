@@ -63,7 +63,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -134,7 +134,7 @@ func TestAuditPurgeRequiresMaintainer(t *testing.T) {
 	env := newEnv(t)
 	body := []byte(`{"older_than_days":365}`)
 
-	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleEditor, auth.RoleAdmin} {
+	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountEditor, auth.AccountAdmin} {
 		client := env.login(t, "u_"+string(role), role)
 		resp := env.mustDo(t, client, http.MethodPost, purgePath, body)
 		if resp.StatusCode != http.StatusForbidden {
@@ -143,7 +143,7 @@ func TestAuditPurgeRequiresMaintainer(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	resp := env.mustDo(t, maintainer, http.MethodPost, purgePath, body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("maintainer purge status = %d, want 200", resp.StatusCode)
@@ -155,7 +155,7 @@ func TestAuditPurgeRequiresMaintainer(t *testing.T) {
 // 400, and nothing is deleted.
 func TestAuditPurgeRejectsBadCutoff(t *testing.T) {
 	env := newEnv(t)
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	env.seedAudit(t, "old.entry", time.Now().Add(-500*24*time.Hour))
 
 	resp := env.mustDo(t, maintainer, http.MethodPost, purgePath, []byte(`{"older_than_days":0}`))
@@ -173,7 +173,7 @@ func TestAuditPurgeRejectsBadCutoff(t *testing.T) {
 // recent audit.purge self-audit record that survives.
 func TestAuditPurgeDeletesOldAndSelfAudits(t *testing.T) {
 	env := newEnv(t)
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 
 	now := time.Now()
 	env.seedAudit(t, "old.one", now.Add(-500*24*time.Hour))

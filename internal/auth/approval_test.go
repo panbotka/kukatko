@@ -3,6 +3,8 @@ package auth
 import (
 	"testing"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestPrepareNewUser_approvesOnCreation checks that an account built here is
@@ -19,7 +21,7 @@ func TestPrepareNewUser_approvesOnCreation(t *testing.T) {
 		Username: "alice",
 		Password: "correct horse battery",
 		Email:    "alice@example.com",
-		Role:     RoleViewer,
+		Role:     AccountViewer,
 	})
 	if err != nil {
 		t.Fatalf("prepareNewUser: %v", err)
@@ -54,7 +56,7 @@ func TestInsertUserArgs(t *testing.T) {
 	}{
 		{
 			name:        "approved account carries its stamp",
-			user:        User{UID: "us_1", ApprovedAt: &approved},
+			user:        User{UID: "us_1", ApprovedAt: &approved, ProjectRole: project.RoleEditor},
 			wantApprove: &approved,
 			wantSubject: nil,
 		},
@@ -83,7 +85,7 @@ func TestInsertUserArgs(t *testing.T) {
 			t.Parallel()
 
 			args := insertUserArgs(tt.user)
-			const wantLen = 10
+			const wantLen = 12
 			if len(args) != wantLen {
 				t.Fatalf("insertUserArgs returned %d args, want %d (insertUserQuery placeholders)",
 					len(args), wantLen)
@@ -99,6 +101,12 @@ func TestInsertUserArgs(t *testing.T) {
 				t.Errorf("subject arg = nil, want %q", *tt.wantSubject)
 			case tt.wantSubject != nil && *gotSubject != *tt.wantSubject:
 				t.Errorf("subject arg = %q, want %q", *gotSubject, *tt.wantSubject)
+			}
+			if got := args[10]; got != any(project.BootstrapUID) {
+				t.Errorf("membership project arg = %v, want the bootstrap project", got)
+			}
+			if got := args[11]; got != any(string(tt.user.ProjectRole)) {
+				t.Errorf("membership role arg = %v, want %q", got, tt.user.ProjectRole)
 			}
 			gotApprove, _ := args[9].(*time.Time)
 			switch {

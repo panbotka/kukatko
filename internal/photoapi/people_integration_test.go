@@ -46,7 +46,7 @@ func (e *env) seedSubject(t *testing.T, name string) string {
 // person on the detail, attach again (idempotent), then detach.
 func TestAttachPerson_roundTrip(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	// A video, deliberately: face detection does not run on footage at all, so
 	// this endpoint is the only way a clip names anybody.
 	photo := env.seedPhoto(t, photos.Photo{Title: "Clip", MediaType: photos.MediaVideo}, "clip.jpg", 10, 20, 30)
@@ -114,9 +114,9 @@ func getDetailPeople(t *testing.T, client *http.Client, base, uid string) []peop
 // metadata stays on RequireWrite and refuses the same curator.
 func TestAttachPerson_guards(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "Still"}, "still.jpg", 40, 50, 60)
 	subjectUID := env.seedSubject(t, "Bohumil")
 	body, _ := json.Marshal(map[string]string{"subject_uid": subjectUID})
@@ -195,7 +195,7 @@ func TestAttachPerson_guards(t *testing.T) {
 // sidecar rewrite, which is what makes the link survive losing the database.
 func TestAttachPerson_schedulesSidecar(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "Still"}, "still.jpg", 70, 80, 90)
 	subjectUID := env.seedSubject(t, "Anežka")
 

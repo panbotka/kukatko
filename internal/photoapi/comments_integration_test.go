@@ -117,9 +117,9 @@ func (e *env) countAuditAction(t *testing.T, action string) int {
 // alone and deleting is the author's or an admin's.
 func TestCommentsAPI_readAndWriteRBAC(t *testing.T) {
 	e := newEnv(t)
-	viewer, _ := e.login(t, "cm_viewer", auth.RoleViewer)
-	editor, _ := e.login(t, "cm_editor", auth.RoleEditor)
-	admin, _ := e.login(t, "cm_admin", auth.RoleAdmin)
+	viewer, _ := e.login(t, "cm_viewer", auth.AccountViewer)
+	editor, _ := e.login(t, "cm_editor", auth.AccountEditor)
+	admin, _ := e.login(t, "cm_admin", auth.AccountAdmin)
 	photo := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 
 	t.Run("a viewer may write a comment", func(t *testing.T) {
@@ -213,8 +213,8 @@ func TestCommentsAPI_readAndWriteRBAC(t *testing.T) {
 // conversation reads forwards.
 func TestCommentsAPI_ordering(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "cm_order_a", auth.RoleViewer)
-	bob, _ := e.login(t, "cm_order_b", auth.RoleEditor)
+	alice, _ := e.login(t, "cm_order_a", auth.AccountViewer)
+	bob, _ := e.login(t, "cm_order_b", auth.AccountEditor)
 	photo := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 
 	first := postComment(t, alice, e.server.URL, photo.UID, "první", http.StatusCreated)
@@ -238,7 +238,7 @@ func TestCommentsAPI_ordering(t *testing.T) {
 // one that does not exist) is a 404, and a comment on a missing photo is a 404.
 func TestCommentsAPI_validation(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "cm_val", auth.RoleViewer)
+	alice, _ := e.login(t, "cm_val", auth.AccountViewer)
 	photo := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 	other := e.seedPhoto(t, photos.Photo{Title: "two"}, "2.jpg", 40, 50, 60)
 
@@ -306,7 +306,7 @@ func TestCommentsAPI_validation(t *testing.T) {
 // disappearing from every read and from the count.
 func TestCommentsAPI_countAndSoftDelete(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "cm_count", auth.RoleViewer)
+	alice, _ := e.login(t, "cm_count", auth.AccountViewer)
 	photo := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 	quiet := e.seedPhoto(t, photos.Photo{Title: "two"}, "2.jpg", 40, 50, 60)
 
@@ -356,7 +356,7 @@ func TestCommentsAPI_countAndSoftDelete(t *testing.T) {
 // log against the photo, with the comment's UID in the details.
 func TestCommentsAPI_auditTrail(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "cm_audit", auth.RoleViewer)
+	alice, _ := e.login(t, "cm_audit", auth.AccountViewer)
 	photo := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 
 	created := postComment(t, alice, e.server.URL, photo.UID, "text", http.StatusCreated)
@@ -397,8 +397,8 @@ func TestCommentsAPI_auditTrail(t *testing.T) {
 // it: the deletion is permanent, so nothing is left to comment on.
 func TestCommentsAPI_cascadeOnPurge(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "cm_purge_a", auth.RoleViewer)
-	admin, _ := e.login(t, "cm_purge_admin", auth.RoleAdmin)
+	alice, _ := e.login(t, "cm_purge_a", auth.AccountViewer)
+	admin, _ := e.login(t, "cm_purge_admin", auth.AccountAdmin)
 	doomed := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 	kept := e.seedPhoto(t, photos.Photo{Title: "two"}, "2.jpg", 40, 50, 60)
 

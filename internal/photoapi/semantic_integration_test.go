@@ -16,7 +16,7 @@ import (
 // not been embedded yet.
 func TestSearch_semanticOrdersByVector(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "sem-viewer", auth.RoleViewer)
+	client, _ := env.login(t, "sem-viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	near := env.seedPhoto(t, photos.Photo{Title: "alpha"}, "near.jpg", 10, 0, 0)
@@ -53,7 +53,7 @@ func TestSearch_semanticOrdersByVector(t *testing.T) {
 // list filters (here the capture-date range) alongside vector ranking.
 func TestSearch_semanticAppliesFilters(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "sem-filter", auth.RoleViewer)
+	client, _ := env.login(t, "sem-filter", auth.AccountViewer)
 	base := env.server.URL
 
 	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
@@ -84,7 +84,7 @@ func TestSearch_semanticAppliesFilters(t *testing.T) {
 // is still included, and the union is de-duplicated.
 func TestSearch_hybridFusesAndDedups(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "hyb-viewer", auth.RoleViewer)
+	client, _ := env.login(t, "hyb-viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	// both: matches the full-text query and is the nearest vector → ranks high in
@@ -131,7 +131,7 @@ func TestSearch_hybridFusesAndDedups(t *testing.T) {
 // TestSearch_defaultsToHybrid verifies omitting the mode parameter selects hybrid.
 func TestSearch_defaultsToHybrid(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "default-mode", auth.RoleViewer)
+	client, _ := env.login(t, "default-mode", auth.AccountViewer)
 	base := env.server.URL
 
 	p := env.seedPhoto(t, photos.Photo{Title: "harbour"}, "harbour.jpg", 15, 0, 0)
@@ -148,7 +148,7 @@ func TestSearch_defaultsToHybrid(t *testing.T) {
 // and hybrid modes fall back to full-text search and flag the response degraded.
 func TestSearch_degradedFallback(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "degraded", auth.RoleViewer)
+	client, _ := env.login(t, "degraded", auth.AccountViewer)
 	base := env.server.URL
 
 	match := env.seedPhoto(t, photos.Photo{Title: "ocean wave"}, "ocean.jpg", 11, 0, 0)
@@ -181,7 +181,7 @@ func TestSearch_degradedFallback(t *testing.T) {
 // which run a real SQL COUNT — leave it unset.
 func TestSearch_rankedTotalMarksPooledCounts(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "ranked-total", auth.RoleViewer)
+	client, _ := env.login(t, "ranked-total", auth.AccountViewer)
 	base := env.server.URL
 
 	p := env.seedPhoto(t, photos.Photo{Title: "castle tower"}, "castle.jpg", 13, 0, 0)
@@ -220,7 +220,7 @@ func TestSearch_rankedTotalMarksPooledCounts(t *testing.T) {
 // honest zero and semantic keeps its neighbours.
 func TestSearch_noTextMatchFlagsNeighbours(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "no-text-match", auth.RoleViewer)
+	client, _ := env.login(t, "no-text-match", auth.AccountViewer)
 	base := env.server.URL
 
 	a := env.seedPhoto(t, photos.Photo{Title: "village square"}, "square.jpg", 14, 0, 0)

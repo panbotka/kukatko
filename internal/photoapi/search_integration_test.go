@@ -33,7 +33,7 @@ func getSearch(t *testing.T, client *http.Client, base, query string) listResp {
 // required-query and pagination behaviour.
 func TestSearch_endpoint(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	// The `simple` dictionary does no stemming, so the matching token must appear
@@ -96,7 +96,7 @@ func TestSearch_endpoint(t *testing.T) {
 // alongside the full-text query.
 func TestSearch_combinedFilter(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer2", auth.RoleViewer)
+	client, _ := env.login(t, "viewer2", auth.AccountViewer)
 	base := env.server.URL
 
 	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)

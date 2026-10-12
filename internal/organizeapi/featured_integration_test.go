@@ -63,8 +63,8 @@ func (e *env) status(t *testing.T, c *http.Client, method, path, body string) in
 // who curate; a machine-made album and a date beyond the year are refused.
 func TestFeatured_overHTTP(t *testing.T) {
 	env := newEnv(t)
-	curator := env.login(t, "curator", auth.RoleCurator)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	curator := env.login(t, "curator", auth.AccountCurator)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, "feat1")
 
 	album := env.createAlbum(t, curator, `{"title":"Pouť 2026"}`)

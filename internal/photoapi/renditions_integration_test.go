@@ -54,7 +54,7 @@ func getRenditions(t *testing.T, client *http.Client, url string) renditionsBody
 // allowed to play.
 func TestRenditions_reportsWhatWasEncoded(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	before := time.Now().Add(-time.Minute)
 	video := seedRendition(t, env, nil, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
@@ -83,7 +83,7 @@ func TestRenditions_reportsWhatWasEncoded(t *testing.T) {
 // 404, so "not encoded" is never confused with "not there".
 func TestRenditions_emptyAndMissing(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
 	unencoded := env.seedVideo(t, "pending.mp4", []byte("not-encoded-yet"))
 
@@ -106,8 +106,8 @@ func TestRenditions_emptyAndMissing(t *testing.T) {
 // queued, and the status endpoint immediately reports the clip as pending again.
 func TestRegenerateStoryboard_discardsAndSchedules(t *testing.T) {
 	env := newEnv(t)
-	maintainer, _ := env.login(t, "boss", auth.RoleMaintainer)
-	viewer, _ := env.login(t, "guest", auth.RoleViewer)
+	maintainer, _ := env.login(t, "boss", auth.AccountMaintainer)
+	viewer, _ := env.login(t, "guest", auth.AccountViewer)
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
 	env.plantSprite(t, video, []byte("stale-sprite-bytes"))
 
@@ -151,8 +151,8 @@ func TestRegenerateStoryboard_discardsAndSchedules(t *testing.T) {
 // queued.
 func TestRegenerateStoryboard_guardAndRefusals(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	maintainer, _ := env.login(t, "boss", auth.RoleMaintainer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	maintainer, _ := env.login(t, "boss", auth.AccountMaintainer)
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
 

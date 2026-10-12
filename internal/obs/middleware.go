@@ -51,6 +51,10 @@ func logPath(path string) string {
 type fields struct {
 	mu      sync.Mutex
 	userUID string
+	// actorRole is the role the caller acted with when it is worth calling out
+	// — "maintainer" for a system administrator entering a project it is not a
+	// member of — or "".
+	actorRole string
 }
 
 // fieldsContextKey is the unexported context key under which the request fields
@@ -95,6 +99,35 @@ func userOf(ctx context.Context) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.userUID
+}
+
+// SetActorRole records role as the role the request's caller acted with, so the
+// access-log line carries it as actor_role and an audit entry built from the
+// request (audit.FromRequest) records it too. auth stamps "maintainer" when a
+// system administrator enters a project on the strength of that role alone. It
+// is a no-op when role is empty or no fields bag is present.
+func SetActorRole(ctx context.Context, role string) {
+	if role == "" {
+		return
+	}
+	f := fieldsFrom(ctx)
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	f.actorRole = role
+	f.mu.Unlock()
+}
+
+// ActorRole returns the role SetActorRole stamped on ctx, or "" when none.
+func ActorRole(ctx context.Context) string {
+	f := fieldsFrom(ctx)
+	if f == nil {
+		return ""
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.actorRole
 }
 
 // AccessLog returns a middleware that installs the request fields bag and logs
@@ -143,6 +176,9 @@ func logRequest(
 	}
 	if uid := userOf(ctx); uid != "" {
 		attrs = append(attrs, slog.String("user", uid))
+	}
+	if role := ActorRole(ctx); role != "" {
+		attrs = append(attrs, slog.String("actor_role", role))
 	}
 	logger.LogAttrs(ctx, levelForStatus(ww.Status()), "http request", attrs...)
 }

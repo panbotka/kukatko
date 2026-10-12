@@ -109,7 +109,7 @@ func (h *reviewHarness) user(t *testing.T, uid string) string {
 	t.Helper()
 	_, err := h.db.Pool().Exec(context.Background(),
 		`INSERT INTO users (uid, username, email, password_hash, role)
-		 VALUES ($1, $2, $2||'@example.test', 'x', 'editor')`,
+		 VALUES ($1, $2, $2||'@example.test', 'x', 'user')`,
 		uid, uid)
 	if err != nil {
 		t.Fatalf("creating user %s: %v", uid, err)

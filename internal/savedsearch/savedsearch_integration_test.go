@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 	"github.com/panbotka/kukatko/internal/savedsearch"
 )
@@ -52,7 +53,7 @@ func makeUser(t *testing.T, store *auth.Store, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleViewer,
+		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}

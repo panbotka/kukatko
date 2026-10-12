@@ -24,8 +24,8 @@ type curatorStep struct {
 // is refused every one of the same writes.
 func TestRoleEnforcement_curatorOwnsAlbumsAndLabels(t *testing.T) {
 	env := newEnv(t)
-	curator := env.login(t, "curator", auth.RoleCurator)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	curator := env.login(t, "curator", auth.AccountCurator)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, "cur1")
 
 	resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Pouť"}`))

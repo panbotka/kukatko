@@ -240,7 +240,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 
 // login creates a user with the given role and returns a cookie-bearing client
 // plus the session's download token.
-func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -409,7 +409,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // TestList_filters exercises every list filter against a seeded library.
 func TestList_filters(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	jan := time.Date(2022, 1, 15, 12, 0, 0, 0, time.UTC)
@@ -488,7 +488,7 @@ func TestList_filters(t *testing.T) {
 // TestList_sortAndPagination verifies ordering and cursor/total pagination.
 func TestList_sortAndPagination(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	// Seed three photos with strictly increasing capture times and titles.
@@ -549,7 +549,7 @@ func TestList_sortAndPagination(t *testing.T) {
 // newest end, everything else from its oldest.
 func TestList_albumScopeChronological(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	tOld := time.Date(2019, 5, 1, 9, 0, 0, 0, time.UTC)
@@ -615,7 +615,7 @@ func equalStrings(a, b []string) bool {
 // TestDetail verifies full detail retrieval including files, and the 404 path.
 func TestDetail(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	seeded := env.seedPhoto(t, photos.Photo{
@@ -659,11 +659,11 @@ func TestDetail(t *testing.T) {
 // a human-readable name, and omits the uploader for a photo with no uploader.
 func TestDetailUploader(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	uploader, err := env.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "cameraman", Email: "cameraman@example.test", Password: testPassword, DisplayName: "Camera Man", Role: auth.RoleEditor,
+		Username: "cameraman", Email: "cameraman@example.test", Password: testPassword, DisplayName: "Camera Man", Role: auth.AccountEditor,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(uploader): %v", err)
@@ -710,8 +710,8 @@ func TestDetailUploader(t *testing.T) {
 // via null, validates input, and enforces write access.
 func TestUpdateMetadata(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	seeded := env.seedPhoto(t, photos.Photo{
@@ -800,7 +800,7 @@ func TestUpdateMetadata(t *testing.T) {
 // blanks the organization panel and crashes the detail page.
 func TestUpdateMetadata_returnsFullDetail(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	seeded := env.seedPhoto(t, photos.Photo{
@@ -905,8 +905,8 @@ func decodeDetail(
 // can be filtered for and restored, and that viewers cannot archive.
 func TestArchive(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	keep := env.seedPhoto(t, photos.Photo{Title: "Keep", TakenAtSource: "unknown"}, "keep.jpg", 5, 5, 200)
@@ -961,8 +961,8 @@ func TestArchive(t *testing.T) {
 // user. An admin is authorized to purge; the ladder gives a maintainer the same.
 func TestTrashPurgeRBAC(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	admin, _ := env.login(t, "admin", auth.RoleAdmin)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	admin, _ := env.login(t, "admin", auth.AccountAdmin)
 	base := env.server.URL
 	ctx := t.Context()
 
@@ -1027,9 +1027,9 @@ func TestTrashPurgeRBAC(t *testing.T) {
 // every archived photo older than the cutoff while a live photo is left alone.
 func TestTrashPurgeOlderRBAC(t *testing.T) {
 	env := newEnv(t)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	admin, _ := env.login(t, "admin", auth.RoleAdmin)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	admin, _ := env.login(t, "admin", auth.AccountAdmin)
 	base := env.server.URL
 	ctx := t.Context()
 
@@ -1102,7 +1102,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 // size validation.
 func TestThumbnail(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Thumb", TakenAtSource: "unknown"}, "thumb.jpg", 120, 60, 30)
@@ -1152,7 +1152,7 @@ func TestThumbnail(t *testing.T) {
 // unauthenticated request is rejected.
 func TestDownload(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "editor", auth.RoleEditor)
+	client, token := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	original := jpegBytes(t, 33, 66, 99)
@@ -1249,7 +1249,7 @@ type timelineResp struct {
 // so the buckets match the same-filtered list.
 func TestTimeline(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	dec := time.Date(2023, 12, 20, 9, 0, 0, 0, time.UTC)

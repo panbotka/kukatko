@@ -129,8 +129,8 @@ const theNewPassword = "a-brand-new-password"
 // hash rather than the link itself.
 func TestPasswordReset_issuesALinkAndMailsIt(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 	before := time.Now()
 
@@ -181,8 +181,8 @@ func TestPasswordReset_issuesALinkAndMailsIt(t *testing.T) {
 // the same request a second time fails and the old password is gone.
 func TestPasswordReset_setsThePasswordAndBurnsTheLink(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	issued := mustIssueReset(t, env, admin, forgetful.UID)
@@ -228,8 +228,8 @@ func TestPasswordReset_setsThePasswordAndBurnsTheLink(t *testing.T) {
 // signed out by it.
 func TestPasswordReset_invalidatesEverySession(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 	first := signInAs(t, env, "forgetful")
 	second := signInAs(t, env, "forgetful")
@@ -254,8 +254,8 @@ func TestPasswordReset_invalidatesEverySession(t *testing.T) {
 // reports itself unusable and sets nothing.
 func TestPasswordReset_expiredLinkIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	issued := mustIssueReset(t, env, admin, forgetful.UID)
@@ -285,8 +285,8 @@ func TestPasswordReset_expiredLinkIsRefused(t *testing.T) {
 // works: issuing a second one kills the first, and exactly one row is left.
 func TestPasswordReset_supersededLinkIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	first := resetToken(t, mustIssueReset(t, env, admin, forgetful.UID).ResetURL)
@@ -317,8 +317,8 @@ func TestPasswordReset_supersededLinkIsRefused(t *testing.T) {
 // stops working.
 func TestPasswordReset_blockedAccountIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	issued := mustIssueReset(t, env, admin, forgetful.UID)
@@ -343,8 +343,8 @@ func TestPasswordReset_blockedAccountIsRefused(t *testing.T) {
 // endpoints answer to a caller who has no link, or a password the rules refuse.
 func TestPasswordReset_refusesTheUnknownAndTheWeak(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	if got := resetStatus(t, env, "not-a-token-anybody-issued"); got.Valid {
@@ -372,8 +372,8 @@ func TestPasswordReset_refusesTheUnknownAndTheWeak(t *testing.T) {
 // not start one for a maintainer.
 func TestPasswordReset_maintainerBoundary(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	root := env.mustCreate(t, "root", auth.RoleMaintainer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	root := env.mustCreate(t, "root", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 
 	if code, body := issueReset(t, env, admin, root.UID); code != http.StatusForbidden {
@@ -410,8 +410,8 @@ func TestPasswordReset_publicEndpointsAreRateLimited(t *testing.T) {
 // in as an editor is not enough, and neither is signing in not at all.
 func TestPasswordReset_needsAnAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	forgetful := env.mustCreate(t, "forgetful", auth.RoleViewer)
-	env.mustCreate(t, "editor", auth.RoleEditor)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
+	env.mustCreate(t, "editor", auth.AccountEditor)
 
 	if code, _ := issueReset(t, env, signInAs(t, env, "editor"), forgetful.UID); code != http.StatusForbidden {
 		t.Errorf("an editor issuing a reset = %d, want 403", code)

@@ -37,8 +37,8 @@ func (e *env) taskOf(t *testing.T, c *http.Client, taskUID string) phototask.Tas
 // the task.
 func TestAnswer_handsTheTaskOn(t *testing.T) {
 	e := newEnv(t)
-	agent := e.login(t, "agent", auth.RoleEditor)
-	person := e.login(t, "person", auth.RoleEditor)
+	agent := e.login(t, "agent", auth.AccountEditor)
+	person := e.login(t, "person", auth.AccountEditor)
 	task := e.openTask(t, agent, "Kdo je na fotce?", e.makePhoto(t, "a").UID)
 
 	body, _ := json.Marshal(map[string]any{"body": "Strýc Karel, oprav jméno.", "state": "working"})
@@ -80,8 +80,8 @@ func TestAnswer_handsTheTaskOn(t *testing.T) {
 // comment row was inserted, which is what proves the two are one commit.
 func TestAnswer_refusesAndWritesNothing(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "viewer", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "viewer", auth.AccountViewer)
 	task := e.openTask(t, editor, "Který rok?", e.makePhoto(t, "a").UID)
 
 	cases := []struct {

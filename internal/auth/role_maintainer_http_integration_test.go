@@ -15,9 +15,9 @@ import (
 // test database or Role.Valid still rejects the role.
 func TestHTTP_maintainerRoleAssignable(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	user := env.user(t, "ops", auth.RoleMaintainer)
-	if user.Role != auth.RoleMaintainer {
-		t.Fatalf("created role = %q, want %q", user.Role, auth.RoleMaintainer)
+	user := env.user(t, "ops", auth.AccountMaintainer)
+	if user.AccountRole != auth.AccountMaintainer {
+		t.Fatalf("created role = %q, want %q", user.Role, auth.AccountMaintainer)
 	}
 }
 
@@ -28,8 +28,8 @@ func TestHTTP_maintainerRoleAssignable(t *testing.T) {
 // admin and import — admits it.
 func TestHTTP_maintainerBoundary(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	env.user(t, "ops-agent", auth.RoleMaintainer)
-	opsUser := env.user(t, "ops-token-holder", auth.RoleMaintainer)
+	env.user(t, "ops-agent", auth.AccountMaintainer)
+	opsUser := env.user(t, "ops-token-holder", auth.AccountMaintainer)
 	_, opsToken := env.mintToken(t, opsUser, "agent cli", nil)
 
 	// Bearer token: an automation account's intended credential.
@@ -76,14 +76,14 @@ func TestHTTP_maintainerBoundary(t *testing.T) {
 func TestHTTP_importGuardRoleMatrix(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	tests := []struct {
-		role auth.Role
+		role auth.AccountRole
 		user string
 		want int
 	}{
-		{auth.RoleMaintainer, "imp-maint", http.StatusOK},
-		{auth.RoleAdmin, "imp-admin", http.StatusForbidden},
-		{auth.RoleEditor, "imp-editor", http.StatusForbidden},
-		{auth.RoleViewer, "imp-viewer", http.StatusForbidden},
+		{auth.AccountMaintainer, "imp-maint", http.StatusOK},
+		{auth.AccountAdmin, "imp-admin", http.StatusForbidden},
+		{auth.AccountEditor, "imp-editor", http.StatusForbidden},
+		{auth.AccountViewer, "imp-viewer", http.StatusForbidden},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {
@@ -102,14 +102,14 @@ func TestHTTP_importGuardRoleMatrix(t *testing.T) {
 func TestHTTP_adminGuardRoleMatrix(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	tests := []struct {
-		role auth.Role
+		role auth.AccountRole
 		user string
 		want int
 	}{
-		{auth.RoleMaintainer, "adm-maint", http.StatusOK},
-		{auth.RoleAdmin, "adm-admin", http.StatusOK},
-		{auth.RoleEditor, "adm-editor", http.StatusForbidden},
-		{auth.RoleViewer, "adm-viewer", http.StatusForbidden},
+		{auth.AccountMaintainer, "adm-maint", http.StatusOK},
+		{auth.AccountAdmin, "adm-admin", http.StatusOK},
+		{auth.AccountEditor, "adm-editor", http.StatusForbidden},
+		{auth.AccountViewer, "adm-viewer", http.StatusForbidden},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {

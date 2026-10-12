@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -42,7 +43,7 @@ func newFixture(t *testing.T) fixture {
 	dbtest.TruncateAll(t, db)
 	const uid = "pushjob_owner"
 	if err := auth.NewStore(db.Pool()).CreateUser(context.Background(), auth.User{
-		UID: uid, Username: "owner", Email: "owner@example.test", PasswordHash: "x", Role: auth.RoleViewer,
+		UID: uid, Username: "owner", Email: "owner@example.test", PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating the account: %v", err)
 	}

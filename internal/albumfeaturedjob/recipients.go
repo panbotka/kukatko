@@ -1,13 +1,15 @@
 package albumfeaturedjob
 
-import "github.com/panbotka/kukatko/internal/auth"
+import "github.com/panbotka/kukatko/internal/project"
 
 // account is what the recipient rules know about one user.
 type account struct {
 	// UID is the account.
 	UID string
-	// Role decides whether a private album may be announced to it.
-	Role auth.Role
+	// Role is the account's role in the album's project (admin for a
+	// maintainer, "" for no membership); it decides whether a private album may
+	// be announced to it.
+	Role project.Role
 	// Disabled is whether the account was switched off; a disabled account
 	// hears nothing.
 	Disabled bool

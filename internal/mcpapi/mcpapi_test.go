@@ -13,6 +13,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -22,9 +23,9 @@ func passthrough(next http.Handler) http.Handler { return next }
 
 // callerCtx returns a context carrying a caller with the given role, as
 // withCaller would have built it.
-func callerCtx(role auth.Role) context.Context {
+func callerCtx(role project.Role) context.Context {
 	return context.WithValue(context.Background(), callerKey{},
-		caller{user: auth.User{UID: "user-1", Role: role}})
+		caller{user: auth.User{UID: "user-1"}, role: role})
 }
 
 // TestRegisterRoutesDisabledAnswers404 pins the config switch's contract: off
@@ -81,13 +82,13 @@ func TestNewAPIDisabledBuildsNoServer(t *testing.T) {
 // if a write tool were reachable, a read-only role must not get through it.
 func TestWriterFromContextEnforcesRole(t *testing.T) {
 	for _, tc := range []struct {
-		role    auth.Role
+		role    project.Role
 		wantErr bool
 	}{
-		{role: auth.RoleViewer, wantErr: true},
-		{role: auth.RoleEditor, wantErr: false},
-		{role: auth.RoleAdmin, wantErr: false},
-		{role: auth.RoleMaintainer, wantErr: false},
+		{role: project.RoleViewer, wantErr: true},
+		{role: project.RoleCurator, wantErr: true},
+		{role: project.RoleEditor, wantErr: false},
+		{role: project.RoleAdmin, wantErr: false},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {
 			_, err := writerFromContext(callerCtx(tc.role))
@@ -220,7 +221,7 @@ func TestPositiveOr(t *testing.T) {
 // ranked path when the caller has not asked for an order of their own.
 func TestSearchParamsUsesQueryLanguage(t *testing.T) {
 	api := &API{pageSize: 25, maxPageSize: 100}
-	c := caller{user: auth.User{UID: "user-1", Role: auth.RoleViewer}}
+	c := caller{user: auth.User{UID: "user-1"}, role: project.RoleViewer}
 
 	params, ranked, err := api.searchParams(c, searchPhotosIn{Query: "babicka year:1965"})
 	if err != nil {
@@ -256,7 +257,7 @@ func TestSearchParamsUsesQueryLanguage(t *testing.T) {
 // is what makes "an album's photos" a search rather than a separate tool.
 func TestSearchParamsScopes(t *testing.T) {
 	api := &API{pageSize: 25, maxPageSize: 100}
-	c := caller{user: auth.User{UID: "user-1", Role: auth.RoleViewer}}
+	c := caller{user: auth.User{UID: "user-1"}, role: project.RoleViewer}
 	params, _, err := api.searchParams(c, searchPhotosIn{
 		AlbumUID: "a1", LabelUID: " l1 ", PersonUID: "s1", Offset: -3,
 	})
@@ -283,7 +284,7 @@ func TestSearchParamsScopes(t *testing.T) {
 // '|'-alternatives than query.MaxComplexity is rejected; a normal query is not.
 func TestSearchParamsCapsComplexity(t *testing.T) {
 	api := &API{pageSize: 25, maxPageSize: 100}
-	c := caller{user: auth.User{UID: "user-1", Role: auth.RoleViewer}}
+	c := caller{user: auth.User{UID: "user-1"}, role: project.RoleViewer}
 
 	overComplex := "title:" + strings.Repeat("a|", query.MaxComplexity) + "a"
 	if _, _, err := api.searchParams(c, searchPhotosIn{Query: overComplex}); err == nil {

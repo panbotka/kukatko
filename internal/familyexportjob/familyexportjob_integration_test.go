@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/familyexportjob"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -74,7 +75,7 @@ func (f *treeFixture) makeUser(t *testing.T, db *database.DB) string {
 		Username:     "genealogist",
 		Email:        "genealogist@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleViewer,
+		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating the acting user: %v", err)
 	}

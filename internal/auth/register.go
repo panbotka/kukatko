@@ -223,10 +223,11 @@ func (rg *Registration) register(
 		Password:    in.Password,
 		DisplayName: in.DisplayName,
 		Email:       in.Email,
-		// The lowest role there is. An administrator who wants this person to
+		// A plain user and the lowest project role there is, in a membership
+		// nobody has approved yet. An administrator who wants this person to
 		// edit or govern anything raises it when they approve the account;
 		// registration itself hands out nothing.
-		Role: RoleViewer,
+		Role: AccountViewer,
 	})
 	if err != nil {
 		return User{}, err
@@ -243,7 +244,7 @@ func (rg *Registration) register(
 		entry.Details = map[string]any{}
 	}
 	entry.Details["username"] = user.Username
-	entry.Details["role"] = string(user.Role)
+	entry.Details["role"] = string(user.AccountRole)
 
 	if err := rg.svc.store.CreateUserAuditedWith(ctx, user, entry,
 		func(ctx context.Context, tx pgx.Tx) error {

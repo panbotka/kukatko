@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // maxBodyBytes bounds the size of decoded JSON request bodies to guard against
@@ -161,7 +164,64 @@ func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, "authentication required")
 		return
 	}
-	writeJSON(w, http.StatusOK, loginResponse{User: p.user, DownloadToken: p.session.DownloadToken})
+	resp, err := a.meResponseFor(r.Context(), p)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "auth: building /auth/me", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// meProject is one project the caller belongs to, as GET /auth/me lists it.
+type meProject struct {
+	UID      string       `json:"uid"`
+	Slug     string       `json:"slug"`
+	Name     string       `json:"name"`
+	Active   bool         `json:"active"`
+	Role     project.Role `json:"role"`
+	Approved bool         `json:"approved"`
+}
+
+// meResponse is the body of GET /auth/me: the login response plus the caller's
+// instance role, its memberships and the slug of the project it last worked in
+// ("" when none is remembered). The user's "role" is its role in the request's
+// project (see AccountRole) — "maintainer" for a maintainer.
+type meResponse struct {
+	loginResponse
+
+	InstanceRole    Role        `json:"instance_role"`
+	Projects        []meProject `json:"projects"`
+	LastProjectSlug string      `json:"last_project_slug"`
+}
+
+// meResponseFor assembles GET /auth/me for the principal p from its memberships
+// and its remembered last project. It returns a wrapped store error.
+func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error) {
+	memberships, err := a.projects.MembershipsOf(ctx, p.user.UID)
+	if err != nil {
+		return meResponse{}, fmt.Errorf("auth: listing the memberships of %s: %w", p.user.UID, err)
+	}
+	projects := make([]meProject, 0, len(memberships))
+	for _, ms := range memberships {
+		projects = append(projects, meProject{
+			UID: ms.ProjectUID, Slug: ms.Slug, Name: ms.Name, Active: ms.Active, Role: ms.Role, Approved: ms.Approved,
+		})
+	}
+	last, err := a.svc.store.LastProjectSlug(ctx, p.user.UID)
+	if err != nil {
+		return meResponse{}, err
+	}
+	user := p.user
+	if p.project != nil {
+		user = withProjectRole(user, p.projectRole)
+	}
+	return meResponse{
+		loginResponse:   loginResponse{User: user, DownloadToken: p.session.DownloadToken},
+		InstanceRole:    p.user.Role,
+		Projects:        projects,
+		LastProjectSlug: last,
+	}, nil
 }
 
 // handleSubject records which person of the library the caller is, or clears

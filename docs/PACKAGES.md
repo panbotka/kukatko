@@ -39,7 +39,21 @@ to `## Package map` in `CLAUDE.md`.
   what surfaces it, since net/http silently replays only an idempotent request. Which test loses
   the race is arbitrary, which is why it moves between runs and reads as someone else's
   regression), `internal/auth/`
-  (authentication/authorization: `Role` viewer/curator/editor/admin/maintainer + `authorize`, bcrypt cost 12
+  (authentication/authorization on **two ladders**: the instance `Role` (`user`/`maintainer`, `users.role`;
+  `CanMaintain`/`CanImport`) and the per-project `project.Role` of the caller's membership, which every
+  project-level guard reads. `role.go` also holds the transitional `AccountRole` (the five-rung
+  viewer…maintainer vocabulary the admin user endpoints and a user payload's `role` still speak;
+  `Split` → instance role + bootstrap-project role, never an authorization decision) and the pure
+  `authorize(instance, projectRole, req)`. **`project.go`**: `WithProject(store)` names the request's
+  project (chi param `{project}`, else the bootstrap slug — transition), the guards' `enterProject`
+  decides access after authentication (unknown/foreign/deactivated → identical 404, unapproved → 403
+  `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), throttles
+  `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole`.
+  `ProjectFromContext`/`ProjectUIDFromContext`/`ProjectRoleFromContext` are the **only** way a handler
+  or store learns the current project. A `User` carries `Role` (instance), `ProjectRole` (bootstrap
+  membership, read by a correlated subquery in `userColumns` — transition) and the derived `AccountRole`
+  (JSON `role`); creating or updating an account writes its bootstrap membership in the same statement
+  (CTE), and an approval stamps the membership too. `sessions.role` is gone (0103). Bcrypt cost 12
   `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
   (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
   `KUKATKO_TEST_BCRYPT_COST` override, compiled only under the `integration` tag), so no running

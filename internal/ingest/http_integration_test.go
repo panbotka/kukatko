@@ -74,7 +74,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 
 // loginClient creates a user with the given role and returns an HTTP client
 // carrying its authenticated session cookie.
-func (e *httpEnv) loginClient(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *httpEnv) loginClient(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	client, _ := e.loginUser(t, username, role)
 	return client
@@ -82,7 +82,7 @@ func (e *httpEnv) loginClient(t *testing.T, username string, role auth.Role) *ht
 
 // loginUser is loginClient that also returns the created user's UID, for a test
 // that checks what the upload was attributed to.
-func (e *httpEnv) loginUser(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *httpEnv) loginUser(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	const password = "correct horse battery staple"
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
@@ -159,7 +159,7 @@ func (e *httpEnv) uploadFiles(
 // batch and receives a per-file result list with mixed outcomes.
 func TestHTTPUpload_editorCreatesPhotos(t *testing.T) {
 	env := newHTTPEnv(t)
-	client := env.loginClient(t, "editor", auth.RoleEditor)
+	client := env.loginClient(t, "editor", auth.AccountEditor)
 
 	red := jpegBytes(t, 210, 30, 30, 90)
 	blue := jpegBytes(t, 30, 30, 210, 90)
@@ -183,7 +183,7 @@ func TestHTTPUpload_editorCreatesPhotos(t *testing.T) {
 // library, not only file them.
 func TestHTTPUpload_curatorCreatesPhotos(t *testing.T) {
 	env := newHTTPEnv(t)
-	client := env.loginClient(t, "curator", auth.RoleCurator)
+	client := env.loginClient(t, "curator", auth.AccountCurator)
 
 	status, results := env.uploadFiles(t, client, map[string][]byte{
 		"green.jpg": jpegBytes(t, 30, 210, 30, 90),
@@ -202,7 +202,7 @@ func TestHTTPUpload_curatorCreatesPhotos(t *testing.T) {
 // photo in the same batch, which is still created.
 func TestHTTPUpload_refusesFilesThatAreNotMedia(t *testing.T) {
 	env := newHTTPEnv(t)
-	client := env.loginClient(t, "editor", auth.RoleEditor)
+	client := env.loginClient(t, "editor", auth.AccountEditor)
 
 	status, results := env.uploadFiles(t, client, map[string][]byte{
 		"broken.jpg": []byte(strings.Repeat("definitely not a jpeg ", 200)),
@@ -231,7 +231,7 @@ func TestHTTPUpload_refusesFilesThatAreNotMedia(t *testing.T) {
 // in the same batch that is still created.
 func TestHTTPUpload_refusesAVIFAndTruncatedImages(t *testing.T) {
 	env := newHTTPEnv(t)
-	client := env.loginClient(t, "editor", auth.RoleEditor)
+	client := env.loginClient(t, "editor", auth.AccountEditor)
 
 	whole := jpegBytes(t, 60, 160, 30, 90)
 	status, results := env.uploadFiles(t, client, map[string][]byte{
@@ -259,7 +259,7 @@ func TestHTTPUpload_refusesAVIFAndTruncatedImages(t *testing.T) {
 // photo is attributed to that viewer.
 func TestHTTPUpload_viewerCreatesPhotos(t *testing.T) {
 	env := newHTTPEnv(t)
-	client, viewerUID := env.loginUser(t, "viewer", auth.RoleViewer)
+	client, viewerUID := env.loginUser(t, "viewer", auth.AccountViewer)
 
 	status, results := env.uploadFiles(t, client, map[string][]byte{
 		"x.jpg": jpegBytes(t, 1, 2, 3, 80),

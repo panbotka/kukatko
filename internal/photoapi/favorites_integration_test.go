@@ -85,8 +85,8 @@ func favUIDs(list favListResp) map[string]bool {
 // favorite=true filter, the /favorites listing, and per-user isolation.
 func TestFavoritesAPI(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "fav_alice", auth.RoleViewer)
-	bob, _ := e.login(t, "fav_bob", auth.RoleEditor)
+	alice, _ := e.login(t, "fav_alice", auth.AccountViewer)
+	bob, _ := e.login(t, "fav_bob", auth.AccountEditor)
 
 	p1 := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 10, 20, 30)
 	p2 := e.seedPhoto(t, photos.Photo{Title: "two"}, "2.jpg", 40, 50, 60)

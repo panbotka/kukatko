@@ -81,7 +81,7 @@ func newEnv(t *testing.T, opts envOptions) *env {
 }
 
 // login creates an account with the given role and signs it in.
-func (e *env) login(t *testing.T, username string, role auth.Role) session {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) session {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -202,8 +202,8 @@ func (e *env) listSubscriptions(t *testing.T, s session) ([]subscriptionView, st
 // remove it and the client keys never come back.
 func TestSubscriptions_lifecycle(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	viewer := e.login(t, "vera", auth.RoleViewer)
-	other := e.login(t, "otto", auth.RoleEditor)
+	viewer := e.login(t, "vera", auth.AccountViewer)
+	other := e.login(t, "otto", auth.AccountEditor)
 	p256dh, authKey := browserKeys(t)
 	const endpoint = "https://push.example/v1/abc"
 
@@ -256,7 +256,7 @@ func TestSubscriptions_lifecycle(t *testing.T) {
 // to is a 400 and stores nothing.
 func TestSubscribe_refusesUnusable(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	user := e.login(t, "vera", auth.RoleViewer)
+	user := e.login(t, "vera", auth.AccountViewer)
 	p256dh, authKey := browserKeys(t)
 	bodies := []string{
 		subscribeBody("http://push.example/plain", p256dh, authKey),
@@ -278,7 +278,7 @@ func TestSubscribe_refusesUnusable(t *testing.T) {
 // and the subscription write answers 503 without storing a row.
 func TestPushDisabled_saysSoAndStoresNothing(t *testing.T) {
 	e := newEnv(t, envOptions{pushOff: true})
-	user := e.login(t, "vera", auth.RoleViewer)
+	user := e.login(t, "vera", auth.AccountViewer)
 
 	status, body := e.do(t, user, http.MethodGet, "/api/v1/push/config", "")
 	if status != http.StatusOK || !strings.Contains(body, `"enabled":false`) {
@@ -304,7 +304,7 @@ func TestSubscribe_isRateLimited(t *testing.T) {
 		return user.UID
 	}
 	e := newEnv(t, envOptions{throttle: limiter.KeyedMiddleware(keyFn)})
-	user := e.login(t, "vera", auth.RoleViewer)
+	user := e.login(t, "vera", auth.AccountViewer)
 	p256dh, authKey := browserKeys(t)
 	body := subscribeBody("https://push.example/a", p256dh, authKey)
 
@@ -340,7 +340,7 @@ func (p preferences) find(kind notification.Kind, channel notification.Channel) 
 // pair is a 400 that changes nothing.
 func TestPreferences_readAndReplace(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	user := e.login(t, "vera", auth.RoleViewer)
+	user := e.login(t, "vera", auth.AccountViewer)
 
 	status, body := e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
 	var got preferences
@@ -443,7 +443,7 @@ func (e *env) seedPhotos(t *testing.T, n int) []string {
 // private photographs drop out and are counted — with media URLs stamped on.
 func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	owner := e.login(t, "vera", auth.RoleViewer)
+	owner := e.login(t, "vera", auth.AccountViewer)
 	p := e.seedPhotos(t, 5)
 	set := []string{p[4], p[0], p[2], p[1], p[3]}
 	n, err := notification.NewStore(e.db.Pool()).Create(t.Context(), notification.New{
@@ -495,8 +495,8 @@ func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 // idempotent for the owner.
 func TestNotification_scopedToOwner(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	owner := e.login(t, "vera", auth.RoleViewer)
-	admin := e.login(t, "ada", auth.RoleAdmin)
+	owner := e.login(t, "vera", auth.AccountViewer)
+	admin := e.login(t, "ada", auth.AccountAdmin)
 	n, err := notification.NewStore(e.db.Pool()).Create(t.Context(), notification.New{
 		UserUID: owner.uid, Kind: notification.KindRegistrationPending, Title: "Someone registered",
 	})

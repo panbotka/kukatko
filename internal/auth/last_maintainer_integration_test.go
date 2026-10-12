@@ -45,7 +45,7 @@ func assertStillEnabledMaintainer(t *testing.T, env *testEnv, uid string) {
 	if err != nil {
 		t.Fatalf("GetUserByUID: %v", err)
 	}
-	if user.Role != auth.RoleMaintainer || user.Disabled {
+	if user.AccountRole != auth.AccountMaintainer || user.Disabled {
 		t.Fatalf("account = role %q disabled %v, want maintainer/false", user.Role, user.Disabled)
 	}
 }
@@ -56,7 +56,7 @@ func assertStillEnabledMaintainer(t *testing.T, env *testEnv, uid string) {
 // audited or not. All four are refused and leave the account untouched.
 func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 	env := newTestEnv(t)
-	solo := env.createUser(t, "solo-maint", auth.RoleMaintainer)
+	solo := env.createUser(t, "solo-maint", auth.AccountMaintainer)
 
 	tests := []struct {
 		name string
@@ -66,7 +66,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "audited demote",
 			call: func() error {
 				_, err := env.svc.UpdateUserAudited(t.Context(), solo.UID,
-					auth.UpdateUserInput{Email: solo.Email, Role: auth.RoleAdmin}, solo.Role,
+					auth.UpdateUserInput{Email: solo.Email, Role: auth.AccountAdmin}, solo.Role,
 					mgmtEntry(solo.UID, audit.ActionUserUpdate))
 				return err
 			},
@@ -92,7 +92,7 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 			name: "plain update that only disables",
 			call: func() error {
 				_, err := env.svc.UpdateUser(t.Context(), solo.UID, auth.UpdateUserInput{
-					Email: solo.Email, Role: auth.RoleMaintainer, Disabled: true,
+					Email: solo.Email, Role: auth.AccountMaintainer, Disabled: true,
 				})
 				return err
 			},
@@ -126,17 +126,17 @@ func TestLastMaintainer_soloCannotStepDown(t *testing.T) {
 // then cannot, and ordinary accounts are never affected either way.
 func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 	env := newTestEnv(t)
-	first := env.createUser(t, "maint-one", auth.RoleMaintainer)
-	second := env.createUser(t, "maint-two", auth.RoleMaintainer)
+	first := env.createUser(t, "maint-one", auth.AccountMaintainer)
+	second := env.createUser(t, "maint-two", auth.AccountMaintainer)
 
 	// Two enabled maintainers: demoting one is a normal, allowed change.
 	demoted, err := env.svc.UpdateUserAudited(t.Context(), first.UID,
-		auth.UpdateUserInput{Email: first.Email, Role: auth.RoleAdmin}, second.Role,
+		auth.UpdateUserInput{Email: first.Email, Role: auth.AccountAdmin}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate))
 	if err != nil {
 		t.Fatalf("demote with a second maintainer present: %v", err)
 	}
-	if demoted.Role != auth.RoleAdmin {
+	if demoted.AccountRole != auth.AccountAdmin {
 		t.Fatalf("demoted role = %q, want admin", demoted.Role)
 	}
 	assertEnabledMaintainers(t, env, 1)
@@ -148,7 +148,7 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 
 	// The survivor is now the last one, so the very same demote is refused.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), second.UID,
-		auth.UpdateUserInput{Email: second.Email, Role: auth.RoleAdmin}, second.Role,
+		auth.UpdateUserInput{Email: second.Email, Role: auth.AccountAdmin}, second.Role,
 		mgmtEntry(second.UID, audit.ActionUserUpdate)); !errors.Is(err, auth.ErrLastMaintainer) {
 		t.Fatalf("demote of the survivor err = %v, want ErrLastMaintainer", err)
 	}
@@ -161,8 +161,8 @@ func TestLastMaintainer_guardsOnlyTheLastOne(t *testing.T) {
 // in for the account being taken away — and re-enabling it lifts the refusal.
 func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 	env := newTestEnv(t)
-	spare := env.createUser(t, "maint-spare", auth.RoleMaintainer)
-	active := env.createUser(t, "maint-active", auth.RoleMaintainer)
+	spare := env.createUser(t, "maint-spare", auth.AccountMaintainer)
+	active := env.createUser(t, "maint-active", auth.AccountMaintainer)
 
 	// Park the spare: allowed, because the active one remains.
 	if _, err := env.svc.SetUserDisabledAudited(t.Context(), spare.UID, true, active.Role,
@@ -180,7 +180,7 @@ func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 
 	// Re-enabling the spare raises the count, and the active one may then step down.
 	if _, err := env.svc.UpdateUserAudited(t.Context(), spare.UID, auth.UpdateUserInput{
-		Email: spare.Email, Role: auth.RoleMaintainer, Disabled: false,
+		Email: spare.Email, Role: auth.AccountMaintainer, Disabled: false,
 	}, active.Role, mgmtEntry(active.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("re-enable the spare maintainer: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestLastMaintainer_disabledMaintainerDoesNotCount(t *testing.T) {
 // stay fully manageable, or the guard would be a lockout of its own.
 func TestLastMaintainer_maintainerlessInstanceStaysEditable(t *testing.T) {
 	env := newTestEnv(t)
-	admin := env.createUser(t, "admin", auth.RoleAdmin)
+	admin := env.createUser(t, "admin", auth.AccountAdmin)
 	assertEnabledMaintainers(t, env, 0)
 
 	if _, err := env.svc.SetUserDisabled(t.Context(), admin.UID, true); err != nil {
@@ -213,8 +213,8 @@ func TestLastMaintainer_maintainerlessInstanceStaysEditable(t *testing.T) {
 // 403: the caller was never the problem, the instance's state was.
 func TestHTTP_lastMaintainerGuard(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	maint := env.mustCreate(t, "solo-maint", auth.RoleMaintainer)
-	successor := env.mustCreate(t, "successor", auth.RoleAdmin)
+	maint := env.mustCreate(t, "solo-maint", auth.AccountMaintainer)
+	successor := env.mustCreate(t, "successor", auth.AccountAdmin)
 	client := newClient(t)
 
 	if status, body := env.do(t, client, http.MethodPost, "/api/v1/auth/login",

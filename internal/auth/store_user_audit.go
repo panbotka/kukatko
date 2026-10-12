@@ -65,9 +65,12 @@ func (s *Store) UpdateUserProfileAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.updateUserReturningAudited(ctx, entry, updateUserProfileQuery,
-		uid, in.DisplayName, in.Email, in.Role, in.Disabled, in.Note,
-		normalizeSubjectUID(in.SubjectUID))
+	user, err := s.updateUserReturningAudited(ctx, entry, updateUserProfileQuery, updateUserProfileArgs(uid, in)...)
+	if err != nil {
+		return User{}, err
+	}
+	_, inProject := in.Role.Split()
+	return withProjectRole(user, inProject), nil
 }
 
 // SetUserDisabledAudited flips the disabled flag for the user identified by uid,

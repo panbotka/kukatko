@@ -36,10 +36,10 @@ func deref(s *string) string {
 // each audited as an assign, and the creator is on it by acting.
 func TestCreate_handsTheTaskToSomebody(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 	editorUID := e.uidOf(t, editor)
-	e.login(t, "agent", auth.RoleEditor)
-	e.login(t, "anna", auth.RoleViewer)
+	e.login(t, "agent", auth.AccountEditor)
+	e.login(t, "anna", auth.AccountViewer)
 	photo := e.makePhoto(t, "a")
 
 	body, _ := json.Marshal(map[string]any{
@@ -93,7 +93,7 @@ func TestCreate_handsTheTaskToSomebody(t *testing.T) {
 // unknown user does everywhere else, and opens no task at all.
 func TestCreate_unknownParticipantIs404(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 
 	body, _ := json.Marshal(map[string]any{
 		"title": "Komu?", "participants": []string{"us-nobody"},
@@ -112,7 +112,7 @@ func TestCreate_unknownParticipantIs404(t *testing.T) {
 // reads back with no cover and no count, and it lists like any other.
 func TestCreate_withoutPhotos(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 
 	for name, body := range map[string]map[string]any{
 		"absent": {"title": "Přejmenovat wf: štítky"},

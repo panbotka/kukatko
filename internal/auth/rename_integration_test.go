@@ -54,9 +54,9 @@ func storedUsername(t *testing.T, env *httpEnv, uid string) string {
 // has a message on the queue telling them the name to sign in with.
 func TestRename_renamesAuditsAndMails(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	silly := env.mustCreate(t, "xxx_jan_xxx", auth.RoleViewer)
+	silly := env.mustCreate(t, "xxx_jan_xxx", auth.AccountViewer)
 
 	status, body := renameUser(t, env, admin, silly.UID, "  Jan.Novak ")
 	if status != http.StatusOK {
@@ -109,9 +109,9 @@ func TestRename_renamesAuditsAndMails(t *testing.T) {
 // leaves neither an audit entry nor a mail behind.
 func TestRename_sameNameIsANoOp(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 
 	status, body := renameUser(t, env, admin, jan.UID, " JAN ")
 	if status != http.StatusOK {
@@ -131,11 +131,11 @@ func TestRename_sameNameIsANoOp(t *testing.T) {
 // would not see. Nothing changes on a refusal.
 func TestRename_refusesATakenName(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
-	env.mustCreate(t, "eva", auth.RoleViewer)
-	legacy := env.mustCreate(t, "legacy", auth.RoleViewer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
+	env.mustCreate(t, "eva", auth.AccountViewer)
+	legacy := env.mustCreate(t, "legacy", auth.AccountViewer)
 	if _, err := env.db.Pool().Exec(t.Context(),
 		`UPDATE users SET username = 'Petr' WHERE uid = $1`, legacy.UID); err != nil {
 		t.Fatalf("storing a mixed-case legacy username: %v", err)
@@ -167,9 +167,9 @@ func TestRename_refusesATakenName(t *testing.T) {
 // over MaxUsernameLen runes, the same rules creation applies.
 func TestRename_refusesAnInvalidName(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 
 	tests := []struct {
 		name     string
@@ -204,10 +204,10 @@ func TestRename_refusesAnInvalidName(t *testing.T) {
 // 404, and an administrator may rename their own account.
 func TestRename_roleBoundaries(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
-	env.mustCreate(t, "root", auth.RoleMaintainer)
-	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "root", auth.AccountMaintainer)
+	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 	maintainer := signInAs(t, env, "root")
 
@@ -221,7 +221,7 @@ func TestRename_roleBoundaries(t *testing.T) {
 		t.Errorf("maintainer renaming a maintainer = %d, want 200 (body %s)", status, body)
 	}
 
-	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleCurator, auth.RoleEditor} {
+	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountCurator, auth.AccountEditor} {
 		name := "lower-" + string(role)
 		env.mustCreate(t, name, role)
 		client := signInAs(t, env, name)
@@ -255,9 +255,9 @@ func TestRename_roleBoundaries(t *testing.T) {
 // password sign-in now takes the new name only.
 func TestRename_keepsEverythingKeyedOnUID(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	janClient := signInAs(t, env, "jan")
 
 	assertUsersReferencedOnlyByUID(t, env)
@@ -349,9 +349,9 @@ func assertUsersReferencedOnlyByUID(t *testing.T, env *httpEnv) {
 // placeholder address itself is left as it was.
 func TestRename_mailIsSkippedNotFailed(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
-	jan := env.mustCreate(t, "jan", auth.RoleViewer)
+	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	const placeholder = "jan-us123@kukatko.invalid"
 	if _, err := env.db.Pool().Exec(t.Context(),
 		`UPDATE users SET email = $2 WHERE uid = $1`, jan.UID, placeholder); err != nil {
@@ -369,12 +369,12 @@ func TestRename_mailIsSkippedNotFailed(t *testing.T) {
 		t.Errorf("placeholder address rewritten to %q, want it untouched", renamed.Email)
 	}
 
-	eva := env.mustCreate(t, "eva", auth.RoleViewer)
+	eva := env.mustCreate(t, "eva", auth.AccountViewer)
 	mailOff := auth.NewRename(auth.RenameConfig{
 		Service: env.svc,
 		Mail:    mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: false}),
 	})
-	user, err := mailOff.Rename(t.Context(), eva.UID, "eva.novakova", auth.RoleAdmin,
+	user, err := mailOff.Rename(t.Context(), eva.UID, "eva.novakova", auth.RoleUser,
 		audit.Meta{ActorUID: eva.UID}.Entry(audit.ActionUserRename, "users", "", nil))
 	if err != nil || user.Username != "eva.novakova" {
 		t.Fatalf("renaming with mail off = %q, %v; want eva.novakova", user.Username, err)

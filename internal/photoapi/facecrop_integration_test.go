@@ -40,7 +40,7 @@ func decodeJPEG(t *testing.T, body io.Reader) image.Image {
 // this much of it.
 func TestFaceCropRoute_servesASquareCropOfTheFace(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Face", TakenAtSource: "unknown"}, "face.jpg", 11, 22, 33)
 
 	resp := mustDo(t, client, http.MethodGet,
@@ -76,7 +76,7 @@ func TestFaceCropRoute_servesASquareCropOfTheFace(t *testing.T) {
 // what makes a page of hundreds of faces cheap on its second visit.
 func TestFaceCropRoute_repeatViewIsAnswered304(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Face", TakenAtSource: "unknown"}, "again.jpg", 44, 55, 66)
 	url := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face" + faceBoxQuery
 
@@ -115,7 +115,7 @@ func TestFaceCropRoute_repeatViewIsAnswered304(t *testing.T) {
 // rendition — the property the whole route depends on.
 func TestFaceCropRoute_twoFacesOfOnePhotoDiffer(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Two", TakenAtSource: "unknown"}, "two.jpg", 77, 88, 99)
 	base := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face"
 
@@ -149,7 +149,7 @@ func TestFaceCropRoute_twoFacesOfOnePhotoDiffer(t *testing.T) {
 // token, and not at all without either.
 func TestFaceCropRoute_guardMatchesTheOtherPhotoImagery(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "viewer", auth.RoleViewer)
+	client, token := env.login(t, "viewer", auth.AccountViewer)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Guard", TakenAtSource: "unknown"}, "guard.jpg", 12, 34, 56)
 	url := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face" + faceBoxQuery
 
@@ -182,7 +182,7 @@ func TestFaceCropRoute_guardMatchesTheOtherPhotoImagery(t *testing.T) {
 // unknown photo is simply not there.
 func TestFaceCropRoute_rejectsAnUnusableRequest(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Bad", TakenAtSource: "unknown"}, "bad.jpg", 21, 43, 65)
 
 	tests := []struct {

@@ -116,7 +116,7 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 
 	if _, err := pool.Exec(ctx,
 		`INSERT INTO users (uid, username, display_name, email, password_hash, role)
-		 VALUES ($1, 'dia-user', 'Tomáš Nečas', 'dia-user@example.test', 'x', 'editor')`,
+		 VALUES ($1, 'dia-user', 'Tomáš Nečas', 'dia-user@example.test', 'x', 'user')`,
 		lib.user); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}

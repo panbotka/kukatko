@@ -57,13 +57,13 @@ func TestRebuildEndpoints_rbac(t *testing.T) {
 
 	paths := []string{"reembed", "redetect-faces", "regeocode"}
 	roles := []struct {
-		role auth.Role
+		role auth.AccountRole
 		want int
 	}{
-		{role: auth.RoleViewer, want: http.StatusForbidden},
-		{role: auth.RoleEditor, want: http.StatusForbidden},
-		{role: auth.RoleAdmin, want: http.StatusForbidden},
-		{role: auth.RoleMaintainer, want: http.StatusOK},
+		{role: auth.AccountViewer, want: http.StatusForbidden},
+		{role: auth.AccountEditor, want: http.StatusForbidden},
+		{role: auth.AccountAdmin, want: http.StatusForbidden},
+		{role: auth.AccountMaintainer, want: http.StatusOK},
 	}
 
 	for _, path := range paths {
@@ -95,7 +95,7 @@ func TestRebuildEndpoints_rbac(t *testing.T) {
 func TestRedetectFaces_reportsAndAudits(t *testing.T) {
 	env := newEnv(t)
 	env.rebuilds.faces = 4
-	client, _ := env.login(t, "rb-audit", auth.RoleMaintainer)
+	client, _ := env.login(t, "rb-audit", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "audited"}, "rebuild-audit.jpg", 51, 52, 53)
 
 	resp := mustDo(t, client, http.MethodPost,
@@ -135,7 +135,7 @@ func TestRedetectFaces_reportsAndAudits(t *testing.T) {
 func TestReembed_offlineQueuesTheForcedJob(t *testing.T) {
 	env := newEnv(t)
 	env.rebuilds.err = worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
-	client, _ := env.login(t, "rb-offline", auth.RoleMaintainer)
+	client, _ := env.login(t, "rb-offline", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "offline"}, "rebuild-offline.jpg", 61, 62, 63)
 
 	for range 2 {
@@ -249,7 +249,7 @@ func isForcedPayload(t *testing.T, payload json.RawMessage) bool {
 func TestReembed_upgradesAQueuedPlainJob(t *testing.T) {
 	env := newEnv(t)
 	env.rebuilds.err = worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
-	client, _ := env.login(t, "rb-upgrade", auth.RoleMaintainer)
+	client, _ := env.login(t, "rb-upgrade", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "upgrade"}, "rebuild-upgrade.jpg", 71, 72, 73)
 
 	if err := jobs.NewEnqueuer(env.jobs).EnqueueImageEmbed(t.Context(), photo.UID); err != nil {
@@ -273,7 +273,7 @@ func TestReembed_upgradesAQueuedPlainJob(t *testing.T) {
 func TestReembed_runningJobIsAConflict(t *testing.T) {
 	env := newEnv(t)
 	env.rebuilds.err = worker.RetryAfter(time.Minute, embedding.ErrUnavailable)
-	client, _ := env.login(t, "rb-inflight", auth.RoleMaintainer)
+	client, _ := env.login(t, "rb-inflight", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "in flight"}, "rebuild-inflight.jpg", 81, 82, 83)
 
 	if err := jobs.NewEnqueuer(env.jobs).EnqueueImageEmbed(t.Context(), photo.UID); err != nil {

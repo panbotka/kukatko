@@ -103,7 +103,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -129,7 +129,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 // into one snapshot.
 func TestSystemStatus_Aggregates(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	ctx := t.Context()
 
 	// Two queued image_embed jobs (pending embedding work) and one dead-lettered.
@@ -202,7 +202,7 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 // up in the browsable count with its size, and an archived one in the trash.
 func TestSystemStatus_LibrarySection(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 
 	seedStatusPhoto(t, env.db, "live1", 1500, false)
 	seedStatusPhoto(t, env.db, "gone1", 700, true)
@@ -239,7 +239,7 @@ func TestSystemStatus_LibrarySection(t *testing.T) {
 // and that is the instance working as configured rather than a backlog.
 func TestSystemStatus_VideoSection(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 
 	seedStatusVideo(t, env.db, "clip1")
 
@@ -317,11 +317,11 @@ func TestSystemStatus_ForbiddenBelowMaintainer(t *testing.T) {
 	env := newEnv(t)
 	for _, tc := range []struct {
 		user string
-		role auth.Role
+		role auth.AccountRole
 	}{
-		{"viewer", auth.RoleViewer},
-		{"editor", auth.RoleEditor},
-		{"admin", auth.RoleAdmin},
+		{"viewer", auth.AccountViewer},
+		{"editor", auth.AccountEditor},
+		{"admin", auth.AccountAdmin},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {
 			client := env.login(t, tc.user, tc.role)
@@ -347,7 +347,7 @@ func TestSystemStats_ViewerAllowedAnonymousRejected(t *testing.T) {
 		t.Errorf("anonymous status = %d, want 401", anon.StatusCode)
 	}
 
-	viewer := env.login(t, "stats-viewer", auth.RoleViewer)
+	viewer := env.login(t, "stats-viewer", auth.AccountViewer)
 	resp := do(t, viewer, http.MethodGet, env.baseURL+"/api/v1/system/stats", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

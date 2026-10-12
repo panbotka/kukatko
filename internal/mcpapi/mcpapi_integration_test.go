@@ -93,7 +93,7 @@ func newEnvWith(t *testing.T, enabled bool) *env {
 
 // token creates a user with the given role and mints an API token for it,
 // returning the plaintext `kkt_…` an agent would put in its Authorization header.
-func (e *env) token(t *testing.T, username string, role auth.Role) string {
+func (e *env) token(t *testing.T, username string, role auth.AccountRole) string {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -307,7 +307,7 @@ func (r callResult) decode(t *testing.T, dst any) {
 // handing the client 200 and index.html to parse as JSON-RPC.
 func TestMCPDisabledAnswers404(t *testing.T) {
 	e := newEnvWith(t, false)
-	bearer := e.token(t, "agent-off", auth.RoleMaintainer)
+	bearer := e.token(t, "agent-off", auth.AccountMaintainer)
 
 	status, header, _ := e.rpcWithHeader(t, bearer, "tools/list", nil)
 	if status != http.StatusNotFound {
@@ -356,7 +356,7 @@ func TestMCPRequiresAuthentication(t *testing.T) {
 // that the server announces its tools capability.
 func TestMCPInitializeHandshake(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-init", auth.RoleMaintainer)
+	bearer := e.token(t, "agent-init", auth.AccountMaintainer)
 
 	status, resp := e.rpc(t, bearer, "initialize", map[string]any{
 		"protocolVersion": "2025-06-18",
@@ -390,7 +390,7 @@ func TestMCPInitializeHandshake(t *testing.T) {
 // write tools, and that the read tools it does get are all there.
 func TestMCPViewerSeesOnlyReadTools(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-viewer", auth.RoleViewer)
+	bearer := e.token(t, "agent-viewer", auth.AccountViewer)
 	tools := e.listTools(t, bearer)
 
 	for _, want := range []string{
@@ -416,7 +416,7 @@ func TestMCPViewerSeesOnlyReadTools(t *testing.T) {
 // be refused by every write tool, not merely hidden from it.
 func TestMCPViewerIsRefusedOnEveryWrite(t *testing.T) {
 	e := newEnv(t)
-	viewer := e.token(t, "agent-ro", auth.RoleViewer)
+	viewer := e.token(t, "agent-ro", auth.AccountViewer)
 	photoUID := e.seedPhoto(t, "aa11")
 
 	for _, tc := range []struct {
@@ -464,7 +464,7 @@ func TestMCPDestructiveToolsAreNotExposed(t *testing.T) {
 	e := newEnv(t)
 	// The most privileged role there is: if a tool is hidden even here, it is
 	// not exposed at all.
-	admin := e.token(t, "agent-admin", auth.RoleAdmin)
+	admin := e.token(t, "agent-admin", auth.AccountAdmin)
 	tools := e.listTools(t, admin)
 
 	banned := []string{"delete", "purge", "trash", "archive", "restore", "backup", "user", "empty"}
@@ -487,7 +487,7 @@ func TestMCPDestructiveToolsAreNotExposed(t *testing.T) {
 // useful fields, the paging counters, and no EXIF blob.
 func TestMCPSearchReturnsCompactShape(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-search", auth.RoleViewer)
+	bearer := e.token(t, "agent-search", auth.AccountViewer)
 
 	// Every photo carries an EXIF blob, not just one: the page below returns only
 	// the configured 2 of 4, so a single tagged photo could sit outside it and
@@ -545,7 +545,7 @@ func TestMCPSearchReturnsCompactShape(t *testing.T) {
 // query language rather than to free text alone.
 func TestMCPSearchUsesTheQueryLanguage(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-q", auth.RoleViewer)
+	bearer := e.token(t, "agent-q", auth.AccountViewer)
 
 	old := e.seedPhoto(t, "cc01")
 	recent := e.seedPhoto(t, "cc02")
@@ -578,7 +578,7 @@ func setTaken(t *testing.T, e *env, uid string, at time.Time) {
 // trail attributed to the agent's own user.
 func TestMCPWriteTokenCanOrganize(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-rw", auth.RoleMaintainer)
+	bearer := e.token(t, "agent-rw", auth.AccountMaintainer)
 	actor := e.userUID(t, "agent-rw")
 	photoUID := e.seedPhoto(t, "dd01")
 
@@ -659,7 +659,7 @@ func TestMCPWriteTokenCanOrganize(t *testing.T) {
 // one leaves a row behind — an agent's actions must be as traceable as a human's.
 func TestMCPEveryMutationIsAudited(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-audit", auth.RoleEditor)
+	bearer := e.token(t, "agent-audit", auth.AccountEditor)
 	actor := e.userUID(t, "agent-audit")
 	photoUID := e.seedPhoto(t, "ee01")
 
@@ -709,7 +709,7 @@ func TestMCPEveryMutationIsAudited(t *testing.T) {
 // not wipe the description, the notes or the capture date.
 func TestMCPSetMetadataDoesNotBlankOtherFields(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-partial", auth.RoleEditor)
+	bearer := e.token(t, "agent-partial", auth.AccountEditor)
 	photoUID := e.seedPhoto(t, "ff01")
 
 	taken := time.Date(1965, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -759,7 +759,7 @@ func TestMCPSetMetadataDoesNotBlankOtherFields(t *testing.T) {
 // into the uid the other tools want.
 func TestMCPListAndLookupCollections(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-coll", auth.RoleEditor)
+	bearer := e.token(t, "agent-coll", auth.AccountEditor)
 	photoUID := e.seedPhoto(t, "gg01")
 
 	album, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: "Dovolená 2019"})
@@ -848,8 +848,8 @@ func TestMCPListAndLookupCollections(t *testing.T) {
 // calling user's own rather than a library-wide number.
 func TestMCPLibraryStats(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-stats", auth.RoleEditor)
-	other := e.token(t, "agent-other", auth.RoleEditor)
+	bearer := e.token(t, "agent-stats", auth.AccountEditor)
+	other := e.token(t, "agent-other", auth.AccountEditor)
 
 	first := e.seedPhoto(t, "hh01")
 	e.seedPhoto(t, "hh02")
@@ -884,7 +884,7 @@ func TestMCPLibraryStats(t *testing.T) {
 // half-apply a change when one uid is wrong.
 func TestMCPBulkEditIsAtomic(t *testing.T) {
 	e := newEnv(t)
-	bearer := e.token(t, "agent-bulk", auth.RoleEditor)
+	bearer := e.token(t, "agent-bulk", auth.AccountEditor)
 	first := e.seedPhoto(t, "ii01")
 	second := e.seedPhoto(t, "ii02")
 
@@ -919,7 +919,7 @@ func TestMCPBulkEditIsAtomic(t *testing.T) {
 // A tool nobody described is a tool the agent will misuse.
 func TestMCPToolDescriptionsAreWritten(t *testing.T) {
 	e := newEnv(t)
-	tools := e.listTools(t, e.token(t, "agent-desc", auth.RoleMaintainer))
+	tools := e.listTools(t, e.token(t, "agent-desc", auth.AccountMaintainer))
 	if len(tools) < 15 {
 		t.Fatalf("a write token sees %d tools, want the full set", len(tools))
 	}
@@ -939,7 +939,7 @@ func TestMCPToolDescriptionsAreWritten(t *testing.T) {
 // everywhere — the library is a closed world.
 func TestMCPToolMetadataIsComplete(t *testing.T) {
 	e := newEnv(t)
-	tools := e.listTools(t, e.token(t, "agent-meta", auth.RoleMaintainer))
+	tools := e.listTools(t, e.token(t, "agent-meta", auth.AccountMaintainer))
 
 	writes := map[string]bool{
 		"create_album": true, "add_photos_to_album": true, "remove_photos_from_album": true,

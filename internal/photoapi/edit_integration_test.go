@@ -46,7 +46,7 @@ func getEdit(t *testing.T, client *http.Client, base, uid string) editResp {
 // rather than 404, so the editor UI always has a value to seed its controls.
 func TestEdit_getDefaultsToNeutral(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 10, 20, 30)
 
 	got := getEdit(t, client, env.server.URL, photo.UID)
@@ -58,7 +58,7 @@ func TestEdit_getDefaultsToNeutral(t *testing.T) {
 // TestEdit_putThenGet stores an edit and reads it back.
 func TestEdit_putThenGet(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 11, 21, 31)
 
 	// Use values exactly representable as float32 (the REAL column type) so the
@@ -79,7 +79,7 @@ func TestEdit_putThenGet(t *testing.T) {
 // TestEdit_putValidation rejects an out-of-range rotation with 400.
 func TestEdit_putValidation(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 12, 22, 32)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 45})
@@ -93,7 +93,7 @@ func TestEdit_putValidation(t *testing.T) {
 // TestEdit_putForbiddenForViewer confirms a viewer cannot save edits.
 func TestEdit_putForbiddenForViewer(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 13, 23, 33)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 90})
@@ -156,7 +156,7 @@ func thumbnailJobPayloads(t *testing.T, e *env) []struct {
 // grid stops showing the previous rendering.
 func TestEdit_putAuditsAndRebuildsThumbnails(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "edit_audit", auth.RoleEditor)
+	client, _ := env.login(t, "edit_audit", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 15, 25, 35)
 
 	putEdit(t, client, env.server.URL, photo.UID, map[string]any{"rotation": 270})
@@ -196,7 +196,7 @@ func TestEdit_putAuditsAndRebuildsThumbnails(t *testing.T) {
 // serving the rotation the user just took back.
 func TestEdit_neutralSaveRebuildsThumbnails(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "edit_reset", auth.RoleEditor)
+	client, _ := env.login(t, "edit_reset", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 16, 26, 36)
 
 	putEdit(t, client, env.server.URL, photo.UID,
@@ -216,7 +216,7 @@ func TestEdit_neutralSaveRebuildsThumbnails(t *testing.T) {
 // rotated image is 48×64) while ?original=true still serves the unrotated bytes.
 func TestDownload_honorsRotationEdit(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "editor", auth.RoleEditor)
+	client, token := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 14, 24, 34)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 90})

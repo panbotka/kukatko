@@ -80,7 +80,7 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 }
 
 // user creates a user through the service, failing the test on error.
-func (e *tokenEnv) user(t *testing.T, username string, role auth.Role) auth.User {
+func (e *tokenEnv) user(t *testing.T, username string, role auth.AccountRole) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -223,7 +223,7 @@ func (e *tokenEnv) lastUsedAt(t *testing.T, id string) *time.Time {
 
 func TestHTTP_apiTokenCreateListRevoke(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	cookie := env.login(t, "alice")
 
 	status, body := env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", cookie, `{"name":"backup cli"}`)
@@ -309,8 +309,8 @@ func TestHTTP_apiTokenCreateListRevoke(t *testing.T) {
 
 func TestHTTP_bearerInheritsUserRole(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	viewer := env.user(t, "viewer", auth.RoleViewer)
-	admin := env.user(t, "admin", auth.RoleAdmin)
+	viewer := env.user(t, "viewer", auth.AccountViewer)
+	admin := env.user(t, "admin", auth.AccountAdmin)
 	_, viewerSecret := env.mintToken(t, viewer, "viewer token", nil)
 	_, adminSecret := env.mintToken(t, admin, "admin token", nil)
 
@@ -352,13 +352,13 @@ func TestHTTP_bearerInheritsUserRole(t *testing.T) {
 
 func TestHTTP_bearerRejectsBadCredentials(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 
 	expiry := env.now.Add(time.Hour)
 	_, expiredSecret := env.mintToken(t, alice, "expiring", &expiry)
 	revoked, revokedSecret := env.mintToken(t, alice, "doomed", nil)
 	valid, validSecret := env.mintToken(t, alice, "good", nil)
-	disabledUser := env.user(t, "gone", auth.RoleEditor)
+	disabledUser := env.user(t, "gone", auth.AccountEditor)
 	_, disabledSecret := env.mintToken(t, disabledUser, "orphan", nil)
 
 	entry := audit.Entry{ActorUID: alice.UID, Action: audit.ActionAPITokenRevoke, TargetType: "api_tokens"}
@@ -414,7 +414,7 @@ func TestHTTP_bearerRejectsBadCredentials(t *testing.T) {
 
 func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	cookie := env.login(t, "alice")
 
 	// No Authorization header: the cookie path is untouched.
@@ -458,7 +458,7 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 
 func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 	tok, secret := env.mintToken(t, alice, "busy client", nil)
 
 	if at := env.lastUsedAt(t, tok.ID); at != nil {
@@ -494,9 +494,9 @@ func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 
 func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	alice := env.user(t, "alice", auth.RoleEditor)
-	env.user(t, "bob", auth.RoleEditor)
-	env.user(t, "root", auth.RoleAdmin)
+	alice := env.user(t, "alice", auth.AccountEditor)
+	env.user(t, "bob", auth.AccountEditor)
+	env.user(t, "root", auth.AccountAdmin)
 
 	aliceToken, aliceSecret := env.mintToken(t, alice, "alice's", nil)
 	otherToken, _ := env.mintToken(t, alice, "alice's second", nil)
@@ -547,7 +547,7 @@ func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 
 func TestHTTP_apiTokenCreateValidation(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	cookie := env.login(t, "alice")
 
 	past := env.now.Add(-time.Hour).Format(time.RFC3339)
@@ -579,7 +579,7 @@ func TestHTTP_apiTokenCreateValidation(t *testing.T) {
 func TestHTTP_apiTokenCreateRateLimited(t *testing.T) {
 	// The login limiter is shared, so the same key space caps token creation.
 	env := newTokenEnv(t, 2)
-	env.user(t, "alice", auth.RoleEditor)
+	env.user(t, "alice", auth.AccountEditor)
 	cookie := env.login(t, "alice")
 
 	for i := range 2 {

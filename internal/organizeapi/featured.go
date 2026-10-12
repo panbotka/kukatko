@@ -96,8 +96,7 @@ func featuredDays(configured int) int {
 // pushed at everybody who opens the app, so it does not broadcast what the
 // owner marked private. It answers 500 if the store fails.
 func (a *API) handleFeaturedList(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	includePrivate := ok && user.Role.CanCurate()
+	includePrivate := auth.ProjectRoleFromContext(r.Context()).CanCurate()
 	albums, err := a.featured.ListFeaturedAlbums(r.Context(), includePrivate)
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "listing featured albums failed", err)

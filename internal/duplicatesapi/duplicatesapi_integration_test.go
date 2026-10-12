@@ -78,7 +78,7 @@ func newEnv(t *testing.T) *env {
 
 // login creates a user with the given role and returns a cookie-bearing client
 // plus the new user's UID.
-func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -217,7 +217,7 @@ func (e *env) do(t *testing.T, c *http.Client, method, path string, body []byte)
 // title/description, the copies are archived and the merge is audited.
 func TestMerge_unionsAlbumsLabelsPeopleAndArchives(t *testing.T) {
 	env := newEnv(t)
-	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	keeper := env.seedPhoto(t, "keep", "", "", 4000, 3000)
@@ -267,7 +267,7 @@ func TestMerge_unionsAlbumsLabelsPeopleAndArchives(t *testing.T) {
 // keeper lacks them.
 func TestMerge_fillsOnlyMissingScalars(t *testing.T) {
 	env := newEnv(t)
-	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	keeper := env.seedPhoto(t, "keep", "Original", "", 4000, 3000)
@@ -325,7 +325,7 @@ func TestMerge_fillsOnlyMissingScalars(t *testing.T) {
 // but changes nothing in the database.
 func TestMerge_dryRunPreviewsWithoutChanging(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	keeper := env.seedPhoto(t, "keep", "", "", 4000, 3000)
@@ -354,7 +354,7 @@ func TestMerge_dryRunPreviewsWithoutChanging(t *testing.T) {
 // TestMerge_idempotentReRun verifies re-running a resolved merge is a safe no-op.
 func TestMerge_idempotentReRun(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	keeper := env.seedPhoto(t, "keep", "", "", 4000, 3000)
 	copy1 := env.seedPhoto(t, "dup1", "", "", 2000, 1500)
@@ -377,7 +377,7 @@ func TestMerge_idempotentReRun(t *testing.T) {
 // TestMerge_viewerForbidden verifies a viewer cannot resolve a group.
 func TestMerge_viewerForbidden(t *testing.T) {
 	env := newEnv(t)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	keeper := env.seedPhoto(t, "keep", "", "", 4000, 3000)
 	copy1 := env.seedPhoto(t, "dup1", "", "", 2000, 1500)
 

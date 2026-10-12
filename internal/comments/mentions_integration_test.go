@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // recordingObserver keeps every report the store makes, with the comment's
@@ -44,7 +45,7 @@ func (f *fixture) makeApprovedUser(t *testing.T, uid, username, displayName stri
 	approved := time.Now().Add(-time.Hour)
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, Email: username + "@example.test", DisplayName: displayName,
-		PasswordHash: "x", Role: auth.RoleViewer, Disabled: disabled, ApprovedAt: &approved,
+		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer, Disabled: disabled, ApprovedAt: &approved,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}

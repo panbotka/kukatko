@@ -64,7 +64,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -123,7 +123,7 @@ func (e *env) deadLetter(t *testing.T, uid string) jobs.Job {
 // total counts, and requires the maintainer role (jobs are an operations surface).
 func TestStatsEndpoint(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	env.enqueue(t, jobs.TypeImageEmbed, "a", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeImageEmbed, "b", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeFaceDetect, "a", jobs.EnqueueOptions{})
@@ -155,11 +155,11 @@ func TestStatsForbiddenBelowMaintainer(t *testing.T) {
 	env := newEnv(t)
 	for _, tc := range []struct {
 		user string
-		role auth.Role
+		role auth.AccountRole
 	}{
-		{"viewer", auth.RoleViewer},
-		{"editor", auth.RoleEditor},
-		{"admin", auth.RoleAdmin},
+		{"viewer", auth.AccountViewer},
+		{"editor", auth.AccountEditor},
+		{"admin", auth.AccountAdmin},
 	} {
 		t.Run(string(tc.role), func(t *testing.T) {
 			client := env.login(t, tc.user, tc.role)
@@ -175,7 +175,7 @@ func TestStatsForbiddenBelowMaintainer(t *testing.T) {
 // TestListEndpoint verifies GET /jobs lists jobs and filters by state.
 func TestListEndpoint(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	env.enqueue(t, jobs.TypeImageEmbed, "a", jobs.EnqueueOptions{})
 	env.enqueue(t, jobs.TypeImageEmbed, "b", jobs.EnqueueOptions{})
 	env.deadLetter(t, "c")
@@ -201,7 +201,7 @@ func TestListEndpoint(t *testing.T) {
 // answers 404/409 for missing and non-requeueable jobs.
 func TestRequeueEndpoint(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	dead := env.deadLetter(t, "c")
 
 	resp := do(t, maint, http.MethodPost,
@@ -237,7 +237,7 @@ func TestRequeueEndpoint(t *testing.T) {
 // a maintainer surface like the rest of the queue API.
 func TestRequeueDeadEndpoint(t *testing.T) {
 	env := newEnv(t)
-	maint := env.login(t, "maint", auth.RoleMaintainer)
+	maint := env.login(t, "maint", auth.AccountMaintainer)
 	env.deadLetter(t, "c")
 	env.enqueue(t, jobs.TypeThumbnail, "d", jobs.EnqueueOptions{})
 
@@ -256,7 +256,7 @@ func TestRequeueDeadEndpoint(t *testing.T) {
 		t.Errorf("dead letter after the requeue = %d jobs, want 0", len(dead))
 	}
 
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	resp := do(t, editor, http.MethodPost, env.baseURL+"/api/v1/jobs/requeue-dead", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {

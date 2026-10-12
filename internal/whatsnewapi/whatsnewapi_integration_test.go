@@ -72,7 +72,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -176,7 +176,7 @@ func TestFirstVisitHasNoDigest(t *testing.T) {
 	env := newEnv(t)
 	env.insertPhoto(t, "ph-old", env.now.Add(-time.Hour))
 
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	if got := env.summary(t, viewer); got.HasNews {
 		t.Fatalf("first visit digest = %+v, want has_news false", got)
 	}
@@ -187,7 +187,7 @@ func TestFirstVisitHasNoDigest(t *testing.T) {
 // rather than replacing it.
 func TestVisitSurvivesReloads(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 
 	// First read establishes the account; nothing to report yet.
 	if got := env.summary(t, viewer); got.HasNews {
@@ -221,7 +221,7 @@ func TestVisitSurvivesReloads(t *testing.T) {
 // again.
 func TestNewVisitRotatesReference(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	env.summary(t, viewer)
 
 	env.advance(2 * testGap)
@@ -242,7 +242,7 @@ func TestNewVisitRotatesReference(t *testing.T) {
 // albums and people, with each count reporting the true total.
 func TestCountsAndLinks(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	env.summary(t, viewer)
 
 	env.advance(2 * testGap)
@@ -285,7 +285,7 @@ func TestCountsAndLinks(t *testing.T) {
 // auto-generated albums nor unnamed subjects are announced.
 func TestExcludedFromCounts(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	env.summary(t, viewer)
 
 	env.advance(2 * testGap)
@@ -321,7 +321,7 @@ func TestExcludedFromCounts(t *testing.T) {
 // name links the newest [whatsnew.MaxItems] and still reports the true total.
 func TestLinksAreCapped(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	env.summary(t, viewer)
 
 	env.advance(2 * testGap)
@@ -348,9 +348,9 @@ func TestLinksAreCapped(t *testing.T) {
 // sees it exactly as a maintainer does.
 func TestEveryRoleMayRead(t *testing.T) {
 	env := newEnv(t)
-	roles := []auth.Role{auth.RoleViewer, auth.RoleEditor, auth.RoleAdmin, auth.RoleMaintainer}
+	roles := []auth.AccountRole{auth.AccountViewer, auth.AccountEditor, auth.AccountAdmin, auth.AccountMaintainer}
 
-	clients := make(map[auth.Role]*http.Client, len(roles))
+	clients := make(map[auth.AccountRole]*http.Client, len(roles))
 	for _, role := range roles {
 		clients[role] = env.login(t, "u_"+string(role), role)
 		env.summary(t, clients[role]) // The first read establishes the account.
@@ -382,8 +382,8 @@ func TestUnauthenticatedRejected(t *testing.T) {
 // reference point.
 func TestVisitsAreIndependentPerUser(t *testing.T) {
 	env := newEnv(t)
-	alice := env.login(t, "alice", auth.RoleEditor)
-	bob := env.login(t, "bob", auth.RoleViewer)
+	alice := env.login(t, "alice", auth.AccountEditor)
+	bob := env.login(t, "bob", auth.AccountViewer)
 	env.summary(t, alice)
 	env.summary(t, bob)
 
@@ -422,8 +422,8 @@ func TestMinePhotosCountsOnlyTheReader(t *testing.T) {
 	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
 	env.insertSubject(t, "sub-other", "Dědeček", env.now.Add(-time.Hour))
 
-	linked := env.login(t, "linked", auth.RoleViewer)
-	unlinked := env.login(t, "unlinked", auth.RoleViewer)
+	linked := env.login(t, "linked", auth.AccountViewer)
+	unlinked := env.login(t, "unlinked", auth.AccountViewer)
 	env.linkAccount(t, "linked", "sub-me")
 	// The first read of each account establishes its reference point.
 	env.summary(t, linked)
@@ -453,7 +453,7 @@ func TestMinePhotosCountsOnlyTheReader(t *testing.T) {
 func TestMinePhotosIgnoresRejectedMarkers(t *testing.T) {
 	env := newEnv(t)
 	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
-	linked := env.login(t, "linked", auth.RoleViewer)
+	linked := env.login(t, "linked", auth.AccountViewer)
 	env.linkAccount(t, "linked", "sub-me")
 	env.summary(t, linked)
 
@@ -473,7 +473,7 @@ func TestMinePhotosIgnoresRejectedMarkers(t *testing.T) {
 func TestMinePhotosSurvivesTheSubjectBeingDeleted(t *testing.T) {
 	env := newEnv(t)
 	env.insertSubject(t, "sub-me", "Babička", env.now.Add(-time.Hour))
-	linked := env.login(t, "linked", auth.RoleViewer)
+	linked := env.login(t, "linked", auth.AccountViewer)
 	env.linkAccount(t, "linked", "sub-me")
 	env.summary(t, linked)
 

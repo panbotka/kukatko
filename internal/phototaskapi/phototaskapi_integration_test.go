@@ -73,7 +73,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	created, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -167,7 +167,7 @@ func (e *env) openTask(t *testing.T, c *http.Client, title string, photoUIDs ...
 // add a photograph, advance it, refuse to close it silently, then close it.
 func TestTaskLifecycle(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 	one := e.makePhoto(t, "a")
 	two := e.makePhoto(t, "b")
 
@@ -205,7 +205,7 @@ func TestTaskLifecycle(t *testing.T) {
 // refused with a 400 that names the rule when the set is malformed.
 func TestTaskOptions(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 
 	body, _ := json.Marshal(map[string]any{
 		"title": "Je na nápisu rok 1936, nebo 1938?", "options": []string{" 1936", "1938", "nevím"},
@@ -265,8 +265,8 @@ func TestTaskOptions(t *testing.T) {
 // cannot open, edit, close or delete a task.
 func TestViewerMayAnswerButNotCurate(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 	task := e.openTask(t, editor, "V kterém roce?")
 
 	// Reading is open to them.
@@ -312,8 +312,8 @@ func TestViewerMayAnswerButNotCurate(t *testing.T) {
 // belongs to, and that only its author may rewrite it.
 func TestCommentScoping(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 	task := e.openTask(t, editor, "První")
 	other := e.openTask(t, editor, "Druhý")
 
@@ -337,7 +337,7 @@ func TestCommentScoping(t *testing.T) {
 // a state nobody has heard of — a typo must say so, not look like "no matches".
 func TestListFiltering(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 	e.openTask(t, editor, "Otevřená")
 	closed := e.openTask(t, editor, "Zavřená")
 	closing, _ := json.Marshal(map[string]any{"state": "rejected", "resolution": "nedohledatelné"})
@@ -378,7 +378,7 @@ func TestListFiltering(t *testing.T) {
 // link is sent to somebody who has an account, not published.
 func TestAnonymousIsRefused(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
+	editor := e.login(t, "editor", auth.AccountEditor)
 	task := e.openTask(t, editor, "V kterém roce?")
 
 	anon := &http.Client{}
@@ -398,8 +398,8 @@ func TestAnonymousIsRefused(t *testing.T) {
 // and the last-activity fields say whose move it is, each as its own reader.
 func TestWhoseTurn(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 	task := e.openTask(t, editor, "V kterém roce?")
 
 	type page struct {

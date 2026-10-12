@@ -55,7 +55,7 @@ func yearCounts(resp yearsResp) map[int]int {
 // same-filtered list.
 func TestYears(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	// Mid-year, mid-day capture times, so the bucket a photo lands in does not

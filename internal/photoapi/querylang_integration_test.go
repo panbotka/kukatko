@@ -22,7 +22,7 @@ func intPtr(n int) *int {
 // is never consulted — even in the default hybrid mode.
 func TestSearch_filterOnlyQuerySkipsSidecar(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "ql-filter", auth.RoleViewer)
+	client, _ := env.login(t, "ql-filter", auth.AccountViewer)
 	base := env.server.URL
 
 	low := env.seedPhoto(t, photos.Photo{Title: "low iso", ISO: intPtr(100)}, "low.jpg", 10, 0, 0)
@@ -45,7 +45,7 @@ func TestSearch_filterOnlyQuerySkipsSidecar(t *testing.T) {
 // photos, the iso: filter keeps one.
 func TestSearch_queryLanguageConstrainsFreeText(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "ql-mixed", auth.RoleViewer)
+	client, _ := env.login(t, "ql-mixed", auth.AccountViewer)
 	base := env.server.URL
 
 	sharp := env.seedPhoto(t, photos.Photo{Title: "sunset pier", ISO: intPtr(100)}, "a.jpg", 10, 0, 0)
@@ -66,7 +66,7 @@ func TestSearch_queryLanguageConstrainsFreeText(t *testing.T) {
 // carries it verbatim) instead of erroring or returning nothing.
 func TestSearch_unknownTokenDegradesAndReports(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "ql-unknown", auth.RoleViewer)
+	client, _ := env.login(t, "ql-unknown", auth.AccountViewer)
 	base := env.server.URL
 
 	tagged := env.seedPhoto(t, photos.Photo{Title: "wall", Notes: "sprayed color:red all over"},
@@ -86,7 +86,7 @@ func TestSearch_unknownTokenDegradesAndReports(t *testing.T) {
 // on the list response too.
 func TestList_queryLanguageApplies(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "ql-list", auth.RoleViewer)
+	client, _ := env.login(t, "ql-list", auth.AccountViewer)
 	base := env.server.URL
 
 	y2024 := time.Date(2024, 5, 1, 12, 0, 0, 0, time.UTC)

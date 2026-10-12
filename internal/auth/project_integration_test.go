@@ -1,0 +1,392 @@
+//go:build integration
+
+package auth_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
+)
+
+// projectEnv is an httpEnv plus a second server whose routes carry the
+// {project} URL parameter, the way the next step mounts every project route, and
+// the project store to arrange memberships with.
+type projectEnv struct {
+	*httpEnv
+	projects *project.Store
+	server   *httptest.Server
+}
+
+// projectProbe answers what the guard decided: the request's project and the
+// caller's role in it.
+type projectProbe struct {
+	ProjectUID string `json:"project_uid"`
+	Role       string `json:"role"`
+}
+
+// writeProjectProbe is the handler behind the probe routes.
+func writeProjectProbe(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(projectProbe{
+		ProjectUID: auth.ProjectUIDFromContext(r.Context()),
+		Role:       string(auth.ProjectRoleFromContext(r.Context())),
+	})
+}
+
+// newProjectEnv builds the environment: /api/v1 resolves the bootstrap project
+// (no parameter — the transition rule), /api/v1/p/{project} the named one.
+func newProjectEnv(t *testing.T) *projectEnv {
+	t.Helper()
+	base := newHTTPEnv(t, 50)
+	projects := project.NewStore(base.db.Pool())
+	api := auth.NewAPI(auth.APIConfig{Service: base.svc, Limiter: auth.NewLimiter(50, time.Minute)})
+
+	probes := func(r chi.Router) {
+		r.With(api.RequireAuth).Get("/probe/auth", writeProjectProbe)
+		r.With(api.RequireAdmin).Get("/probe/admin", writeProjectProbe)
+		r.With(api.RequireMaintainer).Get("/probe/maintain", writeProjectProbe)
+		r.With(api.RequireAuthOrDownloadToken).Get("/probe/media", writeProjectProbe)
+	}
+	r := chi.NewRouter()
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(auth.WithProject(projects))
+		api.RegisterRoutes(r)
+		probes(r)
+		r.Route("/p/{project}", func(r chi.Router) {
+			r.Use(auth.WithProject(projects))
+			probes(r)
+		})
+	})
+	server := httptest.NewServer(r)
+	t.Cleanup(server.Close)
+	return &projectEnv{httpEnv: base, projects: projects, server: server}
+}
+
+// get issues a GET against the project server as client.
+func (e *projectEnv) get(t *testing.T, client *http.Client, path string) (int, []byte) {
+	t.Helper()
+	other := *e.httpEnv
+	other.server = e.server
+	return other.do(t, client, http.MethodGet, path, "")
+}
+
+// signIn creates username with role and returns a client signed in on the
+// project server.
+func (e *projectEnv) signIn(t *testing.T, username string, role auth.AccountRole) (*http.Client, auth.User) {
+	t.Helper()
+	user := e.mustCreate(t, username, role)
+	other := *e.httpEnv
+	other.server = e.server
+	return other.loginClient(t, username), user
+}
+
+// createProject makes a project with slug next to the bootstrap one.
+func (e *projectEnv) createProject(t *testing.T, slug string) *project.Project {
+	t.Helper()
+	p, err := e.projects.Create(t.Context(), audit.Meta{}, project.CreateParams{Slug: slug, Name: "Projekt " + slug})
+	if err != nil {
+		t.Fatalf("creating project %q: %v", slug, err)
+	}
+	return p
+}
+
+// addMember makes user a member of p with role, approved or not.
+func (e *projectEnv) addMember(t *testing.T, p *project.Project, user auth.User, role project.Role, approved bool) {
+	t.Helper()
+	if _, err := e.projects.AddMember(t.Context(), audit.Meta{}, p.UID, user.UID, role, approved); err != nil {
+		t.Fatalf("adding %s to %s: %v", user.Username, p.Slug, err)
+	}
+}
+
+// decodeProbe decodes a probe answer.
+func decodeProbe(t *testing.T, body []byte) projectProbe {
+	t.Helper()
+	var p projectProbe
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatalf("decoding probe %s: %v", body, err)
+	}
+	return p
+}
+
+// TestProject_bootstrapFallback proves the transition rule: a route without the
+// parameter addresses the bootstrap project, with the caller's role there.
+func TestProject_bootstrapFallback(t *testing.T) {
+	env := newProjectEnv(t)
+	client, _ := env.signIn(t, "eva", auth.AccountEditor)
+
+	status, body := env.get(t, client, "/api/v1/probe/auth")
+	if status != http.StatusOK {
+		t.Fatalf("probe = %d, body %s", status, body)
+	}
+	got := decodeProbe(t, body)
+	if got.ProjectUID != project.BootstrapUID || got.Role != string(project.RoleEditor) {
+		t.Errorf("probe = %+v, want the bootstrap project as editor", got)
+	}
+	if status, _ := env.get(t, client, "/api/v1/p/v/probe/auth"); status != http.StatusOK {
+		t.Errorf("the bootstrap project by slug = %d, want 200", status)
+	}
+}
+
+// TestProject_foreignIsIndistinguishableFromUnknown proves a tenant cannot
+// learn another project exists: a project it is no member of answers exactly
+// what a slug nobody uses answers.
+func TestProject_foreignIsIndistinguishableFromUnknown(t *testing.T) {
+	env := newProjectEnv(t)
+	env.createProject(t, "alfa")
+	client, _ := env.signIn(t, "eva", auth.AccountAdmin)
+
+	foreignStatus, foreignBody := env.get(t, client, "/api/v1/p/alfa/probe/auth")
+	unknownStatus, unknownBody := env.get(t, client, "/api/v1/p/nikde/probe/auth")
+	if foreignStatus != http.StatusNotFound || unknownStatus != http.StatusNotFound {
+		t.Fatalf("foreign = %d, unknown = %d, want 404 for both", foreignStatus, unknownStatus)
+	}
+	if string(foreignBody) != string(unknownBody) {
+		t.Errorf("foreign body %s differs from unknown body %s", foreignBody, unknownBody)
+	}
+	// The media guard applies the same rule.
+	if status, body := env.get(t, client, "/api/v1/p/alfa/probe/media"); status != http.StatusNotFound ||
+		string(body) != string(unknownBody) {
+		t.Errorf("media guard on a foreign project = %d %s, want the same 404", status, body)
+	}
+}
+
+// TestProject_anonymousGets401Regardless proves an anonymous caller learns
+// nothing either: 401 for an existing and an unknown project alike.
+func TestProject_anonymousGets401Regardless(t *testing.T) {
+	env := newProjectEnv(t)
+	env.createProject(t, "alfa")
+	for _, path := range []string{"/api/v1/p/alfa/probe/auth", "/api/v1/p/nikde/probe/auth"} {
+		if status, _ := env.get(t, newClient(t), path); status != http.StatusUnauthorized {
+			t.Errorf("anonymous %s = %d, want 401", path, status)
+		}
+	}
+}
+
+// TestProject_pendingMembershipIs403 proves a member nobody has approved yet
+// gets 403 pending_approval.
+func TestProject_pendingMembershipIs403(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	client, user := env.signIn(t, "eva", auth.AccountViewer)
+	env.addMember(t, alfa, user, project.RoleViewer, false)
+
+	status, body := env.get(t, client, "/api/v1/p/alfa/probe/auth")
+	if status != http.StatusForbidden {
+		t.Fatalf("pending member = %d, want 403 (body %s)", status, body)
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || got.Error != auth.ErrorPendingApproval {
+		t.Errorf("body = %s, want {\"error\":%q}", body, auth.ErrorPendingApproval)
+	}
+}
+
+// TestProject_inactiveProject proves a deactivated project is 404 for its own
+// members and still open to a maintainer.
+func TestProject_inactiveProject(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	member, user := env.signIn(t, "eva", auth.AccountViewer)
+	env.addMember(t, alfa, user, project.RoleEditor, true)
+	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
+
+	if status, body := env.get(t, member, "/api/v1/p/alfa/probe/auth"); status != http.StatusOK {
+		t.Fatalf("member of an active project = %d (body %s)", status, body)
+	}
+	inactive := false
+	if _, err := env.projects.Update(t.Context(), audit.Meta{}, alfa.UID, project.UpdatePatch{Active: &inactive}); err != nil {
+		t.Fatalf("deactivating: %v", err)
+	}
+	if status, _ := env.get(t, member, "/api/v1/p/alfa/probe/auth"); status != http.StatusNotFound {
+		t.Errorf("member of a deactivated project = %d, want 404", status)
+	}
+	if status, body := env.get(t, maint, "/api/v1/p/alfa/probe/auth"); status != http.StatusOK {
+		t.Errorf("maintainer in a deactivated project = %d, want 200 (body %s)", status, body)
+	}
+}
+
+// TestProject_maintainerIsAdminEverywhere proves a maintainer enters a project
+// it is no member of as its admin, while the instance guard still reads the
+// instance role alone.
+func TestProject_maintainerIsAdminEverywhere(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
+	admin, adminUser := env.signIn(t, "boss", auth.AccountAdmin)
+	env.addMember(t, alfa, adminUser, project.RoleAdmin, true)
+
+	status, body := env.get(t, maint, "/api/v1/p/alfa/probe/admin")
+	if status != http.StatusOK {
+		t.Fatalf("maintainer admin probe = %d (body %s)", status, body)
+	}
+	if got := decodeProbe(t, body); got.ProjectUID != alfa.UID || got.Role != string(project.RoleAdmin) {
+		t.Errorf("maintainer probe = %+v, want alfa as admin", got)
+	}
+	if status, _ := env.get(t, maint, "/api/v1/p/alfa/probe/maintain"); status != http.StatusOK {
+		t.Errorf("maintainer on the instance guard = %d, want 200", status)
+	}
+	// A project admin is no maintainer.
+	if status, _ := env.get(t, admin, "/api/v1/p/alfa/probe/maintain"); status != http.StatusForbidden {
+		t.Errorf("project admin on the instance guard = %d, want 403", status)
+	}
+}
+
+// TestProject_lastProjectRemembered proves entering a project remembers it as
+// the account's last one.
+func TestProject_lastProjectRemembered(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	client, user := env.signIn(t, "eva", auth.AccountViewer)
+	env.addMember(t, alfa, user, project.RoleViewer, true)
+
+	if status, _ := env.get(t, client, "/api/v1/p/alfa/probe/auth"); status != http.StatusOK {
+		t.Fatalf("entering alfa = %d", status)
+	}
+	slug, err := env.store.LastProjectSlug(t.Context(), user.UID)
+	if err != nil || slug != "alfa" {
+		t.Errorf("LastProjectSlug = %q, %v, want alfa", slug, err)
+	}
+}
+
+// meBody is the part of GET /auth/me these tests read.
+type meBody struct {
+	User struct {
+		UID          string `json:"uid"`
+		Role         string `json:"role"`
+		InstanceRole string `json:"instance_role"`
+	} `json:"user"`
+	InstanceRole    string `json:"instance_role"`
+	LastProjectSlug string `json:"last_project_slug"`
+	Projects        []struct {
+		UID      string `json:"uid"`
+		Slug     string `json:"slug"`
+		Name     string `json:"name"`
+		Active   bool   `json:"active"`
+		Role     string `json:"role"`
+		Approved bool   `json:"approved"`
+	} `json:"projects"`
+}
+
+// TestProject_meShape pins GET /auth/me: the instance role, every membership
+// with its role and approval, the remembered last project, and the user's
+// "role" as the role in the resolved project — "maintainer" for a maintainer,
+// so the frontend's maintainer screens keep working.
+func TestProject_meShape(t *testing.T) {
+	env := newProjectEnv(t)
+	alfa := env.createProject(t, "alfa")
+	client, user := env.signIn(t, "eva", auth.AccountCurator)
+	env.addMember(t, alfa, user, project.RoleAdmin, false)
+
+	status, body := env.get(t, client, "/api/v1/auth/me")
+	if status != http.StatusOK {
+		t.Fatalf("/auth/me = %d (body %s)", status, body)
+	}
+	var me meBody
+	if err := json.Unmarshal(body, &me); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	if me.InstanceRole != "user" || me.User.Role != "curator" || me.LastProjectSlug != project.BootstrapSlug {
+		t.Errorf("instance_role=%q role=%q last=%q, want user/curator/v", me.InstanceRole, me.User.Role, me.LastProjectSlug)
+	}
+	if len(me.Projects) != 2 {
+		t.Fatalf("projects = %+v, want two memberships", me.Projects)
+	}
+	byslug := map[string]int{}
+	for i, p := range me.Projects {
+		byslug[p.Slug] = i
+	}
+	if p := me.Projects[byslug["alfa"]]; p.UID != alfa.UID || p.Role != "admin" || p.Approved || !p.Active {
+		t.Errorf("alfa membership = %+v, want an unapproved admin of an active project", p)
+	}
+	if p := me.Projects[byslug["v"]]; p.UID != project.BootstrapUID || p.Role != "curator" || !p.Approved {
+		t.Errorf("bootstrap membership = %+v, want an approved curator", p)
+	}
+
+	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
+	_, body = env.get(t, maint, "/api/v1/auth/me")
+	if err := json.Unmarshal(body, &me); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	if me.InstanceRole != "maintainer" || me.User.Role != "maintainer" {
+		t.Errorf("maintainer /auth/me instance_role=%q role=%q, want maintainer twice", me.InstanceRole, me.User.Role)
+	}
+}
+
+// TestProject_registrationCreatesAPendingMembership proves a self-service
+// registration creates a plain user with an unapproved viewer membership of the
+// bootstrap project, and that approving the account approves the membership.
+func TestProject_registrationCreatesAPendingMembership(t *testing.T) {
+	env := newHTTPEnv(t, 10)
+	projects := project.NewStore(env.db.Pool())
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	admin := signInAs(t, env, "boss")
+	waiting := waitingAccount(t, env, "newcomer")
+
+	if waiting.Role != auth.RoleUser {
+		t.Errorf("registered instance role = %q, want user", waiting.Role)
+	}
+	member, err := projects.Membership(t.Context(), project.BootstrapUID, waiting.UID)
+	if err != nil {
+		t.Fatalf("reading the membership: %v", err)
+	}
+	if member.Role != project.RoleViewer || member.ApprovedAt != nil {
+		t.Errorf("membership = %s approved %v, want an unapproved viewer", member.Role, member.ApprovedAt)
+	}
+
+	if status, body := approve(t, env, admin, waiting.UID); status != http.StatusOK {
+		t.Fatalf("approve = %d (body %s)", status, body)
+	}
+	member, err = projects.Membership(t.Context(), project.BootstrapUID, waiting.UID)
+	if err != nil {
+		t.Fatalf("reading the membership: %v", err)
+	}
+	if member.ApprovedAt == nil {
+		t.Error("approving the account left its membership pending")
+	}
+	user, err := env.store.GetUserByUID(t.Context(), waiting.UID)
+	if err != nil || user.ApprovedAt == nil {
+		t.Errorf("users.approved_at after approval = %v (%v), want stamped during the transition", user.ApprovedAt, err)
+	}
+}
+
+// TestProject_adminUpdateMovesTheMembership proves the transitional admin
+// endpoint's five-rung role lands as instance role + bootstrap membership.
+func TestProject_adminUpdateMovesTheMembership(t *testing.T) {
+	env := newHTTPEnv(t, 10)
+	projects := project.NewStore(env.db.Pool())
+	maintUser := env.mustCreate(t, "ops", auth.AccountMaintainer)
+	target := env.mustCreate(t, "eva", auth.AccountViewer)
+
+	updated, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
+		auth.UpdateUserInput{Email: target.Email, Role: auth.AccountEditor}, maintUser.Role,
+		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
+	if err != nil {
+		t.Fatalf("UpdateUserAudited: %v", err)
+	}
+	if updated.Role != auth.RoleUser || updated.ProjectRole != project.RoleEditor || updated.AccountRole != auth.AccountEditor {
+		t.Errorf("updated = %q/%q/%q, want user/editor/editor", updated.Role, updated.ProjectRole, updated.AccountRole)
+	}
+	member, err := projects.Membership(t.Context(), project.BootstrapUID, target.UID)
+	if err != nil || member.Role != project.RoleEditor {
+		t.Errorf("membership after update = %+v (%v), want editor", member, err)
+	}
+
+	promoted, err := env.svc.UpdateUserAudited(t.Context(), target.UID,
+		auth.UpdateUserInput{Email: target.Email, Role: auth.AccountMaintainer}, maintUser.Role,
+		audit.Meta{ActorUID: maintUser.UID}.Entry(audit.ActionUserUpdate, "users", "", nil))
+	if err != nil {
+		t.Fatalf("promoting: %v", err)
+	}
+	if promoted.Role != auth.RoleMaintainer || promoted.AccountRole != auth.AccountMaintainer {
+		t.Errorf("promoted = %q/%q, want maintainer", promoted.Role, promoted.AccountRole)
+	}
+}

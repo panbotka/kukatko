@@ -112,11 +112,11 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 	// An admin and a maintainer who opted into the mail, an admin who never
 	// chose, and accounts that must not be told even having opted in: a
 	// disabled admin and an editor.
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
-	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
-	env.mustCreate(t, "silent", auth.RoleAdmin)
-	scribe := env.mustCreate(t, "scribe", auth.RoleEditor)
-	blocked := env.mustCreate(t, "retired", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
+	env.mustCreate(t, "silent", auth.AccountAdmin)
+	scribe := env.mustCreate(t, "scribe", auth.AccountEditor)
+	blocked := env.mustCreate(t, "retired", auth.AccountAdmin)
 	if _, err := env.svc.SetUserDisabled(t.Context(), blocked.UID, true); err != nil {
 		t.Fatalf("disabling the retired admin: %v", err)
 	}
@@ -151,8 +151,8 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 	if created.ApprovedAt != nil {
 		t.Errorf("approved_at = %v, want NULL — nobody has approved this account", *created.ApprovedAt)
 	}
-	if created.Role != auth.RoleViewer {
-		t.Errorf("role = %q, want %q — registration hands out nothing", created.Role, auth.RoleViewer)
+	if created.AccountRole != auth.AccountViewer {
+		t.Errorf("role = %q, want %q — registration hands out nothing", created.Role, auth.AccountViewer)
 	}
 	if created.Disabled {
 		t.Error("the account is disabled; waiting for approval is not the same as blocked")
@@ -242,7 +242,7 @@ func TestRegister_unapprovedAccountCannotSignIn(t *testing.T) {
 // that carries the wrong secret creates nothing and schedules no mail.
 func TestRegister_wrongSecretIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	openRegistration(t, env)
 
 	status, body := register(t, env, "stranger", "stranger@example.test", "vsichni rodaci 2025")
@@ -308,7 +308,7 @@ func TestRegister_closedInstanceRefuses(t *testing.T) {
 // registration.
 func TestRegister_duplicateUsernameIsRejected(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "alice", auth.RoleViewer)
+	env.mustCreate(t, "alice", auth.AccountViewer)
 	openRegistration(t, env)
 
 	status, body := register(t, env, "Alice", "alice-two@example.test", theSecret)
@@ -380,7 +380,7 @@ func TestRegister_validatesLikeTheAdminAPI(t *testing.T) {
 // person's own confirmation is what matters.
 func TestRegister_succeedsWithNobodyToNotify(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	admin := env.mustCreate(t, "boss", auth.RoleAdmin)
+	admin := env.mustCreate(t, "boss", auth.AccountAdmin)
 	if _, err := env.db.Pool().Exec(t.Context(),
 		`UPDATE users SET email = 'boss@kukatko.invalid' WHERE uid = $1`, admin.UID); err != nil {
 		t.Fatalf("giving the admin a placeholder address: %v", err)

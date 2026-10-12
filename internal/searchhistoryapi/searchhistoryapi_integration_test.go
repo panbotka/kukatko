@@ -62,7 +62,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -143,7 +143,7 @@ func (e *env) list(t *testing.T, c *http.Client) []string {
 // them back most-recent-first, and that the query is stored trimmed.
 func TestSearchHistoryRecordsNewestFirst(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	if got := e.list(t, client); len(got) != 0 {
 		t.Fatalf("fresh history = %v, want empty", got)
@@ -163,7 +163,7 @@ func TestSearchHistoryRecordsNewestFirst(t *testing.T) {
 // front instead of appending a second copy.
 func TestSearchHistoryDeduplicates(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	e.record(t, client, "svatba", http.StatusNoContent)
 	e.record(t, client, "hory", http.StatusNoContent)
@@ -180,7 +180,7 @@ func TestSearchHistoryDeduplicates(t *testing.T) {
 // oldest, without any retention job.
 func TestSearchHistoryCapsAtMaxEntries(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	const extra = 5
 	for i := range searchhistory.MaxEntries + extra {
@@ -205,7 +205,7 @@ func TestSearchHistoryCapsAtMaxEntries(t *testing.T) {
 // idempotent.
 func TestSearchHistoryClear(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	e.record(t, client, "svatba", http.StatusNoContent)
 	for range 2 {
@@ -224,7 +224,7 @@ func TestSearchHistoryClear(t *testing.T) {
 // and leaves the history untouched.
 func TestSearchHistoryRejectsBlankQuery(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	e.record(t, client, "   ", http.StatusBadRequest)
 	if got := e.list(t, client); len(got) != 0 {
@@ -254,8 +254,8 @@ func TestSearchHistoryRequiresAuth(t *testing.T) {
 // untouched.
 func TestSearchHistoryPerUserIsolation(t *testing.T) {
 	e := newEnv(t)
-	alice := e.login(t, "alice", auth.RoleViewer)
-	bob := e.login(t, "bob", auth.RoleEditor)
+	alice := e.login(t, "alice", auth.AccountViewer)
+	bob := e.login(t, "bob", auth.AccountEditor)
 
 	e.record(t, alice, "alice only", http.StatusNoContent)
 	e.record(t, bob, "bob only", http.StatusNoContent)

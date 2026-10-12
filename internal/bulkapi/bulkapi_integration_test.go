@@ -94,7 +94,7 @@ func newEnv(t *testing.T, maxBatch int) *env {
 
 // login creates a user with the given role and returns a cookie-bearing client
 // plus the new user's UID.
-func (e *env) login(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -163,7 +163,7 @@ func decodeBody(t *testing.T, resp *http.Response, dst any) {
 // verifying the committed state and the per-photo result.
 func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Trip"})
@@ -257,7 +257,7 @@ func assertAuditWritten(t *testing.T, ctx context.Context, env *env, actorUID st
 // an error per-photo while the valid photos are still updated and committed.
 func TestBulk_partialFailureReportsPerPhoto(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 	good := env.seedPhoto(t, "good1")
 
@@ -287,7 +287,7 @@ func TestBulk_partialFailureReportsPerPhoto(t *testing.T) {
 // TestBulk_roleEnforcement verifies a viewer cannot perform a bulk edit.
 func TestBulk_roleEnforcement(t *testing.T) {
 	env := newEnv(t, 1000)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	uid := env.seedPhoto(t, "view1")
 
 	body, _ := json.Marshal(map[string]any{
@@ -305,7 +305,7 @@ func TestBulk_roleEnforcement(t *testing.T) {
 // 413 and makes no change.
 func TestBulk_batchSizeLimit(t *testing.T) {
 	env := newEnv(t, 2)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	p1 := env.seedPhoto(t, "lim1")
 	p2 := env.seedPhoto(t, "lim2")
 	p3 := env.seedPhoto(t, "lim3")
@@ -325,7 +325,7 @@ func TestBulk_batchSizeLimit(t *testing.T) {
 // acting user.
 func TestBulk_favoriteIsPerUser(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 	uid := env.seedPhoto(t, "fav1")
 
@@ -352,7 +352,7 @@ func TestBulk_favoriteIsPerUser(t *testing.T) {
 // the acting user and that an out-of-range rating is rejected with 400.
 func TestBulk_ratingIsPerUser(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, editorUID := env.login(t, "editor", auth.RoleEditor)
+	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 	uid := env.seedPhoto(t, "rate1")
 
@@ -389,7 +389,7 @@ func TestBulk_ratingIsPerUser(t *testing.T) {
 // TestBulk_unknownOperationRejected verifies an unknown operation key is a 400.
 func TestBulk_unknownOperationRejected(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	uid := env.seedPhoto(t, "bad1")
 
 	body := []byte(`{"photo_uids":["` + uid + `"],"operations":{"frobnicate":true}}`)
@@ -405,7 +405,7 @@ func TestBulk_unknownOperationRejected(t *testing.T) {
 // one photo at a time.
 func TestBulk_hidesAndUnhides(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
 	p1 := env.seedPhoto(t, "hide1")

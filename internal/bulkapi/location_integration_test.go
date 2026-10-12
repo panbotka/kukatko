@@ -51,7 +51,7 @@ func assertLocation(t *testing.T, ctx context.Context, env *env, uid string, lat
 // estimate. Each moved photo owes a reverse geocode, so each is scheduled.
 func TestBulkLocation_overwritesEveryPhoto(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 	empty := env.seedPhoto(t, "loc-empty-1")
 	placed := env.seedPlacedPhoto(t, "loc-placed-1", 50.1, 14.4)
@@ -76,7 +76,7 @@ func TestBulkLocation_overwritesEveryPhoto(t *testing.T) {
 // says what really happened, and it is not handed to the geocoder.
 func TestBulkLocation_onlyMissingKeepsExisting(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 	empty := env.seedPhoto(t, "loc-empty-2")
 	placed := env.seedPlacedPhoto(t, "loc-placed-2", 50.1, 14.4)
@@ -100,7 +100,7 @@ func TestBulkLocation_onlyMissingKeepsExisting(t *testing.T) {
 // twice.
 func TestBulkLocation_resendingTheSameCoordinateSchedulesNothing(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	placed := env.seedPlacedPhoto(t, "loc-placed-3", 49.19522, 16.60796)
 
 	result := env.setLocation(t, editor, []string{placed},
@@ -119,7 +119,7 @@ func TestBulkLocation_resendingTheSameCoordinateSchedulesNothing(t *testing.T) {
 // draw on a map.
 func TestBulkLocation_rejectsCoordinatesOffTheGlobe(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	uid := env.seedPhoto(t, "loc-bounds-1")
 
 	for _, coords := range []map[string]any{
@@ -165,7 +165,7 @@ func (e *env) setLocation(
 // would really see.
 func TestBulkLocationSummary_countsPlacedPhotos(t *testing.T) {
 	env := newEnv(t, 1000)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	empty := env.seedPhoto(t, "sum-empty-1")
 	placed := env.seedPlacedPhoto(t, "sum-placed-1", 50.1, 14.4)
 
@@ -189,7 +189,7 @@ func TestBulkLocationSummary_countsPlacedPhotos(t *testing.T) {
 // on it.
 func TestBulkLocationSummary_roleEnforcement(t *testing.T) {
 	env := newEnv(t, 1000)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	uid := env.seedPhoto(t, "sum-view-1")
 
 	body, _ := json.Marshal(map[string]any{"photo_uids": []string{uid}})

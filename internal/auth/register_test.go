@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -122,7 +123,7 @@ func TestPrepareRegistration_isUnapprovedViewer(t *testing.T) {
 		Username: "  Newcomer ",
 		Password: "correct horse battery",
 		Email:    "Newcomer@EXAMPLE.com",
-		Role:     RoleViewer,
+		Role:     AccountViewer,
 	})
 	if err != nil {
 		t.Fatalf("prepareRegistration: %v", err)
@@ -130,8 +131,8 @@ func TestPrepareRegistration_isUnapprovedViewer(t *testing.T) {
 	if user.ApprovedAt != nil {
 		t.Errorf("ApprovedAt = %v, want nil — nobody has let this account in yet", *user.ApprovedAt)
 	}
-	if user.Role != RoleViewer {
-		t.Errorf("Role = %q, want %q", user.Role, RoleViewer)
+	if user.Role != RoleUser || user.ProjectRole != project.RoleViewer {
+		t.Errorf("Role, ProjectRole = %q, %q, want %q, %q", user.Role, user.ProjectRole, RoleUser, project.RoleViewer)
 	}
 	if user.Username != "newcomer" {
 		t.Errorf("Username = %q, want the normalized %q", user.Username, "newcomer")
@@ -161,25 +162,25 @@ func TestPrepareRegistration_rejectsBadInput(t *testing.T) {
 	}{
 		{
 			name:    "no e-mail address",
-			in:      CreateUserInput{Username: "a", Password: "correct horse battery", Role: RoleViewer},
+			in:      CreateUserInput{Username: "a", Password: "correct horse battery", Role: AccountViewer},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name: "malformed e-mail address",
 			in: CreateUserInput{Username: "a", Password: "correct horse battery",
-				Email: "nobody@localhost", Role: RoleViewer},
+				Email: "nobody@localhost", Role: AccountViewer},
 			wantErr: ErrInvalidEmail,
 		},
 		{
 			name:    "password too short",
-			in:      CreateUserInput{Username: "a", Password: "short", Email: "a@example.com", Role: RoleViewer},
+			in:      CreateUserInput{Username: "a", Password: "short", Email: "a@example.com", Role: AccountViewer},
 			wantErr: ErrPasswordTooShort,
 		},
 		{
 			name: "username too long",
 			in: CreateUserInput{
 				Username: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				Password: "correct horse battery", Email: "a@example.com", Role: RoleViewer,
+				Password: "correct horse battery", Email: "a@example.com", Role: AccountViewer,
 			},
 			wantErr: ErrUsernameTooLong,
 		},

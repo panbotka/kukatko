@@ -215,7 +215,7 @@ func loginJSON(username, password string) string {
 }
 
 // mustCreate creates a user through the service and fails the test on error.
-func (e *httpEnv) mustCreate(t *testing.T, username string, role auth.Role) auth.User {
+func (e *httpEnv) mustCreate(t *testing.T, username string, role auth.AccountRole) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -228,7 +228,7 @@ func (e *httpEnv) mustCreate(t *testing.T, username string, role auth.Role) auth
 
 func TestHTTP_loginMeLogoutFlow(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "alice", auth.RoleEditor)
+	env.mustCreate(t, "alice", auth.AccountEditor)
 	client := newClient(t)
 
 	status, body := env.do(t, client, http.MethodPost, "/api/v1/auth/login", loginJSON("alice", testPassword))
@@ -265,7 +265,7 @@ func TestHTTP_loginMeLogoutFlow(t *testing.T) {
 
 func TestHTTP_loginSetsSecureCookieAttributes(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "mia", auth.RoleViewer)
+	env.mustCreate(t, "mia", auth.AccountViewer)
 	client := newClient(t)
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
@@ -299,7 +299,7 @@ func TestHTTP_loginSetsSecureCookieAttributes(t *testing.T) {
 
 func TestHTTP_loginBadCredentials(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "nate", auth.RoleViewer)
+	env.mustCreate(t, "nate", auth.AccountViewer)
 	client := newClient(t)
 
 	if status, _ := env.do(t, client, http.MethodPost, "/api/v1/auth/login",
@@ -310,9 +310,9 @@ func TestHTTP_loginBadCredentials(t *testing.T) {
 
 func TestHTTP_rbacEnforcement(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "viewer", auth.RoleViewer)
-	env.mustCreate(t, "editor", auth.RoleEditor)
-	env.mustCreate(t, "admin", auth.RoleAdmin)
+	env.mustCreate(t, "viewer", auth.AccountViewer)
+	env.mustCreate(t, "editor", auth.AccountEditor)
+	env.mustCreate(t, "admin", auth.AccountAdmin)
 
 	t.Run("unauthenticated blocked", func(t *testing.T) {
 		client := newClient(t)
@@ -366,7 +366,7 @@ func assertStatus(t *testing.T, env *httpEnv, client *http.Client, method, path,
 
 func TestHTTP_loginRateLimited(t *testing.T) {
 	env := newHTTPEnv(t, 3)
-	env.mustCreate(t, "target", auth.RoleViewer)
+	env.mustCreate(t, "target", auth.AccountViewer)
 	client := newClient(t)
 
 	// The first 3 wrong attempts are answered 401; the 4th is throttled with 429.
@@ -393,7 +393,7 @@ func TestHTTP_loginRateLimited(t *testing.T) {
 // so the budget for the one address the attacker really has runs out.
 func TestHTTP_loginLimitSurvivesAForgedForwardingHeader(t *testing.T) {
 	env := newHTTPEnv(t, 3)
-	env.mustCreate(t, "target", auth.RoleViewer)
+	env.mustCreate(t, "target", auth.AccountViewer)
 	client := newClient(t)
 
 	for i := range 3 {
@@ -426,7 +426,7 @@ func TestHTTP_loginLimitSurvivesAForgedForwardingHeader(t *testing.T) {
 func TestHTTP_loginPerUsernameBudgetOutlastsChangingClients(t *testing.T) {
 	const perIPLimit = 2
 	env := newHTTPEnvWithProxies(t, perIPLimit, []string{"loopback"})
-	env.mustCreate(t, "target", auth.RoleViewer)
+	env.mustCreate(t, "target", auth.AccountViewer)
 	client := newClient(t)
 
 	// Every attempt claims a different client, and the proxy is trusted, so the
@@ -446,7 +446,7 @@ func TestHTTP_loginPerUsernameBudgetOutlastsChangingClients(t *testing.T) {
 	}
 
 	// The account is throttled, not the endpoint: another username still answers.
-	env.mustCreate(t, "bystander", auth.RoleViewer)
+	env.mustCreate(t, "bystander", auth.AccountViewer)
 	if status := env.doWithHeaders(t, client, http.MethodPost, "/api/v1/auth/login",
 		loginJSON("bystander", testPassword), headers); status != http.StatusOK {
 		t.Errorf("an unrelated account: status = %d, want 200", status)
@@ -462,11 +462,11 @@ func TestHTTP_loginFailsIdenticallyForUnknownAndDisabled(t *testing.T) {
 	env := newHTTPEnv(t, 50)
 	client := newClient(t)
 
-	disabled := env.mustCreate(t, "gone", auth.RoleViewer)
+	disabled := env.mustCreate(t, "gone", auth.AccountViewer)
 	if _, err := env.svc.SetUserDisabled(t.Context(), disabled.UID, true); err != nil {
 		t.Fatalf("SetUserDisabled: %v", err)
 	}
-	env.mustCreate(t, "present", auth.RoleViewer)
+	env.mustCreate(t, "present", auth.AccountViewer)
 
 	attempts := []struct {
 		name     string
@@ -511,7 +511,7 @@ func TestHTTP_loginRejectsOverLongUsername(t *testing.T) {
 
 	// Rejection must not have consumed the caller's throttling budget either: a
 	// normal login for a real account still works right after.
-	env.mustCreate(t, "quinn", auth.RoleViewer)
+	env.mustCreate(t, "quinn", auth.AccountViewer)
 	assertStatus(t, env, client, http.MethodPost, "/api/v1/auth/login",
 		loginJSON("quinn", testPassword), http.StatusOK)
 }
@@ -520,21 +520,21 @@ func TestHTTP_loginRejectsOverLongUsername(t *testing.T) {
 // account whose username exceeds the login cap, which could never log in.
 func TestHTTP_createUserRejectsOverLongUsername(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "root", auth.RoleAdmin)
+	env.mustCreate(t, "root", auth.AccountAdmin)
 	client := env.loginClient(t, "root")
 
 	body := adminUserBody(t, map[string]any{
 		"username": strings.Repeat("a", auth.MaxUsernameLen+1),
 		"password": testPassword,
 		"email":    "toolong@example.test",
-		"role":     string(auth.RoleViewer),
+		"role":     string(auth.AccountViewer),
 	})
 	assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users", body, http.StatusBadRequest)
 }
 
 func TestHTTP_changePassword(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "olive", auth.RoleEditor)
+	env.mustCreate(t, "olive", auth.AccountEditor)
 	client := env.loginClient(t, "olive")
 
 	assertStatus(t, env, client, http.MethodPost, "/api/v1/auth/password",
@@ -598,7 +598,7 @@ func (e *httpEnv) createNotedUser(t *testing.T, admin *http.Client, username, no
 
 func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "noteadmin", auth.RoleAdmin)
+	env.mustCreate(t, "noteadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "noteadmin")
 
 	const note = "Contractor; account kept for the 2026 audit."
@@ -644,7 +644,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 func TestHTTP_adminUserNoteListedAndPersisted(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "listadmin", auth.RoleAdmin)
+	env.mustCreate(t, "listadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "listadmin")
 
 	const note = "Owner of the shared family album."
@@ -670,7 +670,7 @@ func TestHTTP_adminUserNoteListedAndPersisted(t *testing.T) {
 
 func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "lenadmin", auth.RoleAdmin)
+	env.mustCreate(t, "lenadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "lenadmin")
 
 	tooLong := strings.Repeat("a", auth.MaxNoteLen+1)
@@ -713,7 +713,7 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 
 func TestHTTP_userNoteNeverReachesNonAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "secretadmin", auth.RoleAdmin)
+	env.mustCreate(t, "secretadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "secretadmin")
 
 	const note = "Do not surface this to the account holder."
@@ -758,8 +758,8 @@ func assertNoteAbsent(t *testing.T, label string, body []byte) {
 
 func TestHTTP_adminResetPassword(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "rootadmin", auth.RoleAdmin)
-	target := env.mustCreate(t, "victim", auth.RoleViewer)
+	env.mustCreate(t, "rootadmin", auth.AccountAdmin)
+	target := env.mustCreate(t, "victim", auth.AccountViewer)
 	admin := env.loginClient(t, "rootadmin")
 
 	assertStatus(t, env, admin, http.MethodPost, "/api/v1/admin/users/"+target.UID+"/password",

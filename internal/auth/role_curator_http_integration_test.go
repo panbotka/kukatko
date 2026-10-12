@@ -15,9 +15,9 @@ import (
 // test database or Role.Valid still rejects the role.
 func TestHTTP_curatorRoleAssignable(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	user := env.user(t, "curator", auth.RoleCurator)
-	if user.Role != auth.RoleCurator {
-		t.Fatalf("created role = %q, want %q", user.Role, auth.RoleCurator)
+	user := env.user(t, "curator", auth.AccountCurator)
+	if user.AccountRole != auth.AccountCurator {
+		t.Fatalf("created role = %q, want %q", user.Role, auth.AccountCurator)
 	}
 }
 
@@ -33,14 +33,14 @@ func TestHTTP_curatorGuardRoleMatrix(t *testing.T) {
 	}
 	const ok, no = http.StatusOK, http.StatusForbidden
 	tests := []struct {
-		role auth.Role
+		role auth.AccountRole
 		want [5]int // auth, curate, write, admin, import
 	}{
-		{auth.RoleViewer, [5]int{ok, no, no, no, no}},
-		{auth.RoleCurator, [5]int{ok, ok, no, no, no}},
-		{auth.RoleEditor, [5]int{ok, ok, ok, no, no}},
-		{auth.RoleAdmin, [5]int{ok, ok, ok, ok, no}},
-		{auth.RoleMaintainer, [5]int{ok, ok, ok, ok, ok}},
+		{auth.AccountViewer, [5]int{ok, no, no, no, no}},
+		{auth.AccountCurator, [5]int{ok, ok, no, no, no}},
+		{auth.AccountEditor, [5]int{ok, ok, ok, no, no}},
+		{auth.AccountAdmin, [5]int{ok, ok, ok, ok, no}},
+		{auth.AccountMaintainer, [5]int{ok, ok, ok, ok, ok}},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {

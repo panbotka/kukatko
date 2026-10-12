@@ -77,14 +77,14 @@ func (e *httpEnv) assertCreatedAdmin(t *testing.T, status int, body []byte, user
 		t.Fatalf("POST /admin/users status = %d, want 201 (body %s)", status, body)
 	}
 	created := decodeUser(t, body)
-	if created["role"] != string(auth.RoleAdmin) {
+	if created["role"] != string(auth.AccountAdmin) {
 		t.Fatalf("created role = %v, want admin", created["role"])
 	}
 	stored, err := e.store.GetUserByUsername(t.Context(), username)
 	if err != nil {
 		t.Fatalf("GetUserByUsername(%q): %v", username, err)
 	}
-	if stored.Role != auth.RoleAdmin {
+	if stored.AccountRole != auth.AccountAdmin {
 		t.Fatalf("stored role = %q, want admin", stored.Role)
 	}
 	return created
@@ -97,14 +97,14 @@ func (e *httpEnv) assertCreatedAdmin(t *testing.T, status int, body []byte, user
 // and `Sec-Fetch-Site: same-site` on it.
 func TestCSRF_textPlainJSONCreatesAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "victim-admin", auth.RoleAdmin)
+	env.mustCreate(t, "victim-admin", auth.AccountAdmin)
 	victim := env.loginClient(t, "victim-admin")
 
 	body := adminUserBody(t, map[string]any{
 		"username": "csrf-fetch",
 		"email":    "csrf-fetch@example.test",
 		"password": testPassword, // attacker-chosen; loginClient signs in with it
-		"role":     string(auth.RoleAdmin),
+		"role":     string(auth.AccountAdmin),
 	})
 	status, data := env.doRaw(t, victim, http.MethodPost, "/api/v1/admin/users", body, siblingHeaders())
 	env.assertCreatedAdmin(t, status, data, "csrf-fetch")
@@ -120,7 +120,7 @@ func TestCSRF_textPlainJSONCreatesAdmin(t *testing.T) {
 // never read.
 func TestCSRF_textPlainFormCreatesAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "victim-admin", auth.RoleAdmin)
+	env.mustCreate(t, "victim-admin", auth.AccountAdmin)
 	victim := env.loginClient(t, "victim-admin")
 
 	name := `{"username":"csrf-form","email":"csrf-form@example.test",` +
@@ -145,7 +145,7 @@ func TestCSRF_textPlainFormLogsIn(t *testing.T) {
 	// The attacker's own account, with a password that carries the "=" the
 	// form encoding needs.
 	if _, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "attacker", Email: "attacker@example.test", Password: "attacker-pass=", Role: auth.RoleViewer,
+		Username: "attacker", Email: "attacker@example.test", Password: "attacker-pass=", Role: auth.AccountViewer,
 	}); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}

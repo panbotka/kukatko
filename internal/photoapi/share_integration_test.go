@@ -61,7 +61,7 @@ func readShareManifest(t *testing.T, resp *http.Response) []shareManifestFile {
 // a UID that resolves to nothing (as the ZIP and the single download do).
 func TestShareManifest_describesSelectionInOrder(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	jpg := env.seedPhoto(t, photos.Photo{Title: "Beach", TakenAtSource: "unknown"}, "beach.jpg", 10, 20, 30)
 	clip := env.seedPhoto(t, photos.Photo{
@@ -101,7 +101,7 @@ func TestShareManifest_describesSelectionInOrder(t *testing.T) {
 // picture in the phone's library.
 func TestShareManifest_deduplicatesNames(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	p1 := env.seedPhoto(t, photos.Photo{Title: "A", TakenAtSource: "unknown"}, "IMG.jpg", 11, 21, 31)
 	p2 := env.seedPhoto(t, photos.Photo{Title: "B", TakenAtSource: "unknown"}, "IMG.jpg", 41, 51, 61)
@@ -124,7 +124,7 @@ func TestShareManifest_deduplicatesNames(t *testing.T) {
 // name at all.
 func TestShareManifest_rejectsUnusableRequests(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	tooMany := make([]string, 1001)
 	for i := range tooMany {
@@ -212,7 +212,7 @@ func TestMediaRoutes_proxyStreamsBytesOnPublishedBackend(t *testing.T) {
 	}
 	media := publishingFS{FS: mediaFS}
 	env := newEnvWithMedia(t, media)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	client = noRedirectClient(client)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "remote.jpg", 33, 44, 55)
 	mirrorOriginal(t, env, media, seeded)
@@ -269,7 +269,7 @@ func TestMediaRoutes_proxyStreamsBytesOnPublishedBackend(t *testing.T) {
 // as the redirecting form is.
 func TestMediaRoutes_proxyStillRequiresTheGuard(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Local", TakenAtSource: "unknown"}, "local.jpg", 13, 23, 33)
 
 	base := env.server.URL + "/api/v1/photos/" + seeded.UID

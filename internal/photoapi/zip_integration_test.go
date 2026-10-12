@@ -64,7 +64,7 @@ func readZipEntries(t *testing.T, resp *http.Response) map[string][]byte {
 // carries the photo's exact original bytes.
 func TestDownloadZip_streamsSelectionWithDedupedNames(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	// Two photos share the file name "IMG.jpg" (distinct colours → distinct
 	// content and storage paths) to exercise entry-name de-duplication.
@@ -113,7 +113,7 @@ func TestDownloadZip_streamsSelectionWithDedupedNames(t *testing.T) {
 // whole archive.
 func TestDownloadZip_skipsMissingOriginal(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	present := env.seedPhoto(t, photos.Photo{Title: "Here", TakenAtSource: "unknown"}, "here.jpg", 11, 21, 31)
 	gone := env.seedPhoto(t, photos.Photo{Title: "Gone", TakenAtSource: "unknown"}, "gone.jpg", 41, 51, 61)
@@ -150,7 +150,7 @@ func TestDownloadZip_skipsMissingOriginal(t *testing.T) {
 // file cap is rejected with 413 before any archive is written.
 func TestDownloadZip_enforcesCap(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	tooMany := make([]string, 1001)
 	for i := range tooMany {
@@ -188,7 +188,7 @@ func TestDownloadZip_requiresAuth(t *testing.T) {
 // photo is a 400 rather than an empty archive.
 func TestDownloadZip_emptyRequestRejected(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	resp := postZip(t, client, env.server.URL, map[string]any{"photo_uids": []string{}})
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -202,7 +202,7 @@ func TestDownloadZip_emptyRequestRejected(t *testing.T) {
 // album view hides is not leaked into its download).
 func TestDownloadZip_albumExpandsToLivePhotos(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "editor", auth.RoleEditor)
+	client, _ := env.login(t, "editor", auth.AccountEditor)
 
 	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
 	if err != nil {

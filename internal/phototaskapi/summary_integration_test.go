@@ -17,8 +17,8 @@ import (
 // it is differs, and an anonymous request gets nothing.
 func TestSummary_isPerCaller(t *testing.T) {
 	e := newEnv(t)
-	editor := e.login(t, "editor", auth.RoleEditor)
-	viewer := e.login(t, "pametnik", auth.RoleViewer)
+	editor := e.login(t, "editor", auth.AccountEditor)
+	viewer := e.login(t, "pametnik", auth.AccountViewer)
 
 	asked := e.openTask(t, editor, "V kterém roce?")
 	ask, _ := json.Marshal(map[string]string{"user_uid": e.uids["pametnik"]})

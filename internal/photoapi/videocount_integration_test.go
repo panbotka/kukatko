@@ -15,7 +15,7 @@ import (
 // photo counts with the stills — it is a photograph.
 func TestVideoTotal_reportedByEveryPagePath(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "video-total", auth.RoleEditor)
+	client, _ := env.login(t, "video-total", auth.AccountEditor)
 	base := env.server.URL
 
 	env.seedPhoto(t, photos.Photo{

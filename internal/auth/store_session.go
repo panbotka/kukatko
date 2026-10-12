@@ -11,7 +11,7 @@ import (
 
 // sessionColumns is the canonical, ordered column list for session reads,
 // matched by scanSession.
-const sessionColumns = `id, token, download_token, user_uid, role, created_at, expires_at`
+const sessionColumns = `id, token, download_token, user_uid, created_at, expires_at`
 
 // scanSession reads one session row in sessionColumns order, returning a wrapped
 // error on failure.
@@ -19,7 +19,7 @@ func scanSession(row pgx.Row) (Session, error) {
 	var sess Session
 	if err := row.Scan(
 		&sess.ID, &sess.Token, &sess.DownloadToken, &sess.UserUID,
-		&sess.Role, &sess.CreatedAt, &sess.ExpiresAt,
+		&sess.CreatedAt, &sess.ExpiresAt,
 	); err != nil {
 		return Session{}, fmt.Errorf("auth: scanning session: %w", err)
 	}
@@ -32,10 +32,10 @@ func scanSession(row pgx.Row) (Session, error) {
 // testable) rather than the database wall clock. It returns a wrapped error on
 // failure.
 func (s *Store) CreateSession(ctx context.Context, sess Session) error {
-	const q = `INSERT INTO sessions (id, token, download_token, user_uid, role, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	const q = `INSERT INTO sessions (id, token, download_token, user_uid, created_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`
 	_, err := s.pool.Exec(ctx, q,
-		sess.ID, sess.Token, sess.DownloadToken, sess.UserUID, sess.Role, sess.CreatedAt, sess.ExpiresAt)
+		sess.ID, sess.Token, sess.DownloadToken, sess.UserUID, sess.CreatedAt, sess.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("auth: inserting session: %w", err)
 	}

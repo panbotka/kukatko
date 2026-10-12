@@ -18,7 +18,7 @@ import (
 // can be undone — and stating a real date afterwards discards what was put away.
 func TestPatchClearsTakenAtAndPreservesIt(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	scannedIn := time.Date(2011, 3, 8, 10, 15, 0, 0, time.UTC)
@@ -82,7 +82,7 @@ func TestPatchClearsTakenAtAndPreservesIt(t *testing.T) {
 // stated.
 func TestDatedFilterFindsUndatedPhotos(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	base := env.server.URL
 
 	scannedIn := time.Date(2011, 3, 8, 10, 15, 0, 0, time.UTC)

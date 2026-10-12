@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/maintenance"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // facebookDownloadName is the file name that produced the defect this repair
@@ -30,7 +31,7 @@ func (h *harness) maintainerMeta(t *testing.T) audit.Meta {
 		Username:     "impossible-dates",
 		Email:        "impossible-dates@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleMaintainer,
+		Role:         auth.RoleMaintainer, ProjectRole: project.RoleAdmin,
 	}); err != nil {
 		t.Fatalf("creating the acting maintainer: %v", err)
 	}

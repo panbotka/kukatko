@@ -16,8 +16,8 @@ import (
 // documented way back.
 func TestHideFromLibrary(t *testing.T) {
 	env := newEnv(t)
-	editor, _ := env.login(t, "editor", auth.RoleEditor)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
+	editor, _ := env.login(t, "editor", auth.AccountEditor)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 	ctx := t.Context()
 

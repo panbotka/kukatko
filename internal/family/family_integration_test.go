@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/family"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -52,7 +53,7 @@ func makeUser(t *testing.T, db *database.DB, uid, username string) string {
 		Username:     username,
 		Email:        username + "@example.test",
 		PasswordHash: "x",
-		Role:         auth.RoleViewer,
+		Role:         auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}

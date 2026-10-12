@@ -91,9 +91,9 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 	e.exec(t, `INSERT INTO users (uid, username, email, password_hash, role)
 		VALUES ($1,$2,$2||'@example.test',$3,$4)`,
 		"usr000000001", "operator", "hash", "maintainer")
-	e.exec(t, `INSERT INTO sessions (id, token, download_token, user_uid, role, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		"ses1", "tok1", "dl1", "usr000000001", "maintainer", time.Now().Add(time.Hour))
+	e.exec(t, `INSERT INTO sessions (id, token, download_token, user_uid, expires_at)
+		VALUES ($1,$2,$3,$4,$5)`,
+		"ses1", "tok1", "dl1", "usr000000001", time.Now().Add(time.Hour))
 	e.exec(t, `INSERT INTO api_tokens (id, user_uid, name, secret_hash) VALUES ($1,$2,$3,$4)`,
 		"tokid1", "usr000000001", "migration", "secret")
 	e.exec(t, `INSERT INTO announcements (message) VALUES ($1)`, "migration in progress")

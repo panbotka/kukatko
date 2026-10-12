@@ -99,7 +99,7 @@ func (e *env) seed(t *testing.T, entries ...audit.Entry) {
 
 // createUser creates a user with the given role and returns its UID, so a seeded
 // audit row can be attributed to it (audit_log.actor_uid references users.uid).
-func (e *env) createUser(t *testing.T, username string, role auth.Role) string {
+func (e *env) createUser(t *testing.T, username string, role auth.AccountRole) string {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -111,7 +111,7 @@ func (e *env) createUser(t *testing.T, username string, role auth.Role) string {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	client, _ := e.loginUser(t, username, role)
 	return client
@@ -120,7 +120,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 // loginUser creates a user with the given role and returns both a cookie-bearing
 // client for it and its UID, so a test can seed audit rows attributed to the very
 // user it acts as.
-func (e *env) loginUser(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *env) loginUser(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -154,7 +154,7 @@ type listResponse struct {
 // TestListForbiddenForNonAdmin verifies a non-admin cannot read the audit log.
 func TestListForbiddenForNonAdmin(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	resp := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
@@ -167,7 +167,7 @@ func TestListForbiddenForNonAdmin(t *testing.T) {
 // total and next_offset.
 func TestListFiltersAndPagination(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 	env.seed(t,
 		audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-1"},
 		audit.Entry{Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-1"},
@@ -234,9 +234,9 @@ func reviewRows(actorUID string) []audit.Entry {
 // selectivity (by actor and by via=review) is exercised.
 func TestReviewDecisionFilter(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
-	actorA := env.createUser(t, "actor-a", auth.RoleEditor)
-	actorB := env.createUser(t, "actor-b", auth.RoleEditor)
+	admin := env.login(t, "admin", auth.AccountAdmin)
+	actorA := env.createUser(t, "actor-a", auth.AccountEditor)
+	actorB := env.createUser(t, "actor-b", auth.AccountEditor)
 
 	seed := reviewRows(actorA)
 	// Non-review noise for A: an ordinary edit and a non-review face assign (no
@@ -301,7 +301,7 @@ func TestReviewDecisionFilter(t *testing.T) {
 	}
 
 	// Admin-only: an editor is forbidden, an admin is served (list() asserts 200).
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	forbidden := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit?user="+actorA+"&via=review", nil)
 	defer func() { _ = forbidden.Body.Close() }()
 	if forbidden.StatusCode != http.StatusForbidden {
@@ -327,8 +327,8 @@ func ownRows(actorUID string) []audit.Entry {
 // the system's actor-less ones — and that even the lowest role may read it.
 func TestMineListsOnlyOwnEntries(t *testing.T) {
 	env := newEnv(t)
-	viewer, viewerUID := env.loginUser(t, "viewer", auth.RoleViewer)
-	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	viewer, viewerUID := env.loginUser(t, "viewer", auth.AccountViewer)
+	otherUID := env.createUser(t, "other", auth.AccountEditor)
 
 	seed := ownRows(viewerUID)
 	seed = append(seed, ownRows(otherUID)...)
@@ -367,8 +367,8 @@ func TestMineListsOnlyOwnEntries(t *testing.T) {
 // quietly serving one's own rows, while naming oneself changes nothing.
 func TestMineRejectsAnotherUsersFilter(t *testing.T) {
 	env := newEnv(t)
-	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
-	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	editor, editorUID := env.loginUser(t, "editor", auth.AccountEditor)
+	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(editorUID)
 	env.seed(t, append(seed, ownRows(otherUID)...)...)
 
@@ -389,8 +389,8 @@ func TestMineRejectsAnotherUsersFilter(t *testing.T) {
 // filtered view can never reach another user's rows.
 func TestMineNarrowingSurvivesPagingAndFilters(t *testing.T) {
 	env := newEnv(t)
-	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
-	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	editor, editorUID := env.loginUser(t, "editor", auth.AccountEditor)
+	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(editorUID)
 	env.seed(t, append(seed, ownRows(otherUID)...)...)
 
@@ -428,8 +428,8 @@ func TestMineNarrowingSurvivesPagingAndFilters(t *testing.T) {
 // anybody — while the admin's own /audit/mine shows only the admin's rows.
 func TestAdminListingUnchanged(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
-	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
+	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(otherUID)
 	seed = append(seed,
 		audit.Entry{ActorUID: adminUID, Action: audit.ActionUserCreate, TargetType: "users", TargetUID: otherUID},
@@ -508,7 +508,7 @@ func badRequest(t *testing.T, client *http.Client, url, want string) string {
 // refused with 400 naming the offending value.
 func TestListRejectsNonsenseFilters(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
 	env.seed(t, ownRows(adminUID)...)
 
 	base := env.baseURL + "/api/v1/audit"
@@ -528,9 +528,9 @@ func TestListRejectsNonsenseFilters(t *testing.T) {
 // with no recorded actions still gets the true answer: 200 and an empty list.
 func TestListAcceptsUsernameAsUser(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
-	actorUID := env.createUser(t, "panbotka", auth.RoleEditor)
-	env.createUser(t, "quiet", auth.RoleEditor)
+	admin := env.login(t, "admin", auth.AccountAdmin)
+	actorUID := env.createUser(t, "panbotka", auth.AccountEditor)
+	env.createUser(t, "quiet", auth.AccountEditor)
 	env.seed(t, ownRows(actorUID)...)
 
 	base := env.baseURL + "/api/v1/audit"
@@ -562,7 +562,7 @@ func TestListAcceptsUsernameAsUser(t *testing.T) {
 // returns its entries, and an entity_type nobody has registered is accepted too.
 func TestListKeepsEntriesOfVanishedEntities(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 	env.seed(t,
 		audit.Entry{Action: audit.ActionPhotoPurge, TargetType: "photos", TargetUID: "ph-gone"},
 		audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-gone"},
@@ -584,8 +584,8 @@ func TestListKeepsEntriesOfVanishedEntities(t *testing.T) {
 // 403 as asking by UID, not a 400, while naming oneself either way is accepted.
 func TestMineRejectsAnotherUsersName(t *testing.T) {
 	env := newEnv(t)
-	editor, editorUID := env.loginUser(t, "editor", auth.RoleEditor)
-	otherUID := env.createUser(t, "other", auth.RoleEditor)
+	editor, editorUID := env.loginUser(t, "editor", auth.AccountEditor)
+	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(editorUID)
 	env.seed(t, append(seed, ownRows(otherUID)...)...)
 
@@ -611,7 +611,7 @@ func TestMineRejectsAnotherUsersName(t *testing.T) {
 // listing answers 200.
 func TestListAcceptsTheFrontendFilters(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.RoleAdmin)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
 	env.seed(t, reviewRows(adminUID)...)
 
 	frontendParams := url.Values{

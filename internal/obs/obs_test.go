@@ -121,3 +121,21 @@ func TestSetUser_noFieldsBag(t *testing.T) {
 		t.Errorf("userOf without a fields bag = %q, want empty", uid)
 	}
 }
+
+// TestSetActorRole verifies the actor role is stamped on the request's fields
+// bag and read back, that an empty role changes nothing, and that both are
+// no-ops without a bag.
+func TestSetActorRole(t *testing.T) {
+	t.Parallel()
+
+	SetActorRole(context.Background(), "maintainer") // no bag: must not panic
+	if got := ActorRole(context.Background()); got != "" {
+		t.Errorf("ActorRole without a fields bag = %q, want empty", got)
+	}
+	ctx := withFields(context.Background())
+	SetActorRole(ctx, "maintainer")
+	SetActorRole(ctx, "")
+	if got := ActorRole(ctx); got != "maintainer" {
+		t.Errorf("ActorRole = %q, want maintainer", got)
+	}
+}

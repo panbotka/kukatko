@@ -55,8 +55,8 @@ func getRating(t *testing.T, client *http.Client, base, uid string) ratedPhoto {
 // and list, clearing, validation and missing-photo errors, and per-user isolation.
 func TestRatingsAPI(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "rat_alice", auth.RoleViewer)
-	bob, _ := e.login(t, "rat_bob", auth.RoleEditor)
+	alice, _ := e.login(t, "rat_alice", auth.AccountViewer)
+	bob, _ := e.login(t, "rat_bob", auth.AccountEditor)
 
 	p1 := e.seedPhoto(t, photos.Photo{Title: "one"}, "1.jpg", 11, 21, 31)
 	p2 := e.seedPhoto(t, photos.Photo{Title: "two"}, "2.jpg", 41, 51, 61)
@@ -123,7 +123,7 @@ func TestRatingsAPI(t *testing.T) {
 // rating sort, all scoped to the requesting user.
 func TestRatingsFilterAndSort(t *testing.T) {
 	e := newEnv(t)
-	alice, _ := e.login(t, "ratf_alice", auth.RoleViewer)
+	alice, _ := e.login(t, "ratf_alice", auth.AccountViewer)
 
 	p1 := e.seedPhoto(t, photos.Photo{Title: "alpha"}, "f1.jpg", 12, 22, 32)
 	p2 := e.seedPhoto(t, photos.Photo{Title: "bravo"}, "f2.jpg", 42, 52, 62)

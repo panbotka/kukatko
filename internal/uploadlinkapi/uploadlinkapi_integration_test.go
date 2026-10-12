@@ -134,7 +134,7 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 }
 
 // login creates an account with role and returns its UID and session cookies.
-func (e *integrationEnv) login(t *testing.T, username string, role auth.Role) (string, []*http.Cookie) {
+func (e *integrationEnv) login(t *testing.T, username string, role auth.AccountRole) (string, []*http.Cookie) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: integrationPassword, Role: role,
@@ -259,7 +259,7 @@ func (e *integrationEnv) openRegistration(t *testing.T, enabled bool) {
 // secret — and the photo becomes theirs while the account waits for approval.
 func TestAnonymousUploadThenRegisterClaimsThePhotos(t *testing.T) {
 	e := newIntegrationEnv(t)
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, linkUID := e.createLink(t, curator)
 
 	resp := e.uploadFile(t, code, "a.jpg", "Jana", nil)
@@ -320,9 +320,9 @@ func TestAnonymousUploadThenRegisterClaimsThePhotos(t *testing.T) {
 // uploader is the actor of the audit entry and the account on the provenance.
 func TestSignedInUploadIsAttributed(t *testing.T) {
 	e := newIntegrationEnv(t)
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, _ := e.createLink(t, curator)
-	viewerUID, viewer := e.login(t, "divak", auth.RoleViewer)
+	viewerUID, viewer := e.login(t, "divak", auth.AccountViewer)
 
 	resp := e.uploadFile(t, code, "b.jpg", "", viewer)
 	if resp.StatusCode != http.StatusOK {
@@ -346,7 +346,7 @@ func TestSignedInUploadIsAttributed(t *testing.T) {
 // page and the upload, and refuses a registration.
 func TestRevokedLinkRefusesEverything(t *testing.T) {
 	e := newIntegrationEnv(t)
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, linkUID := e.createLink(t, curator)
 	e.openRegistration(t, true)
 
@@ -398,8 +398,8 @@ func (e *integrationEnv) listedCodes(t *testing.T, cookies []*http.Cookie) map[s
 // old URL.
 func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
 	e := newIntegrationEnv(t)
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
-	_, other := e.login(t, "jiny", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
+	_, other := e.login(t, "jiny", auth.AccountCurator)
 	code, linkUID := e.createLink(t, curator)
 
 	if got := e.listedCodes(t, curator)[linkUID]; got != code {
@@ -487,7 +487,7 @@ func (e *integrationEnv) count(t *testing.T, query string, args ...any) int {
 // and pipeline is the control: it is created, filed and scheduled.
 func TestJunkThroughALiveLinkIsRefused(t *testing.T) {
 	e := newIntegrationEnvWith(t, realPipeline(t))
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, _ := e.createLink(t, curator)
 	photosBefore := e.count(t, "SELECT count(*) FROM photos")
 
@@ -549,7 +549,7 @@ func TestJunkThroughALiveLinkIsRefused(t *testing.T) {
 // truncated JPEG as damaged — with nothing created, filed or queued.
 func TestAVIFAndTruncatedImagesThroughALinkAreRefused(t *testing.T) {
 	e := newIntegrationEnvWith(t, realPipeline(t))
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, _ := e.createLink(t, curator)
 	photosBefore := e.count(t, "SELECT count(*) FROM photos")
 
@@ -678,7 +678,7 @@ func TestConcurrentRequestsCannotOvershootTheFileCap(t *testing.T) {
 		cfg.Ingest = barrier
 	})
 	barrier.photos = e.photos
-	_, curator := e.login(t, "kurator", auth.RoleCurator)
+	_, curator := e.login(t, "kurator", auth.AccountCurator)
 	code, linkUID := e.createLink(t, curator)
 
 	batches := [][]string{{"a.jpg", "b.jpg"}, {"c.jpg", "d.jpg"}}
@@ -756,7 +756,7 @@ func TestLinkDyingMidRequestStopsItsFiles(t *testing.T) {
 					}
 				}}
 			})
-			_, curator := e.login(t, "kurator", auth.RoleCurator)
+			_, curator := e.login(t, "kurator", auth.AccountCurator)
 			code, linkUID := e.createLink(t, curator)
 
 			got, err := e.postFiles(t.Context(), code, "a.jpg", "b.jpg")

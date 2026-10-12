@@ -72,7 +72,7 @@ func (e *env) summary(t *testing.T, userUID string) whatsnew.Summary {
 func (e *env) addUser(t *testing.T, uid string) {
 	t.Helper()
 	e.exec(t, `INSERT INTO users (uid, username, email, password_hash, role)
-	           VALUES ($1, $2, $2||'@example.test', 'x', 'editor')`, uid, uid)
+	           VALUES ($1, $2, $2||'@example.test', 'x', 'user')`, uid, uid)
 }
 
 // addPhoto inserts a live library photo uploaded by uploader (empty = nobody, as

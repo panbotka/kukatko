@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/tagnotifyjob"
 )
 
@@ -28,10 +29,11 @@ func (f *fixture) put(t *testing.T, albumUID, photoUID string) {
 	f.exec(t, `INSERT INTO album_photos (album_uid, photo_uid) VALUES ($1, $2)`, albumUID, photoUID)
 }
 
-// setRole gives anna the role.
+// setRole gives anna the role in the bootstrap project.
 func (f *fixture) setRole(t *testing.T, role string) {
 	t.Helper()
-	f.exec(t, `UPDATE users SET role = $2 WHERE uid = $1`, annaUID, role)
+	f.exec(t, `UPDATE project_members SET role = $3 WHERE project_uid = $1 AND user_uid = $2`,
+		project.BootstrapUID, annaUID, role)
 }
 
 // albumWindow seeds the window every album case starts from: fair and fire are

@@ -49,12 +49,42 @@ export interface User {
    * never moves it.
    */
   welcome_seen_at?: string | null
+  /**
+   * The account's instance role: `maintainer` (the system administrator) or
+   * `user`. `role` above stays the role in the current project (`maintainer`
+   * for a maintainer) so every existing check keeps working.
+   */
+  instance_role?: InstanceRole
+}
+
+/** The instance-wide role of an account (`users.role` on the backend). */
+export type InstanceRole = 'user' | 'maintainer'
+
+/** A project role, the ladder inside one library (`project_members.role`). */
+export type ProjectRole = Exclude<Role, 'maintainer'>
+
+/** One project the signed-in account belongs to, as `GET /auth/me` lists it. */
+export interface ProjectMembership {
+  uid: string
+  slug: string
+  name: string
+  /** False for a deactivated project; it is listed but cannot be entered. */
+  active: boolean
+  role: ProjectRole
+  /** False while a project admin has not approved the membership yet. */
+  approved: boolean
 }
 
 /** Successful auth response body (`POST /auth/login`, `GET /auth/me`). */
 export interface AuthSession {
   user: User
   download_token: string
+  /** The instance role; only `GET /auth/me` carries it. */
+  instance_role?: InstanceRole
+  /** Every project the account belongs to; only `GET /auth/me` carries it. */
+  projects?: ProjectMembership[]
+  /** Slug of the project the account last entered (`""` for none); `GET /auth/me` only. */
+  last_project_slug?: string
 }
 
 /**

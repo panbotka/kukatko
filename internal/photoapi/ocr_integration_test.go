@@ -41,7 +41,7 @@ func detailOCR(t *testing.T, env *env, client *http.Client, uid string) (string,
 // photo by what is written on it and then not read the writing.
 func TestDetail_servesOCRText(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Shop"}, "shop.jpg", 10, 20, 30)
 	const read = "ZAVŘENO\nOtevíráme v pondělí"
@@ -66,7 +66,7 @@ func TestDetail_servesOCRText(t *testing.T) {
 // enough not to need an opt-in parameter.
 func TestDetail_omitsOCRTextWhenThereIsNone(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	never := env.seedPhoto(t, photos.Photo{Title: "Never read"}, "never.jpg", 40, 50, 60)
 	if _, present := detailOCR(t, env, client, never.UID); present {
@@ -87,7 +87,7 @@ func TestDetail_omitsOCRTextWhenThereIsNone(t *testing.T) {
 // detail endpoint is allowed to pay for and a listing is not.
 func TestList_neverServesOCRText(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Shop"}, "shop.jpg", 10, 20, 30)
 	if err := env.store.SaveOCR(t.Context(), photo.UID, photos.OCR{
@@ -121,7 +121,7 @@ func TestList_neverServesOCRText(t *testing.T) {
 // photo is worth showing either way.
 func TestDetail_omitsPeopleWithoutAFaceBackend(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "reader", auth.RoleViewer)
+	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Shop"}, "shop.jpg", 10, 20, 30)
 	resp := mustDo(t, client, http.MethodGet,

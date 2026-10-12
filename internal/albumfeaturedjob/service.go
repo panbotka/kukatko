@@ -8,13 +8,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -97,8 +97,14 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 }
 
 // accountsSQL reads every account with what the recipient rules need, in a
-// stable order so a retry delivers in the same sequence.
-const accountsSQL = `SELECT uid, role, disabled FROM users ORDER BY uid`
+// stable order so a retry delivers in the same sequence. The role is the one in
+// the bootstrap project (transition: the album's own project once albums are
+// scoped) — admin for a maintainer, "" for an account that is no member.
+const accountsSQL = `
+SELECT u.uid, CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE COALESCE(m.role, '') END, u.disabled
+FROM users u
+LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = '` + project.BootstrapUID + `'
+ORDER BY u.uid`
 
 // Announce delivers the "a new album is featured" notification for albumUID,
 // in one transaction, to every account the rules allow (see recipients) that
@@ -182,7 +188,7 @@ func readAccounts(ctx context.Context, tx pgx.Tx) ([]account, error) {
 		if err := row.Scan(&a.UID, &role, &a.Disabled); err != nil {
 			return account{}, fmt.Errorf("scanning an account: %w", err)
 		}
-		a.Role = auth.Role(role)
+		a.Role = project.Role(role)
 		return a, nil
 	})
 	if err != nil {

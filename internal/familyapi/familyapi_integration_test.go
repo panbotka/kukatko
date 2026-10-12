@@ -68,7 +68,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -181,7 +181,7 @@ func (e *env) addRelation(t *testing.T, c *http.Client, uid string, body string)
 // against what actually landed in Postgres.
 func TestRelations_roundTrip(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	father := env.subject(t, "Bohumil Nečas st.")
 	mother := env.subject(t, "Marie Nečasová")
@@ -221,7 +221,7 @@ func TestRelations_roundTrip(t *testing.T) {
 // checks the audit row records which family it landed in.
 func TestAddRelation_newSubjectIsCreatedAndAudited(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	son := env.subject(t, "Bohumil Nečas ml.")
 
 	result := env.addRelation(t, editor, son,
@@ -263,7 +263,7 @@ func TestAddRelation_newSubjectIsCreatedAndAudited(t *testing.T) {
 // which is exactly the case an orphan would fall out of.
 func TestAddRelation_newSubjectIsAtomic(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	son := env.subject(t, "Bohumil Nečas ml.")
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+env.subject(t, "Otec")+`"}`)
@@ -287,7 +287,7 @@ func TestAddRelation_newSubjectIsAtomic(t *testing.T) {
 // is what stands in its way.
 func TestAddRelation_cycleIsConflict(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	father := env.subject(t, "Otec")
 	son := env.subject(t, "Syn")
@@ -304,7 +304,7 @@ func TestAddRelation_cycleIsConflict(t *testing.T) {
 // whether it is the one in the path or the one in the body.
 func TestAddRelation_unknownSubject(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	known := env.subject(t, "Známý")
 
 	if got := env.status(t, editor, http.MethodPost, "/api/v1/subjects/su_ghost/relations",
@@ -329,7 +329,7 @@ func TestAddRelation_unknownSubject(t *testing.T) {
 // left to remove, so a repeated click answers 404 instead of pretending.
 func TestRemoveRelation_roundTrip(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	father := env.subject(t, "Otec")
 	son := env.subject(t, "Syn")
@@ -359,7 +359,7 @@ func TestRemoveRelation_roundTrip(t *testing.T) {
 // are gone, and a stale client carrying them is neither obeyed nor refused.
 func TestTree_ignoresTheRetiredParams(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	grandfather := env.subject(t, "Děd")
 	father := env.subject(t, "Otec")
@@ -411,7 +411,7 @@ func memberGenerations(members []family.Member) map[string]int {
 // partner flag, no direction — beside the explicit truncated flag and total.
 func TestTree_network(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	mother := env.subject(t, "Ludmila")
 	father := env.subject(t, "Aleš")
@@ -467,7 +467,7 @@ func TestTree_network(t *testing.T) {
 // TestUpdateFamily_roundTrip edits the family row itself and records the diff.
 func TestUpdateFamily_roundTrip(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	husband := env.subject(t, "Bohumil")
 	result := env.addRelation(t, editor, husband,
@@ -503,7 +503,7 @@ func TestUpdateFamily_roundTrip(t *testing.T) {
 // has no route that stays on RequireWrite, so there is no refusal to assert here.
 func TestRBAC_curatorMayWrite(t *testing.T) {
 	env := newEnv(t)
-	curator := env.login(t, "curator", auth.RoleCurator)
+	curator := env.login(t, "curator", auth.AccountCurator)
 	son := env.subject(t, "Syn")
 
 	result := env.addRelation(t, curator, son, `{"role":"parent","new_subject":{"name":"Otec"}}`)
@@ -523,8 +523,8 @@ func TestRBAC_curatorMayWrite(t *testing.T) {
 // viewer sees the family of everybody and changes nobody's.
 func TestRBAC_viewerMayReadButNotWrite(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	editor := env.login(t, "editor", auth.AccountEditor)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 
 	father := env.subject(t, "Otec")
 	son := env.subject(t, "Syn")
@@ -591,7 +591,7 @@ func TestUnauthenticated_isRefused(t *testing.T) {
 // which it is not once a parent hangs on the family.
 func TestAddRelation_siblingWithNoParents(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "sibling-editor", auth.RoleEditor)
+	editor := env.login(t, "sibling-editor", auth.AccountEditor)
 	josef := env.subject(t, "Josef Nečas")
 	anna := env.subject(t, "Anna Nečasová")
 

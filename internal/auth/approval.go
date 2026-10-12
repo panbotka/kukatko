@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // ApprovalConfig bundles what NewApproval needs.
@@ -77,16 +78,27 @@ func (noMail) Enqueue(context.Context, jobs.Execer, mailjob.Mail) error { return
 // boundary applies exactly as it does to every other user-management action, so
 // a non-maintainer approving a maintainer account gets ErrMaintainerRequired. An
 // account that is already approved is returned unchanged with no mail and no
-// audit entry (see Store.ApproveUserAudited); a blocked one is refused with
+// audit entry (see Store.ApproveUserAudited). The membership approved is the
+// one in the request's project (bootstrap during the transition); a blocked one is refused with
 // ErrUserDisabled, and a missing one with ErrUserNotFound.
 func (ap *Approval) Approve(ctx context.Context, uid string, actor Role, entry audit.Entry) (User, error) {
 	if err := ap.svc.guardMaintainerBoundary(ctx, actor, uid, ""); err != nil {
 		return User{}, err
 	}
-	return ap.svc.store.ApproveUserAudited(ctx, uid, ap.svc.now(), entry,
+	return ap.svc.store.ApproveUserAudited(ctx, uid, approvalProjectUID(ctx), ap.svc.now(), entry,
 		func(ctx context.Context, tx pgx.Tx, user User) error {
 			return ap.scheduleMail(ctx, tx, user)
 		})
+}
+
+// approvalProjectUID returns the project whose membership an approval lets the
+// account into: the request's project, or the bootstrap project for a caller
+// outside a request (transition: removed in the alias-removal step).
+func approvalProjectUID(ctx context.Context) string {
+	if uid := ProjectUIDFromContext(ctx); uid != "" {
+		return uid
+	}
+	return project.BootstrapUID
 }
 
 // scheduleMail enqueues the "your account is active" message on tx, so it is

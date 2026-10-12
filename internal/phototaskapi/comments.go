@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // commentRequest is the JSON body of the answer and edit endpoints: the
@@ -105,7 +106,7 @@ func (a *API) stateMove(
 	if raw == nil {
 		return nil, true
 	}
-	if !user.Role.CanWrite() {
+	if !auth.ProjectRoleFromContext(r.Context()).CanWrite() {
 		writeError(w, http.StatusForbidden, "moving a task needs write access")
 		return nil, false
 	}
@@ -166,7 +167,7 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !canDeleteComment(existing, user) {
+	if !canDeleteComment(existing, user, auth.ProjectRoleFromContext(r.Context())) {
 		writeError(w, http.StatusForbidden, "only the author or an admin may delete a comment")
 		return
 	}
@@ -210,8 +211,10 @@ func canEditComment(c comments.Comment, user auth.User) bool {
 
 // canDeleteComment reports whether user may remove the comment: its author, or
 // an admin removing anyone's.
-func canDeleteComment(c comments.Comment, user auth.User) bool {
-	return (c.AuthorUID != "" && c.AuthorUID == user.UID) || user.Role.IsAdmin()
+//
+// role is the caller's role in the request's project.
+func canDeleteComment(c comments.Comment, user auth.User, role project.Role) bool {
+	return (c.AuthorUID != "" && c.AuthorUID == user.UID) || role.IsAdmin()
 }
 
 // commentsAvailable reports whether a comment store is configured, writing 503

@@ -48,7 +48,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 // createUser is a helper that creates a user with the given role and the shared
 // test password.
-func (e *testEnv) createUser(t *testing.T, username string, role auth.Role) auth.User {
+func (e *testEnv) createUser(t *testing.T, username string, role auth.AccountRole) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test",
@@ -63,7 +63,7 @@ func (e *testEnv) createUser(t *testing.T, username string, role auth.Role) auth
 
 func TestLogin_successAndFailures(t *testing.T) {
 	env := newTestEnv(t)
-	env.createUser(t, "alice", auth.RoleEditor)
+	env.createUser(t, "alice", auth.AccountEditor)
 
 	t.Run("success", func(t *testing.T) {
 		sess, user, err := env.svc.Login(t.Context(), "alice", testPassword)
@@ -97,7 +97,7 @@ func TestLogin_successAndFailures(t *testing.T) {
 	})
 
 	t.Run("disabled user", func(t *testing.T) {
-		user := env.createUser(t, "bob", auth.RoleViewer)
+		user := env.createUser(t, "bob", auth.AccountViewer)
 		if _, err := env.svc.SetUserDisabled(t.Context(), user.UID, true); err != nil {
 			t.Fatalf("SetUserDisabled: %v", err)
 		}
@@ -109,7 +109,7 @@ func TestLogin_successAndFailures(t *testing.T) {
 
 func TestLogin_recordsLastLogin(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "carol", auth.RoleViewer)
+	user := env.createUser(t, "carol", auth.AccountViewer)
 	if user.LastLoginAt != nil {
 		t.Fatal("new user should have nil last_login_at")
 	}
@@ -127,7 +127,7 @@ func TestLogin_recordsLastLogin(t *testing.T) {
 
 func TestSession_slidingExtensionCapAndExpiry(t *testing.T) {
 	env := newTestEnv(t)
-	env.createUser(t, "dave", auth.RoleEditor)
+	env.createUser(t, "dave", auth.AccountEditor)
 	base := *env.now
 
 	sess, _, err := env.svc.Login(t.Context(), "dave", testPassword)
@@ -194,7 +194,7 @@ func assertStoredExpiry(t *testing.T, env *testEnv, token string, want time.Time
 
 func TestCleanupExpiredSessions_removesOnlyExpired(t *testing.T) {
 	env := newTestEnv(t)
-	env.createUser(t, "erin", auth.RoleViewer)
+	env.createUser(t, "erin", auth.AccountViewer)
 	base := *env.now
 
 	sess, _, err := env.svc.Login(t.Context(), "erin", testPassword)
@@ -224,7 +224,7 @@ func TestCleanupExpiredSessions_removesOnlyExpired(t *testing.T) {
 
 func TestChangePassword_invalidatesOtherSessions(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "frank", auth.RoleEditor)
+	user := env.createUser(t, "frank", auth.AccountEditor)
 
 	keep, _, err := env.svc.Login(t.Context(), "frank", testPassword)
 	if err != nil {
@@ -259,7 +259,7 @@ func TestChangePassword_invalidatesOtherSessions(t *testing.T) {
 
 func TestChangePassword_wrongCurrent(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "grace", auth.RoleViewer)
+	user := env.createUser(t, "grace", auth.AccountViewer)
 	sess, _, err := env.svc.Login(t.Context(), "grace", testPassword)
 	if err != nil {
 		t.Fatalf("Login: %v", err)
@@ -272,7 +272,7 @@ func TestChangePassword_wrongCurrent(t *testing.T) {
 
 func TestResetPassword_invalidatesAllSessions(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "heidi", auth.RoleViewer)
+	user := env.createUser(t, "heidi", auth.AccountViewer)
 	sess, _, err := env.svc.Login(t.Context(), "heidi", testPassword)
 	if err != nil {
 		t.Fatalf("Login: %v", err)
@@ -292,17 +292,17 @@ func TestResetPassword_invalidatesAllSessions(t *testing.T) {
 
 func TestCreateUser_duplicateAndInvalidRole(t *testing.T) {
 	env := newTestEnv(t)
-	env.createUser(t, "ivan", auth.RoleViewer)
+	env.createUser(t, "ivan", auth.AccountViewer)
 
 	_, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "ivan", Email: "ivan@example.test", Password: testPassword, Role: auth.RoleEditor,
+		Username: "ivan", Email: "ivan@example.test", Password: testPassword, Role: auth.AccountEditor,
 	})
 	if !errors.Is(err, auth.ErrUsernameTaken) {
 		t.Errorf("duplicate username error = %v, want ErrUsernameTaken", err)
 	}
 
 	_, err = env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "judy", Email: "judy@example.test", Password: testPassword, Role: auth.Role("superuser"),
+		Username: "judy", Email: "judy@example.test", Password: testPassword, Role: auth.AccountRole("superuser"),
 	})
 	if !errors.Is(err, auth.ErrInvalidRole) {
 		t.Errorf("invalid role error = %v, want ErrInvalidRole", err)
@@ -311,19 +311,19 @@ func TestCreateUser_duplicateAndInvalidRole(t *testing.T) {
 
 func TestUpdateUser_disableInvalidatesSessions(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "karl", auth.RoleEditor)
+	user := env.createUser(t, "karl", auth.AccountEditor)
 	sess, _, err := env.svc.Login(t.Context(), "karl", testPassword)
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
 
 	updated, err := env.svc.UpdateUser(t.Context(), user.UID, auth.UpdateUserInput{
-		DisplayName: "Karl K", Email: "karl@example.com", Role: auth.RoleViewer, Disabled: true,
+		DisplayName: "Karl K", Email: "karl@example.com", Role: auth.AccountViewer, Disabled: true,
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
-	if updated.Role != auth.RoleViewer || !updated.Disabled || updated.DisplayName != "Karl K" {
+	if updated.AccountRole != auth.AccountViewer || !updated.Disabled || updated.DisplayName != "Karl K" {
 		t.Errorf("update not applied: %+v", updated)
 	}
 	if _, _, err := env.svc.Authenticate(t.Context(), sess.Token); !errors.Is(err, auth.ErrSessionNotFound) {
@@ -356,7 +356,7 @@ func TestBootstrap_outcomes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUserByUsername: %v", err)
 		}
-		if user.Role != auth.RoleMaintainer {
+		if user.AccountRole != auth.AccountMaintainer {
 			t.Errorf("bootstrap user role = %q, want maintainer", user.Role)
 		}
 		if _, _, err := env.svc.Login(t.Context(), "root", "bootstrap-password"); err != nil {
@@ -380,7 +380,7 @@ func TestBootstrap_outcomes(t *testing.T) {
 // ErrSessionNotFound, and an expired session is rejected and pruned.
 func TestAuthenticateDownloadToken(t *testing.T) {
 	env := newTestEnv(t)
-	user := env.createUser(t, "dora", auth.RoleViewer)
+	user := env.createUser(t, "dora", auth.AccountViewer)
 
 	sess, _, err := env.svc.Login(t.Context(), "dora", testPassword)
 	if err != nil {
@@ -395,8 +395,8 @@ func TestAuthenticateDownloadToken(t *testing.T) {
 		if gotUser.UID != user.UID || gotSess.ID != sess.ID {
 			t.Errorf("resolved user=%s session=%s, want %s/%s", gotUser.UID, gotSess.ID, user.UID, sess.ID)
 		}
-		if gotSess.Role != auth.RoleViewer {
-			t.Errorf("session role = %s, want viewer", gotSess.Role)
+		if gotUser.AccountRole != auth.AccountViewer {
+			t.Errorf("user role = %s, want viewer", gotUser.AccountRole)
 		}
 	})
 
@@ -423,7 +423,7 @@ func TestAuthenticateDownloadToken(t *testing.T) {
 // filtering by account (the audit trail) tell a real account apart from a typo.
 func TestGetUserByUIDOrUsername(t *testing.T) {
 	env := newTestEnv(t)
-	created := env.createUser(t, "panbotka", auth.RoleEditor)
+	created := env.createUser(t, "panbotka", auth.AccountEditor)
 
 	for _, ref := range []string{created.UID, "panbotka"} {
 		got, err := env.store.GetUserByUIDOrUsername(t.Context(), ref)

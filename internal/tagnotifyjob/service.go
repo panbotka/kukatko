@@ -7,12 +7,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -175,9 +175,15 @@ JOIN albums a ON a.uid = ap.album_uid
 WHERE ap.photo_uid = ANY($1) AND a.type = 'album'
 ORDER BY ap.photo_uid, a.title, a.uid`
 
-// roleSQL reads the recipient's role, which decides whether a private album may
-// be named to them.
-const roleSQL = `SELECT role FROM users WHERE uid = $1`
+// roleSQL reads the recipient's role in the bootstrap project (transition: the
+// photos' own project once they are scoped) — admin for a maintainer, "" for an
+// account that is no member — which decides whether a private album may be
+// named to them.
+const roleSQL = `
+SELECT CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE COALESCE(m.role, '') END
+FROM users u
+LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = '` + project.BootstrapUID + `'
+WHERE u.uid = $1`
 
 // collect reads on tx what the grouping needs — the albums of photos and
 // whether userUID may see a private one (a curator or above, the rule the
@@ -205,7 +211,7 @@ func collect(ctx context.Context, tx pgx.Tx, userUID string, photos []string) ([
 	for i, uid := range photos {
 		tagged[i] = taggedPhoto{UID: uid, Albums: albums[uid]}
 	}
-	return groupByAlbum(tagged, auth.Role(role).CanCurate(), MaxAlbumGroups), nil
+	return groupByAlbum(tagged, project.Role(role).CanCurate(), MaxAlbumGroups), nil
 }
 
 // mailGroup is one line of the window's single e-mail: a delivered group with

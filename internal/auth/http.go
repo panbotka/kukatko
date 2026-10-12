@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/obs"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
@@ -46,7 +47,12 @@ type API struct {
 	// available" instead of vanishing.
 	passkeys      *Passkeys
 	secureCookies bool
-	now           func() time.Time
+	// projects resolves the bootstrap project for a request that did not pass
+	// through WithProject, and the memberships GET /auth/me lists.
+	projects *project.Store
+	// lastProject throttles the per-account "last project" write.
+	lastProject *lastProjectThrottle
+	now         func() time.Time
 }
 
 // APIConfig configures NewAPI.
@@ -96,6 +102,9 @@ type APIConfig struct {
 	Passkeys *Passkeys
 	// SecureCookies marks the session cookie Secure (HTTPS-only).
 	SecureCookies bool
+	// Projects is the project store the guards resolve projects and memberships
+	// with. Optional: when nil, NewAPI builds one over the service's pool.
+	Projects *project.Store
 }
 
 // NewAPI returns an API from cfg, using time.Now as its clock.
@@ -113,8 +122,23 @@ func NewAPI(cfg APIConfig) *API {
 		passwordResetLimit: perAddressLimiter(cfg.PasswordResetLimiter, cfg.Limiter),
 		passkeys:           cfg.Passkeys,
 		secureCookies:      cfg.SecureCookies,
+		projects:           projectsFor(cfg),
+		lastProject:        &lastProjectThrottle{},
 		now:                time.Now,
 	}
+}
+
+// projectsFor returns the project store cfg names, or one over the service's
+// own pool when it names none — or nil when there is neither (a unit test
+// exercising a handler that never reaches a guard).
+func projectsFor(cfg APIConfig) *project.Store {
+	if cfg.Projects != nil {
+		return cfg.Projects
+	}
+	if cfg.Service == nil || cfg.Service.store == nil {
+		return nil
+	}
+	return project.NewStore(cfg.Service.store.pool)
 }
 
 // usernameLimiterFor returns the per-username limiter cfg asks for, deriving one
@@ -217,6 +241,12 @@ type principal struct {
 	// false for every cookie-authenticated request whatever the user's role, so
 	// the exemption can never ride a browser session or a stolen cookie.
 	unlimited bool
+	// project is the project the request was authorised for, or nil outside a
+	// project context (OptionalAuth, the anonymous routes).
+	project *project.Project
+	// projectRole is the caller's role in project — project.RoleAdmin for a
+	// maintainer — or the zero value outside a project context.
+	projectRole project.Role
 }
 
 // contextKey is an unexported type for context keys defined in this package, so

@@ -70,7 +70,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -140,7 +140,7 @@ func decodeBody(t *testing.T, resp *http.Response, dst any) {
 // for a single owner.
 func TestSavedSearchLifecycle(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	resp := e.mustDo(t, client, http.MethodPost, "/api/v1/saved-searches",
 		[]byte(`{"name":"Recent","params":{"sort":"newest","q":"hory"}}`))
@@ -194,7 +194,7 @@ func TestSavedSearchLifecycle(t *testing.T) {
 // TestSavedSearchCreateEmptyName checks that a blank name is rejected with 400.
 func TestSavedSearchCreateEmptyName(t *testing.T) {
 	e := newEnv(t)
-	client := e.login(t, "alice", auth.RoleViewer)
+	client := e.login(t, "alice", auth.AccountViewer)
 
 	resp := e.mustDo(t, client, http.MethodPost, "/api/v1/saved-searches", []byte(`{"name":"   "}`))
 	defer func() { _ = resp.Body.Close() }()
@@ -218,8 +218,8 @@ func TestSavedSearchRequiresAuth(t *testing.T) {
 // search survives B's attempts.
 func TestSavedSearchOwnerIsolation(t *testing.T) {
 	e := newEnv(t)
-	alice := e.login(t, "alice", auth.RoleViewer)
-	bob := e.login(t, "bob", auth.RoleViewer)
+	alice := e.login(t, "alice", auth.AccountViewer)
+	bob := e.login(t, "bob", auth.AccountViewer)
 
 	resp := e.mustDo(t, alice, http.MethodPost, "/api/v1/saved-searches",
 		[]byte(`{"name":"Alice only","params":{}}`))

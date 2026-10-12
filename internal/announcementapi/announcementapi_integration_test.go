@@ -64,7 +64,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -138,7 +138,7 @@ func (e *env) countAudit(t *testing.T, action string) int {
 // 200 with an empty message rather than a 404.
 func TestReadableByAnyAuthedUser(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	if msg := env.getMessage(t, viewer); msg != "" {
 		t.Fatalf("empty announcement message = %q, want empty", msg)
 	}
@@ -150,7 +150,7 @@ func TestPublishRequiresMaintainer(t *testing.T) {
 	env := newEnv(t)
 	body := []byte(`{"message":"Downtime","level":"warning"}`)
 
-	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleEditor, auth.RoleAdmin} {
+	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountEditor, auth.AccountAdmin} {
 		client := env.login(t, "u_"+string(role), role)
 		for _, method := range []string{http.MethodPut, http.MethodDelete} {
 			resp := env.mustDo(t, client, method, "/api/v1/announcement", body)
@@ -161,7 +161,7 @@ func TestPublishRequiresMaintainer(t *testing.T) {
 		}
 	}
 
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement", body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("maintainer PUT status = %d, want 200", resp.StatusCode)
@@ -173,8 +173,8 @@ func TestPublishRequiresMaintainer(t *testing.T) {
 // and clearing takes it back down. Both actions write an audit row.
 func TestPublishThenReadAndClear(t *testing.T) {
 	env := newEnv(t)
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 
 	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement",
 		[]byte(`{"message":"Údržba ve 22:00","level":"warning"}`))
@@ -217,7 +217,7 @@ func TestUnauthenticatedRejected(t *testing.T) {
 // TestPublishRejectsBadLevel: a maintainer publishing an unknown level gets 400.
 func TestPublishRejectsBadLevel(t *testing.T) {
 	env := newEnv(t)
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement",
 		[]byte(`{"message":"x","level":"bogus"}`))
 	if resp.StatusCode != http.StatusBadRequest {

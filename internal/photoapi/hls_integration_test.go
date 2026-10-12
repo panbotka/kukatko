@@ -85,7 +85,7 @@ func hlsURL(e *env, uid, suffix string) string {
 // at the object store — the whole reason segments are authorised per request.
 func TestHLSMaster_advertisesEveryRendition(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	resp := mustDo(t, client, http.MethodGet, hlsURL(env, video.UID, "master.m3u8"), nil)
@@ -114,7 +114,7 @@ func TestHLSMaster_advertisesEveryRendition(t *testing.T) {
 // stops asking without an error to interpret.
 func TestHLSMaster_notFound(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
 	// A video the encoder has never reached: the row exists, the renditions do not.
 	unencoded := env.seedVideo(t, "pending.mp4", []byte("not-encoded-yet"))
@@ -133,7 +133,7 @@ func TestHLSMaster_notFound(t *testing.T) {
 // byte for byte, while the segment names become URIs relative to the playlist.
 func TestHLSMedia_servesTheWrittenPlaylist(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	resp := mustDo(t, client, http.MethodGet, hlsURL(env, video.UID, "1080p/index.m3u8"), nil)
@@ -157,7 +157,7 @@ func TestHLSMedia_servesTheWrittenPlaylist(t *testing.T) {
 // the encoder's plan to a caller who cannot use the answer.
 func TestHLSMedia_notFound(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	for _, rendition := range []string{"720p", "1080P", "not.a.rendition"} {
@@ -174,7 +174,7 @@ func TestHLSMedia_notFound(t *testing.T) {
 // segment's own media type.
 func TestHLSSegment_streamsFromLocalStore(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	tests := []struct {
@@ -205,7 +205,7 @@ func TestHLSSegment_streamsFromLocalStore(t *testing.T) {
 // send the player to a 403 mid-clip.
 func TestHLSSegment_redirectsToSignedURL(t *testing.T) {
 	env := newEnvWithMedia(t, newSigningR2(t))
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	client = noRedirectClient(client)
 	video := seedRendition(t, env, nil, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
@@ -230,7 +230,7 @@ func TestHLSSegment_redirectsToSignedURL(t *testing.T) {
 // a stray extension, the playlist itself — is a 404 and never reaches the store.
 func TestHLSSegment_rejectsMalformedNames(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	for _, name := range []string{"0.m4s", "000000.m4s", "00000.mp4", "init.m4s", "%2e%2e%2fsecret"} {
@@ -248,7 +248,7 @@ func TestHLSSegment_rejectsMalformedNames(t *testing.T) {
 // an object nobody ever published.
 func TestHLSSegment_unknownRenditionOrPhoto(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	client = noRedirectClient(client)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
@@ -271,7 +271,7 @@ func TestHLSSegment_unknownRenditionOrPhoto(t *testing.T) {
 // token — which is what a cookie-less `<video>` tag carries — gets in.
 func TestHLSRoutes_requireAuthentication(t *testing.T) {
 	env := newEnv(t)
-	client, token := env.login(t, "viewer", auth.RoleViewer)
+	client, token := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	for _, suffix := range []string{"master.m3u8", "1080p/index.m3u8", "1080p/00000.m4s"} {
@@ -297,7 +297,7 @@ func TestHLSRoutes_requireAuthentication(t *testing.T) {
 // playlist, and that one down to every segment.
 func TestHLSPlaylists_repeatTheDownloadToken(t *testing.T) {
 	env := newEnv(t)
-	_, token := env.login(t, "viewer", auth.RoleViewer)
+	_, token := env.login(t, "viewer", auth.AccountViewer)
 	video := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 
 	master := mustDo(t, &http.Client{}, http.MethodGet,
@@ -322,7 +322,7 @@ func TestHLSPlaylists_repeatTheDownloadToken(t *testing.T) {
 // everything else false.
 func TestPhotoDetail_reportsStreamingAvailability(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	encoded := seedRendition(t, env, env.fs, env.seedVideo(t, "clip.mp4", []byte("mp4-bytes")))
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 1, 2, 3)
 
@@ -365,7 +365,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 // prepared — and must leave the field off a still entirely.
 func TestPhotoList_reportsStreamingAvailability(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	encoded := seedRendition(t, env, nil, env.seedVideo(t, "encoded.mp4", []byte("encoded-bytes")))
 	pending := env.seedVideo(t, "pending.mp4", []byte("pending-bytes"))
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 1, 2, 3)

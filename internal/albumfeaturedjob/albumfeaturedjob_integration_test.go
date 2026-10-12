@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
 
@@ -64,7 +65,9 @@ func newFixture(t *testing.T) *fixture {
 		curatorUID: "curator", viewerUID: "viewer", editorUID: "editor", adminUID: "admin", disabledUID: "editor",
 	} {
 		f.exec(t, `INSERT INTO users (uid, username, email, password_hash, role, approved_at, disabled)
-			VALUES ($1, $2, $3, 'x', $4, now(), $5)`, uid, uid, uid+"@example.test", role, uid == disabledUID)
+			VALUES ($1, $2, $3, 'x', 'user', now(), $4)`, uid, uid, uid+"@example.test", uid == disabledUID)
+		f.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at)
+			VALUES ($1, $2, $3, now())`, project.BootstrapUID, uid, role)
 	}
 	for _, uid := range []string{curatorUID, viewerUID, editorUID, disabledUID} {
 		f.exec(t, `INSERT INTO notification_prefs (user_uid, kind, channel, enabled)

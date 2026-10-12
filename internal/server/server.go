@@ -42,6 +42,7 @@ type Server struct {
 	httpServer     *http.Server
 	router         chi.Router
 	apiGroups      []func(chi.Router)
+	apiMiddlewares []func(http.Handler) http.Handler
 	middlewares    []func(http.Handler) http.Handler
 	metricsHandler http.Handler
 	trustedProxies *clientip.Set
@@ -57,6 +58,16 @@ type Option func(*Server)
 func WithAPI(register func(r chi.Router)) Option {
 	return func(s *Server) {
 		s.apiGroups = append(s.apiGroups, register)
+	}
+}
+
+// WithAPIMiddleware appends middlewares applied to every route of the /api/v1
+// router group, before any route a WithAPI register mounts — the request's
+// project resolution (auth.WithProject) is one. They run in the order given and
+// multiple WithAPIMiddleware options compose.
+func WithAPIMiddleware(mw ...func(http.Handler) http.Handler) Option {
+	return func(s *Server) {
+		s.apiMiddlewares = append(s.apiMiddlewares, mw...)
 	}
 }
 
@@ -148,6 +159,7 @@ func (s *Server) routes() {
 	}
 	if len(s.apiGroups) > 0 {
 		s.router.Route("/api/v1", func(r chi.Router) {
+			r.Use(s.apiMiddlewares...)
 			for _, register := range s.apiGroups {
 				register(r)
 			}

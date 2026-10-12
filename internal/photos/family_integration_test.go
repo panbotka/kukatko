@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/personme"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/query"
 )
 
@@ -55,7 +56,7 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 	actor := "usfamflt00000000000000001"
 	if err := auth.NewStore(db.Pool()).CreateUser(ctx, auth.User{
 		UID: actor, Username: "genealogist", Email: "genealogist@example.test",
-		PasswordHash: "x", Role: auth.RoleViewer,
+		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating actor: %v", err)
 	}

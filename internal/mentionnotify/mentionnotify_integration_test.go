@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
 
@@ -68,7 +69,7 @@ func newFixture(t *testing.T) *fixture {
 	} {
 		if err := users.CreateUser(t.Context(), auth.User{
 			UID: uid, Username: uid, Email: uid + "@example.test", DisplayName: name, PasswordHash: "x",
-			Role: auth.RoleViewer, Disabled: uid == disabledUID, ApprovedAt: &approved,
+			Role: auth.RoleUser, ProjectRole: project.RoleViewer, Disabled: uid == disabledUID, ApprovedAt: &approved,
 		}); err != nil {
 			t.Fatalf("creating account %s: %v", uid, err)
 		}

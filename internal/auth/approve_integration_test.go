@@ -58,7 +58,7 @@ func approvalMail(t *testing.T, env *httpEnv) []mailPayload {
 // message waiting on the queue that points them at the sign-in page.
 func TestApprove_letsAWaitingAccountIn(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 	before := time.Now()
@@ -69,7 +69,7 @@ func TestApprove_letsAWaitingAccountIn(t *testing.T) {
 	}
 	var approved struct {
 		accountFlags
-		Role auth.Role `json:"role"`
+		Role auth.AccountRole `json:"role"`
 	}
 	if err := json.Unmarshal(body, &approved); err != nil {
 		t.Fatalf("decoding the approved account: %v", err)
@@ -84,8 +84,8 @@ func TestApprove_letsAWaitingAccountIn(t *testing.T) {
 		t.Error("approving disabled the account")
 	}
 	// Approving is not promoting: the role the registration handed out stays.
-	if approved.Role != auth.RoleViewer {
-		t.Errorf("role after approval = %q, want %q", approved.Role, auth.RoleViewer)
+	if approved.Role != auth.AccountViewer {
+		t.Errorf("role after approval = %q, want %q", approved.Role, auth.AccountViewer)
 	}
 
 	stored, err := env.store.GetUserByUID(t.Context(), waiting.UID)
@@ -121,7 +121,7 @@ func TestApprove_letsAWaitingAccountIn(t *testing.T) {
 // second audit entry nor a second mail promising somebody something twice.
 func TestApprove_twiceChangesNothing(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 
@@ -160,7 +160,7 @@ func TestApprove_twiceChangesNothing(t *testing.T) {
 // stamp, trail, mail — moves, because unblocking is its own action.
 func TestApprove_blockedAccountIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 	if _, err := env.svc.SetUserDisabled(t.Context(), waiting.UID, true); err != nil {
@@ -192,7 +192,7 @@ func TestApprove_blockedAccountIsRefused(t *testing.T) {
 // in, which is what the trail is for.
 func TestApprove_auditEntryNamesBothParties(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.RoleAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 
@@ -223,8 +223,8 @@ func TestApprove_auditEntryNamesBothParties(t *testing.T) {
 // nobody is a 404.
 func TestApprove_maintainerBoundaryAndMissingAccount(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
-	keeper := env.mustCreate(t, "keeper", auth.RoleMaintainer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 
 	if status, body := approve(t, env, admin, keeper.UID); status != http.StatusForbidden {
@@ -239,7 +239,7 @@ func TestApprove_maintainerBoundaryAndMissingAccount(t *testing.T) {
 // session cannot approve anybody.
 func TestApprove_isAdminOnly(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "mia", auth.RoleViewer)
+	env.mustCreate(t, "mia", auth.AccountViewer)
 	viewer := signInAs(t, env, "mia")
 	waiting := waitingAccount(t, env, "newcomer")
 
@@ -257,7 +257,7 @@ func TestApprove_isAdminOnly(t *testing.T) {
 // value that is not a boolean is refused rather than quietly ignored.
 func TestListUsers_pendingFilter(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 

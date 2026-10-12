@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -80,18 +81,19 @@ var errValidDays = errors.New("valid_days is out of range")
 
 // view projects link onto its response shape at the current time, as user sees
 // it: the code and path only when user may manage the link and the code is known.
-func (a *API) view(user auth.User, link uploadlink.Link) linkView {
+func (a *API) view(user auth.User, role project.Role, link uploadlink.Link) linkView {
 	v := linkView{Link: link, State: link.StateAt(a.now())}
-	if link.Code != "" && canManage(user, link) {
+	if link.Code != "" && canManage(user, role, link) {
 		v.Code, v.Path = link.Code, PublicPathPrefix+link.Code
 	}
 	return v
 }
 
 // canManage reports whether user may manage link — see its URL, extend, revoke
-// or give it a code: its creator or an administrator.
-func canManage(user auth.User, link uploadlink.Link) bool {
-	return user.Role.IsAdmin() || (link.CreatedBy != nil && *link.CreatedBy == user.UID)
+// or give it a code: its creator or an administrator of the project (role is
+// the caller's project role).
+func canManage(user auth.User, role project.Role, link uploadlink.Link) bool {
+	return role.IsAdmin() || (link.CreatedBy != nil && *link.CreatedBy == user.UID)
 }
 
 // handleList writes the caller's links — or, for an administrator, everybody's —
@@ -103,7 +105,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	creator := user.UID
-	if user.Role.IsAdmin() {
+	if a.currentRole(r).IsAdmin() {
 		creator = ""
 	}
 	links, err := a.store.List(r.Context(), creator)
@@ -113,7 +115,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]linkView, len(links))
 	for i, link := range links {
-		views[i] = a.view(user, link)
+		views[i] = a.view(user, a.currentRole(r), link)
 	}
 	writeJSON(w, http.StatusOK, listResponse{Links: views, DefaultDays: a.defaultDays, MaxDays: a.maxDays})
 }
@@ -150,7 +152,9 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		a.writeStoreError(w, r, "creating upload link", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, createResponse{Link: a.view(user, link), Code: code, Path: PublicPathPrefix + code})
+	writeJSON(w, http.StatusCreated, createResponse{
+		Link: a.view(user, a.currentRole(r), link), Code: code, Path: PublicPathPrefix + code,
+	})
 }
 
 // handleExtend makes a link valid for valid_days from now. Only the creator or
@@ -177,7 +181,7 @@ func (a *API) handleExtend(w http.ResponseWriter, r *http.Request) {
 		a.writeStoreError(w, r, "extending upload link", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, updated)})
+	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, a.currentRole(r), updated)})
 }
 
 // handleRevoke revokes a link for good. Only the creator or an administrator
@@ -195,7 +199,7 @@ func (a *API) handleRevoke(w http.ResponseWriter, r *http.Request) {
 		a.writeStoreError(w, r, "revoking upload link", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, updated)})
+	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, a.currentRole(r), updated)})
 }
 
 // handleRestoreCode makes a pre-0091 link's code readable again from the
@@ -220,7 +224,7 @@ func (a *API) handleRestoreCode(w http.ResponseWriter, r *http.Request) {
 		a.writeStoreError(w, r, "restoring upload link code", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, updated)})
+	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, a.currentRole(r), updated)})
 }
 
 // handleNewCode gives a link a fresh code, which kills its old URL at once; the
@@ -238,7 +242,7 @@ func (a *API) handleNewCode(w http.ResponseWriter, r *http.Request) {
 		a.writeStoreError(w, r, "replacing upload link code", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, updated)})
+	writeJSON(w, http.StatusOK, linkResponse{Link: a.view(user, a.currentRole(r), updated)})
 }
 
 // ownedLink resolves the {uid} link for a caller who may manage it — its
@@ -256,7 +260,7 @@ func (a *API) ownedLink(w http.ResponseWriter, r *http.Request) (auth.User, uplo
 		a.writeStoreError(w, r, "reading upload link", err)
 		return auth.User{}, uploadlink.Link{}, false
 	}
-	if !canManage(user, link) {
+	if !canManage(user, a.currentRole(r), link) {
 		writeError(w, http.StatusNotFound, uploadlink.ErrNotFound.Error())
 		return auth.User{}, uploadlink.Link{}, false
 	}

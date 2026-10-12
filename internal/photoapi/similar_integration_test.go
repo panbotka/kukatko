@@ -53,7 +53,7 @@ func getSimilar(t *testing.T, client *http.Client, base, uid, query string) simi
 // photos ordered by ascending cosine distance and excludes the source itself.
 func TestSimilar_ordersAndExcludesSource(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	src := env.seedPhoto(t, photos.Photo{}, "src", 10, 0, 0)
@@ -98,7 +98,7 @@ func TestSimilar_ordersAndExcludesSource(t *testing.T) {
 // TestSimilar_limit caps the number of returned neighbours.
 func TestSimilar_limit(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	src := env.seedPhoto(t, photos.Photo{}, "src", 11, 0, 0)
@@ -118,7 +118,7 @@ func TestSimilar_limit(t *testing.T) {
 // empty (200) result, and a missing photo yields 404.
 func TestSimilar_noEmbeddingIsEmpty(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	base := env.server.URL
 
 	src := env.seedPhoto(t, photos.Photo{}, "noemb", 12, 0, 0)

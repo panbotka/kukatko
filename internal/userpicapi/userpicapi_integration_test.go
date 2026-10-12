@@ -115,7 +115,7 @@ func (e *env) login(t *testing.T, username string) (string, *http.Client) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test",
-		Password: testPassword, Role: auth.RoleViewer,
+		Password: testPassword, Role: auth.AccountViewer,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %v", username, err)

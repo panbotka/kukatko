@@ -28,21 +28,21 @@ func mgmtEntry(actorUID, action string) audit.Entry {
 func TestMaintainerBoundary_create(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := t.Context()
-	admin := env.createUser(t, "admin", auth.RoleAdmin)
-	maint := env.createUser(t, "maint", auth.RoleMaintainer)
+	admin := env.createUser(t, "admin", auth.AccountAdmin)
+	maint := env.createUser(t, "maint", auth.AccountMaintainer)
 
 	tests := []struct {
 		name     string
 		actor    auth.Role
 		username string
-		role     auth.Role
+		role     auth.AccountRole
 		wantErr  error
 	}{
-		{"admin creates viewer", admin.Role, "v", auth.RoleViewer, nil},
-		{"admin creates admin", admin.Role, "a", auth.RoleAdmin, nil},
-		{"admin creates maintainer", admin.Role, "m1", auth.RoleMaintainer, auth.ErrMaintainerRequired},
-		{"admin creates ai", admin.Role, "ai1", auth.Role("ai"), auth.ErrInvalidRole},
-		{"maintainer creates maintainer", maint.Role, "m2", auth.RoleMaintainer, nil},
+		{"admin creates viewer", admin.Role, "v", auth.AccountViewer, nil},
+		{"admin creates admin", admin.Role, "a", auth.AccountAdmin, nil},
+		{"admin creates maintainer", admin.Role, "m1", auth.AccountMaintainer, auth.ErrMaintainerRequired},
+		{"admin creates ai", admin.Role, "ai1", auth.AccountRole("ai"), auth.ErrInvalidRole},
+		{"maintainer creates maintainer", maint.Role, "m2", auth.AccountMaintainer, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,14 +63,14 @@ func TestMaintainerBoundary_create(t *testing.T) {
 func TestMaintainerBoundary_modify(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := t.Context()
-	admin := env.createUser(t, "admin", auth.RoleAdmin)
-	maint := env.createUser(t, "maint", auth.RoleMaintainer)
-	editor := env.createUser(t, "editor", auth.RoleEditor)
-	target := env.createUser(t, "target-maint", auth.RoleMaintainer)
+	admin := env.createUser(t, "admin", auth.AccountAdmin)
+	maint := env.createUser(t, "maint", auth.AccountMaintainer)
+	editor := env.createUser(t, "editor", auth.AccountEditor)
+	target := env.createUser(t, "target-maint", auth.AccountMaintainer)
 
 	// An admin may not promote an editor to maintainer.
 	_, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, Role: auth.RoleMaintainer},
+		auth.UpdateUserInput{Email: editor.Email, Role: auth.AccountMaintainer},
 		admin.Role, mgmtEntry(admin.UID, audit.ActionUserUpdate))
 	if !errors.Is(err, auth.ErrMaintainerRequired) {
 		t.Fatalf("admin promote to maintainer err = %v, want ErrMaintainerRequired", err)
@@ -90,7 +90,7 @@ func TestMaintainerBoundary_modify(t *testing.T) {
 
 	// A maintainer may promote an editor to maintainer.
 	if _, err := env.svc.UpdateUserAudited(ctx, editor.UID,
-		auth.UpdateUserInput{Email: editor.Email, Role: auth.RoleMaintainer},
+		auth.UpdateUserInput{Email: editor.Email, Role: auth.AccountMaintainer},
 		maint.Role, mgmtEntry(maint.UID, audit.ActionUserUpdate)); err != nil {
 		t.Fatalf("maintainer promote to maintainer: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestMigration_aiRowBecomesMaintainer(t *testing.T) {
 	if err := tx.QueryRow(ctx, `SELECT role FROM users WHERE uid = 'usr_legacyai'`).Scan(&role); err != nil {
 		t.Fatalf("select migrated role: %v", err)
 	}
-	if role != string(auth.RoleMaintainer) {
+	if role != string(auth.AccountMaintainer) {
 		t.Fatalf("legacy ai account role = %q, want maintainer", role)
 	}
 

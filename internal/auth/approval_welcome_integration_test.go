@@ -155,7 +155,7 @@ func meFlags(t *testing.T, env *httpEnv, client *http.Client) accountFlags {
 // that stamp — separately from the disabled flag — after the account is blocked.
 func TestApproval_adminCreatedAccountIsApproved(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.RoleAdmin)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
 	admin := signInAs(t, env, "boss")
 
 	body := `{"username":"newcomer","password":"` + testPassword +
@@ -223,7 +223,7 @@ func listAccount(t *testing.T, env *httpEnv, client *http.Client, username strin
 // call leaves exactly where it was.
 func TestWelcomeSeen_stampsOnceAndIsIdempotent(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "reader", auth.RoleViewer)
+	env.mustCreate(t, "reader", auth.AccountViewer)
 	client := signInAs(t, env, "reader")
 
 	if before := meFlags(t, env, client); before.WelcomeSeenAt != nil {

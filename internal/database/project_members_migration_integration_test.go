@@ -33,10 +33,14 @@ func TestMigrate_projectMembersBackfill(t *testing.T) {
 		t.Fatalf("migrating a fresh schema: %v", err)
 	}
 	// Roll the schema back to just before 0101, so the seeded accounts are what
-	// the migration finds, exactly as in production.
+	// the migration finds, exactly as in production — including the role CHECK
+	// 0103 later narrowed to user/maintainer.
 	if _, err := db.Pool().Exec(ctx, `
 		DROP TABLE project_members;
-		ALTER TABLE users DROP COLUMN last_project_uid`); err != nil {
+		ALTER TABLE users DROP COLUMN last_project_uid;
+		ALTER TABLE users DROP CONSTRAINT users_role_check;
+		ALTER TABLE users ADD CONSTRAINT users_role_check
+			CHECK (role IN ('viewer', 'curator', 'editor', 'admin', 'maintainer'))`); err != nil {
 		t.Fatalf("undoing 0101: %v", err)
 	}
 

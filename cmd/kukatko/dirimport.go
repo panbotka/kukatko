@@ -344,7 +344,7 @@ func resolveUploader(
 		return "", fmt.Errorf("listing users: %w", err)
 	}
 	for i := range users {
-		if users[i].Role == auth.RoleAdmin && !users[i].Disabled {
+		if users[i].AccountRole == auth.AccountAdmin && !users[i].Disabled {
 			return users[i].UID, nil
 		}
 	}

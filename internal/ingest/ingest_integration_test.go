@@ -134,7 +134,7 @@ func newEnvWithPlaces(t *testing.T, dup config.DuplicateConfig, places *recordin
 	authSvc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	uploader, err := authSvc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "uploader", Email: "uploader@example.test", Password: "correct horse battery staple", Role: auth.RoleEditor,
+		Username: "uploader", Email: "uploader@example.test", Password: "correct horse battery staple", Role: auth.AccountEditor,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)

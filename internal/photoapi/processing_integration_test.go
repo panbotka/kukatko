@@ -79,7 +79,7 @@ func wantState(t *testing.T, report map[string]processingEntry, step processing.
 // steps that cannot apply to it as skipped.
 func TestDetailProcessing_freshPhotoIsPending(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "fresh"}, "fresh.jpg", 10, 20, 30)
 
 	report := detailProcessing(t, client, env.server.URL, photo.UID)
@@ -98,7 +98,7 @@ func TestDetailProcessing_freshPhotoIsPending(t *testing.T) {
 // step-specific result.
 func TestDetailProcessing_evidenceReadsDone(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	lat, lng := 49.36, 16.72
 	photo := env.seedPhoto(t,
 		photos.Photo{Title: "done", Lat: &lat, Lng: &lng}, "done.jpg", 40, 50, 60)
@@ -165,7 +165,7 @@ func TestDetailProcessing_evidenceReadsDone(t *testing.T) {
 // queue rather than from evidence: waiting, being worked on, and broken.
 func TestDetailProcessing_queueStates(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "queued"}, "queued.jpg", 70, 80, 90)
 
 	enqueue := func(jobType string) jobs.Job {
@@ -207,7 +207,7 @@ func TestDetailProcessing_queueStates(t *testing.T) {
 // one did not work, rather than reading as a fresh wait.
 func TestDetailProcessing_queuedRetryAfterAnErrorReadsFailed(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "retry"}, "retry.jpg", 11, 22, 33)
 
 	job, err := env.jobs.Enqueue(t.Context(), jobs.TypeThumbnail,
@@ -242,7 +242,7 @@ func TestDetailProcessing_queuedRetryAfterAnErrorReadsFailed(t *testing.T) {
 // frame, stays pending like any freshly uploaded photo's.
 func TestDetailProcessing_videoSkipsTextAndFaces(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	clip := env.seedPhoto(t,
 		photos.Photo{Title: "clip", MediaType: photos.MediaVideo}, "clip.mp4", 12, 34, 56)
 
@@ -258,7 +258,7 @@ func TestDetailProcessing_videoSkipsTextAndFaces(t *testing.T) {
 // do, and reporting it as done would claim a place the photo has not got.
 func TestDetailProcessing_placeMarkerWithoutGPSIsNotDone(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "viewer", auth.RoleViewer)
+	client, _ := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "nogps"}, "nogps.jpg", 21, 32, 43)
 
 	if _, err := places.NewStore(env.db.Pool()).SavePlace(t.Context(),
@@ -277,13 +277,13 @@ func TestRunProcessingStep_rbac(t *testing.T) {
 	photo := env.seedPhoto(t, photos.Photo{Title: "rbac"}, "rbac.jpg", 13, 24, 35)
 
 	tests := []struct {
-		role auth.Role
+		role auth.AccountRole
 		want int
 	}{
-		{role: auth.RoleViewer, want: http.StatusForbidden},
-		{role: auth.RoleEditor, want: http.StatusForbidden},
-		{role: auth.RoleAdmin, want: http.StatusForbidden},
-		{role: auth.RoleMaintainer, want: http.StatusOK},
+		{role: auth.AccountViewer, want: http.StatusForbidden},
+		{role: auth.AccountEditor, want: http.StatusForbidden},
+		{role: auth.AccountAdmin, want: http.StatusForbidden},
+		{role: auth.AccountMaintainer, want: http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.role), func(t *testing.T) {
@@ -311,7 +311,7 @@ func TestRunProcessingStep_rbac(t *testing.T) {
 // dedup index rather than piling up work.
 func TestRunProcessingStep_enqueuesAndIsIdempotent(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "maint", auth.RoleMaintainer)
+	client, _ := env.login(t, "maint", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "run"}, "run.jpg", 14, 25, 36)
 
 	for range 2 {
@@ -346,7 +346,7 @@ func TestRunProcessingStep_enqueuesAndIsIdempotent(t *testing.T) {
 // and a step that could never apply to this photo.
 func TestRunProcessingStep_refusals(t *testing.T) {
 	env := newEnv(t)
-	client, _ := env.login(t, "maint", auth.RoleMaintainer)
+	client, _ := env.login(t, "maint", auth.AccountMaintainer)
 	photo := env.seedPhoto(t, photos.Photo{Title: "refuse"}, "refuse.jpg", 15, 26, 37)
 
 	tests := []struct {

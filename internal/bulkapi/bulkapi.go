@@ -210,7 +210,7 @@ func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if ops.BeyondCuration() && !user.Role.CanWrite() {
+	if ops.BeyondCuration() && !auth.ProjectRoleFromContext(r.Context()).CanWrite() {
 		writeError(w, http.StatusForbidden,
 			"only an editor may change a photo's metadata; a curator may change albums, labels and its own marks")
 		return

@@ -185,7 +185,7 @@ func (a *API) buildHandler() http.Handler {
 		// RequireAuth has already run, so a principal is always present here.
 		// Fall back to the read-only server if it somehow is not: an unidentified
 		// caller must never reach a write tool.
-		if user, ok := auth.UserFromContext(r.Context()); ok && user.Role.CanWrite() {
+		if auth.ProjectRoleFromContext(r.Context()).CanWrite() {
 			return writable
 		}
 		return readOnly

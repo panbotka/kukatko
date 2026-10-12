@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -48,7 +49,7 @@ func newFixture(t *testing.T) fixture {
 	}
 	if err := auth.NewStore(db.Pool()).CreateUser(ctx, auth.User{
 		UID: f.curator, Username: "curator", Email: "curator@example.test",
-		PasswordHash: "x", Role: auth.RoleCurator,
+		PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleCurator,
 	}); err != nil {
 		t.Fatalf("creating curator: %v", err)
 	}

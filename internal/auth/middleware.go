@@ -4,36 +4,38 @@ import (
 	"net/http"
 )
 
-// RequireAuth wraps next so it runs only for requests carrying a valid session
-// cookie; the authenticated user and session are placed in the request context.
-// Unauthenticated requests get 401.
+// RequireAuth wraps next so it runs only for authenticated members of the
+// request's project (any project role); the authenticated user, session,
+// project and project role are placed in the request context. Unauthenticated
+// requests get 401; the project rules of enterProject apply (404 for an unknown,
+// foreign or deactivated project, 403 pending_approval).
 func (a *API) RequireAuth(next http.Handler) http.Handler {
 	return a.requireRole(requireAuth, next)
 }
 
-// RequireCurator wraps next so it runs only for authenticated users who may
-// curate the catalogue (faces, people, albums, labels): curators and every role
-// with write access. Viewers get 403; unauthenticated requests get 401.
+// RequireCurator wraps next so it runs only for callers whose project role may
+// curate the catalogue (faces, people, albums, labels): curators, editors and
+// admins. Viewers get 403; unauthenticated requests get 401.
 func (a *API) RequireCurator(next http.Handler) http.Handler {
 	return a.requireRole(requireCurate, next)
 }
 
-// RequireWrite wraps next so it runs only for authenticated users with write
-// access (editor, admin or maintainer). Viewers and curators get 403;
+// RequireWrite wraps next so it runs only for callers whose project role has
+// write access (editor or admin). Viewers and curators get 403;
 // unauthenticated requests get 401.
 func (a *API) RequireWrite(next http.Handler) http.Handler {
 	return a.requireRole(requireWrite, next)
 }
 
-// RequireAdmin wraps next so it runs only for authenticated admins — or
-// maintainers, who inherit every admin power up the ladder. Lesser roles get
-// 403; unauthenticated requests get 401.
+// RequireAdmin wraps next so it runs only for admins of the request's project —
+// which every maintainer is. Lesser roles get 403; unauthenticated requests get
+// 401.
 func (a *API) RequireAdmin(next http.Handler) http.Handler {
 	return a.requireRole(requireAdmin, next)
 }
 
-// RequireMaintainer wraps next so it runs only for authenticated maintainers,
-// the top of the role ladder. It guards the operations surfaces — imports,
+// RequireMaintainer wraps next so it runs only for accounts whose instance role
+// (users.role) is maintainer. It guards the operations surfaces — imports,
 // maintenance, system status, backup, restore, jobs and processing backfills.
 // Lesser roles get 403; unauthenticated requests get 401.
 func (a *API) RequireMaintainer(next http.Handler) http.Handler {
@@ -42,7 +44,7 @@ func (a *API) RequireMaintainer(next http.Handler) http.Handler {
 
 // RequireImport wraps next so it runs only for callers permitted to trigger
 // imports. Imports are an operations capability, so this now resolves to the
-// maintainer role: other roles (including plain admins) get 403 and
+// instance maintainer role: everybody else (project admins included) gets 403 and
 // unauthenticated requests get 401. It guards the import/migration triggers.
 func (a *API) RequireImport(next http.Handler) http.Handler {
 	return a.requireRole(requireImport, next)
@@ -73,6 +75,7 @@ const downloadTokenParam = "t"
 // context just as RequireAuth does. Requests with neither a valid cookie nor a
 // valid token get 401. It guards media endpoints so a browser <img>/<video> tag
 // can fetch protected thumbnails and originals without relying on the cookie.
+// The project rules of RequireAuth apply exactly as there.
 func (a *API) RequireAuthOrDownloadToken(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.authenticateRequest(r)
@@ -82,6 +85,10 @@ func (a *API) RequireAuthOrDownloadToken(next http.Handler) http.Handler {
 		if err != nil {
 			a.clearExpiredCookie(w, err)
 			writeUnauthorized(w, "authentication required")
+			return
+		}
+		p, err = a.enterProject(w, r, p)
+		if err != nil {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
@@ -103,10 +110,13 @@ func (a *API) authenticateDownloadToken(r *http.Request) (principal, error) {
 	return principal{user: user, session: sess}, nil
 }
 
-// requireRole returns a middleware that authenticates the request, enforces req
-// against the user's role, attaches the principal to the context, and calls
-// next. It writes 401 when authentication fails and 403 when the role is
-// insufficient.
+// requireRole returns a middleware that authenticates the request, resolves the
+// caller's access to the request's project (enterProject), enforces req against
+// the project role — or, for the instance-level requirements, the instance role
+// — attaches the principal to the context, and calls next. It writes 401 when
+// authentication fails, 404/403 for the project rules and 403 when the role is
+// insufficient. An instance-level requirement is checked before the project, so
+// a non-maintainer gets the same 403 whatever project it addressed.
 func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.authenticateRequest(r)
@@ -115,7 +125,15 @@ func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 			writeUnauthorized(w, "authentication required")
 			return
 		}
-		if !authorize(p.user.Role, req) {
+		if req.instanceLevel() && !authorize(p.user.Role, "", req) {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
+			return
+		}
+		p, err = a.enterProject(w, r, p)
+		if err != nil {
+			return
+		}
+		if !authorize(p.user.Role, p.projectRole, req) {
 			writeError(w, http.StatusForbidden, "insufficient permissions")
 			return
 		}

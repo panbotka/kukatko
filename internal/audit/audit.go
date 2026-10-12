@@ -36,6 +36,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -45,6 +46,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/obs"
 )
 
 // Action labels classify audit entries. They are stored verbatim in the action
@@ -635,6 +637,11 @@ type Meta struct {
 	IP string
 	// UserAgent is the request's User-Agent header.
 	UserAgent string
+	// ActorRole is the role the actor acted with when it is worth recording —
+	// "maintainer" for a system administrator acting in a project on the
+	// strength of that role alone — or "". Entry records it as the
+	// "actor_role" detail.
+	ActorRole string
 }
 
 // FromRequest builds a Meta from r and the actorUID resolved by the caller from
@@ -643,13 +650,27 @@ type Meta struct {
 // resolved by internal/clientip — the socket peer unless a trusted proxy named
 // the real client — so a row records where the request came from and not what
 // its sender wished to claim.
+//
+// The actor role comes from the request's observability fields (obs.ActorRole),
+// where internal/auth stamps it.
 func FromRequest(r *http.Request, actorUID string) Meta {
-	return Meta{ActorUID: actorUID, IP: clientip.FromRequest(r), UserAgent: r.UserAgent()}
+	return Meta{
+		ActorUID: actorUID, IP: clientip.FromRequest(r), UserAgent: r.UserAgent(),
+		ActorRole: obs.ActorRole(r.Context()),
+	}
 }
 
 // Entry stamps the meta's actor/IP/User-Agent onto a new Entry with the given
-// action, target and details, so handlers do not repeat those fields.
+// action, target and details, so handlers do not repeat those fields. A meta
+// carrying an ActorRole adds it to a copy of details as "actor_role"; the
+// caller's map is never modified.
 func (m Meta) Entry(action, targetType, targetUID string, details map[string]any) Entry {
+	if m.ActorRole != "" {
+		withRole := make(map[string]any, len(details)+1)
+		maps.Copy(withRole, details)
+		withRole["actor_role"] = m.ActorRole
+		details = withRole
+	}
 	return Entry{
 		ActorUID:   m.ActorUID,
 		Action:     action,

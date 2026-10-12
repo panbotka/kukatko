@@ -64,7 +64,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -136,7 +136,7 @@ var openRegistration = []byte(
 // full record back including the secret, and the change is audited.
 func TestAdminRoundTripAndAudit(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 
 	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
@@ -161,7 +161,7 @@ func TestAdminRoundTripAndAudit(t *testing.T) {
 // without a session and carries only the three flags that screen needs.
 func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
@@ -188,7 +188,7 @@ func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 // session, is refused without one, and never carries the secret.
 func TestWelcomeNeedsASessionAndHidesTheSecret(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
@@ -201,7 +201,7 @@ func TestWelcomeNeedsASessionAndHidesTheSecret(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	viewer := env.login(t, "viewer", auth.RoleViewer)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
 	body := decodeBody(t, env.mustDo(t, viewer, http.MethodGet, "/api/v1/settings/welcome", nil))
 	if len(body) != 1 || body["welcome_markdown"] != "# Vítej" {
 		t.Fatalf("welcome body = %v, want only welcome_markdown", body)
@@ -222,7 +222,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	for _, role := range []auth.Role{auth.RoleViewer, auth.RoleEditor} {
+	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountEditor} {
 		client := env.login(t, "u_"+string(role), role)
 		for _, method := range []string{http.MethodGet, http.MethodPut} {
 			resp := env.mustDo(t, client, method, "/api/v1/settings", openRegistration)
@@ -233,7 +233,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 		}
 	}
 
-	maintainer := env.login(t, "boss", auth.RoleMaintainer)
+	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	resp := env.mustDo(t, maintainer, http.MethodGet, "/api/v1/settings", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("maintainer GET /settings status = %d, want 200", resp.StatusCode)
@@ -245,7 +245,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 // nothing is stored.
 func TestOpeningRegistrationNeedsASecret(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.RoleAdmin)
+	admin := env.login(t, "admin", auth.AccountAdmin)
 
 	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings",
 		[]byte(`{"registration_enabled":true,"registration_secret":"  ","welcome_markdown":""}`))

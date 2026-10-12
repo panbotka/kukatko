@@ -63,7 +63,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/apitest` — the HTTP client the API packages' tests drive their `httptest` servers with; never `http.DefaultClient`, whose process-wide pool a closing test server empties under a parallel test
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
-- `internal/auth` — viewer/curator/editor/admin/maintainer roles (strict ladder), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn), all-authenticated name directory (`GET /users`)
+- `internal/auth` — two ladders: instance role user/maintainer + the request's project role (viewer…admin, resolved by `WithProject`; `ProjectFromContext` is the only way to learn the project), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn), all-authenticated name directory (`GET /users`)
 - `internal/avatar` — a face as a small square picture, cut server-side (the subject avatar and `GET /photos/{uid}/face` alike): the crop geometry, the per-face choice of source thumbnail and the cache-only rendition
 - `internal/avatarapi` — all-authenticated `GET /subjects/{uid}/avatar` (JPEG + ETag; "no picture" of any kind is a 404)
 - `internal/backup` — S3 backup (pg_dump + sync of originals + retention) **and** restore

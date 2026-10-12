@@ -95,7 +95,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	client, _ := e.loginUID(t, username, role)
 	return client
@@ -104,7 +104,7 @@ func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client 
 // loginUID creates a user with the given role and returns a cookie-bearing client
 // together with the created user's UID, so a test can assert the actor recorded on
 // an audit row is exactly this user.
-func (e *env) loginUID(t *testing.T, username string, role auth.Role) (*http.Client, string) {
+func (e *env) loginUID(t *testing.T, username string, role auth.AccountRole) (*http.Client, string) {
 	t.Helper()
 	user, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -234,7 +234,7 @@ func (e *env) createMarker(t *testing.T, photoUID, subjectUID string, bbox [4]fl
 // reported as already_done and the match is cached on the face row.
 func TestFaces_iouMatchCachesAndAssigns(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "alice-admin", auth.RoleAdmin)
+	client := env.login(t, "alice-admin", auth.AccountAdmin)
 	ctx := context.Background()
 
 	box := [4]float64{0.2, 0.2, 0.3, 0.3}
@@ -271,7 +271,7 @@ func TestFaces_iouMatchCachesAndAssigns(t *testing.T) {
 // subject, excluding people already on the photo and faces below the size floor.
 func TestFaces_suggestions(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "bob-admin", auth.RoleAdmin)
+	client := env.login(t, "bob-admin", auth.AccountAdmin)
 
 	bob := env.createSubject(t, "Bob")
 	carol := env.createSubject(t, "Carol")
@@ -322,7 +322,7 @@ func TestFaces_suggestions(t *testing.T) {
 // that is what lets the UI fix a wrong assignment in one click.
 func TestFaces_suggestionsForAssignedFace(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "dave-admin", auth.RoleAdmin)
+	client := env.login(t, "dave-admin", auth.AccountAdmin)
 
 	alice := env.createSubject(t, "Alice")
 	bob := env.createSubject(t, "Bob")
@@ -359,7 +359,7 @@ func TestFaces_suggestionsForAssignedFace(t *testing.T) {
 // confirm the subject is reused, not duplicated.
 func TestAssign_createUnassignReuseSubject(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "carol-editor", auth.RoleEditor)
+	client := env.login(t, "carol-editor", auth.AccountEditor)
 	ctx := context.Background()
 
 	box := [4]float64{0.2, 0.2, 0.3, 0.3}
@@ -421,7 +421,7 @@ func TestAssign_validationAndAuth(t *testing.T) {
 	env := newEnv(t)
 	uid := env.makePhoto(t, "auth")
 
-	editor := env.login(t, "ed", auth.RoleEditor)
+	editor := env.login(t, "ed", auth.AccountEditor)
 	resp := env.assign(t, editor, uid, facematch.AssignRequest{Action: "bogus"})
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("bogus action status = %d, want 400", resp.StatusCode)
@@ -434,7 +434,7 @@ func TestAssign_validationAndAuth(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	viewer := env.login(t, "vi", auth.RoleViewer)
+	viewer := env.login(t, "vi", auth.AccountViewer)
 	box := [4]float64{0, 0, 0.1, 0.1}
 	resp = env.assign(t, viewer, uid, facematch.AssignRequest{Action: facematch.ActionCreateMarker, BBox: &box, SubjectName: "X"})
 	if resp.StatusCode != http.StatusForbidden {
@@ -450,7 +450,7 @@ func TestAssign_validationAndAuth(t *testing.T) {
 func TestFaceAssignAudited(t *testing.T) {
 	env := newEnv(t)
 	ctx := t.Context()
-	editor, actor := env.loginUID(t, "audeditor", auth.RoleEditor)
+	editor, actor := env.loginUID(t, "audeditor", auth.AccountEditor)
 	uid := env.makePhoto(t, "faceauditphoto")
 	auditStore := audit.NewStore(env.db.Pool())
 
@@ -515,7 +515,7 @@ func decodeAssign(t *testing.T, resp *http.Response) facematch.AssignResult {
 // the cache back and forth and put the duplicate straight back.
 func TestFaces_oneMarkerPerFace(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "dup-admin", auth.RoleAdmin)
+	client := env.login(t, "dup-admin", auth.AccountAdmin)
 	ctx := context.Background()
 
 	uid := env.makePhoto(t, "onemarkerperface")

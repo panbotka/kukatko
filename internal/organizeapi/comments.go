@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // CommentStore is the subset of comments.Store an album's thread needs. It is
@@ -156,7 +157,7 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !canDeleteComment(existing, user) {
+	if !canDeleteComment(existing, user, auth.ProjectRoleFromContext(r.Context())) {
 		writeError(w, http.StatusForbidden, "only the author or an admin may delete a comment")
 		return
 	}
@@ -212,8 +213,10 @@ func canEditComment(c comments.Comment, user auth.User) bool {
 
 // canDeleteComment reports whether user may remove the comment: its author, or
 // an admin (and a maintainer, up the ladder) moderating anyone's.
-func canDeleteComment(c comments.Comment, user auth.User) bool {
-	return canEditComment(c, user) || user.Role.IsAdmin()
+//
+// role is the caller's role in the request's project.
+func canDeleteComment(c comments.Comment, user auth.User, role project.Role) bool {
+	return canEditComment(c, user) || role.IsAdmin()
 }
 
 // commentsAvailable reports whether a comment store is configured, writing 503

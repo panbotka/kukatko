@@ -73,7 +73,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -153,7 +153,7 @@ func decodeBody(t *testing.T, resp *http.Response, dst any) {
 // TestAlbumLifecycle exercises create, list, get, update and delete over HTTP.
 func TestAlbumLifecycle(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums",
 		[]byte(`{"title":"Léto u Řeky","description":"summer"}`))
@@ -201,7 +201,7 @@ func TestAlbumLifecycle(t *testing.T) {
 // they were added in.
 func TestAlbumMembership(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	oldest := env.seedPhotoAt(t, "m1", time.Date(2019, 3, 1, 8, 0, 0, 0, time.UTC))
 	middle := env.seedPhotoAt(t, "m2", time.Date(2021, 3, 1, 8, 0, 0, 0, time.UTC))
 	newest := env.seedPhotoAt(t, "m3", time.Date(2023, 3, 1, 8, 0, 0, 0, time.UTC))
@@ -237,7 +237,7 @@ func TestAlbumMembership(t *testing.T) {
 // /albums/{uid}/order answers 404 even for an editor and an existing album.
 func TestAlbumReorderRouteRemoved(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	p1 := env.seedPhoto(t, "rr1")
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
@@ -255,7 +255,7 @@ func TestAlbumReorderRouteRemoved(t *testing.T) {
 // TestAlbumMembershipNotFound maps a missing album/photo to 404.
 func TestAlbumMembershipNotFound(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums/al_missing/photos",
 		[]byte(`{"photo_uids":["ph_x"]}`))
@@ -278,7 +278,7 @@ func TestAlbumMembershipNotFound(t *testing.T) {
 // TestLabelLifecycleAndAttach covers label CRUD plus attach/detach to a photo.
 func TestLabelLifecycleAndAttach(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, "lbl1")
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/labels",
@@ -331,7 +331,7 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 // from — reports the stored value.
 func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/labels",
 		[]byte(`{"name":"Výlet","priority":0}`))
@@ -392,8 +392,8 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 // can do both.
 func TestRoleEnforcement(t *testing.T) {
 	env := newEnv(t)
-	viewer := env.login(t, "viewer", auth.RoleViewer)
-	editor := env.login(t, "editor", auth.RoleEditor)
+	viewer := env.login(t, "viewer", auth.AccountViewer)
+	editor := env.login(t, "editor", auth.AccountEditor)
 
 	// Viewer can read.
 	for _, path := range []string{"/api/v1/albums", "/api/v1/labels"} {

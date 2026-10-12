@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // errNoCaller means a tool handler ran without an identified caller. It can only
@@ -36,6 +37,9 @@ const viaMCP = "mcp"
 // *http.Request the audit trail needs (IP, user agent) does not reach it.
 type caller struct {
 	user auth.User
+	// role is the caller's role in the request's project; it decides whether
+	// the caller may write.
+	role project.Role
 	meta audit.Meta
 }
 
@@ -64,7 +68,7 @@ func (a *API) withCaller(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		c := caller{user: user, meta: audit.FromRequest(r, user.UID)}
+		c := caller{user: user, role: auth.ProjectRoleFromContext(r.Context()), meta: audit.FromRequest(r, user.UID)}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, c)))
 	})
 }
@@ -87,7 +91,7 @@ func writerFromContext(ctx context.Context) (caller, error) {
 	if err != nil {
 		return caller{}, err
 	}
-	if !c.user.Role.CanWrite() {
+	if !c.role.CanWrite() {
 		return caller{}, errReadOnly
 	}
 	return c, nil

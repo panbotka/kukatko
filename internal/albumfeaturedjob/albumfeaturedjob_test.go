@@ -9,12 +9,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/worker"
 )
 
@@ -72,11 +72,11 @@ func TestRecipients(t *testing.T) {
 	t.Parallel()
 
 	accounts := []account{
-		{UID: "us-admin", Role: auth.RoleAdmin},
-		{UID: "us-curator", Role: auth.RoleCurator},
-		{UID: "us-editor", Role: auth.RoleEditor},
-		{UID: "us-off", Role: auth.RoleEditor, Disabled: true},
-		{UID: "us-viewer", Role: auth.RoleViewer},
+		{UID: "us-admin", Role: project.RoleAdmin},
+		{UID: "us-curator", Role: project.RoleCurator},
+		{UID: "us-editor", Role: project.RoleEditor},
+		{UID: "us-off", Role: project.RoleEditor, Disabled: true},
+		{UID: "us-viewer", Role: project.RoleViewer},
 	}
 	tests := []struct {
 		name    string

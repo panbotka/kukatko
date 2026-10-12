@@ -80,7 +80,7 @@ func newEnv(t *testing.T) *env {
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
-func (e *env) login(t *testing.T, username string, role auth.Role) *http.Client {
+func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.Client {
 	t.Helper()
 	if _, err := e.authSvc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: testPassword, Role: role,
@@ -170,7 +170,7 @@ func (e *env) seedCluster(t *testing.T) {
 func TestListClusters_EditorSeesClusters(t *testing.T) {
 	env := newEnv(t)
 	env.firstClusterUID(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
 	defer func() { _ = resp.Body.Close() }()
@@ -192,7 +192,7 @@ func TestListClusters_EditorSeesClusters(t *testing.T) {
 // curator-only clustering routes.
 func TestListClusters_ViewerForbidden(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "viewer", auth.RoleViewer)
+	client := env.login(t, "viewer", auth.AccountViewer)
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api/v1/faces/clusters"},
@@ -215,7 +215,7 @@ func TestListClusters_ViewerForbidden(t *testing.T) {
 func TestClusters_CuratorReachesEveryRoute(t *testing.T) {
 	env := newEnv(t)
 	uid := env.firstClusterUID(t)
-	client := env.login(t, "curator", auth.RoleCurator)
+	client := env.login(t, "curator", auth.AccountCurator)
 
 	listResp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
 	_ = listResp.Body.Close()
@@ -244,7 +244,7 @@ func TestClusters_CuratorReachesEveryRoute(t *testing.T) {
 func TestAssignCluster_Endpoint(t *testing.T) {
 	env := newEnv(t)
 	uid := env.firstClusterUID(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	body, _ := json.Marshal(map[string]string{"subject_name": "Carol"})
 	resp := mustDo(t, client, http.MethodPost,
@@ -270,7 +270,7 @@ func TestAssignCluster_Endpoint(t *testing.T) {
 // TestAssignCluster_UnknownCluster verifies an unknown cluster id answers 404.
 func TestAssignCluster_UnknownCluster(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	body, _ := json.Marshal(map[string]string{"subject_name": "Nobody"})
 	resp := mustDo(t, client, http.MethodPost,
@@ -299,7 +299,7 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 	}
 	uid := listing.Clusters[0].UID
 	strayPhoto := listing.Clusters[0].Representative.PhotoUID
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	body, _ := json.Marshal(map[string]any{"photo_uid": strayPhoto, "face_index": 0})
 	resp := mustDo(t, client, http.MethodPost,
@@ -326,7 +326,7 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 func TestListClusters_SchedulesPreparation(t *testing.T) {
 	env := newEnv(t)
 	env.seedCluster(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	for range 3 {
 		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
@@ -357,7 +357,7 @@ func TestListClusters_SchedulesPreparation(t *testing.T) {
 func TestListClusters_Pages(t *testing.T) {
 	env := newEnv(t)
 	env.firstClusterUID(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	resp := mustDo(t, client, http.MethodGet,
 		env.server.URL+"/api/v1/faces/clusters?limit=1&offset=0", nil)
@@ -416,7 +416,7 @@ func TestListClusters_SchedulesGrouping(t *testing.T) {
 	env := newEnv(t)
 	env.seedFace(t, "u1")
 	env.seedFace(t, "u2")
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	for range 3 {
 		out := env.listGroups(t, client)
@@ -450,7 +450,7 @@ func TestListClusters_SchedulesGrouping(t *testing.T) {
 // it can show a plain empty state rather than a permanent "working…".
 func TestListClusters_NoFacesSchedulesNothing(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	if out := env.listGroups(t, client); out.Grouping || len(out.Clusters) != 0 {
 		t.Fatalf("listing = %+v, want an empty page and no pass", out)
@@ -468,7 +468,7 @@ func TestListClusters_GroupedLibrarySchedulesNothing(t *testing.T) {
 	env := newEnv(t)
 	env.firstClusterUID(t)
 	env.seedFace(t, "leftover")
-	client := env.login(t, "editor", auth.RoleEditor)
+	client := env.login(t, "editor", auth.AccountEditor)
 
 	out := env.listGroups(t, client)
 	if len(out.Clusters) != 1 || out.Grouping {

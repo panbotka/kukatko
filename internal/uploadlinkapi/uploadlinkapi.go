@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/ingest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
@@ -87,6 +88,9 @@ type Config struct {
 	// CurrentUser resolves the caller from the request; nil uses
 	// auth.UserFromContext. Tests inject a fake.
 	CurrentUser func(r *http.Request) (auth.User, bool)
+	// CurrentRole resolves the caller's role in the request's project; nil uses
+	// auth.ProjectRoleFromContext. Tests inject a fake.
+	CurrentRole func(r *http.Request) project.Role
 	// IPLimit throttles the public routes per client IP; nil throttles nothing.
 	IPLimit *ratelimit.Limiter
 	// LinkLimit throttles the uploads through one link, keyed by the link; nil
@@ -125,6 +129,7 @@ type API struct {
 	requireCurator func(http.Handler) http.Handler
 	optionalAuth   func(http.Handler) http.Handler
 	currentUser    func(r *http.Request) (auth.User, bool)
+	currentRole    func(r *http.Request) project.Role
 	ipLimit        *ratelimit.Limiter
 	linkLimit      *ratelimit.Limiter
 	maxFileSize    int64
@@ -143,13 +148,16 @@ func NewAPI(cfg Config) *API {
 	a := &API{
 		store: cfg.Store, ingest: cfg.Ingest, sidecar: cfg.Sidecar,
 		requireCurator: cfg.RequireCurator, optionalAuth: cfg.OptionalAuth,
-		currentUser: cfg.CurrentUser, ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,
+		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,
 		maxFileSize: cfg.MaxFileSize, maxUploads: cfg.MaxUploadsPerLink,
 		defaultDays: cfg.DefaultDays, maxDays: cfg.MaxDays,
 		secureCookies: cfg.SecureCookies, now: cfg.Now, log: cfg.Logger,
 	}
 	if a.currentUser == nil {
 		a.currentUser = func(r *http.Request) (auth.User, bool) { return auth.UserFromContext(r.Context()) }
+	}
+	if a.currentRole == nil {
+		a.currentRole = func(r *http.Request) project.Role { return auth.ProjectRoleFromContext(r.Context()) }
 	}
 	if a.ipLimit == nil {
 		a.ipLimit = ratelimit.New(0, 0)

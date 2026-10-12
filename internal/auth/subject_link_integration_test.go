@@ -69,7 +69,7 @@ func (e *linkEnv) deleteSubject(t *testing.T, uid string) {
 }
 
 // seedUser creates an account with the given role and returns it.
-func (e *linkEnv) seedUser(t *testing.T, username string, role auth.Role) auth.User {
+func (e *linkEnv) seedUser(t *testing.T, username string, role auth.AccountRole) auth.User {
 	t.Helper()
 	user, err := e.svc.CreateUser(t.Context(), auth.CreateUserInput{
 		Username: username, Email: username + "@example.test", Password: "correct horse battery", Role: role,
@@ -116,7 +116,7 @@ func (e *linkEnv) meSubject(t *testing.T, client *http.Client) *string {
 func TestSubjectLink_selfService(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_self", "Babička")
-	env.seedUser(t, "viewer", auth.RoleViewer)
+	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
 	if got := env.meSubject(t, client); got != nil {
@@ -146,7 +146,7 @@ func TestSubjectLink_selfService(t *testing.T) {
 // bad request rather than a stored dangling pointer.
 func TestSubjectLink_unknownSubjectIsRejected(t *testing.T) {
 	env := newLinkEnv(t)
-	env.seedUser(t, "viewer", auth.RoleViewer)
+	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
 	status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
@@ -177,8 +177,8 @@ func TestSubjectLink_requiresAuthentication(t *testing.T) {
 func TestSubjectLink_sharedBetweenAccounts(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_shared", "Babička")
-	env.seedUser(t, "family", auth.RoleViewer)
-	env.seedUser(t, "babicka", auth.RoleViewer)
+	env.seedUser(t, "family", auth.AccountViewer)
+	env.seedUser(t, "babicka", auth.AccountViewer)
 
 	for _, username := range []string{"family", "babicka"} {
 		client := env.signIn(t, username)
@@ -199,7 +199,7 @@ func TestSubjectLink_sharedBetweenAccounts(t *testing.T) {
 func TestSubjectLink_survivesSubjectDeletion(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_gone", "Babička")
-	env.seedUser(t, "viewer", auth.RoleViewer)
+	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
 	if status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
@@ -228,7 +228,7 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_a", "Babička")
 	env.addSubject(t, "sub_b", "Dědeček")
-	env.seedUser(t, "admin", auth.RoleAdmin)
+	env.seedUser(t, "admin", auth.AccountAdmin)
 	admin := env.signIn(t, "admin")
 
 	status, body := env.do(t, admin, http.MethodPost, "/api/v1/admin/users",

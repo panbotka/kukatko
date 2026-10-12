@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // maxCommentBody caps the comment request body. A body is at most
@@ -149,7 +150,7 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !canDeleteComment(user, existing) {
+	if !canDeleteComment(user, auth.ProjectRoleFromContext(r.Context()), existing) {
 		writeError(w, http.StatusForbidden, "only the author or an admin can delete a comment")
 		return
 	}
@@ -172,8 +173,10 @@ func canEditComment(user auth.User, c comments.Comment) bool {
 // canDeleteComment reports whether user may remove c: its author, or an admin
 // (and a maintainer, up the ladder) moderating anyone's — the same governance
 // power the role already carries over the rest of the library.
-func canDeleteComment(user auth.User, c comments.Comment) bool {
-	return canEditComment(user, c) || user.Role.IsAdmin()
+//
+// role is the caller's role in the request's project.
+func canDeleteComment(user auth.User, role project.Role, c comments.Comment) bool {
+	return canEditComment(user, c) || role.IsAdmin()
 }
 
 // resolveComment performs the preamble the edit and delete handlers share:

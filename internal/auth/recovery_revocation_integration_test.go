@@ -203,8 +203,8 @@ func TestRecovery_leavesAPITokensAlive(t *testing.T) {
 	for _, path := range recoveryPaths() {
 		t.Run(path.name, func(t *testing.T) {
 			env := newRecoveryEnv(t)
-			env.user(t, "boss", auth.RoleAdmin)
-			alice := env.user(t, "alice", auth.RoleEditor)
+			env.user(t, "boss", auth.AccountAdmin)
+			alice := env.user(t, "alice", auth.AccountEditor)
 
 			victim := newClient(t)
 			env.signInWithPassword(t, victim, "alice")
@@ -243,8 +243,8 @@ func TestRecovery_leavesPasskeysAlive(t *testing.T) {
 	for _, path := range recoveryPaths() {
 		t.Run(path.name, func(t *testing.T) {
 			env := newRecoveryEnv(t)
-			env.user(t, "boss", auth.RoleAdmin)
-			alice := env.user(t, "alice", auth.RoleEditor)
+			env.user(t, "boss", auth.AccountAdmin)
+			alice := env.user(t, "alice", auth.AccountEditor)
 
 			victim := newClient(t)
 			env.signInWithPassword(t, victim, "alice")
@@ -283,7 +283,7 @@ func TestRecovery_leavesPasskeysAlive(t *testing.T) {
 // Neither write asks for the password again.
 func TestRecovery_bearerTokenAloneMintsTokenAndPasskey(t *testing.T) {
 	env := newRecoveryEnv(t)
-	alice := env.user(t, "alice", auth.RoleEditor)
+	alice := env.user(t, "alice", auth.AccountEditor)
 
 	victim := newClient(t)
 	env.signInWithPassword(t, victim, "alice")

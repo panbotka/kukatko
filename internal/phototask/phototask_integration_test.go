@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -58,7 +59,7 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 	t.Helper()
 	if err := f.users.CreateUser(context.Background(), auth.User{
 		UID: uid, Username: username, Email: username + "@example.test",
-		DisplayName: displayName, PasswordHash: "x", Role: auth.RoleViewer,
+		DisplayName: displayName, PasswordHash: "x", Role: auth.RoleUser, ProjectRole: project.RoleViewer,
 	}); err != nil {
 		t.Fatalf("creating user %s: %v", username, err)
 	}

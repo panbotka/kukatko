@@ -198,7 +198,6 @@ func (s *Service) createSession(ctx context.Context, user User) (Session, error)
 		Token:         token,
 		DownloadToken: downloadToken,
 		UserUID:       user.UID,
-		Role:          user.Role,
 		CreatedAt:     now,
 		ExpiresAt:     now.Add(s.policy.TTL),
 	}
@@ -233,7 +232,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (User, Session
 		return User{}, Session{}, ErrUserDisabled
 	}
 
-	sess, err = s.extendSession(ctx, sess, user, now)
+	sess, err = s.extendSession(ctx, sess, now)
 	if err != nil {
 		return User{}, Session{}, err
 	}
@@ -241,11 +240,9 @@ func (s *Service) Authenticate(ctx context.Context, token string) (User, Session
 }
 
 // extendSession applies the sliding-expiry policy to sess as of now and persists
-// the new expiry when it has advanced by at least the renew interval. The
-// session's cached role is refreshed from user so a mid-session role change
-// takes effect. It returns the updated session value.
-func (s *Service) extendSession(ctx context.Context, sess Session, user User, now time.Time) (Session, error) {
-	sess.Role = user.Role
+// the new expiry when it has advanced by at least the renew interval. It
+// returns the updated session value.
+func (s *Service) extendSession(ctx context.Context, sess Session, now time.Time) (Session, error) {
 	newExpiry, extend := slideExpiry(sess.CreatedAt, sess.ExpiresAt, now, s.policy.TTL, s.policy.MaxLifetime)
 	if !extend {
 		return sess, nil
@@ -282,7 +279,6 @@ func (s *Service) AuthenticateDownloadToken(ctx context.Context, token string) (
 		_, _ = s.store.DeleteUserSessions(ctx, user.UID)
 		return User{}, Session{}, ErrUserDisabled
 	}
-	sess.Role = user.Role
 	return user, sess, nil
 }
 

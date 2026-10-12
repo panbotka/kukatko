@@ -48,7 +48,7 @@ func decodeRollCall(t *testing.T, raw json.RawMessage) []facematch.PersonOnPhoto
 // instead of having to know that /faces exists.
 func TestDetail_peopleOptIn(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "alice-admin", auth.RoleAdmin)
+	client := env.login(t, "alice-admin", auth.AccountAdmin)
 
 	box := [4]float64{0.2, 0.2, 0.3, 0.3}
 	uid := env.makePhoto(t, "roll-call")
@@ -80,7 +80,7 @@ func TestDetail_peopleOptIn(t *testing.T) {
 // face↔marker match nobody asked for.
 func TestDetail_peopleAbsentWithoutTheParameter(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "alice-admin", auth.RoleAdmin)
+	client := env.login(t, "alice-admin", auth.AccountAdmin)
 
 	box := [4]float64{0.2, 0.2, 0.3, 0.3}
 	uid := env.makePhoto(t, "quiet")
@@ -103,7 +103,7 @@ func TestDetail_peopleAbsentWithoutTheParameter(t *testing.T) {
 // marked" stays distinguishable from "you did not ask".
 func TestDetail_peopleEmptyIsNotAbsent(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "alice-admin", auth.RoleAdmin)
+	client := env.login(t, "alice-admin", auth.AccountAdmin)
 
 	uid := env.makePhoto(t, "nobody")
 	body := env.getDetail(t, client, uid, "?people=true")
@@ -121,7 +121,7 @@ func TestDetail_peopleEmptyIsNotAbsent(t *testing.T) {
 // who is on it included — without a second request.
 func TestUpdate_returnsPeopleWhenAsked(t *testing.T) {
 	env := newEnv(t)
-	client := env.login(t, "alice-admin", auth.RoleAdmin)
+	client := env.login(t, "alice-admin", auth.AccountAdmin)
 
 	box := [4]float64{0.2, 0.2, 0.3, 0.3}
 	uid := env.makePhoto(t, "edited")

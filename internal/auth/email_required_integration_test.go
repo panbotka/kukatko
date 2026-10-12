@@ -144,7 +144,7 @@ func TestMigration0063_fillsPlaceholders(t *testing.T) {
 // accepted and stored normalized.
 func TestHTTP_createUserRequiresEmail(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "mailadmin", auth.RoleAdmin)
+	env.mustCreate(t, "mailadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "mailadmin")
 
 	rejected := []struct {
@@ -186,9 +186,9 @@ func TestHTTP_createUserRequiresEmail(t *testing.T) {
 // mistyping it — and that a refused update leaves the stored address alone.
 func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "updadmin", auth.RoleAdmin)
+	env.mustCreate(t, "updadmin", auth.AccountAdmin)
 	admin := env.loginClient(t, "updadmin")
-	target := env.mustCreate(t, "updtarget", auth.RoleViewer)
+	target := env.mustCreate(t, "updtarget", auth.AccountViewer)
 	path := "/api/v1/admin/users/" + target.UID
 
 	for _, tt := range []struct {
@@ -227,7 +227,7 @@ func TestCreateUser_emailRules(t *testing.T) {
 	env := newTestEnv(t)
 
 	_, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-		Username: "addressless", Password: testPassword, Role: auth.RoleViewer,
+		Username: "addressless", Password: testPassword, Role: auth.AccountViewer,
 	})
 	if !errors.Is(err, auth.ErrInvalidEmail) {
 		t.Fatalf("CreateUser without an address err = %v, want ErrInvalidEmail", err)
@@ -236,7 +236,7 @@ func TestCreateUser_emailRules(t *testing.T) {
 	const shared = "rodina@example.com"
 	for _, username := range []string{"matka", "otec"} {
 		user, err := env.svc.CreateUser(t.Context(), auth.CreateUserInput{
-			Username: username, Email: shared, Password: testPassword, Role: auth.RoleViewer,
+			Username: username, Email: shared, Password: testPassword, Role: auth.AccountViewer,
 		})
 		if err != nil {
 			t.Fatalf("CreateUser(%q) with a shared address: %v", username, err)

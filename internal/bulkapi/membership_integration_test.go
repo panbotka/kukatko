@@ -30,7 +30,7 @@ func (e *env) postMembershipSummary(t *testing.T, c *http.Client, uids []string)
 // and a photo in neither is not.
 func TestBulkMembershipSummary_countsAndNamesFiledPhotos(t *testing.T) {
 	env := newEnv(t, 1000)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
 	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Panorama"})
@@ -79,7 +79,7 @@ func TestBulkMembershipSummary_countsAndNamesFiledPhotos(t *testing.T) {
 // empty arrays rather than null so the client never has to guard them.
 func TestBulkMembershipSummary_unfiledBatch(t *testing.T) {
 	env := newEnv(t, 1000)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	uid := env.seedPhoto(t, "mem-unfiled-1")
 
 	resp := env.postMembershipSummary(t, curator, []string{uid})
@@ -102,8 +102,8 @@ func TestBulkMembershipSummary_unfiledBatch(t *testing.T) {
 // the batches the apply rejects: empty is 400, oversized 413.
 func TestBulkMembershipSummary_guardsAndLimits(t *testing.T) {
 	env := newEnv(t, 2)
-	viewer, _ := env.login(t, "viewer", auth.RoleViewer)
-	curator, _ := env.login(t, "curator", auth.RoleCurator)
+	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
+	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	uid := env.seedPhoto(t, "mem-guard-1")
 
 	tests := []struct {

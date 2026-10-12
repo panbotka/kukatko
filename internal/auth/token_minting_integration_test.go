@@ -80,7 +80,7 @@ type parentSetup struct {
 
 // newParentSetup builds a parentSetup on the recovery environment, with alice
 // holding role.
-func newParentSetup(t *testing.T, role auth.Role) parentSetup {
+func newParentSetup(t *testing.T, role auth.AccountRole) parentSetup {
 	t.Helper()
 	env := newRecoveryEnv(t)
 	alice := env.user(t, "alice", role)
@@ -100,7 +100,7 @@ func newParentSetup(t *testing.T, role auth.Role) parentSetup {
 // parent by a year. Both are 201: the service checks only that an expiry is not
 // in the past, never against the presenting credential.
 func TestTokenMinting_expiringTokenMintsLongerLivedToken(t *testing.T) {
-	s := newParentSetup(t, auth.RoleEditor)
+	s := newParentSetup(t, auth.AccountEditor)
 	env, parent, presenter := s.env, s.parent, s.presenter
 	parentExpiry := storedExpiry(t, env, parent.Token.ID)
 	if parentExpiry == nil {
@@ -133,7 +133,7 @@ func TestTokenMinting_expiringTokenMintsLongerLivedToken(t *testing.T) {
 // an hour-long parent, then moves the clock past the parent's expiry. The
 // parent is refused; the child still authenticates.
 func TestTokenMinting_childOutlivesExpiredParent(t *testing.T) {
-	s := newParentSetup(t, auth.RoleEditor)
+	s := newParentSetup(t, auth.AccountEditor)
 	env, presenter := s.env, s.presenter
 	child := bearerClient(t, mint(t, env, presenter, map[string]any{"name": "child"}).Secret)
 
@@ -153,7 +153,7 @@ func TestTokenMinting_childOutlivesExpiredParent(t *testing.T) {
 // to a leaked token. The parent is refused; the child still authenticates and
 // is the one live token left.
 func TestTokenMinting_childOutlivesRevokedParent(t *testing.T) {
-	s := newParentSetup(t, auth.RoleEditor)
+	s := newParentSetup(t, auth.AccountEditor)
 	env, presenter := s.env, s.presenter
 	child := bearerClient(t, mint(t, env, presenter, map[string]any{"name": "child"}).Secret)
 
@@ -180,7 +180,7 @@ func TestTokenMinting_childOutlivesRevokedParent(t *testing.T) {
 // sign-in yields an ordinary session: a bounded bearer credential has turned into
 // an unbounded interactive one.
 func TestTokenMinting_expiringTokenRegistersPasskey(t *testing.T) {
-	s := newParentSetup(t, auth.RoleEditor)
+	s := newParentSetup(t, auth.AccountEditor)
 	env, presenter := s.env, s.presenter
 	device := newVirtualAuthenticator(t)
 	// Current behaviour (SEC-022): passkey registration accepts a bearer principal.
@@ -208,7 +208,7 @@ func TestTokenMinting_expiringTokenRegistersPasskey(t *testing.T) {
 // documented as belonging to "one revocable credential", and it still does —
 // but that credential can be a fresh one minted by any other.
 func TestTokenMinting_adminTokenMintsUnlimitedChild(t *testing.T) {
-	s := newParentSetup(t, auth.RoleAdmin)
+	s := newParentSetup(t, auth.AccountAdmin)
 	env, parent, presenter := s.env, s.parent, s.presenter
 	if parent.Token.Unlimited {
 		t.Fatal("the parent token is unlimited; the setup is wrong")
