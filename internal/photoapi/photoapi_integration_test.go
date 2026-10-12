@@ -36,6 +36,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/processing"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/stacks"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboard"
@@ -223,10 +224,18 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
 	})
 
+	// The photo routes are mounted the way the server mounts them: unprefixed
+	// (the transition alias every older test drives) and under /p/{project},
+	// where the tenant-isolation tests address a project by its slug.
+	projects := project.NewStore(db.Pool())
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
 		api.RegisterRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(projects))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)

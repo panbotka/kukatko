@@ -6182,6 +6182,45 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (`subjectLinks` in `reset.go`), and
     `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
     like a freshly migrated one.
+- **Tenant-isolation harness (`internal/projecttest`):** test support, **compiled only under the
+  `integration` build tag** (so `make check` neither builds nor lints it — run
+  `golangci-lint run --build-tags=integration ./internal/projecttest/...` after changing it). It exists
+  because the biggest risk of multi-tenancy is a forgotten `WHERE project_id`, and every scoping step
+  proves the opposite with the same helper.
+  - `Seed(t, pool, opts...) *Fixture` (call it after `dbtest.TruncateAll`, which leaves the bootstrap
+    project in place) — side **A** = the bootstrap project (`project.BootstrapUID`, slug `v`), side **B**
+    = a project it creates with `project.Store.Create` (slug `b-<random>`, prefix `projects/<uid>/`). In
+    each: one approved member (admin; `WithRole(SideB, project.RoleViewer)` changes it) who belongs to
+    **that project only** (the account is created with no membership, then `AddMember`), one photo with
+    its primary `photo_files` row (no object in storage), a person with a face marker on it, an album
+    holding it, a label on it, a task over it, the member's saved search and an upload link. The rows
+    are plain SQL naming `project_id` **explicitly**, never through the stores: the stores are what the
+    scoping steps change, and a seed through an unscoped store would land in whatever project it
+    defaults to — the very bug the harness exists to catch. Every uid is on the `Tenant`
+    (`f.A.PhotoUID`, `f.B.AlbumUID`, `f.A.UserUID`, `f.A.Slug`, `UploadLinkCode`, …); each title/name
+    contains the tenant's random `Token`, so a search for it should match one side only;
+    `Tenant.UIDs()` lists everything that must never surface on the other side (the slug is left out —
+    `v` matches any body).
+  - `f.ClientFor(t, server, side) *http.Client` — signed in through `POST /api/v1/auth/login`, a cookie
+    jar of its own on `apitest.Client()`'s pool-free transport (the spec's `*apitest.Client` is that
+    client: `apitest` exports a function, not a type). The fixture remembers each client's side and
+    server, so the HTTP helpers take a bare path. `f.PathFor(side, suffix)` = `/api/v1/p/<slug>/<suffix>`;
+    `f.Get(t, client, path)` returns a response whose body is already buffered.
+  - Assertions (all take `testing.TB`): `f.AssertInvisible(t, client, path)` — 404, and the body names
+    none of the **other** side's `UIDs()` (a uid the path itself carries is exempt — echoing the request
+    leaks nothing); `f.AssertListExcludes(t, client, path, otherUIDs...)` — 200 and none of the given
+    uids (at least one is required, an empty exclusion would pass every leak); `AssertSameShape(t,
+    respForeign, respMissing)` — same status, Content-Type and byte-identical body, so another project's
+    row is indistinguishable from a missing one (`MissingUID("ph")` mints the missing half);
+    `f.AssertStoreScoped(t, fn)` — `fn(A's project uid)` and `fn(B's)` both non-empty and disjoint. The
+    two that need the fixture's clients or project uids are methods, which is why they read `f.Assert…`.
+  - Tests: the assertions' failure paths through a recording `testing.TB` against canned servers; the
+    seed's shape and membership against the DB; `AssertStoreScoped` over every seeded root table; the
+    real project guard (each member enters its own project as admin, the other is a 404 identical to an
+    unknown slug). Worked example in a package: `internal/photoapi/isolation_integration_test.go`
+    (its test env mounts the photo routes under `/p/{project}` too); the foreign-photo case is skipped
+    with "unscoped until the photos step" until that step scopes the store.
+
 - **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
   behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in
   `docs/MIGRATION_SAFETY.md`). `Collect(ctx, pool, dir, store)` reads inside **one `READ ONLY REPEATABLE READ`

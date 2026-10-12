@@ -1383,6 +1383,17 @@ follow these rules; **a task is not done with red lint or tests.**
   silently replays only an idempotent request. Drive a test server with **`apitest.Client()`**
   (`internal/apitest`, which pools nothing); a client that ships gets a pool of its own by cloning the
   default (`internal/mapy`, `internal/embedding`). A **`forbidigo`** rule keeps the door shut.
+- **Tenant isolation.** Every query is scoped by an explicit `project_id` predicate, so the failure to fear
+  is a forgotten one: a silent leak between tenants. **`internal/projecttest`** (integration tag) seeds two
+  projects side by side — A the bootstrap project, B a created one — each with an approved member and one
+  photo, person + face marker, album, label, task, saved search and upload link, and offers
+  `AssertInvisible` (404 naming nothing of the other side), `AssertListExcludes`, `AssertSameShape` (a
+  foreign row answers byte-for-byte like a missing one) and `AssertStoreScoped` (A's and B's reads both
+  non-empty and disjoint); details in `docs/PACKAGES.md`. **Rule: every package a step scopes by project
+  adds at least one store-level and one HTTP-level isolation test with this harness** — the store test
+  proves the predicate, the HTTP test proves the handler reads through it and that "foreign" and
+  "missing" look the same. A case that cannot pass until a later step scopes its package is kept with
+  `t.Skip("unscoped until the <name> step")`, so that step only deletes the skip.
 - Meaningful coverage of the logic (not vanity %). New behavior = new/updated tests.
 
 ### 19.3 Frontend tests
