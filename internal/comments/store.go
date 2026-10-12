@@ -21,11 +21,23 @@ const foreignKeyViolation = "23503"
 // it borrows the shared pgx pool supplied at construction.
 type Store struct {
 	pool *pgxpool.Pool
+	// mentions hears about fresh mentions inside the mutation's transaction;
+	// nil hears nothing. See WithMentionObserver.
+	mentions MentionObserver
 }
 
 // NewStore returns a Store backed by pool. The pool stays owned by the caller.
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+// WithMentionObserver returns a copy of s that reports every fresh mention to
+// observer, within the transaction of the comment that carries it. The copy
+// shares the pool; s itself is unchanged.
+func (s *Store) WithMentionObserver(observer MentionObserver) *Store {
+	out := *s
+	out.mentions = observer
+	return &out
 }
 
 // commentColumns is the projection every read and mutation returns, expecting the
@@ -34,12 +46,27 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // a thread needs to render; it collapses to the empty string both for an empty
 // display name (fall back to the username) and for a deleted account (no u row).
 // The two subject columns are collapsed to the empty string as well: exactly one
-// of them is ever set, and Comment reports the unset one as absent.
+// of them is ever set, and Comment reports the unset one as absent. The last
+// column is the comment's mentions as a JSON array (see mentionsColumn).
 const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''),
 	COALESCE(c.author_uid, ''),
 	COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 	s.cover_photo_uid,
-	c.body, c.created_at, c.edited_at`
+	c.body, c.created_at, c.edited_at, ` + mentionsColumn
+
+// mentionsColumn resolves the comment's stored mentions (comment_mentions) to
+// the accounts' current names and linked people, as one JSON array in order of
+// first mention, empty — never NULL — for a comment without any. It is a
+// correlated subquery rather than a join so a comment stays one row however
+// many people it names; an account deleted since has no row (the cascade took
+// it), so it is simply absent, and the client falls back to the token's name.
+const mentionsColumn = `COALESCE((
+	SELECT jsonb_agg(jsonb_build_object(
+		'user_uid', m.user_uid,
+		'name', COALESCE(NULLIF(mu.display_name, ''), mu.username),
+		'subject_uid', mu.subject_uid) ORDER BY m.position)
+	FROM comment_mentions m JOIN users mu ON mu.uid = m.user_uid
+	WHERE m.comment_uid = c.uid), '[]'::jsonb)`
 
 // mutationColumns is what a mutating CTE returns for the outer select to join
 // against. It is the raw row, not the resolved projection: the author's name is
@@ -297,7 +324,7 @@ func (s *Store) CreateAlong(
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "creating comment", along, stmts.create,
+	return s.mutateAudited(ctx, entry, "creating comment", s.mentionsThen(along), stmts.create,
 		uid, subj.UID, nullableUID(authorUID), trimmed)
 }
 
@@ -324,7 +351,7 @@ func (s *Store) Update(ctx context.Context, uid, body string, entry audit.Entry)
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "updating comment", nil, updateSQL, uid, trimmed)
+	return s.mutateAudited(ctx, entry, "updating comment", s.mentionsThen(nil), updateSQL, uid, trimmed)
 }
 
 // deleteSQL soft-deletes a live comment, returning the row it stamped so the
@@ -351,14 +378,19 @@ func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error
 	return err
 }
 
+// postStep is work that follows the mutation on its transaction, with the
+// comment as the mutation read it back — and may amend it (the mentions a
+// create just wrote). Its error is returned as it came.
+type postStep func(ctx context.Context, tx pgx.Tx, c *Comment) error
+
 // mutateAudited runs query — a single-row mutation that reads the changed comment
 // back — writes entry (stamped with that comment's UID) on the same transaction
 // and commits, so the change and its audit record are atomic: if either fails the
 // transaction rolls back and neither persists. op names the operation for error
-// context. A non-nil along runs on the same transaction before the commit (see
-// Along); its error is returned as it came.
+// context. A non-nil post runs on the same transaction before the commit (see
+// postStep); its error is returned as it came.
 func (s *Store) mutateAudited(
-	ctx context.Context, entry audit.Entry, op string, along Along, query string, args ...any,
+	ctx context.Context, entry audit.Entry, op string, post postStep, query string, args ...any,
 ) (Comment, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -373,8 +405,8 @@ func (s *Store) mutateAudited(
 	if err := audit.Write(ctx, tx, entryWithComment(entry, c.UID)); err != nil {
 		return Comment{}, fmt.Errorf("comments: %s: writing audit entry: %w", op, err)
 	}
-	if along != nil {
-		if err := along(ctx, tx); err != nil {
+	if post != nil {
+		if err := post(ctx, tx, &c); err != nil {
 			return Comment{}, err
 		}
 	}
@@ -408,8 +440,11 @@ type rowScanner interface {
 func scanComment(row rowScanner) (Comment, error) {
 	var c Comment
 	if err := row.Scan(&c.UID, &c.PhotoUID, &c.TaskUID, &c.AuthorUID, &c.AuthorName,
-		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt); err != nil {
+		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Mentions); err != nil {
 		return Comment{}, fmt.Errorf("scanning comment row: %w", err)
+	}
+	if c.Mentions == nil {
+		c.Mentions = []Mention{}
 	}
 	return c, nil
 }

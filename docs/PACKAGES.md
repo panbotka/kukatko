@@ -1495,8 +1495,40 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `entryWithComment` stamps the affected comment's UID into `details.comment_uid` (the audit target stays the
   **photo**) on a **copy** of the caller's details map. **Delete is soft** — `deleted_at` is stamped, the row
   stays, every read filters it out — so deleting twice, or editing a deleted comment, is `ErrNotFound` rather
-  than a silent success. A body is plain text in and plain text out: nothing is parsed, rendered or sanitised
-  server-side, so the client escapes what it displays. `translateMutation` maps no-rows → `ErrNotFound` and a
+  than a silent success. A body is plain text in and plain text out: nothing is rendered or sanitised
+  server-side, so the client escapes what it displays. **The one thing the store reads out of a body is who
+  it mentions** (`mention.go`): **`ParseMentions(body)`** finds every `@[Name](user:<uid>)` token
+  (`mentionPattern` — an `@` straight before a Markdown link to the `user:` pseudo-scheme and an account
+  uid of letters, digits, `_`, `-`; a bare `@Name` is never matched) **outside code** — `stripCode` blanks
+  fenced blocks (``` or ~~~, closing fence at least as long, unclosed runs to the end), indented blocks
+  (four spaces or a tab after a blank line or at the top) and inline code spans (a backtick run closed by
+  one of the same length; an unclosed run is literal), so what the renderer shows as code is not a mention
+  here either — and returns `[]MentionRef{UserUID, Name}`, each account once, in order of first mention;
+  `MentionToken(name, uid)` writes the token; `Excerpt(body, limit)` is the notification's quote (tokens as
+  `@Name`, whitespace collapsed, cut with an ellipsis at `MaxExcerptLen` 140). On **every create and
+  edit** the shared `mutateAudited` runs a `postStep` (`mentionsThen`, `store_mentions.go`) after the audit
+  row and before the caller's `Along`: **`syncMentions`** resolves the refs on the transaction against the
+  accounts (`resolveMentionsSQL`: existing, `NOT disabled`, `approved_at IS NOT NULL` — the rest are
+  dropped), prunes the `comment_mentions` rows the body no longer carries, upserts the rest at their body
+  position, sets `Comment.Mentions` (the create's read-back ran before any row existed) and reports the
+  **fresh** ones — not in the previous set, not the author's own (a self-mention is stored, so it renders,
+  but is nobody's news) — to the **`MentionObserver`** (`WithMentionObserver`, a copy of the store like
+  `people.WithTagObserver`; `Mentioned(ctx, tx, Comment, []Mention)` on the comment's transaction; an error
+  fails the comment, so an observer that must not cost one contains its failures, see
+  `internal/mentionnotify`). Every read resolves the mentions afresh: `commentColumns` ends in
+  **`mentionsColumn`**, a correlated `jsonb_agg` over `comment_mentions ⋈ users` ordered by position,
+  `'[]'` when none, scanned into **`Comment.Mentions []Mention{UserUID, Name, SubjectUID *string}`**
+  (`json:"mentions"`, never nil) — so a renamed account reads under its new name in every old comment and a
+  deleted one (its rows cascaded away) is simply absent, the client falling back to the token's own name.
+  Table `comment_mentions` (migration `0098_comment_mentions.sql`: `(comment_uid, user_uid)` PK, both FKs
+  `CASCADE`, `position`, `idx_comment_mentions_user (user_uid, created_at DESC)` for a later "mentions of
+  me"; catalogue in `internal/reset`). A soft-deleted comment keeps its rows. Tests: the parser table (token
+  forms, duplicates, bad uid, every code case), the token round-trip and the excerpt as unit tests;
+  over a real database — create resolves, stores, returns and reports (an unknown uid, a disabled and an
+  unapproved account dropped, the writer's own left out of the report), a rename shows on the next read, a
+  deleted account drops out, a plain comment carries `[]` and never reaches the observer, an edit prunes
+  and reports only the new names, re-mentioning a dropped name is fresh again, a task thread resolves the
+  same, a soft delete keeps the rows. `translateMutation` maps no-rows → `ErrNotFound` and a
   `photo_uid` foreign-key violation → `ErrPhotoNotFound`), `internal/photoedit/`
   (**CGO-free application of a non-destructive edit** to a decoded image for download/preview: `Apply(img,
   photos.Edit) image.Image` applies **crop** (normalized `[x,y,w,h]` 0..1), **rotation** 0/90/180/270
@@ -5515,11 +5547,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     on the homepage, the link to it; a blank title reads „(bez názvu)"), `RenderTaskAssigned`
     (`TaskAssignedData{DisplayName,Who,Title,URL}` — subject „<who> tě přidal(a) k úkolu: <title>", the
     body „v Kukátku tě <who> přidal(a) k úkolu „<title>"." and the link to the task; a blank `Who` reads
-    „Někdo", a blank title „(bez názvu)") and the
+    „Někdo", a blank title „(bez názvu)"), `RenderCommentMention`
+    (`CommentMentionData{DisplayName,Who,OnTask,Title,Excerpt,URL}` — subject „<who> tě zmínil(a) v
+    komentáři u úkolu „<title>"" / „u fotky „<title>"" / bare „u fotky" for an untitled photo, the excerpt
+    indented as a quote, the link to the comment) and the
     generic `RenderNotification` (`NotificationData{DisplayName,Title,Body,URL}` — the title as the subject,
     the body (or the title when there is none) and the link), which `internal/notifydeliver` uses for any
     kind without a template of its own. `internal/mailjob` has a constructor for each (`Tagged`,
-    `AlbumFeatured`, `TaskAssigned`, `Notification`) and renders all four.
+    `AlbumFeatured`, `TaskAssigned`, `CommentMention`, `Notification`) and renders all five.
   - Configuration is `mail.*` (`internal/config`, [`OPERATIONS.md`](OPERATIONS.md)); an enabled mailer with no
     `host`, `from_address` or `base_url` fails startup naming every missing key.
 
@@ -5714,8 +5749,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos),
     **`KindAlbumFeatured`** ("a new album is featured on the homepage", its set is the album's cover, the
-    link is the album's page) and **`KindTaskAssigned`** ("somebody put you on a task", no photos, the
-    link is the task's page) — in a
+    link is the album's page), **`KindTaskAssigned`** ("somebody put you on a task", no photos, the
+    link is the task's page) and **`KindCommentMention`** ("somebody mentioned you in a comment", no
+    photos, the link is the thread scrolled to the comment; `RenderCommentMention(lang, who, MentionPlace,
+    title, excerpt)` — „<who> tě zmínil(a) v komentáři u fotky <title>" / „u úkolu <title>", the photo
+    named only when it has a title, the excerpt as the body) — in a
     package registry in display order, each with the **channels** it is delivered through
     (`AllChannels()`: **`ChannelInApp`** `in_app`, **`ChannelPush`**, **`ChannelEmail`**, in that order) —
     **every kind offers all three, and every default is off** (`everyChannelOff()`; the 2026-10-11
@@ -5961,6 +5999,34 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   Bedřich's notifications (title, body, task link, in the inbox) and Anna's mail; `Assign` once → one,
   re-asked (by anybody) → none, self-assign → none, a disabled account → none, somebody already on the
   task by acting → none, a fresh task → one; the plain store without the hook announces nothing.
+
+- **Mention notification (`internal/mentionnotify`):** "somebody mentioned you in a comment" — the
+  `comment_mention` kind, one notification per freshly mentioned account, **inside the comment's
+  transaction**. **`Notifier`** (`New(Config{Deliver, Language, Logger})`, panicking without `Deliver`) is
+  the comments store's `MentionObserver`, wired onto the one store both threads write through in
+  `cmd/kukatko/mention.go` (`buildCommentStore` over `buildDeliverer`, used by `photos.go` and
+  `phototask.go`); the store reports only the mentions **new on the comment** and never the writer's own,
+  so an edit that fixes a typo costs nothing here. **`Mentioned(ctx, tx, Comment, []Mention)`** runs under
+  a **savepoint** of the comment's transaction (a notification is worth less than the remark: a failed
+  delivery is rolled back to it, logged and swallowed; only a broken transaction is returned), reads the
+  **place** (`photoPlaceSQL`: the photo's title and whether it may be named at all —
+  `notification.VisiblePhotoSQL`, not private, hidden or archived; `taskPlaceSQL`: the title, always
+  visible) and the mentioned accounts' **standing** in one query (`standingSQL`: enabled and approved),
+  and applies the pure **`wanted(userUID, authorUID, standing, place)`** rules: never the writer, never an
+  account out of standing, never for a photo that may not be named — the mention is still highlighted in
+  the thread, only the announcement is skipped. Whether the person wants the kind at all is
+  `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
+  `KindCommentMention`, `notification.RenderCommentMention` with the writer's resolved name, the place and
+  `comments.Excerpt` of the body, `Link` = **`CommentPath(subject, commentUID)`**
+  (`/photos/<uid>?panel=info#comment-<cuid>` — the drawer must be open for the thread to mount — or
+  `/tasks/<uid>#comment-<cuid>`), no photographs, and the `comment_mention` mail
+  (`mailer.CommentMentionData{DisplayName, Who, OnTask, Title, Excerpt, URL}`) with the absolute link.
+  **Deleting the comment afterwards cancels nothing** — a notification is a frozen record, like a push
+  already sent. Tests: the rules table, the paths, the defaults and the message as unit tests; over a real
+  database — a photo comment naming Anna, Bedřich, the writer, a newcomer who never chose and a disabled
+  account → exactly Anna's and Bedřich's notifications (title with the photo's title, excerpt, anchored
+  link, in the inbox) and Anna's mail; a task comment → the task's title and anchor; a private, hidden or
+  archived photo → the mention stored, nobody told; an edit → only the newly named account.
 
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
   A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and calls

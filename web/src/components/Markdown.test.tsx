@@ -1,8 +1,17 @@
 import { render, screen, within } from '@testing-library/react'
+import { type ReactNode } from 'react'
+import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+
+import i18n from '../i18n'
 
 import { Markdown } from './Markdown'
+
+/** Renders under the i18n provider, for the mention chip's tooltips. */
+function renderEn(ui: ReactNode) {
+  return render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>)
+}
 
 describe('Markdown', () => {
   it('renders headings, emphasis and lists', () => {
@@ -134,6 +143,90 @@ describe('Markdown', () => {
 
     expect(container.querySelector('ol')).toBeNull()
     expect([...container.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['1987.', '2)'])
+  })
+
+  describe('mentions', () => {
+    beforeAll(async () => {
+      await i18n.changeLanguage('en')
+    })
+    const mentions = [
+      { user_uid: 'us1', name: 'Tomáš Kozák', subject_uid: 'su1' },
+      { user_uid: 'us2', name: 'Anna Nováková', subject_uid: null },
+    ]
+
+    it('renders a token as a chip linking to the linked person, under the current name', () => {
+      renderEn(
+        <MemoryRouter>
+          <Markdown mentions={mentions}>{'Hele @[Tomas K.](user:us1), víš to?'}</Markdown>
+        </MemoryRouter>,
+      )
+
+      // The stored name was „Tomas K."; the account is now „Tomáš Kozák".
+      const chip = screen.getByRole('link', { name: 'Tomáš Kozák' })
+      expect(chip).toHaveAttribute('href', '/people/su1')
+      expect(chip).toHaveClass('kk-mention')
+      expect(chip).not.toHaveClass('kk-mention--me')
+      expect(chip.querySelector('.bi-at')).not.toBeNull()
+      expect(screen.getByText(/víš to\?/)).toBeInTheDocument()
+      expect(document.body.textContent).not.toContain('@[')
+    })
+
+    it('draws an unlinked account as a plain chip and the reader’s own stronger', () => {
+      renderEn(
+        <Markdown mentions={mentions} currentUserUid="us2">
+          {'@[Anna](user:us2) a @[Tomáš](user:us1)'}
+        </Markdown>,
+      )
+
+      expect(screen.queryByRole('link', { name: 'Anna Nováková' })).not.toBeInTheDocument()
+      const me = screen.getByText('Anna Nováková')
+      expect(me).toHaveClass('kk-mention', 'kk-mention--me')
+      expect(me).toHaveAttribute('title', 'Mention: Anna Nováková (that is you)')
+      expect(screen.getByText('Tomáš Kozák')).not.toHaveClass('kk-mention--me')
+    })
+
+    it('keeps the stored name, muted and unlinked, for an account that is gone', () => {
+      renderEn(<Markdown mentions={mentions}>{'@[Bedřich](user:us9) víš?'}</Markdown>)
+
+      const chip = screen.getByText('Bedřich')
+      expect(chip).toHaveClass('kk-mention', 'kk-mention--gone')
+      expect(chip.tagName).toBe('SPAN')
+      expect(chip).toHaveAttribute('title', 'Bedřich — this account no longer exists')
+    })
+
+    it('leaves a mention in code, a bare @name and a user: link without the @ alone', () => {
+      const { container } = renderEn(
+        <Markdown mentions={mentions}>{'`@[Tomáš](user:us1)` @Tomáš [Tomáš](user:us1)'}</Markdown>,
+      )
+
+      expect(container.querySelector('.kk-mention')).toBeNull()
+      expect(container.querySelector('code')).toHaveTextContent('@[Tomáš](user:us1)')
+      // The sanitiser drops the unknown scheme, so the bare link is just text.
+      expect(screen.queryByRole('link')).not.toBeInTheDocument()
+      expect(container.innerHTML).not.toContain('user:us1"')
+    })
+
+    it('does not weaken the sanitiser: unsafe HTML and hrefs still die with mentions on', () => {
+      const { container } = renderEn(
+        <Markdown mentions={mentions}>
+          {
+            '<span class="kk-mention" onclick="x()">no</span> [k](javascript:alert(1)) <img src=x onerror=alert(1)>'
+          }
+        </Markdown>,
+      )
+
+      expect(container.querySelector('.kk-mention')).toBeNull()
+      expect(container.querySelector('img')).toBeNull()
+      expect(container.innerHTML).not.toContain('onclick')
+      expect(container.innerHTML).not.toContain('javascript:')
+    })
+
+    it('leaves tokens to the sanitiser when no mentions are given', () => {
+      const { container } = renderEn(<Markdown>{'@[Tomáš](user:us1)'}</Markdown>)
+
+      expect(container.querySelector('.kk-mention')).toBeNull()
+      expect(screen.getByText('Tomáš')).toBeInTheDocument()
+    })
   })
 
   it('keeps a list that has content', () => {

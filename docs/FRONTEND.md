@@ -907,7 +907,21 @@ here.
   becomes, capped at 6, and every heading drawn at body size via `.kk-markdown--embedded` — so typed
   headings never outrank the page's: 3 for a task body, 4 for a comment), `photoRefs` (bare photo uid
   tokens in **text** become links — never inside code or an existing link; `lib/markdownLinks`
-  `remarkPhotoRefs`) and `taskUid`. Tests: `Markdown.test.tsx`, `lib/markdownLinks.test.ts`),
+  `remarkPhotoRefs`), `taskUid`, and **`mentions`** + `currentUserUid`: given a list of resolved mentions
+  (`CommentMention[]`, even empty), every `@[name](user:uid)` token in text becomes a mention node
+  (`lib/mentions` `remarkMentions`, inside the pipeline — never inside code; a `user:` link without the `@`
+  is left to the sanitiser, which drops its unknown scheme) that `rehype-sanitize` passes through a schema
+  widened for **exactly that element** (`mentionSanitizeSchema`: `span` may carry the `kk-mention` class
+  and the two `data-mention-*` attributes, nothing else changes) and `components.span` (`MarkdownSpan`,
+  reading the hast node's properties) renders as a **`MentionChip`** (`components/`): the `@` glyph
+  (`Icon` `at`) and the account's **current** name on a small pill (`.kk-mention`, the accent's tint), a
+  react-router `Link` to `/people/<subject_uid>` when the account is linked to a person (the one page
+  Kukátko has for somebody; never user administration), a plain `span` with the name as its `title`
+  otherwise; the reader's own mention wears the accent fill (`.kk-mention--me`, „to jsi ty" in the
+  tooltip); a token naming nobody in the list — an account since deleted — keeps the token's own name,
+  muted and unlinked (`.kk-mention--gone`). Without `mentions` the tokens are left to the sanitiser as any
+  other unknown-scheme link. Tests: `Markdown.test.tsx` (chip, link vs. none, „me", renamed, deleted, the
+  sanitiser still stripping with mentions on), `lib/mentions.test.ts`, `lib/markdownLinks.test.ts`),
   `ReasonedButton` (**the shared „a button that is off always says why" control.** A greyed-out
   control with no explanation reads as a malfunction, so this drop-in for react-bootstrap's `Button`
   has **no `disabled` prop at all**: the only way to switch it off is `disabledReason` — one finished,
@@ -3643,8 +3657,8 @@ here.
   in is deliberately cheap — **every signed-in role may post, viewers included** (backend
   `RequireAuth`, not `RequireWrite`, see [`API.md`](API.md)), and the composer is therefore **never hidden
   from a viewer**. It used to be the one place in the app where a viewer writes; a task's thread is now
-  the other, and the same components serve both: the panel, `CommentItem` and `useComments` take a
-  **`CommentSubject`** (`{kind: 'photo' | 'task', uid}`, built with `photoSubject`/`taskSubject`) rather
+  the other, and the same components serve both: the panel, `CommentItem`, `MentionTextarea` and
+  `useComments` take a **`CommentSubject`** (`{kind: 'photo' | 'task', uid}`, built with `photoSubject`/`taskSubject`) rather
   than a photo uid, because server-side the two threads are one table with one set of rules and a second
   copy of this UI would have drifted from the first. The panel takes
   `photoUid` + `currentUserUid` + `canModerate` as **props, not from `useAuth`** (like `PeoplePanel`'s
@@ -3655,7 +3669,28 @@ here.
   caller that already titles the section around it — the task page heads its card "Diskuse" and lifts the
   count (via `onCountChange`) up beside it, so the reader is not told twice what they are looking at.
   **Empty state invites the first remark**
-  („Napiš, co o téhle fotce víš…") rather than reporting an absence. **`PersonAvatar`**
+  („Napiš, co o téhle fotce víš…") rather than reporting an absence. **The composer is
+  `MentionTextarea`** (`components/photo/`, also the in-place editor of `CommentItem`): a textarea that
+  offers the people of the library when the reader types **`@`** — the list opens at an `@` starting a
+  word and follows what is typed after it (`lib/mentions` `findMentionQuery`: no line break, no brackets,
+  at most 40 characters), filtered accent- and case-insensitively (`filterMentionCandidates`, word starts
+  first, at most 8 rows) over `GET /users` fetched **the first time an `@` is typed** (`hooks/useDirectory`,
+  once per mount, aborted only on unmount — paging through photos must not fetch the directory per
+  thread; a failure offers nobody and the text stays text). Up/Down move, Enter or Tab pick, Escape
+  dismisses until the reader types on, and a row picks **on mousedown** (the field keeps focus and caret;
+  a test's `.click()` on a row deliberately picks nothing). Picking replaces the `@query` with the stored
+  token `@[Name](user:uid)` plus a space (`insertMention`) and puts the caret after it on the next render;
+  the token is what the reader sees in the box — the one syntax the backend recognises — rather than a
+  second WYSIWYG editor to keep honest. A key the open list consumed never reaches the composer's own
+  `onKeyDown`, so the Enter that picked a name does not also post. The list hangs off the field through
+  `useAnchoredMenu` like every suggestion list (fixed overlay on desktop, in-flow on a phone, rows are tap
+  targets, `aria-autocomplete`/`aria-controls`/`aria-activedescendant` on the textarea), and the field
+  itself reads at 16px on a phone through app.css's small-field rule. Each `CommentItem` carries
+  `id="comment-<uid>"` (`lib/mentions` `commentAnchorId`) — what the `comment_mention` notification's link
+  ends in — and `.kk-comment:target` outlines it; once the thread has loaded, `CommentsPanel` scrolls the
+  comment the URL's hash names into view (the browser's own jump happens before the thread exists). The
+  `photo.comments.submitHint` says `@` mentions somebody. Tests: `MentionTextarea.test.tsx` (lazy fetch and
+  filtering, mousedown selection with the caret, keyboard and Escape, keys handed on, a failed directory). **`PersonAvatar`**
   (`components/`) is what a thread actually draws: **whatever picture the author's account resolves to**
   (`userAvatarUrl(author_uid)` → `GET /users/{uid}/avatar`, `services/userpic`; no download token — the
   browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when the
@@ -3692,7 +3727,9 @@ here.
   body goes through **`CommentBody`** (`components/photo/`), which renders it as **Markdown** through the
   shared `Markdown` component (`breaks` — a single newline is a line break, so a short typed comment looks
   as typed; `headingFloor={4}`; sanitised, raw HTML inert, no `dangerouslySetInnerHTML` anywhere in the
-  chain) — `**bold**`, `` `code` ``, `[name](url)` and tables read as meant. The composer's
+  chain; **`mentions={comment.mentions}`** + `currentUserUid`, so every `@`-mention is a `MentionChip`
+  resolved from the comment's own payload) — `**bold**`, `` `code` ``, `[name](url)` and tables read as
+  meant. The composer's
   `photo.comments.submitHint` says Markdown works. On top of that it recognises a **photo uid** (`ph` + 24
   of the catalogue's base32 alphabet `0-9a-v`, word-bounded — `lib/photoRefs` `splitPhotoRefs`, the pure
   half) in **text only** (`photoRefs`, never inside code or an existing link), which becomes a `Link` to

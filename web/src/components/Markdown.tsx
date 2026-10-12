@@ -4,9 +4,14 @@ import { Link, useInRouterContext } from 'react-router-dom'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { type PluggableList } from 'unified'
 
 import { remarkPhotoRefs, resolveMarkdownLink } from '../lib/markdownLinks'
+import { MENTION_CLASS, mentionSanitizeSchema, remarkMentions } from '../lib/mentions'
 import { remarkEmptyLists } from '../lib/remarkEmptyLists'
+import { type CommentMention } from '../services/comments'
+
+import { MentionChip } from './MentionChip'
 
 /** A heading level a rendered `#` may be mapped to. */
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
@@ -37,6 +42,16 @@ export interface MarkdownProps {
    * `?task=`, so the viewer pages within the task's group and Back returns to it.
    */
   taskUid?: string
+  /**
+   * The accounts the text's `@[name](user:uid)` tokens name, as the server
+   * resolved them — current name and linked person. Given (even empty), every
+   * token renders as a {@link MentionChip}; a token naming nobody in the list
+   * is an account since deleted and shows the token's own name. Unset, the
+   * tokens are left to the sanitiser, which drops their unknown scheme.
+   */
+  mentions?: CommentMention[]
+  /** The reader's own account, so a mention of them is drawn stronger. */
+  currentUserUid?: string | null
 }
 
 /** Props of the anchor react-markdown hands to {@link MarkdownLink}. */
@@ -98,6 +113,35 @@ function MarkdownTable({ node: _node, className, ...rest }: ComponentProps<'tabl
   )
 }
 
+/** Props of the span react-markdown hands to {@link MarkdownSpan}. */
+type MarkdownSpanProps = ComponentProps<'span'> &
+  ExtraProps & { mentions: CommentMention[]; currentUserUid: string | null }
+
+/**
+ * Renders a `span` of the rendered tree: the mention element the
+ * `remarkMentions` plugin emitted — recognised by its class and read from the
+ * hast node's properties, which the sanitiser has already passed — as a
+ * {@link MentionChip}; any other span (there are none in Markdown, but a
+ * sanitiser-approved one is harmless) as itself.
+ */
+function MarkdownSpan({ node, mentions, currentUserUid, children, ...rest }: MarkdownSpanProps) {
+  const props = node?.properties ?? {}
+  const uid = props.dataMentionUid
+  const isMention = Array.isArray(props.className) && props.className.includes(MENTION_CLASS)
+  if (!isMention || typeof uid !== 'string') {
+    return <span {...rest}>{children}</span>
+  }
+  const name = typeof props.dataMentionName === 'string' ? props.dataMentionName : uid
+  return (
+    <MentionChip
+      uid={uid}
+      fallbackName={name}
+      mention={mentions.find((m) => m.user_uid === uid)}
+      isMe={currentUserUid !== null && currentUserUid === uid}
+    />
+  )
+}
+
 /** The six heading tags, by level. */
 const HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const
 
@@ -143,20 +187,35 @@ export function Markdown({
   headingFloor,
   photoRefs = false,
   taskUid,
+  mentions,
+  currentUserUid = null,
 }: MarkdownProps) {
-  const remarkPlugins = useMemo(
+  const withMentions = mentions !== undefined
+  const remarkPlugins = useMemo<PluggableList>(
     () => [
       remarkGfm,
       remarkEmptyLists,
       ...(photoRefs ? [remarkPhotoRefs] : []),
+      ...(withMentions ? [remarkMentions] : []),
       ...(breaks ? [remarkBreaks] : []),
     ],
-    [breaks, photoRefs],
+    [breaks, photoRefs, withMentions],
+  )
+  // The sanitiser always runs; with mentions it runs with the schema widened
+  // for exactly the mention element (`lib/mentions`), otherwise as shipped.
+  const rehypePlugins = useMemo<PluggableList>(
+    () => (withMentions ? [[rehypeSanitize, mentionSanitizeSchema]] : [rehypeSanitize]),
+    [withMentions],
   )
   const components = useMemo<Components>(() => {
     const base: Components = {
       a: (props) => <MarkdownLink {...props} taskUid={taskUid} />,
       table: MarkdownTable,
+    }
+    if (mentions !== undefined) {
+      base.span = (props) => (
+        <MarkdownSpan {...props} mentions={mentions} currentUserUid={currentUserUid} />
+      )
     }
     if (headingFloor === undefined) {
       return base
@@ -170,7 +229,7 @@ export function Markdown({
       h5: shiftedHeading(5, headingFloor),
       h6: shiftedHeading(6, headingFloor),
     }
-  }, [headingFloor, taskUid])
+  }, [headingFloor, taskUid, mentions, currentUserUid])
   const classes = [
     'kk-markdown',
     headingFloor === undefined ? undefined : 'kk-markdown--embedded',
@@ -183,7 +242,7 @@ export function Markdown({
     <div className={classes}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
-        rehypePlugins={[rehypeSanitize]}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {children}

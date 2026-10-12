@@ -39,6 +39,9 @@ const (
 	// TemplateTaskAssigned tells somebody they were put on a task — the e-mail
 	// channel of the task_assigned notification kind.
 	TemplateTaskAssigned = "task_assigned"
+	// TemplateCommentMention tells somebody a comment mentions them — the
+	// e-mail channel of the comment_mention notification kind.
+	TemplateCommentMention = "comment_mention"
 )
 
 // signature closes every message. Kukátko sends as itself, never as a person.

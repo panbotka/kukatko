@@ -15,6 +15,7 @@ export type IconName =
   | 'arrows-fullscreen'
   | 'arrows-angle-contract'
   | 'arrows-angle-expand'
+  | 'at'
   | 'award-fill'
   | 'bar-chart'
   | 'bell'

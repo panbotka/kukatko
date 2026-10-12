@@ -78,7 +78,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/cluster` — auto-clustering of unassigned faces (union-find over HNSW neighbors); the listing is a page of cached per-cluster summaries, built in the background
 - `internal/clusterapi` — `/faces/clusters` (paged list, assign, remove-face)
 - `internal/clusterjob` — the `face_cluster` job: reclustering and the preparation of the cluster summaries, off the request path
-- `internal/comments` — comment threads on a photo **or a task**: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi` and `internal/phototaskapi`
+- `internal/comments` — comment threads on a photo **or a task**: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi` and `internal/phototaskapi`; parses `@[Name](user:uid)` mentions outside code, stores them in `comment_mentions`, resolves them on every read and reports the fresh ones to a `MentionObserver`
 - `internal/config` — typed configuration, Viper, `Load()`
 - `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments, upload-link codes), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
@@ -119,6 +119,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
 - `internal/mcpapi` — MCP server for an AI agent, `POST /mcp` (RequireAuth + per-tool RBAC); off by default, nothing destructive exposed
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
+- `internal/mentionnotify` — the `comment_mention` notification: the comments store's mention observer delivers it to every freshly named account in the comment's transaction (under a savepoint), never the writer, never an account out of standing, never for a private/hidden/archived photo; deleting the comment later cancels nothing
 - `internal/metajob` — worker handler `metadata` + backfill: re-reads an original into the IPTC/XMP and file-technical columns; gap-filler only
 - `internal/metrics` — Prometheus registry + collectors (DB pool, queue depth)
 - `internal/namelessjob` — the nameless catch-all subject repair as queue work: the undo-file format shared with the CLI, the report/schedule service, the `nameless_detach`/`nameless_restore` handlers

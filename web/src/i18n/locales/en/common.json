@@ -565,7 +565,8 @@
         "tagged": "When somebody tags me in a photo",
         "registration_pending": "When a new registration is waiting for approval",
         "album_featured": "When a new featured album appears on the home page",
-        "task_assigned": "When somebody adds me to a task"
+        "task_assigned": "When somebody adds me to a task",
+        "comment_mention": "When somebody mentions me in a comment"
       },
       "saveError": "The choice could not be saved. Please try again.",
       "prefsLoadError": "Your notification choices could not be loaded.",
@@ -2522,7 +2523,7 @@
       "placeholder": "Write a comment…",
       "inputLabel": "New comment",
       "submit": "Post comment",
-      "submitHint": "Enter posts, Shift+Enter adds a line. Markdown works: **bold**, `code`, [link](url)",
+      "submitHint": "Enter posts, Shift+Enter adds a line. Markdown works: **bold**, `code`, [link](url). Type @ to mention somebody.",
       "send": "Send",
       "handOverHint": "Posts the comment and hands the task to the agent (Ctrl/Cmd+Shift+Enter)",
       "edit": "Edit",
@@ -2540,7 +2541,15 @@
       "referenced": "Photos mentioned in the comment",
       "refPhoto": "Photo {{uid}}",
       "moreRefs_one": "and {{count}} more photo",
-      "moreRefs_other": "and {{count}} more photos"
+      "moreRefs_other": "and {{count}} more photos",
+      "mention": {
+        "listLabel": "Who to mention",
+        "loading": "Loading people…",
+        "noMatch": "Nobody by that name here",
+        "of": "Mention: {{name}}",
+        "you": "Mention: {{name}} (that is you)",
+        "gone": "{{name}} — this account no longer exists"
+      }
     },
     "video": {
       "label": "Video player",

@@ -35,6 +35,7 @@ function posted(body: string): Comment {
     task_uid: 'tk1',
     author_uid: 'u1',
     author_name: 'U',
+    mentions: [],
     body,
     created_at: '2026-09-20T10:00:00Z',
   }

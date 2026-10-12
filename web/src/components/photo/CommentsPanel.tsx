@@ -1,5 +1,5 @@
 import { type ParseKeys } from 'i18next'
-import { type SyntheticEvent, useState } from 'react'
+import { type SyntheticEvent, useEffect, useRef, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
@@ -12,6 +12,7 @@ import { type Comment, type CommentSubject, MAX_COMMENT_LENGTH } from '../../ser
 import { type TaskState } from '../../services/tasks'
 
 import { CommentItem } from './CommentItem'
+import { MentionTextarea } from './MentionTextarea'
 
 /** Props for {@link CommentsPanel}. */
 export interface CommentsPanelProps {
@@ -102,7 +103,13 @@ const FAILURE_MESSAGE: Record<CommentFailure, ParseKeys> = {
  * Comments read oldest first, like a conversation. Enter posts and Shift+Enter adds
  * a line, which is the convention every chat has taught people; the send button
  * stays for the reader who does not know it and for touch, where there is no Enter
- * to speak of.
+ * to speak of. Typing `@` offers the people of the library ({@link MentionTextarea});
+ * a picked name is stored as a mention, highlighted in the thread and announced
+ * to the person named.
+ *
+ * A link into a thread may name one comment (`#comment-<uid>`, what a mention
+ * notification opens): once the thread has loaded, the panel scrolls that
+ * comment into view, and the row lights up while it is the URL's target.
  */
 export function CommentsPanel({
   subject,
@@ -124,6 +131,24 @@ export function CommentsPanel({
   // The comment the reader has asked to delete, or null. One dialog serves the
   // whole thread — a modal per row would be a modal per comment in the DOM.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+
+  // The comment a link singled out, scrolled to once the thread is there. The
+  // browser's own jump to `:target` happens on load, before the thread exists,
+  // so the panel repeats it — once per hash, so a post or an edit afterwards
+  // does not drag the reader back up; the highlight itself is CSS (`:target`).
+  const scrolledTo = useRef<string | null>(null)
+  useEffect(() => {
+    const hash = window.location.hash
+    if (status !== 'ready' || !hash.startsWith('#comment-') || scrolledTo.current === hash) {
+      return
+    }
+    const id = hash.slice(1)
+    const target = document.getElementById(id)
+    if (target !== null && comments.some((item) => `comment-${item.uid}` === id)) {
+      scrolledTo.current = hash
+      target.scrollIntoView({ block: 'center' })
+    }
+  }, [status, comments])
 
   // One send for both buttons. The hand-over is a single request — the comment
   // and the move commit together server-side — so a failure leaves the draft in
@@ -182,6 +207,7 @@ export function CommentsPanel({
             <CommentItem
               key={comment.uid}
               comment={comment}
+              currentUserUid={currentUserUid}
               canEdit={currentUserUid !== null && comment.author_uid === currentUserUid}
               canDelete={
                 canModerate || (currentUserUid !== null && comment.author_uid === currentUserUid)
@@ -218,17 +244,14 @@ export function CommentsPanel({
         <label className="visually-hidden" htmlFor="kk-comment-new">
           {t('photo.comments.inputLabel')}
         </label>
-        <textarea
+        <MentionTextarea
           id="kk-comment-new"
-          className="form-control form-control-sm"
           rows={2}
           maxLength={MAX_COMMENT_LENGTH}
           placeholder={t('photo.comments.placeholder')}
           value={draft}
           disabled={busy}
-          onChange={(event) => {
-            setDraft(event.target.value)
-          }}
+          onChange={setDraft}
           onKeyDown={(event) => {
             if (handOver && isHandOverKey(event)) {
               void submit(event, handOver)

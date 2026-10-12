@@ -1061,6 +1061,72 @@
   overflow-wrap: anywhere;
 }
 
+/* An `@`-mention in the text: a small pill in the accent's tint, the `@`
+   glyph and the account's name. Linked or not it reads the same, so the eye
+   finds every person named at a glance; the reader's own mention wears the
+   accent fill (with the dark base on it, as every accent control does), so
+   "where am I named" jumps out of a long thread; a mention of an account
+   since deleted is muted and links nowhere. Colours are tokens only. */
+.kk-mention {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15em;
+  padding: 0 0.4em;
+  border-radius: var(--kk-radius-sm);
+  background: var(--kk-accent-subtle);
+  color: var(--kk-text);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.kk-comment__body a.kk-mention {
+  text-decoration: none;
+}
+
+.kk-comment__body a.kk-mention:hover,
+.kk-comment__body a.kk-mention:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.kk-mention__icon {
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.kk-mention--me {
+  background: var(--kk-accent);
+  color: var(--kk-on-accent);
+}
+
+.kk-mention--gone {
+  background: var(--kk-surface-sunken);
+  color: var(--kk-text-muted);
+  font-weight: 500;
+}
+
+/* The comment a link singled out (`#comment-<uid>`, what a mention
+   notification opens): outlined in the accent while it is the URL's target. */
+.kk-comment:target {
+  outline: 2px solid var(--kk-accent);
+  outline-offset: var(--kk-space-1);
+  border-radius: var(--kk-radius-sm);
+}
+
+/* The composer with its `@` suggestion list: the list hangs off the field
+   (`useAnchoredMenu`), so the wrapper only has to be a positioning context and
+   fill the row like the bare textarea did. */
+.kk-mention-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.kk-mention-menu .dropdown-item {
+  white-space: normal;
+}
+
 /* The photographs a comment refers to, as a strip of small squares under it:
    the courtesy on top of the links, so a "these three are wrong" shows the
    three without a click. */

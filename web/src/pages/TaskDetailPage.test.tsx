@@ -289,6 +289,7 @@ describe('send and hand to the agent', () => {
       task_uid: 'tk1',
       author_uid: 'u1',
       author_name: 'U',
+      mentions: [],
       body,
       created_at: '2026-09-18T11:00:00Z',
     }
@@ -699,6 +700,7 @@ describe('taking photographs out of the group', () => {
       task_uid: 'tk1',
       author_uid: 'u1',
       author_name: 'U',
+      mentions: [],
       body: 'ph1',
       created_at: '2026-09-20T10:00:00Z',
     })
@@ -768,6 +770,7 @@ describe('the discussion', () => {
         task_uid: 'tk1',
         author_uid: 'u2',
         author_name: 'Pamětník',
+        mentions: [],
         body: '1987.',
         created_at: '2026-09-18T11:00:00Z',
       },
@@ -841,6 +844,7 @@ describe('quick answers', () => {
       task_uid: 'tk1',
       author_uid: author,
       author_name: author,
+      mentions: [],
       body,
       created_at: '2026-09-18T11:00:00Z',
     }

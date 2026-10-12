@@ -125,7 +125,7 @@ type AlbumFeaturedData struct {
 func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
 	title := strings.TrimSpace(d.Title)
 	if title == "" {
-		title = "(bez názvu)"
+		title = untitled
 	}
 	lines := []string{
 		informalGreeting(d.DisplayName), "",
@@ -159,7 +159,7 @@ func RenderTaskAssigned(d TaskAssignedData) Rendered {
 	}
 	title := strings.TrimSpace(d.Title)
 	if title == "" {
-		title = "(bez názvu)"
+		title = untitled
 	}
 	lines := []string{
 		informalGreeting(d.DisplayName), "",
@@ -174,4 +174,66 @@ func RenderTaskAssigned(d TaskAssignedData) Rendered {
 		Subject:  who + " tě přidal(a) k úkolu: " + title,
 		Body:     body(lines...),
 	}
+}
+
+// untitled is how a mail names a task or an album whose title is blank.
+const untitled = "(bez názvu)"
+
+// CommentMentionData is what the "somebody mentioned you in a comment"
+// message needs: whom to greet, who wrote the comment (by name; blank reads as
+// „někdo"), whether the thread is a task's (else a photograph's), the title of
+// that task or photograph (a photo's may be blank), the comment's excerpt and
+// the absolute link to the comment. An empty URL leaves the link out.
+type CommentMentionData struct {
+	DisplayName string
+	Who         string
+	OnTask      bool
+	Title       string
+	Excerpt     string
+	URL         string
+}
+
+// RenderCommentMention builds the e-mail channel of the comment_mention
+// notification kind: the subject says who mentioned the recipient and where,
+// the way the notification's title does, and the body quotes the comment and
+// links to it. It is a pure function of d.
+func RenderCommentMention(d CommentMentionData) Rendered {
+	who := strings.TrimSpace(d.Who)
+	if who == "" {
+		who = "Někdo"
+	}
+	place := mentionPlace(d)
+	lines := []string{
+		informalGreeting(d.DisplayName), "",
+		"v Kukátku tě " + who + " zmínil(a) v komentáři u " + place + ":",
+	}
+	if excerpt := strings.TrimSpace(d.Excerpt); excerpt != "" {
+		lines = append(lines, "", "    "+excerpt)
+	}
+	if url := strings.TrimSpace(d.URL); url != "" {
+		lines = append(lines, "", "Podívat se na komentář můžeš tady:", "", url)
+	}
+	lines = append(lines, "", notificationFooter, "", signature)
+	return Rendered{
+		Template: TemplateCommentMention,
+		Subject:  who + " tě zmínil(a) v komentáři u " + place,
+		Body:     body(lines...),
+	}
+}
+
+// mentionPlace is how the mention mail names the thread's subject: a task by
+// its title in quotes (a blank one reads as untitled), a photograph by its
+// title in quotes when it has one and bare otherwise.
+func mentionPlace(d CommentMentionData) string {
+	title := strings.TrimSpace(d.Title)
+	if d.OnTask {
+		if title == "" {
+			title = untitled
+		}
+		return "úkolu „" + title + "“"
+	}
+	if title == "" {
+		return "fotky"
+	}
+	return "fotky „" + title + "“"
 }

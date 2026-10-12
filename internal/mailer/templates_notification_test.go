@@ -173,3 +173,51 @@ func TestRenderTaskAssigned(t *testing.T) {
 		t.Errorf("nameless and untitled without link: body %q", bare.Body)
 	}
 }
+
+// TestRenderCommentMention pins the comment_mention mail: who and where in the
+// subject, the quoted excerpt and the link in the body, a task by its title, a
+// photo bare when untitled, and the fallbacks for a blank writer.
+func TestRenderCommentMention(t *testing.T) {
+	t.Parallel()
+
+	got := RenderCommentMention(CommentMentionData{
+		DisplayName: "Anna", Who: " Pan Botka ", OnTask: true, Title: " Kdy to bylo? ",
+		Excerpt: "Hele @Anna, víš to?", URL: "https://kukatko.example/tasks/pt1#comment-cm1",
+	})
+	if got.Template != TemplateCommentMention ||
+		got.Subject != "Pan Botka tě zmínil(a) v komentáři u úkolu „Kdy to bylo?“" {
+		t.Errorf("template %q, subject %q", got.Template, got.Subject)
+	}
+	want := "Ahoj, Anna,\n" +
+		"\n" +
+		"v Kukátku tě Pan Botka zmínil(a) v komentáři u úkolu „Kdy to bylo?“:\n" +
+		"\n" +
+		"    Hele @Anna, víš to?\n" +
+		"\n" +
+		"Podívat se na komentář můžeš tady:\n" +
+		"\n" +
+		"https://kukatko.example/tasks/pt1#comment-cm1\n" +
+		"\n" +
+		notificationFooter + "\n" +
+		"\n" +
+		"Kukátko\n"
+	if got.Body != want {
+		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
+	}
+
+	photo := RenderCommentMention(CommentMentionData{Who: "Anna", Title: "Pouť 1987"})
+	if photo.Subject != "Anna tě zmínil(a) v komentáři u fotky „Pouť 1987“" {
+		t.Errorf("photo subject %q", photo.Subject)
+	}
+	bare := RenderCommentMention(CommentMentionData{Who: " "})
+	if bare.Subject != "Někdo tě zmínil(a) v komentáři u fotky" || !strings.HasPrefix(bare.Body, "Ahoj,\n") {
+		t.Errorf("nameless on an untitled photo: subject %q, body %q", bare.Subject, bare.Body)
+	}
+	if strings.Contains(bare.Body, "tady:") || strings.Contains(bare.Body, "    ") {
+		t.Errorf("no link and no excerpt expected: body %q", bare.Body)
+	}
+	task := RenderCommentMention(CommentMentionData{Who: "Anna", OnTask: true})
+	if task.Subject != "Anna tě zmínil(a) v komentáři u úkolu „(bez názvu)“" {
+		t.Errorf("untitled task subject %q", task.Subject)
+	}
+}

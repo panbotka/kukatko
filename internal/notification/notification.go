@@ -46,6 +46,10 @@ const (
 	// a Kukátko task (/tasks) by somebody else. It carries no photographs — the
 	// task's own page holds its frozen group — and opens the task.
 	KindTaskAssigned Kind = "task_assigned"
+	// KindCommentMention is "somebody mentioned you in a comment": a comment on
+	// a photo or a task names the account with an @-mention. It carries no
+	// photographs and opens the thread, scrolled to the comment.
+	KindCommentMention Kind = "comment_mention"
 )
 
 // Channel names how a notification reaches its account: the in-app inbox, a
@@ -106,6 +110,7 @@ var registry = []struct {
 	{kind: KindRegistrationPending, channels: everyChannelOff()},
 	{kind: KindAlbumFeatured, channels: everyChannelOff()},
 	{kind: KindTaskAssigned, channels: everyChannelOff()},
+	{kind: KindCommentMention, channels: everyChannelOff()},
 }
 
 // Kinds returns every known kind, in display order, as a fresh slice.

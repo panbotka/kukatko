@@ -15,9 +15,12 @@ import { type TaskState } from './tasks'
  *
  * Two properties of the backend shape the whole client:
  *
- *   - **Bodies are plain text.** Nothing is parsed, rendered or sanitised
- *     server-side, so whatever displays a body must escape it (React does, as long
- *     as nobody reaches for `dangerouslySetInnerHTML`).
+ *   - **Bodies are plain text.** Nothing is rendered or sanitised server-side, so
+ *     whatever displays a body must escape it (React does, as long as nobody
+ *     reaches for `dangerouslySetInnerHTML`). The one thing the server reads out
+ *     of a body is its `@[name](user:uid)` mentions (`lib/mentions`), which it
+ *     resolves into {@link Comment.mentions} on every read and announces to the
+ *     people named.
  *   - **Writing is open to every signed-in role, viewers included.** The create
  *     route is guarded by `RequireAuth`, not `RequireWrite` — the one documented
  *     exception to the read-only rule — so this client never gates on `canWrite`.
@@ -85,6 +88,23 @@ export interface Comment {
   created_at: string
   /** Set once the author has rewritten the body; absent on a never-edited comment. */
   edited_at?: string
+  /**
+   * The accounts the body's mention tokens name that still exist, in order of
+   * first mention, each under its **current** name — so a renamed account reads
+   * right in an old comment — with the person it is linked to. A token whose
+   * account was deleted has no entry; the chip then shows the token's own name.
+   * Always an array, empty for a comment that mentions nobody.
+   */
+  mentions: CommentMention[]
+}
+
+/** One account a comment mentions (`comments.Mention`). */
+export interface CommentMention {
+  user_uid: string
+  /** The account's current display name, falling back to the username. */
+  name: string
+  /** The person of the library the account is linked to, where the mention links; null for none. */
+  subject_uid: string | null
 }
 
 /** Response body of the thread endpoint of either subject. */

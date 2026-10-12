@@ -16,7 +16,8 @@ import (
 func TestKinds(t *testing.T) {
 	t.Parallel()
 
-	if got, want := Kinds(), []Kind{KindTagged, KindRegistrationPending, KindAlbumFeatured, KindTaskAssigned}; !reflect.DeepEqual(got, want) {
+	want := []Kind{KindTagged, KindRegistrationPending, KindAlbumFeatured, KindTaskAssigned, KindCommentMention}
+	if got := Kinds(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Kinds() = %v, want %v", got, want)
 	}
 	for _, kind := range Kinds() {
@@ -265,6 +266,9 @@ func TestEffective(t *testing.T) {
 		{Kind: KindTaskAssigned, Channel: ChannelInApp, Enabled: false, IsDefault: true},
 		{Kind: KindTaskAssigned, Channel: ChannelPush, Enabled: false, IsDefault: true},
 		{Kind: KindTaskAssigned, Channel: ChannelEmail, Enabled: false, IsDefault: true},
+		{Kind: KindCommentMention, Channel: ChannelInApp, Enabled: false, IsDefault: true},
+		{Kind: KindCommentMention, Channel: ChannelPush, Enabled: false, IsDefault: true},
+		{Kind: KindCommentMention, Channel: ChannelEmail, Enabled: false, IsDefault: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("effective() = %+v, want %+v", got, want)

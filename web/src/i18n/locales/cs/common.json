@@ -577,7 +577,8 @@
         "tagged": "Když mě někdo označí na fotce",
         "registration_pending": "Když na schválení čeká nová registrace",
         "album_featured": "Když se na úvodní stránce objeví nové doporučené album",
-        "task_assigned": "Když mě někdo přidá k úkolu"
+        "task_assigned": "Když mě někdo přidá k úkolu",
+        "comment_mention": "Když mě někdo zmíní v komentáři"
       },
       "saveError": "Volbu se nepodařilo uložit. Zkus to prosím znovu.",
       "prefsLoadError": "Volby oznámení se nepodařilo načíst.",
@@ -2640,7 +2641,7 @@
       "placeholder": "Napiš komentář…",
       "inputLabel": "Nový komentář",
       "submit": "Odeslat komentář",
-      "submitHint": "Enter odešle, Shift+Enter odřádkuje. Funguje Markdown: **tučně**, `kód`, [odkaz](url)",
+      "submitHint": "Enter odešle, Shift+Enter odřádkuje. Funguje Markdown: **tučně**, `kód`, [odkaz](url). Napiš @ a zmíň někoho.",
       "send": "Odeslat",
       "handOverHint": "Odešle komentář a předá úkol agentovi (Ctrl/Cmd+Shift+Enter)",
       "edit": "Upravit",
@@ -2660,7 +2661,15 @@
       "moreRefs_one": "a {{count}} další fotka",
       "moreRefs_few": "a {{count}} další fotky",
       "moreRefs_many": "a {{count}} dalších fotek",
-      "moreRefs_other": "a {{count}} dalších fotek"
+      "moreRefs_other": "a {{count}} dalších fotek",
+      "mention": {
+        "listLabel": "Koho zmínit",
+        "loading": "Načítání lidí…",
+        "noMatch": "Nikdo takový tu není",
+        "of": "Zmínka: {{name}}",
+        "you": "Zmínka: {{name}} (to jsi ty)",
+        "gone": "{{name}} — účet už neexistuje"
+      }
     },
     "video": {
       "label": "Přehrávač videa",

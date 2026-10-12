@@ -24,8 +24,12 @@
 //
 // # Plain text, soft deletes
 //
-// A body is plain text and stays that way: nothing is parsed, rendered or
-// sanitised server-side, so a client must escape what it displays. Deletion is
+// A body is plain text and stays that way: nothing is rendered or sanitised
+// server-side, so a client must escape what it displays. The one thing the
+// store reads out of a body is who it mentions — `@[Name](user:<uid>)` tokens,
+// see ParseMentions — which it resolves against the accounts, stores in
+// comment_mentions and reports to a MentionObserver (the comment_mention
+// notification) for the mentions that are new on the comment. Deletion is
 // soft — the row keeps its place with deleted_at stamped, every read filters on
 // deleted_at IS NULL — so an audited delete can still be explained afterwards.
 //
@@ -35,10 +39,13 @@
 package comments
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // MaxBodyLen is the longest comment body accepted, in characters (runes, not
@@ -132,6 +139,44 @@ type Comment struct {
 	// EditedAt is nil until the author first rewrites the body, which is what
 	// lets a client mark a comment as edited without comparing timestamps.
 	EditedAt *time.Time `json:"edited_at,omitempty"`
+	// Mentions are the accounts the body's mention tokens name that still
+	// exist, in order of first mention, each with its current name — so a
+	// renamed account reads under its new name — and its linked person. A
+	// token whose account is gone has no entry; a client shows the token's
+	// own name then. Never nil: a comment without mentions carries an empty
+	// array.
+	Mentions []Mention `json:"mentions"`
+}
+
+// Mention is one account a comment mentions, as read back: resolved against
+// the users table when the comment is read, not when it was written.
+type Mention struct {
+	// UserUID is the mentioned account.
+	UserUID string `json:"user_uid"`
+	// Name is the account's current display name, falling back to the username.
+	Name string `json:"name"`
+	// SubjectUID is the person of the library the account says it is, or nil —
+	// the common case — when nobody has said. It is where a mention links.
+	SubjectUID *string `json:"subject_uid"`
+}
+
+// MentionObserver hears that a comment freshly mentions accounts, inside the
+// transaction that wrote or edited it — so whatever it does commits with the
+// comment or not at all. It is how the comment_mention notification
+// (internal/mentionnotify) learns about every mention without the HTTP layer
+// having to remember it.
+//
+// It hears only mentions new on the comment: the ones a create carries, and
+// on an edit the ones the previous body did not have — fixing a typo does not
+// announce everybody again. A self-mention is never reported. It is not
+// called at all when nothing is new.
+//
+// An error it returns fails the comment. An observer that must never cost a
+// comment (a notification is worth less than the remark) contains its own
+// failures, for instance under a savepoint.
+type MentionObserver interface {
+	// Mentioned hears that c now mentions mentioned, none of them before.
+	Mentioned(ctx context.Context, tx pgx.Tx, c Comment, mentioned []Mention) error
 }
 
 // Subject returns the subject this comment hangs off, reconstructed from

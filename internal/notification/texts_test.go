@@ -360,3 +360,73 @@ func TestShorten(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderCommentMention pins the "somebody mentioned you in a comment" text
+// in both languages: the writer and the place in the headline — a task by
+// title, a photo by title only when it has one — the excerpt under it, a blank
+// writer as "Někdo"/"Somebody" and an overlong title cut.
+func TestRenderCommentMention(t *testing.T) {
+	t.Parallel()
+
+	long := strings.Repeat("x", MaxTaskTitleLen+10)
+	tests := []struct {
+		name    string
+		lang    Language
+		who     string
+		place   MentionPlace
+		title   string
+		excerpt string
+		want    Text
+	}{
+		{
+			name: "photo with a title, czech", lang: LanguageCzech, who: " Anna ", place: MentionPlacePhoto,
+			title: "Pouť 1987", excerpt: " Hele @Tomáš, víš to? ",
+			want: Text{Title: "Anna tě zmínil(a) v komentáři u fotky Pouť 1987", Body: "Hele @Tomáš, víš to?"},
+		},
+		{
+			name: "photo without a title, czech", lang: LanguageCzech, who: "Anna", place: MentionPlacePhoto,
+			excerpt: "Hele",
+			want:    Text{Title: "Anna tě zmínil(a) v komentáři u fotky", Body: "Hele"},
+		},
+		{
+			name: "task, czech", lang: LanguageCzech, who: "Anna", place: MentionPlaceTask, title: "Kdy to bylo?",
+			excerpt: "V roce 1987.",
+			want:    Text{Title: "Anna tě zmínil(a) v komentáři u úkolu Kdy to bylo?", Body: "V roce 1987."},
+		},
+		{
+			name: "task without a title, nobody named, czech", lang: LanguageCzech, who: " ", place: MentionPlaceTask,
+			want: Text{Title: "Někdo tě zmínil(a) v komentáři u úkolu (bez názvu)"},
+		},
+		{
+			name: "photo with a title, english", lang: LanguageEnglish, who: "Anna", place: MentionPlacePhoto,
+			title: "Pouť 1987", excerpt: "Hey",
+			want: Text{Title: "Anna mentioned you in a comment on the photo Pouť 1987", Body: "Hey"},
+		},
+		{
+			name: "photo without a title, english", lang: LanguageEnglish, who: "", place: MentionPlacePhoto,
+			want: Text{Title: "Somebody mentioned you in a comment on a photo"},
+		},
+		{
+			name: "task, english", lang: LanguageEnglish, who: "Anna", place: MentionPlaceTask, title: "Kdy?",
+			want: Text{Title: "Anna mentioned you in a comment on the task Kdy?"},
+		},
+		{
+			name: "unknown language reads as czech", lang: "de", who: "Anna", place: MentionPlaceTask, title: "Kdy?",
+			want: Text{Title: "Anna tě zmínil(a) v komentáři u úkolu Kdy?"},
+		},
+		{
+			name: "overlong photo title is cut", lang: LanguageCzech, who: "Anna", place: MentionPlacePhoto, title: long,
+			want: Text{Title: "Anna tě zmínil(a) v komentáři u fotky " + strings.Repeat("x", MaxTaskTitleLen-1) + "…"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := RenderCommentMention(tt.lang, tt.who, tt.place, tt.title, tt.excerpt)
+			if got != tt.want {
+				t.Errorf("RenderCommentMention(%q, %q, %q, %q, %q) = %+v, want %+v",
+					tt.lang, tt.who, tt.place, tt.title, tt.excerpt, got, tt.want)
+			}
+		})
+	}
+}

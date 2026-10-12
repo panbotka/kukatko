@@ -89,6 +89,12 @@ func TaskAssigned(to string, data mailer.TaskAssignedData) Mail {
 	return Mail{Template: mailer.TemplateTaskAssigned, To: to, Data: data}
 }
 
+// CommentMention is the e-mail channel of the comment_mention notification
+// kind: a comment mentions the recipient, with a link to it.
+func CommentMention(to string, data mailer.CommentMentionData) Mail {
+	return Mail{Template: mailer.TemplateCommentMention, To: to, Data: data}
+}
+
 // Scheduler inserts a job into the persistent queue through a caller-supplied
 // executor. It is satisfied by jobs.Enqueue, which is what production wires; a
 // test substitutes its own function and needs no database.

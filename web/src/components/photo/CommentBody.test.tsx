@@ -61,6 +61,26 @@ describe('CommentBody', () => {
     expect(link).toHaveAttribute('target', '_blank')
   })
 
+  it('renders a mention from the comment’s resolved list, the reader’s own stronger', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <CommentBody
+            body="@[Tom](user:us1) a @[Anna](user:us2)?"
+            mentions={[
+              { user_uid: 'us1', name: 'Tomáš Kozák', subject_uid: 'su1' },
+              { user_uid: 'us2', name: 'Anna', subject_uid: null },
+            ]}
+            currentUserUid="us2"
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByRole('link', { name: 'Tomáš Kozák' })).toHaveAttribute('href', '/people/su1')
+    expect(screen.getByText('Anna')).toHaveClass('kk-mention--me')
+  })
+
   it('never interprets raw HTML in the body', () => {
     renderBody('<b>bold</b> <a href="/x">link</a> and <img src=x onerror=alert(1)>')
 

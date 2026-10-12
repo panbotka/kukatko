@@ -391,6 +391,15 @@ rebuilt? — and the only person who knows is usually not the person editing the
   message if you want one, then the photographs, which every reader (and the terminal) sees as links and
   small thumbnails. A viewer can do this too, because it is a comment. Any photo identifier typed or
   pasted into a comment renders the same way, on a photo's thread as on a task's.
+- **Mention somebody with `@`.** In any comment — on a photo or on a task — type `@` and pick a person
+  from the list (accents do not matter: `@tom` finds Tomáš). The name shows as a highlighted chip, links to
+  that person's page when their account is linked to one, and your own name stands out, so you can see at a
+  glance where a thread is talking to you. The person mentioned gets a notification („Pan Botka tě
+  zmínil(a) v komentáři u fotky Pouť 1987", with the comment quoted) through whichever channels they
+  switched on under „Když mě někdo zmíní v komentáři" — all off until they choose — and one tap opens the
+  thread at that very comment. Nobody is told about a private or hidden photo, editing a comment only
+  announces the people newly named, and a mention survives a rename, because it remembers the account,
+  not the name.
 - **Task texts and comments are Markdown.** Bold, `code`, links and tables in a task's question or in a
   comment show formatted, a wide table scrolls sideways on a phone, and a link to a photo or a task in
   Kukátko itself opens in the same tab — from inside a task, a photo link keeps you in that task.

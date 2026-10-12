@@ -934,7 +934,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 - **Comments API (`/api/v1`, `internal/photoapi` + `internal/comments`):** per-photo comment threads — the
   family conversation around a picture ("who is the boy on the left?", "this was the summer before the barn
   burned down"). `GET /photos/{uid}/comments` (authenticated) →
-  `{comments:[{uid,photo_uid,author_uid,author_name,author_photo_uid?,body,created_at,edited_at?}]}`, **oldest first** (a
+  `{comments:[{uid,photo_uid,author_uid,author_name,author_photo_uid?,body,created_at,edited_at?,mentions}]}`, **oldest first** (a
   conversation reads forwards), `author_name` resolved server-side (display name, fallback username) so a
   thread needs no second lookup; **`author_photo_uid`** is the cover photo of the person the author's
   account is linked to (`users.subject_uid` → `subjects.cover_photo_uid`, one LEFT JOIN in the same
@@ -958,8 +958,31 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   moderation power admins already hold over the rest of the library. The delete is **soft**: the row keeps its
   place with `deleted_at` stamped and drops out of every read, so deleting twice is 404 rather than a silent
   success, and editing a deleted comment is 404 too. **Body:** plain text, whitespace-trimmed, **1–2000
-  characters** (runes, not bytes; blank → 400, longer → 400, unknown JSON field → 400); nothing is parsed or
-  rendered server-side — no HTML, no markdown — so **the client escapes what it displays**. A comment
+  characters** (runes, not bytes; blank → 400, longer → 400, unknown JSON field → 400); nothing is rendered
+  or sanitised server-side — no HTML, no markdown — so **the client escapes what it displays**.
+  **`@`-mentions** are the one thing the server reads out of a body: a token `@[Display Name](user:<uid>)`
+  — the composer writes it when a name is picked from `GET /users`; a bare `@Tomáš` typed by hand is plain
+  text, never matched — names an **account**, by uid, so a rename breaks no old mention. On create and on
+  edit the server parses the tokens (outside code: a token inside a code span or block is not a mention,
+  exactly as the renderer shows it as code), **validates** each uid against the accounts (existing,
+  enabled, approved — an unknown or disabled one is dropped, the token still renders from its own name),
+  de-duplicates, stores the set in **`comment_mentions`** (migration `0098_comment_mentions.sql`,
+  `(comment_uid, user_uid, position)`, both FKs `ON DELETE CASCADE`) and returns it as **`mentions`**:
+  `[{user_uid, name, subject_uid}]` in order of first mention, resolved **on every read** — `name` is the
+  account's *current* display name (fallback username), `subject_uid` the person of the library the
+  account is linked to (`null` for none), which is where the client links the chip. A token whose account
+  was since deleted has no entry; the client shows the token's own name. `mentions` is always an array.
+  **Mentioning somebody announces it**: every freshly mentioned account other than the writer gets the
+  **`comment_mention` notification** in the comment's transaction (`internal/mentionnotify`, through the
+  channels they chose — all off by default): „Pan Botka tě zmínil(a) v komentáři u fotky Pouť 1987" (the
+  photo's title, or bare „u fotky" when it has none) with the comment's excerpt (mention tokens read as
+  `@Name`, cut at 140 characters) under it, linking to `/photos/{uid}?panel=info#comment-{commentUID}` —
+  the viewer with its drawer open, scrolled to the comment. **Nobody is told about a private, hidden or
+  archived photo** (`notification.VisiblePhotoSQL`, the one reading every notification uses): the mention
+  is stored and highlighted, the announcement skipped. A **self-mention** is stored (it renders) and
+  announces nothing. An **edit announces only the mentions the previous body did not carry** — fixing a
+  typo notifies nobody again — and prunes the dropped ones. **Deleting the comment afterwards cancels
+  nothing**: a notification is a frozen record of what was said, exactly like a push already sent. A comment
   addressed through the wrong photo (`{uid}` is not the comment's) is **404, not 403**, so the endpoint cannot
   be used to probe which comment UIDs exist. `GET /photos/{uid}` carries **`comment_count`** (always present,
   0 when there are none) so the detail can badge the thread without fetching it; it resolves through the bulk
@@ -1063,7 +1086,10 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   is the same table, shapes and rules as the per-photo thread above, addressed with a task subject, and it
   is guarded by **`RequireAuth`** on all four routes. That is not an oversight to be tightened later: the
   person who remembers the year is rarely the person who edits the library, so answering is exactly what a
-  viewer account is for here. The create route carries the same per-user throttle (429), built from the
+  viewer account is for here. `@`-mentions work exactly as on a photo's thread (`mentions` on every
+  comment, the `comment_mention` notification to each freshly named account); the notification says „u
+  úkolu <title>" and links to `/tasks/{uid}#comment-{commentUID}` — a task has no private flag, so every
+  mentioned account in good standing is told. The create route carries the same per-user throttle (429), built from the
   same `ratelimit.comment` configuration in its own bucket, so a burst of answers cannot use up somebody's
   allowance for commenting on photographs. A comment addressed through the wrong task answers **404**.
   **Answer and move in one action:** the create body takes an optional **`state`** —
@@ -2063,7 +2089,7 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
   - **`GET /notifications/preferences`** → `200 {preferences:[{kind, channel, enabled, is_default}]}`:
     the **effective** set, one entry per known kind and **delivery channel** — every kind offers all three,
     in display order `in_app`, `push`, `email` (`tagged/in_app`, `tagged/push`, `tagged/email`,
-    `registration_pending/in_app`, …, `task_assigned/email`) — the stored choice or the channel's default (`is_default: true`),
+    `registration_pending/in_app`, …, `task_assigned/email`, `comment_mention/in_app`, …) — the stored choice or the channel's default (`is_default: true`),
     so the frontend needs no knowledge of the defaults. **Every default is off** (since 2026-10-11;
     before, the two push channels defaulted on): an account that never chose receives nothing, and an
     explicit stored choice is kept as it was. Which kinds a role can ever

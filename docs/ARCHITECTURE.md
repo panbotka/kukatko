@@ -551,6 +551,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   so both cascades stay the database's job (migration `0052`, renamed and extended by `0080`). The two
   threads are one table because they are the same conversation with a different subject — one rate limit,
   one set of audit actions, one soft-delete rule, one piece of client code.
+- **`comment_mentions`** — the accounts a comment names with an `@[Name](user:<uid>)` token, one
+  `(comment_uid, user_uid)` row with its `position` in the body, both FKs `ON DELETE CASCADE` (migration
+  `0098`, package `internal/comments`). Parsed from the body on every create and edit, resolved to the
+  accounts' current names on every read, and the source of the `comment_mention` notification
+  (`internal/mentionnotify`), which hears only the mentions new on the comment. Emptied by the wipe with
+  the comments it belongs to.
 - **`jobs`** — persistent queue (see [§8](#8-asynchronni-joby--box-offline)):
   ```
   jobs(

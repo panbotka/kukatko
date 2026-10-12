@@ -254,3 +254,63 @@ func taskTitle(lang Language, title string) string {
 	}
 	return shorten(name, MaxTaskTitleLen)
 }
+
+// MentionPlace is where a comment that mentions somebody sits: on a
+// photograph or on a task. The text names the place, because "u fotky" and
+// "u úkolu" are different sentences.
+type MentionPlace string
+
+const (
+	// MentionPlacePhoto is a comment in a photograph's thread.
+	MentionPlacePhoto MentionPlace = "photo"
+	// MentionPlaceTask is a comment in a task's thread.
+	MentionPlaceTask MentionPlace = "task"
+)
+
+// RenderCommentMention builds the "somebody mentioned you in a comment"
+// notification: who wrote the comment (by name), where it sits — a photo or a
+// task, named by title — and the comment's excerpt as the line under the
+// headline, in lang (anything but English reads as Czech). The writer's name
+// is trimmed and, when blank, replaced by "Někdo"/"Somebody". A task is named
+// like RenderTaskAssigned names it (cut at MaxTaskTitleLen, blank reads as
+// untitled); a photograph is named only when it has a title, because most do
+// not and "u fotky (bez názvu)" would be noise. An empty excerpt leaves the
+// body empty. It is a pure function of its arguments.
+func RenderCommentMention(lang Language, who string, place MentionPlace, title, excerpt string) Text {
+	writer := strings.TrimSpace(who)
+	if lang == LanguageEnglish {
+		if writer == "" {
+			writer = "Somebody"
+		}
+		return Text{Title: writer + " mentioned you in a comment on " + mentionPlace(lang, place, title),
+			Body: strings.TrimSpace(excerpt)}
+	}
+	if writer == "" {
+		writer = "Někdo"
+	}
+	return Text{Title: writer + " tě zmínil(a) v komentáři u " + mentionPlace(lang, place, title),
+		Body: strings.TrimSpace(excerpt)}
+}
+
+// mentionPlace is how the mention notification names the thread's subject: the
+// task by its title, the photograph by its title when it has one and bare
+// otherwise, in lang.
+func mentionPlace(lang Language, place MentionPlace, title string) string {
+	if place == MentionPlaceTask {
+		if lang == LanguageEnglish {
+			return "the task " + taskTitle(lang, title)
+		}
+		return "úkolu " + taskTitle(lang, title)
+	}
+	name := strings.TrimSpace(title)
+	if lang == LanguageEnglish {
+		if name == "" {
+			return "a photo"
+		}
+		return "the photo " + shorten(name, MaxTaskTitleLen)
+	}
+	if name == "" {
+		return "fotky"
+	}
+	return "fotky " + shorten(name, MaxTaskTitleLen)
+}

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { markdownPhotoUids } from '../../lib/markdownLinks'
 import { photoRefHref } from '../../lib/photoRefs'
 import { Markdown } from '../Markdown'
+import { type CommentMention } from '../../services/comments'
 import { thumbUrl } from '../../services/photos'
 
 /** How many referenced photographs the strip draws before folding into "+N". */
@@ -23,6 +24,15 @@ export interface CommentBodyProps {
    * Back lands on the question. A photo thread passes nothing.
    */
   taskUid?: string
+  /**
+   * The accounts the body mentions, as the server resolved them with the
+   * comment (`Comment.mentions`). Every `@[name](user:uid)` token renders as a
+   * `MentionChip` from it. Defaults to none resolved, so a token still shows
+   * as a chip with the name it was written with.
+   */
+  mentions?: CommentMention[]
+  /** The reader's own account, so a mention of them stands out. */
+  currentUserUid?: string | null
 }
 
 /**
@@ -35,6 +45,11 @@ export interface CommentBodyProps {
  * read as they were meant, in a task's thread and a photo's alike. A single
  * newline is a line break (`breaks`), so a short typed comment looks as typed.
  * A typed heading starts at level 4 and is drawn small, under the thread's own.
+ *
+ * An `@`-mention — `@[Tomáš Kozák](user:<uid>)`, as the composer writes it —
+ * renders as a `MentionChip`: the account's current name on a small pill,
+ * linking to the person it is linked to, the reader's own drawn stronger
+ * (`lib/mentions` `remarkMentions`, inside the sanitised pipeline).
  *
  * A bare photo uid token in the text still becomes a link with the uid itself
  * as its text; a reviewer's "these three are wrong" followed by three uids
@@ -51,15 +66,24 @@ export interface CommentBodyProps {
  * deleted, a mistyped uid of the right shape) drops out rather than showing a
  * broken image.
  */
-export function CommentBody({ body, taskUid }: CommentBodyProps) {
+export function CommentBody({ body, taskUid, mentions, currentUserUid = null }: CommentBodyProps) {
   const { t } = useTranslation()
   const uids = useMemo(() => markdownPhotoUids(body, window.location.origin), [body])
   const shown = uids.slice(0, COMMENT_STRIP_MAX)
   const rest = uids.length - shown.length
+  const resolved = useMemo(() => mentions ?? [], [mentions])
 
   return (
     <>
-      <Markdown className="kk-comment__body" breaks photoRefs headingFloor={4} taskUid={taskUid}>
+      <Markdown
+        className="kk-comment__body"
+        breaks
+        photoRefs
+        headingFloor={4}
+        taskUid={taskUid}
+        mentions={resolved}
+        currentUserUid={currentUserUid}
+      >
         {body}
       </Markdown>
       {shown.length > 0 && (

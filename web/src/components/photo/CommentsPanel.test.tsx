@@ -38,6 +38,7 @@ function comment(overrides: Partial<Comment> = {}): Comment {
     author_uid: 'usr_jarmila',
     author_name: 'Jarmila',
     body: 'This is the barn before it burned down.',
+    mentions: [],
     created_at: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
     ...overrides,
   }

@@ -5,13 +5,17 @@ import { useTranslation } from 'react-i18next'
 import { Icon } from '../Icon'
 import { PersonAvatar } from '../PersonAvatar'
 import { formatDateTimeMinutes } from '../../lib/format'
+import { commentAnchorId } from '../../lib/mentions'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import { type Comment, MAX_COMMENT_LENGTH } from '../../services/comments'
 
 import { CommentBody } from './CommentBody'
+import { MentionTextarea } from './MentionTextarea'
 /** Props for {@link CommentItem}. */
 export interface CommentItemProps {
   comment: Comment
+  /** The reader's own uid, or null when unknown — a mention of them is drawn stronger. */
+  currentUserUid: string | null
   /** Whether the reader wrote this comment and may rewrite it. */
   canEdit: boolean
   /** Whether the reader may remove it — its author, or an admin moderating. */
@@ -28,12 +32,12 @@ export interface CommentItemProps {
  * One comment in a photo's thread: who said it, how long ago, and what they said —
  * with the edit and delete affordances the reader is actually allowed to use.
  *
- * The body is rendered as text (React escapes it), never as HTML or markdown: the
- * backend stores exactly what was typed and parses nothing, so the client must not
- * either. `white-space: pre-wrap` in the stylesheet keeps the writer's own line
- * breaks without inventing any other syntax. The one token recognised in it is a
- * photo uid, which {@link CommentBody} turns into a link (and a thumbnail under
- * the remark) — on a task's thread carrying the task, so the viewer stays in it.
+ * The body renders through {@link CommentBody}: sanitised Markdown, every
+ * photo uid a link (and a thumbnail under the remark) — on a task's thread
+ * carrying the task, so the viewer stays in it — and every `@`-mention a chip
+ * resolved from the comment's own `mentions`. The row carries the
+ * `comment-<uid>` id a notification's link scrolls to, and lights up while it
+ * is the URL's target.
  *
  * The avatar beside it is {@link PersonAvatar}: whatever picture the author's
  * account resolves to — one they uploaded, a photo of the library they picked,
@@ -42,13 +46,15 @@ export interface CommentItemProps {
  * face" becomes visible, which is why the account page says so before the link is
  * made.
  *
- * Editing happens **in place**, in a textarea that replaces the body — a modal for
- * fixing a typo would hide the conversation the remark belongs to. Deleting does
+ * Editing happens **in place**, in the same mention-aware textarea the composer
+ * uses ({@link MentionTextarea}) — a modal for fixing a typo would hide the
+ * conversation the remark belongs to. Deleting does
  * not happen here: the row only asks, and the thread above raises the confirmation,
  * so one dialog serves every row.
  */
 export function CommentItem({
   comment,
+  currentUserUid,
   canEdit,
   canDelete,
   busy,
@@ -78,7 +84,7 @@ export function CommentItem({
   }
 
   return (
-    <li className="kk-comment">
+    <li className="kk-comment" id={commentAnchorId(comment.uid)}>
       {/* Whatever the author's account resolves to; the coloured initial — the
           common case — when it resolves to nothing. An authorless comment (its
           account was deleted) names no user and goes straight to the letter. */}
@@ -108,17 +114,14 @@ export function CommentItem({
             <label className="visually-hidden" htmlFor={`kk-comment-edit-${comment.uid}`}>
               {t('photo.comments.editLabel')}
             </label>
-            <textarea
+            <MentionTextarea
               id={`kk-comment-edit-${comment.uid}`}
-              className="form-control form-control-sm"
               rows={3}
               maxLength={MAX_COMMENT_LENGTH}
               value={draft}
               autoFocus
               disabled={busy}
-              onChange={(event) => {
-                setDraft(event.target.value)
-              }}
+              onChange={setDraft}
               onKeyDown={(event) => {
                 // Enter saves, Shift+Enter is a newline — the same bargain the
                 // composer strikes, so editing feels like writing.
@@ -149,7 +152,12 @@ export function CommentItem({
             </div>
           </form>
         ) : (
-          <CommentBody body={comment.body} taskUid={comment.task_uid} />
+          <CommentBody
+            body={comment.body}
+            taskUid={comment.task_uid}
+            mentions={comment.mentions}
+            currentUserUid={currentUserUid}
+          />
         )}
       </div>
 

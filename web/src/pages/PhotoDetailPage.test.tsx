@@ -3970,6 +3970,7 @@ describe('PhotoDetailPage comment badge', () => {
         photo_uid: 'b',
         author_uid: 'u1',
         author_name: 'U',
+        mentions: [],
         body: 'The barn is still standing here.',
         created_at: '2026-01-02T10:00:00Z',
       },
@@ -3979,6 +3980,7 @@ describe('PhotoDetailPage comment badge', () => {
       photo_uid: 'b',
       author_uid: 'u1',
       author_name: 'U',
+      mentions: [],
       body: 'And that is the well.',
       created_at: '2026-01-02T11:00:00Z',
     })

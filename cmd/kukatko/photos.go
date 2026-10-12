@@ -6,7 +6,6 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
-	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/embedjob"
@@ -162,8 +161,9 @@ func buildPhotoAPI(
 		Stacker: photoStacker(cfg, db),
 		// Per-photo comment threads. Writing one is open to every authenticated
 		// role (viewers included), so the throttle keys on the user rather than
-		// the client IP — see photoapi.handleCreateComment.
-		Comments:    comments.NewStore(db.Pool()),
+		// the client IP — see photoapi.handleCreateComment. A comment that
+		// mentions somebody announces it (see buildCommentStore).
+		Comments:    buildCommentStore(cfg, db),
 		Storyboards: storyboards,
 		// The rendition rows behind the three streaming endpoints. They are wired
 		// whatever video.hls.enabled says: the switch decides whether new videos are
