@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/announcement"
 	"github.com/panbotka/kukatko/internal/announcementapi"
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // fakeStore is an in-memory announcementapi.Store for handler tests. The err
@@ -26,6 +27,7 @@ type fakeStore struct {
 	setErr    error
 	clearErr  error
 
+	lastProject    string
 	lastSetMessage string
 	lastSetLevel   string
 	lastSetAuthor  string
@@ -34,14 +36,16 @@ type fakeStore struct {
 }
 
 // Get returns the configured current announcement (or error).
-func (f *fakeStore) Get(context.Context) (announcement.Announcement, error) {
+func (f *fakeStore) Get(_ context.Context, projectUID string) (announcement.Announcement, error) {
+	f.lastProject = projectUID
 	return f.current, f.getErr
 }
 
 // Set records its inputs and returns the configured result (or error).
 func (f *fakeStore) Set(
-	_ context.Context, message, level, authorUID string, entry audit.Entry,
+	_ context.Context, projectUID, message, level, authorUID string, entry audit.Entry,
 ) (announcement.Announcement, error) {
+	f.lastProject = projectUID
 	f.lastSetMessage = message
 	f.lastSetLevel = level
 	f.lastSetAuthor = authorUID
@@ -50,7 +54,8 @@ func (f *fakeStore) Set(
 }
 
 // Clear records that it was called and returns the configured error.
-func (f *fakeStore) Clear(_ context.Context, entry audit.Entry) error {
+func (f *fakeStore) Clear(_ context.Context, projectUID string, entry audit.Entry) error {
+	f.lastProject = projectUID
 	f.clearCalled = true
 	f.lastEntry = entry
 	return f.clearErr
@@ -158,6 +163,9 @@ func TestSet_ok(t *testing.T) {
 	}
 	if store.lastSetMessage != "Hello" || store.lastSetLevel != "info" {
 		t.Fatalf("store got message=%q level=%q", store.lastSetMessage, store.lastSetLevel)
+	}
+	if store.lastProject != project.BootstrapUID {
+		t.Fatalf("store got project %q, want the bootstrap project", store.lastProject)
 	}
 	if store.lastEntry.Action != audit.ActionAnnouncementSet {
 		t.Fatalf("audit action = %q, want %q", store.lastEntry.Action, audit.ActionAnnouncementSet)

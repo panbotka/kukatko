@@ -11,7 +11,8 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 )
 
-// Store is the database access layer for the single instance-wide settings row.
+// Store is the database access layer for the settings rows, one per project
+// (migration 0102; before it the table held a single instance-wide row).
 // It owns no connection; it borrows the shared pgx pool supplied at construction.
 type Store struct {
 	pool *pgxpool.Pool
@@ -28,20 +29,20 @@ func NewStore(pool *pgxpool.Pool) *Store {
 const selectColumns = `registration_enabled, registration_secret, welcome_markdown,
        updated_at, COALESCE(updated_by_uid, '') AS updated_by_uid`
 
-// getSQL reads the single settings row.
-const getSQL = `SELECT ` + selectColumns + ` FROM instance_settings WHERE id = true`
+// getSQL reads one project's settings row.
+const getSQL = `SELECT ` + selectColumns + ` FROM instance_settings WHERE project_id = $1`
 
-// Get returns the instance settings. Migration 0062 seeds the row, so the read
-// normally finds it; a missing row yields the zero-value defaults (registration
+// Get returns the settings of the project projectUID. Migration 0062 seeds the
+// bootstrap project's row, so the read normally finds it; a missing row yields the zero-value defaults (registration
 // closed, no secret, no welcome text) rather than an error, because the
 // anonymous sign-in screen reads this and must never be blocked by a settings
 // row that somebody removed by hand.
 //
 // The returned record includes the registration secret in readable form. Callers
 // serving anyone below the admin role must not pass it on.
-func (s *Store) Get(ctx context.Context) (Settings, error) {
+func (s *Store) Get(ctx context.Context, projectUID string) (Settings, error) {
 	var out Settings
-	err := s.pool.QueryRow(ctx, getSQL).Scan(
+	err := s.pool.QueryRow(ctx, getSQL, projectUID).Scan(
 		&out.RegistrationEnabled, &out.RegistrationSecret, &out.WelcomeMarkdown,
 		&out.UpdatedAt, &out.UpdatedByUID,
 	)
@@ -54,14 +55,14 @@ func (s *Store) Get(ctx context.Context) (Settings, error) {
 	return out, nil
 }
 
-// upsertSQL writes all three values at once, replacing whatever was there. The
-// single-row table (id pinned to true) makes this an upsert on the fixed primary
-// key, and updated_at is stamped to now() on every write.
+// upsertSQL writes all three values of one project at once, replacing whatever
+// was there. One row per project (project_id is the primary key) makes this an
+// upsert on that key, and updated_at is stamped to now() on every write.
 const upsertSQL = `
-INSERT INTO instance_settings (id, registration_enabled, registration_secret, welcome_markdown,
-                               updated_at, updated_by_uid)
-VALUES (true, $1, $2, $3, now(), $4)
-ON CONFLICT (id) DO UPDATE
+INSERT INTO instance_settings (project_id, registration_enabled, registration_secret,
+                               welcome_markdown, updated_at, updated_by_uid)
+VALUES ($1, $2, $3, $4, now(), $5)
+ON CONFLICT (project_id) DO UPDATE
 SET registration_enabled = EXCLUDED.registration_enabled,
     registration_secret = EXCLUDED.registration_secret,
     welcome_markdown = EXCLUDED.welcome_markdown,
@@ -69,7 +70,7 @@ SET registration_enabled = EXCLUDED.registration_enabled,
     updated_by_uid = EXCLUDED.updated_by_uid
 RETURNING ` + selectColumns
 
-// Set replaces all three settings with in, stamped as changed by actorUID, and
+// Set replaces all three settings of the project projectUID with in, stamped as changed by actorUID, and
 // writes entry to the audit log in the same transaction so the change and the
 // record of who made it commit atomically or not at all.
 //
@@ -78,7 +79,9 @@ RETURNING ` + selectColumns
 // only whitespace) returns ErrSecretRequired and nothing is written. The secret
 // is stored trimmed; the welcome Markdown is stored verbatim. entry's details
 // are set by the caller and must not carry the secret.
-func (s *Store) Set(ctx context.Context, in Update, actorUID string, entry audit.Entry) (Settings, error) {
+func (s *Store) Set(
+	ctx context.Context, projectUID string, in Update, actorUID string, entry audit.Entry,
+) (Settings, error) {
 	normalized, err := in.validate()
 	if err != nil {
 		return Settings{}, err
@@ -90,7 +93,7 @@ func (s *Store) Set(ctx context.Context, in Update, actorUID string, entry audit
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var out Settings
-	if scanErr := tx.QueryRow(ctx, upsertSQL,
+	if scanErr := tx.QueryRow(ctx, upsertSQL, projectUID,
 		normalized.RegistrationEnabled, normalized.RegistrationSecret, normalized.WelcomeMarkdown,
 		nullableUID(actorUID),
 	).Scan(

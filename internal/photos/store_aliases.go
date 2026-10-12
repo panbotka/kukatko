@@ -23,11 +23,14 @@ type PhotoprismAlias struct {
 
 // addPhotoprismAliasSQL records (or re-points) one alias. It is idempotent by
 // primary key so a re-run of the import writes the same alias again without
-// erroring, and re-points one whose content moved to another row.
+// erroring, and re-points one whose content moved to another row. The alias
+// belongs to the project of the photo holding its content; that photo's uid is
+// bound twice ($2 and $4) because one placeholder used for the VARCHAR photo_uid
+// column and the TEXT photos.uid fails type deduction (42P08).
 const addPhotoprismAliasSQL = `
-INSERT INTO photoprism_aliases (photoprism_uid, photo_uid, photoprism_file_hash)
-VALUES ($1, $2, nullif($3, ''))
-ON CONFLICT (photoprism_uid) DO UPDATE
+INSERT INTO photoprism_aliases (project_id, photoprism_uid, photo_uid, photoprism_file_hash)
+VALUES ((SELECT project_id FROM photos WHERE uid = $4), $1, $2, nullif($3, ''))
+ON CONFLICT (project_id, photoprism_uid) DO UPDATE
 SET photo_uid = excluded.photo_uid, photoprism_file_hash = excluded.photoprism_file_hash`
 
 // AddPhotoprismAlias records that the PhotoPrism photo ppUID is held by the
@@ -41,7 +44,7 @@ SET photo_uid = excluded.photo_uid, photoprism_file_hash = excluded.photoprism_f
 // that as a failed photo, because an unrecorded alias is a source photo dropped in
 // silence, which is exactly what this table exists to prevent.
 func (s *Store) AddPhotoprismAlias(ctx context.Context, ppUID, photoUID, ppFileHash string) error {
-	if _, err := s.pool.Exec(ctx, addPhotoprismAliasSQL, ppUID, photoUID, ppFileHash); err != nil {
+	if _, err := s.pool.Exec(ctx, addPhotoprismAliasSQL, ppUID, photoUID, ppFileHash, photoUID); err != nil {
 		return fmt.Errorf("photos: recording photoprism alias %s -> %s: %w", ppUID, photoUID, err)
 	}
 	return nil

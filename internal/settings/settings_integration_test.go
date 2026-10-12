@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -163,7 +164,7 @@ func TestRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	admin := makeAdmin(t, users, "se_admin", "admin")
 
-	saved, err := store.Set(ctx, settings.Update{
+	saved, err := store.Set(ctx, project.BootstrapUID, settings.Update{
 		RegistrationEnabled: true,
 		RegistrationSecret:  "rodina2026",
 		WelcomeMarkdown:     "# Vítej v Kukátku",
@@ -176,7 +177,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected saved settings: %+v", saved)
 	}
 
-	got, err := store.Get(ctx)
+	got, err := store.Get(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("Get = %+v, want %+v", got, saved)
 	}
 
-	replaced, err := store.Set(ctx, settings.Update{
+	replaced, err := store.Set(ctx, project.BootstrapUID, settings.Update{
 		RegistrationEnabled: false,
 		RegistrationSecret:  "",
 		WelcomeMarkdown:     "",
@@ -211,7 +212,7 @@ func TestGetWithoutRowReturnsDefaults(t *testing.T) {
 	if n := countRows(t, db); n != 0 {
 		t.Fatalf("row count after truncation = %d, want 0", n)
 	}
-	got, err := store.Get(context.Background())
+	got, err := store.Get(context.Background(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Get with no row: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestSetRejectsSecretlessRegistration(t *testing.T) {
 	admin := makeAdmin(t, users, "se_lock", "lock")
 
 	for _, secret := range []string{"", "   "} {
-		if _, err := store.Set(ctx, settings.Update{
+		if _, err := store.Set(ctx, project.BootstrapUID, settings.Update{
 			RegistrationEnabled: true,
 			RegistrationSecret:  secret,
 		}, admin, updateEntry(admin)); !errors.Is(err, settings.ErrSecretRequired) {
@@ -251,7 +252,7 @@ func TestActorCascadesToNull(t *testing.T) {
 	ctx := context.Background()
 	admin := makeAdmin(t, users, "se_gone", "gone")
 
-	if _, err := store.Set(ctx, settings.Update{
+	if _, err := store.Set(ctx, project.BootstrapUID, settings.Update{
 		RegistrationEnabled: true,
 		RegistrationSecret:  "rodina2026",
 	}, admin, updateEntry(admin)); err != nil {
@@ -260,7 +261,7 @@ func TestActorCascadesToNull(t *testing.T) {
 	if _, err := db.Pool().Exec(ctx, "DELETE FROM users WHERE uid = $1", admin); err != nil {
 		t.Fatalf("deleting the administrator: %v", err)
 	}
-	got, err := store.Get(ctx)
+	got, err := store.Get(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Get after actor delete: %v", err)
 	}
@@ -277,4 +278,46 @@ func countRows(t *testing.T, db *database.DB) int {
 		t.Fatalf("counting instance_settings: %v", err)
 	}
 	return n
+}
+
+// TestSettingsArePerProject: each project has its own row. A write to one
+// project leaves another's settings at their defaults, and the second project's
+// own write adds a row instead of replacing the first.
+func TestSettingsArePerProject(t *testing.T) {
+	store, users, db := newStore(t)
+	ctx := context.Background()
+	admin := makeAdmin(t, users, "se_projects", "projects")
+	const other = "pjsettingsotherproject0001"
+	if _, err := db.Pool().Exec(ctx,
+		"INSERT INTO projects (uid, slug, name) VALUES ($1, 'settings-other', 'Other')", other); err != nil {
+		t.Fatalf("creating the second project: %v", err)
+	}
+
+	if _, err := store.Set(ctx, project.BootstrapUID, settings.Update{
+		RegistrationEnabled: true, RegistrationSecret: "veselice", WelcomeMarkdown: "Ahoj",
+	}, admin, updateEntry(admin)); err != nil {
+		t.Fatalf("Set bootstrap: %v", err)
+	}
+	untouched, err := store.Get(ctx, other)
+	if err != nil {
+		t.Fatalf("Get other: %v", err)
+	}
+	if untouched != (settings.Settings{}) {
+		t.Fatalf("other project's settings = %+v, want the defaults", untouched)
+	}
+
+	if _, err := store.Set(ctx, other, settings.Update{WelcomeMarkdown: "Jiná knihovna"},
+		admin, updateEntry(admin)); err != nil {
+		t.Fatalf("Set other: %v", err)
+	}
+	if n := countRows(t, db); n != 2 {
+		t.Fatalf("instance_settings row count = %d, want 2 (one per project)", n)
+	}
+	bootstrap, err := store.Get(ctx, project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("Get bootstrap: %v", err)
+	}
+	if !bootstrap.RegistrationEnabled || bootstrap.RegistrationSecret != "veselice" || bootstrap.WelcomeMarkdown != "Ahoj" {
+		t.Fatalf("bootstrap settings after the other project's write = %+v", bootstrap)
+	}
 }

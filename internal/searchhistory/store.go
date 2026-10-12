@@ -18,13 +18,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-// recordQuerySQL remembers one query. The (user_uid, query) primary key makes it
-// an upsert: running the same search again moves its position to the front of the
+// recordQuerySQL remembers one query. The (user_uid, project_id, query) primary
+// key makes it an upsert: running the same search again moves its position to the front of the
 // history instead of appending a duplicate.
 const recordQuerySQL = `
 INSERT INTO search_history (user_uid, query)
 VALUES ($1, $2)
-ON CONFLICT (user_uid, query) DO UPDATE SET searched_at = now()`
+ON CONFLICT (user_uid, project_id, query) DO UPDATE SET searched_at = now()`
 
 // pruneHistorySQL drops everything past the newest $2 entries of one user's
 // history, which is what keeps the history a fixed-size ring rather than a log.

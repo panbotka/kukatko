@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -65,7 +66,7 @@ func countAudit(t *testing.T, db *database.DB, action string) int {
 // TestGetEmpty returns ErrNotFound when nothing is published.
 func TestGetEmpty(t *testing.T) {
 	store, _, _ := newStore(t)
-	if _, err := store.Get(context.Background()); !errors.Is(err, announcement.ErrNotFound) {
+	if _, err := store.Get(context.Background(), project.BootstrapUID); !errors.Is(err, announcement.ErrNotFound) {
 		t.Fatalf("Get on empty error = %v, want ErrNotFound", err)
 	}
 }
@@ -77,7 +78,7 @@ func TestSetGetClear(t *testing.T) {
 	ctx := context.Background()
 	author := makeUser(t, users, "an_author", "author")
 
-	published, err := store.Set(ctx, "Downtime tonight", announcement.LevelWarning, author, setEntry(author))
+	published, err := store.Set(ctx, project.BootstrapUID, "Downtime tonight", announcement.LevelWarning, author, setEntry(author))
 	if err != nil {
 		t.Fatalf("Set: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestSetGetClear(t *testing.T) {
 		t.Fatalf("unexpected published: %+v", published)
 	}
 
-	got, err := store.Get(ctx)
+	got, err := store.Get(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestSetGetClear(t *testing.T) {
 	}
 
 	// A second Set replaces the message and level; the table still holds one row.
-	replaced, err := store.Set(ctx, "All clear", announcement.LevelInfo, author, setEntry(author))
+	replaced, err := store.Set(ctx, project.BootstrapUID, "All clear", announcement.LevelInfo, author, setEntry(author))
 	if err != nil {
 		t.Fatalf("Set replace: %v", err)
 	}
@@ -109,10 +110,10 @@ func TestSetGetClear(t *testing.T) {
 		t.Fatalf("announcement.set audit rows = %d, want 2", got)
 	}
 
-	if err := store.Clear(ctx, clearEntry(author)); err != nil {
+	if err := store.Clear(ctx, project.BootstrapUID, clearEntry(author)); err != nil {
 		t.Fatalf("Clear: %v", err)
 	}
-	if _, err := store.Get(ctx); !errors.Is(err, announcement.ErrNotFound) {
+	if _, err := store.Get(ctx, project.BootstrapUID); !errors.Is(err, announcement.ErrNotFound) {
 		t.Fatalf("Get after clear error = %v, want ErrNotFound", err)
 	}
 	if got := countAudit(t, db, audit.ActionAnnouncementClear); got != 1 {
@@ -127,13 +128,13 @@ func TestSetValidation(t *testing.T) {
 	ctx := context.Background()
 	author := makeUser(t, users, "an_val", "val")
 
-	if _, err := store.Set(ctx, "   ", announcement.LevelInfo, author, setEntry(author)); !errors.Is(err, announcement.ErrEmptyMessage) {
+	if _, err := store.Set(ctx, project.BootstrapUID, "   ", announcement.LevelInfo, author, setEntry(author)); !errors.Is(err, announcement.ErrEmptyMessage) {
 		t.Fatalf("Set blank message error = %v, want ErrEmptyMessage", err)
 	}
-	if _, err := store.Set(ctx, "hi", "danger", author, setEntry(author)); !errors.Is(err, announcement.ErrInvalidLevel) {
+	if _, err := store.Set(ctx, project.BootstrapUID, "hi", "danger", author, setEntry(author)); !errors.Is(err, announcement.ErrInvalidLevel) {
 		t.Fatalf("Set bad level error = %v, want ErrInvalidLevel", err)
 	}
-	defaulted, err := store.Set(ctx, "hi", "", author, setEntry(author))
+	defaulted, err := store.Set(ctx, project.BootstrapUID, "hi", "", author, setEntry(author))
 	if err != nil {
 		t.Fatalf("Set empty level: %v", err)
 	}
@@ -149,13 +150,13 @@ func TestAuthorCascadesToNull(t *testing.T) {
 	ctx := context.Background()
 	author := makeUser(t, users, "an_cascade", "cascade")
 
-	if _, err := store.Set(ctx, "Stays up", announcement.LevelInfo, author, setEntry(author)); err != nil {
+	if _, err := store.Set(ctx, project.BootstrapUID, "Stays up", announcement.LevelInfo, author, setEntry(author)); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 	if _, err := db.Pool().Exec(ctx, "DELETE FROM users WHERE uid = $1", author); err != nil {
 		t.Fatalf("deleting author: %v", err)
 	}
-	got, err := store.Get(ctx)
+	got, err := store.Get(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Get after author delete: %v", err)
 	}
@@ -172,4 +173,37 @@ func countRows(t *testing.T, db *database.DB) int {
 		t.Fatalf("counting announcements: %v", err)
 	}
 	return n
+}
+
+// TestAnnouncementIsPerProject: a banner published in one project is invisible
+// in another, and clearing the other project's banner leaves it standing.
+func TestAnnouncementIsPerProject(t *testing.T) {
+	store, users, db := newStore(t)
+	ctx := context.Background()
+	author := makeUser(t, users, "an_projects", "projects")
+	const other = "pjannouncementotherproj001"
+	if _, err := db.Pool().Exec(ctx,
+		"INSERT INTO projects (uid, slug, name) VALUES ($1, 'announcement-other', 'Other')", other); err != nil {
+		t.Fatalf("creating the second project: %v", err)
+	}
+
+	if _, err := store.Set(ctx, project.BootstrapUID, "Only here", announcement.LevelInfo, author, setEntry(author)); err != nil {
+		t.Fatalf("Set bootstrap: %v", err)
+	}
+	if _, err := store.Get(ctx, other); !errors.Is(err, announcement.ErrNotFound) {
+		t.Fatalf("Get other error = %v, want ErrNotFound", err)
+	}
+	if err := store.Clear(ctx, other, clearEntry(author)); err != nil {
+		t.Fatalf("Clear other: %v", err)
+	}
+	got, err := store.Get(ctx, project.BootstrapUID)
+	if err != nil {
+		t.Fatalf("Get bootstrap after clearing the other project: %v", err)
+	}
+	if got.Message != "Only here" {
+		t.Fatalf("bootstrap message = %q, want %q", got.Message, "Only here")
+	}
+	if n := countRows(t, db); n != 1 {
+		t.Fatalf("announcements row count = %d, want 1", n)
+	}
 }

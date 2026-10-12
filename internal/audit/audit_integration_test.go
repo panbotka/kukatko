@@ -245,3 +245,30 @@ func TestStore_ListFilters(t *testing.T) {
 		t.Errorf("page[0].Action = %q, want %s", page[0].Action, audit.ActionPhotoUpdate)
 	}
 }
+
+// TestWrite_storesTheProject: an entry naming a project lands in
+// audit_log.project_id, and one without (an instance-level action) stores NULL.
+func TestWrite_storesTheProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	ctx := t.Context()
+
+	if err := audit.Write(ctx, db.Pool(), audit.Entry{
+		Action: "test.project", TargetType: "photos", ProjectUID: "pjsomeproject",
+	}); err != nil {
+		t.Fatalf("Write with a project: %v", err)
+	}
+	if err := audit.Write(ctx, db.Pool(), audit.Entry{Action: "test.instance", TargetType: "users"}); err != nil {
+		t.Fatalf("Write without a project: %v", err)
+	}
+	for action, want := range map[string]*string{"test.project": new("pjsomeproject"), "test.instance": nil} {
+		var got *string
+		if err := db.Pool().QueryRow(ctx,
+			"SELECT project_id FROM audit_log WHERE action = $1", action).Scan(&got); err != nil {
+			t.Fatalf("reading %s: %v", action, err)
+		}
+		if (got == nil) != (want == nil) || (got != nil && *got != *want) {
+			t.Errorf("%s project_id = %v, want %v", action, got, want)
+		}
+	}
+}

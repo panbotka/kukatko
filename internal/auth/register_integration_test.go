@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -30,7 +31,7 @@ func openRegistration(t *testing.T, env *httpEnv) {
 func setRegistration(t *testing.T, env *httpEnv, in settings.Update) {
 	t.Helper()
 	entry := audit.Entry{Action: audit.ActionSettingsUpdate, TargetType: "settings"}
-	if _, err := env.settings.Set(t.Context(), in, "", entry); err != nil {
+	if _, err := env.settings.Set(t.Context(), project.BootstrapUID, in, "", entry); err != nil {
 		t.Fatalf("storing instance settings: %v", err)
 	}
 }
@@ -281,7 +282,8 @@ func TestRegister_closedInstanceRefuses(t *testing.T) {
 	// On with a blank secret. The settings API refuses that combination, so it is
 	// written straight to the row the way a hand-edited database would hold it.
 	if _, err := env.db.Pool().Exec(t.Context(),
-		`UPDATE instance_settings SET registration_enabled = true, registration_secret = '' WHERE id = true`,
+		`UPDATE instance_settings SET registration_enabled = true, registration_secret = '' WHERE project_id = $1`,
+		project.BootstrapUID,
 	); err != nil {
 		t.Fatalf("forcing an empty secret: %v", err)
 	}

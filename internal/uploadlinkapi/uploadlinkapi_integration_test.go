@@ -31,6 +31,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -246,7 +247,7 @@ func (e *integrationEnv) uploadedBy(t *testing.T, photoUID string) string {
 // these tests ever sends: the link is the only key they use.
 func (e *integrationEnv) openRegistration(t *testing.T, enabled bool) {
 	t.Helper()
-	if _, err := e.settings.Set(t.Context(), settings.Update{RegistrationEnabled: enabled, RegistrationSecret: "never sent"}, "",
+	if _, err := e.settings.Set(t.Context(), project.BootstrapUID, settings.Update{RegistrationEnabled: enabled, RegistrationSecret: "never sent"}, "",
 		audit.Entry{Action: audit.ActionSettingsUpdate, TargetType: "settings"}); err != nil {
 		t.Fatalf("storing settings: %v", err)
 	}

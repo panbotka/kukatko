@@ -382,7 +382,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   - a generated `fts tsvector` column (GIN index) — see [§6.2](#62-hledani).
   - `favorite` is **moved** into a per-user table (see below).
 - **`photo_files`** — originals + derivatives, `role IN (original|sidecar|edited)`, `is_primary`.
-- **`photoprism_aliases`** — `photoprism_uid PK` → `photo_uid` (many-to-one, `ON DELETE CASCADE`),
+- **`photoprism_aliases`** — PK `(project_id, photoprism_uid)` (migration 0102; was `photoprism_uid`) → `photo_uid` (many-to-one, `ON DELETE CASCADE`),
   `photoprism_file_hash`: the source photos that collapsed onto a row already holding their exact
   content (see §5.3). Provenance like the columns above, and equally live.
 - **`photo_hls_renditions`** — `(photo_uid, rendition) PK`, the media playlist ffmpeg wrote plus what the
@@ -616,9 +616,31 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `task_digest_at` still exist and are **still what today's code reads**; the membership is a copy taken at
   migration time. Later steps move each reader to `project_members`, and only the step that finishes the
   move drops the `users` columns (never in the migration that adds the new ones, so a rollback stays possible).
-  **The model is completed in later steps** (membership readers, `project_id` on the catalogue tables, routing,
-  per-project storage, limits); the design is
-  [`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
+- **`project_id` on the catalogue** (migration 0102) — every catalogue root row names its project:
+  `project_id TEXT NOT NULL DEFAULT 'pj0000000000000000veselice' REFERENCES projects(uid) ON DELETE CASCADE`
+  (backfilled to the bootstrap project). Child tables are scoped through their FK to a root row:
+
+  | Scoping | Tables |
+  | --- | --- |
+  | `project_id` directly | `photos`, `subjects`, `albums`, `labels`, `face_clusters`, `subject_families`, `photo_tasks`, `upload_links`, `import_runs`, `saved_searches`, `notifications`, `search_history`, `instance_settings`, `announcements`, `photoprism_aliases` |
+  | `project_id` denormalised (copy of the photo's, set by the writer in `internal/vectors`) | `embeddings`, `faces` — so a project-filtered HNSW kNN needs no join |
+  | `project_id` nullable, no FK (instance-level actions have none) | `audit_log` (`audit.Entry.ProjectUID`) |
+  | through a parent FK, no column | `photo_files`, `markers`, `album_photos`, `photo_labels`, `comments`, `comment_mentions`, `photo_task_photos`, `photo_task_participants`, `notification_photos`, `face_rejections`/`label_rejections`/`face_confirmations`, `photo_phashes`, `photo_places`, `photo_edits`, `photo_hls_renditions`, `subject_family_children`, `upload_link_*`, `user_favorites`/`user_ratings`, `import_failures`, `tag_notices`, … |
+
+  Keys that were instance-wide are per project: `UNIQUE (project_id, file_hash)` on photos,
+  `UNIQUE (project_id, slug)` on subjects/albums/labels, PK `(user_uid, project_id, query)` on
+  `search_history`, PK `(project_id, photoprism_uid)` on `photoprism_aliases`; `instance_settings` and
+  `announcements` lost their one-row `id BOOLEAN` key and are keyed by `project_id` (one row per project — the
+  old row became the bootstrap project's; `internal/settings`/`internal/announcement` take the project on every
+  call). The import watermark index is per `(project_id, source)`, and each root table has a copy of its listing
+  index with `project_id` leading. **Transitional:** the DEFAULT keeps every existing INSERT working; reads are
+  **not** scoped yet (later steps add `WHERE project_id` package by package, the callers pass
+  `project.BootstrapUID` with a `TODO multi-tenancy` marker), `idx_photos_file_hash` serves the unscoped
+  file-hash lookups until then, and a final step drops the defaults.
+
+**The model is completed in later steps** (membership readers, scoped reads, routing, per-project storage,
+limits); the design is
+[`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
 
 ### 5.3 Identity mapping (provenance)
 

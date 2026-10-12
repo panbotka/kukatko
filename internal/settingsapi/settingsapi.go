@@ -37,6 +37,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -49,12 +50,14 @@ const maxBodyBytes = 64 << 10
 // so the handlers depend on behaviour rather than the concrete store, keeping
 // them unit-testable with fakes.
 type Store interface {
-	// Get returns the current instance settings, including the registration
+	// Get returns the project's current settings, including the registration
 	// secret in readable form.
-	Get(ctx context.Context) (settings.Settings, error)
-	// Set replaces all three settings, auditing the change in the same
-	// transaction, and returns the persisted record.
-	Set(ctx context.Context, in settings.Update, actorUID string, entry audit.Entry) (settings.Settings, error)
+	Get(ctx context.Context, projectUID string) (settings.Settings, error)
+	// Set replaces all three of the project's settings, auditing the change in
+	// the same transaction, and returns the persisted record.
+	Set(
+		ctx context.Context, projectUID string, in settings.Update, actorUID string, entry audit.Entry,
+	) (settings.Settings, error)
 }
 
 // API exposes the instance-settings endpoints over HTTP. The route guards are
@@ -125,7 +128,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // at all — the last one decides whether the registration and pending-approval
 // screens may promise an e-mail.
 func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
-	current, err := a.store.Get(r.Context())
+	current, err := a.store.Get(r.Context(), requestProject(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
 		return
@@ -141,7 +144,7 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 // unset greeting is an empty string, not a 404 — the client decides whether an
 // empty greeting is worth showing.
 func (a *API) handleWelcome(w http.ResponseWriter, r *http.Request) {
-	current, err := a.store.Get(r.Context())
+	current, err := a.store.Get(r.Context(), requestProject(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
 		return
@@ -153,7 +156,7 @@ func (a *API) handleWelcome(w http.ResponseWriter, r *http.Request) {
 // route is behind RequireAdmin: reading the secret back is the whole point of
 // storing it unhashed, and the reason nobody below an administrator may.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
-	current, err := a.store.Get(r.Context())
+	current, err := a.store.Get(r.Context(), requestProject(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
 		return
@@ -171,7 +174,7 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.UserFromContext(r.Context())
 	entry := a.auditEntry(r, user.UID, in)
-	saved, err := a.store.Set(r.Context(), in, user.UID, entry)
+	saved, err := a.store.Set(r.Context(), requestProject(r), in, user.UID, entry)
 	if err != nil {
 		writeSetError(w, err)
 		return
@@ -282,4 +285,14 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // writeError writes an error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
+}
+
+// requestProject returns the project a request acts on. Requests do not carry a
+// project yet, so every one acts on the bootstrap project, which holds the whole
+// library.
+//
+//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
+func requestProject(*http.Request) string {
+	// TODO multi-tenancy: project from context
+	return project.BootstrapUID
 }

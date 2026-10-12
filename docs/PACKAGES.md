@@ -1776,8 +1776,10 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   (the DB layer for embeddings and faces, **stored directly in Postgres** as `halfvec` (float16)
   columns with HNSW cosine indexes — tables `embeddings`/`faces` in migration `0006_embeddings.sql`;
   `halfvec` instead of `vector` halves the HNSW index memory at a negligible recall loss on
-  normalized SigLIP/ArcFace vectors (important on the Pi); `Store` = `NewStore(pool)` over
-  the shared pgx pool:
+  normalized SigLIP/ArcFace vectors (important on the Pi); both tables carry a **denormalised
+  `project_id`** (migration 0102) that the two writers (the embedding upsert and the face insert behind
+  `SaveFaces`/`RecordFaceDetection`) copy from the photo's row, so a project-filtered kNN needs no join;
+  `Store` = `NewStore(pool)` over the shared pgx pool:
   `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(vec,limit,maxDistance)`
   for 1152-dim image embeddings (768 until migration `0057` swapped the image tower),
   `SaveFaces`(idempotent replace in a transaction)/`ListFaces`/
@@ -3698,12 +3700,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `search_history` table in migration `0056_search_history.sql`: `user_uid` FK users `ON DELETE CASCADE`,
   `query TEXT NOT NULL CHECK (char_length BETWEEN 1 AND 500)`, `searched_at TIMESTAMPTZ DEFAULT now()`,
   **PK `(user_uid, query)`** (which is what makes recording an idempotent upsert) + the index
-  `(user_uid, searched_at DESC)`; `MaxEntries = 20`, `MaxQueryLength = 500`, `Normalize(query)` (trims,
+  `(user_uid, searched_at DESC)`; migration 0102 adds `project_id` (bootstrap DEFAULT) and widens the PK to
+  `(user_uid, project_id, query)` — reads are not scoped by project yet; `MaxEntries = 20`, `MaxQueryLength = 500`, `Normalize(query)` (trims,
   caps at 500 **characters** and trims what the cut left, `""` for a whitespace-only query — it deliberately
   does *not* fold case or collapse inner whitespace: the string is handed back to the search box verbatim,
   and collapsing spaces would change `title:"a  b"`), `Entry{Query,SearchedAt}`;
   `Store` = `NewStore(pool)`: `Record(ctx,userUID,query)` (normalize → `ErrEmptyQuery` for a blank one →
-  `INSERT … ON CONFLICT (user_uid, query) DO UPDATE SET searched_at = now()` **then** the prune, both in
+  `INSERT … ON CONFLICT (user_uid, project_id, query) DO UPDATE SET searched_at = now()` **then** the prune, both in
   **one transaction** so no reader sees a history past the cap; the prune keeps the newest `MaxEntries`
   identified **by query** rather than by timestamp, since the PK is unique per user while two rows written in
   one transaction share `now()`), `List(ctx,userUID)` (newest first, `LIMIT MaxEntries`, tie-broken by query —
@@ -3726,9 +3729,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `0039_announcement.sql`: `id BOOLEAN PK DEFAULT true CHECK (id)` (a single-row invariant → publish is
   an **upsert**), `message TEXT NOT NULL`, `level TEXT NOT NULL DEFAULT 'info' CHECK (info|warning)`,
   `author_uid VARCHAR(32)` FK users `ON DELETE SET NULL` (losing the author must not take down a live announcement),
-  `updated_at TIMESTAMPTZ`; `Store` = `NewStore(pool)`: `Get(ctx)` (→ the sentinel `ErrNotFound` when nothing),
-  `Set(ctx,message,level,authorUID,entry)` (upsert + validation: an empty/whitespace message → `ErrEmptyMessage`,
-  an unknown level → `ErrInvalidLevel`, an empty level → `info`), `Clear(ctx,entry)` (delete); **both publish and clear
+  `updated_at TIMESTAMPTZ`; **since migration 0102 one row per project**: the `id` key is gone, PK
+  `project_id` (FK `projects`, the old row became the bootstrap project's) and every method takes `projectUID`
+  right after `ctx` (`internal/announcementapi` passes `project.BootstrapUID` until requests carry a project);
+  `Store` = `NewStore(pool)`: `Get(ctx,projectUID)` (→ the sentinel `ErrNotFound` when nothing),
+  `Set(ctx,projectUID,message,level,authorUID,entry)` (upsert + validation: an empty/whitespace message → `ErrEmptyMessage`,
+  an unknown level → `ErrInvalidLevel`, an empty level → `info`), `Clear(ctx,projectUID,entry)` (delete); **both publish and clear
   write the audit** (`announcement.set`/`announcement.clear`, message/level into details) in the **same transaction**
   as the change (mirrors `internal/organize`)), `internal/announcementapi/`
   (a dual-guard HTTP API over the announcement: the `Store` interface (a subset of `announcement.Store`) → unit-testable
@@ -3748,9 +3754,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `welcome_markdown TEXT NOT NULL DEFAULT ''`, `updated_at TIMESTAMPTZ`, `updated_by_uid VARCHAR(32)` FK users
   `ON DELETE SET NULL` (losing that account must not take the instance's own configuration with it); **the
   migration seeds the row**, so every read finds one — the anonymous sign-in screen asks whether registration
-  is open before anybody has ever opened the admin area. `Store` = `NewStore(pool)`: `Get(ctx)` (→ the
+  is open before anybody has ever opened the admin area. **Since migration 0102 one row per project**: the `id`
+  key is gone, PK `project_id` (FK `projects`, the seeded row became the bootstrap project's; another project
+  without a row reads the defaults) and every method takes `projectUID` right after `ctx` (`internal/settingsapi`
+  and `internal/auth`'s registration pass `project.BootstrapUID` until requests carry a project).
+  `Store` = `NewStore(pool)`: `Get(ctx,projectUID)` (→ the
   zero-value defaults when the row is missing rather than an error, so a hand-deleted row cannot block the
-  sign-in screen), `Set(ctx,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown},actorUID,entry)`
+  sign-in screen), `Set(ctx,projectUID,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown},actorUID,entry)`
   (upsert of **all three at once** — the flag and the secret guard each other, so they are never saved apart;
   enabling registration with a blank/whitespace-only secret → `ErrSecretRequired` and nothing is written;
   the secret is stored trimmed, the Markdown verbatim); the update **writes the audit**
@@ -3904,7 +3914,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the `Execer` interface (satisfied by the pool **and** `pgx.Tx`), so the audit row runs in the **same
   transaction** as the mutation — it commits/rolls back with it (ARCHITECTURE §5.1/§11/§12 "audit log
   durable", a fix of the previous system's after-commit gap); `Entry{ActorUID,Action,TargetType,TargetUID,
-  Details,IP,UserAgent}` (an empty UID/IP/UA → SQL NULL, nil details → `{}`); **the handler convention**
+  Details,IP,UserAgent,ProjectUID}` (an empty UID/IP/UA/project → SQL NULL, nil details → `{}`; `ProjectUID`
+  fills the nullable, FK-less `audit_log.project_id` of migration 0102 — empty for an instance-level action); **the handler convention**
   `Meta` + `FromRequest(r, actorUID)` (the actor from the auth context, IP from `clientip.FromRequest` — the
   socket peer unless a *trusted* proxy named the client, so the trail records where a request came from and
   not what its sender claimed; UA from the header) → `(Meta).Entry(action, targetType, targetUID, details)` builds

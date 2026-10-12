@@ -54,11 +54,16 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 // upsertEmbeddingSQL inserts an image embedding or overwrites the existing one
-// for the photo, refreshing created_at to the time of the latest write.
+// for the photo, refreshing created_at to the time of the latest write. The
+// row carries a denormalised copy of its photo's project (migration 0102), so a
+// project-filtered kNN never joins photos; a re-embed refreshes it too. The
+// photo uid is bound twice ($1 and $6): one placeholder used for the VARCHAR
+// photo_uid column and the TEXT photos.uid fails type deduction (42P08).
 const upsertEmbeddingSQL = `
-INSERT INTO embeddings (photo_uid, embedding, model, pretrained, dim)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO embeddings (photo_uid, embedding, model, pretrained, dim, project_id)
+VALUES ($1, $2, $3, $4, $5, (SELECT project_id FROM photos WHERE uid = $6))
 ON CONFLICT (photo_uid) DO UPDATE SET
+    project_id = EXCLUDED.project_id,
     embedding  = EXCLUDED.embedding,
     model      = EXCLUDED.model,
     pretrained = EXCLUDED.pretrained,
@@ -76,7 +81,7 @@ func (s *Store) SaveEmbedding(ctx context.Context, emb Embedding) (Embedding, er
 	}
 	emb.Dim = len(emb.Vector)
 	err := s.pool.QueryRow(ctx, upsertEmbeddingSQL,
-		emb.PhotoUID, ToHalfVec(emb.Vector), emb.Model, emb.Pretrained, emb.Dim,
+		emb.PhotoUID, ToHalfVec(emb.Vector), emb.Model, emb.Pretrained, emb.Dim, emb.PhotoUID,
 	).Scan(&emb.CreatedAt)
 	if err != nil {
 		return Embedding{}, fmt.Errorf("saving embedding for %s: %w", emb.PhotoUID, err)

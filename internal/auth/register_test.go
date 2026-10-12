@@ -17,7 +17,7 @@ type fakeSettings struct {
 }
 
 // Get returns the fixed settings (or the fixed failure).
-func (f fakeSettings) Get(context.Context) (settings.Settings, error) {
+func (f fakeSettings) Get(context.Context, string) (settings.Settings, error) {
 	return f.stored, f.err
 }
 

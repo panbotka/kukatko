@@ -16,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
@@ -31,8 +32,8 @@ const ApprovalPath = "/users"
 // settings row, and so the dependency reads as "registration consults the
 // instance settings" rather than "auth owns them".
 type SettingsSource interface {
-	// Get returns the instance settings, or the defaults when none are stored.
-	Get(ctx context.Context) (settings.Settings, error)
+	// Get returns the project's settings, or the defaults when none are stored.
+	Get(ctx context.Context, projectUID string) (settings.Settings, error)
 }
 
 // MailScheduler schedules one message for delivery through a caller-supplied
@@ -189,7 +190,7 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 func (rg *Registration) RegisterWithLink(
 	ctx context.Context, in RegisterInput, grant LinkGrant, entry audit.Entry,
 ) (User, error) {
-	stored, err := rg.settings.Get(ctx)
+	stored, err := rg.settings.Get(ctx, registrationProject(ctx))
 	if err != nil {
 		return User{}, fmt.Errorf("auth: reading the registration settings: %w", err)
 	}
@@ -272,7 +273,7 @@ func (rg *Registration) register(
 // about how much of the secret was right — the one thing that would turn a
 // guessing game into a search.
 func (rg *Registration) checkSecret(ctx context.Context, secret string) error {
-	stored, err := rg.settings.Get(ctx)
+	stored, err := rg.settings.Get(ctx, registrationProject(ctx))
 	if err != nil {
 		return fmt.Errorf("auth: reading the registration settings: %w", err)
 	}
@@ -386,4 +387,14 @@ func inSavepoint(ctx context.Context, tx pgx.Tx, fn func(savepoint pgx.Tx) error
 		return fmt.Errorf("auth: releasing the savepoint: %w", err)
 	}
 	return nil
+}
+
+// registrationProject returns the project whose settings govern a registration.
+// Registration does not name a project yet, so it is always the bootstrap
+// project, which holds the whole library.
+//
+//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
+func registrationProject(context.Context) string {
+	// TODO multi-tenancy: project from context
+	return project.BootstrapUID
 }

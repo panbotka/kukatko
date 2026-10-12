@@ -593,8 +593,9 @@ func ReviewDecisionActions() []string {
 // insertSQL appends one audit entry. It is shared by Store.Record and the
 // package-level Write so the column order stays in one place.
 const insertSQL = `
-INSERT INTO audit_log (actor_uid, action, target_type, target_uid, details, ip, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`
+INSERT INTO audit_log (actor_uid, action, target_type, target_uid, details, ip, user_agent,
+                       project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 // Entry is a single audit record describing who did what. ActorUID, TargetUID,
 // IP and UserAgent are optional (empty string stores SQL NULL); Details is
@@ -618,6 +619,10 @@ type Entry struct {
 	IP string
 	// UserAgent is the client User-Agent string, or empty when unknown.
 	UserAgent string
+	// ProjectUID is the project the action happened in, or empty for an
+	// instance-level action (accounts, sessions, system maintenance), which
+	// stores SQL NULL.
+	ProjectUID string
 }
 
 // Meta carries the request-derived audit fields shared by every entry a handler
@@ -688,6 +693,7 @@ func Write(ctx context.Context, exec Execer, entry Entry) error {
 	if _, err := exec.Exec(ctx, insertSQL,
 		nullable(entry.ActorUID), entry.Action, entry.TargetType,
 		nullable(entry.TargetUID), details, nullable(entry.IP), nullable(entry.UserAgent),
+		nullable(entry.ProjectUID),
 	); err != nil {
 		return fmt.Errorf("audit: writing %q entry: %w", entry.Action, err)
 	}

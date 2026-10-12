@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/settingsapi"
 )
@@ -29,17 +30,21 @@ type fakeStore struct {
 	lastUpdate settings.Update
 	lastActor  string
 	lastEntry  audit.Entry
+	// lastProject is the project the most recent Get or Set was asked about.
+	lastProject string
 }
 
 // Get returns the configured current settings (or error).
-func (f *fakeStore) Get(context.Context) (settings.Settings, error) {
+func (f *fakeStore) Get(_ context.Context, projectUID string) (settings.Settings, error) {
+	f.lastProject = projectUID
 	return f.current, f.getErr
 }
 
 // Set records its inputs and returns the configured result (or error).
 func (f *fakeStore) Set(
-	_ context.Context, in settings.Update, actorUID string, entry audit.Entry,
+	_ context.Context, projectUID string, in settings.Update, actorUID string, entry audit.Entry,
 ) (settings.Settings, error) {
+	f.lastProject = projectUID
 	f.lastUpdate = in
 	f.lastActor = actorUID
 	f.lastEntry = entry
@@ -233,6 +238,9 @@ func TestPutReplacesAllThree(t *testing.T) {
 	}
 	if store.lastUpdate != want {
 		t.Fatalf("update passed down = %+v, want %+v", store.lastUpdate, want)
+	}
+	if store.lastProject != project.BootstrapUID {
+		t.Fatalf("store got project %q, want the bootstrap project", store.lastProject)
 	}
 	if store.lastEntry.Action != audit.ActionSettingsUpdate || store.lastEntry.TargetType != "settings" {
 		t.Fatalf("audit entry = %+v, want a settings.update entry", store.lastEntry)

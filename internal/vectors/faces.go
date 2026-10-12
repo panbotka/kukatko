@@ -14,12 +14,16 @@ import (
 const uniqueViolation = "23505"
 
 // insertFaceSQL inserts a single face row and returns its assigned id and
-// created_at.
+// created_at. The row carries a denormalised copy of its photo's project
+// (migration 0102), so a project-filtered kNN never joins photos. The photo
+// uid is bound twice ($1 and $14): one placeholder used for the VARCHAR
+// photo_uid column and the TEXT photos.uid fails type deduction (42P08).
 const insertFaceSQL = `
 INSERT INTO faces (
     photo_uid, face_index, embedding, bbox, det_score, model, dim,
-    marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    marker_uid, subject_uid, subject_name, photo_width, photo_height, orientation, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+        (SELECT project_id FROM photos WHERE uid = $14))
 RETURNING id, created_at`
 
 // listFacesSQL reads every face of a photo in face_index order.
@@ -271,7 +275,7 @@ func insertFaces(ctx context.Context, tx pgx.Tx, photoUID string, faces []Face) 
 		err := tx.QueryRow(ctx, insertFaceSQL,
 			photoUID, face.FaceIndex, ToHalfVec(face.Vector), bbox[:], face.DetScore,
 			face.Model, len(face.Vector), face.MarkerUID, face.SubjectUID,
-			face.SubjectName, face.PhotoWidth, face.PhotoHeight, face.Orientation,
+			face.SubjectName, face.PhotoWidth, face.PhotoHeight, face.Orientation, photoUID,
 		).Scan(&faces[i].ID, &faces[i].CreatedAt)
 		if isUniqueViolation(err) {
 			return fmt.Errorf("%w: photo %s face %d", ErrFaceIndexTaken, photoUID, face.FaceIndex)

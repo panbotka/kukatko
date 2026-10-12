@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/announcement"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // maxBodyBytes caps the publish request body. A banner message is a short line,
@@ -35,16 +36,18 @@ const maxBodyBytes = 16 << 10
 // unit-testable with fakes. Set and Clear take an audit.Entry the store writes in
 // the same transaction as the change.
 type Store interface {
-	// Get returns the current announcement, or announcement.ErrNotFound when none
-	// is published.
-	Get(ctx context.Context) (announcement.Announcement, error)
-	// Set publishes message at level authored by authorUID (replacing any existing
-	// one), auditing the change, and returns the persisted announcement.
+	// Get returns the project's current announcement, or
+	// announcement.ErrNotFound when none is published.
+	Get(ctx context.Context, projectUID string) (announcement.Announcement, error)
+	// Set publishes message in the project at level authored by authorUID
+	// (replacing any existing one), auditing the change, and returns the
+	// persisted announcement.
 	Set(
-		ctx context.Context, message, level, authorUID string, entry audit.Entry,
+		ctx context.Context, projectUID, message, level, authorUID string, entry audit.Entry,
 	) (announcement.Announcement, error)
-	// Clear takes the announcement down for all users, auditing the change.
-	Clear(ctx context.Context, entry audit.Entry) error
+	// Clear takes the project's announcement down for all users, auditing the
+	// change.
+	Clear(ctx context.Context, projectUID string, entry audit.Entry) error
 }
 
 // API exposes the announcement endpoints over HTTP. The route guards are supplied
@@ -92,7 +95,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // handleGet writes the current announcement, or an empty-message body (still 200)
 // when none is published.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
-	current, err := a.store.Get(r.Context())
+	current, err := a.store.Get(r.Context(), requestProject(r))
 	if errors.Is(err, announcement.ErrNotFound) {
 		writeJSON(w, http.StatusOK, response{})
 		return
@@ -123,7 +126,7 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 		"message": in.Message,
 		"level":   in.Level,
 	})
-	saved, err := a.store.Set(r.Context(), in.Message, in.Level, user.UID, entry)
+	saved, err := a.store.Set(r.Context(), requestProject(r), in.Message, in.Level, user.UID, entry)
 	if err != nil {
 		writeSetError(w, err)
 		return
@@ -135,7 +138,7 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleClear(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	entry := a.auditEntry(r, user.UID, audit.ActionAnnouncementClear, nil)
-	if err := a.store.Clear(r.Context(), entry); err != nil {
+	if err := a.store.Clear(r.Context(), requestProject(r), entry); err != nil {
 		writeError(w, http.StatusInternalServerError, "clearing announcement failed")
 		return
 	}
@@ -212,4 +215,14 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // writeError writes an error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
+}
+
+// requestProject returns the project a request acts on. Requests do not carry a
+// project yet, so every one acts on the bootstrap project, which holds the whole
+// library.
+//
+//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
+func requestProject(*http.Request) string {
+	// TODO multi-tenancy: project from context
+	return project.BootstrapUID
 }

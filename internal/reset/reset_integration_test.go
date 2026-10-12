@@ -96,7 +96,7 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 		"ses1", "tok1", "dl1", "usr000000001", "maintainer", time.Now().Add(time.Hour))
 	e.exec(t, `INSERT INTO api_tokens (id, user_uid, name, secret_hash) VALUES ($1,$2,$3,$4)`,
 		"tokid1", "usr000000001", "migration", "secret")
-	e.exec(t, `INSERT INTO announcements (id, message) VALUES (true, $1)`, "migration in progress")
+	e.exec(t, `INSERT INTO announcements (message) VALUES ($1)`, "migration in progress")
 	if err := audit.NewStore(e.db.Pool()).Record(t.Context(), audit.Entry{
 		Action: "photo.update", TargetType: "photos", TargetUID: "pht000000001",
 	}); err != nil {
