@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Modal, Spinner } from 'react-bootstrap'
+import { Alert, Button, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 
 import { type DirectoryUser, listDirectory } from '../../services/directory'
+import Modal from '../Modal'
 import { PersonAvatar } from '../PersonAvatar'
 
 /** Fetch lifecycle of the directory the picker chooses from. */
@@ -20,6 +21,12 @@ export interface PersonPickerProps {
   /** Called with the chosen person — the uid to send, the name to show. */
   onPick: (user: DirectoryUser) => void
   onClose: () => void
+  /**
+   * The picker is opened from another dialog (the create dialog), so it takes
+   * the nested layer: its backdrop dims the dialog it was opened from instead of
+   * painting under it.
+   */
+  nested?: boolean
 }
 
 /**
@@ -30,7 +37,14 @@ export interface PersonPickerProps {
  * field to search, and it is fetched when the dialog opens rather than with the
  * page that hosts it.
  */
-export function PersonPicker({ show, busy, already, onPick, onClose }: PersonPickerProps) {
+export function PersonPicker({
+  show,
+  busy,
+  already,
+  onPick,
+  onClose,
+  nested = false,
+}: PersonPickerProps) {
   const { t } = useTranslation()
   const [state, setState] = useState<DirectoryState>({ status: 'loading' })
 
@@ -58,7 +72,14 @@ export function PersonPicker({ show, busy, already, onPick, onClose }: PersonPic
     state.status === 'ready' ? state.users.filter((u) => !already.includes(u.uid)) : []
 
   return (
-    <Modal show={show} onHide={onClose} centered aria-labelledby="person-picker-title">
+    <Modal
+      show={show}
+      onHide={onClose}
+      centered
+      aria-labelledby="person-picker-title"
+      className={nested ? 'kk-modal--nested' : undefined}
+      backdropClassName={nested ? 'kk-modal-backdrop--nested' : undefined}
+    >
       <Modal.Header closeButton>
         <Modal.Title as="h2" className="h5" id="person-picker-title">
           {t('taskDetail.people.pick')}

@@ -4,7 +4,9 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext'
 import i18n from '../../i18n'
+import { type User } from '../../services/auth'
 import { type Task } from '../../services/tasks'
 
 import { NewTaskModal } from './NewTaskModal'
@@ -52,16 +54,36 @@ function task(overrides: Partial<Task> = {}): Task {
   }
 }
 
+/** The signed-in account: the one opening the task, `u1` in the directory. */
+const me: User = {
+  uid: 'u1',
+  username: 'botka',
+  display_name: 'Pan Botka',
+  email: 'botka@example.test',
+  role: 'editor',
+  disabled: false,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  subject_uid: null,
+  welcome_seen_at: '2026-09-26T10:00:00Z',
+}
+
 /** Renders the dialog inside a router that records where it navigates to. */
 function renderModal(photoUids?: string[]) {
+  const auth = { status: 'authenticated', user: me, role: 'editor' } as unknown as AuthContextValue
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<NewTaskModal show onClose={vi.fn()} photoUids={photoUids} />} />
-          <Route path="/tasks/:uid" element={<p>the task page</p>} />
-        </Routes>
-      </MemoryRouter>
+      <AuthContext.Provider value={auth}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route
+              path="/"
+              element={<NewTaskModal show onClose={vi.fn()} photoUids={photoUids} />}
+            />
+            <Route path="/tasks/:uid" element={<p>the task page</p>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -73,6 +95,7 @@ beforeEach(async () => {
   addTaskPhotosMock.mockReset()
   listDirectoryMock.mockReset()
   listDirectoryMock.mockResolvedValue([
+    { uid: 'u1', name: 'Pan Botka' },
     { uid: 'u2', name: 'Anna' },
     { uid: 'u3', name: 'Agent' },
   ])
@@ -129,6 +152,45 @@ describe('NewTaskModal', () => {
       })
     })
     expect(await screen.findByText('the task page')).toBeInTheDocument()
+  })
+
+  it('never offers the creator, who is on the task already', async () => {
+    const user = userEvent.setup()
+    renderModal([])
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const picker = await screen.findByRole('dialog', { name: 'Who should be on this task?' })
+    await within(picker).findByRole('button', { name: /Anna/ })
+    expect(within(picker).queryByRole('button', { name: /Pan Botka/ })).toBeNull()
+  })
+
+  it('dims the create dialog under the picker opened from it', async () => {
+    const user = userEvent.setup()
+    renderModal([])
+
+    await user.click(screen.getByRole('button', { name: 'Add' }))
+    const picker = await screen.findByRole('dialog', { name: 'Who should be on this task?' })
+    // The nested layer: the picker's own backdrop paints over the create
+    // dialog (the order itself is pinned in styles/dialogBand.test.ts).
+    expect(picker).toHaveClass('kk-modal--nested')
+    const backdrops = document.querySelectorAll('.modal-backdrop')
+    expect(backdrops).toHaveLength(2)
+    expect(backdrops[1]).toHaveClass('kk-modal-backdrop--nested')
+    expect(backdrops[0]).not.toHaveClass('kk-modal-backdrop--nested')
+  })
+
+  it('names both close buttons in the interface language', async () => {
+    await i18n.changeLanguage('cs')
+    const user = userEvent.setup()
+    renderModal(['p1'])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: 'Zavřít' })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Close' })).toBeNull()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Přidat' }))
+    const picker = await screen.findByRole('dialog', { name: 'Koho přidat k úkolu?' })
+    expect(within(picker).getByRole('button', { name: 'Zavřít' })).toBeInTheDocument()
   })
 
   it('says in one line that a task from the bare button has no photos', () => {

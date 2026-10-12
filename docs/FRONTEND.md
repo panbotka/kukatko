@@ -859,7 +859,13 @@ here.
   opened in the viewer painted under the photograph and the image took every click. `app.css` re-declares
   the band on the scale — offcanvas backdrop/panel 1082/1083, modal backdrop/dialog 1084/1085, still under
   the PWA note (1090) and the toasts (1100) — on Bootstrap's own classes, so no dialog needs a line of its
-  own. Guarded by `styles/dialogBand.test.ts`. **A footer has one filled button — the action**
+  own. A dialog opened **from another dialog** passes `className="kk-modal--nested"` +
+  `backdropClassName="kk-modal-backdrop--nested"` (1087/1086): Bootstrap gives every modal one layer, so the
+  second backdrop painted under the first dialog and left it undimmed (`PersonPicker`'s `nested`).
+  Guarded by `styles/dialogBand.test.ts`. ESLint also refuses `Modal` from the `react-bootstrap` barrel (the
+  same modal by another door, which `NewTaskModal` and `PersonPicker` had used, so their ✕ said `Close`).
+  An `Offcanvas` has no wrapper — each drawer names its ✕ itself — and `components/offcanvasCloseLabel.test.ts`
+  fails on an `Offcanvas.Header closeButton` without a `closeLabel`. **A footer has one filled button — the action**
   (`primary`, or `danger` for a destructive confirm); its cancel/close is `outline-secondary` (or `link`),
   never a filled `secondary`, whose teal plate weighs as much as the orange primary beside it and makes
   the two read as equals (UI/UX review 2026-10-11, #33). `styles/modalFooterCancel.test.ts` walks every
@@ -969,25 +975,28 @@ here.
   `UserCard`), `AuditPage`, `ImportPage` (run history) and `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
   `HeaderActions` (**the shared „page-header actions → „…" overflow" collapse.** A detail header packs its
   actions next to the title, and on a phone a row of four or five ≥44px buttons wrapped into two or three rows
-  — with the destructive one sitting inline among the neutral ones, a mis-tap away. Props are ready-made nodes,
-  not descriptors, so a page keeps its own RBAC gating and button styling: `primary` (the one or two actions
+  — with the destructive one sitting inline among the neutral ones, a mis-tap away. `primary` is ready-made
+  nodes (it never enters the menu); everything that may enter the menu is a **`HeaderAction` descriptor**
+  (`key`, `label`, `icon?`, `onSelect?`, `to?` — an in-app address, rendered as a router link so it opens in
+  a new tab — `disabled?`, `inlineVariant?`), because the same action is a `size="sm"` button on a wide
+  header row and a `Dropdown.Item` in the menu; the page keeps its RBAC gating and handlers where they were.
+  Slots: `primary` (the one or two actions
   that stay inline **at every width**), `secondary` (inline on desktop, leading the menu on a phone),
   `overflow` (the occasional actions: **in the menu at every width**, so a desktop header is not a row of
   equal buttons nothing stands out from), `destructive` (in the menu at every width too, always last and
   **behind a `Dropdown.Divider`**) and `id?` (the toggle's DOM id). So the menu exists on desktop as well
-  whenever `overflow`/`destructive` hold anything. Each is a `ReactNode[]` — an array, not a fragment, precisely so a conditionally rendered
-  `{canWrite && <Button/>}` arrives as `false` and can be told apart from a real action: an all-`false` list
-  renders **no toggle at all** rather than an empty menu, and every entry needs a stable `key` as any array of
-  children does. The menu is keyboard-operable as a disclosure: the toggle is a labelled button
-  (`aria-label` + `aria-expanded`), Enter/Space open it, the menu follows its toggle in the DOM so **Tab**
-  walks into its items (they are buttons/links, not `.dropdown-item`s, so there are no arrow keys), and
-  **Escape** closes it and hands focus back to the toggle. The breakpoint is decided **in JS** (`useIsNarrowViewport`), never `d-md-none`, so only one
-  layout is ever in the DOM; the menu stacks its actions as full-width buttons (an inner `d-grid`, like
-  `BatchActionBar`'s overflow) and **closes itself on any click inside** — a plain button raises no `select`
-  event react-bootstrap would act on, and a menu left standing open behind the modal its item just opened reads
-  as a stuck page. Styles `.kk-header-overflow-*` in `app.css`; the bare „…" toggle drops Bootstrap's caret and
-  squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`); the menu's
-  buttons keep their labels on one line (`white-space: nowrap`), widening the menu instead. i18n
+  whenever `overflow`/`destructive` hold anything. Each is an array, not a fragment, precisely so a conditionally rendered
+  `canWrite && {…}` arrives as `false` and can be told apart from a real action: an all-`false` list
+  renders **no toggle at all** rather than an empty menu. The menu is a real menu: `role="menu"` labelled by
+  its toggle (`aria-label` + `aria-expanded`), its entries **`.dropdown-item`s with `role="menuitem"`** — not
+  the stack of outlined buttons it was until the v0.31 walkthrough — the destructive ones in `text-danger`.
+  Enter/Space/↓ open it (from the keyboard, focus lands on the first item), **↑/↓ walk the items**
+  (a disabled one is skipped), **Escape** closes it and hands focus back to the toggle, and choosing an item
+  closes the menu through react-bootstrap's own `select`, so a menu never stands open behind the modal its
+  item just opened. The breakpoint is decided **in JS** (`useIsNarrowViewport`), never `d-md-none`, so only one
+  layout is ever in the DOM. Styles `.kk-header-overflow-*` in `app.css`; the bare „…" toggle drops Bootstrap's caret and
+  squares off to the 44px floor on `pointer: coarse` (guarded by `styles/tapTargets.test.ts`); the items keep
+  their labels on one line, widening the menu instead, and take the app-wide 44px item floor on touch. i18n
   `headerActions.overflow`. Adopted by `AlbumDetailPage` and `LabelDetailPage`; any other detail header can
   take it as-is.
   Tests: `HeaderActions.test.tsx`);
@@ -1773,7 +1782,10 @@ here.
   `downloadPhotosZip`, shows a spinner while it streams and an error on failure — 413 = over the cap
   (`download.zipTooMany`), otherwise generic (`download.zipError`); `photoUids` = the current selection,
   `albumUid` (+ `name` = the album title) = the whole album; **available to a viewer too** (a download is not a write),
-  disabled when there is nothing to download. Inserted into the library's `SelectionBar` and into the album header),
+  disabled when there is nothing to download. Inserted into the library's `SelectionBar`. The lifecycle itself
+  is the hook **`hooks/useZipDownload`** (`run`, `pending`, `error`, `empty`), which the album header's „…" item
+  drives directly — it shows „Připravuji…" disabled while the archive streams, and the page shows a failure as
+  an `Alert` because the menu has closed by then),
   `SharePhotosButton` (**share the selection into the phone's own library**, beside the ZIP: `photoUids` (a
   selection, or the single photo of `PhotoDetailPage`) → the phone's share sheet, where iOS offers "Save Images"
   into Apple Photos and Android offers Google Photos — the answer to "someone else uploaded these and I want mine
@@ -2295,10 +2307,10 @@ here.
   **Promítání** and **Upravit** (the latter in the filled `primary` style, so something on the row stands
   out — the UI/UX review of 2026-10-11 found six equal outline buttons) and a „…" menu holding
   **Obličeje (N)**, **Stáhnout ZIP**, **Sdílet odkaz pro nahrávání** and — last, behind its own divider,
-  in danger styling — **Smazat**; on a phone **Upravit** folds into that menu too (leading it, as an
-  outline item — the page reads `useIsNarrowViewport` for the variant), so the header keeps to one row
+  in danger styling — **Smazat**, every one a menu item (`HeaderAction` descriptors); on a phone **Upravit**
+  folds into that menu too (leading it, as a plain item), so the header keeps to one row
   instead of wrapping into two or three. Either way the RBAC gate is the same `canCurate` on the same
-  buttons (an album is curation: a curator renames and deletes it); a viewer gets Promítání and a menu
+  actions (an album is curation: a curator renames and deletes it); a viewer gets Promítání and a menu
   with the ZIP alone.
   **Obličeje (N)** is the way into the album face-tagging run (`AlbumFacesPage`, below): an `<a>`
   styled as a button (`btn btn-outline-secondary btn-sm`) to `/albums/:uid/faces` — an anchor, not
@@ -2606,7 +2618,9 @@ here.
   colour) and
   `components/tasks/PersonPicker` (**somebody to ask**: a modal list over `services/directory`, one
   `PersonAvatar` + name per row, the people in `already` left out so a second pick never offers the same
-  person twice; the directory is fetched when the dialog opens rather than with the page that hosts it,
+  person twice; `nested` puts it on the nested dialog layer (`kk-modal--nested`/`kk-modal-backdrop--nested`,
+  1086/1087 on the `app.css` scale) for when it opens over another dialog, so its backdrop dims that dialog
+  instead of painting under it; the directory is fetched when the dialog opens rather than with the page that hosts it,
   and it is a list to read rather than a field to search — a family archive has a dozen accounts, not a
   company's thousands. It is shared by `TaskParticipants` (asking one more person) and `NewTaskModal`
   (handing a task over as it is opened), which is the whole reason it was lifted out of the first: two
@@ -2615,7 +2629,8 @@ here.
   `AnswerOptionsEditor` — because a question that takes a form to
   ask does not get asked; on success it navigates straight to the new task, which is both the confirmation
   and the page whose link gets sent on. Under them sit the two fields for **handing work over** rather
-  than asking: **Komu**, a multi-pick through `PersonPicker` shown as removable chips and sent as
+  than asking: **Komu**, a multi-pick through a `nested` `PersonPicker` that never offers the signed-in
+  creator (on the task already), shown as removable chips and sent as
   `participants`, so whoever should be on the task is on it from the start instead of after a second step
   on the task page; and **Stav**, limited to the two openings `OPENING_STATES` names — `question`
   (default, "někdo má odpovědět") and `working` ("někdo to má udělat"), with the helper line under the

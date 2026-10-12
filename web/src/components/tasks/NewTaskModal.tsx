@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Form, Modal, Spinner } from 'react-bootstrap'
+import { Alert, Button, Form, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
+import { useAuth } from '../../auth/AuthContext'
 import { type DirectoryUser } from '../../services/directory'
 import {
   addTaskPhotos,
@@ -13,6 +14,7 @@ import {
   type TaskState,
 } from '../../services/tasks'
 import { Icon } from '../Icon'
+import Modal from '../Modal'
 import { PersonAvatar } from '../PersonAvatar'
 
 import { AnswerOptionsEditor } from './AnswerOptionsEditor'
@@ -67,6 +69,7 @@ type OpeningState = (typeof OPENING_STATES)[number]
 export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [mode, setMode] = useState<Mode>('new')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -268,7 +271,10 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
             <PersonPicker
               show={picking}
               busy={busy}
-              already={who.map((person) => person.uid)}
+              nested
+              // Whoever opens the task is on it as its creator already, so the
+              // list offers neither them nor anybody picked so far.
+              already={[...who.map((person) => person.uid), ...(user === null ? [] : [user.uid])]}
               onPick={(person) => {
                 setWho((current) => [...current, person])
                 setPicking(false)

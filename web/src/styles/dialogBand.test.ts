@@ -97,4 +97,28 @@ describe('dialog band', () => {
   it('stays under the toast stack, so a toast raised from a dialog lands on top', () => {
     expect(band.modal).toBeLessThan(layer(tokens, /\.kk-toast-stack\s*(?=\{)/, 'z-index'))
   })
+
+  describe('a dialog opened from another dialog', () => {
+    const nested = {
+      backdrop: layer(
+        app,
+        /\.modal-backdrop\.kk-modal-backdrop--nested\s*(?=\{)/,
+        '--bs-backdrop-zindex',
+      ),
+      modal: layer(app, /\.modal\.kk-modal--nested\s*(?=\{)/, '--bs-modal-zindex'),
+    }
+
+    it('dims the parent dialog: its backdrop paints over the band', () => {
+      expect(nested.backdrop).toBeGreaterThan(band.modal)
+    })
+
+    it('paints the nested dialog over its own backdrop', () => {
+      expect(nested.modal).toBeGreaterThan(nested.backdrop)
+    })
+
+    it('stays under the PWA note and the toast stack', () => {
+      expect(nested.modal).toBeLessThan(layer(app, /:root\s*(?=\{)/, '--kk-pwa-status-z'))
+      expect(nested.modal).toBeLessThan(layer(tokens, /\.kk-toast-stack\s*(?=\{)/, 'z-index'))
+    })
+  })
 })

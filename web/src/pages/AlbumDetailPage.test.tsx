@@ -122,7 +122,7 @@ vi.mock('react-virtuoso', () => ({
 
 vi.mock('../services/photos', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/photos')>()
-  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn() }
+  return { ...actual, fetchPhotos: vi.fn(), fetchTimeline: vi.fn(), downloadPhotosZip: vi.fn() }
 })
 
 vi.mock('../services/organize', async (importOriginal) => {
@@ -158,7 +158,8 @@ vi.mock('../services/bulk', async (importOriginal) => {
   return { ...actual, bulkUpdatePhotos: vi.fn() }
 })
 
-const { fetchPhotos, fetchTimeline } = await import('../services/photos')
+const { fetchPhotos, fetchTimeline, downloadPhotosZip } = await import('../services/photos')
+const downloadZipMock = vi.mocked(downloadPhotosZip)
 const { bulkUpdatePhotos } = await import('../services/bulk')
 const { fetchFeaturedAlbums, featureAlbum, unfeatureAlbum } = await import('../services/featured')
 const featuredListMock = vi.mocked(fetchFeaturedAlbums)
@@ -490,6 +491,30 @@ describe('AlbumDetailPage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('downloads the album from the menu and tells a failure on the page', async () => {
+    fetchAlbumMock.mockResolvedValue(album())
+    fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
+    downloadZipMock.mockRejectedValue(new ApiError(413, 'too many'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Holidays' })
+    await user.click(
+      within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Download ZIP' }),
+    )
+
+    expect(downloadZipMock).toHaveBeenCalledWith({
+      photoUids: undefined,
+      albumUid: 'al_1',
+      name: 'Holidays',
+    })
+    // The menu has closed behind the item, so the failure is told on the page.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many photos to download at once.',
+    )
+    expect(overflowMenu()).not.toHaveClass('show')
+  })
+
   it('hides mutation controls from viewers', async () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
@@ -500,11 +525,11 @@ describe('AlbumDetailPage', () => {
     // The "…" menu is a different place for the actions, not a way around RBAC:
     // a viewer's holds the download alone.
     const menu = await openHeaderMenu(userEvent.setup())
-    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Download ZIP' })).toBeInTheDocument()
     expect(
-      within(menu).queryByRole('link', { name: 'Share an upload link' }),
+      within(menu).queryByRole('menuitem', { name: 'Share an upload link' }),
     ).not.toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
     expect(menu.querySelector('.dropdown-divider')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'More edits' })).not.toBeInTheDocument()
@@ -518,9 +543,9 @@ describe('AlbumDetailPage', () => {
     await screen.findByRole('heading', { name: 'Holidays' })
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
     const menu = await openHeaderMenu(userEvent.setup())
-    expect(within(menu).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
     // Sharing an upload link opens the create form with this album chosen.
-    expect(within(menu).getByRole('link', { name: 'Share an upload link' })).toHaveAttribute(
+    expect(within(menu).getByRole('menuitem', { name: 'Share an upload link' })).toHaveAttribute(
       'href',
       `/upload-links?album=${album().uid}`,
     )
@@ -537,7 +562,7 @@ describe('AlbumDetailPage', () => {
 
     await screen.findByRole('heading', { name: 'Holidays' })
     // The menu item opens the dialog; nothing is deleted until it is confirmed.
-    await user.click(within(await openHeaderMenu(user)).getByRole('button', { name: 'Delete' }))
+    await user.click(within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/Delete the album "Holidays"/)).toBeInTheDocument()
     expect(deleteAlbumMock).not.toHaveBeenCalled()
@@ -556,7 +581,7 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     await screen.findByRole('heading', { name: 'Holidays' })
-    await user.click(within(await openHeaderMenu(user)).getByRole('button', { name: 'Delete' }))
+    await user.click(within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Delete' }))
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
@@ -727,10 +752,12 @@ describe('AlbumDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
 
     const menu = await openHeaderMenu(user)
-    await within(menu).findByRole('link', { name: 'Faces (13)' })
+    await within(menu).findByRole('menuitem', { name: 'Faces (13)' })
     // In order: the occasional actions, then — behind a divider, in danger
     // styling — the delete, last.
-    const items = [...menu.querySelectorAll('a, button')].map((item) => item.textContent)
+    const items = within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent)
     expect(items).toEqual([
       'Faces (13)',
       'Download ZIP',
@@ -738,8 +765,8 @@ describe('AlbumDetailPage', () => {
       'Share an upload link',
       'Delete',
     ])
-    const remove = within(menu).getByRole('button', { name: 'Delete' })
-    expect(remove).toHaveClass('btn-outline-danger')
+    const remove = within(menu).getByRole('menuitem', { name: 'Delete' })
+    expect(remove).toHaveClass('dropdown-item', 'text-danger')
     const divider = menu.querySelector('.dropdown-divider')
     expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
@@ -835,11 +862,14 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     // Every folded action is reachable from the menu, and the destructive one
     // sits behind a divider in danger styling rather than next to "Edit".
     const menu = overflowMenu()
-    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Download ZIP' })).toBeInTheDocument()
     // Edit leads the menu, as one item among the others rather than a filled block.
-    expect(within(menu).getByRole('button', { name: 'Edit' })).toHaveClass('btn-outline-secondary')
-    const remove = within(menu).getByRole('button', { name: 'Delete' })
-    expect(remove).toHaveClass('btn-outline-danger')
+    const edit = within(menu).getByRole('menuitem', { name: 'Edit' })
+    expect(edit).toHaveClass('dropdown-item')
+    expect(edit).not.toHaveClass('btn')
+    expect(within(menu).getAllByRole('menuitem')[0]).toBe(edit)
+    const remove = within(menu).getByRole('menuitem', { name: 'Delete' })
+    expect(remove).toHaveClass('dropdown-item', 'text-danger')
     const divider = menu.querySelector('.dropdown-divider')
     expect(divider).not.toBeNull()
     expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -858,7 +888,7 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     await waitFor(() => {
       expect(overflowMenu()).toHaveClass('show')
     })
-    await user.click(within(overflowMenu()).getByRole('button', { name: 'Delete' }))
+    await user.click(within(overflowMenu()).getByRole('menuitem', { name: 'Delete' }))
 
     // Collapsing the action changed nothing about it: the dialog still guards
     // the deletion, and the menu steps out of the way behind it.
@@ -887,7 +917,7 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     await waitFor(() => {
       expect(overflowMenu()).toHaveClass('show')
     })
-    await user.click(within(overflowMenu()).getByRole('button', { name: 'Edit' }))
+    await user.click(within(overflowMenu()).getByRole('menuitem', { name: 'Edit' }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText('Title')).toHaveValue('Holidays')
@@ -909,9 +939,9 @@ describe('AlbumDetailPage on a narrow (phone) screen', () => {
     // The menu is a different place to put the actions, not a way around RBAC:
     // a viewer's overflow holds the download alone.
     const menu = overflowMenu()
-    expect(within(menu).getByRole('button', { name: 'Download ZIP' })).toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
-    expect(within(menu).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Download ZIP' })).toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument()
     expect(menu.querySelector('.dropdown-divider')).toBeNull()
   })
 })
@@ -941,7 +971,7 @@ describe('AlbumDetailPage face tagging', () => {
     await screen.findByRole('link', { name: 'a.jpg' })
     // An occasional action: it waits in the header's "…" menu.
     const menu = await openHeaderMenu(userEvent.setup())
-    const link = await within(menu).findByRole('link', { name: 'Faces (12)' })
+    const link = await within(menu).findByRole('menuitem', { name: 'Faces (12)' })
     expect(link).toHaveAttribute('href', '/albums/al_1/faces')
   })
 
@@ -953,7 +983,7 @@ describe('AlbumDetailPage face tagging', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     const menu = await openHeaderMenu(userEvent.setup())
-    expect(within(menu).queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: /^Faces/ })).not.toBeInTheDocument()
   })
 
   it('keeps the run away from a viewer, who may not name anybody', async () => {
@@ -964,7 +994,7 @@ describe('AlbumDetailPage face tagging', () => {
 
     await screen.findByRole('link', { name: 'a.jpg' })
     const menu = await openHeaderMenu(userEvent.setup())
-    expect(within(menu).queryByRole('link', { name: /^Faces/ })).not.toBeInTheDocument()
+    expect(within(menu).queryByRole('menuitem', { name: /^Faces/ })).not.toBeInTheDocument()
   })
 })
 
@@ -1231,7 +1261,7 @@ describe('AlbumDetailPage featuring on the homepage', () => {
 
     await screen.findByRole('heading', { name: 'Holidays' })
     await user.click(
-      within(await openHeaderMenu(user)).getByRole('button', { name: 'Feature on homepage' }),
+      within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Feature on homepage' }),
     )
     const dialog = await screen.findByRole('dialog')
     const field = within(dialog).getByLabelText('Feature until')
@@ -1246,8 +1276,8 @@ describe('AlbumDetailPage featuring on the homepage', () => {
     // The header now says until when, and the menu offers to extend or stop.
     expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
     const menu = await openHeaderMenu(user)
-    expect(within(menu).getByRole('button', { name: 'Extend feature' })).toBeInTheDocument()
-    expect(within(menu).getByRole('button', { name: 'Stop featuring' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Extend feature' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Stop featuring' })).toBeInTheDocument()
   })
 
   it('badges a featured album and stops featuring it from the menu', async () => {
@@ -1259,7 +1289,7 @@ describe('AlbumDetailPage featuring on the homepage', () => {
 
     expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
     await user.click(
-      within(await openHeaderMenu(user)).getByRole('button', { name: 'Stop featuring' }),
+      within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Stop featuring' }),
     )
     await waitFor(() => {
       expect(unfeatureMock).toHaveBeenCalledWith('al_1')
@@ -1278,7 +1308,7 @@ describe('AlbumDetailPage featuring on the homepage', () => {
 
     await screen.findByText(/Featured until/)
     await user.click(
-      within(await openHeaderMenu(user)).getByRole('button', { name: 'Extend feature' }),
+      within(await openHeaderMenu(user)).getByRole('menuitem', { name: 'Extend feature' }),
     )
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => {
@@ -1294,8 +1324,8 @@ describe('AlbumDetailPage featuring on the homepage', () => {
 
     expect(await screen.findByText(/Featured until/)).toBeInTheDocument()
     const menu = await openHeaderMenu(user)
-    expect(within(menu).queryByRole('button', { name: 'Extend feature' })).toBeNull()
-    expect(within(menu).queryByRole('button', { name: 'Stop featuring' })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: 'Extend feature' })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: 'Stop featuring' })).toBeNull()
   })
 
   it('offers no featuring for a machine-made album', async () => {
@@ -1306,6 +1336,6 @@ describe('AlbumDetailPage featuring on the homepage', () => {
 
     await screen.findByRole('heading')
     const menu = await openHeaderMenu(user)
-    expect(within(menu).queryByRole('button', { name: 'Feature on homepage' })).toBeNull()
+    expect(within(menu).queryByRole('menuitem', { name: 'Feature on homepage' })).toBeNull()
   })
 })

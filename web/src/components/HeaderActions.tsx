@@ -1,35 +1,74 @@
 import { type ReactNode, useState } from 'react'
+import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 
-import { Icon } from './Icon'
+import { Icon, type IconName } from './Icon'
+
+/**
+ * One action of a page header that may end up in the "…" menu. It is described
+ * rather than rendered, because the same action is a button on the header row
+ * of a wide screen and a menu item (`Dropdown.Item`, `role="menuitem"`) on a
+ * phone — and a ready-made button dropped into a menu is a stack of outlined
+ * blocks the arrow keys cannot walk.
+ */
+export interface HeaderAction {
+  /** Stable React key, unique within the group. */
+  key: string
+  /** The visible label. */
+  label: ReactNode
+  /** An optional leading glyph. */
+  icon?: IconName
+  /** Runs the action. Ignored when `to` is set. */
+  onSelect?: () => void
+  /**
+   * An in-app address: the action is a link (openable in a new tab, copyable)
+   * rather than a button.
+   */
+  to?: string
+  disabled?: boolean
+  /**
+   * Bootstrap variant of the action when it stands on the header row (a
+   * secondary action on a wide screen); a menu item is always a plain item.
+   * Defaults to `outline-secondary`.
+   */
+  inlineVariant?: string
+}
+
+/**
+ * A slot of an action list: an action, or what a conditionally rendered one
+ * (`canCurate && {…}`) evaluates to when it is not there.
+ */
+export type HeaderActionSlot = HeaderAction | false | null | undefined
 
 /** Props for {@link HeaderActions}. */
 export interface HeaderActionsProps {
   /**
    * The one or two actions that stay directly reachable at every width. Keep the
    * list short — everything here has to fit beside the page title on a phone.
+   * They never enter the menu, so they are passed as ready-made nodes.
    */
   primary?: readonly ReactNode[]
   /**
-   * Secondary actions: inline on desktop, folded into the "…" overflow menu on a
-   * phone (where they lead the menu).
+   * Secondary actions: inline buttons on desktop, folded into the "…" overflow
+   * menu on a phone (where they lead the menu).
    */
-  secondary?: readonly ReactNode[]
+  secondary?: readonly HeaderActionSlot[]
   /**
    * Occasional actions that live in the "…" overflow menu **at every width**, so
    * a desktop header shows only its one or two real actions instead of a row of
    * equal buttons nothing stands out from.
    */
-  overflow?: readonly ReactNode[]
+  overflow?: readonly HeaderActionSlot[]
   /**
    * Destructive actions (delete and friends): always in the "…" overflow menu,
-   * at every width, last and behind a divider so a mis-tap cannot land on them
-   * from the neutral actions above.
+   * at every width, last, in the danger colour and behind a divider so a mis-tap
+   * cannot land on them from the neutral actions above.
    */
-  destructive?: readonly ReactNode[]
+  destructive?: readonly HeaderActionSlot[]
   /**
    * DOM id of the overflow toggle. The default suits a page with one action
    * group; give a second group on the same page an id of its own.
@@ -41,8 +80,61 @@ export interface HeaderActionsProps {
  * Drops the slots a caller rendered conditionally: `{canWrite && <Button/>}`
  * yields `false`, and an all-`false` list must not raise an empty menu.
  */
-function present(nodes: readonly ReactNode[] | undefined): ReactNode[] {
-  return (nodes ?? []).filter((node) => node !== null && node !== undefined && node !== false)
+function present<T>(nodes: readonly (T | false | null | undefined)[] | undefined): T[] {
+  return (nodes ?? []).filter(
+    (node): node is T => node !== null && node !== undefined && node !== false,
+  )
+}
+
+/** The label with its optional glyph in front. */
+function content(action: HeaderAction): ReactNode {
+  return (
+    <>
+      {action.icon !== undefined && <Icon name={action.icon} className="me-2" />}
+      {action.label}
+    </>
+  )
+}
+
+/** A secondary action standing on the header row of a wide screen. */
+function InlineAction({ action }: { action: HeaderAction }) {
+  const variant = action.inlineVariant ?? 'outline-secondary'
+  if (action.to !== undefined) {
+    return (
+      <Link to={action.to} className={`btn btn-${variant} btn-sm`}>
+        {content(action)}
+      </Link>
+    )
+  }
+  return (
+    <Button variant={variant} size="sm" disabled={action.disabled} onClick={action.onSelect}>
+      {content(action)}
+    </Button>
+  )
+}
+
+/** An action as an item of the "…" menu. */
+function MenuAction({ action, danger }: { action: HeaderAction; danger?: boolean }) {
+  const className = danger === true ? 'text-danger' : undefined
+  if (action.to !== undefined) {
+    return (
+      <Dropdown.Item as={Link} to={action.to} role="menuitem" className={className}>
+        {content(action)}
+      </Dropdown.Item>
+    )
+  }
+  return (
+    <Dropdown.Item
+      as="button"
+      type="button"
+      role="menuitem"
+      className={className}
+      disabled={action.disabled}
+      onClick={action.onSelect}
+    >
+      {content(action)}
+    </Dropdown.Item>
+  )
 }
 
 /**
@@ -53,15 +145,12 @@ function present(nodes: readonly ReactNode[] | undefined): ReactNode[] {
  * so the header keeps to one compact row instead of wrapping into a two- or
  * three-row block of 44px targets.
  *
- * Actions are passed as ready-made nodes (arrays, so a conditionally rendered
- * `false` can be told apart from a real action) — the group only decides *where*
- * they are rendered, never how they look or what they do, which keeps a page's
- * RBAC gating and button styling exactly where it already was. Every entry needs
- * a stable `key`, as any array of React children does.
- *
- * The menu closes itself on any click inside: a plain button raises no
- * `select` event that react-bootstrap would act on, and an overflow menu left
- * standing open behind the modal its item just opened reads as a stuck page.
+ * Everything that may enter the menu is a {@link HeaderAction} descriptor (in
+ * an array, so a conditionally rendered `false` can be told apart from a real
+ * action): the group renders it as a button on the row or as a proper menu
+ * item — `role="menuitem"`, walked with the arrow keys, closing the menu when
+ * chosen — while the page keeps its RBAC gating and its handlers where they
+ * already were.
  */
 export function HeaderActions({
   primary,
@@ -86,7 +175,9 @@ export function HeaderActions({
   return (
     <div className="d-flex gap-1 flex-wrap align-items-center">
       {primaryItems}
-      {inlineItems}
+      {inlineItems.map((action) => (
+        <InlineAction key={action.key} action={action} />
+      ))}
       {hasMenu && (
         <Dropdown align="end" show={open} onToggle={setOpen}>
           <Dropdown.Toggle
@@ -99,19 +190,14 @@ export function HeaderActions({
           >
             <Icon name="three-dots" />
           </Dropdown.Toggle>
-          <Dropdown.Menu
-            className="kk-header-overflow-menu"
-            onClick={() => {
-              setOpen(false)
-            }}
-          >
-            {menuItems.length > 0 && <div className="d-grid gap-1">{menuItems}</div>}
-            {destructiveItems.length > 0 && (
-              <>
-                {menuItems.length > 0 && <Dropdown.Divider />}
-                <div className="d-grid gap-1">{destructiveItems}</div>
-              </>
-            )}
+          <Dropdown.Menu className="kk-header-overflow-menu" role="menu" aria-labelledby={id}>
+            {menuItems.map((action) => (
+              <MenuAction key={action.key} action={action} />
+            ))}
+            {menuItems.length > 0 && destructiveItems.length > 0 && <Dropdown.Divider />}
+            {destructiveItems.map((action) => (
+              <MenuAction key={action.key} action={action} danger />
+            ))}
           </Dropdown.Menu>
         </Dropdown>
       )}

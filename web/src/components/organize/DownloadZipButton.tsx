@@ -1,10 +1,8 @@
-import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
-import { ApiError } from '../../services/auth'
-import { downloadPhotosZip } from '../../services/photos'
+import { useZipDownload } from '../../hooks/useZipDownload'
 import { Icon } from '../Icon'
 
 /** Props for {@link DownloadZipButton}. */
@@ -21,16 +19,11 @@ export interface DownloadZipButtonProps {
   variant?: string
 }
 
-/** The lifecycle of a ZIP download request, driving the button and status line. */
-type Status = { kind: 'idle' } | { kind: 'pending' } | { kind: 'error'; message: string }
-
 /**
  * A toolbar action that downloads a selection of photos — or a whole album — as a
  * single ZIP of originals. While the archive streams it shows a spinner and
- * disables itself; on failure it explains why (a 413 means the request was over
- * the per-download cap, anything else a generic failure). The browser download is
- * triggered inside the service, so this component only reflects pending/error
- * state. It disables itself when there is nothing to download.
+ * disables itself; on failure it explains why (see `useZipDownload`). It disables
+ * itself when there is nothing to download.
  */
 export function DownloadZipButton({
   photoUids,
@@ -40,32 +33,14 @@ export function DownloadZipButton({
   variant,
 }: DownloadZipButtonProps) {
   const { t } = useTranslation()
-  const [status, setStatus] = useState<Status>({ kind: 'idle' })
-
-  const run = async () => {
-    setStatus({ kind: 'pending' })
-    try {
-      await downloadPhotosZip({ photoUids, albumUid, name })
-      setStatus({ kind: 'idle' })
-    } catch (err) {
-      const message =
-        err instanceof ApiError && err.status === 413
-          ? t('download.zipTooMany')
-          : t('download.zipError')
-      setStatus({ kind: 'error', message })
-    }
-  }
-
-  const pending = status.kind === 'pending'
-  const nothingToDownload =
-    albumUid === undefined && (photoUids === undefined || photoUids.length === 0)
+  const { run, pending, error, empty } = useZipDownload({ photoUids, albumUid, name })
 
   return (
     <>
       <Button
         variant={variant ?? 'outline-light'}
         size="sm"
-        disabled={disabled === true || pending || nothingToDownload}
+        disabled={disabled === true || pending || empty}
         onClick={() => {
           void run()
         }}
@@ -77,9 +52,9 @@ export function DownloadZipButton({
         )}
         {pending ? t('download.zipPending') : t('download.zip')}
       </Button>
-      {status.kind === 'error' && (
+      {error !== null && (
         <span className="text-danger small ms-2" role="alert">
-          {status.message}
+          {error}
         </span>
       )}
     </>

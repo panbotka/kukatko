@@ -52,6 +52,13 @@ export default tseslint.config(
               message:
                 "Import the app's Modal (src/components/Modal.tsx) instead: it translates the close button's accessible name.",
             },
+            {
+              // The barrel is the same modal by another door.
+              name: 'react-bootstrap',
+              importNames: ['Modal'],
+              message:
+                "Import the app's Modal (src/components/Modal.tsx) instead: it translates the close button's accessible name.",
+            },
           ],
         },
       ],

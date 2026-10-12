@@ -2,11 +2,12 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Button from 'react-bootstrap/Button'
 import { I18nextProvider } from 'react-i18next'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 
-import { HeaderActions } from './HeaderActions'
+import { type HeaderAction, HeaderActions } from './HeaderActions'
 
 /**
  * Points `window.matchMedia` at a fixed phone/desktop answer. The shared test
@@ -26,29 +27,31 @@ function mockViewport(narrow: boolean): void {
   }))
 }
 
-/** A labelled button standing in for a page's real header action. */
-function action(label: string, onClick?: () => void, danger = false) {
+/** A labelled button standing in for a page's real primary action. */
+function primaryButton(label: string) {
   return (
-    <Button
-      key={label}
-      size="sm"
-      variant={danger ? 'outline-danger' : 'outline-secondary'}
-      onClick={onClick}
-    >
+    <Button key={label} size="sm" variant="outline-secondary">
       {label}
     </Button>
   )
 }
 
+/** A described header action standing in for a page's real one. */
+function action(label: string, onSelect?: () => void): HeaderAction {
+  return { key: label, label, onSelect }
+}
+
 function renderGroup(onDelete?: () => void) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <HeaderActions
-        primary={[action('Slideshow')]}
-        secondary={[action('Edit')]}
-        overflow={[action('Download'), action('Share')]}
-        destructive={[action('Delete', onDelete, true)]}
-      />
+      <MemoryRouter>
+        <HeaderActions
+          primary={[primaryButton('Slideshow')]}
+          secondary={[action('Edit')]}
+          overflow={[action('Download'), { key: 'share', label: 'Share', to: '/share' }]}
+          destructive={[action('Delete', onDelete)]}
+        />
+      </MemoryRouter>
     </I18nextProvider>,
   )
 }
@@ -98,8 +101,8 @@ describe('HeaderActions on a wide screen', () => {
 
     const menu = await openMenu(user)
     const items = within(menu)
-      .getAllByRole('button')
-      .map((button) => button.textContent)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent)
     expect(items).toEqual(['Download', 'Share', 'Delete'])
     // The secondary action is not duplicated into the menu on a wide screen.
     expect(within(menu).queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
@@ -112,8 +115,8 @@ describe('HeaderActions on a wide screen', () => {
     const menu = await openMenu(user)
     const divider = menu.querySelector('.dropdown-divider')
     expect(divider).not.toBeNull()
-    const remove = within(menu).getByRole('button', { name: 'Delete' })
-    expect(remove).toHaveClass('btn-outline-danger')
+    const remove = within(menu).getByRole('menuitem', { name: 'Delete' })
+    expect(remove).toHaveClass('dropdown-item', 'text-danger')
     expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
@@ -121,16 +124,13 @@ describe('HeaderActions on a wide screen', () => {
     const user = userEvent.setup()
     render(
       <I18nextProvider i18n={i18n}>
-        <HeaderActions
-          primary={[action('Slideshow')]}
-          destructive={[action('Delete', undefined, true)]}
-        />
+        <HeaderActions primary={[primaryButton('Slideshow')]} destructive={[action('Delete')]} />
       </I18nextProvider>,
     )
 
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
     const menu = await openMenu(user)
-    expect(within(menu).getByRole('button', { name: 'Delete' })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
     expect(menu.querySelector('.dropdown-divider')).toBeNull()
   })
 
@@ -138,7 +138,7 @@ describe('HeaderActions on a wide screen', () => {
     render(
       <I18nextProvider i18n={i18n}>
         <HeaderActions
-          primary={[action('Slideshow')]}
+          primary={[primaryButton('Slideshow')]}
           secondary={[action('Edit')]}
           overflow={[false]}
           destructive={[false]}
@@ -170,9 +170,11 @@ describe('HeaderActions on a wide screen', () => {
     })
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
-    // The menu follows its toggle in the DOM, so Tab walks into its items.
-    await user.tab()
-    expect(within(overflowMenu()).getByRole('button', { name: 'Download' })).toHaveFocus()
+    // Opened from the keyboard, the menu hands focus to its first item and is
+    // walked with the arrow keys from there, like any menu.
+    expect(within(overflowMenu()).getByRole('menuitem', { name: 'Download' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(within(overflowMenu()).getByRole('menuitem', { name: 'Share' })).toHaveFocus()
 
     // Escape closes it again and hands focus back to the toggle.
     await user.keyboard('{Escape}')
@@ -181,17 +183,69 @@ describe('HeaderActions on a wide screen', () => {
     })
     expect(toggle).toHaveFocus()
 
-    // And an item is activated with Enter like any button.
+    // And an item is activated with Enter, which closes the menu behind it.
     await user.keyboard('{Enter}')
     await waitFor(() => {
       expect(overflowMenu()).toHaveClass('show')
     })
-    await user.tab()
-    await user.tab()
-    await user.tab()
-    expect(within(overflowMenu()).getByRole('button', { name: 'Delete' })).toHaveFocus()
+    await user.keyboard('{ArrowDown}{ArrowDown}')
+    expect(within(overflowMenu()).getByRole('menuitem', { name: 'Delete' })).toHaveFocus()
     await user.keyboard('{Enter}')
     expect(onDelete).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(overflowMenu()).not.toHaveClass('show')
+    })
+  })
+
+  it('renders the menu as a menu of items, not a stack of buttons', async () => {
+    const user = userEvent.setup()
+    renderGroup()
+
+    const menu = await openMenu(user)
+    expect(menu).toHaveAttribute('role', 'menu')
+    expect(menu).toHaveAttribute('aria-labelledby', 'header-overflow')
+    expect(menu.querySelector('.btn')).toBeNull()
+    for (const item of within(menu).getAllByRole('menuitem')) {
+      expect(item).toHaveClass('dropdown-item')
+    }
+    // An action with an address stays a real link, openable in a new tab.
+    expect(within(menu).getByRole('menuitem', { name: 'Share' })).toHaveAttribute('href', '/share')
+  })
+
+  it('renders a secondary action as a button of its own variant on the row', () => {
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <HeaderActions secondary={[{ key: 'edit', label: 'Edit', inlineVariant: 'primary' }]} />
+        </MemoryRouter>
+      </I18nextProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Edit' })).toHaveClass('btn-primary', 'btn-sm')
+  })
+
+  it('skips a disabled item when walking the menu', async () => {
+    const user = userEvent.setup()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <MemoryRouter>
+          <HeaderActions
+            overflow={[{ key: 'busy', label: 'Busy', disabled: true }, action('Share')]}
+          />
+        </MemoryRouter>
+      </I18nextProvider>,
+    )
+
+    const menu = await openMenu(user)
+    // react-bootstrap marks a disabled item with `aria-disabled` and the
+    // `disabled` class, which is also what keeps the arrow keys off it.
+    expect(within(menu).getByRole('menuitem', { name: 'Busy' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    within(menu).getByRole('menuitem', { name: 'Share' }).focus()
+    await user.keyboard('{ArrowUp}')
+    expect(within(menu).getByRole('menuitem', { name: 'Share' })).toHaveFocus()
   })
 })
 
@@ -216,8 +270,8 @@ describe('HeaderActions on a narrow (phone) screen', () => {
     })
     // The secondary action leads, then the occasional ones, the destructive last.
     const items = within(overflowMenu())
-      .getAllByRole('button')
-      .map((button) => button.textContent)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent)
     expect(items).toEqual(['Edit', 'Download', 'Share', 'Delete'])
   })
 
@@ -236,8 +290,8 @@ describe('HeaderActions on a narrow (phone) screen', () => {
     // sits between them, and the button itself is styled as destructive.
     const divider = menu.querySelector('.dropdown-divider')
     expect(divider).not.toBeNull()
-    const remove = within(menu).getByRole('button', { name: 'Delete' })
-    expect(remove).toHaveClass('btn-outline-danger')
+    const remove = within(menu).getByRole('menuitem', { name: 'Delete' })
+    expect(remove).toHaveClass('dropdown-item', 'text-danger')
     expect(divider?.compareDocumentPosition(remove)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
@@ -251,7 +305,7 @@ describe('HeaderActions on a narrow (phone) screen', () => {
     await waitFor(() => {
       expect(overflowMenu()).toHaveClass('show')
     })
-    await user.click(within(overflowMenu()).getByRole('button', { name: 'Delete' }))
+    await user.click(within(overflowMenu()).getByRole('menuitem', { name: 'Delete' }))
 
     expect(onDelete).toHaveBeenCalledTimes(1)
     // A menu left standing open behind the dialog its item just raised reads as
@@ -268,7 +322,11 @@ describe('HeaderActions on a narrow (phone) screen', () => {
         {/* What a viewer sees on an empty album: the conditional slots render
             `false`, and an overflow button opening an empty menu is worse than
             no button at all. */}
-        <HeaderActions primary={[action('Slideshow')]} secondary={[false]} destructive={[false]} />
+        <HeaderActions
+          primary={[primaryButton('Slideshow')]}
+          secondary={[false]}
+          destructive={[false]}
+        />
       </I18nextProvider>,
     )
 

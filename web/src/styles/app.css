@@ -87,6 +87,8 @@
        1083  offcanvas           │    Bootstrap's dialog band, lifted off its own
        1084  modal backdrop      │    1040–1055 (see "The dialog band" below)
        1085  modal               ┘
+       1086  nested modal backdrop ┐  a dialog opened from another dialog
+       1087  nested modal          ┘  (`kk-modal--nested`, see below)
        1090  PWA offline/update note  ambient, still under…
        1100  toast stack              `.kk-toast-stack` (tokens.css)
 
@@ -116,6 +118,8 @@
   --kk-offcanvas-z: 1083;
   --kk-modal-backdrop-z: 1084;
   --kk-modal-z: 1085;
+  --kk-modal-nested-backdrop-z: 1086;
+  --kk-modal-nested-z: 1087;
   --kk-pwa-status-z: 1090;
 }
 
@@ -133,6 +137,20 @@
 
 .modal-backdrop {
   --bs-backdrop-zindex: var(--kk-modal-backdrop-z);
+}
+
+/* A dialog opened from another dialog (the new-task modal's "who to ask"
+   picker): Bootstrap gives every modal the same layer, so the second one's
+   backdrop painted *under* the first dialog and left its fields showing, undimmed,
+   around the picker. The nested pair takes the two layers above the band — its
+   backdrop over the parent dialog, the dialog over its backdrop. Both classes
+   are qualified so they beat the band's rules above on specificity, not on order. */
+.modal.kk-modal--nested {
+  --bs-modal-zindex: var(--kk-modal-nested-z);
+}
+
+.modal-backdrop.kk-modal-backdrop--nested {
+  --bs-backdrop-zindex: var(--kk-modal-nested-backdrop-z);
 }
 
 /* ---- Modals and the safe area ------------------------------------------
@@ -653,15 +671,12 @@ body {
   display: none;
 }
 
-/* The menu stacks its actions as full-width buttons (the inner `d-grid`), so it
-   needs a minimum width, and its labels stay on one line — the longest of them
-   ("Sdílet odkaz pro nahrávání") widens the menu rather than wrapping in it. */
+/* The menu lists its actions as plain dropdown items, whose labels Bootstrap
+   keeps on one line — the longest of them ("Sdílet odkaz pro nahrávání") widens
+   the menu rather than wrapping in it; the minimum width keeps a short menu
+   from shrinking to its one word. */
 .kk-header-overflow-menu {
   min-width: 12rem;
-}
-
-.kk-header-overflow-menu .btn {
-  white-space: nowrap;
 }
 
 /* A bare glyph is the narrowest control the header has (~34px). The app-wide

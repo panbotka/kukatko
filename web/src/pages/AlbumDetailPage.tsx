@@ -4,7 +4,7 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Offcanvas from 'react-bootstrap/Offcanvas'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { type ListRange } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
@@ -26,17 +26,16 @@ import {
 import { AlbumEditModal } from '../components/organize/AlbumEditModal'
 import { FeatureAlbumModal } from '../components/organize/FeatureAlbumModal'
 import { type BatchExtraAction, BatchActionBar } from '../components/organize/BatchActionBar'
-import { DownloadZipButton } from '../components/organize/DownloadZipButton'
 import { CommentsPanel } from '../components/photo/CommentsPanel'
 import { SlideshowStart } from '../components/slideshow/SlideshowStart'
 import { useAlbumFaceCount } from '../hooks/useAlbumFaces'
 import { useBulkEdit } from '../hooks/useBulkEdit'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useGridScrollMemory } from '../hooks/useGridScrollMemory'
-import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useUploaders } from '../hooks/useUploaders'
 import { useWindowedPhotos } from '../hooks/useWindowedPhotos'
+import { useZipDownload } from '../hooks/useZipDownload'
 import { detailQueryString } from '../lib/detailView'
 import { formatFeaturedUntil, isFeatured } from '../lib/featured'
 import { gridScrollKey } from '../lib/gridScroll'
@@ -190,8 +189,12 @@ export function AlbumDetailPage() {
   // into the tagging run and the reason the button is there at all: an album
   // where everybody is named offers nothing to do, so it offers no button.
   const unnamedFaces = useAlbumFaceCount(uid)
-  // Where Edit sits: on the header row (filled) or in the phone's "…" menu.
-  const narrow = useIsNarrowViewport()
+  // The "…" menu's ZIP download. Its state lives here, not in the menu item,
+  // so a failure can be told on the page once the menu has closed.
+  const zip = useZipDownload({
+    albumUid: uid,
+    name: state.status === 'ready' ? state.album.title : undefined,
+  })
 
   // Hover-select: a curator's tiles carry the corner checkmark from the outset,
   // so the toolbar below keys off what is picked rather than an explicit mode.
@@ -472,93 +475,71 @@ export function AlbumDetailPage() {
               </Button>,
             ]}
             secondary={[
-              canCurate && (
-                <Button
-                  key="edit"
-                  // Filled on the header row; inside the phone's menu it is one
-                  // item among the others, not a blue block in a list.
-                  variant={narrow ? 'outline-secondary' : 'primary'}
-                  size="sm"
-                  onClick={() => {
-                    setEditing(true)
-                  }}
-                >
-                  {t('albumDetail.edit')}
-                </Button>
-              ),
+              canCurate && {
+                key: 'edit',
+                label: t('albumDetail.edit'),
+                // Filled on the header row; inside the phone's menu it is one
+                // item among the others.
+                inlineVariant: 'primary',
+                onSelect: () => {
+                  setEditing(true)
+                },
+              },
             ]}
             overflow={[
-              canCurate && unnamedFaces !== null && unnamedFaces > 0 && (
-                /* An anchor styled as a button, not a Button with an onClick:
-                   the run has an address of its own, so it must be openable in a
-                   new tab and copyable like every other link in the app. */
-                <Link
-                  key="faces"
-                  to={`/albums/${encodeURIComponent(uid)}/faces`}
-                  className="btn btn-outline-secondary btn-sm"
-                >
-                  <Icon name="person-bounding-box" className="me-1" />
-                  {t('albumDetail.faces', { n: unnamedFaces })}
-                </Link>
-              ),
-              total > 0 && (
-                <DownloadZipButton
-                  key="download"
-                  albumUid={uid}
-                  name={album.title}
-                  variant="outline-secondary"
-                />
-              ),
-              canFeature && (
-                <Button
-                  key="feature"
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={() => {
-                    setFeaturing(true)
-                  }}
-                >
-                  <Icon name="stars" className="me-1" />
-                  {featured ? t('featured.extend') : t('featured.feature')}
-                </Button>
-              ),
-              canFeature && featured && (
-                <Button
-                  key="unfeature"
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={() => void unfeature()}
-                >
-                  <Icon name="x-lg" className="me-1" />
-                  {t('featured.unfeature')}
-                </Button>
-              ),
-              canCurate && (
-                /* A link, not a button: the create form has an address of its
-                   own (/upload-links?album=…), opened with this album chosen. */
-                <Link
-                  key="uploadLink"
-                  to={newLinkForAlbum(uid)}
-                  className="btn btn-outline-secondary btn-sm"
-                >
-                  <Icon name="link-45deg" className="me-1" />
-                  {t('albumDetail.uploadLink')}
-                </Link>
-              ),
+              canCurate &&
+                unnamedFaces !== null &&
+                unnamedFaces > 0 && {
+                  // A link, not a button: the run has an address of its own, so
+                  // it must be openable in a new tab and copyable like every
+                  // other link in the app.
+                  key: 'faces',
+                  label: t('albumDetail.faces', { n: unnamedFaces }),
+                  icon: 'person-bounding-box',
+                  to: `/albums/${encodeURIComponent(uid)}/faces`,
+                },
+              total > 0 && {
+                key: 'download',
+                label: zip.pending ? t('download.zipPending') : t('download.zip'),
+                icon: 'box-arrow-in-down',
+                disabled: zip.pending,
+                onSelect: () => {
+                  void zip.run()
+                },
+              },
+              canFeature && {
+                key: 'feature',
+                label: featured ? t('featured.extend') : t('featured.feature'),
+                icon: 'stars',
+                onSelect: () => {
+                  setFeaturing(true)
+                },
+              },
+              canFeature &&
+                featured && {
+                  key: 'unfeature',
+                  label: t('featured.unfeature'),
+                  icon: 'x-lg',
+                  onSelect: () => void unfeature(),
+                },
+              canCurate && {
+                // A link, not a button: the create form has an address of its
+                // own (/upload-links?album=…), opened with this album chosen.
+                key: 'uploadLink',
+                label: t('albumDetail.uploadLink'),
+                icon: 'link-45deg',
+                to: newLinkForAlbum(uid),
+              },
             ]}
             destructive={[
-              canCurate && (
-                <Button
-                  key="delete"
-                  variant="outline-danger"
-                  size="sm"
-                  onClick={() => {
-                    setPendingDelete(true)
-                  }}
-                >
-                  {t('albumDetail.delete')}
-                </Button>
-              ),
+              canCurate && {
+                key: 'delete',
+                label: t('albumDetail.delete'),
+                icon: 'trash',
+                onSelect: () => {
+                  setPendingDelete(true)
+                },
+              },
             ]}
           />
         )}
@@ -574,6 +555,13 @@ export function AlbumDetailPage() {
       )}
 
       {actionError && <Alert variant="danger">{t('albumDetail.actionError')}</Alert>}
+      {/* The download is chosen from the "…" menu, which has closed by the time
+          it fails, so its failure is told here rather than inside the menu. */}
+      {zip.error !== null && (
+        <Alert variant="danger" role="alert">
+          {zip.error}
+        </Alert>
+      )}
 
       {/* An album is always chronological — the backend pins the sort key — so
           the selector offers the two directions and nothing else. */}
