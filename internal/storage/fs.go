@@ -255,6 +255,19 @@ func (s *FS) KeysWithPrefix(ctx context.Context, prefix string, yield func(key s
 	}
 }
 
+// KeySizes walks the storage root and yields the relative key and size of every
+// regular file under it, skipping the in-progress upload directory exactly as
+// Keys does. See the SizedKeyLister interface.
+func (s *FS) KeySizes(ctx context.Context, yield func(key string, size int64) error) error {
+	return s.Keys(ctx, func(key string) error {
+		info, err := os.Stat(filepath.Join(s.root, filepath.FromSlash(key)))
+		if err != nil {
+			return fmt.Errorf("storage: sizing %s: %w", key, err)
+		}
+		return yield(key, info.Size())
+	})
+}
+
 // walkBase returns the deepest directory under the root that can still contain
 // every key starting with prefix: the prefix's own parent directory, since the
 // prefix's last segment may name only part of a filename. An empty prefix, or one

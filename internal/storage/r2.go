@@ -448,6 +448,29 @@ func (r *R2) KeysWithPrefix(ctx context.Context, prefix string, yield func(key s
 	return nil
 }
 
+// KeySizes lists the whole bucket and yields every object's key with the size
+// the listing already reports, so sizing the store costs the listing's pages and
+// not one HEAD per object. Directory markers are skipped as in KeysWithPrefix.
+// See the SizedKeyLister interface.
+func (r *R2) KeySizes(ctx context.Context, yield func(key string, size int64) error) error {
+	listCtx, cancel := context.WithCancel(ctx)
+	// Cancelling drains minio-go's listing goroutine when yield stops early.
+	defer cancel()
+	opts := minio.ListObjectsOptions{Recursive: true}
+	for object := range r.client.ListObjects(listCtx, r.bucket, opts) {
+		if object.Err != nil {
+			return fmt.Errorf("storage: listing bucket %s: %w", r.bucket, object.Err)
+		}
+		if object.Key == "" || strings.HasSuffix(object.Key, "/") {
+			continue
+		}
+		if err := yield(object.Key, object.Size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // URL returns the signed, short-lived URL at which the edge Worker serves the
 // object at relPath, or the empty string when no media base URL is configured (in
 // which case the application serves the bytes itself). See Storage.URL.

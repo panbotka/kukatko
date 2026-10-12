@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	iofs "io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -411,6 +412,29 @@ func TestFSKeys_enumeratesEveryObject(t *testing.T) {
 	got := keysOf(t, fs)
 	if !slices.Equal(got, want) {
 		t.Errorf("Keys() = %v, want %v", got, want)
+	}
+}
+
+// TestFSKeySizes_reportsEverySize verifies KeySizes yields each stored object's
+// key with its byte size and, like Keys, never the in-progress upload directory.
+func TestFSKeySizes_reportsEverySize(t *testing.T) {
+	t.Parallel()
+	fs := newTestFS(t)
+
+	want := map[string]int64{"2024/05/a.jpg": 3, "thumb/aa/x.jpg": 7}
+	writeFileAt(t, filepath.Join(fs.root, "2024", "05", "a.jpg"), "abc")
+	writeFileAt(t, filepath.Join(fs.root, "thumb", "aa", "x.jpg"), "1234567")
+	writeFileAt(t, filepath.Join(fs.tmpDir, "half-written"), "staged")
+
+	got := map[string]int64{}
+	if err := fs.KeySizes(t.Context(), func(key string, size int64) error {
+		got[key] = size
+		return nil
+	}); err != nil {
+		t.Fatalf("KeySizes: %v", err)
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("KeySizes() = %v, want %v", got, want)
 	}
 }
 

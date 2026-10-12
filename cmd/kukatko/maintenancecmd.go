@@ -32,7 +32,8 @@ func newMaintenanceCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newMaintenanceScanCmd(), newMaintenanceRepairCmd(),
-		newMaintenanceNamelessCmd(), newMaintenanceResetCmd())
+		newMaintenanceNamelessCmd(), newMaintenanceResetCmd(),
+		newMaintenanceInventoryCmd(), newMaintenanceInventoryDiffCmd())
 	return cmd
 }
 

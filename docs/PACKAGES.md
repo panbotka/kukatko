@@ -15,7 +15,9 @@ to `## Package map` in `CLAUDE.md`.
   `index.html` with a 200, which it would try to parse as JSON), `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
-  embedded migration runner `Migrate`, pgvector types registered on every connection,
+  embedded migration runner `Migrate` — each file in its own transaction, logged as
+  `migration applied file=… duration_ms=…` when it commits, the per-file wall time the upgrade
+  outage estimate in `docs/MIGRATION_SAFETY.md` is measured from — pgvector types registered on every connection,
   **session time zone pinned to UTC** (`pinSessionTimeZone` sets the `timezone` startup runtime
   param, overriding the DSN) so SQL calendar arithmetic (`date_part('year', taken_at)`,
   `make_timestamptz`) shares one reference frame with the UTC boundaries the Go side builds —
@@ -721,6 +723,9 @@ to `## Package map` in `CLAUDE.md`.
   (`thumb/<aa>/<bb>/<cc>/<hash>_`) instead of paying a `Head` per size. An empty prefix enumerates everything,
   and both `Keys` implementations are now that call with `""`. A prefix nothing matches — or one naming an
   absent directory — yields nothing and is **not** an error.
+  **`SizedKeyLister`** (also optional, both backends) adds the size: `KeySizes(ctx, yield(key, size))` — `R2`
+  takes it from the listing itself (no `HEAD` per object), `FS` stats each walked file. Only the upgrade
+  inventory's storage check (`internal/inventory`) uses it.
   **Signed URLs** (`sign.go`, `URLSigner`): `https://<media_base_url>/<key>?exp=<unix>&sig=<hex>`,
   where `sig = HMAC-SHA256(secret, key + "\n" + exp)` — the signature covers both the key and the expiry, and the key is
   signed **unescaped** (the UTF-8 name is percent-encoded only when the path is rendered).
@@ -6161,6 +6166,29 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (`subjectLinks` in `reset.go`), and
     `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
     like a freshly migrated one.
+- **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
+  behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in
+  `docs/MIGRATION_SAFETY.md`). `Collect(ctx, pool, dir, store)` reads inside **one `READ ONLY REPEATABLE READ`
+  transaction** with the session in UTC and writes sorted, escaped TSV files: `counts.tsv` (every table of
+  `current_schema()`), `columns.tsv` (table, column, `udt_name`), `digests.tsv`, `photos.tsv`
+  (`uid|file_hash|file_path|file_size|archived_at` — the catalogue's soft delete is `archived_at`; there is no
+  `deleted_at`) and `users.tsv` (`uid|username|role|disabled`). It **never migrates**, so the new binary can
+  inventory the old schema before a deploy (the old release has no such command).
+  The digests cover an **explicit column allow-list per table** (`spec.go`: the columns that exist at 0099 and
+  after the tenancy migrations; `project_id`, `last_project_uid`, the generated `photos.fts` and `users.role`
+  are left out — the role is judged row by row from `users.tsv`). A row is projected to its allow-listed
+  columns (`jsonb`/`halfvec`/`vector`/`bytea` as `md5(col::text)`), rendered with `row_to_json`, hashed; the
+  row hashes are concatenated in key order (text keys `COLLATE "C"`) and hashed once more — equivalent to
+  hashing the concatenated rows, in bounded memory. An allow-listed column the schema lacks is named in the
+  row's fourth field instead of failing; an absent table digests as `absent`. With a `SizedKeyLister` it
+  also lists the store **once** and writes `storage-missing.tsv`: every `photos.file_path` absent or of a
+  size other than `file_size` (empty = good).
+  `Load`/`Diff`/`Judge` are pure: `Diff` emits keyed `Difference`s (`table-added:`, `table-removed:`, `count:`,
+  `column-added:`/`-removed:`/`-type:` (`table.column`; a new table's columns are its table's difference),
+  `digest:`, `photo[-added|-removed]:`, `user[-added|-removed]:`, `user-role:` when **only** the role changed,
+  `storage-missing:` for originals newly missing in B); `ParseExpectations` takes `path.Match` globs over those
+  keys plus the named rule **`role-collapse`** (viewer/curator/editor/admin → `user` and nothing else);
+  `Result.Err` is `ErrUnexpected` when anything is left unexplained.
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client

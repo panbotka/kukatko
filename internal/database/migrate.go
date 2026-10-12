@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"path"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -184,8 +186,9 @@ func appliedVersions(ctx context.Context, pool *pgxpool.Pool) (map[int64]bool, e
 }
 
 // applyPending applies each migration whose version is not already in applied,
-// in slice order, returning the filenames applied. It stops and returns the
-// migrations applied so far together with the error on the first failure.
+// in slice order, returning the filenames applied and logging each file's wall
+// time as it commits. It stops and returns the migrations applied so far
+// together with the error on the first failure.
 func applyPending(
 	ctx context.Context,
 	pool *pgxpool.Pool,
@@ -197,9 +200,15 @@ func applyPending(
 		if applied[mig.version] {
 			continue
 		}
+		started := time.Now()
 		if err := applyOne(ctx, pool, mig); err != nil {
 			return done, err
 		}
+		// The per-file wall time is what an upgrade's outage window is measured
+		// from (docs/MIGRATION_SAFETY.md): each file holds its locks until it
+		// commits, so the slowest file is the longest a request can wait.
+		slog.InfoContext(ctx, "migration applied", "file", mig.filename,
+			"duration_ms", time.Since(started).Milliseconds())
 		done = append(done, mig.filename)
 	}
 	return done, nil

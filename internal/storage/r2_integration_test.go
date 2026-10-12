@@ -569,6 +569,26 @@ func TestR2Keys_enumeratesTheBucket(t *testing.T) {
 	}
 }
 
+// TestR2KeySizes_reportsListingSizes verifies KeySizes yields each object's key
+// with the byte size the bucket listing reports.
+func TestR2KeySizes_reportsListingSizes(t *testing.T) {
+	store, _ := newTestR2(t)
+
+	content := jpegBytes("sizes")
+	stored := storeFixture(t, store, "IMG_0007.jpg", content)
+
+	got := map[string]int64{}
+	if err := store.KeySizes(t.Context(), func(key string, size int64) error {
+		got[key] = size
+		return nil
+	}); err != nil {
+		t.Fatalf("KeySizes: %v", err)
+	}
+	if size, ok := got[stored.RelPath]; !ok || size != int64(len(content)) {
+		t.Errorf("KeySizes()[%q] = %d (present %v), want %d", stored.RelPath, size, ok, len(content))
+	}
+}
+
 // TestR2KeysWithPrefix_listsOnlyThePrefix verifies the bucket listing is narrowed
 // server-side to the given prefix, matched literally so it may end mid-filename.
 // That is what lets the thumbnailer ask "which of this photo's sizes are already

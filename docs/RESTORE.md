@@ -132,6 +132,27 @@ exactly the state the ordinary encode backfill looks for. Re-encode them in step
 
 > The connection password is passed to `pg_restore` via `PGPASSWORD`, never on the command line.
 
+#### Dumps taken before migration 0104
+
+A dump of a database whose schema is older than **0104** (every release up to and including **0.31.0**)
+**fails** `restore db`: `pg_restore` runs with an empty `search_path`, the full-text wrapper
+`immutable_unaccent` called `unaccent(…)` unqualified, and the planner inlines it while it creates
+`photos.fts` — `ERROR: function unaccent(unknown, text) does not exist` at `CREATE TABLE photos`, and the
+single transaction rolls everything back (found 2026-10-12 by the migration rehearsal,
+[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md); 0104 qualifies the call, so dumps taken after it restore
+normally — proven on the production copy). Restore such a dump by hand instead, letting `public` stay on the
+search path — the restored copy is otherwise exact (proven: 21,151 photos, every inventory digest equal):
+
+```bash
+aws s3 cp s3://<backup-bucket>/db/kukatko-<timestamp>.dump /tmp/old.dump   # or any S3 client
+createdb kukatko_restored
+pg_restore --no-owner --no-privileges -f - /tmp/old.dump \
+  | sed "s/^SELECT pg_catalog.set_config('search_path', '', false);/SELECT pg_catalog.set_config('search_path', 'public', false);/" \
+  | psql -v ON_ERROR_STOP=1 -d kukatko_restored
+```
+
+Then point `database.url` at it and run `kukatko migrate` (it applies 0104 and anything newer).
+
 ### 5. Restore the originals (`storage.backend: fs`)
 
 On the `r2` backend skip this step and follow

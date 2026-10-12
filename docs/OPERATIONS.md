@@ -53,6 +53,9 @@ configuration key both here **and** into `config.example.yaml`.
   a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
   accounts/announcement/instance settings/audit trail/migrations are never touched; see below) and
+  **`maintenance inventory`** / **`maintenance inventory-diff`** (the read-only before/after snapshot of an
+  upgrade and its judged diff — `internal/inventory`; **never migrates**; see "Upgrade runbook — multi-tenancy"
+  below) and
   **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
   identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
   `maintenance repair` with the flags
@@ -457,6 +460,67 @@ object keys come from), and if any object fails to delete the truncation is skip
 nonzero with `ErrStorageIncomplete` — the catalogue still describes the store, so the fix is to make the store
 reachable and run it again. It is deliberately **not exposed over HTTP**, for the same reason `restore db` is
 not: it pulls the tables out from under a running server.
+
+### Upgrade runbook — multi-tenancy
+
+The multi-tenancy migrations (0100 onwards) restructure data that exists only once — the library of
+~21k photos. They were rehearsed on a copy of production (verdict and measurements in
+[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md)); this is how a deploy that ships them is checked.
+
+**`kukatko maintenance inventory --out <dir> [--storage]`** writes a deterministic snapshot of the
+configured database: `counts.tsv` (every table → rows), `columns.tsv`, `digests.tsv` (an order-independent
+digest per catalogue table over an explicit column allow-list that exists before **and** after the
+tenancy migrations), `photos.tsv` (`uid|file_hash|file_path|file_size|archived_at`) and `users.tsv`
+(`uid|username|role|disabled`). It runs in one read-only transaction and **does not apply migrations** — so
+the *new* binary takes the "before" snapshot of a database still on the old schema (the old release has no
+such command). `--storage` also lists the configured store **once** and writes `storage-missing.tsv` — every
+original absent or of the wrong size; empty is good. Give it a **read-only** key (R2: an API token with
+*Object Read only* on the bucket — it lists and reads, it cannot write). On the production copy it took
+4.75 s and 45 MB RSS on the box (expect ~3–4× that on the VPS).
+
+**`kukatko maintenance inventory-diff <dirA> <dirB> [--expect …]`** prints every difference (unexpected first)
+and **exits 1** when one is not allowed by an `--expect`: a `path.Match` glob over the difference key
+(`table-added:projects`, `column-added:*.project_id`, `count:schema_migrations`, `digest:photos`,
+`photo:<uid>`, `user-role:<uid>`, `storage-missing:<path>`, …) or the rule `role-collapse` (an account whose
+only change is viewer/curator/editor/admin → `user`). It needs no database. The expectation set for the
+0100–0104 chain — every entry is a difference the design makes, nothing else:
+
+```sh
+kukatko maintenance inventory-diff A B \
+  --expect table-added:projects --expect table-added:project_members \
+  --expect 'column-added:*.project_id' --expect column-added:users.last_project_uid \
+  --expect column-removed:announcements.id --expect column-removed:instance_settings.id \
+  --expect column-removed:sessions.role --expect count:schema_migrations --expect role-collapse
+```
+
+**On a live instance** the app keeps writing between A and B, so the live tables drift: `count:jobs`,
+`count:audit_log`, `count:sessions`, `count:notifications`, `count:search_history` and `digest:users` (every
+visit stamps `last_seen_at`). Allow those only after reading them: `users.tsv` must show no change but the
+role collapse, and every catalogue difference (`digest:photos`, `digest:album_photos`, `photo:…`) must match an
+`audit_log` entry written in the window (`created_at` after A). An unexplained catalogue difference stops
+the rollout.
+
+The owner's checklist — in this order, and the storage move only at the very end:
+
+1. **Backup.** `kukatko backup` in the running (old) container, and note the dump key. A dump of a schema
+   before 0104 does not restore with `restore db` as-is — use the manual procedure in
+   [`RESTORE.md`](RESTORE.md) ("Dumps taken before migration 0104") if it is ever needed.
+2. **Check for long transactions** (`SELECT pid, xact_start, query FROM pg_stat_activity WHERE xact_start <
+   now() - interval '10 seconds'`) and do not deploy while a backup's `pg_dump` runs: 0102 takes
+   `ACCESS EXCLUSIVE` on the catalogue tables and would queue behind it, and every request behind 0102.
+3. **Inventory A** with the **new** image, against the production database, before switching:
+   `docker run --rm --network <db-network> --entrypoint /app/kukatko -e KUKATKO_DATABASE_URL=… -e
+   KUKATKO_STORAGE_…(read-only key) -v /root/inventory:/inv <new-image> maintenance inventory --storage --out /inv/A`.
+4. **Deploy.** The container's start applies the migrations (rehearsed: 0.27 s on the box, ~1–2 s expected
+   on the VPS) — the outage is the container restart plus that.
+5. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
+   once the live drift has been read and allowed.
+6. **UI spot-check:** sign in, the library grid, a search, one album, one person, the timeline, `/auth/me`.
+7. **Only then** consider starting the storage move — it is a separate job, started by hand.
+
+**Rollback** without restoring a backup: [`docs/migrations-rollback/`](migrations-rollback/README.md) holds
+the hand-run down scripts (newest first, each `psql -1`), proven to return inventory A exactly; then start
+the previous release.
 
 ### `kukatko ctl` — remote API client
 

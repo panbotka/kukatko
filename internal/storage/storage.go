@@ -150,6 +150,23 @@ type KeyLister interface {
 	Keys(ctx context.Context, yield func(key string) error) error
 }
 
+// SizedKeyLister enumerates the store's objects together with their sizes,
+// answering "does every original exist with the byte count the catalogue
+// records?" in one streamed listing instead of one Stat per object. Both
+// backends implement it (*FS by walking the root, *R2 by listing the bucket,
+// whose listing already carries each object's size).
+//
+// Like KeyLister it is deliberately not part of Storage; only the whole-store
+// reconciliations (the pre/post-deploy inventory) need it, and they type-assert
+// for it.
+type SizedKeyLister interface {
+	// KeySizes calls yield once for every object the store holds, passing its
+	// slash-separated key relative to the store root and its size in bytes, in
+	// unspecified order. It streams exactly as KeyLister.Keys does and stops at the
+	// first error from yield, returning it unwrapped.
+	KeySizes(ctx context.Context, yield func(key string, size int64) error) error
+}
+
 // PrefixLister narrows a key listing to one prefix, answering "what does the
 // store already hold under here?" in a single round trip. Both backends
 // implement it (*FS by walking the prefix's own directory, *R2 by listing the

@@ -49,6 +49,7 @@ Open **one** document based on what you're touching. Don't read them all preempt
 | Performance (thumbnails, vips, HNSW `ef_search`, indexes) | [`docs/PERF.md`](docs/PERF.md) |
 | A cosine-distance threshold — its value, its measurement, how to re-derive it | [`docs/THRESHOLDS.md`](docs/THRESHOLDS.md) |
 | Restore from backup / disaster recovery | [`docs/RESTORE.md`](docs/RESTORE.md) |
+| A schema migration on production data — rehearsal verdict, inventory/diff, rollback scripts | [`docs/MIGRATION_SAFETY.md`](docs/MIGRATION_SAFETY.md) |
 | UX decisions and audit | [`docs/UX_AUDIT.md`](docs/UX_AUDIT.md) |
 | Security audit — findings, severities, attack scenarios | [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md) |
 
@@ -109,6 +110,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/importapi` — maintainer-only, read-only import bookkeeping: run history + failures listing
 - `internal/importer` — bookkeeping of import runs + persisted per-photo/per-file failures (`partial` status); keeps the finished migration's runs as provenance
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
+- `internal/inventory` — the upgrade's before/after snapshot (counts, columns, allow-listed digests, photo/user rosters, one-listing storage check) and its expectation-judged diff; read-only, never migrates
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`, terminal failure, enqueue inside the caller's transaction)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
 - `internal/mailer` — the only way to send an e-mail: the `Sender` interface + SMTP (stdlib only), a no-op for when mail is off and a socket-free fake for tests; Czech templates rendered purely (the notification kinds' mails included); a `.invalid` recipient is refused, never dialled
