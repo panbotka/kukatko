@@ -70,9 +70,11 @@ type FaceSearcher interface {
 // cluster member into a named marker, reusing the single assignment state machine
 // rather than duplicating marker creation here.
 type FaceAssigner interface {
-	// Apply runs one assignment-state transition (here always create_marker),
-	// auditing the change with the supplied meta.
-	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
+	// Apply runs one assignment-state transition (here always create_marker)
+	// inside the project, auditing the change with the supplied meta.
+	Apply(
+		ctx context.Context, projectUID string, req facematch.AssignRequest, meta audit.Meta,
+	) (facematch.AssignResult, error)
 }
 
 // Config bundles the Service's collaborators and tunables. Store, Faces and
@@ -89,7 +91,10 @@ type Config struct {
 
 // Service runs face auto-clustering: building clusters from unassigned faces,
 // listing them with representatives and suggestions, assigning a whole cluster to
-// a subject and removing a stray face from a cluster.
+// a subject and removing a stray face from a cluster. Every method works inside
+// one project, named by the uid it takes right after the context: clustering,
+// the cached summaries, the listing and both writes never see another project's
+// faces or clusters.
 type Service struct {
 	store                 *Store
 	faces                 FaceSearcher

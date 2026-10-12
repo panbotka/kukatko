@@ -89,9 +89,10 @@ type FaceStore interface {
 	// photo totals.
 	SampleFacesBySubject(ctx context.Context, subjectUID string, limit int) (vectors.SubjectFaces, error)
 	// FindSimilarUnassignedFaceCandidates returns the nearest unassigned faces to
-	// vec, excluding the given keys, within maxDistance.
+	// vec inside the project, excluding the given keys, within maxDistance.
 	FindSimilarUnassignedFaceCandidates(
-		ctx context.Context, vec []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+		exclude []vectors.FaceKey,
 	) ([]vectors.FaceCandidate, error)
 	// FacesByKeys returns the face rows for the given keys (embeddings included).
 	FacesByKeys(ctx context.Context, keys []vectors.FaceKey) ([]vectors.Face, error)
@@ -99,16 +100,17 @@ type FaceStore interface {
 
 // PeopleStore is the subset of people.Store the service reads: it validates the
 // subject, counts its marked photos, and resolves a candidate's marker to classify
-// the action. *people.Store satisfies it.
+// the action, every read inside one project. *people.Store satisfies it.
 type PeopleStore interface {
-	// GetSubjectByUID returns the subject, or people.ErrSubjectNotFound.
-	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
-	// GetMarkerByUID returns the marker, or people.ErrMarkerNotFound.
-	GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error)
+	// GetSubjectByUID returns the project's subject, or people.ErrSubjectNotFound
+	// (also for a subject of another project).
+	GetSubjectByUID(ctx context.Context, projectUID, uid string) (people.Subject, error)
+	// GetMarkerByUID returns the project's marker, or people.ErrMarkerNotFound.
+	GetMarkerByUID(ctx context.Context, projectUID, uid string) (people.Marker, error)
 	// ListPhotoUIDsBySubject returns the distinct photos carrying a non-invalid
 	// marker for the subject; the gap versus embedded faces is what "no embeddings"
 	// reports.
-	ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error)
+	ListPhotoUIDsBySubject(ctx context.Context, projectUID, subjectUID string) ([]string, error)
 }
 
 // FeedbackStore is the subset of feedback.Store the service reads: the faces a user
@@ -123,8 +125,9 @@ type FeedbackStore interface {
 // the surviving candidates, so the response can carry stamped media URLs and the
 // pixel dimensions the bounding box is projected into. *photos.Store satisfies it.
 type PhotoStore interface {
-	// ListByUIDs returns the photos with the given uids, in an unspecified order.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photos with the given uids, in an
+	// unspecified order; a uid of another project is simply absent.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
 }
 
 // Config bundles the Service's collaborators and tunables. The four stores and the
@@ -284,20 +287,23 @@ type Result struct {
 	Candidates []Candidate `json:"candidates"`
 }
 
-// Find computes the untagged-face candidates for subjectUID under req. It returns
-// people.ErrSubjectNotFound when no such subject exists. A subject with no exemplars
-// yields a non-error empty Result carrying a Reason.
+// Find computes the untagged-face candidates for subjectUID under req, inside the
+// project projectUID: the subject must be the project's, and every candidate is an
+// unassigned face of the project. It returns people.ErrSubjectNotFound when no such
+// subject exists in the project — a subject of another project included, so the
+// two are indistinguishable — and people.ErrNoProject for an empty projectUID. A
+// subject with no exemplars yields a non-error empty Result carrying a Reason.
 //
 // The work is bounded at both ends, and neither bound follows the library: at most
 // MaxExemplars faces seed the kNN however heavily the person is tagged, and at most
 // MaxCandidates survivors are hydrated into photo records however many faces match.
 // Everything before hydration works on small vote structs, so a wide match costs
 // vectors and not photo rows. Both cuts are reported on the Result.
-func (s *Service) Find(ctx context.Context, subjectUID string, req Request) (Result, error) {
-	if _, err := s.people.GetSubjectByUID(ctx, subjectUID); err != nil {
+func (s *Service) Find(ctx context.Context, projectUID, subjectUID string, req Request) (Result, error) {
+	if _, err := s.people.GetSubjectByUID(ctx, projectUID, subjectUID); err != nil {
 		return Result{}, fmt.Errorf("loading subject %s: %w", subjectUID, err)
 	}
-	src, err := s.loadSource(ctx, subjectUID)
+	src, err := s.loadSource(ctx, projectUID, subjectUID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -315,7 +321,7 @@ func (s *Service) Find(ctx context.Context, subjectUID string, req Request) (Res
 	if err != nil {
 		return Result{}, fmt.Errorf("loading rejections for subject %s: %w", subjectUID, err)
 	}
-	voted, err := s.search(ctx, src.exemplars, threshold, rejectionKeys(rejected))
+	voted, err := s.search(ctx, projectUID, src.exemplars, threshold, rejectionKeys(rejected))
 	if err != nil {
 		return Result{}, err
 	}
@@ -323,7 +329,7 @@ func (s *Service) Find(ctx context.Context, subjectUID string, req Request) (Res
 		filterVoted(voted, minMatch, s.minFaceRel), req.MinDistance, s.maxCandidates)
 	result.Capped = capped
 
-	built, err := s.build(ctx, subjectUID, survivors, src.acceptedVecs, rejected)
+	built, err := s.build(ctx, projectUID, subjectUID, survivors, src.acceptedVecs, rejected)
 	if err != nil {
 		return Result{}, err
 	}

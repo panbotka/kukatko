@@ -32,7 +32,7 @@ func roundLibrary(f *fixture) {
 func TestQueue_oneRequestIsOneRound(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, roundLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -74,11 +74,11 @@ func TestQueue_refetchingBeforeAnsweringReturnsTheSameRound(t *testing.T) {
 	// would silently drop the questions already on screen.
 	f := newFixture(t, roundLibrary)
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", SourceBoth, 0)
+	first, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
-	second, err := f.svc.Queue(ctx, "user", SourceBoth, 0)
+	second, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -96,18 +96,18 @@ func TestQueue_answeringARoundThroughMintsTheNext(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, roundLibrary)
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", SourceBoth, 0)
+	first, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	// Skipping settles a question without writing anything, which is all this
 	// needs: the round shrinks the same way whatever the verdict was.
 	for i, q := range first.Questions {
-		if _, err := f.svc.Answer(ctx, "user", q.ID, AnswerSkip, audit.Meta{}); err != nil {
+		if _, err := f.svc.Answer(ctx, testProject, "user", q.ID, AnswerSkip, audit.Meta{}); err != nil {
 			t.Fatalf("Answer %d: %v", i, err)
 		}
 		if i < len(first.Questions)-1 {
-			mid, midErr := f.svc.Queue(ctx, "user", SourceBoth, 0)
+			mid, midErr := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 			if midErr != nil {
 				t.Fatalf("Queue mid-round: %v", midErr)
 			}
@@ -121,7 +121,7 @@ func TestQueue_answeringARoundThroughMintsTheNext(t *testing.T) {
 			}
 		}
 	}
-	second, err := f.svc.Queue(ctx, "user", SourceBoth, 0)
+	second, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestQueue_lastRoundSaysSo(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.05, 0.30)}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestQueue_lastRoundSaysSo(t *testing.T) {
 func TestQueue_limitOverridesTheRoundSize(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, roundLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 4)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 4)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestQueue_albumMembershipIsReadOncePerRebuild(t *testing.T) {
 	})
 	ctx := context.Background()
 	for range 3 {
-		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+		if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestQueue_albumLookupFailureStillServesARound(t *testing.T) {
 		roundLibrary(f)
 		f.albums = &fakeAlbums{err: errors.New("albums are down")}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestQueue_breatherCardsAreTypedAndCarryTitleAndYear(t *testing.T) {
 		roundLibrary(f)
 		withBreathers(f)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestQueue_breathersRotateThroughTheEras(t *testing.T) {
 	ctx := context.Background()
 	seen := make([]string, 0, 3)
 	for range 3 {
-		res, err := f.svc.Queue(ctx, "user", SourceBoth, 1)
+		res, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 1)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -283,7 +283,7 @@ func TestQueue_breathersRotateThroughTheEras(t *testing.T) {
 		}
 		seen = append(seen, res.Breathers[0].Photo.UID)
 		// Answer the one-question round through so the next fetch mints a new one.
-		if _, err := f.svc.Answer(ctx, "user", res.Questions[0].ID, AnswerSkip, audit.Meta{}); err != nil {
+		if _, err := f.svc.Answer(ctx, testProject, "user", res.Questions[0].ID, AnswerSkip, audit.Meta{}); err != nil {
 			t.Fatalf("Answer: %v", err)
 		}
 	}
@@ -304,12 +304,12 @@ func TestQueue_breatherFallsBackToTheFileNameAndDegradesQuietly(t *testing.T) {
 	// The third round's turn is the untitled 1972 card.
 	var card Breather
 	for range 3 {
-		res, err := f.svc.Queue(ctx, "user", SourceBoth, 1)
+		res, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 1)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 		card = res.Breathers[0]
-		if _, err := f.svc.Answer(ctx, "user", res.Questions[0].ID, AnswerSkip, audit.Meta{}); err != nil {
+		if _, err := f.svc.Answer(ctx, testProject, "user", res.Questions[0].ID, AnswerSkip, audit.Meta{}); err != nil {
 			t.Fatalf("Answer: %v", err)
 		}
 	}
@@ -321,7 +321,7 @@ func TestQueue_breatherFallsBackToTheFileNameAndDegradesQuietly(t *testing.T) {
 		roundLibrary(f)
 		f.breathers = &fakeBreathers{err: errors.New("no breathers today")}
 	})
-	res, err := broken.svc.Queue(ctx, "user", SourceBoth, 0)
+	res, err := broken.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestQueue_breatherFallsBackToTheFileNameAndDegradesQuietly(t *testing.T) {
 func TestQueue_noBreatherSourceMeansNoBreathers(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, roundLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestAnswer_confirmedFaceIsAnOrdinaryAnswer(t *testing.T) {
 	// session counters: the game moves straight on to the next question.
 	f := newFixture(t, withFace)
 	id := faceQuestionID("photo1", 0, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}

@@ -30,7 +30,7 @@ type fakeService struct {
 
 // Queue records the source and limit and returns the scripted result.
 func (f *fakeService) Queue(
-	_ context.Context, _ string, src review.Source, limit int,
+	_ context.Context, _, _ string, src review.Source, limit int,
 ) (review.QueueResult, error) {
 	f.queueSource = src
 	f.queueLimit = limit
@@ -39,7 +39,7 @@ func (f *fakeService) Queue(
 
 // Answer records the inputs and returns the scripted result.
 func (f *fakeService) Answer(
-	_ context.Context, _ string, questionID string, answer review.Answer, _ audit.Meta,
+	_ context.Context, _, _ string, questionID string, answer review.Answer, _ audit.Meta,
 ) (review.AnswerResult, error) {
 	f.questionID = questionID
 	f.answer = answer
@@ -226,6 +226,7 @@ func TestHandleAnswer_serviceErrors(t *testing.T) {
 	}{
 		{"invalid question", review.ErrInvalidQuestion, http.StatusBadRequest},
 		{"invalid answer", review.ErrInvalidAnswer, http.StatusBadRequest},
+		{"question outside the project", review.ErrQuestionNotFound, http.StatusNotFound},
 		{"internal failure", context.DeadlineExceeded, http.StatusInternalServerError},
 	}
 	for _, tt := range tests {

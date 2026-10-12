@@ -44,7 +44,7 @@ import (
 // actually runs rather than in a one-kind special case.
 func (h *reviewHarness) checksService() *review.Service {
 	candSvc := candidates.New(candidates.Config{
-		Faces: bootstrapVectors{h.vectors}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
+		Faces: h.vectors, People: h.people, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
@@ -54,12 +54,13 @@ func (h *reviewHarness) checksService() *review.Service {
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})
 	return review.New(review.Config{
-		Sweeper:  sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 2}),
+		Sweeper:  sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 2}),
 		Expander: expandSvc,
 		Organize: h.organize,
 		Faces:    h.vectors,
-		Feedback: bootstrapFeedback{h.feedback},
-		Assigner: bootstrapAssigner{facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})},
+		Feedback: h.feedback,
+		Assigner: facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people}),
+		Scope:    review.NewScopeStore(h.db.Pool()),
 		Places: geoestimate.NewReviewer(geoestimate.ReviewConfig{
 			Catalogue: h.photos, Places: places.NewStore(h.db.Pool()),
 		}),
@@ -68,9 +69,9 @@ func (h *reviewHarness) checksService() *review.Service {
 			PhashMaxDiff: 8, EmbeddingMaxDist: 0.1,
 		}),
 		Outliers: outliers.New(outliers.Config{
-			Faces: h.vectors, People: bootstrapPeople{h.people}, Feedback: h.feedback,
+			Faces: h.vectors, People: h.people, Feedback: h.feedback,
 		}),
-		Subjects:   bootstrapPeople{h.people},
+		Subjects:   h.people,
 		Photos:     h.photos,
 		KindShares: allKinds(),
 		BandMin:    0.45, BandMax: 0.75,
@@ -103,7 +104,7 @@ func (h *reviewHarness) estimated(t *testing.T, hash, city string, lat, lng floa
 // the queue holds none.
 func questionOf(t *testing.T, svc *review.Service, user string, kind review.Kind) review.Question {
 	t.Helper()
-	res, err := svc.Queue(context.Background(), user, review.SourceBoth, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, user, review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestReviewPlaceCheck_acceptKeepsTheLocationAndClearsTheEstimateDB(t *testin
 		t.Fatalf("place question photo = %q, want %q", question.Photo.UID, uid)
 	}
 
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerYes, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerYes, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(yes): %v", err)
 	}
@@ -171,7 +172,7 @@ func TestReviewPlaceCheck_rejectClearsTheLocationAndLeavesTheTombstoneDB(t *test
 	svc := h.checksService()
 
 	question := questionOf(t, svc, "tester", review.KindPlace)
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerNo, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerNo, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(no): %v", err)
 	}
@@ -242,7 +243,7 @@ func TestReviewDuplicateCheck_yesConfirmsAndNeverMergesDB(t *testing.T) {
 		t.Fatalf("duplicate question shows the same photo twice (%s)", question.Photo.UID)
 	}
 
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerYes, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerYes, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(yes): %v", err)
 	}
@@ -287,7 +288,7 @@ func TestReviewDuplicateCheck_noDismissesAndTheGroupStopsComingBackDB(t *testing
 	svc := h.checksService()
 
 	question := questionOf(t, svc, "tester", review.KindDuplicate)
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerNo, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerNo, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(no): %v", err)
 	}
@@ -314,7 +315,7 @@ func TestReviewDuplicateCheck_noDismissesAndTheGroupStopsComingBackDB(t *testing
 	}
 	// The point of persisting the "no": a fresh service (cold cache, empty
 	// session) must not offer the pair again.
-	fresh, err := h.checksService().Queue(ctx, "other", review.SourceBoth, 100)
+	fresh, err := h.checksService().Queue(ctx, project.BootstrapUID, "other", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestReviewOutlierCheck_noDetachesThePersonAndKeepsTheMarkerDB(t *testing.T)
 		t.Fatalf("outlier question carries no face box, so the crop cannot be drawn")
 	}
 
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerNo, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerNo, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(no): %v", err)
 	}
@@ -435,7 +436,7 @@ func TestReviewOutlierCheck_yesConfirmsAndStopsSurfacingDB(t *testing.T) {
 	svc := h.checksService()
 
 	question := questionOf(t, svc, "tester", review.KindOutlier)
-	res, err := svc.Answer(context.Background(), "tester", question.ID, review.AnswerYes, reviewMeta)
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerYes, reviewMeta)
 	if err != nil {
 		t.Fatalf("Answer(yes): %v", err)
 	}
@@ -464,8 +465,8 @@ func TestReviewOutlierCheck_yesConfirmsAndStopsSurfacingDB(t *testing.T) {
 	// And the /outliers page agrees: the confirmed face is excluded there too,
 	// because both views read the same feedback set.
 	ranked, err := outliers.New(outliers.Config{
-		Faces: h.vectors, People: bootstrapPeople{h.people}, Feedback: h.feedback,
-	}).Outliers(ctx, subj.UID, outliers.Options{})
+		Faces: h.vectors, People: h.people, Feedback: h.feedback,
+	}).Outliers(ctx, project.BootstrapUID, subj.UID, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -475,7 +476,7 @@ func TestReviewOutlierCheck_yesConfirmsAndStopsSurfacingDB(t *testing.T) {
 		}
 	}
 	// The game does not offer it again either, from a cold service.
-	fresh, err := h.checksService().Queue(ctx, "other", review.SourceBoth, 100)
+	fresh, err := h.checksService().Queue(ctx, project.BootstrapUID, "other", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -499,7 +500,7 @@ func TestReviewQueue_mixesEveryKindWithoutOneDominatingDB(t *testing.T) {
 		FaceIndex: 0, Vector: vec(map[int]float32{3: 0.6, 4: 0.8}), DetScore: 0.9,
 	})
 
-	res, err := h.checksService().Queue(context.Background(), "tester", review.SourceBoth, 20)
+	res, err := h.checksService().Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 20)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -532,7 +533,7 @@ func TestReviewQueue_peopleSourceSkipsTheChecksDB(t *testing.T) {
 
 	// The three checks ride with SourceBoth alone: restricting the game to people
 	// is a promise about what it will ask, and a place question would break it.
-	res, err := h.checksService().Queue(context.Background(), "tester", review.SourcePeople, 20)
+	res, err := h.checksService().Queue(context.Background(), project.BootstrapUID, "tester", review.SourcePeople, 20)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -552,7 +553,7 @@ func TestReviewAnswer_placeVerdictIsAuditedAsAReviewDecisionDB(t *testing.T) {
 	question := questionOf(t, svc, "tester", review.KindPlace)
 
 	if _, err := svc.Answer(
-		context.Background(), "tester", question.ID, review.AnswerYes, reviewMeta,
+		context.Background(), project.BootstrapUID, "tester", question.ID, review.AnswerYes, reviewMeta,
 	); err != nil {
 		t.Fatalf("Answer(yes): %v", err)
 	}

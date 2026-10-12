@@ -29,17 +29,24 @@ type fakeNameless struct {
 	detached    []namelessjob.Undo
 	restored    []namelessjob.Undo
 	lastMeta    audit.Meta
+	// projects records the project of every call, in order.
+	projects []string
 }
 
-func (f *fakeNameless) List(context.Context) ([]people.NamelessSubject, error) {
+func (f *fakeNameless) List(_ context.Context, projectUID string) ([]people.NamelessSubject, error) {
+	f.projects = append(f.projects, projectUID)
 	return f.subjects, f.listErr
 }
 
-func (f *fakeNameless) Snapshot(context.Context) (namelessjob.Undo, error) {
+func (f *fakeNameless) Snapshot(_ context.Context, projectUID, _ string) (namelessjob.Undo, error) {
+	f.projects = append(f.projects, projectUID)
 	return f.undo, f.snapshotErr
 }
 
-func (f *fakeNameless) EnqueueDetach(_ context.Context, undo namelessjob.Undo, meta audit.Meta) (int, error) {
+func (f *fakeNameless) EnqueueDetach(
+	_ context.Context, projectUID string, undo namelessjob.Undo, meta audit.Meta,
+) (int, error) {
+	f.projects = append(f.projects, projectUID)
 	f.lastMeta = meta
 	if f.detachErr != nil {
 		return 0, f.detachErr
@@ -48,7 +55,10 @@ func (f *fakeNameless) EnqueueDetach(_ context.Context, undo namelessjob.Undo, m
 	return len(undo.Subjects), nil
 }
 
-func (f *fakeNameless) EnqueueRestore(_ context.Context, undo namelessjob.Undo, meta audit.Meta) (int, error) {
+func (f *fakeNameless) EnqueueRestore(
+	_ context.Context, projectUID string, undo namelessjob.Undo, meta audit.Meta,
+) (int, error) {
+	f.projects = append(f.projects, projectUID)
 	f.lastMeta = meta
 	if f.restoreErr != nil {
 		return 0, f.restoreErr
@@ -57,10 +67,20 @@ func (f *fakeNameless) EnqueueRestore(_ context.Context, undo namelessjob.Undo, 
 	return len(undo.Subjects), nil
 }
 
-// newNamelessRouter mounts the API over the nameless repair (which may be nil).
+// testProject and testSlug name the project the unit tests' requests are in.
+const (
+	testProject = "pj_test"
+	testSlug    = "test"
+)
+
+// newNamelessRouter mounts the API over the nameless repair (which may be nil),
+// every request in testProject — the passthrough guard names none, so the
+// package's project lookup is swapped for one that does.
 func newNamelessRouter(n NamelessRepair) http.Handler {
 	r := chi.NewRouter()
-	NewAPI(Config{Nameless: n, RequireMaintainer: passthrough}).RegisterRoutes(r)
+	api := NewAPI(Config{Nameless: n, RequireMaintainer: passthrough})
+	api.projectOf = func(context.Context) (string, string, bool) { return testProject, testSlug, true }
+	api.RegisterRoutes(r)
 	return r
 }
 
@@ -262,3 +282,63 @@ func (b *brokenWriter) Header() http.Header { return b.header }
 func (b *brokenWriter) Write([]byte) (int, error) { return 0, errors.New("connection reset") }
 
 func (b *brokenWriter) WriteHeader(int) {}
+
+// TestNamelessRunsInTheRequestsProject hands the request's project to every
+// step of the repair.
+func TestNamelessRunsInTheRequestsProject(t *testing.T) {
+	t.Parallel()
+	subject, snap := namelessFixture()
+	fake := &fakeNameless{
+		subjects: []people.NamelessSubject{subject},
+		undo:     namelessjob.Undo{ProjectUID: testProject, Subjects: []people.SubjectSnapshot{snap}},
+	}
+	router := newNamelessRouter(fake)
+	do(router, http.MethodGet, "/maintenance/nameless-subjects", "")
+	do(router, http.MethodPost, "/maintenance/nameless-subjects/detach", "")
+	raw, err := json.Marshal(fake.undo)
+	if err != nil {
+		t.Fatalf("marshal undo: %v", err)
+	}
+	do(router, http.MethodPost, "/maintenance/nameless-subjects/restore", string(raw))
+	if len(fake.projects) != 4 {
+		t.Fatalf("calls = %v, want list, snapshot, detach and restore", fake.projects)
+	}
+	for _, got := range fake.projects {
+		if got != testProject {
+			t.Errorf("repair step ran in %q, want %q", got, testProject)
+		}
+	}
+}
+
+// TestNamelessRestoreRefusesAnotherProjectsFile answers 400 for an undo file
+// taken in another project.
+func TestNamelessRestoreRefusesAnotherProjectsFile(t *testing.T) {
+	t.Parallel()
+	_, snap := namelessFixture()
+	raw, err := json.Marshal(namelessjob.Undo{ProjectUID: "pj_other", Subjects: []people.SubjectSnapshot{snap}})
+	if err != nil {
+		t.Fatalf("marshal undo: %v", err)
+	}
+	fake := &fakeNameless{restoreErr: namelessjob.ErrProjectMismatch}
+	rec := do(newNamelessRouter(fake), http.MethodPost, "/maintenance/nameless-subjects/restore", string(raw))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+// TestNamelessWithoutProject refuses to run the repair for no project at all.
+func TestNamelessWithoutProject(t *testing.T) {
+	t.Parallel()
+	fake := &fakeNameless{}
+	r := chi.NewRouter()
+	api := NewAPI(Config{Nameless: fake, RequireMaintainer: passthrough})
+	api.projectOf = func(context.Context) (string, string, bool) { return "", "", false }
+	api.RegisterRoutes(r)
+	rec := do(r, http.MethodGet, "/maintenance/nameless-subjects", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if len(fake.projects) != 0 {
+		t.Errorf("the repair ran for %v without a project", fake.projects)
+	}
+}

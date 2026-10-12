@@ -284,7 +284,7 @@ type failingSnapshot struct {
 	maintenanceapi.NamelessRepair
 }
 
-func (failingSnapshot) Snapshot(context.Context) (namelessjob.Undo, error) {
+func (failingSnapshot) Snapshot(context.Context, string, string) (namelessjob.Undo, error) {
 	return namelessjob.Undo{}, errors.New("snapshot unavailable")
 }
 

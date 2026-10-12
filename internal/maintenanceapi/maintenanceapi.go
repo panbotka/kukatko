@@ -62,6 +62,9 @@ type API struct {
 	audit             AuditPurger
 	nameless          NamelessRepair
 	requireMaintainer func(http.Handler) http.Handler
+	// projectOf names the request's project (uid, slug) for the nameless repair;
+	// auth.ProjectFromContext in production, swapped by the package's tests.
+	projectOf func(ctx context.Context) (uid, slug string, ok bool)
 }
 
 // Config bundles the dependencies of NewAPI. A nil Service, a nil Audit and a nil
@@ -85,7 +88,18 @@ func NewAPI(cfg Config) *API {
 		audit:             cfg.Audit,
 		nameless:          cfg.Nameless,
 		requireMaintainer: cfg.RequireMaintainer,
+		projectOf:         requestProject,
 	}
+}
+
+// requestProject returns the uid and slug of the project the request was
+// authorised for (auth.ProjectFromContext), reporting whether there is one.
+func requestProject(ctx context.Context) (uid, slug string, ok bool) {
+	p, ok := auth.ProjectFromContext(ctx)
+	if !ok {
+		return "", "", false
+	}
+	return p.UID, p.Slug, true
 }
 
 // RegisterRoutes mounts the maintenance endpoints onto r, which the caller has

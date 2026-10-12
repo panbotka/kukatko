@@ -33,11 +33,12 @@ const maxBodyBytes = 64 << 10
 // Service is the slice of *review.Service the handlers need; the indirection
 // keeps handler tests store-free.
 type Service interface {
-	// Queue returns the user's next batch of questions from the chosen source,
-	// plus session counters.
-	Queue(ctx context.Context, userUID string, src review.Source, limit int) (review.QueueResult, error)
-	// Answer applies one verdict and returns the outcome plus session counters.
-	Answer(ctx context.Context, userUID, questionID string, answer review.Answer,
+	// Queue returns the user's next batch of questions in the project from the
+	// chosen source, plus session counters.
+	Queue(ctx context.Context, projectUID, userUID string, src review.Source, limit int) (review.QueueResult, error)
+	// Answer applies one verdict in the project and returns the outcome plus
+	// session counters.
+	Answer(ctx context.Context, projectUID, userUID, questionID string, answer review.Answer,
 		meta audit.Meta) (review.AnswerResult, error)
 }
 
@@ -103,7 +104,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 }
 
 // handleQueue answers GET /review/queue?source=both|people|labels&limit=N with
-// the next batch of questions for the authenticated user. A missing source
+// the next batch of questions for the authenticated user in the request's
+// project — every question is about that project's photos, faces, people and
+// labels. A missing source
 // means both; a missing or zero limit uses the configured default; a malformed
 // value of either answers 400.
 func (a *API) handleQueue(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +125,7 @@ func (a *API) handleQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := auth.UserFromContext(r.Context())
-	res, err := a.service.Queue(r.Context(), user.UID, src, limit)
+	res, err := a.service.Queue(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, src, limit)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "review queue failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "building review queue failed")
@@ -139,10 +142,12 @@ type answerInput struct {
 	Answer string `json:"answer"`
 }
 
-// handleAnswer answers POST /review/answer by applying one verdict. A
-// malformed body, unknown answer or unparseable question id answers 400; a
-// question whose target vanished still answers 200 with result "gone" so the
-// UI simply moves on.
+// handleAnswer answers POST /review/answer by applying one verdict in the
+// request's project. A malformed body, unknown answer or unparseable question
+// id answers 400; a question naming a photo, subject or label the project does
+// not hold — one of another project, or one that exists nowhere — answers 404
+// with one fixed body and writes nothing; a question whose face or marker
+// vanished still answers 200 with result "gone" so the UI simply moves on.
 func (a *API) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "review game not available")
@@ -155,10 +160,13 @@ func (a *API) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.UserFromContext(r.Context())
 	meta := audit.FromRequest(r, user.UID)
-	res, err := a.service.Answer(r.Context(), user.UID, in.QuestionID, review.Answer(in.Answer), meta)
+	res, err := a.service.Answer(r.Context(), auth.ProjectUIDFromContext(r.Context()),
+		user.UID, in.QuestionID, review.Answer(in.Answer), meta)
 	switch {
 	case errors.Is(err, review.ErrInvalidQuestion), errors.Is(err, review.ErrInvalidAnswer):
 		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, review.ErrQuestionNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
 	case err != nil:
 		slog.ErrorContext(r.Context(), "review answer failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "applying answer failed")

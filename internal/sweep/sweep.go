@@ -37,17 +37,17 @@ const (
 // testable with a fake and stays decoupled from the candidates package's wiring;
 // *candidates.Service satisfies it.
 type Finder interface {
-	// Find returns the untagged-face candidates for the subject, or
-	// people.ErrSubjectNotFound when no such subject exists.
-	Find(ctx context.Context, subjectUID string, req candidates.Request) (candidates.Result, error)
+	// Find returns the untagged-face candidates for the project's subject, or
+	// people.ErrSubjectNotFound when the project holds no such subject.
+	Find(ctx context.Context, projectUID, subjectUID string, req candidates.Request) (candidates.Result, error)
 }
 
 // SubjectLister lists the named subjects the sweep iterates. *people.Store satisfies
 // it.
 type SubjectLister interface {
-	// ListSubjects returns every subject with its non-invalid marker count, ordered by
-	// name.
-	ListSubjects(ctx context.Context) ([]people.SubjectCount, error)
+	// ListSubjects returns every subject of the project with its non-invalid
+	// marker count, ordered by name.
+	ListSubjects(ctx context.Context, projectUID string) ([]people.SubjectCount, error)
 }
 
 // Config bundles the Service's collaborators and tunables. Subjects and Finder are
@@ -112,32 +112,34 @@ type Params struct {
 }
 
 // plan is the set of subjects a single sweep will scan, plus how many had faces
-// before the cap.
+// before the cap, and the project they all belong to.
 type plan struct {
-	subjects []people.SubjectCount
-	total    int
-	capped   bool
+	projectUID string
+	subjects   []people.SubjectCount
+	total      int
+	capped     bool
 }
 
-// Sweep scans every named subject that has faces and calls emit for each streamed
+// Sweep scans every named subject of the project projectUID that has faces —
+// searching only that project's unassigned faces — and calls emit for each streamed
 // event: a Progress per scanned subject, a Person for each subject with actionable
 // candidates, and a final Summary. emit is called serially (never concurrently), so
 // a caller can write it straight to an HTTP response without locking. An emit that
 // returns an error stops the sweep and is returned; a per-subject search failure is
 // logged and skipped rather than aborting the whole run. Listing the subjects is the
 // only fatal step and returns its error before any event is emitted.
-func (s *Service) Sweep(ctx context.Context, params Params, emit func(Event) error) error {
-	pl, err := s.buildPlan(ctx)
+func (s *Service) Sweep(ctx context.Context, projectUID string, params Params, emit func(Event) error) error {
+	pl, err := s.buildPlan(ctx, projectUID)
 	if err != nil {
 		return err
 	}
 	return s.run(ctx, pl, params, emit)
 }
 
-// buildPlan lists the subjects, keeps only those with at least one marker (a face to
-// search from), and caps the count, reporting whether the cap bit.
-func (s *Service) buildPlan(ctx context.Context) (plan, error) {
-	all, err := s.subjects.ListSubjects(ctx)
+// buildPlan lists the project's subjects, keeps only those with at least one marker
+// (a face to search from), and caps the count, reporting whether the cap bit.
+func (s *Service) buildPlan(ctx context.Context, projectUID string) (plan, error) {
+	all, err := s.subjects.ListSubjects(ctx, projectUID)
 	if err != nil {
 		return plan{}, fmt.Errorf("listing subjects: %w", err)
 	}
@@ -149,9 +151,9 @@ func (s *Service) buildPlan(ctx context.Context) (plan, error) {
 	}
 	total := len(withFaces)
 	if s.maxSubjects > 0 && total > s.maxSubjects {
-		return plan{subjects: withFaces[:s.maxSubjects], total: total, capped: true}, nil
+		return plan{projectUID: projectUID, subjects: withFaces[:s.maxSubjects], total: total, capped: true}, nil
 	}
-	return plan{subjects: withFaces, total: total, capped: false}, nil
+	return plan{projectUID: projectUID, subjects: withFaces, total: total, capped: false}, nil
 }
 
 // run scans the planned subjects with a bounded worker pool and funnels each result
@@ -162,7 +164,7 @@ func (s *Service) run(ctx context.Context, pl plan, params Params, emit func(Eve
 	defer cancel()
 
 	results := make(chan personResult)
-	go s.scanAll(ctx, pl.subjects, params, results, new(dispatchState))
+	go s.scanAll(ctx, pl.projectUID, pl.subjects, params, results, new(dispatchState))
 
 	summary := Summary{SubjectsTotal: pl.total, Capped: pl.capped}
 	var emitErr error
@@ -189,8 +191,8 @@ func (s *Service) run(ctx context.Context, pl plan, params Params, emit func(Eve
 // caller throws no computed work away — and records how many subjects it started
 // in state.dispatched. A full Sweep passes a state nobody ever stops.
 func (s *Service) scanAll(
-	ctx context.Context, subjects []people.SubjectCount, params Params, results chan<- personResult,
-	state *dispatchState,
+	ctx context.Context, projectUID string, subjects []people.SubjectCount, params Params,
+	results chan<- personResult, state *dispatchState,
 ) {
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(s.concurrency)
@@ -200,7 +202,7 @@ func (s *Service) scanAll(
 		}
 		state.dispatched.Add(1)
 		grp.Go(func() error {
-			r := s.scanSubject(gctx, subj, params)
+			r := s.scanSubject(gctx, projectUID, subj, params)
 			select {
 			case results <- r:
 				return nil
@@ -226,9 +228,9 @@ type personResult struct {
 // candidates (already-done ones filtered out). A search error is carried on the
 // result so the consumer can log and skip it without aborting the sweep.
 func (s *Service) scanSubject(
-	ctx context.Context, subj people.SubjectCount, params Params,
+	ctx context.Context, projectUID string, subj people.SubjectCount, params Params,
 ) personResult {
-	res, err := s.finder.Find(ctx, subj.UID, candidates.Request{
+	res, err := s.finder.Find(ctx, projectUID, subj.UID, candidates.Request{
 		Threshold:   params.Threshold,
 		MinDistance: params.MinDistance,
 		Limit:       params.Limit,

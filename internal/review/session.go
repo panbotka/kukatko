@@ -20,11 +20,15 @@ import (
 	"time"
 )
 
-// session holds one user's cached queue and bookkeeping. Its mutex serialises
-// queue rebuilds with answer bookkeeping for that user; different users never
+// session holds one user's cached queue and bookkeeping in one project. Its
+// mutex serialises queue rebuilds with answer bookkeeping for that user in that
+// project; different users (and one user's games in different projects) never
 // contend.
 type session struct {
 	mu sync.Mutex
+	// project is the uid of the project the session plays in; every search a
+	// rebuild runs is confined to it.
+	project string
 	// queue is the ordered list of questions not yet answered or skipped.
 	queue []Question
 	// hasQueue reports whether queue was ever built (an empty built queue is
@@ -69,24 +73,32 @@ type session struct {
 	lastSeen time.Time
 }
 
-// session returns the caller's session, creating it on first use and pruning
-// sessions idle beyond sessionIdleTTL.
-func (s *Service) session(userUID string) *session {
+// sessionKey is the key of one user's session in one project. The separator is
+// a byte no uid contains, so two different pairs can never share a key.
+func sessionKey(projectUID, userUID string) string {
+	return projectUID + "\x00" + userUID
+}
+
+// session returns the caller's session in the project, creating it on first use
+// and pruning sessions idle beyond sessionIdleTTL.
+func (s *Service) session(projectUID, userUID string) *session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	for uid, sess := range s.sessions {
-		if uid != userUID && now.Sub(sess.lastSeen) > sessionIdleTTL {
-			delete(s.sessions, uid)
+	key := sessionKey(projectUID, userUID)
+	for k, sess := range s.sessions {
+		if k != key && now.Sub(sess.lastSeen) > sessionIdleTTL {
+			delete(s.sessions, k)
 		}
 	}
-	sess, ok := s.sessions[userUID]
+	sess, ok := s.sessions[key]
 	if !ok {
 		sess = &session{
+			project:  projectUID,
 			answered: make(map[string]bool),
 			skipped:  make(map[string]bool),
 		}
-		s.sessions[userUID] = sess
+		s.sessions[key] = sess
 	}
 	sess.lastSeen = now
 	return sess

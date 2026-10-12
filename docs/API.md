@@ -1257,7 +1257,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   subject (find-or-create by name) → markers for all faces, the cluster is consumed;
   `POST /faces/clusters/{id}/remove-face` `{photo_uid,face_index}` detaches a stray face before
   naming → the refreshed cluster (or `null` when it is orphaned); 503 without a backend, 400/404/409 per the
-  sentinels. Mounted by the fourth `server.WithAPI` (`buildClusterAPI` in `cmd/kukatko/clusters.go`).
+  sentinels. **Per project:** clustering, the cached summaries, the listing and the scheduled pass all belong
+  to the request's project — the page never shows another project's cluster, and `assign`/`remove-face` aimed
+  at a cluster of another project answer the very 404 a missing cluster gets (`{"error":"cluster: cluster not
+  found"}`) and change nothing. Mounted by the fourth `server.WithAPI` (`buildClusterAPI` in `cmd/kukatko/clusters.go`).
 - **Outliers API (`/api/v1/p/{project}`, `internal/outlierapi`, curator and above via `RequireCurator`):**
   `GET /subjects/{uid}/outliers` → `{subject_uid,count,meaningful,avg_distance,no_embedding,
   faces:[{photo_uid,face_index,bbox,det_score,distance,marker_uid?,width,height,orientation}]}`
@@ -1274,7 +1277,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   **without an embedding** that cannot be checked (a face recognized while the sidecar was offline) and are
   **not** in `faces` — the client should own up to them, not silently drop them. **Faces confirmed by the
   user** (see Feedback API below) are excluded from the result, so repeated passes converge instead of
-  offering the same false alarms over and over. Mounted by `server.WithAPI` (`buildOutlierAPI` in
+  offering the same false alarms over and over. A subject of another project answers the same 404
+  `{"error":"subject not found"}` as a missing one. Mounted by `server.WithAPI` (`buildOutlierAPI` in
   `cmd/kukatko/outliers.go`).
 - **Candidates API (`/api/v1/p/{project}`, `internal/candidatesapi`, curator and above via `RequireCurator`):**
   "find a person among untagged photos". `POST /subjects/{uid}/candidates` with an **optional** body
@@ -1300,12 +1304,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (present → `assign_person` over that marker, empty → `create_marker`). `bbox` is relative 0..1 **and** pixels
   (honouring EXIF orientation). An empty **non-error** result with `reason` `"no_faces"` (a subject without faces)
   or `"no_embeddings"` (tagged, but the faces have no embedding — the box was offline); the box being offline
-  otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject.
-  Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
+  otherwise does not matter (it reads vectors already in the DB). 503 without a backend, 404 missing subject —
+  `{"error":"subject not found"}`, the same for a subject of another project; every candidate is an unassigned
+  face of the request's project. Mounted by `server.WithAPI` (`buildCandidatesAPI` in `cmd/kukatko/candidates.go`).
 - **Recognition sweep API (`/api/v1/p/{project}`, `internal/sweepapi`, curator and above via `RequireCurator`):**
   "go through all named people and find certain matches among unlabelled faces" — a server-side
   fan-out via the **candidate search** (`internal/candidates`) over all subjects, not client-side.
-  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>`. `confidence`: a value
+  `GET /faces/sweep?confidence=<percent-or-distance>&limit=<per-person>` — over the request's project only:
+  its named subjects, its unassigned faces. `confidence`: a value
   `>1` (max 100) is a **confidence percentage** → mapped to the cosine distance `1 - percent/100`
   (floor `0.01`), a value `≤1` is a **direct distance**, empty = default 75 % (0.25); negative /
   `>100` / non-numeric → 400. `limit` = the cap on candidates per person (0 = all; negative → 400). It iterates
@@ -1491,8 +1497,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   offered again in this session, but is **not recorded** (a restart may bring it back; skip is not a rejection).
   Answers are **idempotent** (`result:"already_answered"`, no second write or duplicate
   marker) and audited in the same transaction as the mutation (via the reused write paths). A deleted
-  photo/face/label between fetch and answer → 200 with `result:"gone"` (the UI moves on), **not** 500; an invalid
-  `question_id`/`answer` → 400. Mounted by `server.WithAPI` (`buildReviewAPI` in
+  face or marker between fetch and answer → 200 with `result:"gone"` (the UI moves on), **not** 500; an invalid
+  `question_id`/`answer` → 400. **Per project:** the queue is the caller's session **in the request's
+  project** — every question is about that project's photos, faces, people and labels — and an answer first
+  proves the question's photo(s), subject and label inside it: one the project does not hold (another
+  project's, or one deleted meanwhile) → **404** `{"error":"review: question not found"}`, the same body either
+  way, with **nothing written** (not even the skip memory). Mounted by `server.WithAPI` (`buildReviewAPI` in
   `cmd/kukatko/review.go`, sharing the facematch service with photoapi and the candidates/expand services with the
   sweep and expand endpoints).
   **Leaderboard** `GET /review/leaderboard?window=all|7d|today` (default `all`, other value → 400)
@@ -1723,9 +1733,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `POST /process/faces` → `{enqueued, skipped_videos}` (backfill `face_detect` for the **stills** without
   face detection; a video is never scheduled — detection does not run on footage — and the count of the
   clips passed over is reported so "nothing scheduled" and "nothing to schedule" stay different answers),
-  `POST /process/clusters` → **202** `{scheduled}` (queues the `face_cluster` pass: regroup the
-  unassigned faces, then prepare the cluster summaries; `scheduled:false` means a pass was already
-  waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
+  `POST /process/clusters` → **202** `{scheduled}` (queues one `face_cluster` pass **per active project**:
+  regroup that project's unassigned faces, then prepare its cluster summaries; `scheduled:false` means every
+  active project already had a pass waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
   geotagged photos without a place via `placesjob.BackfillPlaces`; 503 when there is no mapy.com key),
   `POST /process/thumbnails` → `{enqueued,pending,dry_run}` (backfill `thumbnail` for photos **without a
   generated thumbnail** via `thumbjob.BackfillThumbnails`; "missing thumbnail" = a photo without a perceptual
@@ -2574,7 +2584,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   cannot be written to → nothing scheduled, nothing to detach → 409; all three leave the catalogue untouched.
   The body carries no `Content-Length`, so a client that reads it to EOF (any browser taking it as a Blob) knows
   the jobs are queued. `POST /maintenance/nameless-subjects/restore` takes that file back (raw JSON body, ≤64 MiB;
-  unparsable or subject-less → 400) → `202 {queued}`. Both destructive directions run as the `nameless_detach` /
+  unparsable or subject-less → 400, a file of another project → 400) → `202 {queued}`. All three work in the
+  request's project — through these instance routes the bootstrap project; `kukatko maintenance
+  nameless-subjects --project <slug>` reaches the others — and the undo file records it (`project_uid`,
+  `project_slug`). Both destructive directions run as the `nameless_detach` /
   `nameless_restore` jobs over `people.DetachSubject`/`RestoreSubject` (audited inside their own transaction),
   never inline: detaching production's catch-all moves ~111 000 faces into the partial HNSW index of migration
   0047 and takes minutes. Mounted always (`buildMaintenanceAPI`

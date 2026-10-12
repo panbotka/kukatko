@@ -44,7 +44,7 @@ type fakeSweeper struct {
 // Scan walks the scripted subjects from win.Offset for at most win.Budget of
 // them, handing each to collect and stopping early when collect says so.
 func (f *fakeSweeper) Scan(
-	_ context.Context, params sweep.Params, win sweep.Window, collect sweep.Collect,
+	_ context.Context, _ string, params sweep.Params, win sweep.Window, collect sweep.Collect,
 ) (sweep.Coverage, error) {
 	f.mu.Lock()
 	f.calls++
@@ -157,7 +157,7 @@ type fakeFeedback struct {
 
 // ConfirmFace records the face confirmation.
 func (f *fakeFeedback) ConfirmFace(
-	_ context.Context, key feedback.FaceConfirmationKey, _ audit.Entry,
+	_ context.Context, _ string, key feedback.FaceConfirmationKey, _ audit.Entry,
 ) error {
 	if f.err != nil {
 		return f.err
@@ -189,7 +189,7 @@ func (f *fakeFeedback) DismissDuplicate(
 }
 
 // RejectFace records the face rejection.
-func (f *fakeFeedback) RejectFace(_ context.Context, key feedback.FaceRejectionKey, _ audit.Entry) error {
+func (f *fakeFeedback) RejectFace(_ context.Context, _ string, key feedback.FaceRejectionKey, _ audit.Entry) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -206,20 +206,22 @@ func (f *fakeFeedback) RejectLabel(_ context.Context, key feedback.LabelRejectio
 	return nil
 }
 
-// fakeAssigner records assign requests.
+// fakeAssigner records assign requests and the project each was applied in.
 type fakeAssigner struct {
-	reqs []facematch.AssignRequest
-	err  error
+	reqs     []facematch.AssignRequest
+	projects []string
+	err      error
 }
 
 // Apply records the request.
 func (f *fakeAssigner) Apply(
-	_ context.Context, req facematch.AssignRequest, _ audit.Meta,
+	_ context.Context, projectUID string, req facematch.AssignRequest, _ audit.Meta,
 ) (facematch.AssignResult, error) {
 	if f.err != nil {
 		return facematch.AssignResult{}, f.err
 	}
 	f.reqs = append(f.reqs, req)
+	f.projects = append(f.projects, projectUID)
 	return facematch.AssignResult{Action: req.Action}, nil
 }
 
@@ -231,6 +233,8 @@ type fixture struct {
 	faces    *fakeFaces
 	feedback *fakeFeedback
 	assigner *fakeAssigner
+	// scope decides which uids belong to testProject; by default all of them.
+	scope *fakeScope
 	// perEntity overrides Config.MaxPerEntity (0 = the package default), so a
 	// test can widen or tighten the share one subject or label may take of a
 	// batch.
@@ -281,6 +285,7 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 		faces:    &fakeFaces{faces: map[vectors.FaceKey]vectors.Face{}},
 		feedback: &fakeFeedback{},
 		assigner: &fakeAssigner{},
+		scope:    &fakeScope{},
 		now:      &now,
 	}
 	if mutate != nil {
@@ -296,6 +301,7 @@ func newFixture(t *testing.T, mutate func(*fixture)) *fixture {
 		Faces:             f.faces,
 		Feedback:          f.feedback,
 		Assigner:          f.assigner,
+		Scope:             f.scope,
 		MaxPerEntity:      f.perEntity,
 		SureShare:         f.sureShare,
 		SureMin:           f.sureMin,
@@ -396,7 +402,7 @@ type fakeBreathers struct {
 
 // PickBreathers returns up to limit scripted picks.
 func (f *fakeBreathers) PickBreathers(
-	_ context.Context, _ string, limit int,
+	_ context.Context, _, _ string, limit int,
 ) ([]BreatherPick, error) {
 	f.calls++
 	if f.err != nil {
@@ -405,8 +411,8 @@ func (f *fakeBreathers) PickBreathers(
 	return f.picks[:min(limit, len(f.picks))], nil
 }
 
-// ListByUIDs returns the scripted photos among uids.
-func (f *fakeBreathers) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+// ListByUIDsInProject returns the scripted photos among uids.
+func (f *fakeBreathers) ListByUIDsInProject(_ context.Context, _ string, uids []string) ([]photos.Photo, error) {
 	out := make([]photos.Photo, 0, len(uids))
 	for _, uid := range uids {
 		if photo, ok := f.photos[uid]; ok {
@@ -465,7 +471,7 @@ func TestQueue_tierFilter(t *testing.T) {
 		// Similarities 0.85 (confident tier), 0.5 (band).
 		f.expander.results["lab1"] = labelResult("lab1", 0.85, 0.5)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -512,7 +518,7 @@ func TestQueue_alreadyDoneExcluded(t *testing.T) {
 		person.Candidates[0].Action = candidates.ActionAlreadyDone
 		f.sweeper.people = []*sweep.Person{person}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -536,7 +542,7 @@ func TestQueue_hiddenPhotosExcluded(t *testing.T) {
 		res.Candidates[0].Photo.HiddenFromLibrary = true
 		f.expander.results["lab1"] = res
 	})
-	got, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	got, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -559,7 +565,7 @@ func TestQueue_ordersByBoundaryDistanceAndInterleaves(t *testing.T) {
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 1)}
 		f.expander.results["lab1"] = labelResult("lab1", 0.46)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -592,7 +598,7 @@ func TestQueue_deterministicAcrossRebuilds(t *testing.T) {
 			f.expander.results["lab1"] = labelResult("lab1", 0.55, 0.65)
 			f.expander.results["lab2"] = labelResult("lab2", 0.6)
 		})
-		res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+		res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -618,7 +624,7 @@ func TestQueue_cacheTTL(t *testing.T) {
 	})
 	ctx := context.Background()
 	for range 3 {
-		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+		if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 	}
@@ -626,7 +632,7 @@ func TestQueue_cacheTTL(t *testing.T) {
 		t.Fatalf("sweep calls within TTL = %d, want 1 (cached)", f.sweeper.calls)
 	}
 	*f.now = f.now.Add(2 * DefaultCacheTTL)
-	if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+	if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue after TTL: %v", err)
 	}
 	if f.sweeper.calls != 2 {
@@ -641,7 +647,7 @@ func TestQueue_limit(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41, 0.42)}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 2)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 2)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -694,7 +700,7 @@ func TestQueue_emptyReasons(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, tt.mutate)
-			res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+			res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
@@ -713,7 +719,7 @@ func TestQueue_labelSearchFailureSkipsLabel(t *testing.T) {
 		f.expander.errs["bad"] = errors.New("boom")
 		f.expander.results["good"] = labelResult("good", 0.6)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -725,7 +731,7 @@ func TestQueue_labelSearchFailureSkipsLabel(t *testing.T) {
 func TestQueue_sweepFailureFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) { f.sweeper.err = errors.New("boom") })
-	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0); err == nil {
+	if _, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0); err == nil {
 		t.Fatal("Queue with failing sweep: want error, got nil")
 	}
 }
@@ -797,4 +803,44 @@ func TestParseQuestionID_invalid(t *testing.T) {
 			t.Errorf("parse(%q) error = %v, want ErrInvalidQuestion", id, err)
 		}
 	}
+}
+
+// testProject is the project the unit tests play in.
+const testProject = "pj_test"
+
+// fakeScope answers the membership reads: every uid belongs to the project
+// unless it is listed in foreign, so a test can plant another project's photo,
+// subject or label.
+type fakeScope struct {
+	foreign map[string]bool
+	// reads counts the membership reads, so a test can tell a refused answer
+	// was refused before any write.
+	reads int
+}
+
+// members returns the uids not marked foreign.
+func (f *fakeScope) members(uids []string) map[string]bool {
+	f.reads++
+	out := make(map[string]bool, len(uids))
+	for _, uid := range uids {
+		if !f.foreign[uid] {
+			out[uid] = true
+		}
+	}
+	return out
+}
+
+// PhotosInProject returns the uids not marked foreign.
+func (f *fakeScope) PhotosInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return f.members(uids), nil
+}
+
+// SubjectsInProject returns the uids not marked foreign.
+func (f *fakeScope) SubjectsInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return f.members(uids), nil
+}
+
+// LabelsInProject returns the uids not marked foreign.
+func (f *fakeScope) LabelsInProject(_ context.Context, _ string, uids []string) (map[string]bool, error) {
+	return f.members(uids), nil
 }

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -69,7 +70,7 @@ func (h *skipHarness) skipEverything(t *testing.T, svc *review.Service, user str
 	ctx := context.Background()
 	asked := make([]string, 0, limit)
 	for len(asked) < limit {
-		res, err := svc.Queue(ctx, user, review.SourcePeople, 100)
+		res, err := svc.Queue(ctx, project.BootstrapUID, user, review.SourcePeople, 100)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -81,7 +82,7 @@ func (h *skipHarness) skipEverything(t *testing.T, svc *review.Service, user str
 				break
 			}
 			meta := audit.Meta{ActorUID: user}
-			if _, err := svc.Answer(ctx, user, q.ID, review.AnswerSkip, meta); err != nil {
+			if _, err := svc.Answer(ctx, project.BootstrapUID, user, q.ID, review.AnswerSkip, meta); err != nil {
 				t.Fatalf("Answer(skip): %v", err)
 			}
 			asked = append(asked, q.Photo.UID)
@@ -94,7 +95,7 @@ func (h *skipHarness) skipEverything(t *testing.T, svc *review.Service, user str
 // every read starts from a cold session — the restart the memory exists for.
 func (h *skipHarness) faceQuestions(t *testing.T, user string) []review.Question {
 	t.Helper()
-	res, err := h.service().Queue(context.Background(), user, review.SourcePeople, 100)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, user, review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -222,7 +223,7 @@ func TestSkip_afterTheCoolingOffPeriodOneUnseenPhotoIsAsked(t *testing.T) {
 	// would be the game not listening at all.
 	later := time.Now().Add(review.DefaultSkipMuteCooldown + time.Hour)
 	svc := h.serviceAt(func() time.Time { return later })
-	res, err := svc.Queue(context.Background(), user, review.SourcePeople, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, user, review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -255,7 +256,7 @@ func TestSkip_anotherSkipRemutesForLonger(t *testing.T) {
 	// often rather than every cooldown for ever.
 	sameWaitAgain := later.Add(review.DefaultSkipMuteCooldown + time.Hour)
 	res, err := h.serviceAt(func() time.Time { return sameWaitAgain }).
-		Queue(context.Background(), user, review.SourcePeople, 100)
+		Queue(context.Background(), project.BootstrapUID, user, review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}

@@ -75,7 +75,7 @@ func (s *scaleFaces) SampleFacesBySubject(
 // FindSimilarUnassignedFaceCandidates returns this exemplar's window of the
 // unnamed-face pool, each face at a stable distance inside the allowed range.
 func (s *scaleFaces) FindSimilarUnassignedFaceCandidates(
-	_ context.Context, vec []float32, limit int, maxDistance float64, _ []vectors.FaceKey,
+	_ context.Context, _ string, vec []float32, limit int, maxDistance float64, _ []vectors.FaceKey,
 ) ([]vectors.FaceCandidate, error) {
 	n := min(limit, s.pool)
 	start := 0
@@ -109,15 +109,15 @@ func (s *scaleFaces) FacesByKeys(_ context.Context, keys []vectors.FaceKey) ([]v
 // scalePeople is a PeopleStore that knows one subject and no markers.
 type scalePeople struct{ exemplars int }
 
-func (s *scalePeople) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (s *scalePeople) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	return people.Subject{UID: uid, Name: uid}, nil
 }
 
-func (s *scalePeople) GetMarkerByUID(context.Context, string) (people.Marker, error) {
+func (s *scalePeople) GetMarkerByUID(context.Context, string, string) (people.Marker, error) {
 	return people.Marker{}, people.ErrMarkerNotFound
 }
 
-func (s *scalePeople) ListPhotoUIDsBySubject(context.Context, string) ([]string, error) {
+func (s *scalePeople) ListPhotoUIDsBySubject(context.Context, string, string) ([]string, error) {
 	out := make([]string, 0, s.exemplars)
 	for i := range s.exemplars {
 		out = append(out, fmt.Sprintf("src%06d", i))
@@ -129,7 +129,7 @@ func (s *scalePeople) ListPhotoUIDsBySubject(context.Context, string) ([]string,
 // all — the per-candidate cost the real store pays.
 type scalePhotos struct{ exif []byte }
 
-func (s *scalePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+func (s *scalePhotos) ListByUIDsInProject(_ context.Context, _ string, uids []string) ([]photos.Photo, error) {
 	out := make([]photos.Photo, 0, len(uids))
 	for _, uid := range uids {
 		blob := make([]byte, len(s.exif))
@@ -192,7 +192,7 @@ func requestAllocation(tb testing.TB, exemplars, pool, spread int, req Request) 
 	var res Result
 	bytes := allocatedBytes(tb, func() {
 		var err error
-		res, err = svc.Find(context.Background(), "su_scale", req)
+		res, err = svc.Find(context.Background(), testProject, "su_scale", req)
 		if err != nil {
 			tb.Fatalf("Find(exemplars=%d, pool=%d): %v", exemplars, pool, err)
 		}

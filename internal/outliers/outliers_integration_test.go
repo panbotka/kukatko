@@ -31,18 +31,6 @@ type harness struct {
 	svc      *outliers.Service
 }
 
-// bootstrapPeople adapts *people.Store to the project-less outliers.PeopleStore,
-// reading the bootstrap project the test subjects land in (cmd/kukatko wires the
-// request's project instead).
-type bootstrapPeople struct {
-	*people.Store
-}
-
-// GetSubjectByUID reads the subject inside the bootstrap project.
-func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
-	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
-}
-
 // newHarness returns a harness over a truncated integration database.
 func newHarness(t *testing.T) harness {
 	t.Helper()
@@ -57,7 +45,7 @@ func newHarness(t *testing.T) harness {
 		photos:   photos.NewStore(db.Pool()),
 		feedback: feedbackStore,
 		svc: outliers.New(outliers.Config{
-			Faces: faceStore, People: bootstrapPeople{peopleStore}, Feedback: feedbackStore,
+			Faces: faceStore, People: peopleStore, Feedback: feedbackStore,
 		}),
 	}
 }
@@ -142,7 +130,7 @@ func TestOutliers_plantedOutlierRanksFirstDB(t *testing.T) {
 	}
 	outlierPhoto := h.assignFace(t, "planted-outlier", subj, faceVec(map[int]float32{1: 1}))
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -170,7 +158,7 @@ func TestOutliers_trimmedCentroidDB(t *testing.T) {
 	subj := h.makeSubject(t, "Alice")
 	plantedA, plantedB := h.plantCluster(t, subj)
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -212,7 +200,7 @@ func TestOutliers_thresholdAndLimitDB(t *testing.T) {
 	subj := h.makeSubject(t, "Alice")
 	h.plantCluster(t, subj)
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{Threshold: 0.5})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{Threshold: 0.5})
 	if err != nil {
 		t.Fatalf("Outliers(threshold): %v", err)
 	}
@@ -220,7 +208,7 @@ func TestOutliers_thresholdAndLimitDB(t *testing.T) {
 		t.Errorf("threshold: faces=%d Count=%d, want 2 of 12", len(res.Faces), res.Count)
 	}
 
-	res, err = h.svc.Outliers(ctx, subj, outliers.Options{Limit: 3})
+	res, err = h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{Limit: 3})
 	if err != nil {
 		t.Fatalf("Outliers(limit): %v", err)
 	}
@@ -244,7 +232,7 @@ func TestOutliers_confirmedFaceExcludedDB(t *testing.T) {
 		t.Fatalf("ConfirmFace: %v", err)
 	}
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -282,7 +270,7 @@ func TestOutliers_noEmbeddingCountDB(t *testing.T) {
 		t.Fatalf("CreateMarker: %v", err)
 	}
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -303,7 +291,7 @@ func TestOutliers_smallSetDB(t *testing.T) {
 	h.assignFace(t, "small-1", subj, faceVec(map[int]float32{0: 1}))
 	h.assignFace(t, "small-2", subj, faceVec(map[int]float32{1: 1}))
 
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -319,7 +307,7 @@ func TestOutliers_noFacesDB(t *testing.T) {
 	ctx := t.Context()
 
 	subj := h.makeSubject(t, "Carol")
-	res, err := h.svc.Outliers(ctx, subj, outliers.Options{})
+	res, err := h.svc.Outliers(ctx, project.BootstrapUID, subj, outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -331,7 +319,7 @@ func TestOutliers_noFacesDB(t *testing.T) {
 // TestOutliers_subjectNotFoundDB checks the people sentinel is surfaced.
 func TestOutliers_subjectNotFoundDB(t *testing.T) {
 	h := newHarness(t)
-	_, err := h.svc.Outliers(t.Context(), "su_missing", outliers.Options{})
+	_, err := h.svc.Outliers(t.Context(), project.BootstrapUID, "su_missing", outliers.Options{})
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("Outliers = %v, want ErrSubjectNotFound", err)
 	}

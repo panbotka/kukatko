@@ -42,15 +42,34 @@ const (
 // NamelessRepair is the nameless-subject repair the API drives. It is satisfied
 // by *namelessjob.Service; a nil NamelessRepair makes the three endpoints answer
 // 503.
+//
+// Every method works inside one project: the request's (auth.ProjectFromContext).
+// These routes are instance routes, so through the unprefixed path that is the
+// bootstrap project; the CLI's --project reaches any other.
 type NamelessRepair interface {
-	// List reports the subjects whose name identifies nobody (read-only).
-	List(ctx context.Context) ([]people.NamelessSubject, error)
-	// Snapshot reads the undo file a detach would need, changing nothing.
-	Snapshot(ctx context.Context) (namelessjob.Undo, error)
+	// List reports the project's subjects whose name identifies nobody
+	// (read-only).
+	List(ctx context.Context, projectUID string) ([]people.NamelessSubject, error)
+	// Snapshot reads the undo file a detach would need, changing nothing; the
+	// file records the project's uid and slug.
+	Snapshot(ctx context.Context, projectUID, projectSlug string) (namelessjob.Undo, error)
 	// EnqueueDetach schedules the detach of everything the undo file covers.
-	EnqueueDetach(ctx context.Context, undo namelessjob.Undo, meta audit.Meta) (int, error)
-	// EnqueueRestore schedules the replay of an undo file.
-	EnqueueRestore(ctx context.Context, undo namelessjob.Undo, meta audit.Meta) (int, error)
+	EnqueueDetach(ctx context.Context, projectUID string, undo namelessjob.Undo, meta audit.Meta) (int, error)
+	// EnqueueRestore schedules the replay of an undo file; one of another
+	// project is namelessjob.ErrProjectMismatch.
+	EnqueueRestore(ctx context.Context, projectUID string, undo namelessjob.Undo, meta audit.Meta) (int, error)
+}
+
+// namelessProject returns the uid and slug of the project the repair runs in,
+// writing a 500 and reporting false when the request carries none — which a
+// request through the auth guards never does.
+func (a *API) namelessProject(w http.ResponseWriter, r *http.Request) (uid, slug string, ok bool) {
+	uid, slug, ok = a.projectOf(r.Context())
+	if !ok {
+		log.Printf("maintenanceapi: the nameless repair was reached without a project")
+		writeError(w, http.StatusInternalServerError, "no project")
+	}
+	return uid, slug, ok
 }
 
 // namelessReportResponse is the read-only report: every nameless subject with the
@@ -75,7 +94,11 @@ func (a *API) handleNamelessReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "nameless-subject repair not available")
 		return
 	}
-	found, err := a.nameless.List(r.Context())
+	projectUID, _, ok := a.namelessProject(w, r)
+	if !ok {
+		return
+	}
+	found, err := a.nameless.List(r.Context(), projectUID)
 	if err != nil {
 		log.Printf("maintenanceapi: listing nameless subjects: %v", err)
 		writeError(w, http.StatusInternalServerError, "listing nameless subjects failed")
@@ -114,7 +137,11 @@ func (a *API) handleNamelessDetach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "nameless-subject repair not available")
 		return
 	}
-	undo, err := a.nameless.Snapshot(r.Context())
+	projectUID, projectSlug, ok := a.namelessProject(w, r)
+	if !ok {
+		return
+	}
+	undo, err := a.nameless.Snapshot(r.Context(), projectUID, projectSlug)
 	if err != nil {
 		log.Printf("maintenanceapi: snapshotting nameless subjects: %v", err)
 		writeError(w, http.StatusInternalServerError, "reading the undo snapshot failed")
@@ -140,7 +167,7 @@ func (a *API) handleNamelessDetach(w http.ResponseWriter, r *http.Request) {
 	// response has already promised must not die with it.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), enqueueTimeout)
 	defer cancel()
-	if queued, err := a.nameless.EnqueueDetach(ctx, undo, meta); err != nil {
+	if queued, err := a.nameless.EnqueueDetach(ctx, projectUID, undo, meta); err != nil {
 		log.Printf("maintenanceapi: scheduling the nameless detach: %v (queued %d)", err, queued)
 	}
 }
@@ -148,8 +175,8 @@ func (a *API) handleNamelessDetach(w http.ResponseWriter, r *http.Request) {
 // handleNamelessRestore takes an undo file back and schedules the replay: every
 // subject it holds is re-created under its original uid and the markers and faces
 // it owned are re-assigned. It answers 503 when the repair is not wired, 400 for
-// a body that is not a readable undo file or records no subject, and 500 when the
-// scheduling fails.
+// a body that is not a readable undo file, records no subject, or belongs to
+// another project than the request's, and 500 when the scheduling fails.
 func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 	if a.nameless == nil {
 		writeError(w, http.StatusServiceUnavailable, "nameless-subject repair not available")
@@ -160,7 +187,15 @@ func (a *API) handleNamelessRestore(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	queued, err := a.nameless.EnqueueRestore(r.Context(), undo, auditMeta(r))
+	projectUID, _, ok := a.namelessProject(w, r)
+	if !ok {
+		return
+	}
+	queued, err := a.nameless.EnqueueRestore(r.Context(), projectUID, undo, auditMeta(r))
+	if errors.Is(err, namelessjob.ErrProjectMismatch) {
+		writeError(w, http.StatusBadRequest, "the undo file belongs to another project")
+		return
+	}
 	if err != nil {
 		log.Printf("maintenanceapi: scheduling the nameless restore: %v", err)
 		writeError(w, http.StatusInternalServerError, "scheduling the restore failed")

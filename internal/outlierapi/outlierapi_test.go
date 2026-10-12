@@ -24,7 +24,7 @@ type fakeService struct {
 
 // Outliers records opts and returns the canned result and error regardless of
 // subject.
-func (f *fakeService) Outliers(_ context.Context, _ string, opts outliers.Options) (outliers.Result, error) {
+func (f *fakeService) Outliers(_ context.Context, _, _ string, opts outliers.Options) (outliers.Result, error) {
 	f.opts = opts
 	return f.result, f.err
 }

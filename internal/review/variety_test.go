@@ -74,7 +74,7 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 		f.perEntity = math.MaxInt32
 	})
 	ctx := context.Background()
-	mat, err := f.svc.collect(ctx, ctx, SourceBoth, DefaultQueueSize)
+	mat, err := f.svc.collect(ctx, ctx, testProject, SourceBoth, DefaultQueueSize)
 	if err != nil {
 		t.Fatalf("collect: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestQueue_monotonyBaseline(t *testing.T) {
 func TestQueue_noEntityRepeatsMoreThanTheRunCap(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, monotonousLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestQueue_noEntityRepeatsMoreThanTheRunCap(t *testing.T) {
 func TestQueue_noEntityOwnsMoreThanItsShare(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, monotonousLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestQueue_varietyStaysInsideTheTiers(t *testing.T) {
 			scannedPerson("certain", 0.02, 0.05), scannedPerson("hopeless", 0.90, 0.95))
 		f.expander.results["lab01"] = labelResult("lab01", 0.99, 0.98, 0.2, 0.6)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestQueue_spreadStaysDeterministic(t *testing.T) {
 	t.Parallel()
 	build := func() []string {
 		f := newFixture(t, monotonousLibrary)
-		res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+		res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 		if err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
@@ -209,7 +209,7 @@ func TestQueue_maxPerEntityIsConfigurable(t *testing.T) {
 		monotonousLibrary(f)
 		f.perEntity = 1
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestQueue_onePersonDominatingTheLibraryDoesNotOwnTheRound(t *testing.T) {
 				scannedPerson(fmt.Sprintf("occasional%d", i), distancesOf(nearMid(2, 0.14))...))
 		}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourcePeople, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourcePeople, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}

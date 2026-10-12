@@ -39,6 +39,9 @@ var (
 	// ErrFaceNotInCluster indicates a remove-face request named a face that is not
 	// a member of the cluster.
 	ErrFaceNotInCluster = errors.New("cluster: face is not in the cluster")
+	// ErrNoProject indicates a Store or Service method was called without a
+	// project: a programming error, never read as "the whole instance".
+	ErrNoProject = errors.New("cluster: no project given")
 )
 
 // Face is a clusterable detected face: its database identity, location and

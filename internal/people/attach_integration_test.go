@@ -337,7 +337,7 @@ func TestAttachSubjectToPhoto_namelessRepair(t *testing.T) {
 	f.attach(t)
 
 	entry := actorEntry(f.actorUID, audit.ActionSubjectDelete, "subjects", f.subjectUID, nil)
-	snap, err := f.store.DetachSubject(t.Context(), f.subjectUID, entry)
+	snap, err := f.store.DetachSubject(t.Context(), testProject, f.subjectUID, entry)
 	if err != nil {
 		t.Fatalf("DetachSubject: %v", err)
 	}

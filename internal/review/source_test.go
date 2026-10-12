@@ -46,7 +46,7 @@ func TestParseSource(t *testing.T) {
 func TestQueue_peopleSourceNeverRunsTheLabelSearch(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, mixedLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourcePeople, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourcePeople, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestQueue_peopleSourceNeverRunsTheLabelSearch(t *testing.T) {
 func TestQueue_labelsSourceNeverRunsTheSubjectSweep(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, mixedLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", SourceLabels, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceLabels, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestQueue_labelsSourceNeverRunsTheSubjectSweep(t *testing.T) {
 func TestQueue_bothIsTheDefaultForAnUnknownSource(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, mixedLibrary)
-	res, err := f.svc.Queue(context.Background(), "user", Source("nonsense"), 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", Source("nonsense"), 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestQueue_switchingSourceRebuildsInsideTheCacheTTL(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, mixedLibrary)
 	ctx := context.Background()
-	if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+	if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	sweeps := f.sweeper.calls
@@ -105,7 +105,7 @@ func TestQueue_switchingSourceRebuildsInsideTheCacheTTL(t *testing.T) {
 	// The clock does not move, so the cache is warm: a repeat of the same source
 	// must not re-run the searches. Without this the test below would prove
 	// nothing — every call would rebuild anyway.
-	if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+	if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	if f.sweeper.calls != sweeps {
@@ -114,7 +114,7 @@ func TestQueue_switchingSourceRebuildsInsideTheCacheTTL(t *testing.T) {
 
 	// A changed source must not be served that warm batch: it holds exactly the
 	// questions the player just asked not to be asked.
-	res, err := f.svc.Queue(ctx, "user", SourceLabels, 0)
+	res, err := f.svc.Queue(ctx, testProject, "user", SourceLabels, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestQueue_emptyChosenSourceSaysWhich(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, tc.setup)
-			res, err := f.svc.Queue(context.Background(), "user", tc.source, 0)
+			res, err := f.svc.Queue(context.Background(), testProject, "user", tc.source, 0)
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
@@ -219,7 +219,7 @@ func TestQueue_skipsCarryAcrossSources(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, mixedLibrary)
 	ctx := context.Background()
-	res, err := f.svc.Queue(ctx, "user", SourceLabels, 0)
+	res, err := f.svc.Queue(ctx, testProject, "user", SourceLabels, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -227,13 +227,13 @@ func TestQueue_skipsCarryAcrossSources(t *testing.T) {
 		t.Fatalf("questions = %+v, want the one label question", res.Questions)
 	}
 	skipped := res.Questions[0].ID
-	if _, err := f.svc.Answer(ctx, "user", skipped, AnswerSkip, audit.Meta{}); err != nil {
+	if _, err := f.svc.Answer(ctx, testProject, "user", skipped, AnswerSkip, audit.Meta{}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 
 	// "Don't know" is a statement about the question, not about the toggle that
 	// surfaced it, so switching back to both must not offer it again.
-	back, err := f.svc.Queue(ctx, "user", SourceBoth, 0)
+	back, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}

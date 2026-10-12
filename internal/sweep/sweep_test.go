@@ -15,6 +15,10 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
+// testProject is the project uid the unit tests sweep; the fakes ignore it,
+// the integration tests prove the real stores honour it.
+const testProject = "pj_test"
+
 // fakeLister returns a fixed subject list (or an error).
 type fakeLister struct {
 	subjects []people.SubjectCount
@@ -22,7 +26,7 @@ type fakeLister struct {
 }
 
 // ListSubjects returns the fake's canned subjects or error.
-func (f *fakeLister) ListSubjects(context.Context) ([]people.SubjectCount, error) {
+func (f *fakeLister) ListSubjects(context.Context, string) ([]people.SubjectCount, error) {
 	return f.subjects, f.err
 }
 
@@ -42,7 +46,7 @@ type fakeFinder struct {
 
 // Find records the query, tracks concurrency, and returns the canned result/error.
 func (f *fakeFinder) Find(
-	ctx context.Context, subjectUID string, _ candidates.Request,
+	ctx context.Context, _, subjectUID string, _ candidates.Request,
 ) (candidates.Result, error) {
 	f.mu.Lock()
 	f.queried = append(f.queried, subjectUID)
@@ -98,7 +102,7 @@ func quietService(t *testing.T, cfg Config) *Service {
 func collect(t *testing.T, svc *Service, params Params) []Event {
 	t.Helper()
 	var events []Event
-	if err := svc.Sweep(context.Background(), params, func(ev Event) error {
+	if err := svc.Sweep(context.Background(), testProject, params, func(ev Event) error {
 		events = append(events, ev)
 		return nil
 	}); err != nil {
@@ -319,7 +323,7 @@ func TestSweep_listErrorFatal(t *testing.T) {
 	svc := quietService(t, Config{Subjects: lister, Finder: finder})
 
 	var emitted int
-	err := svc.Sweep(context.Background(), Params{}, func(Event) error {
+	err := svc.Sweep(context.Background(), testProject, Params{}, func(Event) error {
 		emitted++
 		return nil
 	})
@@ -346,7 +350,7 @@ func TestSweep_emitFailureStops(t *testing.T) {
 	want := errors.New("client gone")
 	done := make(chan error, 1)
 	go func() {
-		done <- svc.Sweep(context.Background(), Params{}, func(Event) error { return want })
+		done <- svc.Sweep(context.Background(), testProject, Params{}, func(Event) error { return want })
 	}()
 	select {
 	case err := <-done:

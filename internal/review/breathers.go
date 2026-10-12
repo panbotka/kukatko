@@ -77,12 +77,12 @@ func NewBreatherStore(pool *pgxpool.Pool) *BreatherStore {
 	return &BreatherStore{pool: pool}
 }
 
-// breatherQuery picks the best-liked photo of each era for one user. The inner
-// select joins the two per-user opinion tables ($1 is the user) and keeps only
-// the photos the library would show anyway — not archived, not a hidden
-// document, not a non-primary stack member — while DISTINCT ON collapses each
-// decade to its highest-rated member. $2 is the rating floor, $3 the cap on how
-// many eras come back.
+// breatherQuery picks the best-liked photo of each era for one user in one
+// project. The inner select joins the two per-user opinion tables ($1 is the
+// user) and keeps only the project's photos ($4) the library would show anyway —
+// not archived, not a hidden document, not a non-primary stack member — while
+// DISTINCT ON collapses each decade to its highest-rated member. $2 is the
+// rating floor, $3 the cap on how many eras come back.
 const breatherQuery = `
 SELECT DISTINCT ON (decade) photo_uid, rating, favorite
 FROM (
@@ -93,7 +93,8 @@ FROM (
     FROM photos p
     LEFT JOIN user_ratings r ON r.photo_uid = p.uid AND r.user_uid = $1
     LEFT JOIN user_favorites f ON f.photo_uid = p.uid AND f.user_uid = $1
-    WHERE p.archived_at IS NULL
+    WHERE p.project_id = $4
+      AND p.archived_at IS NULL
       AND (p.stack_uid IS NULL OR p.stack_primary)
       AND p.hidden_from_library = FALSE
       AND (r.rating >= $2 OR f.photo_uid IS NOT NULL)
@@ -101,17 +102,21 @@ FROM (
 ORDER BY decade DESC, rating DESC, favorite DESC, photo_uid
 LIMIT $3`
 
-// PickBreathers returns up to limit breather candidates for the user, at most
-// one per era and newest era first. A user with no favourites and no high
-// ratings yields an empty slice, not an error — a library nobody has curated yet
-// simply has no breathers to show.
+// PickBreathers returns up to limit breather candidates for the user among the
+// project's photos, at most one per era and newest era first. A user with no
+// favourites and no high ratings yields an empty slice, not an error — a library
+// nobody has curated yet simply has no breathers to show. An empty projectUID is
+// ErrNoProject.
 func (s *BreatherStore) PickBreathers(
-	ctx context.Context, userUID string, limit int,
+	ctx context.Context, projectUID, userUID string, limit int,
 ) ([]BreatherPick, error) {
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
 	if limit <= 0 {
 		limit = breatherPoolSize
 	}
-	rows, err := s.pool.Query(ctx, breatherQuery, userUID, breatherMinRating, limit)
+	rows, err := s.pool.Query(ctx, breatherQuery, userUID, breatherMinRating, limit, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("review: querying breather candidates: %w", err)
 	}
@@ -138,11 +143,11 @@ func (s *BreatherStore) PickBreathers(
 // Every failure degrades to no breather at all. The card is a garnish on a queue
 // that has to keep working when the box is offline and half the library's jobs
 // are pending, so it must never be the reason a round fails to load.
-func (s *Service) breathersFor(ctx context.Context, userUID string, sequence int) []Breather {
+func (s *Service) breathersFor(ctx context.Context, projectUID, userUID string, sequence int) []Breather {
 	if s.breathers == nil || s.photos == nil {
 		return nil
 	}
-	picks, err := s.breathers.PickBreathers(ctx, userUID, breatherPoolSize)
+	picks, err := s.breathers.PickBreathers(ctx, projectUID, userUID, breatherPoolSize)
 	if err != nil {
 		s.log.WarnContext(ctx, "review: picking breathers failed", "error", err)
 		return nil
@@ -155,7 +160,7 @@ func (s *Service) breathersFor(ctx context.Context, userUID string, sequence int
 	for _, pick := range turn {
 		uids = append(uids, pick.PhotoUID)
 	}
-	byUID, err := s.photosByUID(ctx, uids)
+	byUID, err := s.photosByUID(ctx, projectUID, uids)
 	if err != nil {
 		s.log.WarnContext(ctx, "review: loading breather photos failed", "error", err)
 		return nil

@@ -49,12 +49,13 @@ type countingFaces struct {
 
 // FindSimilarUnassignedFaceCandidates counts the query and runs the real one.
 func (c *countingFaces) FindSimilarUnassignedFaceCandidates(
-	ctx context.Context, vec []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+	ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+	exclude []vectors.FaceKey,
 ) ([]vectors.FaceCandidate, error) {
 	c.mu.Lock()
 	c.knn++
 	c.mu.Unlock()
-	return c.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, vec, limit, maxDistance, exclude)
+	return c.Store.FindSimilarUnassignedFaceCandidates(ctx, projectUID, vec, limit, maxDistance, exclude)
 }
 
 // queries returns the kNN tally under the lock.
@@ -70,11 +71,11 @@ func (c *countingFaces) queries() int {
 func (h *reviewHarness) instrumentedService(cfg review.Config) (*review.Service, *countingFaces) {
 	faces := &countingFaces{Store: h.vectors}
 	candSvc := candidates.New(candidates.Config{
-		Faces: faces, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
+		Faces: faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
-	cfg.Sweeper = sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 4})
+	cfg.Sweeper = sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 4})
 	cfg.Expander = expand.New(expand.Config{
 		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
@@ -82,8 +83,9 @@ func (h *reviewHarness) instrumentedService(cfg review.Config) (*review.Service,
 	})
 	cfg.Organize = h.organize
 	cfg.Faces = h.vectors
-	cfg.Feedback = bootstrapFeedback{h.feedback}
-	cfg.Assigner = bootstrapAssigner{facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})}
+	cfg.Feedback = h.feedback
+	cfg.Assigner = facematch.New(facematch.Config{Photos: h.photos, Faces: h.vectors, People: h.people})
+	cfg.Scope = review.NewScopeStore(h.db.Pool())
 	cfg.BandMin, cfg.BandMax = 0.45, 0.75
 	return review.New(cfg), faces
 }
@@ -135,7 +137,7 @@ func TestReviewQueue_workIsBoundedAtProductionScaleDB(t *testing.T) {
 
 	svc, faces := h.instrumentedService(review.Config{})
 	begin := time.Now()
-	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 0)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 0)
 	elapsed := time.Since(begin)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
@@ -165,7 +167,7 @@ func TestReviewQueue_workDoesNotGrowWithTheLibraryDB(t *testing.T) {
 		h.seedNamedSubjects(t, subjects)
 		h.seedUnassignedFaces(t, 50, 20)
 		svc, faces := h.instrumentedService(review.Config{})
-		if _, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 0); err != nil {
+		if _, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 0); err != nil {
 			t.Fatalf("Queue over %d subjects: %v", subjects, err)
 		}
 		return faces.queries()

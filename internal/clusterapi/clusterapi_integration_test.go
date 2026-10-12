@@ -4,7 +4,6 @@ package clusterapi_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/clusterapi"
@@ -47,20 +45,6 @@ type env struct {
 	svc     *cluster.Service
 }
 
-// bootstrapAssigner adapts *facematch.Service to the project-less
-// cluster.FaceAssigner, applying every transition in the bootstrap project the
-// test photos land in (cmd/kukatko wires the request's project instead).
-type bootstrapAssigner struct {
-	*facematch.Service
-}
-
-// Apply runs the transition inside the bootstrap project.
-func (a bootstrapAssigner) Apply(
-	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
-) (facematch.AssignResult, error) {
-	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
-}
-
 // newEnv builds the HTTP test environment over a freshly truncated database.
 func newEnv(t *testing.T) *env {
 	t.Helper()
@@ -76,13 +60,13 @@ func newEnv(t *testing.T) *env {
 	peopleStore := people.NewStore(db.Pool())
 	matchSvc := facematch.New(facematch.Config{Photos: photoStore, Faces: vectorStore, People: peopleStore})
 	svc := cluster.New(cluster.Config{
-		Store: cluster.NewStore(db.Pool()), Faces: vectorStore, Assigner: bootstrapAssigner{matchSvc},
+		Store: cluster.NewStore(db.Pool()), Faces: vectorStore, Assigner: matchSvc,
 	})
 
 	jobStore := jobs.NewStore(db.Pool())
 	api := clusterapi.NewAPI(clusterapi.Config{
 		Service:        svc,
-		Preparer:       clusterjob.New(svc, jobStore, 0, nil),
+		Preparer:       clusterjob.New(svc, jobStore, project.NewStore(db.Pool()), 0, nil),
 		RequireCurator: authAPI.RequireCurator,
 	})
 	r := chi.NewRouter()
@@ -164,10 +148,10 @@ func (e *env) seedFace(t *testing.T, hash string) {
 func (e *env) firstClusterUID(t *testing.T) string {
 	t.Helper()
 	e.seedCluster(t)
-	if _, err := e.svc.BuildSummaries(t.Context(), 0); err != nil {
+	if _, err := e.svc.BuildSummaries(t.Context(), project.BootstrapUID, 0); err != nil {
 		t.Fatalf("BuildSummaries: %v", err)
 	}
-	listing, err := e.svc.ListPage(t.Context(), cluster.PageRequest{})
+	listing, err := e.svc.ListPage(t.Context(), project.BootstrapUID, cluster.PageRequest{})
 	if err != nil || len(listing.Clusters) != 1 {
 		t.Fatalf("ListPage = %+v, %v; want 1 cluster", listing, err)
 	}
@@ -180,7 +164,7 @@ func (e *env) seedCluster(t *testing.T) {
 	t.Helper()
 	e.seedFace(t, "f1")
 	e.seedFace(t, "f2")
-	if _, err := e.svc.Recluster(t.Context()); err != nil {
+	if _, err := e.svc.Recluster(t.Context(), project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 }
@@ -280,7 +264,7 @@ func TestAssignCluster_Endpoint(t *testing.T) {
 		t.Fatalf("result = %+v, want subject Carol with 2 markers", result)
 	}
 
-	listing, err := env.svc.ListPage(t.Context(), cluster.PageRequest{})
+	listing, err := env.svc.ListPage(t.Context(), project.BootstrapUID, cluster.PageRequest{})
 	if err != nil || listing.Total != 0 || listing.Pending != 0 {
 		t.Fatalf("clusters after assign = %+v, %v; want none", listing, err)
 	}
@@ -306,13 +290,13 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 	env.seedFace(t, "r1")
 	env.seedFace(t, "r2")
 	env.seedFace(t, "r3")
-	if _, err := env.svc.Recluster(t.Context()); err != nil {
+	if _, err := env.svc.Recluster(t.Context(), project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
-	if _, err := env.svc.BuildSummaries(t.Context(), 0); err != nil {
+	if _, err := env.svc.BuildSummaries(t.Context(), project.BootstrapUID, 0); err != nil {
 		t.Fatalf("BuildSummaries: %v", err)
 	}
-	listing, err := env.svc.ListPage(t.Context(), cluster.PageRequest{})
+	listing, err := env.svc.ListPage(t.Context(), project.BootstrapUID, cluster.PageRequest{})
 	if err != nil || len(listing.Clusters) != 1 {
 		t.Fatalf("ListPage = %+v, %v; want 1 cluster", listing, err)
 	}
@@ -456,7 +440,7 @@ func TestListClusters_SchedulesGrouping(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
-	if err := clusterjob.New(env.svc, env.jobs, 0, nil).Handle(t.Context(), job); err != nil {
+	if err := clusterjob.New(env.svc, env.jobs, nil, 0, nil).Handle(t.Context(), job); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 	if out := env.listGroups(t, client); len(out.Clusters) != 1 {

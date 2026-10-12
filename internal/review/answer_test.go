@@ -21,7 +21,7 @@ func TestAnswer_yesFaceCreatesMarker(t *testing.T) {
 		}
 	})
 	id := faceQuestionID("photo1", 0, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestAnswer_yesFaceTagsViaReview(t *testing.T) {
 		}
 	})
 	id := faceQuestionID("photo1", 0, "subj1")
-	if _, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{}); err != nil {
+	if _, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	if len(f.assigner.reqs) != 1 {
@@ -67,7 +67,7 @@ func TestAnswer_yesFaceAssignsExistingMarker(t *testing.T) {
 		}
 	})
 	id := faceQuestionID("photo1", 1, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestAnswer_yesFaceAlreadyAssignedShortCircuits(t *testing.T) {
 		}
 	})
 	id := faceQuestionID("photo1", 0, "subj1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestAnswer_yesLabelAttaches(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil)
 	id := labelQuestionID("photo1", "lab1")
-	res, err := f.svc.Answer(context.Background(), "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(context.Background(), testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -120,10 +120,10 @@ func TestAnswer_noRecordsRejections(t *testing.T) {
 		f.faces.faces[vectors.FaceKey{PhotoUID: "photo1", FaceIndex: 0}] = vectors.Face{}
 	})
 	ctx := context.Background()
-	if _, err := f.svc.Answer(ctx, "user", faceQuestionID("photo1", 0, "subj1"), AnswerNo, audit.Meta{}); err != nil {
+	if _, err := f.svc.Answer(ctx, testProject, "user", faceQuestionID("photo1", 0, "subj1"), AnswerNo, audit.Meta{}); err != nil {
 		t.Fatalf("Answer face no: %v", err)
 	}
-	if _, err := f.svc.Answer(ctx, "user", labelQuestionID("photo2", "lab1"), AnswerNo, audit.Meta{}); err != nil {
+	if _, err := f.svc.Answer(ctx, testProject, "user", labelQuestionID("photo2", "lab1"), AnswerNo, audit.Meta{}); err != nil {
 		t.Fatalf("Answer label no: %v", err)
 	}
 	if len(f.feedback.faceRejects) != 1 || f.feedback.faceRejects[0].SubjectUID != "subj1" {
@@ -143,12 +143,12 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.4, 0.41)}
 	})
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", SourceBoth, 1)
+	first, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 1)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	skippedID := first.Questions[0].ID
-	res, err := f.svc.Answer(ctx, "user", skippedID, AnswerSkip, audit.Meta{})
+	res, err := f.svc.Answer(ctx, testProject, "user", skippedID, AnswerSkip, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer skip: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 	if len(f.feedback.faceRejects) != 0 {
 		t.Error("skip must not record a rejection")
 	}
-	next, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
+	next, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after skip: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestAnswer_skipShelvesWithoutWrites(t *testing.T) {
 	}
 	// The skip also survives a rebuild within the session.
 	*f.now = f.now.Add(2 * DefaultCacheTTL)
-	rebuilt, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
+	rebuilt, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after rebuild: %v", err)
 	}
@@ -189,10 +189,10 @@ func TestAnswer_idempotent(t *testing.T) {
 	})
 	ctx := context.Background()
 	id := faceQuestionID("photo1", 0, "subj1")
-	if _, err := f.svc.Answer(ctx, "user", id, AnswerYes, audit.Meta{}); err != nil {
+	if _, err := f.svc.Answer(ctx, testProject, "user", id, AnswerYes, audit.Meta{}); err != nil {
 		t.Fatalf("first Answer: %v", err)
 	}
-	res, err := f.svc.Answer(ctx, "user", id, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(ctx, testProject, "user", id, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("second Answer: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestAnswer_goneTargets(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			f := newFixture(t, tt.mutate)
-			res, err := f.svc.Answer(context.Background(), "user", tt.id, tt.answer, audit.Meta{})
+			res, err := f.svc.Answer(context.Background(), testProject, "user", tt.id, tt.answer, audit.Meta{})
 			if err != nil {
 				t.Fatalf("Answer: %v (gone must not be an error)", err)
 			}
@@ -253,11 +253,11 @@ func TestAnswer_invalidInput(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, nil)
 	ctx := context.Background()
-	if _, err := f.svc.Answer(ctx, "user", "bogus-id", AnswerYes, audit.Meta{}); !errors.Is(err, ErrInvalidQuestion) {
+	if _, err := f.svc.Answer(ctx, testProject, "user", "bogus-id", AnswerYes, audit.Meta{}); !errors.Is(err, ErrInvalidQuestion) {
 		t.Errorf("bogus id error = %v, want ErrInvalidQuestion", err)
 	}
 	id := labelQuestionID("photo1", "lab1")
-	if _, err := f.svc.Answer(ctx, "user", id, Answer("maybe"), audit.Meta{}); !errors.Is(err, ErrInvalidAnswer) {
+	if _, err := f.svc.Answer(ctx, testProject, "user", id, Answer("maybe"), audit.Meta{}); !errors.Is(err, ErrInvalidAnswer) {
 		t.Errorf("bogus answer error = %v, want ErrInvalidAnswer", err)
 	}
 }
@@ -270,7 +270,7 @@ func TestAnswer_updatesQueueCounters(t *testing.T) {
 		f.faces.faces[vectors.FaceKey{PhotoUID: "photo-subj1-1", FaceIndex: 0}] = vectors.Face{}
 	})
 	ctx := context.Background()
-	first, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
+	first, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -278,14 +278,14 @@ func TestAnswer_updatesQueueCounters(t *testing.T) {
 		t.Fatalf("remaining = %d, want 2", first.Remaining)
 	}
 	answered := first.Questions[0].ID
-	res, err := f.svc.Answer(ctx, "user", answered, AnswerYes, audit.Meta{})
+	res, err := f.svc.Answer(ctx, testProject, "user", answered, AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
 	if res.Answered != 1 || res.Remaining != 1 {
 		t.Errorf("after answer: %+v, want answered 1 remaining 1", res)
 	}
-	next, err := f.svc.Queue(ctx, "user", SourceBoth, 10)
+	next, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after answer: %v", err)
 	}

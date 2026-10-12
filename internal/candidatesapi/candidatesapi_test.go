@@ -24,7 +24,7 @@ type fakeService struct {
 	gotReq candidates.Request
 }
 
-func (f *fakeService) Find(_ context.Context, uid string, req candidates.Request) (candidates.Result, error) {
+func (f *fakeService) Find(_ context.Context, _, uid string, req candidates.Request) (candidates.Result, error) {
 	f.gotUID = uid
 	f.gotReq = req
 	return f.result, f.err

@@ -54,7 +54,7 @@ func TestScan_budgetBoundsTheWork(t *testing.T) {
 			t.Parallel()
 			svc, finder := scanFixture(t, tt.subjects, 1)
 			var seen []*Person
-			cov, err := svc.Scan(context.Background(), Params{}, Window{Budget: tt.budget},
+			cov, err := svc.Scan(context.Background(), testProject, Params{}, Window{Budget: tt.budget},
 				func(person *Person) (bool, error) {
 					seen = append(seen, person)
 					return false, nil
@@ -83,7 +83,7 @@ func TestScan_rotatesThroughTheLibrary(t *testing.T) {
 	order := make([]string, 0, 6)
 	for range 3 {
 		var seen []*Person
-		cov, err := svc.Scan(context.Background(), Params{}, Window{Offset: offset, Budget: 2},
+		cov, err := svc.Scan(context.Background(), testProject, Params{}, Window{Offset: offset, Budget: 2},
 			func(person *Person) (bool, error) {
 				seen = append(seen, person)
 				return false, nil
@@ -112,7 +112,7 @@ func TestScan_stopsEarlyWhenTheCollectorHasEnough(t *testing.T) {
 	)
 	svc, finder := scanFixture(t, 40, concurrency)
 	var seen []*Person
-	cov, err := svc.Scan(context.Background(), Params{}, Window{Budget: budget},
+	cov, err := svc.Scan(context.Background(), testProject, Params{}, Window{Budget: budget},
 		func(person *Person) (bool, error) {
 			seen = append(seen, person)
 			return len(seen) >= stopAfter, nil
@@ -163,7 +163,7 @@ func TestScan_offsetWrapsAndSubjectsWithoutFacesAreSkipped(t *testing.T) {
 	svc := quietService(t, Config{Subjects: lister, Finder: finder, Concurrency: 1})
 	var seen []*Person
 	// Offset 7 over the two subjects with faces wraps to index 1 → "b".
-	cov, err := svc.Scan(context.Background(), Params{}, Window{Offset: 7, Budget: 1},
+	cov, err := svc.Scan(context.Background(), testProject, Params{}, Window{Offset: 7, Budget: 1},
 		func(person *Person) (bool, error) {
 			seen = append(seen, person)
 			return false, nil
@@ -184,7 +184,7 @@ func TestScan_subjectFailureIsSkippedNotFatal(t *testing.T) {
 	svc, finder := scanFixture(t, 3, 1)
 	finder.errs["subj001"] = errors.New("boom")
 	var seen []*Person
-	if _, err := svc.Scan(context.Background(), Params{}, Window{},
+	if _, err := svc.Scan(context.Background(), testProject, Params{}, Window{},
 		func(person *Person) (bool, error) {
 			seen = append(seen, person)
 			return false, nil
@@ -200,7 +200,7 @@ func TestScan_collectorErrorAborts(t *testing.T) {
 	t.Parallel()
 	svc, _ := scanFixture(t, 5, 1)
 	wantErr := errors.New("collector said no")
-	if _, err := svc.Scan(context.Background(), Params{}, Window{},
+	if _, err := svc.Scan(context.Background(), testProject, Params{}, Window{},
 		func(*Person) (bool, error) { return false, wantErr }); !errors.Is(err, wantErr) {
 		t.Fatalf("Scan error = %v, want %v", err, wantErr)
 	}
@@ -209,7 +209,7 @@ func TestScan_collectorErrorAborts(t *testing.T) {
 func TestScan_emptyLibraryReportsTotals(t *testing.T) {
 	t.Parallel()
 	svc := quietService(t, Config{Subjects: &fakeLister{}, Finder: &fakeFinder{}, Concurrency: 1})
-	cov, err := svc.Scan(context.Background(), Params{}, Window{Budget: 4},
+	cov, err := svc.Scan(context.Background(), testProject, Params{}, Window{Budget: 4},
 		func(*Person) (bool, error) { return false, nil })
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -225,7 +225,7 @@ func TestScan_listSubjectsFailureIsFatal(t *testing.T) {
 	svc := quietService(t, Config{
 		Subjects: &fakeLister{err: wantErr}, Finder: &fakeFinder{}, Concurrency: 1,
 	})
-	if _, err := svc.Scan(context.Background(), Params{}, Window{},
+	if _, err := svc.Scan(context.Background(), testProject, Params{}, Window{},
 		func(*Person) (bool, error) { return false, nil }); !errors.Is(err, wantErr) {
 		t.Fatalf("Scan error = %v, want %v", err, wantErr)
 	}

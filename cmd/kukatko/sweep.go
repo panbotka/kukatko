@@ -20,7 +20,7 @@ func buildSweepAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage,
 ) *sweepapi.API {
 	svc := sweep.New(sweep.Config{
-		Subjects:    requestProjectPeople{people.NewStore(db.Pool())},
+		Subjects:    people.NewStore(db.Pool()),
 		Finder:      buildCandidatesService(cfg, db, mediaStore),
 		Concurrency: cfg.Sweep.Concurrency,
 		MaxSubjects: cfg.Sweep.MaxSubjects,

@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -26,12 +27,12 @@ func buildClusterAPI(
 	clusterSvc := cluster.New(cluster.Config{
 		Store:                 cluster.NewStore(db.Pool()),
 		Faces:                 vectors.NewStore(db.Pool()),
-		Assigner:              requestProjectAssigner{faceSvc},
+		Assigner:              faceSvc,
 		Threshold:             cfg.Cluster.Threshold,
 		MinSize:               cfg.Cluster.MinSize,
 		SuggestionMaxDistance: cfg.Cluster.SuggestionMaxDistance,
 	})
-	jobSvc := clusterjob.New(clusterSvc, store, 0, nil)
+	jobSvc := clusterjob.New(clusterSvc, store, project.NewStore(db.Pool()), 0, nil)
 	api := clusterapi.NewAPI(clusterapi.Config{
 		Service: clusterSvc,
 		// The listing schedules the preparation of the groups it could not show yet,

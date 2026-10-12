@@ -58,7 +58,7 @@ func shareOf(questions []Question) float64 {
 func TestQueue_mixesTheTiersAtTheConfiguredShare(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, tieredLibrary(12))
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestQueue_theMixHoldsInThePrefixNotJustOverall(t *testing.T) {
 	// above — it spends its confident allowance first — so a prefix leaning easy
 	// is the intended behaviour and only a prefix leaning *hard* is the defect.
 	f := newFixture(t, tieredLibrary(12))
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestQueue_sureShareIsConfigurable(t *testing.T) {
 				tieredLibrary(12)(f)
 				f.sureShare = share
 			})
-			res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+			res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
@@ -149,7 +149,7 @@ func TestQueue_exhaustedConfidentTierDegradesToTheBand(t *testing.T) {
 				scannedPerson(fmt.Sprintf("subj%02d", i), 0.30, 0.32, 0.34, 0.36))
 		}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestQueue_exhaustedBandDegradesToTheConfidentTier(t *testing.T) {
 				scannedPerson(fmt.Sprintf("subj%02d", i), 0.05, 0.07, 0.09, 0.11))
 		}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestQueue_emptyWindowRotatesInsteadOfReportingNothingToDo(t *testing.T) {
 		}
 		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj11", 0.4, 0.05))
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestQueue_rotationGivesUpOnAGenuinelyEmptyLibrary(t *testing.T) {
 	// be scanned maxRebuildRounds times over to learn what the first round
 	// already proved.
 	f := newFixture(t, nil)
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestQueue_confidentTierIsOrderedSurestFirst(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1", 0.18, 0.02, 0.10)}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestQueue_perEntityShareCountsBothTiersTogether(t *testing.T) {
 		f.sweeper.people = []*sweep.Person{scannedPerson("subj1",
 			0.05, 0.07, 0.09, 0.11, 0.13, 0.30, 0.32, 0.34, 0.36, 0.38)}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, maxBatch)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, maxBatch)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestQueue_reviewDisabledLabelIsNeitherAskedNorScanned(t *testing.T) {
 		f.expander.results["off"] = labelResult("off", 0.6, 0.9)
 		f.expander.results["on"] = labelResult("on", 0.6, 0.9)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceLabels, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceLabels, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestNew_tierFallbacks(t *testing.T) {
 			t.Parallel()
 			svc := New(Config{
 				Sweeper: &fakeSweeper{}, Expander: &fakeExpander{}, Organize: &fakeOrganize{},
-				Faces: &fakeFaces{}, Feedback: &fakeFeedback{}, Assigner: &fakeAssigner{},
+				Faces: &fakeFaces{}, Feedback: &fakeFeedback{}, Assigner: &fakeAssigner{}, Scope: &fakeScope{},
 				SureMin: tt.sureMin, SureShare: tt.sureShare,
 			})
 			if svc.sureFloor() != tt.wantFloor {

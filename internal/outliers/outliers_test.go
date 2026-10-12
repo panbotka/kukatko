@@ -36,7 +36,7 @@ type fakePeople struct {
 }
 
 // GetSubjectByUID returns a minimal subject, or the canned error.
-func (p fakePeople) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (p fakePeople) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	if p.err != nil {
 		return people.Subject{}, p.err
 	}
@@ -91,7 +91,7 @@ func TestOutliers_rankingOrder(t *testing.T) {
 	}
 	svc := newService(fakeFaces{faces: faces})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestOutliers_trimmedCentroidScoresOutliersHigher(t *testing.T) {
 	faces := clusterWithOutliers()
 	svc := newService(fakeFaces{faces: faces})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestOutliers_threshold(t *testing.T) {
 	t.Parallel()
 	svc := newService(fakeFaces{faces: clusterWithOutliers()})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{Threshold: 0.5})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{Threshold: 0.5})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestOutliers_limit(t *testing.T) {
 	t.Parallel()
 	svc := newService(fakeFaces{faces: clusterWithOutliers()})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{Limit: 3})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{Limit: 3})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestOutliers_confirmedExcluded(t *testing.T) {
 		}},
 	})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestOutliers_confirmedExcluded(t *testing.T) {
 func TestOutliers_noEmbeddingCount(t *testing.T) {
 	t.Parallel()
 	svc := newService(fakeFaces{faces: clusterWithOutliers(), noEmbedding: 5})
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestOutliers_deterministicTieBreak(t *testing.T) {
 	}
 	svc := newService(fakeFaces{faces: faces})
 
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestOutliers_smallSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			svc := newService(fakeFaces{faces: tt.faces})
-			res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+			res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 			if err != nil {
 				t.Fatalf("Outliers: %v", err)
 			}
@@ -295,7 +295,7 @@ func TestOutliers_smallSet(t *testing.T) {
 func TestOutliers_empty(t *testing.T) {
 	t.Parallel()
 	svc := newService(fakeFaces{})
-	res, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	res, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if err != nil {
 		t.Fatalf("Outliers: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestOutliers_subjectNotFound(t *testing.T) {
 		People:   fakePeople{err: people.ErrSubjectNotFound},
 		Feedback: fakeFeedback{},
 	})
-	_, err := svc.Outliers(context.Background(), "su_missing", outliers.Options{})
+	_, err := svc.Outliers(context.Background(), "pj_test", "su_missing", outliers.Options{})
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("Outliers = %v, want ErrSubjectNotFound", err)
 	}
@@ -326,7 +326,7 @@ func TestOutliers_faceStoreError(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("boom")
 	svc := newService(fakeFaces{err: sentinel})
-	_, err := svc.Outliers(context.Background(), "su_alice", outliers.Options{})
+	_, err := svc.Outliers(context.Background(), "pj_test", "su_alice", outliers.Options{})
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("Outliers = %v, want wrapped sentinel", err)
 	}

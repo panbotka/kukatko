@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/sweep"
 )
 
@@ -38,9 +39,10 @@ const minDistance = 0.01
 // sweepapi depends on the behaviour, not the sweep package's wiring; *sweep.Service
 // satisfies it.
 type Service interface {
-	// Sweep scans the named subjects and calls emit for each streamed event. emit is
-	// called serially, so the handler can write it straight to the response.
-	Sweep(ctx context.Context, params sweep.Params, emit func(sweep.Event) error) error
+	// Sweep scans the named subjects of the project and calls emit for each
+	// streamed event. emit is called serially, so the handler can write it
+	// straight to the response.
+	Sweep(ctx context.Context, projectUID string, params sweep.Params, emit func(sweep.Event) error) error
 }
 
 // API exposes the recognition sweep over HTTP. The curator guard is supplied by the
@@ -73,13 +75,14 @@ func NewAPI(cfg Config) *API {
 // RegisterRoutes mounts the sweep endpoint onto r, which the caller has scoped under
 // the API base path (for example /api/v1):
 //
-//	GET /faces/sweep  RequireCurator  streamed recognition sweep across all subjects
+//	GET /faces/sweep  RequireCurator  streamed recognition sweep across the project's subjects
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireCurator).Get("/faces/sweep", a.handleSweep)
 }
 
-// handleSweep parses the confidence and per-person limit, then streams the sweep as
-// newline-delimited JSON. An absent backend answers 503; an unparsable parameter 400;
+// handleSweep parses the confidence and per-person limit, then streams the sweep of
+// the request's project as newline-delimited JSON: only its subjects are scanned and
+// only its unassigned faces can be candidates. An absent backend answers 503; an unparsable parameter 400;
 // a failure before the first line is written becomes a 500, while a mid-stream failure
 // (the client is already receiving 200 OK) can only be logged.
 func (a *API) handleSweep(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +96,7 @@ func (a *API) handleSweep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := newStream(w)
-	if err := a.service.Sweep(r.Context(), params, stream.emit); err != nil {
+	if err := a.service.Sweep(r.Context(), auth.ProjectUIDFromContext(r.Context()), params, stream.emit); err != nil {
 		stream.fail(err)
 	}
 }

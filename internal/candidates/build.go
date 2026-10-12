@@ -17,13 +17,13 @@ import (
 // negative-exemplar rule, and classifies each remaining face's action. Only this
 // filtered set is ever loaded into memory, keeping the work bounded.
 func (s *Service) build(
-	ctx context.Context, subjectUID string, survivors []votedCandidate,
+	ctx context.Context, projectUID, subjectUID string, survivors []votedCandidate,
 	acceptedVecs [][]float32, rejected []feedback.FaceRef,
 ) ([]Candidate, error) {
 	if len(survivors) == 0 {
 		return []Candidate{}, nil
 	}
-	photoByUID, err := s.loadPhotos(ctx, survivors)
+	photoByUID, err := s.loadPhotos(ctx, projectUID, survivors)
 	if err != nil {
 		return nil, err
 	}
@@ -32,13 +32,16 @@ func (s *Service) build(
 	if err != nil {
 		return nil, err
 	}
-	return s.assemble(ctx, subjectUID, survivors, photoByUID)
+	return s.assemble(ctx, projectUID, subjectUID, survivors, photoByUID)
 }
 
 // loadPhotos fetches the distinct photos of the surviving candidates in one query
-// and stamps their media URLs, returning them keyed by uid for O(1) lookup.
-func (s *Service) loadPhotos(ctx context.Context, survivors []votedCandidate) (map[string]photos.Photo, error) {
-	list, err := s.photos.ListByUIDs(ctx, distinctPhotoUIDs(survivors))
+// confined to the project and stamps their media URLs, returning them keyed by
+// uid for O(1) lookup.
+func (s *Service) loadPhotos(
+	ctx context.Context, projectUID string, survivors []votedCandidate,
+) (map[string]photos.Photo, error) {
+	list, err := s.photos.ListByUIDsInProject(ctx, projectUID, distinctPhotoUIDs(survivors))
 	if err != nil {
 		return nil, fmt.Errorf("loading candidate photos: %w", err)
 	}
@@ -156,13 +159,14 @@ func survivorKeys(survivors []votedCandidate) []vectors.FaceKey {
 // each action against the subject. Markers are resolved through a per-call cache so
 // several candidates sharing a marker cost one lookup.
 func (s *Service) assemble(
-	ctx context.Context, subjectUID string, survivors []votedCandidate, photoByUID map[string]photos.Photo,
+	ctx context.Context, projectUID, subjectUID string, survivors []votedCandidate,
+	photoByUID map[string]photos.Photo,
 ) ([]Candidate, error) {
 	markerSubjects := make(map[string]string)
 	out := make([]Candidate, 0, len(survivors))
 	for _, candidate := range survivors {
 		photo := photoByUID[candidate.key.PhotoUID]
-		action, err := s.classify(ctx, subjectUID, candidate.markerUID, markerSubjects)
+		action, err := s.classify(ctx, projectUID, subjectUID, candidate.markerUID, markerSubjects)
 		if err != nil {
 			return nil, err
 		}
@@ -184,12 +188,12 @@ func (s *Service) assemble(
 // stale-cache case (already_done); any other marker means the person still has to be
 // assigned (assign_person).
 func (s *Service) classify(
-	ctx context.Context, subjectUID string, markerUID *string, cache map[string]string,
+	ctx context.Context, projectUID, subjectUID string, markerUID *string, cache map[string]string,
 ) (Action, error) {
 	if markerUID == nil || *markerUID == "" {
 		return ActionCreateMarker, nil
 	}
-	markerSubject, err := s.markerSubject(ctx, *markerUID, cache)
+	markerSubject, err := s.markerSubject(ctx, projectUID, *markerUID, cache)
 	if err != nil {
 		return "", err
 	}
@@ -202,11 +206,13 @@ func (s *Service) classify(
 // markerSubject returns the subject a marker points at (empty when it points at
 // none), resolving through cache. A marker that has vanished is treated as pointing
 // at no subject rather than failing the whole search.
-func (s *Service) markerSubject(ctx context.Context, markerUID string, cache map[string]string) (string, error) {
+func (s *Service) markerSubject(
+	ctx context.Context, projectUID, markerUID string, cache map[string]string,
+) (string, error) {
 	if subject, ok := cache[markerUID]; ok {
 		return subject, nil
 	}
-	marker, err := s.people.GetMarkerByUID(ctx, markerUID)
+	marker, err := s.people.GetMarkerByUID(ctx, projectUID, markerUID)
 	if err != nil {
 		if errors.Is(err, people.ErrMarkerNotFound) {
 			cache[markerUID] = ""

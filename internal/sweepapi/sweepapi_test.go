@@ -21,7 +21,7 @@ type fakeService struct {
 }
 
 // Sweep delegates to the fake's run function.
-func (f *fakeService) Sweep(_ context.Context, _ sweep.Params, emit func(sweep.Event) error) error {
+func (f *fakeService) Sweep(_ context.Context, _ string, _ sweep.Params, emit func(sweep.Event) error) error {
 	return f.run(emit)
 }
 

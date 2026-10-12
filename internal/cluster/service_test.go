@@ -32,7 +32,7 @@ type stubAssigner struct{}
 
 // Apply returns an empty result.
 func (stubAssigner) Apply(
-	context.Context, facematch.AssignRequest, audit.Meta,
+	context.Context, string, facematch.AssignRequest, audit.Meta,
 ) (facematch.AssignResult, error) {
 	return facematch.AssignResult{}, nil
 }

@@ -171,7 +171,7 @@ func TestAnswer_skipRemembersOnlyTheKindsThatNameAPerson(t *testing.T) {
 		duplicateQuestionID("ph5", "ph6"),
 	}
 	for _, id := range ids {
-		if _, err := f.svc.Answer(ctx, "user", id, AnswerSkip, audit.Meta{}); err != nil {
+		if _, err := f.svc.Answer(ctx, testProject, "user", id, AnswerSkip, audit.Meta{}); err != nil {
 			t.Fatalf("Answer(skip, %s): %v", id, err)
 		}
 	}
@@ -194,7 +194,7 @@ func TestAnswer_skipStillCountsWhenTheMemoryIsUnavailable(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.skips = &fakeSkips{err: context.DeadlineExceeded}
 	})
-	res, err := f.svc.Answer(context.Background(), "user",
+	res, err := f.svc.Answer(context.Background(), testProject, "user",
 		faceQuestionID("ph1", 0, "anna"), AnswerSkip, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer(skip): %v", err)

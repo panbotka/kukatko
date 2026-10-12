@@ -30,18 +30,18 @@ type fakeService struct {
 }
 
 // ListPage records the requested page and returns the canned listing or error.
-func (f *fakeService) ListPage(_ context.Context, req cluster.PageRequest) (cluster.Listing, error) {
+func (f *fakeService) ListPage(_ context.Context, _ string, req cluster.PageRequest) (cluster.Listing, error) {
 	f.gotPage = req
 	return f.listing, f.err
 }
 
 // AssignCluster returns the canned result or error.
-func (f *fakeService) AssignCluster(context.Context, cluster.AssignRequest) (cluster.AssignResult, error) {
+func (f *fakeService) AssignCluster(context.Context, string, cluster.AssignRequest) (cluster.AssignResult, error) {
 	return f.assignResp, f.err
 }
 
 // RemoveFace returns the canned view/deleted flag or error.
-func (f *fakeService) RemoveFace(context.Context, string, cluster.Ref) (cluster.View, bool, error) {
+func (f *fakeService) RemoveFace(context.Context, string, string, cluster.Ref) (cluster.View, bool, error) {
 	return f.removeView, f.removeDel, f.err
 }
 
@@ -54,7 +54,7 @@ type fakePreparer struct {
 }
 
 // EnsureGrouping counts the call and returns the canned outcome.
-func (f *fakePreparer) EnsureGrouping(context.Context) (bool, error) {
+func (f *fakePreparer) EnsureGrouping(context.Context, string) (bool, error) {
 	f.calls++
 	return f.grouping, f.err
 }

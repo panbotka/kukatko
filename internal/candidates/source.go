@@ -45,12 +45,12 @@ type source struct {
 // holding 16 532 exemplars is what let a GET /review/queue grow the process to
 // 10.9 GB and take the host down with it. It costs little recall — the vote rule
 // clamps at five agreeing exemplars, which hundreds supply as well as thousands.
-func (s *Service) loadSource(ctx context.Context, subjectUID string) (source, error) {
+func (s *Service) loadSource(ctx context.Context, projectUID, subjectUID string) (source, error) {
 	sample, err := s.faces.SampleFacesBySubject(ctx, subjectUID, s.maxExemplars)
 	if err != nil {
 		return source{}, fmt.Errorf("sampling faces for subject %s: %w", subjectUID, err)
 	}
-	markedPhotos, err := s.people.ListPhotoUIDsBySubject(ctx, subjectUID)
+	markedPhotos, err := s.people.ListPhotoUIDsBySubject(ctx, projectUID, subjectUID)
 	if err != nil {
 		return source{}, fmt.Errorf("listing marked photos for subject %s: %w", subjectUID, err)
 	}

@@ -12,11 +12,11 @@ to `## Package map` in `CLAUDE.md`.
   adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
   `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
   transition alias, removed in the alias-removal step. Each group is built once, so a limiter or cache is
-  shared by both mounts. **`projectshim.go`** (transition) adapts the project-scoped people, vector,
-  face-matching and feedback stores to the project-less interfaces of the packages scoped in a later step
-  (candidates, outliers, sweep, review, the cluster assignment, expand): each adapter reads the request's
-  project (`auth.ProjectUIDFromContext`), so those calls already run inside the caller's project, and goes
-  away when its consumer passes the project itself. A package with routes on both sides exposes the halves separately:
+  shared by both mounts. **`projectshim.go`** (transition) adapts the project-scoped similarity search of
+  `vectors.Store` to the project-less interface of expand, the one consumer scoped in a later step (with
+  albums and labels): the adapter reads the request's project (`auth.ProjectUIDFromContext`), so the call
+  already runs inside the caller's project, and goes away when expand passes the project itself. Candidates,
+  outliers, sweep, review and the cluster assignment pass the project themselves since step 14. A package with routes on both sides exposes the halves separately:
   `auth` `RegisterInstanceRoutes`/`RegisterDirectoryRoutes`, `notificationapi`
   `RegisterPushRoutes`/`RegisterInboxRoutes`, `uploadlinkapi` `RegisterManagementRoutes`/
   `RegisterPublicRoutes`, `buildIngest` an `ingestRoutes` triple),
@@ -1684,7 +1684,13 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   in a unique index — except `tag_notify`, whose own index `idx_jobs_tag_notify_dedup` (migration 0089)
   keys on the payload's `user_uid` while **queued**, one open tagging window per account, and
   `album_featured_notify`, whose `idx_jobs_album_featured_notify_dedup` (migration 0097) keys on the
-  payload's `album_uid` while queued, one pending announcement per album.
+  payload's `album_uid` while queued, one pending announcement per album, and the library-wide jobs that
+  carry `project_uid` (migration 0105): `idx_jobs_face_cluster_dedup` keys `face_cluster` on the payload's
+  `project_uid` (one queued pass per project) and `idx_jobs_nameless_dedup` keys `nameless_detach`/
+  `nameless_restore` on (type, `project_uid`, `subject_uid`), both while queued; a payload queued before the
+  field existed has a NULL key and never collides. **`CountPendingForProject(ctx,projectUID,types...)`**
+  counts the queued-or-running jobs of the types whose payload names the project (0 for no types or no
+  project) — the per-project pending check of `internal/clusterjob`.
   **`EnqueueOrSkip(ctx, exec, type, payload, opts)`** is the same insert with `ON CONFLICT DO NOTHING`:
   a duplicate is still `ErrDuplicate`, but it **does not abort the caller's transaction** the way a
   unique violation would — for a caller that enqueues "unless already scheduled" in the middle of its
@@ -2228,9 +2234,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   inside one project. `Tagging` carries `ProjectUID`, so the tag observer (`internal/tagnotifyjob`) hears
   which project a tagging happened in. Deliberately unscoped: `LinkedSubjectAvatar` (an account's
   profile picture, served instance-wide), `ListMarkersWithSubjects` (the sidecar job, keyed by the photo
-  it loaded), the nameless repair (`ListNamelessSubjects`/`SnapshotSubject`/`DetachSubject`/
-  `RestoreSubject`, scoped in the next step) and `CreateSubjectTx`, which takes the project from its
-  caller (`internal/family` passes the anchor subject's). `subjects`
+  it loaded) and `CreateSubjectTx`, which takes the project from its caller (`internal/family` passes the
+  anchor subject's). The nameless repair is scoped since step 14: `ListNamelessSubjects`/`SnapshotSubject`/
+  `DetachSubject`/`RestoreSubject` take the project (a subject of another project is `ErrSubjectNotFound`,
+  writing nothing), `RestoreSubject` inserts the row **into** the project and re-links only markers on the
+  project's photos and faces of the project, and the audited ones default the entry's `ProjectUID`. `subjects`
   = `uid PK` (prefix `su`), `slug UNIQUE (project_id, slug)`, `name`, `nickname` (`TEXT NOT NULL DEFAULT ''`, migration
   `0074`), `type IN (person|pet|other)`, `favorite`,
   `private`, `notes`, `cover_photo_uid` (FK photos `ON DELETE SET NULL`),
@@ -2672,7 +2680,14 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `ListPendingClusters`/`CountClusters`/`SaveSummary`/
   `GetCluster`/`DeleteCluster`/`RemoveFaceFromCluster`/`RefreshCluster`); sentinels
   `ErrClusterNotFound`/`ErrEmptyCluster`/`ErrMissingSubject`/`ErrFaceNotInCluster`; tunables in
-  `cluster.*` config), `internal/clusterapi/`
+  `cluster.*` config. **Project scope:** every `Service` and `Store` method takes `projectUID` right after
+  `ctx` and never defaults it (`ErrNoProject`); `face_clusters.project_id` and the faces' denormalised
+  `project_id` confine every query, so clustering runs **per project** — the union-find only ever sees one
+  project's unassigned faces and their neighbours are searched inside it, `CreateCluster` stamps the project,
+  the cached summaries and their counts are per project (`idx_face_clusters_project_ready` from 0102,
+  `idx_face_clusters_project_pending` from 0105), and a cluster of another project is `ErrClusterNotFound` to
+  `GetCluster`/`AssignCluster`/`RemoveFace` — refused before anything is written; the assigner is handed the
+  same project, so a cluster can only be named after a subject of its own project), `internal/clusterapi/`
   (a curator-and-above HTTP API over the clustering: the `Service` interface (satisfied by `cluster.Service`)
   and the optional `Preparer` (satisfied by `clusterjob.Service`),
   `NewAPI(Config{Service,Preparer,RequireCurator})`+`RegisterRoutes` mounts `/faces/clusters`:
@@ -2683,13 +2698,22 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   are being worked out" instead of "there are none"; a scheduling failure is logged and answers
   `grouping:false`, never fatal to the read), `POST /faces/clusters/{id}/assign` (assigns
   the whole cluster), `POST /faces/clusters/{id}/remove-face` (detaches a face); 503 when the backend
-  is not wired, 400/404/409 per the sentinels; mounted in `serve` (`buildClusterAPI` in
+  is not wired, 400/404/409 per the sentinels. Every handler passes `auth.ProjectUIDFromContext`: the page
+  lists the request project's clusters, `EnsureGrouping` schedules that project's pass, and a cluster uid of
+  another project answers the same 404 body as a missing one (`cluster: cluster not found`); mounted in `serve` (`buildClusterAPI` in
   `cmd/kukatko/clusters.go`, which shares the `facematch.Service` from `buildFaceMatch` and the job
   store, and hands the same `clusterjob.Service` on to `buildJobs`)), `internal/clusterjob/`
   (the face-grouping work as background work: the `face_cluster` job handler and the two schedulers.
-  `New(Clusterer,Queue,batch,logger)` over the interfaces `Clusterer` (`Recluster`/`BuildSummaries`/
-  `GroupingState`, satisfied by `cluster.Service`) and `Queue` (`Enqueue`/`CountPending`, satisfied
-  by `jobs.Store`);
+  `New(Clusterer,Queue,Projects,batch,logger)` over the interfaces `Clusterer` (`Recluster`/`BuildSummaries`/
+  `GroupingState`, all taking the project, satisfied by `cluster.Service`), `Queue` (`Enqueue`/
+  `CountPendingForProject`, satisfied by `jobs.Store`) and `Projects` (`List`, satisfied by `project.Store`).
+  **Per project:** the payload is `{"project_uid":…,"recluster":…}`; `Handle` works on the project it names (a
+  payload queued before the field existed names none and works on the bootstrap project, the only library
+  there was) and its successor names the same project; `EnsureGrouping(ctx,projectUID)` reads and schedules
+  one project; `ScheduleRecluster(ctx)` queues **one pass per active project** (a deactivated one is skipped)
+  and reports whether any was queued. The pending check is per project (`CountPendingForProject`), backed by
+  the unique `idx_jobs_face_cluster_dedup` on `payload->>'project_uid'` (migration 0105, queued jobs only, so a
+  running pass can enqueue its successor); a racing duplicate is read as "scheduled", never an error;
   **`ScheduleRecluster(ctx)`** queues `{"recluster":true}` (the maintainer trigger) and
   **`EnsureGrouping(ctx)`** queues the pass the library's own state asks for, reporting whether one
   is queued or running afterwards: `{"recluster":true}` when `GroupingState.Groupable` (faces and no
@@ -2697,9 +2721,8 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   stops, so before this a library nobody grouped by hand stayed empty for ever), `{}` when groups are
   waiting for their summary (regroups nothing — browsing must never change who a face belongs to),
   and **nothing** for a library that is empty or already grouped and prepared. Both are **deduped by
-  an explicit `CountPending` check**, because the queue's dedup index keys on `payload->>'photo_uid'`
-  and these payloads carry none: at most one pass is queued or running, so repeated page loads
-  collapse into one. **`Handle(ctx,job)`** regroups when asked, then prepares one batch of summaries and, when
+  an explicit per-project pending check** (a running pass counts too, which the queued-only index cannot
+  see): at most one pass per project is queued or running, so repeated page loads collapse into one. **`Handle(ctx,job)`** regroups when asked, then prepares one batch of summaries and, when
   `Remaining > 0`, **enqueues its own successor** — so a backlog drains in bounded steps and the page
   can honestly report how many groups are ready), `internal/outliers/`
   (per-person outlier detection of faces: reveals probably **misassigned faces**
@@ -2724,10 +2747,15 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   assignments without an embedding that **cannot** be checked (the sidecar was offline) and are not in `faces` —
   the client should acknowledge them; **small sets** (< `MinMeaningful`=3 faces) → `meaningful:false` (nothing
   is singled out), the faces are still returned sorted; no mutation — a wrong
-  face is detached via the existing assign API), `internal/outlierapi/`
+  face is detached via the existing assign API. **Project scope:** `Outliers(ctx,projectUID,subjectUID,opts)`
+  proves the subject inside the project first (`people.GetSubjectByUID`), so a subject of another project is
+  `people.ErrSubjectNotFound` exactly like a missing one; once proven, the faces read are its own and a
+  subject's faces never leave its project), `internal/outlierapi/`
   (a curator-and-above HTTP API over outlier detection: the `Service` interface (satisfied by `outliers.Service`),
   `NewAPI(Config{Service,RequireCurator})`+`RegisterRoutes` mounts `GET /subjects/{uid}/outliers`
-  behind `RequireCurator`; 503 without a backend, 404 missing subject; mounted in `serve`
+  behind `RequireCurator`; 503 without a backend, 404 missing subject — also for a subject of another project
+  (the request's project via `auth.ProjectUIDFromContext`), with the fixed body `subject not found`, so the two
+  cannot be told apart; mounted in `serve`
   (`buildOutlierAPI` in `cmd/kukatko/outliers.go`)), `internal/candidates/`
   (**"find a person among untagged photos"**: for a named subject finds **unassigned**
   faces that resemble it — the counterpart to `GET /photos?person=`, complementing clustering too, which
@@ -2770,12 +2798,17 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `reason:"no_faces"`; a subject with markers but no embedded faces → `reason:"no_embeddings"` +
   `faces_without_embedding`; the box being offline doesn't matter — the vectors are read already in Postgres. **Read-only** —
   confirmation goes through the existing assign path; the sweep across all people can call `Find` per subject
-  without reimplementation), `internal/candidatesapi/`
+  without reimplementation. **Project scope:** `Find(ctx,projectUID,subjectUID,req)` — the subject, its
+  markers and marked photos are read inside the project (`people.ErrSubjectNotFound` for one of another
+  project, `people.ErrNoProject` for none), the unassigned-face kNN is the project-filtered
+  `FindSimilarUnassignedFaceCandidates`, and the survivors are hydrated through `ListByUIDsInProject`, so no
+  candidate ever comes from another project however close its face sits), `internal/candidatesapi/`
   (a curator-and-above HTTP API over the candidate search: the `Service` interface (satisfied by `candidates.Service`),
   `NewAPI(Config{Service,RequireCurator})`+`RegisterRoutes` mounts `POST /subjects/{uid}/candidates`
   behind `RequireCurator`; the body `{threshold?,limit?}` is **optional** (empty → defaults),
   `DisallowUnknownFields` + 64 KiB, a negative `threshold`/`limit` → 400; 503 without a backend, 404 missing
-  subject (`people.ErrSubjectNotFound`); mounted in `serve` (`buildCandidatesAPI` in
+  subject (`people.ErrSubjectNotFound`) — the same fixed `subject not found` body for a subject of another
+  project, searched in the request's project (`auth.ProjectUIDFromContext`); mounted in `serve` (`buildCandidatesAPI` in
   `cmd/kukatko/candidates.go`, takes `mediaStore` for URL stamping)), `internal/sweep/`
   (**recognition sweep** — composes the per-subject candidate search across **all** named
   subjects at once: the `Finder` interface (satisfied by `*candidates.Service`) and `SubjectLister` (satisfied by
@@ -2802,14 +2835,18 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   exactly as in `Sweep`; only the subject listing is fatal. `Sweep` shares the dispatcher (`dispatchState`)
   and the `Person` projection (`personOf`) and is otherwise unchanged — `GET /faces/sweep` still covers
   everyone. Unit tests in `scan_test.go` (budget bound, rotation without gaps, early stop, wrapping offset,
-  skipped failures, collector error, empty library)), `internal/sweepapi/`
+  skipped failures, collector error, empty library). **Project scope:** `Sweep(ctx,projectUID,…)` and
+  `Scan(ctx,projectUID,…)` plan over `ListSubjects(ctx,projectUID)` and hand the project to every `Find`, so
+  a sweep walks only the project's people and offers only its faces; `SubjectsTotal` counts the project's
+  subjects), `internal/sweepapi/`
   (a curator-and-above HTTP API over the sweep: the `Service` interface (satisfied by `*sweep.Service`),
   `NewAPI(Config{Service,RequireCurator})` (nil RequireCurator → pass-through) + `RegisterRoutes` mounts
   `GET /faces/sweep` behind `RequireCurator`; `parseConfidence` (percent-or-distance → distance, floor
   `0.01`, default 75 %) + `parseLimit`, errors → 400; streams **NDJSON** via the `stream` helper, which
   sets the headers (`application/x-ndjson`, `Cache-Control: no-store`) **lazily** at the first line and
   **flushes** after each one (`http.Flusher`, propagated through `internal/metrics` `statusRecorder.Flush`);
-  an error before the first line → 500 JSON, mid-stream → only a log; 503 without a backend; mounted in `serve`
+  an error before the first line → 500 JSON, mid-stream → only a log; 503 without a backend; the sweep runs in
+  the request's project (`auth.ProjectUIDFromContext`); mounted in `serve`
   (`buildSweepAPI` in `cmd/kukatko/sweep.go`, shares `candidates.Service` via `buildCandidatesService`)),
   `internal/expand/`
   (**"find photos similar to an album / label"** — completing a partially-tagged collection, the counterpart to the per-photo
@@ -2904,7 +2941,18 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   (`buildMCPAPI` in `cmd/kukatko/mcp.go`, in `discoveryAPIOptions`). See `docs/MCP.md`),
   `internal/review/`
   (**the review game** — a queue of "one at a time" questions and the application of answers;
-  **it composes existing pieces, reimplements nothing**. **Five kinds** (`Kinds`): face questions via the
+  **it composes existing pieces, reimplements nothing**. **Project scope (`scope.go`):** `Queue(ctx,projectUID,
+  userUID,…)` and `Answer(ctx,projectUID,userUID,…)` (`ErrNoProject` without one); the session is keyed by
+  (project, user) and the rotation cursors are per project (`rotation`, `offset`/`advance`), so one player's
+  games in two projects never share a pool, a shelf or a window; the face and outlier sources pass the project
+  to `Sweeper.Scan`/`OutlierRanker.Outliers`/`SubjectLister.ListSubjects`, every photo is hydrated through
+  `PhotoStore.ListByUIDsInProject` (a duplicate pair with a foreign half drops out), the breathers are picked
+  from the project's photos, the place estimates of other projects are dropped (`Photo.ProjectID`), and the
+  label rotation keeps only the project's labels (`Scope.LabelsInProject` — the label store still lists the
+  instance). Before an answer writes anything — a skip included — `proveInProject` checks the question's
+  photo(s), subject and label through the required `Scope` (`*ScopeStore`, three `uid = ANY` reads with
+  `project_id`): one the project does not hold (another project's, or nobody's) is **`ErrQuestionNotFound`**
+  and nothing is written; the write paths (`Assigner.Apply`, `RejectFace`, `ConfirmFace`) get the project too. **Five kinds** (`Kinds`): face questions via the
   `Sweeper` interface (satisfied by
   `*sweep.Service` → per-subject candidate search with all its filters: unassigned-only,
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
@@ -3220,7 +3268,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `review.ParseSource` → 400 on anything else) and `?limit=` (empty → default,
   non-numeric/negative → 400), answer decodes `{question_id,answer}` (`DisallowUnknownFields`, 64 KiB,
   empty fields → 400) and builds `audit.Meta` via `audit.FromRequest` + `auth.UserFromContext`;
-  `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, any other error → 500, `result:"gone"` stays 200;
+  `ErrInvalidQuestion`/`ErrInvalidAnswer` → 400, `ErrQuestionNotFound` (a photo, subject or label outside the
+  request's project — `auth.ProjectUIDFromContext` — or nowhere) → 404 with one fixed body, any other error →
+  500, `result:"gone"` (a vanished face or marker) stays 200;
   the leaderboard reads `?window=all|7d|today` (default all, `ParseWindow` → 400 on other) and via
   `buildLeaderboardResponse` returns `{window,caller_uid,entries:[…is_me]}` (the caller from `auth.
   UserFromContext`, `is_me` on the own row, entries never null); 503 without a backend; mounted
@@ -5036,7 +5086,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (a maintainer-only HTTP API over maintenance: the interfaces `Service` (Scan+Repair, satisfied by `*maintenance.Service`,
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);
   plus `NamelessRepair` (`List`/`Snapshot`/`EnqueueDetach`/`EnqueueRestore`, satisfied by
-  `*namelessjob.Service`, nil → 503);
+  `*namelessjob.Service`, nil → 503), every call made in the request's project (`auth.ProjectFromContext`
+  through the swappable `projectOf`; these are instance routes, so the unprefixed path is the bootstrap project
+  — the CLI's `--project` reaches the others; a request without a project → 500, an undo file of another
+  project → 400);
   `NewAPI(Config{Service,Audit,Nameless,RequireMaintainer})`+`RegisterRoutes` mounts `/maintenance`:
   `GET /maintenance/scan` (the integrity report), `POST /maintenance/repair` (body `RepairOptions`,
   `DisallowUnknownFields`, an empty selection → 400, `ErrOrphanImportUnavailable` → 503, otherwise `RepairResult`)
@@ -5056,8 +5109,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   mounted in `serve` (`buildMaintenanceAPI` in `cmd/kukatko/maintenance.go` injects `audit.NewStore`,
   the service is built by `buildMaintenanceAndThumb`, shared with the registration of the `thumbnail` handler in `buildJobs`)),
   `internal/namelessjob/`
-  (**the nameless-subject repair as background work**: the `Undo` file format (`{subjects:[people.SubjectSnapshot]}`,
-  shared verbatim with the CLI's `--undo-file`/`--undo`, so a file crosses freely between the two), the `Service`
+  (**the nameless-subject repair as background work**: the `Undo` file format (`{project_uid,project_slug,
+  subjects:[people.SubjectSnapshot]}`, shared verbatim with the CLI's `--undo-file`/`--undo`, so a file crosses
+  freely between the two; a file from before projects carries no project and belongs to the bootstrap one,
+  `Undo.Project`/`CheckProject` → `ErrProjectMismatch` in any other), the `Service`
   the admin surface drives (`List` — read-only report; `Snapshot` — the undo of every nameless subject via
   `people.SnapshotSubject`, skipping one that vanished mid-read; `EnqueueDetach`/`EnqueueRestore` — one job per
   subject, the scheduling maintainer's `audit.Meta` carried in the payload so the job's audit row names them),
@@ -5068,7 +5123,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   double-click or the CLI having got there first all mean the repair happened) and **warns** when it detached
   more than the delivered undo file recorded, since replaying that file would leave the difference unassigned.
   Registered unconditionally in `buildRegistry` — the repair for an importer artefact must not depend on an
-  optional feature being on),
+  optional feature being on. **Per project:** each project may have its own catch-all; `List`/`Snapshot`/
+  `EnqueueDetach`/`EnqueueRestore` take the project (`ErrNoProject` without one, `ErrProjectMismatch` for an
+  undo file of another project, nothing queued), both payloads carry `project_uid` (the restore one also a
+  top-level `subject_uid`) and the handlers run in it — a payload queued before the field existed in the
+  bootstrap project — stamping it on the audit entry; the dedup key is (type, project, subject)
+  (`idx_jobs_nameless_dedup`, migration 0105, queued jobs only), so the same detach or restore queued twice
+  collapses and is not counted again),
   `internal/duplicates/`
   (**a review surface for near-duplicate photos** beyond the upload-time warning: it links photos by two
   signals — pHash Hamming distance up to `duplicate.phash_max_diff` and embedding cosine distance

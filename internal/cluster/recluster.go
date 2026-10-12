@@ -7,8 +7,10 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// Recluster groups the currently clusterable faces (unassigned and not yet in a
-// cluster) into new clusters and returns how many clusters were created. It is
+// Recluster groups the project's currently clusterable faces (unassigned and not
+// yet in a cluster) into new clusters of that project and returns how many
+// clusters were created. Faces of other projects are neither read nor linked: the
+// neighbour search is confined to the project, so a cluster never spans two. It is
 // incremental and re-runnable: assigned faces and already-clustered faces are
 // excluded, so existing clusters and named faces are never disturbed — only fresh
 // unassigned faces are grouped. Faces whose connected component is smaller than
@@ -17,15 +19,15 @@ import (
 // The similarity graph is built from each clusterable face's HNSW nearest
 // neighbours within the cosine-distance threshold; connected components of those
 // edges become clusters. The work is deterministic for a fixed set of faces.
-func (s *Service) Recluster(ctx context.Context) (int, error) {
-	faces, err := s.store.ListUnclusteredFaces(ctx)
+func (s *Service) Recluster(ctx context.Context, projectUID string) (int, error) {
+	faces, err := s.store.ListUnclusteredFaces(ctx, projectUID)
 	if err != nil {
 		return 0, err
 	}
 	if len(faces) == 0 {
 		return 0, nil
 	}
-	edges, err := s.buildEdges(ctx, faces)
+	edges, err := s.buildEdges(ctx, projectUID, faces)
 	if err != nil {
 		return 0, err
 	}
@@ -34,7 +36,7 @@ func (s *Service) Recluster(ctx context.Context) (int, error) {
 		if len(component) < s.minSize {
 			continue
 		}
-		if err := s.persistCluster(ctx, faces, component); err != nil {
+		if err := s.persistCluster(ctx, projectUID, faces, component); err != nil {
 			return created, err
 		}
 		created++
@@ -47,7 +49,7 @@ func (s *Service) Recluster(ctx context.Context) (int, error) {
 // distance threshold. Only edges between faces in the supplied set are kept
 // (neighbours that are assigned or in another cluster are ignored), so clustering
 // stays confined to the currently clusterable faces.
-func (s *Service) buildEdges(ctx context.Context, faces []Face) ([][2]int, error) {
+func (s *Service) buildEdges(ctx context.Context, projectUID string, faces []Face) ([][2]int, error) {
 	index := make(map[int64]int, len(faces))
 	for i := range faces {
 		index[faces[i].ID] = i
@@ -55,7 +57,7 @@ func (s *Service) buildEdges(ctx context.Context, faces []Face) ([][2]int, error
 	var edges [][2]int
 	for i := range faces {
 		matches, err := s.faces.FindSimilarFaces(
-			ctx, faces[i].ProjectID, faces[i].Vector, neighborSearchLimit, s.threshold)
+			ctx, projectUID, faces[i].Vector, neighborSearchLimit, s.threshold)
 		if err != nil {
 			return nil, fmt.Errorf("cluster: searching neighbours of face %d: %w", faces[i].ID, err)
 		}
@@ -70,24 +72,25 @@ func (s *Service) buildEdges(ctx context.Context, faces []Face) ([][2]int, error
 
 // persistCluster creates one cluster from the faces at the component's indices:
 // it computes the centroid, inserts the cluster row and claims the member faces.
-func (s *Service) persistCluster(ctx context.Context, faces []Face, component []int) error {
+func (s *Service) persistCluster(ctx context.Context, projectUID string, faces []Face, component []int) error {
 	vecs := make([][]float32, len(component))
 	ids := make([]int64, len(component))
 	for k, idx := range component {
 		vecs[k] = faces[idx].Vector
 		ids[k] = faces[idx].ID
 	}
-	created, err := s.store.CreateCluster(ctx, vectors.Centroid(vecs), len(component), faces[component[0]].Model)
+	created, err := s.store.CreateCluster(
+		ctx, projectUID, vectors.Centroid(vecs), len(component), faces[component[0]].Model)
 	if err != nil {
 		return err
 	}
-	if err := s.store.AddFacesToCluster(ctx, created.UID, ids); err != nil {
+	if err := s.store.AddFacesToCluster(ctx, projectUID, created.UID, ids); err != nil {
 		return err
 	}
 	return nil
 }
 
-// GroupingState reports what the library's face groups look like to the
+// GroupingState reports what the project's face groups look like to the
 // scheduler: how many are listable, how many still need their cached summary,
 // and — for a library that has never been grouped — whether enough unassigned
 // faces are waiting for a pass to produce anything.
@@ -95,8 +98,8 @@ func (s *Service) persistCluster(ctx context.Context, faces []Face, component []
 // It is a read: it groups nothing and assigns nobody. The clusterable-face count
 // stops at the minimum group size, so the question costs the same on a library
 // with two unassigned faces and on one with two hundred thousand.
-func (s *Service) GroupingState(ctx context.Context) (GroupingState, error) {
-	ready, unprepared, err := s.store.CountClusters(ctx)
+func (s *Service) GroupingState(ctx context.Context, projectUID string) (GroupingState, error) {
+	ready, unprepared, err := s.store.CountClusters(ctx, projectUID)
 	if err != nil {
 		return GroupingState{}, err
 	}
@@ -104,7 +107,7 @@ func (s *Service) GroupingState(ctx context.Context) (GroupingState, error) {
 	if ready+unprepared > 0 {
 		return state, nil
 	}
-	clusterable, err := s.store.CountClusterableFaces(ctx, s.minSize)
+	clusterable, err := s.store.CountClusterableFaces(ctx, projectUID, s.minSize)
 	if err != nil {
 		return GroupingState{}, err
 	}

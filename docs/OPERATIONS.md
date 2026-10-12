@@ -56,8 +56,9 @@ configuration key both here **and** into `config.example.yaml`.
   **`maintenance inventory`** / **`maintenance inventory-diff`** (the read-only before/after snapshot of an
   upgrade and its judged diff — `internal/inventory`; **never migrates**; see "Upgrade runbook — multi-tenancy"
   below) and
-  **`maintenance nameless-subjects`** (reports — and with `--apply --undo-file` detaches — subjects whose name
-  identifies nobody, the importer-minted catch-all; dry run by default, reversible via `--undo`; see below) and
+  **`maintenance nameless-subjects --project <slug>`** (reports — and with `--apply --undo-file` detaches —
+  the project's subjects whose name identifies nobody, the importer-minted catch-all; dry run by default,
+  reversible via `--undo`; see below) and
   `maintenance repair` with the flags
   `--thumbnails`/`--embeddings`/`--faces`/`--phashes`/`--import-orphans`/`--places`/`--dimensions`/
   `--face-markers`/`--sideways-faces`/`--impossible-dates`/`--missing-renditions`/`--delete-orphan-segments`/
@@ -359,11 +360,18 @@ The importers now key on `people.NameSlug`, which returns `""` for exactly those
 stays unassigned. This command is the repair for the data the old behaviour already wrote.
 
 ```bash
-kukatko maintenance nameless-subjects                                   # dry run (default): report only
-kukatko maintenance nameless-subjects --apply --undo-file /tmp/undo.json   # detach, writing the undo
-kukatko maintenance nameless-subjects --undo /tmp/undo.json                # put everything back
+kukatko maintenance nameless-subjects --project v                                   # dry run: report only
+kukatko maintenance nameless-subjects --project v --apply --undo-file /tmp/undo.json   # detach, writing the undo
+kukatko maintenance nameless-subjects --project v --undo /tmp/undo.json                # put everything back
 ```
 
+- **`--project <slug>` is required** (`errProjectRequired`), in every mode, the report included. Each project
+  may have a catch-all of its own and the command never guesses which library it is about to change: it
+  resolves the slug (an unknown one is an error), lists, detaches and restores inside that project only, and a
+  subject of another project is invisible to it. The undo file records the project's uid and slug
+  (`project_uid`, `project_slug`), and `--undo` refuses a file of another project
+  (`namelessjob.ErrProjectMismatch`) before restoring anything. A file written before projects existed records
+  none and belongs to the bootstrap project (`v`).
 - **Dry run by default.** With no flag it lists every nameless subject with its uid, slug, creation time and
   how many markers and cached faces point at it, then totals them. It changes nothing.
 - **`--apply` requires `--undo-file`** (`errUndoFileRequired`). Detaching sets the marker→subject links NULL,
@@ -392,7 +400,11 @@ the undo takes that file back. The file format is identical (`namelessjob.Undo`)
 browser replays with `--undo` and one written by `--undo-file` uploads to the page. The destructive halves run
 as the `nameless_detach` / `nameless_restore` **jobs** rather than inside the request: detaching production's
 catch-all moves ~111 000 faces into the partial "unassigned faces" HNSW index (migration 0047), which is
-minutes of index maintenance. Watch the job queue on the same page for progress.
+minutes of index maintenance. Watch the job queue on the same page for progress. The page works on the
+request's project — through the instance route that is the bootstrap project; use the CLI's `--project` for
+any other. Both jobs carry `project_uid` in their payload, and their dedup key is (type, project, subject)
+(`idx_jobs_nameless_dedup`, migration 0105), so scheduling the same detach or restore twice while the first
+is still queued collapses into it.
 
 ### `kukatko maintenance reset` — the guarded library wipe
 

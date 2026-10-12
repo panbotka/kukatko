@@ -48,16 +48,31 @@ const viaReview = audit.ViaReview
 // replays. A question whose photo/face/label vanished since the queue was
 // built reports the "gone" result instead of failing, so the UI moves on.
 // Returns ErrInvalidQuestion or ErrInvalidAnswer for malformed input.
+//
+// The answer is given in the project projectUID: before anything is written —
+// a skip included — the question's photo(s), subject and label must belong to
+// it, or the answer is ErrQuestionNotFound (a uid of another project and one
+// that exists nowhere alike), and every write path is handed the project.
 func (s *Service) Answer(
-	ctx context.Context, userUID, questionID string, answer Answer, meta audit.Meta,
+	ctx context.Context, projectUID, userUID, questionID string, answer Answer, meta audit.Meta,
 ) (AnswerResult, error) {
+	if projectUID == "" {
+		return AnswerResult{}, ErrNoProject
+	}
 	ref, err := parseQuestionID(questionID)
 	if err != nil {
 		return AnswerResult{}, err
 	}
-	sess := s.session(userUID)
 	switch answer {
-	case AnswerSkip:
+	case AnswerSkip, AnswerYes, AnswerNo:
+	default:
+		return AnswerResult{}, ErrInvalidAnswer
+	}
+	if err := s.proveInProject(ctx, projectUID, ref); err != nil {
+		return AnswerResult{}, err
+	}
+	sess := s.session(projectUID, userUID)
+	if answer == AnswerSkip {
 		// The shelf and the memory are both written: the session stops offering
 		// this question for this sitting, the memory counts a "don't know" about
 		// the person so the game eventually stops asking this player about them at
@@ -65,14 +80,11 @@ func (s *Service) Answer(
 		// rejection, and the two must never be conflated.
 		s.recordSkip(ctx, userUID, ref)
 		return sess.consume(questionID, resultSkipped, false), nil
-	case AnswerYes, AnswerNo:
-	default:
-		return AnswerResult{}, ErrInvalidAnswer
 	}
 	if sess.alreadyAnswered(questionID) {
 		return sess.consume(questionID, resultAlreadyAnswered, false), nil
 	}
-	result, err := s.apply(ctx, ref, answer, meta)
+	result, err := s.apply(ctx, projectUID, ref, answer, meta)
 	if err != nil {
 		return AnswerResult{}, err
 	}
@@ -84,14 +96,16 @@ func (s *Service) Answer(
 // without a geo-estimate reviewer, say) reports "gone" rather than failing: the
 // only way to hold such a question is to have been served it before the wiring
 // changed, and that is exactly the mid-game race "gone" exists for.
-func (s *Service) apply(ctx context.Context, ref questionRef, answer Answer, meta audit.Meta) (string, error) {
+func (s *Service) apply(
+	ctx context.Context, projectUID string, ref questionRef, answer Answer, meta audit.Meta,
+) (string, error) {
 	yes := answer == AnswerYes
 	switch ref.Kind {
 	case KindFace:
 		if yes {
-			return s.applyFaceYes(ctx, ref, meta)
+			return s.applyFaceYes(ctx, projectUID, ref, meta)
 		}
-		return s.applyFaceNo(ctx, ref, meta)
+		return s.applyFaceNo(ctx, projectUID, ref, meta)
 	case KindLabel:
 		if yes {
 			return s.applyLabelYes(ctx, ref, meta)
@@ -102,7 +116,7 @@ func (s *Service) apply(ctx context.Context, ref questionRef, answer Answer, met
 	case KindDuplicate:
 		return s.applyDuplicate(ctx, ref, yes, meta)
 	case KindOutlier:
-		return s.applyOutlier(ctx, ref, yes, meta)
+		return s.applyOutlier(ctx, projectUID, ref, yes, meta)
 	default:
 		return "", ErrInvalidQuestion
 	}
@@ -113,7 +127,9 @@ func (s *Service) apply(ctx context.Context, ref questionRef, answer Answer, met
 // marker already exists, create_marker (with the face's stored display-relative
 // box) when not — and a face already carrying the subject short-circuits to
 // success, which keeps a replayed yes from minting a duplicate marker.
-func (s *Service) applyFaceYes(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
+func (s *Service) applyFaceYes(
+	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
+) (string, error) {
 	key := vectors.FaceKey{PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex}
 	faces, err := s.faces.FacesByKeys(ctx, []vectors.FaceKey{key})
 	if err != nil {
@@ -140,7 +156,7 @@ func (s *Service) applyFaceYes(ctx context.Context, ref questionRef, meta audit.
 		box := face.BBox
 		req.BBox = &box
 	}
-	if _, err := s.assigner.Apply(ctx, req, meta); err != nil {
+	if _, err := s.assigner.Apply(ctx, projectUID, req, meta); err != nil {
 		if isGone(err) {
 			return resultGone, nil
 		}
@@ -168,14 +184,17 @@ func (s *Service) applyLabelYes(ctx context.Context, ref questionRef, meta audit
 // applyFaceNo records the face rejection that makes the game converge: the pair
 // never comes back and the negative-exemplar rule kills lookalike candidates.
 // The write is idempotent and audits inside the mutation's transaction.
-func (s *Service) applyFaceNo(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
+func (s *Service) applyFaceNo(
+	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
+) (string, error) {
 	key := feedback.FaceRejectionKey{
 		PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex, SubjectUID: ref.SubjectUID,
 	}
 	entry := meta.Entry(audit.ActionFaceReject, "subjects", ref.SubjectUID, map[string]any{
 		"photo_uid": ref.PhotoUID, "face_index": ref.FaceIndex, "via": viaReview,
 	})
-	return decided(resultRejected, s.feedback.RejectFace(ctx, key, entry), "recording a face rejection")
+	return decided(resultRejected, s.feedback.RejectFace(ctx, projectUID, key, entry),
+		"recording a face rejection")
 }
 
 // applyLabelNo records the persisted "this photo should not carry this label",
@@ -243,7 +262,7 @@ func (s *Service) applyDuplicate(
 // A yes on a face whose marker has gone still records the opinion: the
 // confirmation is about the face, and the face is still there.
 func (s *Service) applyOutlier(
-	ctx context.Context, ref questionRef, yes bool, meta audit.Meta,
+	ctx context.Context, projectUID string, ref questionRef, yes bool, meta audit.Meta,
 ) (string, error) {
 	if yes {
 		key := feedback.FaceConfirmationKey{
@@ -252,17 +271,19 @@ func (s *Service) applyOutlier(
 		entry := meta.Entry(audit.ActionFaceConfirm, "subjects", ref.SubjectUID, map[string]any{
 			"photo_uid": ref.PhotoUID, "face_index": ref.FaceIndex, "via": viaReview,
 		})
-		return decided(resultConfirmed, s.feedback.ConfirmFace(ctx, key, entry),
+		return decided(resultConfirmed, s.feedback.ConfirmFace(ctx, projectUID, key, entry),
 			"confirming an assigned face")
 	}
-	return s.detachOutlier(ctx, ref, meta)
+	return s.detachOutlier(ctx, projectUID, ref, meta)
 }
 
 // detachOutlier clears the subject from the marker the question's face is tied
 // to. The marker is re-read rather than taken from the queue, so a face detached
 // or re-detected since the batch was built resolves to "gone" instead of
 // unassigning whatever marker used to be there.
-func (s *Service) detachOutlier(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
+func (s *Service) detachOutlier(
+	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
+) (string, error) {
 	key := vectors.FaceKey{PhotoUID: ref.PhotoUID, FaceIndex: ref.FaceIndex}
 	faces, err := s.faces.FacesByKeys(ctx, []vectors.FaceKey{key})
 	if err != nil {
@@ -283,7 +304,7 @@ func (s *Service) detachOutlier(ctx context.Context, ref questionRef, meta audit
 		FaceIndex: &ref.FaceIndex,
 		Via:       viaReview,
 	}
-	if _, err := s.assigner.Apply(ctx, req, meta); err != nil {
+	if _, err := s.assigner.Apply(ctx, projectUID, req, meta); err != nil {
 		if isGone(err) {
 			return resultGone, nil
 		}

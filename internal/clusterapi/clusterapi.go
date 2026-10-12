@@ -5,6 +5,10 @@
 // named. It depends on a cluster service behaviour and a curator guard, both
 // injected, so it stays decoupled from the cluster package's wiring.
 //
+// Every endpoint works inside the request's project (auth.ProjectUIDFromContext):
+// the listing shows only its clusters, and a cluster of another project is
+// answered exactly like one that does not exist — the same 404, nothing written.
+//
 // The listing is paginated and reads only what has been prepared in the
 // background: a page carries the clusters whose cached summary exists, together
 // with how many are still being prepared, so a library with thousands of groups
@@ -22,6 +26,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/facematch"
 	"github.com/panbotka/kukatko/internal/people"
@@ -31,14 +36,17 @@ import (
 // so clusterapi depends on the behaviour, not cluster's wiring; cluster.Service
 // satisfies it.
 type Service interface {
-	// ListPage returns one page of the clusters that are ready to be shown, with
-	// how many are ready in total and how many are still being prepared.
-	ListPage(ctx context.Context, req cluster.PageRequest) (cluster.Listing, error)
-	// AssignCluster assigns every face in a cluster to one subject.
-	AssignCluster(ctx context.Context, req cluster.AssignRequest) (cluster.AssignResult, error)
-	// RemoveFace detaches one face from a cluster, returning the refreshed cluster
-	// view, or deleted=true when the removal emptied (and deleted) the cluster.
-	RemoveFace(ctx context.Context, clusterUID string, ref cluster.Ref) (cluster.View, bool, error)
+	// ListPage returns one page of the project's clusters that are ready to be
+	// shown, with how many are ready in total and how many are still being
+	// prepared.
+	ListPage(ctx context.Context, projectUID string, req cluster.PageRequest) (cluster.Listing, error)
+	// AssignCluster assigns every face in one of the project's clusters to one
+	// subject of the project.
+	AssignCluster(ctx context.Context, projectUID string, req cluster.AssignRequest) (cluster.AssignResult, error)
+	// RemoveFace detaches one face from one of the project's clusters, returning
+	// the refreshed cluster view, or deleted=true when the removal emptied (and
+	// deleted) the cluster.
+	RemoveFace(ctx context.Context, projectUID, clusterUID string, ref cluster.Ref) (cluster.View, bool, error)
 }
 
 // Preparer schedules the background pass the library's groups are missing: the
@@ -47,10 +55,10 @@ type Service interface {
 // is optional: with none wired the listing still serves whatever is prepared, it
 // just never asks for more.
 type Preparer interface {
-	// EnsureGrouping queues the pass the library is missing, unless one is already
-	// waiting or running, and reports whether a pass is in flight afterwards. It
-	// groups only unassigned faces and reassigns nobody.
-	EnsureGrouping(ctx context.Context) (bool, error)
+	// EnsureGrouping queues the pass the project is missing, unless one is
+	// already waiting or running for it, and reports whether a pass is in flight
+	// afterwards. It groups only unassigned faces and reassigns nobody.
+	EnsureGrouping(ctx context.Context, projectUID string) (bool, error)
 }
 
 // API exposes the clustering endpoints over HTTP. The curator guard is supplied by
@@ -127,7 +135,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	listing, err := a.service.ListPage(r.Context(), req)
+	listing, err := a.service.ListPage(r.Context(), auth.ProjectUIDFromContext(r.Context()), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing clusters failed")
 		return
@@ -143,7 +151,7 @@ func (a *API) ensureGrouping(r *http.Request) bool {
 	if a.preparer == nil {
 		return false
 	}
-	grouping, err := a.preparer.EnsureGrouping(r.Context())
+	grouping, err := a.preparer.EnsureGrouping(r.Context(), auth.ProjectUIDFromContext(r.Context()))
 	if err != nil {
 		log.Printf("clusterapi: scheduling the face-grouping pass: %v", err)
 		return false
@@ -195,7 +203,7 @@ func (a *API) handleAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.ClusterUID = chi.URLParam(r, "id")
-	result, err := a.service.AssignCluster(r.Context(), req)
+	result, err := a.service.AssignCluster(r.Context(), auth.ProjectUIDFromContext(r.Context()), req)
 	if err != nil {
 		writeClusterError(w, err, "assigning cluster failed")
 		return
@@ -229,7 +237,7 @@ func (a *API) handleRemoveFace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	view, deleted, err := a.service.RemoveFace(r.Context(), chi.URLParam(r, "id"),
+	view, deleted, err := a.service.RemoveFace(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "id"),
 		cluster.Ref{PhotoUID: req.PhotoUID, FaceIndex: req.FaceIndex})
 	if err != nil {
 		writeClusterError(w, err, "removing face from cluster failed")

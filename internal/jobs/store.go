@@ -72,6 +72,10 @@ var dedupIndexes = map[string]bool{
 	"idx_jobs_album_featured_notify_dedup": true,
 	// The daily inbox retention purge, keyed on the type alone.
 	"idx_jobs_notification_purge_dedup": true,
+	// The face-grouping pass, one queued per project (migration 0105).
+	"idx_jobs_face_cluster_dedup": true,
+	// The nameless repair, one queued per (type, project, subject) (migration 0105).
+	"idx_jobs_nameless_dedup": true,
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint
@@ -608,6 +612,27 @@ func (s *Store) CountPending(ctx context.Context, types ...string) (int, error) 
 	var n int
 	if err := s.pool.QueryRow(ctx, q, types).Scan(&n); err != nil {
 		return 0, fmt.Errorf("jobs: counting pending jobs: %w", err)
+	}
+	return n, nil
+}
+
+// countPendingForProjectSQL counts the pending jobs of the given types whose
+// payload names one project — the library-wide jobs carry it as project_uid.
+const countPendingForProjectSQL = "SELECT count(*) FROM jobs WHERE state IN ('queued', 'running') " +
+	"AND type = ANY($1) AND payload ->> 'project_uid' = $2"
+
+// CountPendingForProject returns how many jobs of the given types are still
+// pending (queued or running) for the project projectUID, read from the
+// payload's project_uid. A job queued before its type carried a project is not
+// counted. With no types, or an empty projectUID, it returns 0: there is no
+// project to ask about.
+func (s *Store) CountPendingForProject(ctx context.Context, projectUID string, types ...string) (int, error) {
+	if len(types) == 0 || projectUID == "" {
+		return 0, nil
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, countPendingForProjectSQL, types, projectUID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("jobs: counting pending jobs of project %s: %w", projectUID, err)
 	}
 	return n, nil
 }

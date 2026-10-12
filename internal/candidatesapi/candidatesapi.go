@@ -18,9 +18,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/candidates"
 	"github.com/panbotka/kukatko/internal/people"
 )
+
+// subjectNotFound is the 404 message for a subject the request's project does
+// not hold, whether it exists in another project or nowhere.
+const subjectNotFound = "subject not found"
 
 // maxBodyBytes caps the request body. The body is two numbers, so a tight limit
 // guards against oversized payloads.
@@ -30,9 +35,10 @@ const maxBodyBytes = 64 << 10
 // candidatesapi depends on the behaviour, not the candidates package's wiring;
 // *candidates.Service satisfies it.
 type Service interface {
-	// Find returns the untagged-face candidates for the subject, or
-	// people.ErrSubjectNotFound when no such subject exists.
-	Find(ctx context.Context, subjectUID string, req candidates.Request) (candidates.Result, error)
+	// Find returns the untagged-face candidates for the subject inside the
+	// project, or people.ErrSubjectNotFound when the project holds no such
+	// subject (one of another project included).
+	Find(ctx context.Context, projectUID, subjectUID string, req candidates.Request) (candidates.Result, error)
 }
 
 // API exposes the candidate search over HTTP. The curator guard is supplied by the
@@ -65,8 +71,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireCurator).Post("/subjects/{uid}/candidates", a.handleFind)
 }
 
-// handleFind runs the candidate search for the path subject. An absent backend
-// answers 503, an unparsable or negative-valued body 400, an unknown subject 404.
+// handleFind runs the candidate search for the path subject inside the request's
+// project. An absent backend answers 503, an unparsable or negative-valued body
+// 400, an unknown subject 404 — and so does a subject of another project, with the
+// same body, so the two cannot be told apart.
 func (a *API) handleFind(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "candidate search not available")
@@ -77,10 +85,12 @@ func (a *API) handleFind(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := a.service.Find(r.Context(), chi.URLParam(r, "uid"), req)
+	result, err := a.service.Find(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"), req)
 	if err != nil {
 		if errors.Is(err, people.ErrSubjectNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			// A fixed message: the wrapped error names the uid, and the answer
+			// about a foreign subject must be byte-identical to a missing one's.
+			writeError(w, http.StatusNotFound, subjectNotFound)
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "candidate search failed")

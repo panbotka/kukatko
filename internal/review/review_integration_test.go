@@ -61,8 +61,8 @@ func newReviewHarness(t *testing.T) *reviewHarness {
 // bootstrap* adapters below do the same for the bootstrap project, which every
 // row these tests seed lands in.
 
-// bootstrapVectors adapts *vectors.Store to the project-less similarity searches
-// of candidates and expand.
+// bootstrapVectors adapts *vectors.Store to the project-less similarity search
+// of expand, which is scoped in a later step.
 type bootstrapVectors struct {
 	*vectors.Store
 }
@@ -72,70 +72,6 @@ func (v bootstrapVectors) FindSimilar(
 	ctx context.Context, q []float32, limit int, maxDistance float64,
 ) ([]vectors.Match, error) {
 	return v.Store.FindSimilar(ctx, project.BootstrapUID, q, limit, maxDistance)
-}
-
-// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
-func (v bootstrapVectors) FindSimilarUnassignedFaceCandidates(
-	ctx context.Context, q []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
-) ([]vectors.FaceCandidate, error) {
-	return v.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, q, limit, maxDistance, exclude)
-}
-
-// bootstrapPeople adapts *people.Store to the project-less subject and marker
-// reads of candidates, outliers, sweep and review.
-type bootstrapPeople struct {
-	*people.Store
-}
-
-// GetSubjectByUID reads the subject inside the bootstrap project.
-func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
-	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
-}
-
-// GetMarkerByUID reads the marker inside the bootstrap project.
-func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
-	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
-}
-
-// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
-func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
-	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
-}
-
-// ListSubjects lists the subjects of the bootstrap project.
-func (p bootstrapPeople) ListSubjects(ctx context.Context) ([]people.SubjectCount, error) {
-	return p.Store.ListSubjects(ctx, project.BootstrapUID)
-}
-
-// bootstrapFeedback adapts *feedback.Store to the project-less face opinions the
-// review game records.
-type bootstrapFeedback struct {
-	*feedback.Store
-}
-
-// RejectFace records the rejection inside the bootstrap project.
-func (f bootstrapFeedback) RejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error {
-	return f.Store.RejectFace(ctx, project.BootstrapUID, key, entry)
-}
-
-// ConfirmFace records the confirmation inside the bootstrap project.
-func (f bootstrapFeedback) ConfirmFace(
-	ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry,
-) error {
-	return f.Store.ConfirmFace(ctx, project.BootstrapUID, key, entry)
-}
-
-// bootstrapAssigner adapts *facematch.Service to the project-less Apply of the
-// review game.
-type bootstrapAssigner struct {
-	*facematch.Service
-}
-
-// Apply performs the transition inside the bootstrap project.
-func (a bootstrapAssigner) Apply(
-	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
-) (facematch.AssignResult, error) {
-	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
 }
 
 // service composes a fresh review service over the harness stores — a fresh
@@ -148,11 +84,11 @@ func (h *reviewHarness) service() *review.Service {
 // stand on the far side of a cooling-off period. A nil clock means time.Now.
 func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 	candSvc := candidates.New(candidates.Config{
-		Faces: bootstrapVectors{h.vectors}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
+		Faces: h.vectors, People: h.people, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
-	sweepSvc := sweep.New(sweep.Config{Subjects: bootstrapPeople{h.people}, Finder: candSvc, Concurrency: 2})
+	sweepSvc := sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 2})
 	expandSvc := expand.New(expand.Config{
 		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
@@ -164,8 +100,9 @@ func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 		Expander:   expandSvc,
 		Organize:   h.organize,
 		Faces:      h.vectors,
-		Feedback:   bootstrapFeedback{h.feedback},
-		Assigner:   bootstrapAssigner{matchSvc},
+		Feedback:   h.feedback,
+		Assigner:   matchSvc,
+		Scope:      review.NewScopeStore(h.db.Pool()),
 		Skips:      review.NewSkipRecorder(h.db.Pool()),
 		KindShares: allKinds(),
 		BandMin:    0.45, BandMax: 0.75,
@@ -300,7 +237,7 @@ func (h *reviewHarness) label(t *testing.T, name string, members ...string) orga
 // queueIDs fetches one big batch and returns the question ids in order.
 func queueIDs(t *testing.T, svc *review.Service) []string {
 	t.Helper()
-	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -352,7 +289,7 @@ func TestReviewQueue_faceTiersAndExclusionsDB(t *testing.T) {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
-	res, err := h.service().Queue(context.Background(), "tester", review.SourceBoth, 100)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -394,7 +331,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	bandPhoto := h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -403,7 +340,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	}
 	questionID := res.Questions[0].ID
 
-	answer, err := svc.Answer(context.Background(), "tester", questionID, review.AnswerYes, audit.Meta{ActorUID: ""})
+	answer, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", questionID, review.AnswerYes, audit.Meta{ActorUID: ""})
 	if err != nil {
 		t.Fatalf("Answer yes: %v", err)
 	}
@@ -419,7 +356,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	}
 
 	// Answering the same question again must not double-assign or error.
-	again, err := svc.Answer(context.Background(), "tester", questionID, review.AnswerYes, audit.Meta{})
+	again, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", questionID, review.AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("repeat Answer: %v", err)
 	}
@@ -428,7 +365,7 @@ func TestReviewAnswer_faceYesAssignsAndConvergesDB(t *testing.T) {
 	}
 	// Even a fresh service (cold session — like answering after a restart)
 	// must not create a second marker: the face row already carries Alice.
-	fresh, err := h.service().Answer(context.Background(), "tester", questionID, review.AnswerYes, audit.Meta{})
+	fresh, err := h.service().Answer(context.Background(), project.BootstrapUID, "tester", questionID, review.AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("cold repeat Answer: %v", err)
 	}
@@ -459,14 +396,14 @@ func TestReviewAnswer_faceYesTagsAuditViaReview(t *testing.T) {
 	h.face(t, "band", vectors.Face{FaceIndex: 0, Vector: bandFace(), DetScore: 0.9})
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	if len(res.Questions) != 1 {
 		t.Fatalf("questions = %d, want 1", len(res.Questions))
 	}
-	if _, err := svc.Answer(context.Background(), "tester", res.Questions[0].ID, review.AnswerYes, audit.Meta{}); err != nil {
+	if _, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", res.Questions[0].ID, review.AnswerYes, audit.Meta{}); err != nil {
 		t.Fatalf("Answer yes: %v", err)
 	}
 
@@ -521,7 +458,7 @@ func TestReviewAnswer_faceNoRejectsDB(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("queue = %v, want one question", ids)
 	}
-	res, err := svc.Answer(context.Background(), "tester", ids[0], review.AnswerNo, audit.Meta{})
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", ids[0], review.AnswerNo, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer no: %v", err)
 	}
@@ -549,7 +486,7 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	h.embedded(t, "certain", imgVec(map[int]float32{0: 0.95, 1: 0.3122}))
 
 	svc := h.service()
-	res, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	res, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -561,7 +498,7 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 		t.Fatalf("question = %+v, want the band photo for label %s", q, label.UID)
 	}
 
-	answer, err := svc.Answer(context.Background(), "tester", q.ID, review.AnswerYes, audit.Meta{})
+	answer, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", q.ID, review.AnswerYes, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer yes: %v", err)
 	}
@@ -599,7 +536,7 @@ func TestReviewAnswer_labelNoRejectsDB(t *testing.T) {
 	if len(ids) != 1 {
 		t.Fatalf("queue = %v, want one question", ids)
 	}
-	if _, err := svc.Answer(context.Background(), "tester", ids[0], review.AnswerNo, audit.Meta{}); err != nil {
+	if _, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", ids[0], review.AnswerNo, audit.Meta{}); err != nil {
 		t.Fatalf("Answer no: %v", err)
 	}
 	rejected, err := h.feedback.IsLabelRejected(context.Background(), feedback.LabelRejectionKey{
@@ -622,19 +559,19 @@ func TestReviewAnswer_skipDoesNotLeadNextBatchDB(t *testing.T) {
 	})
 
 	svc := h.service()
-	first, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 1)
+	first, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 1)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	skipped := first.Questions[0].ID
-	res, err := svc.Answer(context.Background(), "tester", skipped, review.AnswerSkip, audit.Meta{})
+	res, err := svc.Answer(context.Background(), project.BootstrapUID, "tester", skipped, review.AnswerSkip, audit.Meta{})
 	if err != nil {
 		t.Fatalf("Answer skip: %v", err)
 	}
 	if res.Result != "skipped" || res.Answered != 0 {
 		t.Fatalf("skip = %+v, want skipped and uncounted", res)
 	}
-	next, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 10)
+	next, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 10)
 	if err != nil {
 		t.Fatalf("Queue after skip: %v", err)
 	}
@@ -661,7 +598,7 @@ func TestReviewQueue_sourceSelectionDB(t *testing.T) {
 	labelPhoto := h.embedded(t, "band-label", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
 
 	svc := h.service()
-	both, err := svc.Queue(context.Background(), "tester", review.SourceBoth, 100)
+	both, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 100)
 	if err != nil {
 		t.Fatalf("Queue(both): %v", err)
 	}
@@ -669,7 +606,7 @@ func TestReviewQueue_sourceSelectionDB(t *testing.T) {
 		t.Fatalf("both = %+v, want one question per source", both.Questions)
 	}
 
-	people, err := svc.Queue(context.Background(), "tester", review.SourcePeople, 100)
+	people, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue(people): %v", err)
 	}
@@ -681,7 +618,7 @@ func TestReviewQueue_sourceSelectionDB(t *testing.T) {
 		t.Errorf("people source = %q, want %q", people.Source, review.SourcePeople)
 	}
 
-	labels, err := svc.Queue(context.Background(), "tester", review.SourceLabels, 100)
+	labels, err := svc.Queue(context.Background(), project.BootstrapUID, "tester", review.SourceLabels, 100)
 	if err != nil {
 		t.Fatalf("Queue(labels): %v", err)
 	}
@@ -703,7 +640,7 @@ func TestReviewQueue_chosenSourceEmptyDB(t *testing.T) {
 	h.label(t, "Ostatky", member)
 	h.embedded(t, "band-label", imgVec(map[int]float32{0: 0.6, 1: 0.8}))
 
-	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 0)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourcePeople, 0)
 	if err != nil {
 		t.Fatalf("Queue(people): %v", err)
 	}
@@ -714,7 +651,7 @@ func TestReviewQueue_chosenSourceEmptyDB(t *testing.T) {
 
 func TestReviewQueue_emptyLibraryDB(t *testing.T) {
 	h := newReviewHarness(t)
-	res, err := h.service().Queue(context.Background(), "tester", review.SourceBoth, 0)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue on empty library: %v", err)
 	}
@@ -808,7 +745,7 @@ func TestReviewQueue_tierMixDB(t *testing.T) {
 		h.faceAt(t, fmt.Sprintf("band%d", i), confidence)
 	}
 
-	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 100)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -840,7 +777,7 @@ func TestReviewQueue_confidentTierExhaustedDegradesDB(t *testing.T) {
 		h.faceAt(t, fmt.Sprintf("band%d", i), confidence)
 	}
 
-	res, err := h.service().Queue(context.Background(), "tester", review.SourcePeople, 100)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourcePeople, 100)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -878,7 +815,7 @@ func TestReviewQueue_reviewDisabledLabelDB(t *testing.T) {
 		t.Fatalf("UpdateLabel left review_enabled true: %+v", off)
 	}
 
-	res, err := h.service().Queue(context.Background(), "tester", review.SourceLabels, 100)
+	res, err := h.service().Queue(context.Background(), project.BootstrapUID, "tester", review.SourceLabels, 100)
 	if err != nil {
 		t.Fatalf("Queue(labels): %v", err)
 	}

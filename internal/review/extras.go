@@ -40,22 +40,26 @@ import (
 // question is "was this taken in <place>?", and a pair of decimal degrees is not
 // a place anybody can answer about. Those photos come back once the `places` job
 // has caught up — which is exactly the right time to ask.
-func (s *Service) placeQuestions(ctx context.Context, need int) ([]Question, int, error) {
+//
+// The estimate list is the instance's, so a photo of another project is
+// dropped here (Photo.ProjectID): the game only ever asks about its own
+// project's photos.
+func (s *Service) placeQuestions(ctx context.Context, projectUID string, need int) ([]Question, int, error) {
 	if s.places == nil {
 		return nil, 0, nil
 	}
-	offset := s.placeOffset()
+	offset := s.offset(projectUID, placeCursor)
 	pending, total, err := s.places.Pending(ctx, offset, need)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: listing estimated locations: %w", err)
 	}
-	s.advancePlaceOffset(wrapOffset(offset+len(pending), total))
+	s.advance(projectUID, placeCursor, wrapOffset(offset+len(pending), total))
 
 	questions := make([]Question, 0, len(pending))
 	for _, estimate := range pending {
 		name := estimate.PlaceLabel()
 		photo := estimate.Photo
-		if name == "" || photo.Lat == nil || photo.Lng == nil {
+		if photo.ProjectID != projectUID || name == "" || photo.Lat == nil || photo.Lng == nil {
 			continue
 		}
 		s.media.DecorateOne(ctx, &photo)
@@ -92,19 +96,22 @@ func (s *Service) placeQuestions(ctx context.Context, need int) ([]Question, int
 //
 // A group already carrying a human confirmation is skipped for the same reason:
 // the question has been answered.
-func (s *Service) duplicateQuestions(ctx context.Context, need int) ([]Question, int, error) {
+//
+// Both photos of a pair are hydrated inside projectUID, so a pair with a photo
+// of another project has a member missing and is dropped like a vanished one.
+func (s *Service) duplicateQuestions(ctx context.Context, projectUID string, need int) ([]Question, int, error) {
 	if s.duplicates == nil || s.photos == nil {
 		return nil, 0, nil
 	}
-	offset := s.dupOffset()
+	offset := s.offset(projectUID, dupCursor)
 	res, err := s.duplicates.FindGroups(ctx, need, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: finding duplicate groups: %w", err)
 	}
-	s.advanceDupOffset(wrapOffset(offset+len(res.Groups), res.Total))
+	s.advance(projectUID, dupCursor, wrapOffset(offset+len(res.Groups), res.Total))
 
 	pairs := pairGroups(res.Groups)
-	byUID, err := s.photosByUID(ctx, pairUIDs(pairs))
+	byUID, err := s.photosByUID(ctx, projectUID, pairUIDs(pairs))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -201,19 +208,20 @@ func pairConfidence(member duplicates.Member) float64 {
 // used either: with fewer than outliers.MinMeaningful faces every face is
 // roughly equidistant from the centroid, so "furthest" means nothing and the
 // question would be an accusation drawn from noise.
-func (s *Service) outlierQuestions(ctx context.Context, need int) ([]Question, int, error) {
+func (s *Service) outlierQuestions(ctx context.Context, projectUID string, need int) ([]Question, int, error) {
 	if s.outliers == nil || s.subjects == nil || s.photos == nil {
 		return nil, 0, nil
 	}
-	subjects, err := s.outlierPlan(ctx)
+	subjects, err := s.outlierPlan(ctx, projectUID)
 	if err != nil {
 		return nil, 0, err
 	}
 	if len(subjects) == 0 {
 		return nil, 0, nil
 	}
-	offset := wrapOffset(s.outlierOffset(), len(subjects))
-	found, scanned, err := s.rankWindow(ctx, rotateSubjects(subjects, offset, s.outlierBudget), need)
+	offset := wrapOffset(s.offset(projectUID, outlierCursor), len(subjects))
+	window := rotateSubjects(subjects, offset, s.outlierBudget)
+	found, scanned, err := s.rankWindow(ctx, projectUID, window, need)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -221,8 +229,8 @@ func (s *Service) outlierQuestions(ctx context.Context, need int) ([]Question, i
 	// scan that stopped early because the batch was full has not looked at the
 	// rest of its window, and skipping them would leave those people unasked
 	// about until the cursor came all the way round again.
-	s.advanceOutlierOffset(wrapOffset(offset+scanned, len(subjects)))
-	questions, err := s.outlierQuestionsFor(ctx, found)
+	s.advance(projectUID, outlierCursor, wrapOffset(offset+scanned, len(subjects)))
+	questions, err := s.outlierQuestionsFor(ctx, projectUID, found)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -232,7 +240,7 @@ func (s *Service) outlierQuestions(ctx context.Context, need int) ([]Question, i
 // rankWindow ranks the subjects of one window until it holds need faces worth
 // asking about, and reports how many of them it actually looked at.
 func (s *Service) rankWindow(
-	ctx context.Context, window []people.Subject, need int,
+	ctx context.Context, projectUID string, window []people.Subject, need int,
 ) ([]subjectOutliers, int, error) {
 	var found []subjectOutliers
 	scanned, collected := 0, 0
@@ -240,7 +248,7 @@ func (s *Service) rankWindow(
 		if collected >= need {
 			break
 		}
-		theirs, err := s.rankSubject(ctx, subject)
+		theirs, err := s.rankSubject(ctx, projectUID, subject)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -260,11 +268,11 @@ type subjectOutliers struct {
 	faces   []outliers.OutlierFace
 }
 
-// outlierPlan lists the subjects the outlier rotation may walk: those with at
-// least MinMeaningful markers, since a ranking over fewer faces carries no
-// signal and would only produce questions drawn from noise.
-func (s *Service) outlierPlan(ctx context.Context) ([]people.Subject, error) {
-	all, err := s.subjects.ListSubjects(ctx)
+// outlierPlan lists the project's subjects the outlier rotation may walk: those
+// with at least MinMeaningful markers, since a ranking over fewer faces carries
+// no signal and would only produce questions drawn from noise.
+func (s *Service) outlierPlan(ctx context.Context, projectUID string) ([]people.Subject, error) {
+	all, err := s.subjects.ListSubjects(ctx, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("review: listing subjects for outliers: %w", err)
 	}
@@ -281,9 +289,11 @@ func (s *Service) outlierPlan(ctx context.Context) ([]people.Subject, error) {
 // about: far enough from the centroid, and tied to a marker a "no" could detach.
 // A single subject's ranking failing is logged and skipped rather than failing
 // the rebuild, matching the per-label policy of the label scan.
-func (s *Service) rankSubject(ctx context.Context, subject people.Subject) (subjectOutliers, error) {
+func (s *Service) rankSubject(
+	ctx context.Context, projectUID string, subject people.Subject,
+) (subjectOutliers, error) {
 	opts := outliers.Options{Threshold: s.outlierThreshold, Limit: s.maxPerEntity}
-	res, err := s.outliers.Outliers(ctx, subject.UID, opts)
+	res, err := s.outliers.Outliers(ctx, projectUID, subject.UID, opts)
 	if err != nil {
 		if ctx.Err() != nil {
 			return subjectOutliers{}, fmt.Errorf("review: ranking outliers of %s: %w", subject.UID, err)
@@ -307,7 +317,7 @@ func (s *Service) rankSubject(ctx context.Context, subject people.Subject) (subj
 // outlierQuestionsFor hydrates the photos of every kept face in one read and
 // builds the questions, most suspicious (furthest from the centroid) first.
 func (s *Service) outlierQuestionsFor(
-	ctx context.Context, found []subjectOutliers,
+	ctx context.Context, projectUID string, found []subjectOutliers,
 ) ([]Question, error) {
 	var uids []string
 	for _, entry := range found {
@@ -315,7 +325,7 @@ func (s *Service) outlierQuestionsFor(
 			uids = append(uids, face.PhotoUID)
 		}
 	}
-	byUID, err := s.photosByUID(ctx, uids)
+	byUID, err := s.photosByUID(ctx, projectUID, uids)
 	if err != nil {
 		return nil, err
 	}
@@ -347,10 +357,13 @@ func (s *Service) outlierQuestionsFor(
 	return questions, nil
 }
 
-// photosByUID loads a batch of photos keyed by uid, deduplicating the input so a
-// photo named twice (both halves of a pair, two outlier faces on one shot) is
-// fetched once. An empty input yields an empty map without a query.
-func (s *Service) photosByUID(ctx context.Context, uids []string) (map[string]photos.Photo, error) {
+// photosByUID loads a batch of the project's photos keyed by uid, deduplicating
+// the input so a photo named twice (both halves of a pair, two outlier faces on
+// one shot) is fetched once. A photo of another project is simply absent. An
+// empty input yields an empty map without a query.
+func (s *Service) photosByUID(
+	ctx context.Context, projectUID string, uids []string,
+) (map[string]photos.Photo, error) {
 	byUID := make(map[string]photos.Photo, len(uids))
 	if len(uids) == 0 {
 		return byUID, nil
@@ -364,7 +377,7 @@ func (s *Service) photosByUID(ctx context.Context, uids []string) (map[string]ph
 		seen[uid] = struct{}{}
 		unique = append(unique, uid)
 	}
-	list, err := s.photos.ListByUIDs(ctx, unique)
+	list, err := s.photos.ListByUIDsInProject(ctx, projectUID, unique)
 	if err != nil {
 		return nil, fmt.Errorf("review: loading photos: %w", err)
 	}

@@ -22,9 +22,10 @@ import (
 // the project on its own transaction before it changes anything, and every
 // subject it names is looked up inside the same project — so a marker never
 // points at a subject of another project. The handful of methods a background job
-// or a later multi-tenancy step still calls without a request (the nameless
-// repair, the sidecar writer, the family tree's inline create) are documented as
-// unscoped where they are declared.
+// or a later multi-tenancy step still calls without a request (the sidecar
+// writer, the family tree's inline create) are documented as unscoped where they
+// are declared. The nameless repair is scoped like everything else: each project
+// has its own catch-all, and its jobs carry the project.
 
 // requireProject returns ErrNoProject when projectUID is empty and nil
 // otherwise. Every scoped Store method calls it before touching the database.

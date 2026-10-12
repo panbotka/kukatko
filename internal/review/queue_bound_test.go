@@ -45,7 +45,7 @@ type knnFinder struct {
 // Find records the work one subject's search would cost and returns inBand
 // candidates sitting in the middle of the uncertainty band.
 func (f *knnFinder) Find(
-	_ context.Context, subjectUID string, _ candidates.Request,
+	_ context.Context, _, subjectUID string, _ candidates.Request,
 ) (candidates.Result, error) {
 	f.mu.Lock()
 	f.subjects++
@@ -76,7 +76,7 @@ type staticSubjects struct {
 }
 
 // ListSubjects returns the synthetic subject list.
-func (s *staticSubjects) ListSubjects(context.Context) ([]people.SubjectCount, error) {
+func (s *staticSubjects) ListSubjects(context.Context, string) ([]people.SubjectCount, error) {
 	return s.subjects, nil
 }
 
@@ -103,6 +103,7 @@ func libraryOf(t *testing.T, n int) (*Service, *knnFinder) {
 		Faces:    &fakeFaces{},
 		Feedback: &fakeFeedback{},
 		Assigner: &fakeAssigner{},
+		Scope:    &fakeScope{},
 		Log:      quiet,
 	})
 	return svc, finder
@@ -118,7 +119,7 @@ func TestQueue_faceWorkDoesNotScaleWithSubjectCount(t *testing.T) {
 		t.Run(fmt.Sprintf("%d_named_subjects", size), func(t *testing.T) {
 			t.Parallel()
 			svc, finder := libraryOf(t, size)
-			res, err := svc.Queue(context.Background(), "user", SourceBoth, 0)
+			res, err := svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 			if err != nil {
 				t.Fatalf("Queue: %v", err)
 			}
@@ -160,7 +161,7 @@ func TestQueue_rotatesThroughSubjectsAcrossRebuilds(t *testing.T) {
 	ctx := context.Background()
 	offsets := make([]int, 0, 3)
 	for range 3 {
-		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+		if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 		*f.now = f.now.Add(2 * DefaultCacheTTL) // force a rebuild
@@ -187,7 +188,7 @@ func TestQueue_rotatesThroughLabelsAcrossRebuilds(t *testing.T) {
 	})
 	ctx := context.Background()
 	for range 2 {
-		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+		if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 		*f.now = f.now.Add(2 * DefaultCacheTTL)
@@ -198,9 +199,9 @@ func TestQueue_rotatesThroughLabelsAcrossRebuilds(t *testing.T) {
 		t.Fatalf("label searches = %d, want %d (%d per rebuild over 20 labels)",
 			f.expander.calls, 2*DefaultLabelBudget, DefaultLabelBudget)
 	}
-	if f.svc.labelOffset() != 2*DefaultLabelBudget {
+	if f.svc.offset(testProject, labelCursor) != 2*DefaultLabelBudget {
 		t.Errorf("label cursor = %d, want %d — successive rebuilds must move on",
-			f.svc.labelOffset(), 2*DefaultLabelBudget)
+			f.svc.offset(testProject, labelCursor), 2*DefaultLabelBudget)
 	}
 }
 
@@ -226,7 +227,7 @@ func TestQueue_labelScanStopsOnceTheBatchIsFull(t *testing.T) {
 		// down with it — otherwise the round's size would raise the target back up.
 		f.roundSize = f.queueSize
 	})
-	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0); err != nil {
+	if _, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	// LabelConcurrency is 2, so the scan runs one chunk and stops: it must not
@@ -253,7 +254,7 @@ func TestQueue_labelScanSpendsItsBudgetOnVariety(t *testing.T) {
 			f.expander.results[uid] = labelResult(uid, sims...)
 		}
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -276,7 +277,7 @@ func TestQueue_rebuildsWhenTheQueueRunsDry(t *testing.T) {
 	f := newFixture(t, nil) // no sources at all: every rebuild yields an empty queue
 	ctx := context.Background()
 	for range 3 {
-		if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err != nil {
+		if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err != nil {
 			t.Fatalf("Queue: %v", err)
 		}
 	}
@@ -294,7 +295,7 @@ func TestQueue_buildDeadlineServesWhatItHas(t *testing.T) {
 		f.organize.labels = []organize.LabelCount{labelCount("lab1", 2)}
 		f.expander.results["lab1"] = labelResult("lab1", 0.6)
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue with a face scan that ran out of time: %v", err)
 	}
@@ -307,7 +308,7 @@ func TestQueue_buildDeadlineServesWhatItHas(t *testing.T) {
 func TestQueue_buildDeadlineNeverReportsNoSources(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, func(f *fixture) { f.sweeper.err = context.DeadlineExceeded })
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
@@ -324,7 +325,7 @@ func TestQueue_clientCancellationStillFails(t *testing.T) {
 	f := newFixture(t, func(f *fixture) { f.sweeper.err = context.DeadlineExceeded })
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := f.svc.Queue(ctx, "user", SourceBoth, 0); err == nil {
+	if _, err := f.svc.Queue(ctx, testProject, "user", SourceBoth, 0); err == nil {
 		t.Fatal("Queue with a cancelled caller: want an error, got nil")
 	}
 }
@@ -333,7 +334,7 @@ func TestNew_boundedDefaults(t *testing.T) {
 	t.Parallel()
 	svc := New(Config{
 		Sweeper: &fakeSweeper{}, Expander: &fakeExpander{}, Organize: &fakeOrganize{},
-		Faces: &fakeFaces{}, Feedback: &fakeFeedback{}, Assigner: &fakeAssigner{},
+		Faces: &fakeFaces{}, Feedback: &fakeFeedback{}, Assigner: &fakeAssigner{}, Scope: &fakeScope{},
 		FaceBudget: -1, LabelBudget: 0, BuildTimeout: -time.Second,
 	})
 	if svc.faceBudget != DefaultFaceBudget || svc.labelBudget != DefaultLabelBudget {
@@ -350,7 +351,7 @@ func TestQueue_faceScanAsksForBothTiers(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj01", 0.4))
 	})
-	if _, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0); err != nil {
+	if _, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0); err != nil {
 		t.Fatalf("Queue: %v", err)
 	}
 	if len(f.sweeper.params) != 1 {
@@ -387,7 +388,7 @@ func TestQueue_cachedQueueIsCapped(t *testing.T) {
 	f := newFixture(t, func(f *fixture) {
 		f.sweeper.people = append(f.sweeper.people, scannedPerson("subj01", confidences...))
 	})
-	res, err := f.svc.Queue(context.Background(), "user", SourceBoth, 0)
+	res, err := f.svc.Queue(context.Background(), testProject, "user", SourceBoth, 0)
 	if err != nil {
 		t.Fatalf("Queue: %v", err)
 	}

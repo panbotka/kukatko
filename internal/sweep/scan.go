@@ -76,7 +76,7 @@ type dispatchState struct {
 }
 
 // Scan runs the per-subject candidate search over a bounded window of the named
-// subjects and hands every subject that yielded actionable candidates to
+// subjects of the project projectUID and hands every subject that yielded actionable candidates to
 // collect, stopping as soon as collect reports it has enough. It returns the
 // coverage the run achieved: the library-wide subject total (so an empty result
 // can still be explained), how many subjects were scanned, and where the next
@@ -86,8 +86,10 @@ type dispatchState struct {
 // logged and skipped exactly as in Sweep, so one broken subject cannot fail a
 // caller's whole request. The work is bounded by Budget subjects regardless of
 // how large the library grows.
-func (s *Service) Scan(ctx context.Context, params Params, win Window, collect Collect) (Coverage, error) {
-	pl, err := s.buildPlan(ctx)
+func (s *Service) Scan(
+	ctx context.Context, projectUID string, params Params, win Window, collect Collect,
+) (Coverage, error) {
+	pl, err := s.buildPlan(ctx, projectUID)
 	if err != nil {
 		return Coverage{}, err
 	}
@@ -96,7 +98,7 @@ func (s *Service) Scan(ctx context.Context, params Params, win Window, collect C
 		return Coverage{SubjectsTotal: pl.total}, nil
 	}
 	offset := wrapOffset(win.Offset, planned)
-	scanned, err := s.collectWindow(ctx, rotate(pl.subjects, offset, win.Budget), params, collect)
+	scanned, err := s.collectWindow(ctx, projectUID, rotate(pl.subjects, offset, win.Budget), params, collect)
 	if err != nil {
 		return Coverage{}, err
 	}
@@ -112,14 +114,14 @@ func (s *Service) Scan(ctx context.Context, params Params, win Window, collect C
 // consumer keeps draining after a stop so every subject already in flight is
 // still collected and the dispatcher goroutine always finishes.
 func (s *Service) collectWindow(
-	ctx context.Context, window []people.SubjectCount, params Params, collect Collect,
+	ctx context.Context, projectUID string, window []people.SubjectCount, params Params, collect Collect,
 ) (int, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	state := new(dispatchState)
 	results := make(chan personResult)
-	go s.scanAll(ctx, window, params, results, state)
+	go s.scanAll(ctx, projectUID, window, params, results, state)
 
 	var collectErr error
 	for r := range results {

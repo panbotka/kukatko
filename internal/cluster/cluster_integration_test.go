@@ -3,12 +3,10 @@
 package cluster_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/cluster"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/facematch"
@@ -48,25 +46,11 @@ func newEnv(t *testing.T) *env {
 	svc := cluster.New(cluster.Config{
 		Store:    cluster.NewStore(db.Pool()),
 		Faces:    vectorStore,
-		Assigner: bootstrapAssigner{matchSvc},
+		Assigner: matchSvc,
 	})
 	return &env{
 		pool: db.Pool(), photos: photoStore, vectors: vectorStore, people: peopleStore, svc: svc,
 	}
-}
-
-// bootstrapAssigner adapts *facematch.Service to the project-less
-// cluster.FaceAssigner, applying every transition in the bootstrap project the
-// test photos land in (cmd/kukatko wires the request's project instead).
-type bootstrapAssigner struct {
-	*facematch.Service
-}
-
-// Apply runs the transition inside the bootstrap project.
-func (a bootstrapAssigner) Apply(
-	ctx context.Context, req facematch.AssignRequest, meta audit.Meta,
-) (facematch.AssignResult, error) {
-	return a.Service.Apply(ctx, project.BootstrapUID, req, meta)
 }
 
 // makePhoto inserts a photo with stored dimensions and returns its uid.
@@ -120,7 +104,7 @@ func (e *env) listClusters(t *testing.T) []cluster.View {
 // prepare runs one background summary pass, failing the test on error.
 func (e *env) prepare(t *testing.T) cluster.SummaryRun {
 	t.Helper()
-	run, err := e.svc.BuildSummaries(t.Context(), 0)
+	run, err := e.svc.BuildSummaries(t.Context(), project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("BuildSummaries: %v", err)
 	}
@@ -130,7 +114,7 @@ func (e *env) prepare(t *testing.T) cluster.SummaryRun {
 // page reads one listing page, failing the test on error.
 func (e *env) page(t *testing.T, req cluster.PageRequest) cluster.Listing {
 	t.Helper()
-	listing, err := e.svc.ListPage(t.Context(), req)
+	listing, err := e.svc.ListPage(t.Context(), project.BootstrapUID, req)
 	if err != nil {
 		t.Fatalf("ListPage: %v", err)
 	}
@@ -154,7 +138,7 @@ func TestRecluster_GroupsSimilarSeparatesDissimilar(t *testing.T) {
 	// A single dissimilar face (axis 10) must not form a cluster (below min size).
 	env.seedFace(t, "lone", 10, "", "")
 
-	created, err := env.svc.Recluster(ctx)
+	created, err := env.svc.Recluster(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
@@ -184,7 +168,7 @@ func TestAssignCluster_CreatesMarkersForAllFaces(t *testing.T) {
 		env.seedFace(t, "p2", 0, "", ""),
 		env.seedFace(t, "p3", 0, "", ""),
 	}
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	views := env.listClusters(t)
@@ -192,7 +176,7 @@ func TestAssignCluster_CreatesMarkersForAllFaces(t *testing.T) {
 		t.Fatalf("got %d clusters, want 1", len(views))
 	}
 
-	result, err := env.svc.AssignCluster(ctx, cluster.AssignRequest{
+	result, err := env.svc.AssignCluster(ctx, project.BootstrapUID, cluster.AssignRequest{
 		ClusterUID: views[0].UID, SubjectName: "Alice",
 	})
 	if err != nil {
@@ -241,13 +225,13 @@ func TestRecluster_Incremental_OnlyTouchesUnassigned(t *testing.T) {
 	for _, h := range []string{"b1", "b2"} {
 		env.seedFace(t, h, 5, "", "")
 	}
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster round 1: %v", err)
 	}
 	clusterA, clusterB := env.clustersBySize(t, 3, 2)
 
 	// Assign cluster A to a subject — those faces are now named.
-	if _, err := env.svc.AssignCluster(ctx, cluster.AssignRequest{
+	if _, err := env.svc.AssignCluster(ctx, project.BootstrapUID, cluster.AssignRequest{
 		ClusterUID: clusterA.UID, SubjectName: "Anna",
 	}); err != nil {
 		t.Fatalf("AssignCluster A: %v", err)
@@ -257,7 +241,7 @@ func TestRecluster_Incremental_OnlyTouchesUnassigned(t *testing.T) {
 	for _, h := range []string{"c1", "c2"} {
 		env.seedFace(t, h, 9, "", "")
 	}
-	created, err := env.svc.Recluster(ctx)
+	created, err := env.svc.Recluster(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Recluster round 2: %v", err)
 	}
@@ -297,7 +281,7 @@ func TestCluster_SuggestsNearestNamedSubject(t *testing.T) {
 	env.seedFace(t, "u1", 0, "", "")
 	env.seedFace(t, "u2", 0, "", "")
 
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	views := env.listClusters(t)
@@ -318,7 +302,7 @@ func TestRemoveFace_DetachesStrayFace(t *testing.T) {
 	strayPhoto := env.seedFace(t, "s1", 0, "", "")
 	env.seedFace(t, "s2", 0, "", "")
 	env.seedFace(t, "s3", 0, "", "")
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	view := env.listClusters(t)[0]
@@ -326,7 +310,7 @@ func TestRemoveFace_DetachesStrayFace(t *testing.T) {
 		t.Fatalf("cluster size = %d, want 3", view.Size)
 	}
 
-	refreshed, deleted, err := env.svc.RemoveFace(ctx, view.UID, cluster.Ref{PhotoUID: strayPhoto, FaceIndex: 0})
+	refreshed, deleted, err := env.svc.RemoveFace(ctx, project.BootstrapUID, view.UID, cluster.Ref{PhotoUID: strayPhoto, FaceIndex: 0})
 	if err != nil {
 		t.Fatalf("RemoveFace: %v", err)
 	}
@@ -400,7 +384,7 @@ func TestListPage_ListsOnlyPreparedClusters(t *testing.T) {
 	for _, h := range []string{"b1", "b2"} {
 		env.seedFace(t, h, 5, "", "")
 	}
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 
@@ -439,7 +423,7 @@ func TestListPage_Pages(t *testing.T) {
 			env.seedFace(t, string(rune('p'+i))+suffix, axis, "", "")
 		}
 	}
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	env.prepare(t)
@@ -474,7 +458,7 @@ func TestBuildSummaries_DropsEmptyClusters(t *testing.T) {
 
 	first := env.seedFace(t, "e1", 0, "", "")
 	second := env.seedFace(t, "e2", 0, "", "")
-	if _, err := env.svc.Recluster(ctx); err != nil {
+	if _, err := env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	listing := env.page(t, cluster.PageRequest{})
@@ -488,7 +472,7 @@ func TestBuildSummaries_DropsEmptyClusters(t *testing.T) {
 	store := cluster.NewStore(env.pool)
 	clusterUID := env.onlyClusterUID(t)
 	for _, uid := range []string{first, second} {
-		removed, err := store.RemoveFaceFromCluster(ctx, clusterUID, cluster.Ref{PhotoUID: uid})
+		removed, err := store.RemoveFaceFromCluster(ctx, project.BootstrapUID, clusterUID, cluster.Ref{PhotoUID: uid})
 		if err != nil {
 			t.Fatalf("RemoveFaceFromCluster %s: %v", uid, err)
 		}
@@ -538,7 +522,7 @@ func TestGroupingState_ReadsTheLibrary(t *testing.T) {
 	env := newEnv(t)
 	ctx := t.Context()
 
-	state, err := env.svc.GroupingState(ctx)
+	state, err := env.svc.GroupingState(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("GroupingState on an empty library: %v", err)
 	}
@@ -547,7 +531,7 @@ func TestGroupingState_ReadsTheLibrary(t *testing.T) {
 	}
 
 	env.seedFace(t, "g1", 0, "", "")
-	if state, err = env.svc.GroupingState(ctx); err != nil {
+	if state, err = env.svc.GroupingState(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("GroupingState with one face: %v", err)
 	}
 	if state.Groupable {
@@ -555,18 +539,18 @@ func TestGroupingState_ReadsTheLibrary(t *testing.T) {
 	}
 
 	env.seedFace(t, "g2", 0, "", "")
-	if state, err = env.svc.GroupingState(ctx); err != nil {
+	if state, err = env.svc.GroupingState(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("GroupingState with two faces: %v", err)
 	}
 	if !state.Groupable {
 		t.Errorf("state = %+v, want two unassigned faces and no groups to be groupable", state)
 	}
 
-	if _, err = env.svc.Recluster(ctx); err != nil {
+	if _, err = env.svc.Recluster(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("Recluster: %v", err)
 	}
 	env.seedFace(t, "g3", 9, "", "")
-	if state, err = env.svc.GroupingState(ctx); err != nil {
+	if state, err = env.svc.GroupingState(ctx, project.BootstrapUID); err != nil {
 		t.Fatalf("GroupingState after grouping: %v", err)
 	}
 	if state.Groupable || state.Unprepared != 1 {

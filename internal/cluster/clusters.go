@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// ListPage returns one page of the clusters that are ready to be shown — those
+// ListPage returns one page of the project's clusters that are ready to be shown — those
 // whose listing summary has already been built — together with how many are
 // ready in total and how many are still being prepared in the background.
 //
@@ -16,13 +16,13 @@ import (
 // whose clusters have never been summarised answers with an empty page and a
 // pending count, which is what lets the page say "17 groups ready, 400 being
 // prepared" rather than spin.
-func (s *Service) ListPage(ctx context.Context, req PageRequest) (Listing, error) {
+func (s *Service) ListPage(ctx context.Context, projectUID string, req PageRequest) (Listing, error) {
 	limit, offset := req.clamp()
-	ready, pending, err := s.store.CountClusters(ctx)
+	ready, pending, err := s.store.CountClusters(ctx, projectUID)
 	if err != nil {
 		return Listing{}, err
 	}
-	clusters, err := s.store.ListReadyClusters(ctx, limit, offset)
+	clusters, err := s.store.ListReadyClusters(ctx, projectUID, limit, offset)
 	if err != nil {
 		return Listing{}, err
 	}
@@ -83,8 +83,8 @@ func viewOf(c Cluster) View {
 	return view
 }
 
-// BuildSummaries prepares the listing summary of up to limit clusters that have
-// none — the expensive half of the old per-request listing, moved to the
+// BuildSummaries prepares the listing summary of up to limit of the project's
+// clusters that have none — the expensive half of the old per-request listing, moved to the
 // background — and reports what the pass did: how many summaries it built, how
 // many empty clusters it dropped, and how many clusters are still waiting once
 // its budget ran out.
@@ -96,17 +96,17 @@ func viewOf(c Cluster) View {
 //
 // A cluster that disappears while its summary is being built (named by somebody
 // in the meantime) is skipped rather than failing the pass.
-func (s *Service) BuildSummaries(ctx context.Context, limit int) (SummaryRun, error) {
+func (s *Service) BuildSummaries(ctx context.Context, projectUID string, limit int) (SummaryRun, error) {
 	if limit <= 0 {
 		limit = DefaultSummaryBatch
 	}
-	pending, err := s.store.ListPendingClusters(ctx, limit)
+	pending, err := s.store.ListPendingClusters(ctx, projectUID, limit)
 	if err != nil {
 		return SummaryRun{}, err
 	}
 	run := SummaryRun{}
 	for i := range pending {
-		built, dropped, err := s.buildSummary(ctx, pending[i])
+		built, dropped, err := s.buildSummary(ctx, projectUID, pending[i])
 		if err != nil {
 			return run, err
 		}
@@ -117,7 +117,7 @@ func (s *Service) BuildSummaries(ctx context.Context, limit int) (SummaryRun, er
 			run.Dropped++
 		}
 	}
-	_, remaining, err := s.store.CountClusters(ctx)
+	_, remaining, err := s.store.CountClusters(ctx, projectUID)
 	if err != nil {
 		return run, err
 	}
@@ -128,18 +128,19 @@ func (s *Service) BuildSummaries(ctx context.Context, limit int) (SummaryRun, er
 // buildSummary computes and stores the listing summary of one cluster. It
 // reports whether a summary was stored and whether the cluster was dropped for
 // having no faces left. A cluster that vanished meanwhile counts as neither.
-func (s *Service) buildSummary(ctx context.Context, c Cluster) (built, dropped bool, err error) {
-	faces, err := s.store.ListClusterFaces(ctx, c.UID)
+func (s *Service) buildSummary(ctx context.Context, projectUID string, c Cluster) (built, dropped bool, err error) {
+	faces, err := s.store.ListClusterFaces(ctx, projectUID, c.UID)
 	if err != nil {
 		return false, false, err
 	}
 	if len(faces) == 0 {
-		if err := s.store.DeleteCluster(ctx, c.UID); err != nil && !errors.Is(err, ErrClusterNotFound) {
+		if err := s.store.DeleteCluster(ctx, projectUID, c.UID); err != nil && !errors.Is(err, ErrClusterNotFound) {
 			return false, false, err
 		}
 		return false, true, nil
 	}
-	if err := s.store.SaveSummary(ctx, c.UID, s.summarize(ctx, c.Centroid, faces)); err != nil {
+	summary := s.summarize(ctx, projectUID, c.Centroid, faces)
+	if err := s.store.SaveSummary(ctx, projectUID, c.UID, summary); err != nil {
 		if errors.Is(err, ErrClusterNotFound) {
 			return false, false, nil
 		}
@@ -152,13 +153,14 @@ func (s *Service) buildSummary(ctx context.Context, c Cluster) (built, dropped b
 // face closest to the centroid as the representative, a handful of examples, and
 // the nearest already-named subject as the suggestion. It is the expensive part
 // — one HNSW search per cluster — and is therefore only ever called off the
-// request path.
-func (s *Service) summarize(ctx context.Context, centroidVec []float32, faces []Face) Summary {
+// request path. The suggestion is searched in projectUID, the cluster's own
+// project.
+func (s *Service) summarize(ctx context.Context, projectUID string, centroidVec []float32, faces []Face) Summary {
 	rep := nearestToCentroid(centroidVec, faces)
 	return Summary{
 		Representative: exampleOf(faces[rep]),
 		Examples:       exampleFaces(faces, rep),
-		Suggestion:     s.suggestForCluster(ctx, faces[rep].ProjectID, centroidVec),
+		Suggestion:     s.suggestForCluster(ctx, projectUID, centroidVec),
 	}
 }
 
@@ -194,8 +196,8 @@ func exampleOf(f Face) ExampleFace {
 // suggestion distance cutoff (or the centroid is empty, or the box is offline so
 // the candidate search fails — a missing suggestion must never fail the pass).
 //
-// The search runs in projectUID — the project of the cluster's faces — so a
-// cluster is only ever suggested a subject of its own project.
+// The search runs in projectUID — the cluster's project — so a cluster is only
+// ever suggested a subject of its own project.
 func (s *Service) suggestForCluster(ctx context.Context, projectUID string, centroidVec []float32) *Suggestion {
 	if len(centroidVec) == 0 {
 		return nil

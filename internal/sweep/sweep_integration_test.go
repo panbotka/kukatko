@@ -35,46 +35,6 @@ type sweepHarness struct {
 	svc      *sweep.Service
 }
 
-// bootstrapFaces adapts *vectors.Store to the project-less candidates.FaceStore,
-// searching the bootstrap project the test photos land in (cmd/kukatko wires the
-// request's project instead).
-type bootstrapFaces struct {
-	*vectors.Store
-}
-
-// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
-func (f bootstrapFaces) FindSimilarUnassignedFaceCandidates(
-	ctx context.Context, v []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
-) ([]vectors.FaceCandidate, error) {
-	return f.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, v, limit, maxDistance, exclude)
-}
-
-// bootstrapPeople adapts *people.Store to the project-less
-// candidates.PeopleStore and sweep.SubjectLister, reading the bootstrap project.
-type bootstrapPeople struct {
-	*people.Store
-}
-
-// GetSubjectByUID reads the subject inside the bootstrap project.
-func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
-	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
-}
-
-// GetMarkerByUID reads the marker inside the bootstrap project.
-func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
-	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
-}
-
-// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
-func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
-	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
-}
-
-// ListSubjects lists the subjects of the bootstrap project.
-func (p bootstrapPeople) ListSubjects(ctx context.Context) ([]people.SubjectCount, error) {
-	return p.Store.ListSubjects(ctx, project.BootstrapUID)
-}
-
 // newSweepHarness returns a harness over a truncated integration database, wiring the
 // real candidate service as the sweep's finder.
 func newSweepHarness(t *testing.T) sweepHarness {
@@ -86,13 +46,13 @@ func newSweepHarness(t *testing.T) sweepHarness {
 	feedbackStore := feedback.NewStore(db.Pool())
 	photoStore := photos.NewStore(db.Pool())
 	cand := candidates.New(candidates.Config{
-		Faces: bootstrapFaces{faceStore}, People: bootstrapPeople{peopleStore},
+		Faces: faceStore, People: peopleStore,
 		Feedback: feedbackStore, Photos: photoStore,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
 	})
 	svc := sweep.New(sweep.Config{
-		Subjects:    bootstrapPeople{peopleStore},
+		Subjects:    peopleStore,
 		Finder:      cand,
 		Concurrency: 3,
 		MaxSubjects: 500,
@@ -172,7 +132,7 @@ func (h sweepHarness) exemplar(t *testing.T, hash, subjectUID string, v []float3
 func (h sweepHarness) run(t *testing.T) []sweep.Event {
 	t.Helper()
 	var events []sweep.Event
-	err := h.svc.Sweep(context.Background(), sweep.Params{}, func(ev sweep.Event) error {
+	err := h.svc.Sweep(context.Background(), project.BootstrapUID, sweep.Params{}, func(ev sweep.Event) error {
 		events = append(events, ev)
 		return nil
 	})

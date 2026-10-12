@@ -33,41 +33,6 @@ type candHarness struct {
 	svc      *candidates.Service
 }
 
-// bootstrapFaces adapts *vectors.Store to the project-less candidates.FaceStore,
-// searching the bootstrap project the test photos land in (cmd/kukatko wires the
-// request's project instead).
-type bootstrapFaces struct {
-	*vectors.Store
-}
-
-// FindSimilarUnassignedFaceCandidates searches the bootstrap project.
-func (f bootstrapFaces) FindSimilarUnassignedFaceCandidates(
-	ctx context.Context, v []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
-) ([]vectors.FaceCandidate, error) {
-	return f.Store.FindSimilarUnassignedFaceCandidates(ctx, project.BootstrapUID, v, limit, maxDistance, exclude)
-}
-
-// bootstrapPeople adapts *people.Store to the project-less
-// candidates.PeopleStore, reading the bootstrap project.
-type bootstrapPeople struct {
-	*people.Store
-}
-
-// GetSubjectByUID reads the subject inside the bootstrap project.
-func (p bootstrapPeople) GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error) {
-	return p.Store.GetSubjectByUID(ctx, project.BootstrapUID, uid)
-}
-
-// GetMarkerByUID reads the marker inside the bootstrap project.
-func (p bootstrapPeople) GetMarkerByUID(ctx context.Context, uid string) (people.Marker, error) {
-	return p.Store.GetMarkerByUID(ctx, project.BootstrapUID, uid)
-}
-
-// ListPhotoUIDsBySubject lists the subject's photos inside the bootstrap project.
-func (p bootstrapPeople) ListPhotoUIDsBySubject(ctx context.Context, subjectUID string) ([]string, error) {
-	return p.Store.ListPhotoUIDsBySubject(ctx, project.BootstrapUID, subjectUID)
-}
-
 // newCandHarness returns a harness over a truncated integration database.
 func newCandHarness(t *testing.T) candHarness {
 	t.Helper()
@@ -83,7 +48,7 @@ func newCandHarness(t *testing.T) candHarness {
 		feedback: feedbackStore,
 		photos:   photoStore,
 		svc: candidates.New(candidates.Config{
-			Faces: bootstrapFaces{faceStore}, People: bootstrapPeople{peopleStore},
+			Faces: faceStore, People: peopleStore,
 			Feedback: feedbackStore, Photos: photoStore,
 			Media:       mediaurl.NewBuilder(nil),
 			MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
@@ -161,7 +126,7 @@ func TestFind_plantedUnassignedFaceFoundDB(t *testing.T) {
 	// Same embedding, but already assigned to Bob: must never be returned for Alice.
 	h.saveFace(t, "bob-lookalike", vectors.Face{FaceIndex: 0, Vector: nearE0(), DetScore: 0.9, SubjectUID: &bob.UID})
 
-	res, err := h.svc.Find(ctx, alice.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, alice.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -202,7 +167,7 @@ func TestFind_rejectedFaceNotReturnedDB(t *testing.T) {
 		t.Fatalf("RejectFace: %v", err)
 	}
 
-	res, err := h.svc.Find(ctx, alice.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, alice.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -240,7 +205,7 @@ func TestFind_negativeExemplarDroppedDB(t *testing.T) {
 	near := h.saveFace(t, "near", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{0: 0.574, 1: 0.819}), DetScore: 0.9})
 	far := h.saveFace(t, "far", vectors.Face{FaceIndex: 0, Vector: nearE0(), DetScore: 0.9})
 
-	res, err := h.svc.Find(ctx, alice.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, alice.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -272,7 +237,7 @@ func TestFind_voteRuleFiltersDB(t *testing.T) {
 	one := h.saveFace(t, "one", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{0: 0.95, 20: 0.31}), DetScore: 0.9})
 	two := h.saveFace(t, "two", vectors.Face{FaceIndex: 0, Vector: vec(map[int]float32{0: 0.7071, 1: 0.7071}), DetScore: 0.9})
 
-	res, err := h.svc.Find(ctx, subj.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, subj.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -319,7 +284,7 @@ func TestFind_alreadyDoneClassifiedDB(t *testing.T) {
 		t.Fatalf("SaveFaces(stale): %v", err)
 	}
 
-	res, err := h.svc.Find(ctx, alice.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, alice.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -340,7 +305,7 @@ func TestFind_zeroFacesEmptyDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSubject: %v", err)
 	}
-	res, err := h.svc.Find(ctx, subj.UID, candidates.Request{})
+	res, err := h.svc.Find(ctx, project.BootstrapUID, subj.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -352,7 +317,7 @@ func TestFind_zeroFacesEmptyDB(t *testing.T) {
 // TestFind_subjectNotFoundDB checks the people sentinel is surfaced from the DB.
 func TestFind_subjectNotFoundDB(t *testing.T) {
 	h := newCandHarness(t)
-	_, err := h.svc.Find(t.Context(), "su_missing", candidates.Request{})
+	_, err := h.svc.Find(t.Context(), project.BootstrapUID, "su_missing", candidates.Request{})
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("Find = %v, want ErrSubjectNotFound", err)
 	}
@@ -396,7 +361,7 @@ func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
 		})
 	}
 
-	got, err := h.svc.Find(ctx, subject.UID, candidates.Request{})
+	got, err := h.svc.Find(ctx, project.BootstrapUID, subject.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -410,12 +375,12 @@ func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
 	// The same search with a hydration ceiling so large that every exemplar asks for
 	// the store's maximum — the answer the cap must not change.
 	unbounded := candidates.New(candidates.Config{
-		Faces: bootstrapFaces{h.faces}, People: bootstrapPeople{h.people}, Feedback: h.feedback, Photos: h.photos,
+		Faces: h.faces, People: h.people, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 5000, MinFacePx: 32, Concurrency: 4, MinFaceRel: 0.02,
 		MaxCandidates: 5000,
 	})
-	want, err := unbounded.Find(ctx, subject.UID, candidates.Request{})
+	want, err := unbounded.Find(ctx, project.BootstrapUID, subject.UID, candidates.Request{})
 	if err != nil {
 		t.Fatalf("Find(unbounded): %v", err)
 	}
@@ -442,7 +407,7 @@ func TestFind_perExemplarCapCostsNoMatchesDB(t *testing.T) {
 
 	// A tighter threshold: the distance cut now lives in Go rather than in the SQL
 	// predicate, so it has to land in exactly the same place.
-	tight, err := h.svc.Find(ctx, subject.UID, candidates.Request{Threshold: 0.25})
+	tight, err := h.svc.Find(ctx, project.BootstrapUID, subject.UID, candidates.Request{Threshold: 0.25})
 	if err != nil {
 		t.Fatalf("Find(threshold 0.25): %v", err)
 	}

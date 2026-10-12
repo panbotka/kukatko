@@ -262,6 +262,14 @@ var (
 	ErrInvalidAnswer = errors.New("review: invalid answer")
 	// ErrInvalidSource indicates a queue source outside people/labels/both.
 	ErrInvalidSource = errors.New("review: invalid source")
+	// ErrQuestionNotFound indicates an answer to a question whose photo, subject
+	// or label the caller's project does not hold — one of another project, or
+	// one that exists nowhere. Nothing is written for it, and the two cases are
+	// deliberately indistinguishable.
+	ErrQuestionNotFound = errors.New("review: question not found")
+	// ErrNoProject indicates a Service method was called without a project: a
+	// programming error, never read as "the whole instance".
+	ErrNoProject = errors.New("review: no project given")
 )
 
 // Kind tells the question types apart.
@@ -494,10 +502,10 @@ type AnswerResult struct {
 // form, not on the full sweep behind GET /faces/sweep: filling one batch of
 // questions must never cost a library-wide scan.
 type Sweeper interface {
-	// Scan runs the per-subject candidate search over a window of the named
-	// subjects, hands each subject's actionable candidates to collect, and stops
-	// as soon as collect reports it has enough.
-	Scan(ctx context.Context, params sweep.Params, win sweep.Window,
+	// Scan runs the per-subject candidate search over a window of the project's
+	// named subjects, hands each subject's actionable candidates to collect, and
+	// stops as soon as collect reports it has enough.
+	Scan(ctx context.Context, projectUID string, params sweep.Params, win sweep.Window,
 		collect sweep.Collect) (sweep.Coverage, error)
 }
 
@@ -530,13 +538,14 @@ type FaceStore interface {
 // method records an opinion and mutates nothing it is about — which is exactly
 // why the game may call them: a game must never quietly merge or delete.
 type FeedbackStore interface {
-	// RejectFace persists "this face is not this subject"; idempotent.
-	RejectFace(ctx context.Context, key feedback.FaceRejectionKey, entry audit.Entry) error
+	// RejectFace persists "this face is not this subject" inside the project;
+	// idempotent.
+	RejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
 	// RejectLabel persists "this photo should not carry this label"; idempotent.
 	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
-	// ConfirmFace persists "this assigned face really is this subject", which
-	// takes it out of the outlier ranking for good; idempotent.
-	ConfirmFace(ctx context.Context, key feedback.FaceConfirmationKey, entry audit.Entry) error
+	// ConfirmFace persists "this assigned face really is this subject" inside the
+	// project, which takes it out of the outlier ranking for good; idempotent.
+	ConfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
 	// ConfirmDuplicate persists "these two really are the same shot". It merges
 	// nothing; idempotent.
 	ConfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
@@ -571,16 +580,17 @@ type DuplicateFinder interface {
 // subject's centroid; *outliers.Service satisfies it. A nil one switches the
 // outlier check off.
 type OutlierRanker interface {
-	// Outliers returns the subject's faces, most suspicious first, narrowed by
-	// opts and with the already-confirmed ones excluded.
-	Outliers(ctx context.Context, subjectUID string, opts outliers.Options) (outliers.Result, error)
+	// Outliers returns the project's subject's faces, most suspicious first,
+	// narrowed by opts and with the already-confirmed ones excluded.
+	Outliers(ctx context.Context, projectUID, subjectUID string, opts outliers.Options) (outliers.Result, error)
 }
 
 // SubjectLister lists the subjects the outlier rotation walks; *people.Store
 // satisfies it.
 type SubjectLister interface {
-	// ListSubjects returns every subject with its non-invalid marker count.
-	ListSubjects(ctx context.Context) ([]people.SubjectCount, error)
+	// ListSubjects returns every subject of the project with its non-invalid
+	// marker count.
+	ListSubjects(ctx context.Context, projectUID string) ([]people.SubjectCount, error)
 }
 
 // PhotoStore hydrates the catalogue records the duplicate and outlier questions
@@ -588,8 +598,24 @@ type SubjectLister interface {
 // photos over already built, but a duplicate group carries only comparison
 // fields and an outlier face only a photo uid.
 type PhotoStore interface {
-	// ListByUIDs returns the photos for the given uids, ignoring unknown ones.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photos for the given uids,
+	// ignoring unknown ones and those of another project.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
+}
+
+// Scope tells which of a set of uids belong to one project; *ScopeStore
+// satisfies it. The game uses it twice: to keep another project's labels out of
+// the label rotation (the label store lists the whole instance), and to prove
+// an answer's photo, subject and label inside the caller's project before
+// anything is written.
+type Scope interface {
+	// PhotosInProject returns the subset of uids naming photos of the project.
+	PhotosInProject(ctx context.Context, projectUID string, uids []string) (map[string]bool, error)
+	// SubjectsInProject returns the subset of uids naming subjects of the
+	// project.
+	SubjectsInProject(ctx context.Context, projectUID string, uids []string) (map[string]bool, error)
+	// LabelsInProject returns the subset of uids naming labels of the project.
+	LabelsInProject(ctx context.Context, projectUID string, uids []string) (map[string]bool, error)
 }
 
 // AlbumMembership reports which albums a set of photos belongs to;
@@ -605,17 +631,19 @@ type AlbumMembership interface {
 // BreatherSource picks the photos a round's breather card can show;
 // *review.BreatherStore satisfies it. A nil one simply means no breathers.
 type BreatherSource interface {
-	// PickBreathers returns up to limit high-rated or favourited photos for the
-	// user, at most one per era and newest era first.
-	PickBreathers(ctx context.Context, userUID string, limit int) ([]BreatherPick, error)
+	// PickBreathers returns up to limit of the project's high-rated or
+	// favourited photos for the user, at most one per era and newest era first.
+	PickBreathers(ctx context.Context, projectUID, userUID string, limit int) ([]BreatherPick, error)
 }
 
 // Assigner applies the existing face-assignment state machine; *facematch.Service
 // satisfies it.
 type Assigner interface {
-	// Apply runs one assignment action (create_marker / assign_person) with
-	// its audit entry in the marker mutation's transaction.
-	Apply(ctx context.Context, req facematch.AssignRequest, meta audit.Meta) (facematch.AssignResult, error)
+	// Apply runs one assignment action (create_marker / assign_person) inside
+	// the project, with its audit entry in the marker mutation's transaction.
+	Apply(
+		ctx context.Context, projectUID string, req facematch.AssignRequest, meta audit.Meta,
+	) (facematch.AssignResult, error)
 }
 
 // Config assembles a Service. All store/service fields are required; numeric
@@ -633,6 +661,9 @@ type Config struct {
 	Feedback FeedbackStore
 	// Assigner applies yes answers on faces and no answers on outliers.
 	Assigner Assigner
+	// Scope proves an answer's targets in the caller's project and keeps
+	// another project's labels out of the rotation.
+	Scope Scope
 	// Skips remembers a player's "I don't know" about a person across sessions;
 	// nil switches the persisted memory off and leaves skips shelved for the
 	// current session only.
@@ -718,7 +749,9 @@ type Config struct {
 }
 
 // Service builds review queues and applies answers. It is safe for concurrent
-// use; per-user session state lives in memory.
+// use; per-user session state lives in memory, one session per (project, user):
+// a player's game in one project never serves, shelves or counts a question of
+// another.
 type Service struct {
 	sweeper    Sweeper
 	expander   Expander
@@ -726,6 +759,7 @@ type Service struct {
 	faces      FaceStore
 	feedback   FeedbackStore
 	assigner   Assigner
+	scope      Scope
 	skips      SkipStore
 	places     PlaceReviewer
 	duplicates DuplicateFinder
@@ -764,95 +798,53 @@ type Service struct {
 	mu       sync.Mutex
 	sessions map[string]*session
 
-	// cursorMu guards the rotation cursors below. They are instance-wide, not
-	// per user: every rebuild advances them, so consecutive rebuilds walk
-	// successive windows of the library instead of re-reading its head. There is
-	// one per question kind, because the kinds are scanned independently and a
-	// shared cursor would make one kind's progress skip another's work.
-	cursorMu      sync.Mutex
-	faceCursor    int
-	labelCursor   int
-	placeCursor   int
-	dupCursor     int
-	outlierCursor int
+	// cursorMu guards the rotation cursors below. They are per project, not per
+	// user: every rebuild in a project advances its cursors, so consecutive
+	// rebuilds walk successive windows of that project's library instead of
+	// re-reading its head — and one project's progress never moves another's
+	// window. There is one per question kind, because the kinds are scanned
+	// independently and a shared cursor would make one kind's progress skip
+	// another's work.
+	cursorMu sync.Mutex
+	cursors  map[string]*rotation
 }
 
-// faceOffset returns the subject-rotation cursor for the next rebuild.
-func (s *Service) faceOffset() int {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	return s.faceCursor
+// rotation is one project's set of rotation cursors, one per question kind.
+type rotation struct {
+	face, label, place, dup, outlier int
 }
 
-// advanceFaceOffset moves the subject-rotation cursor to where the scan said the
-// next window should start.
-func (s *Service) advanceFaceOffset(next int) {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	s.faceCursor = next
+// cursorFor returns a pointer to one of the project's cursors, chosen by pick,
+// creating the project's set on first use. The caller holds s.cursorMu.
+func (s *Service) cursorFor(projectUID string, pick func(*rotation) *int) *int {
+	set, ok := s.cursors[projectUID]
+	if !ok {
+		set = &rotation{}
+		s.cursors[projectUID] = set
+	}
+	return pick(set)
 }
 
-// labelOffset returns the label-rotation cursor for the next rebuild.
-func (s *Service) labelOffset() int {
+// offset returns the project's cursor chosen by pick for the next rebuild.
+func (s *Service) offset(projectUID string, pick func(*rotation) *int) int {
 	s.cursorMu.Lock()
 	defer s.cursorMu.Unlock()
-	return s.labelCursor
+	return *s.cursorFor(projectUID, pick)
 }
 
-// advanceLabelOffset moves the label-rotation cursor past the labels the last
-// rebuild scanned.
-func (s *Service) advanceLabelOffset(next int) {
+// advance moves the project's cursor chosen by pick to next.
+func (s *Service) advance(projectUID string, pick func(*rotation) *int, next int) {
 	s.cursorMu.Lock()
 	defer s.cursorMu.Unlock()
-	s.labelCursor = next
+	*s.cursorFor(projectUID, pick) = next
 }
 
-// placeOffset returns the estimated-location rotation cursor for the next
-// rebuild.
-func (s *Service) placeOffset() int {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	return s.placeCursor
-}
-
-// advancePlaceOffset moves the estimated-location cursor past the window the
-// last rebuild read.
-func (s *Service) advancePlaceOffset(next int) {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	s.placeCursor = next
-}
-
-// dupOffset returns the duplicate-group rotation cursor for the next rebuild.
-func (s *Service) dupOffset() int {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	return s.dupCursor
-}
-
-// advanceDupOffset moves the duplicate-group cursor past the page the last
-// rebuild read.
-func (s *Service) advanceDupOffset(next int) {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	s.dupCursor = next
-}
-
-// outlierOffset returns the outlier-subject rotation cursor for the next
-// rebuild.
-func (s *Service) outlierOffset() int {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	return s.outlierCursor
-}
-
-// advanceOutlierOffset moves the outlier-subject cursor past the subjects the
-// last rebuild ranked.
-func (s *Service) advanceOutlierOffset(next int) {
-	s.cursorMu.Lock()
-	defer s.cursorMu.Unlock()
-	s.outlierCursor = next
-}
+// The cursor pickers, one per question kind.
+func faceCursor(r *rotation) *int    { return &r.face }
+func labelCursor(r *rotation) *int   { return &r.label }
+func placeCursor(r *rotation) *int   { return &r.place }
+func dupCursor(r *rotation) *int     { return &r.dup }
+func outlierCursor(r *rotation) *int { return &r.outlier }
 
 // New assembles a review Service from cfg. It panics when a required
 // dependency is nil (a wiring bug, not a runtime condition); out-of-range
@@ -866,6 +858,7 @@ func New(cfg Config) *Service {
 		faces:            cfg.Faces,
 		feedback:         cfg.Feedback,
 		assigner:         cfg.Assigner,
+		scope:            cfg.Scope,
 		skips:            cfg.Skips,
 		places:           cfg.Places,
 		duplicates:       cfg.Duplicates,
@@ -899,6 +892,7 @@ func New(cfg Config) *Service {
 		skipMuteCooldown:  cfg.SkipMuteCooldown,
 		now:               cfg.Now,
 		sessions:          make(map[string]*session),
+		cursors:           make(map[string]*rotation),
 	}
 	svc.applyFallbacks()
 	return svc
@@ -907,8 +901,8 @@ func New(cfg Config) *Service {
 // requireDeps panics when a required Config dependency is missing.
 func requireDeps(cfg Config) {
 	if cfg.Sweeper == nil || cfg.Expander == nil || cfg.Organize == nil ||
-		cfg.Faces == nil || cfg.Feedback == nil || cfg.Assigner == nil {
-		panic("review: New requires Sweeper, Expander, Organize, Faces, Feedback and Assigner")
+		cfg.Faces == nil || cfg.Feedback == nil || cfg.Assigner == nil || cfg.Scope == nil {
+		panic("review: New requires Sweeper, Expander, Organize, Faces, Feedback, Assigner and Scope")
 	}
 }
 

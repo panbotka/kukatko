@@ -36,8 +36,8 @@ import (
 	"github.com/panbotka/kukatko/internal/sweep"
 )
 
-// Queue returns the user's current round of questions from src (empty or
-// unknown means both sources), at most limit long (non-positive limit means the
+// Queue returns the user's current round of questions in the project
+// projectUID from src (empty or unknown means both sources), at most limit long (non-positive limit means the
 // configured RoundSize). One request is one round: the questions are a playlist
 // mixed for variety rather than a prefix of a sorted list, and res.Round says
 // which round it is and what it is made of.
@@ -48,15 +48,24 @@ import (
 // answering returns the same round again — the mix is a pure function of the
 // unchanged pool — so a client that retries cannot lose questions. An empty
 // round carries a Reason the UI can show. The error is non-nil only when the
-// underlying searches fail outright.
-func (s *Service) Queue(ctx context.Context, userUID string, src Source, limit int) (QueueResult, error) {
+// underlying searches fail outright, and ErrNoProject for an empty projectUID.
+//
+// Every question in the round is about the project's own photos, faces, people
+// and labels: the session is the user's session in this project, and every
+// search the rebuild runs is confined to it.
+func (s *Service) Queue(
+	ctx context.Context, projectUID, userUID string, src Source, limit int,
+) (QueueResult, error) {
+	if projectUID == "" {
+		return QueueResult{}, ErrNoProject
+	}
 	src = src.orBoth()
 	size := s.roundSize
 	if limit > 0 {
 		size = limit
 	}
 	size = min(size, maxBatch)
-	sess := s.session(userUID)
+	sess := s.session(projectUID, userUID)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	if s.needsRebuild(sess, src) {
@@ -111,7 +120,7 @@ func (s *Service) ensureRound(ctx context.Context, sess *session, userUID string
 	sess.roundLen = len(round)
 	sess.roundSeq = seq + 1
 	sess.round = roundSummary(sess.roundSeq, round)
-	sess.breathers = s.breathersFor(ctx, userUID, seq)
+	sess.breathers = s.breathersFor(ctx, sess.project, userUID, seq)
 	s.log.DebugContext(ctx, "review: round mixed", "round", sess.roundSeq,
 		"questions", len(round), "entities", sess.round.Entities,
 		"longest_run", longestEntityRun(round), "sure", sess.round.Sure,
@@ -199,7 +208,7 @@ func (s *Service) rebuild(
 	// pool rather than once per question, which is what keeps "don't ask me about
 	// this person" free.
 	sess.skips = s.loadSkipMemory(ctx, userUID)
-	mat, err := s.collectRotating(buildCtx, ctx, src, need)
+	mat, err := s.collectRotating(buildCtx, ctx, sess.project, src, need)
 	if err != nil {
 		return err
 	}
@@ -285,12 +294,12 @@ func (s *Service) albumsFor(ctx context.Context, questions []Question) map[strin
 // empty, and needsRebuild then rebuilds on the very next request, which rotates
 // just the same — one request later instead of one round.
 func (s *Service) collectRotating(
-	buildCtx, ctx context.Context, src Source, need int,
+	buildCtx, ctx context.Context, projectUID string, src Source, need int,
 ) (material, error) {
 	var mat material
 	for round := range maxRebuildRounds {
 		var err error
-		if mat, err = s.collect(buildCtx, ctx, src, need); err != nil {
+		if mat, err = s.collect(buildCtx, ctx, projectUID, src, need); err != nil {
 			return material{}, err
 		}
 		if roundIsFinal(mat, buildCtx) {
@@ -323,10 +332,12 @@ func roundIsFinal(mat material, buildCtx context.Context) bool {
 // afterwards would spend the whole price of a batch on questions nobody asked
 // for. The unscanned side's total therefore stays zero, which reasonFor knows
 // not to read as an empty library.
-func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (material, error) {
+func (s *Service) collect(
+	buildCtx, ctx context.Context, projectUID string, src Source, need int,
+) (material, error) {
 	var mat material
 	if src.wantsFaces() && s.shares.enabled(KindFace) {
-		faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, need)
+		faceQs, subjectsTotal, err := s.faceQuestions(buildCtx, projectUID, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
 				return material{}, err
@@ -336,7 +347,7 @@ func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (
 		mat.faceQs, mat.subjectsTotal = faceQs, subjectsTotal
 	}
 	if src.wantsLabels() && s.shares.enabled(KindLabel) {
-		labelQs, labelsTotal, err := s.labelQuestions(buildCtx, need)
+		labelQs, labelsTotal, err := s.labelQuestions(buildCtx, projectUID, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
 				return material{}, err
@@ -345,7 +356,7 @@ func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (
 		}
 		mat.labelQs, mat.labelsTotal = labelQs, labelsTotal
 	}
-	if err := s.collectChecks(buildCtx, ctx, src, need, &mat); err != nil {
+	if err := s.collectChecks(buildCtx, ctx, projectUID, src, need, &mat); err != nil {
 		return material{}, err
 	}
 	return mat, nil
@@ -357,14 +368,14 @@ func (s *Service) collect(buildCtx, ctx context.Context, src Source, need int) (
 // degraded (its totals can no longer prove the library is empty) and the batch
 // is served from whatever the rest produced.
 func (s *Service) collectChecks(
-	buildCtx, ctx context.Context, src Source, need int, mat *material,
+	buildCtx, ctx context.Context, projectUID string, src Source, need int, mat *material,
 ) error {
 	if !src.wantsChecks() {
 		return nil
 	}
 	checks := []struct {
 		kind    Kind
-		collect func(context.Context, int) ([]Question, int, error)
+		collect func(context.Context, string, int) ([]Question, int, error)
 		into    *[]Question
 		total   *int
 	}{
@@ -380,7 +391,7 @@ func (s *Service) collectChecks(
 		if !s.shares.enabled(check.kind) {
 			continue
 		}
-		questions, total, err := check.collect(buildCtx, need)
+		questions, total, err := check.collect(buildCtx, projectUID, need)
 		if err != nil {
 			if !s.tolerateDeadline(ctx, err) {
 				return err
@@ -450,12 +461,12 @@ func (s *Service) tolerateDeadline(ctx context.Context, err error) bool {
 // band candidates at all. That takes a person who resembles hundreds of
 // still-unnamed faces at over BandMax — the shape the catch-all-subject bug
 // produced, not a healthy library — and the rotation moves past them either way.
-func (s *Service) faceQuestions(ctx context.Context, need int) (tiered, int, error) {
+func (s *Service) faceQuestions(ctx context.Context, projectUID string, need int) (tiered, int, error) {
 	var questions tiered
 	collected := 0
 	params := sweep.Params{Threshold: 1 - s.bandMin}
-	win := sweep.Window{Offset: s.faceOffset(), Budget: s.faceBudget}
-	cov, err := s.sweeper.Scan(ctx, params, win, func(person *sweep.Person) (bool, error) {
+	win := sweep.Window{Offset: s.offset(projectUID, faceCursor), Budget: s.faceBudget}
+	cov, err := s.sweeper.Scan(ctx, projectUID, params, win, func(person *sweep.Person) (bool, error) {
 		theirs := s.personQuestions(person)
 		questions.merge(theirs)
 		collected += s.batchShare(theirs)
@@ -464,7 +475,7 @@ func (s *Service) faceQuestions(ctx context.Context, need int) (tiered, int, err
 	if err != nil {
 		return tiered{}, 0, fmt.Errorf("review: scanning face candidates: %w", err)
 	}
-	s.advanceFaceOffset(cov.NextOffset)
+	s.advance(projectUID, faceCursor, cov.NextOffset)
 	return questions, cov.SubjectsTotal, nil
 }
 
@@ -560,15 +571,15 @@ func (s *Service) batchShare(questions tiered) int {
 // scan on its own. It also returns how many such labels the library holds, for
 // the empty-library reason. A single label's search failing is logged and
 // skipped, like the per-subject scan's policy.
-func (s *Service) labelQuestions(ctx context.Context, need int) (tiered, int, error) {
-	labels, total, err := s.labelPlan(ctx)
+func (s *Service) labelQuestions(ctx context.Context, projectUID string, need int) (tiered, int, error) {
+	labels, total, err := s.labelPlan(ctx, projectUID)
 	if err != nil {
 		return tiered{}, 0, err
 	}
 	if len(labels) == 0 {
 		return tiered{}, total, nil
 	}
-	offset := wrapOffset(s.labelOffset(), len(labels))
+	offset := wrapOffset(s.offset(projectUID, labelCursor), len(labels))
 	window := rotateLabels(labels, offset, s.labelBudget)
 
 	var questions tiered
@@ -586,7 +597,7 @@ func (s *Service) labelQuestions(ctx context.Context, need int) (tiered, int, er
 			collected += s.batchShare(label)
 		}
 	}
-	s.advanceLabelOffset(wrapOffset(offset+scanned, len(labels)))
+	s.advance(projectUID, labelCursor, wrapOffset(offset+scanned, len(labels)))
 	return questions, total, nil
 }
 
@@ -602,14 +613,26 @@ func (s *Service) labelQuestions(ctx context.Context, need int) (tiered, int, er
 // total as well is deliberate too — a library whose every label is switched off
 // is, as far as the game is concerned, a library with no labels, and that is
 // what the empty-queue reason should say.
-func (s *Service) labelPlan(ctx context.Context) ([]organize.LabelCount, int, error) {
+//
+// Only the project's own labels take part: the label store lists the whole
+// instance, so the plan keeps just the labels Scope says belong to projectUID —
+// another project's label is neither scanned nor counted.
+func (s *Service) labelPlan(ctx context.Context, projectUID string) ([]organize.LabelCount, int, error) {
 	all, err := s.organize.ListLabels(ctx)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: listing labels: %w", err)
 	}
+	uids := make([]string, 0, len(all))
+	for _, label := range all {
+		uids = append(uids, label.UID)
+	}
+	own, err := s.scope.LabelsInProject(ctx, projectUID, uids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("review: reading the project's labels: %w", err)
+	}
 	labels := make([]organize.LabelCount, 0, len(all))
 	for _, label := range all {
-		if label.PhotoCount > 0 && label.ReviewEnabled {
+		if own[label.UID] && label.PhotoCount > 0 && label.ReviewEnabled {
 			labels = append(labels, label)
 		}
 	}

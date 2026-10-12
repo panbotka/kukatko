@@ -40,15 +40,20 @@ func TestNamelessFlags_validation(t *testing.T) {
 		wantErr error
 		wantMsg string
 	}{
-		{name: "no flags is the dry run", args: nil},
-		{name: "apply with an undo file", args: []string{"--apply", "--undo-file", "u.json"}},
-		{name: "undo alone", args: []string{"--undo", "u.json"}},
-		{name: "apply without an undo file", args: []string{"--apply"}, wantErr: errUndoFileRequired},
+		{name: "the project alone is the dry run", args: []string{"--project", "v"}},
+		{name: "apply with an undo file", args: []string{"--project", "v", "--apply", "--undo-file", "u.json"}},
+		{name: "undo alone", args: []string{"--project", "v", "--undo", "u.json"}},
+		{
+			name: "apply without an undo file", args: []string{"--project", "v", "--apply"},
+			wantErr: errUndoFileRequired,
+		},
 		{
 			name:    "apply together with undo",
-			args:    []string{"--apply", "--undo", "u.json", "--undo-file", "u.json"},
+			args:    []string{"--project", "v", "--apply", "--undo", "u.json", "--undo-file", "u.json"},
 			wantMsg: "mutually exclusive",
 		},
+		{name: "no project is refused", args: nil, wantErr: errProjectRequired},
+		{name: "no project is refused even for undo", args: []string{"--undo", "u.json"}, wantErr: errProjectRequired},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,7 +91,7 @@ func TestWriteUndoFile_roundTrip(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "undo.json")
-	undo := namelessUndo{Subjects: []people.SubjectSnapshot{{
+	undo := namelessUndo{ProjectUID: "pj_test", ProjectSlug: "test", Subjects: []people.SubjectSnapshot{{
 		Subject:    people.Subject{UID: "su_catchall", Slug: "subject", Name: ""},
 		MarkerUIDs: []string{"mk_1", "mk_2"},
 		Faces:      []people.FaceRef{{PhotoUID: "ph_1", FaceIndex: 0}},
@@ -104,6 +109,10 @@ func TestWriteUndoFile_roundTrip(t *testing.T) {
 	}
 	if len(got.Subjects) != 1 {
 		t.Fatalf("subjects = %d, want 1", len(got.Subjects))
+	}
+	if got.ProjectUID != "pj_test" || got.ProjectSlug != "test" {
+		t.Errorf("project = %q/%q, want pj_test/test: the file must say which library it is about",
+			got.ProjectUID, got.ProjectSlug)
 	}
 	snap := got.Subjects[0]
 	if snap.Subject.UID != "su_catchall" || len(snap.MarkerUIDs) != 2 || len(snap.Faces) != 1 {

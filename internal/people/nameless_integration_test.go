@@ -81,7 +81,7 @@ func TestListNamelessSubjects(t *testing.T) {
 	seedAssignedFace(t, store, photoStore, vecStore, "nameless_b", catchAll.UID)
 	seedAssignedFace(t, store, photoStore, vecStore, "named_a", alice.UID)
 
-	found, err := store.ListNamelessSubjects(ctx)
+	found, err := store.ListNamelessSubjects(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListNamelessSubjects: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestDetachSubject_roundTripsThroughItsSnapshot(t *testing.T) {
 	_, markerB := seedAssignedFace(t, store, photoStore, vecStore, "detach_b", catchAll.UID)
 	photoAlice, markerAlice := seedAssignedFace(t, store, photoStore, vecStore, "detach_c", alice.UID)
 
-	snap, err := store.DetachSubject(ctx, catchAll.UID,
+	snap, err := store.DetachSubject(ctx, testProject, catchAll.UID,
 		actorEntry(actor, audit.ActionSubjectDelete, "subject", catchAll.UID,
 			map[string]any{"reason": "nameless catch-all"}))
 	if err != nil {
@@ -162,7 +162,7 @@ func TestDetachSubject_roundTripsThroughItsSnapshot(t *testing.T) {
 	}
 	requireOneAudit(t, ctx, audit.NewStore(db.Pool()), audit.ActionSubjectDelete, actor, catchAll.UID)
 
-	restored, err := store.RestoreSubject(ctx, snap,
+	restored, err := store.RestoreSubject(ctx, testProject, snap,
 		actorEntry(actor, audit.ActionSubjectCreate, "subject", catchAll.UID,
 			map[string]any{"reason": "undo"}))
 	if err != nil {
@@ -189,7 +189,7 @@ func TestDetachSubject_missingSubject(t *testing.T) {
 	store, _, _, db := newStores(t)
 	actor := makeUser(t, db, "usr_detach0000000000000000001", "detacher2")
 
-	_, err := store.DetachSubject(t.Context(), "su_does_not_exist",
+	_, err := store.DetachSubject(t.Context(), testProject, "su_does_not_exist",
 		actorEntry(actor, audit.ActionSubjectDelete, "subject", "su_does_not_exist", nil))
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("DetachSubject missing = %v, want ErrSubjectNotFound", err)
@@ -218,7 +218,7 @@ func TestRestoreSubject_slugTakenSinceTheSnapshot(t *testing.T) {
 	}
 	_, markerUID := seedAssignedFace(t, store, photoStore, vecStore, "reslug_a", catchAll.UID)
 
-	snap, err := store.DetachSubject(ctx, catchAll.UID,
+	snap, err := store.DetachSubject(ctx, testProject, catchAll.UID,
 		actorEntry(actor, audit.ActionSubjectDelete, "subject", catchAll.UID, nil))
 	if err != nil {
 		t.Fatalf("DetachSubject: %v", err)
@@ -231,7 +231,7 @@ func TestRestoreSubject_slugTakenSinceTheSnapshot(t *testing.T) {
 		t.Fatalf("squatter slug = %q, want the freed %q", squatter.Slug, snap.Subject.Slug)
 	}
 
-	restored, err := store.RestoreSubject(ctx, snap,
+	restored, err := store.RestoreSubject(ctx, testProject, snap,
 		actorEntry(actor, audit.ActionSubjectCreate, "subject", catchAll.UID, nil))
 	if err != nil {
 		t.Fatalf("RestoreSubject: %v", err)
@@ -263,7 +263,7 @@ func TestSnapshotSubject_readsWhatADetachWouldRemove(t *testing.T) {
 	_, markerA := seedAssignedFace(t, store, photoStore, vecStore, "snapshot_a", catchAll.UID)
 	_, markerB := seedAssignedFace(t, store, photoStore, vecStore, "snapshot_b", catchAll.UID)
 
-	snap, err := store.SnapshotSubject(ctx, catchAll.UID)
+	snap, err := store.SnapshotSubject(ctx, testProject, catchAll.UID)
 	if err != nil {
 		t.Fatalf("SnapshotSubject: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestSnapshotSubject_readsWhatADetachWouldRemove(t *testing.T) {
 func TestSnapshotSubject_missingSubject(t *testing.T) {
 	store, _, _, _ := newStores(t)
 
-	if _, err := store.SnapshotSubject(t.Context(), "sub_does_not_exist"); !errors.Is(err, people.ErrSubjectNotFound) {
+	if _, err := store.SnapshotSubject(t.Context(), testProject, "sub_does_not_exist"); !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("SnapshotSubject on a missing subject = %v, want ErrSubjectNotFound", err)
 	}
 }

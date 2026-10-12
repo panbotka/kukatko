@@ -29,13 +29,13 @@ type votedCandidate struct {
 // the vote rule can ever demand.
 const minPerExemplarSearch = 100
 
-// search runs one unassigned-face kNN per exemplar, bounded to the configured
+// search runs one unassigned-face kNN per exemplar inside the project, bounded to the configured
 // concurrency, and merges the neighbours by face into a voted set. The rejected
 // faces are excluded in SQL (before each LIMIT) via exclude, so a rejected face
 // never even competes for a slot. Merging is guarded by a mutex because the
 // searches run concurrently.
 func (s *Service) search(
-	ctx context.Context, exemplars []vectors.Face, threshold float64, exclude []vectors.FaceKey,
+	ctx context.Context, projectUID string, exemplars []vectors.Face, threshold float64, exclude []vectors.FaceKey,
 ) ([]votedCandidate, error) {
 	var (
 		mu     sync.Mutex
@@ -48,7 +48,7 @@ func (s *Service) search(
 		exemplar := exemplars[i]
 		group.Go(func() error {
 			found, err := s.faces.FindSimilarUnassignedFaceCandidates(
-				groupCtx, exemplar.Vector, perExemplar, threshold, exclude)
+				groupCtx, projectUID, exemplar.Vector, perExemplar, threshold, exclude)
 			if err != nil {
 				return fmt.Errorf("searching from exemplar %s#%d: %w", exemplar.PhotoUID, exemplar.FaceIndex, err)
 			}

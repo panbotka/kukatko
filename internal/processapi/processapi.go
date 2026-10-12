@@ -48,8 +48,9 @@ type FaceBackfiller interface {
 // plus one per resulting group, minutes of work on a real library, so it belongs
 // in the queue and not in the request that asks for it.
 type Reclusterer interface {
-	// ScheduleRecluster queues the clustering pass and reports whether a job was
-	// queued (false when one is already waiting or running).
+	// ScheduleRecluster queues one clustering pass per active project — the pass
+	// groups one project's faces — and reports whether any job was queued (false
+	// when every active project already has one waiting or running).
 	ScheduleRecluster(ctx context.Context) (bool, error)
 }
 

@@ -14,6 +14,10 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
+// testProject is the project uid the unit tests search in; the fakes ignore it,
+// the integration tests prove the real stores honour it.
+const testProject = "pj_test"
+
 // oneHot returns a FaceDim vector that is 1 at index i and 0 elsewhere — a distinct
 // exemplar direction so the fake search can identify which exemplar is querying.
 func oneHot(i int) []float32 {
@@ -62,7 +66,7 @@ func (f *fakeFaces) SampleFacesBySubject(
 }
 
 func (f *fakeFaces) FindSimilarUnassignedFaceCandidates(
-	_ context.Context, vec []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
+	_ context.Context, _ string, vec []float32, limit int, maxDistance float64, exclude []vectors.FaceKey,
 ) ([]vectors.FaceCandidate, error) {
 	f.searchLimit.Store(int64(limit))
 	excluded := make(map[vectors.FaceKey]struct{}, len(exclude))
@@ -99,21 +103,21 @@ type fakePeople struct {
 	marked   map[string][]string
 }
 
-func (f *fakePeople) GetSubjectByUID(_ context.Context, uid string) (people.Subject, error) {
+func (f *fakePeople) GetSubjectByUID(_ context.Context, _, uid string) (people.Subject, error) {
 	if subject, ok := f.subjects[uid]; ok {
 		return subject, nil
 	}
 	return people.Subject{}, people.ErrSubjectNotFound
 }
 
-func (f *fakePeople) GetMarkerByUID(_ context.Context, uid string) (people.Marker, error) {
+func (f *fakePeople) GetMarkerByUID(_ context.Context, _, uid string) (people.Marker, error) {
 	if marker, ok := f.markers[uid]; ok {
 		return marker, nil
 	}
 	return people.Marker{}, people.ErrMarkerNotFound
 }
 
-func (f *fakePeople) ListPhotoUIDsBySubject(_ context.Context, uid string) ([]string, error) {
+func (f *fakePeople) ListPhotoUIDsBySubject(_ context.Context, _, uid string) ([]string, error) {
 	return f.marked[uid], nil
 }
 
@@ -133,7 +137,7 @@ type fakePhotos struct {
 	requested int
 }
 
-func (f *fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+func (f *fakePhotos) ListByUIDsInProject(_ context.Context, _ string, uids []string) ([]photos.Photo, error) {
 	f.requested += len(uids)
 	var out []photos.Photo
 	for _, uid := range uids {
@@ -192,7 +196,7 @@ var bigBox = [4]float64{0.3, 0.3, 0.3, 0.3}
 func TestFind_subjectNotFound(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	_, err := h.svc.Find(context.Background(), "su_missing", Request{})
+	_, err := h.svc.Find(context.Background(), testProject, "su_missing", Request{})
 	if !errors.Is(err, people.ErrSubjectNotFound) {
 		t.Fatalf("Find = %v, want ErrSubjectNotFound", err)
 	}
@@ -204,7 +208,7 @@ func TestFind_noFaces(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	subj := h.addSubject("su_empty")
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -223,7 +227,7 @@ func TestFind_noEmbeddings(t *testing.T) {
 	h := newHarness(t)
 	subj := h.addSubject("su_noemb")
 	h.people.marked[subj] = []string{"p1", "p2"}
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -245,7 +249,7 @@ func TestFind_plantedCandidateFound(t *testing.T) {
 		{PhotoUID: "cand", FaceIndex: 0, Distance: 0.2, BBox: bigBox},
 	}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -291,7 +295,7 @@ func TestFind_voteRuleFilters(t *testing.T) {
 		{PhotoUID: "two", FaceIndex: 0, Distance: 0.25, BBox: bigBox},
 	}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -324,7 +328,7 @@ func TestFind_rejectionExcluded(t *testing.T) {
 	h.faces.byKeys[vectors.FaceKey{PhotoUID: "keep"}] = vectors.Face{PhotoUID: "keep", Vector: oneHot(3)}
 	h.faces.byKeys[vectors.FaceKey{PhotoUID: "rejected"}] = vectors.Face{PhotoUID: "rejected", Vector: oneHot(7)}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -355,7 +359,7 @@ func TestFind_negativeExemplarDrop(t *testing.T) {
 	h.faces.byKeys[vectors.FaceKey{PhotoUID: "near"}] = vectors.Face{PhotoUID: "near", Vector: oneHot(1)}
 	h.faces.byKeys[vectors.FaceKey{PhotoUID: "far"}] = vectors.Face{PhotoUID: "far", Vector: oneHot(3)}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -382,7 +386,7 @@ func TestFind_actionClassification(t *testing.T) {
 		{PhotoUID: "mine", FaceIndex: 0, Distance: 0.3, BBox: bigBox, MarkerUID: new("mk_mine")},
 	}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -424,7 +428,7 @@ func TestFind_limitTruncates(t *testing.T) {
 		{PhotoUID: "far", FaceIndex: 0, Distance: 0.4, BBox: bigBox},
 		{PhotoUID: "near", FaceIndex: 0, Distance: 0.1, BBox: bigBox},
 	}
-	res, err := h.svc.Find(context.Background(), subj, Request{Limit: 1})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{Limit: 1})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -449,7 +453,7 @@ func TestFind_minDistanceKeepsTheUncertainMiddle(t *testing.T) {
 		{PhotoUID: "unsure", FaceIndex: 0, Distance: 0.4, BBox: bigBox},
 	}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{MinDistance: 0.25})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{MinDistance: 0.25})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -478,7 +482,7 @@ func TestFind_capsExemplars(t *testing.T) {
 	}
 	h.people.marked[subj] = []string{"srca", "srcb", "srcc", "srcd", "unembedded"}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -513,7 +517,7 @@ func TestFind_capsHydratedCandidates(t *testing.T) {
 		})
 	}
 
-	res, err := h.svc.Find(context.Background(), subj, Request{})
+	res, err := h.svc.Find(context.Background(), testProject, subj, Request{})
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
@@ -559,7 +563,7 @@ func TestFind_perExemplarLimitFollowsTheSourceSet(t *testing.T) {
 					PhotoUID: fmt.Sprintf("src%03d", i), FaceIndex: 0, Vector: oneHot(i), DetScore: 0.9,
 				})
 			}
-			if _, err := h.svc.Find(context.Background(), subj, Request{}); err != nil {
+			if _, err := h.svc.Find(context.Background(), testProject, subj, Request{}); err != nil {
 				t.Fatalf("Find: %v", err)
 			}
 			if got := h.faces.searchLimit.Load(); got != tt.want {

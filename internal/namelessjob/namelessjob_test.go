@@ -10,6 +10,13 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
+)
+
+// testProject is the project the repair runs in, and testSlug its slug.
+const (
+	testProject = "pj_test"
+	testSlug    = "test"
 )
 
 // fakeStore is a stub Store recording the audited calls the handlers made.
@@ -23,13 +30,17 @@ type fakeStore struct {
 	detached    []string
 	restored    []people.SubjectSnapshot
 	entries     []audit.Entry
+	// projects records the project of every call, in order.
+	projects []string
 }
 
-func (f *fakeStore) ListNamelessSubjects(context.Context) ([]people.NamelessSubject, error) {
+func (f *fakeStore) ListNamelessSubjects(_ context.Context, projectUID string) ([]people.NamelessSubject, error) {
+	f.projects = append(f.projects, projectUID)
 	return f.subjects, f.listErr
 }
 
-func (f *fakeStore) SnapshotSubject(_ context.Context, uid string) (people.SubjectSnapshot, error) {
+func (f *fakeStore) SnapshotSubject(_ context.Context, projectUID, uid string) (people.SubjectSnapshot, error) {
+	f.projects = append(f.projects, projectUID)
 	if f.snapshotErr != nil {
 		return people.SubjectSnapshot{}, f.snapshotErr
 	}
@@ -41,8 +52,9 @@ func (f *fakeStore) SnapshotSubject(_ context.Context, uid string) (people.Subje
 }
 
 func (f *fakeStore) DetachSubject(
-	_ context.Context, uid string, entry audit.Entry,
+	_ context.Context, projectUID, uid string, entry audit.Entry,
 ) (people.SubjectSnapshot, error) {
+	f.projects = append(f.projects, projectUID)
 	if f.detachErr != nil {
 		return people.SubjectSnapshot{}, f.detachErr
 	}
@@ -52,8 +64,9 @@ func (f *fakeStore) DetachSubject(
 }
 
 func (f *fakeStore) RestoreSubject(
-	_ context.Context, snap people.SubjectSnapshot, entry audit.Entry,
+	_ context.Context, projectUID string, snap people.SubjectSnapshot, entry audit.Entry,
 ) (people.Subject, error) {
+	f.projects = append(f.projects, projectUID)
 	if f.restoreErr != nil {
 		return people.Subject{}, f.restoreErr
 	}
@@ -106,7 +119,7 @@ func TestSnapshotReadsWithoutChanging(t *testing.T) {
 	t.Parallel()
 	svc, store, queue := fixture()
 
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
@@ -129,7 +142,7 @@ func TestSnapshotSkipsVanishedSubject(t *testing.T) {
 	svc, store, _ := fixture()
 	store.snapshots = map[string]people.SubjectSnapshot{}
 
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
@@ -143,12 +156,12 @@ func TestSnapshotSkipsVanishedSubject(t *testing.T) {
 func TestEnqueueDetachCarriesTheUndoCounts(t *testing.T) {
 	t.Parallel()
 	svc, _, queue := fixture()
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
 
-	queued, err := svc.EnqueueDetach(t.Context(), undo, audit.Meta{ActorUID: "usr1", IP: "10.0.0.1"})
+	queued, err := svc.EnqueueDetach(t.Context(), testProject, undo, audit.Meta{ActorUID: "usr1", IP: "10.0.0.1"})
 	if err != nil {
 		t.Fatalf("EnqueueDetach: %v", err)
 	}
@@ -177,8 +190,8 @@ func TestEnqueueRestoreRejectsUidlessSnapshot(t *testing.T) {
 	t.Parallel()
 	svc, _, queue := fixture()
 
-	if _, err := svc.EnqueueRestore(t.Context(),
-		Undo{Subjects: []people.SubjectSnapshot{{}}}, audit.Meta{}); err == nil {
+	if _, err := svc.EnqueueRestore(t.Context(), testProject,
+		Undo{ProjectUID: testProject, Subjects: []people.SubjectSnapshot{{}}}, audit.Meta{}); err == nil {
 		t.Fatal("EnqueueRestore accepted a snapshot with no subject uid")
 	}
 	if len(queue.enqueued) != 0 {
@@ -191,11 +204,11 @@ func TestEnqueueRestoreRejectsUidlessSnapshot(t *testing.T) {
 func TestHandleDetachDetachesAndAudits(t *testing.T) {
 	t.Parallel()
 	svc, store, queue := fixture()
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if _, err := svc.EnqueueDetach(t.Context(), undo, audit.Meta{ActorUID: "usr1"}); err != nil {
+	if _, err := svc.EnqueueDetach(t.Context(), testProject, undo, audit.Meta{ActorUID: "usr1"}); err != nil {
 		t.Fatalf("EnqueueDetach: %v", err)
 	}
 
@@ -252,11 +265,11 @@ func TestHandleDetachRejectsUidlessPayload(t *testing.T) {
 func TestHandleRestoreReplaysTheSnapshot(t *testing.T) {
 	t.Parallel()
 	svc, store, queue := fixture()
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if _, err := svc.EnqueueRestore(t.Context(), undo, audit.Meta{ActorUID: "usr1"}); err != nil {
+	if _, err := svc.EnqueueRestore(t.Context(), testProject, undo, audit.Meta{ActorUID: "usr1"}); err != nil {
 		t.Fatalf("EnqueueRestore: %v", err)
 	}
 	if queue.enqueued[0].Type != jobs.TypeNamelessRestore {
@@ -284,16 +297,162 @@ func TestEnqueueDetachReportsQueueFailure(t *testing.T) {
 	t.Parallel()
 	svc, _, queue := fixture()
 	queue.err = errors.New("queue down")
-	undo, err := svc.Snapshot(t.Context())
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
 
-	queued, err := svc.EnqueueDetach(t.Context(), undo, audit.Meta{})
+	queued, err := svc.EnqueueDetach(t.Context(), testProject, undo, audit.Meta{})
 	if err == nil {
 		t.Fatal("EnqueueDetach hid the queue failure")
 	}
 	if queued != 0 {
 		t.Errorf("queued = %d, want 0", queued)
+	}
+}
+
+// TestSnapshotRecordsTheProject writes the project's uid and slug into the undo
+// file and reads only that project.
+func TestSnapshotRecordsTheProject(t *testing.T) {
+	t.Parallel()
+	svc, store, _ := fixture()
+
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if undo.ProjectUID != testProject || undo.ProjectSlug != testSlug {
+		t.Errorf("undo project = %q/%q, want %q/%q", undo.ProjectUID, undo.ProjectSlug, testProject, testSlug)
+	}
+	for _, got := range store.projects {
+		if got != testProject {
+			t.Errorf("store read in project %q, want %q", got, testProject)
+		}
+	}
+	if _, err := svc.Snapshot(t.Context(), "", ""); !errors.Is(err, ErrNoProject) {
+		t.Errorf("Snapshot with no project = %v, want ErrNoProject", err)
+	}
+}
+
+// TestEnqueueRefusesAnotherProjectsUndo refuses to replay or apply an undo file
+// in a project other than its own, queueing nothing, and reads a file from
+// before projects existed as the bootstrap project's.
+func TestEnqueueRefusesAnotherProjectsUndo(t *testing.T) {
+	t.Parallel()
+
+	snap := people.SubjectSnapshot{Subject: people.Subject{UID: "sub1"}}
+	tests := []struct {
+		name    string
+		undo    Undo
+		project string
+		wantErr bool
+	}{
+		{name: "own project", undo: Undo{ProjectUID: testProject}, project: testProject},
+		{name: "another project", undo: Undo{ProjectUID: "pj_other"}, project: testProject, wantErr: true},
+		{name: "legacy file in bootstrap", undo: Undo{}, project: project.BootstrapUID},
+		{name: "legacy file elsewhere", undo: Undo{}, project: testProject, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc, _, queue := fixture()
+			tt.undo.Subjects = []people.SubjectSnapshot{snap}
+			_, detachErr := svc.EnqueueDetach(t.Context(), tt.project, tt.undo, audit.Meta{})
+			_, restoreErr := svc.EnqueueRestore(t.Context(), tt.project, tt.undo, audit.Meta{})
+			for _, err := range []error{detachErr, restoreErr} {
+				if got := errors.Is(err, ErrProjectMismatch); got != tt.wantErr {
+					t.Errorf("error = %v, want mismatch %t", err, tt.wantErr)
+				}
+			}
+			if tt.wantErr && len(queue.enqueued) != 0 {
+				t.Errorf("enqueued %d job(s) for a foreign undo file, want none", len(queue.enqueued))
+			}
+		})
+	}
+}
+
+// TestEnqueueCarriesTheProject puts project_uid (and, for a restore, the subject
+// uid the dedup index reads) into both payloads.
+func TestEnqueueCarriesTheProject(t *testing.T) {
+	t.Parallel()
+	svc, _, queue := fixture()
+
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if _, err := svc.EnqueueDetach(t.Context(), testProject, undo, audit.Meta{}); err != nil {
+		t.Fatalf("EnqueueDetach: %v", err)
+	}
+	if _, err := svc.EnqueueRestore(t.Context(), testProject, undo, audit.Meta{}); err != nil {
+		t.Fatalf("EnqueueRestore: %v", err)
+	}
+	for _, job := range queue.enqueued {
+		var p struct {
+			ProjectUID string `json:"project_uid"`
+			SubjectUID string `json:"subject_uid"`
+		}
+		if err := json.Unmarshal(job.Payload, &p); err != nil {
+			t.Fatalf("decoding %s: %v", job.Payload, err)
+		}
+		if p.ProjectUID != testProject || p.SubjectUID != undo.Subjects[0].Subject.UID {
+			t.Errorf("%s payload = %s, want project %s and the subject uid", job.Type, job.Payload, testProject)
+		}
+	}
+}
+
+// TestEnqueueDuplicateIsNotCounted collapses a job already waiting for the same
+// subject into it instead of failing or counting it twice.
+func TestEnqueueDuplicateIsNotCounted(t *testing.T) {
+	t.Parallel()
+	svc, _, queue := fixture()
+	undo, err := svc.Snapshot(t.Context(), testProject, testSlug)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	queue.err = jobs.ErrDuplicate
+	queued, err := svc.EnqueueDetach(t.Context(), testProject, undo, audit.Meta{})
+	if err != nil || queued != 0 {
+		t.Errorf("EnqueueDetach on a duplicate = %d, %v; want 0, nil", queued, err)
+	}
+}
+
+// TestHandleRunsInThePayloadsProject detaches and restores in the payload's
+// project, stamping it on the audit entry; a payload from before projects
+// existed works on the bootstrap project.
+func TestHandleRunsInThePayloadsProject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		project string
+		want    string
+	}{
+		{name: "named project", project: "pj_b", want: "pj_b"},
+		{name: "legacy payload", project: "", want: project.BootstrapUID},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc, store, _ := fixture()
+			detach, _ := json.Marshal(detachPayload{ProjectUID: tt.project, SubjectUID: "sunuikf1e9jdpjog5qgomsvgrb"})
+			restore, _ := json.Marshal(restorePayload{
+				ProjectUID: tt.project, Snapshot: people.SubjectSnapshot{Subject: people.Subject{UID: "sub1"}},
+			})
+			if err := svc.HandleDetach(t.Context(), jobs.Job{ID: 1, Payload: detach}); err != nil {
+				t.Fatalf("HandleDetach: %v", err)
+			}
+			if err := svc.HandleRestore(t.Context(), jobs.Job{ID: 2, Payload: restore}); err != nil {
+				t.Fatalf("HandleRestore: %v", err)
+			}
+			if len(store.projects) != 2 || store.projects[0] != tt.want || store.projects[1] != tt.want {
+				t.Errorf("store calls in %v, want both in %s", store.projects, tt.want)
+			}
+			for _, entry := range store.entries {
+				if entry.ProjectUID != tt.want {
+					t.Errorf("audit entry project = %q, want %q", entry.ProjectUID, tt.want)
+				}
+			}
+		})
 	}
 }

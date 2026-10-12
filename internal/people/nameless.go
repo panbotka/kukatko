@@ -46,7 +46,8 @@ type SubjectSnapshot struct {
 	Faces []FaceRef `json:"faces"`
 }
 
-// listSubjectCountsSQL reads every subject with its marker and cached-face counts.
+// listSubjectCountsSQL reads every subject of one project with its marker and
+// cached-face counts.
 // It deliberately does not filter by name: "identifies nobody" is defined by
 // NameSlug, in Go, and re-expressing that predicate as a SQL regex would give the
 // repair a second definition free to drift from the one the importers guard on.
@@ -57,14 +58,19 @@ SELECT ` + subjectColumns + `,
        (SELECT COUNT(*) FROM markers m WHERE m.subject_uid = s.uid),
        (SELECT COUNT(*) FROM faces f WHERE f.subject_uid = s.uid)
 FROM subjects s
+WHERE s.project_id = $1
 ORDER BY s.created_at, s.uid`
 
-// ListNamelessSubjects returns every subject whose name identifies nobody, with
-// the markers and faces currently pointing at it. It is read-only — the dry run of
-// the nameless-subject repair — and yields an empty slice when the library is
-// clean.
-func (s *Store) ListNamelessSubjects(ctx context.Context) ([]NamelessSubject, error) {
-	rows, err := s.pool.Query(ctx, listSubjectCountsSQL)
+// ListNamelessSubjects returns every subject of the project whose name
+// identifies nobody, with the markers and faces currently pointing at it. It is
+// read-only — the dry run of the nameless-subject repair — and yields an empty
+// slice when the project is clean. Each project has its own catch-all, if any:
+// another project's is never listed.
+func (s *Store) ListNamelessSubjects(ctx context.Context, projectUID string) ([]NamelessSubject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listSubjectCountsSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("people: listing subjects with counts: %w", err)
 	}
@@ -103,7 +109,13 @@ func (s *Store) ListNamelessSubjects(ctx context.Context) ([]NamelessSubject, er
 // recorded here, so replaying the file would leave that one marker unassigned.
 // The authoritative snapshot therefore stays the one DetachSubject returns, and
 // the detach path compares the two.
-func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapshot, error) {
+//
+// The subject must belong to the project: one of another project is
+// ErrSubjectNotFound, exactly like a missing one.
+func (s *Store) SnapshotSubject(ctx context.Context, projectUID, uid string) (SubjectSnapshot, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SubjectSnapshot{}, err
+	}
 	// A plain (read-write) transaction, not a read-only one: snapshotSubjectTx
 	// takes FOR UPDATE on the subject row, which Postgres rejects in a READ ONLY
 	// transaction. The lock is held only for the length of the two list queries.
@@ -113,7 +125,7 @@ func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapsho
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	snap, err := snapshotSubjectTx(ctx, tx, uid)
+	snap, err := snapshotSubjectTx(ctx, tx, projectUID, uid)
 	if err != nil {
 		return SubjectSnapshot{}, err
 	}
@@ -123,11 +135,13 @@ func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapsho
 	return snap, nil
 }
 
-// DetachSubject deletes the subject identified by uid and returns the snapshot
-// that undoes it. Its markers are detached (markers.subject_uid is set NULL by the
+// DetachSubject deletes the project's subject identified by uid and returns the
+// snapshot that undoes it. Its markers are detached (markers.subject_uid is set NULL by the
 // foreign key) and the cached subject_uid/subject_name on any faces pointing at it
 // are cleared, all in the same transaction as entry's audit row. It returns
-// ErrSubjectNotFound — writing nothing — if no such subject exists.
+// ErrSubjectNotFound — writing nothing, not even the audit row — if the project
+// holds no such subject (one of another project included). The audit entry's
+// ProjectUID defaults to projectUID.
 //
 // Its hand-attached links (type = 'person') are deleted rather than detached: a
 // region survives losing its name, a bare claim "this person is here" does not.
@@ -141,12 +155,17 @@ func (s *Store) SnapshotSubject(ctx context.Context, uid string) (SubjectSnapsho
 // mechanism general keeps it honest about what it does. Persist the returned
 // snapshot before you need it — this call is the only moment the removed links
 // exist anywhere.
-func (s *Store) DetachSubject(ctx context.Context, uid string, entry audit.Entry) (SubjectSnapshot, error) {
+func (s *Store) DetachSubject(
+	ctx context.Context, projectUID, uid string, entry audit.Entry,
+) (SubjectSnapshot, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SubjectSnapshot{}, err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (SubjectSnapshot, error) {
-		snap, err := snapshotSubjectTx(ctx, tx, uid)
+	return mutateAudited(ctx, s.pool, withProject(entry, projectUID), func(tx pgx.Tx) (SubjectSnapshot, error) {
+		snap, err := snapshotSubjectTx(ctx, tx, projectUID, uid)
 		if err != nil {
 			return SubjectSnapshot{}, err
 		}
@@ -158,7 +177,7 @@ func (s *Store) DetachSubject(ctx context.Context, uid string, entry audit.Entry
 		if err := deletePersonMarkersTx(ctx, tx, uid); err != nil {
 			return SubjectSnapshot{}, err
 		}
-		tag, err := tx.Exec(ctx, "DELETE FROM subjects WHERE uid = $1", uid)
+		tag, err := tx.Exec(ctx, "DELETE FROM subjects WHERE uid = $1 AND project_id = $2", uid, projectUID)
 		if err != nil {
 			return SubjectSnapshot{}, fmt.Errorf("people: deleting subject %s: %w", uid, err)
 		}
@@ -169,12 +188,14 @@ func (s *Store) DetachSubject(ctx context.Context, uid string, entry audit.Entry
 	})
 }
 
-// snapshotSubjectTx reads the subject and every marker and cached face pointing at
-// it inside tx, so the snapshot is consistent with the deletion that follows it in
-// the same transaction. A missing subject yields ErrSubjectNotFound.
-func snapshotSubjectTx(ctx context.Context, tx pgx.Tx, uid string) (SubjectSnapshot, error) {
+// snapshotSubjectTx reads the project's subject and every marker and cached face
+// pointing at it inside tx, so the snapshot is consistent with the deletion that
+// follows it in the same transaction. A missing subject — or one of another
+// project — yields ErrSubjectNotFound.
+func snapshotSubjectTx(ctx context.Context, tx pgx.Tx, projectUID, uid string) (SubjectSnapshot, error) {
 	subj, err := scanSubject(tx.QueryRow(ctx,
-		"SELECT "+subjectColumns+" FROM subjects WHERE uid = $1 FOR UPDATE", uid))
+		"SELECT "+subjectColumns+" FROM subjects WHERE uid = $1 AND "+subjectProjectClause("$2")+" FOR UPDATE",
+		uid, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return SubjectSnapshot{}, ErrSubjectNotFound
@@ -208,27 +229,35 @@ func snapshotSubjectTx(ctx context.Context, tx pgx.Tx, uid string) (SubjectSnaps
 	return SubjectSnapshot{Subject: subj, MarkerUIDs: markerUIDs, Faces: faces}, nil
 }
 
-// restoreSubjectSQL re-inserts a snapshotted subject under its original uid and
-// timestamps, so an undo restores the row rather than an approximation of it. The
-// slug is a parameter because a base slug taken in the meantime has to be
-// disambiguated.
+// restoreSubjectSQL re-inserts a snapshotted subject into its project under its
+// original uid and timestamps, so an undo restores the row rather than an
+// approximation of it. The slug is a parameter because a base slug taken in the
+// meantime has to be disambiguated.
 const restoreSubjectSQL = `
 INSERT INTO subjects (uid, slug, name, nickname, type, favorite, private, notes,
-                      cover_photo_uid, birth_year, death_year, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                      cover_photo_uid, birth_year, death_year, created_at, updated_at, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING ` + subjectColumns
 
-// RestoreSubject puts a snapshot back: it re-inserts the subject, re-assigns the
-// markers that were detached from it and refreshes the cached subject on the faces
-// that named it, in the same transaction as entry's audit row. It is the undo of
-// DetachSubject and returns the restored subject.
+// RestoreSubject puts a snapshot back into the project: it re-inserts the subject
+// there, re-assigns the markers that were detached from it and refreshes the
+// cached subject on the faces that named it, in the same transaction as entry's
+// audit row. It is the undo of DetachSubject and returns the restored subject.
+// Only markers sitting on the project's photos and faces of the project are
+// re-linked, so a snapshot replayed into the wrong project cannot reach across
+// into another one; the audit entry's ProjectUID defaults to projectUID.
 //
 // The restored row keeps its original uid, name and timestamps; only the slug may
 // differ, because another subject may have taken the base slug in the meantime and
 // slugs are unique. A marker or face deleted since the snapshot is simply not
 // restored — the update matches what still exists — so a partially outdated
 // snapshot restores what it can instead of failing.
-func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry audit.Entry) (Subject, error) {
+func (s *Store) RestoreSubject(
+	ctx context.Context, projectUID string, snap SubjectSnapshot, entry audit.Entry,
+) (Subject, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Subject{}, err
+	}
 	if snap.Subject.UID == "" {
 		return Subject{}, fmt.Errorf("%w: snapshot carries no subject uid", ErrSubjectNotFound)
 	}
@@ -238,7 +267,7 @@ func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry 
 	// Each slug attempt runs in its own transaction (insertAuditedWithUniqueSlug),
 	// which is what makes retrying possible at all: a unique violation aborts the
 	// transaction it happens in, so a retry inside one would only ever hit 25P02.
-	restored, err := insertAuditedWithUniqueSlug(ctx, s.pool, snap.Subject.Slug, entry,
+	restored, err := insertAuditedWithUniqueSlug(ctx, s.pool, snap.Subject.Slug, withProject(entry, projectUID),
 		func(tx pgx.Tx, slug string) (Subject, error) {
 			subj := snap.Subject
 			// The insert's error is returned unwrapped by design: the caller inspects
@@ -246,11 +275,11 @@ func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry 
 			restored, err := scanSubject(tx.QueryRow(ctx, restoreSubjectSQL,
 				subj.UID, slug, subj.Name, subj.Nickname, subj.Type, subj.Favorite,
 				subj.Private, subj.Notes, subj.CoverPhotoUID, subj.BirthYear, subj.DeathYear,
-				timeOrNow(subj.CreatedAt), timeOrNow(subj.UpdatedAt)))
+				timeOrNow(subj.CreatedAt), timeOrNow(subj.UpdatedAt), projectUID))
 			if err != nil {
 				return Subject{}, err
 			}
-			return restored, relinkSnapshotTx(ctx, tx, snap, restored)
+			return restored, relinkSnapshotTx(ctx, tx, projectUID, snap, restored)
 		})
 	if err != nil {
 		return Subject{}, fmt.Errorf("people: restoring subject %s: %w", snap.Subject.UID, err)
@@ -258,15 +287,15 @@ func (s *Store) RestoreSubject(ctx context.Context, snap SubjectSnapshot, entry 
 	return restored, nil
 }
 
-// relinkSnapshotTx re-points the snapshot's markers and cached faces at the
-// restored subject inside tx. The faces update joins on the (photo, slot) pairs
-// the snapshot carries, since that is the natural key a face keeps across a
-// re-detection.
-func relinkSnapshotTx(ctx context.Context, tx pgx.Tx, snap SubjectSnapshot, restored Subject) error {
+// relinkSnapshotTx re-points the snapshot's markers and cached faces of the
+// project at the restored subject inside tx. The faces update joins on the
+// (photo, slot) pairs the snapshot carries, since that is the natural key a face
+// keeps across a re-detection.
+func relinkSnapshotTx(ctx context.Context, tx pgx.Tx, projectUID string, snap SubjectSnapshot, restored Subject) error {
 	if len(snap.MarkerUIDs) > 0 {
 		if _, err := tx.Exec(ctx,
-			"UPDATE markers SET subject_uid = $1 WHERE uid = ANY($2)",
-			restored.UID, snap.MarkerUIDs,
+			"UPDATE markers SET subject_uid = $1 WHERE uid = ANY($2) AND "+markerProjectClause("$3"),
+			restored.UID, snap.MarkerUIDs, projectUID,
 		); err != nil {
 			return fmt.Errorf("people: reassigning markers to subject %s: %w", restored.UID, err)
 		}
@@ -283,8 +312,9 @@ func relinkSnapshotTx(ctx context.Context, tx pgx.Tx, snap SubjectSnapshot, rest
 	if _, err := tx.Exec(ctx,
 		`UPDATE faces SET subject_uid = $1, subject_name = $2
          FROM unnest($3::text[], $4::int[]) AS ref(photo_uid, face_index)
-         WHERE faces.photo_uid = ref.photo_uid AND faces.face_index = ref.face_index`,
-		restored.UID, restored.Name, photoUIDs, indexes,
+         WHERE faces.photo_uid = ref.photo_uid AND faces.face_index = ref.face_index
+           AND faces.project_id = $5`,
+		restored.UID, restored.Name, photoUIDs, indexes, projectUID,
 	); err != nil {
 		return fmt.Errorf("people: restoring faces cache for subject %s: %w", restored.UID, err)
 	}

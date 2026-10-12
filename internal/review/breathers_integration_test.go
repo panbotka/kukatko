@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/review"
 )
 
@@ -80,7 +81,7 @@ func TestPickBreathers_oneLikedPhotoPerEraNewestFirst(t *testing.T) {
 	seedRating(t, pool, "bara", dull2016, 5)
 
 	store := review.NewBreatherStore(pool)
-	picks, err := store.PickBreathers(context.Background(), "anna", 8)
+	picks, err := store.PickBreathers(context.Background(), project.BootstrapUID, "anna", 8)
 	if err != nil {
 		t.Fatalf("PickBreathers: %v", err)
 	}
@@ -103,7 +104,7 @@ func TestPickBreathers_nothingLikedYieldsNoPicks(t *testing.T) {
 	seedUser(t, pool, "anna", "anna", "Anna")
 	seedPhoto(t, photos.NewStore(pool), "hash-plain", 2020, false)
 
-	picks, err := review.NewBreatherStore(pool).PickBreathers(context.Background(), "anna", 8)
+	picks, err := review.NewBreatherStore(pool).PickBreathers(context.Background(), project.BootstrapUID, "anna", 8)
 	if err != nil {
 		t.Fatalf("PickBreathers: %v", err)
 	}

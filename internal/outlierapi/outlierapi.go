@@ -19,9 +19,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/outliers"
 	"github.com/panbotka/kukatko/internal/people"
 )
+
+// subjectNotFound is the 404 message for a subject the request's project does
+// not hold, whether it exists in another project or nowhere.
+const subjectNotFound = "subject not found"
 
 // maxThreshold is the largest accepted distance threshold: cosine distance never
 // exceeds 2, so anything above it can only be a caller mistake.
@@ -32,8 +37,9 @@ const maxThreshold = 2
 // outliers.Service satisfies it.
 type Service interface {
 	// Outliers returns the subject's assigned faces ranked most-suspicious first,
-	// narrowed by opts, or people.ErrSubjectNotFound when no such subject exists.
-	Outliers(ctx context.Context, subjectUID string, opts outliers.Options) (outliers.Result, error)
+	// narrowed by opts, or people.ErrSubjectNotFound when the project holds no
+	// such subject.
+	Outliers(ctx context.Context, projectUID, subjectUID string, opts outliers.Options) (outliers.Result, error)
 }
 
 // API exposes the outlier endpoint over HTTP. The curator guard is supplied by the
@@ -71,8 +77,9 @@ func (a *API) RegisterRoutes(r chi.Router) {
 }
 
 // handleList returns the subject's assigned faces ranked by distance from their
-// centroid, narrowed by the threshold and limit query parameters. A malformed
-// parameter answers 400, an unknown subject 404 and a missing backend 503.
+// centroid, narrowed by the threshold and limit query parameters, inside the
+// request's project. A malformed parameter answers 400, an unknown subject 404 —
+// a subject of another project gets the very same 404 — and a missing backend 503.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "face outlier detection not available")
@@ -83,10 +90,12 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := a.service.Outliers(r.Context(), chi.URLParam(r, "uid"), opts)
+	result, err := a.service.Outliers(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"), opts)
 	if err != nil {
 		if errors.Is(err, people.ErrSubjectNotFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			// A fixed message: the wrapped error names the uid, and the answer
+			// about a foreign subject must be byte-identical to a missing one's.
+			writeError(w, http.StatusNotFound, subjectNotFound)
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "listing outliers failed")

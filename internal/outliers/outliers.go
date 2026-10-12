@@ -39,11 +39,13 @@ type FaceStore interface {
 }
 
 // PeopleStore is the subset of people.Store the service reads: the subject is
-// validated before ranking so a missing subject answers 404 rather than an empty
-// list. people.Store satisfies it.
+// validated inside the project before ranking, so a missing subject — or one of
+// another project — answers 404 rather than an empty list. people.Store
+// satisfies it.
 type PeopleStore interface {
-	// GetSubjectByUID returns the subject with uid, or people.ErrSubjectNotFound.
-	GetSubjectByUID(ctx context.Context, uid string) (people.Subject, error)
+	// GetSubjectByUID returns the project's subject with uid, or
+	// people.ErrSubjectNotFound.
+	GetSubjectByUID(ctx context.Context, projectUID, uid string) (people.Subject, error)
 }
 
 // FeedbackStore is the subset of feedback.Store the service reads: the faces a
@@ -135,12 +137,15 @@ type Result struct {
 // Outliers loads every face assigned to subjectUID, scores each by cosine
 // distance from the subject's trimmed centroid and returns them most-distant
 // (most likely misassigned) first, narrowed by opts: faces a user has confirmed
-// as correct are excluded, then the threshold and limit apply. It returns
-// people.ErrSubjectNotFound when no such subject exists. Small sets (fewer than
+// as correct are excluded, then the threshold and limit apply. The subject must
+// belong to the project projectUID: it returns people.ErrSubjectNotFound when the
+// project holds no such subject — one of another project included — and
+// people.ErrNoProject for an empty projectUID. Once the subject is proven, the
+// faces read are its own, and a subject's faces never leave its project. Small sets (fewer than
 // MinMeaningful faces) are returned ranked but with Meaningful=false, because no
 // face stands out from so few.
-func (s *Service) Outliers(ctx context.Context, subjectUID string, opts Options) (Result, error) {
-	if _, err := s.people.GetSubjectByUID(ctx, subjectUID); err != nil {
+func (s *Service) Outliers(ctx context.Context, projectUID, subjectUID string, opts Options) (Result, error) {
+	if _, err := s.people.GetSubjectByUID(ctx, projectUID, subjectUID); err != nil {
 		return Result{}, fmt.Errorf("loading subject %s: %w", subjectUID, err)
 	}
 	faces, err := s.faces.ListFacesBySubject(ctx, subjectUID)
