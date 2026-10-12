@@ -112,6 +112,10 @@ var catalogueTables = []string{
 // administrator had just mailed to somebody locked out would be an outage for
 // that person, and the links are short-lived anyway — the periodic cleanup takes
 // them, not the reset.
+// projects stays because a project is the container a library lives in, not
+// part of it: like the accounts, it describes who the instance serves. Wiping it
+// would also remove the bootstrap project every later project_id column points
+// at, so the reset empties the libraries and keeps the projects they belong to.
 // push_subscriptions stays for the same reason user_pictures does, below: a
 // browser somebody allowed to show Kukátko's notifications is part of their
 // account, next to their password and their profile, and has nothing to do with
@@ -135,6 +139,7 @@ var preservedTables = []string{
 	"notification_prefs",
 	"passkey_credentials",
 	"password_reset_tokens",
+	"projects",
 	"push_subscriptions",
 	"schema_migrations",
 	"sessions",

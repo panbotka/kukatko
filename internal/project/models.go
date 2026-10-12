@@ -1,0 +1,241 @@
+// Package project is the database access layer for projects: the independent
+// libraries (tenants) one Kukátko instance hosts. A project has an immutable
+// URL slug, an editable name and description, an active flag, the key prefix of
+// everything it stores in the object store and two optional size limits.
+//
+// Migration 0100 creates the table and the bootstrap project (BootstrapUID,
+// slug "v") everything that existed before multi-tenancy belongs to. It is the
+// only project whose storage prefix may be empty — the root layout — until its
+// storage is moved; every project created through Store.Create gets
+// "projects/<uid>/".
+//
+// Every mutation is audited in its own transaction through internal/audit. The
+// acting account arrives as an audit.Meta from the caller, because this package
+// sits below internal/auth and must not import it. Membership, project_id on the
+// catalogue tables and any HTTP surface are later steps of the multi-tenancy
+// work (docs/superpowers/specs/2026-10-11-multi-tenancy-design.md).
+package project
+
+import (
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+)
+
+const (
+	// BootstrapUID is the fixed uid of the project migration 0100 inserts: the
+	// library as it existed before multi-tenancy. Later project_id columns carry
+	// it as their transitional DEFAULT.
+	BootstrapUID = "pj0000000000000000veselice"
+	// BootstrapSlug is the URL slug of the bootstrap project.
+	BootstrapSlug = "v"
+	// TargetType is the audit target type every project mutation records.
+	TargetType = "project"
+	// StoragePrefixRoot is the directory every created project's storage prefix
+	// lives under: "projects/<uid>/".
+	StoragePrefixRoot = "projects/"
+
+	// uidPrefix marks uids that identify a project row.
+	uidPrefix = "pj"
+	// uidSuffixLen is the number of random characters after the prefix; with the
+	// two-character prefix the uid is 26 characters, like every other uid.
+	uidSuffixLen = 24
+	// uidAlphabet is the 32-symbol lowercase base32 alphabet every uid uses.
+	uidAlphabet = "0123456789abcdefghijklmnopqrstuv"
+)
+
+var (
+	// ErrNotFound is returned when no project has the requested uid or slug.
+	ErrNotFound = errors.New("project not found")
+	// ErrSlugTaken is returned by Create when another project already has the slug.
+	ErrSlugTaken = errors.New("project slug is already taken")
+	// ErrInvalidSlug is returned when a slug does not match the slug format
+	// (lowercase letters, digits and hyphens, 1–40 characters, not starting with a
+	// hyphen) or is one of the reserved words.
+	ErrInvalidSlug = errors.New("invalid project slug")
+	// ErrInvalidName is returned when a project name is empty or only whitespace.
+	ErrInvalidName = errors.New("project name must not be empty")
+	// ErrInvalidLimit is returned when a size limit is zero or negative, or when a
+	// patch both sets and clears the same limit.
+	ErrInvalidLimit = errors.New("project limit must be a positive number of bytes")
+	// ErrInvalidStoragePrefix is returned when a storage prefix is neither empty
+	// nor a relative key prefix ending in a slash.
+	ErrInvalidStoragePrefix = errors.New("project storage prefix must be empty or end with '/' and not start with '/'")
+)
+
+// slugPattern is the slug format, identical to the CHECK on projects.slug.
+var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+
+// reservedSlugs are path segments a project slug must not take, because they
+// name (or will name) routes of the application itself next to /p/<slug>/.
+var reservedSlugs = []string{
+	"p", "api", "u", "invite", "system", "login", "register", "projects", "account", "healthz", "metrics",
+}
+
+// Project is one row of the projects table.
+type Project struct {
+	// UID is the project's identifier: "pj" plus 24 base32 characters.
+	UID string `json:"uid"`
+	// Slug is the immutable URL segment of the project (/p/<slug>/…).
+	Slug string `json:"slug"`
+	// Name is the human-readable project name; never empty.
+	Name string `json:"name"`
+	// Description is free text about the project; may be empty.
+	Description string `json:"description"`
+	// Active is false for a deactivated project nobody may enter; its data stays.
+	Active bool `json:"active"`
+	// StoragePrefix is the object-store key prefix of everything the project
+	// stores: "" (the root layout) or a relative prefix ending in "/".
+	StoragePrefix string `json:"storage_prefix"`
+	// MaxFileBytes is the largest single original the project accepts, or nil
+	// for no limit.
+	MaxFileBytes *int64 `json:"max_file_bytes"`
+	// MaxTotalBytes caps the sum of the project's originals, or nil for no limit.
+	MaxTotalBytes *int64 `json:"max_total_bytes"`
+	// CreatedAt is when the project was created.
+	CreatedAt time.Time `json:"created_at"`
+	// UpdatedAt is when the project row was last changed.
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// CreateParams are the caller-supplied fields of a new project. The uid and the
+// storage prefix are generated by Store.Create.
+type CreateParams struct {
+	// Slug is the immutable URL segment; validated with ValidateSlug.
+	Slug string
+	// Name is the project name; surrounding whitespace is trimmed and an empty
+	// result is ErrInvalidName.
+	Name string
+	// Description is optional free text; surrounding whitespace is trimmed.
+	Description string
+	// MaxFileBytes is the per-original limit, or nil for none.
+	MaxFileBytes *int64
+	// MaxTotalBytes is the limit on the sum of originals, or nil for none.
+	MaxTotalBytes *int64
+}
+
+// UpdatePatch lists the editable fields of a project; a nil field is left
+// unchanged. The slug is deliberately absent — it is the URL and immutable — and
+// the storage prefix changes only through Store.SetStoragePrefix.
+type UpdatePatch struct {
+	// Name replaces the project name when non-nil (trimmed, must not be empty).
+	Name *string
+	// Description replaces the description when non-nil (trimmed, may be empty).
+	Description *string
+	// Active activates or deactivates the project when non-nil.
+	Active *bool
+	// MaxFileBytes sets the per-original limit when non-nil.
+	MaxFileBytes *int64
+	// ClearMaxFileBytes removes the per-original limit. Combining it with
+	// MaxFileBytes is ErrInvalidLimit.
+	ClearMaxFileBytes bool
+	// MaxTotalBytes sets the limit on the sum of originals when non-nil.
+	MaxTotalBytes *int64
+	// ClearMaxTotalBytes removes the limit on the sum of originals. Combining it
+	// with MaxTotalBytes is ErrInvalidLimit.
+	ClearMaxTotalBytes bool
+}
+
+// Usage is how much of the instance a project occupies.
+type Usage struct {
+	// Photos is the number of photo rows the project holds (archived included,
+	// since their originals are still stored until purged).
+	Photos int64 `json:"photos"`
+	// OriginalsBytes is the summed size of those photos' originals.
+	OriginalsBytes int64 `json:"originals_bytes"`
+}
+
+// ValidateSlug reports whether slug may name a project: it must match the slug
+// format and must not be a reserved word. It returns an error wrapping
+// ErrInvalidSlug that says which rule failed, or nil.
+func ValidateSlug(slug string) error {
+	if !slugPattern.MatchString(slug) {
+		return fmt.Errorf("%w: %q must be 1–40 lowercase letters, digits or hyphens, not starting with a hyphen",
+			ErrInvalidSlug, slug)
+	}
+	if slices.Contains(reservedSlugs, slug) {
+		return fmt.Errorf("%w: %q is reserved", ErrInvalidSlug, slug)
+	}
+	return nil
+}
+
+// ValidateStoragePrefix reports whether prefix may be a project's storage
+// prefix, mirroring the CHECK on projects.storage_prefix: either empty (the root
+// layout) or a relative key prefix that ends with "/" and does not start with
+// one. It returns ErrInvalidStoragePrefix otherwise.
+func ValidateStoragePrefix(prefix string) error {
+	if prefix == "" {
+		return nil
+	}
+	if !strings.HasSuffix(prefix, "/") || strings.HasPrefix(prefix, "/") {
+		return fmt.Errorf("%w: %q", ErrInvalidStoragePrefix, prefix)
+	}
+	return nil
+}
+
+// StoragePrefixFor returns the storage prefix a created project with the given
+// uid gets: "projects/<uid>/".
+func StoragePrefixFor(uid string) string {
+	return StoragePrefixRoot + uid + "/"
+}
+
+// normalizeName trims name and returns ErrInvalidName when nothing is left.
+func normalizeName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", ErrInvalidName
+	}
+	return trimmed, nil
+}
+
+// validateLimit returns ErrInvalidLimit when limit is set but not positive; a
+// nil limit (no limit) is always valid.
+func validateLimit(limit *int64) error {
+	if limit != nil && *limit <= 0 {
+		return fmt.Errorf("%w: got %d", ErrInvalidLimit, *limit)
+	}
+	return nil
+}
+
+// patchLimit applies one limit's half of an UpdatePatch to current: set wins
+// when given, remove empties it, neither keeps it. Setting and removing at once,
+// or setting a non-positive value, is ErrInvalidLimit. A nil result with a nil
+// error means "no limit".
+func patchLimit(current, set *int64, remove bool) (*int64, error) {
+	switch {
+	case set != nil && remove:
+		return nil, fmt.Errorf("%w: a limit cannot be set and cleared at once", ErrInvalidLimit)
+	case set != nil:
+		if err := validateLimit(set); err != nil {
+			return nil, err
+		}
+		value := *set
+		return &value, nil
+	case remove:
+		return nil, nil //nolint:nilnil // nil is the valid value "no limit", not a missing result
+	default:
+		return current, nil
+	}
+}
+
+// newUID returns a fresh project uid: "pj" followed by uidSuffixLen characters
+// drawn uniformly from uidAlphabet. Because the alphabet length (32) divides 256,
+// masking the low 5 bits of each random byte is unbiased. It returns a wrapped
+// error only if the system random source fails.
+func newUID() (string, error) {
+	buf := make([]byte, uidSuffixLen)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("project: reading random bytes: %w", err)
+	}
+	var sb strings.Builder
+	sb.Grow(len(uidPrefix) + uidSuffixLen)
+	sb.WriteString(uidPrefix)
+	for _, b := range buf {
+		sb.WriteByte(uidAlphabet[b&0x1f])
+	}
+	return sb.String(), nil
+}

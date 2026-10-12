@@ -6078,6 +6078,36 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   returned failure, the scheduler's startup + periodic enqueues surviving failures, its defaults; the
   dedup is covered in `internal/jobs`' integration tests.
 
+- **Projects (`internal/project`):** the first step of multi-tenancy
+  ([design](superpowers/specs/2026-10-11-multi-tenancy-design.md)) — the `projects` table (migration
+  0100) and its store. A project is one independent library of the instance; nothing else references it
+  yet (no `project_id`, no membership, no HTTP route — later steps).
+  - `models.go` — `Project` (mirrors the row), `CreateParams`, `UpdatePatch`, `Usage`; the constants
+    `BootstrapUID = "pj0000000000000000veselice"` / `BootstrapSlug = "v"` (the row migration 0100 inserts:
+    Veselice, active, `storage_prefix = ''`, no limits — the library as it was before multi-tenancy),
+    `TargetType = "project"`; `ValidateSlug` (`^[a-z0-9][a-z0-9-]{0,39}$`, identical to the CHECK, plus
+    the reserved words `p`, `api`, `u`, `invite`, `system`, `login`, `register`, `projects`, `account`,
+    `healthz`, `metrics` — path segments the app itself needs next to `/p/<slug>/`), `ValidateStoragePrefix`
+    (empty, or relative and ending in `/` — the CHECK again), `StoragePrefixFor(uid)` = `projects/<uid>/`;
+    the `pj` uid generator (the `internal/photos` pattern: 24 base32 chars, 26 total). Sentinels
+    `ErrNotFound`, `ErrSlugTaken`, `ErrInvalidSlug`, `ErrInvalidName`, `ErrInvalidLimit`,
+    `ErrInvalidStoragePrefix`.
+  - `store.go` — `Store` over the pgx pool. Reads: `Get(uid)`, `GetBySlug(slug)` (unknown = `ErrNotFound`),
+    `List` (by name, then uid). Writes, each **audited in its own transaction** with the caller's
+    `audit.Meta` (the package must not import `internal/auth`, so the actor is passed in):
+    `Create` → `project.create` (fresh `pj` uid, `storage_prefix = projects/<uid>/` — **a created project
+    never has the empty root prefix**, only the bootstrap row does; name/description trimmed; the slug's
+    unique violation → `ErrSlugTaken`); `Update(uid, UpdatePatch)` → `project.update` with the
+    `audit.ChangesKey` old → new diff, row locked `FOR UPDATE` for the read-modify-write; **the slug is
+    immutable** (no field for it); a limit is set by value or removed by its `Clear…` flag (both at once =
+    `ErrInvalidLimit`); a patch that changes nothing writes neither the row nor an audit entry;
+    `SetStoragePrefix(uid, prefix)` → `project.storage_prefix` (details `old`/`new`) — the only way the
+    prefix changes, meant for the storage move. `Usage(uid)` = photo rows + `sum(file_size)` (archived
+    included: their originals are still stored until purged); until `photos.project_id` exists the whole
+    library counts for `BootstrapUID` and every other project is empty (a `TODO multi-tenancy` marks it).
+  - `internal/reset` keeps `projects` among the **preserved** tables (account-side, like `users`), and
+    `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
+    like a freshly migrated one.
 - **Remote CLI client (`internal/ctl`):** the client half of `kukatko ctl` — the one piece of the tree that
   Kukátko calls **over HTTP as a foreign server**, not through the DB and the disk. It has nothing in common with `internal/config`
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client

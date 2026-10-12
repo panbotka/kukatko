@@ -18,6 +18,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // EnvTestDatabaseURL is the environment variable holding the DSN of the
@@ -57,7 +58,9 @@ func New(t *testing.T) *database.DB {
 // TruncateAll empties every base table in the public schema except
 // schema_migrations, giving a test a clean slate while preserving the applied
 // migration history. Identity sequences are reset and foreign-key dependents are
-// cascaded. The test is failed on any error.
+// cascaded. The rows the migrations themselves seed (the bootstrap project) are
+// put back, so a truncated database looks like a freshly migrated one. The test
+// is failed on any error.
 func TruncateAll(t *testing.T, db *database.DB) {
 	t.Helper()
 
@@ -74,7 +77,17 @@ func TruncateAll(t *testing.T, db *database.DB) {
 	if _, err := db.Pool().Exec(ctx, stmt); err != nil {
 		t.Fatalf("truncating tables: %v", err)
 	}
+	if _, err := db.Pool().Exec(ctx, seedBootstrapProjectSQL, project.BootstrapUID, project.BootstrapSlug); err != nil {
+		t.Fatalf("re-seeding the bootstrap project: %v", err)
+	}
 }
+
+// seedBootstrapProjectSQL puts back the project migration 0100 inserts, exactly
+// as the migration does.
+const seedBootstrapProjectSQL = `
+INSERT INTO projects (uid, slug, name, description, active, storage_prefix)
+VALUES ($1, $2, 'Veselice', '', true, '')
+ON CONFLICT (uid) DO NOTHING`
 
 // dataTables returns the sanitized, quoted names of every base table in the
 // public schema except schema_migrations (which must survive truncation so

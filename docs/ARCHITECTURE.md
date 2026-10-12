@@ -594,6 +594,18 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   Bulk lookups (`FaceRejectionsForSubject`, `LabelRejectionsForLabel`) serve the search paths as an
   exclusion filter **without N+1**.
 
+### 5.2a Projects (multi-tenancy, in progress)
+
+- **`projects`** (migration 0100) — one independent library (tenant) of the instance: `uid` (`pj…`),
+  `slug` (the immutable URL segment, `^[a-z0-9][a-z0-9-]{0,39}$`, UNIQUE), `name`, `description`,
+  `active`, `storage_prefix` (`''` = the root layout, else a relative prefix ending in `/`),
+  `max_file_bytes`/`max_total_bytes` (NULL = no limit). The migration inserts the **bootstrap project**
+  `pj0000000000000000veselice` / `v` / Veselice that everything existing today belongs to; created projects
+  get `projects/<uid>/`. Store: `internal/project`. It is an account-side table — a reset keeps it.
+  **The model is completed in later steps** (membership, `project_id` on the catalogue tables, routing,
+  per-project storage, limits); the design is
+  [`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
+
 ### 5.3 Identity mapping (provenance)
 
 These columns were the import's dedup keys; they are now **the record of where each photo came from**

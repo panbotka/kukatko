@@ -336,3 +336,34 @@ func TestExecute_keepsTheAccountButNotItsPerson(t *testing.T) {
 		t.Error("linking to a deleted person succeeded; the foreign key was not restored")
 	}
 }
+
+// TestLiveSchema_everyTableClassified verifies every table the migrations create
+// is in exactly one of the two lists. It is the schema-side half of the drift
+// guard: a migration that adds a table without classifying it fails here, in the
+// test suite, before any reset ever refuses to run in production.
+func TestLiveSchema_everyTableClassified(t *testing.T) {
+	env := newResetEnv(t)
+
+	rows, err := env.db.Pool().Query(t.Context(),
+		`SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)
+	if err != nil {
+		t.Fatalf("listing tables: %v", err)
+	}
+	defer rows.Close()
+	catalogue, preserved := reset.CatalogueTables(), reset.PreservedTables()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scanning table name: %v", err)
+		}
+		if !slices.Contains(catalogue, name) && !slices.Contains(preserved, name) {
+			t.Errorf("table %q is in neither catalogueTables nor preservedTables", name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterating tables: %v", err)
+	}
+	if !slices.Contains(preserved, "projects") {
+		t.Error("projects must be preserved: it is account-side, and the bootstrap project anchors every library")
+	}
+}

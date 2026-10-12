@@ -436,6 +436,18 @@ const (
 	// (kind → enabled), so the trail answers "since when does this person not
 	// get tag notifications" without a second lookup.
 	ActionNotificationPrefsUpdate = "notification_prefs.update"
+	// ActionProjectCreate records a system administrator creating a project (one
+	// independent library of the instance). The target is the new project; the
+	// details carry its slug, name and size limits.
+	ActionProjectCreate = "project.create"
+	// ActionProjectUpdate records an edit of a project's name, description,
+	// active flag or size limits. The target is the project; the details carry
+	// the field-level old → new diff under ChangesKey.
+	ActionProjectUpdate = "project.update"
+	// ActionProjectStoragePrefix records a project's object-store key prefix
+	// being replaced (the storage move). The target is the project; the details
+	// carry the old and the new prefix.
+	ActionProjectStoragePrefix = "project.storage_prefix"
 	// ActionAuditPurge records a maintainer purging old audit entries by retention
 	// (deleting rows older than a cutoff). The applied cutoff, the retention window
 	// in days and the number of deleted rows are recorded in the entry's details.
@@ -493,7 +505,8 @@ var knownActions = map[string]struct{}{
 	ActionUploadLinkCreate: {}, ActionUploadLinkExtend: {}, ActionUploadLinkRevoke: {},
 	ActionUploadLinkUpload: {}, ActionUploadLinkRestoreCode: {}, ActionUploadLinkRotateCode: {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
-	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {},
+	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
+	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {},
 }
 
 // KnownAction reports whether action is one of the trail's own action labels. An
