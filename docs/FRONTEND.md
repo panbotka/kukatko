@@ -1671,7 +1671,9 @@ here.
   every control writes straight into the URL via `SetUrlState<AlbumsView>`, **pushing** except the
   live-typed query, which replaces. The strip offers only the sections the library **has albums in**
   (`sections` from `browseAlbums`) and disappears entirely below two of them — a lone tab is a label,
-  not a choice, so a library of nothing but hand-made albums keeps just the search and the ordering),
+  not a choice, so a library of nothing but hand-made albums keeps just the search and the ordering;
+  on a phone the search field carries `.kukatko-filter-search--own-row` and takes a row of its own,
+  the ordering and the switch wrapping beneath it, so its placeholder is not cut beside the select),
   `LabelFilterBar` (the labels index's own filter bar: a name search + the ordering, both writing
   straight into the URL via `SetUrlState<LabelsView>`, **pushing** except the live-typed query. No
   filter beyond the search: a label is a name and a count, and there is nothing else to filter it by),
@@ -8145,7 +8147,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   **the timeline** `.kukatko-timeline*` (a fixed vertical data bar at the right
   edge below the navbar, absolutely positioned ticks, a floating label for the active month, `touch-action:
   none` for dragging, hidden at widths ≤ 575.98px); **the filter bar** `.kukatko-filter-*`
-  (`.kukatko-filter-search` = the search field grows and fills the header's row, `.kukatko-filter-sort`
+  (`.kukatko-filter-search` = the search field grows and fills the header's row, `--own-row` = below `md` the
+  whole row, guarded by `styles/filterSearchOwnRow.test.ts`, `.kukatko-filter-sort`
   a minimum width, `.kukatko-filter-panel` = 44px tap targets on the panel's elements, `.kukatko-filter-chip`
   = a tappable pill chip with a cross); **the labels cloud** `.kk-label-*` (`.kk-label-cloud` = the
   wrapping flex cloud, `.kk-label-chip` = the pill that owns the hairline and the hover, split between

@@ -106,7 +106,10 @@ export function AlbumFilterBar({ view, onChange, counts, sections, tab }: AlbumF
       )}
 
       <div className="d-flex flex-wrap align-items-center gap-2">
-        <InputGroup className="kukatko-filter-search">
+        {/* On a phone the field takes a row of its own and the ordering and the
+            switch wrap beneath it: beside the select it was left so narrow that
+            the placeholder read "Hledat podle n". */}
+        <InputGroup className="kukatko-filter-search kukatko-filter-search--own-row">
           <InputGroup.Text aria-hidden="true">
             <Icon name="search" />
           </InputGroup.Text>

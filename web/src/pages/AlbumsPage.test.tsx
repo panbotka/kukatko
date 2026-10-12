@@ -382,6 +382,17 @@ describe('AlbumsPage', () => {
     expect(screen.getByRole('combobox', { name: 'Sort' })).toBeInTheDocument()
   })
 
+  it('gives the search field a row of its own on a phone', async () => {
+    // The phone-only full-width rule itself is guarded in
+    // styles/filterSearchOwnRow.test.ts; here only that the field opts in.
+    fetchMock.mockResolvedValue([album('al_1', 'Dovolená 2019')])
+    renderPage()
+
+    await screen.findByText('Dovolená 2019')
+    const field = screen.getByRole('searchbox', { name: 'Search albums' })
+    expect(field.closest('.input-group')).toHaveClass('kukatko-filter-search--own-row')
+  })
+
   it('offers only the sections the library has albums in', async () => {
     fetchMock.mockResolvedValue([
       album('al_1', 'Dovolená 2019'),

@@ -1752,6 +1752,14 @@ body {
     flex-basis: 8rem;
     min-width: 8rem;
   }
+
+  /* A bar whose other controls are a select and a switch rather than one icon
+     button (the album index) gives the field the whole row instead: squeezed
+     beside the ordering it kept ~200px, and its placeholder was cut mid-word.
+     The controls after it wrap onto the next line. */
+  .kukatko-filter-search--own-row {
+    flex-basis: 100%;
+  }
 }
 
 /* The Filters button is icon-only on a phone (funnel + count badge); the
