@@ -194,13 +194,47 @@ describe('OrganizePanel autocomplete', () => {
     await user.type(input, 'o') // matches "Holidays" and "Work"
     await screen.findByRole('listbox', { name: 'Add to album' })
 
-    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}')
+    // The first row starts active, so one step down lands on the second.
+    await user.keyboard('{ArrowDown}{Enter}')
 
     await waitFor(() => {
       expect(addAlbumPhotosMock).toHaveBeenCalledTimes(1)
     })
     // Two matches sorted as fetched: Holidays (a1), Work (a3); second is Work.
     expect(addAlbumPhotosMock).toHaveBeenCalledWith('a3', ['p1'])
+  })
+
+  it('adds the first album suggestion on Enter alone, never the create row', async () => {
+    addAlbumPhotosMock.mockResolvedValue(['p1'])
+    const user = userEvent.setup()
+    renderPanel({})
+
+    const input = await screen.findByRole('combobox', { name: 'Add to album' })
+    // "Work" is offered above "Create “wor”".
+    await user.type(input, 'wor')
+    await screen.findByRole('option', { name: 'Create “wor”' })
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(addAlbumPhotosMock).toHaveBeenCalledWith('a3', ['p1'])
+    })
+    expect(createAlbumMock).not.toHaveBeenCalled()
+  })
+
+  it('attaches the first label suggestion on Enter alone', async () => {
+    attachLabelMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPanel({})
+
+    const input = await screen.findByRole('combobox', { name: 'Add label' })
+    await user.type(input, 'sun')
+    await screen.findByRole('option', { name: 'sunset' })
+    await user.keyboard('{Enter}')
+
+    await waitFor(() => {
+      expect(attachLabelMock).toHaveBeenCalledWith('l1', 'p1')
+    })
+    expect(createLabelMock).not.toHaveBeenCalled()
   })
 
   it('closes the suggestion list on Escape', async () => {

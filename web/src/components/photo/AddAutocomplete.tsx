@@ -94,12 +94,23 @@ function matchesOption(option: AutocompleteOption, text: string): boolean {
 }
 
 /**
+ * Reports whether the typed text is an option's whole name — its label or its
+ * alias, case- and accent-insensitively. Such an option ranks first: it is the
+ * one the user is spelling out, and the first row is what Enter picks.
+ */
+function namesOption(option: AutocompleteOption, text: string): boolean {
+  return foldedEquals(option.label, text) || foldedEquals(option.alias ?? '', text)
+}
+
+/**
  * A type-to-filter autocomplete for adding the photo to an album, attaching a
  * label or naming a person. As the user types, options whose label — or alias, for
  * a person their nickname — matches the query (case- and accent-insensitively)
- * appear in a dropdown; choosing one — by click or keyboard (Up/Down to move,
- * Enter to select, Esc to close) — calls {@link AddAutocompleteProps.onAdd} and
- * clears the input.
+ * appear in a dropdown, an option the query names exactly first; choosing one —
+ * by click or keyboard (Up/Down to move, Enter to select, Esc to close) — calls
+ * {@link AddAutocompleteProps.onAdd} and clears the input. The first row is the
+ * active option the moment the list opens (`aria-activedescendant`), so typing
+ * a name and pressing Enter picks it, as the comment @-mention list does.
  *
  * With {@link AddAutocompleteProps.onCreate} set, a query that names no existing
  * option gets a trailing "create «query»" row, so a photo can be given a label
@@ -130,7 +141,7 @@ export function AddAutocomplete({
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const [open, setOpen] = useState(false)
-  const [activeIndex, setActiveIndex] = useState(-1)
+  const [activeIndex, setActiveIndex] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -153,10 +164,14 @@ export function AddAutocomplete({
   }, [focusKey, disabled])
   const trimmed = text.trim()
 
-  const suggestions = useMemo(
-    () => options.filter((option) => matchesOption(option, text)).slice(0, MAX_SUGGESTIONS),
-    [options, text],
-  )
+  // An exact name leads; the rest keep the caller's order (sort is stable).
+  const suggestions = useMemo(() => {
+    const needle = text.trim()
+    return options
+      .filter((option) => matchesOption(option, text))
+      .sort((a, b) => Number(namesOption(b, needle)) - Number(namesOption(a, needle)))
+      .slice(0, MAX_SUGGESTIONS)
+  }, [options, text])
 
   // Creating is offered only for a name nothing already carries — neither an
   // offered option nor an entry held back because the photo has it — so the row
@@ -179,15 +194,21 @@ export function AddAutocomplete({
   // in-flow block inside the panel's own scroll on a phone.
   const menu = useAnchoredMenu(inputRef, showDropdown)
 
-  // Reset the keyboard highlight whenever the filtered set changes.
+  // Each row's id, for `aria-activedescendant`; the create row has no uid.
+  const optionId = (index: number): string =>
+    index < suggestions.length ? `${listboxId}-${suggestions[index].uid}` : `${listboxId}-create`
+  const activeId =
+    showDropdown && activeIndex >= 0 && activeIndex < rowCount ? optionId(activeIndex) : undefined
+
+  // Back to the first row whenever the filtered set changes, so Enter picks it.
   useEffect(() => {
-    setActiveIndex(-1)
+    setActiveIndex(0)
   }, [suggestions])
 
   function select(option: AutocompleteOption) {
     setText('')
     setOpen(false)
-    setActiveIndex(-1)
+    setActiveIndex(0)
     onAdd(option.uid)
   }
 
@@ -197,7 +218,7 @@ export function AddAutocomplete({
     }
     setText('')
     setOpen(false)
-    setActiveIndex(-1)
+    setActiveIndex(0)
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -212,21 +233,21 @@ export function AddAutocomplete({
       case 'ArrowUp':
         if (rowCount > 0) {
           event.preventDefault()
-          setActiveIndex((i) => Math.max(i - 1, -1))
+          setActiveIndex((i) => Math.max(i - 1, 0))
         }
         break
       case 'Enter': {
-        // Nothing highlighted: Enter still creates when that is the only row,
-        // so typing a brand-new name and confirming it just works.
-        const creating =
-          canCreate &&
-          (activeIndex === suggestions.length || (activeIndex === -1 && rowCount === 1))
-        if (creating) {
+        // Only a visible list is picked from: an empty or dismissed field lets
+        // Enter through untouched.
+        if (activeId === undefined) {
+          break
+        }
+        if (canCreate && activeIndex === suggestions.length) {
           event.preventDefault()
           void create()
           break
         }
-        const option = activeIndex >= 0 ? suggestions[activeIndex] : undefined
+        const option = suggestions.at(activeIndex)
         if (option) {
           event.preventDefault()
           select(option)
@@ -235,7 +256,7 @@ export function AddAutocomplete({
       }
       case 'Escape':
         setOpen(false)
-        setActiveIndex(-1)
+        setActiveIndex(0)
         break
       default:
         break
@@ -267,6 +288,7 @@ export function AddAutocomplete({
         aria-expanded={showDropdown}
         aria-controls={listboxId}
         aria-autocomplete="list"
+        aria-activedescendant={activeId}
         autoComplete="off"
         disabled={disabled}
         // Opt-in, and only ever set where the field is the whole purpose of the
@@ -298,6 +320,7 @@ export function AddAutocomplete({
           {suggestions.map((option, index) => (
             <li key={option.uid}>
               <button
+                id={optionId(index)}
                 type="button"
                 role="option"
                 aria-selected={index === activeIndex}
@@ -328,6 +351,7 @@ export function AddAutocomplete({
           {canCreate && (
             <li>
               <button
+                id={optionId(suggestions.length)}
                 type="button"
                 role="option"
                 aria-selected={activeIndex === suggestions.length}

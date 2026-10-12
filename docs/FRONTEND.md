@@ -3640,7 +3640,12 @@ here.
   `EntityChip` (the pill itself is the link, so the whole chip is one 44px target on a phone — the editor's
   remove X only trims it). Adding runs through
   **`AddAutocomplete`** (a type-to-filter combobox over react-bootstrap primitives,
-  **case/accent-insensitive** via `lib/text` `foldedIncludes`, keyboard ↑/↓/Enter/Esc + click,
+  **case/accent-insensitive** via `lib/text` `foldedIncludes`, keyboard ↑/↓/Enter/Esc + click — the
+  **first row is the active option** the moment the list opens (`aria-activedescendant`, each row an id),
+  so typing a name and pressing Enter picks it, as the comment @-mention list does; an option whose label or
+  alias the query names **exactly** (`foldedEquals`) ranks first, the rest keep the caller's order, and the
+  create row stays last, so Enter creates only when it is the sole row; Enter on a closed or empty field
+  passes through untouched,
   an option's optional **`alias`** matched on the same terms as its `label` and drawn beside it — a person's
   **nickname**, which is the one thing `hint` is not: a hint carries a number and is never searched, an alias
   is another way to say the same name. `FaceAssignPanel` and `AttachPersonField` both pass

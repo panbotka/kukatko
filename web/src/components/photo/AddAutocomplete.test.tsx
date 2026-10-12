@@ -75,9 +75,89 @@ describe('AddAutocomplete', () => {
     const user = userEvent.setup()
     const { onAdd } = renderField()
 
-    await user.type(screen.getByRole('combobox'), 'nečas{ArrowDown}{ArrowDown}{Enter}')
+    await user.type(screen.getByRole('combobox'), 'nečas{ArrowDown}{Enter}')
 
     expect(onAdd).toHaveBeenCalledWith('su2')
+  })
+
+  it('makes the first row the active option, so Enter alone picks it', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = renderField()
+    const input = screen.getByRole('combobox')
+
+    await user.type(input, 'nečas')
+    const first = screen.getByRole('option', { name: /Bohumil Nečas/ })
+    expect(input).toHaveAttribute('aria-activedescendant', first.id)
+    expect(first).toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{Enter}')
+    expect(onAdd).toHaveBeenCalledWith('su1')
+    expect(input).toHaveValue('')
+  })
+
+  it('picks a partial match with Enter rather than offering to create the typed text', async () => {
+    // The pre-release repro: "Jedna" lists "Jedna jediná" above "Create «Jedna»".
+    const user = userEvent.setup()
+    const onCreate = vi.fn().mockResolvedValue(true)
+    const { onAdd } = renderField({
+      options: [{ uid: 'al1', label: 'Jedna jediná' }],
+      onCreate,
+    })
+
+    await user.type(screen.getByRole('combobox'), 'Jedna{Enter}')
+
+    expect(onAdd).toHaveBeenCalledWith('al1')
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('ranks an exact name before the longer names that contain it', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = renderField({
+      options: [
+        { uid: 'al1', label: 'Jedna jediná' },
+        { uid: 'al2', label: 'Jedna' },
+      ],
+      onCreate: vi.fn(),
+    })
+
+    await user.type(screen.getByRole('combobox'), 'jedna')
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Jedna',
+      'Jedna jediná',
+    ])
+
+    await user.keyboard('{Enter}')
+    expect(onAdd).toHaveBeenCalledWith('al2')
+  })
+
+  it('creates with Enter alone when the create row is all there is', async () => {
+    const user = userEvent.setup()
+    const onCreate = vi.fn().mockResolvedValue(true)
+    const { onAdd } = renderField({ onCreate })
+    const input = screen.getByRole('combobox')
+
+    await user.type(input, 'Anežka')
+    expect(input).toHaveAttribute(
+      'aria-activedescendant',
+      screen.getByRole('option', { name: 'Create “Anežka”' }).id,
+    )
+    await user.keyboard('{Enter}')
+
+    expect(onCreate).toHaveBeenCalledWith('Anežka')
+    expect(onAdd).not.toHaveBeenCalled()
+  })
+
+  it('lets Enter through untouched while no list is shown', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = renderField()
+    const input = screen.getByRole('combobox')
+
+    await user.click(input)
+    await user.keyboard('{Enter}')
+    expect(input).not.toHaveAttribute('aria-activedescendant')
+
+    await user.type(input, 'nečas{Escape}{Enter}')
+    expect(onAdd).not.toHaveBeenCalled()
   })
 
   it('offers to create a name nothing carries and keeps the text when that fails', async () => {
