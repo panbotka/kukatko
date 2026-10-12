@@ -17,7 +17,7 @@ import (
 
 type stubPlacePhotos struct{}
 
-func (stubPlacePhotos) GetByUID(context.Context, string) (photos.Photo, error) {
+func (stubPlacePhotos) GetForJob(context.Context, string) (photos.Photo, error) {
 	return photos.Photo{}, photos.ErrPhotoNotFound
 }
 
