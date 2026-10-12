@@ -729,7 +729,8 @@ One HTTP service, offline-aware by default; the reference implementation is
   the basis for finding a person among untagged photos, the recognition sweep, album/label expansion and the review game):
   like a candidate search, but `WHERE subject_uid IS NULL` and with an **exclusion set** (faces already rejected
   for the given subject) filtered out **in SQL** (an anti-join via `unnest`). Filtering happens **before**
-  the `LIMIT` and the query runs under `SET LOCAL hnsw.iterative_scan = strict_order` (pgvector ≥ 0.8), so
+  the `LIMIT` and the query runs under `SET LOCAL hnsw.iterative_scan` (pgvector ≥ 0.8; `relaxed_order` since
+  multi-tenancy, which also filters `project_id` inside the scan — `docs/PERF.md` §1), so
   the caller gets the number of candidates it asked for even when rejections take away the nearest neighbors —
   **filtering only after the HNSW limit would quietly shrink the result** (a list of 50 from which rejections remove
   30 must still return 50 good candidates). This is a design decision, not an implementation detail.

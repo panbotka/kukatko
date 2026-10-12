@@ -47,6 +47,71 @@ full recall on these indexes while keeping per-query latency low. Raising it
 toward 400 is pure latency cost with no recall benefit at this library size and
 is intentionally never used.
 
+### The project filter inside the HNSW scan (multi-tenancy)
+
+Every kNN — similar photos (`FindSimilar`), face identity suggestions
+(`FindSimilarFaceCandidates`), a face's neighbours (`FindSimilarFaces`) and the
+unassigned-face search behind exemplar lookups (`FindSimilarUnassignedFaceCandidates`) —
+filters `project_id = $n` on the **denormalised** column of `embeddings`/`faces`
+(migration 0102), inside the statement the index serves, without joining `photos`:
+
+```sql
+WITH nearest AS MATERIALIZED (
+    SELECT …, embedding <=> $1 AS distance
+    FROM faces
+    WHERE project_id = $4
+    ORDER BY embedding <=> $1
+    LIMIT $3
+)
+SELECT … FROM nearest WHERE distance <= $2 ORDER BY distance, photo_uid, face_index
+```
+
+The distance cutoff lives **outside** the CTE: inside it, it is invisible to the
+index scan and would make the iterative scan walk to `hnsw.max_scan_tuples` (see
+§3, the unassigned-face measurement). The outer `ORDER BY` re-sorts because the
+scan runs in relaxed order.
+
+**Recall for a small project — `hnsw.iterative_scan = relaxed_order`.** A plain HNSW
+scan hands out its first `ef_search` (100) candidates and the `WHERE` throws away every
+one of another project, so a small project next to a big one would see almost no
+neighbours. pgvector ≥ 0.8 keeps walking the graph until `LIMIT` rows pass the filter.
+`internal/vectors/project.go` sets `SET LOCAL hnsw.iterative_scan = relaxed_order` per
+query whenever the installed extension supports it — `iterativeScanSupported` reads
+`pg_extension.extversion` once per process and caches the answer (the deployment ships
+0.8.1); on an older pgvector the queries run without it, still correct, merely less
+complete for a small project. `TestKNN_smallProjectKeepsItsNeighbours` crowds the
+query vector with 150 identical faces in one project and asserts the other project's
+single face is still found.
+
+**Measured plans** (`EXPLAIN (ANALYZE, BUFFERS)`, test DB on the Pi, 2026-10-13; one
+project with N rows, a second with 10, random 512-dim faces / 1152-dim embeddings,
+`ef_search = 100`, `iterative_scan = relaxed_order`, all inside a rolled-back
+transaction):
+
+| Query (N = 20 000) | Plan | Execution |
+| --- | --- | --- |
+| face suggestions, big project, `LIMIT 200` | `Index Scan using idx_faces_hnsw` · `Filter: project_id = …` · 2 rows removed | 36.8 ms |
+| unassigned faces (exemplar shape), big project, `LIMIT 50` | `Index Scan using idx_faces_hnsw` · `Filter: subject_uid IS NULL AND project_id = …` | 3.7 ms |
+| similar photos, big project, `LIMIT 50` | `Index Scan using idx_embeddings_hnsw` · `Filter: project_id = …` | 5.6 ms |
+| face kNN, small project (10 rows) | `Index Scan using idx_faces_project` + exact sort | 0.13 ms |
+| similar photos, small project, `LIMIT 50` | all 10 of its rows returned | — |
+
+At N = 2 000 the planner already used `idx_embeddings_hnsw` with the project filter for
+the `LIMIT 50` image search (4.2 ms) in one run and a sequential scan (10.8 ms) in another
+— the two costs are that close at 2 000 rows — and a sequential scan + top-N sort for the
+`LIMIT 200` face query (4.1 ms), which is the cheaper plan when the `LIMIT` is a tenth of
+the table. Either way the filter is part of the one scan: no plan ever post-filters a
+fixed candidate list. For a small project the planner picks the btree on `project_id`
+and sorts exactly, which is both fastest and exact.
+
+How to reproduce: in one transaction, insert a second project and N + 10 photos split
+between the two, insert random `faces`/`embeddings` rows with the photos' `project_id`
+(for N = 20 000 drop the three HNSW indexes first and recreate them after the insert with
+`max_parallel_maintenance_workers = 0` — the container's `/dev/shm` refuses a parallel
+build — since 20 000 incremental HNSW inserts take minutes on the Pi), `ANALYZE`, set the
+two `SET LOCAL`s, run the `EXPLAIN`s with a query vector taken from one of the rows, and
+`ROLLBACK`.
+
 ### Index build guidance (large libraries / Pi)
 
 Building an HNSW index is the memory-heavy operation, not querying it. For a
@@ -963,7 +1028,8 @@ Find(subject, threshold 0.4): 13.7 s, 428 exemplars, 32 candidates
 ```
 
 **Root cause — the per-exemplar query, not the number of them.** Every exemplar
-ran this, under `hnsw.iterative_scan = strict_order`:
+ran this, under `hnsw.iterative_scan = strict_order` (since multi-tenancy the query also
+filters `project_id` and runs under `relaxed_order`, re-sorted outside a CTE — see §1):
 
 ```sql
 WHERE subject_uid IS NULL AND (embedding <=> $1) <= 0.4
