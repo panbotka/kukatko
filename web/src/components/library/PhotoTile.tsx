@@ -259,15 +259,18 @@ export function PhotoTile({
       {thumb.failed && (
         // The fallback keeps to the band between the tile's corner controls —
         // the select circle above, the favourite heart below — and drops its
-        // words, then its glyph, as the tile shrinks (`.kk-tile__unavailable`
-        // in `styles/tokens.css`). Its name says it all at any size.
+        // words as the tile shrinks, never its glyph, which then sits on its own
+        // clear of both (`.kk-tile__unavailable` in `styles/tokens.css`). Its
+        // name says it all at any size.
         <span
           className="kk-tile__unavailable text-secondary"
           role="img"
           aria-label={t('library.tile.unavailable')}
         >
-          <Icon name="image" className="kk-tile__unavailable-icon" />
-          <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
+          <span className="kk-tile__unavailable-body">
+            <Icon name="image" className="kk-tile__unavailable-icon" />
+            <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
+          </span>
         </span>
       )}
       {isPlayableClip(photo) && (

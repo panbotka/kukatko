@@ -1091,12 +1091,15 @@ here.
   (`photo.blurhash` → `FadeInImage`'s `blurhash` → `BlurPlaceholder`), the neutral well for a photo
   that carries no hash, and the neutral well again once the thumbnail is beyond saving (the failed
   tile unmounts the image and the blur with it, so the „unavailable" label stays readable). That label
-  (`.kk-tile__unavailable`, shared with `TrashCard`) is an image glyph plus the words, kept to the
-  band between the corner controls — its top/bottom insets reserve the select circle and the heart,
-  so neither can sit on the text — and fitted to that band as a size container: two lines of words
-  where they fit (from a ~120px tile), the glyph alone below that, nothing on the tiniest tiles
-  (the `aria-label` still names it); it is out of flow, so the tile link's underline never reaches
-  it (`styles/tileUnavailable.test.ts` pins the reserve to the controls' sizes); a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
+  (`.kk-tile__unavailable`, shared with `TrashCard`) is an image glyph plus the words. It fills the
+  tile as a size container; its body pads a band between the corner controls (the reserves of the
+  select circle and the heart), and the words show only where two lines of them fit that band —
+  always with the glyph, beside them in a short band (from a ~112×123 tile), above them in a tall one.
+  Below that the glyph is never dropped: it sits alone in the tile, centred but pushed below the
+  circle and out of the heart's column (the default ten-column wall's ~117×88 tile included); only
+  a tile under ~74px wide, too narrow for that, keeps it above the heart instead. It is out of flow,
+  so the tile link's underline never reaches it (`styles/tileUnavailable.test.ts` evaluates the
+  rungs and the glyph's placement for concrete tile sizes against the controls' boxes); a **hover date caption** `.kk-tile__caption` (capture date over the bottom scrim
   `--kk-tile-scrim`, only on hover/focus, `aria-hidden` because the same date is already carried by the image alt,
   not shown on touch — without a date it doesn't render); on hover the **image** zooms in discreetly
   (`scale`, inside `overflow:hidden`, no layout shift); an optional **favorite heart** overlay

@@ -887,64 +887,112 @@
 
 /*
  * A tile whose thumbnail could not be loaded: a quiet image glyph and the words
- * "no preview available", centred in the tile. The tile's overlay controls sit
- * in its corners — the select circle top-start (1.65rem), a clip/stack badge
- * top-end, the favourite heart bottom-end (a 2.75rem disc) — so the padding
- * reserves a band clear of all of them: the top inset clears the circle, the
- * bottom one the heart, each with its `--kk-space-1` margin and half as much
- * again for air — every rem spent here is a rem a ~120px tile cannot spend on
- * its two lines of text. Nothing inside can reach a corner control however wide the text runs,
- * because the band and the corners never share a row.
+ * "no preview available". The tile's overlay controls sit in its corners — the
+ * select circle top-start (1.65rem), a clip/stack badge top-end, the favourite
+ * heart bottom-end (a 2.75rem disc) — and the fallback keeps clear of them.
+ * `--kk-tile-unavailable-check` and `-heart` are the reserves: each control,
+ * its `--kk-space-1` margin and half as much again for air (2.025rem and
+ * 3.125rem).
  *
- * The band is the size container the content is fitted to. The stepper allows
- * tiles far too small for words (ten columns, a short justified row), so the
- * text shows only where two lines of it fit, the glyph only where it fits on
- * its own, and both together on a roomy tile; a tile too small for either is
- * the plain well, still named by its `aria-label`. Absolutely positioned, so it
+ * The fallback fills the tile and is the size container its content is fitted
+ * to; its body pads those reserves into a band between the corners. The words
+ * show only where two lines of them fit that band, and never without the glyph
+ * — beside them in a short wide band, above them in a tall one — so however
+ * wide they run they never share a row with a corner control. The container
+ * queries below are therefore written in tile sizes: what the band needs plus
+ * the reserves (5.15rem of height, 2 × `--kk-space-2` of width).
+ *
+ * The glyph alone is never dropped. Below the word rungs (the default ten-column
+ * wall's ~117×88 tile leaves no band at all) it leaves the band and is placed in
+ * the tile itself: centred, but pushed below the circle and out of the heart's
+ * column, so it sits between the two on the free diagonal. Out of the heart's
+ * column needs a tile at least the heart reserve plus the glyph and a margin
+ * wide (4.625rem, ~74px); narrower ones keep it above the heart instead, the
+ * control a touch screen always shows. Absolutely positioned, so the fallback
  * fills the media box whatever sized it and — out of flow — inherits no link
- * underline from it either.
+ * underline from it.
  */
 .kk-tile__unavailable {
+  --kk-tile-unavailable-check: calc(var(--kk-space-1) * 1.5 + 1.65rem);
+  --kk-tile-unavailable-heart: calc(var(--kk-space-1) * 1.5 + 2.75rem);
+  --kk-tile-unavailable-glyph: 1.25rem;
+
   container: kk-tile-unavailable / size;
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--kk-space-1);
-  padding: calc(var(--kk-space-1) * 1.5 + 1.65rem) var(--kk-space-2)
-    calc(var(--kk-space-1) * 1.5 + 2.75rem);
   overflow: hidden;
   text-align: center;
   text-decoration: none;
 }
 
+/* The band. On a tile shorter than the two reserves it is taller than the tile
+   — harmless, it then holds only the glyph, which is placed against the tile. */
+.kk-tile__unavailable-body {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--kk-space-1);
+  width: 100%;
+  height: 100%;
+  padding: var(--kk-tile-unavailable-check) var(--kk-space-2) var(--kk-tile-unavailable-heart);
+}
+
+/* The glyph on its own, placed in the whole tile (the body is not positioned,
+   so `%` here is the tile): centred, but its top never above the circle's
+   reserve nor so low it leaves the tile, its start never in the heart's column
+   nor off the tile's start edge. */
 .kk-tile__unavailable-icon {
-  display: none;
-  font-size: 1.25rem;
+  position: absolute;
+  top: min(
+    max(var(--kk-tile-unavailable-check), 50% - var(--kk-tile-unavailable-glyph) / 2),
+    100% - var(--kk-space-1) - var(--kk-tile-unavailable-glyph)
+  );
+  left: clamp(
+    var(--kk-space-1),
+    50% - var(--kk-tile-unavailable-glyph) / 2,
+    100% - var(--kk-tile-unavailable-heart) - var(--kk-tile-unavailable-glyph)
+  );
+  font-size: var(--kk-tile-unavailable-glyph);
   line-height: 1;
 }
 
 .kk-tile__unavailable-text {
   display: none;
+  min-width: 0;
   font-size: var(--kk-font-size-caption);
   line-height: var(--kk-line-height-caption);
   overflow-wrap: anywhere;
 }
 
-/* Room for the glyph alone. */
-@container kk-tile-unavailable (min-height: 1.25rem) {
+/* Too narrow to clear the heart's column (under the heart reserve + glyph + a
+   margin): keep the glyph above the heart, below the circle where the height
+   allows. */
+@container kk-tile-unavailable (width < 4.625rem) {
   .kk-tile__unavailable-icon {
-    display: block;
+    top: max(
+      var(--kk-space-1),
+      min(
+        max(var(--kk-tile-unavailable-check), 50% - var(--kk-tile-unavailable-glyph) / 2),
+        100% - var(--kk-tile-unavailable-heart) - var(--kk-tile-unavailable-glyph)
+      )
+    );
   }
 }
 
-/* Room for two lines of words (2 × 0.8125rem × 1.4): they win over the glyph. The clamp keeps a third
-   line (a narrow tile, a longer translation) from spilling out of the band. */
-@container kk-tile-unavailable (min-width: 5rem) and (min-height: 2.3rem) {
+/* A band with room for two lines of words (2 × 0.8125rem × 1.4 = 2.275rem) beside
+   the glyph (1.25rem, a gap and ~4.5rem of words, 6rem): the glyph rejoins the
+   band, at their start. The clamp keeps a third line (a longer translation) from
+   spilling out of it. */
+@container kk-tile-unavailable (min-width: 7rem) and (min-height: 7.45rem) {
+  .kk-tile__unavailable-body {
+    flex-direction: row;
+    text-align: start;
+  }
+
   .kk-tile__unavailable-icon {
-    display: none;
+    position: static;
   }
 
   .kk-tile__unavailable-text {
@@ -956,10 +1004,25 @@
   }
 }
 
-/* Room for both: the glyph, the gap and two lines. */
-@container kk-tile-unavailable (min-width: 5rem) and (min-height: 3.8rem) {
+/* A band with room for the glyph above two lines (1.25rem, a gap and 2.275rem
+   = 3.775rem, ~5rem wide): the stacked label, which a narrower band than the
+   row's can hold too. */
+@container kk-tile-unavailable (min-width: 6rem) and (min-height: 8.95rem) {
+  .kk-tile__unavailable-body {
+    flex-direction: column;
+    text-align: center;
+  }
+
   .kk-tile__unavailable-icon {
-    display: block;
+    position: static;
+  }
+
+  .kk-tile__unavailable-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
   }
 }
 

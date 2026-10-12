@@ -85,8 +85,10 @@ export function TrashCard({
               role="img"
               aria-label={t('library.tile.unavailable')}
             >
-              <Icon name="image" className="kk-tile__unavailable-icon" />
-              <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
+              <span className="kk-tile__unavailable-body">
+                <Icon name="image" className="kk-tile__unavailable-icon" />
+                <span className="kk-tile__unavailable-text">{t('library.tile.unavailable')}</span>
+              </span>
             </span>
           )}
         </Link>
