@@ -3,6 +3,7 @@ package expand
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/mediaurl"
@@ -34,12 +35,18 @@ func vecEqual(a, b []float32) bool {
 	return true
 }
 
+// testProject is the project every harness collection and photo belongs to.
+const testProject = "pr_test"
+
 // fakeVectors scripts the VectorStore behaviour: the embeddings behind a set of
-// photo UIDs, and which neighbours each source photo's kNN returns.
+// photo UIDs, and which neighbours each source photo's kNN returns. It records
+// the project every kNN was asked to search.
 type fakeVectors struct {
 	embeddings map[string][]float32       // GetEmbedding source of truth (any embedded photo)
 	sourceEmb  map[string][]float32       // source photos only, to recognise a query vector
 	perSource  map[string][]vectors.Match // scripted kNN result per source photo UID
+	mu         sync.Mutex                 // guards searched: the kNNs run concurrently
+	searched   []string                   // the projectUID of every FindSimilar call
 }
 
 func (f *fakeVectors) GetEmbedding(_ context.Context, uid string) (vectors.Embedding, error) {
@@ -50,8 +57,11 @@ func (f *fakeVectors) GetEmbedding(_ context.Context, uid string) (vectors.Embed
 }
 
 func (f *fakeVectors) FindSimilar(
-	_ context.Context, vec []float32, limit int, maxDistance float64,
+	_ context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
 ) ([]vectors.Match, error) {
+	f.mu.Lock()
+	f.searched = append(f.searched, projectUID)
+	f.mu.Unlock()
 	var out []vectors.Match
 	for _, m := range f.perSource[f.sourceForVec(vec)] {
 		if maxDistance > 0 && m.Distance > maxDistance {
@@ -75,33 +85,40 @@ func (f *fakeVectors) sourceForVec(vec []float32) string {
 	return ""
 }
 
-// fakeOrganize scripts the OrganizeStore behaviour.
+// fakeOrganize scripts the OrganizeStore behaviour: albums and labels map to the
+// project they belong to, and one of another project is not found.
 type fakeOrganize struct {
-	albums      map[string]struct{}
-	labels      map[string]struct{}
+	albums      map[string]string
+	labels      map[string]string
 	albumPhotos map[string][]string
 	labelPhotos map[string][]string
 }
 
-func (f *fakeOrganize) GetAlbumByUID(_ context.Context, uid string) (organize.Album, error) {
-	if _, ok := f.albums[uid]; ok {
+func (f *fakeOrganize) GetAlbumByUID(_ context.Context, projectUID, uid string) (organize.Album, error) {
+	if owner, ok := f.albums[uid]; ok && owner == projectUID {
 		return organize.Album{UID: uid}, nil
 	}
 	return organize.Album{}, organize.ErrAlbumNotFound
 }
 
-func (f *fakeOrganize) ListPhotoUIDs(_ context.Context, albumUID string) ([]string, error) {
+func (f *fakeOrganize) ListPhotoUIDs(_ context.Context, projectUID, albumUID string) ([]string, error) {
+	if f.albums[albumUID] != projectUID {
+		return nil, nil
+	}
 	return f.albumPhotos[albumUID], nil
 }
 
-func (f *fakeOrganize) GetLabelByUID(_ context.Context, uid string) (organize.Label, error) {
-	if _, ok := f.labels[uid]; ok {
+func (f *fakeOrganize) GetLabelByUID(_ context.Context, projectUID, uid string) (organize.Label, error) {
+	if owner, ok := f.labels[uid]; ok && owner == projectUID {
 		return organize.Label{UID: uid}, nil
 	}
 	return organize.Label{}, organize.ErrLabelNotFound
 }
 
-func (f *fakeOrganize) ListPhotoUIDsByLabel(_ context.Context, labelUID string) ([]string, error) {
+func (f *fakeOrganize) ListPhotoUIDsByLabel(_ context.Context, projectUID, labelUID string) ([]string, error) {
+	if f.labels[labelUID] != projectUID {
+		return nil, nil
+	}
 	return f.labelPhotos[labelUID], nil
 }
 
@@ -114,15 +131,16 @@ func (f *fakeFeedback) LabelRejectionsForLabel(_ context.Context, labelUID strin
 	return f.labelRejections[labelUID], nil
 }
 
-// fakePhotos scripts the PhotoStore behaviour.
+// fakePhotos scripts the PhotoStore behaviour; a photo of another project is
+// omitted like a missing one.
 type fakePhotos struct {
 	byUID map[string]photos.Photo
 }
 
-func (f *fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+func (f *fakePhotos) ListByUIDsInProject(_ context.Context, projectUID string, uids []string) ([]photos.Photo, error) {
 	var out []photos.Photo
 	for _, uid := range uids {
-		if photo, ok := f.byUID[uid]; ok {
+		if photo, ok := f.byUID[uid]; ok && photo.ProjectID == projectUID {
 			out = append(out, photo)
 		}
 	}
@@ -151,7 +169,7 @@ func newHarness(t *testing.T) *harness {
 			perSource:  map[string][]vectors.Match{},
 		},
 		organize: &fakeOrganize{
-			albums: map[string]struct{}{}, labels: map[string]struct{}{},
+			albums: map[string]string{}, labels: map[string]string{},
 			albumPhotos: map[string][]string{}, labelPhotos: map[string][]string{},
 		},
 		feedback: &fakeFeedback{labelRejections: map[string][]string{}},
@@ -183,20 +201,20 @@ func (h *harness) setEmbedding(uid string, vec []float32) { h.vectors.embeddings
 // addPhoto registers a hydratable, standalone candidate photo record.
 func (h *harness) addPhoto(uid string) {
 	h.photos.byUID[uid] = photos.Photo{
-		UID: uid, FileHash: uid + "hash", FilePath: "2024/01/" + uid + ".jpg",
+		UID: uid, ProjectID: testProject, FileHash: uid + "hash", FilePath: "2024/01/" + uid + ".jpg",
 		FileWidth: 1000, FileHeight: 800, FileOrientation: 1,
 	}
 }
 
 // album registers an album with the given members.
 func (h *harness) album(uid string, members ...string) {
-	h.organize.albums[uid] = struct{}{}
+	h.organize.albums[uid] = testProject
 	h.organize.albumPhotos[uid] = members
 }
 
 // label registers a label with the given members.
 func (h *harness) label(uid string, members ...string) {
-	h.organize.labels[uid] = struct{}{}
+	h.organize.labels[uid] = testProject
 	h.organize.labelPhotos[uid] = members
 }
 
@@ -209,7 +227,7 @@ func match(uid string, dist float64) vectors.Match {
 func TestAlbum_notFound(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	if _, err := h.svc.Album(context.Background(), "al_missing", Request{}); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if _, err := h.svc.Album(context.Background(), testProject, "al_missing", Request{}); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Fatalf("Album = %v, want ErrAlbumNotFound", err)
 	}
 }
@@ -218,7 +236,7 @@ func TestAlbum_notFound(t *testing.T) {
 func TestLabel_notFound(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	if _, err := h.svc.Label(context.Background(), "lb_missing", Request{}); !errors.Is(err, organize.ErrLabelNotFound) {
+	if _, err := h.svc.Label(context.Background(), testProject, "lb_missing", Request{}); !errors.Is(err, organize.ErrLabelNotFound) {
 		t.Fatalf("Label = %v, want ErrLabelNotFound", err)
 	}
 }
@@ -229,7 +247,7 @@ func TestAlbum_empty(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.album("al_empty")
-	res, err := h.svc.Album(context.Background(), "al_empty", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al_empty", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -250,7 +268,7 @@ func TestLabel_noEmbeddings(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.label("lb", "p1", "p2")
-	res, err := h.svc.Label(context.Background(), "lb", Request{})
+	res, err := h.svc.Label(context.Background(), testProject, "lb", Request{})
 	if err != nil {
 		t.Fatalf("Label: %v", err)
 	}
@@ -274,7 +292,7 @@ func TestAlbum_singlePhoto(t *testing.T) {
 	h.addSource("src", oneHot(0), []vectors.Match{match("src", 0.0), match("cand", 0.2)})
 	h.album("al", "src")
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -303,7 +321,7 @@ func TestExpand_membersExcluded(t *testing.T) {
 	h.addSource("b", oneHot(1), []vectors.Match{match("b", 0.0), match("a", 0.1), match("cand", 0.25)})
 	h.album("al", "a", "b")
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -327,7 +345,7 @@ func TestExpand_votingRanksAgreementFirst(t *testing.T) {
 	h.addSource("s1", oneHot(1), []vectors.Match{match("agreed", 0.45)})
 	h.album("al", "s0", "s1")
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -367,7 +385,7 @@ func TestExpand_voteRuleFilters(t *testing.T) {
 	}
 	h.album("al", members...)
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -396,7 +414,7 @@ func TestLabel_rejectedExcluded(t *testing.T) {
 	h.setEmbedding("keep", oneHot(3))
 	h.setEmbedding("rejected", oneHot(7))
 
-	res, err := h.svc.Label(context.Background(), "lb", Request{})
+	res, err := h.svc.Label(context.Background(), testProject, "lb", Request{})
 	if err != nil {
 		t.Fatalf("Label: %v", err)
 	}
@@ -423,7 +441,7 @@ func TestLabel_negativeExemplarDrop(t *testing.T) {
 	h.setEmbedding("near", oneHot(1))
 	h.setEmbedding("far", oneHot(3))
 
-	res, err := h.svc.Label(context.Background(), "lb", Request{})
+	res, err := h.svc.Label(context.Background(), testProject, "lb", Request{})
 	if err != nil {
 		t.Fatalf("Label: %v", err)
 	}
@@ -446,7 +464,7 @@ func TestExpand_sourceCapReported(t *testing.T) {
 	}
 	h.album("al", members...)
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -469,7 +487,7 @@ func TestExpand_limitTruncates(t *testing.T) {
 	h.addSource("src", oneHot(0), []vectors.Match{match("near", 0.1), match("far", 0.4)})
 	h.album("al", "src")
 
-	res, err := h.svc.Album(context.Background(), "al", Request{Limit: 1})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{Limit: 1})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -489,13 +507,13 @@ func TestExpand_nonPrimaryStackMemberSkipped(t *testing.T) {
 	h.addPhoto("primary")
 	stackUID := "st1"
 	h.photos.byUID["stacked"] = photos.Photo{
-		UID: "stacked", FileHash: "stackedhash", FilePath: "2024/01/stacked.jpg",
+		UID: "stacked", ProjectID: testProject, FileHash: "stackedhash", FilePath: "2024/01/stacked.jpg",
 		StackUID: &stackUID, StackPrimary: false,
 	}
 	h.addSource("src", oneHot(0), []vectors.Match{match("primary", 0.2), match("stacked", 0.1)})
 	h.album("al", "src")
 
-	res, err := h.svc.Album(context.Background(), "al", Request{})
+	res, err := h.svc.Album(context.Background(), testProject, "al", Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}

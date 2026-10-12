@@ -18,10 +18,18 @@
 // album has no rejection model (internal/feedback models label and face rejections,
 // not album ones), so the rejection and negative-exemplar filters apply to labels
 // only. The asymmetry is intentional — it is not papered over with a new table here.
+//
+// It works inside one project. The album or label is resolved in the project (one
+// of another project is the same not-found as a missing one), its members are the
+// project's, every per-member kNN searches only the project's embeddings (the
+// denormalised embeddings.project_id), and the surviving candidates hydrate
+// through the photos store's project-scoped lookup — so no photo of another
+// project is ever voted for, let alone returned.
 package expand
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/mediaurl"
@@ -82,33 +90,45 @@ const (
 	ReasonNoEmbeddings = "no_source_embeddings"
 )
 
+// ErrNoProject is returned by a search called without a project — a programming
+// error, never "anywhere in the instance".
+var ErrNoProject = errors.New("expand: no project given")
+
 // VectorStore loads a photo's image embedding and runs image kNN over the catalog.
 // It is an interface so expand depends on the vectors layer's behaviour, not its
 // construction; *vectors.Store satisfies it.
 type VectorStore interface {
 	// GetEmbedding returns a photo's image embedding, or vectors.ErrEmbeddingNotFound
-	// when it has not been embedded yet.
+	// when it has not been embedded yet. It is keyed by uid: expand only asks it
+	// about photos it already resolved inside the project.
 	GetEmbedding(ctx context.Context, photoUID string) (vectors.Embedding, error)
-	// FindSimilar returns the photos nearest to vec by cosine distance, nearest
-	// first; maxDistance <= 0 disables the distance filter.
-	FindSimilar(ctx context.Context, vec []float32, limit int, maxDistance float64) ([]vectors.Match, error)
+	// FindSimilar returns the photos of projectUID nearest to vec by cosine
+	// distance, nearest first; maxDistance <= 0 disables the distance filter.
+	FindSimilar(
+		ctx context.Context, projectUID string, vec []float32, limit int, maxDistance float64,
+	) ([]vectors.Match, error)
 }
 
 // OrganizeStore resolves collection membership natively and validates a collection
-// UID. Kukátko owns its own albums and labels, so this never calls PhotoPrism.
+// UID inside a project. Kukátko owns its own albums and labels, so this never calls
+// PhotoPrism.
 type OrganizeStore interface {
-	// GetAlbumByUID returns the album, or organize.ErrAlbumNotFound.
-	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
+	// GetAlbumByUID returns the project's album, or organize.ErrAlbumNotFound —
+	// for an album of another project too.
+	GetAlbumByUID(ctx context.Context, projectUID, uid string) (organize.Album, error)
 	// ListPhotoUIDs returns an album's member photo UIDs in display order.
-	ListPhotoUIDs(ctx context.Context, albumUID string) ([]string, error)
-	// GetLabelByUID returns the label, or organize.ErrLabelNotFound.
-	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
-	// ListPhotoUIDsByLabel returns the UIDs of photos carrying the label.
-	ListPhotoUIDsByLabel(ctx context.Context, labelUID string) ([]string, error)
+	ListPhotoUIDs(ctx context.Context, projectUID, albumUID string) ([]string, error)
+	// GetLabelByUID returns the project's label, or organize.ErrLabelNotFound —
+	// for a label of another project too.
+	GetLabelByUID(ctx context.Context, projectUID, uid string) (organize.Label, error)
+	// ListPhotoUIDsByLabel returns the UIDs of the project's photos carrying the
+	// label.
+	ListPhotoUIDsByLabel(ctx context.Context, projectUID, labelUID string) ([]string, error)
 }
 
 // FeedbackStore lists the photos a user has rejected for a label. Albums have no
-// rejection model, so this is consulted for labels only.
+// rejection model, so this is consulted for labels only. It is keyed by the label,
+// which expand has already resolved inside the project.
 type FeedbackStore interface {
 	// LabelRejectionsForLabel returns the UIDs of photos rejected for the label.
 	LabelRejectionsForLabel(ctx context.Context, labelUID string) ([]string, error)
@@ -116,9 +136,9 @@ type FeedbackStore interface {
 
 // PhotoStore hydrates candidate photo UIDs into full catalog records.
 type PhotoStore interface {
-	// ListByUIDs returns the photo records for uids, in unspecified order, silently
-	// omitting UIDs with no row.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photo records for uids, in
+	// unspecified order, silently omitting UIDs with no row in the project.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
 }
 
 // Config bundles the dependencies and tunables of a Service. The four stores are
@@ -243,38 +263,47 @@ type Result struct {
 	Candidates []Candidate `json:"candidates"`
 }
 
-// collection is a resolved source set: the members to vote over and exclude, plus
-// any label rejections. Albums leave rejected nil.
+// collection is a resolved source set: the project it lives in, the members to
+// vote over and exclude, plus any label rejections. Albums leave rejected nil.
 type collection struct {
+	project  string
 	kind     string
 	uid      string
 	members  []string
 	rejected []string
 }
 
-// Album expands an album: it validates the album exists (returning
-// organize.ErrAlbumNotFound otherwise), resolves its members natively, and votes
-// over them. Albums carry no rejections.
-func (s *Service) Album(ctx context.Context, albumUID string, req Request) (Result, error) {
-	if _, err := s.organize.GetAlbumByUID(ctx, albumUID); err != nil {
+// Album expands an album of the project: it validates the album exists there
+// (returning organize.ErrAlbumNotFound otherwise — for another project's album
+// too), resolves its members natively, and votes over them inside the project.
+// Albums carry no rejections. An empty projectUID is ErrNoProject.
+func (s *Service) Album(ctx context.Context, projectUID, albumUID string, req Request) (Result, error) {
+	if projectUID == "" {
+		return Result{}, ErrNoProject
+	}
+	if _, err := s.organize.GetAlbumByUID(ctx, projectUID, albumUID); err != nil {
 		return Result{}, fmt.Errorf("expand: loading album %s: %w", albumUID, err)
 	}
-	members, err := s.organize.ListPhotoUIDs(ctx, albumUID)
+	members, err := s.organize.ListPhotoUIDs(ctx, projectUID, albumUID)
 	if err != nil {
 		return Result{}, fmt.Errorf("expand: listing album %s members: %w", albumUID, err)
 	}
-	return s.find(ctx, collection{kind: KindAlbum, uid: albumUID, members: members}, req)
+	return s.find(ctx, collection{project: projectUID, kind: KindAlbum, uid: albumUID, members: members}, req)
 }
 
-// Label expands a label: it validates the label exists (returning
-// organize.ErrLabelNotFound otherwise), resolves the photos carrying it, loads its
-// rejections, and votes over the members with the rejection and negative-exemplar
-// filters applied.
-func (s *Service) Label(ctx context.Context, labelUID string, req Request) (Result, error) {
-	if _, err := s.organize.GetLabelByUID(ctx, labelUID); err != nil {
+// Label expands a label of the project: it validates the label exists there
+// (returning organize.ErrLabelNotFound otherwise — for another project's label
+// too), resolves the photos carrying it, loads its rejections, and votes over the
+// members inside the project with the rejection and negative-exemplar filters
+// applied. An empty projectUID is ErrNoProject.
+func (s *Service) Label(ctx context.Context, projectUID, labelUID string, req Request) (Result, error) {
+	if projectUID == "" {
+		return Result{}, ErrNoProject
+	}
+	if _, err := s.organize.GetLabelByUID(ctx, projectUID, labelUID); err != nil {
 		return Result{}, fmt.Errorf("expand: loading label %s: %w", labelUID, err)
 	}
-	members, err := s.organize.ListPhotoUIDsByLabel(ctx, labelUID)
+	members, err := s.organize.ListPhotoUIDsByLabel(ctx, projectUID, labelUID)
 	if err != nil {
 		return Result{}, fmt.Errorf("expand: listing label %s members: %w", labelUID, err)
 	}
@@ -282,7 +311,9 @@ func (s *Service) Label(ctx context.Context, labelUID string, req Request) (Resu
 	if err != nil {
 		return Result{}, fmt.Errorf("expand: loading label %s rejections: %w", labelUID, err)
 	}
-	return s.find(ctx, collection{kind: KindLabel, uid: labelUID, members: members, rejected: rejected}, req)
+	return s.find(ctx, collection{
+		project: projectUID, kind: KindLabel, uid: labelUID, members: members, rejected: rejected,
+	}, req)
 }
 
 // orDefaultFloat returns value when positive, otherwise fallback.

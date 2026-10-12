@@ -39,6 +39,9 @@ var (
 	ErrInvalidRating = errors.New("organize: invalid rating")
 	// ErrInvalidFlag indicates a personal-marking flag outside the allowed set.
 	ErrInvalidFlag = errors.New("organize: invalid rating flag")
+	// ErrNoProject indicates a scoped Store method was called without a project
+	// — a programming error, never "the whole instance".
+	ErrNoProject = errors.New("organize: no project given")
 )
 
 // AlbumType classifies an album, mirrored by the SQL CHECK constraint on

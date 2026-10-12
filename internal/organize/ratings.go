@@ -36,37 +36,46 @@ WHERE user_uid = $1 AND photo_uid = $2 AND rating = 0 AND flag = 'none'`
 // resulting row would be all-defaults (rating 0 and flag 'none') the row is
 // deleted instead, so a never-rated photo keeps no row. It returns
 // ErrInvalidRating for a rating outside 0–5, or ErrUserNotFound / ErrPhotoNotFound
-// when either side does not exist.
-func (s *Store) SetRating(ctx context.Context, userUID, photoUID string, rating int) error {
+// when either side does not exist (a photo outside the project included).
+func (s *Store) SetRating(ctx context.Context, projectUID, userUID, photoUID string, rating int) error {
 	if rating < ratingMin || rating > ratingMax {
 		return ErrInvalidRating
 	}
-	return s.upsertRating(ctx, setRatingUpsertSQL, userUID, photoUID, rating, "rating write")
+	return s.upsertRating(ctx, setRatingUpsertSQL, projectUID, userUID, photoUID, rating, "rating write")
 }
 
 // SetFlag sets the personal-marking flag photoUID has for the user identified by
 // userUID, leaving any existing rating untouched. It is an idempotent upsert;
 // when the resulting row would be all-defaults (rating 0 and flag 'none') the row
 // is deleted instead. It returns ErrInvalidFlag for a flag outside the allowed
-// set, or ErrUserNotFound / ErrPhotoNotFound when either side does not exist.
-func (s *Store) SetFlag(ctx context.Context, userUID, photoUID, flag string) error {
+// set, or ErrUserNotFound / ErrPhotoNotFound when either side does not exist (a
+// photo outside the project included).
+func (s *Store) SetFlag(ctx context.Context, projectUID, userUID, photoUID, flag string) error {
 	if !RatingFlag(flag).valid() {
 		return ErrInvalidFlag
 	}
-	return s.upsertRating(ctx, setFlagUpsertSQL, userUID, photoUID, flag, "flag write")
+	return s.upsertRating(ctx, setFlagUpsertSQL, projectUID, userUID, photoUID, flag, "flag write")
 }
 
-// upsertRating runs upsertSQL (which sets exactly one of rating/flag to value)
-// and the default-pruning delete in a single transaction, so a row that falls
-// back to all-defaults never lingers. op labels the operation for error wrapping.
+// upsertRating proves photoUID inside the project, then runs upsertSQL (which
+// sets exactly one of rating/flag to value) and the default-pruning delete in a
+// single transaction, so a row that falls back to all-defaults never lingers. op
+// labels the operation for error wrapping.
 func (s *Store) upsertRating(
-	ctx context.Context, upsertSQL, userUID, photoUID string, value any, op string,
+	ctx context.Context, upsertSQL, projectUID, userUID, photoUID string, value any, op string,
 ) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("organize: begin %s: %w", op, err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := requirePhotosInProject(ctx, tx, projectUID, photoUID); err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, upsertSQL, userUID, photoUID, value); err != nil {
 		return translateUserPhotoFK(err, op)
@@ -80,30 +89,42 @@ func (s *Store) upsertRating(
 	return nil
 }
 
-// clearRatingSQL removes a user's rating row for a photo outright, dropping both
-// the star rating and the pick/reject flag in one idempotent statement.
-const clearRatingSQL = `DELETE FROM user_ratings WHERE user_uid = $1 AND photo_uid = $2`
+// clearRatingSQL removes a user's rating row for a photo of the project ($3)
+// outright, dropping both the star rating and the pick/reject flag in one
+// idempotent statement.
+const clearRatingSQL = `
+DELETE FROM user_ratings r WHERE r.user_uid = $1 AND r.photo_uid = $2
+  AND EXISTS (SELECT 1 FROM photos p WHERE p.uid = r.photo_uid AND p.project_id = $3)`
 
 // ClearRating removes the rating and flag the user identified by userUID has set
 // on photoUID, resetting the photo back to the default rating 0 / flag "none".
 // It is idempotent: clearing a photo the user never rated — or one that no longer
 // exists — is a no-op that still succeeds, mirroring RemoveFavorite so the DELETE
-// rating endpoint can answer 204 without a prior-existence check.
-func (s *Store) ClearRating(ctx context.Context, userUID, photoUID string) error {
-	if _, err := s.pool.Exec(ctx, clearRatingSQL, userUID, photoUID); err != nil {
+// rating endpoint can answer 204 without a prior-existence check. A photo of
+// another project is left untouched.
+func (s *Store) ClearRating(ctx context.Context, projectUID, userUID, photoUID string) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	if _, err := s.pool.Exec(ctx, clearRatingSQL, userUID, photoUID, projectUID); err != nil {
 		return fmt.Errorf("organize: clearing rating %s for user %s: %w", photoUID, userUID, err)
 	}
 	return nil
 }
 
 // GetRating returns the star rating and flag the user identified by userUID has
-// set on photoUID. A photo the user has never rated has no row and yields the
-// zero value (rating 0, flag "none") with a nil error.
-func (s *Store) GetRating(ctx context.Context, userUID, photoUID string) (PhotoRating, error) {
+// set on photoUID, a photo of the project. A photo the user has never rated —
+// and a photo of another project — has no row and yields the zero value (rating
+// 0, flag "none") with a nil error.
+func (s *Store) GetRating(ctx context.Context, projectUID, userUID, photoUID string) (PhotoRating, error) {
+	if err := requireProject(projectUID); err != nil {
+		return PhotoRating{}, err
+	}
 	out := PhotoRating{Rating: 0, Flag: string(FlagNone)}
 	err := s.pool.QueryRow(ctx,
-		"SELECT rating, flag FROM user_ratings WHERE user_uid = $1 AND photo_uid = $2",
-		userUID, photoUID).Scan(&out.Rating, &out.Flag)
+		"SELECT r.rating, r.flag FROM user_ratings r WHERE r.user_uid = $1 AND r.photo_uid = $2 AND "+
+			photoInProject("r.photo_uid", "$3"),
+		userUID, photoUID, projectUID).Scan(&out.Rating, &out.Flag)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, nil
 	}
@@ -117,23 +138,27 @@ func (s *Store) GetRating(ctx context.Context, userUID, photoUID string) (PhotoR
 // the user has rated. It annotates a whole page of photos with the current user's
 // rating in one round-trip instead of one GetRating per photo.
 const ratingsAmongSQL = `
-SELECT photo_uid, rating, flag FROM user_ratings
-WHERE user_uid = $1 AND photo_uid = ANY($2)`
+SELECT r.photo_uid, r.rating, r.flag FROM user_ratings r
+JOIN photos p ON p.uid = r.photo_uid AND p.project_id = $3
+WHERE r.user_uid = $1 AND r.photo_uid = ANY($2)`
 
 // RatingsAmong returns the rating and flag the user identified by userUID has set
-// on each of photoUIDs, keyed by photo UID. Only photos with a rating row are
+// on each of photoUIDs that is a photo of the project, keyed by photo UID. Only photos with a rating row are
 // present; a photo absent from the map has never been rated and defaults to
 // rating 0 / flag "none", which the caller applies. An empty photoUIDs slice
 // yields an empty map without querying. It lets a caller annotate a whole page of
 // photos with the current user's rating in one query.
 func (s *Store) RatingsAmong(
-	ctx context.Context, userUID string, photoUIDs []string,
+	ctx context.Context, projectUID, userUID string, photoUIDs []string,
 ) (map[string]PhotoRating, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	out := make(map[string]PhotoRating, len(photoUIDs))
 	if len(photoUIDs) == 0 {
 		return out, nil
 	}
-	rows, err := s.pool.Query(ctx, ratingsAmongSQL, userUID, photoUIDs)
+	rows, err := s.pool.Query(ctx, ratingsAmongSQL, userUID, photoUIDs, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: reading ratings for user %s: %w", userUID, err)
 	}

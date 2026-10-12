@@ -122,13 +122,13 @@ func (s *Service) applyCuration(ctx context.Context, photoUID, userUID string, s
 		return
 	}
 	if sc.Favorite {
-		if err := s.curation.AddFavorite(ctx, userUID, photoUID); err != nil {
+		if err := s.curation.AddFavorite(ctx, s.projectUID, userUID, photoUID); err != nil {
 			s.log.Warn("dirimport: marking sidecar favourite", "photo", photoUID, "err", err)
 			tal.recordFailure(importer.StageMetadata, photoUID, "", "sidecar favourite", err)
 		}
 	}
 	if sc.Rating > 0 {
-		if err := s.curation.SetRating(ctx, userUID, photoUID, sc.Rating); err != nil {
+		if err := s.curation.SetRating(ctx, s.projectUID, userUID, photoUID, sc.Rating); err != nil {
 			s.log.Warn("dirimport: setting sidecar rating", "photo", photoUID, "err", err)
 			tal.recordFailure(importer.StageMetadata, photoUID, "", "sidecar rating", err)
 		}

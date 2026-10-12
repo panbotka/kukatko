@@ -46,20 +46,23 @@ const defaultGroupLimit = 8
 // search over albums and labels. It is an interface so the handler depends on
 // behaviour rather than the concrete store, keeping it unit-testable with fakes.
 type Organizer interface {
-	// SearchAlbums returns up to limit albums whose title or description matches q.
-	SearchAlbums(ctx context.Context, q string, limit int) ([]organize.AlbumCount, error)
-	// SearchLabels returns up to limit labels whose name matches q.
-	SearchLabels(ctx context.Context, q string, limit int) ([]organize.LabelCount, error)
-	// GetAlbumByUID resolves one album by its uid, or organize.ErrAlbumNotFound.
-	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
-	// GetLabelByUID resolves one label by its uid, or organize.ErrLabelNotFound.
-	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
-	// AlbumCovers returns the cover photo of every named album, in one query for
-	// the whole batch. Albums with no cover are absent from the map.
-	AlbumCovers(ctx context.Context, uids []string) (map[string]organize.Cover, error)
-	// LabelCovers returns the cover photo of every named label, in one query for
-	// the whole batch. Labels with no cover are absent from the map.
-	LabelCovers(ctx context.Context, uids []string) (map[string]organize.Cover, error)
+	// SearchAlbums returns up to limit albums of the project whose title or
+	// description matches q.
+	SearchAlbums(ctx context.Context, projectUID, q string, limit int) ([]organize.AlbumCount, error)
+	// SearchLabels returns up to limit labels of the project whose name matches q.
+	SearchLabels(ctx context.Context, projectUID, q string, limit int) ([]organize.LabelCount, error)
+	// GetAlbumByUID resolves one album of the project by its uid, or
+	// organize.ErrAlbumNotFound.
+	GetAlbumByUID(ctx context.Context, projectUID, uid string) (organize.Album, error)
+	// GetLabelByUID resolves one label of the project by its uid, or
+	// organize.ErrLabelNotFound.
+	GetLabelByUID(ctx context.Context, projectUID, uid string) (organize.Label, error)
+	// AlbumCovers returns the cover photo of every named album of the project, in
+	// one query for the whole batch. Albums with no cover are absent from the map.
+	AlbumCovers(ctx context.Context, projectUID string, uids []string) (map[string]organize.Cover, error)
+	// LabelCovers returns the cover photo of every named label of the project, in
+	// one query for the whole batch. Labels with no cover are absent from the map.
+	LabelCovers(ctx context.Context, projectUID string, uids []string) (map[string]organize.Cover, error)
 }
 
 // PeopleSearcher is the subset of people.Store the endpoint needs: name search
@@ -261,12 +264,12 @@ func (a *API) handleGlobal(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleFuzzy(w http.ResponseWriter, r *http.Request, query string) {
 	ctx := r.Context()
 
-	albums, err := a.organizer.SearchAlbums(ctx, query, a.limit)
+	albums, err := a.organizer.SearchAlbums(ctx, auth.ProjectUIDFromContext(ctx), query, a.limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching albums failed")
 		return
 	}
-	labels, err := a.organizer.SearchLabels(ctx, query, a.limit)
+	labels, err := a.organizer.SearchLabels(ctx, auth.ProjectUIDFromContext(ctx), query, a.limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "searching labels failed")
 		return

@@ -49,16 +49,16 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 		FileHash: "r-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "unrated",
 	})
 
-	if err := org.SetRating(ctx, alice, high.UID, 5); err != nil {
+	if err := org.SetRating(ctx, project.BootstrapUID, alice, high.UID, 5); err != nil {
 		t.Fatalf("SetRating high: %v", err)
 	}
-	if err := org.SetFlag(ctx, alice, high.UID, "pick"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, alice, high.UID, "pick"); err != nil {
 		t.Fatalf("SetFlag high: %v", err)
 	}
-	if err := org.SetRating(ctx, alice, low.UID, 2); err != nil {
+	if err := org.SetRating(ctx, project.BootstrapUID, alice, low.UID, 2); err != nil {
 		t.Fatalf("SetRating low: %v", err)
 	}
-	if err := org.SetFlag(ctx, alice, low.UID, "reject"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, alice, low.UID, "reject"); err != nil {
 		t.Fatalf("SetFlag low: %v", err)
 	}
 
@@ -170,15 +170,15 @@ func TestList_eyeFlagFilter(t *testing.T) {
 		FileHash: "eye-3", FilePath: "e/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "plain",
 	})
 
-	if err := org.SetFlag(ctx, alice, eyed.UID, "eye"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, alice, eyed.UID, "eye"); err != nil {
 		t.Fatalf("SetFlag eye: %v", err)
 	}
-	if err := org.SetFlag(ctx, alice, picked.UID, "pick"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, alice, picked.UID, "pick"); err != nil {
 		t.Fatalf("SetFlag pick: %v", err)
 	}
 
 	// The eye flag round-trips through GetRating.
-	if got, err := org.GetRating(ctx, alice, eyed.UID); err != nil || got.Flag != "eye" {
+	if got, err := org.GetRating(ctx, project.BootstrapUID, alice, eyed.UID); err != nil || got.Flag != "eye" {
 		t.Fatalf("GetRating(eyed) = %+v, %v, want flag eye", got, err)
 	}
 

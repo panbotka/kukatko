@@ -119,7 +119,7 @@ func (e *env) seedPhoto(t *testing.T, hash, title, description string, width, he
 // makeAlbum creates an album and returns its UID.
 func (e *env) makeAlbum(t *testing.T, title string) string {
 	t.Helper()
-	a, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: title})
+	a, err := e.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: title})
 	if err != nil {
 		t.Fatalf("create album %s: %v", title, err)
 	}
@@ -129,7 +129,7 @@ func (e *env) makeAlbum(t *testing.T, title string) string {
 // makeLabel creates a label and returns its UID.
 func (e *env) makeLabel(t *testing.T, name string) string {
 	t.Helper()
-	l, err := e.organize.CreateLabel(t.Context(), organize.Label{Name: name})
+	l, err := e.organize.CreateLabel(t.Context(), project.BootstrapUID, organize.Label{Name: name})
 	if err != nil {
 		t.Fatalf("create label %s: %v", name, err)
 	}
@@ -149,7 +149,7 @@ func (e *env) makeSubject(t *testing.T, name string) string {
 // addToAlbum makes photoUID a member of albumUID.
 func (e *env) addToAlbum(t *testing.T, albumUID, photoUID string) {
 	t.Helper()
-	if err := e.organize.AddPhoto(t.Context(), albumUID, photoUID); err != nil {
+	if err := e.organize.AddPhoto(t.Context(), project.BootstrapUID, albumUID, photoUID); err != nil {
 		t.Fatalf("add photo to album: %v", err)
 	}
 }
@@ -157,7 +157,7 @@ func (e *env) addToAlbum(t *testing.T, albumUID, photoUID string) {
 // attachLabel attaches labelUID to photoUID.
 func (e *env) attachLabel(t *testing.T, photoUID, labelUID string) {
 	t.Helper()
-	if err := e.organize.AttachLabel(t.Context(), photoUID, labelUID, organize.SourceManual, 0); err != nil {
+	if err := e.organize.AttachLabel(t.Context(), project.BootstrapUID, photoUID, labelUID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("attach label: %v", err)
 	}
 }
@@ -276,13 +276,13 @@ func TestMerge_fillsOnlyMissingScalars(t *testing.T) {
 
 	// The copy carries the acting user's favorite, rating and flag; the keeper has
 	// none of them.
-	if err := env.organize.AddFavorite(ctx, editorUID, copy1); err != nil {
+	if err := env.organize.AddFavorite(ctx, project.BootstrapUID, editorUID, copy1); err != nil {
 		t.Fatalf("add favorite: %v", err)
 	}
-	if err := env.organize.SetRating(ctx, editorUID, copy1, 4); err != nil {
+	if err := env.organize.SetRating(ctx, project.BootstrapUID, editorUID, copy1, 4); err != nil {
 		t.Fatalf("set rating: %v", err)
 	}
-	if err := env.organize.SetFlag(ctx, editorUID, copy1, "pick"); err != nil {
+	if err := env.organize.SetFlag(ctx, project.BootstrapUID, editorUID, copy1, "pick"); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
 
@@ -306,14 +306,14 @@ func TestMerge_fillsOnlyMissingScalars(t *testing.T) {
 	if got.Title != "Original" {
 		t.Errorf("keeper title = %q, want it untouched (Original)", got.Title)
 	}
-	fav, err := env.organize.IsFavorite(ctx, editorUID, keeper)
+	fav, err := env.organize.IsFavorite(ctx, project.BootstrapUID, editorUID, keeper)
 	if err != nil {
 		t.Fatalf("IsFavorite: %v", err)
 	}
 	if !fav {
 		t.Errorf("keeper favorite not carried over")
 	}
-	ratings, err := env.organize.RatingsAmong(ctx, editorUID, []string{keeper})
+	ratings, err := env.organize.RatingsAmong(ctx, project.BootstrapUID, editorUID, []string{keeper})
 	if err != nil {
 		t.Fatalf("RatingsAmong: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestMerge_viewerForbidden(t *testing.T) {
 // assertAlbumHas fails unless the album contains the photo.
 func assertAlbumHas(t *testing.T, ctx context.Context, env *env, albumUID, photoUID string) {
 	t.Helper()
-	uids, err := env.organize.ListPhotoUIDs(ctx, albumUID)
+	uids, err := env.organize.ListPhotoUIDs(ctx, project.BootstrapUID, albumUID)
 	if err != nil {
 		t.Fatalf("list album photos: %v", err)
 	}
@@ -403,7 +403,7 @@ func assertAlbumHas(t *testing.T, ctx context.Context, env *env, albumUID, photo
 // assertAlbumMissing fails when the album contains the photo.
 func assertAlbumMissing(t *testing.T, ctx context.Context, env *env, albumUID, photoUID string) {
 	t.Helper()
-	uids, err := env.organize.ListPhotoUIDs(ctx, albumUID)
+	uids, err := env.organize.ListPhotoUIDs(ctx, project.BootstrapUID, albumUID)
 	if err != nil {
 		t.Fatalf("list album photos: %v", err)
 	}
@@ -415,7 +415,7 @@ func assertAlbumMissing(t *testing.T, ctx context.Context, env *env, albumUID, p
 // assertLabelHas fails unless the label is attached to the photo.
 func assertLabelHas(t *testing.T, ctx context.Context, env *env, labelUID, photoUID string) {
 	t.Helper()
-	uids, err := env.organize.ListPhotoUIDsByLabel(ctx, labelUID)
+	uids, err := env.organize.ListPhotoUIDsByLabel(ctx, project.BootstrapUID, labelUID)
 	if err != nil {
 		t.Fatalf("list label photos: %v", err)
 	}

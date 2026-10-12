@@ -60,14 +60,16 @@ type PhotoStore interface {
 
 // Organizer reads the curation that lives in the organize store.
 type Organizer interface {
-	// AlbumsForPhoto returns the photo's album memberships.
-	AlbumsForPhoto(ctx context.Context, photoUID string) ([]organize.Album, error)
+	// AlbumsForPhoto returns the photo's album memberships. Every method takes
+	// the project the photo belongs to (Photo.ProjectID of the row the job
+	// loaded), so the sidecar records only its own project's curation.
+	AlbumsForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.Album, error)
 	// PhotoLabelsForPhoto returns the photo's labels with their provenance.
-	PhotoLabelsForPhoto(ctx context.Context, photoUID string) ([]organize.PhotoLabel, error)
+	PhotoLabelsForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.PhotoLabel, error)
 	// FavoritesForPhoto returns every user who favorited the photo.
-	FavoritesForPhoto(ctx context.Context, photoUID string) ([]organize.UserFavorite, error)
+	FavoritesForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.UserFavorite, error)
 	// RatingsForPhoto returns every user's rating of the photo.
-	RatingsForPhoto(ctx context.Context, photoUID string) ([]organize.UserRating, error)
+	RatingsForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.UserRating, error)
 }
 
 // PeopleStore reads the photo's face markers with the names assigned to them.
@@ -257,16 +259,16 @@ func (s *Service) Remove(ctx context.Context, fileKey string) error {
 func (s *Service) gather(ctx context.Context, photo photos.Photo) (sidecarexport.Input, error) {
 	in := sidecarexport.Input{Photo: photo}
 	var err error
-	if in.Albums, err = s.organize.AlbumsForPhoto(ctx, photo.UID); err != nil {
+	if in.Albums, err = s.organize.AlbumsForPhoto(ctx, photo.ProjectID, photo.UID); err != nil {
 		return sidecarexport.Input{}, fmt.Errorf("sidecarjob: reading albums of %s: %w", photo.UID, err)
 	}
-	if in.Labels, err = s.organize.PhotoLabelsForPhoto(ctx, photo.UID); err != nil {
+	if in.Labels, err = s.organize.PhotoLabelsForPhoto(ctx, photo.ProjectID, photo.UID); err != nil {
 		return sidecarexport.Input{}, fmt.Errorf("sidecarjob: reading labels of %s: %w", photo.UID, err)
 	}
-	if in.Favorites, err = s.organize.FavoritesForPhoto(ctx, photo.UID); err != nil {
+	if in.Favorites, err = s.organize.FavoritesForPhoto(ctx, photo.ProjectID, photo.UID); err != nil {
 		return sidecarexport.Input{}, fmt.Errorf("sidecarjob: reading favorites of %s: %w", photo.UID, err)
 	}
-	if in.Ratings, err = s.organize.RatingsForPhoto(ctx, photo.UID); err != nil {
+	if in.Ratings, err = s.organize.RatingsForPhoto(ctx, photo.ProjectID, photo.UID); err != nil {
 		return sidecarexport.Input{}, fmt.Errorf("sidecarjob: reading ratings of %s: %w", photo.UID, err)
 	}
 	if in.People, err = s.people.ListMarkersWithSubjects(ctx, photo.UID); err != nil {

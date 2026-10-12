@@ -91,10 +91,10 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 	e := &integrationEnv{db: db, settings: settings.NewStore(db.Pool()), photos: map[string]string{}}
 	org := organize.NewStore(db.Pool())
 	var err error
-	if e.album, err = org.CreateAlbum(ctx, organize.Album{Title: "Pouť 2026"}); err != nil {
+	if e.album, err = org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Pouť 2026"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if e.label, err = org.CreateLabel(ctx, organize.Label{Name: "pouť"}); err != nil {
+	if e.label, err = org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "pouť"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	photoStore := photos.NewStore(db.Pool())
@@ -275,7 +275,7 @@ func TestAnonymousUploadThenRegisterClaimsThePhotos(t *testing.T) {
 	if len(session) != 1 {
 		t.Fatalf("anonymous upload set no session cookie: %v", resp.Cookies())
 	}
-	albums, err := organize.NewStore(e.db.Pool()).AlbumsForPhoto(t.Context(), e.photos["a.jpg"])
+	albums, err := organize.NewStore(e.db.Pool()).AlbumsForPhoto(t.Context(), project.BootstrapUID, e.photos["a.jpg"])
 	if err != nil || len(albums) != 1 {
 		t.Fatalf("photo not in the album: %+v, %v", albums, err)
 	}

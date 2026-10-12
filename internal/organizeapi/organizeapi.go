@@ -35,60 +35,73 @@ import (
 // AlbumStore is the subset of organize.Store the album endpoints need. It is an
 // interface so the handlers depend on behaviour rather than the concrete store,
 // keeping them unit-testable with fakes. Every mutation takes an audit.Entry the
-// store writes in the same transaction as the change.
+// store writes in the same transaction as the change. Every method takes the
+// request's project (auth.ProjectUIDFromContext) after the context: an album or
+// photo of another project is organize.ErrAlbumNotFound/ErrPhotoNotFound, the
+// same 404 a missing one gets.
 type AlbumStore interface {
-	// ListAlbums returns every album with its photo count, effective cover and
-	// capture-time span.
-	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
-	// CreateAlbumAudited inserts an album (auditing the change) and returns it with
-	// its generated UID/slug.
-	CreateAlbumAudited(ctx context.Context, album organize.Album, entry audit.Entry) (organize.Album, error)
-	// GetAlbumByUID returns one album or organize.ErrAlbumNotFound.
-	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
+	// ListAlbums returns every album of the project with its photo count,
+	// effective cover and capture-time span.
+	ListAlbums(ctx context.Context, projectUID string) ([]organize.AlbumSummary, error)
+	// CreateAlbumAudited inserts an album into the project (auditing the change)
+	// and returns it with its generated UID/slug.
+	CreateAlbumAudited(
+		ctx context.Context, projectUID string, album organize.Album, entry audit.Entry,
+	) (organize.Album, error)
+	// GetAlbumByUID returns one album of the project or organize.ErrAlbumNotFound.
+	GetAlbumByUID(ctx context.Context, projectUID, uid string) (organize.Album, error)
 	// UpdateAlbumAudited rewrites an album's editable fields (auditing the change),
 	// or returns organize.ErrAlbumNotFound.
 	UpdateAlbumAudited(
-		ctx context.Context, uid string, upd organize.AlbumUpdate, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, upd organize.AlbumUpdate, entry audit.Entry,
 	) (organize.Album, error)
 	// DeleteAlbumAudited removes an album (auditing the change), or returns
 	// organize.ErrAlbumNotFound.
-	DeleteAlbumAudited(ctx context.Context, uid string, entry audit.Entry) error
-	// AddPhotosAudited adds photos to an album (idempotent) as one audited batch.
-	AddPhotosAudited(ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry) error
+	DeleteAlbumAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error
+	// AddPhotosAudited adds photos to an album (idempotent) as one audited batch;
+	// one photo outside the project refuses the whole batch.
+	AddPhotosAudited(
+		ctx context.Context, projectUID, albumUID string, photoUIDs []string, entry audit.Entry,
+	) error
 	// RemovePhotosAudited removes photos from an album (idempotent) as one audited
 	// batch.
-	RemovePhotosAudited(ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry) error
+	RemovePhotosAudited(
+		ctx context.Context, projectUID, albumUID string, photoUIDs []string, entry audit.Entry,
+	) error
 	// ListPhotoUIDs returns an album's photo UIDs in display (chronological) order.
-	ListPhotoUIDs(ctx context.Context, albumUID string) ([]string, error)
+	ListPhotoUIDs(ctx context.Context, projectUID, albumUID string) ([]string, error)
 }
 
 // LabelStore is the subset of organize.Store the label endpoints need. Every
-// mutation takes an audit.Entry the store writes in the same transaction.
+// mutation takes an audit.Entry the store writes in the same transaction, and
+// every method the request's project after the context (see AlbumStore).
 type LabelStore interface {
-	// ListLabels returns every label with its photo count.
-	ListLabels(ctx context.Context) ([]organize.LabelCount, error)
-	// CreateLabelAudited inserts a label (auditing the change) and returns it with
-	// its generated UID/slug.
-	CreateLabelAudited(ctx context.Context, label organize.Label, entry audit.Entry) (organize.Label, error)
-	// GetLabelByUID returns one label or organize.ErrLabelNotFound.
-	GetLabelByUID(ctx context.Context, uid string) (organize.Label, error)
+	// ListLabels returns every label of the project with its photo count.
+	ListLabels(ctx context.Context, projectUID string) ([]organize.LabelCount, error)
+	// CreateLabelAudited inserts a label into the project (auditing the change)
+	// and returns it with its generated UID/slug.
+	CreateLabelAudited(
+		ctx context.Context, projectUID string, label organize.Label, entry audit.Entry,
+	) (organize.Label, error)
+	// GetLabelByUID returns one label of the project or organize.ErrLabelNotFound.
+	GetLabelByUID(ctx context.Context, projectUID, uid string) (organize.Label, error)
 	// UpdateLabelAudited rewrites a label's editable fields (auditing the change),
 	// or returns organize.ErrLabelNotFound.
 	UpdateLabelAudited(
-		ctx context.Context, uid string, upd organize.LabelUpdate, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, upd organize.LabelUpdate, entry audit.Entry,
 	) (organize.Label, error)
 	// DeleteLabelAudited removes a label (auditing the change), or returns
 	// organize.ErrLabelNotFound.
-	DeleteLabelAudited(ctx context.Context, uid string, entry audit.Entry) error
+	DeleteLabelAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error
 	// AttachLabelAudited attaches a label to a photo with a source and uncertainty
 	// (auditing the change).
 	AttachLabelAudited(
-		ctx context.Context, photoUID, labelUID string,
+		ctx context.Context, projectUID, photoUID, labelUID string,
 		source organize.LabelSource, uncertainty int, entry audit.Entry,
 	) error
 	// DetachLabelAudited removes a label from a photo (idempotent, auditing the
 	// change).
-	DetachLabelAudited(ctx context.Context, photoUID, labelUID string, entry audit.Entry) error
+	DetachLabelAudited(ctx context.Context, projectUID, photoUID, labelUID string, entry audit.Entry) error
 }
 
 // API exposes the album and label endpoints over HTTP. The route guards are
@@ -310,4 +323,10 @@ func labelStatus(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, "label operation failed"
 	}
+}
+
+// projectOf returns the project the request runs in — the one every store call
+// of this package is confined to.
+func projectOf(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }

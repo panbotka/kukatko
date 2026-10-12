@@ -56,24 +56,6 @@ func newReviewHarness(t *testing.T) *reviewHarness {
 	}
 }
 
-// The review game and the services it composes still speak project-less
-// signatures; cmd/kukatko adapts the real stores to the request's project. The
-// bootstrap* adapters below do the same for the bootstrap project, which every
-// row these tests seed lands in.
-
-// bootstrapVectors adapts *vectors.Store to the project-less similarity search
-// of expand, which is scoped in a later step.
-type bootstrapVectors struct {
-	*vectors.Store
-}
-
-// FindSimilar searches the bootstrap project.
-func (v bootstrapVectors) FindSimilar(
-	ctx context.Context, q []float32, limit int, maxDistance float64,
-) ([]vectors.Match, error) {
-	return v.Store.FindSimilar(ctx, project.BootstrapUID, q, limit, maxDistance)
-}
-
 // service composes a fresh review service over the harness stores — a fresh
 // instance means a cold cache and empty sessions, like a server restart.
 func (h *reviewHarness) service() *review.Service {
@@ -90,7 +72,7 @@ func (h *reviewHarness) serviceAt(now func() time.Time) *review.Service {
 	})
 	sweepSvc := sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 2})
 	expandSvc := expand.New(expand.Config{
-		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})
@@ -220,13 +202,13 @@ func (h *reviewHarness) embedded(t *testing.T, hash string, v []float32) string 
 // label creates a label with the given member photos and returns it.
 func (h *reviewHarness) label(t *testing.T, name string, members ...string) organize.Label {
 	t.Helper()
-	created, err := h.organize.CreateLabel(context.Background(), organize.Label{Name: name})
+	created, err := h.organize.CreateLabel(context.Background(), project.BootstrapUID, organize.Label{Name: name})
 	if err != nil {
 		t.Fatalf("CreateLabel(%s): %v", name, err)
 	}
 	for _, member := range members {
 		if err := h.organize.AttachLabel(
-			context.Background(), member, created.UID, organize.SourceManual, 0,
+			context.Background(), project.BootstrapUID, member, created.UID, organize.SourceManual, 0,
 		); err != nil {
 			t.Fatalf("AttachLabel(%s): %v", member, err)
 		}
@@ -505,7 +487,7 @@ func TestReviewAnswer_labelFlowDB(t *testing.T) {
 	if answer.Result != "labeled" {
 		t.Fatalf("result = %q, want labeled", answer.Result)
 	}
-	labels, err := h.organize.LabelsForPhoto(context.Background(), bandPhoto)
+	labels, err := h.organize.LabelsForPhoto(context.Background(), project.BootstrapUID, bandPhoto)
 	if err != nil {
 		t.Fatalf("LabelsForPhoto: %v", err)
 	}
@@ -806,7 +788,7 @@ func TestReviewQueue_reviewDisabledLabelDB(t *testing.T) {
 		t.Fatalf("queue before the switch = %v, want the one band question", ids)
 	}
 
-	off, err := h.organize.UpdateLabel(context.Background(), label.UID,
+	off, err := h.organize.UpdateLabel(context.Background(), project.BootstrapUID, label.UID,
 		organize.LabelUpdate{Name: label.Name, Priority: label.Priority, ReviewEnabled: false})
 	if err != nil {
 		t.Fatalf("UpdateLabel: %v", err)
@@ -830,7 +812,7 @@ func TestReviewQueue_reviewDisabledLabelDB(t *testing.T) {
 	}
 
 	// And back on again: the switch is a setting, not a deletion.
-	if _, err := h.organize.UpdateLabel(context.Background(), label.UID,
+	if _, err := h.organize.UpdateLabel(context.Background(), project.BootstrapUID, label.UID,
 		organize.LabelUpdate{Name: label.Name, Priority: label.Priority, ReviewEnabled: true},
 	); err != nil {
 		t.Fatalf("UpdateLabel back on: %v", err)

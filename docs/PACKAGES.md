@@ -12,11 +12,10 @@ to `## Package map` in `CLAUDE.md`.
   adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
   `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
   transition alias, removed in the alias-removal step. Each group is built once, so a limiter or cache is
-  shared by both mounts. **`projectshim.go`** (transition) adapts the project-scoped similarity search of
-  `vectors.Store` to the project-less interface of expand, the one consumer scoped in a later step (with
-  albums and labels): the adapter reads the request's project (`auth.ProjectUIDFromContext`), so the call
-  already runs inside the caller's project, and goes away when expand passes the project itself. Candidates,
-  outliers, sweep, review and the cluster assignment pass the project themselves since step 14. A package with routes on both sides exposes the halves separately:
+  shared by both mounts. The request-project shim (`projectshim.go`) is gone: candidates, outliers, sweep,
+  review and the cluster assignment pass the project themselves since step 14, and expand — its last
+  consumer — since step 15 hands `vectors.Store.FindSimilar` the project it was given. A package with
+  routes on both sides exposes the halves separately:
   `auth` `RegisterInstanceRoutes`/`RegisterDirectoryRoutes`, `notificationapi`
   `RegisterPushRoutes`/`RegisterInboxRoutes`, `uploadlinkapi` `RegisterManagementRoutes`/
   `RegisterPublicRoutes`, `buildIngest` an `ingestRoutes` triple),
@@ -1302,7 +1301,9 @@ to `## Package map` in `CLAUDE.md`.
   — Google has no face boxes, so from them **no subject or marker may be created**),
   `internal/dirimport/`
   (**import of a directory from disk** — `kukatko import dir <path>`; `Service` = `New(Config{Ingest,Runs,
-  Photos,Filler,Curation,Albums,Labels,Concurrency,Logger})` with `Import(ctx, Options{Root,Recursive,
+  Photos,Filler,Curation,Albums,Labels,ProjectUID,Concurrency,Logger})` — `ProjectUID` is the project
+  `--album`, `--labels` and the export's favourites/ratings are resolved and written in (`serve`'s wiring
+  passes the bootstrap project, where ingest still catalogues every new photo — transition) with `Import(ctx, Options{Root,Recursive,
   DryRun,NoSidecars,Album,Labels,UploadedBy,Progress}) (Result,error)`; **no second pipeline** —
   every media file goes
   through `ingest.IngestFile` exactly like an upload (stream, SHA256 dedup, metadata, `YYYY/MM`, thumbnails,
@@ -1394,7 +1395,8 @@ to `## Package map` in `CLAUDE.md`.
   `Ratings` backend; sets rating and/or flag via `SetRating`/`SetFlag`) + `DELETE /photos/{uid}/rating`
   (idempotent clear via `ClearRating` → 204); the `RatingStore` interface (satisfied by `organize.Store`,
   `SetRating`/`SetFlag`/`ClearRating`/`RatingsAmong`) is nil-safe (not wired → rating 0 / flag `none`,
-  rating endpoints 503);
+  rating endpoints 503); both stores, and the detail's album/label chips (`PhotoOrganizer`), take the
+  request's project — a favourite, rating or membership is read and written only for the project's photos;
   **one face as its own rendition** (`facecrop.go`): `GET /photos/{uid}/face?box=x,y,w,h` (`RequireDownload`,
   the same guard as a thumbnail, so an `<img>` works from a cookie or a `?t=` token) streams the small square
   JPEG of that one face through the `FaceCropRenderer` interface (satisfied by `*avatar.Renderer` — the very
@@ -2856,10 +2858,15 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `Service` = `New(Config{Vectors,Organize,Feedback,Photos,Media,MaxDistance,Limit,MaxLimit,SearchLimit,
   SourceCap,Concurrency})`, tunables default via the `Default*` constants (0.20/50/200/200/500/8 —
   `DefaultMaxDistance` is model-specific and was re-derived for SigLIP 2, see `THRESHOLDS.md`), nil
-  store→panic, nil `Media` is OK. **`Album(ctx,uid,Request)`** / **`Label(ctx,uid,Request)`** share
-  one core `find`, differing only in how the source set is resolved (validation via `GetAlbumByUID`/
-  `GetLabelByUID` → `organize.ErrAlbumNotFound`/`ErrLabelNotFound`; membership via `ListPhotoUIDs`/
-  `ListPhotoUIDsByLabel` — **native, no foreign catalog**; a label additionally `LabelRejectionsForLabel`).
+  store→panic, nil `Media` is OK. **`Album(ctx,projectUID,uid,Request)`** /
+  **`Label(ctx,projectUID,uid,Request)`** share one core `find`, differing only in how the source set is
+  resolved (validation via `GetAlbumByUID`/`GetLabelByUID(ctx,projectUID,uid)` →
+  `organize.ErrAlbumNotFound`/`ErrLabelNotFound`, **another project's collection alike**; membership via
+  `ListPhotoUIDs`/`ListPhotoUIDsByLabel(ctx,projectUID,uid)` — **native, no foreign catalog**; a label
+  additionally `LabelRejectionsForLabel`, keyed by the label already resolved in the project). **Project
+  scope:** an empty project → `expand.ErrNoProject`; every per-source kNN is
+  `FindSimilar(ctx,projectUID,vec,limit,maxDistance)` (the denormalised `embeddings.project_id`), so a
+  foreign photo never collects a vote, and hydration goes through `ListByUIDsInProject`.
   The core: **samples** the sources down to `SourceCap` (`sampleSource`, a deterministic even stride, reports
   `source_capped`); loads the sample's embeddings (`GetEmbedding`, `ErrEmbeddingNotFound` is **skipped and
   counted**, not an error — the box is often offline); for each source `FindSimilar` with **bounded concurrency**
@@ -2867,22 +2874,26 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   **excludes the collection's members** (the whole point); **vote rule** `min_match_count` (`computeMinMatchCount`,
   `√sourceCount * threshold/base / 2`, **clamp 1..5**, returned); for labels the **rejected** UIDs drop out and
   the **negative-exemplar rule** applies (`vectors.IsNegativeExemplar` — **a no-op without rejections**; albums
-  have no rejection model → an asymmetry); hydration (`ListByUIDs` + `mediaurl.DecorateOne`, a non-primary
+  have no rejection model → an asymmetry); hydration (`ListByUIDsInProject` + `mediaurl.DecorateOne`, a non-primary
   stack member is skipped); ordered **`match_count` DESC then `distance` ASC**, truncated to `Limit`. `Result` =
   `{kind,collection_uid,source_photo_count,source_photos_sampled,source_photos_with_embedding,
   source_capped,source_cap,min_match_count,threshold,limit,result_count,reason?,candidates:[Candidate{
   photo,distance,similarity,match_count}]}`; `similarity` = `1 - distance`. **Edge cases**: an empty
   collection → `reason:"empty_collection"`, a collection with no embeddings → `reason:"no_source_embeddings"` (both
   a non-error empty `Candidates:[]`); a single photo degenerates to per-photo similarity. **Read-only** —
-  adding goes through `POST /photos/bulk`. Unit tests with fakes + an integration test over real embeddings+DB),
+  adding goes through `POST /photos/bulk`. Unit tests with fakes + an integration test over real embeddings+DB
+  + a tenant-isolation test: identical vectors in both projects, each side finds only its own look-alike),
   `internal/expandapi/`
   (a curator-and-above HTTP API over collection expansion: the `Service` interface (satisfied by `*expand.Service`)
-  with two methods `Album`/`Label`, `NewAPI(Config{Service,RequireCurator})` + `RegisterRoutes` mounts
+  with two methods `Album`/`Label(ctx,projectUID,uid,req)`, `NewAPI(Config{Service,RequireCurator})` +
+  `RegisterRoutes` mounts
   `GET /albums/{uid}/similar` and `GET /labels/{uid}/similar` behind `RequireCurator` (they lead into the
   album/label curation a curator owns); both share `respond` +
   `finder`, differing only in the not-found sentinel; `parseRequest` reads the query `?threshold=&limit=` (empty →
   default, non-numeric / negative → 400); 503 without a backend, 404 missing album/label
-  (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`); mounted in `serve` (`buildExpandAPI` in
+  (`organize.ErrAlbumNotFound`/`ErrLabelNotFound`) — one fixed body, so another project's album/label reads
+  exactly like a missing one; the search runs in the request's project (`auth.ProjectUIDFromContext`);
+  mounted in `serve` (`buildExpandAPI` in
   `cmd/kukatko/expand.go`, takes `mediaStore` for URL stamping)),
   `internal/mcpapi/`
   (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at `POST /api/v1/mcp`;
@@ -2948,11 +2959,13 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   to `Sweeper.Scan`/`OutlierRanker.Outliers`/`SubjectLister.ListSubjects`, every photo is hydrated through
   `PhotoStore.ListByUIDsInProject` (a duplicate pair with a foreign half drops out), the breathers are picked
   from the project's photos, the place estimates of other projects are dropped (`Photo.ProjectID`), and the
-  label rotation keeps only the project's labels (`Scope.LabelsInProject` — the label store still lists the
-  instance). Before an answer writes anything — a skip included — `proveInProject` checks the question's
+  label rotation keeps only the project's labels (the label store lists only the project's, and
+  `Scope.LabelsInProject` keeps the filter as a second lock), the label similarity search runs inside the
+  project (`Expander.Label(ctx, projectUID, …)`) and the album-variety lookup reads only the project's albums. Before an answer writes anything — a skip included — `proveInProject` checks the question's
   photo(s), subject and label through the required `Scope` (`*ScopeStore`, three `uid = ANY` reads with
   `project_id`): one the project does not hold (another project's, or nobody's) is **`ErrQuestionNotFound`**
-  and nothing is written; the write paths (`Assigner.Apply`, `RejectFace`, `ConfirmFace`) get the project too. **Five kinds** (`Kinds`): face questions via the
+  and nothing is written; the write paths (`Assigner.Apply`, `RejectFace`, `ConfirmFace`, `AttachLabelAudited`,
+  `RejectLabel`, `ConfirmDuplicate`, `DismissDuplicate`) get the project too. **Five kinds** (`Kinds`): face questions via the
   `Sweeper` interface (satisfied by
   `*sweep.Service` → per-subject candidate search with all its filters: unassigned-only,
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
@@ -3528,9 +3541,26 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   first, the index's count, the cover resolved as `AlbumCovers` does plus its BlurHash, `FeaturedBy` — one
   statement whose CTEs scan only the featured albums' membership) and `FeaturedAlbumTx(ctx, tx, uid)` (the
   same record for one album on the caller's transaction, private or not, `ErrNotFeatured` when the strip
-  would not list it — for the announcement job); validating `until` is the caller's job)), `internal/organizeapi/`
+  would not list it — for the announcement job); validating `until` is the caller's job.
+  **Project scope** (`store_project.go`, the `internal/photos` convention): every method takes `projectUID`
+  after `ctx` (`AddPhotoTx`/`AttachLabelTx` after the `tx`), never defaulted — empty is `ErrNoProject`.
+  `albums`/`labels` carry `project_id` (every insert writes it, slugs are unique per project); the join
+  tables and favourites/ratings are scoped through their album, label or photo. An album, label or photo
+  of another project is the same error as a missing one (`ErrAlbumNotFound`/`ErrLabelNotFound`/
+  `ErrPhotoNotFound`, an empty list). Writes prove their targets on their own transaction first:
+  `addAlbumPhotoRows` proves the album and **the whole photo batch in one statement**
+  (`requirePhotosInProject`, `unnest` + `NOT EXISTS`) — one foreign uid refuses the batch, nothing is added,
+  no audit row — and inserts it in one statement; `attachLabelRow` proves label and photo; a hand-picked
+  cover (create/update/`SetCover`) must be a photo of the project; update/delete/feature carry
+  `project_id` in their `WHERE`. Audited writes default the entry's `ProjectUID`. Reads filter the album/label
+  by project and join only the project's photos (counts, covers, the featured strip's collage, the
+  photo's memberships, favourites/ratings listings and `…Among` annotations, the sidecar readers).
+  `FeaturedAlbumTx` is the one explicitly **unscoped job loader** (the announcement job's payload carries
+  only the album uid); the sidecar job passes the loaded photo's `ProjectID`)), `internal/organizeapi/`
   (a read/curation HTTP API over albums and labels — the basis of the Albums/Labels UI: the interfaces `AlbumStore`/
-  `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB;
+  `LabelStore` (subsets of `organize.Store`) → unit-testable with fakes without a DB; every store call
+  passes the request's project (`projectOf(r)` = `auth.ProjectUIDFromContext`), so another project's album
+  or label answers the very 404 a missing uid gets, and adding a foreign photo is the "photo not found" 404;
   `NewAPI(Config{Albums,Labels,RequireAuth,RequireCurator})`+`RegisterRoutes` mounts two
   subrouters: **albums** `GET /albums` (RequireAuth, `{albums:[AlbumSummary]}` — counts, the effective
   `cover_uid`, the further covers `cover_uids` and the range `taken_from`/`taken_to`),
@@ -3576,7 +3606,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   photo and the subject both belong to it (`requireFaceTargetInProject`) — otherwise `ErrTargetNotFound`
   (also for an un-reject/un-confirm of a missing target, which used to be a silent no-op), with no row and no
   audit entry; the entry's `ProjectUID` is defaulted. The reads keyed by a subject the caller resolved in
-  its project (`FaceRejectionsForSubject`, `FaceConfirmationsForSubject`, the `Is…` probes) stay keyed by uid; it closes the gap where a rejection wasn't kept and the same
+  its project (`FaceRejectionsForSubject`, `FaceConfirmationsForSubject`, the `Is…` probes) stay keyed by uid.
+  **Label and near-duplicate opinions** follow the same rule through the shared `inScopedAuditedTx` (a
+  `proof` run on the write's transaction): `RejectLabel`/`UnrejectLabel` prove the photo **and** the
+  label in the project (`labelProof`), `DismissDuplicate`/`UndismissDuplicate`/
+  `ConfirmDuplicate`/`UnconfirmDuplicate` prove both photos of the pair (`pairProof`) — otherwise
+  `ErrTargetNotFound`, no row, no audit entry; `ErrNoProject` without a project. The bulk reads
+  (`LabelRejectionsForLabel`, `DismissedDuplicatePairs`, `ConfirmedDuplicatePairs`) stay keyed by uid: the
+  label is resolved in the project by its caller, the pair lists are only intersected with one project's
+  duplicate scan, and no write joins two projects. The review game passes its session's project to the
+  label and pair writes like the HTTP layer does. The face opinions close the gap where a rejection wasn't kept and the same
   wrong face was offered endlessly, so the review work never shrank; tables `face_rejections`/
   `label_rejections` in migration `0031_feedback_rejections.sql`: `face_rejections` keyed by the face identity
   (`photo_uid`+`face_index`, as in `internal/facematch` and the `faces` table) + `subject_uid`,
@@ -3637,8 +3676,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   distinction and the smaller-uid-first normalisation now live **once**) — the two tables are the same shape down
   to the CHECK, and writing the four operations twice is exactly how the second one drifts from the first. What
   stays duplicated is the documented API surface of each (its key type, its sentinels, the paragraph saying why
-  it mutates nothing), carrying a justified `//nolint:dupl`: collapsing two documented APIs into one generic pair
-  would cost more in readability than the repetition does.
+  it mutates nothing): collapsing two documented APIs into one generic pair would cost more in readability than
+  the repetition does.
   **Repeated-marker dismissals** (`markerdismissals.go`, table `duplicate_marker_dismissals`, migration
   `0050_duplicate_marker_dismissals.sql`) are a fourth kind: "this person **really is** marked more than once on
   this photo" — a double exposure, a mirror, a photo of a photo, a face on a poster behind its owner. Keyed by
@@ -3654,8 +3693,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   clicking past it),
   `internal/feedbackapi/`
   (an HTTP API over rejections — the `Store` interface (a subset of `feedback.Store`) → unit-testable with fakes;
-  the four face routes pass `auth.ProjectUIDFromContext`, so an opinion about another project's face or
-  subject is a 404;
+  the four face, the two label and the four near-duplicate-photo routes pass `auth.ProjectUIDFromContext`
+  (the label/pair ones through the `…InProject` store methods), so an opinion about another project's face,
+  subject, photo or label is the same 404 as one about a missing uid;
   `NewAPI(Config{Store,RequireCurator,RequireWrite})`+`RegisterRoutes` mounts the subrouter `/feedback`
   (the face, label and repeated-marker routes behind `RequireCurator`, the four near-duplicate-photo ones —
   `duplicate-dismissals`, `duplicate-confirmations` — behind `RequireWrite`):
@@ -3815,25 +3855,33 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `user_favorites`; the `saved_searches` table in migration `0017_saved_searches.sql`: `uid PK` (prefix `ss`),
   `owner_uid` FK users `ON DELETE CASCADE`, `name TEXT NOT NULL`, `params JSONB NOT NULL` (the opaque
   stored state of the view/search: filters, sorting, query, mode), `created_at`/`updated_at`, an index on
-  `owner_uid`; `Store` = `NewStore(pool)`: `Create(ctx,ownerUID,name,params)`/`List(ctx,ownerUID)`
-  (newest-first by `created_at`)/`Get(ctx,uid)`/`Update(ctx,uid,name,params)` (overwrites name+params,
-  stamps `updated_at`)/`Delete(ctx,uid)`; `params` as `json.RawMessage` (empty → `{}`, so the NOT NULL
-  column gets valid JSON), `Get`/`Update`/`Delete` on a missing row → the sentinel `ErrNotFound`;
-  ownership is **not handled by the store** — the HTTP layer above it scopes it)), `internal/savedsearchapi/`
+  `owner_uid`; migration 0102 adds `project_id` + the index `(project_id, owner_uid)`; `Store` =
+  `NewStore(pool)`: `Create(ctx,projectUID,ownerUID,name,params)`/`List(ctx,projectUID,ownerUID)`
+  (newest-first by `created_at`)/`Get(ctx,projectUID,ownerUID,uid)`/`Update(ctx,projectUID,ownerUID,uid,
+  name,params)` (overwrites name+params, stamps `updated_at`)/`Delete(ctx,projectUID,ownerUID,uid)`;
+  `params` as `json.RawMessage` (empty → `{}`, so the NOT NULL column gets valid JSON).
+  **Project scope (`store_project.go`, the photos convention):** a saved search belongs to one owner
+  inside one project, and **the store enforces both** — every statement names the project and the owner
+  (`ownerProjectClause`), an empty project is `ErrNoProject`, `Create` writes `project_id` explicitly (the
+  column's transitional default is never relied on), and a missing uid, another owner's search and the
+  owner's own search in another project are all the **same `ErrNotFound`** (a refused `Update`/`Delete`
+  writes nothing); `SavedSearch` carries `ProjectUID`)), `internal/savedsearchapi/`
   (a read/curation HTTP API over saved searches: the `Store` interface (a subset of `savedsearch.Store`) →
   unit-testable with fakes; `NewAPI(Config{Store,RequireAuth})`+`RegisterRoutes` mounts
-  `/saved-searches` **all behind `RequireAuth`** and **scoped to the logged-in user** from the auth context
-  (`auth.UserFromContext`): `GET /saved-searches` (`{saved_searches:[{uid,name,params,created_at,
+  `/saved-searches` **all behind `RequireAuth`** and **scoped to the logged-in user and the request's
+  project** from the auth context (`auth.UserFromContext`, `auth.ProjectUIDFromContext`): `GET /saved-searches` (`{saved_searches:[{uid,name,params,created_at,
   updated_at}]}` of the current user, owner_uid is deliberately not shown in the view), `POST /saved-searches`
   `{name,params}` → 201 (an empty name → 400, `params` optional → `{}`), `GET /saved-searches/{uid}`
   → 200, `PATCH /saved-searches/{uid}` `{name?,params?}` → 200 (an omitted field unchanged, an empty
   name → 400), `DELETE /saved-searches/{uid}` → 204; **ownership isolation** — the shared helper
-  `ownedSearch` loads the row and compares `owner_uid` with the actor, a foreign one (even a non-existent one) → **404** (never
-  reveals someone else's search); the body `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
+  `ownedSearch` loads the row through the owner- and project-scoped `Get`, so another user's search and the
+  caller's own search in another project are the store's `ErrNotFound` → the **very 404** a missing uid gets
+  (never reveals someone else's search); the body `DisallowUnknownFields` + 1 MiB limit, sentinel `ErrNotFound`→404;
   mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`)),
   `internal/uploadlink/`
   (the domain of **upload links** — a short link a curator posts to a group chat, through which anybody
-  uploads photos into preset albums and labels; owns the four tables of migration `0090_upload_links.sql`:
+  uploads photos into preset albums and labels (filed by `organize.AddPhotoTx`/`AttachLabelTx` inside the
+  **link's own project**, read from `upload_links.project_id`, so a target outside it fails the filing); owns the four tables of migration `0090_upload_links.sql`:
   `upload_links` (`uid` prefix `ul`, `code_hash` UNIQUE — the SHA-256 of the short code, which every
   lookup goes through — and, since `0091_upload_links_code.sql`, the nullable readable `code`: kept so a
   manager can copy the URL again, NULL for a link created before 0091 until it is restored,
@@ -3899,24 +3947,29 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `search_history` table in migration `0056_search_history.sql`: `user_uid` FK users `ON DELETE CASCADE`,
   `query TEXT NOT NULL CHECK (char_length BETWEEN 1 AND 500)`, `searched_at TIMESTAMPTZ DEFAULT now()`,
   **PK `(user_uid, query)`** (which is what makes recording an idempotent upsert) + the index
-  `(user_uid, searched_at DESC)`; migration 0102 adds `project_id` (bootstrap DEFAULT) and widens the PK to
-  `(user_uid, project_id, query)` — reads are not scoped by project yet; `MaxEntries = 20`, `MaxQueryLength = 500`, `Normalize(query)` (trims,
+  `(user_uid, searched_at DESC)`; migration 0102 adds `project_id` (bootstrap DEFAULT, never relied on) and
+  widens the PK to `(user_uid, project_id, query)`, so the history is **per (user, project)**; `MaxEntries = 20`, `MaxQueryLength = 500`, `Normalize(query)` (trims,
   caps at 500 **characters** and trims what the cut left, `""` for a whitespace-only query — it deliberately
   does *not* fold case or collapse inner whitespace: the string is handed back to the search box verbatim,
   and collapsing spaces would change `title:"a  b"`), `Entry{Query,SearchedAt}`;
-  `Store` = `NewStore(pool)`: `Record(ctx,userUID,query)` (normalize → `ErrEmptyQuery` for a blank one →
+  `Store` = `NewStore(pool)`, **every method project-scoped** (`store_project.go`: `projectUID` after `ctx`,
+  never defaulted — empty → `ErrNoProject`; every statement names user and project via `userProjectClause`):
+  `Record(ctx,projectUID,userUID,query)` (normalize → `ErrEmptyQuery` for a blank one →
   `INSERT … ON CONFLICT (user_uid, project_id, query) DO UPDATE SET searched_at = now()` **then** the prune, both in
   **one transaction** so no reader sees a history past the cap; the prune keeps the newest `MaxEntries`
-  identified **by query** rather than by timestamp, since the PK is unique per user while two rows written in
-  one transaction share `now()`), `List(ctx,userUID)` (newest first, `LIMIT MaxEntries`, tie-broken by query —
-  the same total order the prune uses), `Clear(ctx,userUID)` (idempotent);
+  identified **by query** rather than by timestamp, since the PK is unique per (user, project) while two rows
+  written in one transaction share `now()`; the prune's DELETE and subquery both name the project, so the
+  ring of 20 is **per (user, project)** and trimming one project never deletes another's history),
+  `List(ctx,projectUID,userUID)` (newest first, `LIMIT MaxEntries`, tie-broken by query — the same total
+  order the prune uses), `Clear(ctx,projectUID,userUID)` (idempotent, that project only);
   **deduplication is on the exact trimmed text** — "Praha" and "praha" are two entries, because folding
   them would mean choosing which spelling the user gets handed back; there is **no retention job**, the
-  per-write prune bounds the table by the number of accounts), `internal/searchhistoryapi/`
+  per-write prune bounds the table by the number of memberships), `internal/searchhistoryapi/`
   (the HTTP API over it: the `Store` interface (a subset of `searchhistory.Store`) → unit-testable with a fake;
   `NewAPI(Config{Store,RequireAuth})`+`RegisterRoutes` mounts `/search-history` **all behind `RequireAuth`**
-  and **scoped to the logged-in user** (`auth.UserFromContext`) — there is no path parameter and no owner in
-  any body, so there is nothing to tamper with: `GET` → `{searches:[{query,searched_at}]}` (an empty history is
+  and **scoped to the logged-in user and the request's project** (`auth.UserFromContext`,
+  `auth.ProjectUIDFromContext`) — there is no path parameter and no owner in any body, so there is nothing to
+  tamper with: `GET` → `{searches:[{query,searched_at}]}` (an empty history is
   `[]`, never `null`), `POST {query}` → **204** (no body: the client already knows what it searched for, and the
   refreshed list is only wanted when the dropdown next opens, which is a GET), `DELETE` → 204 (idempotent);
   a blank query → 400 both in `decodeRecord` and via the store's `ErrEmptyQuery`, the body
@@ -4051,7 +4104,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/globalsearchapi/`
   (a grouped **global search** HTTP API across entities — the basis of the navbar quick-results and the cross-entity section
   of the search page: the small interfaces `Organizer` (`SearchAlbums`/`SearchLabels` + `GetAlbumByUID`/
-  `GetLabelByUID` + `AlbumCovers`/`LabelCovers`, satisfied by `organize.Store`), `PeopleSearcher`
+  `GetLabelByUID` + `AlbumCovers`/`LabelCovers`, satisfied by `organize.Store`, each taking the request's
+  project — another project's album or label is neither found nor resolved from a pasted uid), `PeopleSearcher`
   (`SearchSubjects` + `GetSubjectByUID`/`GetMarkerByUID` + `SubjectCovers`, satisfied by
   `people.Store`) and `PhotoSearcher` (`Search` + `GetByUID`/
   `GetByPhotoprismUID`/`GetByPhotoprismAlias`/`ListStackMembers`, satisfied by
@@ -4808,7 +4862,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `restore --from-sidecars`),
   `internal/sidecarjob/`
   (the worker handler of the `sidecar` job + the backfill — the **scheduling** half of `sidecarexport`: that one knows the format
-  and the write, this one knows *when*. The job is enqueued by every mutation of metadata/curation data; the handler
+  and the write, this one knows *when*. The organise readers get the project of the photo the job loaded
+  (`Photo.ProjectID`), so a sidecar records only its own project's albums, labels, favourites and ratings. The job is enqueued by every mutation of metadata/curation data; the handler
   **re-reads** the photo and rewrites the file, so it is **idempotent and stateless** (twice = the same bytes,
   late = the current state) — which is why the queue's per-photo dedup is a safe **debounce**, not a dropped update.
   All behind the interfaces `PhotoStore`/`Organizer`/`PeopleStore`/`PlaceStore`/`UserStore`/`SidecarWriter`/

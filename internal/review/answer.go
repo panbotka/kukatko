@@ -108,13 +108,13 @@ func (s *Service) apply(
 		return s.applyFaceNo(ctx, projectUID, ref, meta)
 	case KindLabel:
 		if yes {
-			return s.applyLabelYes(ctx, ref, meta)
+			return s.applyLabelYes(ctx, projectUID, ref, meta)
 		}
-		return s.applyLabelNo(ctx, ref, meta)
+		return s.applyLabelNo(ctx, projectUID, ref, meta)
 	case KindPlace:
 		return s.applyPlace(ctx, ref, yes, meta)
 	case KindDuplicate:
-		return s.applyDuplicate(ctx, ref, yes, meta)
+		return s.applyDuplicate(ctx, projectUID, ref, yes, meta)
 	case KindOutlier:
 		return s.applyOutlier(ctx, projectUID, ref, yes, meta)
 	default:
@@ -167,11 +167,13 @@ func (s *Service) applyFaceYes(
 
 // applyLabelYes confirms a label question through the existing organize attach
 // path (idempotent upsert), audited in the same transaction.
-func (s *Service) applyLabelYes(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
+func (s *Service) applyLabelYes(
+	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
+) (string, error) {
 	entry := meta.Entry(audit.ActionLabelAttach, "labels", ref.LabelUID, map[string]any{
 		"photo_uid": ref.PhotoUID, "source": string(organize.SourceManual), "via": viaReview,
 	})
-	err := s.organize.AttachLabelAudited(ctx, ref.PhotoUID, ref.LabelUID, organize.SourceManual, 0, entry)
+	err := s.organize.AttachLabelAudited(ctx, projectUID, ref.PhotoUID, ref.LabelUID, organize.SourceManual, 0, entry)
 	if err != nil {
 		if isGone(err) {
 			return resultGone, nil
@@ -199,12 +201,14 @@ func (s *Service) applyFaceNo(
 
 // applyLabelNo records the persisted "this photo should not carry this label",
 // which the label-similarity search then excludes for good.
-func (s *Service) applyLabelNo(ctx context.Context, ref questionRef, meta audit.Meta) (string, error) {
+func (s *Service) applyLabelNo(
+	ctx context.Context, projectUID string, ref questionRef, meta audit.Meta,
+) (string, error) {
 	key := feedback.LabelRejectionKey{PhotoUID: ref.PhotoUID, LabelUID: ref.LabelUID}
 	entry := meta.Entry(audit.ActionLabelReject, "labels", ref.LabelUID, map[string]any{
 		"photo_uid": ref.PhotoUID, "via": viaReview,
 	})
-	return decided(resultRejected, s.feedback.RejectLabel(ctx, key, entry), "recording a label rejection")
+	return decided(resultRejected, s.feedback.RejectLabel(ctx, projectUID, key, entry), "recording a label rejection")
 }
 
 // applyPlace settles an estimated location: yes keeps the coordinates and
@@ -237,18 +241,18 @@ func (s *Service) applyPlace(
 // it puts the group at the top of the duplicates page, where merging is an
 // explicit act with a preview in front of it.
 func (s *Service) applyDuplicate(
-	ctx context.Context, ref questionRef, yes bool, meta audit.Meta,
+	ctx context.Context, projectUID string, ref questionRef, yes bool, meta audit.Meta,
 ) (string, error) {
 	details := map[string]any{"other_uid": ref.OtherUID, "via": viaReview}
 	if yes {
 		key := feedback.DuplicateConfirmationKey{PhotoUID: ref.PhotoUID, OtherUID: ref.OtherUID}
 		entry := meta.Entry(audit.ActionDuplicateConfirm, "photos", ref.PhotoUID, details)
-		return decided(resultConfirmed, s.feedback.ConfirmDuplicate(ctx, key, entry),
+		return decided(resultConfirmed, s.feedback.ConfirmDuplicate(ctx, projectUID, key, entry),
 			"confirming a duplicate pair")
 	}
 	key := feedback.DuplicateDismissalKey{PhotoUID: ref.PhotoUID, OtherUID: ref.OtherUID}
 	entry := meta.Entry(audit.ActionDuplicateDismiss, "photos", ref.PhotoUID, details)
-	return decided(resultRejected, s.feedback.DismissDuplicate(ctx, key, entry),
+	return decided(resultRejected, s.feedback.DismissDuplicate(ctx, projectUID, key, entry),
 		"dismissing a duplicate pair")
 }
 

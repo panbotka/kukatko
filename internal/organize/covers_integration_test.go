@@ -77,22 +77,22 @@ func TestAlbumCovers(t *testing.T) {
 	ctx := context.Background()
 
 	uids := makeCoverPhotos(t, photoStore, "al")
-	filled, err := store.CreateAlbum(ctx, organize.Album{Title: "Filled"})
+	filled, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Filled"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	addPhotos(t, store, filled.UID, uids...)
-	empty, err := store.CreateAlbum(ctx, organize.Album{Title: "Empty"})
+	empty, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Empty"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	picked, err := store.CreateAlbum(ctx, organize.Album{Title: "Picked", CoverPhotoUID: &uids[0]})
+	picked, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Picked", CoverPhotoUID: &uids[0]})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	addPhotos(t, store, picked.UID, uids...)
 
-	covers, err := store.AlbumCovers(ctx, []string{filled.UID, empty.UID, picked.UID, "al-nothing"})
+	covers, err := store.AlbumCovers(ctx, testProject, []string{filled.UID, empty.UID, picked.UID, "al-nothing"})
 	if err != nil {
 		t.Fatalf("AlbumCovers: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestAlbumCovers_skipsHiddenAndArchived(t *testing.T) {
 	ctx := context.Background()
 
 	uids := makeCoverPhotos(t, photoStore, "hid")
-	album, err := store.CreateAlbum(ctx, organize.Album{Title: "Mixed"})
+	album, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Mixed"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestAlbumCovers_skipsHiddenAndArchived(t *testing.T) {
 		t.Fatalf("hiding %s: %v", uids[1], err)
 	}
 
-	covers, err := store.AlbumCovers(ctx, []string{album.UID})
+	covers, err := store.AlbumCovers(ctx, testProject, []string{album.UID})
 	if err != nil {
 		t.Fatalf("AlbumCovers: %v", err)
 	}
@@ -152,21 +152,21 @@ func TestLabelCovers(t *testing.T) {
 	ctx := context.Background()
 
 	uids := makeCoverPhotos(t, photoStore, "lb")
-	used, err := store.CreateLabel(ctx, organize.Label{Name: "sunset"})
+	used, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "sunset"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	for _, uid := range uids {
-		if err := store.AttachLabel(ctx, uid, used.UID, organize.SourceManual, 0); err != nil {
+		if err := store.AttachLabel(ctx, testProject, uid, used.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel: %v", err)
 		}
 	}
-	unused, err := store.CreateLabel(ctx, organize.Label{Name: "unused"})
+	unused, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "unused"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 
-	covers, err := store.LabelCovers(ctx, []string{used.UID, unused.UID})
+	covers, err := store.LabelCovers(ctx, testProject, []string{used.UID, unused.UID})
 	if err != nil {
 		t.Fatalf("LabelCovers: %v", err)
 	}
@@ -185,18 +185,18 @@ func TestListLabels_carriesCover(t *testing.T) {
 	ctx := context.Background()
 
 	uids := makeCoverPhotos(t, photoStore, "ll")
-	used, err := store.CreateLabel(ctx, organize.Label{Name: "sunset"})
+	used, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "sunset"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if err := store.AttachLabel(ctx, uids[1], used.UID, organize.SourceManual, 0); err != nil {
+	if err := store.AttachLabel(ctx, testProject, uids[1], used.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
-	if _, err := store.CreateLabel(ctx, organize.Label{Name: "unused"}); err != nil {
+	if _, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "unused"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 
-	list, err := store.ListLabels(ctx)
+	list, err := store.ListLabels(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListLabels: %v", err)
 	}
@@ -230,19 +230,19 @@ func TestCovers_oneQueryPerBatch(t *testing.T) {
 	labelUIDs := make([]string, 0, 5)
 	for i := range 5 {
 		suffix := string(rune('a' + i))
-		album, err := store.CreateAlbum(ctx, organize.Album{Title: "Album " + suffix})
+		album, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album " + suffix})
 		if err != nil {
 			t.Fatalf("CreateAlbum: %v", err)
 		}
 		addPhotos(t, store, album.UID, uids...)
 		albumUIDs = append(albumUIDs, album.UID)
 
-		label, err := store.CreateLabel(ctx, organize.Label{Name: "label-" + suffix})
+		label, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "label-" + suffix})
 		if err != nil {
 			t.Fatalf("CreateLabel: %v", err)
 		}
 		for _, uid := range uids {
-			if err := store.AttachLabel(ctx, uid, label.UID, organize.SourceManual, 0); err != nil {
+			if err := store.AttachLabel(ctx, testProject, uid, label.UID, organize.SourceManual, 0); err != nil {
 				t.Fatalf("AttachLabel: %v", err)
 			}
 		}
@@ -255,11 +255,11 @@ func TestCovers_oneQueryPerBatch(t *testing.T) {
 		run  func() error
 	}{
 		{"albums", func() error {
-			_, err := traced.AlbumCovers(ctx, albumUIDs)
+			_, err := traced.AlbumCovers(ctx, testProject, albumUIDs)
 			return err
 		}},
 		{"labels", func() error {
-			_, err := traced.LabelCovers(ctx, labelUIDs)
+			_, err := traced.LabelCovers(ctx, testProject, labelUIDs)
 			return err
 		}},
 	}

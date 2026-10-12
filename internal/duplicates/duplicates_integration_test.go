@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/duplicates"
 	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -52,7 +53,7 @@ func (f fixture) dismiss(t *testing.T, a, b string) {
 	t.Helper()
 	key := feedback.DuplicateDismissalKey{PhotoUID: a, OtherUID: b}
 	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a}
-	if err := f.feedback.DismissDuplicate(t.Context(), key, entry); err != nil {
+	if err := f.feedback.DismissDuplicate(t.Context(), project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicate(%s, %s): %v", a, b, err)
 	}
 }
@@ -266,7 +267,7 @@ func TestService_dismissalIsIdempotentAndReversible(t *testing.T) {
 
 	key := feedback.DuplicateDismissalKey{PhotoUID: b, OtherUID: a}
 	entry := audit.Entry{Action: audit.ActionDuplicateUndismiss, TargetType: "photos", TargetUID: b}
-	if err := f.feedback.UndismissDuplicate(t.Context(), key, entry); err != nil {
+	if err := f.feedback.UndismissDuplicate(t.Context(), project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UndismissDuplicate: %v", err)
 	}
 

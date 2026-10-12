@@ -98,7 +98,11 @@ func (a *API) registerCollectionTools(s *mcp.Server) {
 func (a *API) handleListAlbums(
 	ctx context.Context, _ *mcp.CallToolRequest, in listIn,
 ) (*mcp.CallToolResult, albumList, error) {
-	list, err := a.organize.ListAlbums(ctx)
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, albumList{}, err
+	}
+	list, err := a.organize.ListAlbums(ctx, c.projectUID)
 	if err != nil {
 		return nil, albumList{}, fmt.Errorf("listing albums: %w", err)
 	}
@@ -116,19 +120,23 @@ func (a *API) handleListAlbums(
 func (a *API) handleGetAlbum(
 	ctx context.Context, _ *mcp.CallToolRequest, in lookupIn,
 ) (*mcp.CallToolResult, albumInfo, error) {
-	al, err := a.lookupAlbum(ctx, in)
+	c, err := callerFromContext(ctx)
 	if err != nil {
 		return nil, albumInfo{}, err
 	}
-	uids, err := a.organize.ListPhotoUIDs(ctx, al.UID)
+	al, err := a.lookupAlbum(ctx, c.projectUID, in)
+	if err != nil {
+		return nil, albumInfo{}, err
+	}
+	uids, err := a.organize.ListPhotoUIDs(ctx, c.projectUID, al.UID)
 	if err != nil {
 		return nil, albumInfo{}, fmt.Errorf("counting the album's photos: %w", err)
 	}
 	return nil, toAlbumInfo(al, len(uids)), nil
 }
 
-// lookupAlbum resolves an album from a uid or a slug.
-func (a *API) lookupAlbum(ctx context.Context, in lookupIn) (organize.Album, error) {
+// lookupAlbum resolves an album of the project from a uid or a slug.
+func (a *API) lookupAlbum(ctx context.Context, projectUID string, in lookupIn) (organize.Album, error) {
 	uid, slug := strings.TrimSpace(in.UID), strings.TrimSpace(in.Slug)
 	var (
 		al  organize.Album
@@ -136,9 +144,9 @@ func (a *API) lookupAlbum(ctx context.Context, in lookupIn) (organize.Album, err
 	)
 	switch {
 	case uid != "":
-		al, err = a.organize.GetAlbumByUID(ctx, uid)
+		al, err = a.organize.GetAlbumByUID(ctx, projectUID, uid)
 	case slug != "":
-		al, err = a.organize.GetAlbumBySlug(ctx, slug)
+		al, err = a.organize.GetAlbumBySlug(ctx, projectUID, slug)
 	default:
 		return organize.Album{}, errNeedUIDOrSlug
 	}
@@ -155,7 +163,11 @@ func (a *API) lookupAlbum(ctx context.Context, in lookupIn) (organize.Album, err
 func (a *API) handleListLabels(
 	ctx context.Context, _ *mcp.CallToolRequest, in listIn,
 ) (*mcp.CallToolResult, labelList, error) {
-	list, err := a.organize.ListLabels(ctx)
+	c, err := callerFromContext(ctx)
+	if err != nil {
+		return nil, labelList{}, err
+	}
+	list, err := a.organize.ListLabels(ctx, c.projectUID)
 	if err != nil {
 		return nil, labelList{}, fmt.Errorf("listing labels: %w", err)
 	}
@@ -173,19 +185,23 @@ func (a *API) handleListLabels(
 func (a *API) handleGetLabel(
 	ctx context.Context, _ *mcp.CallToolRequest, in lookupIn,
 ) (*mcp.CallToolResult, labelInfo, error) {
-	l, err := a.lookupLabel(ctx, in)
+	c, err := callerFromContext(ctx)
 	if err != nil {
 		return nil, labelInfo{}, err
 	}
-	uids, err := a.organize.ListPhotoUIDsByLabel(ctx, l.UID)
+	l, err := a.lookupLabel(ctx, c.projectUID, in)
+	if err != nil {
+		return nil, labelInfo{}, err
+	}
+	uids, err := a.organize.ListPhotoUIDsByLabel(ctx, c.projectUID, l.UID)
 	if err != nil {
 		return nil, labelInfo{}, fmt.Errorf("counting the label's photos: %w", err)
 	}
 	return nil, toLabelInfo(l, len(uids)), nil
 }
 
-// lookupLabel resolves a label from a uid or a slug.
-func (a *API) lookupLabel(ctx context.Context, in lookupIn) (organize.Label, error) {
+// lookupLabel resolves a label of the project from a uid or a slug.
+func (a *API) lookupLabel(ctx context.Context, projectUID string, in lookupIn) (organize.Label, error) {
 	uid, slug := strings.TrimSpace(in.UID), strings.TrimSpace(in.Slug)
 	var (
 		l   organize.Label
@@ -193,9 +209,9 @@ func (a *API) lookupLabel(ctx context.Context, in lookupIn) (organize.Label, err
 	)
 	switch {
 	case uid != "":
-		l, err = a.organize.GetLabelByUID(ctx, uid)
+		l, err = a.organize.GetLabelByUID(ctx, projectUID, uid)
 	case slug != "":
-		l, err = a.organize.GetLabelBySlug(ctx, slug)
+		l, err = a.organize.GetLabelBySlug(ctx, projectUID, slug)
 	default:
 		return organize.Label{}, errNeedUIDOrSlug
 	}

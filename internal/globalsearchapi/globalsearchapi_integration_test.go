@@ -96,11 +96,11 @@ func newEnv(t *testing.T, limit int) *httptest.Server {
 
 	// Albums: two accent-bearing title matches for "dovolena" to test the cap.
 	for _, title := range []string{"Dovolená u moře", "Dovolená v horách"} {
-		if _, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: title}); err != nil {
+		if _, err := organizeStore.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: title}); err != nil {
 			t.Fatalf("CreateAlbum %q: %v", title, err)
 		}
 	}
-	if _, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "Dovolená"}); err != nil {
+	if _, err := organizeStore.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Dovolená"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	if _, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Dovolená s Tomášem"}); err != nil {
@@ -231,11 +231,11 @@ func newUIDEnv(t *testing.T) uidEnv {
 		t.Fatalf("CreateStack: %v", err)
 	}
 
-	album, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: "Léto 2024"})
+	album, err := organizeStore.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Léto 2024"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	label, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "sunset"})
+	label, err := organizeStore.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "sunset"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
@@ -400,24 +400,24 @@ func newCoverEnv(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("Create photo: %v", err)
 	}
-	album, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: "Cover album"})
+	album, err := organizeStore.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Cover album"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if err := organizeStore.AddPhoto(ctx, album.UID, photo.UID); err != nil {
+	if err := organizeStore.AddPhoto(ctx, project.BootstrapUID, album.UID, photo.UID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
-	if _, err := organizeStore.CreateAlbum(ctx, organize.Album{Title: "Cover empty album"}); err != nil {
+	if _, err := organizeStore.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Cover empty album"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	label, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "coverful"})
+	label, err := organizeStore.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "coverful"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if err := organizeStore.AttachLabel(ctx, photo.UID, label.UID, organize.SourceManual, 0); err != nil {
+	if err := organizeStore.AttachLabel(ctx, project.BootstrapUID, photo.UID, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
-	if _, err := organizeStore.CreateLabel(ctx, organize.Label{Name: "coverless"}); err != nil {
+	if _, err := organizeStore.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "coverless"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	subject, err := peopleStore.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Cover Alice"})

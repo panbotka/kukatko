@@ -21,17 +21,17 @@ type fakeRatings struct {
 }
 
 // SetRating is unused by the annotation tests and always succeeds.
-func (f *fakeRatings) SetRating(_ context.Context, _, _ string, _ int) error { return nil }
+func (f *fakeRatings) SetRating(_ context.Context, _ string, _, _ string, _ int) error { return nil }
 
 // SetFlag is unused by the annotation tests and always succeeds.
-func (f *fakeRatings) SetFlag(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeRatings) SetFlag(_ context.Context, _ string, _, _, _ string) error { return nil }
 
 // ClearRating is unused by the annotation tests and always succeeds.
-func (f *fakeRatings) ClearRating(_ context.Context, _, _ string) error { return nil }
+func (f *fakeRatings) ClearRating(_ context.Context, _ string, _, _ string) error { return nil }
 
 // RatingsAmong records its arguments and returns the configured map or error.
 func (f *fakeRatings) RatingsAmong(
-	_ context.Context, userUID string, photoUIDs []string,
+	_ context.Context, _ string, userUID string, photoUIDs []string,
 ) (map[string]organize.PhotoRating, error) {
 	f.gotUser = userUID
 	f.gotUIDs = photoUIDs

@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -108,7 +109,7 @@ func TestDetailUploadLink(t *testing.T) {
 // album, made by creatorUID.
 func seedUploadLink(t *testing.T, env *env, links *uploadlink.Store, creatorUID string) uploadlink.Link {
 	t.Helper()
-	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Pouť"})
+	album, err := env.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Pouť"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}

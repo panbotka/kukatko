@@ -104,11 +104,16 @@ func insertAuditedAttempt[T any](
 	return row, nil
 }
 
-// CreateAlbumAudited inserts a and writes entry to the audit log in the same
-// transaction, so the album and the record of who created it commit atomically.
-// entry's TargetUID defaults to the album's generated UID. It behaves like
-// CreateAlbum otherwise (unique slug, ErrInvalidType for a bad type).
-func (s *Store) CreateAlbumAudited(ctx context.Context, a Album, entry audit.Entry) (Album, error) {
+// CreateAlbumAudited inserts a into the project and writes entry to the audit
+// log in the same transaction, so the album and the record of who created it
+// commit atomically. entry's TargetUID defaults to the album's generated UID and
+// its ProjectUID to the project. It behaves like CreateAlbum otherwise (slug
+// unique per project, ErrInvalidType for a bad type, ErrPhotoNotFound for a
+// cover outside the project).
+func (s *Store) CreateAlbumAudited(ctx context.Context, projectUID string, a Album, entry audit.Entry) (Album, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Album{}, err
+	}
 	prepared, base, err := prepareAlbumInsert(a)
 	if err != nil {
 		return Album{}, err
@@ -116,18 +121,23 @@ func (s *Store) CreateAlbumAudited(ctx context.Context, a Album, entry audit.Ent
 	if entry.TargetUID == "" {
 		entry.TargetUID = prepared.UID
 	}
+	entry = withProject(entry, projectUID)
 	return insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Album, error) {
-		return insertAlbumRow(ctx, tx, prepared, slug)
+		return insertAlbumRow(ctx, tx, projectUID, prepared, slug)
 	})
 }
 
-// UpdateAlbumAudited applies upd to the album identified by uid and writes entry
-// in the same transaction. entry's TargetUID defaults to uid. It behaves like
-// UpdateAlbum otherwise (ErrAlbumNotFound if missing, ErrInvalidType for a bad
-// type). A rolled-back update writes no audit row.
+// UpdateAlbumAudited applies upd to the album of the project identified by uid
+// and writes entry in the same transaction. entry's TargetUID defaults to uid and
+// its ProjectUID to the project. It behaves like UpdateAlbum otherwise
+// (ErrAlbumNotFound if missing or foreign, ErrInvalidType for a bad type). A
+// rolled-back update writes no audit row.
 func (s *Store) UpdateAlbumAudited(
-	ctx context.Context, uid string, upd AlbumUpdate, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, upd AlbumUpdate, entry audit.Entry,
 ) (Album, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Album{}, err
+	}
 	prepared, base, err := prepareAlbumUpdate(upd)
 	if err != nil {
 		return Album{}, err
@@ -135,8 +145,9 @@ func (s *Store) UpdateAlbumAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
+	entry = withProject(entry, projectUID)
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Album, error) {
-		return updateAlbumRow(ctx, tx, uid, prepared, slug)
+		return updateAlbumRow(ctx, tx, projectUID, uid, prepared, slug)
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -147,49 +158,62 @@ func (s *Store) UpdateAlbumAudited(
 	return updated, nil
 }
 
-// DeleteAlbumAudited removes the album identified by uid and writes entry in the
-// same transaction. entry's TargetUID defaults to uid. A missing album returns
+// DeleteAlbumAudited removes the album of the project identified by uid and
+// writes entry in the same transaction. entry's TargetUID defaults to uid and its
+// ProjectUID to the project. A missing (or foreign) album returns
 // ErrAlbumNotFound and writes no audit row.
-func (s *Store) DeleteAlbumAudited(ctx context.Context, uid string, entry audit.Entry) error {
+func (s *Store) DeleteAlbumAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		return deleteAlbumRow(ctx, tx, uid)
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		return deleteAlbumRow(ctx, tx, projectUID, uid)
 	})
 }
 
-// AddPhotosAudited adds every photo in photoUIDs to the album identified by
-// albumUID and writes a single entry in the same transaction, so the whole batch
-// and its audit record commit atomically. entry's TargetUID defaults to albumUID.
-// A missing album or photo returns ErrAlbumNotFound/ErrPhotoNotFound, rolls the
-// batch back and writes no audit row. Adding a photo already a member is a no-op.
+// AddPhotosAudited adds every photo in photoUIDs to the album of the project
+// identified by albumUID and writes a single entry in the same transaction, so
+// the whole batch and its audit record commit atomically. entry's TargetUID
+// defaults to albumUID and its ProjectUID to the project. The album and every
+// photo of the batch are proved inside the project first (one statement for the
+// whole batch): a missing or foreign album is ErrAlbumNotFound, a single missing
+// or foreign photo is ErrPhotoNotFound, and either way nothing is added and no
+// audit row is written. Adding a photo already a member is a no-op.
 func (s *Store) AddPhotosAudited(
-	ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry,
+	ctx context.Context, projectUID, albumUID string, photoUIDs []string, entry audit.Entry,
 ) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = albumUID
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		for _, photoUID := range photoUIDs {
-			if _, err := tx.Exec(ctx, addPhotoSQL, albumUID, photoUID); err != nil {
-				return translateMembershipFK(err)
-			}
-		}
-		return nil
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		return addAlbumPhotoRows(ctx, tx, projectUID, albumUID, photoUIDs)
 	})
 }
 
-// RemovePhotosAudited removes every photo in photoUIDs from the album identified
-// by albumUID and writes a single entry in the same transaction. entry's TargetUID
-// defaults to albumUID. Removing a photo that is not a member is a no-op.
+// RemovePhotosAudited removes every photo in photoUIDs from the album of the
+// project identified by albumUID and writes a single entry in the same
+// transaction. entry's TargetUID defaults to albumUID and its ProjectUID to the
+// project. Removing a photo that is not a member is a no-op; an album outside the
+// project is ErrAlbumNotFound and writes nothing.
 func (s *Store) RemovePhotosAudited(
-	ctx context.Context, albumUID string, photoUIDs []string, entry audit.Entry,
+	ctx context.Context, projectUID, albumUID string, photoUIDs []string, entry audit.Entry,
 ) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = albumUID
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		if err := requireAlbumInProject(ctx, tx, projectUID, albumUID); err != nil {
+			return err
+		}
 		for _, photoUID := range photoUIDs {
 			if err := removeAlbumPhotoRow(ctx, tx, albumUID, photoUID); err != nil {
 				return err
@@ -199,10 +223,14 @@ func (s *Store) RemovePhotosAudited(
 	})
 }
 
-// CreateLabelAudited inserts l and writes entry to the audit log in the same
-// transaction. entry's TargetUID defaults to the label's generated UID. It behaves
-// like CreateLabel otherwise (unique slug).
-func (s *Store) CreateLabelAudited(ctx context.Context, l Label, entry audit.Entry) (Label, error) {
+// CreateLabelAudited inserts l into the project and writes entry to the audit
+// log in the same transaction. entry's TargetUID defaults to the label's
+// generated UID and its ProjectUID to the project. It behaves like CreateLabel
+// otherwise (slug unique per project).
+func (s *Store) CreateLabelAudited(ctx context.Context, projectUID string, l Label, entry audit.Entry) (Label, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Label{}, err
+	}
 	prepared, base, err := prepareLabelInsert(l)
 	if err != nil {
 		return Label{}, err
@@ -210,23 +238,29 @@ func (s *Store) CreateLabelAudited(ctx context.Context, l Label, entry audit.Ent
 	if entry.TargetUID == "" {
 		entry.TargetUID = prepared.UID
 	}
+	entry = withProject(entry, projectUID)
 	return insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Label, error) {
-		return insertLabelRow(ctx, tx, prepared, slug)
+		return insertLabelRow(ctx, tx, projectUID, prepared, slug)
 	})
 }
 
-// UpdateLabelAudited applies upd to the label identified by uid and writes entry in
-// the same transaction. entry's TargetUID defaults to uid. It returns
-// ErrLabelNotFound if no such label exists, writing no audit row.
+// UpdateLabelAudited applies upd to the label of the project identified by uid
+// and writes entry in the same transaction. entry's TargetUID defaults to uid and
+// its ProjectUID to the project. It returns ErrLabelNotFound if the project holds
+// no such label, writing no audit row.
 func (s *Store) UpdateLabelAudited(
-	ctx context.Context, uid string, upd LabelUpdate, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, upd LabelUpdate, entry audit.Entry,
 ) (Label, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Label{}, err
+	}
 	base := slugify(upd.Name, labelFallbackSlug)
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
+	entry = withProject(entry, projectUID)
 	updated, err := insertAuditedWithUniqueSlug(ctx, s.pool, base, entry, func(tx pgx.Tx, slug string) (Label, error) {
-		return updateLabelRow(ctx, tx, uid, upd, slug)
+		return updateLabelRow(ctx, tx, projectUID, uid, upd, slug)
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -237,26 +271,35 @@ func (s *Store) UpdateLabelAudited(
 	return updated, nil
 }
 
-// DeleteLabelAudited removes the label identified by uid and writes entry in the
-// same transaction. entry's TargetUID defaults to uid. A missing label returns
+// DeleteLabelAudited removes the label of the project identified by uid and
+// writes entry in the same transaction. entry's TargetUID defaults to uid and its
+// ProjectUID to the project. A missing (or foreign) label returns
 // ErrLabelNotFound and writes no audit row.
-func (s *Store) DeleteLabelAudited(ctx context.Context, uid string, entry audit.Entry) error {
+func (s *Store) DeleteLabelAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		return deleteLabelRow(ctx, tx, uid)
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		return deleteLabelRow(ctx, tx, projectUID, uid)
 	})
 }
 
 // AttachLabelAudited attaches labelUID to photoUID with source and uncertainty and
-// writes entry in the same transaction. entry's TargetUID defaults to labelUID. It
-// behaves like AttachLabel otherwise (ErrInvalidSource for a bad source,
-// ErrLabelNotFound/ErrPhotoNotFound when either side is missing — each rolls back
-// and writes no audit row).
+// writes entry in the same transaction. entry's TargetUID defaults to labelUID and
+// its ProjectUID to the project. It behaves like AttachLabel otherwise
+// (ErrInvalidSource for a bad source, ErrLabelNotFound/ErrPhotoNotFound when
+// either side is missing or outside the project — each rolls back and writes no
+// audit row).
 func (s *Store) AttachLabelAudited(
-	ctx context.Context, photoUID, labelUID string, source LabelSource, uncertainty int, entry audit.Entry,
+	ctx context.Context, projectUID, photoUID, labelUID string, source LabelSource, uncertainty int,
+	entry audit.Entry,
 ) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	normalized, err := normalizeLabelSource(source)
 	if err != nil {
 		return err
@@ -264,19 +307,28 @@ func (s *Store) AttachLabelAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = labelUID
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		return attachLabelRow(ctx, tx, photoUID, labelUID, normalized, uncertainty)
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		return attachLabelRow(ctx, tx, projectUID, photoUID, labelUID, normalized, uncertainty)
 	})
 }
 
 // DetachLabelAudited removes labelUID from photoUID and writes entry in the same
-// transaction. entry's TargetUID defaults to labelUID. Detaching a label that is
-// not attached is a no-op but still records the action.
-func (s *Store) DetachLabelAudited(ctx context.Context, photoUID, labelUID string, entry audit.Entry) error {
+// transaction. entry's TargetUID defaults to labelUID and its ProjectUID to the
+// project. Detaching a label that is not attached is a no-op but still records
+// the action; a label outside the project is ErrLabelNotFound and writes nothing.
+func (s *Store) DetachLabelAudited(
+	ctx context.Context, projectUID, photoUID, labelUID string, entry audit.Entry,
+) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = labelUID
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		if err := requireLabelInProject(ctx, tx, projectUID, labelUID); err != nil {
+			return err
+		}
 		return detachLabelRow(ctx, tx, photoUID, labelUID)
 	})
 }

@@ -26,11 +26,15 @@ type row interface {
 	Scan(dest ...any) error
 }
 
+// savedSearchColumns is the column list every query returns, in the order
+// scanSavedSearch reads it.
+const savedSearchColumns = "uid, project_id, owner_uid, name, params, created_at, updated_at"
+
 // scanSavedSearch reads one saved_searches row into a SavedSearch. It maps
 // pgx.ErrNoRows to ErrNotFound so callers can branch on the sentinel.
 func scanSavedSearch(r row) (SavedSearch, error) {
 	var s SavedSearch
-	err := r.Scan(&s.UID, &s.OwnerUID, &s.Name, &s.Params, &s.CreatedAt, &s.UpdatedAt)
+	err := r.Scan(&s.UID, &s.ProjectUID, &s.OwnerUID, &s.Name, &s.Params, &s.CreatedAt, &s.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SavedSearch{}, ErrNotFound
 	}
@@ -40,43 +44,53 @@ func scanSavedSearch(r row) (SavedSearch, error) {
 	return s, nil
 }
 
-// insertSavedSearchSQL inserts a saved search and returns the persisted row,
-// including the database-assigned timestamps.
+// insertSavedSearchSQL inserts a saved search into a project and returns the
+// persisted row, including the database-assigned timestamps. project_id is always
+// written explicitly: the column's transitional default is never relied on.
 const insertSavedSearchSQL = `
-INSERT INTO saved_searches (uid, owner_uid, name, params)
-VALUES ($1, $2, $3, $4)
-RETURNING uid, owner_uid, name, params, created_at, updated_at`
+INSERT INTO saved_searches (uid, project_id, owner_uid, name, params)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING ` + savedSearchColumns
 
-// Create inserts a saved search owned by ownerUID with the given name and opaque
-// params, returning the persisted record with its generated UID and timestamps.
-// params must be valid JSON; a nil params is stored as the empty JSON object.
+// Create inserts a saved search owned by ownerUID in projectUID with the given
+// name and opaque params, returning the persisted record with its generated UID
+// and timestamps. params must be valid JSON; a nil params is stored as the empty
+// JSON object. An empty projectUID is ErrNoProject.
 func (s *Store) Create(
-	ctx context.Context, ownerUID, name string, params json.RawMessage,
+	ctx context.Context, projectUID, ownerUID, name string, params json.RawMessage,
 ) (SavedSearch, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SavedSearch{}, err
+	}
 	uid, err := newSavedSearchUID()
 	if err != nil {
 		return SavedSearch{}, err
 	}
 	saved, err := scanSavedSearch(s.pool.QueryRow(ctx, insertSavedSearchSQL,
-		uid, ownerUID, name, defaultParams(params)))
+		uid, projectUID, ownerUID, name, defaultParams(params)))
 	if err != nil {
 		return SavedSearch{}, err
 	}
 	return saved, nil
 }
 
-// listSavedSearchesSQL returns a user's saved searches, most recently created
-// first then by uid for a stable tie-break.
+// listSavedSearchesSQL returns a user's saved searches in one project, most
+// recently created first then by uid for a stable tie-break.
 const listSavedSearchesSQL = `
-SELECT uid, owner_uid, name, params, created_at, updated_at
+SELECT ` + savedSearchColumns + `
 FROM saved_searches
-WHERE owner_uid = $1
+WHERE ` + ownerProjectClause + `
 ORDER BY created_at DESC, uid`
 
-// List returns every saved search owned by ownerUID, newest first. A user with no
-// saved searches yields an empty (non-nil) slice and a nil error.
-func (s *Store) List(ctx context.Context, ownerUID string) ([]SavedSearch, error) {
-	rows, err := s.pool.Query(ctx, listSavedSearchesSQL, ownerUID)
+// List returns every saved search ownerUID owns in projectUID, newest first. A
+// user with no saved searches there yields an empty (non-nil) slice and a nil
+// error; the same user's searches in another project are never listed. An empty
+// projectUID is ErrNoProject.
+func (s *Store) List(ctx context.Context, projectUID, ownerUID string) ([]SavedSearch, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listSavedSearchesSQL, projectUID, ownerUID)
 	if err != nil {
 		return nil, fmt.Errorf("savedsearch: listing for owner %s: %w", ownerUID, err)
 	}
@@ -96,40 +110,59 @@ func (s *Store) List(ctx context.Context, ownerUID string) ([]SavedSearch, error
 	return out, nil
 }
 
-// getSavedSearchSQL fetches one saved search by its UID.
+// getSavedSearchSQL fetches one saved search by its UID, only when it belongs
+// to the owner inside the project.
 const getSavedSearchSQL = `
-SELECT uid, owner_uid, name, params, created_at, updated_at
+SELECT ` + savedSearchColumns + `
 FROM saved_searches
-WHERE uid = $1`
+WHERE ` + ownerProjectClause + ` AND uid = $3`
 
-// Get returns the saved search identified by uid, or ErrNotFound if no such row
-// exists. Ownership is not checked here; the caller scopes access to the owner.
-func (s *Store) Get(ctx context.Context, uid string) (SavedSearch, error) {
-	return scanSavedSearch(s.pool.QueryRow(ctx, getSavedSearchSQL, uid))
+// Get returns the saved search identified by uid when ownerUID owns it in
+// projectUID. A missing uid, another owner's search and the owner's own search in
+// another project are all the same ErrNotFound. An empty projectUID is
+// ErrNoProject.
+func (s *Store) Get(ctx context.Context, projectUID, ownerUID, uid string) (SavedSearch, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SavedSearch{}, err
+	}
+	return scanSavedSearch(s.pool.QueryRow(ctx, getSavedSearchSQL, projectUID, ownerUID, uid))
 }
 
 // updateSavedSearchSQL rewrites a saved search's name and params and stamps
-// updated_at, returning the updated row.
+// updated_at, returning the updated row — only when it belongs to the owner
+// inside the project.
 const updateSavedSearchSQL = `
 UPDATE saved_searches
-SET name = $2, params = $3, updated_at = now()
-WHERE uid = $1
-RETURNING uid, owner_uid, name, params, created_at, updated_at`
+SET name = $4, params = $5, updated_at = now()
+WHERE ` + ownerProjectClause + ` AND uid = $3
+RETURNING ` + savedSearchColumns
 
 // Update rewrites the name and params of the saved search identified by uid and
-// returns the updated record, or ErrNotFound if no such row exists. A nil params
-// is stored as the empty JSON object.
+// returns the updated record, or ErrNotFound unless ownerUID owns it in
+// projectUID (nothing is written then). A nil params is stored as the empty JSON
+// object. An empty projectUID is ErrNoProject.
 func (s *Store) Update(
-	ctx context.Context, uid, name string, params json.RawMessage,
+	ctx context.Context, projectUID, ownerUID, uid, name string, params json.RawMessage,
 ) (SavedSearch, error) {
+	if err := requireProject(projectUID); err != nil {
+		return SavedSearch{}, err
+	}
 	return scanSavedSearch(s.pool.QueryRow(ctx, updateSavedSearchSQL,
-		uid, name, defaultParams(params)))
+		projectUID, ownerUID, uid, name, defaultParams(params)))
 }
 
-// Delete removes the saved search identified by uid, returning ErrNotFound if no
-// such row exists.
-func (s *Store) Delete(ctx context.Context, uid string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM saved_searches WHERE uid = $1", uid)
+// deleteSavedSearchSQL removes one saved search, only when it belongs to the
+// owner inside the project.
+const deleteSavedSearchSQL = `DELETE FROM saved_searches WHERE ` + ownerProjectClause + ` AND uid = $3`
+
+// Delete removes the saved search identified by uid, returning ErrNotFound
+// unless ownerUID owns it in projectUID (nothing is deleted then). An empty
+// projectUID is ErrNoProject.
+func (s *Store) Delete(ctx context.Context, projectUID, ownerUID, uid string) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	tag, err := s.pool.Exec(ctx, deleteSavedSearchSQL, projectUID, ownerUID, uid)
 	if err != nil {
 		return fmt.Errorf("savedsearch: deleting %s: %w", uid, err)
 	}

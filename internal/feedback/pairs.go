@@ -46,13 +46,15 @@ type pairOpinion struct {
 	record, remove, check, list string
 }
 
-// recordPair inserts the opinion for k and writes entry in the same
-// transaction. It is idempotent, and a foreign-key violation (a photo that does
-// not exist) becomes ErrTargetNotFound rather than an opaque database error.
+// recordPair inserts the opinion for k inside projectUID and writes entry in the
+// same transaction. It is idempotent; both photos must belong to the project
+// (ErrNoProject without one, ErrTargetNotFound otherwise, nothing written), and a
+// foreign-key violation (a photo deleted meanwhile) becomes ErrTargetNotFound
+// rather than an opaque database error.
 func (s *Store) recordPair(
-	ctx context.Context, op pairOpinion, k photoPair, entry audit.Entry,
+	ctx context.Context, projectUID string, op pairOpinion, k photoPair, entry audit.Entry,
 ) error {
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inScopedAuditedTx(ctx, projectUID, entry, pairProof(k), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, op.insertSQL, k.PhotoUID, k.OtherUID, nullable(entry.ActorUID))
 		if isForeignKeyViolation(err) {
 			return ErrTargetNotFound
@@ -64,13 +66,13 @@ func (s *Store) recordPair(
 	})
 }
 
-// removePair deletes the opinion for k and writes entry in the same
-// transaction. Removing what was never recorded still records the action but
-// changes no rows.
+// removePair deletes the opinion for k inside projectUID and writes entry in the
+// same transaction. Removing what was never recorded still records the action but
+// changes no rows; both photos must belong to the project, as for recordPair.
 func (s *Store) removePair(
-	ctx context.Context, op pairOpinion, k photoPair, entry audit.Entry,
+	ctx context.Context, projectUID string, op pairOpinion, k photoPair, entry audit.Entry,
 ) error {
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inScopedAuditedTx(ctx, projectUID, entry, pairProof(k), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, op.deleteSQL, k.PhotoUID, k.OtherUID)
 		if err != nil {
 			return fmt.Errorf("feedback: %s pair %s/%s: %w", op.remove, k.PhotoUID, k.OtherUID, err)
@@ -92,7 +94,9 @@ func (s *Store) hasPair(ctx context.Context, op pairOpinion, k photoPair) (bool,
 // listPairs reads every recorded pair in canonical order. It is the bulk lookup
 // duplicate detection uses, because the scan walks the catalogue in one pass and
 // needs the whole set up front — there is no per-photo entry point to filter by.
-// An empty table yields an empty (non-nil) slice.
+// It is not filtered by project: the scan only ever looks a pair up among its own
+// project's photos, and no write joins two projects (see project.go). An empty
+// table yields an empty (non-nil) slice.
 func (s *Store) listPairs(ctx context.Context, op pairOpinion) ([]photoPair, error) {
 	rows, err := s.pool.Query(ctx, op.listSQL)
 	if err != nil {

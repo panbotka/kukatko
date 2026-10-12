@@ -37,28 +37,37 @@ type Store interface {
 	RejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
 	// UnrejectFace takes a face rejection back, idempotently and audited.
 	UnrejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
-	// RejectLabel records that a photo should NOT have a label, idempotently and
-	// audited.
-	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
-	// UnrejectLabel takes a label rejection back, idempotently and audited.
-	UnrejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
+	// RejectLabel records that a photo should NOT have a label inside the
+	// project, idempotently and audited.
+	RejectLabel(ctx context.Context, projectUID string, key feedback.LabelRejectionKey, entry audit.Entry) error
+	// UnrejectLabel takes a label rejection back inside the project, idempotently
+	// and audited.
+	UnrejectLabel(ctx context.Context, projectUID string, key feedback.LabelRejectionKey, entry audit.Entry) error
 	// ConfirmFace records that a face really IS a subject, idempotently and
 	// audited.
 	ConfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
 	// UnconfirmFace takes a face confirmation back, idempotently and audited.
 	UnconfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
-	// DismissDuplicate records that two photos are NOT duplicates of each other,
+	// DismissDuplicate records that two photos of the project are NOT
+	// duplicates of each other, idempotently and audited.
+	DismissDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateDismissalKey, entry audit.Entry,
+	) error
+	// UndismissDuplicate takes a duplicate dismissal back inside the
+	// project, idempotently and audited.
+	UndismissDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateDismissalKey, entry audit.Entry,
+	) error
+	// ConfirmDuplicate records that two photos of the project really ARE
+	// the same shot, idempotently and audited. It merges nothing.
+	ConfirmDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+	) error
+	// UnconfirmDuplicate takes a duplicate confirmation back inside the project,
 	// idempotently and audited.
-	DismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
-	// UndismissDuplicate takes a duplicate dismissal back, idempotently and
-	// audited.
-	UndismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
-	// ConfirmDuplicate records that two photos really ARE the same shot,
-	// idempotently and audited. It merges nothing.
-	ConfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
-	// UnconfirmDuplicate takes a duplicate confirmation back, idempotently and
-	// audited.
-	UnconfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
+	UnconfirmDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+	) error
 	// DismissDuplicateMarkers records that a person really IS marked more than
 	// once on a photo, idempotently and audited.
 	DismissDuplicateMarkers(

@@ -20,21 +20,25 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        COUNT(p.uid) AS photo_count
 FROM albums a
 LEFT JOIN album_photos ap ON ap.album_uid = a.uid
-LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.archived_at IS NULL
+LEFT JOIN photos p ON p.uid = ap.photo_uid AND p.project_id = a.project_id AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
-WHERE immutable_unaccent(a.title) ILIKE immutable_unaccent($1)
-   OR immutable_unaccent(a.description) ILIKE immutable_unaccent($1)
+WHERE a.project_id = $3
+  AND (immutable_unaccent(a.title) ILIKE immutable_unaccent($1)
+       OR immutable_unaccent(a.description) ILIKE immutable_unaccent($1))
 GROUP BY a.uid
 ORDER BY a.title, a.uid
 LIMIT $2`
 
-// SearchAlbums returns up to limit albums whose title or description contains q,
+// SearchAlbums returns up to limit albums of the project whose title or description contains q,
 // matched case- and accent-insensitively, each paired with its photo count and
 // ordered by title. A non-positive limit falls back to defaultSearchLimit. It
 // backs the grouped global-search endpoint. The result is empty (not nil) when
 // nothing matches.
-func (s *Store) SearchAlbums(ctx context.Context, q string, limit int) ([]AlbumCount, error) {
-	rows, err := s.pool.Query(ctx, searchAlbumsSQL, likePattern(q), clampSearchLimit(limit))
+func (s *Store) SearchAlbums(ctx context.Context, projectUID, q string, limit int) ([]AlbumCount, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, searchAlbumsSQL, likePattern(q), clampSearchLimit(limit), projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: searching albums: %w", err)
 	}
@@ -63,20 +67,23 @@ SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, l.created_at, l.upda
        COUNT(p.uid) AS photo_count
 FROM labels l
 LEFT JOIN photo_labels pl ON pl.label_uid = l.uid
-LEFT JOIN photos p ON p.uid = pl.photo_uid AND p.archived_at IS NULL
+LEFT JOIN photos p ON p.uid = pl.photo_uid AND p.project_id = l.project_id AND p.archived_at IS NULL
     AND (p.stack_uid IS NULL OR p.stack_primary)
-WHERE immutable_unaccent(l.name) ILIKE immutable_unaccent($1)
+WHERE l.project_id = $3 AND immutable_unaccent(l.name) ILIKE immutable_unaccent($1)
 GROUP BY l.uid
 ORDER BY l.priority DESC, l.name, l.uid
 LIMIT $2`
 
-// SearchLabels returns up to limit labels whose name contains q, matched case-
+// SearchLabels returns up to limit labels of the project whose name contains q, matched case-
 // and accent-insensitively, each paired with its photo count and ordered by
 // priority then name. A non-positive limit falls back to defaultSearchLimit. It
 // backs the grouped global-search endpoint. The result is empty (not nil) when
 // nothing matches.
-func (s *Store) SearchLabels(ctx context.Context, q string, limit int) ([]LabelCount, error) {
-	rows, err := s.pool.Query(ctx, searchLabelsSQL, likePattern(q), clampSearchLimit(limit))
+func (s *Store) SearchLabels(ctx context.Context, projectUID, q string, limit int) ([]LabelCount, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, searchLabelsSQL, likePattern(q), clampSearchLimit(limit), projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: searching labels: %w", err)
 	}

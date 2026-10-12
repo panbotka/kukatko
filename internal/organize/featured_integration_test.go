@@ -32,7 +32,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 	actor := makeUser(t, authStore, "feat_actor", "feat")
 	photoUID := makePhoto(t, photoStore, "featuredcover")
 
-	album, err := store.CreateAlbum(ctx, organize.Album{Title: "Pouť 2026"})
+	album, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Pouť 2026"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 	}
 
 	until := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
-	got, err := store.FeatureAlbumAudited(ctx, album.UID, until, actor,
+	got, err := store.FeatureAlbumAudited(ctx, testProject, album.UID, until, actor,
 		actorEntry(actor, audit.ActionAlbumFeature, "albums", album.UID, nil))
 	if err != nil {
 		t.Fatalf("FeatureAlbumAudited: %v", err)
@@ -52,7 +52,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionAlbumFeature, actor, album.UID)
 
-	list, err := store.ListFeaturedAlbums(ctx, false)
+	list, err := store.ListFeaturedAlbums(ctx, testProject, false)
 	if err != nil {
 		t.Fatalf("ListFeaturedAlbums: %v", err)
 	}
@@ -68,29 +68,29 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 	}
 
 	// Every album payload carries the active end: detail, index and search.
-	detail, err := store.GetAlbumByUID(ctx, album.UID)
+	detail, err := store.GetAlbumByUID(ctx, testProject, album.UID)
 	if err != nil || detail.FeaturedUntil == nil {
 		t.Fatalf("GetAlbumByUID featured_until = %v (err %v), want set", detail.FeaturedUntil, err)
 	}
-	all, err := store.ListAlbums(ctx)
+	all, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
 	if albumByUID(t, all, album.UID).FeaturedUntil == nil {
 		t.Error("ListAlbums does not carry featured_until")
 	}
-	hits, err := store.SearchAlbums(ctx, "Pout", 5)
+	hits, err := store.SearchAlbums(ctx, testProject, "Pout", 5)
 	if err != nil || len(hits) != 1 || hits[0].FeaturedUntil == nil {
 		t.Errorf("SearchAlbums = %+v (err %v), want one featured hit", hits, err)
 	}
 
 	// Extending keeps the moment the feature began, so the strip's order holds.
 	later := until.Add(30 * 24 * time.Hour)
-	if _, err := store.FeatureAlbumAudited(ctx, album.UID, later, actor,
+	if _, err := store.FeatureAlbumAudited(ctx, testProject, album.UID, later, actor,
 		actorEntry(actor, audit.ActionAlbumFeature, "albums", album.UID, nil)); err != nil {
 		t.Fatalf("extending: %v", err)
 	}
-	list, err = store.ListFeaturedAlbums(ctx, false)
+	list, err = store.ListFeaturedAlbums(ctx, testProject, false)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("ListFeaturedAlbums after extend = %v (err %v)", featuredUIDs(list), err)
 	}
@@ -101,7 +101,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 		t.Errorf("featured_until after extend = %v, want %v", list[0].FeaturedUntil, later)
 	}
 
-	off, err := store.UnfeatureAlbumAudited(ctx, album.UID,
+	off, err := store.UnfeatureAlbumAudited(ctx, testProject, album.UID,
 		actorEntry(actor, audit.ActionAlbumUnfeature, "albums", album.UID, nil))
 	if err != nil {
 		t.Fatalf("UnfeatureAlbumAudited: %v", err)
@@ -110,7 +110,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 		t.Errorf("featured_until after unfeature = %v, want nil", off.FeaturedUntil)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionAlbumUnfeature, actor, album.UID)
-	if list, _ := store.ListFeaturedAlbums(ctx, true); len(list) != 0 {
+	if list, _ := store.ListFeaturedAlbums(ctx, testProject, true); len(list) != 0 {
 		t.Errorf("featured after unfeature = %v, want none", featuredUIDs(list))
 	}
 }
@@ -121,7 +121,7 @@ func TestFeatureAlbum_lifecycle(t *testing.T) {
 func TestFeatureAlbum_expiredIsNotFeatured(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()
-	album, err := store.CreateAlbum(ctx, organize.Album{Title: "Old news"})
+	album, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Old news"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -130,14 +130,14 @@ func TestFeatureAlbum_expiredIsNotFeatured(t *testing.T) {
 		        featured_at = now() - interval '2 months' WHERE uid = $1`, album.UID); err != nil {
 		t.Fatalf("backdating the feature: %v", err)
 	}
-	list, err := store.ListFeaturedAlbums(ctx, true)
+	list, err := store.ListFeaturedAlbums(ctx, testProject, true)
 	if err != nil {
 		t.Fatalf("ListFeaturedAlbums: %v", err)
 	}
 	if len(list) != 0 {
 		t.Errorf("featured = %v, want none (expired)", featuredUIDs(list))
 	}
-	got, err := store.GetAlbumByUID(ctx, album.UID)
+	got, err := store.GetAlbumByUID(ctx, testProject, album.UID)
 	if err != nil {
 		t.Fatalf("GetAlbumByUID: %v", err)
 	}
@@ -147,11 +147,11 @@ func TestFeatureAlbum_expiredIsNotFeatured(t *testing.T) {
 
 	// Featuring it again starts a fresh feature rather than inheriting the old
 	// featured_at, so it lands at the front of the strip.
-	if _, err := store.FeatureAlbumAudited(ctx, album.UID, time.Now().Add(time.Hour), "",
+	if _, err := store.FeatureAlbumAudited(ctx, testProject, album.UID, time.Now().Add(time.Hour), "",
 		audit.Entry{Action: audit.ActionAlbumFeature, TargetType: "albums"}); err != nil {
 		t.Fatalf("re-featuring: %v", err)
 	}
-	list, err = store.ListFeaturedAlbums(ctx, true)
+	list, err = store.ListFeaturedAlbums(ctx, testProject, true)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("ListFeaturedAlbums = %v (err %v), want one", featuredUIDs(list), err)
 	}
@@ -165,15 +165,15 @@ func TestFeatureAlbum_expiredIsNotFeatured(t *testing.T) {
 func TestListFeaturedAlbums_privateAndOrder(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()
-	older, err := store.CreateAlbum(ctx, organize.Album{Title: "Older"})
+	older, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Older"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	newer, err := store.CreateAlbum(ctx, organize.Album{Title: "Newer"})
+	newer, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Newer"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	secret, err := store.CreateAlbum(ctx, organize.Album{Title: "Secret", Private: true})
+	secret, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Secret", Private: true})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -186,14 +186,14 @@ func TestListFeaturedAlbums_privateAndOrder(t *testing.T) {
 		}
 	}
 
-	public, err := store.ListFeaturedAlbums(ctx, false)
+	public, err := store.ListFeaturedAlbums(ctx, testProject, false)
 	if err != nil {
 		t.Fatalf("ListFeaturedAlbums(false): %v", err)
 	}
 	if got := featuredUIDs(public); len(got) != 2 || got[0] != newer.UID || got[1] != older.UID {
 		t.Errorf("public featured = %v, want [%s %s]", got, newer.UID, older.UID)
 	}
-	everything, err := store.ListFeaturedAlbums(ctx, true)
+	everything, err := store.ListFeaturedAlbums(ctx, testProject, true)
 	if err != nil {
 		t.Fatalf("ListFeaturedAlbums(true): %v", err)
 	}
@@ -208,19 +208,19 @@ func TestFeatureAlbum_rejectsNonAlbumAndMissing(t *testing.T) {
 	store, _, _, db := newStores(t)
 	ctx := t.Context()
 	auditStore := audit.NewStore(db.Pool())
-	month, err := store.CreateAlbum(ctx, organize.Album{Title: "January 2026", Type: organize.AlbumMonth})
+	month, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "January 2026", Type: organize.AlbumMonth})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	entry := audit.Entry{Action: audit.ActionAlbumFeature, TargetType: "albums"}
 	until := time.Now().Add(time.Hour)
-	if _, err := store.FeatureAlbumAudited(ctx, month.UID, until, "", entry); !errors.Is(err, organize.ErrNotFeaturable) {
+	if _, err := store.FeatureAlbumAudited(ctx, testProject, month.UID, until, "", entry); !errors.Is(err, organize.ErrNotFeaturable) {
 		t.Errorf("featuring a month album: err = %v, want ErrNotFeaturable", err)
 	}
-	if _, err := store.FeatureAlbumAudited(ctx, "alnope", until, "", entry); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if _, err := store.FeatureAlbumAudited(ctx, testProject, "alnope", until, "", entry); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Errorf("featuring a missing album: err = %v, want ErrAlbumNotFound", err)
 	}
-	if _, err := store.UnfeatureAlbumAudited(ctx, "alnope", entry); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if _, err := store.UnfeatureAlbumAudited(ctx, testProject, "alnope", entry); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Errorf("unfeaturing a missing album: err = %v, want ErrAlbumNotFound", err)
 	}
 	requireNoAudit(t, ctx, auditStore, audit.ActionAlbumFeature)
@@ -269,32 +269,32 @@ func TestListFeaturedAlbums_coverCandidates(t *testing.T) {
 		t.Fatalf("SetHiddenFromLibrary: %v", err)
 	}
 
-	full, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Full"})
-	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
-	small, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Small"})
-	hiddenOnly, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Hidden"})
-	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "E Empty"})
+	full, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "A Full"})
+	pinned, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "B Pinned"})
+	small, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "C Small"})
+	hiddenOnly, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "D Hidden"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "E Empty"})
 	addPhotos(t, store, full.UID, newestFirst...)
 	addPhotos(t, store, pinned.UID, append(slices.Clone(newestFirst), hidden)...)
 	addPhotos(t, store, small.UID, newestFirst[0], newestFirst[1])
 	addPhotos(t, store, hiddenOnly.UID, hidden)
 	oldest := newestFirst[len(newestFirst)-1]
-	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+	if _, err := store.SetCover(ctx, testProject, pinned.UID, &oldest); err != nil {
 		t.Fatalf("SetCover: %v", err)
 	}
 	until := time.Now().Add(48 * time.Hour)
 	for _, uid := range []string{full.UID, pinned.UID, small.UID, hiddenOnly.UID, emptyAlbum.UID} {
-		if _, err := store.FeatureAlbumAudited(ctx, uid, until, "",
+		if _, err := store.FeatureAlbumAudited(ctx, testProject, uid, until, "",
 			actorEntry("", audit.ActionAlbumFeature, "albums", uid, nil)); err != nil {
 			t.Fatalf("FeatureAlbumAudited %s: %v", uid, err)
 		}
 	}
 
-	strip, err := store.ListFeaturedAlbums(ctx, false)
+	strip, err := store.ListFeaturedAlbums(ctx, testProject, false)
 	if err != nil {
 		t.Fatalf("ListFeaturedAlbums: %v", err)
 	}
-	index, err := store.ListAlbums(ctx)
+	index, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}

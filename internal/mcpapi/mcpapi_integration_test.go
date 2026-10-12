@@ -449,7 +449,7 @@ func TestMCPViewerIsRefusedOnEveryWrite(t *testing.T) {
 	if photo.Title != "" {
 		t.Errorf("a viewer's refused write still changed the photo: title = %q", photo.Title)
 	}
-	albums, err := e.organize.ListAlbums(t.Context())
+	albums, err := e.organize.ListAlbums(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -613,14 +613,14 @@ func TestMCPWriteTokenCanOrganize(t *testing.T) {
 	})
 
 	// The library actually changed.
-	uids, err := e.organize.ListPhotoUIDs(t.Context(), album.UID)
+	uids, err := e.organize.ListPhotoUIDs(t.Context(), project.BootstrapUID, album.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDs: %v", err)
 	}
 	if len(uids) != 1 || uids[0] != photoUID {
 		t.Errorf("album holds %v, want [%s]", uids, photoUID)
 	}
-	labels, err := e.organize.LabelsForPhoto(t.Context(), photoUID)
+	labels, err := e.organize.LabelsForPhoto(t.Context(), project.BootstrapUID, photoUID)
 	if err != nil {
 		t.Fatalf("LabelsForPhoto: %v", err)
 	}
@@ -689,14 +689,14 @@ func TestMCPEveryMutationIsAudited(t *testing.T) {
 	if photo.Title != "Na zahradě" || photo.Notes != "z MCP" || photo.Description != "hromadně" {
 		t.Errorf("photo = %+v, want the edits applied", photo)
 	}
-	rating, err := e.organize.GetRating(t.Context(), actor, photoUID)
+	rating, err := e.organize.GetRating(t.Context(), project.BootstrapUID, actor, photoUID)
 	if err != nil {
 		t.Fatalf("GetRating: %v", err)
 	}
 	if rating.Rating != 4 {
 		t.Errorf("rating = %d, want 4", rating.Rating)
 	}
-	fav, err := e.organize.IsFavorite(t.Context(), actor, photoUID)
+	fav, err := e.organize.IsFavorite(t.Context(), project.BootstrapUID, actor, photoUID)
 	if err != nil {
 		t.Fatalf("IsFavorite: %v", err)
 	}
@@ -763,11 +763,11 @@ func TestMCPListAndLookupCollections(t *testing.T) {
 	bearer := e.token(t, "agent-coll", auth.AccountEditor)
 	photoUID := e.seedPhoto(t, "gg01")
 
-	album, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: "Dovolená 2019"})
+	album, err := e.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Dovolená 2019"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if _, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: "Vánoce"}); err != nil {
+	if _, err := e.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Vánoce"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	subj, err := e.people.CreateSubject(t.Context(), project.BootstrapUID, people.Subject{Name: "Babička"})
@@ -854,7 +854,7 @@ func TestMCPLibraryStats(t *testing.T) {
 
 	first := e.seedPhoto(t, "hh01")
 	e.seedPhoto(t, "hh02")
-	if _, err := e.organize.CreateAlbum(t.Context(), organize.Album{Title: "A"}); err != nil {
+	if _, err := e.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "A"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	e.mustCall(t, bearer, "set_photo_rating", map[string]any{"uid": first, "favorite": true})
@@ -889,7 +889,7 @@ func TestMCPBulkEditIsAtomic(t *testing.T) {
 	first := e.seedPhoto(t, "ii01")
 	second := e.seedPhoto(t, "ii02")
 
-	label, err := e.organize.CreateLabel(t.Context(), organize.Label{Name: "výlet"})
+	label, err := e.organize.CreateLabel(t.Context(), project.BootstrapUID, organize.Label{Name: "výlet"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}

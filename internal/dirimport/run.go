@@ -366,7 +366,7 @@ func (s *Service) resolveAlbum(ctx context.Context, ref string) (string, error) 
 	if s.albums == nil {
 		return "", errors.New("dirimport: --album given but no album store is configured")
 	}
-	album, err := s.albums.GetAlbumByUID(ctx, ref)
+	album, err := s.albums.GetAlbumByUID(ctx, s.projectUID, ref)
 	switch {
 	case err == nil:
 		return album.UID, nil
@@ -374,7 +374,7 @@ func (s *Service) resolveAlbum(ctx context.Context, ref string) (string, error) 
 		return "", fmt.Errorf("dirimport: looking up album %q: %w", ref, err)
 	}
 
-	existing, err := s.albums.ListAlbums(ctx)
+	existing, err := s.albums.ListAlbums(ctx, s.projectUID)
 	if err != nil {
 		return "", fmt.Errorf("dirimport: listing albums: %w", err)
 	}
@@ -383,7 +383,7 @@ func (s *Service) resolveAlbum(ctx context.Context, ref string) (string, error) 
 			return existing[i].UID, nil
 		}
 	}
-	created, err := s.albums.CreateAlbum(ctx, organize.Album{Title: ref, Type: organize.AlbumManual})
+	created, err := s.albums.CreateAlbum(ctx, s.projectUID, organize.Album{Title: ref, Type: organize.AlbumManual})
 	if err != nil {
 		return "", fmt.Errorf("dirimport: creating album %q: %w", ref, err)
 	}
@@ -401,7 +401,7 @@ func (s *Service) resolveLabels(ctx context.Context, names []string) ([]string, 
 	if s.labels == nil {
 		return nil, errors.New("dirimport: --labels given but no label store is configured")
 	}
-	existing, err := s.labels.ListLabels(ctx)
+	existing, err := s.labels.ListLabels(ctx, s.projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("dirimport: listing labels: %w", err)
 	}
@@ -414,7 +414,7 @@ func (s *Service) resolveLabels(ctx context.Context, names []string) ([]string, 
 	for _, name := range wanted {
 		uid, ok := byName[strings.ToLower(name)]
 		if !ok {
-			created, createErr := s.labels.CreateLabel(ctx, organize.Label{Name: name})
+			created, createErr := s.labels.CreateLabel(ctx, s.projectUID, organize.Label{Name: name})
 			if createErr != nil {
 				return nil, fmt.Errorf("dirimport: creating label %q: %w", name, createErr)
 			}
@@ -448,14 +448,14 @@ func (s *Service) applyTarget(ctx context.Context, photoUID string, dest target,
 		return
 	}
 	if dest.albumUID != "" {
-		if err := s.albums.AddPhoto(ctx, dest.albumUID, photoUID); err != nil {
+		if err := s.albums.AddPhoto(ctx, s.projectUID, dest.albumUID, photoUID); err != nil {
 			s.log.Warn("dirimport: adding photo to album",
 				"album", dest.albumUID, "photo", photoUID, "err", err)
 			tal.recordFailure(importer.StageAlbumMember, photoUID, "", dest.albumUID, err)
 		}
 	}
 	for _, labelUID := range dest.labelUIDs {
-		if err := s.labels.AttachLabel(ctx, photoUID, labelUID, organize.SourceImport, 0); err != nil {
+		if err := s.labels.AttachLabel(ctx, s.projectUID, photoUID, labelUID, organize.SourceImport, 0); err != nil {
 			s.log.Warn("dirimport: attaching label",
 				"label", labelUID, "photo", photoUID, "err", err)
 			tal.recordFailure(importer.StageLabel, photoUID, "", labelUID, err)

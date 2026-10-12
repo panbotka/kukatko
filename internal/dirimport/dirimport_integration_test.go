@@ -22,6 +22,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/video"
@@ -79,6 +80,7 @@ func newEnv(t *testing.T) *testEnv {
 		Curation:    organizeStore,
 		Albums:      organizeStore,
 		Labels:      organizeStore,
+		ProjectUID:  project.BootstrapUID,
 		Concurrency: 2,
 	})
 	return &testEnv{
@@ -322,14 +324,14 @@ func assertRunRecorded(t *testing.T, env *testEnv, runID int64, wantImported int
 // the run touched, the in-folder duplicate included.
 func assertFiledUnderAlbum(t *testing.T, env *testEnv, wantMembers int) {
 	t.Helper()
-	albums, err := env.organize.ListAlbums(t.Context())
+	albums, err := env.organize.ListAlbums(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
 	if len(albums) != 1 || albums[0].Title != "Scans" {
 		t.Fatalf("albums = %+v, want exactly one titled Scans", albums)
 	}
-	members, err := env.organize.ListPhotoUIDs(t.Context(), albums[0].UID)
+	members, err := env.organize.ListPhotoUIDs(t.Context(), project.BootstrapUID, albums[0].UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDs: %v", err)
 	}
@@ -337,7 +339,7 @@ func assertFiledUnderAlbum(t *testing.T, env *testEnv, wantMembers int) {
 		t.Errorf("album holds %d photos, want %d (the duplicate is filed too)", len(members), wantMembers)
 	}
 
-	labels, err := env.organize.ListLabels(t.Context())
+	labels, err := env.organize.ListLabels(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListLabels: %v", err)
 	}
@@ -382,7 +384,7 @@ func TestImport_dryRunWritesNothing(t *testing.T) {
 	if got := countRuns(t, env.db); got != 0 {
 		t.Errorf("dry run recorded %d import runs, want 0", got)
 	}
-	albums, err := env.organize.ListAlbums(t.Context())
+	albums, err := env.organize.ListAlbums(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}

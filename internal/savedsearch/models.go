@@ -1,8 +1,9 @@
 // Package savedsearch is the database access layer for per-user saved searches
 // ("smart albums"): named, owner-private filter/search definitions a user can
 // re-open later. It mirrors the per-user ownership model of user favorites — a
-// saved search belongs to exactly one owner, and only that owner may see or
-// modify it. Ownership scoping is enforced by the HTTP layer above this store.
+// saved search belongs to exactly one owner inside exactly one project, and only
+// that owner, inside that project, may see or modify it. The store enforces both:
+// every method takes the project and the owner (see store_project.go).
 package savedsearch
 
 import (
@@ -11,8 +12,14 @@ import (
 	"time"
 )
 
-// ErrNotFound is returned when a saved search does not exist.
-var ErrNotFound = errors.New("saved search not found")
+var (
+	// ErrNotFound is returned when a saved search does not exist — or belongs to
+	// another owner, or to another project: all three are the same answer.
+	ErrNotFound = errors.New("saved search not found")
+	// ErrNoProject is returned by a Store method called without a project — a
+	// programming error, never "anywhere in the instance".
+	ErrNoProject = errors.New("savedsearch: no project given")
+)
 
 // SavedSearch is a named, owner-private saved view/search definition. Params
 // holds opaque saved state (filters, sort, search query, mode) as raw JSON so the
@@ -20,6 +27,8 @@ var ErrNotFound = errors.New("saved search not found")
 type SavedSearch struct {
 	// UID is the primary key, of the form "ss" followed by random base32 chars.
 	UID string `json:"uid"`
+	// ProjectUID is the project the saved search belongs to.
+	ProjectUID string `json:"project_uid"`
 	// OwnerUID is the UID of the user who owns the saved search.
 	OwnerUID string `json:"owner_uid"`
 	// Name is the user-facing label for the saved search.

@@ -116,14 +116,14 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 	raw := makePhoto(t, store, "raw2", "IMG_2.CR2", "image/x-canon-cr2", 6000, 4000)
 	jpg := makePhoto(t, store, "jpg2", "IMG_2.jpg", "image/jpeg", 6000, 4000)
 
-	album, _ := org.CreateAlbum(ctx, organize.Album{Title: "Trip"})
-	label, _ := org.CreateLabel(ctx, organize.Label{Name: "beach"})
+	album, _ := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Trip"})
+	label, _ := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "beach"})
 	subject, _ := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
 	for _, uid := range []string{raw.UID, jpg.UID} {
-		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
-		if err := org.AttachLabel(ctx, uid, label.UID, organize.SourceManual, 0); err != nil {
+		if err := org.AttachLabel(ctx, project.BootstrapUID, uid, label.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel: %v", err)
 		}
 		mustMarker(t, ppl, uid, subject.UID)
@@ -244,7 +244,7 @@ func assertCounts(
 
 func albumCount(t *testing.T, org *organize.Store, albumUID string) int {
 	t.Helper()
-	list, err := org.ListAlbums(t.Context())
+	list, err := org.ListAlbums(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -259,7 +259,7 @@ func albumCount(t *testing.T, org *organize.Store, albumUID string) int {
 
 func labelCount(t *testing.T, org *organize.Store, labelUID string) int {
 	t.Helper()
-	list, err := org.ListLabels(t.Context())
+	list, err := org.ListLabels(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListLabels: %v", err)
 	}

@@ -5,8 +5,9 @@
 //
 // The history is stored server-side rather than in the browser precisely so it
 // survives the device: a query composed on a laptop is offered on the phone. It
-// is strictly per-user — every statement in this package is scoped to one
-// user_uid and nothing reads across accounts.
+// is strictly per user **and** per project — every statement in this package is
+// scoped to one (user_uid, project_id) pair, nothing reads across accounts or
+// projects, and the ring of [MaxEntries] is kept per pair (see store_project.go).
 //
 // Queries are opaque plain strings here. This package trims and caps them
 // ([Normalize]) and nothing else: `internal/query` remains the only thing that
@@ -22,9 +23,10 @@ import (
 )
 
 const (
-	// MaxEntries is how many recent searches one user's history keeps. Every
-	// record prunes back to this many, so the table is bounded by the number of
-	// accounts rather than by how much anyone searches.
+	// MaxEntries is how many recent searches one user's history keeps in one
+	// project. Every record prunes that (user, project) history back to this
+	// many, so the table is bounded by the number of memberships rather than by
+	// how much anyone searches.
 	MaxEntries = 20
 
 	// MaxQueryLength is the longest query, in characters, the history stores.
@@ -34,9 +36,14 @@ const (
 	MaxQueryLength = 500
 )
 
-// ErrEmptyQuery is returned when a query holds nothing but whitespace, so there
-// is no search to remember.
-var ErrEmptyQuery = errors.New("searchhistory: query is empty")
+var (
+	// ErrEmptyQuery is returned when a query holds nothing but whitespace, so
+	// there is no search to remember.
+	ErrEmptyQuery = errors.New("searchhistory: query is empty")
+	// ErrNoProject is returned by a Store method called without a project — a
+	// programming error, never "anywhere in the instance".
+	ErrNoProject = errors.New("searchhistory: no project given")
+)
 
 // Entry is one remembered search: the query exactly as it was run, and when it
 // was last run. Re-running a query moves SearchedAt forward instead of adding a

@@ -66,11 +66,12 @@ func TestSavedSearchCRUD(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, users, "ss_owner", "owner")
 
-	created, err := store.Create(ctx, owner, "Recent", json.RawMessage(`{"sort":"newest"}`))
+	created, err := store.Create(ctx, project.BootstrapUID, owner, "Recent", json.RawMessage(`{"sort":"newest"}`))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.UID == "" || created.OwnerUID != owner || created.Name != "Recent" {
+	if created.UID == "" || created.ProjectUID != project.BootstrapUID || created.OwnerUID != owner ||
+		created.Name != "Recent" {
 		t.Fatalf("unexpected created record: %+v", created)
 	}
 	if !jsonEqual(t, created.Params, `{"sort":"newest"}`) {
@@ -80,7 +81,7 @@ func TestSavedSearchCRUD(t *testing.T) {
 		t.Fatalf("timestamps not stamped: %+v", created)
 	}
 
-	got, err := store.Get(ctx, created.UID)
+	got, err := store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -88,7 +89,8 @@ func TestSavedSearchCRUD(t *testing.T) {
 		t.Fatalf("Get mismatch: %+v", got)
 	}
 
-	updated, err := store.Update(ctx, created.UID, "Older", json.RawMessage(`{"sort":"oldest"}`))
+	updated, err := store.Update(ctx, project.BootstrapUID, owner, created.UID, "Older",
+		json.RawMessage(`{"sort":"oldest"}`))
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -99,10 +101,10 @@ func TestSavedSearchCRUD(t *testing.T) {
 		t.Logf("updated_at not advanced (clock granularity): %v", updated.UpdatedAt)
 	}
 
-	if err := store.Delete(ctx, created.UID); err != nil {
+	if err := store.Delete(ctx, project.BootstrapUID, owner, created.UID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := store.Get(ctx, created.UID); !errors.Is(err, savedsearch.ErrNotFound) {
+	if _, err := store.Get(ctx, project.BootstrapUID, owner, created.UID); !errors.Is(err, savedsearch.ErrNotFound) {
 		t.Fatalf("Get after delete error = %v, want ErrNotFound", err)
 	}
 }
@@ -114,7 +116,7 @@ func TestSavedSearchCreateDefaultsParams(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, users, "ss_def", "def")
 
-	created, err := store.Create(ctx, owner, "Empty", nil)
+	created, err := store.Create(ctx, project.BootstrapUID, owner, "Empty", nil)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -133,11 +135,11 @@ func TestSavedSearchCarriesUIDQuery(t *testing.T) {
 	owner := makeUser(t, users, "ss_uid", "uid")
 
 	const params = `{"q":"uid:ph7lpul2io09bcg2rvp2rljsr6 favorite:yes","mode":"filter"}`
-	created, err := store.Create(ctx, owner, "That one photo", json.RawMessage(params))
+	created, err := store.Create(ctx, project.BootstrapUID, owner, "That one photo", json.RawMessage(params))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	got, err := store.Get(ctx, created.UID)
+	got, err := store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -165,19 +167,19 @@ func TestSavedSearchListNewestFirst(t *testing.T) {
 	alice := makeUser(t, users, "ss_alice", "alice")
 	bob := makeUser(t, users, "ss_bob", "bob")
 
-	first, err := store.Create(ctx, alice, "First", json.RawMessage(`{}`))
+	first, err := store.Create(ctx, project.BootstrapUID, alice, "First", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("Create first: %v", err)
 	}
-	second, err := store.Create(ctx, alice, "Second", json.RawMessage(`{}`))
+	second, err := store.Create(ctx, project.BootstrapUID, alice, "Second", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("Create second: %v", err)
 	}
-	if _, err := store.Create(ctx, bob, "Bob", json.RawMessage(`{}`)); err != nil {
+	if _, err := store.Create(ctx, project.BootstrapUID, bob, "Bob", json.RawMessage(`{}`)); err != nil {
 		t.Fatalf("Create bob: %v", err)
 	}
 
-	list, err := store.List(ctx, alice)
+	list, err := store.List(ctx, project.BootstrapUID, alice)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -188,7 +190,7 @@ func TestSavedSearchListNewestFirst(t *testing.T) {
 		t.Fatalf("List order = [%s,%s], want [%s,%s]", list[0].UID, list[1].UID, second.UID, first.UID)
 	}
 
-	empty, err := store.List(ctx, "ss_nobody")
+	empty, err := store.List(ctx, project.BootstrapUID, "ss_nobody")
 	if err != nil {
 		t.Fatalf("List for unknown owner: %v", err)
 	}
@@ -202,14 +204,19 @@ func TestSavedSearchListNewestFirst(t *testing.T) {
 func TestSavedSearchMissing(t *testing.T) {
 	store, _, _ := newStore(t)
 	ctx := context.Background()
+	const (
+		owner   = "ss_nobody"
+		missing = "ss_missing"
+	)
 
-	if _, err := store.Get(ctx, "ss_missing"); !errors.Is(err, savedsearch.ErrNotFound) {
+	if _, err := store.Get(ctx, project.BootstrapUID, owner, missing); !errors.Is(err, savedsearch.ErrNotFound) {
 		t.Errorf("Get error = %v, want ErrNotFound", err)
 	}
-	if _, err := store.Update(ctx, "ss_missing", "x", json.RawMessage(`{}`)); !errors.Is(err, savedsearch.ErrNotFound) {
+	_, err := store.Update(ctx, project.BootstrapUID, owner, missing, "x", json.RawMessage(`{}`))
+	if !errors.Is(err, savedsearch.ErrNotFound) {
 		t.Errorf("Update error = %v, want ErrNotFound", err)
 	}
-	if err := store.Delete(ctx, "ss_missing"); !errors.Is(err, savedsearch.ErrNotFound) {
+	if err := store.Delete(ctx, project.BootstrapUID, owner, missing); !errors.Is(err, savedsearch.ErrNotFound) {
 		t.Errorf("Delete error = %v, want ErrNotFound", err)
 	}
 }
@@ -221,14 +228,14 @@ func TestSavedSearchCascadesOnUserDelete(t *testing.T) {
 	ctx := context.Background()
 	owner := makeUser(t, users, "ss_cascade", "cascade")
 
-	created, err := store.Create(ctx, owner, "Doomed", json.RawMessage(`{}`))
+	created, err := store.Create(ctx, project.BootstrapUID, owner, "Doomed", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if _, err := db.Pool().Exec(ctx, "DELETE FROM users WHERE uid = $1", owner); err != nil {
 		t.Fatalf("deleting owner: %v", err)
 	}
-	if _, err := store.Get(ctx, created.UID); !errors.Is(err, savedsearch.ErrNotFound) {
+	if _, err := store.Get(ctx, project.BootstrapUID, owner, created.UID); !errors.Is(err, savedsearch.ErrNotFound) {
 		t.Fatalf("Get after owner delete error = %v, want ErrNotFound", err)
 	}
 }

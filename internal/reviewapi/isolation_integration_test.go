@@ -87,7 +87,7 @@ func newReviewServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 type noVectors struct{ *vectors.Store }
 
 // FindSimilar finds nothing.
-func (noVectors) FindSimilar(_ context.Context, _ []float32, _ int, _ float64) ([]vectors.Match, error) {
+func (noVectors) FindSimilar(_ context.Context, _ string, _ []float32, _ int, _ float64) ([]vectors.Match, error) {
 	return nil, nil
 }
 

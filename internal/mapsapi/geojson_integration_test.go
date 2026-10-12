@@ -177,11 +177,11 @@ func TestGeoJSON_geotaggedAndFilters(t *testing.T) {
 	})
 
 	t.Run("album scope", func(t *testing.T) {
-		album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Trip"})
+		album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Trip"})
 		if err != nil {
 			t.Fatalf("CreateAlbum: %v", err)
 		}
-		if err := env.organize.AddPhoto(ctx, album.UID, withGPS.UID); err != nil {
+		if err := env.organize.AddPhoto(ctx, project.BootstrapUID, album.UID, withGPS.UID); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
 		fc := env.fetchGeo(t, "?album="+album.UID)

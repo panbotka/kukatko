@@ -56,18 +56,23 @@ type UserRating struct {
 const listPhotoLabelsSQL = "SELECT l.uid, l.slug, l.name, l.priority, l.review_enabled, " +
 	"l.created_at, l.updated_at, " +
 	"pl.source, pl.uncertainty, pl.created_at " +
-	"FROM labels l JOIN photo_labels pl ON pl.label_uid = l.uid WHERE pl.photo_uid = $1 " +
+	"FROM labels l JOIN photo_labels pl ON pl.label_uid = l.uid " +
+	"WHERE pl.photo_uid = $1 AND l.project_id = $2 " +
 	"ORDER BY l.priority DESC, l.name"
 
-// PhotoLabelsForPhoto returns the labels attached to the photo identified by
+// PhotoLabelsForPhoto returns the labels of the project attached to the photo
+// identified by
 // photoUID together with each attachment's source, uncertainty and time, ordered
 // by priority then name. An unknown photo yields an empty slice (not an error).
 //
 // It is LabelsForPhoto plus the join columns, for callers that must reproduce the
 // attachment rather than merely display it — the metadata sidecar export, whose
 // whole job is to record enough that AttachLabel can be replayed.
-func (s *Store) PhotoLabelsForPhoto(ctx context.Context, photoUID string) ([]PhotoLabel, error) {
-	rows, err := s.pool.Query(ctx, listPhotoLabelsSQL, photoUID)
+func (s *Store) PhotoLabelsForPhoto(ctx context.Context, projectUID, photoUID string) ([]PhotoLabel, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listPhotoLabelsSQL, photoUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing photo labels for %s: %w", photoUID, err)
 	}
@@ -93,18 +98,23 @@ func (s *Store) PhotoLabelsForPhoto(ctx context.Context, photoUID string) ([]Pho
 // first. It is served by idx_user_favorites_photo_uid.
 const listFavoritesForPhotoSQL = "SELECT f.user_uid, u.username, f.added_at " +
 	"FROM user_favorites f JOIN users u ON u.uid = f.user_uid " +
-	"WHERE f.photo_uid = $1 ORDER BY f.added_at, f.user_uid"
+	"JOIN photos p ON p.uid = f.photo_uid AND p.project_id = $2 " +
+	"WHERE f.photo_uid = $1 " +
+	"ORDER BY f.added_at, f.user_uid"
 
-// FavoritesForPhoto returns every user who has favorited the photo identified by
-// photoUID, oldest first. A photo nobody favorited yields an empty slice (not an
+// FavoritesForPhoto returns every user who has favorited the photo of the
+// project identified by photoUID, oldest first. A photo nobody favorited yields an empty slice (not an
 // error).
 //
 // It is the reverse of IsFavorite: that answers "did this user favorite it",
 // which is what a request scoped to one user needs, whereas an export must record
 // everybody's — a favorite dropped because the exporter only knew about one user
 // is curation quietly lost.
-func (s *Store) FavoritesForPhoto(ctx context.Context, photoUID string) ([]UserFavorite, error) {
-	rows, err := s.pool.Query(ctx, listFavoritesForPhotoSQL, photoUID)
+func (s *Store) FavoritesForPhoto(ctx context.Context, projectUID, photoUID string) ([]UserFavorite, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listFavoritesForPhotoSQL, photoUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing favorites for photo %s: %w", photoUID, err)
 	}
@@ -128,16 +138,21 @@ func (s *Store) FavoritesForPhoto(ctx context.Context, photoUID string) ([]UserF
 // served by idx_user_ratings_photo_uid.
 const listRatingsForPhotoSQL = "SELECT r.user_uid, u.username, r.rating, r.flag, r.updated_at " +
 	"FROM user_ratings r JOIN users u ON u.uid = r.user_uid " +
-	"WHERE r.photo_uid = $1 ORDER BY u.username, r.user_uid"
+	"JOIN photos p ON p.uid = r.photo_uid AND p.project_id = $2 " +
+	"WHERE r.photo_uid = $1 " +
+	"ORDER BY u.username, r.user_uid"
 
-// RatingsForPhoto returns every user's rating of the photo identified by
-// photoUID, ordered by username. A photo nobody rated yields an empty slice (not
+// RatingsForPhoto returns every user's rating of the photo of the project
+// identified by photoUID, ordered by username. A photo nobody rated yields an empty slice (not
 // an error).
 //
 // It is the reverse of GetRating — see FavoritesForPhoto for why an export needs
 // all users rather than the requesting one.
-func (s *Store) RatingsForPhoto(ctx context.Context, photoUID string) ([]UserRating, error) {
-	rows, err := s.pool.Query(ctx, listRatingsForPhotoSQL, photoUID)
+func (s *Store) RatingsForPhoto(ctx context.Context, projectUID, photoUID string) ([]UserRating, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listRatingsForPhotoSQL, photoUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing ratings for photo %s: %w", photoUID, err)
 	}

@@ -97,7 +97,8 @@ func (a *API) handleFaceUnconfirm(w http.ResponseWriter, r *http.Request) {
 // duplicates of each other and answers 204. The pair is unordered and the write is
 // idempotent, so dismissing it twice — in either argument order — is a no-op. A
 // malformed body or a missing identifier answers 400, as does a pair naming the
-// same photo twice; a non-existent photo answers 404.
+// same photo twice; a photo that does not exist in the request's project answers
+// 404 (another project's photo alike).
 func (a *API) handleDuplicateDismiss(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeDuplicateDismissal(r)
 	if err != nil {
@@ -107,7 +108,8 @@ func (a *API) handleDuplicateDismiss(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateDismiss, "photos", key.PhotoUID,
 		map[string]any{"other_uid": key.OtherUID})
-	if err := a.store.DismissDuplicate(r.Context(), key, entry); err != nil {
+	err = a.store.DismissDuplicate(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry)
+	if err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -118,7 +120,7 @@ func (a *API) handleDuplicateDismiss(w http.ResponseWriter, r *http.Request) {
 // handleDuplicateUndismiss takes back the duplicate dismissal in the request body
 // and answers 204, letting the pair be offered for review again. Un-dismissing a
 // pair that was never dismissed is a no-op. A malformed body or a missing
-// identifier answers 400.
+// identifier answers 400; a photo outside the request's project answers 404.
 func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeDuplicateDismissal(r)
 	if err != nil {
@@ -128,7 +130,8 @@ func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateUndismiss, "photos", key.PhotoUID,
 		map[string]any{"other_uid": key.OtherUID})
-	if err := a.store.UndismissDuplicate(r.Context(), key, entry); err != nil {
+	err = a.store.UndismissDuplicate(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry)
+	if err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -141,7 +144,8 @@ func (a *API) handleDuplicateUndismiss(w http.ResponseWriter, r *http.Request) {
 // records the agreement, which the duplicates page ranks on. The pair is
 // unordered and the write is idempotent, so confirming twice, in either argument
 // order, is a no-op. A malformed body, a missing identifier or a pair naming the
-// same photo twice answers 400; a non-existent photo answers 404.
+// same photo twice answers 400; a photo that does not exist in the request's
+// project answers 404 (another project's photo alike).
 func (a *API) handleDuplicateConfirm(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeDuplicateDismissal(r)
 	if err != nil {
@@ -151,7 +155,8 @@ func (a *API) handleDuplicateConfirm(w http.ResponseWriter, r *http.Request) {
 	key := in.toConfirmationKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateConfirm, "photos", key.PhotoUID,
 		map[string]any{"other_uid": key.OtherUID})
-	if err := a.store.ConfirmDuplicate(r.Context(), key, entry); err != nil {
+	err = a.store.ConfirmDuplicate(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry)
+	if err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -162,7 +167,8 @@ func (a *API) handleDuplicateConfirm(w http.ResponseWriter, r *http.Request) {
 // handleDuplicateUnconfirm takes back the duplicate confirmation in the request
 // body and answers 204, dropping the group back to being a machine guess.
 // Un-confirming a pair that was never confirmed is a no-op. A malformed body or
-// a missing identifier answers 400.
+// a missing identifier answers 400; a photo outside the request's project
+// answers 404.
 func (a *API) handleDuplicateUnconfirm(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeDuplicateDismissal(r)
 	if err != nil {
@@ -172,7 +178,7 @@ func (a *API) handleDuplicateUnconfirm(w http.ResponseWriter, r *http.Request) {
 	key := in.toConfirmationKey()
 	entry := a.auditEntry(r, audit.ActionDuplicateUnconfirm, "photos", key.PhotoUID,
 		map[string]any{"other_uid": key.OtherUID})
-	if err := a.store.UnconfirmDuplicate(r.Context(), key, entry); err != nil {
+	if err := a.store.UnconfirmDuplicate(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -226,8 +232,8 @@ func (a *API) handleMarkerUndismiss(w http.ResponseWriter, r *http.Request) {
 
 // handleLabelReject records that the photo in the request body should NOT have the
 // given label and answers 204. Rejecting the same pair twice is a no-op. A malformed
-// body or a missing identifier answers 400; a non-existent photo or label answers
-// 404.
+// body or a missing identifier answers 400; a photo or label that does not exist
+// in the request's project answers 404 (another project's alike).
 func (a *API) handleLabelReject(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeLabelRejection(r)
 	if err != nil {
@@ -237,7 +243,7 @@ func (a *API) handleLabelReject(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionLabelReject, "labels", key.LabelUID,
 		map[string]any{"photo_uid": key.PhotoUID})
-	if err := a.store.RejectLabel(r.Context(), key, entry); err != nil {
+	if err := a.store.RejectLabel(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return
@@ -247,7 +253,8 @@ func (a *API) handleLabelReject(w http.ResponseWriter, r *http.Request) {
 
 // handleLabelUnreject takes back the label rejection in the request body and answers
 // 204. Un-rejecting a pair that was never rejected is a no-op. A malformed body or a
-// missing identifier answers 400.
+// missing identifier answers 400; a photo or label outside the request's project
+// answers 404.
 func (a *API) handleLabelUnreject(w http.ResponseWriter, r *http.Request) {
 	in, err := decodeLabelRejection(r)
 	if err != nil {
@@ -257,7 +264,7 @@ func (a *API) handleLabelUnreject(w http.ResponseWriter, r *http.Request) {
 	key := in.toKey()
 	entry := a.auditEntry(r, audit.ActionLabelUnreject, "labels", key.LabelUID,
 		map[string]any{"photo_uid": key.PhotoUID})
-	if err := a.store.UnrejectLabel(r.Context(), key, entry); err != nil {
+	if err := a.store.UnrejectLabel(r.Context(), auth.ProjectUIDFromContext(r.Context()), key, entry); err != nil {
 		status, msg := rejectionStatus(err)
 		writeError(w, status, msg)
 		return

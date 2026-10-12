@@ -131,7 +131,7 @@ func TestAlbumListPlanStaysProportionalToMemberships(t *testing.T) {
 	ctx := t.Context()
 	seedPlanFixture(t, db)
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -239,7 +239,7 @@ func explainAlbumIndex(t *testing.T, db *database.DB) explainResult {
 	var raw []byte
 	err := db.Pool().QueryRow(t.Context(),
 		"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) "+organize.ListAlbumsSQL,
-		organize.CoverCandidates).Scan(&raw)
+		organize.CoverCandidates, testProject).Scan(&raw)
 	if err != nil {
 		t.Fatalf("explaining the album index: %v", err)
 	}

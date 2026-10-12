@@ -52,7 +52,7 @@ func hitUIDs[T entityHit](hits []T) []string {
 // from one batched lookup. An album with none is left as it is: the client draws
 // its own glyph rather than a gap.
 func (a *API) stampAlbumCovers(ctx context.Context, hits []albumHit) error {
-	covers, err := a.organizer.AlbumCovers(ctx, hitUIDs(hits))
+	covers, err := a.organizer.AlbumCovers(ctx, auth.ProjectUIDFromContext(ctx), hitUIDs(hits))
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading album covers: %w", err)
 	}
@@ -67,7 +67,7 @@ func (a *API) stampAlbumCovers(ctx context.Context, hits []albumHit) error {
 
 // stampLabelCovers fills Cover and ThumbURL on every label hit that has one.
 func (a *API) stampLabelCovers(ctx context.Context, hits []labelHit) error {
-	covers, err := a.organizer.LabelCovers(ctx, hitUIDs(hits))
+	covers, err := a.organizer.LabelCovers(ctx, auth.ProjectUIDFromContext(ctx), hitUIDs(hits))
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading label covers: %w", err)
 	}

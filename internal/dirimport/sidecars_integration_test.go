@@ -110,7 +110,7 @@ func assertSidecarMetadata(t *testing.T, env *testEnv) {
 	}
 	// Google's "favorited" is the importing user's favourite: favourites are
 	// per-user in Kukátko.
-	fav, err := env.organize.IsFavorite(t.Context(), env.uploader, lake.UID)
+	fav, err := env.organize.IsFavorite(t.Context(), project.BootstrapUID, env.uploader, lake.UID)
 	if err != nil {
 		t.Fatalf("IsFavorite: %v", err)
 	}
@@ -133,7 +133,7 @@ func assertSidecarMetadata(t *testing.T, env *testEnv) {
 func assertNoAlbumsFromExport(t *testing.T, env *testEnv) {
 	t.Helper()
 
-	albums, err := env.organize.ListAlbums(t.Context())
+	albums, err := env.organize.ListAlbums(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}

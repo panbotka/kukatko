@@ -49,7 +49,7 @@ func (h *reviewHarness) checksService() *review.Service {
 		MaxDistance: 0.5, SearchLimit: 1000, MinFacePx: 32, Concurrency: 2, MinFaceRel: 0.02,
 	})
 	expandSvc := expand.New(expand.Config{
-		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})

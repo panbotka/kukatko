@@ -93,13 +93,13 @@ func (a *API) resolveDirect(ctx context.Context, ref query.UIDRef) (*directHit, 
 // use, asked for this one uid, so a pasted id draws the picture a typed name
 // would have.
 func (a *API) resolveAlbum(ctx context.Context, hit *directHit) error {
-	album, err := a.organizer.GetAlbumByUID(ctx, hit.UID)
+	album, err := a.organizer.GetAlbumByUID(ctx, auth.ProjectUIDFromContext(ctx), hit.UID)
 	if err != nil {
 		return skipNotFound(err, organize.ErrAlbumNotFound)
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityAlbum), album.UID
 	hit.Title = album.Title
-	covers, err := a.organizer.AlbumCovers(ctx, []string{album.UID})
+	covers, err := a.organizer.AlbumCovers(ctx, auth.ProjectUIDFromContext(ctx), []string{album.UID})
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading album cover %s: %w", album.UID, err)
 	}
@@ -109,13 +109,13 @@ func (a *API) resolveAlbum(ctx context.Context, hit *directHit) error {
 
 // resolveLabel fills hit from the label with its uid.
 func (a *API) resolveLabel(ctx context.Context, hit *directHit) error {
-	label, err := a.organizer.GetLabelByUID(ctx, hit.UID)
+	label, err := a.organizer.GetLabelByUID(ctx, auth.ProjectUIDFromContext(ctx), hit.UID)
 	if err != nil {
 		return skipNotFound(err, organize.ErrLabelNotFound)
 	}
 	hit.Found, hit.TargetKind, hit.TargetUID = true, string(query.EntityLabel), label.UID
 	hit.Title = label.Name
-	covers, err := a.organizer.LabelCovers(ctx, []string{label.UID})
+	covers, err := a.organizer.LabelCovers(ctx, auth.ProjectUIDFromContext(ctx), []string{label.UID})
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading label cover %s: %w", label.UID, err)
 	}

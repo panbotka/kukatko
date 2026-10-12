@@ -85,12 +85,12 @@ func TestUploaders(t *testing.T) {
 		"tomas3.jpg", 100, 110, 120)
 	imported := env.seedPhoto(t, photos.Photo{Title: "Imported"}, "imported.jpg", 130, 140, 150)
 
-	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Svatba"})
+	album, err := env.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Svatba"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	for _, uid := range []string{annaWedding.UID, tomasWedding.UID, imported.UID} {
-		if err := env.organize.AddPhoto(t.Context(), album.UID, uid); err != nil {
+		if err := env.organize.AddPhoto(t.Context(), project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}

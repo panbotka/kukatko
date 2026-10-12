@@ -1,8 +1,10 @@
 // Package savedsearchapi exposes per-user saved searches ("smart albums") over
 // HTTP: a signed-in user can create, list, read, edit and delete their own named
-// filter/search definitions. Every operation is scoped to the acting user taken
-// from the auth context, and a saved search owned by another user is reported as
-// 404 so a caller can never observe or mutate someone else's searches.
+// filter/search definitions. Every operation is scoped to the acting user and the
+// request's project, both taken from the auth context, and a saved search owned
+// by another user — or by the same user in another project — is reported as the
+// very 404 a missing one gets, so a caller can never observe or mutate a search
+// outside their own (user, project).
 //
 // The store is an interface and the auth guard is injected, so the package stays
 // decoupled from the concrete store and from auth's wiring, and is unit-testable
@@ -26,17 +28,23 @@ import (
 // so the handlers depend on behaviour rather than the concrete store, keeping them
 // unit-testable with fakes.
 type Store interface {
-	// Create inserts a saved search owned by ownerUID and returns it.
-	Create(ctx context.Context, ownerUID, name string, params json.RawMessage) (savedsearch.SavedSearch, error)
-	// List returns ownerUID's saved searches, newest first.
-	List(ctx context.Context, ownerUID string) ([]savedsearch.SavedSearch, error)
-	// Get returns one saved search by uid, or savedsearch.ErrNotFound.
-	Get(ctx context.Context, uid string) (savedsearch.SavedSearch, error)
-	// Update rewrites a saved search's name and params, or returns
+	// Create inserts a saved search owned by ownerUID in projectUID and returns it.
+	Create(
+		ctx context.Context, projectUID, ownerUID, name string, params json.RawMessage,
+	) (savedsearch.SavedSearch, error)
+	// List returns ownerUID's saved searches in projectUID, newest first.
+	List(ctx context.Context, projectUID, ownerUID string) ([]savedsearch.SavedSearch, error)
+	// Get returns one saved search ownerUID owns in projectUID, or
+	// savedsearch.ErrNotFound (also for another owner's or project's search).
+	Get(ctx context.Context, projectUID, ownerUID, uid string) (savedsearch.SavedSearch, error)
+	// Update rewrites the name and params of a saved search ownerUID owns in
+	// projectUID, or returns savedsearch.ErrNotFound.
+	Update(
+		ctx context.Context, projectUID, ownerUID, uid, name string, params json.RawMessage,
+	) (savedsearch.SavedSearch, error)
+	// Delete removes a saved search ownerUID owns in projectUID, or returns
 	// savedsearch.ErrNotFound.
-	Update(ctx context.Context, uid, name string, params json.RawMessage) (savedsearch.SavedSearch, error)
-	// Delete removes a saved search, or returns savedsearch.ErrNotFound.
-	Delete(ctx context.Context, uid string) error
+	Delete(ctx context.Context, projectUID, ownerUID, uid string) error
 }
 
 // API exposes the saved-search endpoints over HTTP. The auth guard is supplied by
@@ -60,13 +68,14 @@ func NewAPI(cfg Config) *API {
 }
 
 // RegisterRoutes mounts the saved-search endpoints onto r, which the caller has
-// scoped under the API base path (for example /api/v1). Every route requires auth:
+// scoped under the API base path (for example /api/v1). Every route requires auth
+// and acts inside the request's project only:
 //
-//	GET    /saved-searches         list the caller's saved searches
-//	POST   /saved-searches         create a saved search
-//	GET    /saved-searches/{uid}   read one (404 if missing or not owner)
-//	PATCH  /saved-searches/{uid}   edit name/params (404 if missing or not owner)
-//	DELETE /saved-searches/{uid}   delete one (404 if missing or not owner)
+//	GET    /saved-searches         list the caller's saved searches in the project
+//	POST   /saved-searches         create a saved search in the project
+//	GET    /saved-searches/{uid}   read one (404 if missing, not owner or other project)
+//	PATCH  /saved-searches/{uid}   edit name/params (404 likewise)
+//	DELETE /saved-searches/{uid}   delete one (404 likewise)
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/saved-searches", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
@@ -77,13 +86,14 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 }
 
-// handleList writes the acting user's saved searches as {saved_searches:[…]}.
+// handleList writes the acting user's saved searches in the request's project as
+// {saved_searches:[…]}.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
 		return
 	}
-	searches, err := a.store.List(r.Context(), user.UID)
+	searches, err := a.store.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing saved searches failed")
 		return
@@ -91,7 +101,8 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listResponse(searches))
 }
 
-// handleCreate creates a saved search owned by the acting user and writes 201.
+// handleCreate creates a saved search owned by the acting user in the request's
+// project and writes 201.
 func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
@@ -102,7 +113,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	saved, err := a.store.Create(r.Context(), user.UID, in.Name, in.Params)
+	saved, err := a.store.Create(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, in.Name, in.Params)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "creating saved search failed")
 		return
@@ -131,7 +142,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updated, err := a.store.Update(r.Context(), saved.UID, name, params)
+	updated, err := a.store.Update(r.Context(), saved.ProjectUID, saved.OwnerUID, saved.UID, name, params)
 	if err != nil {
 		writeSearchError(w, err, "updating saved search failed")
 		return
@@ -145,7 +156,7 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := a.store.Delete(r.Context(), saved.UID); err != nil {
+	if err := a.store.Delete(r.Context(), saved.ProjectUID, saved.OwnerUID, saved.UID); err != nil {
 		writeSearchError(w, err, "deleting saved search failed")
 		return
 	}
@@ -153,21 +164,20 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // ownedSearch resolves the acting user and the {uid} path saved search, returning
-// it only when it exists and belongs to that user. It writes the appropriate
-// response (401/404/500) and reports ok=false otherwise. A search owned by a
-// different user is reported as 404 — never revealed.
+// it only when it exists, belongs to that user and lives in the request's
+// project. It writes the appropriate response (401/404/500) and reports ok=false
+// otherwise. A search owned by a different user, or by the same user in another
+// project, is the store's ErrNotFound and so the very 404 a missing one gets —
+// never revealed.
 func (a *API) ownedSearch(w http.ResponseWriter, r *http.Request) (savedsearch.SavedSearch, bool) {
 	user, ok := currentUser(w, r)
 	if !ok {
 		return savedsearch.SavedSearch{}, false
 	}
-	saved, err := a.store.Get(r.Context(), chi.URLParam(r, "uid"))
+	saved, err := a.store.Get(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID,
+		chi.URLParam(r, "uid"))
 	if err != nil {
 		writeSearchError(w, err, "reading saved search failed")
-		return savedsearch.SavedSearch{}, false
-	}
-	if saved.OwnerUID != user.UID {
-		writeError(w, http.StatusNotFound, "saved search not found")
 		return savedsearch.SavedSearch{}, false
 	}
 	return saved, true

@@ -568,13 +568,13 @@ func TestList_albumScopeChronological(t *testing.T) {
 	undated := env.seedPhoto(t, photos.Photo{Title: "Undated"}, "u.jpg", 5, 5, 210)
 	outside := env.seedPhoto(t, photos.Photo{Title: "Outside", TakenAt: ptrTime(tOld), TakenAtSource: "exif"}, "x.jpg", 120, 120, 5)
 
-	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
+	album, err := env.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	// Add newest-first so the chronological result cannot be insertion order.
 	for _, uid := range []string{newest.UID, undated.UID, oldest.UID} {
-		if err := env.organize.AddPhoto(t.Context(), album.UID, uid); err != nil {
+		if err := env.organize.AddPhoto(t.Context(), project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}
@@ -819,19 +819,19 @@ func TestUpdateMetadata_returnsFullDetail(t *testing.T) {
 
 	// The photo belongs to an album, carries a label and is favorited: exactly the
 	// state the buggy PATCH response used to drop.
-	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
+	album, err := env.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if err := env.organize.AddPhoto(t.Context(), album.UID, seeded.UID); err != nil {
+	if err := env.organize.AddPhoto(t.Context(), project.BootstrapUID, album.UID, seeded.UID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
-	label, err := env.organize.CreateLabel(t.Context(), organize.Label{Name: "beach"})
+	label, err := env.organize.CreateLabel(t.Context(), project.BootstrapUID, organize.Label{Name: "beach"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	if err := env.organize.AttachLabel(
-		t.Context(), seeded.UID, label.UID, organize.SourceManual, 0,
+		t.Context(), project.BootstrapUID, seeded.UID, label.UID, organize.SourceManual, 0,
 	); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}

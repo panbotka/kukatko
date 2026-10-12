@@ -80,7 +80,7 @@ func isolationService(pool *pgxpool.Pool) *review.Service {
 	return review.New(review.Config{
 		Sweeper: sweep.New(sweep.Config{Subjects: peopleStore, Finder: cand, Concurrency: 2}),
 		Expander: expand.New(expand.Config{
-			Vectors: bootstrapVectors{faces}, Organize: organizeStore, Feedback: feedbackStore, Photos: photoStore,
+			Vectors: faces, Organize: organizeStore, Feedback: feedbackStore, Photos: photoStore,
 			Media: mediaurl.NewBuilder(nil),
 		}),
 		Organize: organizeStore,

@@ -138,24 +138,24 @@ func seedQueryOrganisation(
 	org := organize.NewStore(pool)
 	ppl := people.NewStore(pool)
 
-	album, err := org.CreateAlbum(ctx, organize.Album{Title: "Léto 2024"})
+	album, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Léto 2024"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	lib.org["album"] = album.UID
 	for _, uid := range []string{beach.UID, prague2.UID} {
-		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
 	}
 
 	labels := map[string]string{"cat": beach.UID, "dog": winter.UID, "blurry": clip.UID}
 	for name, photoUID := range labels {
-		label, err := org.CreateLabel(ctx, organize.Label{Name: name})
+		label, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: name})
 		if err != nil {
 			t.Fatalf("CreateLabel(%s): %v", name, err)
 		}
-		if err := org.AttachLabel(ctx, photoUID, label.UID, organize.SourceManual, 0); err != nil {
+		if err := org.AttachLabel(ctx, project.BootstrapUID, photoUID, label.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel(%s): %v", name, err)
 		}
 		lib.org["label:"+name] = label.UID
@@ -207,19 +207,19 @@ func seedQueryOrganisation(
 		lib.user); err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	if err := org.SetRating(ctx, lib.user, beach.UID, 5); err != nil {
+	if err := org.SetRating(ctx, project.BootstrapUID, lib.user, beach.UID, 5); err != nil {
 		t.Fatalf("SetRating(beach): %v", err)
 	}
-	if err := org.SetRating(ctx, lib.user, winter.UID, 2); err != nil {
+	if err := org.SetRating(ctx, project.BootstrapUID, lib.user, winter.UID, 2); err != nil {
 		t.Fatalf("SetRating(winter): %v", err)
 	}
-	if err := org.SetFlag(ctx, lib.user, beach.UID, "pick"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, lib.user, beach.UID, "pick"); err != nil {
 		t.Fatalf("SetFlag(beach): %v", err)
 	}
-	if err := org.SetFlag(ctx, lib.user, clip.UID, "reject"); err != nil {
+	if err := org.SetFlag(ctx, project.BootstrapUID, lib.user, clip.UID, "reject"); err != nil {
 		t.Fatalf("SetFlag(clip): %v", err)
 	}
-	if err := org.AddFavorite(ctx, lib.user, winter.UID); err != nil {
+	if err := org.AddFavorite(ctx, project.BootstrapUID, lib.user, winter.UID); err != nil {
 		t.Fatalf("AddFavorite(winter): %v", err)
 	}
 }

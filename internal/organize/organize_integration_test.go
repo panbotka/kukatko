@@ -18,6 +18,10 @@ import (
 	"github.com/panbotka/kukatko/internal/project"
 )
 
+// testProject is the project every fixture of this package lives in: the
+// bootstrap project, which the photo seeders of the suite write into.
+const testProject = project.BootstrapUID
+
 // These tests run only under `make test-integration` against the database named
 // by KUKATKO_TEST_DATABASE_URL. They share one database and truncate between
 // cases, so they intentionally do not run in parallel.
@@ -65,7 +69,7 @@ func makePhotoAt(t *testing.T, store *photos.Store, hash string, takenAt time.Ti
 func addPhotos(t *testing.T, store *organize.Store, albumUID string, photoUIDs ...string) {
 	t.Helper()
 	for _, photoUID := range photoUIDs {
-		if err := store.AddPhoto(context.Background(), albumUID, photoUID); err != nil {
+		if err := store.AddPhoto(context.Background(), testProject, albumUID, photoUID); err != nil {
 			t.Fatalf("adding photo %s to album %s: %v", photoUID, albumUID, err)
 		}
 	}
@@ -106,7 +110,7 @@ func TestAlbumCRUD(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	created, err := store.CreateAlbum(ctx, organize.Album{Title: "Léto u Řeky", Description: "summer"})
+	created, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Léto u Řeky", Description: "summer"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -114,16 +118,16 @@ func TestAlbumCRUD(t *testing.T) {
 		t.Fatalf("unexpected created album: %+v", created)
 	}
 
-	byUID, err := store.GetAlbumByUID(ctx, created.UID)
+	byUID, err := store.GetAlbumByUID(ctx, testProject, created.UID)
 	if err != nil || byUID.UID != created.UID {
 		t.Fatalf("GetAlbumByUID = %+v, %v", byUID, err)
 	}
-	bySlug, err := store.GetAlbumBySlug(ctx, "leto-u-reky")
+	bySlug, err := store.GetAlbumBySlug(ctx, testProject, "leto-u-reky")
 	if err != nil || bySlug.UID != created.UID {
 		t.Fatalf("GetAlbumBySlug = %+v, %v", bySlug, err)
 	}
 
-	updated, err := store.UpdateAlbum(ctx, created.UID, organize.AlbumUpdate{
+	updated, err := store.UpdateAlbum(ctx, testProject, created.UID, organize.AlbumUpdate{
 		Title: "Hory", Type: organize.AlbumFolder, Private: true,
 	})
 	if err != nil {
@@ -134,13 +138,13 @@ func TestAlbumCRUD(t *testing.T) {
 		t.Fatalf("unexpected updated album: %+v", updated)
 	}
 
-	if err := store.DeleteAlbum(ctx, created.UID); err != nil {
+	if err := store.DeleteAlbum(ctx, testProject, created.UID); err != nil {
 		t.Fatalf("DeleteAlbum: %v", err)
 	}
-	if _, err := store.GetAlbumByUID(ctx, created.UID); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if _, err := store.GetAlbumByUID(ctx, testProject, created.UID); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Fatalf("GetAlbumByUID after delete = %v, want ErrAlbumNotFound", err)
 	}
-	if err := store.DeleteAlbum(ctx, created.UID); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if err := store.DeleteAlbum(ctx, testProject, created.UID); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Fatalf("DeleteAlbum missing = %v, want ErrAlbumNotFound", err)
 	}
 }
@@ -150,14 +154,14 @@ func TestAlbumInvalidType(t *testing.T) {
 	store, _, _, _ := newStores(t)
 	ctx := t.Context()
 
-	if _, err := store.CreateAlbum(ctx, organize.Album{Title: "X", Type: "playlist"}); !errors.Is(err, organize.ErrInvalidType) {
+	if _, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "X", Type: "playlist"}); !errors.Is(err, organize.ErrInvalidType) {
 		t.Fatalf("CreateAlbum bad type = %v, want ErrInvalidType", err)
 	}
-	created, err := store.CreateAlbum(ctx, organize.Album{Title: "Y"})
+	created, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Y"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if _, err := store.UpdateAlbum(ctx, created.UID, organize.AlbumUpdate{Title: "Y", Type: "mixtape"}); !errors.Is(err, organize.ErrInvalidType) {
+	if _, err := store.UpdateAlbum(ctx, testProject, created.UID, organize.AlbumUpdate{Title: "Y", Type: "mixtape"}); !errors.Is(err, organize.ErrInvalidType) {
 		t.Fatalf("UpdateAlbum bad type = %v, want ErrInvalidType", err)
 	}
 }
@@ -170,7 +174,7 @@ func TestAlbumUniqueSlug(t *testing.T) {
 	want := []string{"trip", "trip-2", "trip-3"}
 	titles := []string{"Trip", "Trip", "Trip!"}
 	for i, title := range titles {
-		got, err := store.CreateAlbum(ctx, organize.Album{Title: title})
+		got, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: title})
 		if err != nil {
 			t.Fatalf("CreateAlbum %d: %v", i, err)
 		}
@@ -187,7 +191,7 @@ func TestAlbumUniqueSlug(t *testing.T) {
 func TestAlbumPhotoMembership(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
-	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
+	album, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album"})
 	oldest := makePhotoAt(t, photoStore, "ap1", time.Date(2020, 6, 1, 10, 0, 0, 0, time.UTC))
 	middle := makePhotoAt(t, photoStore, "ap2", time.Date(2022, 6, 1, 10, 0, 0, 0, time.UTC))
 	// No capture time: falls back to its upload (created_at) time, which is
@@ -196,16 +200,16 @@ func TestAlbumPhotoMembership(t *testing.T) {
 
 	// Add in an order that matches neither insertion nor chronology.
 	for _, p := range []string{undated, oldest, middle} {
-		if err := store.AddPhoto(ctx, album.UID, p); err != nil {
+		if err := store.AddPhoto(ctx, testProject, album.UID, p); err != nil {
 			t.Fatalf("AddPhoto %s: %v", p, err)
 		}
 	}
 	// Re-adding an existing member is an idempotent no-op.
-	if err := store.AddPhoto(ctx, album.UID, oldest); err != nil {
+	if err := store.AddPhoto(ctx, testProject, album.UID, oldest); err != nil {
 		t.Fatalf("AddPhoto idempotent: %v", err)
 	}
 
-	got, err := store.ListPhotoUIDs(ctx, album.UID)
+	got, err := store.ListPhotoUIDs(ctx, testProject, album.UID)
 	if err != nil {
 		t.Fatalf("ListPhotoUIDs: %v", err)
 	}
@@ -213,14 +217,14 @@ func TestAlbumPhotoMembership(t *testing.T) {
 		t.Fatalf("ListPhotoUIDs = %v, want chronological [%s %s %s]", got, oldest, middle, undated)
 	}
 
-	if err := store.RemovePhoto(ctx, album.UID, oldest); err != nil {
+	if err := store.RemovePhoto(ctx, testProject, album.UID, oldest); err != nil {
 		t.Fatalf("RemovePhoto: %v", err)
 	}
 	// Removing again is idempotent.
-	if err := store.RemovePhoto(ctx, album.UID, oldest); err != nil {
+	if err := store.RemovePhoto(ctx, testProject, album.UID, oldest); err != nil {
 		t.Fatalf("RemovePhoto idempotent: %v", err)
 	}
-	got, _ = store.ListPhotoUIDs(ctx, album.UID)
+	got, _ = store.ListPhotoUIDs(ctx, testProject, album.UID)
 	if len(got) != 2 || got[0] != middle || got[1] != undated {
 		t.Fatalf("after remove = %v, want [%s %s]", got, middle, undated)
 	}
@@ -230,13 +234,13 @@ func TestAlbumPhotoMembership(t *testing.T) {
 func TestAlbumMembershipMissing(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
-	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
+	album, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album"})
 	photoUID := makePhoto(t, photoStore, "mm1")
 
-	if err := store.AddPhoto(ctx, "almissing", photoUID); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if err := store.AddPhoto(ctx, testProject, "almissing", photoUID); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Errorf("AddPhoto missing album = %v, want ErrAlbumNotFound", err)
 	}
-	if err := store.AddPhoto(ctx, album.UID, "phmissing"); !errors.Is(err, organize.ErrPhotoNotFound) {
+	if err := store.AddPhoto(ctx, testProject, album.UID, "phmissing"); !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Errorf("AddPhoto missing photo = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -248,12 +252,12 @@ func TestAlbumListCounts(t *testing.T) {
 	p1 := makePhoto(t, photoStore, "lc1")
 	p2 := makePhoto(t, photoStore, "lc2")
 
-	a1, _ := store.CreateAlbum(ctx, organize.Album{Title: "Alps"})
-	b1, _ := store.CreateAlbum(ctx, organize.Album{Title: "Beach"})
-	_ = store.AddPhoto(ctx, a1.UID, p1)
-	_ = store.AddPhoto(ctx, a1.UID, p2)
+	a1, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Alps"})
+	b1, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Beach"})
+	_ = store.AddPhoto(ctx, testProject, a1.UID, p1)
+	_ = store.AddPhoto(ctx, testProject, a1.UID, p2)
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -289,11 +293,11 @@ func TestAlbumListOrder(t *testing.T) {
 
 	// The titles run counter to the wanted order, so a leftover alphabetical sort
 	// cannot pass this test by accident.
-	oldAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Old"})
-	recentAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Recent"})
-	decoyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Archived Decoy"})
-	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
-	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "E Empty"})
+	oldAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "A Old"})
+	recentAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "B Recent"})
+	decoyAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "C Archived Decoy"})
+	undatedAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "D Undated"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "E Empty"})
 
 	addPhotos(t, store, oldAlbum.UID, oldest)
 	addPhotos(t, store, recentAlbum.UID, newest)
@@ -302,7 +306,7 @@ func TestAlbumListOrder(t *testing.T) {
 	addPhotos(t, store, decoyAlbum.UID, middle, future)
 	addPhotos(t, store, undatedAlbum.UID, undatedPhoto)
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -336,8 +340,8 @@ func TestAlbumListOrderTieBreak(t *testing.T) {
 	first := makePhotoAt(t, photoStore, "tb1", shot)
 	second := makePhotoAt(t, photoStore, "tb2", shot)
 
-	one, _ := store.CreateAlbum(ctx, organize.Album{Title: "Z Title"})
-	two, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Title"})
+	one, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Z Title"})
+	two, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "A Title"})
 	addPhotos(t, store, one.UID, first)
 	addPhotos(t, store, two.UID, second)
 
@@ -345,7 +349,7 @@ func TestAlbumListOrderTieBreak(t *testing.T) {
 	slices.Sort(want)
 
 	for call := range 2 {
-		list, err := store.ListAlbums(ctx)
+		list, err := store.ListAlbums(ctx, testProject)
 		if err != nil {
 			t.Fatalf("ListAlbums call %d: %v", call, err)
 		}
@@ -375,26 +379,26 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 	}
 	undated := makePhoto(t, photoStore, "cr4")
 
-	ranged, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Ranged"})
-	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
-	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Empty"})
-	undatedAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Undated"})
+	ranged, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "A Ranged"})
+	pinned, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "B Pinned"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "C Empty"})
+	undatedAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "D Undated"})
 	for _, uid := range []string{oldest, newest, archived} {
-		if err := store.AddPhoto(ctx, ranged.UID, uid); err != nil {
+		if err := store.AddPhoto(ctx, testProject, ranged.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
-		if err := store.AddPhoto(ctx, pinned.UID, uid); err != nil {
+		if err := store.AddPhoto(ctx, testProject, pinned.UID, uid); err != nil {
 			t.Fatalf("AddPhoto: %v", err)
 		}
 	}
-	if err := store.AddPhoto(ctx, undatedAlbum.UID, undated); err != nil {
+	if err := store.AddPhoto(ctx, testProject, undatedAlbum.UID, undated); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
-	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+	if _, err := store.SetCover(ctx, testProject, pinned.UID, &oldest); err != nil {
 		t.Fatalf("SetCover: %v", err)
 	}
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -434,7 +438,7 @@ func TestAlbumListCoverAndRange(t *testing.T) {
 	}
 
 	// The fallback must be deterministic: the same album, the same cover, always.
-	again, err := store.ListAlbums(ctx)
+	again, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums again: %v", err)
 	}
@@ -475,13 +479,13 @@ func TestAlbumListCoverStackAndTieBreak(t *testing.T) {
 		t.Fatalf("CreateStack: %v", err)
 	}
 
-	album, err := store.CreateAlbum(ctx, organize.Album{Title: "Stacked"})
+	album, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Stacked"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	addPhotos(t, store, album.UID, tieOne, tieTwo, oldest, newestHidden)
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -528,20 +532,20 @@ func TestAlbumListCoverCandidates(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	full, _ := store.CreateAlbum(ctx, organize.Album{Title: "A Full"})
-	pinned, _ := store.CreateAlbum(ctx, organize.Album{Title: "B Pinned"})
-	small, _ := store.CreateAlbum(ctx, organize.Album{Title: "C Small"})
-	emptyAlbum, _ := store.CreateAlbum(ctx, organize.Album{Title: "D Empty"})
+	full, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "A Full"})
+	pinned, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "B Pinned"})
+	small, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "C Small"})
+	emptyAlbum, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "D Empty"})
 	members := append(slices.Clone(newestFirst), archived)
 	addPhotos(t, store, full.UID, members...)
 	addPhotos(t, store, pinned.UID, members...)
 	addPhotos(t, store, small.UID, newestFirst[0], newestFirst[1])
 	oldest := newestFirst[len(newestFirst)-1]
-	if _, err := store.SetCover(ctx, pinned.UID, &oldest); err != nil {
+	if _, err := store.SetCover(ctx, testProject, pinned.UID, &oldest); err != nil {
 		t.Fatalf("SetCover: %v", err)
 	}
 
-	list, err := store.ListAlbums(ctx)
+	list, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
@@ -584,7 +588,7 @@ func TestAlbumListCoverCandidates(t *testing.T) {
 
 	// The grid renders these in order; a list that reshuffled between requests
 	// would redraw every album on every reload.
-	again, err := store.ListAlbums(ctx)
+	again, err := store.ListAlbums(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListAlbums again: %v", err)
 	}
@@ -600,8 +604,8 @@ func TestAlbumCoverSetNullOnPhotoDelete(t *testing.T) {
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "cover")
 
-	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
-	withCover, err := store.SetCover(ctx, album.UID, &photoUID)
+	album, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album"})
+	withCover, err := store.SetCover(ctx, testProject, album.UID, &photoUID)
 	if err != nil {
 		t.Fatalf("SetCover: %v", err)
 	}
@@ -612,7 +616,7 @@ func TestAlbumCoverSetNullOnPhotoDelete(t *testing.T) {
 	if err := photoStore.Delete(ctx, photoUID); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	got, err := store.GetAlbumByUID(ctx, album.UID)
+	got, err := store.GetAlbumByUID(ctx, testProject, album.UID)
 	if err != nil {
 		t.Fatalf("GetAlbumByUID: %v", err)
 	}
@@ -625,14 +629,14 @@ func TestAlbumCoverSetNullOnPhotoDelete(t *testing.T) {
 func TestAlbumSetCoverMissing(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
-	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
+	album, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album"})
 	photoUID := makePhoto(t, photoStore, "sc")
 
-	if _, err := store.SetCover(ctx, "almissing", &photoUID); !errors.Is(err, organize.ErrAlbumNotFound) {
+	if _, err := store.SetCover(ctx, testProject, "almissing", &photoUID); !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Errorf("SetCover missing album = %v, want ErrAlbumNotFound", err)
 	}
 	bad := "phmissing"
-	if _, err := store.SetCover(ctx, album.UID, &bad); !errors.Is(err, organize.ErrPhotoNotFound) {
+	if _, err := store.SetCover(ctx, testProject, album.UID, &bad); !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Errorf("SetCover missing photo = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -642,16 +646,16 @@ func TestAlbumSetCoverMissing(t *testing.T) {
 func TestAlbumPhotoCascadeOnPhotoDelete(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
-	album, _ := store.CreateAlbum(ctx, organize.Album{Title: "Album"})
+	album, _ := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Album"})
 	photoUID := makePhoto(t, photoStore, "casc")
-	if err := store.AddPhoto(ctx, album.UID, photoUID); err != nil {
+	if err := store.AddPhoto(ctx, testProject, album.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
 
 	if err := photoStore.Delete(ctx, photoUID); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	got, _ := store.ListPhotoUIDs(ctx, album.UID)
+	got, _ := store.ListPhotoUIDs(ctx, testProject, album.UID)
 	if len(got) != 0 {
 		t.Errorf("album membership = %v, want empty after photo delete", got)
 	}
@@ -665,32 +669,32 @@ func TestLabelCRUDAndAttach(t *testing.T) {
 	p1 := makePhoto(t, photoStore, "lp1")
 	p2 := makePhoto(t, photoStore, "lp2")
 
-	beach, err := store.CreateLabel(ctx, organize.Label{Name: "Pláž", Priority: 5})
+	beach, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "Pláž", Priority: 5})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	if beach.Slug != "plaz" || beach.Priority != 5 {
 		t.Fatalf("unexpected label: %+v", beach)
 	}
-	sky, _ := store.CreateLabel(ctx, organize.Label{Name: "Sky"})
+	sky, _ := store.CreateLabel(ctx, testProject, organize.Label{Name: "Sky"})
 
-	bySlug, err := store.GetLabelBySlug(ctx, "plaz")
+	bySlug, err := store.GetLabelBySlug(ctx, testProject, "plaz")
 	if err != nil || bySlug.UID != beach.UID {
 		t.Fatalf("GetLabelBySlug = %+v, %v", bySlug, err)
 	}
 
-	if err := store.AttachLabel(ctx, p1, beach.UID, organize.SourceManual, 0); err != nil {
+	if err := store.AttachLabel(ctx, testProject, p1, beach.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel p1: %v", err)
 	}
-	if err := store.AttachLabel(ctx, p2, beach.UID, organize.SourceAI, 30); err != nil {
+	if err := store.AttachLabel(ctx, testProject, p2, beach.UID, organize.SourceAI, 30); err != nil {
 		t.Fatalf("AttachLabel p2: %v", err)
 	}
 	// Re-attaching updates source/uncertainty without erroring.
-	if err := store.AttachLabel(ctx, p1, beach.UID, organize.SourceImport, 10); err != nil {
+	if err := store.AttachLabel(ctx, testProject, p1, beach.UID, organize.SourceImport, 10); err != nil {
 		t.Fatalf("AttachLabel idempotent: %v", err)
 	}
 
-	list, err := store.ListLabels(ctx)
+	list, err := store.ListLabels(ctx, testProject)
 	if err != nil {
 		t.Fatalf("ListLabels: %v", err)
 	}
@@ -702,26 +706,26 @@ func TestLabelCRUDAndAttach(t *testing.T) {
 		t.Fatalf("labels[1] = %+v, want sky count 0", list[1])
 	}
 
-	if err := store.DetachLabel(ctx, p1, beach.UID); err != nil {
+	if err := store.DetachLabel(ctx, testProject, p1, beach.UID); err != nil {
 		t.Fatalf("DetachLabel: %v", err)
 	}
-	if err := store.DetachLabel(ctx, p1, beach.UID); err != nil {
+	if err := store.DetachLabel(ctx, testProject, p1, beach.UID); err != nil {
 		t.Fatalf("DetachLabel idempotent: %v", err)
 	}
-	uids, _ := store.ListPhotoUIDsByLabel(ctx, beach.UID)
+	uids, _ := store.ListPhotoUIDsByLabel(ctx, testProject, beach.UID)
 	if len(uids) != 1 || uids[0] != p2 {
 		t.Fatalf("ListPhotoUIDsByLabel = %v, want [%s]", uids, p2)
 	}
 
-	updated, err := store.UpdateLabel(ctx, sky.UID, organize.LabelUpdate{Name: "Obloha", Priority: 9})
+	updated, err := store.UpdateLabel(ctx, testProject, sky.UID, organize.LabelUpdate{Name: "Obloha", Priority: 9})
 	if err != nil || updated.Slug != "obloha" || updated.Priority != 9 {
 		t.Fatalf("UpdateLabel = %+v, %v", updated, err)
 	}
 
-	if err := store.DeleteLabel(ctx, beach.UID); err != nil {
+	if err := store.DeleteLabel(ctx, testProject, beach.UID); err != nil {
 		t.Fatalf("DeleteLabel: %v", err)
 	}
-	if _, err := store.GetLabelByUID(ctx, beach.UID); !errors.Is(err, organize.ErrLabelNotFound) {
+	if _, err := store.GetLabelByUID(ctx, testProject, beach.UID); !errors.Is(err, organize.ErrLabelNotFound) {
 		t.Fatalf("GetLabelByUID after delete = %v, want ErrLabelNotFound", err)
 	}
 }
@@ -737,18 +741,18 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 
 	// Deliberately zero-valued: a struct literal must not be able to create a
 	// label the review game silently ignores.
-	label, err := store.CreateLabel(ctx, organize.Label{Name: "Výlet"})
+	label, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "Výlet"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	if !label.ReviewEnabled {
 		t.Fatalf("a freshly created label is review_enabled=%v, want true", label.ReviewEnabled)
 	}
-	if err := store.AttachLabel(ctx, photoUID, label.UID, organize.SourceManual, 0); err != nil {
+	if err := store.AttachLabel(ctx, testProject, photoUID, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
 
-	off, err := store.UpdateLabel(ctx, label.UID,
+	off, err := store.UpdateLabel(ctx, testProject, label.UID,
 		organize.LabelUpdate{Name: "Výlet", Priority: 0, ReviewEnabled: false})
 	if err != nil {
 		t.Fatalf("UpdateLabel off: %v", err)
@@ -759,29 +763,29 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 
 	// Every read path has to agree, or the toggle looks broken from whichever
 	// page happens to use the other query.
-	fetched, err := store.GetLabelByUID(ctx, label.UID)
+	fetched, err := store.GetLabelByUID(ctx, testProject, label.UID)
 	if err != nil || fetched.ReviewEnabled {
 		t.Errorf("GetLabelByUID = %+v, %v; want review_enabled false", fetched, err)
 	}
-	list, err := store.ListLabels(ctx)
+	list, err := store.ListLabels(ctx, testProject)
 	if err != nil || len(list) != 1 || list[0].ReviewEnabled {
 		t.Errorf("ListLabels = %+v, %v; want one label with review_enabled false", list, err)
 	}
-	found, err := store.SearchLabels(ctx, "výlet", 10)
+	found, err := store.SearchLabels(ctx, testProject, "výlet", 10)
 	if err != nil || len(found) != 1 || found[0].ReviewEnabled {
 		t.Errorf("SearchLabels = %+v, %v; want one label with review_enabled false", found, err)
 	}
-	onPhoto, err := store.LabelsForPhoto(ctx, photoUID)
+	onPhoto, err := store.LabelsForPhoto(ctx, testProject, photoUID)
 	if err != nil || len(onPhoto) != 1 || onPhoto[0].ReviewEnabled {
 		t.Errorf("LabelsForPhoto = %+v, %v; want one label with review_enabled false", onPhoto, err)
 	}
-	exported, err := store.PhotoLabelsForPhoto(ctx, photoUID)
+	exported, err := store.PhotoLabelsForPhoto(ctx, testProject, photoUID)
 	if err != nil || len(exported) != 1 || exported[0].ReviewEnabled {
 		t.Errorf("PhotoLabelsForPhoto = %+v, %v; want one label with review_enabled false",
 			exported, err)
 	}
 
-	back, err := store.UpdateLabel(ctx, label.UID,
+	back, err := store.UpdateLabel(ctx, testProject, label.UID,
 		organize.LabelUpdate{Name: "Výlet", Priority: 0, ReviewEnabled: true})
 	if err != nil || !back.ReviewEnabled {
 		t.Fatalf("UpdateLabel back on = %+v, %v", back, err)
@@ -794,15 +798,15 @@ func TestLabelAttachInvalidSourceAndMissing(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "lsrc")
-	label, _ := store.CreateLabel(ctx, organize.Label{Name: "Tag"})
+	label, _ := store.CreateLabel(ctx, testProject, organize.Label{Name: "Tag"})
 
-	if err := store.AttachLabel(ctx, photoUID, label.UID, "robot", 0); !errors.Is(err, organize.ErrInvalidSource) {
+	if err := store.AttachLabel(ctx, testProject, photoUID, label.UID, "robot", 0); !errors.Is(err, organize.ErrInvalidSource) {
 		t.Errorf("AttachLabel bad source = %v, want ErrInvalidSource", err)
 	}
-	if err := store.AttachLabel(ctx, "phmissing", label.UID, organize.SourceManual, 0); !errors.Is(err, organize.ErrPhotoNotFound) {
+	if err := store.AttachLabel(ctx, testProject, "phmissing", label.UID, organize.SourceManual, 0); !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Errorf("AttachLabel missing photo = %v, want ErrPhotoNotFound", err)
 	}
-	if err := store.AttachLabel(ctx, photoUID, "lbmissing", organize.SourceManual, 0); !errors.Is(err, organize.ErrLabelNotFound) {
+	if err := store.AttachLabel(ctx, testProject, photoUID, "lbmissing", organize.SourceManual, 0); !errors.Is(err, organize.ErrLabelNotFound) {
 		t.Errorf("AttachLabel missing label = %v, want ErrLabelNotFound", err)
 	}
 }
@@ -813,15 +817,15 @@ func TestPhotoLabelCascadeOnPhotoDelete(t *testing.T) {
 	store, photoStore, _, _ := newStores(t)
 	ctx := t.Context()
 	photoUID := makePhoto(t, photoStore, "plc")
-	label, _ := store.CreateLabel(ctx, organize.Label{Name: "Tag"})
-	if err := store.AttachLabel(ctx, photoUID, label.UID, organize.SourceManual, 0); err != nil {
+	label, _ := store.CreateLabel(ctx, testProject, organize.Label{Name: "Tag"})
+	if err := store.AttachLabel(ctx, testProject, photoUID, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
 
 	if err := photoStore.Delete(ctx, photoUID); err != nil {
 		t.Fatalf("Delete photo: %v", err)
 	}
-	uids, _ := store.ListPhotoUIDsByLabel(ctx, label.UID)
+	uids, _ := store.ListPhotoUIDsByLabel(ctx, testProject, label.UID)
 	if len(uids) != 0 {
 		t.Errorf("label attachments = %v, want empty after photo delete", uids)
 	}
@@ -837,69 +841,69 @@ func TestFavoritesIdempotentAndIsolated(t *testing.T) {
 	p1 := makePhoto(t, photoStore, "fav1")
 	p2 := makePhoto(t, photoStore, "fav2")
 
-	if err := store.AddFavorite(ctx, alice, p1); err != nil {
+	if err := store.AddFavorite(ctx, testProject, alice, p1); err != nil {
 		t.Fatalf("AddFavorite: %v", err)
 	}
 	// Adding again is idempotent.
-	if err := store.AddFavorite(ctx, alice, p1); err != nil {
+	if err := store.AddFavorite(ctx, testProject, alice, p1); err != nil {
 		t.Fatalf("AddFavorite idempotent: %v", err)
 	}
-	if err := store.AddFavorite(ctx, alice, p2); err != nil {
+	if err := store.AddFavorite(ctx, testProject, alice, p2); err != nil {
 		t.Fatalf("AddFavorite p2: %v", err)
 	}
 	// Bob favorites only p1; favorites are per-user.
-	if err := store.AddFavorite(ctx, bob, p1); err != nil {
+	if err := store.AddFavorite(ctx, testProject, bob, p1); err != nil {
 		t.Fatalf("AddFavorite bob: %v", err)
 	}
 
-	isFav, err := store.IsFavorite(ctx, alice, p1)
+	isFav, err := store.IsFavorite(ctx, testProject, alice, p1)
 	if err != nil || !isFav {
 		t.Fatalf("IsFavorite alice/p1 = %v, %v, want true", isFav, err)
 	}
-	if isFav, _ := store.IsFavorite(ctx, bob, p2); isFav {
+	if isFav, _ := store.IsFavorite(ctx, testProject, bob, p2); isFav {
 		t.Errorf("IsFavorite bob/p2 = true, want false (isolation)")
 	}
 
-	aliceFavs, err := store.ListFavorites(ctx, alice)
+	aliceFavs, err := store.ListFavorites(ctx, testProject, alice)
 	if err != nil {
 		t.Fatalf("ListFavorites: %v", err)
 	}
 	if len(aliceFavs) != 2 {
 		t.Errorf("alice favorites = %v, want 2", aliceFavs)
 	}
-	bobFavs, _ := store.ListFavorites(ctx, bob)
+	bobFavs, _ := store.ListFavorites(ctx, testProject, bob)
 	if len(bobFavs) != 1 || bobFavs[0] != p1 {
 		t.Errorf("bob favorites = %v, want [%s]", bobFavs, p1)
 	}
 
 	// FavoritedAmong resolves a page's flags in one query and stays per-user.
-	aliceSet, err := store.FavoritedAmong(ctx, alice, []string{p1, p2})
+	aliceSet, err := store.FavoritedAmong(ctx, testProject, alice, []string{p1, p2})
 	if err != nil {
 		t.Fatalf("FavoritedAmong: %v", err)
 	}
 	if !aliceSet[p1] || !aliceSet[p2] {
 		t.Errorf("alice FavoritedAmong = %v, want both true", aliceSet)
 	}
-	bobSet, _ := store.FavoritedAmong(ctx, bob, []string{p1, p2})
+	bobSet, _ := store.FavoritedAmong(ctx, testProject, bob, []string{p1, p2})
 	if !bobSet[p1] || bobSet[p2] {
 		t.Errorf("bob FavoritedAmong = %v, want {p1:true, p2 absent}", bobSet)
 	}
-	if empty, _ := store.FavoritedAmong(ctx, alice, nil); len(empty) != 0 {
+	if empty, _ := store.FavoritedAmong(ctx, testProject, alice, nil); len(empty) != 0 {
 		t.Errorf("FavoritedAmong(nil) = %v, want empty", empty)
 	}
 
-	if err := store.RemoveFavorite(ctx, alice, p1); err != nil {
+	if err := store.RemoveFavorite(ctx, testProject, alice, p1); err != nil {
 		t.Fatalf("RemoveFavorite: %v", err)
 	}
 	// Removing again is idempotent.
-	if err := store.RemoveFavorite(ctx, alice, p1); err != nil {
+	if err := store.RemoveFavorite(ctx, testProject, alice, p1); err != nil {
 		t.Fatalf("RemoveFavorite idempotent: %v", err)
 	}
-	if isFav, _ := store.IsFavorite(ctx, alice, p1); isFav {
+	if isFav, _ := store.IsFavorite(ctx, testProject, alice, p1); isFav {
 		t.Errorf("IsFavorite alice/p1 after remove = true, want false")
 	}
 	// Bob's favorite of p1 is untouched by alice's removal.
-	if isFav, _ := store.IsFavorite(ctx, bob, p1); !isFav {
+	if isFav, _ := store.IsFavorite(ctx, testProject, bob, p1); !isFav {
 		t.Errorf("IsFavorite bob/p1 = false, want true (isolation)")
 	}
 }
@@ -911,10 +915,10 @@ func TestFavoriteMissing(t *testing.T) {
 	user := makeUser(t, userStore, "fmiss_u", "fmiss")
 	photoUID := makePhoto(t, photoStore, "fmiss")
 
-	if err := store.AddFavorite(ctx, "usermissing", photoUID); !errors.Is(err, organize.ErrUserNotFound) {
+	if err := store.AddFavorite(ctx, testProject, "usermissing", photoUID); !errors.Is(err, organize.ErrUserNotFound) {
 		t.Errorf("AddFavorite missing user = %v, want ErrUserNotFound", err)
 	}
-	if err := store.AddFavorite(ctx, user, "phmissing"); !errors.Is(err, organize.ErrPhotoNotFound) {
+	if err := store.AddFavorite(ctx, testProject, user, "phmissing"); !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Errorf("AddFavorite missing photo = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -928,20 +932,20 @@ func TestFavoriteCascadeOnUserDelete(t *testing.T) {
 	bob := makeUser(t, userStore, "cdel_bob", "cbob")
 	photoUID := makePhoto(t, photoStore, "cdel")
 
-	if err := store.AddFavorite(ctx, alice, photoUID); err != nil {
+	if err := store.AddFavorite(ctx, testProject, alice, photoUID); err != nil {
 		t.Fatalf("AddFavorite alice: %v", err)
 	}
-	if err := store.AddFavorite(ctx, bob, photoUID); err != nil {
+	if err := store.AddFavorite(ctx, testProject, bob, photoUID); err != nil {
 		t.Fatalf("AddFavorite bob: %v", err)
 	}
 
 	if _, err := db.Pool().Exec(ctx, "DELETE FROM users WHERE uid = $1", alice); err != nil {
 		t.Fatalf("delete user: %v", err)
 	}
-	if favs, _ := store.ListFavorites(ctx, alice); len(favs) != 0 {
+	if favs, _ := store.ListFavorites(ctx, testProject, alice); len(favs) != 0 {
 		t.Errorf("alice favorites = %v, want empty after user delete", favs)
 	}
-	if isFav, _ := store.IsFavorite(ctx, bob, photoUID); !isFav {
+	if isFav, _ := store.IsFavorite(ctx, testProject, bob, photoUID); !isFav {
 		t.Errorf("bob favorite removed by alice's deletion, want preserved")
 	}
 }
@@ -952,25 +956,25 @@ func TestAlbumsForPhoto(t *testing.T) {
 	ctx := t.Context()
 
 	photoUID := makePhoto(t, photoStore, "ph-mem")
-	zebra, err := store.CreateAlbum(ctx, organize.Album{Title: "Zebra"})
+	zebra, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Zebra"})
 	if err != nil {
 		t.Fatalf("CreateAlbum Zebra: %v", err)
 	}
-	alps, err := store.CreateAlbum(ctx, organize.Album{Title: "Alps"})
+	alps, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Alps"})
 	if err != nil {
 		t.Fatalf("CreateAlbum Alps: %v", err)
 	}
-	if _, err := store.CreateAlbum(ctx, organize.Album{Title: "Empty"}); err != nil {
+	if _, err := store.CreateAlbum(ctx, testProject, organize.Album{Title: "Empty"}); err != nil {
 		t.Fatalf("CreateAlbum Empty: %v", err)
 	}
-	if err := store.AddPhoto(ctx, zebra.UID, photoUID); err != nil {
+	if err := store.AddPhoto(ctx, testProject, zebra.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto Zebra: %v", err)
 	}
-	if err := store.AddPhoto(ctx, alps.UID, photoUID); err != nil {
+	if err := store.AddPhoto(ctx, testProject, alps.UID, photoUID); err != nil {
 		t.Fatalf("AddPhoto Alps: %v", err)
 	}
 
-	got, err := store.AlbumsForPhoto(ctx, photoUID)
+	got, err := store.AlbumsForPhoto(ctx, testProject, photoUID)
 	if err != nil {
 		t.Fatalf("AlbumsForPhoto: %v", err)
 	}
@@ -978,7 +982,7 @@ func TestAlbumsForPhoto(t *testing.T) {
 		t.Fatalf("AlbumsForPhoto = %+v, want [Alps, Zebra]", got)
 	}
 
-	none, err := store.AlbumsForPhoto(ctx, "ph-nope")
+	none, err := store.AlbumsForPhoto(ctx, testProject, "ph-nope")
 	if err != nil {
 		t.Fatalf("AlbumsForPhoto(unknown): %v", err)
 	}
@@ -993,25 +997,25 @@ func TestLabelsForPhoto(t *testing.T) {
 	ctx := t.Context()
 
 	photoUID := makePhoto(t, photoStore, "ph-lbl")
-	low, err := store.CreateLabel(ctx, organize.Label{Name: "beach", Priority: 1})
+	low, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "beach", Priority: 1})
 	if err != nil {
 		t.Fatalf("CreateLabel beach: %v", err)
 	}
-	high, err := store.CreateLabel(ctx, organize.Label{Name: "sunset", Priority: 9})
+	high, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "sunset", Priority: 9})
 	if err != nil {
 		t.Fatalf("CreateLabel sunset: %v", err)
 	}
-	if _, err := store.CreateLabel(ctx, organize.Label{Name: "unused", Priority: 5}); err != nil {
+	if _, err := store.CreateLabel(ctx, testProject, organize.Label{Name: "unused", Priority: 5}); err != nil {
 		t.Fatalf("CreateLabel unused: %v", err)
 	}
-	if err := store.AttachLabel(ctx, photoUID, low.UID, organize.SourceManual, 0); err != nil {
+	if err := store.AttachLabel(ctx, testProject, photoUID, low.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel beach: %v", err)
 	}
-	if err := store.AttachLabel(ctx, photoUID, high.UID, organize.SourceManual, 0); err != nil {
+	if err := store.AttachLabel(ctx, testProject, photoUID, high.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel sunset: %v", err)
 	}
 
-	got, err := store.LabelsForPhoto(ctx, photoUID)
+	got, err := store.LabelsForPhoto(ctx, testProject, photoUID)
 	if err != nil {
 		t.Fatalf("LabelsForPhoto: %v", err)
 	}

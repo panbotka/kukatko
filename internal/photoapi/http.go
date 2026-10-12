@@ -882,14 +882,14 @@ func (a *API) photoMemberships(ctx context.Context, uid string) ([]albumRef, []l
 	if a.organizer == nil {
 		return albums, labels, nil
 	}
-	albumRows, err := a.organizer.AlbumsForPhoto(ctx, uid)
+	albumRows, err := a.organizer.AlbumsForPhoto(ctx, auth.ProjectUIDFromContext(ctx), uid)
 	if err != nil {
 		return nil, nil, fmt.Errorf("photoapi: albums for photo: %w", err)
 	}
 	for _, album := range albumRows {
 		albums = append(albums, albumRef{UID: album.UID, Title: album.Title})
 	}
-	labelRows, err := a.organizer.LabelsForPhoto(ctx, uid)
+	labelRows, err := a.organizer.LabelsForPhoto(ctx, auth.ProjectUIDFromContext(ctx), uid)
 	if err != nil {
 		return nil, nil, fmt.Errorf("photoapi: labels for photo: %w", err)
 	}

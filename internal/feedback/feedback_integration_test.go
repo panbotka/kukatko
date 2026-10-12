@@ -13,10 +13,10 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/feedback"
-	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -31,7 +31,6 @@ type fixtures struct {
 	feedback *feedback.Store
 	photos   *photos.Store
 	people   *people.Store
-	labels   *organize.Store
 	users    *auth.Store
 	db       *database.DB
 }
@@ -46,7 +45,6 @@ func newFixtures(t *testing.T) *fixtures {
 		feedback: feedback.NewStore(db.Pool()),
 		photos:   photos.NewStore(db.Pool()),
 		people:   people.NewStore(db.Pool()),
-		labels:   organize.NewStore(db.Pool()),
 		users:    auth.NewStore(db.Pool()),
 		db:       db,
 	}
@@ -75,14 +73,17 @@ func (f *fixtures) makeSubject(t *testing.T, name string) string {
 	return subj.UID
 }
 
-// makeLabel inserts a label and returns its uid.
+// makeLabel inserts a label into the bootstrap project and returns its uid. It
+// writes the row directly so the fixture does not depend on organize's API.
 func (f *fixtures) makeLabel(t *testing.T, name string) string {
 	t.Helper()
-	label, err := f.labels.CreateLabel(context.Background(), organize.Label{Name: name})
-	if err != nil {
+	uid := projecttest.MissingUID("lb")
+	if _, err := f.db.Pool().Exec(context.Background(),
+		`INSERT INTO labels (uid, project_id, slug, name) VALUES ($1, $2, $3, $4)`,
+		uid, project.BootstrapUID, uid, name); err != nil {
 		t.Fatalf("creating label %s: %v", name, err)
 	}
-	return label.UID
+	return uid
 }
 
 // makeUser inserts a viewer account and returns its uid.
@@ -163,10 +164,10 @@ func TestLabelRejectionLifecycle(t *testing.T) {
 	key := feedback.LabelRejectionKey{PhotoUID: photo, LabelUID: label}
 	entry := audit.Entry{Action: audit.ActionLabelReject, TargetType: "labels", TargetUID: label}
 
-	if err := f.feedback.RejectLabel(ctx, key, entry); err != nil {
+	if err := f.feedback.RejectLabel(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectLabel: %v", err)
 	}
-	if err := f.feedback.RejectLabel(ctx, key, entry); err != nil {
+	if err := f.feedback.RejectLabel(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectLabel (repeat): %v", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM label_rejections"); n != 1 {
@@ -175,7 +176,7 @@ func TestLabelRejectionLifecycle(t *testing.T) {
 	if ok, err := f.feedback.IsLabelRejected(ctx, key); err != nil || !ok {
 		t.Fatalf("IsLabelRejected = %v, %v, want true, nil", ok, err)
 	}
-	if err := f.feedback.UnrejectLabel(ctx, key, entry); err != nil {
+	if err := f.feedback.UnrejectLabel(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnrejectLabel: %v", err)
 	}
 	if ok, _ := f.feedback.IsLabelRejected(ctx, key); ok {
@@ -224,7 +225,7 @@ func TestBulkLookups(t *testing.T) {
 
 	label := f.makeLabel(t, "Sky")
 	lkey := feedback.LabelRejectionKey{PhotoUID: p1, LabelUID: label}
-	if err := f.feedback.RejectLabel(ctx, lkey, entry); err != nil {
+	if err := f.feedback.RejectLabel(ctx, project.BootstrapUID, lkey, entry); err != nil {
 		t.Fatalf("RejectLabel: %v", err)
 	}
 	photoUIDs, err := f.feedback.LabelRejectionsForLabel(ctx, label)
@@ -282,7 +283,7 @@ func TestForeignKeyCascades(t *testing.T) {
 	if err := f.feedback.RejectFace(ctx, project.BootstrapUID, faceKey, entry); err != nil {
 		t.Fatalf("RejectFace: %v", err)
 	}
-	if err := f.feedback.RejectLabel(ctx, labelKey, entry); err != nil {
+	if err := f.feedback.RejectLabel(ctx, project.BootstrapUID, labelKey, entry); err != nil {
 		t.Fatalf("RejectLabel: %v", err)
 	}
 
@@ -326,7 +327,7 @@ func TestRejectMissingTarget(t *testing.T) {
 		t.Fatalf("RejectFace missing photo = %v, want ErrTargetNotFound", err)
 	}
 	badLabel := feedback.LabelRejectionKey{PhotoUID: photo, LabelUID: "no_such_label"}
-	if err := f.feedback.RejectLabel(ctx, badLabel, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.RejectLabel(ctx, project.BootstrapUID, badLabel, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("RejectLabel missing label = %v, want ErrTargetNotFound", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM face_rejections"); n != 0 {
@@ -451,16 +452,16 @@ func TestDuplicateDismissalLifecycle(t *testing.T) {
 	key := feedback.DuplicateDismissalKey{PhotoUID: a, OtherUID: b}
 	entry := audit.Entry{Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a}
 
-	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicate: %v", err)
 	}
 	// Dismissing again — and in the reverse order — is a no-op, not an error, and
 	// leaves exactly one row: the pair is unordered and normalised on the way in.
-	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicate (repeat): %v", err)
 	}
 	reversed := feedback.DuplicateDismissalKey{PhotoUID: b, OtherUID: a}
-	if err := f.feedback.DismissDuplicate(ctx, reversed, entry); err != nil {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, reversed, entry); err != nil {
 		t.Fatalf("DismissDuplicate (reversed): %v", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM duplicate_dismissals"); n != 1 {
@@ -490,14 +491,14 @@ func TestDuplicateDismissalLifecycle(t *testing.T) {
 			pairs[0].PhotoUID, pairs[0].OtherUID, lo, hi)
 	}
 
-	if err := f.feedback.UndismissDuplicate(ctx, reversed, entry); err != nil {
+	if err := f.feedback.UndismissDuplicate(ctx, project.BootstrapUID, reversed, entry); err != nil {
 		t.Fatalf("UndismissDuplicate: %v", err)
 	}
 	if ok, _ := f.feedback.IsDuplicateDismissed(ctx, key); ok {
 		t.Fatalf("IsDuplicateDismissed after undismiss = true, want false")
 	}
 	// Un-dismissing what was never dismissed is a no-op, not an error.
-	if err := f.feedback.UndismissDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.UndismissDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UndismissDuplicate (repeat): %v", err)
 	}
 }
@@ -512,17 +513,17 @@ func TestDuplicateDismissalRejectsBadKeys(t *testing.T) {
 
 	// A photo is not a duplicate of itself.
 	same := feedback.DuplicateDismissalKey{PhotoUID: photo, OtherUID: photo}
-	if err := f.feedback.DismissDuplicate(ctx, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
 		t.Fatalf("DismissDuplicate(self) = %v, want ErrSamePhoto", err)
 	}
 	// An incomplete key never reaches the database.
 	partial := feedback.DuplicateDismissalKey{PhotoUID: photo}
-	if err := f.feedback.DismissDuplicate(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Fatalf("DismissDuplicate(partial) = %v, want ErrEmptyKey", err)
 	}
 	// A pair naming a photo that does not exist trips the foreign key.
 	ghost := feedback.DuplicateDismissalKey{PhotoUID: photo, OtherUID: "ph_nonexistent00000000000"}
-	if err := f.feedback.DismissDuplicate(ctx, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("DismissDuplicate(ghost) = %v, want ErrTargetNotFound", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM duplicate_dismissals"); n != 0 {
@@ -543,7 +544,7 @@ func TestDuplicateDismissalAudited(t *testing.T) {
 		Action: audit.ActionDuplicateDismiss, TargetType: "photos", TargetUID: a, ActorUID: user,
 	}
 
-	if err := f.feedback.DismissDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.DismissDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("DismissDuplicate: %v", err)
 	}
 	n := f.count(t, "SELECT count(*) FROM audit_log WHERE action = $1", audit.ActionDuplicateDismiss)
@@ -675,7 +676,7 @@ func TestDuplicateConfirmationLifecycle(t *testing.T) {
 	entry := audit.Entry{Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: a}
 
 	for _, k := range []feedback.DuplicateConfirmationKey{key, key, reversed} {
-		if err := f.feedback.ConfirmDuplicate(ctx, k, entry); err != nil {
+		if err := f.feedback.ConfirmDuplicate(ctx, project.BootstrapUID, k, entry); err != nil {
 			t.Fatalf("ConfirmDuplicate(%v): %v", k, err)
 		}
 	}
@@ -708,13 +709,13 @@ func TestDuplicateConfirmationLifecycle(t *testing.T) {
 			pairs[0].PhotoUID, pairs[0].OtherUID, lo, hi)
 	}
 
-	if err := f.feedback.UnconfirmDuplicate(ctx, reversed, entry); err != nil {
+	if err := f.feedback.UnconfirmDuplicate(ctx, project.BootstrapUID, reversed, entry); err != nil {
 		t.Fatalf("UnconfirmDuplicate: %v", err)
 	}
 	if ok, _ := f.feedback.IsDuplicateConfirmed(ctx, key); ok {
 		t.Fatalf("IsDuplicateConfirmed after unconfirm = true, want false")
 	}
-	if err := f.feedback.UnconfirmDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.UnconfirmDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("UnconfirmDuplicate (repeat): %v", err)
 	}
 }
@@ -728,15 +729,15 @@ func TestDuplicateConfirmationRejectsBadKeys(t *testing.T) {
 	entry := audit.Entry{Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: photo}
 
 	same := feedback.DuplicateConfirmationKey{PhotoUID: photo, OtherUID: photo}
-	if err := f.feedback.ConfirmDuplicate(ctx, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
+	if err := f.feedback.ConfirmDuplicate(ctx, project.BootstrapUID, same, entry); !errors.Is(err, feedback.ErrSamePhoto) {
 		t.Fatalf("ConfirmDuplicate(self) = %v, want ErrSamePhoto", err)
 	}
 	partial := feedback.DuplicateConfirmationKey{PhotoUID: photo}
-	if err := f.feedback.ConfirmDuplicate(ctx, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
+	if err := f.feedback.ConfirmDuplicate(ctx, project.BootstrapUID, partial, entry); !errors.Is(err, feedback.ErrEmptyKey) {
 		t.Fatalf("ConfirmDuplicate(partial) = %v, want ErrEmptyKey", err)
 	}
 	ghost := feedback.DuplicateConfirmationKey{PhotoUID: photo, OtherUID: "ph_nonexistent00000000000"}
-	if err := f.feedback.ConfirmDuplicate(ctx, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
+	if err := f.feedback.ConfirmDuplicate(ctx, project.BootstrapUID, ghost, entry); !errors.Is(err, feedback.ErrTargetNotFound) {
 		t.Fatalf("ConfirmDuplicate(ghost) = %v, want ErrTargetNotFound", err)
 	}
 	if n := f.count(t, "SELECT count(*) FROM duplicate_confirmations"); n != 0 {
@@ -757,7 +758,7 @@ func TestDuplicateConfirmationAudited(t *testing.T) {
 		Action: audit.ActionDuplicateConfirm, TargetType: "photos", TargetUID: a, ActorUID: user,
 	}
 
-	if err := f.feedback.ConfirmDuplicate(ctx, key, entry); err != nil {
+	if err := f.feedback.ConfirmDuplicate(ctx, project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("ConfirmDuplicate: %v", err)
 	}
 	if n := f.count(t,

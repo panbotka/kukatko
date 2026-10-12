@@ -1,4 +1,4 @@
-// The four exported methods below mirror the confirmation's line for line, and
+// The exported methods below mirror the confirmation's line for line, and
 // deliberately so: the shared machinery already lives in pairs.go, and what is
 // left here is the documented public surface of one table — the key type it
 // takes, the sentinels it returns and the paragraph explaining why dismissing
@@ -39,35 +39,43 @@ ORDER BY photo_uid, other_uid`,
 	list:   "duplicate dismissals",
 }
 
-// DismissDuplicate records that the two photos named by key are NOT duplicates of
-// each other and writes entry in the same transaction. The pair is unordered:
-// dismissing (A,B) and (B,A) records the one same decision. The write is
-// idempotent — dismissing the same pair twice is a no-op, not an error — and
-// dismissed_by is taken from entry.ActorUID (empty stored as NULL).
+// DismissDuplicate records that the two photos named by key are NOT
+// duplicates of each other and writes entry in the same transaction. The pair is
+// unordered: dismissing (A,B) and (B,A) records the one same decision. The write
+// is idempotent — dismissing the same pair twice is a no-op, not an error — and
+// dismissed_by is taken from entry.ActorUID (empty stored as NULL); the entry's
+// ProjectUID defaults to projectUID.
 //
 // It never mutates either photo: nothing is archived, merged or deleted. It only
 // records the opinion, which later duplicate scans read to stop linking the pair.
 // It returns ErrEmptyKey if the key lacks a uid, ErrSamePhoto if both uids name
-// the same photo, or ErrTargetNotFound if either photo does not exist.
-func (s *Store) DismissDuplicate(ctx context.Context, key DuplicateDismissalKey, entry audit.Entry) error {
+// the same photo, ErrNoProject without a project, or ErrTargetNotFound — writing
+// nothing — unless both photos exist in projectUID.
+func (s *Store) DismissDuplicate(
+	ctx context.Context, projectUID string, key DuplicateDismissalKey, entry audit.Entry,
+) error {
 	pair, err := checkPairKey(key.PhotoUID, key.OtherUID)
 	if err != nil {
 		return err
 	}
-	return s.recordPair(ctx, duplicateDismissals, pair, entry)
+	return s.recordPair(ctx, projectUID, duplicateDismissals, pair, entry)
 }
 
-// UndismissDuplicate removes the duplicate dismissal identified by key and writes
-// entry in the same transaction, letting a user take the decision back so the pair
-// is offered for review again. Un-dismissing a pair that was never dismissed still
-// records the action but changes no rows. It returns ErrEmptyKey if the key lacks
-// a uid, or ErrSamePhoto if both uids name the same photo.
-func (s *Store) UndismissDuplicate(ctx context.Context, key DuplicateDismissalKey, entry audit.Entry) error {
+// UndismissDuplicate removes the duplicate dismissal identified by key
+// and writes entry in the same transaction, letting a user take the decision back
+// so the pair is offered for review again. Un-dismissing a pair that was never
+// dismissed still records the action but changes no rows. It returns ErrEmptyKey
+// if the key lacks a uid, ErrSamePhoto if both uids name the same photo,
+// ErrNoProject without a project, or ErrTargetNotFound — writing nothing — unless
+// both photos exist in projectUID.
+func (s *Store) UndismissDuplicate(
+	ctx context.Context, projectUID string, key DuplicateDismissalKey, entry audit.Entry,
+) error {
 	pair, err := checkPairKey(key.PhotoUID, key.OtherUID)
 	if err != nil {
 		return err
 	}
-	return s.removePair(ctx, duplicateDismissals, pair, entry)
+	return s.removePair(ctx, projectUID, duplicateDismissals, pair, entry)
 }
 
 // IsDuplicateDismissed reports whether the pair identified by key has been

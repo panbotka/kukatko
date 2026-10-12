@@ -13,7 +13,7 @@ import (
 // makeAlbum creates an album with the given title and returns it.
 func makeAlbum(t *testing.T, store *organize.Store, title string) organize.Album {
 	t.Helper()
-	album, err := store.CreateAlbum(context.Background(), organize.Album{Title: title})
+	album, err := store.CreateAlbum(context.Background(), testProject, organize.Album{Title: title})
 	if err != nil {
 		t.Fatalf("creating album %s: %v", title, err)
 	}
@@ -37,7 +37,7 @@ func TestAlbumUIDsForPhotos_batchMembership(t *testing.T) {
 	addPhotos(t, store, wedding.UID, inBoth, weddingOnly)
 	addPhotos(t, store, holiday.UID, inBoth)
 
-	got, err := store.AlbumUIDsForPhotos(ctx, []string{inBoth, weddingOnly, orphan, "nosuchuid"})
+	got, err := store.AlbumUIDsForPhotos(ctx, testProject, []string{inBoth, weddingOnly, orphan, "nosuchuid"})
 	if err != nil {
 		t.Fatalf("AlbumUIDsForPhotos: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestAlbumUIDsForPhotos_batchMembership(t *testing.T) {
 
 func TestAlbumUIDsForPhotos_emptyInputTouchesNothing(t *testing.T) {
 	store, _, _, _ := newStores(t)
-	got, err := store.AlbumUIDsForPhotos(context.Background(), nil)
+	got, err := store.AlbumUIDsForPhotos(context.Background(), testProject, nil)
 	if err != nil {
 		t.Fatalf("AlbumUIDsForPhotos: %v", err)
 	}

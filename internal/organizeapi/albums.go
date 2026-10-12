@@ -25,7 +25,7 @@ type photoUIDsResponse struct {
 // for it (hand-picked, else its newest photo) and the span of capture times
 // across its photos. It answers 500 if the store fails, logging the cause.
 func (a *API) handleAlbumList(w http.ResponseWriter, r *http.Request) {
-	albums, err := a.albums.ListAlbums(r.Context())
+	albums, err := a.albums.ListAlbums(r.Context(), projectOf(r))
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "listing albums failed", err)
 		return
@@ -44,7 +44,7 @@ func (a *API) handleAlbumCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	album := in.toAlbum()
 	entry := a.auditEntry(r, audit.ActionAlbumCreate, "albums", "", map[string]any{"title": album.Title})
-	created, err := a.albums.CreateAlbumAudited(r.Context(), album, entry)
+	created, err := a.albums.CreateAlbumAudited(r.Context(), projectOf(r), album, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -56,7 +56,7 @@ func (a *API) handleAlbumCreate(w http.ResponseWriter, r *http.Request) {
 // handleAlbumGet returns the album identified by the path UID with the size of
 // its comment thread (`comment_count`), or 404 if missing.
 func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
-	album, err := a.albums.GetAlbumByUID(r.Context(), chi.URLParam(r, "uid"))
+	album, err := a.albums.GetAlbumByUID(r.Context(), projectOf(r), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -76,7 +76,7 @@ func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
 // or empty title answers 400; a missing album answers 404.
 func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.albums.GetAlbumByUID(r.Context(), uid)
+	existing, err := a.albums.GetAlbumByUID(r.Context(), projectOf(r), uid)
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -91,7 +91,7 @@ func (a *API) handleAlbumUpdate(w http.ResponseWriter, r *http.Request) {
 	details := map[string]any{"title": in.Title}
 	albumChanges(existing, upd).StampInto(details)
 	entry := a.auditEntry(r, audit.ActionAlbumUpdate, "albums", uid, details)
-	album, err := a.albums.UpdateAlbumAudited(r.Context(), uid, upd, entry)
+	album, err := a.albums.UpdateAlbumAudited(r.Context(), projectOf(r), uid, upd, entry)
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -119,7 +119,7 @@ func albumChanges(before organize.Album, after organize.AlbumUpdate) *audit.Chan
 func (a *API) handleAlbumDelete(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	entry := a.auditEntry(r, audit.ActionAlbumDelete, "albums", uid, nil)
-	if err := a.albums.DeleteAlbumAudited(r.Context(), uid, entry); err != nil {
+	if err := a.albums.DeleteAlbumAudited(r.Context(), projectOf(r), uid, entry); err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
 		return
@@ -142,7 +142,7 @@ func (a *API) handleAlbumAddPhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionAlbumAddPhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
-	if err := a.albums.AddPhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
+	if err := a.albums.AddPhotosAudited(r.Context(), projectOf(r), uid, in.PhotoUIDs, entry); err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
 		return
@@ -165,7 +165,7 @@ func (a *API) handleAlbumRemovePhotos(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionAlbumRemovePhotos, "albums", uid, photoBatchDetails(in.PhotoUIDs))
-	if err := a.albums.RemovePhotosAudited(r.Context(), uid, in.PhotoUIDs, entry); err != nil {
+	if err := a.albums.RemovePhotosAudited(r.Context(), projectOf(r), uid, in.PhotoUIDs, entry); err != nil {
 		fail(w, r, http.StatusInternalServerError, "removing album photo failed", err)
 		return
 	}
@@ -184,7 +184,7 @@ func photoBatchDetails(photoUIDs []string) map[string]any {
 // response (404 on a missing album) and returning false otherwise. It gives the
 // membership handlers a clean 404 before they mutate.
 func (a *API) requireAlbum(w http.ResponseWriter, r *http.Request, uid string) bool {
-	if _, err := a.albums.GetAlbumByUID(r.Context(), uid); err != nil {
+	if _, err := a.albums.GetAlbumByUID(r.Context(), projectOf(r), uid); err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
 		return false
@@ -195,7 +195,7 @@ func (a *API) requireAlbum(w http.ResponseWriter, r *http.Request, uid string) b
 // writeMembership writes the album's current photo order as the membership
 // response, or 500 if the order cannot be loaded.
 func (a *API) writeMembership(w http.ResponseWriter, r *http.Request, uid string) {
-	order, err := a.albums.ListPhotoUIDs(r.Context(), uid)
+	order, err := a.albums.ListPhotoUIDs(r.Context(), projectOf(r), uid)
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "loading album photos failed", err)
 		return

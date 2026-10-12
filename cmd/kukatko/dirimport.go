@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -378,13 +379,17 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		DecodeBudget: processDecodeBudget(cfg),
 	})
 	return dirimport.New(dirimport.Config{
-		Ingest:      ingestSvc,
-		Runs:        importer.NewStore(pool),
-		Photos:      photoStore,
-		Filler:      photoStore,
-		Curation:    organizeStore,
-		Albums:      organizeStore,
-		Labels:      organizeStore,
+		Ingest:   ingestSvc,
+		Runs:     importer.NewStore(pool),
+		Photos:   photoStore,
+		Filler:   photoStore,
+		Curation: organizeStore,
+		Albums:   organizeStore,
+		Labels:   organizeStore,
+		// Transition: ingest still catalogues every new photo in the bootstrap
+		// project (the column default), so the import resolves its albums, labels
+		// and curation there too until the import learns a --project of its own.
+		ProjectUID:  project.BootstrapUID,
 		Concurrency: concurrency,
 	}), nil
 }

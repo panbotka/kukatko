@@ -11,7 +11,8 @@ import (
 // over the shared pool: a signed-in user creating, listing, reading, editing and
 // deleting their own named filter/search definitions. Every endpoint uses the read
 // guard supplied via authAPI (so savedsearchapi stays decoupled from auth's
-// wiring), and each operation is scoped to the acting user.
+// wiring), and each operation is scoped to the acting user inside the request's
+// project.
 func buildSavedSearchAPI(db *database.DB, authAPI *auth.API) *savedsearchapi.API {
 	return savedsearchapi.NewAPI(savedsearchapi.Config{
 		Store:       savedsearch.NewStore(db.Pool()),

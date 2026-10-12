@@ -308,11 +308,11 @@ func (a *API) handleGetPhoto(
 // describePhoto assembles a photo's detail shape: the curated columns, the
 // caller's own opinion of it, and the collections it belongs to.
 func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (photoDetail, error) {
-	albums, err := a.organize.AlbumsForPhoto(ctx, photo.UID)
+	albums, err := a.organize.AlbumsForPhoto(ctx, c.projectUID, photo.UID)
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the photo's albums: %w", err)
 	}
-	labels, err := a.organize.LabelsForPhoto(ctx, photo.UID)
+	labels, err := a.organize.LabelsForPhoto(ctx, c.projectUID, photo.UID)
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the photo's labels: %w", err)
 	}
@@ -320,11 +320,11 @@ func (a *API) describePhoto(ctx context.Context, c caller, photo photos.Photo) (
 	if err != nil {
 		return photoDetail{}, err
 	}
-	favorite, err := a.organize.IsFavorite(ctx, c.user.UID, photo.UID)
+	favorite, err := a.organize.IsFavorite(ctx, c.projectUID, c.user.UID, photo.UID)
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the favourite flag: %w", err)
 	}
-	rating, err := a.organize.GetRating(ctx, c.user.UID, photo.UID)
+	rating, err := a.organize.GetRating(ctx, c.projectUID, c.user.UID, photo.UID)
 	if err != nil {
 		return photoDetail{}, fmt.Errorf("fetching the rating: %w", err)
 	}
@@ -501,11 +501,11 @@ func (a *API) handleLibraryStats(
 	if err != nil {
 		return nil, libraryStats{}, err
 	}
-	albums, err := a.organize.ListAlbums(ctx)
+	albums, err := a.organize.ListAlbums(ctx, c.projectUID)
 	if err != nil {
 		return nil, libraryStats{}, fmt.Errorf("counting albums: %w", err)
 	}
-	labels, err := a.organize.ListLabels(ctx)
+	labels, err := a.organize.ListLabels(ctx, c.projectUID)
 	if err != nil {
 		return nil, libraryStats{}, fmt.Errorf("counting labels: %w", err)
 	}

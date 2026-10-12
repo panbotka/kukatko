@@ -17,7 +17,7 @@ type labelsResponse struct {
 // handleLabelList returns every label with its photo count, ordered by priority.
 // It answers 500 if the store fails, logging the cause.
 func (a *API) handleLabelList(w http.ResponseWriter, r *http.Request) {
-	labels, err := a.labels.ListLabels(r.Context())
+	labels, err := a.labels.ListLabels(r.Context(), projectOf(r))
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "listing labels failed", err)
 		return
@@ -36,7 +36,7 @@ func (a *API) handleLabelCreate(w http.ResponseWriter, r *http.Request) {
 	label := in.toLabel()
 	entry := a.auditEntry(r, audit.ActionLabelCreate, "labels", "",
 		map[string]any{"name": label.Name, "priority": label.Priority})
-	created, err := a.labels.CreateLabelAudited(r.Context(), label, entry)
+	created, err := a.labels.CreateLabelAudited(r.Context(), projectOf(r), label, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
@@ -47,7 +47,7 @@ func (a *API) handleLabelCreate(w http.ResponseWriter, r *http.Request) {
 
 // handleLabelGet returns the label identified by the path UID, or 404 if missing.
 func (a *API) handleLabelGet(w http.ResponseWriter, r *http.Request) {
-	label, err := a.labels.GetLabelByUID(r.Context(), chi.URLParam(r, "uid"))
+	label, err := a.labels.GetLabelByUID(r.Context(), projectOf(r), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
@@ -63,7 +63,7 @@ func (a *API) handleLabelGet(w http.ResponseWriter, r *http.Request) {
 // or empty name answers 400; a missing label answers 404.
 func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.labels.GetLabelByUID(r.Context(), uid)
+	existing, err := a.labels.GetLabelByUID(r.Context(), projectOf(r), uid)
 	if err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
@@ -80,7 +80,7 @@ func (a *API) handleLabelUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	labelChanges(existing, upd).StampInto(details)
 	entry := a.auditEntry(r, audit.ActionLabelUpdate, "labels", uid, details)
-	label, err := a.labels.UpdateLabelAudited(r.Context(), uid, upd, entry)
+	label, err := a.labels.UpdateLabelAudited(r.Context(), projectOf(r), uid, upd, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
@@ -107,7 +107,7 @@ func labelChanges(before organize.Label, after organize.LabelUpdate) *audit.Chan
 func (a *API) handleLabelDelete(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
 	entry := a.auditEntry(r, audit.ActionLabelDelete, "labels", uid, nil)
-	if err := a.labels.DeleteLabelAudited(r.Context(), uid, entry); err != nil {
+	if err := a.labels.DeleteLabelAudited(r.Context(), projectOf(r), uid, entry); err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
 		return
@@ -129,7 +129,7 @@ func (a *API) handleLabelAttach(w http.ResponseWriter, r *http.Request) {
 	entry := a.auditEntry(r, audit.ActionLabelAttach, "labels", uid, map[string]any{
 		"photo_uid": in.PhotoUID, "source": string(in.Source), "uncertainty": in.Uncertainty,
 	})
-	err = a.labels.AttachLabelAudited(r.Context(), in.PhotoUID, uid, in.Source, in.Uncertainty, entry)
+	err = a.labels.AttachLabelAudited(r.Context(), projectOf(r), in.PhotoUID, uid, in.Source, in.Uncertainty, entry)
 	if err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
@@ -150,13 +150,13 @@ func (a *API) handleLabelDetach(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, err := a.labels.GetLabelByUID(r.Context(), uid); err != nil {
+	if _, err := a.labels.GetLabelByUID(r.Context(), projectOf(r), uid); err != nil {
 		status, msg := labelStatus(err)
 		fail(w, r, status, msg, err)
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionLabelDetach, "labels", uid, map[string]any{"photo_uid": in.PhotoUID})
-	if err := a.labels.DetachLabelAudited(r.Context(), in.PhotoUID, uid, entry); err != nil {
+	if err := a.labels.DetachLabelAudited(r.Context(), projectOf(r), in.PhotoUID, uid, entry); err != nil {
 		fail(w, r, http.StatusInternalServerError, "detaching label failed", err)
 		return
 	}

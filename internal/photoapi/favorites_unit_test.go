@@ -60,14 +60,14 @@ type fakeFavorites struct {
 }
 
 // AddFavorite is unused by the annotation tests and always succeeds.
-func (f *fakeFavorites) AddFavorite(_ context.Context, _, _ string) error { return nil }
+func (f *fakeFavorites) AddFavorite(_ context.Context, _ string, _, _ string) error { return nil }
 
 // RemoveFavorite is unused by the annotation tests and always succeeds.
-func (f *fakeFavorites) RemoveFavorite(_ context.Context, _, _ string) error { return nil }
+func (f *fakeFavorites) RemoveFavorite(_ context.Context, _ string, _, _ string) error { return nil }
 
 // FavoritedAmong records its arguments and returns the configured set or error.
 func (f *fakeFavorites) FavoritedAmong(
-	_ context.Context, userUID string, photoUIDs []string,
+	_ context.Context, _ string, userUID string, photoUIDs []string,
 ) (map[string]bool, error) {
 	f.gotUser = userUID
 	f.gotUIDs = photoUIDs

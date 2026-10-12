@@ -17,14 +17,15 @@ import (
 // so photoapi depends on the behaviour, not the organize store's construction;
 // organize.Store satisfies it and a test fake can stand in.
 type FavoriteStore interface {
-	// AddFavorite marks photoUID as a favorite of userUID. It is idempotent and
-	// returns organize.ErrPhotoNotFound when the photo does not exist.
-	AddFavorite(ctx context.Context, userUID, photoUID string) error
+	// AddFavorite marks photoUID, a photo of the project, as a favorite of
+	// userUID. It is idempotent and returns organize.ErrPhotoNotFound when the
+	// project holds no such photo.
+	AddFavorite(ctx context.Context, projectUID, userUID, photoUID string) error
 	// RemoveFavorite unfavorites photoUID for userUID. It is idempotent.
-	RemoveFavorite(ctx context.Context, userUID, photoUID string) error
-	// FavoritedAmong reports which of photoUIDs userUID has favorited, as a set
-	// keyed by photo UID (only favorited UIDs present).
-	FavoritedAmong(ctx context.Context, userUID string, photoUIDs []string) (map[string]bool, error)
+	RemoveFavorite(ctx context.Context, projectUID, userUID, photoUID string) error
+	// FavoritedAmong reports which of photoUIDs (photos of the project) userUID
+	// has favorited, as a set keyed by photo UID (only favorited UIDs present).
+	FavoritedAmong(ctx context.Context, projectUID, userUID string, photoUIDs []string) (map[string]bool, error)
 }
 
 // PhotoOrganizer is the subset of the organize repository the detail endpoint
@@ -33,10 +34,12 @@ type FavoriteStore interface {
 // behaviour; organize.Store satisfies it and a test fake can stand in. When nil
 // the detail response simply omits the memberships.
 type PhotoOrganizer interface {
-	// AlbumsForPhoto returns the albums the photo belongs to, ordered by title.
-	AlbumsForPhoto(ctx context.Context, photoUID string) ([]organize.Album, error)
-	// LabelsForPhoto returns the labels attached to the photo, ordered by priority.
-	LabelsForPhoto(ctx context.Context, photoUID string) ([]organize.Label, error)
+	// AlbumsForPhoto returns the albums of the project the photo belongs to,
+	// ordered by title.
+	AlbumsForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.Album, error)
+	// LabelsForPhoto returns the labels of the project attached to the photo,
+	// ordered by priority.
+	LabelsForPhoto(ctx context.Context, projectUID, photoUID string) ([]organize.Label, error)
 }
 
 // albumRef is the compact album reference embedded in a photo detail response:
@@ -116,7 +119,7 @@ func (a *API) applyFavorites(ctx context.Context, userUID string, uids []string,
 	if a.favorites == nil {
 		return nil
 	}
-	favored, err := a.favorites.FavoritedAmong(ctx, userUID, uids)
+	favored, err := a.favorites.FavoritedAmong(ctx, auth.ProjectUIDFromContext(ctx), userUID, uids)
 	if err != nil {
 		return fmt.Errorf("photoapi: resolving favorites: %w", err)
 	}
@@ -142,7 +145,7 @@ func (a *API) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 // addFavorite adds the favorite for the acting user, wrapping (but preserving via
 // %w) a missing-photo error so the caller can still map it to 404.
 func (a *API) addFavorite(ctx context.Context, userUID, photoUID string) error {
-	if err := a.favorites.AddFavorite(ctx, userUID, photoUID); err != nil {
+	if err := a.favorites.AddFavorite(ctx, auth.ProjectUIDFromContext(ctx), userUID, photoUID); err != nil {
 		return fmt.Errorf("photoapi: adding favorite: %w", err)
 	}
 	return nil
@@ -150,7 +153,7 @@ func (a *API) addFavorite(ctx context.Context, userUID, photoUID string) error {
 
 // removeFavorite removes the favorite for the acting user.
 func (a *API) removeFavorite(ctx context.Context, userUID, photoUID string) error {
-	if err := a.favorites.RemoveFavorite(ctx, userUID, photoUID); err != nil {
+	if err := a.favorites.RemoveFavorite(ctx, auth.ProjectUIDFromContext(ctx), userUID, photoUID); err != nil {
 		return fmt.Errorf("photoapi: removing favorite: %w", err)
 	}
 	return nil

@@ -29,19 +29,19 @@ type fakeStore struct {
 }
 
 // List counts the call and returns an empty history.
-func (f *fakeStore) List(context.Context, string) ([]searchhistory.Entry, error) {
+func (f *fakeStore) List(context.Context, string, string) ([]searchhistory.Entry, error) {
 	f.listed++
 	return nil, nil
 }
 
 // Record appends the query to the recorded log.
-func (f *fakeStore) Record(_ context.Context, _, query string) error {
+func (f *fakeStore) Record(_ context.Context, _, _, query string) error {
 	f.recorded = append(f.recorded, query)
 	return nil
 }
 
 // Clear counts the call.
-func (f *fakeStore) Clear(context.Context, string) error {
+func (f *fakeStore) Clear(context.Context, string, string) error {
 	f.cleared++
 	return nil
 }

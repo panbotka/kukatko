@@ -205,7 +205,7 @@ func TestDownloadZip_albumExpandsToLivePhotos(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "editor", auth.AccountEditor)
 
-	album, err := env.organize.CreateAlbum(t.Context(), organize.Album{Title: "Trip"})
+	album, err := env.organize.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestDownloadZip_albumExpandsToLivePhotos(t *testing.T) {
 	live2 := env.seedPhoto(t, photos.Photo{Title: "L2", TakenAtSource: "unknown"}, "l2.jpg", 42, 52, 62)
 	archived := env.seedPhoto(t, photos.Photo{Title: "Arch", TakenAtSource: "unknown"}, "arch.jpg", 72, 82, 92)
 	for _, uid := range []string{live1.UID, live2.UID, archived.UID} {
-		if err := env.organize.AddPhoto(t.Context(), album.UID, uid); err != nil {
+		if err := env.organize.AddPhoto(t.Context(), project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}

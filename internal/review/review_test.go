@@ -96,7 +96,7 @@ type fakeExpander struct {
 }
 
 // Label returns the scripted result for labelUID.
-func (f *fakeExpander) Label(_ context.Context, labelUID string, _ expand.Request) (expand.Result, error) {
+func (f *fakeExpander) Label(_ context.Context, _ string, labelUID string, _ expand.Request) (expand.Result, error) {
 	f.mu.Lock()
 	f.calls++
 	f.mu.Unlock()
@@ -114,13 +114,13 @@ type fakeOrganize struct {
 }
 
 // ListLabels returns the scripted labels.
-func (f *fakeOrganize) ListLabels(context.Context) ([]organize.LabelCount, error) {
+func (f *fakeOrganize) ListLabels(context.Context, string) ([]organize.LabelCount, error) {
 	return f.labels, nil
 }
 
 // AttachLabelAudited records the attach as "photo/label".
 func (f *fakeOrganize) AttachLabelAudited(
-	_ context.Context, photoUID, labelUID string, _ organize.LabelSource, _ int, _ audit.Entry,
+	_ context.Context, _ string, photoUID, labelUID string, _ organize.LabelSource, _ int, _ audit.Entry,
 ) error {
 	if f.attachErr != nil {
 		return f.attachErr
@@ -168,7 +168,7 @@ func (f *fakeFeedback) ConfirmFace(
 
 // ConfirmDuplicate records the duplicate confirmation.
 func (f *fakeFeedback) ConfirmDuplicate(
-	_ context.Context, key feedback.DuplicateConfirmationKey, _ audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateConfirmationKey, _ audit.Entry,
 ) error {
 	if f.err != nil {
 		return f.err
@@ -179,7 +179,7 @@ func (f *fakeFeedback) ConfirmDuplicate(
 
 // DismissDuplicate records the duplicate dismissal.
 func (f *fakeFeedback) DismissDuplicate(
-	_ context.Context, key feedback.DuplicateDismissalKey, _ audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateDismissalKey, _ audit.Entry,
 ) error {
 	if f.err != nil {
 		return f.err
@@ -198,7 +198,7 @@ func (f *fakeFeedback) RejectFace(_ context.Context, _ string, key feedback.Face
 }
 
 // RejectLabel records the label rejection.
-func (f *fakeFeedback) RejectLabel(_ context.Context, key feedback.LabelRejectionKey, _ audit.Entry) error {
+func (f *fakeFeedback) RejectLabel(_ context.Context, _ string, key feedback.LabelRejectionKey, _ audit.Entry) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -376,7 +376,7 @@ type fakeAlbums struct {
 
 // AlbumUIDsForPhotos returns the scripted membership of the given photos.
 func (f *fakeAlbums) AlbumUIDsForPhotos(
-	_ context.Context, photoUIDs []string,
+	_ context.Context, _ string, photoUIDs []string,
 ) (map[string][]string, error) {
 	f.calls++
 	if f.err != nil {

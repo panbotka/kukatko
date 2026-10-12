@@ -13,7 +13,7 @@ import (
 // the test on error and returning the stored album.
 func mustCreateAlbum(t *testing.T, store *organize.Store, title, description string) organize.Album {
 	t.Helper()
-	album, err := store.CreateAlbum(context.Background(), organize.Album{Title: title, Description: description})
+	album, err := store.CreateAlbum(context.Background(), testProject, organize.Album{Title: title, Description: description})
 	if err != nil {
 		t.Fatalf("creating album %q: %v", title, err)
 	}
@@ -24,7 +24,7 @@ func mustCreateAlbum(t *testing.T, store *organize.Store, title, description str
 // and returning the stored label.
 func mustCreateLabel(t *testing.T, store *organize.Store, name string) organize.Label {
 	t.Helper()
-	label, err := store.CreateLabel(context.Background(), organize.Label{Name: name})
+	label, err := store.CreateLabel(context.Background(), testProject, organize.Label{Name: name})
 	if err != nil {
 		t.Fatalf("creating label %q: %v", name, err)
 	}
@@ -43,12 +43,12 @@ func TestSearchAlbums(t *testing.T) {
 
 	// The sea album gets one photo so the count travels with the search row.
 	photoUID := makePhoto(t, photoStore, "sea-hash")
-	if err := store.AddPhoto(ctx, sea.UID, photoUID); err != nil {
+	if err := store.AddPhoto(ctx, testProject, sea.UID, photoUID); err != nil {
 		t.Fatalf("adding photo to album: %v", err)
 	}
 
 	t.Run("accent- and case-insensitive over title and description", func(t *testing.T) {
-		got, err := store.SearchAlbums(ctx, "DOVOLENA", 10)
+		got, err := store.SearchAlbums(ctx, testProject, "DOVOLENA", 10)
 		if err != nil {
 			t.Fatalf("SearchAlbums: %v", err)
 		}
@@ -72,7 +72,7 @@ func TestSearchAlbums(t *testing.T) {
 	})
 
 	t.Run("no match yields empty", func(t *testing.T) {
-		got, err := store.SearchAlbums(ctx, "zzz-nothing", 10)
+		got, err := store.SearchAlbums(ctx, testProject, "zzz-nothing", 10)
 		if err != nil {
 			t.Fatalf("SearchAlbums: %v", err)
 		}
@@ -82,7 +82,7 @@ func TestSearchAlbums(t *testing.T) {
 	})
 
 	t.Run("limit caps the result set", func(t *testing.T) {
-		got, err := store.SearchAlbums(ctx, "dovolena", 1)
+		got, err := store.SearchAlbums(ctx, testProject, "dovolena", 1)
 		if err != nil {
 			t.Fatalf("SearchAlbums: %v", err)
 		}
@@ -103,7 +103,7 @@ func TestSearchLabels(t *testing.T) {
 	mustCreateLabel(t, store, "Zima")
 
 	t.Run("accent-insensitive prefix contains", func(t *testing.T) {
-		got, err := store.SearchLabels(ctx, "let", 10)
+		got, err := store.SearchLabels(ctx, testProject, "let", 10)
 		if err != nil {
 			t.Fatalf("SearchLabels: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestSearchLabels(t *testing.T) {
 	})
 
 	t.Run("limit caps the result set", func(t *testing.T) {
-		got, err := store.SearchLabels(ctx, "let", 1)
+		got, err := store.SearchLabels(ctx, testProject, "let", 1)
 		if err != nil {
 			t.Fatalf("SearchLabels: %v", err)
 		}

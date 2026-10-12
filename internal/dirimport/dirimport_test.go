@@ -106,7 +106,7 @@ type fakeCuration struct {
 }
 
 // AddFavorite records a favourite.
-func (f *fakeCuration) AddFavorite(_ context.Context, userUID, photoUID string) error {
+func (f *fakeCuration) AddFavorite(_ context.Context, _ string, userUID, photoUID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.favorites == nil {
@@ -117,7 +117,7 @@ func (f *fakeCuration) AddFavorite(_ context.Context, userUID, photoUID string) 
 }
 
 // SetRating records a rating.
-func (f *fakeCuration) SetRating(_ context.Context, userUID, photoUID string, rating int) error {
+func (f *fakeCuration) SetRating(_ context.Context, _ string, userUID, photoUID string, rating int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.ratings == nil {
@@ -274,7 +274,7 @@ func newFakeOrganize() *fakeOrganize {
 }
 
 // GetAlbumByUID returns the album with this UID, or organize.ErrAlbumNotFound.
-func (f *fakeOrganize) GetAlbumByUID(_ context.Context, uid string) (organize.Album, error) {
+func (f *fakeOrganize) GetAlbumByUID(_ context.Context, _ string, uid string) (organize.Album, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if album, ok := f.albums[uid]; ok {
@@ -284,7 +284,7 @@ func (f *fakeOrganize) GetAlbumByUID(_ context.Context, uid string) (organize.Al
 }
 
 // ListAlbums returns every album as a summary.
-func (f *fakeOrganize) ListAlbums(_ context.Context) ([]organize.AlbumSummary, error) {
+func (f *fakeOrganize) ListAlbums(_ context.Context, _ string) ([]organize.AlbumSummary, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]organize.AlbumSummary, 0, len(f.albums))
@@ -295,7 +295,7 @@ func (f *fakeOrganize) ListAlbums(_ context.Context) ([]organize.AlbumSummary, e
 }
 
 // CreateAlbum inserts an album with a generated UID.
-func (f *fakeOrganize) CreateAlbum(_ context.Context, a organize.Album) (organize.Album, error) {
+func (f *fakeOrganize) CreateAlbum(_ context.Context, _ string, a organize.Album) (organize.Album, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.createdAlbums++
@@ -305,7 +305,7 @@ func (f *fakeOrganize) CreateAlbum(_ context.Context, a organize.Album) (organiz
 }
 
 // AddPhoto records an album membership.
-func (f *fakeOrganize) AddPhoto(_ context.Context, albumUID, photoUID string) error {
+func (f *fakeOrganize) AddPhoto(_ context.Context, _ string, albumUID, photoUID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.members[albumUID] = append(f.members[albumUID], photoUID)
@@ -313,7 +313,7 @@ func (f *fakeOrganize) AddPhoto(_ context.Context, albumUID, photoUID string) er
 }
 
 // ListLabels returns every label with a zero count.
-func (f *fakeOrganize) ListLabels(_ context.Context) ([]organize.LabelCount, error) {
+func (f *fakeOrganize) ListLabels(_ context.Context, _ string) ([]organize.LabelCount, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]organize.LabelCount, 0, len(f.labels))
@@ -324,7 +324,7 @@ func (f *fakeOrganize) ListLabels(_ context.Context) ([]organize.LabelCount, err
 }
 
 // CreateLabel inserts a label with a generated UID.
-func (f *fakeOrganize) CreateLabel(_ context.Context, l organize.Label) (organize.Label, error) {
+func (f *fakeOrganize) CreateLabel(_ context.Context, _ string, l organize.Label) (organize.Label, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.createdLabels++
@@ -335,7 +335,7 @@ func (f *fakeOrganize) CreateLabel(_ context.Context, l organize.Label) (organiz
 
 // AttachLabel records a label attachment.
 func (f *fakeOrganize) AttachLabel(
-	_ context.Context, photoUID, labelUID string, _ organize.LabelSource, _ int,
+	_ context.Context, _ string, photoUID, labelUID string, _ organize.LabelSource, _ int,
 ) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

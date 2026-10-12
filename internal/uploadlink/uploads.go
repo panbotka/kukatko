@@ -135,8 +135,15 @@ func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) 
 }
 
 // fileIntoTargets adds photoUID to every album of the link and attaches every
-// label of it, on tx.
+// label of it, on tx. The targets are filed inside the link's own project, so a
+// target (or the photo) outside it is refused like a missing one and fails the
+// filing rather than joining two projects.
 func fileIntoTargets(ctx context.Context, tx pgx.Tx, linkUID, photoUID string) error {
+	var projectUID string
+	if err := tx.QueryRow(ctx,
+		"SELECT project_id FROM upload_links WHERE uid = $1", linkUID).Scan(&projectUID); err != nil {
+		return fmt.Errorf("uploadlink: reading the project of link %s: %w", linkUID, err)
+	}
 	albums, err := targetUIDs(ctx, tx, "SELECT album_uid FROM upload_link_albums WHERE link_uid = $1", linkUID)
 	if err != nil {
 		return err
@@ -146,12 +153,12 @@ func fileIntoTargets(ctx context.Context, tx pgx.Tx, linkUID, photoUID string) e
 		return err
 	}
 	for _, albumUID := range albums {
-		if err := organize.AddPhotoTx(ctx, tx, albumUID, photoUID); err != nil {
+		if err := organize.AddPhotoTx(ctx, tx, projectUID, albumUID, photoUID); err != nil {
 			return fmt.Errorf("uploadlink: filing into album %s: %w", albumUID, err)
 		}
 	}
 	for _, labelUID := range labels {
-		if err := organize.AttachLabelTx(ctx, tx, photoUID, labelUID); err != nil {
+		if err := organize.AttachLabelTx(ctx, tx, projectUID, photoUID, labelUID); err != nil {
 			return fmt.Errorf("uploadlink: attaching label %s: %w", labelUID, err)
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -166,11 +167,11 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 	editor, editorUID := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
 
-	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Trip"})
+	album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
-	label, err := env.organize.CreateLabel(ctx, organize.Label{Name: "beach"})
+	label, err := env.organize.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "beach"})
 	if err != nil {
 		t.Fatalf("create label: %v", err)
 	}
@@ -217,7 +218,7 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 // assertAlbumMembers fails unless the album contains exactly the given photos.
 func assertAlbumMembers(t *testing.T, ctx context.Context, env *env, albumUID string, want ...string) {
 	t.Helper()
-	got, err := env.organize.ListPhotoUIDs(ctx, albumUID)
+	got, err := env.organize.ListPhotoUIDs(ctx, project.BootstrapUID, albumUID)
 	if err != nil {
 		t.Fatalf("list album photos: %v", err)
 	}
@@ -229,7 +230,7 @@ func assertAlbumMembers(t *testing.T, ctx context.Context, env *env, albumUID st
 // assertLabelMembers fails unless the label is attached to the given photos.
 func assertLabelMembers(t *testing.T, ctx context.Context, env *env, labelUID string, want ...string) {
 	t.Helper()
-	got, err := env.organize.ListPhotoUIDsByLabel(ctx, labelUID)
+	got, err := env.organize.ListPhotoUIDsByLabel(ctx, project.BootstrapUID, labelUID)
 	if err != nil {
 		t.Fatalf("list label photos: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestBulk_favoriteIsPerUser(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	fav, err := env.organize.IsFavorite(ctx, editorUID, uid)
+	fav, err := env.organize.IsFavorite(ctx, project.BootstrapUID, editorUID, uid)
 	if err != nil {
 		t.Fatalf("IsFavorite: %v", err)
 	}
@@ -366,7 +367,7 @@ func TestBulk_ratingIsPerUser(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	got, err := env.organize.GetRating(ctx, editorUID, uid)
+	got, err := env.organize.GetRating(ctx, project.BootstrapUID, editorUID, uid)
 	if err != nil {
 		t.Fatalf("GetRating: %v", err)
 	}

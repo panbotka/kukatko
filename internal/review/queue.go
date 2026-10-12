@@ -237,7 +237,7 @@ func (s *Service) rebuild(
 	// A fresh pool has no round in it yet, and the album membership of the old
 	// pool's photos says nothing about this one's.
 	sess.roundLen = 0
-	sess.albums = s.albumsFor(ctx, sess.queue)
+	sess.albums = s.albumsFor(ctx, sess.project, sess.queue)
 	sure, band := tierCounts(sess.queue)
 	s.log.DebugContext(ctx, "review: queue rebuilt", "questions", len(sess.queue),
 		"source", string(src), "entities", countEntities(sess.queue),
@@ -254,7 +254,7 @@ func (s *Service) rebuild(
 // Every failure degrades to no membership at all: the album rule is one of the
 // mixer's cheapest preferences, and losing it is not worth failing a rebuild
 // that has already paid for the vector searches.
-func (s *Service) albumsFor(ctx context.Context, questions []Question) map[string][]string {
+func (s *Service) albumsFor(ctx context.Context, projectUID string, questions []Question) map[string][]string {
 	if s.albums == nil || len(questions) == 0 {
 		return nil
 	}
@@ -267,7 +267,7 @@ func (s *Service) albumsFor(ctx context.Context, questions []Question) map[strin
 		seen[q.Photo.UID] = struct{}{}
 		uids = append(uids, q.Photo.UID)
 	}
-	byPhoto, err := s.albums.AlbumUIDsForPhotos(ctx, uids)
+	byPhoto, err := s.albums.AlbumUIDsForPhotos(ctx, projectUID, uids)
 	if err != nil {
 		s.log.WarnContext(ctx, "review: album membership lookup failed", "error", err)
 		return nil
@@ -586,7 +586,7 @@ func (s *Service) labelQuestions(ctx context.Context, projectUID string, need in
 	scanned, collected := 0, 0
 	for start := 0; start < len(window) && collected < need; start += s.labelConcurrency {
 		chunk := window[start:min(start+s.labelConcurrency, len(window))]
-		results, chunkErr := s.scanLabels(ctx, chunk)
+		results, chunkErr := s.scanLabels(ctx, projectUID, chunk)
 		if chunkErr != nil {
 			return tiered{}, 0, chunkErr
 		}
@@ -614,11 +614,11 @@ func (s *Service) labelQuestions(ctx context.Context, projectUID string, need in
 // is, as far as the game is concerned, a library with no labels, and that is
 // what the empty-queue reason should say.
 //
-// Only the project's own labels take part: the label store lists the whole
-// instance, so the plan keeps just the labels Scope says belong to projectUID —
-// another project's label is neither scanned nor counted.
+// Only the project's own labels take part: the label store lists just the
+// project's labels, and the plan still keeps only those Scope says belong to
+// projectUID — another project's label is neither scanned nor counted.
 func (s *Service) labelPlan(ctx context.Context, projectUID string) ([]organize.LabelCount, int, error) {
-	all, err := s.organize.ListLabels(ctx)
+	all, err := s.organize.ListLabels(ctx, projectUID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: listing labels: %w", err)
 	}
@@ -648,14 +648,16 @@ func (s *Service) labelPlan(ctx context.Context, projectUID string) ([]organize.
 // returns the results positionally. A single label's search failing is logged and
 // left as a zero result rather than failing the rebuild; only the errgroup itself
 // erroring is fatal.
-func (s *Service) scanLabels(ctx context.Context, chunk []organize.LabelCount) ([]expand.Result, error) {
+func (s *Service) scanLabels(
+	ctx context.Context, projectUID string, chunk []organize.LabelCount,
+) ([]expand.Result, error) {
 	results := make([]expand.Result, len(chunk))
 	grp, gctx := errgroup.WithContext(ctx)
 	grp.SetLimit(s.labelConcurrency)
 	for i, label := range chunk {
 		grp.Go(func() error {
 			req := expand.Request{Threshold: 1 - s.bandMin, Limit: labelCandidateLimit}
-			res, findErr := s.expander.Label(gctx, label.UID, req)
+			res, findErr := s.expander.Label(gctx, projectUID, label.UID, req)
 			if findErr != nil {
 				s.log.WarnContext(gctx, "review: label similarity failed",
 					"label_uid", label.UID, "error", findErr)

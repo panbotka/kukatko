@@ -46,12 +46,16 @@ func (f *fakeStore) UnrejectFace(
 	return f.err
 }
 
-func (f *fakeStore) RejectLabel(_ context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error {
+func (f *fakeStore) RejectLabel(
+	_ context.Context, _ string, key feedback.LabelRejectionKey, entry audit.Entry,
+) error {
 	f.called, f.labelKey, f.entry = "RejectLabel", key, entry
 	return f.err
 }
 
-func (f *fakeStore) UnrejectLabel(_ context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error {
+func (f *fakeStore) UnrejectLabel(
+	_ context.Context, _ string, key feedback.LabelRejectionKey, entry audit.Entry,
+) error {
 	f.called, f.labelKey, f.entry = "UnrejectLabel", key, entry
 	return f.err
 }
@@ -71,28 +75,28 @@ func (f *fakeStore) UnconfirmFace(
 }
 
 func (f *fakeStore) DismissDuplicate(
-	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupKey, f.entry = "DismissDuplicate", key, entry
 	return f.err
 }
 
 func (f *fakeStore) UndismissDuplicate(
-	_ context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateDismissalKey, entry audit.Entry,
 ) error {
 	f.called, f.dupKey, f.entry = "UndismissDuplicate", key, entry
 	return f.err
 }
 
 func (f *fakeStore) ConfirmDuplicate(
-	_ context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
 ) error {
 	f.called, f.dupConfirm, f.entry = "ConfirmDuplicate", key, entry
 	return f.err
 }
 
 func (f *fakeStore) UnconfirmDuplicate(
-	_ context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+	_ context.Context, _ string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
 ) error {
 	f.called, f.dupConfirm, f.entry = "UnconfirmDuplicate", key, entry
 	return f.err

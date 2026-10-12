@@ -23,8 +23,11 @@ type votedCandidate struct {
 // concurrency) and merges the hits by photo into voted candidates: match_count is
 // how many source photos returned the photo, distance is the minimum across them.
 // Each source photo's kNN is deduplicated by Postgres, so a photo counts at most
-// once per source and match_count is a true distinct-source vote.
-func (s *Service) search(ctx context.Context, sourceVecs [][]float32, threshold float64) ([]votedCandidate, error) {
+// once per source and match_count is a true distinct-source vote. Every kNN
+// searches projectUID only, so a photo of another project never collects a vote.
+func (s *Service) search(
+	ctx context.Context, projectUID string, sourceVecs [][]float32, threshold float64,
+) ([]votedCandidate, error) {
 	var mu sync.Mutex
 	merged := make(map[string]*votedCandidate)
 	group, groupCtx := errgroup.WithContext(ctx)
@@ -32,7 +35,7 @@ func (s *Service) search(ctx context.Context, sourceVecs [][]float32, threshold 
 	for i := range sourceVecs {
 		vec := sourceVecs[i]
 		group.Go(func() error {
-			matches, err := s.vectors.FindSimilar(groupCtx, vec, s.searchLimit, threshold)
+			matches, err := s.vectors.FindSimilar(groupCtx, projectUID, vec, s.searchLimit, threshold)
 			if err != nil {
 				return fmt.Errorf("expand: kNN over a source photo: %w", err)
 			}

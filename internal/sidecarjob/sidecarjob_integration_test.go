@@ -123,24 +123,24 @@ func TestExport_writesRealCurationToRealStorage(t *testing.T) {
 	photo := makePhoto(t, fix.photos, "e2ecuration01")
 	userUID := makeUser(t, auth.NewStore(fix.db.Pool()), "usr0000000000001", "pan.botka")
 
-	album, err := fix.organize.CreateAlbum(ctx, organize.Album{Title: "Svatba"})
+	album, err := fix.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Svatba"})
 	if err != nil {
 		t.Fatalf("CreateAlbum returned error: %v", err)
 	}
-	if err := fix.organize.AddPhoto(ctx, album.UID, photo.UID); err != nil {
+	if err := fix.organize.AddPhoto(ctx, project.BootstrapUID, album.UID, photo.UID); err != nil {
 		t.Fatalf("AddPhoto returned error: %v", err)
 	}
-	label, err := fix.organize.CreateLabel(ctx, organize.Label{Name: "Portrét", Priority: 3})
+	label, err := fix.organize.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Portrét", Priority: 3})
 	if err != nil {
 		t.Fatalf("CreateLabel returned error: %v", err)
 	}
-	if err := fix.organize.AttachLabel(ctx, photo.UID, label.UID, organize.SourceAI, 12); err != nil {
+	if err := fix.organize.AttachLabel(ctx, project.BootstrapUID, photo.UID, label.UID, organize.SourceAI, 12); err != nil {
 		t.Fatalf("AttachLabel returned error: %v", err)
 	}
-	if err := fix.organize.AddFavorite(ctx, userUID, photo.UID); err != nil {
+	if err := fix.organize.AddFavorite(ctx, project.BootstrapUID, userUID, photo.UID); err != nil {
 		t.Fatalf("AddFavorite returned error: %v", err)
 	}
-	if err := fix.organize.SetRating(ctx, userUID, photo.UID, 4); err != nil {
+	if err := fix.organize.SetRating(ctx, project.BootstrapUID, userUID, photo.UID, 4); err != nil {
 		t.Fatalf("SetRating returned error: %v", err)
 	}
 	subject, err := fix.people.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Jana Nováková", Type: people.SubjectPerson})

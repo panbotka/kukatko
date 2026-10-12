@@ -151,13 +151,17 @@ ORDER BY photo_uid`
 // RejectLabel records that the photo identified by key should NOT carry
 // key.LabelUID and writes entry in the same transaction. The write is idempotent
 // and never detaches the label; it only records the opinion. rejected_by is taken
-// from entry.ActorUID (empty stored as NULL). It returns ErrEmptyKey if the key
-// lacks a photo or label UID.
-func (s *Store) RejectLabel(ctx context.Context, key LabelRejectionKey, entry audit.Entry) error {
+// from entry.ActorUID (empty stored as NULL), and the entry's ProjectUID defaults
+// to projectUID. It returns ErrEmptyKey if the key lacks a photo or label UID,
+// ErrNoProject without a project, and ErrTargetNotFound — recording nothing —
+// unless the photo and the label both belong to projectUID.
+func (s *Store) RejectLabel(
+	ctx context.Context, projectUID string, key LabelRejectionKey, entry audit.Entry,
+) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inScopedAuditedTx(ctx, projectUID, entry, labelProof(key), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, insertLabelRejectionSQL,
 			key.PhotoUID, key.LabelUID, nullable(entry.ActorUID))
 		if isForeignKeyViolation(err) {
@@ -174,12 +178,13 @@ func (s *Store) RejectLabel(ctx context.Context, key LabelRejectionKey, entry au
 // UnrejectLabel removes the label rejection identified by key and writes entry in
 // the same transaction. Un-rejecting a pair that was never rejected still records
 // the action but changes no rows. It returns ErrEmptyKey if the key lacks a photo
-// or label UID.
-func (s *Store) UnrejectLabel(ctx context.Context, key LabelRejectionKey, entry audit.Entry) error {
+// or label UID, ErrNoProject without a project, and ErrTargetNotFound — recording
+// nothing — unless the photo and the label both belong to projectUID.
+func (s *Store) UnrejectLabel(ctx context.Context, projectUID string, key LabelRejectionKey, entry audit.Entry) error {
 	if !key.valid() {
 		return ErrEmptyKey
 	}
-	return s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
+	return s.inScopedAuditedTx(ctx, projectUID, entry, labelProof(key), func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, deleteLabelRejectionSQL, key.PhotoUID, key.LabelUID)
 		if err != nil {
 			return fmt.Errorf("feedback: un-rejecting label %s for photo %s: %w",
@@ -206,7 +211,9 @@ func (s *Store) IsLabelRejected(ctx context.Context, key LabelRejectionKey) (boo
 // LabelRejectionsForLabel returns the UIDs of every photo rejected for labelUID,
 // ordered deterministically. It is the bulk lookup label-expansion uses to exclude
 // already-rejected photos in SQL, without an N+1. A label with no rejections yields
-// an empty (non-nil) slice, nil error.
+// an empty (non-nil) slice, nil error. It is keyed by the label alone: its caller
+// resolves the label inside the project first, and every rejection of a label
+// names a photo of the label's own project (the writes prove both).
 func (s *Store) LabelRejectionsForLabel(ctx context.Context, labelUID string) ([]string, error) {
 	if labelUID == "" {
 		return nil, ErrEmptyKey

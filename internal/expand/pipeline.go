@@ -23,7 +23,7 @@ func (s *Service) find(ctx context.Context, src collection, req Request) (Result
 	}
 	result.MinMatchCount = computeMinMatchCount(len(sourceVecs), threshold, s.maxDistance)
 
-	voted, err := s.search(ctx, sourceVecs, threshold)
+	voted, err := s.search(ctx, src.project, sourceVecs, threshold)
 	if err != nil {
 		return Result{}, err
 	}
@@ -34,7 +34,7 @@ func (s *Service) find(ctx context.Context, src collection, req Request) (Result
 		return Result{}, err
 	}
 
-	candidates, err := s.build(ctx, voted)
+	candidates, err := s.build(ctx, src.project, voted)
 	if err != nil {
 		return Result{}, err
 	}

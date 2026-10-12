@@ -3,10 +3,12 @@
 // makes the search box able to offer "what you searched for last time" on any
 // device the user signs in from.
 //
-// Every operation is scoped to the acting user taken from the auth context. There
-// is no path parameter and no owner in any body, so there is nothing to tamper
-// with: a caller can only ever read, extend or clear their own history. Every
-// signed-in role may use it, viewers included — searching is not curation.
+// Every operation is scoped to the acting user and the request's project, both
+// taken from the auth context. There is no path parameter and no owner in any
+// body, so there is nothing to tamper with: a caller can only ever read, extend or
+// clear their own history in the project they are in — what they searched in
+// another project is a separate history this request never sees. Every signed-in
+// role may use it, viewers included — searching is not curation.
 //
 // The store is an interface and the auth guard is injected, so the package stays
 // decoupled from the concrete store and from auth's wiring, and is unit-testable
@@ -36,13 +38,14 @@ const maxBodyBytes = 8 << 10 // 8 KiB
 // interface so the handlers depend on behaviour rather than the concrete store,
 // keeping them unit-testable with fakes.
 type Store interface {
-	// List returns userUID's recent searches, most recent first.
-	List(ctx context.Context, userUID string) ([]searchhistory.Entry, error)
-	// Record moves query to the front of userUID's history, pruning the overflow.
-	// It returns searchhistory.ErrEmptyQuery for a blank query.
-	Record(ctx context.Context, userUID, query string) error
-	// Clear forgets userUID's whole history.
-	Clear(ctx context.Context, userUID string) error
+	// List returns userUID's recent searches in projectUID, most recent first.
+	List(ctx context.Context, projectUID, userUID string) ([]searchhistory.Entry, error)
+	// Record moves query to the front of userUID's history in projectUID,
+	// pruning the overflow there. It returns searchhistory.ErrEmptyQuery for a
+	// blank query.
+	Record(ctx context.Context, projectUID, userUID, query string) error
+	// Clear forgets userUID's whole history in projectUID.
+	Clear(ctx context.Context, projectUID, userUID string) error
 }
 
 // API exposes the search-history endpoints over HTTP. The auth guard is supplied
@@ -67,11 +70,11 @@ func NewAPI(cfg Config) *API {
 
 // RegisterRoutes mounts the search-history endpoints onto r, which the caller has
 // scoped under the API base path (for example /api/v1). Every route requires auth
-// and acts only on the caller's own history:
+// and acts only on the caller's own history in the request's project:
 //
-//	GET    /search-history   list the caller's recent searches, newest first
-//	POST   /search-history   remember a query that was just run
-//	DELETE /search-history   forget the caller's whole history
+//	GET    /search-history   list the caller's recent searches there, newest first
+//	POST   /search-history   remember a query that was just run there
+//	DELETE /search-history   forget the caller's whole history there
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/search-history", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleList)
@@ -80,13 +83,14 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	})
 }
 
-// handleList writes the acting user's recent searches as {searches:[…]}.
+// handleList writes the acting user's recent searches in the request's project
+// as {searches:[…]}.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
 		return
 	}
-	entries, err := a.store.List(r.Context(), user.UID)
+	entries, err := a.store.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing search history failed")
 		return
@@ -94,7 +98,8 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, listResponse(entries))
 }
 
-// handleRecord remembers one query the acting user just ran and answers 204.
+// handleRecord remembers one query the acting user just ran in the request's
+// project and answers 204.
 //
 // It is deliberately a fire-and-forget write with no body: the client already
 // knows what it searched for, and the refreshed list is only wanted when the
@@ -109,7 +114,7 @@ func (a *API) handleRecord(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := a.store.Record(r.Context(), user.UID, in.Query); err != nil {
+	if err := a.store.Record(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, in.Query); err != nil {
 		if errors.Is(err, searchhistory.ErrEmptyQuery) {
 			writeError(w, http.StatusBadRequest, errBlankQuery.Error())
 			return
@@ -120,14 +125,15 @@ func (a *API) handleRecord(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleClear forgets the acting user's whole history and answers 204. It is
-// idempotent: clearing an already-empty history is a success.
+// handleClear forgets the acting user's whole history in the request's project
+// and answers 204; the history in other projects is kept. It is idempotent:
+// clearing an already-empty history is a success.
 func (a *API) handleClear(w http.ResponseWriter, r *http.Request) {
 	user, ok := currentUser(w, r)
 	if !ok {
 		return
 	}
-	if err := a.store.Clear(r.Context(), user.UID); err != nil {
+	if err := a.store.Clear(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID); err != nil {
 		writeError(w, http.StatusInternalServerError, "clearing search history failed")
 		return
 	}

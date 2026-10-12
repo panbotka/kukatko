@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // postMembershipSummary asks the membership summary for uids as client c and
@@ -33,11 +34,11 @@ func TestBulkMembershipSummary_countsAndNamesFiledPhotos(t *testing.T) {
 	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
-	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Panorama"})
+	album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Panorama"})
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
-	label, err := env.organize.CreateLabel(ctx, organize.Label{Name: "beach"})
+	label, err := env.organize.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "beach"})
 	if err != nil {
 		t.Fatalf("create label: %v", err)
 	}
@@ -45,11 +46,11 @@ func TestBulkMembershipSummary_countsAndNamesFiledPhotos(t *testing.T) {
 	inBoth := env.seedPhoto(t, "mem-both-1")
 	loose := env.seedPhoto(t, "mem-loose-1")
 	for _, uid := range []string{inAlbum, inBoth} {
-		if err := env.organize.AddPhoto(ctx, album.UID, uid); err != nil {
+		if err := env.organize.AddPhoto(ctx, project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("add %s to album: %v", uid, err)
 		}
 	}
-	if err := env.organize.AttachLabel(ctx, inBoth, label.UID, organize.SourceManual, 0); err != nil {
+	if err := env.organize.AttachLabel(ctx, project.BootstrapUID, inBoth, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("attach label: %v", err)
 	}
 

@@ -31,12 +31,13 @@ func buildExpandAPI(
 // buildExpandService assembles the read-only collection-expansion search over the
 // shared pool: the vectors, organize, feedback and photos stores plus the media
 // builder, tuned from cfg.Expand. Album and label share the one service; only the
-// source-set resolution differs.
+// source-set resolution differs. Every search runs inside the project its caller
+// passes (the request's, from expandapi), down to the per-member kNN.
 func buildExpandService(
 	cfg *config.Config, db *database.DB, mediaStore storage.Storage,
 ) *expand.Service {
 	return expand.New(expand.Config{
-		Vectors:     requestProjectVectors{vectors.NewStore(db.Pool())},
+		Vectors:     vectors.NewStore(db.Pool()),
 		Organize:    organize.NewStore(db.Pool()),
 		Feedback:    feedback.NewStore(db.Pool()),
 		Photos:      photos.NewStore(db.Pool()),

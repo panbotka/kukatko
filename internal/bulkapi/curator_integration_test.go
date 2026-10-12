@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/organize"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestBulk_curatorFilesIntoAlbumsAndLabels proves the headline curator case
@@ -20,11 +21,11 @@ func TestBulk_curatorFilesIntoAlbumsAndLabels(t *testing.T) {
 	curator, curatorUID := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
-	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Pouť"})
+	album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Pouť"})
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
-	label, err := env.organize.CreateLabel(ctx, organize.Label{Name: "procession"})
+	label, err := env.organize.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "procession"})
 	if err != nil {
 		t.Fatalf("create label: %v", err)
 	}
@@ -52,7 +53,7 @@ func TestBulk_curatorFilesIntoAlbumsAndLabels(t *testing.T) {
 	}
 	assertAlbumMembers(t, ctx, env, album.UID, p1, p2)
 	assertLabelMembers(t, ctx, env, label.UID, p1, p2)
-	fav, err := env.organize.IsFavorite(ctx, curatorUID, p1)
+	fav, err := env.organize.IsFavorite(ctx, project.BootstrapUID, curatorUID, p1)
 	if err != nil {
 		t.Fatalf("IsFavorite: %v", err)
 	}
@@ -69,7 +70,7 @@ func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 	curator, _ := env.login(t, "curator", auth.AccountCurator)
 	ctx := t.Context()
 
-	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Mixed"})
+	album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Mixed"})
 	if err != nil {
 		t.Fatalf("create album: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 		}
 	}
 
-	members, err := env.organize.ListPhotoUIDs(ctx, album.UID)
+	members, err := env.organize.ListPhotoUIDs(ctx, project.BootstrapUID, album.UID)
 	if err != nil {
 		t.Fatalf("list album photos: %v", err)
 	}

@@ -53,12 +53,12 @@ func TestList_albumScope(t *testing.T) {
 		Title: "outsider", TakenAt: &jun, TakenAtSource: "exif",
 	})
 
-	album, err := org.CreateAlbum(ctx, organize.Album{Title: "Trip"})
+	album, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	for _, uid := range []string{older.UID, mid.UID, newer.UID} {
-		if err := org.AddPhoto(ctx, album.UID, uid); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, album.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", uid, err)
 		}
 	}
@@ -133,21 +133,21 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 		FileHash: "m-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "second-only",
 	})
 
-	first, err := org.CreateAlbum(ctx, organize.Album{Title: "First"})
+	first, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "First"})
 	if err != nil {
 		t.Fatalf("CreateAlbum(first): %v", err)
 	}
-	second, err := org.CreateAlbum(ctx, organize.Album{Title: "Second"})
+	second, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Second"})
 	if err != nil {
 		t.Fatalf("CreateAlbum(second): %v", err)
 	}
 	for _, uid := range []string{inBoth.UID, inFirst.UID} {
-		if err := org.AddPhoto(ctx, first.UID, uid); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, first.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(first, %s): %v", uid, err)
 		}
 	}
 	for _, uid := range []string{inBoth.UID, inSecond.UID} {
-		if err := org.AddPhoto(ctx, second.UID, uid); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, second.UID, uid); err != nil {
 			t.Fatalf("AddPhoto(second, %s): %v", uid, err)
 		}
 	}
@@ -313,12 +313,12 @@ func TestList_labelScope(t *testing.T) {
 		FileHash: "l-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "untagged",
 	})
 
-	label, err := org.CreateLabel(ctx, organize.Label{Name: "Beach"})
+	label, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Beach"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	for _, uid := range []string{tagged.UID, taggedOld.UID} {
-		if err := org.AttachLabel(ctx, uid, label.UID, organize.SourceManual, 0); err != nil {
+		if err := org.AttachLabel(ctx, project.BootstrapUID, uid, label.UID, organize.SourceManual, 0); err != nil {
 			t.Fatalf("AttachLabel(%s): %v", uid, err)
 		}
 	}
@@ -367,21 +367,21 @@ func TestList_multipleLabelsAND(t *testing.T) {
 		FileHash: "ml-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "beach-only",
 	})
 
-	beach, err := org.CreateLabel(ctx, organize.Label{Name: "Beach"})
+	beach, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Beach"})
 	if err != nil {
 		t.Fatalf("CreateLabel(beach): %v", err)
 	}
-	sunset, err := org.CreateLabel(ctx, organize.Label{Name: "Sunset"})
+	sunset, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Sunset"})
 	if err != nil {
 		t.Fatalf("CreateLabel(sunset): %v", err)
 	}
-	if err := org.AttachLabel(ctx, both.UID, beach.UID, organize.SourceManual, 0); err != nil {
+	if err := org.AttachLabel(ctx, project.BootstrapUID, both.UID, beach.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel(both, beach): %v", err)
 	}
-	if err := org.AttachLabel(ctx, both.UID, sunset.UID, organize.SourceManual, 0); err != nil {
+	if err := org.AttachLabel(ctx, project.BootstrapUID, both.UID, sunset.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel(both, sunset): %v", err)
 	}
-	if err := org.AttachLabel(ctx, onlyBeach.UID, beach.UID, organize.SourceManual, 0); err != nil {
+	if err := org.AttachLabel(ctx, project.BootstrapUID, onlyBeach.UID, beach.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel(onlyBeach, beach): %v", err)
 	}
 

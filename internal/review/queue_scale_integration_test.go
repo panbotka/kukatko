@@ -77,7 +77,7 @@ func (h *reviewHarness) instrumentedService(cfg review.Config) (*review.Service,
 	})
 	cfg.Sweeper = sweep.New(sweep.Config{Subjects: h.people, Finder: candSvc, Concurrency: 4})
 	cfg.Expander = expand.New(expand.Config{
-		Vectors: bootstrapVectors{h.vectors}, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
+		Vectors: h.vectors, Organize: h.organize, Feedback: h.feedback, Photos: h.photos,
 		Media:       mediaurl.NewBuilder(nil),
 		MaxDistance: 0.5, SearchLimit: 200, Concurrency: 2,
 	})

@@ -265,35 +265,38 @@ type PhotoFiller interface {
 // "favorited" star, an XMP star rating. Both are per-user in Kukátko, so they
 // land on the importing user; satisfied by *organize.Store.
 type CurationStore interface {
-	// AddFavorite marks the photo as a favourite of this user (idempotent).
-	AddFavorite(ctx context.Context, userUID, photoUID string) error
-	// SetRating sets this user's star rating (0..5) for the photo.
-	SetRating(ctx context.Context, userUID, photoUID string, rating int) error
+	// AddFavorite marks the photo of the project as a favourite of this user
+	// (idempotent).
+	AddFavorite(ctx context.Context, projectUID, userUID, photoUID string) error
+	// SetRating sets this user's star rating (0..5) for the photo of the project.
+	SetRating(ctx context.Context, projectUID, userUID, photoUID string, rating int) error
 }
 
 // AlbumStore is the album catalogue needed to place imported photos, satisfied by
-// *organize.Store.
+// *organize.Store. Every method works inside the project Config.ProjectUID names.
 type AlbumStore interface {
-	// GetAlbumByUID returns the album with this UID.
-	GetAlbumByUID(ctx context.Context, uid string) (organize.Album, error)
-	// ListAlbums lists every album, so --album can resolve a title.
-	ListAlbums(ctx context.Context) ([]organize.AlbumSummary, error)
-	// CreateAlbum inserts a new album.
-	CreateAlbum(ctx context.Context, a organize.Album) (organize.Album, error)
-	// AddPhoto adds a photo to an album (idempotent).
-	AddPhoto(ctx context.Context, albumUID, photoUID string) error
+	// GetAlbumByUID returns the album of the project with this UID.
+	GetAlbumByUID(ctx context.Context, projectUID, uid string) (organize.Album, error)
+	// ListAlbums lists every album of the project, so --album can resolve a title.
+	ListAlbums(ctx context.Context, projectUID string) ([]organize.AlbumSummary, error)
+	// CreateAlbum inserts a new album into the project.
+	CreateAlbum(ctx context.Context, projectUID string, a organize.Album) (organize.Album, error)
+	// AddPhoto adds a photo of the project to an album of it (idempotent).
+	AddPhoto(ctx context.Context, projectUID, albumUID, photoUID string) error
 }
 
 // LabelStore is the label catalogue needed to tag imported photos, satisfied by
-// *organize.Store.
+// *organize.Store. Every method works inside the project Config.ProjectUID names.
 type LabelStore interface {
-	// ListLabels lists every label with its photo count, so --labels can resolve
-	// names.
-	ListLabels(ctx context.Context) ([]organize.LabelCount, error)
-	// CreateLabel inserts a new label.
-	CreateLabel(ctx context.Context, l organize.Label) (organize.Label, error)
-	// AttachLabel attaches a label to a photo (idempotent).
-	AttachLabel(ctx context.Context, photoUID, labelUID string, source organize.LabelSource, uncertainty int) error
+	// ListLabels lists every label of the project with its photo count, so
+	// --labels can resolve names.
+	ListLabels(ctx context.Context, projectUID string) ([]organize.LabelCount, error)
+	// CreateLabel inserts a new label into the project.
+	CreateLabel(ctx context.Context, projectUID string, l organize.Label) (organize.Label, error)
+	// AttachLabel attaches a label of the project to a photo of it (idempotent).
+	AttachLabel(
+		ctx context.Context, projectUID, photoUID, labelUID string, source organize.LabelSource, uncertainty int,
+	) error
 }
 
 // Config bundles the collaborators and tunables a Service needs.
@@ -315,6 +318,9 @@ type Config struct {
 	Albums AlbumStore
 	// Labels resolves and attaches --labels (required only when --labels is used).
 	Labels LabelStore
+	// ProjectUID is the project --album, --labels and an export's favourites and
+	// ratings are resolved and written in (required whenever any of them is used).
+	ProjectUID string
 	// Concurrency is how many files are ingested in parallel; a non-positive value
 	// means DefaultConcurrency and anything above MaxConcurrency is clamped to it.
 	Concurrency int
@@ -333,6 +339,7 @@ type Service struct {
 	curation    CurationStore
 	albums      AlbumStore
 	labels      LabelStore
+	projectUID  string
 	concurrency int
 	log         *slog.Logger
 }
@@ -352,6 +359,7 @@ func New(cfg Config) *Service {
 		curation:    cfg.Curation,
 		albums:      cfg.Albums,
 		labels:      cfg.Labels,
+		projectUID:  cfg.ProjectUID,
 		concurrency: clampConcurrency(cfg.Concurrency),
 		log:         log,
 	}

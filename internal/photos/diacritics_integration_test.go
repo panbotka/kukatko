@@ -86,19 +86,19 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 		t.Fatalf("insert place: %v", err)
 	}
 
-	album, err := org.CreateAlbum(ctx, organize.Album{Title: "Dovolená 2024"})
+	album, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Dovolená 2024"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if err := org.AddPhoto(ctx, album.UID, lib.accented); err != nil {
+	if err := org.AddPhoto(ctx, project.BootstrapUID, album.UID, lib.accented); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
 
-	label, err := org.CreateLabel(ctx, organize.Label{Name: "kytička"})
+	label, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "kytička"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if err := org.AttachLabel(ctx, lib.accented, label.UID, organize.SourceManual, 0); err != nil {
+	if err := org.AttachLabel(ctx, project.BootstrapUID, lib.accented, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
 

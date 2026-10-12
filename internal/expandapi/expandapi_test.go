@@ -24,12 +24,12 @@ type fakeService struct {
 	gotReq      expand.Request
 }
 
-func (f *fakeService) Album(_ context.Context, uid string, req expand.Request) (expand.Result, error) {
+func (f *fakeService) Album(_ context.Context, _, uid string, req expand.Request) (expand.Result, error) {
 	f.gotUID, f.gotReq = uid, req
 	return f.albumResult, f.albumErr
 }
 
-func (f *fakeService) Label(_ context.Context, uid string, req expand.Request) (expand.Result, error) {
+func (f *fakeService) Label(_ context.Context, _, uid string, req expand.Request) (expand.Result, error) {
 	f.gotUID, f.gotReq = uid, req
 	return f.labelResult, f.labelErr
 }

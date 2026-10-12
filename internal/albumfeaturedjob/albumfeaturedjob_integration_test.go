@@ -97,13 +97,13 @@ func (f *fixture) count(t *testing.T, sql string, args ...any) int {
 // album creates a hand-made album with one photo in it and returns its uid.
 func (f *fixture) album(t *testing.T, title string, private bool) string {
 	t.Helper()
-	album, err := f.store.CreateAlbum(t.Context(), organize.Album{Title: title, Private: private})
+	album, err := f.store.CreateAlbum(t.Context(), project.BootstrapUID, organize.Album{Title: title, Private: private})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	photo := "ph" + album.UID
 	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at) VALUES ($1, $1, $2, now())`, photo, photo+".jpg")
-	if err := f.store.AddPhoto(t.Context(), album.UID, photo); err != nil {
+	if err := f.store.AddPhoto(t.Context(), project.BootstrapUID, album.UID, photo); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
 	return album.UID
@@ -114,7 +114,7 @@ func (f *fixture) feature(t *testing.T, albumUID, actor string) {
 	t.Helper()
 	until := time.Now().Add(7 * 24 * time.Hour)
 	entry := audit.Entry{Action: audit.ActionAlbumFeature, TargetType: "albums", ActorUID: actor}
-	if _, err := f.store.FeatureAlbumAudited(t.Context(), albumUID, until, actor, entry); err != nil {
+	if _, err := f.store.FeatureAlbumAudited(t.Context(), project.BootstrapUID, albumUID, until, actor, entry); err != nil {
 		t.Fatalf("FeatureAlbumAudited: %v", err)
 	}
 }
@@ -123,7 +123,7 @@ func (f *fixture) feature(t *testing.T, albumUID, actor string) {
 func (f *fixture) unfeature(t *testing.T, albumUID string) {
 	t.Helper()
 	entry := audit.Entry{Action: audit.ActionAlbumUnfeature, TargetType: "albums", ActorUID: curatorUID}
-	if _, err := f.store.UnfeatureAlbumAudited(t.Context(), albumUID, entry); err != nil {
+	if _, err := f.store.UnfeatureAlbumAudited(t.Context(), project.BootstrapUID, albumUID, entry); err != nil {
 		t.Fatalf("UnfeatureAlbumAudited: %v", err)
 	}
 }

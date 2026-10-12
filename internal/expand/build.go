@@ -9,14 +9,15 @@ import (
 )
 
 // build hydrates the surviving voted candidates into full result rows: it batch-
-// loads the photo records, skips any that raced a delete or is a non-primary stack
-// member (hidden everywhere else, so kept out of here too), stamps each photo's
-// media URLs, and carries the vote count and distance/similarity through.
-func (s *Service) build(ctx context.Context, cands []votedCandidate) ([]Candidate, error) {
+// loads the photo records inside projectUID, skips any that raced a delete, is
+// not the project's or is a non-primary stack member (hidden everywhere else, so
+// kept out of here too), stamps each photo's media URLs, and carries the vote
+// count and distance/similarity through.
+func (s *Service) build(ctx context.Context, projectUID string, cands []votedCandidate) ([]Candidate, error) {
 	if len(cands) == 0 {
 		return []Candidate{}, nil
 	}
-	loaded, err := s.photos.ListByUIDs(ctx, candidateUIDs(cands))
+	loaded, err := s.photos.ListByUIDsInProject(ctx, projectUID, candidateUIDs(cands))
 	if err != nil {
 		return nil, fmt.Errorf("expand: loading candidate photos: %w", err)
 	}
@@ -28,7 +29,7 @@ func (s *Service) build(ctx context.Context, cands []votedCandidate) ([]Candidat
 	for _, candidate := range cands {
 		photo, ok := byUID[candidate.photoUID]
 		if !ok {
-			continue // raced delete between search and load; skip it
+			continue // raced delete between search and load, or not the project's; skip it
 		}
 		if photo.StackUID != nil && !photo.StackPrimary {
 			continue // a non-primary stack member surfaces only through its primary

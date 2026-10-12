@@ -122,12 +122,12 @@ func TestTimelineBuckets_albumScope(t *testing.T) {
 		{hash: "tls-c", takenAt: new(jan)},
 	})
 
-	album, err := org.CreateAlbum(ctx, organize.Album{Title: "Trip"})
+	album, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Trip"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	for _, hash := range []string{"tls-a", "tls-c"} {
-		if err := org.AddPhoto(ctx, album.UID, uids[hash]); err != nil {
+		if err := org.AddPhoto(ctx, project.BootstrapUID, album.UID, uids[hash]); err != nil {
 			t.Fatalf("AddPhoto(%s): %v", hash, err)
 		}
 	}

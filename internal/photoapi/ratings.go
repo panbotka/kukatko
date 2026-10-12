@@ -27,17 +27,20 @@ type RatingStore interface {
 	// SetRating sets photoUID's star rating (0–5) for userUID, leaving any flag
 	// untouched. It returns organize.ErrInvalidRating for an out-of-range value or
 	// organize.ErrPhotoNotFound when the photo does not exist.
-	SetRating(ctx context.Context, userUID, photoUID string, rating int) error
+	SetRating(ctx context.Context, projectUID, userUID, photoUID string, rating int) error
 	// SetFlag sets photoUID's pick/reject flag for userUID, leaving any rating
 	// untouched. It returns organize.ErrInvalidFlag for an unknown flag or
 	// organize.ErrPhotoNotFound when the photo does not exist.
-	SetFlag(ctx context.Context, userUID, photoUID, flag string) error
+	SetFlag(ctx context.Context, projectUID, userUID, photoUID, flag string) error
 	// ClearRating removes userUID's rating and flag for photoUID, idempotently.
-	ClearRating(ctx context.Context, userUID, photoUID string) error
+	ClearRating(ctx context.Context, projectUID, userUID, photoUID string) error
 	// RatingsAmong returns, keyed by photo UID, the rating and flag userUID has set
 	// on each of photoUIDs. Only rated photos are present; an absent photo defaults
 	// to rating 0 / flag "none".
-	RatingsAmong(ctx context.Context, userUID string, photoUIDs []string) (map[string]organize.PhotoRating, error)
+	// Every method is confined to the photos of the project projectUID names.
+	RatingsAmong(
+		ctx context.Context, projectUID, userUID string, photoUIDs []string,
+	) (map[string]organize.PhotoRating, error)
 }
 
 // ratingRequest is the JSON body of PUT /photos/{uid}/rating: an optional star
@@ -89,7 +92,7 @@ func (a *API) annotateRatings(ctx context.Context, userUID string, uids []string
 	if a.ratings == nil {
 		return nil
 	}
-	rated, err := a.ratings.RatingsAmong(ctx, userUID, uids)
+	rated, err := a.ratings.RatingsAmong(ctx, auth.ProjectUIDFromContext(ctx), userUID, uids)
 	if err != nil {
 		return fmt.Errorf("photoapi: resolving ratings: %w", err)
 	}
@@ -157,7 +160,7 @@ func (a *API) handleClearRating(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := photo.UID
-	if err := a.ratings.ClearRating(r.Context(), user.UID, uid); err != nil {
+	if err := a.ratings.ClearRating(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, uid); err != nil {
 		writeError(w, http.StatusInternalServerError, "clearing rating failed")
 		return
 	}
@@ -171,12 +174,12 @@ func (a *API) handleClearRating(w http.ResponseWriter, r *http.Request) {
 // is needed: a missing photo fails the first write before anything is stored.
 func (a *API) applyRating(ctx context.Context, userUID, photoUID string, body ratingRequest) error {
 	if body.Rating != nil {
-		if err := a.ratings.SetRating(ctx, userUID, photoUID, *body.Rating); err != nil {
+		if err := a.ratings.SetRating(ctx, auth.ProjectUIDFromContext(ctx), userUID, photoUID, *body.Rating); err != nil {
 			return fmt.Errorf("photoapi: setting rating: %w", err)
 		}
 	}
 	if body.Flag != nil {
-		if err := a.ratings.SetFlag(ctx, userUID, photoUID, *body.Flag); err != nil {
+		if err := a.ratings.SetFlag(ctx, auth.ProjectUIDFromContext(ctx), userUID, photoUID, *body.Flag); err != nil {
 			return fmt.Errorf("photoapi: setting flag: %w", err)
 		}
 	}

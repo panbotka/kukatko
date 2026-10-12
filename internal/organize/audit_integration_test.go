@@ -76,7 +76,7 @@ func TestAuditAlbumMutations(t *testing.T) {
 	actor := makeUser(t, authStore, "auda_actor", "auda")
 	photoUID := makePhoto(t, photoStore, "auditalbumphoto")
 
-	created, err := store.CreateAlbumAudited(ctx, organize.Album{Title: "Trip"},
+	created, err := store.CreateAlbumAudited(ctx, testProject, organize.Album{Title: "Trip"},
 		actorEntry(actor, audit.ActionAlbumCreate, "albums", "", map[string]any{"title": "Trip"}))
 	if err != nil {
 		t.Fatalf("CreateAlbumAudited: %v", err)
@@ -86,26 +86,26 @@ func TestAuditAlbumMutations(t *testing.T) {
 		t.Errorf("create details title = %v, want Trip", rec.Details["title"])
 	}
 
-	if _, err := store.UpdateAlbumAudited(ctx, created.UID, organize.AlbumUpdate{Title: "Trip 2"},
+	if _, err := store.UpdateAlbumAudited(ctx, testProject, created.UID, organize.AlbumUpdate{Title: "Trip 2"},
 		actorEntry(actor, audit.ActionAlbumUpdate, "albums", created.UID, nil)); err != nil {
 		t.Fatalf("UpdateAlbumAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionAlbumUpdate, actor, created.UID)
 
-	if err := store.AddPhotosAudited(ctx, created.UID, []string{photoUID},
+	if err := store.AddPhotosAudited(ctx, testProject, created.UID, []string{photoUID},
 		actorEntry(actor, audit.ActionAlbumAddPhotos, "albums", created.UID,
 			map[string]any{"count": 1})); err != nil {
 		t.Fatalf("AddPhotosAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionAlbumAddPhotos, actor, created.UID)
 
-	if err := store.RemovePhotosAudited(ctx, created.UID, []string{photoUID},
+	if err := store.RemovePhotosAudited(ctx, testProject, created.UID, []string{photoUID},
 		actorEntry(actor, audit.ActionAlbumRemovePhotos, "albums", created.UID, nil)); err != nil {
 		t.Fatalf("RemovePhotosAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionAlbumRemovePhotos, actor, created.UID)
 
-	if err := store.DeleteAlbumAudited(ctx, created.UID,
+	if err := store.DeleteAlbumAudited(ctx, testProject, created.UID,
 		actorEntry(actor, audit.ActionAlbumDelete, "albums", created.UID, nil)); err != nil {
 		t.Fatalf("DeleteAlbumAudited: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestAuditAlbumRollback(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, authStore, "auda_actor", "auda")
 
-	created, err := store.CreateAlbumAudited(ctx, organize.Album{Title: "Trip"},
+	created, err := store.CreateAlbumAudited(ctx, testProject, organize.Album{Title: "Trip"},
 		actorEntry(actor, audit.ActionAlbumCreate, "albums", "", nil))
 	if err != nil {
 		t.Fatalf("CreateAlbumAudited: %v", err)
@@ -127,7 +127,7 @@ func TestAuditAlbumRollback(t *testing.T) {
 
 	// Adding a non-existent photo violates the FK, rolls the batch back, and must
 	// write no audit row.
-	err = store.AddPhotosAudited(ctx, created.UID, []string{"ph_missing"},
+	err = store.AddPhotosAudited(ctx, testProject, created.UID, []string{"ph_missing"},
 		actorEntry(actor, audit.ActionAlbumAddPhotos, "albums", created.UID, nil))
 	if !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Fatalf("AddPhotosAudited err = %v, want ErrPhotoNotFound", err)
@@ -135,7 +135,7 @@ func TestAuditAlbumRollback(t *testing.T) {
 	requireNoAudit(t, ctx, auditStore, audit.ActionAlbumAddPhotos)
 
 	// Deleting a missing album changes nothing and writes no audit row.
-	err = store.DeleteAlbumAudited(ctx, "al_missing",
+	err = store.DeleteAlbumAudited(ctx, testProject, "al_missing",
 		actorEntry(actor, audit.ActionAlbumDelete, "albums", "al_missing", nil))
 	if !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Fatalf("DeleteAlbumAudited err = %v, want ErrAlbumNotFound", err)
@@ -152,12 +152,12 @@ func TestAuditAlbumCreate_uniqueSlugRetry(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, authStore, "auda_actor", "auda")
 
-	first, err := store.CreateAlbumAudited(ctx, organize.Album{Title: "Trip"},
+	first, err := store.CreateAlbumAudited(ctx, testProject, organize.Album{Title: "Trip"},
 		actorEntry(actor, audit.ActionAlbumCreate, "albums", "", nil))
 	if err != nil {
 		t.Fatalf("first CreateAlbumAudited: %v", err)
 	}
-	second, err := store.CreateAlbumAudited(ctx, organize.Album{Title: "Trip"},
+	second, err := store.CreateAlbumAudited(ctx, testProject, organize.Album{Title: "Trip"},
 		actorEntry(actor, audit.ActionAlbumCreate, "albums", "", nil))
 	if err != nil {
 		t.Fatalf("second CreateAlbumAudited: %v", err)
@@ -179,20 +179,20 @@ func TestAuditLabelMutations(t *testing.T) {
 	actor := makeUser(t, authStore, "auda_actor", "auda")
 	photoUID := makePhoto(t, photoStore, "auditlabelphoto")
 
-	created, err := store.CreateLabelAudited(ctx, organize.Label{Name: "Beach"},
+	created, err := store.CreateLabelAudited(ctx, testProject, organize.Label{Name: "Beach"},
 		actorEntry(actor, audit.ActionLabelCreate, "labels", "", map[string]any{"name": "Beach"}))
 	if err != nil {
 		t.Fatalf("CreateLabelAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionLabelCreate, actor, created.UID)
 
-	if _, err := store.UpdateLabelAudited(ctx, created.UID, organize.LabelUpdate{Name: "Sea", Priority: 3},
+	if _, err := store.UpdateLabelAudited(ctx, testProject, created.UID, organize.LabelUpdate{Name: "Sea", Priority: 3},
 		actorEntry(actor, audit.ActionLabelUpdate, "labels", created.UID, nil)); err != nil {
 		t.Fatalf("UpdateLabelAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionLabelUpdate, actor, created.UID)
 
-	if err := store.AttachLabelAudited(ctx, photoUID, created.UID, organize.SourceManual, 0,
+	if err := store.AttachLabelAudited(ctx, testProject, photoUID, created.UID, organize.SourceManual, 0,
 		actorEntry(actor, audit.ActionLabelAttach, "labels", created.UID,
 			map[string]any{"photo_uid": photoUID})); err != nil {
 		t.Fatalf("AttachLabelAudited: %v", err)
@@ -202,14 +202,14 @@ func TestAuditLabelMutations(t *testing.T) {
 		t.Errorf("attach details photo_uid = %v, want %q", rec.Details["photo_uid"], photoUID)
 	}
 
-	if err := store.DetachLabelAudited(ctx, photoUID, created.UID,
+	if err := store.DetachLabelAudited(ctx, testProject, photoUID, created.UID,
 		actorEntry(actor, audit.ActionLabelDetach, "labels", created.UID,
 			map[string]any{"photo_uid": photoUID})); err != nil {
 		t.Fatalf("DetachLabelAudited: %v", err)
 	}
 	requireOneAudit(t, ctx, auditStore, audit.ActionLabelDetach, actor, created.UID)
 
-	if err := store.DeleteLabelAudited(ctx, created.UID,
+	if err := store.DeleteLabelAudited(ctx, testProject, created.UID,
 		actorEntry(actor, audit.ActionLabelDelete, "labels", created.UID, nil)); err != nil {
 		t.Fatalf("DeleteLabelAudited: %v", err)
 	}
@@ -223,13 +223,13 @@ func TestAuditLabelRollback(t *testing.T) {
 	auditStore := audit.NewStore(db.Pool())
 	actor := makeUser(t, authStore, "auda_actor", "auda")
 
-	created, err := store.CreateLabelAudited(ctx, organize.Label{Name: "Beach"},
+	created, err := store.CreateLabelAudited(ctx, testProject, organize.Label{Name: "Beach"},
 		actorEntry(actor, audit.ActionLabelCreate, "labels", "", nil))
 	if err != nil {
 		t.Fatalf("CreateLabelAudited: %v", err)
 	}
 
-	err = store.AttachLabelAudited(ctx, "ph_missing", created.UID, organize.SourceManual, 0,
+	err = store.AttachLabelAudited(ctx, testProject, "ph_missing", created.UID, organize.SourceManual, 0,
 		actorEntry(actor, audit.ActionLabelAttach, "labels", created.UID, nil))
 	if !errors.Is(err, organize.ErrPhotoNotFound) {
 		t.Fatalf("AttachLabelAudited err = %v, want ErrPhotoNotFound", err)

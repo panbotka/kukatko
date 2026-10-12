@@ -5,6 +5,10 @@
 // to the collection goes through the existing POST /photos/bulk path, so this
 // package adds no second write path. It depends on a search behaviour and a curator
 // guard, both injected, so it stays decoupled from the expand package's wiring.
+//
+// Both work inside the request's project (auth.ProjectUIDFromContext): an album
+// or label of another project answers the very 404 a missing one does, and the
+// candidates are only ever the project's photos.
 package expandapi
 
 import (
@@ -17,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/expand"
 	"github.com/panbotka/kukatko/internal/organize"
 )
@@ -25,15 +30,17 @@ import (
 // expandapi depends on the behaviour, not the expand package's wiring;
 // *expand.Service satisfies it.
 type Service interface {
-	// Album expands an album, or returns organize.ErrAlbumNotFound.
-	Album(ctx context.Context, albumUID string, req expand.Request) (expand.Result, error)
-	// Label expands a label, or returns organize.ErrLabelNotFound.
-	Label(ctx context.Context, labelUID string, req expand.Request) (expand.Result, error)
+	// Album expands an album of the project, or returns organize.ErrAlbumNotFound
+	// (for another project's album too).
+	Album(ctx context.Context, projectUID, albumUID string, req expand.Request) (expand.Result, error)
+	// Label expands a label of the project, or returns organize.ErrLabelNotFound
+	// (for another project's label too).
+	Label(ctx context.Context, projectUID, labelUID string, req expand.Request) (expand.Result, error)
 }
 
 // finder is the common shape of Service.Album and Service.Label, so the two
 // handlers share one implementation differing only in the not-found sentinel.
-type finder func(ctx context.Context, uid string, req expand.Request) (expand.Result, error)
+type finder func(ctx context.Context, projectUID, uid string, req expand.Request) (expand.Result, error)
 
 // API exposes the collection-expansion search over HTTP. The curator guard is
 // supplied by the caller (the auth subsystem) so this package depends on auth's
@@ -86,16 +93,17 @@ func (a *API) handleLabel(w http.ResponseWriter, r *http.Request) {
 	a.respond(w, r, a.service.Label, organize.ErrLabelNotFound)
 }
 
-// respond parses the query, runs find for the path UID, and writes the result. An
-// unparsable threshold or limit answers 400, the not-found sentinel 404, any other
-// failure 500.
+// respond parses the query, runs find for the path UID inside the request's
+// project, and writes the result. An unparsable threshold or limit answers 400,
+// the not-found sentinel 404 (one fixed body, so a foreign collection reads like
+// a missing one), any other failure 500.
 func (a *API) respond(w http.ResponseWriter, r *http.Request, find finder, notFound error) {
 	req, err := parseRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := find(r.Context(), chi.URLParam(r, "uid"), req)
+	result, err := find(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"), req)
 	if err != nil {
 		if errors.Is(err, notFound) {
 			writeError(w, http.StatusNotFound, "collection not found")

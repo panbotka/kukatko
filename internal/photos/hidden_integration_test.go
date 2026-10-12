@@ -45,20 +45,20 @@ func newHiddenLibrary(t *testing.T) hiddenLibrary {
 	})
 
 	var err error
-	if lib.album, err = org.CreateAlbum(ctx, organize.Album{Title: "Documents"}); err != nil {
+	if lib.album, err = org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Documents"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if err = org.AddPhoto(ctx, lib.album.UID, lib.scan.UID); err != nil {
+	if err = org.AddPhoto(ctx, project.BootstrapUID, lib.album.UID, lib.scan.UID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
-	if lib.label, err = org.CreateLabel(ctx, organize.Label{Name: "Scans"}); err != nil {
+	if lib.label, err = org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Scans"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if err = org.AttachLabel(ctx, lib.scan.UID, lib.label.UID, organize.SourceManual, 0); err != nil {
+	if err = org.AttachLabel(ctx, project.BootstrapUID, lib.scan.UID, lib.label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
 	mustCreateUser(t, db, lib.user)
-	if err = org.AddFavorite(ctx, lib.user, lib.scan.UID); err != nil {
+	if err = org.AddFavorite(ctx, project.BootstrapUID, lib.user, lib.scan.UID); err != nil {
 		t.Fatalf("AddFavorite: %v", err)
 	}
 	return lib

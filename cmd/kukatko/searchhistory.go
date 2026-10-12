@@ -11,8 +11,8 @@ import (
 // shared pool: listing what the caller searched for recently, recording a query
 // that was just run, and clearing the lot. The read guard is supplied via authAPI
 // (so searchhistoryapi stays decoupled from auth's wiring), and every operation is
-// scoped to the acting user, so the history is readable and writable by its owner
-// alone.
+// scoped to the acting user inside the request's project, so the history is
+// readable and writable by its owner alone, one history per project.
 func buildSearchHistoryAPI(db *database.DB, authAPI *auth.API) *searchhistoryapi.API {
 	return searchhistoryapi.NewAPI(searchhistoryapi.Config{
 		Store:       searchhistory.NewStore(db.Pool()),

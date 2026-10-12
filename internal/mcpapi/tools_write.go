@@ -177,7 +177,7 @@ func (a *API) handleCreateAlbum(
 	if title == "" {
 		return nil, albumInfo{}, errors.New("an album needs a title")
 	}
-	al, err := a.organize.CreateAlbumAudited(ctx, organize.Album{
+	al, err := a.organize.CreateAlbumAudited(ctx, c.projectUID, organize.Album{
 		Title:       title,
 		Description: strings.TrimSpace(in.Description),
 		Type:        organize.AlbumManual,
@@ -200,7 +200,7 @@ func (a *API) handleAddPhotosToAlbum(
 	entry := c.entry(audit.ActionAlbumAddPhotos, "albums", in.AlbumUID, map[string]any{
 		"photo_uids": uids, "count": len(uids), "via": viaMCP,
 	})
-	if err := a.organize.AddPhotosAudited(ctx, in.AlbumUID, uids, entry); err != nil {
+	if err := a.organize.AddPhotosAudited(ctx, c.projectUID, in.AlbumUID, uids, entry); err != nil {
 		return nil, okResult{}, albumWriteError(err, "adding photos to the album")
 	}
 	return nil, okOf("added %d photo(s) to the album", len(uids)), nil
@@ -217,7 +217,7 @@ func (a *API) handleRemovePhotosFromAlbum(
 	entry := c.entry(audit.ActionAlbumRemovePhotos, "albums", in.AlbumUID, map[string]any{
 		"photo_uids": uids, "count": len(uids), "via": viaMCP,
 	})
-	if err := a.organize.RemovePhotosAudited(ctx, in.AlbumUID, uids, entry); err != nil {
+	if err := a.organize.RemovePhotosAudited(ctx, c.projectUID, in.AlbumUID, uids, entry); err != nil {
 		return nil, okResult{}, albumWriteError(err, "removing photos from the album")
 	}
 	return nil, okOf("removed %d photo(s) from the album", len(uids)), nil
@@ -252,7 +252,7 @@ func (a *API) handleCreateLabel(
 	if name == "" {
 		return nil, labelInfo{}, errors.New("a label needs a name")
 	}
-	l, err := a.organize.CreateLabelAudited(ctx, organize.Label{Name: name},
+	l, err := a.organize.CreateLabelAudited(ctx, c.projectUID, organize.Label{Name: name},
 		c.entry(audit.ActionLabelCreate, "labels", "", map[string]any{"name": name, "via": viaMCP}))
 	if err != nil {
 		return nil, labelInfo{}, fmt.Errorf("creating label: %w", err)
@@ -274,7 +274,7 @@ func (a *API) handleAttachLabel(
 	// making the same claim a human clicking the label makes. The audit trail,
 	// not a lower confidence, is what records that a machine did it.
 	if err := a.organize.AttachLabelAudited(
-		ctx, in.PhotoUID, in.LabelUID, organize.SourceManual, 0, entry,
+		ctx, c.projectUID, in.PhotoUID, in.LabelUID, organize.SourceManual, 0, entry,
 	); err != nil {
 		return nil, okResult{}, labelWriteError(err, "attaching the label")
 	}
@@ -291,7 +291,7 @@ func (a *API) handleDetachLabel(
 	}
 	entry := c.entry(audit.ActionLabelDetach, "photos", in.PhotoUID,
 		map[string]any{"label_uid": in.LabelUID, "via": viaMCP})
-	if err := a.organize.DetachLabelAudited(ctx, in.PhotoUID, in.LabelUID, entry); err != nil {
+	if err := a.organize.DetachLabelAudited(ctx, c.projectUID, in.PhotoUID, in.LabelUID, entry); err != nil {
 		return nil, okResult{}, labelWriteError(err, "detaching the label")
 	}
 	return nil, okOf("detached the label"), nil

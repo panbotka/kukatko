@@ -57,7 +57,7 @@ type fakeSearcher struct {
 }
 
 // SearchAlbums records the query/limit and returns the canned albums or error.
-func (f *fakeSearcher) SearchAlbums(_ context.Context, q string, limit int) ([]organize.AlbumCount, error) {
+func (f *fakeSearcher) SearchAlbums(_ context.Context, _ string, q string, limit int) ([]organize.AlbumCount, error) {
 	f.gotQuery, f.gotLimit = q, limit
 	f.searched++
 	return f.albums, f.err
@@ -65,7 +65,7 @@ func (f *fakeSearcher) SearchAlbums(_ context.Context, q string, limit int) ([]o
 
 // GetAlbumByUID answers from albumsByUID, reporting a miss as the store's
 // not-found sentinel.
-func (f *fakeSearcher) GetAlbumByUID(_ context.Context, uid string) (organize.Album, error) {
+func (f *fakeSearcher) GetAlbumByUID(_ context.Context, _ string, uid string) (organize.Album, error) {
 	if f.err != nil {
 		return organize.Album{}, f.err
 	}
@@ -77,7 +77,7 @@ func (f *fakeSearcher) GetAlbumByUID(_ context.Context, uid string) (organize.Al
 }
 
 // GetLabelByUID answers from labelsByUID.
-func (f *fakeSearcher) GetLabelByUID(_ context.Context, uid string) (organize.Label, error) {
+func (f *fakeSearcher) GetLabelByUID(_ context.Context, _ string, uid string) (organize.Label, error) {
 	label, ok := f.labelsByUID[uid]
 	if !ok {
 		return organize.Label{}, organize.ErrLabelNotFound
@@ -135,13 +135,13 @@ func lookupPhoto(m map[string]photos.Photo, uid string) (photos.Photo, error) {
 
 // AlbumCovers returns the canned album covers, recording the batch it was asked
 // for.
-func (f *fakeSearcher) AlbumCovers(_ context.Context, uids []string) (map[string]organize.Cover, error) {
+func (f *fakeSearcher) AlbumCovers(_ context.Context, _ string, uids []string) (map[string]organize.Cover, error) {
 	f.recordCovers("albums", uids)
 	return f.albumCovers, f.err
 }
 
 // LabelCovers returns the canned label covers, recording the batch it was asked for.
-func (f *fakeSearcher) LabelCovers(_ context.Context, uids []string) (map[string]organize.Cover, error) {
+func (f *fakeSearcher) LabelCovers(_ context.Context, _ string, uids []string) (map[string]organize.Cover, error) {
 	f.recordCovers("labels", uids)
 	return f.labelCovers, f.err
 }
@@ -164,7 +164,7 @@ func (f *fakeSearcher) recordCovers(group string, uids []string) {
 }
 
 // SearchLabels returns the canned labels or error.
-func (f *fakeSearcher) SearchLabels(_ context.Context, _ string, _ int) ([]organize.LabelCount, error) {
+func (f *fakeSearcher) SearchLabels(_ context.Context, _ string, _ string, _ int) ([]organize.LabelCount, error) {
 	return f.labels, f.err
 }
 

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/expand"
@@ -15,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -22,26 +25,25 @@ import (
 // They share one database and truncate between cases, so they do not run in parallel.
 
 // expandHarness bundles the stores and service over a freshly truncated database.
+// The fixture rows are written into the bootstrap project — the project the
+// searches run in.
 type expandHarness struct {
+	pool     *pgxpool.Pool
 	vectors  *vectors.Store
-	organize *organize.Store
 	feedback *feedback.Store
 	photos   *photos.Store
 	svc      *expand.Service
 }
 
-// bootstrapVectors adapts *vectors.Store to the project-less expand.VectorStore,
-// searching the bootstrap project the test photos land in (cmd/kukatko wires the
-// request's project instead).
-type bootstrapVectors struct {
-	*vectors.Store
-}
-
-// FindSimilar searches the bootstrap project.
-func (v bootstrapVectors) FindSimilar(
-	ctx context.Context, vec []float32, limit int, maxDistance float64,
-) ([]vectors.Match, error) {
-	return v.Store.FindSimilar(ctx, project.BootstrapUID, vec, limit, maxDistance)
+// newService returns the expand service over pool's real stores, with the given
+// source-set cap (0 uses the package default).
+func newService(pool *pgxpool.Pool, sourceCap int) *expand.Service {
+	return expand.New(expand.Config{
+		Vectors: vectors.NewStore(pool), Organize: organize.NewStore(pool),
+		Feedback: feedback.NewStore(pool), Photos: photos.NewStore(pool),
+		Media:       mediaurl.NewBuilder(nil),
+		MaxDistance: 0.5, SearchLimit: 200, SourceCap: sourceCap, Concurrency: 4,
+	})
 }
 
 // newExpandHarness returns a harness over a truncated integration database, with the
@@ -50,18 +52,10 @@ func newExpandHarness(t *testing.T, sourceCap int) expandHarness {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
-	vectorStore := vectors.NewStore(db.Pool())
-	organizeStore := organize.NewStore(db.Pool())
-	feedbackStore := feedback.NewStore(db.Pool())
-	photoStore := photos.NewStore(db.Pool())
+	pool := db.Pool()
 	return expandHarness{
-		vectors: vectorStore, organize: organizeStore, feedback: feedbackStore, photos: photoStore,
-		svc: expand.New(expand.Config{
-			Vectors: bootstrapVectors{vectorStore}, Organize: organizeStore,
-			Feedback: feedbackStore, Photos: photoStore,
-			Media:       mediaurl.NewBuilder(nil),
-			MaxDistance: 0.5, SearchLimit: 200, SourceCap: sourceCap, Concurrency: 4,
-		}),
+		pool: pool, vectors: vectors.NewStore(pool), feedback: feedback.NewStore(pool),
+		photos: photos.NewStore(pool), svc: newService(pool, sourceCap),
 	}
 }
 
@@ -102,34 +96,48 @@ func (h expandHarness) embedded(t *testing.T, hash string, vec []float32) string
 	return uid
 }
 
-// album creates an album with the given members and returns its uid.
+// album creates an album of the bootstrap project with the given members and
+// returns its uid. It writes the rows directly so the fixture does not depend on
+// organize's write API.
 func (h expandHarness) album(t *testing.T, title string, members ...string) string {
 	t.Helper()
-	created, err := h.organize.CreateAlbum(context.Background(), organize.Album{Title: title})
-	if err != nil {
-		t.Fatalf("CreateAlbum(%s): %v", title, err)
-	}
-	for _, member := range members {
-		if err := h.organize.AddPhoto(context.Background(), created.UID, member); err != nil {
-			t.Fatalf("AddPhoto(%s): %v", member, err)
-		}
-	}
-	return created.UID
+	return insertCollection(t, h.pool, project.BootstrapUID, "album", title, members...)
 }
 
-// label creates a label, attaches the given members, and returns its uid.
+// label creates a label of the bootstrap project carrying the given members and
+// returns its uid.
 func (h expandHarness) label(t *testing.T, name string, members ...string) string {
 	t.Helper()
-	created, err := h.organize.CreateLabel(context.Background(), organize.Label{Name: name})
-	if err != nil {
-		t.Fatalf("CreateLabel(%s): %v", name, err)
+	return insertCollection(t, h.pool, project.BootstrapUID, "label", name, members...)
+}
+
+// insertCollection inserts an album or a label (kind) named name into the
+// project, attaches members to it and returns its uid.
+func insertCollection(
+	t *testing.T, pool *pgxpool.Pool, projectUID, kind, name string, members ...string,
+) string {
+	t.Helper()
+	ctx := context.Background()
+	var uid, insertSQL, memberSQL string
+	switch kind {
+	case "album":
+		uid = projecttest.MissingUID("al")
+		insertSQL = `INSERT INTO albums (uid, project_id, slug, title, type) VALUES ($1, $2, $4, $3, 'album')`
+		memberSQL = `INSERT INTO album_photos (album_uid, photo_uid) VALUES ($1, $2)`
+	default:
+		uid = projecttest.MissingUID("lb")
+		insertSQL = `INSERT INTO labels (uid, project_id, slug, name) VALUES ($1, $2, $4, $3)`
+		memberSQL = `INSERT INTO photo_labels (label_uid, photo_uid) VALUES ($1, $2)`
+	}
+	if _, err := pool.Exec(ctx, insertSQL, uid, projectUID, name, uid); err != nil {
+		t.Fatalf("creating %s %s: %v", kind, name, err)
 	}
 	for _, member := range members {
-		if err := h.organize.AttachLabel(context.Background(), member, created.UID, organize.SourceManual, 0); err != nil {
-			t.Fatalf("AttachLabel(%s): %v", member, err)
+		if _, err := pool.Exec(ctx, memberSQL, uid, member); err != nil {
+			t.Fatalf("adding %s to %s %s: %v", member, kind, name, err)
 		}
 	}
-	return created.UID
+	return uid
 }
 
 // rejectLabel records a "not this label" rejection for the photo.
@@ -137,7 +145,7 @@ func (h expandHarness) rejectLabel(t *testing.T, photoUID, labelUID string) {
 	t.Helper()
 	entry := audit.Entry{Action: audit.ActionLabelReject, TargetType: "labels", TargetUID: labelUID}
 	key := feedback.LabelRejectionKey{PhotoUID: photoUID, LabelUID: labelUID}
-	if err := h.feedback.RejectLabel(context.Background(), key, entry); err != nil {
+	if err := h.feedback.RejectLabel(context.Background(), project.BootstrapUID, key, entry); err != nil {
 		t.Fatalf("RejectLabel(%s): %v", photoUID, err)
 	}
 }
@@ -161,7 +169,7 @@ func TestAlbumSimilar_findsNeighbourExcludesMembersDB(t *testing.T) {
 	cand := h.embedded(t, "cand", imgVec(map[int]float32{0: 0.9, 2: 0.436}))
 	al := h.album(t, "Trip", member1, member2)
 
-	res, err := h.svc.Album(ctx, al, expand.Request{})
+	res, err := h.svc.Album(ctx, project.BootstrapUID, al, expand.Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -188,7 +196,7 @@ func TestLabelSimilar_rejectedExcludedDB(t *testing.T) {
 	lb := h.label(t, "Ostatky", member)
 	h.rejectLabel(t, rejected, lb)
 
-	res, err := h.svc.Label(ctx, lb, expand.Request{})
+	res, err := h.svc.Label(ctx, project.BootstrapUID, lb, expand.Request{})
 	if err != nil {
 		t.Fatalf("Label: %v", err)
 	}
@@ -215,7 +223,7 @@ func TestLabelSimilar_negativeExemplarDroppedDB(t *testing.T) {
 	lb := h.label(t, "Ostatky", member)
 	h.rejectLabel(t, rejected, lb)
 
-	res, err := h.svc.Label(ctx, lb, expand.Request{})
+	res, err := h.svc.Label(ctx, project.BootstrapUID, lb, expand.Request{})
 	if err != nil {
 		t.Fatalf("Label: %v", err)
 	}
@@ -233,7 +241,7 @@ func TestLabelSimilar_negativeExemplarDroppedDB(t *testing.T) {
 func TestAlbumSimilar_emptyDB(t *testing.T) {
 	h := newExpandHarness(t, 0)
 	al := h.album(t, "Empty")
-	res, err := h.svc.Album(t.Context(), al, expand.Request{})
+	res, err := h.svc.Album(t.Context(), project.BootstrapUID, al, expand.Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -256,7 +264,7 @@ func TestAlbumSimilar_sourceCapReportedDB(t *testing.T) {
 	cand := h.embedded(t, "cand", imgVec(map[int]float32{0: 0.9, 5: 0.436}))
 	al := h.album(t, "Big", members...)
 
-	res, err := h.svc.Album(ctx, al, expand.Request{})
+	res, err := h.svc.Album(ctx, project.BootstrapUID, al, expand.Request{})
 	if err != nil {
 		t.Fatalf("Album: %v", err)
 	}
@@ -272,7 +280,8 @@ func TestAlbumSimilar_sourceCapReportedDB(t *testing.T) {
 // TestAlbumSimilar_notFoundDB checks the organize album sentinel is surfaced from the DB.
 func TestAlbumSimilar_notFoundDB(t *testing.T) {
 	h := newExpandHarness(t, 0)
-	if _, err := h.svc.Album(t.Context(), "al_missing", expand.Request{}); !errors.Is(err, organize.ErrAlbumNotFound) {
+	_, err := h.svc.Album(t.Context(), project.BootstrapUID, "al_missing", expand.Request{})
+	if !errors.Is(err, organize.ErrAlbumNotFound) {
 		t.Fatalf("Album = %v, want ErrAlbumNotFound", err)
 	}
 }
@@ -280,7 +289,8 @@ func TestAlbumSimilar_notFoundDB(t *testing.T) {
 // TestLabelSimilar_notFoundDB checks the organize label sentinel is surfaced from the DB.
 func TestLabelSimilar_notFoundDB(t *testing.T) {
 	h := newExpandHarness(t, 0)
-	if _, err := h.svc.Label(t.Context(), "lb_missing", expand.Request{}); !errors.Is(err, organize.ErrLabelNotFound) {
+	_, err := h.svc.Label(t.Context(), project.BootstrapUID, "lb_missing", expand.Request{})
+	if !errors.Is(err, organize.ErrLabelNotFound) {
 		t.Fatalf("Label = %v, want ErrLabelNotFound", err)
 	}
 }

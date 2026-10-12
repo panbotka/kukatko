@@ -512,18 +512,18 @@ type Sweeper interface {
 // Expander finds photos similar to a label's members; *expand.Service
 // satisfies it.
 type Expander interface {
-	// Label returns photos similar to the label's members, excluding members
-	// and rejected photos.
-	Label(ctx context.Context, labelUID string, req expand.Request) (expand.Result, error)
+	// Label returns photos of the project similar to the label's members,
+	// excluding members and rejected photos.
+	Label(ctx context.Context, projectUID, labelUID string, req expand.Request) (expand.Result, error)
 }
 
 // OrganizeStore is the slice of *organize.Store the review game needs.
 type OrganizeStore interface {
-	// ListLabels returns all labels with their photo counts.
-	ListLabels(ctx context.Context) ([]organize.LabelCount, error)
-	// AttachLabelAudited attaches a label to a photo, writing the audit entry
-	// in the same transaction.
-	AttachLabelAudited(ctx context.Context, photoUID, labelUID string,
+	// ListLabels returns the project's labels with their photo counts.
+	ListLabels(ctx context.Context, projectUID string) ([]organize.LabelCount, error)
+	// AttachLabelAudited attaches a label of the project to a photo of it,
+	// writing the audit entry in the same transaction.
+	AttachLabelAudited(ctx context.Context, projectUID, photoUID, labelUID string,
 		source organize.LabelSource, uncertainty int, entry audit.Entry) error
 }
 
@@ -541,17 +541,22 @@ type FeedbackStore interface {
 	// RejectFace persists "this face is not this subject" inside the project;
 	// idempotent.
 	RejectFace(ctx context.Context, projectUID string, key feedback.FaceRejectionKey, entry audit.Entry) error
-	// RejectLabel persists "this photo should not carry this label"; idempotent.
-	RejectLabel(ctx context.Context, key feedback.LabelRejectionKey, entry audit.Entry) error
+	// RejectLabel persists "this photo should not carry this label" inside the
+	// project; idempotent.
+	RejectLabel(ctx context.Context, projectUID string, key feedback.LabelRejectionKey, entry audit.Entry) error
 	// ConfirmFace persists "this assigned face really is this subject" inside the
 	// project, which takes it out of the outlier ranking for good; idempotent.
 	ConfirmFace(ctx context.Context, projectUID string, key feedback.FaceConfirmationKey, entry audit.Entry) error
-	// ConfirmDuplicate persists "these two really are the same shot". It merges
-	// nothing; idempotent.
-	ConfirmDuplicate(ctx context.Context, key feedback.DuplicateConfirmationKey, entry audit.Entry) error
-	// DismissDuplicate persists "these two are genuinely different", which drops
-	// the edge from every later duplicate scan; idempotent.
-	DismissDuplicate(ctx context.Context, key feedback.DuplicateDismissalKey, entry audit.Entry) error
+	// ConfirmDuplicate persists "these two really are the same shot" inside the
+	// project. It merges nothing; idempotent.
+	ConfirmDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateConfirmationKey, entry audit.Entry,
+	) error
+	// DismissDuplicate persists "these two are genuinely different" inside the
+	// project, which drops the edge from every later duplicate scan; idempotent.
+	DismissDuplicate(
+		ctx context.Context, projectUID string, key feedback.DuplicateDismissalKey, entry audit.Entry,
+	) error
 }
 
 // PlaceReviewer lists the locations the estimator guessed and applies a verdict
@@ -623,9 +628,9 @@ type Scope interface {
 // two questions about photos from the same album next to each other — so a nil
 // one (or a lookup that fails) switches that rule off and changes nothing else.
 type AlbumMembership interface {
-	// AlbumUIDsForPhotos returns the album uids of each given photo; photos in no
-	// album are absent from the map.
-	AlbumUIDsForPhotos(ctx context.Context, photoUIDs []string) (map[string][]string, error)
+	// AlbumUIDsForPhotos returns the uids of the project's albums each given
+	// photo is in; photos in no album are absent from the map.
+	AlbumUIDsForPhotos(ctx context.Context, projectUID string, photoUIDs []string) (map[string][]string, error)
 }
 
 // BreatherSource picks the photos a round's breather card can show;

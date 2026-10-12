@@ -63,19 +63,19 @@ type fakeOrganize struct {
 	err       error
 }
 
-func (f fakeOrganize) AlbumsForPhoto(context.Context, string) ([]organize.Album, error) {
+func (f fakeOrganize) AlbumsForPhoto(context.Context, string, string) ([]organize.Album, error) {
 	return f.albums, f.err
 }
 
-func (f fakeOrganize) PhotoLabelsForPhoto(context.Context, string) ([]organize.PhotoLabel, error) {
+func (f fakeOrganize) PhotoLabelsForPhoto(context.Context, string, string) ([]organize.PhotoLabel, error) {
 	return f.labels, f.err
 }
 
-func (f fakeOrganize) FavoritesForPhoto(context.Context, string) ([]organize.UserFavorite, error) {
+func (f fakeOrganize) FavoritesForPhoto(context.Context, string, string) ([]organize.UserFavorite, error) {
 	return f.favorites, f.err
 }
 
-func (f fakeOrganize) RatingsForPhoto(context.Context, string) ([]organize.UserRating, error) {
+func (f fakeOrganize) RatingsForPhoto(context.Context, string, string) ([]organize.UserRating, error) {
 	return f.ratings, f.err
 }
 

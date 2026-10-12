@@ -31,8 +31,8 @@ func TestEmptyKeyValidation(t *testing.T) {
 	}{
 		{"RejectFace", store.RejectFace(ctx, projectUID, faceKey, entry)},
 		{"UnrejectFace", store.UnrejectFace(ctx, projectUID, faceKey, entry)},
-		{"RejectLabel", store.RejectLabel(ctx, labelKey, entry)},
-		{"UnrejectLabel", store.UnrejectLabel(ctx, labelKey, entry)},
+		{"RejectLabel", store.RejectLabel(ctx, projectUID, labelKey, entry)},
+		{"UnrejectLabel", store.UnrejectLabel(ctx, projectUID, labelKey, entry)},
 		{"ConfirmFace", store.ConfirmFace(ctx, projectUID, confirmKey, entry)},
 		{"UnconfirmFace", store.UnconfirmFace(ctx, projectUID, confirmKey, entry)},
 		{"DismissDuplicateMarkers", store.DismissDuplicateMarkers(ctx, markerKey, entry)},

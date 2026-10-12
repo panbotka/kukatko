@@ -596,8 +596,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   Deleting the subject deletes its links rather than orphaning them: a region survives losing its name as an
   unassigned box, a bare "this person is here" has nothing left to be;
   `GET /photos/{uid}` full detail additionally carries **membership** `albums`/`labels` (inline detail
-  chips, via the `PhotoOrganizer` interface / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`; a nil
-  organizer → empty arrays) and **`uploader`** `{uid,name}` — who uploaded the photo, the name resolved
+  chips, via the `PhotoOrganizer` interface / `organize.Store.AlbumsForPhoto`+`LabelsForPhoto`, the
+  request's project's albums and labels only; a nil organizer → empty arrays) and **`uploader`** `{uid,name}` — who uploaded the photo, the name resolved
   server-side via `UserResolver` (`auth.Store.GetUserByUID`; `name` = `display_name`, fallback
   `username`); omitted (`omitempty`) for photos without `uploaded_by` (the one-off imports),
   and also when the user cannot be resolved — resolution is **only on the detail**, list/search do not
@@ -1352,7 +1352,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   album/label or a collection without embeddings → a **non-error** empty result with `reason` `"empty_collection"` /
   `"no_source_embeddings"`. A collection of **one** photo degenerates into per-photo similarity. **Read-only** —
   adding the found photos goes through the existing `POST /photos/bulk`. 503 without a backend, 404 missing
-  album/label. Mounted by `server.WithAPI` (`buildExpandAPI` in `cmd/kukatko/expand.go`).
+  album/label — an album/label of **another project** answers the very same 404 (one fixed body). The search
+  runs inside the request's project: the collection is resolved there, every per-member kNN searches only the
+  project's embeddings and the candidates hydrate through the project, so a photo of another project is never
+  voted for nor returned, however close. Mounted by `server.WithAPI` (`buildExpandAPI` in
+  `cmd/kukatko/expand.go`).
 - **MCP server (`POST /api/v1/p/{project}/mcp`, `internal/mcpapi`, via `RequireAuth` + per-tool RBAC):** the library
   exposed to an **AI agent** via the **Model Context Protocol** — it searches, reads, organizes ("find all
   photos of grandma from the sixties and put them in an album"). Transport **Streamable HTTP, stateless**, response
@@ -1868,7 +1872,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (RequireCurator → 204); attaching `POST /labels/{uid}/photos` `{photo_uid,source?,uncertainty?}`
   → 204 (invalid source → 400), `DELETE /labels/{uid}/photos` `{photo_uid}` → 204, both RequireCurator.
   Every album and label write is a curator's, deleting included: deleting a collection throws away a
-  stitching-together, never a photograph.
+  stitching-together, never a photograph. **Project scope:** every route works inside the request's project.
+  Another project's album or label answers exactly like a missing uid (the same 404 body, also for its
+  edit, delete, feature, membership and attachment routes), the listings, counts, covers and the featured
+  strip name only the project's albums, labels and photos, and slugs are unique per project. A membership
+  batch naming one photo of another project (or none) is the "photo not found" 404 and adds **nothing** —
+  the batch is checked as a whole before anything is written, and no audit row is left; a cover outside
+  the project is the same 404.
   **Featured albums ("Doporučujeme" on the homepage):** every album payload (detail, list, global search)
   carries **`featured_until`** — when the album's homepage feature ends, **`null` when it is not featured
   now**. Expiry is read through the clock (`featured_until > now()` on every read, nothing unfeatures a row),
@@ -1928,7 +1938,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   label-detach); `POST /feedback/face-confirmations` `{photo_uid,face_index,subject_uid}` → 204
   and `DELETE /feedback/face-confirmations` (same body) → 204; the four face routes answer **404** when
   the face's photo or the subject is not one of the request's project (or does not exist — the `DELETE`s
-  included, which used to answer 204 for a missing target), recording nothing;
+  included, which used to answer 204 for a missing target), recording nothing; likewise the two label
+  routes answer **404** unless both the photo and the label belong to the request's project, and the four
+  near-duplicate-photo routes unless both photos of the pair do (the `DELETE`s included) — an opinion about
+  another project's row reads exactly like one about a missing uid, and writes no row and no audit entry;
   `POST /feedback/duplicate-dismissals` `{photo_uid,other_uid}` → 204 ("these two photos are NOT
   duplicates") and `DELETE /feedback/duplicate-dismissals` (same body) → 204 (undo);
   `POST /feedback/duplicate-confirmations` (same body) → 204 ("yes, this really IS the same photo twice")
@@ -1987,11 +2000,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Saved Searches API (`/api/v1/p/{project}`, `internal/savedsearchapi` + `internal/savedsearch`, authenticated via
   `RequireAuth`):** per-user **saved searches** ("smart albums") — a named, owner's private
   definition of a filter/search. `GET /saved-searches` → `{saved_searches:[{uid,name,params,created_at,
-  updated_at}]}` (only the current user, newest-first); `POST /saved-searches` `{name,params}` →
+  updated_at}]}` (only the current user's in this project, newest-first); `POST /saved-searches` `{name,params}` →
   201 (empty name → 400, `params` JSONB optional → `{}`); `GET /saved-searches/{uid}` → 200;
   `PATCH /saved-searches/{uid}` `{name?,params?}` → 200 (an omitted field unchanged); `DELETE
-  /saved-searches/{uid}` → 204. **Every operation is scoped to the authenticated user** from the auth
-  context — a saved search of another owner is **always reported as 404** (never disclosed), the body
+  /saved-searches/{uid}` → 204. **Every operation is scoped to the authenticated user and the request's
+  project** from the auth context — a saved search of another owner, or the caller's own search in another
+  project, is **always the same 404** a missing uid gets (never disclosed), the body
   `DisallowUnknownFields` + a 1 MiB limit. The `saved_searches` table (migration `0017_saved_searches.sql`).
   Mounted by `server.WithAPI` (`buildSavedSearchAPI` in `cmd/kukatko/savedsearch.go`).
 - **Upload Links API (`/api/v1/p/{project}`, `internal/uploadlinkapi` + `internal/uploadlink`):** short links
@@ -2075,8 +2089,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   same transaction, so there is no retention job. Queries are stored verbatim apart from trimming and a
   **500-character** cap (`searchhistory.Normalize`, which truncates rather than rejecting); deduplication is on
   that exact trimmed text, so `Praha` and `praha` are two entries. **Every operation is scoped to the
-  authenticated user** — there is no path parameter and no owner in any body, so a caller can only ever read,
-  extend or clear their own history, and one user's queries can never appear in another's list. Readable and
+  authenticated user and the request's project** — there is no path parameter and no owner in any body, so a
+  caller can only ever read, extend or clear their own history in that project, and one user's queries can
+  never appear in another's list. Each project is a **separate history**: the ring of 20 is per (user,
+  project), a query recorded in one project is never listed in another, and `DELETE` clears only this one. Readable and
   writable by **every role, viewers included** (searching is not curation), and deliberately **not audited**:
   a private convenience list is not a library mutation. The `search_history` table (migration
   `0056_search_history.sql`). Mounted by `server.WithAPI` (`buildSearchHistoryAPI` in

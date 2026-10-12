@@ -99,38 +99,42 @@ UPDATE albums SET
     featured_at = CASE WHEN featured_until > now() THEN featured_at ELSE now() END,
     featured_until = $2,
     featured_by = $3
-WHERE uid = $1
+WHERE uid = $1 AND project_id = $4
 RETURNING ` + albumColumns
 
 // unfeatureAlbumSQL ends an album's feature, clearing all three columns so the
 // row reads exactly like a never-featured album.
 const unfeatureAlbumSQL = `
 UPDATE albums SET featured_until = NULL, featured_at = NULL, featured_by = NULL
-WHERE uid = $1
+WHERE uid = $1 AND project_id = $2
 RETURNING ` + albumColumns
 
-// FeatureAlbumAudited features the album identified by uid on the homepage until
-// the given instant — or extends/shortens a running feature to it — on behalf
-// of the user byUID (empty for none), and writes entry in the same transaction.
-// entry's TargetUID defaults to uid. It returns ErrAlbumNotFound for a missing
-// album and ErrNotFeaturable for one that is not a hand-made album; either way
-// no audit row is written. Validating until (in the future, not too far) is the
+// FeatureAlbumAudited features the album of the project identified by uid on the
+// project's homepage until the given instant — or extends/shortens a running
+// feature to it — on behalf of the user byUID (empty for none), and writes entry
+// in the same transaction. entry's TargetUID defaults to uid and its ProjectUID
+// to the project. It returns ErrAlbumNotFound for a missing album (or one of
+// another project) and ErrNotFeaturable for one that is not a hand-made album;
+// either way no audit row is written. Validating until (in the future, not too far) is the
 // caller's job: the store records whatever instant it is given. A feature
 // observer (WithFeatureObserver) hears the change only when the album was not
 // featured already — re-dating a running feature is silent.
 func (s *Store) FeatureAlbumAudited(
-	ctx context.Context, uid string, until time.Time, byUID string, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, until time.Time, byUID string, entry audit.Entry,
 ) (Album, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Album{}, err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
 	var out Album
-	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		wasFeatured, err := requireFeaturable(ctx, tx, uid)
+	err := s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		wasFeatured, err := requireFeaturable(ctx, tx, projectUID, uid)
 		if err != nil {
 			return err
 		}
-		a, err := scanAlbum(tx.QueryRow(ctx, featureAlbumSQL, uid, until, optionalUID(byUID)))
+		a, err := scanAlbum(tx.QueryRow(ctx, featureAlbumSQL, uid, until, optionalUID(byUID), projectUID))
 		if err != nil {
 			return fmt.Errorf("organize: featuring album %s: %w", uid, err)
 		}
@@ -160,16 +164,18 @@ func optionalUID(uid string) *string {
 }
 
 // requireFeaturable locks the album row for the rest of tx and reports whether
-// it may be featured: ErrAlbumNotFound when no album has the uid, and
+// it may be featured: ErrAlbumNotFound when no album of the project has the uid,
+// and
 // ErrNotFeaturable when it is not a hand-made one. Asking first rather than
 // letting the CHECK fire is what gives the caller a typed error to map. It also
 // reports whether the album is featured right now, read under the same lock,
 // so the caller knows whether the feature it is about to write is a fresh one.
-func requireFeaturable(ctx context.Context, tx pgx.Tx, uid string) (bool, error) {
+func requireFeaturable(ctx context.Context, tx pgx.Tx, projectUID, uid string) (bool, error) {
 	var typ AlbumType
 	var featured bool
 	err := tx.QueryRow(ctx,
-		"SELECT type, COALESCE(featured_until > now(), false) FROM albums WHERE uid = $1 FOR UPDATE", uid,
+		"SELECT type, COALESCE(featured_until > now(), false) FROM albums "+
+			"WHERE uid = $1 AND project_id = $2 FOR UPDATE", uid, projectUID,
 	).Scan(&typ, &featured)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrAlbumNotFound
@@ -183,18 +189,24 @@ func requireFeaturable(ctx context.Context, tx pgx.Tx, uid string) (bool, error)
 	return featured, nil
 }
 
-// UnfeatureAlbumAudited takes the album identified by uid off the homepage and
-// writes entry in the same transaction. entry's TargetUID defaults to uid.
-// Unfeaturing an album that is not featured is a no-op that still succeeds (the
-// request said "make sure it is not featured", and it is not). A missing album
-// returns ErrAlbumNotFound and writes no audit row.
-func (s *Store) UnfeatureAlbumAudited(ctx context.Context, uid string, entry audit.Entry) (Album, error) {
+// UnfeatureAlbumAudited takes the album of the project identified by uid off the
+// homepage and writes entry in the same transaction. entry's TargetUID defaults
+// to uid and its ProjectUID to the project. Unfeaturing an album that is not
+// featured is a no-op that still succeeds (the request said "make sure it is not
+// featured", and it is not). A missing (or foreign) album returns
+// ErrAlbumNotFound and writes no audit row.
+func (s *Store) UnfeatureAlbumAudited(
+	ctx context.Context, projectUID, uid string, entry audit.Entry,
+) (Album, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Album{}, err
+	}
 	if entry.TargetUID == "" {
 		entry.TargetUID = uid
 	}
 	var out Album
-	err := s.inAuditedTx(ctx, entry, func(tx pgx.Tx) error {
-		a, err := scanAlbum(tx.QueryRow(ctx, unfeatureAlbumSQL, uid))
+	err := s.inAuditedTx(ctx, withProject(entry, projectUID), func(tx pgx.Tx) error {
+		a, err := scanAlbum(tx.QueryRow(ctx, unfeatureAlbumSQL, uid, projectUID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrAlbumNotFound
 		}
@@ -210,9 +222,11 @@ func (s *Store) UnfeatureAlbumAudited(ctx context.Context, uid string, entry aud
 	return out, nil
 }
 
-// listFeaturedAlbumsSQL reads every album featured right now — or, with $3
-// set, just the one with that uid — newest feature first, with its photo
-// count, its cover candidates and its cover.
+// listFeaturedAlbumsSQL reads every album of the project $4 featured right now —
+// or, with $3 set, just the one with that uid, whatever its project ($4 NULL:
+// the job loader) — newest feature first, with its photo count, its cover
+// candidates and its cover. Every photo it counts or draws is one of the album's
+// own project.
 //
 // The featured CTE is the whole selection — active, hand-made, private only
 // when $1 allows it, and one uid when $3 names it — and everything after it is restricted to that handful of
@@ -226,9 +240,10 @@ func (s *Store) UnfeatureAlbumAudited(ctx context.Context, uid string, entry aud
 // docs/PERF.md), and a hand-picked cover wins over it.
 const listFeaturedAlbumsSQL = `
 WITH featured AS (
-    SELECT uid FROM albums
+    SELECT uid, project_id FROM albums
     WHERE featured_until > now() AND type = 'album' AND ($1::boolean OR NOT private)
       AND ($3::text IS NULL OR uid = $3)
+      AND ($4::text IS NULL OR project_id = $4)
 ),
 members AS (
     SELECT ap.album_uid,
@@ -236,9 +251,9 @@ members AS (
            (array_agg(p.uid ORDER BY ` + coverCandidateOrder + `)
                 FILTER (WHERE ` + coverVisible + `))[1:$2::int] AS cover_uids
     FROM album_photos ap
-    JOIN photos p ON p.uid = ap.photo_uid
-    WHERE ap.album_uid IN (SELECT uid FROM featured)
-      AND p.archived_at IS NULL AND (p.stack_uid IS NULL OR p.stack_primary)
+    JOIN featured f ON f.uid = ap.album_uid
+    JOIN photos p ON p.uid = ap.photo_uid AND p.project_id = f.project_id
+    WHERE p.archived_at IS NULL AND (p.stack_uid IS NULL OR p.stack_primary)
     GROUP BY ap.album_uid
 )
 SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
@@ -253,17 +268,22 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
 FROM albums a
 JOIN featured f ON f.uid = a.uid
 LEFT JOIN members m ON m.album_uid = a.uid
-LEFT JOIN photos picked ON picked.uid = a.cover_photo_uid
+LEFT JOIN photos picked ON picked.uid = a.cover_photo_uid AND picked.project_id = a.project_id
 LEFT JOIN photos derived ON derived.uid = m.cover_uids[1]
 ORDER BY a.featured_at DESC NULLS LAST, a.uid`
 
-// ListFeaturedAlbums returns the albums featured on the homepage right now,
-// newest feature first. An album whose feature has lapsed is simply absent —
+// ListFeaturedAlbums returns the albums of the project featured on its homepage
+// right now, newest feature first. An album whose feature has lapsed is simply absent —
 // expiry is read through the clock, nothing has to clear it. Private albums are
 // included only when includePrivate is true (the caller decides who may see
 // them). Nothing featured yields an empty slice and a nil error.
-func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]FeaturedAlbum, error) {
-	return listFeatured(ctx, s.pool, includePrivate, nil)
+func (s *Store) ListFeaturedAlbums(
+	ctx context.Context, projectUID string, includePrivate bool,
+) ([]FeaturedAlbum, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return listFeatured(ctx, s.pool, includePrivate, nil, &projectUID)
 }
 
 // FeaturedAlbumTx reads, on tx, the album identified by uid as the homepage
@@ -272,8 +292,13 @@ func (s *Store) ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]
 // lapsed or was switched off, or no album has the uid. It is for a caller
 // acting on a feature after the fact (the album_featured notification job)
 // that must see the album as it stands in its own transaction.
+//
+// It is the explicitly unscoped job loader of the package: a job has no request
+// and so no project, and the album uid its payload carries — written by the
+// feature's own transaction — is the whole key. The album's photos are still
+// read only from its own project.
 func (s *Store) FeaturedAlbumTx(ctx context.Context, tx pgx.Tx, uid string) (FeaturedAlbum, error) {
-	list, err := listFeatured(ctx, tx, true, &uid)
+	list, err := listFeatured(ctx, tx, true, &uid, nil)
 	if err != nil {
 		return FeaturedAlbum{}, err
 	}
@@ -283,10 +308,13 @@ func (s *Store) FeaturedAlbumTx(ctx context.Context, tx pgx.Tx, uid string) (Fea
 	return list[0], nil
 }
 
-// listFeatured runs listFeaturedAlbumsSQL on q: every featured album, or only
-// the one uid names, private ones only when includePrivate is set.
-func listFeatured(ctx context.Context, q querier, includePrivate bool, uid *string) ([]FeaturedAlbum, error) {
-	rows, err := q.Query(ctx, listFeaturedAlbumsSQL, includePrivate, CoverCandidates, uid)
+// listFeatured runs listFeaturedAlbumsSQL on q: every featured album of the
+// project projectUID names, or only the one uid names, private ones only when
+// includePrivate is set.
+func listFeatured(
+	ctx context.Context, q querier, includePrivate bool, uid, projectUID *string,
+) ([]FeaturedAlbum, error) {
+	rows, err := q.Query(ctx, listFeaturedAlbumsSQL, includePrivate, CoverCandidates, uid, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("organize: listing featured albums: %w", err)
 	}

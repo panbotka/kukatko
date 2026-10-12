@@ -28,7 +28,7 @@ type fakeFeatured struct {
 }
 
 func (f *fakeFeatured) FeatureAlbumAudited(
-	_ context.Context, uid string, until time.Time, _ string, entry audit.Entry,
+	_ context.Context, _ string, uid string, until time.Time, _ string, entry audit.Entry,
 ) (organize.Album, error) {
 	f.lastUntil, f.lastEntry = until, entry
 	if f.featureErr != nil {
@@ -38,13 +38,13 @@ func (f *fakeFeatured) FeatureAlbumAudited(
 }
 
 func (f *fakeFeatured) UnfeatureAlbumAudited(
-	_ context.Context, uid string, entry audit.Entry,
+	_ context.Context, _ string, uid string, entry audit.Entry,
 ) (organize.Album, error) {
 	f.unfeaturedUID, f.lastEntry = uid, entry
 	return organize.Album{UID: uid}, nil
 }
 
-func (f *fakeFeatured) ListFeaturedAlbums(_ context.Context, includePrivate bool) ([]organize.FeaturedAlbum, error) {
+func (f *fakeFeatured) ListFeaturedAlbums(_ context.Context, _ string, includePrivate bool) ([]organize.FeaturedAlbum, error) {
 	f.lastIncludePrivate = includePrivate
 	return f.list, nil
 }

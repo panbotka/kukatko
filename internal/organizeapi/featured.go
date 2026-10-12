@@ -24,16 +24,17 @@ import (
 // homepage surface stays one thing a later kind of featured entity (labels)
 // can join without touching the album catalogue.
 type FeaturedStore interface {
-	// FeatureAlbumAudited features (or re-dates the feature of) an album until
-	// the given instant, auditing the change.
+	// FeatureAlbumAudited features (or re-dates the feature of) an album of the
+	// project until the given instant, auditing the change.
 	FeatureAlbumAudited(
-		ctx context.Context, uid string, until time.Time, byUID string, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, until time.Time, byUID string, entry audit.Entry,
 	) (organize.Album, error)
-	// UnfeatureAlbumAudited takes an album off the homepage, auditing the change.
-	UnfeatureAlbumAudited(ctx context.Context, uid string, entry audit.Entry) (organize.Album, error)
-	// ListFeaturedAlbums returns the albums featured right now, newest first,
-	// private ones only when includePrivate is set.
-	ListFeaturedAlbums(ctx context.Context, includePrivate bool) ([]organize.FeaturedAlbum, error)
+	// UnfeatureAlbumAudited takes an album of the project off the homepage,
+	// auditing the change.
+	UnfeatureAlbumAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) (organize.Album, error)
+	// ListFeaturedAlbums returns the albums of the project featured right now,
+	// newest first, private ones only when includePrivate is set.
+	ListFeaturedAlbums(ctx context.Context, projectUID string, includePrivate bool) ([]organize.FeaturedAlbum, error)
 }
 
 // MaxFeaturedDays is the furthest ahead a feature may end, in days: a feature
@@ -97,7 +98,7 @@ func featuredDays(configured int) int {
 // owner marked private. It answers 500 if the store fails.
 func (a *API) handleFeaturedList(w http.ResponseWriter, r *http.Request) {
 	includePrivate := auth.ProjectRoleFromContext(r.Context()).CanCurate()
-	albums, err := a.featured.ListFeaturedAlbums(r.Context(), includePrivate)
+	albums, err := a.featured.ListFeaturedAlbums(r.Context(), projectOf(r), includePrivate)
 	if err != nil {
 		fail(w, r, http.StatusInternalServerError, "listing featured albums failed", err)
 		return
@@ -123,7 +124,7 @@ func (a *API) handleFeaturedList(w http.ResponseWriter, r *http.Request) {
 // hand-made one all answer 400; a missing album answers 404.
 func (a *API) handleAlbumFeature(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.albums.GetAlbumByUID(r.Context(), uid)
+	existing, err := a.albums.GetAlbumByUID(r.Context(), projectOf(r), uid)
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -142,7 +143,7 @@ func (a *API) handleAlbumFeature(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	details := map[string]any{"title": existing.Title, "until": until, "previous_until": existing.FeaturedUntil}
 	entry := a.auditEntry(r, audit.ActionAlbumFeature, "albums", uid, details)
-	album, err := a.featured.FeatureAlbumAudited(r.Context(), uid, until, user.UID, entry)
+	album, err := a.featured.FeatureAlbumAudited(r.Context(), projectOf(r), uid, until, user.UID, entry)
 	if err != nil {
 		status, msg := featureStatus(err)
 		fail(w, r, status, msg, err)
@@ -156,7 +157,7 @@ func (a *API) handleAlbumFeature(w http.ResponseWriter, r *http.Request) {
 // featured succeeds; a missing album answers 404.
 func (a *API) handleAlbumUnfeature(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.albums.GetAlbumByUID(r.Context(), uid)
+	existing, err := a.albums.GetAlbumByUID(r.Context(), projectOf(r), uid)
 	if err != nil {
 		status, msg := albumStatus(err)
 		fail(w, r, status, msg, err)
@@ -164,7 +165,7 @@ func (a *API) handleAlbumUnfeature(w http.ResponseWriter, r *http.Request) {
 	}
 	details := map[string]any{"title": existing.Title, "previous_until": existing.FeaturedUntil}
 	entry := a.auditEntry(r, audit.ActionAlbumUnfeature, "albums", uid, details)
-	album, err := a.featured.UnfeatureAlbumAudited(r.Context(), uid, entry)
+	album, err := a.featured.UnfeatureAlbumAudited(r.Context(), projectOf(r), uid, entry)
 	if err != nil {
 		status, msg := featureStatus(err)
 		fail(w, r, status, msg, err)

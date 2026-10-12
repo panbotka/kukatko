@@ -54,10 +54,10 @@ func newFixture(t *testing.T) fixture {
 		t.Fatalf("creating curator: %v", err)
 	}
 	var err error
-	if f.album, err = f.org.CreateAlbum(ctx, organize.Album{Title: "Pouť 2026"}); err != nil {
+	if f.album, err = f.org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Pouť 2026"}); err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if f.label, err = f.org.CreateLabel(ctx, organize.Label{Name: "pouť"}); err != nil {
+	if f.label, err = f.org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "pouť"}); err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
 	f.photo = f.makePhoto(t, "ulhash1")
@@ -233,11 +233,11 @@ func TestRecordUpload_filesIntoTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordUpload: %v", err)
 	}
-	albums, err := f.org.AlbumsForPhoto(ctx, f.photo)
+	albums, err := f.org.AlbumsForPhoto(ctx, project.BootstrapUID, f.photo)
 	if err != nil || len(albums) != 1 || albums[0].UID != f.album.UID {
 		t.Errorf("AlbumsForPhoto = %+v, %v", albums, err)
 	}
-	labels, err := f.org.PhotoLabelsForPhoto(ctx, f.photo)
+	labels, err := f.org.PhotoLabelsForPhoto(ctx, project.BootstrapUID, f.photo)
 	if err != nil || len(labels) != 1 {
 		t.Errorf("PhotoLabelsForPhoto = %+v, %v", labels, err)
 	}

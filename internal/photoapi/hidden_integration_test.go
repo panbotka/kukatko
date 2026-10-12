@@ -9,6 +9,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestHideFromLibrary drives the whole feature over HTTP: the toggle, what it
@@ -24,18 +25,18 @@ func TestHideFromLibrary(t *testing.T) {
 	keep := env.seedPhoto(t, photos.Photo{Title: "Keep", TakenAtSource: "unknown"}, "keep.jpg", 5, 5, 200)
 	scan := env.seedPhoto(t, photos.Photo{Title: "Scan", TakenAtSource: "unknown"}, "scan.jpg", 200, 5, 5)
 
-	album, err := env.organize.CreateAlbum(ctx, organize.Album{Title: "Documents"})
+	album, err := env.organize.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "Documents"})
 	if err != nil {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
-	if err = env.organize.AddPhoto(ctx, album.UID, scan.UID); err != nil {
+	if err = env.organize.AddPhoto(ctx, project.BootstrapUID, album.UID, scan.UID); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}
-	label, err := env.organize.CreateLabel(ctx, organize.Label{Name: "Scans"})
+	label, err := env.organize.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Scans"})
 	if err != nil {
 		t.Fatalf("CreateLabel: %v", err)
 	}
-	if err = env.organize.AttachLabel(ctx, scan.UID, label.UID, organize.SourceManual, 0); err != nil {
+	if err = env.organize.AttachLabel(ctx, project.BootstrapUID, scan.UID, label.UID, organize.SourceManual, 0); err != nil {
 		t.Fatalf("AttachLabel: %v", err)
 	}
 
