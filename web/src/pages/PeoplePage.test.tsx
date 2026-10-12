@@ -125,8 +125,8 @@ function shownNames(): string[] {
   return screen
     .getAllByRole('link')
     .map((link) => link.getAttribute('href') ?? '')
-    .filter((href) => href.startsWith('/people/su_'))
-    .map((href) => href.replace('/people/su_', ''))
+    .filter((href) => href.startsWith('/p/v/people/su_'))
+    .map((href) => href.replace('/p/v/people/su_', ''))
 }
 
 beforeEach(async () => {

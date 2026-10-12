@@ -386,6 +386,20 @@ describe('the rendered service worker', () => {
   })
 
   it.each([
+    ['a project page', 'https://kukatko.test/p/v/photos/abc?x=1'],
+    ["a project's home", 'https://kukatko.test/p/v'],
+    ['the project chooser', 'https://kukatko.test/projects'],
+  ])('answers a navigation to %s with the shell too', async (_label, url) => {
+    // Every library page lives under /p/<slug> since the projects: none of it
+    // is a server route, so the shell must open it offline like any other page.
+    const harness = await installed(manifest)
+
+    const response = await harness.handleFetch(request(url, { mode: 'navigate' }))
+
+    expect(response).toEqual({ url: '/index.html', cached: true })
+  })
+
+  it.each([
     ['the API', 'https://kukatko.test/api/v1/photos'],
     ['a thumbnail', 'https://kukatko.test/api/v1/photos/abc/thumb/tile_500'],
     ['an original download', 'https://kukatko.test/api/v1/photos/abc/download?original=true'],

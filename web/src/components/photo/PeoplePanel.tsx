@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 
 import { type UseFacesResult } from '../../hooks/useFaces'
 import { isNamed } from '../../lib/faceState'
+import { useProjectPath } from '../../project/ProjectContext'
 import {
   attachPerson,
   createSubject,
@@ -126,6 +127,7 @@ export function PeoplePanel({
   onPeopleChanged,
 }: PeoplePanelProps) {
   const { t } = useTranslation()
+  const projectPath = useProjectPath()
   // The unfold belongs to the photograph it was asked for, not to the panel: the
   // panel stays mounted while the reader walks the library, so remembering *which*
   // photo is unfolded is what folds the next one back up, with no effect to run.
@@ -300,7 +302,7 @@ export function PeoplePanel({
               <EntityChip
                 key={subject.subject_uid}
                 kind="person"
-                to={`/people/${subject.subject_uid}`}
+                to={projectPath(`/people/${subject.subject_uid}`)}
                 remove={
                   canCurate
                     ? {

@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { ProjectLink } from '../project/ProjectLink'
 import { type GuardRole } from '../services/auth'
 
 /**
@@ -54,9 +54,9 @@ export function ForbiddenPage({ role }: { role: GuardRole }) {
         title={t('forbidden.title')}
         hint={t(MESSAGE_KEYS[role])}
         action={
-          <Link to={LIBRARY_PATH} className="btn btn-primary">
+          <ProjectLink to={LIBRARY_PATH} className="btn btn-primary">
             {t('forbidden.back')}
-          </Link>
+          </ProjectLink>
         }
       />
     </div>

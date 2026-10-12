@@ -56,7 +56,7 @@ describe('SavedSearchesDropdown', () => {
     await user.click(screen.getByRole('button', { name: 'Saved searches' }))
 
     const entry = await screen.findByRole('link', { name: 'Cats' })
-    expect(entry).toHaveAttribute('href', '/search?q=cat&mode=semantic')
+    expect(entry).toHaveAttribute('href', '/p/v/search?q=cat&mode=semantic')
     expect(entry).toHaveAttribute('title', 'Open the saved search "Cats"')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -68,7 +68,7 @@ describe('SavedSearchesDropdown', () => {
     await user.click(screen.getByRole('button', { name: 'Saved searches' }))
 
     const manage = await screen.findByRole('link', { name: 'Manage saved searches' })
-    expect(manage).toHaveAttribute('href', '/saved')
+    expect(manage).toHaveAttribute('href', '/p/v/saved')
     expect(manage).toHaveAttribute('title', 'Rename or delete your saved searches')
   })
 

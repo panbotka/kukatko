@@ -145,7 +145,7 @@ describe('ApiTokensCard list', () => {
     expect(screen.getByText(/a password for programs/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'How tokens are used' })).toHaveAttribute(
       'href',
-      '/help#help-api-tokens',
+      '/p/v/help#help-api-tokens',
     )
   })
 })

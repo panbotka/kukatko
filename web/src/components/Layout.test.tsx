@@ -65,7 +65,7 @@ function auth(
   } as unknown as AuthContextValue
 }
 
-function renderLayout(value: AuthContextValue, path = '/', caps = CAPABILITIES_DEFAULT) {
+function renderLayout(value: AuthContextValue, path = '/p/v', caps = CAPABILITIES_DEFAULT) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
@@ -98,12 +98,12 @@ function renderLayoutWithRoutes(value: AuthContextValue) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter initialEntries={['/']}>
+        <MemoryRouter initialEntries={['/p/v']}>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<div>home page</div>} />
-              <Route path="/albums" element={<div>albums page</div>} />
-              <Route path="/favorites" element={<div>favorites page</div>} />
+              <Route path="/p/v" element={<div>home page</div>} />
+              <Route path="/p/v/albums" element={<div>albums page</div>} />
+              <Route path="/p/v/favorites" element={<div>favorites page</div>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -254,7 +254,7 @@ describe('Layout navbar', () => {
   it('carries no logo and no wordmark, on either viewport', () => {
     // Width is the bar's scarce resource: the brand is gone entirely, mark and
     // wordmark alike, rather than being juggled by display utilities.
-    const { container, unmount } = renderLayout(auth(), '/albums')
+    const { container, unmount } = renderLayout(auth(), '/p/v/albums')
     expect(screen.queryByRole('link', { name: /Kukátko/ })).not.toBeInTheDocument()
     const bar = container.querySelector('.kukatko-navbar')
     expect(bar).not.toBeNull()
@@ -263,7 +263,7 @@ describe('Layout navbar', () => {
 
     unmount()
     mockViewport(true)
-    const phone = renderLayout(auth(), '/albums')
+    const phone = renderLayout(auth(), '/p/v/albums')
     expect(phone.container.querySelector('.kukatko-navbar i.bi-binoculars-fill')).toBeNull()
     expect(screen.queryByRole('link', { name: /Kukátko/ })).not.toBeInTheDocument()
   })
@@ -271,22 +271,22 @@ describe('Layout navbar', () => {
   it('keeps a labelled one-tap way home on the desktop bar', () => {
     // Start away from home so the way back is a real link, not a self-link. With
     // the brand gone this is what replaces it: the bar's first item, labelled.
-    renderLayout(auth(), '/albums')
+    renderLayout(auth(), '/p/v/albums')
 
     const home = screen.getByRole('link', { name: 'Library' })
-    expect(home).toHaveAttribute('href', '/')
+    expect(home).toHaveAttribute('href', '/p/v')
     expect(home).toHaveAttribute('title', 'Show the photo library')
     expect(home.closest('.navbar.kukatko-navbar')).not.toBeNull()
   })
 
   it('keeps a one-tap way home on a phone, in the bottom tab bar', () => {
     mockViewport(true)
-    renderLayout(auth(), '/albums')
+    renderLayout(auth(), '/p/v/albums')
 
     // The phone bar has no nav at all (it folds into the drawer), so the way home
     // is the tab bar's leading tab — permanently under the thumb, no menu first.
     const home = screen.getByRole('link', { name: 'Library' })
-    expect(home).toHaveAttribute('href', '/')
+    expect(home).toHaveAttribute('href', '/p/v')
     expect(home.closest('.kk-tabbar')).not.toBeNull()
   })
 
@@ -321,14 +321,14 @@ describe('Layout navbar', () => {
     renderLayout(auth())
 
     // The library is the homepage, so its nav entry points at the root route.
-    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/')
-    expect(screen.getByRole('link', { name: 'Albums' })).toHaveAttribute('href', '/albums')
-    expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute('href', '/labels')
+    expect(screen.getByRole('link', { name: 'Library' })).toHaveAttribute('href', '/p/v')
+    expect(screen.getByRole('link', { name: 'Albums' })).toHaveAttribute('href', '/p/v/albums')
+    expect(screen.getByRole('link', { name: 'Labels' })).toHaveAttribute('href', '/p/v/labels')
     // The search page is the only place with the query-language help and the
     // mode selector, so it is a labelled destination like the rest — not just
     // the magnifier circle's hover tooltip.
     const search = screen.getByRole('link', { name: 'Search' })
-    expect(search).toHaveAttribute('href', '/search')
+    expect(search).toHaveAttribute('href', '/p/v/search')
     expect(search).toHaveAttribute('title', 'Search the photos')
     expect(search.querySelector('i.bi.bi-search')).not.toBeNull()
   })
@@ -361,14 +361,14 @@ describe('Layout navbar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     for (const [name, href] of [
-      ['Favorites', '/favorites'],
+      ['Favorites', '/p/v/favorites'],
       // Saved searches are smart albums, so they sit next to the favorites
       // instead of hiding in a dropdown on the search page.
-      ['Saved searches', '/saved'],
-      ['People', '/people'],
-      ['Places', '/places'],
-      ['Map', '/map'],
-      ['Leaderboard', '/leaderboard'],
+      ['Saved searches', '/p/v/saved'],
+      ['People', '/p/v/people'],
+      ['Places', '/p/v/places'],
+      ['Map', '/p/v/map'],
+      ['Leaderboard', '/p/v/leaderboard'],
     ]) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
     }
@@ -385,7 +385,7 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'Browse' }))
     expect(screen.getByRole('link', { name: 'Leaderboard' })).toHaveAttribute(
       'href',
-      '/leaderboard',
+      '/p/v/leaderboard',
     )
   })
 
@@ -457,10 +457,10 @@ describe('Layout navbar', () => {
       <I18nextProvider i18n={i18n}>
         <AuthContext.Provider value={auth({ pictureVersion: 1 })}>
           <CapabilitiesContext.Provider value={CAPABILITIES_DEFAULT}>
-            <MemoryRouter initialEntries={['/']}>
+            <MemoryRouter initialEntries={['/p/v']}>
               <Routes>
                 <Route element={<Layout />}>
-                  <Route path="/" element={<div>page content</div>} />
+                  <Route path="/p/v" element={<div>page content</div>} />
                 </Route>
               </Routes>
             </MemoryRouter>
@@ -505,12 +505,12 @@ describe('Layout navbar', () => {
       screen.getByRole('link', { name }),
     )
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
-      '/import',
+      '/p/v/import',
       '/maintenance',
       '/system',
-      '/users',
-      '/audit',
-      '/settings',
+      '/p/v/users',
+      '/p/v/audit',
+      '/p/v/settings',
     ])
     expect(links[0]).toHaveAttribute('title', 'Run a photo import')
     expect(links[0].querySelector('i.bi.bi-box-arrow-in-down')).not.toBeNull()
@@ -532,9 +532,9 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'User One' }))
 
     expect(screen.getByText('Admin')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
-    expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/p/v/users')
+    expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/p/v/audit')
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/p/v/settings')
     for (const name of ['Import', 'Maintenance', 'System']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
@@ -553,13 +553,13 @@ describe('Layout navbar', () => {
     const user = userEvent.setup()
     renderLayout(auth({ canCurate: true }))
 
-    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/review')
-    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/p/v/review')
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/p/v/upload')
 
     await user.click(screen.getByRole('button', { name: 'Tools' }))
     for (const [name, href] of [
-      ['Expand', '/expand'],
-      ['Repeated markers', '/duplicate-markers'],
+      ['Expand', '/p/v/expand'],
+      ['Repeated markers', '/p/v/duplicate-markers'],
     ]) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href)
     }
@@ -576,7 +576,7 @@ describe('Layout navbar', () => {
     expect(screen.queryByRole('link', { name: 'Expand' })).not.toBeInTheDocument()
     // …it lives one level down, inside the Tools dropdown.
     await user.click(screen.getByRole('button', { name: 'Tools' }))
-    expect(screen.getByRole('link', { name: 'Expand' })).toHaveAttribute('href', '/expand')
+    expect(screen.getByRole('link', { name: 'Expand' })).toHaveAttribute('href', '/p/v/expand')
   })
 
   it('omits the tools/admin divider for a viewer who has nothing past it', () => {
@@ -590,13 +590,13 @@ describe('Layout navbar', () => {
   })
 
   it('marks a top-level link active on its detail sub-paths', () => {
-    renderLayout(auth(), '/albums/ab12')
+    renderLayout(auth(), '/p/v/albums/ab12')
     expect(screen.getByRole('link', { name: 'Albums' })).toHaveClass('active')
     expect(screen.getByRole('button', { name: 'Browse' })).not.toHaveClass('active')
   })
 
   it('marks the parent group active when a child route is current', () => {
-    renderLayout(auth(), '/places')
+    renderLayout(auth(), '/p/v/places')
     // /places lives under Browse, so its toggle carries the active state.
     expect(screen.getByRole('button', { name: 'Browse' })).toHaveClass('active')
   })
@@ -611,7 +611,7 @@ describe('Layout navbar', () => {
     // Help sits alongside the account item (above the sign-out divider).
     expect(screen.getByRole('link', { name: 'My account' })).toBeInTheDocument()
     const help = screen.getByRole('link', { name: 'Help' })
-    expect(help).toHaveAttribute('href', '/help')
+    expect(help).toHaveAttribute('href', '/p/v/help')
     expect(help).toHaveAttribute('title', 'Show help')
   })
 
@@ -623,7 +623,7 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'User One' }))
 
     const stats = screen.getByRole('link', { name: 'Statistics' })
-    expect(stats).toHaveAttribute('href', '/stats')
+    expect(stats).toHaveAttribute('href', '/p/v/stats')
     expect(stats).toHaveAttribute('title', 'Show the library statistics')
   })
 
@@ -643,7 +643,7 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'User One' }))
 
     const mine = screen.getByRole('link', { name: 'My photos' })
-    expect(mine).toHaveAttribute('href', '/?person=sub123')
+    expect(mine).toHaveAttribute('href', '/p/v?person=sub123')
     expect(mine).toHaveAttribute('title', 'Show the photos I am on')
   })
 
@@ -787,7 +787,7 @@ describe('Layout navbar in the tablet band', () => {
 
   it.each(TABLET_WIDTHS)('keeps the everyday loop under the thumb at %ipx', (width) => {
     mockViewportWidth(width)
-    const { container } = renderLayout(auth({ isMaintainer: true }), '/albums')
+    const { container } = renderLayout(auth({ isMaintainer: true }), '/p/v/albums')
 
     // The drawer is not the only navigation the band gets: the bottom tab bar
     // follows the same breakpoint, so the library stays one tap away rather than
@@ -797,7 +797,7 @@ describe('Layout navbar in the tablet band', () => {
     expect(bar).toHaveClass('d-lg-none')
     expect(within(bar as HTMLElement).getByRole('link', { name: 'Library' })).toHaveAttribute(
       'href',
-      '/',
+      '/p/v',
     )
   })
 
@@ -841,10 +841,10 @@ function renderLayoutWithCounts(value: AuthContextValue, counts: TaskSummaryStat
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
         <TaskSummaryContext.Provider value={counts}>
-          <MemoryRouter initialEntries={['/']}>
+          <MemoryRouter initialEntries={['/p/v']}>
             <Routes>
               <Route element={<Layout />}>
-                <Route path="/" element={<div>page content</div>} />
+                <Route path="/p/v" element={<div>page content</div>} />
               </Route>
             </Routes>
           </MemoryRouter>

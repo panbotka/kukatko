@@ -5,7 +5,6 @@ import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -27,6 +26,7 @@ import {
   toReviewDecision,
   viewToAuditParams,
 } from '../lib/reviewDecisions'
+import { ProjectLink } from '../project/ProjectLink'
 import { type AuditListResponse, fetchAuditLog } from '../services/audit'
 import { fetchLabels } from '../services/organize'
 import { fetchSubjects } from '../services/people'
@@ -195,10 +195,13 @@ export function ReviewDecisionsPage() {
   return (
     <>
       <div className="mb-3">
-        <Link to="/leaderboard" className="d-inline-flex align-items-center gap-1 small mb-2">
+        <ProjectLink
+          to="/leaderboard"
+          className="d-inline-flex align-items-center gap-1 small mb-2"
+        >
           <Icon name="arrow-left" />
           {t('reviewDecisions.back')}
-        </Link>
+        </ProjectLink>
         <h1 className="kk-page-title mb-1">
           {view.user === '' ? t('reviewDecisions.title') : displayName}
         </h1>
@@ -270,9 +273,9 @@ function DecisionContent({ state, decisions, locale, onRetry, onOffset }: Decisi
         title={t('reviewDecisions.noUser.title')}
         hint={t('reviewDecisions.noUser.hint')}
         action={
-          <Link to="/leaderboard" className="btn btn-primary">
+          <ProjectLink to="/leaderboard" className="btn btn-primary">
             {t('reviewDecisions.back')}
-          </Link>
+          </ProjectLink>
         }
       />
     )
@@ -380,7 +383,7 @@ function DecisionThumb({ photoUid }: { photoUid: string | null }) {
     )
   }
   return (
-    <Link
+    <ProjectLink
       to={`/photos/${encodeURIComponent(photoUid)}`}
       aria-label={t('reviewDecisions.openPhoto')}
       className="kk-decision-thumb-link rounded"
@@ -395,7 +398,7 @@ function DecisionThumb({ photoUid }: { photoUid: string | null }) {
           setFailed(true)
         }}
       />
-    </Link>
+    </ProjectLink>
   )
 }
 

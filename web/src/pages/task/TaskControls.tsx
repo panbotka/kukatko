@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Form } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { Icon } from '../../components/Icon'
 import { type QuickTransition, quickTransitions } from '../../lib/taskTransitions'
+import { ProjectLink } from '../../project/ProjectLink'
 import {
   isClosedState,
   type Task,
@@ -188,12 +188,12 @@ export function TaskControls({ task, busy, onSave, onDelete, onChanged }: TaskCo
             {busy ? t('taskDetail.controls.saving') : t('taskDetail.controls.save')}
           </Button>
           {task.query !== '' && (
-            <Link
+            <ProjectLink
               to={`/search?q=${encodeURIComponent(task.query)}`}
               className="btn btn-outline-secondary btn-sm"
             >
               <Icon name="search" /> {t('taskDetail.controls.showQuery')}
-            </Link>
+            </ProjectLink>
           )}
           <Button variant="outline-danger" size="sm" className="ms-auto" onClick={onDelete}>
             <Icon name="trash" /> {t('taskDetail.controls.delete')}

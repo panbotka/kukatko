@@ -91,7 +91,7 @@ describe('StatTile', () => {
 
     // The accessible name is the label, not the number.
     const link = screen.getByRole('link', { name: 'In the trash' })
-    expect(link).toHaveAttribute('href', '/trash')
+    expect(link).toHaveAttribute('href', '/p/v/trash')
     expect(link).toHaveClass('stretched-link')
     // A tile with nowhere to go offers no link at all.
     expect(screen.getAllByRole('link')).toHaveLength(1)

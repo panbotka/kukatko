@@ -3249,6 +3249,13 @@
     "filterAll": "Všechna",
     "filterUnread": "Nepřečtená"
   },
+  "projects": {
+    "title": "Projekty",
+    "intro": "Knihovny, do kterých patříte. Vyberte, kterou chcete otevřít.",
+    "empty": "Zatím nepatříte do žádného projektu. Požádejte správce některého projektu o pozvánku.",
+    "unavailable": "nedostupný",
+    "pending": "čeká na schválení"
+  },
   "notFound": {
     "title": "Stránka nenalezena",
     "message": "Požadovaná stránka neexistuje.",

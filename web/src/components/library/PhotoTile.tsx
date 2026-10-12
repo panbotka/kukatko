@@ -11,6 +11,7 @@ import { photoLabel } from '../../lib/photoTitle'
 import { formatTakenLabel } from '../../lib/takenDate'
 import { tileRenditionName, tileUsesPreviewURL } from '../../lib/tileRendition'
 import { streamPending } from '../../lib/videoEncode'
+import { useProjectPath } from '../../project/ProjectContext'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -215,6 +216,7 @@ export function PhotoTile({
   extras,
 }: PhotoTileProps) {
   const { t, i18n } = useTranslation()
+  const projectPath = useProjectPath()
   const { video_streaming: videoStreaming } = useCapabilities()
   // A clip whose streaming version has not been produced yet — and therefore one
   // the viewer will not play but show as being prepared (see `lib/videoEncode`).
@@ -338,11 +340,11 @@ export function PhotoTile({
       // without the View Transitions API — or a reader who asked for reduced
       // motion — gets the plain link this degrades to.
       morphId={photo.uid}
-      to={
+      to={projectPath(
         detailQuery !== undefined && detailQuery !== ''
           ? `/photos/${photo.uid}?${detailQuery}`
-          : `/photos/${photo.uid}`
-      }
+          : `/photos/${photo.uid}`,
+      )}
       // A tile drawn at the photograph's own proportions has already downloaded
       // exactly what the viewer wants for its first frame — hand the address over
       // rather than let the viewer mint a second, differently-signed one for the

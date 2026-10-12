@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import Container from 'react-bootstrap/Container'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Nav from 'react-bootstrap/Nav'
@@ -14,6 +14,8 @@ import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
+import { useProjectPath } from '../project/ProjectContext'
+import { stripProjectPrefix } from '../project/paths'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
@@ -134,11 +136,14 @@ import { WelcomeModal } from './welcome/WelcomeModal'
  * the band would return with the next item. The drawer does not care how many
  * items there are, and on a touch screen it is the better navigation anyway.
  */
-export function Layout() {
+export function Layout({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
   const { user, canCurate, canWrite, isAdmin, isMaintainer, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  // The nav entries are the pages' own paths; this puts each into the current
+  // project (an instance page such as the account passes through unchanged).
+  const projectPath = useProjectPath()
   const drawerNav = useIsNavDrawerViewport()
   // The global search palette, opened by the top bar's magnifier on `lg`+ and by
   // the tab bar's search tab below it. Plain state, never the URL: opening and
@@ -208,7 +213,8 @@ export function Layout() {
 
   /** True when any route in `items` is the current location. */
   function groupActive(items: NavEntry[]): boolean {
-    return items.some((item) => pathMatches(pathname, item.to))
+    const page = stripProjectPrefix(pathname)
+    return items.some((item) => pathMatches(page, item.to))
   }
 
   /** The count badge an entry carries: only the work queue has one. */
@@ -236,7 +242,7 @@ export function Layout() {
       <Nav.Link
         key={entry.to}
         as={NavLink}
-        to={entry.to}
+        to={projectPath(entry.to)}
         end={entry.to === LIBRARY_PATH}
         title={t(entry.titleKey)}
         className={`kukatko-tap-target d-flex align-items-center gap-2${
@@ -259,7 +265,7 @@ export function Layout() {
       <NavDropdown.Item
         key={entry.to}
         as={Link}
-        to={entry.to}
+        to={projectPath(entry.to)}
         title={t(entry.titleKey)}
         className="d-flex align-items-center gap-2"
       >
@@ -293,7 +299,7 @@ export function Layout() {
             <Dropdown.Item
               key={item.to}
               as={NavLink}
-              to={item.to}
+              to={projectPath(item.to)}
               title={t(item.titleKey)}
               className="kukatko-tap-target d-flex align-items-center gap-2"
             >
@@ -489,7 +495,7 @@ export function Layout() {
             without an `!important`. */}
         <Container as="main" className="pt-3 pt-md-4 kukatko-main">
           <AnnouncementBanner />
-          <Outlet />
+          {children ?? <Outlet />}
         </Container>
         <Footer>
           <JobQueueStatus />

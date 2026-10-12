@@ -31,6 +31,7 @@ import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey } from '../lib/gridScroll'
 import { isTaskListView, TASK_DEFAULTS, type TaskView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
 import { type Comment, taskSubject } from '../services/comments'
 import {
@@ -96,6 +97,7 @@ export function TaskDetailPage() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const { uid = '' } = useParams<{ uid: string }>()
   const { canWrite, user, isAdmin } = useAuth()
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -300,20 +302,20 @@ export function TaskDetailPage() {
     setBusy(true)
     deleteTask(uid)
       .then(() => {
-        void navigate(TASKS_PATH)
+        void navigate(projectPath(TASKS_PATH))
       })
       .catch(() => {
         setBusy(false)
         setConfirmDelete(false)
       })
-  }, [navigate, uid])
+  }, [navigate, projectPath, uid])
 
   if (state.status === 'missing') {
     return (
       <ErrorState
         title={t('taskDetail.missing')}
         hint={t('taskDetail.missingHint')}
-        action={<BackLink to={TASKS_PATH} label={t('taskDetail.back')} />}
+        action={<BackLink to={projectPath(TASKS_PATH)} label={t('taskDetail.back')} />}
       />
     )
   }
@@ -322,7 +324,7 @@ export function TaskDetailPage() {
     return (
       <ErrorState
         title={t('taskDetail.error')}
-        action={<BackLink to={TASKS_PATH} label={t('taskDetail.back')} />}
+        action={<BackLink to={projectPath(TASKS_PATH)} label={t('taskDetail.back')} />}
       />
     )
   }
@@ -339,7 +341,7 @@ export function TaskDetailPage() {
     <div style={{ paddingBottom: selecting ? 'var(--kk-batch-clearance)' : undefined }}>
       <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
         <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
-          <BackLink to={TASKS_PATH} label={t('taskDetail.back')} />
+          <BackLink to={projectPath(TASKS_PATH)} label={t('taskDetail.back')} />
           <TaskStateBadge state={task.state} />
         </div>
         {status === 'ready' && photos.length > 0 && (

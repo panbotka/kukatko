@@ -23,6 +23,7 @@ import {
 } from '../../lib/querySuggest'
 import { isTypingElement } from '../../lib/ratingHotkeys'
 import { isFormModalOpen } from '../../lib/shortcuts'
+import { useProjectPath } from '../../project/ProjectContext'
 import { thumbUrl } from '../../services/photos'
 import {
   directHitRoute,
@@ -570,6 +571,7 @@ interface DialogProps {
 function SearchCommandDialog({ show, onClose }: DialogProps) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const inputRef = useRef<HTMLInputElement>(null)
   const listboxId = useId()
 
@@ -686,9 +688,9 @@ function SearchCommandDialog({ show, onClose }: DialogProps) {
         recordSearch(item.query)
       }
       onClose()
-      void navigate(item.to)
+      void navigate(projectPath(item.to))
     },
-    [navigate, onClose, recordSearch],
+    [navigate, onClose, projectPath, recordSearch],
   )
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {

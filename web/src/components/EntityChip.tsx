@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react'
 import CloseButton from 'react-bootstrap/CloseButton'
-import { Link } from 'react-router-dom'
+
+import { ProjectLink } from '../project/ProjectLink'
 
 import { ENTITY_STYLE, type EntityKind } from './entityStyle'
 import { Icon } from './Icon'
@@ -17,7 +18,7 @@ export interface EntityChipRemove {
 export interface EntityChipProps {
   /** Which catalog entity the chip stands for — decides its hue and glyph. */
   kind: EntityKind
-  /** Where the chip leads: that entity's scoped list. */
+  /** Where the chip leads: that entity's scoped list, as a page's own path in the current project. */
   to: string
   /** The chip's visible text — a name, optionally with a count beside it. */
   children: ReactNode
@@ -60,17 +61,17 @@ export function EntityChip({ kind, to, children, className, remove }: EntityChip
 
   if (remove === undefined) {
     return (
-      <Link to={to} className={`${pill} text-white text-decoration-none`}>
+      <ProjectLink to={to} className={`${pill} text-white text-decoration-none`}>
         {label}
-      </Link>
+      </ProjectLink>
     )
   }
 
   return (
     <span className={pill}>
-      <Link to={to} className={`${row} text-white text-decoration-none`}>
+      <ProjectLink to={to} className={`${row} text-white text-decoration-none`}>
         {label}
-      </Link>
+      </ProjectLink>
       <CloseButton
         variant="white"
         aria-label={remove.label}

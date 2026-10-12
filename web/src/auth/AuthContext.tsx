@@ -1,11 +1,15 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useMemo } from 'react'
 
+import { ProjectContext } from '../project/ProjectContext'
+import { projectRoleOf } from '../project/paths'
 import {
   canCurate,
   canImport,
   canWrite,
   isAdmin,
   isMaintainer,
+  type InstanceRole,
+  type ProjectMembership,
   type Role,
   type User,
 } from '../services/auth'
@@ -27,7 +31,19 @@ export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'unre
 export interface AuthContextValue {
   status: AuthStatus
   user: User | null
+  /**
+   * The role the user acts with. Read through {@link useAuth} inside a
+   * `ProjectProvider` it is the role in the **current project** (`maintainer`
+   * for the instance's maintainer); the provider's own value, which only an
+   * isolated test ever sees, is the role `GET /auth/me` reported.
+   */
   role: Role | null
+  /** The account's instance role (`maintainer` or `user`); null when signed out. */
+  instanceRole: InstanceRole | null
+  /** Every project the account belongs to, as `GET /auth/me` lists them. */
+  projects: ProjectMembership[]
+  /** Slug of the project the account last worked in, or null for none remembered. */
+  lastProjectSlug: string | null
   /** Opaque token for authorizing media downloads; null when signed out. */
   downloadToken: string | null
   /**
@@ -45,6 +61,8 @@ export interface AuthContextValue {
   /**
    * True when the current user holds operations privileges — maintainer only:
    * imports, maintenance, system status, backup, restore, jobs and processing.
+   * It reads the instance role, never a project's: being the system
+   * administrator is not something a project grants.
    */
   isMaintainer: boolean
   /** True when the current user may trigger imports (maintainer only). */
@@ -94,14 +112,36 @@ export const AuthContext = createContext<AuthContextValue | null>(null)
 /**
  * Accesses the current auth state. Must be called within an {@link AuthProvider}.
  *
+ * Within a `ProjectProvider` (the whole app) the role and the predicates that
+ * hang off it — `canCurate`, `canWrite`, `isAdmin` — are those of the
+ * **current project**: the same account may curate one library and only look
+ * at another. `isMaintainer` (and `canImport`, which equals it) reads the
+ * instance role.
+ *
  * @throws Error when used outside of an `AuthProvider`.
  */
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
-  if (ctx === null) {
+  const projectCtx = useContext(ProjectContext)
+  const project = projectCtx === null ? undefined : projectCtx.project
+  const value = useMemo(() => {
+    if (ctx === null || project === undefined) {
+      return ctx
+    }
+    const role = ctx.user === null ? null : projectRoleOf(ctx.instanceRole, project)
+    return {
+      ...ctx,
+      role,
+      canCurate: role !== null && canCurate(role),
+      canWrite: role !== null && canWrite(role),
+      isAdmin: role !== null && isAdmin(role),
+      canImport: ctx.isMaintainer,
+    }
+  }, [ctx, project])
+  if (value === null) {
     throw new Error('useAuth must be used within an AuthProvider')
   }
-  return ctx
+  return value
 }
 
 /** Helper re-exports so consumers can derive capabilities from a role. */

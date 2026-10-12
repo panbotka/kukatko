@@ -254,7 +254,10 @@ describe('ExpandPage', () => {
       'src',
       expect.stringContaining('fit_1280'),
     )
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/p1',
+    )
 
     await user.click(within(overlay).getByRole('button', { name: 'Never offer for this label' }))
 

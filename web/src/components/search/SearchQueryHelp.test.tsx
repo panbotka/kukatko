@@ -44,7 +44,7 @@ describe('SearchQueryHelp', () => {
 
     const dialog = await screen.findByRole('dialog')
     const link = within(dialog).getByRole('link', { name: /Full-text & semantic search/ })
-    expect(link).toHaveAttribute('href', '/search?q=sunset')
+    expect(link).toHaveAttribute('href', '/p/v/search?q=sunset')
     expect(link.closest('.modal-footer')).not.toBeNull()
 
     // Following it closes the dialog rather than leaving it over the search page.

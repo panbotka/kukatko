@@ -1,9 +1,10 @@
 import Badge from 'react-bootstrap/Badge'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useGlobalSearch } from '../../hooks/useGlobalSearch'
 import { nicknameTag } from '../../lib/nickname'
+import { useProjectPath } from '../../project/ProjectContext'
+import { ProjectLink } from '../../project/ProjectLink'
 import { thumbUrl } from '../../services/photos'
 import {
   DIRECT_KIND_LABEL,
@@ -71,7 +72,7 @@ function DirectHitBanner({ direct }: { direct: GlobalSearchDirect }) {
   return (
     <section aria-label={t('globalSearch.direct.heading')} className="mb-4">
       <h2 className="kk-section-title text-secondary mb-2">{t('globalSearch.direct.heading')}</h2>
-      <Link
+      <ProjectLink
         to={route}
         className="d-inline-flex align-items-center gap-3 text-decoration-none text-body border rounded p-2"
       >
@@ -81,7 +82,7 @@ function DirectHitBanner({ direct }: { direct: GlobalSearchDirect }) {
           <span className="small text-secondary">{directHitSecondary(direct, t)}</span>
         </span>
         <Icon name={DIRECT_TARGET_ICON[direct.target_kind]} />
-      </Link>
+      </ProjectLink>
     </section>
   )
 }
@@ -100,6 +101,7 @@ function DirectHitBanner({ direct }: { direct: GlobalSearchDirect }) {
 export function GlobalSearchSections({ query }: { query: string }) {
   const { t } = useTranslation()
   const { status, result } = useGlobalSearch(query)
+  const projectPath = useProjectPath()
 
   if (status !== 'ready' || result === null) {
     return null
@@ -120,7 +122,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
           </h2>
           <div className="d-flex flex-wrap gap-2">
             {result.albums.map((album) => (
-              <Link
+              <ProjectLink
                 key={album.uid}
                 to={`/albums/${album.uid}`}
                 className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.album.className} ps-1 pe-3 py-1`}
@@ -132,7 +134,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
                 <Badge bg="light" text="dark" pill>
                   {album.photo_count}
                 </Badge>
-              </Link>
+              </ProjectLink>
             ))}
           </div>
         </div>
@@ -151,7 +153,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
               // many people who have none.
               const nickname = nicknameTag(person.nickname)
               return (
-                <Link
+                <ProjectLink
                   key={person.uid}
                   to={`/people/${person.uid}`}
                   className={`d-inline-flex align-items-center gap-2 text-decoration-none text-white rounded-pill ${ENTITY_STYLE.person.className} ps-1 pe-3 py-1`}
@@ -165,7 +167,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
                       {nickname}
                     </span>
                   )}
-                </Link>
+                </ProjectLink>
               )
             })}
           </div>
@@ -184,7 +186,7 @@ export function GlobalSearchSections({ query }: { query: string }) {
               <EntityChip
                 key={label.uid}
                 kind="tag"
-                to={`/labels/${label.uid}`}
+                to={projectPath(`/labels/${label.uid}`)}
                 className="fw-normal"
               >
                 {label.name}

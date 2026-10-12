@@ -10,6 +10,13 @@ describe('reviewReturn', () => {
     expect(reviewReturnPath(reviewReturnState('/review', ''))).toBe('/review')
   })
 
+  it('round-trips the game inside a project, project kept', () => {
+    const state = reviewReturnState('/p/v/review', '?source=people')
+
+    expect(reviewReturnPath(state)).toBe('/p/v/review?source=people')
+    expect(reviewReturnPath(reviewReturnState('/p/v/review', ''))).toBe('/p/v/review')
+  })
+
   it('reads anything that is not the game as "not from the game"', () => {
     expect(reviewReturnPath(undefined)).toBeUndefined()
     expect(reviewReturnPath(null)).toBeUndefined()
@@ -21,6 +28,8 @@ describe('reviewReturn', () => {
     // Only the game's own route: never another page, never another origin.
     expect(reviewReturnPath({ reviewReturn: '/reviewers' })).toBeUndefined()
     expect(reviewReturnPath({ reviewReturn: '/photos' })).toBeUndefined()
+    expect(reviewReturnPath({ reviewReturn: '/p/v/photos' })).toBeUndefined()
+    expect(reviewReturnPath({ reviewReturn: '/p/v' })).toBeUndefined()
     expect(reviewReturnPath({ reviewReturn: 'https://evil.example/review' })).toBeUndefined()
     expect(reviewReturnPath({ reviewReturn: '//evil.example/review' })).toBeUndefined()
   })

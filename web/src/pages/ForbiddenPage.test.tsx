@@ -12,7 +12,7 @@ import { ForbiddenPage } from './ForbiddenPage'
 function renderPage(role: GuardRole) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/review']}>
+      <MemoryRouter initialEntries={['/p/v/review']}>
         <ForbiddenPage role={role} />
       </MemoryRouter>
     </I18nextProvider>,
@@ -47,7 +47,10 @@ describe('ForbiddenPage', () => {
 
     // The link matters most on the fullscreen guarded routes (/review,
     // /duplicates/compare), where there is no navbar to escape through.
-    expect(screen.getByRole('link', { name: /back to the library/i })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: /back to the library/i })).toHaveAttribute(
+      'href',
+      '/p/v',
+    )
   })
 
   it('explains itself in Czech, the default language', async () => {

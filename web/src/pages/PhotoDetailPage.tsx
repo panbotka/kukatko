@@ -96,6 +96,7 @@ import {
 } from '../lib/viewerPanel'
 import { shouldWatchEncode, videoEncode } from '../lib/videoEncode'
 import { preloadUids } from '../lib/viewerPreload'
+import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
 import { photoSubject } from '../services/comments'
 import {
@@ -187,6 +188,7 @@ export function PhotoDetailPage() {
   const { canCurate, canWrite, downloadToken, user, isAdmin, isMaintainer } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const projectPath = useProjectPath()
   const [searchParams, setSearchParams] = useSearchParams()
   const [state, setState] = useState<State>({ status: 'loading' })
   // The rendition version of every photo this session has seen rebuilt (a
@@ -374,9 +376,11 @@ export function PhotoDetailPage() {
     if (detailQuery === '') {
       return undefined
     }
-    const back = new URL(backHref(view), window.location.origin)
+    // Through the project, as the list's own address is: the key must match the
+    // one the grid files its position under, which is read off its `/p/<slug>` URL.
+    const back = new URL(projectPath(backHref(view)), window.location.origin)
     return gridScrollKey(back.pathname, back.search)
-  }, [origin, detailQuery, view])
+  }, [origin, detailQuery, view, projectPath])
   const readerUid = user?.uid ?? ''
   useEffect(() => {
     if (listScrollKey !== undefined) {
@@ -399,9 +403,9 @@ export function PhotoDetailPage() {
   const neighborTo = useCallback(
     (neighbor: string): string => {
       const query = writeViewerPanel(new URLSearchParams(detailQuery), panel).toString()
-      return query === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${query}`
+      return projectPath(query === '' ? `/photos/${neighbor}` : `/photos/${neighbor}?${query}`)
     },
-    [detailQuery, panel],
+    [detailQuery, panel, projectPath],
   )
 
   // Page to a neighbour (prev/next) preserving the originating list order. Shared
@@ -471,7 +475,9 @@ export function PhotoDetailPage() {
     // captures the new state, and otherwise degrades to the photograph fading
     // out over the page change — see `components/morph`.
     morph.morph(uid, () => {
-      void (openedDirectlyRef.current ? navigate(reviewReturn ?? backHref(view)) : navigate(-1))
+      void (openedDirectlyRef.current
+        ? navigate(projectPath(reviewReturn ?? backHref(view)))
+        : navigate(-1))
     })
   }
 
@@ -1749,7 +1755,10 @@ export function PhotoDetailPage() {
               <ul className="list-unstyled d-flex flex-column gap-1 mb-0">
                 {(photo.tasks ?? []).map((task) => (
                   <li key={task.uid}>
-                    <Link to={`/tasks/${task.uid}`} className="d-flex align-items-center gap-2">
+                    <Link
+                      to={projectPath(`/tasks/${task.uid}`)}
+                      className="d-flex align-items-center gap-2"
+                    >
                       <Icon name="ui-checks" />
                       <span>{t('photo.openTask', { title: task.title })}</span>
                     </Link>

@@ -61,9 +61,9 @@ describe('SimilarPhotos', () => {
     renderSimilar('ph-source')
 
     const linkA = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(linkA).toHaveAttribute('href', '/photos/ph-a')
+    expect(linkA).toHaveAttribute('href', '/p/v/photos/ph-a')
     const linkB = screen.getByRole('link', { name: 'b.jpg' })
-    expect(linkB).toHaveAttribute('href', '/photos/ph-b')
+    expect(linkB).toHaveAttribute('href', '/p/v/photos/ph-b')
 
     // It fetched for the source photo.
     expect(fetchMock.mock.calls[0][0]).toBe('ph-source')

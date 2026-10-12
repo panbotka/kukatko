@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { avatarInitial, avatarTone } from '../../lib/avatarIdentity'
 import { AVATAR_CIRCLE, NODE_HEIGHT, PERSON_WIDTH } from '../../lib/familyLayout'
 import { formatLifeSpan } from '../../lib/lifeYears'
 import { truncateText } from '../../lib/text'
+import { ProjectLink } from '../../project/ProjectLink'
 import { subjectAvatarUrl } from '../../services/people'
 
 /** The person a card draws: only what fits inside a box of {@link PERSON_WIDTH}. */
@@ -71,7 +71,7 @@ export function TreePersonCard({
   const hasPhoto = (person?.photo_count ?? 0) > 0 && !failed
 
   return (
-    <Link to={href} className="kk-tree-person" aria-label={label}>
+    <ProjectLink to={href} className="kk-tree-person" aria-label={label}>
       <title>
         {repeat ? (repeatTitle ?? t('familyTree.repeatHint', { name })) : (title ?? label)}
       </title>
@@ -123,6 +123,6 @@ export function TreePersonCard({
           {lifeSpan}
         </text>
       )}
-    </Link>
+    </ProjectLink>
   )
 }

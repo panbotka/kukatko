@@ -2,7 +2,6 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useImageFrame } from '../../hooks/useImageFrame'
 import { useLightbox } from '../../hooks/useLightbox'
@@ -10,6 +9,8 @@ import { groupKey } from '../../lib/duplicateMarkers'
 import { faceBoxStyle } from '../../lib/faceGeometry'
 import { formatDate } from '../../lib/format'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
+import { useProjectPath } from '../../project/ProjectContext'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type DuplicateMarkerGroup } from '../../services/dupmarkers'
 import { thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
@@ -74,6 +75,7 @@ export function DuplicateMarkerGroupCard({
   // The overlay walks this photo's boxes: one frame, one box at a time, big
   // enough to tell which of three faces is actually her. Same list, same order
   // and same numbers as the crops below the preview.
+  const projectPath = useProjectPath()
   const lightbox = useLightbox(group.markers)
   const enlarged = lightbox.item
   // The preview's frame *is* the coordinate system of the boxes over it, so it
@@ -93,9 +95,12 @@ export function DuplicateMarkerGroupCard({
     <Card className="mb-3" data-testid="dup-marker-group" data-group-key={groupKey(group)}>
       <Card.Header className="d-flex flex-wrap align-items-center gap-2">
         <Icon name="person-bounding-box" className="text-warning" />
-        <Link to={`/people/${group.subject_uid}`} className="fw-semibold text-decoration-none">
+        <ProjectLink
+          to={`/people/${group.subject_uid}`}
+          className="fw-semibold text-decoration-none"
+        >
           {group.subject_name}
-        </Link>
+        </ProjectLink>
         <Badge bg="warning" text="dark">
           {t('duplicateMarkers.card.count', { count: group.markers.length })}
         </Badge>
@@ -103,14 +108,14 @@ export function DuplicateMarkerGroupCard({
           {title}
           {group.taken_at !== undefined && ` · ${formatDate(group.taken_at, i18n.language)}`}
         </span>
-        <Link
+        <ProjectLink
           to={`/photos/${group.photo_uid}`}
           className="small text-decoration-none"
           title={t('duplicateMarkers.card.openPhoto')}
         >
           <Icon name="eye" className="me-1" />
           {t('duplicateMarkers.card.openPhoto')}
-        </Link>
+        </ProjectLink>
       </Card.Header>
 
       <Card.Body className="d-flex flex-column gap-3">
@@ -235,7 +240,7 @@ export function DuplicateMarkerGroupCard({
             orientation: group.orientation,
             size: PREVIEW_SIZE,
             bbox: enlarged.bbox,
-            href: `/photos/${group.photo_uid}`,
+            href: projectPath(`/photos/${group.photo_uid}`),
             alt: t('duplicateMarkers.card.cropAlt'),
           }}
           title={t('duplicateMarkers.card.keep', { index: lightbox.index + 1 })}

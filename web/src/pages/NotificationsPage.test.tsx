@@ -76,14 +76,14 @@ function Where() {
   return <output data-testid="where">{location.pathname + location.search}</output>
 }
 
-function renderPage(path = '/notifications', refresh = vi.fn()) {
+function renderPage(path = '/p/v/notifications', refresh = vi.fn()) {
   render(
     <I18nextProvider i18n={i18n}>
       <NotificationInboxContext.Provider value={{ unread: 1, refresh }}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
-              path="/notifications"
+              path="/p/:slug/notifications"
               element={
                 <>
                   <NotificationsPage />
@@ -134,7 +134,7 @@ describe('NotificationsPage', () => {
     expect(await screen.findByRole('heading', { name: 'Notifications' })).toBeInTheDocument()
     expect(await screen.findByRole('link', { name: /Unread: Notification 0/ })).toHaveAttribute(
       'href',
-      '/n/nt0',
+      '/p/v/n/nt0',
     )
     expect(listMock).toHaveBeenLastCalledWith(
       { unread: false, limit: PAGE_SIZE },
@@ -167,7 +167,7 @@ describe('NotificationsPage', () => {
 
     await user.click(screen.getByRole('radio', { name: 'Unread' }))
 
-    expect(screen.getByTestId('where')).toHaveTextContent('/notifications?unread=1')
+    expect(screen.getByTestId('where')).toHaveTextContent('/p/v/notifications?unread=1')
     await waitFor(() => {
       expect(listMock).toHaveBeenLastCalledWith(
         { unread: true, limit: PAGE_SIZE },
@@ -197,7 +197,7 @@ describe('NotificationsPage', () => {
 
     await user.click(await screen.findByRole('link', { name: /Notification 0/ }))
     expect(markOneMock).toHaveBeenCalledWith('nt0')
-    expect(screen.getByTestId('where')).toHaveTextContent('/n/nt0')
+    expect(screen.getByTestId('where')).toHaveTextContent('/p/v/n/nt0')
   })
 
   it('says how to fill an empty inbox, and that an empty unread view means caught up', async () => {
@@ -210,7 +210,7 @@ describe('NotificationsPage', () => {
 
   it('shows the caught-up state for the unread filter', async () => {
     listMock.mockResolvedValue({ notifications: [], total: 0, limit: PAGE_SIZE, offset: 0 })
-    renderPage('/notifications?unread=1')
+    renderPage('/p/v/notifications?unread=1')
     expect(await screen.findByText('You are all caught up.')).toBeInTheDocument()
   })
 

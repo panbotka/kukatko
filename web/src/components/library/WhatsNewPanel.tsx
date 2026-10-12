@@ -3,13 +3,13 @@ import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Collapse from 'react-bootstrap/Collapse'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../../auth/AuthContext'
 import { useWhatsNew } from '../../hooks/useWhatsNew'
 import { formatDateTimeMinutes } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { readDismissedWhatsNew, writeDismissedWhatsNew } from '../../lib/whatsNewDismissal'
+import { ProjectLink } from '../../project/ProjectLink'
 import { Icon } from '../Icon'
 
 /**
@@ -59,7 +59,7 @@ function DigestLine({
       {links.map((link, index) => (
         <Fragment key={link.uid}>
           {index > 0 && <span>, </span>}
-          <Link to={link.href}>{link.label}</Link>
+          <ProjectLink to={link.href}>{link.label}</ProjectLink>
         </Fragment>
       ))}
       {rest > 0 && <span className="opacity-75"> {t('whatsNew.more', { count: rest })}</span>}
@@ -218,7 +218,9 @@ export function WhatsNewPanel() {
             <ul className="list-unstyled mb-0 mt-2 d-flex flex-column gap-1">
               {photos > 0 && (
                 <li>
-                  <Link to={RECENTLY_ADDED_HREF}>{t('whatsNew.photos', { count: photos })}</Link>
+                  <ProjectLink to={RECENTLY_ADDED_HREF}>
+                    {t('whatsNew.photos', { count: photos })}
+                  </ProjectLink>
                 </li>
               )}
               {/* The one line of the digest that is about the reader rather than
@@ -228,7 +230,9 @@ export function WhatsNewPanel() {
                   noise, and for most readers this line simply never exists. */}
               {minePhotos > 0 && mineHref !== null && (
                 <li>
-                  <Link to={mineHref}>{t('whatsNew.minePhotos', { count: minePhotos })}</Link>
+                  <ProjectLink to={mineHref}>
+                    {t('whatsNew.minePhotos', { count: minePhotos })}
+                  </ProjectLink>
                 </li>
               )}
               {albumTotal > 0 && (
@@ -246,7 +250,9 @@ export function WhatsNewPanel() {
                   asked a fortnight ago is still theirs to answer. */}
               {tasks > 0 && (
                 <li>
-                  <Link to={WAITING_TASKS_HREF}>{t('whatsNew.tasks', { count: tasks })}</Link>
+                  <ProjectLink to={WAITING_TASKS_HREF}>
+                    {t('whatsNew.tasks', { count: tasks })}
+                  </ProjectLink>
                 </li>
               )}
             </ul>

@@ -9,7 +9,6 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -28,6 +27,7 @@ import {
 } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
+import { ProjectLink } from '../project/ProjectLink'
 import {
   type AuditChange,
   type AuditChanges,
@@ -474,7 +474,7 @@ function AuditTarget({ record }: { record: AuditRecord }) {
           {href === null ? (
             <span className="text-secondary">{record.target_uid}</span>
           ) : (
-            <Link to={href}>{record.target_uid}</Link>
+            <ProjectLink to={href}>{record.target_uid}</ProjectLink>
           )}
         </div>
       )}
@@ -519,9 +519,9 @@ function AuditEntryDetails({ id, record }: AuditEntryDetailsProps) {
                 <li key={group.key} className="text-break">
                   <code className="text-secondary">{group.key}</code>{' '}
                   {group.links.map((link) => (
-                    <Link key={link.href} to={link.href} className="me-2">
+                    <ProjectLink key={link.href} to={link.href} className="me-2">
                       {link.uid}
-                    </Link>
+                    </ProjectLink>
                   ))}
                 </li>
               ))}

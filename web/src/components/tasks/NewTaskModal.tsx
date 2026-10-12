@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../../auth/AuthContext'
+import { useProjectPath } from '../../project/ProjectContext'
 import { type DirectoryUser } from '../../services/directory'
 import {
   addTaskPhotos,
@@ -69,6 +70,7 @@ type OpeningState = (typeof OPENING_STATES)[number]
 export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const { user } = useAuth()
   const [mode, setMode] = useState<Mode>('new')
   const [title, setTitle] = useState('')
@@ -115,7 +117,7 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
     }
     createTask(input)
       .then((task) => {
-        void navigate(`/tasks/${task.uid}`)
+        void navigate(projectPath(`/tasks/${task.uid}`))
       })
       .catch(() => {
         setFailed(true)
@@ -128,7 +130,7 @@ export function NewTaskModal({ show, onClose, photoUids = [] }: NewTaskModalProp
     setFailed(false)
     addTaskPhotos(task.uid, photoUids)
       .then(() => {
-        void navigate(`/tasks/${task.uid}`)
+        void navigate(projectPath(`/tasks/${task.uid}`))
       })
       .catch(() => {
         setFailed(true)

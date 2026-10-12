@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Link, useInRouterContext } from 'react-router-dom'
 
+import { useProjectPath } from '../project/ProjectContext'
 import { type CommentMention } from '../services/comments'
 
 import { Icon } from './Icon'
@@ -21,7 +22,7 @@ export interface MentionChipProps {
   isMe: boolean
 }
 
-/** The page of the person an account is linked to. */
+/** The page of the person an account is linked to (its own path, outside a project). */
 function personPath(subjectUid: string): string {
   return `/people/${encodeURIComponent(subjectUid)}`
 }
@@ -40,6 +41,7 @@ function personPath(subjectUid: string): string {
 export function MentionChip({ uid, fallbackName, mention, isMe }: MentionChipProps) {
   const { t } = useTranslation()
   const inRouter = useInRouterContext()
+  const projectPath = useProjectPath()
   const name = mention?.name ?? fallbackName
   const classes = [
     'kk-mention',
@@ -70,13 +72,23 @@ export function MentionChip({ uid, fallbackName, mention, isMe }: MentionChipPro
   }
   if (inRouter) {
     return (
-      <Link to={personPath(subjectUid)} className={classes} title={title} data-mention-uid={uid}>
+      <Link
+        to={projectPath(personPath(subjectUid))}
+        className={classes}
+        title={title}
+        data-mention-uid={uid}
+      >
         {content}
       </Link>
     )
   }
   return (
-    <a href={personPath(subjectUid)} className={classes} title={title} data-mention-uid={uid}>
+    <a
+      href={projectPath(personPath(subjectUid))}
+      className={classes}
+      title={title}
+      data-mention-uid={uid}
+    >
       {content}
     </a>
   )

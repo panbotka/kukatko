@@ -173,7 +173,10 @@ describe('LeaderboardPage', () => {
     expect(await screen.findByTestId('empty-state')).toBeInTheDocument()
     expect(screen.getByText('No decisions yet')).toBeInTheDocument()
     // The empty state invites an editor into the review game.
-    expect(screen.getByRole('link', { name: /start sorting/i })).toHaveAttribute('href', '/review')
+    expect(screen.getByRole('link', { name: /start sorting/i })).toHaveAttribute(
+      'href',
+      '/p/v/review',
+    )
   })
 
   it('does not invite a viewer into a game they may not play', async () => {
@@ -193,7 +196,7 @@ describe('LeaderboardPage', () => {
 
     const aliceRow = await screen.findByTestId('leaderboard-row-u1')
     const link = within(aliceRow).getByRole('link', { name: /Alice/i })
-    expect(link).toHaveAttribute('href', '/audit/reviews?user=u1')
+    expect(link).toHaveAttribute('href', '/p/v/audit/reviews?user=u1')
   })
 
   it('shows plain player names to a non-admin, with no click-through', async () => {
@@ -212,7 +215,7 @@ describe('LeaderboardPage', () => {
     expect(await screen.findByTestId('leaderboard-not-on-board')).toBeInTheDocument()
     expect(
       within(screen.getByTestId('leaderboard-not-on-board')).getByRole('link'),
-    ).toHaveAttribute('href', '/review')
+    ).toHaveAttribute('href', '/p/v/review')
   })
 
   it('keeps the way-in hint from a viewer, who can never take it', async () => {

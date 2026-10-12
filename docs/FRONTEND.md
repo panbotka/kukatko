@@ -8205,8 +8205,10 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   keeps it from collapsing beside its button, and no layout runs in jsdom to catch it).
   Routing in `App.tsx`: the route table lives in the exported `AppRoutes` (so that a test can mount it
   into a `MemoryRouter` and verify the wiring itself — `App.test.tsx`), `App` merely wraps it in
-  `BrowserRouter`+`AuthProvider`+`CapabilitiesProvider` (the capabilities provider sits inside the auth provider,
-  because `/capabilities` is behind `RequireAuth`). `/login`, `/register`, `/password-reset/:token` and the
+  `BrowserRouter`+`AuthProvider`+`ProjectProvider`+`CapabilitiesProvider` (the capabilities provider sits inside the auth provider,
+  because `/capabilities` is behind `RequireAuth`). **Every project page below is mounted under
+  `/p/:slug`** (`/albums` here reads `/p/<slug>/albums` in the address bar) — the full table, the
+  entry rule and the old-address redirects are in "Projects in the address bar". `/login`, `/register`, `/password-reset/:token` and the
 upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slideshow` and
   the immersive `/photos/:uid` are under `RequireAuth` but **outside `Layout`** (fullscreen without the navbar),
   the rest is under `Layout`
@@ -8503,21 +8505,107 @@ the request came through and are used as they are.
 
 **The current project** is module state, not a context, so a service stays a plain function:
 `setCurrentProjectSlug(slug | null)` / `getCurrentProjectSlug()`. `AuthProvider` sets it in
-`applySession` — before the state that renders the signed-in tree — from `projectSlugOf(session)`
-(`services/auth.ts`: `last_project_slug`, which `/auth/me` reports as `""` for none, else the first
-of `projects`, else `null`), and to `null` on sign-out. A sign-in answer (password or passkey)
-carries no projects, so `login`/`loginWithPasskey` re-read `GET /auth/me` before publishing the
-session. Transition: the next step reads the slug from the `/p/:slug` route instead. Because a
+`applySession` — before the state that renders the signed-in tree — to the entry rule's pick
+(`entryProjectSlug`, see "Projects in the address bar" below; `/auth/me` reports "none remembered"
+as `""`), and to `null` on sign-out; `ProjectProvider` then replaces it with the project the
+`/p/:slug` address names. A sign-in answer (password or passkey) carries no projects, so
+`login`/`loginWithPasskey` re-read `GET /auth/me` before publishing the session. Because a
 project route needs a session, `CapabilitiesProvider` fetches only while `status` is
 `authenticated` (as `TaskSummaryProvider` and `NotificationInboxProvider` already did).
 
 The anonymous pages (`/login`, `/register`, `/password-reset/:token`, `/u/:code`) call only
 instance routes. Tests: `api.test.ts` (both helpers, the throw, the setter/getter),
-`AuthProvider.test.tsx` (the slug from `/auth/me`, the `""` fallback, the re-read after a sign-in,
+`AuthProvider.test.tsx` (the slug from `/auth/me`, the `""` fallback to the only membership, none
+among several, the re-read after a sign-in,
 `null` on sign-out), `pages/AnonymousPages.test.tsx` (each anonymous page renders with no project,
 never calls `apiPath` and fetches only unprefixed routes). `src/test/setup.ts` starts every test in
 project `v`, so component and service tests expect `/api/v1/p/v/…` for project routes; a test about
 the signed-out state sets `null` itself.
+
+## Projects in the address bar
+
+Since multi-tenancy step 09 every page of a library lives under **`/p/<slug>`** — the library itself
+at `/p/v`, a photo at `/p/v/photos/<uid>`, an album at `/p/v/albums/<uid>`. A user with one project
+notices nothing but the prefix. Code lives in `web/src/project/`.
+
+**Routes** (`App.tsx`). The project's pages are one JSX fragment, `PROJECT_ROUTES`, with paths
+relative to the project root, mounted under `<Route path="/p/:slug" element={<ProjectGate />}>`:
+
+| Kind | Paths |
+| --- | --- |
+| project (under `/p/:slug`), immersive, no shell | `slideshow`, `photos/:uid`, `review` + `albums/:uid/faces` (curator), `duplicates/compare` (editor) |
+| project, inside `Layout` | index (= `LibraryPage`), `library/*` (`LibraryRedirect` → the project's library), `favorites`, `albums`, `albums/:uid`, `labels`, `labels/:uid`, `tasks`, `tasks/:uid`, `n/:uid`, `notifications`, `search`, `saved`, `map`, `places`, `people`, `people/:uid`, `people/:uid/tree`, `leaderboard`, `share-target`, `upload`, `stats`, `help`; curator: `upload-links`, `people/clusters`, `faces`, `expand`, `recognition`, `outliers`, `duplicate-markers`; editor: `duplicates`, `trash`; `import` (`RequireImport`); admin: `users`, `audit`, `audit/reviews`, `settings`; `*` → `NotFoundPage` |
+| instance, public | `/login`, `/register`, `/password-reset/:token`, `/u/:code` |
+| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance` + `/system` (maintainer), `*` (`LegacyRedirect`) |
+
+**The entry rule** (`entryProjectSlug` in `project/paths.ts`): the target is `last_project_slug` when
+it is an approved membership of an active project, else the only such membership, else `null` →
+`/projects`. `/` (`EntryRedirect`) and every old-address redirect use it; `AuthProvider` hands the
+same pick to `setCurrentProjectSlug` when a session arrives (it replaced the transition
+`projectSlugOf`). Several projects and nothing remembered is deliberately `null`, not "the first".
+
+**Old addresses** (`project/LegacyRedirect.tsx`): the instance-level `*` route matches the path
+against `createRoutesFromChildren(PROJECT_ROUTES)` with `matchRoutes` (`isProjectPage`, the project's
+own `*` excluded), so the list of forwarded addresses *is* the list of pages — nothing is typed
+twice. A match is `<Navigate replace>` to `/p/<target>` + the same path, **query and hash kept**
+(`/photos/abc?x=1#h` → `/p/v/photos/abc?x=1#h`); no target → `/projects`; no match → `NotFoundPage`.
+This is also what makes the unprefixed deep links the app does not control keep working: the push
+deeplink `/n/<uid>` (`notification.PathPrefix`), the share sheet's `/share-target?share=…` (the
+service worker still redirects there), the manifest shortcut `/upload` and every old bookmark.
+
+**`ProjectProvider` + `useProject()`** (`project/ProjectProvider.tsx`, `ProjectContext.ts`), directly
+under `AuthProvider`: `{ project, projects, status, switchProject(slug) }`. The current project is
+the `/p/:slug` of the location (`projectSlugInPath`, read with `useLocation`, since the provider sits
+above the routes) matched against `me.projects` (approved, active). `status` is `loading` until the
+session is known, `not-member` when the slug matches no such membership — `ProjectGate` then renders
+the ordinary `NotFoundPage` inside `Layout`, so a stranger cannot tell a foreign project from a
+missing one — else `ready`. On an instance page (`/account`, `/system`), or when `not-member`,
+`project` is the entry-rule project, so the shell's links, the bell and the task badge still point
+somewhere real; it is `null` only for an account with nothing to enter. The provider calls
+`setCurrentProjectSlug` **during render**: pages fetch in their own effects and React runs a child's
+effects before its parent's, so an effect here would be too late for a freshly opened project.
+`TaskSummaryProvider` and `NotificationInboxProvider` take `useProjectSlug()` into their polling
+effect's dependencies, so a project change aborts, clears and refetches.
+
+**Links: `useProjectPath()`** returns `(path) => string` — `/p/<slug>` + a page's own path
+(`projectPathFor`). The library `/` becomes the bare `/p/<slug>` (`/?q=x` → `/p/<slug>?q=x`). It is
+**idempotent and safe**: instance paths (`INSTANCE_PATH_PREFIXES` — `/login`, `/register`,
+`/password-reset`, `/u`, `/account`, `/system`, `/maintenance`, `/projects`), addresses already
+under `/p/` and external URLs pass through unchanged; with no project at all a project page becomes
+`/projects`. **`<ProjectLink to>`** is a router `Link` (ref forwarded, so `as={ProjectLink}` works)
+with `to` resolved the same way. Rules for new code: every absolute in-app path handed to `Link`,
+`NavLink`, `Navigate`, `navigate(…)` or an anchor goes through the hook; the pure path builders in
+`lib/` (`detailHref`, `searchHref`, `LIBRARY_PATH`, `TASKS_PATH`, …) keep returning the page's own
+path and the **call site** wraps it; `components/navItems.ts` entries stay page paths and `Layout`,
+`MobileNavDrawer` and `MobileTabBar` resolve them; a comparison against the current URL uses
+`stripProjectPrefix(location.pathname)`; an absolute URL shared outside the app (Web Share, copy
+link) is `new URL(projectPath(…), origin)`. Outside a provider (an isolated component test) the
+hook uses the API's current slug, which `src/test/setup.ts` sets to `v` — so component tests expect
+`/p/v/…` hrefs.
+
+**Role predicates.** Inside a `ProjectProvider`, `useAuth()` overlays the provider's value: `role` is
+`projectRoleOf(instanceRole, project)` — `maintainer` for the instance maintainer, else the
+membership's role — and `canCurate`/`canWrite`/`isAdmin` derive from it; `isMaintainer` and
+`canImport` read `instance_role` (`AuthContextValue` now also carries `instanceRole`, `projects`,
+`lastProjectSlug`). The bare `AuthProvider` value (what a test passing `AuthContext.Provider`
+directly sees) keeps the role `/auth/me` reported. `RequireRole` refuses a signed-in user with no
+role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
+
+**`/projects`** (`pages/ProjectsPage.tsx`): a placeholder list of the account's memberships, each an
+entry link to `/p/<slug>`; a deactivated project or an unapproved membership is listed without a
+link and says why; none at all says to ask a project's administrator (`projects.*` keys). The real
+chooser and the header switcher are the next step. **PWA:** `start_url` stays `/` (the entry rule
+does the rest); the service worker answers every navigation outside `/api/`, `/healthz`,
+`/metrics` with the shell, `/p/*` included.
+
+Tests: `project/paths.test.ts` (entry rule's three branches + the unusable-last cases,
+`projectPathFor`, prefix parsing, `projectRoleOf`), `project/ProjectProvider.test.tsx` (current
+project from the URL, predicates from the project role, the maintainer, `not-member`, instance
+pages, a visitor), `App.test.tsx` "routing — projects" (`/` → `/p/v`; `/photos/abc?x=1#h` →
+`/p/v/photos/abc?x=1#h`; → `/projects` without a project; a foreign slug renders the not-found
+page; the chooser's links) — the rest of `App.test.tsx` mounts `AppRoutes` inside a
+`ProjectProvider` with a `v` membership and reaches most pages through the old-address redirect;
+`build/pwa.test.ts` (a `/p/…` navigation gets the shell).
 
 ## Theming / changing the palette
 

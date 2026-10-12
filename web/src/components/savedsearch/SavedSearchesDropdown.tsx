@@ -2,9 +2,9 @@ import { useState } from 'react'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { savedSearchHref } from '../../lib/savedSearchView'
+import { ProjectLink } from '../../project/ProjectLink'
 import { fetchSavedSearches, type SavedSearch } from '../../services/savedSearches'
 import { Icon } from '../Icon'
 
@@ -78,7 +78,7 @@ export function SavedSearchesDropdown() {
           state.searches.map((search) => (
             <Dropdown.Item
               key={search.uid}
-              as={Link}
+              as={ProjectLink}
               to={savedSearchHref(search.params)}
               title={t('savedSearches.openTitle', { name: search.name })}
               className="d-flex align-items-center gap-2"
@@ -89,7 +89,7 @@ export function SavedSearchesDropdown() {
           ))}
         <Dropdown.Divider />
         <Dropdown.Item
-          as={Link}
+          as={ProjectLink}
           to="/saved"
           title={t('savedSearches.manageTitle')}
           className="d-flex align-items-center gap-2"

@@ -1,6 +1,5 @@
 import Badge from 'react-bootstrap/Badge'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 import { Virtuoso } from 'react-virtuoso'
 
 import { formatDate, formatDateTimeMinutes } from '../../lib/format'
@@ -8,6 +7,7 @@ import { photoLabel } from '../../lib/photoTitle'
 import { formatRelativeTime } from '../../lib/relativeTime'
 import { formatTakenPeriod } from '../../lib/takenDate'
 import { commentExcerpt, sourceLabel } from '../../lib/taskLedger'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
 import { type GridContext, GridFooter, type PhotoGridSelection } from '../library/PhotoGrid'
@@ -119,7 +119,7 @@ function LedgerRow({ photo, href, selection, orderedUids }: LedgerRowProps) {
         loading="lazy"
         decoding="async"
       />
-      <Link
+      <ProjectLink
         to={href}
         className="kk-ledger-row__title stretched-link"
         title={label}
@@ -133,7 +133,7 @@ function LedgerRow({ photo, href, selection, orderedUids }: LedgerRowProps) {
         }
       >
         {label}
-      </Link>
+      </ProjectLink>
       <div className="kk-ledger-row__date">
         {date === '' ? (
           <span className="text-body-secondary">{t('taskDetail.ledger.noDate')}</span>

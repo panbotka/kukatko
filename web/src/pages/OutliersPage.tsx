@@ -35,6 +35,7 @@ import {
   outlierKey,
   outlierThresholdDistance,
 } from '../lib/outlierReview'
+import { useProjectPath } from '../project/ProjectContext'
 import { fetchOutliers, type OutlierResult } from '../services/people'
 
 /**
@@ -94,6 +95,7 @@ function nextActionableIndex(items: OutlierItem[], fromIndex: number): number {
  */
 export function OutliersPage() {
   const { t } = useTranslation()
+  const projectPath = useProjectPath()
   useDocumentTitle(t('outliersPage.title'))
   const { subjects, loading: subjectsLoading } = useSubjects()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -510,7 +512,7 @@ export function OutliersPage() {
             // doubt, the surroundings are what settle it.
             size: OUTLIER_LIGHTBOX_SIZE,
             bbox: enlarged.face.bbox,
-            href: `/photos/${enlarged.face.photo_uid}`,
+            href: projectPath(`/photos/${enlarged.face.photo_uid}`),
             alt: t('outliersPage.card.photoAlt'),
           }}
           title={t('outliersPage.card.distance', {

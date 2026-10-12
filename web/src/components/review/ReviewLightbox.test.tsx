@@ -45,7 +45,10 @@ describe('ReviewLightbox', () => {
     renderLightbox()
 
     expect(within(dialog()).getByRole('img', { name: 'a photo' })).toBeInTheDocument()
-    expect(within(dialog()).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/ph1')
+    expect(within(dialog()).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph1',
+    )
   })
 
   it('closes on Escape', () => {
@@ -84,7 +87,7 @@ describe('ReviewLightbox', () => {
 
     fireEvent.keyDown(document, { key: 'o' })
 
-    expect(open).toHaveBeenCalledWith('/photos/ph1', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('/p/v/photos/ph1', '_blank', 'noopener,noreferrer')
     open.mockRestore()
   })
 

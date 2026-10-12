@@ -2,19 +2,11 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 
 import i18n from '../i18n'
 import { useAccountLanguage } from '../i18n/accountLanguage'
+import { entryProjectSlug } from '../project/paths'
 import { setCurrentProjectSlug } from '../services/api'
 import * as authService from '../services/auth'
 import { signInWithPasskey } from '../services/passkeys'
-import {
-  canCurate,
-  canImport,
-  canWrite,
-  isAdmin,
-  isMaintainer,
-  NetworkError,
-  projectSlugOf,
-  type AuthSession,
-} from '../services/auth'
+import { canCurate, canWrite, isAdmin, NetworkError, type AuthSession } from '../services/auth'
 
 import { AuthContext, type AuthContextValue, type AuthStatus } from './AuthContext'
 import { clearSignedOutState } from './signOutStorage'
@@ -43,9 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(INITIAL_STATE)
 
   // The project is set before the state, so the first render of a signed-in
-  // tree can already build project-scoped URLs (see services/api).
+  // tree can already build project-scoped URLs (see services/api). It is the
+  // entry rule's pick; ProjectProvider then replaces it with the project the
+  // address names, before any page below it renders.
   const applySession = useCallback((session: AuthSession | null) => {
-    setCurrentProjectSlug(projectSlugOf(session))
+    setCurrentProjectSlug(entryProjectSlug(session))
     setState({ status: session ? 'authenticated' : 'unauthenticated', session })
   }, [])
 
@@ -138,16 +132,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthContextValue>(() => {
     const user = state.session?.user ?? null
+    const instanceRole = user
+      ? (state.session?.instance_role ??
+        user.instance_role ??
+        (user.role === 'maintainer' ? 'maintainer' : 'user'))
+      : null
+    const lastProject = state.session?.last_project_slug ?? ''
     return {
       status: state.status,
       user,
       role: user?.role ?? null,
+      instanceRole,
+      projects: state.session?.projects ?? [],
+      lastProjectSlug: lastProject === '' ? null : lastProject,
       downloadToken: state.session?.download_token ?? null,
       canCurate: user ? canCurate(user.role) : false,
       canWrite: user ? canWrite(user.role) : false,
       isAdmin: user ? isAdmin(user.role) : false,
-      isMaintainer: user ? isMaintainer(user.role) : false,
-      canImport: user ? canImport(user.role) : false,
+      isMaintainer: instanceRole === 'maintainer',
+      canImport: instanceRole === 'maintainer',
       pictureVersion,
       pictureChanged,
       login,

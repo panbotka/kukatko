@@ -180,12 +180,12 @@ function renderPage(canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
-        <MemoryRouter initialEntries={['/people/sj_1']}>
+        <MemoryRouter initialEntries={['/p/v/people/sj_1']}>
           {/* The link stands in for any navigation to another person: the route
               is the same, so React Router keeps this very page mounted. */}
-          <Link to="/people/sj_2">next person</Link>
+          <Link to="/p/v/people/sj_2">next person</Link>
           <Routes>
-            <Route path="/people/:uid" element={<SubjectPage />} />
+            <Route path="/p/:slug/people/:uid" element={<SubjectPage />} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>
@@ -242,7 +242,7 @@ describe('SubjectPage', () => {
     renderPage()
 
     const back = await screen.findByRole('link', { name: 'Back to people' })
-    expect(back).toHaveAttribute('href', '/people')
+    expect(back).toHaveAttribute('href', '/p/v/people')
   })
 
   it('says a deleted person is gone rather than failing blankly', async () => {
@@ -255,7 +255,10 @@ describe('SubjectPage', () => {
 
     expect(await screen.findByText('This person no longer exists.')).toBeInTheDocument()
     expect(screen.queryByText('Could not load this person.')).toBeNull()
-    expect(screen.getByRole('link', { name: 'Back to people' })).toHaveAttribute('href', '/people')
+    expect(screen.getByRole('link', { name: 'Back to people' })).toHaveAttribute(
+      'href',
+      '/p/v/people',
+    )
   })
 
   it('scopes each photo tile to this subject so the viewer pages the person set', async () => {
@@ -266,7 +269,7 @@ describe('SubjectPage', () => {
     // The detail link carries `person=<subjectUid>`, so opening the photo and
     // paging prev/next walks GET /photos?person=sj_1 — this person's photos —
     // rather than falling back to the whole library.
-    expect(tile).toHaveAttribute('href', '/photos/a?person=sj_1')
+    expect(tile).toHaveAttribute('href', '/p/v/photos/a?person=sj_1')
   })
 
   it('keeps selection and bulk edit away from viewers', async () => {
@@ -945,7 +948,7 @@ describe('SubjectPage scroll position', () => {
     // The gallery this person's photos were browsed in was 250 long and scrolled
     // to 2400px; coming back with one page would be a document too short to hold
     // that offset at all.
-    writeGridScroll('u1', '/people/sj_1', { count: 250, scrollY: 2400 })
+    writeGridScroll('u1', '/p/v/people/sj_1', { count: 250, scrollY: 2400 })
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     fetchPhotosMock.mockImplementation((_uid, params) => {
       const offset = params.offset ?? 0
@@ -970,10 +973,13 @@ describe('SubjectPage scroll position', () => {
     return render(
       <I18nextProvider i18n={i18n}>
         <AuthContext.Provider value={auth(true)}>
-          <MemoryRouter initialEntries={['/people']}>
+          <MemoryRouter initialEntries={['/p/v/people']}>
             <Routes>
-              <Route path="/people" element={<Link to="/people/sj_1">open person</Link>} />
-              <Route path="/people/:uid" element={<SubjectPage />} />
+              <Route
+                path="/p/:slug/people"
+                element={<Link to="/p/v/people/sj_1">open person</Link>}
+              />
+              <Route path="/p/:slug/people/:uid" element={<SubjectPage />} />
             </Routes>
           </MemoryRouter>
         </AuthContext.Provider>
@@ -982,7 +988,7 @@ describe('SubjectPage scroll position', () => {
   }
 
   it('starts at the top with one page when a link leads to it', async () => {
-    writeGridScroll('u1', '/people/sj_1', { count: 250, scrollY: 2400 })
+    writeGridScroll('u1', '/p/v/people/sj_1', { count: 250, scrollY: 2400 })
     const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     fetchPhotosMock.mockImplementation((_uid, params) => {
       const offset = params.offset ?? 0
@@ -1020,7 +1026,7 @@ describe('SubjectPage scroll position', () => {
     window.dispatchEvent(new Event('scroll'))
     unmount()
 
-    expect(readGridScroll('u1', '/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
+    expect(readGridScroll('u1', '/p/v/people/sj_1')).toEqual({ count: 2, scrollY: 1500 })
   })
 })
 
@@ -1049,10 +1055,13 @@ describe('SubjectPage family strip', () => {
     expect(screen.getByText('Children')).toBeInTheDocument()
     // Each chip leads to that person's own page, which is what makes the strip a
     // way to walk a family rather than a list of names.
-    expect(screen.getByRole('link', { name: 'Marie' })).toHaveAttribute('href', '/people/sj_p')
-    expect(screen.getByRole('link', { name: 'Petr' })).toHaveAttribute('href', '/people/sj_s')
-    expect(screen.getByRole('link', { name: 'Bohumil' })).toHaveAttribute('href', '/people/sj_x')
-    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/sj_c')
+    expect(screen.getByRole('link', { name: 'Marie' })).toHaveAttribute('href', '/p/v/people/sj_p')
+    expect(screen.getByRole('link', { name: 'Petr' })).toHaveAttribute('href', '/p/v/people/sj_s')
+    expect(screen.getByRole('link', { name: 'Bohumil' })).toHaveAttribute(
+      'href',
+      '/p/v/people/sj_x',
+    )
+    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/p/v/people/sj_c')
     // One request for the whole strip, not one per chip.
     expect(relationsMock).toHaveBeenCalledTimes(1)
   })
@@ -1330,7 +1339,7 @@ describe('SubjectPage outliers link', () => {
     renderPage(true)
 
     const link = await screen.findByRole('link', { name: '2 faces to check' })
-    expect(link).toHaveAttribute('href', '/outliers?subject=sj_1')
+    expect(link).toHaveAttribute('href', '/p/v/outliers?subject=sj_1')
     // In the header's action group, a sibling of Edit and Merge — not orphaned
     // at the foot of the page under the candidate search.
     expect(link.parentElement).toBe(screen.getByRole('button', { name: 'Edit' }).parentElement)
@@ -1364,7 +1373,7 @@ describe('SubjectPage outliers link', () => {
 
     expect(await screen.findByRole('link', { name: '5 obličejů ke kontrole' })).toHaveAttribute(
       'href',
-      '/outliers?subject=sj_1',
+      '/p/v/outliers?subject=sj_1',
     )
   })
 

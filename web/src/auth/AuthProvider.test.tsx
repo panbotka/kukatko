@@ -335,8 +335,17 @@ describe('AuthProvider current project', () => {
     expect(getCurrentProjectSlug()).toBe('rodina')
   })
 
-  it('falls back to the first membership when no last project is remembered', async () => {
+  it('falls back to the only membership when no last project is remembered', async () => {
     // The backend reports "none remembered" as an empty string, not a missing key.
+    fetchMe.mockResolvedValue({ ...SESSION, projects: [membership('v')], last_project_slug: '' })
+    renderProvider()
+    expect(await screen.findByText('authenticated')).toBeInTheDocument()
+    expect(getCurrentProjectSlug()).toBe('v')
+  })
+
+  it('picks no project among several when none is remembered', async () => {
+    // Guessing the first would open a library the person may not have meant;
+    // the chooser asks instead (see the entry rule in project/paths).
     fetchMe.mockResolvedValue({
       ...SESSION,
       projects: [membership('v'), membership('rodina')],
@@ -344,7 +353,7 @@ describe('AuthProvider current project', () => {
     })
     renderProvider()
     expect(await screen.findByText('authenticated')).toBeInTheDocument()
-    expect(getCurrentProjectSlug()).toBe('v')
+    expect(getCurrentProjectSlug()).toBeNull()
   })
 
   it('has no project for an account without memberships, nor for a visitor', async () => {

@@ -12,6 +12,7 @@ import {
   writeSettings,
 } from '../../lib/slideshowSettings'
 import { slideshowHref, type SlideshowScope } from '../../lib/slideshowView'
+import { useProjectPath } from '../../project/ProjectContext'
 
 import Modal from '../Modal'
 import { SlideshowSettingsForm } from './SlideshowSettingsForm'
@@ -60,12 +61,13 @@ export interface SlideshowStartProps {
 export function SlideshowStart({ scope, view, count }: SlideshowStartProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const [open, setOpen] = useState(false)
   // A draft: the persisted settings are read when the dialog opens (they may have
   // changed in the player or another tab since this grid mounted) and written
   // back only if the reader starts the show.
   const [draft, setDraft] = useState<SlideshowSettings>(SLIDESHOW_DEFAULTS)
-  const href = slideshowHref(scope, view)
+  const href = projectPath(slideshowHref(scope, view))
 
   const openDialog = useCallback((event: React.MouseEvent): void => {
     // Leave the modified clicks alone: ctrl/cmd/shift/middle-click mean "open it

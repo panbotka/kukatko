@@ -59,7 +59,7 @@ describe('BarList', () => {
     const list = screen.getByRole('group', { name: 'Most used cameras, 2 of them' })
     expect(
       within(list).getByRole('link', { name: 'Show photos taken with Canon EOS 5D' }),
-    ).toHaveAttribute('href', '/?camera=Canon+EOS+5D')
+    ).toHaveAttribute('href', '/p/v?camera=Canon+EOS+5D')
   })
 
   it('is a single image when no row links anywhere', () => {

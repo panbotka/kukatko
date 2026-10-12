@@ -3,11 +3,11 @@ import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useThumbSrc } from '../../hooks/useThumbSrc'
 import { photoLabel } from '../../lib/photoTitle'
 import { purgeCountdown } from '../../lib/trashCountdown'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -62,7 +62,7 @@ export function TrashCard({
         className="position-relative bg-secondary-subtle overflow-hidden"
         style={{ aspectRatio: '1 / 1' }}
       >
-        <Link
+        <ProjectLink
           to={`/photos/${photo.uid}`}
           className="d-block w-100 h-100"
           aria-label={label}
@@ -91,7 +91,7 @@ export function TrashCard({
               </span>
             </span>
           )}
-        </Link>
+        </ProjectLink>
         <Form.Check
           type="checkbox"
           checked={selected}

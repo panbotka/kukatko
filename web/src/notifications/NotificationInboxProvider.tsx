@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '../auth/AuthContext'
+import { useProjectSlug } from '../project/ProjectContext'
 import { fetchUnreadNotificationCount } from '../services/notifications'
 
 import { NotificationInboxContext, type NotificationInboxState } from './NotificationInboxContext'
@@ -25,10 +26,16 @@ export const REFRESH_INTERVAL_MS = 60_000
  * becomes visible again or the window regains focus — the moment somebody comes
  * back is the moment the number matters. A failed fetch clears the count, so
  * the badge hides silently.
+ *
+ * The count belongs to one project: switching to another aborts the request in
+ * flight, drops the old count and fetches the new project's.
  */
 export function NotificationInboxProvider({ children }: { children: ReactNode }) {
   const { status } = useAuth()
   const enabled = status === 'authenticated'
+  // Read only as the polling effect's dependency: the request itself goes to
+  // whatever project the API is pointed at, which the provider keeps in step.
+  const slug = useProjectSlug()
   const [unread, setUnread] = useState<number | null>(null)
   // The in-flight request, so a refresh supersedes a poll instead of racing it:
   // only the newest request may set state.
@@ -94,8 +101,11 @@ export function NotificationInboxProvider({ children }: { children: ReactNode })
       window.removeEventListener('focus', load)
       controller.current?.abort()
       controller.current = null
+      // The count was the old project's (or the old session's): never show it
+      // in the next one while its own is on the way.
+      setUnread(null)
     }
-  }, [enabled, load])
+  }, [enabled, load, slug])
 
   const value = useMemo<NotificationInboxState>(() => ({ unread, refresh: load }), [unread, load])
 

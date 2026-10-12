@@ -12,6 +12,7 @@ import { createPhotoLayer, type PhotoLayer, toGeoBounds } from '../../lib/mapPho
 import { buildPopupElement } from '../../lib/mapPopup'
 import { mapTileThumbSize, type TileSummary } from '../../lib/mapTile'
 import { type MapViewport } from '../../lib/mapView'
+import { useProjectPath } from '../../project/ProjectContext'
 import { type MapFeature, type Mapset, mapsetNeedsDimming, tileLayerUrl } from '../../services/map'
 
 /**
@@ -272,6 +273,12 @@ export function LeafletMap({
   bottomInsetRef.current = bottomInset
   const thumbAltRef = useRef(thumbAlt)
   thumbAltRef.current = thumbAlt
+  // The popup's href is the photo's address in the current project, so a
+  // middle-click or "open in new tab" lands on it directly. A ref, like the
+  // two above: the popups are built lazily, long after the effect that bound them.
+  const projectPath = useProjectPath()
+  const projectPathRef = useRef(projectPath)
+  projectPathRef.current = projectPath
   const estimatedTitleRef = useRef(estimatedTitle)
   estimatedTitleRef.current = estimatedTitle
   const onPickRef = useRef(picker?.onPick)
@@ -544,6 +551,7 @@ export function LeafletMap({
             onSelectRef.current?.(uid)
           },
           thumbAltRef.current,
+          projectPathRef.current,
         ),
       )
       cluster.addLayer(marker)

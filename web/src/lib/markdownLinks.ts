@@ -38,8 +38,14 @@ export type MarkdownLinkTarget =
  */
 const SERVER_PATH_PREFIXES = ['/api/']
 
-/** A photo's detail page, with the uid captured. */
-const PHOTO_PATH = /^\/photos\/([^/]+)$/
+/**
+ * A photo's detail page, with the uid captured: `/photos/<uid>` as links were
+ * written before projects existed, or `/p/<slug>/photos/<uid>` inside one.
+ */
+const PHOTO_PATH = /^(?:\/p\/[^/]+)?\/photos\/([^/]+)$/
+
+/** The leading `/p/<slug>` of a pathname, when it lives in a project. */
+const PROJECT_PREFIX = /^\/p\/[^/]+/
 
 /**
  * The path, query and fragment of an href when it points at this app's own
@@ -65,6 +71,11 @@ function ownPath(href: string, origin: string): URL | null {
  * a bare link to a photo's page gains `?task=` exactly as {@link photoRefHref}
  * writes it, so the viewer pages within the task's group and Back returns to
  * the question; a link that already carries a query is left as written.
+ *
+ * An `app` target keeps the project the link names (`/p/<slug>/…`); a link
+ * written without one — every comment from before projects existed — comes
+ * back as the page's own path, which the renderer resolves into the current
+ * project the way it resolves any other in-app link.
  */
 export function resolveMarkdownLink(
   href: string,
@@ -83,13 +94,18 @@ export function resolveMarkdownLink(
   }
   const photo = PHOTO_PATH.exec(own.pathname)
   if (photo !== null && own.search === '') {
-    return { kind: 'app', to: photoRefHref(decodeURIComponent(photo[1]), taskUid) + own.hash }
+    const prefix = PROJECT_PREFIX.exec(own.pathname)?.[0] ?? ''
+    return {
+      kind: 'app',
+      to: prefix + photoRefHref(decodeURIComponent(photo[1]), taskUid) + own.hash,
+    }
   }
   return { kind: 'app', to: own.pathname + own.search + own.hash }
 }
 
 /**
- * The photo uid an own-origin `/photos/<uid>` link points at, or null for any
+ * The photo uid an own-origin `/photos/<uid>` link (with or without its
+ * `/p/<slug>` project prefix) points at, or null for any
  * other link — the second source (next to bare uid tokens) of the thumbnails
  * under a comment.
  */

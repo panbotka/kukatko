@@ -6,6 +6,11 @@ import { type MapFeature } from '../services/map'
  * for accessibility and middle-click / open-in-new-tab, but a plain left click
  * is intercepted so navigation stays within the SPA via `onSelect`.
  *
+ * The href is the photo page's own path run through `projectPath` — the
+ * caller's `useProjectPath()` — so a new tab opens the photo inside the current
+ * project. Without it the href is the bare `/photos/<uid>`, which the app's
+ * legacy-address redirect still forwards into a project.
+ *
  * Kept out of the Leaflet component module so it can be unit-tested in isolation
  * and so the component file exports only a component (fast-refresh friendly).
  */
@@ -13,10 +18,11 @@ export function buildPopupElement(
   feature: MapFeature,
   onSelect: (uid: string) => void,
   thumbAlt: string,
+  projectPath: (path: string) => string = (path) => path,
 ): HTMLElement {
   const { uid, title, thumb } = feature.properties
   const link = document.createElement('a')
-  link.href = `/photos/${encodeURIComponent(uid)}`
+  link.href = projectPath(`/photos/${encodeURIComponent(uid)}`)
   link.className = 'kukatko-map-popup d-block text-decoration-none'
 
   const img = document.createElement('img')

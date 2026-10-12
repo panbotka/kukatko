@@ -248,7 +248,7 @@ function LocationProbe() {
   )
 }
 
-function renderPage(entry = '/review') {
+function renderPage(entry = '/p/v/review') {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={[entry]}>
@@ -455,7 +455,7 @@ describe('ReviewPage', () => {
 
     await screen.findByTestId('review-question')
     const faceLink = screen.getByRole('link', { name: 'Open the photo' })
-    expect(faceLink).toHaveAttribute('href', '/photos/p-q1')
+    expect(faceLink).toHaveAttribute('href', '/p/v/photos/p-q1')
     unmount()
 
     queueMock.mockResolvedValue(makeQueue([labelQuestion('q2')]))
@@ -463,7 +463,7 @@ describe('ReviewPage', () => {
     await screen.findByTestId('review-question')
     expect(screen.getByRole('link', { name: 'Open the photo' })).toHaveAttribute(
       'href',
-      '/photos/p-q2',
+      '/p/v/photos/p-q2',
     )
   })
 
@@ -476,7 +476,7 @@ describe('ReviewPage', () => {
 
     await screen.findByTestId('review-question')
     const link = screen.getByRole('link', { name: 'Open the photo' })
-    expect(link).toHaveAttribute('href', '/photos/p-q1')
+    expect(link).toHaveAttribute('href', '/p/v/photos/p-q1')
     expect(link).not.toHaveAttribute('target')
     expect(link).toHaveAttribute('title', 'Open the photo')
   })
@@ -487,16 +487,16 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(
       makeQueue([faceQuestion('q1', 'Alice'), faceQuestion('q2', 'Bob')], { source: 'people' }),
     )
-    renderPage('/review?source=people')
+    renderPage('/p/v/review?source=people')
     await screen.findByTestId('review-question')
 
     await user.click(screen.getByRole('link', { name: 'Open the photo' }))
 
     const probe = screen.getByTestId('location-probe')
-    expect(probe).toHaveTextContent('/photos/p-q1')
+    expect(probe).toHaveTextContent('/p/v/photos/p-q1')
     // The photo page is told where the game was — source included — so it can
     // offer the way back.
-    expect(probe).toHaveAttribute('data-return', '/review?source=people')
+    expect(probe).toHaveAttribute('data-return', '/p/v/review?source=people')
     expect(open).not.toHaveBeenCalled()
     expect(answerMock).not.toHaveBeenCalled()
   })
@@ -511,8 +511,8 @@ describe('ReviewPage', () => {
     await user.keyboard('o')
     // In place, like the anchor: the same path and the same way back.
     const probe = screen.getByTestId('location-probe')
-    expect(probe).toHaveTextContent('/photos/p-q1')
-    expect(probe).toHaveAttribute('data-return', '/review')
+    expect(probe).toHaveTextContent('/p/v/photos/p-q1')
+    expect(probe).toHaveAttribute('data-return', '/p/v/review')
     expect(open).not.toHaveBeenCalled()
     // The shortcut is a detour, not an answer: nothing was sent and the same
     // card is still on screen.
@@ -649,7 +649,7 @@ describe('ReviewPage', () => {
 
   it('asks the backend for the source the URL names', async () => {
     queueMock.mockResolvedValue(makeQueue([labelQuestion('q1')], { source: 'labels' }))
-    renderPage('/review?source=labels')
+    renderPage('/p/v/review?source=labels')
 
     await screen.findByTestId('review-question')
     expect(queueMock).toHaveBeenCalledWith('labels')
@@ -743,7 +743,7 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(
       makeQueue([], { source: 'people', remaining: 0, reason: REASON_NO_PEOPLE }),
     )
-    renderPage('/review?source=people')
+    renderPage('/p/v/review?source=people')
 
     const empty = await screen.findByTestId('review-empty-source')
     expect(empty).toHaveTextContent('No people yet')
@@ -760,7 +760,7 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(
       makeQueue([], { source: 'labels', remaining: 0, reason: REASON_NO_CANDIDATES }),
     )
-    renderPage('/review?source=labels')
+    renderPage('/p/v/review?source=labels')
 
     // The labels are fine — they simply have nothing in the uncertainty band —
     // so the state must not repeat the "no labels yet" advice.
@@ -780,7 +780,7 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(
       makeQueue([], { source: 'labels', remaining: 0, reason: REASON_SOURCE_OFF }),
     )
-    renderPage('/review?source=labels')
+    renderPage('/p/v/review?source=labels')
 
     const empty = await screen.findByTestId('review-empty-source')
     expect(empty).toHaveTextContent('Label questions are switched off')
@@ -808,7 +808,7 @@ describe('ReviewPage', () => {
     queueMock.mockResolvedValue(
       makeQueue([], { source: 'labels', remaining: 0, reason: REASON_NO_LABELS }),
     )
-    renderPage('/review?source=labels')
+    renderPage('/p/v/review?source=labels')
 
     expect(await screen.findByTestId('review-empty-source')).toHaveTextContent('No labels yet')
     await user.click(screen.getByRole('button', { name: 'Ask about people' }))
@@ -1241,7 +1241,7 @@ describe('ReviewPage rounds', () => {
     // ...and the photos they touched are the way back into the library.
     const mosaic = within(summary).getByTestId('review-session-mosaic')
     expect(within(mosaic).getAllByRole('link')).toHaveLength(2)
-    expect(within(mosaic).getAllByRole('link')[0]).toHaveAttribute('href', '/photos/p-q2')
+    expect(within(mosaic).getAllByRole('link')[0]).toHaveAttribute('href', '/p/v/photos/p-q2')
   })
 
   it('leaves straight away when there is nothing to report', async () => {
@@ -1262,7 +1262,7 @@ function signedIn(uid: string): AuthContextValue {
 }
 
 /** The page under a signed-in user, which is what makes a run resumable. */
-function renderSignedIn(uid = 'u1', entry = '/review') {
+function renderSignedIn(uid = 'u1', entry = '/p/v/review') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={signedIn(uid)}>
@@ -1298,14 +1298,14 @@ function PhotoPageStub() {
 }
 
 /** The game and the photo page as real routes, so a trip unmounts the game. */
-function renderRoundTrip(entry = '/review') {
+function renderRoundTrip(entry = '/p/v/review') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={signedIn('u1')}>
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
-            <Route path="/review" element={<ReviewPage />} />
-            <Route path="/photos/:uid" element={<PhotoPageStub />} />
+            <Route path="/p/:slug/review" element={<ReviewPage />} />
+            <Route path="/p/:slug/photos/:uid" element={<PhotoPageStub />} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>
@@ -1389,8 +1389,8 @@ describe('ReviewPage resume', () => {
     await user.click(screen.getByRole('link', { name: 'Open the photo' }))
 
     const stub = screen.getByTestId('photo-page-stub')
-    expect(stub).toHaveTextContent('/photos/p-q3')
-    expect(stub).toHaveAttribute('data-return', '/review')
+    expect(stub).toHaveTextContent('/p/v/photos/p-q3')
+    expect(stub).toHaveAttribute('data-return', '/p/v/review')
     // The game is gone from the screen — the trip happened in this window.
     expect(screen.queryByTestId('review-question')).toBeNull()
     expect(open).not.toHaveBeenCalled()
@@ -1411,14 +1411,14 @@ describe('ReviewPage resume', () => {
     queueMock.mockResolvedValue(
       makeQueue([faceQuestion('q1', 'P1'), faceQuestion('q2', 'P2')], { source: 'people' }),
     )
-    renderRoundTrip('/review?source=people')
+    renderRoundTrip('/p/v/review?source=people')
     await screen.findByTestId('review-question')
 
     await user.keyboard('o')
 
     const stub = await screen.findByTestId('photo-page-stub')
-    expect(stub).toHaveTextContent('/photos/p-q1')
-    expect(stub).toHaveAttribute('data-return', '/review?source=people')
+    expect(stub).toHaveTextContent('/p/v/photos/p-q1')
+    expect(stub).toHaveAttribute('data-return', '/p/v/review?source=people')
 
     await user.click(screen.getByRole('button', { name: 'system back' }))
     expect(await screen.findByTestId('review-question')).toHaveTextContent('P1')
@@ -1445,24 +1445,24 @@ describe('ReviewPage resume', () => {
       await user.click(links[index])
       const stub = screen.getByTestId('photo-page-stub')
       expect(stub).toHaveTextContent(expected)
-      expect(stub).toHaveAttribute('data-return', '/review')
+      expect(stub).toHaveAttribute('data-return', '/p/v/review')
       await user.click(screen.getByRole('button', { name: 'system back' }))
     }
 
     // The outlier: the face crop's anchor and the context photo's.
-    await takeTrip(0, '/photos/p-q1')
+    await takeTrip(0, '/p/v/photos/p-q1')
     expect(await screen.findByTestId('review-outlier')).toBeInTheDocument()
 
     await user.keyboard('{ArrowRight}')
     await screen.findByTestId('review-duplicate')
     // The duplicate pair: either copy, here the second.
-    await takeTrip(1, '/photos/p-q2-b')
+    await takeTrip(1, '/p/v/photos/p-q2-b')
     expect(await screen.findByTestId('review-duplicate')).toBeInTheDocument()
 
     await user.keyboard('{ArrowRight}')
     await screen.findByTestId('review-breather')
     // The breather, which a player is the likeliest to want to keep.
-    await takeTrip(0, '/photos/b1')
+    await takeTrip(0, '/p/v/photos/b1')
     expect(await screen.findByTestId('review-breather')).toHaveTextContent('Svatba u Kozáků')
     expect(open).not.toHaveBeenCalled()
   })
@@ -1515,7 +1515,7 @@ describe('ReviewPage resume', () => {
   it('starts fresh when the run was taken for a different source', async () => {
     const user = userEvent.setup()
     queueMock.mockResolvedValue(fiveQuestions())
-    const first = renderSignedIn('u1', '/review?source=both')
+    const first = renderSignedIn('u1', '/p/v/review?source=both')
     await screen.findByTestId('review-question')
     await user.keyboard('{ArrowRight}')
     await waitFor(() => {
@@ -1527,7 +1527,7 @@ describe('ReviewPage resume', () => {
     queueMock.mockResolvedValue(
       makeQueue([labelQuestion('l1', 'Dogs')], { source: 'labels' as ReviewSource }),
     )
-    renderSignedIn('u1', '/review?source=labels')
+    renderSignedIn('u1', '/p/v/review?source=labels')
 
     expect(await screen.findByTestId('review-question')).toHaveTextContent('Dogs')
     expect(queueMock).toHaveBeenCalledWith('labels')
@@ -1684,7 +1684,7 @@ describe('ReviewPage swipe', () => {
     // untouched by it — this is the key-collision regression the game keeps
     // being at risk of.
     await user.keyboard('o')
-    expect(screen.getByTestId('location-probe')).toHaveTextContent('/photos/p-q1')
+    expect(screen.getByTestId('location-probe')).toHaveTextContent('/p/v/photos/p-q1')
     expect(open).not.toHaveBeenCalled()
     expect(answerMock).not.toHaveBeenCalled()
 

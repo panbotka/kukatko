@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+
+import { ProjectLink } from '../../project/ProjectLink'
 
 import './charts.css'
 
@@ -103,14 +104,14 @@ function Column({ datum, max }: { datum: ColumnDatum; max: number }) {
     )
   }
   return (
-    <Link
+    <ProjectLink
       to={datum.href}
       className="kk-chart-col"
       title={datum.title}
       aria-label={datum.linkLabel ?? datum.title}
     >
       {bar}
-    </Link>
+    </ProjectLink>
   )
 }
 

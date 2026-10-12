@@ -36,6 +36,21 @@ describe('resolveMarkdownLink', () => {
     })
   })
 
+  it('keeps the project a link names and carries the task into its photo link', () => {
+    expect(resolveMarkdownLink(`${ORIGIN}/p/v/photos/${uid(1)}`, ORIGIN, 'tk1')).toEqual({
+      kind: 'app',
+      to: `/p/v/photos/${uid(1)}?task=tk1`,
+    })
+    expect(resolveMarkdownLink(`/p/v/photos/${uid(1)}#c2`, ORIGIN)).toEqual({
+      kind: 'app',
+      to: `/p/v/photos/${uid(1)}#c2`,
+    })
+    expect(resolveMarkdownLink(`${ORIGIN}/p/v/albums/al1?q=x`, ORIGIN)).toEqual({
+      kind: 'app',
+      to: '/p/v/albums/al1?q=x',
+    })
+  })
+
   it('sends another site to a new tab, scheme-relative included', () => {
     expect(resolveMarkdownLink('https://example.com/x', ORIGIN).kind).toBe('external')
     expect(resolveMarkdownLink('http://fotky.example.cz/x', ORIGIN).kind).toBe('external')
@@ -59,6 +74,9 @@ describe('photoUidFromHref', () => {
     expect(photoUidFromHref(`https://example.com/photos/${uid(1)}`, ORIGIN)).toBeNull()
     expect(photoUidFromHref('/photos/not-a-uid', ORIGIN)).toBeNull()
     expect(photoUidFromHref(`/photos/${uid(1)}/edit`, ORIGIN)).toBeNull()
+    expect(photoUidFromHref(`${ORIGIN}/p/v/photos/${uid(3)}`, ORIGIN)).toBe(uid(3))
+    expect(photoUidFromHref(`/p/v/photos/${uid(4)}?task=tk1`, ORIGIN)).toBe(uid(4))
+    expect(photoUidFromHref(`/p/v/x/photos/${uid(4)}`, ORIGIN)).toBeNull()
   })
 })
 

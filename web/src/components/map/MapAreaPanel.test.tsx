@@ -86,7 +86,7 @@ describe('MapAreaPanel (desktop column)', () => {
       within(panel).getByRole('heading', { name: '2 photos in this area' }),
     ).toBeInTheDocument()
     const first = within(panel).getByRole('link', { name: 'Photo from 3/5/2021' })
-    expect(first).toHaveAttribute('href', '/photos/ph1?bbox=1%2C2%2C3%2C4')
+    expect(first).toHaveAttribute('href', '/p/v/photos/ph1?bbox=1%2C2%2C3%2C4')
     // A video says so in words as well as with its glyph.
     expect(within(panel).getByText('Video')).toBeInTheDocument()
   })

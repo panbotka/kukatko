@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge, Button, Form, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { ErrorState } from '../components/ErrorState'
@@ -14,6 +13,7 @@ import { useReloadKey } from '../hooks/useReloadKey'
 import { revealPressedChip } from '../lib/chipStrip'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useUrlState } from '../lib/urlState'
+import { ProjectLink } from '../project/ProjectLink'
 import { thumbUrl } from '../services/photos'
 import {
   fetchTasks,
@@ -375,7 +375,7 @@ function TaskRow({ task }: { task: Task }) {
     task.last_activity_by_name !== '' ? task.last_activity_by_name : t('taskDetail.someone')
   return (
     <li>
-      <Link
+      <ProjectLink
         to={`/tasks/${task.uid}`}
         data-state={task.state}
         className="d-flex align-items-center gap-3 p-2 rounded text-decoration-none kk-task-row"
@@ -421,7 +421,7 @@ function TaskRow({ task }: { task: Task }) {
           )}
           <TaskStateBadge state={task.state} />
         </span>
-      </Link>
+      </ProjectLink>
     </li>
   )
 }

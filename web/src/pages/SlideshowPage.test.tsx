@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { I18nextProvider } from 'react-i18next'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CapabilitiesContext } from '../capabilities/CapabilitiesContext'
@@ -53,11 +53,17 @@ function page(photos: Photo[], extra: Partial<PhotoListResponse> = {}): PhotoLis
   return { photos, total: photos.length, limit: 100, offset: 0, next_offset: null, ...extra }
 }
 
+/** Surfaces where the router is, so a way out can be asserted. */
+function LocationProbe() {
+  const location = useLocation()
+  return <span data-testid="location">{location.pathname + location.search}</span>
+}
+
 /**
  * Renders the slideshow. `semanticSearch` is the instance capability; it
  * defaults to available so a replayed search runs in the mode the URL asks for.
  */
-function renderPage(initialEntry = '/slideshow', semanticSearch = true) {
+function renderPage(initialEntry = '/p/v/slideshow', semanticSearch = true) {
   return render(
     <I18nextProvider i18n={i18n}>
       <CapabilitiesContext.Provider
@@ -70,6 +76,7 @@ function renderPage(initialEntry = '/slideshow', semanticSearch = true) {
       >
         <MemoryRouter initialEntries={[initialEntry]}>
           <SlideshowPage />
+          <LocationProbe />
         </MemoryRouter>
       </CapabilitiesContext.Provider>
     </I18nextProvider>,
@@ -90,7 +97,7 @@ afterEach(() => {
 describe('SlideshowPage', () => {
   it('scopes the fetch to the album / label and filters from the URL', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage('/slideshow?album=al1&sort=oldest')
+    renderPage('/p/v/slideshow?album=al1&sort=oldest')
 
     await screen.findByRole('img')
     const params = fetchMock.mock.calls[0][0]
@@ -100,7 +107,7 @@ describe('SlideshowPage', () => {
 
   it('renders the slideshow stage when photos load', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')]))
-    renderPage('/slideshow?label=lb1')
+    renderPage('/p/v/slideshow?label=lb1')
 
     await screen.findByRole('img')
     expect(screen.getByText('slide 1 of 2')).toBeInTheDocument()
@@ -109,7 +116,7 @@ describe('SlideshowPage', () => {
   it('counts the remaining time against the server total, not the loaded page', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], { total: 40 }))
     const user = userEvent.setup()
-    renderPage('/slideshow')
+    renderPage('/p/v/slideshow')
 
     await screen.findByRole('img')
     await user.click(screen.getByRole('button', { name: 'Settings' }))
@@ -120,7 +127,7 @@ describe('SlideshowPage', () => {
 
   it('replays the search — not a library listing — when the URL carries a mode', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage('/slideshow?q=beach&mode=semantic')
+    renderPage('/p/v/slideshow?q=beach&mode=semantic')
 
     await screen.findByRole('img')
     expect(fetchMock).not.toHaveBeenCalled()
@@ -130,7 +137,7 @@ describe('SlideshowPage', () => {
 
   it('replays a semantic search as full-text while the embeddings box is offline', async () => {
     searchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage('/slideshow?q=beach&mode=semantic', false)
+    renderPage('/p/v/slideshow?q=beach&mode=semantic', false)
 
     await screen.findByRole('img')
     // Still the search endpoint (the library would play a different set), but in
@@ -142,7 +149,7 @@ describe('SlideshowPage', () => {
 
   it('shows a graceful empty state for an empty set', async () => {
     fetchMock.mockResolvedValue(page([]))
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     expect(await screen.findByText('No photos to play')).toBeInTheDocument()
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
@@ -150,7 +157,7 @@ describe('SlideshowPage', () => {
 
   it('shows an error state with retry when loading fails', async () => {
     fetchMock.mockRejectedValueOnce(new Error('boom'))
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     expect(await screen.findByText('Could not load photos.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
@@ -168,7 +175,7 @@ describe('SlideshowPage', () => {
         }
       }),
     )
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     expect(screen.getByText('Loading photos…')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
@@ -179,16 +186,28 @@ describe('SlideshowPage', () => {
 
   it('offers the same way out of the empty and the failed show', async () => {
     fetchMock.mockResolvedValue(page([]))
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     await screen.findByText('No photos to play')
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 
+  it('closes a directly opened show onto its album, inside the project', async () => {
+    // No history behind the show (a shared link), so the way out is rebuilt
+    // from the source view — and it must stay in the project the show was in.
+    fetchMock.mockResolvedValue(page([]))
+    const user = userEvent.setup()
+    renderPage('/p/v/slideshow?album=al1')
+
+    await screen.findByText('No photos to play')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/p\/v\/albums\/al1$/)
+  })
+
   it('persists the chosen effect to localStorage from the settings panel', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
     const user = userEvent.setup()
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     await screen.findByRole('img')
     await user.click(screen.getByRole('button', { name: 'Settings' }))
@@ -207,7 +226,7 @@ describe('SlideshowPage', () => {
     fetchMock.mockResolvedValue(
       page([photo('a', 'a.jpg'), photo('b', 'b.jpg')], { total: 40, next_offset: 2 }),
     )
-    renderPage('/slideshow?album=al1')
+    renderPage('/p/v/slideshow?album=al1')
 
     await screen.findByRole('img')
     // Shuffling only what has loaded would over-represent the first page; the
@@ -225,7 +244,7 @@ describe('SlideshowPage', () => {
 
   it('plays the view order, with no seed, when shuffle is off', async () => {
     fetchMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage('/slideshow?sort=oldest')
+    renderPage('/p/v/slideshow?sort=oldest')
 
     await screen.findByRole('img')
     expect(fetchMock.mock.calls[0][0].sort).toBe('oldest')
@@ -241,7 +260,7 @@ describe('SlideshowPage', () => {
       Promise.resolve(page(params.sort === 'random' ? shuffledOrder : ordered)),
     )
     const user = userEvent.setup()
-    renderPage('/slideshow')
+    renderPage('/p/v/slideshow')
 
     await screen.findByRole('img')
     await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -271,7 +290,7 @@ describe('SlideshowPage', () => {
     // Real time still has to pass, or the awaited queries below never settle.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
-      renderPage('/slideshow')
+      renderPage('/p/v/slideshow')
       await screen.findByText('slide 1 of 2')
       const video = document.querySelector('video')
       if (video === null) {

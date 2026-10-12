@@ -80,12 +80,16 @@ function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
   }
 }
 
-function renderPage(entry = '/tasks', canWrite: boolean | Role = true, counts?: TaskSummaryState) {
+function renderPage(
+  entry = '/p/v/tasks',
+  canWrite: boolean | Role = true,
+  counts?: TaskSummaryState,
+) {
   const page = (
     <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/tasks" element={<TasksPage />} />
-        <Route path="/tasks/:uid" element={<p>detail</p>} />
+        <Route path="/p/:slug/tasks" element={<TasksPage />} />
+        <Route path="/p/:slug/tasks/:uid" element={<p>detail</p>} />
       </Routes>
     </MemoryRouter>
   )
@@ -178,7 +182,7 @@ describe('TasksPage', () => {
   })
 
   it('keeps "on me" in the URL and combines it with a state', async () => {
-    renderPage('/tasks?waiting=1&state=working')
+    renderPage('/p/v/tasks?waiting=1&state=working')
     await waitFor(() => {
       expect(fetchTasksMock).toHaveBeenCalledWith(
         expect.objectContaining({ waiting: true, states: ['working'] }),
@@ -248,7 +252,7 @@ describe('TasksPage', () => {
   })
 
   it('keeps "mine" in the URL and combines it with a state', async () => {
-    renderPage('/tasks?mine=1&state=question')
+    renderPage('/p/v/tasks?mine=1&state=question')
     await waitFor(() => {
       expect(fetchTasksMock).toHaveBeenCalledWith(
         expect.objectContaining({ participant: 'me', states: ['question'] }),
@@ -258,7 +262,7 @@ describe('TasksPage', () => {
   })
 
   it('reads the filter back out of the URL, so Back restores it', async () => {
-    renderPage('/tasks?state=done')
+    renderPage('/p/v/tasks?state=done')
     await waitFor(() => {
       expect(fetchTasksMock).toHaveBeenCalledWith(
         expect.objectContaining({ states: ['done'] }),
@@ -268,17 +272,17 @@ describe('TasksPage', () => {
   })
 
   it('offers opening a task to a writer and not to a viewer', async () => {
-    const { unmount } = renderPage('/tasks', true)
+    const { unmount } = renderPage('/p/v/tasks', true)
     expect(await screen.findByRole('button', { name: /New task/ })).toBeInTheDocument()
     unmount()
 
-    renderPage('/tasks', false)
+    renderPage('/p/v/tasks', false)
     await screen.findAllByText(/3 photos/)
     expect(screen.queryByRole('button', { name: /New task/ })).not.toBeInTheDocument()
   })
 
   it('offers a curator no way to open a task — that stays an editor’s', async () => {
-    renderPage('/tasks', 'curator')
+    renderPage('/p/v/tasks', 'curator')
     await screen.findAllByText(/3 photos/)
     expect(screen.queryByRole('button', { name: /New task/ })).not.toBeInTheDocument()
   })
@@ -300,7 +304,7 @@ describe('TasksPage', () => {
 
 describe('the queue tells you where you stand', () => {
   it('puts the counts on the chips and leaves a zero as a plain label', async () => {
-    renderPage('/tasks', true, { summary: summary(), refresh: vi.fn() })
+    renderPage('/p/v/tasks', true, { summary: summary(), refresh: vi.fn() })
     await screen.findByText(/3 photos/)
 
     expect(screen.getByRole('button', { name: 'Open (34)' })).toBeInTheDocument()
@@ -326,7 +330,7 @@ describe('the queue tells you where you stand', () => {
 
   it('refreshes the counts on arrival', async () => {
     const refresh = vi.fn()
-    renderPage('/tasks', true, { summary: null, refresh })
+    renderPage('/p/v/tasks', true, { summary: null, refresh })
     await screen.findByText(/3 photos/)
 
     expect(refresh).toHaveBeenCalled()
@@ -437,7 +441,8 @@ describe('the state is the colour of the row', () => {
 
     await screen.findByText('Waiting')
     // Scoped to the rows: the filter chips above them carry the same words.
-    const badge = (uid: string) => document.querySelector(`a[href="/tasks/${uid}"] .kk-task-state`)
+    const badge = (uid: string) =>
+      document.querySelector(`a[href="/p/v/tasks/${uid}"] .kk-task-state`)
     expect(badge('tk1')).toHaveClass('kk-task-state--question')
     expect(badge('tk2')).toHaveClass('kk-task-state--done')
   })
@@ -453,7 +458,7 @@ describe('the state is the colour of the row', () => {
 
 describe('the chip strip', () => {
   it('holds every chip in one strip and marks the ones that are on', async () => {
-    renderPage('/tasks?state=rejected&mine=1')
+    renderPage('/p/v/tasks?state=rejected&mine=1')
     await screen.findByText(/3 photos/)
 
     // The strip is what `.kk-task-filters__chips` turns into a sideways scroller

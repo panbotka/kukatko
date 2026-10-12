@@ -20,6 +20,7 @@ import { detailQueryString } from '../lib/detailView'
 import { gridScrollKey } from '../lib/gridScroll'
 import { LIBRARY_DEFAULTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { useUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
 import { fetchLabel, type Label } from '../services/organize'
 
@@ -58,6 +59,7 @@ const LABELS_PATH = '/labels'
 export function LabelDetailPage() {
   const { t } = useTranslation()
   const location = useLocation()
+  const projectPath = useProjectPath()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
@@ -126,7 +128,7 @@ export function LabelDetailPage() {
       <ErrorState
         title={t('labelDetail.missing')}
         hint={t('labelDetail.missingHint')}
-        action={<BackLink to={LABELS_PATH} label={t('labelDetail.back')} />}
+        action={<BackLink to={projectPath(LABELS_PATH)} label={t('labelDetail.back')} />}
       />
     )
   }
@@ -135,7 +137,7 @@ export function LabelDetailPage() {
     return (
       <ErrorState
         title={t('labelDetail.error')}
-        action={<BackLink to={LABELS_PATH} label={t('labelDetail.back')} />}
+        action={<BackLink to={projectPath(LABELS_PATH)} label={t('labelDetail.back')} />}
       />
     )
   }
@@ -150,7 +152,7 @@ export function LabelDetailPage() {
             word — the group must be allowed to shrink so the title wraps inside
             the header instead of widening the page. */}
         <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
-          <BackLink to={LABELS_PATH} label={t('labelDetail.back')} />
+          <BackLink to={projectPath(LABELS_PATH)} label={t('labelDetail.back')} />
           <h1 className="kk-page-title mb-0">{title}</h1>
         </div>
         {/* The label's own actions stay put during a selection: the batch bar

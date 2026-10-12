@@ -12,7 +12,7 @@ import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { AuthContext } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -38,6 +38,8 @@ import { type SwipeVerdict } from '../lib/gestures'
 import { isTypingElement } from '../lib/ratingHotkeys'
 import { type ReviewReturn, reviewReturnState } from '../lib/reviewReturn'
 import { cardPhoto, type ReviewCard } from '../lib/reviewRounds'
+import { useProjectPath } from '../project/ProjectContext'
+import { ProjectLink } from '../project/ProjectLink'
 import { type Bbox, type Subject } from '../services/people'
 import { type Photo, thumbUrl } from '../services/photos'
 import {
@@ -72,6 +74,12 @@ const DRAG_TILT = 1 / 24
  */
 function photoDetailPath(uid: string): string {
   return `/photos/${encodeURIComponent(uid)}`
+}
+
+/** {@link photoDetailPath} in the current project: what the anchors and the key are given. */
+function usePhotoDetailPath(): (uid: string) => string {
+  const projectPath = useProjectPath()
+  return useCallback((uid: string) => projectPath(photoDetailPath(uid)), [projectPath])
 }
 
 /**
@@ -193,9 +201,12 @@ function ScopedEmpty({
         hint={hint}
         action={
           <div className="d-flex gap-2 justify-content-center flex-wrap">
-            <Link to={people ? '/people' : '/labels'} className="btn btn-sm btn-outline-light">
+            <ProjectLink
+              to={people ? '/people' : '/labels'}
+              className="btn btn-sm btn-outline-light"
+            >
               {t(people ? 'review.empty.people' : 'review.empty.labels')}
-            </Link>
+            </ProjectLink>
             <Button
               variant="outline-light"
               size="sm"
@@ -241,12 +252,12 @@ function EmptyQueue({
           hint={t('review.empty.libraryHint')}
           action={
             <div className="d-flex gap-2 justify-content-center flex-wrap">
-              <Link to="/people" className="btn btn-sm btn-outline-light">
+              <ProjectLink to="/people" className="btn btn-sm btn-outline-light">
                 {t('review.empty.people')}
-              </Link>
-              <Link to="/labels" className="btn btn-sm btn-outline-light">
+              </ProjectLink>
+              <ProjectLink to="/labels" className="btn btn-sm btn-outline-light">
                 {t('review.empty.labels')}
-              </Link>
+              </ProjectLink>
             </div>
           }
         />
@@ -405,12 +416,13 @@ function QuestionStage({
   linkState: ReviewReturn
 }) {
   const { t } = useTranslation()
+  const detailPath = usePhotoDetailPath()
   if (question.kind === 'duplicate' && question.other !== undefined) {
     return (
       <ReviewDuplicate
         photo={question.photo}
         other={question.other}
-        href={photoDetailPath}
+        href={detailPath}
         linkState={linkState}
       />
     )
@@ -420,7 +432,7 @@ function QuestionStage({
       <ReviewOutlier
         photo={question.photo}
         bbox={question.bbox.relative}
-        href={photoDetailPath(question.photo.uid)}
+        href={detailPath(question.photo.uid)}
         linkState={linkState}
         alt={t('review.outlier.faceAlt')}
       />
@@ -429,7 +441,7 @@ function QuestionStage({
   return (
     <ReviewPhoto
       photo={question.photo}
-      href={photoDetailPath(question.photo.uid)}
+      href={detailPath(question.photo.uid)}
       linkState={linkState}
       bbox={question.kind === 'face' ? question.bbox?.relative : undefined}
       alt={alt}
@@ -523,6 +535,8 @@ export function ReviewPage() {
   useDocumentTitle(t('nav.review'))
   const navigate = useNavigate()
   const location = useLocation()
+  const projectPath = useProjectPath()
+  const detailPath = usePhotoDetailPath()
   const [searchParams, setSearchParams] = useSearchParams()
   // What every way out to a photo hands the photo's page: the game's own URL,
   // so the page can offer the way back to this very source.
@@ -580,8 +594,8 @@ export function ReviewPage() {
       void navigate(-1)
       return
     }
-    void navigate('/')
-  }, [end, navigate])
+    void navigate(projectPath('/'))
+  }, [end, navigate, projectPath])
 
   const played = game.session.confirmed + game.session.rejected + game.session.skipped
 
@@ -678,8 +692,8 @@ export function ReviewPage() {
     if (photo === undefined) {
       return
     }
-    void navigate(photoDetailPath(photo.uid), { state: returnState })
-  }, [card, navigate, returnState])
+    void navigate(detailPath(photo.uid), { state: returnState })
+  }, [card, navigate, detailPath, returnState])
 
   useKeyboardShortcuts(
     {
@@ -891,7 +905,7 @@ export function ReviewPage() {
     body = (
       <BreatherCard
         breather={card.breather}
-        href={photoDetailPath(card.breather.photo.uid)}
+        href={detailPath(card.breather.photo.uid)}
         linkState={returnState}
         onDismiss={advance}
       />

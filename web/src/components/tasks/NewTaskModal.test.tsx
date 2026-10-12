@@ -74,13 +74,13 @@ function renderModal(photoUids?: string[]) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
-        <MemoryRouter initialEntries={['/']}>
+        <MemoryRouter initialEntries={['/p/v']}>
           <Routes>
             <Route
-              path="/"
+              path="/p/:slug"
               element={<NewTaskModal show onClose={vi.fn()} photoUids={photoUids} />}
             />
-            <Route path="/tasks/:uid" element={<p>the task page</p>} />
+            <Route path="/p/:slug/tasks/:uid" element={<p>the task page</p>} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>

@@ -105,7 +105,7 @@ describe('PhotoLocation', () => {
     renderLocation({})
 
     const link = screen.getByRole('link', { name: 'Show on map' })
-    expect(link).toHaveAttribute('href', '/map?lat=50.08000&lng=14.42000&z=17&photo=b')
+    expect(link).toHaveAttribute('href', '/p/v/map?lat=50.08000&lng=14.42000&z=17&photo=b')
   })
 
   it('brings the archive along for an archived photo', () => {

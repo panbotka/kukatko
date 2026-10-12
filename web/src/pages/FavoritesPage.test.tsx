@@ -119,7 +119,7 @@ describe('FavoritesPage', () => {
     // The tile's detail link carries ?favorite=true so Esc/Back and prev/next
     // return to Favorites rather than the whole library.
     const link = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(link).toHaveAttribute('href', '/photos/a?favorite=true')
+    expect(link).toHaveAttribute('href', '/p/v/photos/a?favorite=true')
   })
 
   it('renders an empty state when the user has no favorites', async () => {

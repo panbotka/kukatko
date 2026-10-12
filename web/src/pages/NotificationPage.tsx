@@ -16,6 +16,7 @@ import { formatDateTime } from '../lib/format'
 import { gridScrollKey } from '../lib/gridScroll'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { useNotificationInbox } from '../notifications/NotificationInboxContext'
+import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
 import {
   fetchNotification,
@@ -74,6 +75,7 @@ export function NotificationPage() {
   const { t, i18n } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
   const { refresh: refreshInbox } = useNotificationInbox()
@@ -129,11 +131,11 @@ export function NotificationPage() {
     if (sole === undefined) {
       return
     }
-    void navigate(`/photos/${encodeURIComponent(sole)}`, {
+    void navigate(projectPath(`/photos/${encodeURIComponent(sole)}`), {
       replace: true,
       state: firstEntryRef.current ? directEntryState() : undefined,
     })
-  }, [sole, navigate])
+  }, [sole, navigate, projectPath])
 
   useDocumentTitle(state.status === 'ready' ? state.detail.title : t('notification.title'))
 
@@ -143,7 +145,7 @@ export function NotificationPage() {
     key: gridScrollKey(location.pathname, location.search),
   })
 
-  const backToLibrary = <BackLink to={LIBRARY_PATH} label={t('notification.back')} />
+  const backToLibrary = <BackLink to={projectPath(LIBRARY_PATH)} label={t('notification.back')} />
 
   if (state.status === 'missing') {
     return (
@@ -151,7 +153,7 @@ export function NotificationPage() {
         title={t('notification.missing.title')}
         hint={t('notification.missing.hint')}
         action={
-          <Link to={LIBRARY_PATH} className="btn btn-primary">
+          <Link to={projectPath(LIBRARY_PATH)} className="btn btn-primary">
             {t('notification.back')}
           </Link>
         }

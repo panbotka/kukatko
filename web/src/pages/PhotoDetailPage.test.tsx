@@ -316,7 +316,7 @@ function LocationProbe() {
  */
 function renderPage(
   canWrite: boolean | Role = true,
-  entry: string | Partial<Location> = '/photos/b?sort=oldest',
+  entry: string | Partial<Location> = '/p/v/photos/b?sort=oldest',
   semanticSearch = true,
   videoStreaming = false,
 ) {
@@ -333,7 +333,7 @@ function renderPage(
         <AuthContext.Provider value={auth(canWrite)}>
           <MemoryRouter initialEntries={[entry]}>
             <Routes>
-              <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+              <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
             </Routes>
             <LocationProbe />
           </MemoryRouter>
@@ -940,7 +940,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // The badge is the proof the state is legible while you stand on it, so a
       // stray press is obvious rather than silent.
       expect(await screen.findByText('Hidden from the library')).toBeInTheDocument()
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
 
       fireEvent.keyDown(document, { key: 's' })
       await waitFor(() => {
@@ -951,7 +951,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         await screen.findByRole('button', { name: 'Hide from the library' }),
       ).toBeInTheDocument()
       expect(screen.queryByText('Hidden from the library')).toBeNull()
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
     })
 
     it('does nothing at all for a viewer', async () => {
@@ -1712,7 +1712,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('opens already showing when the URL asks for it (deep link / refresh)', async () => {
-      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=info')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
@@ -1796,14 +1796,14 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // What a refresh, a shared link and Back/Forward all come down to: the
       // address alone decides which view is up.
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      const { container, unmount } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      const { container, unmount } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
       // The faces view is its own view: no metadata dragged in with it.
       expect(screen.queryByRole('button', { name: 'Technical details' })).not.toBeInTheDocument()
       unmount()
 
-      renderPage(true, '/photos/b?sort=oldest&panel=edits')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=edits')
       expect(await screen.findByRole('button', { name: 'Rotate right' })).toBeInTheDocument()
     })
 
@@ -1812,7 +1812,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // same param — a link opened on a phone lands on the same view.
       mockViewport(true)
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
 
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
@@ -1823,7 +1823,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // the old flag keeps opening the info view; the first navigation moves it
       // over to the new form rather than carrying both forever.
       const user = userEvent.setup()
-      const { container } = renderPage(true, '/photos/b?sort=oldest&info=1')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&info=1')
       await screen.findByRole('heading', { name: 'Beach' })
 
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
@@ -1839,7 +1839,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     it('keeps the faces view on a photo with none instead of showing the metadata', async () => {
       // The drawer shows the view its URL names and never a substitute: an empty
       // face list is an honest answer, the metadata is not what was asked for.
-      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 0')).toBeInTheDocument()
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
       expect(screen.queryByText('Caption & place')).not.toBeInTheDocument()
@@ -1854,7 +1854,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     it('shuts the drawer on the edits named for a viewer, rather than the metadata', async () => {
       // A view the reader cannot have on this photo at all is no reason to show
       // another one: the drawer stays shut on the plain photo.
-      const { container } = renderPage(false, '/photos/b?sort=oldest&panel=edits')
+      const { container } = renderPage(false, '/p/v/photos/b?sort=oldest&panel=edits')
       await screen.findByRole('heading', { name: 'Beach' })
 
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
@@ -1866,7 +1866,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
     it('shuts the drawer on the faces named on a video', async () => {
       fetchPhotoMock.mockResolvedValue(photo({ media_type: 'video' }))
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       await screen.findByRole('heading', { name: 'Beach' })
 
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
@@ -1886,13 +1886,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
         uid === 'c' ? pendingNext : Promise.resolve(photo({ uid: 'b', title: 'Beach' })),
       )
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      const { container } = renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       await screen.findByRole('link', { name: 'Next' })
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
       expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
       expect(viewer(container)).toHaveAttribute('data-panel', 'open')
@@ -1911,7 +1911,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
     it('carries the panel, not just "open", to the neighbour', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       await screen.findByRole('heading', { name: 'Beach' })
 
       const next = await screen.findByRole('link', { name: 'Next' })
@@ -1936,7 +1936,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
     it('keeps paging with the arrows while the panel auto-selects a face', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(true, '/photos/a?sort=oldest&panel=faces')
+      renderPage(true, '/p/v/photos/a?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       await screen.findByRole('link', { name: 'Next' })
       // The automatic pick opened the naming panel, but left the keyboard alone.
@@ -1945,7 +1945,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       press('ArrowRight')
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
       })
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       await screen.findByRole('link', { name: 'Next' })
@@ -1953,13 +1953,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       press('ArrowRight')
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
     it('puts the keyboard in the name field when a face is picked by hand, and Escape hands it back', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       await screen.findByRole('link', { name: 'Next' })
 
@@ -1969,21 +1969,21 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
       // Typing is typing: the arrows move the caret, not the photo.
       press('ArrowRight')
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
 
       // Escape leaves the face, and the keyboard is the viewer's again.
       press('Escape')
       expect(screen.queryByRole('combobox', { name: 'Name' })).not.toBeInTheDocument()
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
       press('ArrowRight')
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
     it('n puts the keyboard in the name field of the selected face', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=faces')
       expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
       expect(nameField()).not.toHaveFocus()
 
@@ -1995,7 +1995,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
     it('n opens the faces view on a face when it is shut', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
       await screen.findByRole('button', { name: 'Show faces' })
 
@@ -2008,7 +2008,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
     it('leaves n alone for a viewer, who names nobody', async () => {
       fetchFacesMock.mockResolvedValue(facesResponse(2))
-      renderPage(false, '/photos/b?sort=oldest')
+      renderPage(false, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
 
       press('n')
@@ -2214,7 +2214,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(screen.getByTestId('face-overlay')).toBeInTheDocument()
       first.unmount()
 
-      const { container } = renderPage(true, '/photos/b?sort=oldest')
+      const { container } = renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('button', { name: 'Show faces' })
       expect(viewer(container)).toHaveAttribute('data-panel', 'closed')
       expect(screen.queryByTestId('face-overlay')).not.toBeInTheDocument()
@@ -2380,7 +2380,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       fetchPhotoMock.mockResolvedValue(clip)
       vi.useFakeTimers({ shouldAdvanceTime: true })
       try {
-        const { container } = renderPage(true, '/photos/b?sort=oldest', true, true)
+        const { container } = renderPage(true, '/p/v/photos/b?sort=oldest', true, true)
 
         await screen.findByRole('heading', { name: 'Clip' })
         expect(container.querySelector('video')).toBeNull()
@@ -2517,14 +2517,14 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       expect(video.currentTime).toBe(5)
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
 
       // Paused and unfocused, the arrow is the page's again and steps on.
       fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
       fireEvent.blur(screen.getByRole('button', { name: 'Play' }), { relatedTarget: null })
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
@@ -2581,12 +2581,12 @@ describe('PhotoDetailPage — immersive viewer', () => {
         // dropped onto the grid.
         fireEvent.keyDown(document, { key: 'Escape' })
         expect(document.fullscreenElement).toBeNull()
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
 
         // Out of fullscreen it means what it always meant.
         fireEvent.keyDown(document, { key: 'Escape' })
         await waitFor(() => {
-          expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+          expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
         })
       } finally {
         undo()
@@ -2607,7 +2607,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
   })
@@ -2704,7 +2704,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       })
       // Rendered from the reply, with a remove control and no crop to show.
       const chip = await screen.findByRole('link', { name: 'Alice' })
-      expect(chip).toHaveAttribute('href', '/people/su_a')
+      expect(chip).toHaveAttribute('href', '/p/v/people/su_a')
       expect(screen.getByRole('button', { name: 'Remove Alice' })).toBeInTheDocument()
     })
 
@@ -2731,7 +2731,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
   describe('navigation', () => {
     it('offers prev/next that respect the list order and a close back to the origin', async () => {
       const user = userEvent.setup()
-      renderPage(true, '/photos/b?sort=oldest&album=al_1')
+      renderPage(true, '/p/v/photos/b?sort=oldest&album=al_1')
 
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
@@ -2741,8 +2741,8 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       const prev = await screen.findByRole('link', { name: 'Previous' })
       const next = await screen.findByRole('link', { name: 'Next' })
-      expect(prev).toHaveAttribute('href', expect.stringContaining('/photos/a'))
-      expect(next).toHaveAttribute('href', expect.stringContaining('/photos/c'))
+      expect(prev).toHaveAttribute('href', expect.stringContaining('/p/v/photos/a'))
+      expect(next).toHaveAttribute('href', expect.stringContaining('/p/v/photos/c'))
       expect(next.getAttribute('href')).toContain('sort=oldest')
       expect(next.getAttribute('href')).toContain('album=al_1')
 
@@ -2751,19 +2751,19 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // oldest-first, so that order needs no param and a reversal would get one.
       await user.click(screen.getByRole('button', { name: 'Back to the list' }))
       await waitFor(() => {
-        expect(screen.getByTestId('location')).toHaveTextContent('/albums/al_1')
+        expect(screen.getByTestId('location')).toHaveTextContent('/p/v/albums/al_1')
       })
       expect(screen.getByTestId('location')).not.toHaveTextContent('sort=')
     })
 
     it('carries a reversed album order back to the album on close', async () => {
       const user = userEvent.setup()
-      renderPage(true, '/photos/b?sort=newest&album=al_1')
+      renderPage(true, '/p/v/photos/b?sort=newest&album=al_1')
 
       await screen.findByRole('heading', { name: 'Beach' })
       await user.click(screen.getByRole('button', { name: 'Back to the list' }))
       await waitFor(() => {
-        expect(screen.getByTestId('location')).toHaveTextContent('/albums/al_1')
+        expect(screen.getByTestId('location')).toHaveTextContent('/p/v/albums/al_1')
       })
       expect(screen.getByTestId('location')).toHaveTextContent('sort=newest')
     })
@@ -2772,7 +2772,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // A subject-gallery tile links to /photos/b?person=su_a, so the viewer must
       // page GET /photos scoped to that person — this person's photos in the same
       // order the gallery shows — not the whole library.
-      renderPage(true, '/photos/b?person=su_a')
+      renderPage(true, '/p/v/photos/b?person=su_a')
 
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
@@ -2783,15 +2783,15 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       const prev = await screen.findByRole('link', { name: 'Previous' })
       const next = await screen.findByRole('link', { name: 'Next' })
-      expect(prev).toHaveAttribute('href', expect.stringContaining('/photos/a'))
-      expect(next).toHaveAttribute('href', expect.stringContaining('/photos/c'))
+      expect(prev).toHaveAttribute('href', expect.stringContaining('/p/v/photos/a'))
+      expect(next).toHaveAttribute('href', expect.stringContaining('/p/v/photos/c'))
       // The scope rides along so stepping keeps paging the subject set.
       expect(next.getAttribute('href')).toContain('person=su_a')
     })
 
     it('pages prev/next through the search and returns to it when opened from search', async () => {
       const user = userEvent.setup()
-      renderPage(true, '/photos/b?q=beach&mode=semantic')
+      renderPage(true, '/p/v/photos/b?q=beach&mode=semantic')
 
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
@@ -2804,18 +2804,20 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       const prev = await screen.findByRole('link', { name: 'Previous' })
       const next = await screen.findByRole('link', { name: 'Next' })
-      expect(prev).toHaveAttribute('href', '/photos/a?q=beach&mode=semantic')
-      expect(next).toHaveAttribute('href', '/photos/c?q=beach&mode=semantic')
+      expect(prev).toHaveAttribute('href', '/p/v/photos/a?q=beach&mode=semantic')
+      expect(next).toHaveAttribute('href', '/p/v/photos/c?q=beach&mode=semantic')
 
       // Closing reconstructs the search URL (query + mode), not the library.
       await user.click(screen.getByRole('button', { name: 'Back to the list' }))
       await waitFor(() => {
-        expect(screen.getByTestId('location')).toHaveTextContent('/search?q=beach&mode=semantic')
+        expect(screen.getByTestId('location')).toHaveTextContent(
+          '/p/v/search?q=beach&mode=semantic',
+        )
       })
     })
 
     it('pages prev/next as full-text while the embeddings box is offline', async () => {
-      renderPage(true, '/photos/b?q=beach&mode=semantic', false)
+      renderPage(true, '/p/v/photos/b?q=beach&mode=semantic', false)
 
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
@@ -2828,11 +2830,11 @@ describe('PhotoDetailPage — immersive viewer', () => {
     })
 
     it('carries the open panel through prev/next so it stays open while paging', async () => {
-      renderPage(true, '/photos/b?sort=oldest&panel=info')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       const next = await screen.findByRole('link', { name: 'Next' })
-      expect(next.getAttribute('href')).toContain('/photos/c')
+      expect(next.getAttribute('href')).toContain('/p/v/photos/c')
       expect(next.getAttribute('href')).toContain('panel=info')
     })
 
@@ -2843,7 +2845,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
@@ -2852,19 +2854,19 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // The library was left scrolled, so there is a position for a photograph to
       // sit in; paging replaces the history entry, so only this keeps the way back
       // pointed at what is actually on stage.
-      writeGridScroll('u1', '/?sort=oldest', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/p/v?sort=oldest', { count: 0, scrollY: 4000 })
 
       renderPage()
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
-        expect(readGridScroll('u1', '/?sort=oldest')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/p/v?sort=oldest')?.uid).toBe('b')
       })
       await screen.findByRole('link', { name: 'Next' })
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
 
       await waitFor(() => {
-        expect(readGridScroll('u1', '/?sort=oldest')?.uid).toBe('c')
+        expect(readGridScroll('u1', '/p/v?sort=oldest')?.uid).toBe('c')
       })
     })
 
@@ -2874,29 +2876,29 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // pasted link or a push notification carries no view params, so its way back
       // names the bare library — but the reader never picked it from there, and a
       // later tap on "Knihovna" must not scroll to it.
-      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/p/v', { count: 0, scrollY: 4000 })
 
-      renderPage(true, '/photos/b')
+      renderPage(true, '/p/v/photos/b')
       await screen.findByRole('heading', { name: 'Beach' })
       await screen.findByRole('link', { name: 'Next' })
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
 
-      expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 4000 })
+      expect(readGridScroll('u1', '/p/v')).toEqual({ count: 0, scrollY: 4000 })
     })
 
     it('tells the library it was opened from, even with no view params', async () => {
       window.sessionStorage.clear()
       // The library at its defaults opens a photo at the bare URL; what says it
       // was opened from the library is the grid naming itself in the state.
-      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/p/v', { count: 0, scrollY: 4000 })
 
-      renderPage(true, { pathname: '/photos/b', state: { gridOrigin: '/' } })
+      renderPage(true, { pathname: '/p/v/photos/b', state: { gridOrigin: '/p/v' } })
       await screen.findByRole('heading', { name: 'Beach' })
       await waitFor(() => {
-        expect(readGridScroll('u1', '/')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/p/v')?.uid).toBe('b')
       })
       await screen.findByRole('link', { name: 'Next' })
 
@@ -2904,23 +2906,26 @@ describe('PhotoDetailPage — immersive viewer', () => {
       fireEvent.keyDown(document, { key: 'ArrowRight' })
 
       await waitFor(() => {
-        expect(readGridScroll('u1', '/')?.uid).toBe('c')
+        expect(readGridScroll('u1', '/p/v')?.uid).toBe('c')
       })
     })
 
     it('tells the grid it came from, not the list its way back names', async () => {
       window.sessionStorage.clear()
-      writeGridScroll('u1', '/', { count: 0, scrollY: 4000 })
-      writeGridScroll('u1', '/notifications/nt_1', { count: 0, scrollY: 900 })
+      writeGridScroll('u1', '/p/v', { count: 0, scrollY: 4000 })
+      writeGridScroll('u1', '/p/v/notifications/nt_1', { count: 0, scrollY: 900 })
 
       // A notification's grid opens its photographs at the bare URL too.
-      renderPage(true, { pathname: '/photos/b', state: { gridOrigin: '/notifications/nt_1' } })
+      renderPage(true, {
+        pathname: '/p/v/photos/b',
+        state: { gridOrigin: '/p/v/notifications/nt_1' },
+      })
       await screen.findByRole('heading', { name: 'Beach' })
 
       await waitFor(() => {
-        expect(readGridScroll('u1', '/notifications/nt_1')?.uid).toBe('b')
+        expect(readGridScroll('u1', '/p/v/notifications/nt_1')?.uid).toBe('b')
       })
-      expect(readGridScroll('u1', '/')).toEqual({ count: 0, scrollY: 4000 })
+      expect(readGridScroll('u1', '/p/v')).toEqual({ count: 0, scrollY: 4000 })
     })
 
     it('pages on an arrow pressed before the list order has arrived', async () => {
@@ -2935,17 +2940,17 @@ describe('PhotoDetailPage — immersive viewer', () => {
         }),
       )
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
       // Still resolving: there is not even an on-screen arrow to click yet.
       expect(screen.queryByRole('link', { name: 'Next' })).not.toBeInTheDocument()
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
 
       resolveList(page(['a', 'b', 'c']))
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
@@ -2957,13 +2962,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
         }),
       )
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
 
       fireEvent.keyDown(document, { key: 'ArrowLeft' })
       resolveList(page(['a', 'b', 'c']))
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/a')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/a')
       })
     })
 
@@ -2978,7 +2983,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
         }),
       )
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
@@ -2994,7 +2999,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       await waitFor(() => {
         expect(screen.getByRole('link', { name: 'Next' })).toBeInTheDocument()
       })
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
       composer.remove()
     })
 
@@ -3002,13 +3007,13 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // "There is no next photo" must not be remembered as "we do not know yet",
       // or the last photo would jump the moment anything else refreshed.
       fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c']))
-      renderPage(true, '/photos/c?sort=oldest')
+      renderPage(true, '/p/v/photos/c?sort=oldest')
       await screen.findByRole('link', { name: 'Previous' })
       expect(screen.queryByRole('link', { name: 'Next' })).not.toBeInTheDocument()
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
     })
 
@@ -3017,21 +3022,23 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // the previous photo's pair stayed on screen, so "next" pointed at the photo
       // already open and a second press went nowhere.
       fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c', 'd']))
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
       await screen.findByRole('link', { name: 'Next' })
       const walked = fetchPhotosMock.mock.calls.length
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
-      expect(screen.getByRole('link', { name: 'Next' }).getAttribute('href')).toContain('/photos/d')
+      expect(screen.getByRole('link', { name: 'Next' }).getAttribute('href')).toContain(
+        '/p/v/photos/d',
+      )
       expect(fetchPhotosMock.mock.calls.length).toBe(walked)
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/d')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/d')
       })
     })
 
@@ -3044,14 +3051,14 @@ describe('PhotoDetailPage — immersive viewer', () => {
         uid === 'c' ? pendingNext : Promise.resolve(photo({ uid: 'b', title: 'Beach' })),
       )
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
       const beachImg = screen.getByRole('img', { name: 'Beach' })
       await screen.findByRole('link', { name: 'Next' })
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
 
       // The previous photo's heading stays mounted — no full-screen loading flicker.
@@ -3076,7 +3083,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       )
       fetchPhotosMock.mockResolvedValue(page(['a', 'b', 'c', 'd']))
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await waitFor(() => {
         expect(resolvers.has('b')).toBe(true)
       })
@@ -3086,12 +3093,12 @@ describe('PhotoDetailPage — immersive viewer', () => {
 
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
       })
       await screen.findByRole('link', { name: 'Next' })
       fireEvent.keyDown(document, { key: 'ArrowRight' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/d')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/d')
       })
       expect(screen.getByRole('heading', { name: 'Beach' })).toBeInTheDocument()
 
@@ -3111,7 +3118,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       videos.photos[2] = { ...videos.photos[2], media_type: 'video' }
       fetchPhotosMock.mockResolvedValue(videos)
 
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
       await screen.findByRole('link', { name: 'Next' })
 
@@ -3122,31 +3129,31 @@ describe('PhotoDetailPage — immersive viewer', () => {
       expect(preloaded().some((url) => url.includes('/photos/c/thumb/'))).toBe(false)
     })
     it('closes to the source list with Escape', async () => {
-      renderPage(true, '/photos/b?sort=oldest')
+      renderPage(true, '/p/v/photos/b?sort=oldest')
       await screen.findByRole('heading', { name: 'Beach' })
 
       fireEvent.keyDown(document, { key: 'Escape' })
       await waitFor(() => {
         // The library lives at the root route; anchor so `/photos/b` cannot pass.
-        expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+        expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
       })
     })
 
     it('steps back out of the drawer before closing the viewer with Escape', async () => {
-      renderPage(true, '/photos/b?sort=oldest&panel=info')
+      renderPage(true, '/p/v/photos/b?sort=oldest&panel=info')
       await screen.findByRole('heading', { name: 'Beach' })
 
       // First Escape shuts the drawer, staying on the photo.
       fireEvent.keyDown(document, { key: 'Escape' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/b')
       })
       expect(screen.getByTestId('location')).not.toHaveTextContent('panel=')
 
       // A second Escape leaves the viewer for the list.
       fireEvent.keyDown(document, { key: 'Escape' })
       await waitFor(() => {
-        expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+        expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
       })
     })
   })
@@ -3799,8 +3806,11 @@ describe('PhotoDetailPage — immersive viewer', () => {
     expect(screen.queryByRole('button', { name: 'Edit Title' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Add to album' })).not.toBeInTheDocument()
     // Read-only album/label chips still link out.
-    expect(screen.getByRole('link', { name: 'Holidays' })).toHaveAttribute('href', '/albums/al_1')
-    expect(screen.getByRole('link', { name: 'Sunset' })).toHaveAttribute('href', '/labels/lb_1')
+    expect(screen.getByRole('link', { name: 'Holidays' })).toHaveAttribute(
+      'href',
+      '/p/v/albums/al_1',
+    )
+    expect(screen.getByRole('link', { name: 'Sunset' })).toHaveAttribute('href', '/p/v/labels/lb_1')
     expect(fetchAlbumsMock).not.toHaveBeenCalled()
 
     // A viewer may show the faces but cannot select one to name it.
@@ -3896,7 +3906,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // rebuilt: a rendition URL is signed per response, so the one the viewer
       // would compute is a different string and therefore a second download.
       renderPage(true, {
-        pathname: '/photos/b',
+        pathname: '/p/v/photos/b',
         search: '?sort=oldest',
         state: { uid: 'b', previewUrl: 'https://media.example/b-720.jpg?sig=abc' },
       })
@@ -3909,7 +3919,7 @@ describe('PhotoDetailPage — immersive viewer', () => {
       // History state outlives the navigation that made it: Back/Forward, and the
       // viewer's own `replace` paging, can present the previous photo's address.
       renderPage(true, {
-        pathname: '/photos/b',
+        pathname: '/p/v/photos/b',
         search: '?sort=oldest',
         state: { uid: 'a', previewUrl: 'https://media.example/a-720.jpg' },
       })
@@ -4052,7 +4062,8 @@ describe('the grid → viewer morph', () => {
       navigate()
     })
     const value: MorphState = { enabled: true, morphId: 'b', morph, ...overrides }
-    const entries = from === 'grid' ? ['/', '/photos/b?sort=oldest'] : ['/photos/b?sort=oldest']
+    const entries =
+      from === 'grid' ? ['/p/v', '/p/v/photos/b?sort=oldest'] : ['/p/v/photos/b?sort=oldest']
     render(
       <I18nextProvider i18n={i18n}>
         <CapabilitiesContext.Provider
@@ -4062,7 +4073,7 @@ describe('the grid → viewer morph', () => {
             <MorphContext.Provider value={value}>
               <MemoryRouter initialEntries={entries}>
                 <Routes>
-                  <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                  <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
                   {/* The list the viewer returns to, whichever query it
                       reconstructs. */}
                   <Route path="*" element={<div>grid</div>} />
@@ -4103,7 +4114,7 @@ describe('the grid → viewer morph', () => {
     expect(morph).toHaveBeenCalledTimes(1)
     expect(morph.mock.calls[0][0]).toBe('b')
     // Back still pops — the morph wraps the navigation, it does not replace it.
-    expect(screen.getByTestId('location')).toHaveTextContent('/')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v')
   })
 
   it('closes through the morph for a photo opened from a bare link too', async () => {
@@ -4116,7 +4127,7 @@ describe('the grid → viewer morph', () => {
     // Nothing to pop back to, so the reconstructed list URL is pushed instead —
     // still through the same single entry point.
     expect(morph).toHaveBeenCalledTimes(1)
-    expect(screen.getByTestId('location')).toHaveTextContent('/?sort=oldest')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v?sort=oldest')
   })
 
   it('navigates exactly as before when the plumbing is the inert default', async () => {
@@ -4127,10 +4138,10 @@ describe('the grid → viewer morph', () => {
           value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
         >
           <AuthContext.Provider value={auth(true)}>
-            <MemoryRouter initialEntries={['/', '/photos/b?sort=oldest']}>
+            <MemoryRouter initialEntries={['/p/v', '/p/v/photos/b?sort=oldest']}>
               <Routes>
-                <Route path="/" element={<div>grid</div>} />
-                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                <Route path="/p/:slug" element={<div>grid</div>} />
+                <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
               </Routes>
               <LocationProbe />
             </MemoryRouter>
@@ -4145,7 +4156,7 @@ describe('the grid → viewer morph', () => {
     // No provider at all — the fallback every browser without the API takes.
     // Back still works, which is the hard rule the morph must not touch.
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/')
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/v')
     })
     expect(stageFigure()).toBeNull()
   })
@@ -4157,7 +4168,7 @@ describe('the first frame while the photo is still on the wire', () => {
     // *before* the photo's row arrives.
     fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
     renderPage(true, {
-      pathname: '/photos/b',
+      pathname: '/p/v/photos/b',
       search: '?sort=oldest',
       state: { uid: 'b', previewUrl: 'https://media.example/b-720.jpg?sig=abc' },
     })
@@ -4176,7 +4187,7 @@ describe('the first frame while the photo is still on the wire', () => {
 
   it('falls back to the spinner for a photo opened from a bare link', async () => {
     fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
-    renderPage(true, '/photos/b?sort=oldest')
+    renderPage(true, '/p/v/photos/b?sort=oldest')
 
     expect(await screen.findByRole('status')).toBeInTheDocument()
     expect(document.querySelector('img.kk-viewer__image')).toBeNull()
@@ -4188,7 +4199,7 @@ describe('the first frame while the photo is still on the wire', () => {
     // back is the only control on screen, and none of the groups — least of all
     // the library menu, which would act on nothing — is offered early.
     fetchPhotoMock.mockImplementation(() => new Promise<PhotoDetail>(() => undefined))
-    const { container } = renderPage(true, '/photos/b?sort=oldest')
+    const { container } = renderPage(true, '/p/v/photos/b?sort=oldest')
 
     expect(await screen.findByRole('status')).toBeInTheDocument()
     expect(container.querySelector('.kk-viewer__actions')).toBeNull()
@@ -4398,9 +4409,9 @@ describe('PhotoDetailPage — the library operations on a clip', () => {
             value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
           >
             <AuthContext.Provider value={auth(true)}>
-              <MemoryRouter initialEntries={['/photos/b']}>
+              <MemoryRouter initialEntries={['/p/v/photos/b']}>
                 <Routes>
-                  <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                  <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
                 </Routes>
               </MemoryRouter>
             </AuthContext.Provider>
@@ -4458,7 +4469,7 @@ describe('PhotoDetailPage download links', () => {
         processing: [{ step: 'hls_transcode', state: 'queued' }],
       }),
     )
-    renderPage(true, '/photos/b?sort=oldest', true, true)
+    renderPage(true, '/p/v/photos/b?sort=oldest', true, true)
 
     await screen.findByRole('heading', { name: 'Clip' })
 
@@ -4484,7 +4495,7 @@ describe('the open-task chip', () => {
     const link = await screen.findByRole('link', {
       name: /Open task: In which year was the house rebuilt\?/,
     })
-    expect(link).toHaveAttribute('href', '/tasks/tk_1')
+    expect(link).toHaveAttribute('href', '/p/v/tasks/tk_1')
   })
 
   it('draws nothing for a photo no question is waiting on', async () => {
@@ -4503,7 +4514,7 @@ describe('the open-task chip', () => {
  * back at the top — with no browser Back, the only guaranteed way home.
  */
 describe('PhotoDetailPage — the way back to sorting', () => {
-  const FROM_GAME = { reviewReturn: '/review?source=people' }
+  const FROM_GAME = { reviewReturn: '/p/v/review?source=people' }
 
   /** The page with the game behind it in history, as the game leaves it. */
   function renderFromGame(state: unknown = FROM_GAME) {
@@ -4514,11 +4525,11 @@ describe('PhotoDetailPage — the way back to sorting', () => {
         >
           <AuthContext.Provider value={auth(true)}>
             <MemoryRouter
-              initialEntries={['/review?source=people', { pathname: '/photos/b', state }]}
+              initialEntries={['/p/v/review?source=people', { pathname: '/p/v/photos/b', state }]}
             >
               <Routes>
-                <Route path="/review" element={<div>the game</div>} />
-                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                <Route path="/p/:slug/review" element={<div>the game</div>} />
+                <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
               </Routes>
               <LocationProbe />
             </MemoryRouter>
@@ -4544,7 +4555,7 @@ describe('PhotoDetailPage — the way back to sorting', () => {
     // Stepping back through history: the game's own entry, source and all, so
     // its snapshot resumes the very card.
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/v/review?source=people')
     })
     expect(screen.getByText('the game')).toBeInTheDocument()
   })
@@ -4556,19 +4567,19 @@ describe('PhotoDetailPage — the way back to sorting', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/v/review?source=people')
     })
   })
 
   it('finds the game even with nothing behind it in history', async () => {
     const user = userEvent.setup()
-    renderPage(true, { pathname: '/photos/b', state: FROM_GAME })
+    renderPage(true, { pathname: '/p/v/photos/b', state: FROM_GAME })
     await screen.findByRole('heading', { name: 'Beach' })
 
     await user.click(screen.getByRole('button', { name: 'Back to review' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/review?source=people')
+      expect(screen.getByTestId('location')).toHaveTextContent('/p/v/review?source=people')
     })
   })
 
@@ -4580,7 +4591,7 @@ describe('PhotoDetailPage — the way back to sorting', () => {
     await user.click(await screen.findByRole('link', { name: 'Next' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/c')
     })
     expect(screen.getByRole('button', { name: 'Back to review' })).toBeInTheDocument()
   })
@@ -4637,9 +4648,9 @@ describe('PhotoDetailPage — forwarded from a first entry', () => {
           value={{ semantic_search: true, known: true, passkeys: false, video_streaming: false }}
         >
           <AuthContext.Provider value={auth(true)}>
-            <MemoryRouter initialEntries={['/elsewhere', { pathname: '/photos/b', state }]}>
+            <MemoryRouter initialEntries={['/elsewhere', { pathname: '/p/v/photos/b', state }]}>
               <Routes>
-                <Route path="/photos/:uid" element={<PhotoDetailPage />} />
+                <Route path="/p/:slug/photos/:uid" element={<PhotoDetailPage />} />
                 <Route path="*" element={<div>not the viewer</div>} />
               </Routes>
               <LocationProbe />
@@ -4658,7 +4669,7 @@ describe('PhotoDetailPage — forwarded from a first entry', () => {
     await user.click(screen.getByRole('button', { name: 'Back to the list' }))
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/p\/v$/)
     })
   })
 

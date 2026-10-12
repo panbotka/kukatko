@@ -491,7 +491,10 @@ describe('LibraryPage', () => {
     // Unfiltered and empty means there is nothing to un-filter: point at upload.
     expect(await screen.findByText('There are no photos yet')).toBeInTheDocument()
     expect(screen.queryByText('No photos found')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute('href', '/upload')
+    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute(
+      'href',
+      '/p/v/upload',
+    )
   })
 
   it('invites a viewer to upload too: every signed-in role may add photos', async () => {
@@ -502,7 +505,10 @@ describe('LibraryPage', () => {
     expect(
       screen.getByText('Upload your first photos and videos to bring the library to life.'),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute('href', '/upload')
+    expect(screen.getByRole('link', { name: 'Upload photos' })).toHaveAttribute(
+      'href',
+      '/p/v/upload',
+    )
   })
 
   it('leaves saving a view live for a viewer, and says what it does', async () => {
@@ -916,7 +922,7 @@ describe('LibraryPage', () => {
     fireEvent.keyDown(document, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/a')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/photos/a')
     })
   })
 

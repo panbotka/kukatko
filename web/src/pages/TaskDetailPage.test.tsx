@@ -141,15 +141,15 @@ function currentLocation(): string {
   return screen.getByTestId('location').textContent
 }
 
-function renderPage(canWrite = true, initialEntry = '/tasks/tk1') {
+function renderPage(canWrite = true, initialEntry = '/p/v/tasks/tk1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
         <MemoryRouter initialEntries={[initialEntry]}>
           <Routes>
-            <Route path="/tasks/:uid" element={<TaskDetailPage />} />
-            <Route path="/tasks" element={<p>list</p>} />
-            <Route path="/photos/:uid" element={<p>viewer</p>} />
+            <Route path="/p/:slug/tasks/:uid" element={<TaskDetailPage />} />
+            <Route path="/p/:slug/tasks" element={<p>list</p>} />
+            <Route path="/p/:slug/photos/:uid" element={<p>viewer</p>} />
           </Routes>
           <LocationProbe />
         </MemoryRouter>
@@ -1092,10 +1092,10 @@ describe('the review ledger', () => {
     // The wall by default: tiles, no rows.
     expect(await screen.findByRole('link', { name: 'Photo ph1' })).toBeInTheDocument()
     expect(document.querySelector('.kk-ledger-row')).toBeNull()
-    expect(currentLocation()).toBe('/tasks/tk1')
+    expect(currentLocation()).toBe('/p/v/tasks/tk1')
 
     await user.click(screen.getByRole('button', { name: 'List' }))
-    expect(currentLocation()).toBe('/tasks/tk1?view=list')
+    expect(currentLocation()).toBe('/p/v/tasks/tk1?view=list')
     expect(document.querySelector('.kk-ledger-row')).not.toBeNull()
     // The chosen layout wears the accent fill every toggle in the app shares.
     const layouts = within(screen.getByRole('group', { name: 'Group layout' })).getAllByRole(
@@ -1104,7 +1104,7 @@ describe('the review ledger', () => {
     expectChosenToggle(layouts, screen.getByRole('button', { name: 'List' }))
 
     await user.click(screen.getByRole('button', { name: 'Grid' }))
-    expect(currentLocation()).toBe('/tasks/tk1')
+    expect(currentLocation()).toBe('/p/v/tasks/tk1')
     expectChosenToggle(layouts, screen.getByRole('button', { name: 'Grid' }))
     expect(document.querySelector('.kk-ledger-row')).toBeNull()
   })
@@ -1126,7 +1126,7 @@ describe('the review ledger', () => {
       }),
       ledgerPhoto('ph2', { last_comment: null }),
     ])
-    renderPage(true, '/tasks/tk1?view=list')
+    renderPage(true, '/p/v/tasks/tk1?view=list')
     await screen.findByRole('heading', { name: /In which year/ })
 
     const rows = await screen.findAllByRole('link', { name: /^Photo ph/ })
@@ -1150,18 +1150,18 @@ describe('the review ledger', () => {
   it('opens a row in the viewer with the task context, so prev/next stay inside the task', async () => {
     const user = userEvent.setup()
     withPhotos([ledgerPhoto('ph1')])
-    renderPage(true, '/tasks/tk1?view=list')
+    renderPage(true, '/p/v/tasks/tk1?view=list')
     await screen.findByRole('heading', { name: /In which year/ })
 
     await user.click(await screen.findByRole('link', { name: 'Photo ph1' }))
-    expect(currentLocation()).toBe('/photos/ph1?task=tk1&view=list')
+    expect(currentLocation()).toBe('/p/v/photos/ph1?task=tk1&view=list')
   })
 
   it('selects from the rows, so the batch actions apply from the ledger too', async () => {
     const user = userEvent.setup()
     withPhotos([ledgerPhoto('ph1'), ledgerPhoto('ph2')])
     removeTaskPhotosMock.mockResolvedValue({ changed: 1, task: task() })
-    renderPage(true, '/tasks/tk1?view=list')
+    renderPage(true, '/p/v/tasks/tk1?view=list')
     await screen.findByRole('heading', { name: /In which year/ })
 
     await user.click(await screen.findByRole('button', { name: 'Select Photo ph1' }))
@@ -1171,7 +1171,7 @@ describe('the review ledger', () => {
     )
     // Selection-first now: clicking another row picks it rather than opening it.
     await user.click(screen.getByRole('link', { name: 'Photo ph2' }))
-    expect(currentLocation()).toBe('/tasks/tk1?view=list')
+    expect(currentLocation()).toBe('/p/v/tasks/tk1?view=list')
     expect(screen.getByRole('button', { name: 'Select Photo ph2' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1187,7 +1187,7 @@ describe('the review ledger', () => {
 
   it('reads the group in the sort the filter bar asks for', async () => {
     withPhotos(Array.from({ length: SMALL_GROUP_MAX + 1 }, (_, i) => ledgerPhoto(`ph${String(i)}`)))
-    renderPage(true, '/tasks/tk1?view=list&sort=oldest')
+    renderPage(true, '/p/v/tasks/tk1?view=list&sort=oldest')
     await screen.findByRole('heading', { name: /In which year/ })
 
     await waitFor(() => {

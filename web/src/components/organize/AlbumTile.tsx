@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { type AlbumCover, albumCover } from '../../lib/albumCovers'
 import { isFeatured } from '../../lib/featured'
 import { formatCaptureRange } from '../../lib/format'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type AlbumSummary } from '../../services/organize'
 
 import { AlbumCoverMedia } from './AlbumCoverMedia'
@@ -48,7 +48,7 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
   const title = albumDisplayTitle(album.title, i18n.language)
 
   return (
-    <Link
+    <ProjectLink
       to={`/albums/${album.uid}`}
       className="kk-tile d-flex flex-column h-100 text-decoration-none text-body"
       aria-label={isFeatured(album) ? t('featured.tileLabel', { title }) : title}
@@ -101,6 +101,6 @@ export function AlbumTile({ album, cover }: AlbumTileProps) {
           {t('albums.photoCount', { count: album.photo_count })}
         </div>
       </div>
-    </Link>
+    </ProjectLink>
   )
 }

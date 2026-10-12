@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { photoLabel } from '../../lib/photoTitle'
+import { ProjectLink } from '../../project/ProjectLink'
 import { fetchSimilar, type SimilarPhoto } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 
@@ -86,7 +86,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
         {state.photos.map((photo) => {
           const label = photoLabel(photo, i18n.language)
           return (
-            <Link
+            <ProjectLink
               key={photo.uid}
               to={`/photos/${photo.uid}`}
               className="d-block position-relative bg-secondary-subtle overflow-hidden rounded flex-shrink-0"
@@ -100,7 +100,7 @@ export function SimilarPhotos({ uid, limit }: SimilarPhotosProps) {
                 className="w-100 h-100"
                 style={{ objectFit: 'cover' }}
               />
-            </Link>
+            </ProjectLink>
           )
         })}
       </div>

@@ -92,7 +92,7 @@ describe('MySubjectCard', () => {
 
     expect(await screen.findByRole('link', { name: 'Jarmila' })).toHaveAttribute(
       'href',
-      '/people/sub1',
+      '/p/v/people/sub1',
     )
     // No warning once the link exists: it is a decision already made.
     expect(screen.queryByText(/cover photo is shown next to every comment/)).not.toBeInTheDocument()

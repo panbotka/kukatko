@@ -9,6 +9,7 @@ import { type PluggableList } from 'unified'
 import { remarkPhotoRefs, resolveMarkdownLink } from '../lib/markdownLinks'
 import { MENTION_CLASS, mentionSanitizeSchema, remarkMentions } from '../lib/mentions'
 import { remarkEmptyLists } from '../lib/remarkEmptyLists'
+import { useProjectPath } from '../project/ProjectContext'
 import { type CommentMention } from '../services/comments'
 
 import { MentionChip } from './MentionChip'
@@ -69,11 +70,16 @@ type MarkdownLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> & ExtraProps & 
  * pair: `noopener` so the opened page cannot reach back through
  * `window.opener`, `noreferrer` so it is not told where the visitor came from.
  *
+ * An own link without a project — written before projects existed, or typed
+ * as a bare `/photos/<uid>` — opens in the current project; one naming its
+ * project (`/p/<slug>/…`) keeps it.
+ *
  * Outside a router (a component rendered on its own) an own link is a plain
  * same-tab anchor — still the right page, just a full load.
  */
 function MarkdownLink({ href, children, taskUid, node: _node, ...rest }: MarkdownLinkProps) {
   const inRouter = useInRouterContext()
+  const projectPath = useProjectPath()
   if (href === undefined) {
     // The sanitiser dropped the href (a `javascript:` URL): nothing to follow.
     return <a {...rest}>{children}</a>
@@ -88,13 +94,13 @@ function MarkdownLink({ href, children, taskUid, node: _node, ...rest }: Markdow
   }
   if (target.kind === 'app' && inRouter) {
     return (
-      <Link {...rest} to={target.to}>
+      <Link {...rest} to={projectPath(target.to)}>
         {children}
       </Link>
     )
   }
   return (
-    <a {...rest} href={target.kind === 'app' ? target.to : target.href}>
+    <a {...rest} href={target.kind === 'app' ? projectPath(target.to) : target.href}>
       {children}
     </a>
   )

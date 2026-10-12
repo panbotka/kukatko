@@ -323,7 +323,10 @@ describe('PeoplePanel', () => {
 
       // The chip links to the person and carries no crop — it has no face to cut
       // one from, which is what tells it apart from a detected one.
-      expect(screen.getByRole('link', { name: 'Alice' })).toHaveAttribute('href', '/people/su_a')
+      expect(screen.getByRole('link', { name: 'Alice' })).toHaveAttribute(
+        'href',
+        '/p/v/people/su_a',
+      )
       expect(screen.getByRole('button', { name: 'Remove Alice' })).toBeInTheDocument()
       expect(screen.queryByText('Nobody here yet.')).not.toBeInTheDocument()
     })

@@ -362,7 +362,7 @@ it('enlarges a numbered crop to the whole frame and keeps it from the overlay', 
     'src',
     expect.stringContaining('fit_1280'),
   )
-  expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+  expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/p/v/photos/p1')
 
   // The footer carries the crop's own two actions, on the same write paths.
   await user.click(within(overlay).getByRole('button', { name: 'Keep #2' }))

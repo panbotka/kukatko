@@ -275,14 +275,14 @@ function albumPage(from: number, count: number): PhotoListResponse {
   }
 }
 
-function renderPage(canWrite: boolean | Role = true, entry = '/albums/al_1') {
+function renderPage(canWrite: boolean | Role = true, entry = '/p/v/albums/al_1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
         <MemoryRouter initialEntries={[entry]}>
           <LocationProbe />
           <Routes>
-            <Route path="/albums/:uid" element={<AlbumDetailPage />} />
+            <Route path="/p/:slug/albums/:uid" element={<AlbumDetailPage />} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>
@@ -365,7 +365,7 @@ describe('AlbumDetailPage comments', () => {
     fetchPhotosMock.mockResolvedValue(page([]))
     createCommentMock.mockResolvedValue(albumComment('c9', 'Lovely day'))
     const user = userEvent.setup()
-    renderPage(false, '/albums/al_1?panel=comments')
+    renderPage(false, '/p/v/albums/al_1?panel=comments')
 
     const drawer = await screen.findByRole('dialog')
     await user.type(within(drawer).getByLabelText('New comment'), 'Lovely day')
@@ -382,7 +382,7 @@ describe('AlbumDetailPage comments', () => {
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([]))
     const user = userEvent.setup()
-    renderPage(true, '/albums/al_1?panel=comments')
+    renderPage(true, '/p/v/albums/al_1?panel=comments')
 
     const drawer = await screen.findByRole('dialog')
     await user.click(within(drawer).getByRole('button', { name: 'Close comments' }))
@@ -436,7 +436,7 @@ describe('AlbumDetailPage', () => {
     // An arrow alone said nothing; the label names the destination, and the
     // arrow itself stays decorative so the link's accessible name is the text.
     const back = await screen.findByRole('link', { name: 'Back to albums' })
-    expect(back).toHaveAttribute('href', '/albums')
+    expect(back).toHaveAttribute('href', '/p/v/albums')
     expect(back.querySelector('.bi-arrow-left')).toHaveAttribute('aria-hidden', 'true')
   })
 
@@ -446,7 +446,7 @@ describe('AlbumDetailPage', () => {
     renderPage()
 
     const back = await screen.findByRole('link', { name: 'Back to albums' })
-    expect(back).toHaveAttribute('href', '/albums')
+    expect(back).toHaveAttribute('href', '/p/v/albums')
   })
 
   it('says a deleted album is gone rather than failing blankly', async () => {
@@ -459,7 +459,10 @@ describe('AlbumDetailPage', () => {
     expect(await screen.findByText('This album no longer exists.')).toBeInTheDocument()
     expect(screen.getByText(/It was most likely deleted/)).toBeInTheDocument()
     expect(screen.queryByText('Could not load this album.')).toBeNull()
-    expect(screen.getByRole('link', { name: 'Back to albums' })).toHaveAttribute('href', '/albums')
+    expect(screen.getByRole('link', { name: 'Back to albums' })).toHaveAttribute(
+      'href',
+      '/p/v/albums',
+    )
   })
 
   it('links each tile to the detail page carrying the album scope', async () => {
@@ -471,7 +474,7 @@ describe('AlbumDetailPage', () => {
     // (and prev/next) returns to this album, not the whole library — and the
     // album's order with it, so prev/next steps the way the grid reads.
     const link = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(link).toHaveAttribute('href', '/photos/a?sort=oldest&album=al_1')
+    expect(link).toHaveAttribute('href', '/p/v/photos/a?sort=oldest&album=al_1')
   })
 
   it('renders no sort selector and no manual reordering controls', async () => {
@@ -547,7 +550,7 @@ describe('AlbumDetailPage', () => {
     // Sharing an upload link opens the create form with this album chosen.
     expect(within(menu).getByRole('menuitem', { name: 'Share an upload link' })).toHaveAttribute(
       'href',
-      `/upload-links?album=${album().uid}`,
+      `/p/v/upload-links?album=${album().uid}`,
     )
     // The tiles are selectable, so photos can be put into and out of albums.
     expect(screen.getByRole('button', { name: 'Select a.jpg' })).toBeInTheDocument()
@@ -972,7 +975,7 @@ describe('AlbumDetailPage face tagging', () => {
     // An occasional action: it waits in the header's "…" menu.
     const menu = await openHeaderMenu(userEvent.setup())
     const link = await within(menu).findByRole('menuitem', { name: 'Faces (12)' })
-    expect(link).toHaveAttribute('href', '/albums/al_1/faces')
+    expect(link).toHaveAttribute('href', '/p/v/albums/al_1/faces')
   })
 
   it('offers nothing when everybody in the album is already named', async () => {
@@ -1019,7 +1022,7 @@ describe('AlbumDetailPage scroll position', () => {
     // The grid is a window over the album: it is 250 photos tall from the first
     // response, so the remembered offset has somewhere to land straight away and
     // nothing has to be walked back through to get there.
-    writeGridScroll('u1', '/albums/al_1', {
+    writeGridScroll('u1', '/p/v/albums/al_1', {
       count: 250,
       scrollY: 6000,
       snapshot: gridState(6000),
@@ -1114,7 +1117,7 @@ describe('AlbumDetailPage order', () => {
     // order that is not in the list — the grid and the control have to agree.
     fetchAlbumMock.mockResolvedValue(album())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage(true, '/albums/al_1?sort=title')
+    renderPage(true, '/p/v/albums/al_1?sort=title')
 
     await screen.findByRole('link', { name: 'a.jpg' })
     expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveValue('oldest')

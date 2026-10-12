@@ -95,13 +95,13 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(entry = '/labels/lb_1', canWrite = true) {
+function renderPage(entry = '/p/v/labels/lb_1', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
         <MemoryRouter initialEntries={[entry]}>
           <Routes>
-            <Route path="/labels/:uid" element={<LabelDetailPage />} />
+            <Route path="/p/:slug/labels/:uid" element={<LabelDetailPage />} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>
@@ -155,7 +155,7 @@ describe('LabelDetailPage', () => {
     // An arrow alone said nothing; the label names the destination, and the
     // arrow itself stays decorative so the link's accessible name is the text.
     const back = await screen.findByRole('link', { name: 'Back to labels' })
-    expect(back).toHaveAttribute('href', '/labels')
+    expect(back).toHaveAttribute('href', '/p/v/labels')
     expect(back.querySelector('.bi-arrow-left')).toHaveAttribute('aria-hidden', 'true')
   })
 
@@ -177,7 +177,7 @@ describe('LabelDetailPage', () => {
     renderPage()
 
     const back = await screen.findByRole('link', { name: 'Back to labels' })
-    expect(back).toHaveAttribute('href', '/labels')
+    expect(back).toHaveAttribute('href', '/p/v/labels')
   })
 
   it('says a deleted label is gone rather than failing blankly', async () => {
@@ -189,7 +189,10 @@ describe('LabelDetailPage', () => {
 
     expect(await screen.findByText('This label no longer exists.')).toBeInTheDocument()
     expect(screen.queryByText('Could not load this label.')).toBeNull()
-    expect(screen.getByRole('link', { name: 'Back to labels' })).toHaveAttribute('href', '/labels')
+    expect(screen.getByRole('link', { name: 'Back to labels' })).toHaveAttribute(
+      'href',
+      '/p/v/labels',
+    )
   })
 
   it('links each tile to the detail page carrying the label scope', async () => {
@@ -200,13 +203,13 @@ describe('LabelDetailPage', () => {
     // The tile's detail link carries ?label so Esc/Back and prev/next stay in
     // this label rather than falling through to the library.
     const link = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(link).toHaveAttribute('href', '/photos/a?label=lb_1')
+    expect(link).toHaveAttribute('href', '/p/v/photos/a?label=lb_1')
   })
 
   it('honours filters from the URL in the scoped fetch', async () => {
     fetchLabelMock.mockResolvedValue(label())
     fetchPhotosMock.mockResolvedValue(page([]))
-    renderPage('/labels/lb_1?sort=oldest')
+    renderPage('/p/v/labels/lb_1?sort=oldest')
 
     await waitFor(() => {
       expect(fetchPhotosMock).toHaveBeenCalled()
@@ -219,7 +222,7 @@ describe('LabelDetailPage', () => {
   it('keeps selection and bulk edit away from viewers', async () => {
     fetchLabelMock.mockResolvedValue(label())
     fetchPhotosMock.mockResolvedValue(page([photo('a', 'a.jpg')]))
-    renderPage('/labels/lb_1', false)
+    renderPage('/p/v/labels/lb_1', false)
 
     await screen.findByRole('heading', { name: 'Sunset' })
     expect(screen.queryByRole('button', { name: 'Select a.jpg' })).not.toBeInTheDocument()

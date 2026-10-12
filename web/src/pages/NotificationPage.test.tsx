@@ -89,16 +89,16 @@ function LocationProbe() {
   )
 }
 
-/** The page at `/n/nt1`, optionally with another page behind it in history. */
+/** The page at `/p/v/n/nt1`, optionally with another page behind it in history. */
 function tree(entries: string[]) {
   return (
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={viewer}>
         <MemoryRouter initialEntries={entries} initialIndex={entries.length - 1}>
           <Routes>
-            <Route path="/n/:uid" element={<NotificationPage />} />
-            <Route path="/photos/:uid" element={<div>the viewer</div>} />
-            <Route path="/" element={<div>the library</div>} />
+            <Route path="/p/:slug/n/:uid" element={<NotificationPage />} />
+            <Route path="/p/:slug/photos/:uid" element={<div>the viewer</div>} />
+            <Route path="/p/:slug" element={<div>the library</div>} />
           </Routes>
           <LocationProbe />
         </MemoryRouter>
@@ -108,7 +108,7 @@ function tree(entries: string[]) {
 }
 
 /** Mounts {@link tree}; `rerender` re-renders the same page in place. */
-function renderPage(entries: string[] = ['/n/nt1']) {
+function renderPage(entries: string[] = ['/p/v/n/nt1']) {
   const view = render(tree(entries))
   return {
     rerender: () => {
@@ -130,7 +130,7 @@ describe('NotificationPage', () => {
     renderPage()
 
     expect(await screen.findByText('the viewer')).toBeInTheDocument()
-    expect(screen.getByTestId('location')).toHaveTextContent('/photos/pha')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v/photos/pha')
     // Opened as the first entry (a push in a fresh window): the viewer is told
     // there is nothing behind it, so its close button reconstructs a way out.
     expect(screen.getByTestId('direct')).toHaveTextContent('true')
@@ -140,7 +140,7 @@ describe('NotificationPage', () => {
 
   it('leaves the viewer to step back when the app had a page behind the notification', async () => {
     fetchMock.mockResolvedValue(detail([photo('pha', 'a.jpg')]))
-    renderPage(['/', '/n/nt1'])
+    renderPage(['/p/v', '/p/v/n/nt1'])
 
     expect(await screen.findByText('the viewer')).toBeInTheDocument()
     expect(screen.getByTestId('direct')).toHaveTextContent('false')
@@ -158,9 +158,9 @@ describe('NotificationPage', () => {
     expect(screen.getByText('Jana tagged you.')).toBeInTheDocument()
     // The frozen order, each tile opening the viewer.
     const tiles = ['a.jpg', 'b.jpg', 'c.jpg'].map((name) => screen.getByRole('link', { name }))
-    expect(tiles[0]).toHaveAttribute('href', '/photos/pha')
-    expect(tiles[2]).toHaveAttribute('href', '/photos/phc')
-    expect(screen.getByTestId('location')).toHaveTextContent('/n/nt1')
+    expect(tiles[0]).toHaveAttribute('href', '/p/v/photos/pha')
+    expect(tiles[2]).toHaveAttribute('href', '/p/v/photos/phc')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v/n/nt1')
     expect(screen.queryByTestId('notification-dropped')).toBeNull()
   })
 
@@ -194,7 +194,7 @@ describe('NotificationPage', () => {
 
     expect(await screen.findByText('1 photo is no longer available to you.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'a.jpg' })).toBeInTheDocument()
-    expect(screen.getByTestId('location')).toHaveTextContent('/n/nt1')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v/n/nt1')
   })
 
   it('explains an empty set whose photos were all dropped', async () => {

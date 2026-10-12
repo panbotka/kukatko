@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { useAuth } from '../auth/AuthContext'
 import { subscribeTaskChanges } from '../lib/taskChanges'
+import { useProjectSlug } from '../project/ProjectContext'
 import { fetchTaskSummary, type TaskSummary } from '../services/tasks'
 
 import { TaskSummaryContext, type TaskSummaryState } from './TaskSummaryContext'
@@ -29,10 +30,16 @@ export const REFRESH_INTERVAL_MS = 60_000
  * state change, an assignment, a new task — which the services announce on the
  * task-change bus. A failed fetch clears the counts, so the badge hides silently
  * rather than showing a number nobody can vouch for.
+ *
+ * The counts belong to one project: switching to another aborts the request in
+ * flight, drops the old counts and fetches the new project's.
  */
 export function TaskSummaryProvider({ children }: { children: ReactNode }) {
   const { status } = useAuth()
   const enabled = status === 'authenticated'
+  // Read only as the polling effect's dependency: the request itself goes to
+  // whatever project the API is pointed at, which the provider keeps in step.
+  const slug = useProjectSlug()
   const [summary, setSummary] = useState<TaskSummary | null>(null)
   // The in-flight request, so a refresh supersedes a poll (and vice versa)
   // instead of racing it: only the newest request may set state.
@@ -98,8 +105,11 @@ export function TaskSummaryProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisibilityChange)
       controller.current?.abort()
       controller.current = null
+      // The counts were the old project's (or the old session's): never show
+      // them in the next one while its own are on the way.
+      setSummary(null)
     }
-  }, [enabled, load])
+  }, [enabled, load, slug])
 
   const value = useMemo<TaskSummaryState>(() => ({ summary, refresh: load }), [summary, load])
 

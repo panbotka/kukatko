@@ -74,7 +74,7 @@ const { fetchQuerySchema } = await import('../services/search')
 const { fetchSearchHistory } = await import('../services/searchHistory')
 
 /** Renders the bar alone at `path`, so the active tab is the one under test. */
-function renderBar(role: 'viewer' | 'curator' | 'editor' = 'editor', path = '/') {
+function renderBar(role: 'viewer' | 'curator' | 'editor' = 'editor', path = '/p/v') {
   const onOpenSearch = vi.fn()
   const view = render(
     <I18nextProvider i18n={i18n}>
@@ -95,7 +95,7 @@ function LocationDisplay() {
 }
 
 /** Renders the whole shell, to pin where the bar does (and does not) appear. */
-function renderShell(path = '/') {
+function renderShell(path = '/p/v') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth('editor')}>
@@ -137,7 +137,7 @@ describe('MobileTabBar on a phone', () => {
 
     const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
     // The library is the homepage, so its tab points at the site root.
-    const links = ['Library', '/', 'Albums', '/albums', 'Upload', '/upload']
+    const links = ['Library', '/p/v', 'Albums', '/p/v/albums', 'Upload', '/p/v/upload']
     for (let i = 0; i < links.length; i += 2) {
       expect(screen.getByRole('link', { name: links[i] })).toHaveAttribute('href', links[i + 1])
     }
@@ -195,7 +195,7 @@ describe('MobileTabBar on a phone', () => {
   })
 
   it('highlights the tab for the current route, sub-paths included', () => {
-    renderBar('editor', '/albums/ab12')
+    renderBar('editor', '/p/v/albums/ab12')
 
     // react-router marks the matching NavLink; the album detail page still reads
     // as "you are in Albums".
@@ -207,7 +207,7 @@ describe('MobileTabBar on a phone', () => {
   })
 
   it('marks the library tab active on the site root only', () => {
-    renderBar('editor', '/')
+    renderBar('editor', '/p/v')
     expect(screen.getByRole('link', { name: 'Library' })).toHaveClass('active')
     expect(screen.getByRole('link', { name: 'Albums' })).not.toHaveClass('active')
   })
@@ -215,13 +215,13 @@ describe('MobileTabBar on a phone', () => {
   it('offers a curator the Upload tab, which is curation', () => {
     renderBar('curator')
 
-    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/p/v/upload')
   })
 
   it('gives a viewer the Upload tab too: all four tabs for every role', () => {
     renderBar('viewer')
 
-    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/upload')
+    expect(screen.getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/p/v/upload')
     expect(screen.getByRole('link', { name: 'Library' })).toBeInTheDocument()
     expect(tabsOf(screen.getByRole('navigation', { name: 'Primary navigation' }))).toHaveLength(4)
   })
@@ -261,20 +261,20 @@ describe('MobileTabBar on a phone', () => {
 
   it('opens the palette from the search tab without navigating anywhere', async () => {
     const user = userEvent.setup()
-    renderShell('/albums')
+    renderShell('/p/v/albums')
 
     const bar = screen.getByRole('navigation', { name: 'Primary navigation' })
     await user.click(within(bar).getByRole('button', { name: 'Search' }))
     const input = await screen.findByRole('combobox')
     // The palette is state, not a route: the page underneath keeps its URL, so
     // closing it leaves nothing on the history stack for Back to walk through.
-    expect(screen.getByTestId('loc')).toHaveTextContent('/albums')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/albums')
 
     fireEvent.keyDown(input, { key: 'Escape' })
     await waitFor(() => {
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     })
-    expect(screen.getByTestId('loc')).toHaveTextContent('/albums')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/albums')
   })
 })
 

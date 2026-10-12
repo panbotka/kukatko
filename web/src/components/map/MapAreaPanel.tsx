@@ -1,7 +1,6 @@
 import { forwardRef, type CSSProperties, type ReactNode } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 import { type GridComponents, VirtuosoGrid } from 'react-virtuoso'
 
 import { FadeInImage } from '../FadeInImage'
@@ -9,6 +8,7 @@ import { Icon } from '../Icon'
 import { formatCount, formatDate } from '../../lib/format'
 import { type SheetState } from '../../lib/mapView'
 import { squareRenditionName } from '../../lib/rendition'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type MapFeature } from '../../services/map'
 import { thumbUrl } from '../../services/photos'
 
@@ -156,7 +156,7 @@ function AreaThumb({
     onHoverPhoto(null)
   }
   return (
-    <Link
+    <ProjectLink
       to={`/photos/${encodeURIComponent(uid)}${detailQuery === '' ? '' : `?${detailQuery}`}`}
       className={highlighted ? 'kk-map-area-thumb is-highlighted' : 'kk-map-area-thumb'}
       onMouseEnter={enter}
@@ -176,7 +176,7 @@ function AreaThumb({
           <span className="visually-hidden">{t('map.area.video')}</span>
         </span>
       )}
-    </Link>
+    </ProjectLink>
   )
 }
 

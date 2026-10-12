@@ -4,10 +4,10 @@ import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../../auth/AuthContext'
 import { useSubjects } from '../../hooks/useSubjects'
+import { ProjectLink } from '../../project/ProjectLink'
 import { setMySubject } from '../../services/auth'
 import { Icon } from '../Icon'
 import { AddAutocomplete } from '../photo/AddAutocomplete'
@@ -108,7 +108,7 @@ export function MySubjectCard() {
               {linked === undefined ? (
                 <span className="text-secondary">{t('account.subject.unknownPerson')}</span>
               ) : (
-                <Link to={`/people/${linked.uid}`}>{linked.name}</Link>
+                <ProjectLink to={`/people/${linked.uid}`}>{linked.name}</ProjectLink>
               )}
             </p>
             <Button

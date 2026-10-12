@@ -33,6 +33,7 @@ import {
   viewportFromView,
 } from '../lib/mapView'
 import { useUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
 import { type Mapset, probeTileFailure, type TileFailure } from '../services/map'
 
 /** The i18n key explaining each tile failure. */
@@ -85,6 +86,7 @@ export function MapPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('map.title'))
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const { canWrite } = useAuth()
   const narrow = useIsNarrowViewport()
   const reducedMotion = usePrefersReducedMotion()
@@ -162,7 +164,7 @@ export function MapPage() {
       onOpenPhoto: (uid) => {
         const { bounds: area, filterView: filters } = latest.current
         const query = area === null ? '' : `?${mapDetailQuery(filters, area)}`
-        void navigate(`/photos/${encodeURIComponent(uid)}${query}`)
+        void navigate(projectPath(`/photos/${encodeURIComponent(uid)}${query}`))
       },
       onOpenCluster: (box) => {
         const { narrow: phone, view: current } = latest.current
@@ -176,7 +178,7 @@ export function MapPage() {
       },
       describe: (summary, estimated) => tileLabel(t, i18n.language, summary, estimated),
     }),
-    [navigate, setView, t, i18n.language],
+    [navigate, projectPath, setView, t, i18n.language],
   )
 
   const handleBackToArea = useCallback(() => {

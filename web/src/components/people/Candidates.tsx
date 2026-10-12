@@ -3,7 +3,6 @@ import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useCandidateReview } from '../../hooks/useCandidateReview'
 import { useGridDensity } from '../../hooks/useGridDensity'
@@ -15,6 +14,7 @@ import {
   THRESHOLD_DEFAULT_PERCENT,
 } from '../../lib/faceThreshold'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type CandidateResult, searchCandidates } from '../../services/faces'
 import { CandidateCard } from '../faces/CandidateCard'
 import { EmptyState } from '../EmptyState'
@@ -199,12 +199,12 @@ export function Candidates({ subjectUid, onAssigned }: CandidatesProps) {
         </Button>
         {/* Power users get the full sweep — threshold slider, keyboard flow, confirm-all
             — on /faces, which pre-fills this subject and auto-runs. */}
-        <Link
+        <ProjectLink
           to={`/faces?subject=${encodeURIComponent(subjectUid)}`}
           className="btn btn-sm btn-outline-secondary"
         >
           {t('candidates.reviewAll')}
-        </Link>
+        </ProjectLink>
         {/* The same stepper and the same stored count as the full workspace, so
             the density set on /faces is the density this section opens at. */}
         {visible.length > 0 && (

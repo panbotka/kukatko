@@ -3,6 +3,7 @@ import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
 
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
+import { useProjectPath } from '../../project/ProjectContext'
 import { Icon } from '../Icon'
 
 import Modal from '../Modal'
@@ -57,6 +58,7 @@ export function ReviewLightbox({
 }: ReviewLightboxProps) {
   const { t } = useTranslation()
   const { href } = stage
+  const projectPath = useProjectPath()
 
   useKeyboardShortcuts({
     Escape: onClose,
@@ -72,7 +74,7 @@ export function ReviewLightbox({
     },
     o: () => {
       if (href !== undefined) {
-        window.open(href, '_blank', 'noopener,noreferrer')
+        window.open(projectPath(href), '_blank', 'noopener,noreferrer')
       }
     },
   })

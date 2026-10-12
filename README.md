@@ -198,6 +198,13 @@ shared library is tidied by more than one person.
 
 ### The everyday library
 
+- **Addresses now start with `/p/<project>`.** One instance can hold several independent libraries
+  (projects), so every page of a library carries it: the library is `/p/v`, a photo
+  `/p/v/photos/…`, an album `/p/v/albums/…`. With a single project nothing else changes — opening
+  `/` lands in it, and every older link or bookmark (`/photos/…`, `/albums/…`, a notification's
+  `/n/…`) is forwarded to the same page in the project you last worked in, filters and all. An
+  account in several projects without a remembered one gets a short list to pick from at
+  `/projects`; a project you do not belong to looks exactly like a page that does not exist.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

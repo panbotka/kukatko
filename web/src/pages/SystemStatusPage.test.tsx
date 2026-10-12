@@ -369,7 +369,7 @@ describe('SystemStatusPage', () => {
     renderPage()
     expect(await screen.findByRole('link', { name: 'Import history' })).toHaveAttribute(
       'href',
-      '/import',
+      '/p/v/import',
     )
     expect(screen.getByRole('link', { name: 'Library maintenance' })).toHaveAttribute(
       'href',
@@ -396,14 +396,17 @@ describe('SystemStatusPage', () => {
 
     expect(await screen.findByRole('link', { name: 'Photos in the library' })).toHaveAttribute(
       'href',
-      '/',
+      '/p/v',
     )
     expect(screen.getByRole('link', { name: 'of which videos' })).toHaveAttribute(
       'href',
-      '/?q=type%3Avideo',
+      '/p/v?q=type%3Avideo',
     )
-    expect(screen.getByRole('link', { name: 'In the trash' })).toHaveAttribute('href', '/trash')
-    expect(screen.getByRole('link', { name: 'Hidden' })).toHaveAttribute('href', '/?q=hidden%3Ayes')
+    expect(screen.getByRole('link', { name: 'In the trash' })).toHaveAttribute('href', '/p/v/trash')
+    expect(screen.getByRole('link', { name: 'Hidden' })).toHaveAttribute(
+      'href',
+      '/p/v?q=hidden%3Ayes',
+    )
     // A number with nowhere to go is plain text, not a link that lands elsewhere.
     expect(screen.queryByRole('link', { name: 'Detected faces' })).toBeNull()
   })
@@ -433,15 +436,15 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('tile-duplicates')).toHaveTextContent('14')
     expect(screen.getByRole('link', { name: 'Groups of faces to name' })).toHaveAttribute(
       'href',
-      '/people/clusters',
+      '/p/v/people/clusters',
     )
     expect(screen.getByRole('link', { name: 'Duplicate markers' })).toHaveAttribute(
       'href',
-      '/duplicate-markers',
+      '/p/v/duplicate-markers',
     )
     expect(screen.getByRole('link', { name: 'Without coordinates' })).toHaveAttribute(
       'href',
-      '/?q=geo%3Ano',
+      '/p/v?q=geo%3Ano',
     )
     // The reverse-geocode backlog is worked down by the maintenance page's
     // "fill in the places" option, so the tile leads there rather than nowhere.
@@ -453,7 +456,7 @@ describe('SystemStatusPage', () => {
     // leads to the videos rather than to a filter that does not exist.
     expect(
       screen.getByRole('link', { name: 'Videos without a streaming version' }),
-    ).toHaveAttribute('href', '/?q=type%3Avideo')
+    ).toHaveAttribute('href', '/p/v?q=type%3Avideo')
   })
 
   it('reports the streaming encode over videos, not over jobs', async () => {

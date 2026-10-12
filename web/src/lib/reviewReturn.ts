@@ -13,18 +13,27 @@
  * and so shows no way back to a game it never came from.
  */
 
+import { stripProjectPrefix } from '../project/paths'
+
 /** The navigation state the game attaches to its way out to a photo. */
 export interface ReviewReturn {
-  /** The game's own path and query (`/review?source=people`) to return to. */
+  /**
+   * The game's own address and query to return to, as the router reported it —
+   * so inside a project it carries the project (`/p/v/review?source=people`).
+   */
   reviewReturn: string
 }
 
 /** The game's route; a return path must be it, never an arbitrary address. */
 const REVIEW_PATH = '/review'
 
-/** Whether `path` is the game's own route, optionally with a query string. */
+/**
+ * Whether `path` is the game's own route, optionally inside a project
+ * (`/p/<slug>/review`) and optionally with a query string.
+ */
 function isReviewPath(path: string): boolean {
-  return path === REVIEW_PATH || path.startsWith(`${REVIEW_PATH}?`)
+  const page = stripProjectPrefix(path)
+  return page === REVIEW_PATH || page.startsWith(`${REVIEW_PATH}?`)
 }
 
 /**

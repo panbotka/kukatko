@@ -3,10 +3,10 @@ import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { formatCount } from '../../lib/format'
 import { countToneAlerts, countToneClass, type CountTone } from '../../lib/jobStateTone'
+import { ProjectLink } from '../../project/ProjectLink'
 import { Icon } from '../Icon'
 
 /**
@@ -81,9 +81,9 @@ function StatTile({ tile }: { tile: StatTileSpec }) {
             {tile.to === undefined ? (
               label
             ) : (
-              <Link to={tile.to} className="stretched-link text-reset">
+              <ProjectLink to={tile.to} className="stretched-link text-reset">
                 {label}
-              </Link>
+              </ProjectLink>
             )}
           </div>
           {tile.hintKey !== undefined && (

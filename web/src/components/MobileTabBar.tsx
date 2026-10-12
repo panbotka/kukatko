@@ -5,6 +5,7 @@ import { NavLink } from 'react-router-dom'
 
 import { useIsNavDrawerViewport } from '../hooks/useIsNarrowViewport'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { useProjectPath } from '../project/ProjectContext'
 
 import { Icon, type IconName } from './Icon'
 
@@ -110,6 +111,7 @@ const TABS: readonly TabEntry[] = [
 export function MobileTabBar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { t } = useTranslation()
   const drawerNav = useIsNavDrawerViewport()
+  const projectPath = useProjectPath()
   const barRef = useRef<HTMLElement>(null)
 
   // Publish the live height (safe-area padding included) so the rest of the shell
@@ -162,7 +164,7 @@ export function MobileTabBar({ onOpenSearch }: { onOpenSearch: () => void }) {
         ) : (
           <NavLink
             key={tab.to}
-            to={tab.to}
+            to={projectPath(tab.to)}
             // Without `end` the root route's prefix match would light the library
             // tab up on every page in the app.
             end={tab.to === LIBRARY_PATH}

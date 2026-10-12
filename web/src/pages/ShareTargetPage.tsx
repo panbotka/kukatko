@@ -1,8 +1,10 @@
 import Alert from 'react-bootstrap/Alert'
 import { useTranslation } from 'react-i18next'
-import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useProjectPath } from '../project/ProjectContext'
+import { ProjectLink } from '../project/ProjectLink'
 import { SHARE_PARAM } from '../pwa/shareContract'
 
 /** Where a staged share is forwarded to, carrying its id. */
@@ -34,19 +36,25 @@ export function ShareTargetPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('share.title'))
   const [searchParams] = useSearchParams()
+  const projectPath = useProjectPath()
   const shareId = searchParams.get(SHARE_PARAM) ?? ''
 
   if (shareId !== '') {
-    return <Navigate to={`${UPLOAD_PATH}?${SHARE_PARAM}=${encodeURIComponent(shareId)}`} replace />
+    return (
+      <Navigate
+        to={projectPath(`${UPLOAD_PATH}?${SHARE_PARAM}=${encodeURIComponent(shareId)}`)}
+        replace
+      />
+    )
   }
 
   return (
     <div className="py-4" data-testid="share-target-page">
       <h1 className="kk-page-title mb-3">{t('share.title')}</h1>
       <Alert variant="warning">{t('share.missing.message')}</Alert>
-      <Link to={UPLOAD_PATH} className="btn btn-primary">
+      <ProjectLink to={UPLOAD_PATH} className="btn btn-primary">
         {t('share.missing.action')}
-      </Link>
+      </ProjectLink>
     </div>
   )
 }

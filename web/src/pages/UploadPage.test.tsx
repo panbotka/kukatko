@@ -483,7 +483,7 @@ describe('UploadPage — stage 3, done', () => {
     const bar = screen.getByTestId('upload-action-bar')
     expect(within(bar).getByRole('link', { name: 'Show them in the library' })).toHaveAttribute(
       'href',
-      '/?sort=added',
+      '/p/v?sort=added',
     )
     expect(within(bar).getByRole('button', { name: 'Upload more' })).toBeInTheDocument()
   })
@@ -711,7 +711,7 @@ describe('UploadPage — by role', () => {
     expect(within(bar).getByRole('button', { name: 'Upload more' })).toBeInTheDocument()
     expect(within(bar).getByRole('link', { name: 'Show them in the library' })).toHaveAttribute(
       'href',
-      '/?sort=added',
+      '/p/v?sort=added',
     )
     expect(screen.queryByRole('heading', { name: 'Albums and labels' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Albums' })).not.toBeInTheDocument()

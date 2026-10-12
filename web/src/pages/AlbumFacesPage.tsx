@@ -15,6 +15,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useFrozenHeight } from '../hooks/useFrozenHeight'
 import { useImageFrame } from '../hooks/useImageFrame'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { useProjectPath } from '../project/ProjectContext'
 import { type FaceView } from '../services/people'
 import { type Photo, thumbUrl } from '../services/photos'
 
@@ -123,6 +124,7 @@ function AlbumFacesStage({ photo, faces, hovered, onHover }: AlbumFacesStageProp
 export function AlbumFacesPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const { uid = '' } = useParams<{ uid: string }>()
   const run = useAlbumFaces(uid)
   const [hovered, setHovered] = useState<number | null>(null)
@@ -138,7 +140,7 @@ export function AlbumFacesPage() {
 
   useDocumentTitle(t('documentTitle.albumFaces'))
 
-  const albumPath = `/albums/${encodeURIComponent(uid)}`
+  const albumPath = projectPath(`/albums/${encodeURIComponent(uid)}`)
   const close = useCallback(() => {
     void navigate(albumPath)
   }, [albumPath, navigate])

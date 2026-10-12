@@ -175,7 +175,7 @@ describe('TechnicalDetails', () => {
 
     await expand()
     const link = screen.getByRole('link', { name: 'Camera Man' })
-    expect(link).toHaveAttribute('href', '/?uploader=u1')
+    expect(link).toHaveAttribute('href', '/p/v?uploader=u1')
     // Only the name is the link; the moment it arrived stays plain text.
     expect(link).not.toHaveTextContent(/2026/)
   })

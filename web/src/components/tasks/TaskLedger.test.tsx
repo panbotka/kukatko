@@ -110,7 +110,7 @@ describe('TaskLedger dates', () => {
     )
     expect(screen.getByRole('link', { name: 'a.jpg' })).toHaveAttribute(
       'href',
-      '/photos/a?task=tk1&view=list',
+      '/p/v/photos/a?task=tk1&view=list',
     )
     expect(screen.getByText('no comment')).toBeInTheDocument()
   })

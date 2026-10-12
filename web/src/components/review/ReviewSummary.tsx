@@ -1,8 +1,8 @@
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { type RoundSummary, type SessionTally } from '../../hooks/useReviewGame'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo, thumbUrl } from '../../services/photos'
 import { Icon, type IconName } from '../Icon'
 
@@ -159,14 +159,14 @@ export function SessionSummaryCard({
             <ul className="review-summary__mosaic" data-testid="review-session-mosaic">
               {mosaic.map((photo) => (
                 <li key={photo.uid}>
-                  <Link to={`/photos/${encodeURIComponent(photo.uid)}`}>
+                  <ProjectLink to={`/photos/${encodeURIComponent(photo.uid)}`}>
                     <img
                       src={thumbUrl(photo.uid, MOSAIC_THUMB)}
                       alt={photo.title === '' ? photo.file_name : photo.title}
                       loading="lazy"
                       decoding="async"
                     />
-                  </Link>
+                  </ProjectLink>
                 </li>
               ))}
             </ul>

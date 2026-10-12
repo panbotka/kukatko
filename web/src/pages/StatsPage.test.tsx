@@ -202,12 +202,12 @@ describe('StatsPage', () => {
       within(await screen.findByTestId('stat-photos-hidden')).getByRole('link', {
         name: 'Show the photos hidden from the library',
       }),
-    ).toHaveAttribute('href', '/?q=hidden%3Ayes')
+    ).toHaveAttribute('href', '/p/v?q=hidden%3Ayes')
     expect(
       within(screen.getByTestId('stat-photos-listed')).getByRole('link', {
         name: 'Open the library',
       }),
-    ).toHaveAttribute('href', '/')
+    ).toHaveAttribute('href', '/p/v')
   })
 
   it('keeps the faces card and the faces meter on one grain, so they agree', async () => {
@@ -254,7 +254,7 @@ describe('StatsPage', () => {
     // The review game works over the nameless detections, so that is the number
     // the link carries — not the marker count it used to hang off.
     expect(unnamed).toHaveTextContent('28,202')
-    expect(unnamed).toHaveAttribute('href', '/review')
+    expect(unnamed).toHaveAttribute('href', '/p/v/review')
 
     // The library's own "no faces" filter, so the destination is an ordinary
     // library view rather than a screen of its own.
@@ -262,13 +262,13 @@ describe('StatsPage', () => {
       within(screen.getByTestId('stat-faces-without-faces')).getByRole('link', {
         name: 'Show photos without a face in the library',
       }),
-    ).toHaveAttribute('href', '/?q=faces%3A0')
+    ).toHaveAttribute('href', '/p/v?q=faces%3A0')
 
     expect(
       within(screen.getByTestId('stat-photos-archived')).getByRole('link', {
         name: 'Open the trash',
       }),
-    ).toHaveAttribute('href', '/trash')
+    ).toHaveAttribute('href', '/p/v/trash')
   })
 
   it('never offers a viewer a link they would be turned away from', async () => {
@@ -282,7 +282,7 @@ describe('StatsPage', () => {
     // The library is open to every role, so that link survives.
     expect(
       within(screen.getByTestId('stat-faces-without-faces')).getByRole('link'),
-    ).toHaveAttribute('href', '/?q=faces%3A0')
+    ).toHaveAttribute('href', '/p/v?q=faces%3A0')
   })
 
   it('shows an error state instead of zeroes when the counts cannot be loaded', async () => {
@@ -340,7 +340,7 @@ describe('StatsPage', () => {
     renderPage()
 
     const bar = await screen.findByRole('link', { name: 'Show photos taken in 1907' })
-    expect(bar).toHaveAttribute('href', '/?taken_after=1907-01-01&taken_before=1907-12-31')
+    expect(bar).toHaveAttribute('href', '/p/v?taken_after=1907-01-01&taken_before=1907-12-31')
     // An empty year leads nowhere: there would be nothing behind the link.
     expect(screen.queryByRole('link', { name: 'Show photos taken in 1906' })).toBeNull()
   })
@@ -350,7 +350,7 @@ describe('StatsPage', () => {
 
     expect(
       await screen.findByRole('link', { name: 'Show photos taken with Apple iPhone 13' }),
-    ).toHaveAttribute('href', '/?camera=iPhone+13')
+    ).toHaveAttribute('href', '/p/v?camera=iPhone+13')
   })
 
   it('reports the coverage shares beside the counts', async () => {

@@ -48,9 +48,12 @@ describe('GlobalSearchSections', () => {
     renderSections('beach')
 
     const albumLink = await screen.findByRole('link', { name: /Beach trip/ })
-    expect(albumLink).toHaveAttribute('href', '/albums/al1')
-    expect(screen.getByRole('link', { name: 'Beatrice' })).toHaveAttribute('href', '/people/su1')
-    expect(screen.getByRole('link', { name: /beachy/ })).toHaveAttribute('href', '/labels/lb1')
+    expect(albumLink).toHaveAttribute('href', '/p/v/albums/al1')
+    expect(screen.getByRole('link', { name: 'Beatrice' })).toHaveAttribute(
+      'href',
+      '/p/v/people/su1',
+    )
+    expect(screen.getByRole('link', { name: /beachy/ })).toHaveAttribute('href', '/p/v/labels/lb1')
   })
 
   it('renders nothing while idle (empty query) — no request', () => {
@@ -90,7 +93,7 @@ describe('GlobalSearchSections', () => {
     renderSections(ALBUM_UID)
 
     const link = await screen.findByRole('link', { name: /Beach trip/ })
-    expect(link).toHaveAttribute('href', `/albums/${ALBUM_UID}`)
+    expect(link).toHaveAttribute('href', `/p/v/albums/${ALBUM_UID}`)
     expect(screen.getByRole('region', { name: 'Go to' })).toBeInTheDocument()
     expect(link).toHaveTextContent('album ID')
   })

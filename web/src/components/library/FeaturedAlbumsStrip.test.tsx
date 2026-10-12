@@ -77,8 +77,11 @@ describe('FeaturedAlbumsStrip', () => {
     const heading = await screen.findByRole('heading', { name: 'Featured' })
     const region = screen.getByRole('region', { name: 'Featured' })
     expect(region).toContainElement(heading)
-    expect(screen.getByRole('link', { name: /Pouť 2026/ })).toHaveAttribute('href', '/albums/al1')
-    expect(screen.getByRole('link', { name: /Hody/ })).toHaveAttribute('href', '/albums/al2')
+    expect(screen.getByRole('link', { name: /Pouť 2026/ })).toHaveAttribute(
+      'href',
+      '/p/v/albums/al1',
+    )
+    expect(screen.getByRole('link', { name: /Hody/ })).toHaveAttribute('href', '/p/v/albums/al2')
     expect(screen.getByText('42 photos')).toBeInTheDocument()
     expect(screen.getByText('1 photo')).toBeInTheDocument()
 

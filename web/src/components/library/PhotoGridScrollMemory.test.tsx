@@ -170,7 +170,7 @@ function RoutedGridPage() {
           <Routes>
             <Route path="/" element={<GridWithMemory photos={PHOTOS} />} />
             <Route path="/elsewhere" element={null} />
-            <Route path="/photos/:uid" element={<ViewerProbe />} />
+            <Route path="/p/:slug/photos/:uid" element={<ViewerProbe />} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>

@@ -4,13 +4,14 @@ import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useLightbox } from '../../hooks/useLightbox'
 import { formatBytes, formatCount, formatDate, formatDuration } from '../../lib/format'
 import { pairId } from '../../lib/duplicateCompare'
 import { gridTemplateColumns, REVIEW_GRID_SCOPE } from '../../lib/gridDensity'
 import { photoLabel } from '../../lib/photoTitle'
+import { useProjectPath } from '../../project/ProjectContext'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type DuplicateGroup, type DuplicateMember } from '../../services/duplicates'
 import { thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
@@ -81,6 +82,7 @@ export function DuplicateGroupCard({
 }: DuplicateGroupCardProps) {
   const { t, i18n } = useTranslation()
   const [keeperUid, setKeeperUid] = useState(group.keeper_uid)
+  const projectPath = useProjectPath()
   const lightbox = useLightbox(group.members)
   const enlarged = lightbox.item
 
@@ -150,13 +152,13 @@ export function DuplicateGroupCard({
         {/* The tiles above are 224px squares — enough to spot a group, not enough
             to choose within one. The compare view is where the decision is made,
             so it is offered right next to the shortcut that skips it. */}
-        <Link
+        <ProjectLink
           to={`/duplicates/compare?pair=${encodeURIComponent(comparePairId(group))}`}
           className="btn btn-outline-secondary btn-sm"
         >
           <Icon name="arrows-angle-expand" className="me-1" />
           {t('duplicates.compare.open')}
-        </Link>
+        </ProjectLink>
         <Button
           variant="primary"
           size="sm"
@@ -179,7 +181,7 @@ export function DuplicateGroupCard({
             // its shape from the loaded preview anyway and draws no box here.
             orientation: 0,
             size: MEMBER_LIGHTBOX_SIZE,
-            href: `/photos/${enlarged.uid}`,
+            href: projectPath(`/photos/${enlarged.uid}`),
             alt: photoLabel(enlarged, i18n.language),
           }}
           title={memberSummary(enlarged, i18n.language)}

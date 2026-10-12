@@ -135,7 +135,7 @@ describe('SubjectTile', () => {
 
   it('links to the subject page', () => {
     renderTile()
-    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/s1')
+    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/p/v/people/s1')
   })
 })
 

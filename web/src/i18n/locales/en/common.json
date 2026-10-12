@@ -3095,6 +3095,13 @@
     "filterAll": "All",
     "filterUnread": "Unread"
   },
+  "projects": {
+    "title": "Projects",
+    "intro": "The libraries you belong to. Pick the one to open.",
+    "empty": "You do not belong to any project yet. Ask the administrator of a project for an invitation.",
+    "unavailable": "unavailable",
+    "pending": "awaiting approval"
+  },
   "notFound": {
     "title": "Page not found",
     "message": "The requested page does not exist.",

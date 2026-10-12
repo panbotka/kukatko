@@ -77,13 +77,13 @@ describe('WhatsNewPanel', () => {
     // arrivals it counted are the first tiles there.
     expect(screen.getByRole('link', { name: '5 new photos' })).toHaveAttribute(
       'href',
-      '/?sort=added',
+      '/p/v?sort=added',
     )
     expect(screen.getByRole('link', { name: 'Summer 2026' })).toHaveAttribute(
       'href',
-      '/albums/al-1',
+      '/p/v/albums/al-1',
     )
-    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/people/su-1')
+    expect(screen.getByRole('link', { name: 'Anna' })).toHaveAttribute('href', '/p/v/people/su-1')
     // Comments have no per-library destination, so they are a count, not a link.
     expect(screen.getByText('2 new comments')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '2 new comments' })).not.toBeInTheDocument()
@@ -250,7 +250,7 @@ describe('WhatsNewPanel — new photos of you', () => {
 
     const mine = await screen.findByRole('link', { name: '2 new photos of you' })
     // The person facet, in recently-added order like the total above it.
-    expect(mine).toHaveAttribute('href', '/?person=sub123&sort=added')
+    expect(mine).toHaveAttribute('href', '/p/v?person=sub123&sort=added')
   })
 
   it('says nothing when none of the new photos is of the reader', async () => {
@@ -285,7 +285,7 @@ describe('the tasks line', () => {
     // The queue narrowed to "on me" — the very count the line reports — not
     // to a state, which would show other people's questions too.
     const link = await screen.findByRole('link', { name: '3 tasks wait on you' })
-    expect(link).toHaveAttribute('href', '/tasks?waiting=1')
+    expect(link).toHaveAttribute('href', '/p/v/tasks?waiting=1')
   })
 
   it('stays quiet when nobody is waiting on an answer', async () => {

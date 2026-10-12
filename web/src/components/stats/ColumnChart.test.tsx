@@ -66,7 +66,7 @@ describe('ColumnChart', () => {
     const chart = screen.getByRole('group', { name: 'Photos by year, 51 in total' })
     expect(within(chart).getByRole('link', { name: 'Open 1907' })).toHaveAttribute(
       'href',
-      '/?year=1907',
+      '/p/v?year=1907',
     )
     // An empty bucket leads nowhere: there would be nothing behind the link.
     expect(within(chart).getAllByRole('link')).toHaveLength(2)

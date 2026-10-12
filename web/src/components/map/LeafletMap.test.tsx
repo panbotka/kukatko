@@ -342,7 +342,7 @@ describe('LeafletMap markers and clustering', () => {
     const popupFn = leaflet.calls.markers[0].popup as () => HTMLElement
     const el = popupFn()
     const link = el.tagName === 'A' ? (el as HTMLAnchorElement) : el.querySelector('a')
-    expect(link?.getAttribute('href')).toBe('/photos/ph1')
+    expect(link?.getAttribute('href')).toBe('/p/v/photos/ph1')
     expect(el.querySelector('img')?.getAttribute('src')).toBe(
       '/api/v1/p/v/photos/ph1/thumb/tile_224',
     )

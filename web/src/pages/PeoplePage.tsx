@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -19,6 +18,7 @@ import {
 } from '../lib/peopleBrowse'
 import { matchedByNickname } from '../lib/nickname'
 import { useUrlState } from '../lib/urlState'
+import { ProjectLink } from '../project/ProjectLink'
 import { fetchSubjects, type SubjectCount } from '../services/people'
 
 /** Fetch lifecycle of the people list. */
@@ -91,9 +91,9 @@ export function PeoplePage() {
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h1 className="kk-page-title mb-0">{t('people.title')}</h1>
         {canCurate && (
-          <Link to="/people/clusters" className="btn btn-outline-primary">
+          <ProjectLink to="/people/clusters" className="btn btn-outline-primary">
             {t('people.reviewClusters')}
-          </Link>
+          </ProjectLink>
         )}
       </div>
 

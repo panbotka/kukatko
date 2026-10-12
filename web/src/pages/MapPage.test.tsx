@@ -133,7 +133,7 @@ function LocationProbe() {
   return <span data-testid="location">{location.pathname + location.search}</span>
 }
 
-function renderMap(initialEntry = '/map', canWrite = true) {
+function renderMap(initialEntry = '/p/v/map', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
@@ -220,21 +220,21 @@ describe('MapPage', () => {
   it('opens a photo tile in the viewer, paging through the visible area', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
     const user = userEvent.setup()
-    renderMap('/map?archived=only')
+    renderMap('/p/v/map?archived=only')
 
     await user.click(await screen.findByRole('button', { name: 'report bounds' }))
     // The page lists the area only once the map has rested (debounced).
     await screen.findByRole('heading', { name: '1 photo in this area' })
     await user.click(screen.getByRole('button', { name: 'ph1' }))
     const location = screen.getByTestId('location').textContent
-    expect(location).toMatch(/^\/photos\/ph1\?/)
+    expect(location).toMatch(/^\/p\/v\/photos\/ph1\?/)
     expect(location).toContain('bbox=49.00000%2C14.00000%2C51.00000%2C16.00000')
     expect(location).toContain('archived=only')
   })
 
   it('reproduces the mapset and filters from a shared URL', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
-    renderMap('/map?mapset=outdoor&archived=only')
+    renderMap('/p/v/map?mapset=outdoor&archived=only')
 
     await screen.findByRole('button', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-mapset', 'outdoor')
@@ -262,12 +262,12 @@ describe('MapPage coverage', () => {
     await user.click(await screen.findByRole('link', { name: 'Fill in locations' }))
     // The library's own route, not the retired `/library` one: an in-app link
     // must not detour through the redirect kept for old bookmarks.
-    expect(screen.getByTestId('location')).toHaveTextContent('/?has_gps=false')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v?has_gps=false')
   })
 
   it('states the coverage to a viewer but sends them nowhere', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')], 10))
-    renderMap('/map', false)
+    renderMap('/p/v/map', false)
 
     expect(await screen.findByText(/1 of 10 photos are on the map/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Fill in locations' })).not.toBeInTheDocument()
@@ -381,7 +381,7 @@ describe('MapPage narrow viewport (phone)', () => {
   it('badges the shut drawer with how many filters are narrowing the map', async () => {
     mockViewport(true)
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
-    renderMap('/map?taken_after=2019-06-01&archived=only')
+    renderMap('/p/v/map?taken_after=2019-06-01&archived=only')
 
     await screen.findByRole('button', { name: 'ph1' })
     // Two filters are on and every control is hidden: without the badge the
@@ -402,7 +402,7 @@ describe('MapPage narrow viewport (phone)', () => {
       within(drawer).getByText('1 of 10 photos are on the map — the rest have no location stored.'),
     ).toBeInTheDocument()
     await user.click(within(drawer).getByRole('link', { name: 'Fill in locations' }))
-    expect(screen.getByTestId('location')).toHaveTextContent('/?has_gps=false')
+    expect(screen.getByTestId('location')).toHaveTextContent('/p/v?has_gps=false')
   })
 
   it('closes the drawer on a footer that already says what the filters left', async () => {
@@ -427,7 +427,7 @@ describe('MapPage narrow viewport (phone)', () => {
     mockViewport(true)
     fetchMock.mockResolvedValue(collection([], 10))
     const user = userEvent.setup()
-    renderMap('/map?taken_after=2030-01-01')
+    renderMap('/p/v/map?taken_after=2030-01-01')
 
     await screen.findByText('No geotagged photos')
     const drawer = await openMapFilterDrawer(user)
@@ -565,7 +565,7 @@ describe('MapPage area panel', () => {
 
   it('restores a collapsed column from a shared URL', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
-    renderMap('/map?panel=closed')
+    renderMap('/p/v/map?panel=closed')
 
     expect(await screen.findByRole('button', { name: /Photos in this area/ })).toBeInTheDocument()
     expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
@@ -582,7 +582,7 @@ describe('MapPage area panel', () => {
     expect(sheet).toHaveAttribute('data-state', 'peek')
     // The strip's photo links into the viewer with the area's query.
     const link = await within(sheet).findByRole('link', { name: 'Undated photo' })
-    expect(link.getAttribute('href')).toContain('/photos/ph1?bbox=')
+    expect(link.getAttribute('href')).toContain('/p/v/photos/ph1?bbox=')
 
     await user.click(within(sheet).getByRole('button', { name: 'Enlarge the photo panel' }))
     expect(screen.getByTestId('location')).toHaveTextContent('panel=half')
@@ -617,7 +617,7 @@ describe('MapPage area panel', () => {
 describe('MapPage deep links', () => {
   it('highlights the photo "show on map" pointed at', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
-    renderMap('/map?lat=50.08&lng=14.42&z=17&photo=ph1')
+    renderMap('/p/v/map?lat=50.08&lng=14.42&z=17&photo=ph1')
 
     await screen.findByRole('button', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-highlight', 'ph1')
@@ -625,7 +625,7 @@ describe('MapPage deep links', () => {
 
   it('hands the area of a viewer Back link to the map to fit', async () => {
     fetchMock.mockResolvedValue(collection([feature('ph1')]))
-    renderMap('/map?area=49%2C14%2C51%2C16')
+    renderMap('/p/v/map?area=49%2C14%2C51%2C16')
 
     await screen.findByRole('button', { name: 'ph1' })
     expect(screen.getByTestId('leaflet-map')).toHaveAttribute('data-area', 'set')

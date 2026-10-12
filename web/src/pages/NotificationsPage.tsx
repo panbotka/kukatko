@@ -14,6 +14,7 @@ import { NotificationRow } from '../components/notifications/NotificationRow'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { useNotificationInbox } from '../notifications/NotificationInboxContext'
+import { ProjectLink } from '../project/ProjectLink'
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -219,7 +220,7 @@ export function NotificationsPage() {
             components={{ Footer: GridFooter }}
             computeItemKey={(_index, n) => n.uid}
             itemContent={(_index, n) => (
-              <Link
+              <ProjectLink
                 to={notificationTarget(n)}
                 className="kk-inbox__item"
                 onClick={() => {
@@ -227,7 +228,7 @@ export function NotificationsPage() {
                 }}
               >
                 <NotificationRow notification={n} />
-              </Link>
+              </ProjectLink>
             )}
           />
         </div>

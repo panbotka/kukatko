@@ -383,7 +383,7 @@ describe('OrganizePanel label creation', () => {
     expect(attachLabelMock).toHaveBeenCalledWith('l9', 'p1')
     expect(await screen.findByRole('link', { name: 'Dovolená' })).toHaveAttribute(
       'href',
-      '/labels/l9',
+      '/p/v/labels/l9',
     )
     expect(input).toHaveValue('')
   })
@@ -484,7 +484,7 @@ describe('OrganizePanel album creation', () => {
     expect(addAlbumPhotosMock).toHaveBeenCalledWith('a9', ['p1'])
     expect(await screen.findByRole('link', { name: 'Ostatky 2022' })).toHaveAttribute(
       'href',
-      '/albums/a9',
+      '/p/v/albums/a9',
     )
     expect(input).toHaveValue('')
   })

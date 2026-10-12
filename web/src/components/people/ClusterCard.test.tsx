@@ -91,7 +91,10 @@ describe('ClusterCard', () => {
       'src',
       expect.stringContaining('fit_1280'),
     )
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p2')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/p2',
+    )
 
     await user.click(
       within(overlay).getByRole('button', { name: 'Remove this face from the group' }),
@@ -107,7 +110,10 @@ describe('ClusterCard', () => {
     await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
 
     const overlay = await screen.findByRole('dialog')
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/p1',
+    )
     expect(
       within(overlay).queryByRole('button', { name: 'Remove this face from the group' }),
     ).toBeNull()

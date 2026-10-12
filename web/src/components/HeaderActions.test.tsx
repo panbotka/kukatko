@@ -209,7 +209,10 @@ describe('HeaderActions on a wide screen', () => {
       expect(item).toHaveClass('dropdown-item')
     }
     // An action with an address stays a real link, openable in a new tab.
-    expect(within(menu).getByRole('menuitem', { name: 'Share' })).toHaveAttribute('href', '/share')
+    expect(within(menu).getByRole('menuitem', { name: 'Share' })).toHaveAttribute(
+      'href',
+      '/p/v/share',
+    )
   })
 
   it('renders a secondary action as a button of its own variant on the row', () => {

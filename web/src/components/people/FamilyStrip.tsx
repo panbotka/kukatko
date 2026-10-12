@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { formatLifeSpan } from '../../lib/lifeYears'
+import { ProjectLink } from '../../project/ProjectLink'
 import { fetchRelations, type Relations, type Relative } from '../../services/family'
 import { Icon } from '../Icon'
 
@@ -47,11 +47,11 @@ function RelativeChip({ relative }: { relative: Relative }) {
   const lifeSpan = formatLifeSpan(relative.birth_year, relative.death_year)
 
   return (
-    <Link to={`/people/${relative.uid}`} className={`${CHIP_CLASS} text-decoration-none`}>
+    <ProjectLink to={`/people/${relative.uid}`} className={`${CHIP_CLASS} text-decoration-none`}>
       <SubjectAvatar uid={relative.uid} name={relative.name} photoCount={relative.photo_count} />
       {relative.name}
       {lifeSpan !== null && <span className="fw-normal">{lifeSpan}</span>}
-    </Link>
+    </ProjectLink>
   )
 }
 
@@ -187,9 +187,9 @@ export function FamilyStrip({ subjectUid, subjectName, canCurate }: FamilyStripP
             only once anything is recorded: a tree of one person is a page that
             can say nothing, and the rows above are where it gets filled in. */}
         {!empty && (
-          <Link to={`/people/${subjectUid}/tree`} className="kk-text-caption">
+          <ProjectLink to={`/people/${subjectUid}/tree`} className="kk-text-caption">
             {t('family.tree')}
-          </Link>
+          </ProjectLink>
         )}
       </div>
       <FamilyRow

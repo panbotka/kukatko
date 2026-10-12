@@ -4,7 +4,7 @@ import Button from 'react-bootstrap/Button'
 import ButtonGroup from 'react-bootstrap/ButtonGroup'
 import Table from 'react-bootstrap/Table'
 import { useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
@@ -14,6 +14,7 @@ import { NarrowPage } from '../components/NarrowPage'
 import { ListSkeleton } from '../components/Skeleton'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
+import { ProjectLink } from '../project/ProjectLink'
 import {
   fetchLeaderboard,
   LEADERBOARD_WINDOWS,
@@ -133,10 +134,13 @@ export function LeaderboardPage() {
         hint={canCurate ? t('leaderboard.empty.hint') : t('leaderboard.empty.hintViewer')}
         action={
           canCurate ? (
-            <Link to="/review" className="btn btn-primary d-inline-flex align-items-center gap-2">
+            <ProjectLink
+              to="/review"
+              className="btn btn-primary d-inline-flex align-items-center gap-2"
+            >
               <Icon name="ui-checks" />
               {t('leaderboard.empty.action')}
-            </Link>
+            </ProjectLink>
           ) : undefined
         }
       />
@@ -194,12 +198,12 @@ export function LeaderboardPage() {
                   </td>
                   <td>
                     {isAdmin ? (
-                      <Link
+                      <ProjectLink
                         to={`/audit/reviews?user=${encodeURIComponent(entry.user_uid)}`}
                         aria-label={t('leaderboard.viewDecisions', { name: entry.display_name })}
                       >
                         {entry.display_name}
-                      </Link>
+                      </ProjectLink>
                     ) : (
                       entry.display_name
                     )}
@@ -237,7 +241,7 @@ export function LeaderboardPage() {
         {!onBoard && canCurate && (
           <p className="text-secondary small mt-3 mb-0" data-testid="leaderboard-not-on-board">
             {t('leaderboard.notOnBoard.hint')}{' '}
-            <Link to="/review">{t('leaderboard.notOnBoard.action')}</Link>
+            <ProjectLink to="/review">{t('leaderboard.notOnBoard.action')}</ProjectLink>
           </p>
         )}
       </>

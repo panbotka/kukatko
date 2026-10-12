@@ -67,13 +67,13 @@ describe('SlideshowStart', () => {
   it('links to the slideshow, carrying the scope and the current filters', () => {
     setup({ scope: { album: 'al1' }, view: { ...VIEW, year: '2024' }, count: 3 })
 
-    expect(startLink()).toHaveAttribute('href', '/slideshow?year=2024&album=al1')
+    expect(startLink()).toHaveAttribute('href', '/p/v/slideshow?year=2024&album=al1')
   })
 
   it('carries the search mode so the slideshow replays the search', () => {
     setup({ scope: { mode: 'semantic' }, view: { ...VIEW, q: 'beach' }, count: 3 })
 
-    expect(startLink()).toHaveAttribute('href', '/slideshow?q=beach&mode=semantic')
+    expect(startLink()).toHaveAttribute('href', '/p/v/slideshow?q=beach&mode=semantic')
   })
 
   it('asks how you want to watch instead of starting the show', async () => {
@@ -143,7 +143,7 @@ describe('SlideshowStart', () => {
     await user.click(within(dialog()).getByLabelText('Náhodné pořadí'))
     await user.click(screen.getByRole('button', { name: 'Spustit' }))
 
-    expect(here()).toBe('/slideshow?album=al1')
+    expect(here()).toBe('/p/v/slideshow?album=al1')
     expect(readSettings()).toMatchObject({ intervalMs: 3000, shuffle: true })
   })
 

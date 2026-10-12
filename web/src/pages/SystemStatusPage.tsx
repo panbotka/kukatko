@@ -21,6 +21,7 @@ import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { formatRelativeTime } from '../lib/relativeTime'
+import { ProjectLink } from '../project/ProjectLink'
 import {
   clearAnnouncement,
   fetchAnnouncement,
@@ -296,9 +297,9 @@ function ImportsCard({ imports }: { imports: ImportsStatus }) {
         <h2 className="kk-section-title mb-2">{t('system.imports.title')}</h2>
         <ImportRunLine run={imports.folder} />
         <div className="mt-auto pt-2">
-          <Link to="/import" className="btn btn-outline-primary btn-sm">
+          <ProjectLink to="/import" className="btn btn-outline-primary btn-sm">
             {t('system.imports.history')}
-          </Link>
+          </ProjectLink>
         </div>
       </Card.Body>
     </Card>

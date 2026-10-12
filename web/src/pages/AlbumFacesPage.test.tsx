@@ -92,10 +92,10 @@ function facesFrom(table: Record<string, FaceView[]>): void {
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/albums/al1/faces']}>
+      <MemoryRouter initialEntries={['/p/v/albums/al1/faces']}>
         <Routes>
-          <Route path="/albums/:uid/faces" element={<AlbumFacesPage />} />
-          <Route path="/albums/:uid" element={<div>album page</div>} />
+          <Route path="/p/:slug/albums/:uid/faces" element={<AlbumFacesPage />} />
+          <Route path="/p/:slug/albums/:uid" element={<div>album page</div>} />
         </Routes>
       </MemoryRouter>
     </I18nextProvider>,

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { BackLink } from '../components/BackLink'
 import { EmptyState } from '../components/EmptyState'
@@ -24,6 +23,7 @@ import {
 import { auditDetailLinks, auditTargetHref } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
+import { ProjectLink } from '../project/ProjectLink'
 import { type AuditListResponse, type AuditRecord, fetchMyActivity } from '../services/audit'
 
 /** Load state of the own-activity listing. */
@@ -170,10 +170,10 @@ function ActivityTarget({ record }: { record: AuditRecord }) {
   const href = auditTargetHref(record)
   if (href !== null) {
     return (
-      <Link to={href} className="d-inline-flex align-items-center gap-1">
+      <ProjectLink to={href} className="d-inline-flex align-items-center gap-1">
         <Icon name="box-arrow-up-right" />
         {typeLabel || t('activity.target.unknown')}
-      </Link>
+      </ProjectLink>
     )
   }
   const { groups, hidden } = auditDetailLinks(record.details, ACTIVITY_LINK_LIMIT)
@@ -184,7 +184,7 @@ function ActivityTarget({ record }: { record: AuditRecord }) {
           {groups.map((group) =>
             group.links.map((link) => (
               <li key={link.href} className="text-break">
-                <Link to={link.href}>{link.uid}</Link>
+                <ProjectLink to={link.href}>{link.uid}</ProjectLink>
               </li>
             )),
           )}

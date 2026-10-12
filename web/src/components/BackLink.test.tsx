@@ -13,11 +13,20 @@ function renderLink(to: string, label = 'Zpět na alba') {
 }
 
 describe('BackLink', () => {
-  it('names the destination and links to it', () => {
+  it('names the destination and links to it inside the current project', () => {
     renderLink('/albums')
 
     const link = screen.getByRole('link', { name: 'Zpět na alba' })
-    expect(link).toHaveAttribute('href', '/albums')
+    expect(link).toHaveAttribute('href', '/p/v/albums')
+  })
+
+  it('keeps a destination that already carries its project', () => {
+    renderLink('/p/jiny/albums?sort=oldest')
+
+    expect(screen.getByRole('link', { name: 'Zpět na alba' })).toHaveAttribute(
+      'href',
+      '/p/jiny/albums?sort=oldest',
+    )
   })
 
   it('keeps the query string of the destination, so the list view state survives', () => {
@@ -27,7 +36,7 @@ describe('BackLink', () => {
 
     expect(screen.getByRole('link', { name: 'Zpět na alba' })).toHaveAttribute(
       'href',
-      '/albums?sort=oldest&year=2024',
+      '/p/v/albums?sort=oldest&year=2024',
     )
   })
 

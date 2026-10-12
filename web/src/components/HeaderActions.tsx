@@ -2,9 +2,9 @@ import { type ReactNode, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useIsNarrowViewport } from '../hooks/useIsNarrowViewport'
+import { ProjectLink } from '../project/ProjectLink'
 
 import { Icon, type IconName } from './Icon'
 
@@ -25,8 +25,8 @@ export interface HeaderAction {
   /** Runs the action. Ignored when `to` is set. */
   onSelect?: () => void
   /**
-   * An in-app address: the action is a link (openable in a new tab, copyable)
-   * rather than a button.
+   * An in-app address — a page's own path, opened in the current project: the
+   * action is a link (openable in a new tab, copyable) rather than a button.
    */
   to?: string
   disabled?: boolean
@@ -101,9 +101,9 @@ function InlineAction({ action }: { action: HeaderAction }) {
   const variant = action.inlineVariant ?? 'outline-secondary'
   if (action.to !== undefined) {
     return (
-      <Link to={action.to} className={`btn btn-${variant} btn-sm`}>
+      <ProjectLink to={action.to} className={`btn btn-${variant} btn-sm`}>
         {content(action)}
-      </Link>
+      </ProjectLink>
     )
   }
   return (
@@ -118,7 +118,7 @@ function MenuAction({ action, danger }: { action: HeaderAction; danger?: boolean
   const className = danger === true ? 'text-danger' : undefined
   if (action.to !== undefined) {
     return (
-      <Dropdown.Item as={Link} to={action.to} role="menuitem" className={className}>
+      <Dropdown.Item as={ProjectLink} to={action.to} role="menuitem" className={className}>
         {content(action)}
       </Dropdown.Item>
     )

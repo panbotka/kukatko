@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
 
 import { photoLabel } from '../../lib/photoTitle'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type Photo } from '../../services/people'
 
 /** Props for {@link SubjectPhotoTile}. */
@@ -89,7 +89,7 @@ export function SubjectPhotoTile({
   const { t, i18n } = useTranslation()
   const label = photoLabel(photo, i18n.language)
 
-  // The tile root is ALWAYS a <Link>, as in the library grid, so its element
+  // The tile root is ALWAYS a <ProjectLink>, as in the library grid, so its element
   // TYPE never changes when the gallery flips into selection-first mode and the
   // thumbnails are not remounted (which would re-run their load-in fade). Only
   // the click behaviour and ARIA role change: when selection-first the box is
@@ -97,7 +97,7 @@ export function SubjectPhotoTile({
   // which react-router honours). A native <a> activates on Enter but not on
   // Space, so Space is handled explicitly to keep it operable as a button.
   const media = (
-    <Link
+    <ProjectLink
       to={
         detailQuery !== undefined && detailQuery !== ''
           ? `/photos/${photo.uid}?${detailQuery}`
@@ -137,7 +137,7 @@ export function SubjectPhotoTile({
         className="w-100 h-100"
         style={{ objectFit: 'cover' }}
       />
-    </Link>
+    </ProjectLink>
   )
 
   const coverLabel = isCover ? t('subject.cover.current') : t('subject.cover.set')

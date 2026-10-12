@@ -7,13 +7,13 @@ import Form from 'react-bootstrap/Form'
 import Offcanvas from 'react-bootstrap/Offcanvas'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useIsNarrowViewport } from '../../hooks/useIsNarrowViewport'
 import { formatCount } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { activeMapFilterCount, MAP_DEFAULTS, type MapView } from '../../lib/mapView'
 import { type SetUrlState } from '../../lib/urlState'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type MapCoverage } from '../../services/map'
 import { Icon } from '../Icon'
 
@@ -363,7 +363,7 @@ function CoverageStatement({
           {canWrite && missing > 0 && (
             <>
               {' '}
-              <Link to={NO_LOCATION_LIBRARY}>{t('map.coverageAction')}</Link>
+              <ProjectLink to={NO_LOCATION_LIBRARY}>{t('map.coverageAction')}</ProjectLink>
             </>
           )}
         </>

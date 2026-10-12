@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { ProjectLink } from '../../project/ProjectLink'
 
 import './charts.css'
 
@@ -55,9 +55,9 @@ export function BarList({
             {datum.href === undefined ? (
               datum.label
             ) : (
-              <Link to={datum.href} className="text-reset" aria-label={datum.linkLabel}>
+              <ProjectLink to={datum.href} className="text-reset" aria-label={datum.linkLabel}>
                 {datum.label}
-              </Link>
+              </ProjectLink>
             )}
           </div>
           <div className="kk-barlist-value">{datum.valueLabel}</div>

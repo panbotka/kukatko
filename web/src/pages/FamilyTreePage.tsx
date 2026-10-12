@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
@@ -12,6 +12,8 @@ import { AddRelationModal } from '../components/people/AddRelationModal'
 import { FamilyNetworkCanvas } from '../components/people/FamilyNetworkCanvas'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { type FamilyLayout, type LayoutFamily, layoutNetwork } from '../lib/familyLayout'
+import { useProjectPath } from '../project/ProjectContext'
+import { ProjectLink } from '../project/ProjectLink'
 import { fetchTree, type FamilyTree, type Relative, type TreeMember } from '../services/family'
 
 /** What the page knows at any moment. */
@@ -127,6 +129,7 @@ export function FamilyTreePage() {
   const { t } = useTranslation()
   const { uid = '' } = useParams<{ uid: string }>()
   const { canCurate } = useAuth()
+  const projectPath = useProjectPath()
   const [state, setState] = useState<State>({ status: 'loading' })
   // Recording a parent changes what the walk would answer, so the fetch is
   // re-run rather than the new person being patched into the old drawing.
@@ -181,8 +184,8 @@ export function FamilyTreePage() {
   // nowhere to re-root to, so its own card leads to the person's page instead.
   const personHref = useCallback(
     (personUid: string) =>
-      personUid === uid ? `/people/${personUid}` : `/people/${personUid}/tree`,
-    [uid],
+      projectPath(personUid === uid ? `/people/${personUid}` : `/people/${personUid}/tree`),
+    [uid, projectPath],
   )
 
   const addingParents = useMemo(
@@ -197,7 +200,7 @@ export function FamilyTreePage() {
 
   return (
     <>
-      <BackLink to={`/people/${uid}`} label={t('familyTree.back')} className="mb-3" />
+      <BackLink to={projectPath(`/people/${uid}`)} label={t('familyTree.back')} className="mb-3" />
       {state.status === 'loading' && (
         <div className="d-flex justify-content-center py-5">
           <Spinner animation="border" role="status">
@@ -218,9 +221,9 @@ export function FamilyTreePage() {
                 generations: generationCount(tree),
               })}
             </span>
-            <Link to={`/people/${tree.root.uid}`} className="ms-auto">
+            <ProjectLink to={`/people/${tree.root.uid}`} className="ms-auto">
               {t('familyTree.openRoot')}
-            </Link>
+            </ProjectLink>
           </div>
           {tree.truncated && (
             <Alert variant="info" className="py-2">

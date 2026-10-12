@@ -360,11 +360,11 @@ describe('CommentsPanel', () => {
     renderPanel()
 
     const link = await screen.findByRole('link', { name: ref })
-    expect(link).toHaveAttribute('href', `/photos/${ref}?task=tk1`)
+    expect(link).toHaveAttribute('href', `/p/v/photos/${ref}?task=tk1`)
     // And the thumbnail under it leads to the same place.
     expect(screen.getByRole('link', { name: `Photo ${ref}` })).toHaveAttribute(
       'href',
-      `/photos/${ref}?task=tk1`,
+      `/p/v/photos/${ref}?task=tk1`,
     )
   })
 

@@ -10,7 +10,6 @@ import Offcanvas from 'react-bootstrap/Offcanvas'
 import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useCapabilities } from '../../capabilities/CapabilitiesContext'
 import { useDebouncedText } from '../../hooks/useDebouncedText'
@@ -38,6 +37,8 @@ import {
   removeQueryTerm,
 } from '../../lib/queryLanguage'
 import { type SetUrlState } from '../../lib/urlState'
+import { useProjectPath } from '../../project/ProjectContext'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type UploaderBucket } from '../../services/photos'
 import { ENTITY_STYLE } from '../entityStyle'
 import { Icon, type IconName } from '../Icon'
@@ -295,6 +296,7 @@ export function FilterBar<T extends LibraryView>({
   displayExtras,
 }: FilterBarProps<T>) {
   const { t, i18n } = useTranslation()
+  const projectPath = useProjectPath()
   const [open, setOpen] = useState(false)
   const narrow = useIsNarrowViewport()
   // Only advertise semantic search when the embeddings box is reachable; the
@@ -356,7 +358,9 @@ export function FilterBar<T extends LibraryView>({
   const renderHelp = (className?: string) => (
     <SearchQueryHelp
       className={className}
-      fullSearchHref={semanticSearch && searchHref !== undefined ? searchHref : undefined}
+      fullSearchHref={
+        semanticSearch && searchHref !== undefined ? projectPath(searchHref) : undefined
+      }
     />
   )
 
@@ -706,9 +710,9 @@ function SearchNote({ href, semanticSearch }: { href: string; semanticSearch: bo
     <div className="form-text mt-1">
       {t('library.filters.searchHint')}{' '}
       {semanticSearch && (
-        <Link to={href} className="text-decoration-none">
+        <ProjectLink to={href} className="text-decoration-none">
           {t('library.filters.fullSearchLink')}
-        </Link>
+        </ProjectLink>
       )}
     </div>
   )

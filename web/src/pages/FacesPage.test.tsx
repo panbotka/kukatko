@@ -366,7 +366,10 @@ describe('FacesPage results', () => {
     const overlay = await screen.findByRole('dialog')
     expect(within(overlay).getByAltText('Photo with the candidate face')).toBeInTheDocument()
     // The way out to the photo's own page is the stage's corner anchor.
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/p1')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/p1',
+    )
 
     fireEvent.click(within(overlay).getByRole('button', { name: /it's this person/i }))
 

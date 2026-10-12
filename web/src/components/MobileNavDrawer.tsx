@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useCapabilities } from '../capabilities/CapabilitiesContext'
 import { LIBRARY_PATH } from '../lib/libraryView'
 import { bareVersion } from '../lib/version'
+import { useProjectPath } from '../project/ProjectContext'
 import { useWaitingOnMe } from '../tasks/TaskSummaryContext'
 
 import { Icon } from './Icon'
@@ -98,6 +99,8 @@ export function MobileNavDrawer({
   // The tasks waiting on the reader, worn by the Úkoly row exactly as the bar's
   // dropdown entry wears it (and the hamburger that opened this drawer).
   const waitingOnMe = useWaitingOnMe()
+  // Each entry is a page's own path; this puts it into the current project.
+  const projectPath = useProjectPath()
   // "My photos", offered only to an account that has said which person of the
   // library it is — the same gate the desktop user menu applies, from the same
   // builder, so the two menus cannot drift.
@@ -137,7 +140,7 @@ export function MobileNavDrawer({
     return (
       <NavLink
         key={entry.to}
-        to={entry.to}
+        to={projectPath(entry.to)}
         end={entry.to === LIBRARY_PATH}
         title={t(entry.titleKey)}
         className={`kk-navdrawer__link${cta ? ' kk-navdrawer__link--cta' : ''}`}

@@ -20,7 +20,7 @@ describe('EntityChip', () => {
     )
 
     const chip = screen.getByRole('link', { name: 'Holidays' })
-    expect(chip).toHaveAttribute('href', '/albums/a1')
+    expect(chip).toHaveAttribute('href', '/p/v/albums/a1')
     expect(chip).toHaveClass('kk-entity-album')
     // The glyph reinforces the hue for a colour-blind reader and stays out of
     // the accessible name.

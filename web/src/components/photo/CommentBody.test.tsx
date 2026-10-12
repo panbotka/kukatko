@@ -34,8 +34,8 @@ describe('CommentBody', () => {
     expect(body).toHaveTextContent(`These are wrong: ${uid(1)} ${uid(2)}, sorry.`)
     const inline = within(body as HTMLElement).getAllByRole('link')
     expect(inline.map((a) => a.getAttribute('href'))).toEqual([
-      `/photos/${uid(1)}`,
-      `/photos/${uid(2)}`,
+      `/p/v/photos/${uid(1)}`,
+      `/p/v/photos/${uid(2)}`,
     ])
     expect(inline[0]).toHaveTextContent(uid(1))
   })
@@ -47,7 +47,7 @@ describe('CommentBody', () => {
     // The inline anchor and its thumbnail lead to the same place.
     expect(links).toHaveLength(2)
     for (const link of links) {
-      expect(link).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+      expect(link).toHaveAttribute('href', `/p/v/photos/${uid(1)}?task=tk1`)
     }
   })
 
@@ -77,7 +77,10 @@ describe('CommentBody', () => {
       </I18nextProvider>,
     )
 
-    expect(screen.getByRole('link', { name: 'Tomáš Kozák' })).toHaveAttribute('href', '/people/su1')
+    expect(screen.getByRole('link', { name: 'Tomáš Kozák' })).toHaveAttribute(
+      'href',
+      '/p/v/people/su1',
+    )
     expect(screen.getByText('Anna')).toHaveClass('kk-mention--me')
   })
 
@@ -104,7 +107,7 @@ describe('CommentBody', () => {
     }
     expect(within(body).getByRole('link', { name: uid(1) })).toHaveAttribute(
       'href',
-      `/photos/${uid(1)}`,
+      `/p/v/photos/${uid(1)}`,
     )
     const strip = screen.getByRole('list', { name: 'Photos mentioned in the comment' })
     expect(within(strip).getAllByRole('link')).toHaveLength(1)
@@ -117,10 +120,10 @@ describe('CommentBody', () => {
     const strip = screen.getByRole('list', { name: 'Photos mentioned in the comment' })
     const thumbs = within(strip).getAllByRole('link')
     expect(thumbs).toHaveLength(1)
-    expect(thumbs[0]).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+    expect(thumbs[0]).toHaveAttribute('href', `/p/v/photos/${uid(1)}?task=tk1`)
     // The written link stays in the app and carries the task.
     const written = screen.getByRole('link', { name: 'this one' })
-    expect(written).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+    expect(written).toHaveAttribute('href', `/p/v/photos/${uid(1)}?task=tk1`)
     expect(written).not.toHaveAttribute('target')
   })
 
@@ -150,7 +153,7 @@ describe('CommentBody', () => {
     const strip = screen.getByRole('list', { name: 'Photos mentioned in the comment' })
     const thumbs = within(strip).getAllByRole('link')
     expect(thumbs).toHaveLength(COMMENT_STRIP_MAX)
-    expect(thumbs[0]).toHaveAttribute('href', `/photos/${uid(1)}?task=tk1`)
+    expect(thumbs[0]).toHaveAttribute('href', `/p/v/photos/${uid(1)}?task=tk1`)
     expect(within(thumbs[0]).getByRole('presentation')).toHaveAttribute(
       'src',
       `/api/v1/p/v/photos/${uid(1)}/thumb/tile_100`,

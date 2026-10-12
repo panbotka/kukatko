@@ -4,11 +4,11 @@ import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { formatCount } from '../lib/format'
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { ProjectLink } from '../project/ProjectLink'
 import type { LibraryStats } from '../services/system'
 
 import { Icon, type IconName } from './Icon'
@@ -243,14 +243,14 @@ function StatValue({ row, allowed }: { row: StatRow; allowed: Record<StatGate, b
   }
   const name = t(link.labelKey)
   return (
-    <Link
+    <ProjectLink
       to={link.to}
       className="text-reset text-decoration-underline"
       title={name}
       aria-label={name}
     >
       {text}
-    </Link>
+    </ProjectLink>
   )
 }
 

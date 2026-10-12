@@ -8,11 +8,11 @@ import InputGroup from 'react-bootstrap/InputGroup'
 import ListGroup from 'react-bootstrap/ListGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../../auth/AuthContext'
 import { useReloadKey } from '../../hooks/useReloadKey'
 import { formatDateTimeMinutes } from '../../lib/format'
+import { ProjectLink } from '../../project/ProjectLink'
 import {
   ApiError,
   API_TOKEN_NAME_MAX_LENGTH,
@@ -418,7 +418,11 @@ export function ApiTokensCard() {
             icon={<Icon name="key" />}
             title={t('account.apiTokens.empty.title')}
             hint={t('account.apiTokens.empty.hint')}
-            action={<Link to={API_TOKENS_HELP_HREF}>{t('account.apiTokens.empty.link')}</Link>}
+            action={
+              <ProjectLink to={API_TOKENS_HELP_HREF}>
+                {t('account.apiTokens.empty.link')}
+              </ProjectLink>
+            }
           />
         )}
 

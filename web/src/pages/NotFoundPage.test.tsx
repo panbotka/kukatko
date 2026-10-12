@@ -11,7 +11,7 @@ import { NotFoundPage } from './NotFoundPage'
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/no-such-page']}>
+      <MemoryRouter initialEntries={['/p/v/no-such-page']}>
         <NotFoundPage />
       </MemoryRouter>
     </I18nextProvider>,
@@ -36,7 +36,7 @@ describe('NotFoundPage', () => {
     expect(within(empty).getByText('Požadovaná stránka neexistuje.')).toBeInTheDocument()
     expect(within(empty).getByRole('link', { name: 'Zpět na domovskou stránku' })).toHaveAttribute(
       'href',
-      '/',
+      '/p/v',
     )
   })
 
@@ -46,6 +46,6 @@ describe('NotFoundPage', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument()
     expect(screen.getByText('The requested page does not exist.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: 'Back to home' })).toHaveAttribute('href', '/p/v')
   })
 })

@@ -269,7 +269,7 @@ describe('Candidates', () => {
     renderSection()
     expect(screen.getByRole('link', { name: /Open full workspace/i })).toHaveAttribute(
       'href',
-      '/faces?subject=sj_1',
+      '/p/v/faces?subject=sj_1',
     )
   })
 })

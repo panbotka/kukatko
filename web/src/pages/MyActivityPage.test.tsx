@@ -99,7 +99,7 @@ describe('MyActivityPage', () => {
     renderPage()
 
     const link = await screen.findByRole('link', { name: /Photo/ })
-    expect(link).toHaveAttribute('href', '/photos/ph9')
+    expect(link).toHaveAttribute('href', '/p/v/photos/ph9')
   })
 
   it('links the photos of a bulk edit from its payload', async () => {
@@ -117,7 +117,10 @@ describe('MyActivityPage', () => {
 
     expect(await screen.findByText('Bulk photo edit')).toBeInTheDocument()
     const links = within(screen.getByTestId('activity-links')).getAllByRole('link')
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/photos/ph1', '/photos/ph2'])
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/p/v/photos/ph1',
+      '/p/v/photos/ph2',
+    ])
   })
 
   it('falls back to the raw label for an action it has no words for', async () => {

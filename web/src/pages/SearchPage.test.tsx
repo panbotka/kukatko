@@ -325,7 +325,7 @@ describe('SearchPage', () => {
     // the search (ranked results), not the library with `q` as a substring
     // filter, and prev/next pages the same ranked results.
     const link = await screen.findByRole('link', { name: 'a.jpg' })
-    expect(link).toHaveAttribute('href', '/photos/a?q=beach&mode=semantic')
+    expect(link).toHaveAttribute('href', '/p/v/photos/a?q=beach&mode=semantic')
   })
 
   it('changing the mode updates the URL and refetches', async () => {

@@ -92,10 +92,29 @@ describe('Markdown', () => {
     )
 
     const task = screen.getByRole('link', { name: 'úkol' })
-    expect(task).toHaveAttribute('href', '/tasks/tk1')
+    expect(task).toHaveAttribute('href', '/p/v/tasks/tk1')
     expect(task).not.toHaveAttribute('target')
     expect(task).not.toHaveAttribute('rel')
-    expect(screen.getByRole('link', { name: 'fotka' })).toHaveAttribute('href', '/photos/ph1?x=1#a')
+    expect(screen.getByRole('link', { name: 'fotka' })).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph1?x=1#a',
+    )
+  })
+
+  it('keeps the project an own link names and leaves instance pages unprefixed', () => {
+    render(
+      <MemoryRouter>
+        <Markdown taskUid="tk1">
+          {`[fotka](${window.location.origin}/p/jiny/photos/ph1) a [účet](/account)`}
+        </Markdown>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: 'fotka' })).toHaveAttribute(
+      'href',
+      '/p/jiny/photos/ph1?task=tk1',
+    )
+    expect(screen.getByRole('link', { name: 'účet' })).toHaveAttribute('href', '/account')
   })
 
   it('carries the task into a link to a photo', () => {
@@ -107,7 +126,7 @@ describe('Markdown', () => {
 
     expect(screen.getByRole('link', { name: 'fotka' })).toHaveAttribute(
       'href',
-      '/photos/ph1?task=tk1',
+      '/p/v/photos/ph1?task=tk1',
     )
   })
 
@@ -115,7 +134,7 @@ describe('Markdown', () => {
     render(<Markdown>{'[úkol](/tasks/tk1)'}</Markdown>)
 
     const link = screen.getByRole('link', { name: 'úkol' })
-    expect(link).toHaveAttribute('href', '/tasks/tk1')
+    expect(link).toHaveAttribute('href', '/p/v/tasks/tk1')
     expect(link).not.toHaveAttribute('target')
   })
 
@@ -163,7 +182,7 @@ describe('Markdown', () => {
 
       // The stored name was „Tomas K."; the account is now „Tomáš Kozák".
       const chip = screen.getByRole('link', { name: 'Tomáš Kozák' })
-      expect(chip).toHaveAttribute('href', '/people/su1')
+      expect(chip).toHaveAttribute('href', '/p/v/people/su1')
       expect(chip).toHaveClass('kk-mention')
       expect(chip).not.toHaveClass('kk-mention--me')
       expect(chip.querySelector('.bi-at')).not.toBeNull()

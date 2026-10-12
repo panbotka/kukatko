@@ -20,6 +20,7 @@ import { isVideo } from '../lib/mediaKind'
 import { searchHref, type SearchView, toMode } from '../lib/searchView'
 import { extendSeen, newShuffleSeed, playlistOf } from '../lib/slideshowPlaylist'
 import { readUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
 import { fetchPhotos, type Photo, type PhotoListParams, searchPhotos } from '../services/photos'
 
 /**
@@ -51,6 +52,7 @@ export function SlideshowPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('slideshow.title'))
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const [searchParams] = useSearchParams()
 
   const album = searchParams.get('album') ?? ''
@@ -222,16 +224,16 @@ export function SlideshowPage() {
       return
     }
     if (album !== '') {
-      void navigate(`/albums/${album}`)
+      void navigate(projectPath(`/albums/${album}`))
     } else if (label !== '') {
-      void navigate(`/labels/${label}`)
+      void navigate(projectPath(`/labels/${label}`))
     } else if (mode !== '') {
       const searchView: SearchView = { ...view, mode: toMode(mode) }
-      void navigate(searchHref(searchView))
+      void navigate(projectPath(searchHref(searchView)))
     } else {
-      void navigate(LIBRARY_PATH)
+      void navigate(projectPath(LIBRARY_PATH))
     }
-  }, [navigate, album, label, mode, view])
+  }, [navigate, projectPath, album, label, mode, view])
 
   // Only a show with nothing to show waits behind the spinner. Toggling shuffle
   // reloads the list from its first page, and blanking the running show for that

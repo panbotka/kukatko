@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
+import { ProjectLink } from '../../project/ProjectLink'
 import { Icon } from '../Icon'
 
 import Modal from '../Modal'
@@ -90,9 +90,9 @@ export function SearchQueryHelp({
           <Modal.Footer>
             {/* Navigating away unmounts nothing here (the bar stays), so the
                 dialog closes itself rather than following the reader. */}
-            <Link to={fullSearchHref} className="text-decoration-none" onClick={close}>
+            <ProjectLink to={fullSearchHref} className="text-decoration-none" onClick={close}>
               {t('library.filters.fullSearchLink')}
-            </Link>
+            </ProjectLink>
           </Modal.Footer>
         )}
       </Modal>

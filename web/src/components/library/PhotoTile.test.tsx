@@ -59,10 +59,10 @@ function HandoffProbe() {
 function renderTileWithRoute(p: Photo, fill: boolean) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/library']}>
+      <MemoryRouter initialEntries={['/p/v']}>
         <Routes>
-          <Route path="/library" element={<PhotoTile photo={p} fill={fill} tileWidth={300} />} />
-          <Route path="/photos/:uid" element={<HandoffProbe />} />
+          <Route path="/p/:slug" element={<PhotoTile photo={p} fill={fill} tileWidth={300} />} />
+          <Route path="/p/:slug/photos/:uid" element={<HandoffProbe />} />
         </Routes>
       </MemoryRouter>
     </I18nextProvider>,
@@ -443,7 +443,7 @@ describe('PhotoTile selection-mode rendering stability', () => {
 
   it('stays a navigable link to the detail page when not selecting', () => {
     render(tile(false, false))
-    expect(screen.getByRole('link', { name: 'Clip' })).toHaveAttribute('href', '/photos/ph1')
+    expect(screen.getByRole('link', { name: 'Clip' })).toHaveAttribute('href', '/p/v/photos/ph1')
   })
 
   it('marks a selection target so touch can show the checkmark it hides at rest', () => {

@@ -124,7 +124,7 @@ function OwnedCommand({ showTrigger }: { showTrigger?: boolean }) {
 function renderCommand({ showTrigger }: { showTrigger?: boolean } = {}) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={['/p/v']}>
         <OwnedCommand showTrigger={showTrigger} />
         <input aria-label="unrelated field" />
         <LocationDisplay />
@@ -246,7 +246,7 @@ describe('SearchCommand', () => {
     // The cursor starts on the "search everything" row; one step down lands on the
     // first result (the album, now that collections lead), and Enter opens it.
     await user.keyboard('{ArrowDown}{Enter}')
-    expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/albums/al1')
   })
 
   it('arrows through the groups in the order they are drawn, photos last', async () => {
@@ -269,7 +269,7 @@ describe('SearchCommand', () => {
 
     // Four steps down from the top is the photo — the last row, not the first.
     await user.keyboard('{Enter}')
-    expect(screen.getByTestId('loc')).toHaveTextContent('/photos/ph1')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/photos/ph1')
   })
 
   it('runs a full search when Enter is pressed without moving the cursor', async () => {
@@ -281,7 +281,7 @@ describe('SearchCommand', () => {
     await screen.findByRole('option', { name: /Sunset beach/ })
 
     await user.keyboard('{Enter}')
-    expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=beach')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/search?q=beach')
   })
 
   it('navigates to a result when it is clicked', async () => {
@@ -291,7 +291,7 @@ describe('SearchCommand', () => {
     await user.type(await screen.findByRole('combobox'), 'beach')
 
     await user.click(await screen.findByRole('option', { name: /Beach trip/ }))
-    expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/albums/al1')
   })
 
   it('shows a pasted UID as its own "go to" row, ahead of the text search', async () => {
@@ -396,7 +396,7 @@ describe('SearchCommand', () => {
 
     // A row runs that search — the palette's rows navigate, and this one is a query.
     await user.keyboard('{Enter}')
-    expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=svatba+1974')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/search?q=svatba+1974')
     // Running it again is what moves it back to the front of the ring.
     expect(recordHistoryMock).toHaveBeenCalledWith('svatba 1974')
   })
@@ -411,7 +411,7 @@ describe('SearchCommand', () => {
     // page only ever sees the query arrive in the URL.
     await user.click(await screen.findByRole('option', { name: /Search all photos for/ }))
 
-    expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=beach')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/search?q=beach')
     expect(recordHistoryMock).toHaveBeenCalledTimes(1)
     expect(recordHistoryMock.mock.calls[0][0]).toBe('beach')
   })
@@ -424,7 +424,7 @@ describe('SearchCommand', () => {
 
     await user.click(await screen.findByRole('option', { name: /Beach trip/ }))
 
-    expect(screen.getByTestId('loc')).toHaveTextContent('/albums/al1')
+    expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/albums/al1')
     expect(recordHistoryMock).not.toHaveBeenCalled()
   })
 
@@ -579,7 +579,7 @@ describe('SearchCommand query completion', () => {
 
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => {
-      expect(screen.getByTestId('loc')).toHaveTextContent('/search?q=beach+type%3Avideo')
+      expect(screen.getByTestId('loc')).toHaveTextContent('/p/v/search?q=beach+type%3Avideo')
     })
     expect(recordHistoryMock).toHaveBeenCalledWith('beach type:video')
   })

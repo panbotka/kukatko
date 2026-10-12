@@ -3,7 +3,6 @@ import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { type BatchMembershipState } from '../../hooks/useBatchMembership'
 import { type OrganizeAssignState } from '../../hooks/useUploadOrganize'
@@ -14,6 +13,7 @@ import {
 } from '../../hooks/useUploadQueue'
 import { LIBRARY_PATH } from '../../lib/libraryView'
 import { canRetryUpload } from '../../lib/uploadErrors'
+import { ProjectLink } from '../../project/ProjectLink'
 
 import { batchMedia } from './batchMedia'
 import { UploadActionBar } from './UploadActionBar'
@@ -215,12 +215,12 @@ export function UploadStageDone({
   }
 
   const libraryLink = (
-    <Link
+    <ProjectLink
       to={`${LIBRARY_PATH}?sort=added`}
       className={`btn btn-lg ${failed && retryable ? 'btn-outline-secondary' : 'btn-primary'}`}
     >
       {t('upload.done.viewLibrary')}
-    </Link>
+    </ProjectLink>
   )
 
   return (

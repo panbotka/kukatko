@@ -42,6 +42,7 @@ import { gridScrollKey } from '../lib/gridScroll'
 import { ALBUM_DEFAULTS, ALBUM_SORTS, type LibraryView, viewToParams } from '../lib/libraryView'
 import { newLinkForAlbum } from '../lib/uploadLinks'
 import { useUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
 import { isNotFound } from '../services/auth'
 import { albumSubject } from '../services/comments'
 import { unfeatureAlbum } from '../services/featured'
@@ -142,6 +143,7 @@ export function AlbumDetailPage() {
   const { t, i18n } = useTranslation()
   const { canCurate, user, isAdmin } = useAuth()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const location = useLocation()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -315,11 +317,11 @@ export function AlbumDetailPage() {
     setActionError(false)
     try {
       await deleteAlbum(state.album.uid)
-      void navigate('/albums')
+      void navigate(projectPath(ALBUMS_PATH))
     } catch {
       setActionError(true)
     }
-  }, [state, navigate])
+  }, [state, navigate, projectPath])
 
   // Timeline wiring, the library's: a ref to scroll the grid, the first visible
   // index to highlight the current month, and a jump straight to a month's
@@ -397,7 +399,7 @@ export function AlbumDetailPage() {
       <ErrorState
         title={t('albumDetail.missing')}
         hint={t('albumDetail.missingHint')}
-        action={<BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />}
+        action={<BackLink to={projectPath(ALBUMS_PATH)} label={t('albumDetail.back')} />}
       />
     )
   }
@@ -406,7 +408,7 @@ export function AlbumDetailPage() {
     return (
       <ErrorState
         title={t('albumDetail.error')}
-        action={<BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />}
+        action={<BackLink to={projectPath(ALBUMS_PATH)} label={t('albumDetail.back')} />}
       />
     )
   }
@@ -425,7 +427,7 @@ export function AlbumDetailPage() {
             unbroken word — the group must be allowed to shrink so the title
             wraps inside the header instead of widening the page. */}
         <div className="d-flex align-items-center gap-2 flex-wrap kk-min-w-0">
-          <BackLink to={ALBUMS_PATH} label={t('albumDetail.back')} />
+          <BackLink to={projectPath(ALBUMS_PATH)} label={t('albumDetail.back')} />
           <h1 className="kk-page-title mb-0">
             {album == null ? '' : albumDisplayTitle(album.title, i18n.language)}
           </h1>
@@ -496,7 +498,7 @@ export function AlbumDetailPage() {
                   key: 'faces',
                   label: t('albumDetail.faces', { n: unnamedFaces }),
                   icon: 'person-bounding-box',
-                  to: `/albums/${encodeURIComponent(uid)}/faces`,
+                  to: projectPath(`/albums/${encodeURIComponent(uid)}/faces`),
                 },
               total > 0 && {
                 key: 'download',
@@ -528,7 +530,7 @@ export function AlbumDetailPage() {
                 key: 'uploadLink',
                 label: t('albumDetail.uploadLink'),
                 icon: 'link-45deg',
-                to: newLinkForAlbum(uid),
+                to: projectPath(newLinkForAlbum(uid)),
               },
             ]}
             destructive={[

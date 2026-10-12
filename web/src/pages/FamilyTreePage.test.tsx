@@ -126,15 +126,15 @@ function auth(canWrite: boolean): AuthContextValue {
   } as unknown as AuthContextValue
 }
 
-function renderPage(entry = '/people/s1/tree', canWrite = true) {
+function renderPage(entry = '/p/v/people/s1/tree', canWrite = true) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(canWrite)}>
         <MemoryRouter initialEntries={[entry]}>
           <Address />
           <Routes>
-            <Route path="/people/:uid/tree" element={<FamilyTreePage />} />
-            <Route path="/people/:uid" element={<div>person page</div>} />
+            <Route path="/p/:slug/people/:uid/tree" element={<FamilyTreePage />} />
+            <Route path="/p/:slug/people/:uid" element={<div>person page</div>} />
           </Routes>
         </MemoryRouter>
       </AuthContext.Provider>
@@ -199,7 +199,7 @@ describe('FamilyTreePage', () => {
     await user.click(await screen.findByLabelText('Redraw the family around Petra Houdková'))
 
     await waitFor(() => {
-      expect(address()).toBe('/people/s5/tree')
+      expect(address()).toBe('/p/v/people/s5/tree')
     })
     await waitFor(() => {
       expect(fetchTreeMock).toHaveBeenLastCalledWith('s5', expect.anything())
@@ -207,7 +207,7 @@ describe('FamilyTreePage', () => {
   })
 
   it('ignores the old direction and depth in a bookmarked address', async () => {
-    renderPage('/people/s1/tree?direction=ancestors&generations=4&closed=fm_2')
+    renderPage('/p/v/people/s1/tree?direction=ancestors&generations=4&closed=fm_2')
 
     await screen.findByLabelText('Open Tomáš Kozák')
     expect(fetchTreeMock).toHaveBeenCalledWith('s1', expect.anything())
@@ -221,7 +221,7 @@ describe('FamilyTreePage', () => {
     await user.click(await screen.findByLabelText('Open Tomáš Kozák'))
 
     await waitFor(() => {
-      expect(address()).toBe('/people/s1')
+      expect(address()).toBe('/p/v/people/s1')
     })
   })
 
@@ -274,7 +274,7 @@ describe('FamilyTreePage', () => {
   })
 
   it('offers no + to a reader who may not record anything', async () => {
-    renderPage('/people/s1/tree', false)
+    renderPage('/p/v/people/s1/tree', false)
 
     await screen.findByLabelText('Open Tomáš Kozák')
     expect(screen.queryByRole('button', { name: /Record a parent/ })).not.toBeInTheDocument()
@@ -287,7 +287,7 @@ describe('FamilyTreePage', () => {
       families: [],
       total: 1,
     })
-    renderPage('/people/s1/tree', false)
+    renderPage('/p/v/people/s1/tree', false)
 
     expect(await screen.findByText('No family has been recorded here yet.')).toBeInTheDocument()
   })

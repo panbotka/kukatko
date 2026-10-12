@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { ProjectLink } from '../project/ProjectLink'
 
 import { Icon } from './Icon'
 
@@ -8,7 +8,9 @@ export interface BackLinkProps {
    * The destination — the full href of the list the page came from, query string
    * included. A real URL (never `history.back()`), so the list's view state
    * (filters, sort, page) round-trips through the query params and Back works
-   * even when the detail page was opened straight from a bookmark.
+   * even when the detail page was opened straight from a bookmark. A page's own
+   * path (`/albums`) opens in the current project; one already carrying its
+   * project (taken from the location) is kept.
    */
   to: string
   /**
@@ -38,9 +40,9 @@ export function BackLink({ to, label, className }: BackLinkProps) {
   }
 
   return (
-    <Link to={to} className={classes.join(' ')}>
+    <ProjectLink to={to} className={classes.join(' ')}>
       <Icon name="arrow-left" className="kk-back-link__arrow" />
       <span>{label}</span>
-    </Link>
+    </ProjectLink>
   )
 }

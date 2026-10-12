@@ -6,7 +6,6 @@ import ListGroup from 'react-bootstrap/ListGroup'
 import Spinner from 'react-bootstrap/Spinner'
 import { type TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EmptyState } from '../components/EmptyState'
@@ -16,6 +15,7 @@ import { SaveSearchModal } from '../components/savedsearch/SaveSearchModal'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useReloadKey } from '../hooks/useReloadKey'
 import { type SavedSearchBadge, savedSearchHref, savedSearchSummary } from '../lib/savedSearchView'
+import { ProjectLink } from '../project/ProjectLink'
 import { deleteSavedSearch, fetchSavedSearches, type SavedSearch } from '../services/savedSearches'
 
 /** Fetch lifecycle of the saved-searches list. */
@@ -121,7 +121,7 @@ export function SavedSearchesPage() {
                   The link is named by the saved search's name alone and
                   described by its query line, so a screen reader hears the
                   name first and the query as the description. */}
-              <Link
+              <ProjectLink
                 to={savedSearchHref(search.params)}
                 aria-label={search.name}
                 aria-describedby={`saved-search-${search.uid}-query`}
@@ -129,7 +129,7 @@ export function SavedSearchesPage() {
               >
                 <span className="d-block text-truncate">{search.name}</span>
                 <SavedSearchQueryLine id={`saved-search-${search.uid}-query`} search={search} />
-              </Link>
+              </ProjectLink>
               {/* Both actions keep a glyph and drop their word below `sm`, so a
                   phone row never has to fit a name plus two Czech-worded buttons
                   across ~336px. The `aria-label` carries the same word the

@@ -152,7 +152,10 @@ describe('UploadLinksPage', () => {
     const card = await screen.findByTestId('upload-link-card')
     expect(within(card).getByRole('heading', { name: 'Pouť 2026' })).toBeInTheDocument()
     expect(within(card).getByText('Active')).toBeInTheDocument()
-    expect(within(card).getByRole('link', { name: /Pouť/ })).toHaveAttribute('href', '/albums/al1')
+    expect(within(card).getByRole('link', { name: /Pouť/ })).toHaveAttribute(
+      'href',
+      '/p/v/albums/al1',
+    )
     expect(within(card).getByText(/3 uploads/)).toBeInTheDocument()
     // The curator's own link does not name its creator.
     expect(within(card).queryByText(/created by/)).not.toBeInTheDocument()

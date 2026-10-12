@@ -6,6 +6,7 @@ import Form from 'react-bootstrap/Form'
 import { useTranslation } from 'react-i18next'
 
 import { useLightbox } from '../../hooks/useLightbox'
+import { useProjectPath } from '../../project/ProjectContext'
 import { Icon } from '../Icon'
 import {
   type ClusterAssignRequest,
@@ -64,6 +65,7 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
   // The representative first, then the strip: the same order the card draws, so
   // ←/→ walks the cluster exactly as the eye does.
   const faces = [cluster.representative, ...cluster.examples]
+  const projectPath = useProjectPath()
   const lightbox = useLightbox(faces)
   const enlarged = lightbox.item
 
@@ -205,7 +207,7 @@ export function ClusterCard({ cluster, busy, onAssign, onRemoveFace }: ClusterCa
             orientation: 0,
             size: CLUSTER_LIGHTBOX_SIZE,
             bbox: enlarged.bbox,
-            href: `/photos/${enlarged.photo_uid}`,
+            href: projectPath(`/photos/${enlarged.photo_uid}`),
             alt: t('clusters.sample'),
           }}
           title={t('clusters.size', { count: cluster.size })}

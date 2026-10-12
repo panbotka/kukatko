@@ -32,6 +32,7 @@ import {
   pairIndexInGroup,
   pairsInGroup,
 } from '../lib/duplicateCompare'
+import { useProjectPath } from '../project/ProjectContext'
 import { ApiError } from '../services/auth'
 import { type MergeResult, fetchDuplicates, mergeDuplicates } from '../services/duplicates'
 import { dismissDuplicate } from '../services/feedback'
@@ -84,6 +85,7 @@ export function DupComparePage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('duplicates.compare.title'))
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const { downloadToken } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -140,8 +142,8 @@ export function DupComparePage() {
   }, [pair, setSearchParams])
 
   const exit = useCallback(() => {
-    void navigate('/duplicates')
-  }, [navigate])
+    void navigate(projectPath('/duplicates'))
+  }, [navigate, projectPath])
 
   // The queue and the cursor as refs, so `advance` can read the live position
   // without depending on it and re-creating itself (and its shortcut bindings) on

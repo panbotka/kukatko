@@ -19,6 +19,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { type OrganizeLoadState } from '../hooks/useUploadOrganize'
 import { resolvePending } from '../lib/pendingCreate'
 import { ALBUM_PARAM } from '../lib/uploadLinks'
+import { useProjectPath } from '../project/ProjectContext'
 import { ApiError } from '../services/auth'
 import { createAlbum, createLabel, fetchAlbums, fetchLabels } from '../services/organize'
 import {
@@ -322,6 +323,7 @@ function LinkCard({
   onNewCode,
 }: LinkCardProps) {
   const { t } = useTranslation()
+  const projectPath = useProjectPath()
   const variant = { active: 'success', expired: 'secondary', revoked: 'danger' }[link.state]
   return (
     <Card text="light" data-testid="upload-link-card">
@@ -332,12 +334,12 @@ function LinkCard({
         </div>
         <div className="d-flex flex-wrap gap-2 mb-2">
           {link.albums.map((album) => (
-            <EntityChip key={album.uid} kind="album" to={`/albums/${album.uid}`}>
+            <EntityChip key={album.uid} kind="album" to={projectPath(`/albums/${album.uid}`)}>
               {album.name}
             </EntityChip>
           ))}
           {link.labels.map((label) => (
-            <EntityChip key={label.uid} kind="tag" to={`/labels/${label.uid}`}>
+            <EntityChip key={label.uid} kind="tag" to={projectPath(`/labels/${label.uid}`)}>
               {label.name}
             </EntityChip>
           ))}

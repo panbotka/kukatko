@@ -78,7 +78,7 @@ function mockViewport(narrow: boolean): void {
 }
 
 /** Renders the shell with a few real destinations, starting at `path`. */
-function renderShell(value: AuthContextValue, path = '/', caps = CAPABILITIES_DEFAULT) {
+function renderShell(value: AuthContextValue, path = '/p/v', caps = CAPABILITIES_DEFAULT) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
@@ -86,10 +86,10 @@ function renderShell(value: AuthContextValue, path = '/', caps = CAPABILITIES_DE
           <MemoryRouter initialEntries={[path]}>
             <Routes>
               <Route element={<Layout />}>
-                <Route path="/" element={<div>home page</div>} />
-                <Route path="/albums" element={<div>albums page</div>} />
-                <Route path="/albums/:uid" element={<div>album detail</div>} />
-                <Route path="/people" element={<div>people page</div>} />
+                <Route path="/p/v" element={<div>home page</div>} />
+                <Route path="/p/v/albums" element={<div>albums page</div>} />
+                <Route path="/p/v/albums/:uid" element={<div>album detail</div>} />
+                <Route path="/p/v/people" element={<div>people page</div>} />
                 <Route path="/login" element={<div>login page</div>} />
               </Route>
             </Routes>
@@ -165,7 +165,10 @@ describe('MobileNavDrawer', () => {
     const tools = within(drawer).getByRole('region', { name: 'Tools' })
     expect(within(tools).getByRole('link', { name: 'Trash' })).toBeInTheDocument()
     expect(within(tools).queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
-    expect(within(admin).getByRole('link', { name: 'Import' })).toHaveAttribute('href', '/import')
+    expect(within(admin).getByRole('link', { name: 'Import' })).toHaveAttribute(
+      'href',
+      '/p/v/import',
+    )
     // And there is no separate Operations block left to teach a second menu.
     expect(within(drawer).queryByRole('region', { name: 'Operations' })).not.toBeInTheDocument()
   })
@@ -197,11 +200,11 @@ describe('MobileNavDrawer', () => {
     // magnifier. Here it is a row of the everyday block, a real navigation.
     const main = within(drawer).getByRole('region', { name: 'Main' })
     const search = within(main).getByRole('link', { name: 'Search' })
-    expect(search).toHaveAttribute('href', '/search')
+    expect(search).toHaveAttribute('href', '/p/v/search')
     expect(search).toHaveAttribute('title', 'Search the photos')
     // …and the only link to it anywhere on the phone shell.
     expect(
-      Array.from(document.querySelectorAll('a[href="/search"]')).filter(
+      Array.from(document.querySelectorAll('a[href="/p/v/search"]')).filter(
         (link) => !drawer.contains(link),
       ),
     ).toHaveLength(0)
@@ -211,7 +214,7 @@ describe('MobileNavDrawer', () => {
     const browse = within(drawer).getByRole('region', { name: 'Browse' })
     expect(within(browse).getByRole('link', { name: 'Saved searches' })).toHaveAttribute(
       'href',
-      '/saved',
+      '/p/v/saved',
     )
     // And the leaderboard is demoted out of the everyday block into Browse.
     expect(within(main).queryByRole('link', { name: 'Leaderboard' })).not.toBeInTheDocument()
@@ -227,36 +230,36 @@ describe('MobileNavDrawer', () => {
     // tools and the account block that replaces the user menu — administration
     // included, at the end of it exactly as the desktop menu carries it.
     expect(drawerHrefs(drawer)).toEqual([
-      '/',
-      '/albums',
-      '/labels',
-      '/search',
-      '/review',
-      '/upload',
-      '/favorites',
-      '/saved',
-      '/tasks',
-      '/people',
-      '/places',
-      '/map',
-      '/leaderboard',
-      '/expand',
-      '/faces',
-      '/recognition',
-      '/outliers',
-      '/duplicate-markers',
-      '/upload-links',
-      '/duplicates',
-      '/trash',
+      '/p/v',
+      '/p/v/albums',
+      '/p/v/labels',
+      '/p/v/search',
+      '/p/v/review',
+      '/p/v/upload',
+      '/p/v/favorites',
+      '/p/v/saved',
+      '/p/v/tasks',
+      '/p/v/people',
+      '/p/v/places',
+      '/p/v/map',
+      '/p/v/leaderboard',
+      '/p/v/expand',
+      '/p/v/faces',
+      '/p/v/recognition',
+      '/p/v/outliers',
+      '/p/v/duplicate-markers',
+      '/p/v/upload-links',
+      '/p/v/duplicates',
+      '/p/v/trash',
       '/account',
-      '/stats',
-      '/help',
-      '/import',
+      '/p/v/stats',
+      '/p/v/help',
+      '/p/v/import',
       '/maintenance',
       '/system',
-      '/users',
-      '/audit',
-      '/settings',
+      '/p/v/users',
+      '/p/v/audit',
+      '/p/v/settings',
     ])
     // The keyboard-shortcuts overlay and sign-out ride along as rows, so nothing
     // the bar offers is lost on a phone.
@@ -266,7 +269,7 @@ describe('MobileNavDrawer', () => {
 
   it('prints the labelled build version in the account block, under sign-out', async () => {
     const user = userEvent.setup()
-    renderShell(auth(), '/', withVersion)
+    renderShell(auth(), '/p/v', withVersion)
     const drawer = await openDrawer(user)
 
     const account = within(drawer).getByRole('region', { name: 'Account' })
@@ -282,7 +285,7 @@ describe('MobileNavDrawer', () => {
 
   it('shows the version as text, not a tappable row', async () => {
     const user = userEvent.setup()
-    renderShell(auth(), '/', withVersion)
+    renderShell(auth(), '/p/v', withVersion)
     const drawer = await openDrawer(user)
 
     // Not a link, not a button, not even a row: a paragraph the thumb and the
@@ -318,21 +321,21 @@ describe('MobileNavDrawer', () => {
     // role. The review game beside Upload is curation and is not there.
     expect(within(drawer).getByRole('region', { name: 'Browse' })).toBeInTheDocument()
     expect(drawerHrefs(drawer)).toEqual([
-      '/',
-      '/albums',
-      '/labels',
-      '/search',
-      '/upload',
-      '/favorites',
-      '/saved',
-      '/tasks',
-      '/people',
-      '/places',
-      '/map',
-      '/leaderboard',
+      '/p/v',
+      '/p/v/albums',
+      '/p/v/labels',
+      '/p/v/search',
+      '/p/v/upload',
+      '/p/v/favorites',
+      '/p/v/saved',
+      '/p/v/tasks',
+      '/p/v/people',
+      '/p/v/places',
+      '/p/v/map',
+      '/p/v/leaderboard',
       '/account',
-      '/stats',
-      '/help',
+      '/p/v/stats',
+      '/p/v/help',
     ])
   })
 
@@ -342,10 +345,16 @@ describe('MobileNavDrawer', () => {
     const drawer = await openDrawer(user)
 
     const hrefs = drawerHrefs(drawer)
-    for (const href of ['/review', '/upload', '/expand', '/faces', '/duplicate-markers']) {
+    for (const href of [
+      '/p/v/review',
+      '/p/v/upload',
+      '/p/v/expand',
+      '/p/v/faces',
+      '/p/v/duplicate-markers',
+    ]) {
       expect(hrefs).toContain(href)
     }
-    for (const href of ['/duplicates', '/trash']) {
+    for (const href of ['/p/v/duplicates', '/p/v/trash']) {
       expect(hrefs).not.toContain(href)
     }
     expect(within(drawer).getByRole('region', { name: 'Tools' })).toBeInTheDocument()
@@ -359,11 +368,11 @@ describe('MobileNavDrawer', () => {
 
     // The group is gated row by row, so an admin gets it — with two rows in it.
     const admin = within(drawer).getByRole('region', { name: 'Admin' })
-    expect(within(admin).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
-    expect(within(admin).getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/audit')
+    expect(within(admin).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/p/v/users')
+    expect(within(admin).getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/p/v/audit')
     expect(within(admin).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',
-      '/settings',
+      '/p/v/settings',
     )
     for (const name of ['Import', 'Maintenance', 'System']) {
       expect(within(drawer).queryByRole('link', { name })).not.toBeInTheDocument()
@@ -411,7 +420,7 @@ describe('MobileNavDrawer', () => {
 
   it('highlights the row for the current route, sub-paths included', async () => {
     const user = userEvent.setup()
-    renderShell(auth(), '/albums/ab12')
+    renderShell(auth(), '/p/v/albums/ab12')
     const drawer = await openDrawer(user)
 
     const albums = within(drawer).getByRole('link', { name: 'Albums' })
@@ -534,7 +543,7 @@ describe('MobileNavDrawer — my photos', () => {
     const account = within(drawer).getByRole('region', { name: 'Account' })
     expect(within(account).getByRole('link', { name: 'My photos' })).toHaveAttribute(
       'href',
-      '/?person=sub123',
+      '/p/v?person=sub123',
     )
   })
 })
@@ -561,10 +570,10 @@ describe('MobileNavDrawer — the tasks-waiting badge', () => {
               refresh: vi.fn(),
             }}
           >
-            <MemoryRouter initialEntries={['/']}>
+            <MemoryRouter initialEntries={['/p/v']}>
               <Routes>
                 <Route element={<Layout />}>
-                  <Route path="/" element={<div>home page</div>} />
+                  <Route path="/p/v" element={<div>home page</div>} />
                 </Route>
               </Routes>
             </MemoryRouter>

@@ -149,10 +149,10 @@ describe('AuditPage', () => {
   })
 
   it.each([
-    ['photos', 'ph9', '/photos/ph9'],
-    ['albums', 'al7', '/albums/al7'],
-    ['labels', 'lb5', '/labels/lb5'],
-    ['subjects', 'su3', '/people/su3'],
+    ['photos', 'ph9', '/p/v/photos/ph9'],
+    ['albums', 'al7', '/p/v/albums/al7'],
+    ['labels', 'lb5', '/p/v/labels/lb5'],
+    ['subjects', 'su3', '/p/v/people/su3'],
   ])('links a %s target straight to the thing that was edited', async (type, uid, href) => {
     fetchAuditMock.mockResolvedValue(
       response([record({ target_type: type, target_uid: uid, details: null })]),
@@ -179,7 +179,7 @@ describe('AuditPage', () => {
     // through the photo the details name.
     expect(await screen.findByRole('link', { name: 'mk3' })).toHaveAttribute(
       'href',
-      '/photos/ph8?person=su4&panel=faces',
+      '/p/v/photos/ph8?person=su4&panel=faces',
     )
   })
 
@@ -239,9 +239,18 @@ describe('AuditPage', () => {
 
     const links = screen.getByTestId('audit-links')
     expect(within(links).getByText('photo_uids')).toBeInTheDocument()
-    expect(within(links).getByRole('link', { name: 'ph1' })).toHaveAttribute('href', '/photos/ph1')
-    expect(within(links).getByRole('link', { name: 'ph2' })).toHaveAttribute('href', '/photos/ph2')
-    expect(within(links).getByRole('link', { name: 'al7' })).toHaveAttribute('href', '/albums/al7')
+    expect(within(links).getByRole('link', { name: 'ph1' })).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph1',
+    )
+    expect(within(links).getByRole('link', { name: 'ph2' })).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph2',
+    )
+    expect(within(links).getByRole('link', { name: 'al7' })).toHaveAttribute(
+      'href',
+      '/p/v/albums/al7',
+    )
     // The raw payload is still there underneath, unchanged.
     expect(screen.getByText(/"count": 2/)).toBeInTheDocument()
   })
@@ -265,10 +274,10 @@ describe('AuditPage', () => {
 
     // The target is the label, but the entry happened on a photo — reachable
     // only through the details.
-    expect(screen.getByRole('link', { name: 'lbl4' })).toHaveAttribute('href', '/labels/lbl4')
+    expect(screen.getByRole('link', { name: 'lbl4' })).toHaveAttribute('href', '/p/v/labels/lbl4')
     expect(
       within(screen.getByTestId('audit-links')).getByRole('link', { name: 'ph9e' }),
-    ).toHaveAttribute('href', '/photos/ph9e')
+    ).toHaveAttribute('href', '/p/v/photos/ph9e')
   })
 
   it('applies a filter to the request params and reflects it in the URL', async () => {

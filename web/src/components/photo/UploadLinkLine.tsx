@@ -1,7 +1,7 @@
 import { Trans, useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { UPLOAD_LINKS_PATH, uploadLinkSender } from '../../lib/uploadLinks'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type PhotoUploadLinkRef } from '../../services/photos'
 import { Icon } from '../Icon'
 
@@ -33,7 +33,7 @@ export function UploadLinkLine({ link }: UploadLinkLineProps) {
           components={{
             // Not <link>: that is a void element to the HTML parser behind
             // Trans, which would drop the title inside it.
-            page: <Link to={UPLOAD_LINKS_PATH} className="text-decoration-none" />,
+            page: <ProjectLink to={UPLOAD_LINKS_PATH} className="text-decoration-none" />,
           }}
         />
         {' · '}

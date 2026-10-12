@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { Icon } from '../Icon'
 import { ReasonedButton } from '../ReasonedButton'
@@ -9,6 +8,7 @@ import { LeafletMap } from '../map/LeafletMap'
 import { formatCoordinates } from '../../lib/coordinates'
 import { photoMapHref } from '../../lib/mapView'
 import { placeLabel } from '../../lib/photoPlace'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type GeocodeResult, type MapFeature, reverseGeocode } from '../../services/map'
 import { type PhotoDetail, updatePhoto } from '../../services/photos'
 
@@ -146,13 +146,13 @@ export function PhotoLocation({ photo, canWrite, onUpdated }: PhotoLocationProps
         {/* Into the big map, centred on this photo with its tile highlighted:
             the mini-map shows where it is, the map shows what else was taken
             around it. */}
-        <Link
+        <ProjectLink
           to={photoMapHref({ uid: photo.uid, lat, lng, archived: photo.archived_at !== undefined })}
           className="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1"
         >
           <Icon name="map" />
           {t('photo.location.showOnMap')}
-        </Link>
+        </ProjectLink>
         {/* Looking a place up is a read: it costs mapy.com credits, not write
             access, so a viewer gets the same live button an editor does. While
             the lookup runs the button says so — the spinner beside it is a

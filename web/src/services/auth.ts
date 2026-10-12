@@ -90,24 +90,6 @@ export interface AuthSession {
 }
 
 /**
- * The project a session works in: the one the account last entered, else its
- * first membership, else none. `GET /auth/me` reports "no last project" as `""`.
- *
- * Transition: the next step reads the project from the route instead; until
- * then `AuthProvider` hands this to `setCurrentProjectSlug`.
- */
-export function projectSlugOf(session: AuthSession | null): string | null {
-  if (session === null) {
-    return null
-  }
-  const last = session.last_project_slug
-  if (last !== undefined && last !== '') {
-    return last
-  }
-  return session.projects?.[0]?.slug ?? null
-}
-
-/**
  * Error carrying the HTTP status of a failed API call so callers can map
  * specific statuses (401, 429, …) to user-facing, translated messages.
  */

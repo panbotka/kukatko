@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, createRoutesFromChildren } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
@@ -40,6 +40,7 @@ import { PasswordResetPage } from './pages/PasswordResetPage'
 import { PeoplePage } from './pages/PeoplePage'
 import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
+import { ProjectsPage } from './pages/ProjectsPage'
 import { RecognitionPage } from './pages/RecognitionPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
@@ -60,14 +61,157 @@ import { UploadLinksPage } from './pages/UploadLinksPage'
 import { UploadPage } from './pages/UploadPage'
 import { UsersPage } from './pages/UsersPage'
 import { NotificationInboxProvider } from './notifications/NotificationInboxProvider'
+import { EntryRedirect, LegacyRedirect } from './project/LegacyRedirect'
+import { ProjectGate } from './project/ProjectGate'
+import { ProjectProvider } from './project/ProjectProvider'
 import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
 
 /**
+ * Every page that belongs to one library, with paths relative to the
+ * project's own root `/p/:slug`. Defined once and used twice: mounted under
+ * `/p/:slug` by {@link AppRoutes}, and matched by {@link LegacyRedirect} to
+ * recognise an address from before projects existed (`/photos/abc`), which it
+ * forwards into a project — so the list of old addresses can never drift from
+ * the list of pages.
+ */
+const PROJECT_ROUTES = (
+  <>
+    {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
+    <Route path="slideshow" element={<SlideshowPage />} />
+    {/* The photo viewer is immersive full-bleed — the image owns the whole
+        viewport — so it lives outside the shell too (no navbar/footer). */}
+    <Route path="photos/:uid" element={<PhotoDetailPage />} />
+    {/* The review game is fullscreen too — one question must own the whole
+        screen — and it curates, so it is curators and above. */}
+    <Route element={<RequireRole role="curator" />}>
+      <Route path="review" element={<ReviewPage />} />
+      {/* Naming an album's faces one photo at a time is the same shape: one
+          question owns the screen, and it curates. */}
+      <Route path="albums/:uid/faces" element={<AlbumFacesPage />} />
+    </Route>
+    {/* Comparing two duplicates needs the whole viewport — the decision is
+        made by looking at the pixels — and it merges/archives, so it is
+        editors and above, like the list it is reached from. */}
+    <Route element={<RequireRole role="editor" />}>
+      <Route path="duplicates/compare" element={<DupComparePage />} />
+    </Route>
+    <Route element={<Layout />}>
+      {/* The photo library is the project's home page: the catalog is what the
+          app is for, so it greets the user rather than hiding one click away. */}
+      <Route index element={<LibraryPage />} />
+      {/* Retired route, kept so old links and bookmarks resolve. The splat
+          also catches the addresses inherited from the PhotoPrism instance
+          this one replaced, which lived under `/library/…`. */}
+      <Route path="library/*" element={<LibraryRedirect />} />
+      <Route path="favorites" element={<FavoritesPage />} />
+      <Route path="albums" element={<AlbumsPage />} />
+      <Route path="albums/:uid" element={<AlbumDetailPage />} />
+      <Route path="labels" element={<LabelsPage />} />
+      <Route path="labels/:uid" element={<LabelDetailPage />} />
+      {/* The work queue. Readable and answerable by every signed-in role:
+          the person who knows in which year the house was rebuilt is rarely
+          the person who edits the library, and the link is sent to them. */}
+      <Route path="tasks" element={<TasksPage />} />
+      <Route path="tasks/:uid" element={<TaskDetailPage />} />
+      {/* A notification's own page — the deeplink its push opens, so the path
+          is kept as short as the push payload's size limit wants it (it must
+          match `notification.PathPrefix`; the push opens the unprefixed
+          `/n/:uid`, which the legacy redirect forwards here). Any signed-in
+          role: it is scoped to the reader's own notifications server-side.
+          One photograph forwards straight to the viewer; several render as a
+          grid. */}
+      <Route path="n/:uid" element={<NotificationPage />} />
+      {/* The whole in-app inbox, which the navbar's bell opens onto. Any
+          signed-in role, scoped to the reader server-side; no nav entry —
+          the bell is its door. */}
+      <Route path="notifications" element={<NotificationsPage />} />
+      <Route path="search" element={<SearchPage />} />
+      <Route path="saved" element={<SavedSearchesPage />} />
+      <Route path="map" element={<MapPage />} />
+      <Route path="places" element={<PlacesPage />} />
+      <Route path="people" element={<PeoplePage />} />
+      <Route path="people/:uid" element={<SubjectPage />} />
+      {/* The whole family of one person, drawn. Read-only like the person's
+          own page — the tree is filled in from the strip on that page — so
+          any signed-in role may look at it. */}
+      <Route path="people/:uid/tree" element={<FamilyTreePage />} />
+      {/* The sorting competition standings: read-only aggregate counts, so
+          any signed-in role may watch the game — no write gate. */}
+      <Route path="leaderboard" element={<LeaderboardPage />} />
+      {/* Where the phone's share sheet lands: it forwards anybody signed in
+          to /upload with the staged share. */}
+      <Route path="share-target" element={<ShareTargetPage />} />
+      {/* Adding photos is open to every signed-in role, viewers included;
+          filing them into albums and labels stays curation (the page
+          offers its picker only to curators). */}
+      <Route path="upload" element={<UploadPage />} />
+      {/* Cluster review and the other face/collection tools are curation:
+          curators and above. */}
+      <Route element={<RequireRole role="curator" />}>
+        {/* Creating and managing upload links hands upload rights to anybody
+            holding one, signed in or not: curation. */}
+        <Route path="upload-links" element={<UploadLinksPage />} />
+        <Route path="people/clusters" element={<ClustersPage />} />
+        {/* Finding a person among untagged photos assigns faces: curation. */}
+        <Route path="faces" element={<FacesPage />} />
+        {/* Growing an album/label with similar photos adds members: curation. */}
+        <Route path="expand" element={<ExpandPage />} />
+        {/* The recognition sweep confirms faces across everyone: curation. */}
+        <Route path="recognition" element={<RecognitionPage />} />
+        {/* Reviewing a person's outliers unassigns faces: curation. */}
+        <Route path="outliers" element={<OutliersPage />} />
+        {/* Fixing a person tagged twice on one photo detaches markers:
+            curation, curators and above. */}
+        <Route path="duplicate-markers" element={<DuplicateMarkersPage />} />
+      </Route>
+      {/* Archiving and deleting photos is editing the catalogue itself, which
+          a curator may not do: editors and above. */}
+      <Route element={<RequireRole role="editor" />}>
+        {/* Duplicate review archives photos in bulk. */}
+        <Route path="duplicates" element={<DuplicatesPage />} />
+        {/* Trash management (restore / permanent delete) is a write action. */}
+        <Route path="trash" element={<TrashPage />} />
+      </Route>
+      {/* Import/migration is an operations capability: maintainer only. */}
+      <Route element={<RequireImport />}>
+        <Route path="import" element={<ImportPage />} />
+      </Route>
+      {/* Governance — user management and the audit log — is admin or higher. */}
+      <Route element={<RequireRole role="admin" />}>
+        <Route path="users" element={<UsersPage />} />
+        <Route path="audit" element={<AuditPage />} />
+        {/* One user's review decisions, reached by clicking a player on the
+            leaderboard: inspecting who sorted what is governance, admin only. */}
+        <Route path="audit/reviews" element={<ReviewDecisionsPage />} />
+        {/* The project's own settings — who may register, with what shared
+            secret, and the greeting a newcomer is met with. Admin only: the
+            record carries that secret in readable form. */}
+        <Route path="settings" element={<SettingsPage />} />
+      </Route>
+      {/* Library statistics: read-only aggregate counts, so any signed-in
+          role may open them — no role gate, like the leaderboard. */}
+      <Route path="stats" element={<StatsPage />} />
+      {/* End-user help: no role guard — visible to any authenticated user. */}
+      <Route path="help" element={<HelpPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Route>
+  </>
+)
+
+/** {@link PROJECT_ROUTES} as route objects, for matching an old address. */
+const PROJECT_ROUTE_OBJECTS = createRoutesFromChildren(PROJECT_ROUTES)
+
+/**
  * The app's route table. `/login`, `/register`, `/password-reset/:token` and
- * the upload-link page `/u/:code` are public; everything else is gated by {@link RequireAuth} and rendered under the
- * shared layout shell. Exported apart from {@link App} so tests can mount it
- * inside a `MemoryRouter` and assert on the wiring itself (which path renders
- * what, and where `/library` forwards to).
+ * the upload-link page `/u/:code` are public; everything else is gated by
+ * {@link RequireAuth}. A library's pages live under `/p/:slug` (see
+ * {@link PROJECT_ROUTES}); the account, operations and the project chooser are
+ * instance-level and carry no project. `/` and every address from before
+ * projects existed forward into the project the entry rule picks.
+ *
+ * Exported apart from {@link App} so tests can mount it inside a
+ * `MemoryRouter` and assert on the wiring itself (which path renders what, and
+ * where old addresses forward to).
  */
 export function AppRoutes() {
   return (
@@ -87,166 +231,69 @@ export function AppRoutes() {
           only where the photos go; a signed-in visitor uploads as themselves. */}
       <Route path="/u/:code" element={<UploadLinkPage />} />
       <Route element={<RequireAuth />}>
-        {/* Fullscreen slideshow lives outside the layout shell (no navbar). */}
-        <Route path="/slideshow" element={<SlideshowPage />} />
-        {/* The photo viewer is immersive full-bleed — the image owns the whole
-            viewport — so it lives outside the shell too (no navbar/footer). */}
-        <Route path="/photos/:uid" element={<PhotoDetailPage />} />
-        {/* The review game is fullscreen too — one question must own the whole
-            screen — and it curates, so it is curators and above. */}
-        <Route element={<RequireRole role="curator" />}>
-          <Route path="/review" element={<ReviewPage />} />
-          {/* Naming an album's faces one photo at a time is the same shape: one
-              question owns the screen, and it curates. */}
-          <Route path="/albums/:uid/faces" element={<AlbumFacesPage />} />
-        </Route>
-        {/* Comparing two duplicates needs the whole viewport — the decision is
-            made by looking at the pixels — and it merges/archives, so it is
-            editors and above, like the list it is reached from. */}
-        <Route element={<RequireRole role="editor" />}>
-          <Route path="/duplicates/compare" element={<DupComparePage />} />
+        {/* The front door: into the project the account works in, or to the
+            chooser when there is no single one to pick. */}
+        <Route path="/" element={<EntryRedirect />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/p/:slug" element={<ProjectGate />}>
+          {PROJECT_ROUTES}
         </Route>
         <Route element={<Layout />}>
-          {/* The photo library is the homepage: the catalog is what the app is
-              for, so it greets the user rather than hiding one click away. */}
-          <Route path="/" element={<LibraryPage />} />
-          {/* Retired route, kept so old links and bookmarks resolve. The splat
-              also catches the addresses inherited from the PhotoPrism instance
-              this one replaced, which lived under `/library/…`. */}
-          <Route path="/library/*" element={<LibraryRedirect />} />
-          <Route path="/favorites" element={<FavoritesPage />} />
-          <Route path="/albums" element={<AlbumsPage />} />
-          <Route path="/albums/:uid" element={<AlbumDetailPage />} />
-          <Route path="/labels" element={<LabelsPage />} />
-          <Route path="/labels/:uid" element={<LabelDetailPage />} />
-          {/* The work queue. Readable and answerable by every signed-in role:
-              the person who knows in which year the house was rebuilt is rarely
-              the person who edits the library, and the link is sent to them. */}
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/tasks/:uid" element={<TaskDetailPage />} />
-          {/* A notification's own page — the deeplink its push opens, so the path
-              is kept as short as the push payload's size limit wants it (it must
-              match `notification.PathPrefix`). Any signed-in role: it is scoped
-              to the reader's own notifications server-side. One photograph
-              forwards straight to the viewer; several render as a grid. */}
-          <Route path="/n/:uid" element={<NotificationPage />} />
-          {/* The whole in-app inbox, which the navbar's bell opens onto. Any
-              signed-in role, scoped to the reader server-side; no nav entry —
-              the bell is its door. */}
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/saved" element={<SavedSearchesPage />} />
-          <Route path="/map" element={<MapPage />} />
-          <Route path="/places" element={<PlacesPage />} />
-          <Route path="/people" element={<PeoplePage />} />
-          <Route path="/people/:uid" element={<SubjectPage />} />
-          {/* The whole family of one person, drawn. Read-only like the person's
-              own page — the tree is filled in from the strip on that page — so
-              any signed-in role may look at it. */}
-          <Route path="/people/:uid/tree" element={<FamilyTreePage />} />
-          {/* The sorting competition standings: read-only aggregate counts, so
-              any signed-in role may watch the game — no write gate. */}
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
-          {/* Where the phone's share sheet lands: it forwards anybody signed in
-              to /upload with the staged share. */}
-          <Route path="/share-target" element={<ShareTargetPage />} />
-          {/* Adding photos is open to every signed-in role, viewers included;
-              filing them into albums and labels stays curation (the page
-              offers its picker only to curators). */}
-          <Route path="/upload" element={<UploadPage />} />
-          {/* Cluster review and the other face/collection tools are curation:
-              curators and above. */}
-          <Route element={<RequireRole role="curator" />}>
-            {/* Creating and managing upload links hands upload rights to anybody
-                holding one, signed in or not: curation. */}
-            <Route path="/upload-links" element={<UploadLinksPage />} />
-            <Route path="/people/clusters" element={<ClustersPage />} />
-            {/* Finding a person among untagged photos assigns faces: curation. */}
-            <Route path="/faces" element={<FacesPage />} />
-            {/* Growing an album/label with similar photos adds members: curation. */}
-            <Route path="/expand" element={<ExpandPage />} />
-            {/* The recognition sweep confirms faces across everyone: curation. */}
-            <Route path="/recognition" element={<RecognitionPage />} />
-            {/* Reviewing a person's outliers unassigns faces: curation. */}
-            <Route path="/outliers" element={<OutliersPage />} />
-            {/* Fixing a person tagged twice on one photo detaches markers:
-                curation, curators and above. */}
-            <Route path="/duplicate-markers" element={<DuplicateMarkersPage />} />
-          </Route>
-          {/* Archiving and deleting photos is editing the catalogue itself, which
-              a curator may not do: editors and above. */}
-          <Route element={<RequireRole role="editor" />}>
-            {/* Duplicate review archives photos in bulk. */}
-            <Route path="/duplicates" element={<DuplicatesPage />} />
-            {/* Trash management (restore / permanent delete) is a write action. */}
-            <Route path="/trash" element={<TrashPage />} />
-          </Route>
-          {/* Import/migration is an operations capability: maintainer only. */}
-          <Route element={<RequireImport />}>
-            <Route path="/import" element={<ImportPage />} />
-          </Route>
-          {/* Operations — library upkeep and system status — are maintainer only,
-              the top of the role ladder. */}
-          <Route element={<RequireRole role="maintainer" />}>
-            <Route path="/maintenance" element={<MaintenancePage />} />
-            <Route path="/system" element={<SystemStatusPage />} />
-          </Route>
-          {/* Governance — user management and the audit log — is admin or higher. */}
-          <Route element={<RequireRole role="admin" />}>
-            <Route path="/users" element={<UsersPage />} />
-            <Route path="/audit" element={<AuditPage />} />
-            {/* One user's review decisions, reached by clicking a player on the
-                leaderboard: inspecting who sorted what is governance, admin only. */}
-            <Route path="/audit/reviews" element={<ReviewDecisionsPage />} />
-            {/* The instance's own settings — who may register, with what shared
-                secret, and the greeting a newcomer is met with. Admin only: the
-                record carries that secret in readable form. */}
-            <Route path="/settings" element={<SettingsPage />} />
-          </Route>
           <Route path="/account" element={<AccountPage />} />
           {/* One user's own actions, from the audit trail narrowed to them by the
               server. No role gate: it is self-repair ("what did I just click
               wrong?"), not the governance view of everybody, which stays admin
-              only at /audit. */}
+              only at /audit. It lives under the account (and reads the
+              instance-wide audit trail), so it carries no project. */}
           <Route path={ACTIVITY_PATH} element={<MyActivityPage />} />
-          {/* Library statistics: read-only aggregate counts, so any signed-in
-              role may open them — no role gate, like the leaderboard. */}
-          <Route path="/stats" element={<StatsPage />} />
-          {/* End-user help: no role guard — visible to any authenticated user. */}
-          <Route path="/help" element={<HelpPage />} />
-          <Route path="*" element={<NotFoundPage />} />
+          {/* Operations — library upkeep and system status — are the instance's
+              own business: maintainer only, the top of the role ladder. */}
+          <Route element={<RequireRole role="maintainer" />}>
+            <Route path="/maintenance" element={<MaintenancePage />} />
+            <Route path="/system" element={<SystemStatusPage />} />
+          </Route>
+          {/* Everything else is either an address from before projects existed
+              — forwarded into the entry project — or simply unknown. */}
+          <Route path="*" element={<LegacyRedirect routes={PROJECT_ROUTE_OBJECTS} />} />
         </Route>
       </Route>
     </Routes>
   )
 }
 
-/** Root component: provides auth and capability state, then wires client-side routing. */
+/** Root component: provides auth, project and capability state, then wires client-side routing. */
 export function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          {/* Capabilities are only meaningful once authenticated (the endpoint is
+          {/* The project the address names (`/p/:slug`), checked against the
+              account's memberships. Directly under AuthProvider: it needs the
+              session, and everything below — the capability probe, the task
+              counts, the bell, every page — works inside one project. */}
+          <ProjectProvider>
+            {/* Capabilities are only meaningful once authenticated (the endpoint is
               behind auth), so the provider sits inside AuthProvider. */}
-          <CapabilitiesProvider>
-            {/* The grid ⇄ viewer morph. It sits inside the router (it watches the
+            <CapabilitiesProvider>
+              {/* The grid ⇄ viewer morph. It sits inside the router (it watches the
                 location to know when the navigation it started has landed) and
                 wraps the whole route table, so any route can opt into the
                 transition later without a second integration. */}
-            <MorphProvider>
-              {/* The work queue's counts for the navigation badge and the queue
+              <MorphProvider>
+                {/* The work queue's counts for the navigation badge and the queue
                   page's chips. Inside AuthProvider because it fetches only for a
-                  signed-in reader; outside the routes because the shell reads it. */}
-              <TaskSummaryProvider>
-                {/* The in-app inbox's unread count for the navbar's bell; like
+                  signed-in reader; outside the routes because the shell reads it.
+                  Like the bell below, it refetches when the project changes. */}
+                <TaskSummaryProvider>
+                  {/* The in-app inbox's unread count for the navbar's bell; like
                     the task counts, fetched only for a signed-in reader. */}
-                <NotificationInboxProvider>
-                  <AppRoutes />
-                </NotificationInboxProvider>
-              </TaskSummaryProvider>
-            </MorphProvider>
-          </CapabilitiesProvider>
+                  <NotificationInboxProvider>
+                    <AppRoutes />
+                  </NotificationInboxProvider>
+                </TaskSummaryProvider>
+              </MorphProvider>
+            </CapabilitiesProvider>
+          </ProjectProvider>
         </AuthProvider>
         {/* Outside the auth gate and outside the layout shell: the service
             worker registers on every page load, and "you are offline" has to

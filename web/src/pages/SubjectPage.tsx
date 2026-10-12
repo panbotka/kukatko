@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { BackLink } from '../components/BackLink'
@@ -33,6 +33,8 @@ import { gridScrollKey } from '../lib/gridScroll'
 import { approximateAge, formatLifeSpan } from '../lib/lifeYears'
 import { nicknameTag } from '../lib/nickname'
 import { decadeAnchorId, formatDecade, groupPhotosByDecade } from '../lib/photoDecades'
+import { useProjectPath } from '../project/ProjectContext'
+import { ProjectLink } from '../project/ProjectLink'
 import { isNotFound } from '../services/auth'
 import { fetchOutliers, fetchSubject, type Subject, updateSubject } from '../services/people'
 
@@ -106,12 +108,12 @@ function OutliersLink({ subjectUid }: OutliersLinkProps) {
     return null
   }
   return (
-    <Link
+    <ProjectLink
       to={`/outliers?subject=${encodeURIComponent(subjectUid)}`}
       className="btn btn-sm btn-outline-secondary"
     >
       <Icon name="exclamation-triangle" /> {t('subject.outliersLink', { count: found.count })}
-    </Link>
+    </ProjectLink>
   )
 }
 
@@ -144,6 +146,7 @@ export function SubjectPage() {
   const { density } = useGridDensity()
   const location = useLocation()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const toast = useToast()
   const { uid = '' } = useParams<{ uid: string }>()
   const [state, setState] = useState<State>({ status: 'loading' })
@@ -350,7 +353,7 @@ export function SubjectPage() {
       <ErrorState
         title={t('subject.missing')}
         hint={t('subject.missingHint')}
-        action={<BackLink to={PEOPLE_PATH} label={t('subject.back')} />}
+        action={<BackLink to={projectPath(PEOPLE_PATH)} label={t('subject.back')} />}
       />
     )
   }
@@ -359,7 +362,7 @@ export function SubjectPage() {
     return (
       <ErrorState
         title={t('subject.error')}
-        action={<BackLink to={PEOPLE_PATH} label={t('subject.back')} />}
+        action={<BackLink to={projectPath(PEOPLE_PATH)} label={t('subject.back')} />}
       />
     )
   }
@@ -372,7 +375,7 @@ export function SubjectPage() {
     <>
       <div className="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2">
-          <BackLink to={PEOPLE_PATH} label={t('subject.back')} />
+          <BackLink to={projectPath(PEOPLE_PATH)} label={t('subject.back')} />
           <h1 className="kk-page-title mb-0">{subject.name}</h1>
           {/* What people actually call them, beside the name and never instead of
               it: Bohumil Nečas („Bohouš"). It is the handle the family uses, so it
@@ -559,7 +562,7 @@ export function SubjectPage() {
             // This page's subject no longer exists, so staying on it would show
             // "this person is gone". Replace the entry rather than push one:
             // Back must not lead to a page that can never load again.
-            void navigate(`/people/${keeper.uid}`, { replace: true })
+            void navigate(projectPath(`/people/${keeper.uid}`), { replace: true })
           }}
         />
       )}

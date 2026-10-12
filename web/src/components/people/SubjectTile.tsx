@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { formatLifeSpan } from '../../lib/lifeYears'
 import { nicknameTag } from '../../lib/nickname'
@@ -8,6 +7,7 @@ import { subjectTileImage } from '../../lib/subjectTile'
 import { EmptyState } from '../EmptyState'
 import { FadeInImage } from '../FadeInImage'
 
+import { ProjectLink } from '../../project/ProjectLink'
 import { type SubjectCount, subjectAvatarUrl } from '../../services/people'
 
 /** Props for {@link SubjectTile}. */
@@ -63,7 +63,7 @@ export function SubjectTile({ subject, showNickname = false }: SubjectTileProps)
   const hasPicture = image.kind !== 'none' && !failed
 
   return (
-    <Link
+    <ProjectLink
       to={`/people/${subject.uid}`}
       className="kk-tile d-block text-decoration-none text-body"
       aria-label={subject.name}
@@ -103,6 +103,6 @@ export function SubjectTile({ subject, showNickname = false }: SubjectTileProps)
         {t('people.photoCount', { count: subject.photo_count })}
         {lifeSpan !== null && ` · ${lifeSpan}`}
       </div>
-    </Link>
+    </ProjectLink>
   )
 }

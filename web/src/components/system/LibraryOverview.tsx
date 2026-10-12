@@ -2,10 +2,10 @@ import Card from 'react-bootstrap/Card'
 import Col from 'react-bootstrap/Col'
 import Row from 'react-bootstrap/Row'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { formatBytes, formatCount } from '../../lib/format'
 import { LIBRARY_PATH } from '../../lib/libraryView'
+import { ProjectLink } from '../../project/ProjectLink'
 import type { LibrarySummary } from '../../services/system'
 
 import { StatTileGrid, type StatTileSpec } from './StatTile'
@@ -157,7 +157,7 @@ export function LibraryOverview({ library }: { library: LibrarySummary }) {
       </h2>
       <p className="text-secondary small">
         {t('system.dashboard.libraryIntro')}{' '}
-        <Link to="/stats">{t('system.dashboard.libraryStatsLink')}</Link>
+        <ProjectLink to="/stats">{t('system.dashboard.libraryStatsLink')}</ProjectLink>
       </p>
       <StatTileGrid tiles={tilesFor(library)} />
       <Row className="g-3 mt-0" xs={1} md={2}>

@@ -7,6 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppRoutes } from './App'
 import { AuthContext, type AuthContextValue } from './auth/AuthContext'
 import i18n from './i18n'
+import { ProjectProvider } from './project/ProjectProvider'
+import type { ProjectMembership, ProjectRole } from './services/auth'
 import { type PhotoListResponse, type Timeline } from './services/photos'
 
 // The library page is what `/` renders, so the routing tests need its data
@@ -91,11 +93,19 @@ const EMPTY_PAGE: PhotoListResponse = {
 }
 const EMPTY_TIMELINE: Timeline = { buckets: [], total: 0 }
 
+/** The account's membership of the bootstrap project `v`, with `role` in it. */
+function memberOfV(role: ProjectRole): ProjectMembership {
+  return { uid: 'pv', slug: 'v', name: 'Veselice', active: true, role, approved: true }
+}
+
 /** A signed-in viewer: enough to pass `RequireAuth` on the library route. */
 const viewerAuth = {
   status: 'authenticated',
   user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer' },
   role: 'viewer',
+  instanceRole: 'user',
+  projects: [memberOfV('viewer')],
+  lastProjectSlug: 'v',
   downloadToken: null,
   canWrite: false,
   isAdmin: false,
@@ -114,6 +124,7 @@ const adminAuth = {
   ...viewerAuth,
   user: { uid: 'u2', username: 'a', display_name: 'A', role: 'admin' },
   role: 'admin',
+  projects: [memberOfV('admin')],
   canWrite: true,
   isAdmin: true,
   isMaintainer: false,
@@ -127,6 +138,7 @@ const curatorAuth = {
   ...viewerAuth,
   user: { uid: 'u3', username: 'c', display_name: 'C', role: 'curator' },
   role: 'curator',
+  projects: [memberOfV('curator')],
   canCurate: true,
   canWrite: false,
 } as unknown as AuthContextValue
@@ -137,6 +149,9 @@ const unauthenticated = {
   status: 'unauthenticated',
   user: null,
   role: null,
+  instanceRole: null,
+  projects: [],
+  lastProjectSlug: null,
   canWrite: false,
   isAdmin: false,
   isMaintainer: false,
@@ -144,12 +159,13 @@ const unauthenticated = {
 
 /** Surfaces the resolved location and offers a Back control. */
 function LocationProbe() {
-  const { pathname, search } = useLocation()
+  const { pathname, search, hash } = useLocation()
   const navigate = useNavigate()
   return (
     <>
       <span data-testid="pathname">{pathname}</span>
       <span data-testid="search">{search}</span>
+      <span data-testid="hash">{hash}</span>
       <button
         type="button"
         onClick={() => {
@@ -168,8 +184,10 @@ function renderRoutes(entries: string[], index = entries.length - 1, auth = view
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={entries} initialIndex={index}>
-          <AppRoutes />
-          <LocationProbe />
+          <ProjectProvider>
+            <AppRoutes />
+            <LocationProbe />
+          </ProjectProvider>
         </MemoryRouter>
       </AuthContext.Provider>
     </I18nextProvider>,
@@ -273,7 +291,7 @@ describe('routing', () => {
       '/duplicate-markers',
       '/upload-links',
     ]) {
-      const { unmount } = renderRoutes([path])
+      const { unmount } = renderRoutes([`/p/v${path}`])
       expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/curator role/i)
       unmount()
     }
@@ -281,7 +299,7 @@ describe('routing', () => {
 
   it('keeps duplicates and the trash behind the editor gate, out of a curator’s reach', async () => {
     for (const path of ['/duplicates', '/duplicates/compare', '/trash']) {
-      const { unmount } = renderRoutes([path], 0, curatorAuth)
+      const { unmount } = renderRoutes([`/p/v${path}`], 0, curatorAuth)
       expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/editor role/i)
       expect(screen.getByTestId('pathname')).toHaveTextContent(path)
       unmount()
@@ -348,21 +366,21 @@ describe('routing', () => {
     })
   })
 
-  it('redirects /library?year=2024 to /?year=2024, preserving the query', async () => {
+  it('redirects /library?year=2024 to /p/v?year=2024, preserving the query', async () => {
     renderRoutes(['/library?year=2024'])
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
     })
     expect(screen.getByTestId('search')).toHaveTextContent('?year=2024')
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
   })
 
-  it('redirects a bare /library to the bare root route', async () => {
+  it('redirects a bare /library to the bare project root', async () => {
     renderRoutes(['/library'])
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
     })
     expect(screen.getByTestId('search')).toBeEmptyDOMElement()
   })
@@ -377,7 +395,7 @@ describe('routing', () => {
     renderRoutes(['/library/login'])
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
     })
     expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
   })
@@ -386,7 +404,7 @@ describe('routing', () => {
     renderRoutes(['/library/albums/at9lxuqxpogaaba1?q=svatba'])
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
     })
     expect(screen.getByTestId('search')).toHaveTextContent('?q=svatba')
   })
@@ -413,7 +431,7 @@ describe('routing', () => {
     renderRoutes(['/nowhere', '/library?year=2024'])
 
     await waitFor(() => {
-      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/$/)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
     })
 
     await user.click(screen.getByRole('button', { name: '__back' }))
@@ -440,8 +458,10 @@ describe('routing', () => {
       <I18nextProvider i18n={i18n}>
         <AuthContext.Provider value={auth}>
           <MemoryRouter initialEntries={['/n/nt1?from=push']}>
-            <AppRoutes />
-            <LocationProbe />
+            <ProjectProvider>
+              <AppRoutes />
+              <LocationProbe />
+            </ProjectProvider>
           </MemoryRouter>
         </AuthContext.Provider>
       </I18nextProvider>
@@ -456,7 +476,74 @@ describe('routing', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'You were tagged in 2 photos' }),
     ).toBeInTheDocument()
-    expect(screen.getByTestId('pathname')).toHaveTextContent('/n/nt1')
+    // The unprefixed push deeplink was forwarded into the reader's project.
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/p/v/n/nt1')
     expect(screen.getByTestId('search')).toHaveTextContent('?from=push')
+  })
+})
+
+describe('routing — projects', () => {
+  /** A signed-in viewer with no project at all: nowhere to forward to. */
+  const homelessAuth = {
+    ...viewerAuth,
+    projects: [],
+    lastProjectSlug: null,
+  } as unknown as AuthContextValue
+
+  it('forwards the front door into the only project', async () => {
+    renderRoutes(['/'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v$/)
+    })
+    expect(await screen.findByRole('heading', { name: 'Library' })).toBeInTheDocument()
+  })
+
+  it('forwards an old address into the project, query string and hash intact', async () => {
+    renderRoutes(['/photos/abc?x=1#h'])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v\/photos\/abc$/)
+    })
+    expect(screen.getByTestId('search')).toHaveTextContent(/^\?x=1$/)
+    expect(screen.getByTestId('hash')).toHaveTextContent(/^#h$/)
+  })
+
+  it('sends an old address to the chooser when there is no project to forward to', async () => {
+    renderRoutes(['/photos/abc?x=1#h'], 0, homelessAuth)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/projects$/)
+    })
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+  })
+
+  it('sends the front door to the chooser for an account without a project', async () => {
+    renderRoutes(['/'], 0, homelessAuth)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/projects$/)
+    })
+  })
+
+  it('answers a project the reader does not belong to exactly like an unknown address', async () => {
+    renderRoutes(['/p/rodina/albums'])
+
+    expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
+    // Rendered in place: the address is kept, nothing about the project leaks.
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/p/rodina/albums')
+  })
+
+  it('keeps an unknown address that is no old project page a plain 404', async () => {
+    renderRoutes(['/nowhere/at/all'])
+
+    expect(await screen.findByTestId('not-found-page')).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/nowhere/at/all')
+  })
+
+  it('lists the projects on the chooser as links into each', async () => {
+    renderRoutes(['/projects'])
+
+    expect(await screen.findByRole('link', { name: 'Veselice' })).toHaveAttribute('href', '/p/v')
   })
 })

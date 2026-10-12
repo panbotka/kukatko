@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useImageFrame } from '../../hooks/useImageFrame'
 import { faceBoxStyle, padBbox } from '../../lib/faceGeometry'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type Bbox } from '../../services/people'
 import { thumbUrl } from '../../services/photos'
 import { Icon } from '../Icon'
@@ -183,7 +183,7 @@ export function OpenPhotoLink({ href, linkState, children }: OpenPhotoLinkProps)
   const inPlace = linkState !== undefined
   const label = inPlace ? t('review.openPhoto') : t('review.openPhotoNewTab')
   return (
-    <Link
+    <ProjectLink
       to={href}
       state={linkState}
       target={inPlace ? undefined : '_blank'}
@@ -195,6 +195,6 @@ export function OpenPhotoLink({ href, linkState, children }: OpenPhotoLinkProps)
     >
       <Icon name={inPlace ? 'box-arrow-in-up-right' : 'box-arrow-up-right'} />
       {children}
-    </Link>
+    </ProjectLink>
   )
 }

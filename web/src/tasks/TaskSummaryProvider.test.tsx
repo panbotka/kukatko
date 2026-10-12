@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import { notifyTaskChanged } from '../lib/taskChanges'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
+import { type ProjectMembership } from '../services/auth'
 import { type TaskSummary } from '../services/tasks'
 
 import { useTaskSummary } from './TaskSummaryContext'
@@ -45,6 +47,32 @@ function renderProvider(status: AuthContextValue['status'] = 'authenticated') {
         <Probe />
       </TaskSummaryProvider>
     </AuthContext.Provider>,
+  )
+}
+
+/** The project context a provider sees, working in the project `slug`. */
+function inProject(slug: string): ProjectContextValue {
+  const project: ProjectMembership = {
+    uid: `pr-${slug}`,
+    slug,
+    name: slug,
+    active: true,
+    role: 'viewer',
+    approved: true,
+  }
+  return { project, projects: [project], status: 'ready', switchProject: vi.fn() }
+}
+
+/** Mounts the provider inside the project `slug`; `rerender` with another to switch. */
+function providerIn(slug: string) {
+  return (
+    <AuthContext.Provider value={auth('authenticated')}>
+      <ProjectContext.Provider value={inProject(slug)}>
+        <TaskSummaryProvider>
+          <Probe />
+        </TaskSummaryProvider>
+      </ProjectContext.Provider>
+    </AuthContext.Provider>
   )
 }
 
@@ -95,6 +123,39 @@ describe('TaskSummaryProvider', () => {
     })
 
     expect(await screen.findByText('none')).toBeInTheDocument()
+  })
+
+  it("drops the old project's counts and fetches the new project's on a switch", async () => {
+    const { rerender } = render(providerIn('v'))
+    expect(await screen.findByText('3')).toBeInTheDocument()
+
+    let resolve: (summary: TaskSummary) => void = () => undefined
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<TaskSummary>((done) => {
+          resolve = done
+        }),
+    )
+    rerender(providerIn('jiny'))
+
+    // The other project's counts never stand in for this one's while they load.
+    expect(screen.getByText('none')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    act(() => {
+      resolve(counts(7))
+    })
+    expect(await screen.findByText('7')).toBeInTheDocument()
+  })
+
+  it("aborts the old project's request when the project changes mid-flight", () => {
+    fetchMock.mockImplementation(() => new Promise<TaskSummary>(() => undefined))
+    const { rerender } = render(providerIn('v'))
+    const firstSignal = fetchMock.mock.calls[0][0]
+
+    rerender(providerIn('jiny'))
+
+    expect(firstSignal?.aborted).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('polls once a minute while the app is open', async () => {

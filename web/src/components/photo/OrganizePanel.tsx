@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { EntityChip } from '../EntityChip'
 
 import { foldedEquals } from '../../lib/text'
+import { useProjectPath } from '../../project/ProjectContext'
 import {
   addAlbumPhotos,
   type AlbumCount,
@@ -46,6 +47,7 @@ export interface OrganizePanelProps {
  */
 export function OrganizePanel({ photo, canCurate, onChanged }: OrganizePanelProps) {
   const { t } = useTranslation()
+  const projectPath = useProjectPath()
   const [albums, setAlbums] = useState<AlbumCount[]>([])
   const [labels, setLabels] = useState<LabelCount[]>([])
   const [busy, setBusy] = useState(false)
@@ -202,7 +204,7 @@ export function OrganizePanel({ photo, canCurate, onChanged }: OrganizePanelProp
           <EntityChip
             key={album.uid}
             kind="album"
-            to={`/albums/${album.uid}`}
+            to={projectPath(`/albums/${album.uid}`)}
             remove={
               canCurate
                 ? {
@@ -240,7 +242,7 @@ export function OrganizePanel({ photo, canCurate, onChanged }: OrganizePanelProp
           <EntityChip
             key={label.uid}
             kind="tag"
-            to={`/labels/${label.uid}`}
+            to={projectPath(`/labels/${label.uid}`)}
             remove={
               canCurate
                 ? {

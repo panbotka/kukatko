@@ -4,9 +4,9 @@ import Button from 'react-bootstrap/Button'
 import Dropdown from 'react-bootstrap/Dropdown'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { useNotificationInbox } from '../../notifications/NotificationInboxContext'
+import { ProjectLink } from '../../project/ProjectLink'
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -167,7 +167,7 @@ export function NotificationBell({ className }: { className?: string }) {
           list.items.map((n) => (
             <Dropdown.Item
               key={n.uid}
-              as={Link}
+              as={ProjectLink}
               to={notificationTarget(n)}
               className="kk-bell-menu__item"
               onClick={() => {
@@ -179,11 +179,11 @@ export function NotificationBell({ className }: { className?: string }) {
           ))}
         <Dropdown.Divider />
         <div className="kk-bell-menu__foot">
-          <Dropdown.Item as={Link} to={INBOX_PATH} className="kk-bell-menu__link">
+          <Dropdown.Item as={ProjectLink} to={INBOX_PATH} className="kk-bell-menu__link">
             {t('inbox.showAll')}
           </Dropdown.Item>
           <Dropdown.Item
-            as={Link}
+            as={ProjectLink}
             to="/account"
             className="kk-bell-menu__link kk-bell-menu__settings"
             title={t('inbox.settings')}

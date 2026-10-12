@@ -18,6 +18,12 @@ import type { IconName } from './Icon'
  * the short visible label plus `icon` carry recognition for the daily users.
  */
 export interface NavEntry {
+  /**
+   * The page's own path (`/albums`), never its address: the shell puts it into
+   * the current project (`/p/<slug>/albums`) with `useProjectPath` when it
+   * renders the link, and an instance page such as `/account` passes through
+   * unchanged. Keeping the project out of here keeps this list static.
+   */
   to: string
   labelKey: ParseKeys
   titleKey: ParseKeys

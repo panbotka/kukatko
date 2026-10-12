@@ -227,7 +227,10 @@ describe('OutliersPage', () => {
       expect.stringContaining('fit_1280'),
     )
     // And the way out to the photo's own page, in the stage's corner.
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/ph1')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph1',
+    )
 
     await user.click(within(overlay).getByRole('button', { name: /Yes, remove/ }))
 
@@ -273,14 +276,17 @@ describe('OutliersPage', () => {
     await user.click(screen.getAllByRole('button', { name: 'Enlarge the photo' })[0])
     const overlay = await screen.findByRole('dialog')
     expect(within(overlay).getByRole('button', { name: 'Previous photo' })).toBeDisabled()
-    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute('href', '/photos/ph1')
+    expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
+      'href',
+      '/p/v/photos/ph1',
+    )
 
     fireEvent.keyDown(document, { key: 'ArrowRight' })
 
     await waitFor(() => {
       expect(within(screen.getByRole('dialog')).getByTestId('review-open-photo')).toHaveAttribute(
         'href',
-        '/photos/ph2',
+        '/p/v/photos/ph2',
       )
     })
     // The last one: forward stops rather than wrapping back to the first.

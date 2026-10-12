@@ -83,7 +83,7 @@ describe('ReviewStage', () => {
 
     expect(open).toHaveAttribute('target', '_blank')
     expect(open).toHaveAttribute('rel', expect.stringContaining('noopener'))
-    expect(open).toHaveAttribute('href', '/photos/ph1')
+    expect(open).toHaveAttribute('href', '/p/v/photos/ph1')
     expect(stageImage().closest('a')).toBeNull()
   })
 
@@ -102,7 +102,7 @@ describe('ReviewStage', () => {
 
     const open = screen.getByTestId('review-open-photo')
 
-    expect(open).toHaveAttribute('href', '/photos/ph1')
+    expect(open).toHaveAttribute('href', '/p/v/photos/ph1')
     expect(open).not.toHaveAttribute('target')
     expect(open).not.toHaveAttribute('rel')
     expect(open).toHaveAccessibleName('Open the photo')

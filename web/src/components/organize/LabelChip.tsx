@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import Dropdown from 'react-bootstrap/Dropdown'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
+import { ProjectLink } from '../../project/ProjectLink'
 import { type LabelCount } from '../../services/organize'
 import { thumbUrl } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
@@ -79,7 +79,11 @@ export function LabelChip({ label, actions }: LabelChipProps) {
     <div className="kk-label-chip">
       {/* The name may be long user data, so it truncates rather than stretching
           the chip past the cloud; the count keeps its own width beside it. */}
-      <Link to={`/labels/${label.uid}`} className="kk-label-chip__link" aria-label={accessibleName}>
+      <ProjectLink
+        to={`/labels/${label.uid}`}
+        className="kk-label-chip__link"
+        aria-label={accessibleName}
+      >
         {showThumb && (
           // Decoration: the link is named after the label, so a screen reader
           // reading the picture too would only say the same thing twice.
@@ -100,7 +104,7 @@ export function LabelChip({ label, actions }: LabelChipProps) {
           </span>
         )}
         <span className="kk-label-chip__count">{label.photo_count}</span>
-      </Link>
+      </ProjectLink>
 
       {actions && (
         <Dropdown align="end">

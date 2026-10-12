@@ -29,6 +29,7 @@ import {
   expandThresholdDistance,
   similarityPercent,
 } from '../lib/expandSearch'
+import { useProjectPath } from '../project/ProjectContext'
 import { type ExpandKind, type ExpandResult, searchSimilar } from '../services/expand'
 import { rejectLabel } from '../services/feedback'
 import { fetchAlbums, fetchLabels } from '../services/organize'
@@ -70,6 +71,7 @@ export function ExpandPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('expand.title'))
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const [searchParams, setSearchParams] = useSearchParams()
 
   // Config lives in local state, seeded from the URL so a reload or Back
@@ -280,10 +282,10 @@ export function ExpandPage() {
     (index: number) => {
       const candidate = candidates.at(index)
       if (candidate !== undefined) {
-        void navigate(`/photos/${candidate.photo.uid}`)
+        void navigate(projectPath(`/photos/${candidate.photo.uid}`))
       }
     },
-    [candidates, navigate],
+    [candidates, navigate, projectPath],
   )
   const selectPhoto = useCallback(
     (index: number) => {
@@ -449,7 +451,7 @@ export function ExpandPage() {
             // thumbnail is precisely what a "does this belong here?" judgement
             // cannot be made from.
             size: 'fit_1280',
-            href: `/photos/${enlarged.photo.uid}`,
+            href: projectPath(`/photos/${enlarged.photo.uid}`),
             alt: t('expand.tile.photoAlt'),
           }}
           title={t('expand.tile.similarityValue', {

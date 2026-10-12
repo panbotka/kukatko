@@ -340,7 +340,7 @@ describe('FilterBar header', () => {
     const dialog = await openQueryHelp(user)
     expect(
       within(dialog).getByRole('link', { name: /Full-text & semantic search/ }),
-    ).toHaveAttribute('href', '/search?q=sunset')
+    ).toHaveAttribute('href', '/p/v/search?q=sunset')
   })
 
   it('omits the search link when the page does not offer one', async () => {

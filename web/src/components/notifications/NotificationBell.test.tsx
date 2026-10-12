@@ -113,14 +113,14 @@ describe('NotificationBell', () => {
     expect(listMock).toHaveBeenCalledWith({ limit: BELL_LIMIT }, expect.any(AbortSignal))
     expect(refresh).toHaveBeenCalled()
     const unread = await screen.findByRole('link', { name: /Unread: You were tagged in photos/ })
-    expect(unread).toHaveAttribute('href', '/n/nt1')
+    expect(unread).toHaveAttribute('href', '/p/v/n/nt1')
     expect(unread.querySelector('time')).toHaveTextContent('5m ago')
     const read = screen.getByRole('link', { name: /A new registration is waiting/ })
-    expect(read).toHaveAttribute('href', '/users')
+    expect(read).toHaveAttribute('href', '/p/v/users')
     expect(read).not.toHaveAccessibleName(/Unread/)
     expect(screen.getByRole('link', { name: 'Show all notifications' })).toHaveAttribute(
       'href',
-      '/notifications',
+      '/p/v/notifications',
     )
   })
 
@@ -133,7 +133,7 @@ describe('NotificationBell', () => {
     await user.click(await screen.findByRole('link', { name: /You were tagged in photos/ }))
 
     expect(markOneMock).toHaveBeenCalledWith('nt1')
-    expect(screen.getByTestId('where')).toHaveTextContent('/n/nt1')
+    expect(screen.getByTestId('where')).toHaveTextContent('/p/v/n/nt1')
     await waitFor(() => {
       expect(refresh).toHaveBeenCalled()
     })
@@ -147,7 +147,7 @@ describe('NotificationBell', () => {
     await user.click(await screen.findByRole('link', { name: /A new registration is waiting/ }))
 
     expect(markOneMock).not.toHaveBeenCalled()
-    expect(screen.getByTestId('where')).toHaveTextContent('/users')
+    expect(screen.getByTestId('where')).toHaveTextContent('/p/v/users')
   })
 
   it('marks everything read and refreshes the count', async () => {

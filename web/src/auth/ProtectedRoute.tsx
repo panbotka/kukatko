@@ -60,12 +60,14 @@ export function RequireAuth() {
  * put them.
  */
 export function RequireRole({ role }: { role: GuardRole }) {
-  const { role: current } = useAuth()
+  const { user, role: current } = useAuth()
 
-  if (current === null) {
+  if (user === null) {
     return <Navigate to="/login" replace />
   }
-  if (!roleAtLeast(current, role)) {
+  // No role at all is an account outside every project, on a page that needs
+  // one: refused like any other shortfall, not mistaken for a signed-out visit.
+  if (current === null || !roleAtLeast(current, role)) {
     return <ForbiddenPage role={role} />
   }
   return <Outlet />

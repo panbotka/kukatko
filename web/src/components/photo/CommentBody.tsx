@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { markdownPhotoUids } from '../../lib/markdownLinks'
 import { photoRefHref } from '../../lib/photoRefs'
 import { Markdown } from '../Markdown'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type CommentMention } from '../../services/comments'
 import { thumbUrl } from '../../services/photos'
 
@@ -120,7 +120,7 @@ function CommentThumb({ uid, taskUid }: { uid: string; taskUid?: string }) {
     return null
   }
   return (
-    <Link
+    <ProjectLink
       to={photoRefHref(uid, taskUid)}
       className="kk-comment__thumb"
       aria-label={t('photo.comments.refPhoto', { uid })}
@@ -134,6 +134,6 @@ function CommentThumb({ uid, taskUid }: { uid: string; taskUid?: string }) {
           setFailed(true)
         }}
       />
-    </Link>
+    </ProjectLink>
   )
 }

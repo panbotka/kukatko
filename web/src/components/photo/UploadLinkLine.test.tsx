@@ -57,7 +57,7 @@ describe('UploadLinkLine', () => {
     await renderLine(link({ uploader_name: 'Jana' }))
     expect(screen.getByRole('link', { name: '„Pouť 2026“' })).toHaveAttribute(
       'href',
-      '/upload-links',
+      '/p/v/upload-links',
     )
   })
 

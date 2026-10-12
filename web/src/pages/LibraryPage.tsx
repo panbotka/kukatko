@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from 'react-bootstrap/Button'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { type ListRange } from 'react-virtuoso'
 
 import { useAuth } from '../auth/AuthContext'
@@ -42,6 +42,8 @@ import {
 import { searchHref } from '../lib/searchView'
 import { type SlideshowScope } from '../lib/slideshowView'
 import { useUrlState } from '../lib/urlState'
+import { useProjectPath } from '../project/ProjectContext'
+import { ProjectLink } from '../project/ProjectLink'
 import { favoritePhoto } from '../services/photos'
 
 /** The library plays every photo the filters leave — it scopes to no album or label. */
@@ -92,6 +94,7 @@ export function LibraryPage() {
   useDocumentTitle(t('library.title'))
   const { canCurate } = useAuth()
   const navigate = useNavigate()
+  const projectPath = useProjectPath()
   const [view, setView] = useUrlState<LibraryView>(LIBRARY_DEFAULTS)
   const [savingView, setSavingView] = useState(false)
 
@@ -230,11 +233,10 @@ export function LibraryPage() {
       }
       // Named as the tiles name it, so the viewer records against this grid.
       const state: GridOrigin = { gridOrigin: gridScroll.key }
-      void navigate(detailQuery === '' ? `/photos/${p.uid}` : `/photos/${p.uid}?${detailQuery}`, {
-        state,
-      })
+      const path = detailQuery === '' ? `/photos/${p.uid}` : `/photos/${p.uid}?${detailQuery}`
+      void navigate(projectPath(path), { state })
     },
-    [displayPhotos, detailQuery, navigate, gridScroll.key],
+    [displayPhotos, detailQuery, navigate, projectPath, gridScroll.key],
   )
   const selectPhoto = useCallback(
     (index: number) => {
@@ -369,7 +371,7 @@ export function LibraryPage() {
         facets={facets}
         uploaders={uploaders}
         showFavorite
-        searchHref={searchHref(view)}
+        searchHref={projectPath(searchHref(view))}
         viewActions={viewActions}
       />
 
@@ -412,9 +414,9 @@ export function LibraryPage() {
           title={t('library.emptyCatalog.title')}
           hint={t('library.emptyCatalog.hint')}
           action={
-            <Link to="/upload" className="btn btn-primary">
+            <ProjectLink to="/upload" className="btn btn-primary">
               {t('library.emptyCatalog.action')}
-            </Link>
+            </ProjectLink>
           }
         />
       )}

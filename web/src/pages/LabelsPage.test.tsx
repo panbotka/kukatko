@@ -92,7 +92,7 @@ describe('LabelsPage', () => {
 
     const cloud = await screen.findByRole('list', { name: 'Labels' })
     const chip = within(cloud).getByRole('link', { name: 'Sunset, 5 photos' })
-    expect(chip).toHaveAttribute('href', '/labels/lb_1')
+    expect(chip).toHaveAttribute('href', '/p/v/labels/lb_1')
     expect(within(chip).getByText('5')).toBeInTheDocument()
   })
 

@@ -1,11 +1,12 @@
 import { Navigate, useLocation } from 'react-router-dom'
 
 import { LIBRARY_PATH } from '../lib/libraryView'
+import { useProjectPath } from '../project/ProjectContext'
 
 /**
  * Compatibility shim for `/library` **and everything under it**: the library now
  * lives at {@link LIBRARY_PATH} (`/`), so this forwards the whole retired branch
- * to the homepage.
+ * to the homepage — the project's own, `/p/<slug>`, since it is mounted inside one.
  *
  * Two generations of dead links land here. Kukátko's own bookmarks, shared links
  * and saved searches minted before the library became the homepage carry a bare
@@ -24,6 +25,7 @@ import { LIBRARY_PATH } from '../lib/libraryView'
  */
 export function LibraryRedirect() {
   const { search, hash } = useLocation()
+  const projectPath = useProjectPath()
 
-  return <Navigate to={{ pathname: LIBRARY_PATH, search, hash }} replace />
+  return <Navigate to={{ pathname: projectPath(LIBRARY_PATH), search, hash }} replace />
 }

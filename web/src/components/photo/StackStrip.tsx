@@ -3,9 +3,9 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { formatBytes } from '../../lib/format'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type StackMember } from '../../services/photos'
 import { FadeInImage } from '../FadeInImage'
 import { Icon } from '../Icon'
@@ -90,7 +90,7 @@ export function StackStrip({
             }`}
             style={{ maxWidth: '18rem' }}
           >
-            <Link
+            <ProjectLink
               to={variantLink(member.uid)}
               className="flex-shrink-0"
               aria-label={t('stack.viewVariant', { name: member.file_name })}
@@ -113,7 +113,7 @@ export function StackStrip({
                   <Icon name="images" />
                 </span>
               )}
-            </Link>
+            </ProjectLink>
             <div className="d-flex flex-column small">
               <span className="text-truncate fw-semibold" title={member.file_name}>
                 {member.file_name}

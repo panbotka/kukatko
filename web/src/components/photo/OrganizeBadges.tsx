@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { EntityChip } from '../EntityChip'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
+import { useProjectPath } from '../../project/ProjectContext'
 import { type PhotoAlbumRef, type PhotoLabelRef } from '../../services/photos'
 
 /** Props for {@link OrganizeBadges}. */
@@ -29,6 +30,7 @@ export interface OrganizeBadgesProps {
  */
 export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
   const { t, i18n } = useTranslation()
+  const projectPath = useProjectPath()
 
   if (albums.length === 0 && labels.length === 0) {
     return null
@@ -43,12 +45,12 @@ export function OrganizeBadges({ albums, labels }: OrganizeBadgesProps) {
       className="d-flex flex-wrap gap-2 mb-3"
     >
       {albums.map((album) => (
-        <EntityChip key={album.uid} kind="album" to={`/albums/${album.uid}`}>
+        <EntityChip key={album.uid} kind="album" to={projectPath(`/albums/${album.uid}`)}>
           {albumDisplayTitle(album.title, i18n.language)}
         </EntityChip>
       ))}
       {labels.map((label) => (
-        <EntityChip key={label.uid} kind="tag" to={`/labels/${label.uid}`}>
+        <EntityChip key={label.uid} kind="tag" to={projectPath(`/labels/${label.uid}`)}>
           {label.name}
         </EntityChip>
       ))}

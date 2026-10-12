@@ -105,7 +105,7 @@ function LocationProbe() {
   return <span data-testid="location">{location.pathname + location.search}</span>
 }
 
-function renderPage(isAdmin = true, initialEntry = '/audit/reviews?user=u1') {
+function renderPage(isAdmin = true, initialEntry = '/p/v/audit/reviews?user=u1') {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth(isAdmin)}>
@@ -179,17 +179,17 @@ describe('ReviewDecisionsPage', () => {
       response([record(2, 'label.reject', 'lb-1', { photo_uid: 'ph-2' })]),
     )
 
-    renderPage(true, '/audit/reviews?user=u1&decision=no&offset=60')
+    renderPage(true, '/p/v/audit/reviews?user=u1&decision=no&offset=60')
 
     const row = await screen.findByTestId('decision-row-2')
     const link = within(row).getByRole('link', { name: 'Open the photo' })
-    expect(link).toHaveAttribute('href', '/photos/ph-2')
+    expect(link).toHaveAttribute('href', '/p/v/photos/ph-2')
     // A client-side route change, never a new tab.
     expect(link).not.toHaveAttribute('target')
     expect(within(link).getByTestId('decision-thumb')).toBeInTheDocument()
 
     await user.click(link)
-    expect(screen.getByTestId('location')).toHaveTextContent(/^\/photos\/ph-2$/)
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/p\/v\/photos\/ph-2$/)
   })
 
   it('renders a blank well with no link for a missing or broken thumbnail', async () => {
@@ -249,7 +249,7 @@ describe('ReviewDecisionsPage', () => {
   })
 
   it('prompts to pick a player when no user is selected', async () => {
-    renderPage(true, '/audit/reviews')
+    renderPage(true, '/p/v/audit/reviews')
 
     expect(await screen.findByText('No user selected')).toBeInTheDocument()
     // With no user, the listing endpoint is never hit.

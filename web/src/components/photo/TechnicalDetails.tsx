@@ -2,7 +2,6 @@ import { type ReactNode, useState } from 'react'
 import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import {
   formatByteCount,
@@ -23,6 +22,7 @@ import {
   splitKeywords,
   takenAtSource,
 } from '../../lib/photoFacts'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type PhotoDetail } from '../../services/photos'
 import { Icon } from '../Icon'
 
@@ -390,7 +390,10 @@ export function TechnicalDetails({
                     // Not <link>: that is a void element to the HTML parser
                     // behind Trans, which would drop the name inside it.
                     uploader: (
-                      <Link to={uploaderHref(uploader.uid)} className="text-decoration-none" />
+                      <ProjectLink
+                        to={uploaderHref(uploader.uid)}
+                        className="text-decoration-none"
+                      />
                     ),
                   }}
                 />

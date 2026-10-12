@@ -242,7 +242,7 @@ describe('DuplicatesPage', () => {
     )
     expect(within(overlay).getByTestId('review-open-photo')).toHaveAttribute(
       'href',
-      '/photos/ph_dup',
+      '/p/v/photos/ph_dup',
     )
 
     await user.click(within(overlay).getByRole('button', { name: 'Keep this' }))

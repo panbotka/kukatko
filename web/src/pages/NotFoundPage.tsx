@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { LIBRARY_PATH } from '../lib/libraryView'
+import { ProjectLink } from '../project/ProjectLink'
 
 /**
  * Fallback page shown for unknown client-side routes. Drawn with the shared
@@ -22,9 +23,9 @@ export function NotFoundPage() {
         title={t('notFound.title')}
         hint={t('notFound.message')}
         action={
-          <Link to="/" className="btn btn-primary">
+          <ProjectLink to={LIBRARY_PATH} className="btn btn-primary">
             {t('notFound.back')}
-          </Link>
+          </ProjectLink>
         }
       />
     </div>

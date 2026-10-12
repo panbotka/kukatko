@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
 
 import { albumDisplayTitle } from '../../i18n/albumNames'
 import { albumCover } from '../../lib/albumCovers'
+import { ProjectLink } from '../../project/ProjectLink'
 import { type FeaturedAlbum, fetchFeaturedAlbums } from '../../services/featured'
 import { AlbumCoverMedia } from '../organize/AlbumCoverMedia'
 
@@ -33,7 +33,7 @@ function FeaturedCard({ album }: { album: FeaturedAlbum }) {
 
   return (
     <li className="kk-featured-strip__item">
-      <Link
+      <ProjectLink
         to={`/albums/${encodeURIComponent(album.uid)}`}
         className="kk-tile kk-featured-card d-flex flex-column text-decoration-none text-body"
         title={title}
@@ -50,7 +50,7 @@ function FeaturedCard({ album }: { album: FeaturedAlbum }) {
         <span className="kk-text-caption text-secondary">
           {t('albums.photoCount', { count: album.photo_count })}
         </span>
-      </Link>
+      </ProjectLink>
     </li>
   )
 }
