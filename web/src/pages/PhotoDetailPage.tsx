@@ -771,9 +771,9 @@ export function PhotoDetailPage() {
     }
   }
 
-  // Viewer shortcuts: ←/→ page, `f` favorite, `m` faces, `i` info drawer, `s`
-  // hide/unhide, Escape steps back out (a selected face, then the drawer, then
-  // the viewer itself).
+  // Viewer shortcuts: ←/→ page, `f` favorite, `m` faces, `n` name a face, `i`
+  // info drawer, `s` hide/unhide, Escape steps back out (a selected face, then
+  // the drawer, then the viewer itself).
   // Rating keys (0–5, p/r) are handled by the separate effect below. The hook
   // suppresses these while typing, which keeps `m`/`i` out of the name field.
   //
@@ -811,6 +811,21 @@ export function PhotoDetailPage() {
       ? {
           s: () => {
             void toggleHidden()
+          },
+        }
+      : {}),
+    // `n` = name: the keyboard's way into the name field, now that the face the
+    // panel picks by itself no longer takes it (arrowing through the library with
+    // the panel open must keep arrowing). Opens the faces view if it is shut and
+    // lands in the field of the selected face, or of the first unnamed one. A
+    // curator's key only — like the rows, a viewer has no field to land in.
+    ...(canCurate
+      ? {
+          n: () => {
+            if (facesAvailable || showFaces) {
+              openFaces()
+              faces.startNaming()
+            }
           },
         }
       : {}),

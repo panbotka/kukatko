@@ -1920,6 +1920,103 @@ describe('PhotoDetailPage — immersive viewer', () => {
   })
 
   /**
+   * The faces panel picks the first unnamed face by itself when a photo loads —
+   * that pick is a convenience, not a claim on the keyboard. The name field only
+   * takes focus from an explicit act, so a reader arrowing through the library
+   * with the panel open keeps arrowing.
+   */
+  describe('faces panel and the keyboard', () => {
+    /** The name field of the selected face's naming panel. */
+    const nameField = () => screen.getByRole('combobox', { name: 'Name' })
+
+    /** Presses a key the way a browser does: on whatever holds the focus. */
+    const press = (key: string) => {
+      fireEvent.keyDown(document.activeElement ?? document.body, { key })
+    }
+
+    it('keeps paging with the arrows while the panel auto-selects a face', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(true, '/photos/a?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      await screen.findByRole('link', { name: 'Next' })
+      // The automatic pick opened the naming panel, but left the keyboard alone.
+      expect(nameField()).toBeInTheDocument()
+      expect(nameField()).not.toHaveFocus()
+
+      press('ArrowRight')
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      })
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      await screen.findByRole('link', { name: 'Next' })
+      expect(nameField()).not.toHaveFocus()
+
+      press('ArrowRight')
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('puts the keyboard in the name field when a face is picked by hand, and Escape hands it back', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      await screen.findByRole('link', { name: 'Next' })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Select face #2: No name' }))
+      await waitFor(() => {
+        expect(nameField()).toHaveFocus()
+      })
+      // Typing is typing: the arrows move the caret, not the photo.
+      press('ArrowRight')
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+
+      // Escape leaves the face, and the keyboard is the viewer's again.
+      press('Escape')
+      expect(screen.queryByRole('combobox', { name: 'Name' })).not.toBeInTheDocument()
+      expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/b')
+      press('ArrowRight')
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent('/photos/c')
+      })
+    })
+
+    it('n puts the keyboard in the name field of the selected face', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(true, '/photos/b?sort=oldest&panel=faces')
+      expect(await screen.findByText('Faces: 2')).toBeInTheDocument()
+      expect(nameField()).not.toHaveFocus()
+
+      press('n')
+      await waitFor(() => {
+        expect(nameField()).toHaveFocus()
+      })
+    })
+
+    it('n opens the faces view on a face when it is shut', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(true, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+      await screen.findByRole('button', { name: 'Show faces' })
+
+      press('n')
+      await waitFor(() => {
+        expect(nameField()).toHaveFocus()
+      })
+      expect(screen.getByTestId('location')).toHaveTextContent('panel=faces')
+    })
+
+    it('leaves n alone for a viewer, who names nobody', async () => {
+      fetchFacesMock.mockResolvedValue(facesResponse(2))
+      renderPage(false, '/photos/b?sort=oldest')
+      await screen.findByRole('heading', { name: 'Beach' })
+
+      press('n')
+      expect(screen.getByTestId('location')).not.toHaveTextContent('panel=faces')
+    })
+  })
+
+  /**
    * What the library has computed about this photo is a visible block of the
    * drawer, not a row inside the collapsed technical card: "why does this photo
    * not come up in search?" deserves an answer without an extra click.

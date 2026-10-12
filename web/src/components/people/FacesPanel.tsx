@@ -357,6 +357,7 @@ export function FacesPanel({
                     subjects={subjects}
                     subjectsLoading={subjectsLoading}
                     busy={faces.busy}
+                    focusKey={faces.nameFocusKey}
                     onAcceptSuggestion={(subject) => {
                       faces.acceptSuggestion(face, subject)
                     }}

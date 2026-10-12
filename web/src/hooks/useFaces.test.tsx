@@ -609,4 +609,102 @@ describe('useFaces confirm all', () => {
     expect(assignMock).not.toHaveBeenCalled()
     expect(result.current.confirmAllState.running).toBe(false)
   })
+  /**
+   * The automatic pick on load is the cursor on the work, not a claim on the
+   * keyboard: a reader arrowing through the library with the panel open must keep
+   * arrowing, so the name field takes focus only from an explicit act.
+   */
+  describe('the keyboard and the name field', () => {
+    it('asks for no focus for the face the load picks by itself', async () => {
+      const { result } = await renderReady()
+      expect(result.current.selected?.face_index).toBe(0)
+      expect(result.current.nameFocusKey).toBeNull()
+    })
+
+    it('asks for focus on an explicit selection, and again on the next one', async () => {
+      const { result } = await renderReady()
+
+      act(() => {
+        result.current.select(0)
+      })
+      const first = result.current.nameFocusKey
+      expect(first).not.toBeNull()
+
+      // The same face picked again is a new request, not a stale one.
+      act(() => {
+        result.current.select(0)
+      })
+      expect(result.current.nameFocusKey).not.toBeNull()
+      expect(result.current.nameFocusKey).not.toBe(first)
+
+      // Deselecting asks for nothing.
+      act(() => {
+        result.current.select(null)
+      })
+      expect(result.current.nameFocusKey).toBe(result.current.nameFocusKey)
+    })
+
+    it('keeps the keyboard on the advance after naming, so the next name is typed without a click', async () => {
+      const two = facesResponse()
+      two.faces = [two.faces[0], { ...two.faces[0], face_index: 1, suggestions: [] }]
+      const { result } = await renderReady(two)
+      expect(result.current.nameFocusKey).toBeNull()
+
+      act(() => {
+        result.current.assignName(result.current.faces[0], 'Bob')
+      })
+      expect(result.current.selected?.face_index).toBe(1)
+      expect(result.current.nameFocusKey).not.toBeNull()
+    })
+
+    it('startNaming lands on the selected face, or on the first one left to name', async () => {
+      const two = facesResponse()
+      two.faces = [two.faces[0], { ...two.faces[0], face_index: 1, suggestions: [] }]
+      const { result } = await renderReady(two)
+
+      act(() => {
+        result.current.select(null)
+      })
+      expect(result.current.selected).toBeNull()
+
+      act(() => {
+        result.current.startNaming()
+      })
+      expect(result.current.selected?.face_index).toBe(0)
+      const key = result.current.nameFocusKey
+      expect(key).not.toBeNull()
+
+      // With a face already selected it stays on it — and asks again.
+      act(() => {
+        result.current.select(1)
+      })
+      act(() => {
+        result.current.startNaming()
+      })
+      expect(result.current.selected?.face_index).toBe(1)
+      expect(result.current.nameFocusKey).not.toBe(key)
+    })
+
+    it('forgets the request when the photo changes', async () => {
+      fetchMock.mockResolvedValue(facesResponse())
+      const rendered = renderHook(({ uid }: { uid: string }) => useFaces(uid), {
+        initialProps: { uid: 'ph1' },
+      })
+      await waitFor(() => {
+        expect(rendered.result.current.status).toBe('ready')
+      })
+      act(() => {
+        rendered.result.current.select(0)
+      })
+      expect(rendered.result.current.nameFocusKey).not.toBeNull()
+
+      rendered.rerender({ uid: 'ph2' })
+      await waitFor(() => {
+        expect(rendered.result.current.status).toBe('ready')
+      })
+      // The new photo's own pick is automatic: no focus.
+      expect(rendered.result.current.selected?.face_index).toBe(0)
+      expect(rendered.result.current.nameFocusKey).toBeNull()
+    })
+  })
 })

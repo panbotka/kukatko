@@ -33,6 +33,12 @@ export interface FaceAssignPanelProps {
   subjectsLoading?: boolean
   /** True while an assignment request is in flight (disables the controls). */
   busy: boolean
+  /**
+   * When the name field should take the keyboard — `useFaces.nameFocusKey`: a
+   * number for a face the reader picked (or was moved to after naming one), null
+   * for the one the load picked by itself. See {@link AddAutocomplete}'s `focusKey`.
+   */
+  focusKey: number | null
   /** Names the face with an existing subject — a ranked suggestion or a typeahead pick. */
   onAcceptSuggestion: (subject: SubjectChoice) => void
   /** Assigns a free-text name (the subject is found or created server-side). */
@@ -85,6 +91,7 @@ export function FaceAssignPanel({
   subjects,
   subjectsLoading = false,
   busy,
+  focusKey,
   onAcceptSuggestion,
   onAssignName,
   onUnassign,
@@ -209,7 +216,11 @@ export function FaceAssignPanel({
           <AddAutocomplete
             id={`face-name-${face.face_index}`}
             label={t('faces.panel.nameLabel')}
-            autoFocus
+            // Only an explicit pick puts the keyboard here. The face the load
+            // selects by itself must not: a reader arrowing through the library
+            // with this panel open is browsing, and the viewer's arrows stand
+            // down while an input holds the focus.
+            focusKey={focusKey}
             disabled={busy || subjectsLoading}
             options={subjects.map((subject) => ({
               uid: subject.uid,

@@ -37,6 +37,8 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
     busy: false,
     actionError: false,
     select: vi.fn(),
+    startNaming: vi.fn(),
+    nameFocusKey: null,
     acceptSuggestion: vi.fn(),
     assignName: vi.fn(),
     unassign: vi.fn(),
@@ -753,5 +755,39 @@ describe('FacesPanel confirm all', () => {
     )
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Who holds the keyboard is the hook's call (`nameFocusKey`): the panel only
+ * passes it on. The face a load picks by itself must leave the arrows to the
+ * viewer; a face the reader picked gets the name field.
+ */
+describe('FacesPanel and the keyboard', () => {
+  it('puts the keyboard in the name field only when the hook asks for it', async () => {
+    const face = faceView({ face_index: 0 })
+    const panel = (nameFocusKey: number | null) => (
+      <I18nextProvider i18n={i18n}>
+        <FacesPanel
+          photoUid="ph_1"
+          faces={facesResult({ faces: [face], selected: face, nameFocusKey })}
+          canCurate
+          hovered={null}
+          onHover={onHover}
+          onClose={onClose}
+        />
+      </I18nextProvider>
+    )
+    const { rerender } = render(panel(null))
+    const input = screen.getByRole('combobox', { name: 'Name' })
+    // The field is disabled until the subject list lands; a deferred request
+    // would be honoured then, so the check waits for the list too.
+    await waitFor(() => {
+      expect(input).toBeEnabled()
+    })
+    expect(input).not.toHaveFocus()
+
+    rerender(panel(1))
+    expect(input).toHaveFocus()
   })
 })

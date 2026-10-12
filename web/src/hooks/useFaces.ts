@@ -50,8 +50,27 @@ export interface UseFacesResult {
   busy: boolean
   /** True when the last assignment failed; the faces were refetched. */
   actionError: boolean
-  /** Opens (or, with null, closes) the naming panel for a face. */
+  /**
+   * Opens (or, with null, closes) the naming panel for a face. An explicit act —
+   * a tap on a box or a row, a jump from the people chips — so it also asks for
+   * the keyboard (see {@link UseFacesResult.nameFocusKey}).
+   */
   select: (faceIndex: number | null) => void
+  /**
+   * Puts the keyboard in the name field: of the selected face, or of the first
+   * face left to name when none is selected. The viewer's `n` key. With every
+   * face named and nothing selected it does nothing.
+   */
+  startNaming: () => void
+  /**
+   * When the name field should take focus, as a key that changes with every
+   * explicit act — `select`, `startNaming`, the advance after naming — and is
+   * null for the face a load picked by itself. That automatic pick is the cursor
+   * on the work, not a claim on the keyboard: a reader arrowing through the
+   * library with the panel open is browsing, not typing, and the viewer's
+   * shortcuts (rightly) stand down while an input holds the focus.
+   */
+  nameFocusKey: number | null
   /**
    * Names a face by accepting one of its ranked identity suggestions — or any
    * subject picked from the typeahead, which is the same thing minus the ranking.
@@ -130,6 +149,7 @@ function nextUnnamed(faces: FaceView[], afterIndex: number): number | null {
 export function useFaces(photoUid: string): UseFacesResult {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [selected, setSelected] = useState<number | null>(null)
+  const [nameFocusKey, setNameFocusKey] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState(false)
   const [confirmAllState, setConfirmAllState] = useState<FacesConfirmAllState>(IDLE_CONFIRM_ALL)
@@ -148,6 +168,24 @@ export function useFaces(photoUid: string): UseFacesResult {
   const currentUidRef = useRef(photoUid)
   currentUidRef.current = photoUid
   const latestRequest = useRef(0)
+
+  // A serial behind `nameFocusKey`, so two acts in a row are two changes.
+  const focusSerial = useRef(0)
+  const requestNameFocus = useCallback(() => {
+    focusSerial.current += 1
+    setNameFocusKey(focusSerial.current)
+  }, [])
+
+  /** Selects a face (or none) and, for a face, asks for the keyboard. */
+  const select = useCallback(
+    (faceIndex: number | null) => {
+      setSelected(faceIndex)
+      if (faceIndex !== null) {
+        requestNameFocus()
+      }
+    },
+    [requestNameFocus],
+  )
 
   const reload = useCallback(
     async (signal?: AbortSignal, autoSelect = false) => {
@@ -179,6 +217,8 @@ export function useFaces(photoUid: string): UseFacesResult {
     const controller = new AbortController()
     setState({ status: 'loading' })
     setSelected(null)
+    // The face this load picks by itself gets no focus; see `nameFocusKey`.
+    setNameFocusKey(null)
     // A mutation still settling belongs to the photo just left; the new one starts
     // with a clean action state rather than inheriting its spinner or its error.
     setBusy(false)
@@ -230,8 +270,13 @@ export function useFaces(photoUid: string): UseFacesResult {
       applyOptimistic(face.face_index, optimisticName)
       // Naming a face moves on to the next one left to name. Unassigning keeps it
       // selected: it has just become unnamed, and the reason to unassign is almost
-      // always to name it something else.
-      setSelected(advance ? nextUnnamed(facesRef.current, face.face_index) : face.face_index)
+      // always to name it something else. Either way the keyboard follows: the
+      // act was the reader's, and the next name is typed without a click.
+      const next = advance ? nextUnnamed(facesRef.current, face.face_index) : face.face_index
+      setSelected(next)
+      if (next !== null) {
+        requestNameFocus()
+      }
       try {
         await assignFace(photoUid, req)
         await reload()
@@ -248,7 +293,7 @@ export function useFaces(photoUid: string): UseFacesResult {
         }
       }
     },
-    [applyOptimistic, photoUid, reload],
+    [applyOptimistic, photoUid, reload, requestNameFocus],
   )
 
   const acceptSuggestion = useCallback(
@@ -315,16 +360,30 @@ export function useFaces(photoUid: string): UseFacesResult {
         // optimistic name with what the server stored, so the faces that failed
         // come back unnamed by themselves.
         await reload().catch(() => undefined)
-        setSelected(
+        const next =
           before.find((face) => !isNamed(face) && !confirmed.has(face.face_index))?.face_index ??
-            null,
-        )
+          null
+        setSelected(next)
+        if (next !== null) {
+          requestNameFocus()
+        }
         setBusy(false)
         setConfirmAllState((state) => ({ ...state, running: false }))
       })()
     },
-    [applyOptimistic, photoUid, reload],
+    [applyOptimistic, photoUid, reload, requestNameFocus],
   )
+
+  const startNaming = useCallback(() => {
+    // The selection is read through the updater so a call right after `select`
+    // sees that selection, not the render's.
+    let target: number | null = null
+    setSelected((prev) => {
+      target = prev ?? firstUnnamed(facesRef.current)
+      return target
+    })
+    requestNameFocus()
+  }, [requestNameFocus])
 
   const cancelConfirmAll = useCallback(() => {
     cancelBatch.current = true
@@ -357,7 +416,9 @@ export function useFaces(photoUid: string): UseFacesResult {
     selected: faces.find((face) => face.face_index === selected) ?? null,
     busy,
     actionError,
-    select: setSelected,
+    select,
+    startNaming,
+    nameFocusKey,
     acceptSuggestion,
     assignName,
     unassign,

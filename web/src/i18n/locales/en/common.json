@@ -1943,6 +1943,7 @@
       "prevNext": "Previous / next photo",
       "favorite": "Toggle favorite",
       "faces": "Show / hide faces",
+      "name": "Name the selected face (cursor into the name field)",
       "info": "Show / hide info",
       "hide": "Hide the photo from the library / bring it back",
       "rating": "Set the star rating (0 clears it)",

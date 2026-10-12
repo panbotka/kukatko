@@ -146,3 +146,50 @@ describe('AddAutocomplete', () => {
     expect(screen.getByRole('option', { name: /Petr Doležal/ })).toBeInTheDocument()
   })
 })
+
+/**
+ * The field never takes the keyboard by itself: only a `focusKey` asks for it,
+ * and a request made while the field is disabled waits for it to be enabled —
+ * the face panel asks during the mutation that moved it to the next face.
+ */
+describe('AddAutocomplete and the keyboard', () => {
+  function Field({ focusKey, disabled }: { focusKey?: number | null; disabled?: boolean }) {
+    return (
+      <I18nextProvider i18n={i18n}>
+        <AddAutocomplete
+          id="person"
+          label="Person’s name"
+          options={OPTIONS}
+          onAdd={vi.fn()}
+          focusKey={focusKey}
+          disabled={disabled}
+        />
+      </I18nextProvider>
+    )
+  }
+
+  it('leaves the focus alone without a focusKey', () => {
+    render(<Field />)
+    expect(screen.getByRole('combobox')).not.toHaveFocus()
+  })
+
+  it('takes the focus for a focusKey, and again when it changes', () => {
+    const { rerender } = render(<Field focusKey={1} />)
+    const input = screen.getByRole('combobox')
+    expect(input).toHaveFocus()
+
+    input.blur()
+    expect(input).not.toHaveFocus()
+    rerender(<Field focusKey={2} />)
+    expect(input).toHaveFocus()
+  })
+
+  it('waits for the field to be enabled before taking the focus', () => {
+    const { rerender } = render(<Field focusKey={1} disabled />)
+    const input = screen.getByRole('combobox')
+    expect(input).not.toHaveFocus()
+
+    rerender(<Field focusKey={1} disabled={false} />)
+    expect(input).toHaveFocus()
+  })
+})

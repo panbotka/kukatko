@@ -85,6 +85,8 @@ function facesResult(overrides: Partial<UseFacesResult> = {}): UseFacesResult {
     busy: false,
     actionError: false,
     select: vi.fn(),
+    startNaming: vi.fn(),
+    nameFocusKey: null,
     acceptSuggestion: vi.fn(),
     assignName: vi.fn(),
     unassign: vi.fn(),

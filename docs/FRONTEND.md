@@ -3225,7 +3225,10 @@ here.
   it survives a replaced entry. Below 768 px it takes its own row under the name and toggles (`flex-wrap` on
   `.kk-viewer__chrome--return`; at 375 px pill + toggles overran the screen). Reached any other way, nothing
   changes. **Keys:** ←/→ steps through neighbors, `f`
-  favorite, `m` faces, `i` drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
+  favorite, `m` faces, `n` **name a face** (curator+ only: opens the faces view if it is shut and puts the
+  keyboard in the name field of the selected face, or of the first unnamed one — `useFaces.startNaming`; it
+  exists because the face the panel picks by itself no longer takes the keyboard, see `useFaces`), `i`
+  drawer, `s` **skrýt** (hide/unhide, editor+ only — the same handler the eye
   button calls, see below), Esc **a step back** (first the selected face, then the drawer, then
   out); rating hotkeys `0`–`5`/`p`/`r`/`v` on document (except while typing into an input or with a
   form modal up, the same two guards the shared hook applies).
@@ -3607,7 +3610,12 @@ here.
   is another way to say the same name. `FaceAssignPanel` and `AttachPersonField` both pass
   `alias: subject.nickname`, because whoever is naming a face knows the family by what everybody calls them,
   not by the name on the documents; an absent alias widens nothing,
-  a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; an optional `onCreate` prop adds
+  a „nic neodpovídá" state, ~44px tap targets, ARIA combobox/listbox; **`focusKey`** (a number: the field takes
+  the focus on mount and again whenever it changes, deferred while `disabled` so a request made during a
+  mutation lands once the field is enabled; unset/null asks for nothing) beside the mount-time **`autoFocus`**
+  (right for a modal's one field or a field that opens on demand — `AddRelationModal`, `AttachPersonField`;
+  wrong for `FaceAssignPanel` since 2026-10-12, because it could not tell a face the reader picked from one the
+  load picked); an optional `onCreate` prop adds
   a „Vytvořit «dotaz»" row — `createAndAttachLabel` does `createLabel` + `attachLabel` and
   `createAndAddAlbum` does `createAlbum` + `addAlbumPhotos` (album defaults: empty description, non-private
   — type/cover/privacy stay editable on the Alba page), both matching the name via `foldedEquals` so they
@@ -5618,8 +5626,13 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   backend's own fork (`internal/facematch`), which the UI never shows because naming either face is
   the same one click. It lives in `lib/` rather than inside `useFaces` because two naming surfaces
   send it, and a second, subtly different builder is exactly how one of them would start creating
-  markers the other assigns — + a typeahead over `useSubjects` (`AddAutocomplete` with `autoFocus`
-  and `hint` = the person's marker count); a face with no embedding leads with a muted note saying so, which is also
+  markers the other assigns — + a typeahead over `useSubjects` (`AddAutocomplete` with
+  `focusKey={faces.nameFocusKey}` — **the field takes the keyboard only for a face the reader picked** (a box,
+  a row, a person chip, `n`) **or was moved to after naming one, never for the face a load selects by
+  itself**: with the panel open a reader arrowing through the library is browsing, and the viewer's arrows
+  rightly stand down while an input holds the focus (bug of 2026-10-12: the second → did nothing); Esc in the
+  field deselects the face, the input unmounts and the keyboard is the viewer's again — and `hint` = the
+  person's marker count); a face with no embedding leads with a muted note saying so, which is also
   the honest explanation of its empty suggestion list; for an assigned face **Přeřadit** (suggestions, which the backend supplies
   for assigned faces too — the face's own person is excluded from them) and **Odebrat**; Esc leaves the reassignment first,
   then the selection), `ClusterCard`, `Candidates` (the per-subject version of `/faces` embedded in the person's page:
@@ -6225,7 +6238,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`readingOrder`, in the one place all the consumers read from): everything numbers and walks faces **by their array
   position** — the boxes, the panel rows, the people chips, `firstUnnamed`/`nextUnnamed` — and detection order is the
   model's own, which on the reported group photo put #1 in the middle, #3 to its left and #5 at the far left.
-  **After loading it selects the first unnamed face**
+  **After loading it selects the first unnamed face** — without asking for the keyboard: **`nameFocusKey`** is
+  `null` for that automatic pick and a fresh number for every explicit act (`select` of a face, **`startNaming`**
+  = the viewer's `n`, which lands on the selected face or the first unnamed one, and the advance after an
+  assignment or a batch), and `FaceAssignPanel` focuses its name field only on the number — so a reader paging
+  with the panel open keeps paging, and one who picked a face types straight away —
   and **after an assignment it moves the selection to the next unnamed one** (`firstUnnamed`/`nextUnnamed`, ordered by
   **the order in the array**, not by `face_index`; `facesRef` against a stale closure) — so you get through a group
   photo without reaching for the mouse. `unassign` **keeps** the selection (the face has just been freed and you

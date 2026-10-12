@@ -389,6 +389,17 @@ implemented**, per the task's conservative-changes rule.
   sheet begins, and the dock stands down to `opacity: 0` / `pointer-events: none` — so nothing is left
   behind it and nothing under it intercepts a tap. ✅ nothing to fix.
 
+- **Keyboard (2026-10-12):** with the faces panel open, → moved to the next photo once and then
+  died: the panel picks the first unnamed face of every photo by itself, and its name field took
+  the keyboard on mount (`autoFocus`), so the second → moved a text caret. The viewer's rule that
+  shortcuts stand down inside an input is right and stays. ✅ **Done (2026-10-12):** the field takes
+  the keyboard only from an explicit act — a box, a row, a person chip, the advance after naming —
+  never from the automatic pick (`useFaces.nameFocusKey`, `AddAutocomplete`'s `focusKey` in place of
+  `autoFocus`), and **`n`** is the keyboard's way into the field (opens the faces view if shut; listed
+  in the shortcut help). Esc in the field already handed the keyboard back. The other `autoFocus` of
+  this kind, `ReviewFacePair`, stays: the review game is one question at a time with no paging under
+  it, so there is nothing for the focus to steal. 🔴 ⚪
+
 ### Upload (`/upload`)
 - **Rebuilt as one stage at a time (2026-08-17).** The three-numbered-steps page read fine on a
   desktop and failed the only test that matters — uploading from an iPhone. All three steps were on

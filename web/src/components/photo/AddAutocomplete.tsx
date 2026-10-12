@@ -58,10 +58,21 @@ export interface AddAutocompleteProps {
   /** Disables the field while a mutation is in flight. */
   disabled?: boolean
   /**
-   * Focuses the field on mount. Set it where the field IS the task (naming the
-   * selected face), not where it is one control among many.
+   * Focuses the field on mount. Set it where the field IS the task the moment it
+   * appears (a modal's one field, a field that opens on demand), not where it is
+   * one control among many.
    */
   autoFocus?: boolean
+  /**
+   * Asks for the keyboard on demand: with a number here the field takes focus on
+   * mount and again whenever the number changes — deferred while the field is
+   * disabled, so a request made during a mutation lands the moment the field is
+   * enabled. Unset (or null) asks for nothing. For a field whose panel can open
+   * *without* the reader asking for it (the face the faces panel picks by itself
+   * on load), where a mount-time `autoFocus` would claim the keyboard from a
+   * reader who is only arrowing through.
+   */
+  focusKey?: number | null
   /**
    * Spacing classes for the wrapper. Defaults to `mb-3`, the gap a field stacked
    * in a panel wants; a form row that lays out its own gaps passes `mb-0`.
@@ -113,6 +124,7 @@ export function AddAutocomplete({
   id,
   disabled,
   autoFocus = false,
+  focusKey,
   className = 'mb-3',
 }: AddAutocompleteProps) {
   const { t } = useTranslation()
@@ -123,6 +135,22 @@ export function AddAutocomplete({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const listboxId = `${id}-listbox`
+
+  // A focus request outlives the render that made it: it is remembered here and
+  // honoured by the first commit in which the field can actually take the focus.
+  const pendingFocus = useRef(false)
+  useEffect(() => {
+    if (focusKey !== undefined && focusKey !== null) {
+      pendingFocus.current = true
+    }
+  }, [focusKey])
+  useEffect(() => {
+    if (!pendingFocus.current || disabled === true) {
+      return
+    }
+    pendingFocus.current = false
+    inputRef.current?.focus()
+  }, [focusKey, disabled])
   const trimmed = text.trim()
 
   const suggestions = useMemo(
@@ -242,7 +270,7 @@ export function AddAutocomplete({
         autoComplete="off"
         disabled={disabled}
         // Opt-in, and only ever set where the field is the whole purpose of the
-        // panel that just opened (naming the selected face).
+        // panel that just opened.
         autoFocus={autoFocus}
         onFocus={() => {
           setOpen(true)
