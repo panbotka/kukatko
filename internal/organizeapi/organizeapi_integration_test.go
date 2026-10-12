@@ -17,6 +17,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/organizeapi"
@@ -36,6 +37,7 @@ type env struct {
 	authSvc *auth.Service
 	photos  *photos.Store
 	audit   *audit.Store
+	db      *database.DB
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -65,7 +67,9 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()), audit: audit.NewStore(db.Pool())}
+	return &env{
+		server: server, authSvc: authSvc, photos: photos.NewStore(db.Pool()), audit: audit.NewStore(db.Pool()), db: db,
+	}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.

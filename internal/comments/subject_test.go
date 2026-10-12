@@ -21,8 +21,9 @@ func TestSubjectValid(t *testing.T) {
 	}{
 		{name: "photo with uid", subj: PhotoSubject("ph1"), want: true},
 		{name: "task with uid", subj: TaskSubject("tk1"), want: true},
+		{name: "album with uid", subj: AlbumSubject("al1"), want: true},
 		{name: "photo without uid", subj: Subject{Kind: SubjectPhoto}, want: false},
-		{name: "unknown kind", subj: Subject{Kind: "album", UID: "al1"}, want: false},
+		{name: "unknown kind", subj: Subject{Kind: "label", UID: "lb1"}, want: false},
 		{name: "zero value", subj: Subject{}, want: false},
 	}
 	for _, tt := range tests {
@@ -35,7 +36,7 @@ func TestSubjectValid(t *testing.T) {
 	}
 }
 
-// TestSubjectConstructors verifies the two helpers build the subject they name.
+// TestSubjectConstructors verifies the three helpers build the subject they name.
 func TestSubjectConstructors(t *testing.T) {
 	t.Parallel()
 
@@ -45,10 +46,13 @@ func TestSubjectConstructors(t *testing.T) {
 	if got := TaskSubject("tk1"); got != (Subject{Kind: SubjectTask, UID: "tk1"}) {
 		t.Errorf("TaskSubject(tk1) = %+v", got)
 	}
+	if got := AlbumSubject("al1"); got != (Subject{Kind: SubjectAlbum, UID: "al1"}) {
+		t.Errorf("AlbumSubject(al1) = %+v", got)
+	}
 }
 
 // TestCommentSubject verifies a stored comment reports the one subject it hangs
-// off, whichever of the two uid columns carried it.
+// off, whichever of the three uid columns carried it.
 func TestCommentSubject(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +63,7 @@ func TestCommentSubject(t *testing.T) {
 	}{
 		{name: "photo comment", c: Comment{PhotoUID: "ph1"}, want: PhotoSubject("ph1")},
 		{name: "task comment", c: Comment{TaskUID: "tk1"}, want: TaskSubject("tk1")},
+		{name: "album comment", c: Comment{AlbumUID: "al1"}, want: AlbumSubject("al1")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,6 +88,10 @@ func TestStatementsFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("statementsFor(task): %v", err)
 	}
+	album, err := statementsFor(AlbumSubject("al1"))
+	if err != nil {
+		t.Fatalf("statementsFor(album): %v", err)
+	}
 	for _, tt := range []struct {
 		name string
 		sql  string
@@ -95,6 +104,9 @@ func TestStatementsFor(t *testing.T) {
 		{name: "task counts", sql: task.countsAmong, want: "task_uid = ANY($1)", deny: "photo_uid = ANY"},
 		{name: "photo create", sql: photo.create, want: "(uid, photo_uid, author_uid, body)", deny: ""},
 		{name: "task create", sql: task.create, want: "(uid, task_uid, author_uid, body)", deny: ""},
+		{name: "album list", sql: album.list, want: "c.album_uid = $1", deny: "c.photo_uid = $1"},
+		{name: "album counts", sql: album.countsAmong, want: "album_uid = ANY($1)", deny: "photo_uid = ANY"},
+		{name: "album create", sql: album.create, want: "(uid, album_uid, author_uid, body)", deny: ""},
 	} {
 		if !strings.Contains(tt.sql, tt.want) {
 			t.Errorf("%s statement does not contain %q:\n%s", tt.name, tt.want, tt.sql)
@@ -104,7 +116,7 @@ func TestStatementsFor(t *testing.T) {
 		}
 	}
 
-	for _, subj := range []Subject{{}, {Kind: "album", UID: "al1"}, {Kind: SubjectPhoto}} {
+	for _, subj := range []Subject{{}, {Kind: "label", UID: "lb1"}, {Kind: SubjectPhoto}} {
 		if _, err := statementsFor(subj); !errors.Is(err, ErrInvalidSubject) {
 			t.Errorf("statementsFor(%+v) error = %v, want ErrInvalidSubject", subj, err)
 		}
@@ -118,13 +130,13 @@ func TestStoreRefusesInvalidSubject(t *testing.T) {
 	t.Parallel()
 
 	store := &Store{}
-	bad := Subject{Kind: "album", UID: "al1"}
+	bad := Subject{Kind: "label", UID: "lb1"}
 	ctx := context.Background()
 
 	if _, err := store.List(ctx, bad); !errors.Is(err, ErrInvalidSubject) {
 		t.Errorf("List(bad) error = %v, want ErrInvalidSubject", err)
 	}
-	if _, err := store.CountsAmong(ctx, "album", []string{"al1"}); !errors.Is(err, ErrInvalidSubject) {
+	if _, err := store.CountsAmong(ctx, "label", []string{"lb1"}); !errors.Is(err, ErrInvalidSubject) {
 		t.Errorf("CountsAmong(bad) error = %v, want ErrInvalidSubject", err)
 	}
 	if _, err := store.Create(ctx, bad, "us1", "hello", audit.Entry{}); !errors.Is(err, ErrInvalidSubject) {
@@ -132,7 +144,7 @@ func TestStoreRefusesInvalidSubject(t *testing.T) {
 	}
 	// An empty input short-circuits before the kind is ever looked at, which is
 	// what lets a caller pass an empty page without special-casing it.
-	if got, err := store.CountsAmong(ctx, "album", nil); err != nil || len(got) != 0 {
+	if got, err := store.CountsAmong(ctx, "label", nil); err != nil || len(got) != 0 {
 		t.Errorf("CountsAmong(bad, nil) = %v, %v, want an empty map and no error", got, err)
 	}
 }

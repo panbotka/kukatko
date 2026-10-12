@@ -53,7 +53,8 @@ func (a *API) handleAlbumCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// handleAlbumGet returns the album identified by the path UID, or 404 if missing.
+// handleAlbumGet returns the album identified by the path UID with the size of
+// its comment thread (`comment_count`), or 404 if missing.
 func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
 	album, err := a.albums.GetAlbumByUID(r.Context(), chi.URLParam(r, "uid"))
 	if err != nil {
@@ -61,7 +62,12 @@ func (a *API) handleAlbumGet(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, status, msg, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, album)
+	count, err := a.commentCount(r.Context(), album.UID)
+	if err != nil {
+		fail(w, r, http.StatusInternalServerError, "counting comments failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, albumDetail{Album: album, CommentCount: count})
 }
 
 // handleAlbumUpdate rewrites an album's editable fields (title, description,

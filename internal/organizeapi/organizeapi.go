@@ -8,7 +8,10 @@
 //
 // Reads are open to any authenticated user; mutations require the curator guard
 // (curators and above) — deleting an album or a label included, since that throws
-// away a stitching-together, not a photograph. The guards are injected and the store is an interface, so the
+// away a stitching-together, not a photograph. The one exception is an album's
+// comment thread (comments.go): whoever can open the album may read and join
+// its conversation, so those routes are RequireAuth like a photo's and a task's.
+// The guards are injected and the store is an interface, so the
 // package stays decoupled from auth's wiring and is unit-testable with fakes.
 package organizeapi
 
@@ -95,12 +98,14 @@ type API struct {
 	albums              AlbumStore
 	labels              LabelStore
 	featured            FeaturedStore
+	comments            CommentStore
 	sidecar             SidecarEnqueuer
 	media               *mediaurl.Builder
 	featuredDefaultDays int
 	now                 func() time.Time
 	requireAuth         func(http.Handler) http.Handler
 	requireCurator      func(http.Handler) http.Handler
+	commentThrottle     func(http.Handler) http.Handler
 }
 
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
@@ -122,6 +127,12 @@ type Config struct {
 	// Featured backs the homepage's featured albums. When nil the featured routes
 	// are not mounted at all.
 	Featured FeaturedStore
+	// Comments backs an album's thread and the comment_count on the album
+	// detail. When nil the thread endpoints answer 503 and the count reads 0.
+	Comments CommentStore
+	// CommentThrottle rate-limits posting to a thread, keyed on the acting user;
+	// it is mounted inside the auth guard. Nil disables the throttle.
+	CommentThrottle func(http.Handler) http.Handler
 	// FeaturedDefaultDays is how long a feature runs when the request names no
 	// end (albums.featured.default_days); a value outside 1…MaxFeaturedDays
 	// falls back to 61.
@@ -147,12 +158,14 @@ func NewAPI(cfg Config) *API {
 		albums:              cfg.Albums,
 		labels:              cfg.Labels,
 		featured:            cfg.Featured,
+		comments:            cfg.Comments,
 		sidecar:             cfg.Sidecar,
 		media:               cfg.Media,
 		featuredDefaultDays: featuredDays(cfg.FeaturedDefaultDays),
 		now:                 cfg.Now,
 		requireAuth:         cfg.RequireAuth,
 		requireCurator:      cfg.RequireCurator,
+		commentThrottle:     cfg.CommentThrottle,
 	}
 	if a.now == nil {
 		a.now = time.Now
@@ -165,7 +178,7 @@ func NewAPI(cfg Config) *API {
 //
 //	GET    /albums                RequireAuth   list albums with counts + cover
 //	POST   /albums                RequireCurator  create an album
-//	GET    /albums/{uid}          RequireAuth   one album
+//	GET    /albums/{uid}          RequireAuth   one album (+ comment_count)
 //	PATCH  /albums/{uid}          RequireCurator  edit title/description/cover/private
 //	DELETE /albums/{uid}          RequireCurator  delete an album
 //	POST   /albums/{uid}/photos   RequireCurator  add photos to the album
@@ -173,6 +186,10 @@ func NewAPI(cfg Config) *API {
 //	GET    /albums/featured       RequireAuth   albums featured on the homepage now
 //	PUT    /albums/{uid}/featured RequireCurator  feature an album / re-date its feature
 //	DELETE /albums/{uid}/featured RequireCurator  take an album off the homepage
+//	GET    /albums/{uid}/comments RequireAuth   the album's comment thread
+//	POST   /albums/{uid}/comments RequireAuth   write a comment (+ per-user rate limit)
+//	PATCH  /albums/{uid}/comments/{commentUID}  RequireAuth  edit own comment
+//	DELETE /albums/{uid}/comments/{commentUID}  RequireAuth  delete own (admin: any)
 //
 //	GET    /labels                RequireAuth   list labels with counts
 //	POST   /labels                RequireCurator  create a label
@@ -198,6 +215,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 			r.With(a.requireCurator).Put("/{uid}/featured", a.handleAlbumFeature)
 			r.With(a.requireCurator).Delete("/{uid}/featured", a.handleAlbumUnfeature)
 		}
+		a.registerCommentRoutes(r)
 	})
 	r.Route("/labels", func(r chi.Router) {
 		r.With(a.requireAuth).Get("/", a.handleLabelList)

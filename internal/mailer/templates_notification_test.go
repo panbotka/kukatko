@@ -175,8 +175,8 @@ func TestRenderTaskAssigned(t *testing.T) {
 }
 
 // TestRenderCommentMention pins the comment_mention mail: who and where in the
-// subject, the quoted excerpt and the link in the body, a task by its title, a
-// photo bare when untitled, and the fallbacks for a blank writer.
+// subject, the quoted excerpt and the link in the body, a task or an album by
+// its title, a photo bare when untitled, and the fallbacks for a blank writer.
 func TestRenderCommentMention(t *testing.T) {
 	t.Parallel()
 
@@ -219,5 +219,13 @@ func TestRenderCommentMention(t *testing.T) {
 	task := RenderCommentMention(CommentMentionData{Who: "Anna", OnTask: true})
 	if task.Subject != "Anna tě zmínil(a) v komentáři u úkolu „(bez názvu)“" {
 		t.Errorf("untitled task subject %q", task.Subject)
+	}
+	album := RenderCommentMention(CommentMentionData{Who: "Anna", OnAlbum: true, Title: "Svatba 1987"})
+	if album.Subject != "Anna tě zmínil(a) v komentáři u alba „Svatba 1987“" {
+		t.Errorf("album subject %q", album.Subject)
+	}
+	if bareAlbum := RenderCommentMention(CommentMentionData{Who: "Anna", OnAlbum: true}); bareAlbum.Subject !=
+		"Anna tě zmínil(a) v komentáři u alba „(bez názvu)“" {
+		t.Errorf("untitled album subject %q", bareAlbum.Subject)
 	}
 }

@@ -7,8 +7,8 @@ import (
 	"github.com/panbotka/kukatko/internal/mentionnotify"
 )
 
-// buildCommentStore assembles the comments store both threads — a photo's and
-// a task's — write through, with the "somebody mentioned you in a comment"
+// buildCommentStore assembles the comments store all three threads — a photo's,
+// a task's and an album's — write through, with the "somebody mentioned you in a comment"
 // notification hooked in: the store's mention observer delivers the
 // comment_mention kind to every account a comment freshly names, inside the
 // comment's transaction, through internal/notifydeliver. Every channel is off

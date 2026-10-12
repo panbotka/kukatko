@@ -29,15 +29,17 @@ var (
 // none of the server's domain packages; the server enforces it either way.
 const MaxCommentLen = 2000
 
-// Comment is one entry of a photo's thread. A thread often holds the only record
-// of who is on a photo, where it was taken and when — which is exactly what an
-// agent trying to date a photo needs to read.
+// Comment is one entry of a thread. A thread often holds the only record of who
+// is on a photo, where it was taken and when — which is exactly what an agent
+// trying to date a photo needs to read.
 type Comment struct {
 	UID string `json:"uid"`
-	// PhotoUID is set on a photograph's thread, TaskUID on a task's. Exactly one
-	// of the two ever is: server-side they are one table with one subject each.
+	// PhotoUID is set on a photograph's thread, TaskUID on a task's, AlbumUID on
+	// an album's. Exactly one of the three ever is: server-side they are one
+	// table with one subject each.
 	PhotoUID   string    `json:"photo_uid,omitempty"`
 	TaskUID    string    `json:"task_uid,omitempty"`
+	AlbumUID   string    `json:"album_uid,omitempty"`
 	AuthorUID  string    `json:"author_uid"`
 	AuthorName string    `json:"author_name"`
 	Body       string    `json:"body"`
@@ -89,8 +91,8 @@ func (c *Client) AddComment(ctx context.Context, photoUID, body string) (json.Ra
 }
 
 // commentsPath renders the thread path for one subject. The collection is the
-// only difference between a photograph's thread and a task's: server-side they
-// are one table, one rate limit and one set of rules.
+// only difference between a photograph's thread, a task's and an album's:
+// server-side they are one table, one rate limit and one set of rules.
 func commentsPath(collection, uid string) string {
 	return "/" + collection + "/" + url.PathEscape(uid) + "/comments"
 }
@@ -133,8 +135,35 @@ func (c *Client) AddTaskComment(ctx context.Context, taskUID, body, state string
 		taskCommentBody{Body: body, State: strings.TrimSpace(state)})
 }
 
+// ListAlbumComments fetches an album's thread — the conversation about the whole
+// event rather than one picture of it. Every signed-in role may read it; an
+// album that does not exist is a *StatusError with status 404, as the album
+// itself would be. Decode it with DecodeComments.
+func (c *Client) ListAlbumComments(ctx context.Context, albumUID string) (json.RawMessage, error) {
+	if err := requireUID("album", albumUID); err != nil {
+		return nil, err
+	}
+	return c.get(ctx, commentsPath("albums", albumUID), nil)
+}
+
+// AddAlbumComment appends a comment to an album's thread and returns the
+// created comment as raw JSON, on the same terms as AddComment: the author is
+// the token's owner, every role may write, a blank or over-long body is refused
+// client-side, a missing album is status 404 and the route is rate limited per
+// user (status 429).
+func (c *Client) AddAlbumComment(ctx context.Context, albumUID, body string) (json.RawMessage, error) {
+	if err := requireUID("album", albumUID); err != nil {
+		return nil, err
+	}
+	body, err := normalizeCommentBody(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.send(ctx, http.MethodPost, commentsPath("albums", albumUID), commentBody{Body: body})
+}
+
 // normalizeCommentBody trims a body and refuses a blank or over-long one, so a
-// bad body costs no round trip. It is the one validation both threads share.
+// bad body costs no round trip. It is the one validation all threads share.
 func normalizeCommentBody(body string) (string, error) {
 	body = strings.TrimSpace(body)
 	switch {

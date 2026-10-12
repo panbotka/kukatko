@@ -164,6 +164,7 @@ func (f *fixture) mails(t *testing.T) [][3]string {
 			Data     struct {
 				Who     string
 				OnTask  bool
+				OnAlbum bool
 				Title   string
 				Excerpt string
 				URL     string
@@ -173,8 +174,14 @@ func (f *fixture) mails(t *testing.T) [][3]string {
 			t.Fatalf("decoding mail job %s: %v", raw, err)
 		}
 		d := p.Data
-		out = append(out, [3]string{p.Template, p.To,
-			strings.Join([]string{d.Who, d.Title, d.Excerpt, d.URL, map[bool]string{true: "task", false: "photo"}[d.OnTask]}, "|")})
+		kind := "photo"
+		switch {
+		case d.OnTask:
+			kind = "task"
+		case d.OnAlbum:
+			kind = "album"
+		}
+		out = append(out, [3]string{p.Template, p.To, strings.Join([]string{d.Who, d.Title, d.Excerpt, d.URL, kind}, "|")})
 	}
 	return out
 }
@@ -222,6 +229,25 @@ func TestTaskComment_linksToTheTask(t *testing.T) {
 	}
 	if got := f.mails(t); len(got) != 1 || !strings.HasSuffix(got[0][2], "|task") {
 		t.Fatalf("mails = %+v, want one task mail", got)
+	}
+}
+
+// TestAlbumComment_linksToTheAlbum checks a comment on an album names the album
+// and links to the comment on the album's page with the comments drawer open;
+// a private album is announced like any other, because its page is open to
+// every signed-in role.
+func TestAlbumComment_linksToTheAlbum(t *testing.T) {
+	f := newFixture(t)
+	f.exec(t, `INSERT INTO albums (uid, slug, title, private) VALUES ('al-one', 'svatba', 'Svatba 1987', true)`)
+	c := f.comment(t, comments.AlbumSubject("al-one"), "@[Anna](user:us-anna) kdo tam ještě byl?")
+
+	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987",
+		body: "@Anna kdo tam ještě byl?", link: "/albums/al-one?panel=comments#comment-" + c.UID, inApp: true}}
+	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("notifications = %+v, want %+v", got, want)
+	}
+	if got := f.mails(t); len(got) != 1 || !strings.HasSuffix(got[0][2], "|album") {
+		t.Fatalf("mails = %+v, want one album mail", got)
 	}
 }
 

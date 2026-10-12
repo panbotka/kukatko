@@ -45,10 +45,10 @@ func (s *Store) WithMentionObserver(observer MentionObserver) *Store {
 // name is resolved here rather than by the caller so one query yields everything
 // a thread needs to render; it collapses to the empty string both for an empty
 // display name (fall back to the username) and for a deleted account (no u row).
-// The two subject columns are collapsed to the empty string as well: exactly one
-// of them is ever set, and Comment reports the unset one as absent. The last
+// The three subject columns are collapsed to the empty string as well: exactly
+// one of them is ever set, and Comment reports the unset ones as absent. The last
 // column is the comment's mentions as a JSON array (see mentionsColumn).
-const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''),
+const commentColumns = `c.uid, COALESCE(c.photo_uid, ''), COALESCE(c.task_uid, ''), COALESCE(c.album_uid, ''),
 	COALESCE(c.author_uid, ''),
 	COALESCE(NULLIF(u.display_name, ''), u.username, ''),
 	s.cover_photo_uid,
@@ -71,7 +71,7 @@ const mentionsColumn = `COALESCE((
 // mutationColumns is what a mutating CTE returns for the outer select to join
 // against. It is the raw row, not the resolved projection: the author's name is
 // added by the join that reads the CTE back.
-const mutationColumns = `uid, photo_uid, task_uid, author_uid, body, created_at, edited_at`
+const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, created_at, edited_at`
 
 // authorJoin resolves a comment's author to a user row, and that account to the
 // person it says it is. Both are LEFT JOINs, and for different reasons: the user
@@ -82,7 +82,7 @@ const mutationColumns = `uid, photo_uid, task_uid, author_uid, body, created_at,
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 	` LEFT JOIN subjects s ON s.uid = u.subject_uid`
 
-// subjectStatements holds the three statements whose text depends on which
+// subjectStatements holds the four statements whose text depends on which
 // column carries the subject. They are built once per kind at package
 // initialisation rather than formatted per call, so no request ever assembles
 // SQL and the column name can only ever come from the closed set below.
@@ -99,6 +99,7 @@ type subjectStatements struct {
 var statements = map[SubjectKind]subjectStatements{
 	SubjectPhoto: buildStatements("photo_uid"),
 	SubjectTask:  buildStatements("task_uid"),
+	SubjectAlbum: buildStatements("album_uid"),
 }
 
 // buildStatements returns the per-kind statements for the subject stored in
@@ -152,8 +153,9 @@ func statementsFor(subj Subject) (subjectStatements, error) {
 
 // List returns the live comments on subj, oldest first, each carrying its
 // author's resolved name. A subject with no comments — or one that does not
-// exist — yields an empty slice and a nil error: a thread is a view of a photo or
-// a task, not a claim that it exists, and the caller has already resolved it.
+// exist — yields an empty slice and a nil error: a thread is a view of a photo, a
+// task or an album, not a claim that it exists, and the caller has already
+// resolved it.
 // An unknown subject kind yields ErrInvalidSubject.
 func (s *Store) List(ctx context.Context, subj Subject) ([]Comment, error) {
 	stmts, err := statementsFor(subj)
@@ -235,8 +237,8 @@ WHERE c.uid = $1 AND c.deleted_at IS NULL`
 // It is one grouped query for the whole page for the same reason CountsAmong
 // is: the caller is a listing (a task's review ledger, one row per photograph),
 // and a per-row lookup would be the N+1 that shape invites. The DISTINCT ON
-// walks idx_comments_photo / idx_comments_task backwards, so the cost is one
-// index probe per subject rather than a sort over its thread.
+// walks idx_comments_photo / idx_comments_task / idx_comments_album backwards,
+// so the cost is one index probe per subject rather than a sort over its thread.
 func (s *Store) LatestAmong(ctx context.Context, kind SubjectKind, uids []string) (map[string]Comment, error) {
 	out := make(map[string]Comment, len(uids))
 	if len(uids) == 0 {
@@ -439,7 +441,7 @@ type rowScanner interface {
 // stays wrapped so pgx.ErrNoRows and constraint violations remain classifiable.
 func scanComment(row rowScanner) (Comment, error) {
 	var c Comment
-	if err := row.Scan(&c.UID, &c.PhotoUID, &c.TaskUID, &c.AuthorUID, &c.AuthorName,
+	if err := row.Scan(&c.UID, &c.PhotoUID, &c.TaskUID, &c.AlbumUID, &c.AuthorUID, &c.AuthorName,
 		&c.AuthorPhotoUID, &c.Body, &c.CreatedAt, &c.EditedAt, &c.Mentions); err != nil {
 		return Comment{}, fmt.Errorf("scanning comment row: %w", err)
 	}
@@ -451,8 +453,8 @@ func scanComment(row rowScanner) (Comment, error) {
 
 // translateMutation maps a failed mutation to the package's sentinel errors: no
 // row changed means the comment is gone (or never existed), and a foreign-key
-// violation on either subject column means the photo or task is. Anything else is
-// wrapped with op.
+// violation on any subject column means the photo, task or album is. Anything
+// else is wrapped with op.
 func translateMutation(err error, op string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
@@ -460,7 +462,8 @@ func translateMutation(err error, op string) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation &&
 		(strings.Contains(pgErr.ConstraintName, "photo_uid") ||
-			strings.Contains(pgErr.ConstraintName, "task_uid")) {
+			strings.Contains(pgErr.ConstraintName, "task_uid") ||
+			strings.Contains(pgErr.ConstraintName, "album_uid")) {
 		return ErrSubjectNotFound
 	}
 	return fmt.Errorf("comments: %s: %w", op, err)

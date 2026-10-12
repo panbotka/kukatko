@@ -49,6 +49,55 @@ func TestClient_ListComments(t *testing.T) {
 	}
 }
 
+// TestClient_AlbumComments verifies the album thread lives under the albums
+// collection, read and written on the same terms as a photo's.
+func TestClient_AlbumComments(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotMethod string
+	var gotBody map[string]string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		if r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"uid":"cmt09","album_uid":"alb01","author_uid":"usr09","author_name":"Agent",` +
+				`"body":"Svatba byla v červnu.","created_at":"2024-05-03T08:00:00Z"}`))
+			return
+		}
+		w.Write([]byte(commentsBody))
+	})
+
+	raw, err := client.ListAlbumComments(t.Context(), "alb01")
+	if err != nil {
+		t.Fatalf("ListAlbumComments returned %v", err)
+	}
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/albums/alb01/comments" {
+		t.Errorf("request = %s %s, want GET on the album thread path", gotMethod, gotPath)
+	}
+	if thread, err := DecodeComments(raw); err != nil || len(thread) != 2 {
+		t.Errorf("DecodeComments = %+v, %v, want both comments", thread, err)
+	}
+
+	raw, err = client.AddAlbumComment(t.Context(), "alb01", "  Svatba byla v červnu.  ")
+	if err != nil {
+		t.Fatalf("AddAlbumComment returned %v", err)
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/albums/alb01/comments" || gotBody["body"] != "Svatba byla v červnu." {
+		t.Errorf("request = %s %s %v, want a trimmed POST on the album thread path", gotMethod, gotPath, gotBody)
+	}
+	comment, err := DecodeComment(raw)
+	if err != nil || comment.AlbumUID != "alb01" || comment.PhotoUID != "" {
+		t.Errorf("DecodeComment = %+v, %v, want an album comment", comment, err)
+	}
+	if _, err := client.AddAlbumComment(t.Context(), "alb01", "  "); !errors.Is(err, ErrEmptyComment) {
+		t.Errorf("blank body error = %v, want ErrEmptyComment", err)
+	}
+	if _, err := client.ListAlbumComments(t.Context(), ""); err == nil {
+		t.Error("ListAlbumComments without a uid did not fail")
+	}
+}
+
 // TestClient_AddComment verifies the body is trimmed, posted, and echoed back.
 func TestClient_AddComment(t *testing.T) {
 	t.Parallel()

@@ -589,6 +589,52 @@ func TestCtlTasks_deleteNeedsConfirmation(t *testing.T) {
 	}
 }
 
+// TestCtlAlbumComments verifies the album thread is reachable from the albums
+// tree: read whole under the albums collection, written without an author.
+func TestCtlAlbumComments(t *testing.T) {
+	var gotBody map[string]string
+	var paths []string
+	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.Method == http.MethodGet {
+			w.Write([]byte(`{"comments":[{"uid":"cmt01","album_uid":"alb01","author_uid":"usr01",` +
+				`"author_name":"Anna","body":"Svatba byla v červnu.","created_at":"2024-05-01T10:22:33Z"}]}`))
+			return
+		}
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"uid":"cmt09","album_uid":"alb01","author_uid":"usr09","author_name":"Agent",` +
+			`"body":"A oddával farář Novák.","created_at":"2024-05-03T08:00:00Z"}`))
+	})
+
+	out, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "albums", "comments", "alb01")
+	if err != nil {
+		t.Fatalf("albums comments returned %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "Anna (usr01)") || !strings.Contains(out, "Svatba byla v červnu.") {
+		t.Errorf("output %q does not print the thread", out)
+	}
+	out, err = runCtl(t, "", "ctl", "--ctl-config", configPath,
+		"albums", "comment", "alb01", "A oddával farář Novák.")
+	if err != nil {
+		t.Fatalf("albums comment returned %v (%s)", err, out)
+	}
+	if gotBody["body"] != "A oddával farář Novák." {
+		t.Errorf("body = %v, want the comment text", gotBody)
+	}
+	if _, sent := gotBody["author_uid"]; sent {
+		t.Errorf("body = %v, want no author: the token's owner is the author", gotBody)
+	}
+	if !strings.Contains(out, "Agent (usr09)") {
+		t.Errorf("output %q does not echo the created comment", out)
+	}
+	for _, p := range paths {
+		if p != "/api/v1/albums/alb01/comments" {
+			t.Errorf("path %q, want the album thread path", p)
+		}
+	}
+}
+
 func TestCtlComments(t *testing.T) {
 	var gotBody map[string]string
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {

@@ -181,13 +181,15 @@ const untitled = "(bez názvu)"
 
 // CommentMentionData is what the "somebody mentioned you in a comment"
 // message needs: whom to greet, who wrote the comment (by name; blank reads as
-// „někdo"), whether the thread is a task's (else a photograph's), the title of
-// that task or photograph (a photo's may be blank), the comment's excerpt and
-// the absolute link to the comment. An empty URL leaves the link out.
+// „někdo"), whether the thread is a task's or an album's (else a photograph's;
+// at most one of the two flags is set), the title of that task, album or
+// photograph (a photo's may be blank), the comment's excerpt and the absolute
+// link to the comment. An empty URL leaves the link out.
 type CommentMentionData struct {
 	DisplayName string
 	Who         string
 	OnTask      bool
+	OnAlbum     bool
 	Title       string
 	Excerpt     string
 	URL         string
@@ -221,14 +223,17 @@ func RenderCommentMention(d CommentMentionData) Rendered {
 	}
 }
 
-// mentionPlace is how the mention mail names the thread's subject: a task by
-// its title in quotes (a blank one reads as untitled), a photograph by its
-// title in quotes when it has one and bare otherwise.
+// mentionPlace is how the mention mail names the thread's subject: a task or
+// an album by its title in quotes (a blank one reads as untitled), a photograph
+// by its title in quotes when it has one and bare otherwise.
 func mentionPlace(d CommentMentionData) string {
 	title := strings.TrimSpace(d.Title)
-	if d.OnTask {
+	if d.OnTask || d.OnAlbum {
 		if title == "" {
 			title = untitled
+		}
+		if d.OnAlbum {
+			return "alba „" + title + "“"
 		}
 		return "úkolu „" + title + "“"
 	}

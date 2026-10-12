@@ -11,19 +11,72 @@ import (
 )
 
 // newCtlAlbumsCmd builds the "ctl albums" tree: albums and their membership,
-// served by internal/organizeapi. Listing needs any role; creating and editing
-// membership need the editor or admin role.
+// served by internal/organizeapi, and an album's comment thread. Listing needs
+// any role; creating and editing membership need the editor or admin role; the
+// thread is open to every signed-in role, read and write, like a photo's.
 func newCtlAlbumsCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "albums",
-		Short: "List, inspect, create, edit and delete albums and their membership",
+		Short: "List, inspect, create, edit and delete albums, their membership and their comments",
 	}
 	cmd.AddCommand(
 		newCtlAlbumsListCmd(opts), newCtlAlbumsGetCmd(opts), newCtlAlbumsCreateCmd(opts),
 		newCtlAlbumsUpdateCmd(opts), newCtlAlbumsDeleteCmd(opts),
 		newCtlAlbumsAddPhotosCmd(opts), newCtlAlbumsRemovePhotosCmd(opts),
+		newCtlAlbumsCommentsCmd(opts), newCtlAlbumsCommentCmd(opts),
 	)
 	return cmd
+}
+
+// newCtlAlbumsCommentsCmd builds "ctl albums comments <uid>": the album's thread,
+// oldest first, bodies printed whole — it is a conversation, not a table.
+func newCtlAlbumsCommentsCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "comments <uid>",
+		Short: "Read an album's whole comment thread, oldest first",
+		Long: "Read an album's whole comment thread, oldest first.\n\n" +
+			"An album's thread is the conversation about the whole event rather than one\n" +
+			"picture of it. The bodies are printed in full, as `ctl comments list` prints a\n" +
+			"photo's. An album with no thread prints one line saying so; an album that does\n" +
+			"not exist is a 404.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			raw, err := client.ListAlbumComments(cmd.Context(), args[0])
+			if err != nil {
+				return fmt.Errorf("reading the comments of album %s: %w", args[0], err)
+			}
+			return renderComments(cmd.OutOrStdout(), out, raw)
+		},
+	}
+}
+
+// newCtlAlbumsCommentCmd builds "ctl albums comment <uid> <text>", appending to
+// the album's thread under the token's own account.
+func newCtlAlbumsCommentCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "comment <uid> <text>",
+		Short: "Append a comment to an album's thread, under your own account",
+		Long: "Append a comment to an album's thread.\n\n" +
+			"The author is whoever the API token belongs to, exactly as for `ctl comments\n" +
+			"add`: write only under your own account. Every role may write — a comment is\n" +
+			"participation, not curation. The body is plain text, at most 2000 characters.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, out, err := opts.resolve()
+			if err != nil {
+				return err
+			}
+			raw, err := client.AddAlbumComment(cmd.Context(), args[0], args[1])
+			if err != nil {
+				return fmt.Errorf("commenting on album %s: %w", args[0], err)
+			}
+			return renderComment(cmd.OutOrStdout(), out, raw)
+		},
+	}
 }
 
 // newCtlAlbumsListCmd builds "ctl albums list", the bare {"albums": […]} list.

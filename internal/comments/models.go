@@ -2,14 +2,15 @@
 // short plain-text note by one user on one subject, so a family can work out who
 // is on a picture and remember what was happening around it.
 //
-// # Two subjects, one thread
+// # Three subjects, one thread
 //
-// A comment hangs off either a photograph or a task (internal/phototask), and
-// never both. The two are the same conversation with a different subject — a
-// question asked of whoever knows the answer, and the answer written underneath
-// it — so they share one table, one rate limit, one set of audit actions and one
-// soft-delete rule rather than being built twice. Which subject a thread belongs
-// to is the caller's to state, as a Subject; everything below it is identical.
+// A comment hangs off a photograph, a task (internal/phototask) or an album
+// (internal/organize), and never more than one of them. The three are the same
+// conversation with a different subject — a question asked of whoever knows the
+// answer, and the answer written underneath it — so they share one table, one
+// rate limit, one set of audit actions and one soft-delete rule rather than
+// being built three times. Which subject a thread belongs to is the caller's to
+// state, as a Subject; everything below it is identical.
 //
 // # Who may write
 //
@@ -54,7 +55,7 @@ import (
 const MaxBodyLen = 2000
 
 // SubjectKind names what a comment thread hangs off. The zero value is not a
-// kind: a Subject always says which of the two it is.
+// kind: a Subject always says which of the three it is.
 type SubjectKind string
 
 const (
@@ -62,6 +63,9 @@ const (
 	SubjectPhoto SubjectKind = "photo"
 	// SubjectTask is a thread on one task — the conversation that answers it.
 	SubjectTask SubjectKind = "task"
+	// SubjectAlbum is a thread on one album — the conversation about the whole
+	// event rather than one picture of it.
+	SubjectAlbum SubjectKind = "album"
 )
 
 // Subject identifies the one thing a comment is about. Exactly one subject per
@@ -82,20 +86,25 @@ func TaskSubject(uid string) Subject {
 	return Subject{Kind: SubjectTask, UID: uid}
 }
 
+// AlbumSubject returns the Subject naming the album uid.
+func AlbumSubject(uid string) Subject {
+	return Subject{Kind: SubjectAlbum, UID: uid}
+}
+
 // Valid reports whether the subject names one of the known kinds and carries a
 // uid. An invalid subject is a programming error rather than bad input — every
 // caller builds one from a route it has already resolved — so the store refuses
 // it with ErrInvalidSubject instead of guessing.
 func (s Subject) Valid() bool {
-	return s.UID != "" && (s.Kind == SubjectPhoto || s.Kind == SubjectTask)
+	return s.UID != "" && (s.Kind == SubjectPhoto || s.Kind == SubjectTask || s.Kind == SubjectAlbum)
 }
 
 var (
 	// ErrNotFound indicates the comment does not exist, or has been soft-deleted
 	// (a deleted comment is invisible to every read path, including this one).
 	ErrNotFound = errors.New("comments: comment not found")
-	// ErrSubjectNotFound indicates the photo or task being commented on does not
-	// exist.
+	// ErrSubjectNotFound indicates the photo, task or album being commented on
+	// does not exist.
 	ErrSubjectNotFound = errors.New("comments: subject not found")
 	// ErrInvalidSubject indicates the Subject named no known kind, or no uid.
 	ErrInvalidSubject = errors.New("comments: invalid subject")
@@ -111,13 +120,16 @@ var (
 // migration 0052); the soft-delete timestamp is never exposed, because a deleted
 // comment is never listed.
 //
-// Exactly one of PhotoUID and TaskUID is set, matching the row's one subject.
+// Exactly one of PhotoUID, TaskUID and AlbumUID is set, matching the row's one
+// subject.
 type Comment struct {
 	UID string `json:"uid"`
-	// PhotoUID is the photograph this comment is on, empty on a task thread.
+	// PhotoUID is the photograph this comment is on, empty on any other thread.
 	PhotoUID string `json:"photo_uid,omitempty"`
-	// TaskUID is the task this comment is on, empty on a photo thread.
-	TaskUID   string `json:"task_uid,omitempty"`
+	// TaskUID is the task this comment is on, empty on any other thread.
+	TaskUID string `json:"task_uid,omitempty"`
+	// AlbumUID is the album this comment is on, empty on any other thread.
+	AlbumUID  string `json:"album_uid,omitempty"`
 	AuthorUID string `json:"author_uid"`
 	// AuthorName is the author's display name, falling back to the username, as
 	// resolved by the store — so a client renders a name without a second lookup.
@@ -180,12 +192,16 @@ type MentionObserver interface {
 }
 
 // Subject returns the subject this comment hangs off, reconstructed from
-// whichever of the two uid fields the row carries.
+// whichever of the three uid fields the row carries.
 func (c Comment) Subject() Subject {
-	if c.TaskUID != "" {
+	switch {
+	case c.TaskUID != "":
 		return TaskSubject(c.TaskUID)
+	case c.AlbumUID != "":
+		return AlbumSubject(c.AlbumUID)
+	default:
+		return PhotoSubject(c.PhotoUID)
 	}
-	return PhotoSubject(c.PhotoUID)
 }
 
 // normalizeBody trims surrounding whitespace from a comment body and validates

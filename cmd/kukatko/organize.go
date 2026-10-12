@@ -7,6 +7,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mediaurl"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/organizeapi"
+	"github.com/panbotka/kukatko/internal/ratelimit"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -22,14 +23,22 @@ import (
 // changed — curation that lives nowhere but the database. The store reports a
 // fresh feature to the album_featured scheduler, which queues the announcement
 // job in the feature's transaction.
+//
+// An album's comment thread writes through the same comments store as a photo's
+// and a task's (buildCommentStore, mentions announced), rate-limited from the
+// same ratelimit.comment settings in a bucket of its own — one number to tune,
+// and a burst of album talk cannot use up a person's allowance on photographs.
 func buildOrganizeAPI(
 	cfg *config.Config, db *database.DB, authAPI *auth.API, mediaStore storage.Storage, sidecar sidecarScheduler,
 ) *organizeapi.API {
 	store := organize.NewStore(db.Pool()).WithFeatureObserver(buildAlbumFeaturedScheduler())
+	limit := ratelimit.New(cfg.RateLimit.Comment.RatePerSec, cfg.RateLimit.Comment.Burst)
 	return organizeapi.NewAPI(organizeapi.Config{
 		Albums:              store,
 		Labels:              store,
 		Featured:            store,
+		Comments:            buildCommentStore(cfg, db),
+		CommentThrottle:     limit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
 		FeaturedDefaultDays: cfg.Albums.Featured.DefaultDays,
 		Media:               mediaurl.NewBuilder(mediaStore),
 		Sidecar:             sidecar,

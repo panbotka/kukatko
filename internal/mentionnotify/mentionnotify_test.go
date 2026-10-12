@@ -49,6 +49,10 @@ func TestWanted(t *testing.T) {
 			name: "a task is always visible", user: "us-anna", author: "us-tom", standing: true,
 			place: place{kind: notification.MentionPlaceTask, visible: true}, want: true,
 		},
+		{
+			name: "an album is always visible", user: "us-anna", author: "us-tom", standing: true,
+			place: place{kind: notification.MentionPlaceAlbum, visible: true}, want: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,7 +65,8 @@ func TestWanted(t *testing.T) {
 }
 
 // TestCommentPath pins the links a notification opens: the photo viewer with
-// its drawer open, or the task page, both anchored to the comment.
+// its drawer open, the task page, or the album page with its comments drawer
+// open, each anchored to the comment.
 func TestCommentPath(t *testing.T) {
 	t.Parallel()
 
@@ -70,6 +75,9 @@ func TestCommentPath(t *testing.T) {
 	}
 	if got := CommentPath(comments.TaskSubject("pt1"), "cm1"); got != "/tasks/pt1#comment-cm1" {
 		t.Errorf("task path = %q", got)
+	}
+	if got := CommentPath(comments.AlbumSubject("al1"), "cm1"); got != "/albums/al1?panel=comments#comment-cm1" {
+		t.Errorf("album path = %q", got)
 	}
 }
 
@@ -120,5 +128,28 @@ func TestMessage(t *testing.T) {
 	if mail.Template != mailer.TemplateCommentMention || mail.To != "anna@example.test" ||
 		!reflect.DeepEqual(mail.Data, wantData) {
 		t.Fatalf("mail = %+v, want the comment_mention template with %+v", mail, wantData)
+	}
+}
+
+// TestMessage_album checks an album's thread names the album, links to the
+// album page with its comments drawer open and marks the mail as an album's.
+func TestMessage_album(t *testing.T) {
+	t.Parallel()
+
+	c := comments.Comment{UID: "cm1", AlbumUID: "al1", AuthorUID: "us-tom", AuthorName: "Pan Botka",
+		Body: "@[Anna](user:us-anna) kdo tam ještě byl?"}
+	p := place{kind: notification.MentionPlaceAlbum, title: "Svatba 1987", visible: true}
+	msg := New(Config{Deliver: fakeDeliver{}}).message(c, c.Subject(), p)
+	wantText := notification.Text{
+		Title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987", Body: "@Anna kdo tam ještě byl?",
+	}
+	if msg.Text != wantText || msg.Link != "/albums/al1?panel=comments#comment-cm1" {
+		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
+	}
+	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},
+		notification.Notification{}, "https://k.example/albums/al1?panel=comments#comment-cm1")
+	data, ok := mail.Data.(mailer.CommentMentionData)
+	if !ok || data.OnTask || !data.OnAlbum || data.Title != "Svatba 1987" {
+		t.Fatalf("mail data = %+v, want an album mention of Svatba 1987", mail.Data)
 	}
 }

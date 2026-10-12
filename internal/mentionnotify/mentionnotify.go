@@ -16,9 +16,13 @@
 // highlighted in the thread for whoever reads it; only the announcement is
 // skipped. A task has no such flag: every signed-in role may open every
 // task, so a task comment is announced to every mentioned account in good
-// standing. "Already mentioned" is the store's rule — an edit reports only the
-// accounts the previous body did not name — and whether the person wants the
-// kind at all is notifydeliver's question.
+// standing. An album's thread follows the album's own read rule, which is the
+// same — GET /albums/{uid} answers every signed-in role, a private album is a
+// badge there and not a wall — so an album comment is announced like a task's;
+// should the album rule ever tighten, this is the one place to follow it.
+// "Already mentioned" is the store's rule — an edit reports only the accounts
+// the previous body did not name — and whether the person wants the kind at
+// all is notifydeliver's question.
 //
 // A notification is worth less than the comment that caused it, so every
 // delivery runs under a savepoint of the comment's transaction: one that fails
@@ -97,24 +101,29 @@ const AnchorPrefix = "#comment-"
 
 // CommentPath returns the in-app path that opens the comment commentUID in
 // the thread of subj: a photograph's viewer with its drawer open (the thread
-// mounts only while it is), or the task's page, either one anchored to the
+// mounts only while it is), the task's page, or the album's page with its
+// comments drawer open (the same reason as the viewer's), each anchored to the
 // comment.
 func CommentPath(subj comments.Subject, commentUID string) string {
 	anchor := AnchorPrefix + commentUID
-	if subj.Kind == comments.SubjectTask {
+	switch subj.Kind {
+	case comments.SubjectTask:
 		return "/tasks/" + subj.UID + anchor
+	case comments.SubjectAlbum:
+		return "/albums/" + subj.UID + "?panel=comments" + anchor
+	default:
+		return "/photos/" + subj.UID + "?panel=info" + anchor
 	}
-	return "/photos/" + subj.UID + "?panel=info" + anchor
 }
 
 // place is what the rules know about the thread's subject.
 type place struct {
-	// kind is a photo's thread or a task's.
+	// kind is a photo's thread, a task's or an album's.
 	kind notification.MentionPlace
 	// title names the subject; a photograph's may be blank.
 	title string
 	// visible is whether an account may be told about the subject at all: a
-	// task always, a photograph unless private, hidden or archived.
+	// task or an album always, a photograph unless private, hidden or archived.
 	visible bool
 }
 
@@ -143,6 +152,11 @@ const photoPlaceSQL = `SELECT p.title, ` + notification.VisiblePhotoSQL + ` FROM
 
 // taskPlaceSQL reads a task's title; a task is always announceable.
 const taskPlaceSQL = `SELECT t.title, true FROM photo_tasks t WHERE t.uid = $1`
+
+// albumPlaceSQL reads an album's title; an album is announceable to every
+// signed-in account, exactly as its page is open to every one (see the package
+// comment).
+const albumPlaceSQL = `SELECT a.title, true FROM albums a WHERE a.uid = $1`
 
 // standingSQL reads, of the given accounts, the ones in good standing: enabled
 // and approved.
@@ -201,15 +215,26 @@ func (n *Notifier) notify(ctx context.Context, sp pgx.Tx, c comments.Comment, me
 	return nil
 }
 
-// readPlace reads what the rules and the text need about subj on sp.
+// placeQueries maps each subject kind to the place it reads and how.
+var placeQueries = map[comments.SubjectKind]struct {
+	kind  notification.MentionPlace
+	query string
+}{
+	comments.SubjectPhoto: {kind: notification.MentionPlacePhoto, query: photoPlaceSQL},
+	comments.SubjectTask:  {kind: notification.MentionPlaceTask, query: taskPlaceSQL},
+	comments.SubjectAlbum: {kind: notification.MentionPlaceAlbum, query: albumPlaceSQL},
+}
+
+// readPlace reads what the rules and the text need about subj on sp. A subject
+// kind the notifier does not know is an error rather than a guess: the store
+// refuses such a comment before it gets here.
 func readPlace(ctx context.Context, sp pgx.Tx, subj comments.Subject) (place, error) {
-	p := place{kind: notification.MentionPlacePhoto}
-	query := photoPlaceSQL
-	if subj.Kind == comments.SubjectTask {
-		p.kind = notification.MentionPlaceTask
-		query = taskPlaceSQL
+	q, ok := placeQueries[subj.Kind]
+	if !ok {
+		return place{}, fmt.Errorf("unknown subject kind %q", subj.Kind)
 	}
-	err := sp.QueryRow(ctx, query, subj.UID).Scan(&p.title, &p.visible)
+	p := place{kind: q.kind}
+	err := sp.QueryRow(ctx, q.query, subj.UID).Scan(&p.title, &p.visible)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return place{}, fmt.Errorf("%s %s not found", subj.Kind, subj.UID)
 	}
@@ -260,8 +285,10 @@ func (n *Notifier) message(c comments.Comment, subj comments.Subject, p place) n
 func mailBuilder(who string, p place, excerpt string) notifydeliver.MailBuilder {
 	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
 		return mailjob.CommentMention(to.Email, mailer.CommentMentionData{
-			DisplayName: to.DisplayName, Who: strings.TrimSpace(who), OnTask: p.kind == notification.MentionPlaceTask,
-			Title: p.title, Excerpt: excerpt, URL: url,
+			DisplayName: to.DisplayName, Who: strings.TrimSpace(who),
+			OnTask:  p.kind == notification.MentionPlaceTask,
+			OnAlbum: p.kind == notification.MentionPlaceAlbum,
+			Title:   p.title, Excerpt: excerpt, URL: url,
 		})
 	}
 }

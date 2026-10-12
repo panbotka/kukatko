@@ -362,9 +362,9 @@ func TestShorten(t *testing.T) {
 }
 
 // TestRenderCommentMention pins the "somebody mentioned you in a comment" text
-// in both languages: the writer and the place in the headline — a task by
-// title, a photo by title only when it has one — the excerpt under it, a blank
-// writer as "Někdo"/"Somebody" and an overlong title cut.
+// in both languages: the writer and the place in the headline — a task or an
+// album by title, a photo by title only when it has one — the excerpt under it,
+// a blank writer as "Někdo"/"Somebody" and an overlong title cut.
 func TestRenderCommentMention(t *testing.T) {
 	t.Parallel()
 
@@ -396,6 +396,15 @@ func TestRenderCommentMention(t *testing.T) {
 		{
 			name: "task without a title, nobody named, czech", lang: LanguageCzech, who: " ", place: MentionPlaceTask,
 			want: Text{Title: "Někdo tě zmínil(a) v komentáři u úkolu (bez názvu)"},
+		},
+		{
+			name: "album, czech", lang: LanguageCzech, who: "Anna", place: MentionPlaceAlbum, title: "Svatba 1987",
+			excerpt: "Kdo tam ještě byl?",
+			want:    Text{Title: "Anna tě zmínil(a) v komentáři u alba Svatba 1987", Body: "Kdo tam ještě byl?"},
+		},
+		{
+			name: "album without a title, english", lang: LanguageEnglish, who: "Anna", place: MentionPlaceAlbum,
+			want: Text{Title: "Anna mentioned you in a comment on the album (untitled)"},
 		},
 		{
 			name: "photo with a title, english", lang: LanguageEnglish, who: "Anna", place: MentionPlacePhoto,
