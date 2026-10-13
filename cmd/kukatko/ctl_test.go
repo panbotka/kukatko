@@ -50,7 +50,7 @@ func TestRootCmd_ctlSymlinkImpliesCtl(t *testing.T) {
 	for _, c := range root.Commands() {
 		names[c.Name()] = true
 	}
-	for _, want := range []string{"photos", "config"} {
+	for _, want := range []string{"photos", "context"} {
 		if !names[want] {
 			t.Errorf("kukatkoctl root has no %q subcommand", want)
 		}
@@ -60,9 +60,14 @@ func TestRootCmd_ctlSymlinkImpliesCtl(t *testing.T) {
 	}
 }
 
+// ctlTestProject is the project the context ctlServer seeds works in: every
+// project-scoped path a command test expects is under /api/v1/p/fam/.
+const ctlTestProject = "fam"
+
 // ctlServer starts an httptest server and returns the path of a ctl config file
-// pointing at it, so a command can be driven end to end against a real HTTP
-// endpoint. The server and the temp directory are cleaned up with the test.
+// pointing at it, its context working in ctlTestProject, so a command can be
+// driven end to end against a real HTTP endpoint. The server and the temp
+// directory are cleaned up with the test.
 func ctlServer(t *testing.T, handler http.HandlerFunc) string {
 	t.Helper()
 
@@ -72,7 +77,9 @@ func ctlServer(t *testing.T, handler http.HandlerFunc) string {
 	configPath := filepath.Join(t.TempDir(), "ctl.yaml")
 	cfg := &ctl.Config{
 		CurrentContext: "test",
-		Contexts:       []ctl.Context{{Name: "test", Server: srv.URL, Token: "kkt_abc_supersecret"}},
+		Contexts: []ctl.Context{{
+			Name: "test", Server: srv.URL, Token: "kkt_abc_supersecret", Project: ctlTestProject,
+		}},
 	}
 	if err := ctl.Save(configPath, cfg); err != nil {
 		t.Fatalf("seeding ctl config: %v", err)
@@ -87,6 +94,7 @@ func runCtl(t *testing.T, stdin string, args ...string) (string, error) {
 
 	t.Setenv(ctl.EnvServer, "")
 	t.Setenv(ctl.EnvToken, "")
+	t.Setenv(ctl.EnvProject, "")
 
 	cmd := newRootCmd("kukatko")
 	var buf bytes.Buffer
@@ -187,8 +195,8 @@ func TestCtlPhotosGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos get returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01" {
-		t.Errorf("path = %q, want /api/v1/photos/pht01", gotPath)
+	if gotPath != "/api/v1/p/fam/photos/pht01" {
+		t.Errorf("path = %q, want /api/v1/p/fam/photos/pht01", gotPath)
 	}
 	for _, want := range []string{"UID", "pht01", "TITLE", "Lake", "ALBUMS", "Trip"} {
 		if !strings.Contains(out, want) {
@@ -228,8 +236,8 @@ func TestCtlPhotosSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos search returned %v", err)
 	}
-	if gotPath != "/api/v1/search" || gotQuery != "jezero" {
-		t.Errorf("request = %s?q=%s, want /api/v1/search?q=jezero", gotPath, gotQuery)
+	if gotPath != "/api/v1/p/fam/search" || gotQuery != "jezero" {
+		t.Errorf("request = %s?q=%s, want /api/v1/p/fam/search?q=jezero", gotPath, gotQuery)
 	}
 	if gotMode != ctl.SearchHybrid {
 		t.Errorf("mode = %q, want the hybrid default", gotMode)
@@ -332,6 +340,7 @@ func TestCtl_envOverridesContext(t *testing.T) {
 
 	t.Setenv(ctl.EnvServer, srv.URL)
 	t.Setenv(ctl.EnvToken, "kkt_new_y")
+	t.Setenv(ctl.EnvProject, ctlTestProject)
 
 	cmd := newRootCmd("kukatko")
 	var buf bytes.Buffer

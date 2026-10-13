@@ -54,7 +54,7 @@ func TestClient_GetImageEdit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetImageEdit returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/edit" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/edit" {
 		t.Errorf("path = %q, want the edit path", gotPath)
 	}
 	edit, err := DecodeImageEdit(raw)

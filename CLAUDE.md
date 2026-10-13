@@ -81,7 +81,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/clusterjob` — the `face_cluster` job: reclustering and the preparation of the cluster summaries, off the request path
 - `internal/comments` — comment threads on a photo, a task **or an album**: plain text, soft delete, audited in the mutation's transaction; every role may write (viewers included), the endpoints live in `internal/photoapi`, `internal/phototaskapi` and `internal/organizeapi`; parses `@[Name](user:uid)` mentions outside code, stores them in `comment_mentions`, resolves them on every read and reports the fresh ones to a `MentionObserver`
 - `internal/config` — typed configuration, Viper, `Load()`
-- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments, upload-link codes), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
+- `internal/ctl` — **client** of the own API for `kukatko ctl`: contexts (kubectl-style, with a project: `--project` > `KUKATKO_PROJECT` > context), Bearer token, table/JSON/llm output, streamed renditions and uploads, the photo-edit body, the whole curation write surface (faces/subjects/families, clusters, albums, labels, stacks, image edits, saved searches, duplicates, comments, upload-link codes), the photo lifecycle, and the irreversible commands behind their `--yes`/`--dry-run` gate (purge, trash, duplicate merge)
 - `internal/database` — pgxpool wrapper, embedded migration runner, pgvector types
 - `internal/dirimport` — `kukatko import dir`: walks a directory on disk and uploads its media via `internal/ingest`
 - `internal/duplicates` — near-dup groups (pHash banded-LSH + embedding HNSW, union-find); read-only, and never across the still/video boundary (a clip is judged by one poster frame)
@@ -121,7 +121,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/maintenanceapi` — maintainer-only `/maintenance` (scan, repair)
 - `internal/mapsapi` — tile proxy, geocode (reverse + place search), GeoJSON feed
 - `internal/mapy` — server-side mapy.com client; **the key never leaves the server**
-- `internal/mcpapi` — MCP server for an AI agent, `POST /mcp` (RequireAuth + per-tool RBAC); off by default, nothing destructive exposed
+- `internal/mcpapi` — MCP server for an AI agent, `POST /p/{project}/mcp` (RequireAuth + per-tool RBAC; instructions and 401 challenge name the project's endpoint); off by default, nothing destructive exposed
 - `internal/mediaurl` — stamps `thumb_url`/`download_url` into payloads; signed URL, or an own route
 - `internal/memberapi` — a project admin's `/p/{project}/members` (RequireAdmin): list, role, approve (mails the project's link), remove, and the exact-match add that always answers 202 so nobody can enumerate accounts
 - `internal/mentionnotify` — the `comment_mention` notification: the comments store's mention observer delivers it to every freshly named account in the comment's transaction (under a savepoint), never the writer, never an account out of standing, never for a private/hidden/archived photo; deleting the comment later cancels nothing

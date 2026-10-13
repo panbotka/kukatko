@@ -40,8 +40,8 @@ func TestClient_StackPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StackPhotos returned %v", err)
 	}
-	if requests != 1 || gotMethod != http.MethodPost || gotPath != "/api/v1/photos/stack" {
-		t.Errorf("request = %d× %s %s, want one POST /api/v1/photos/stack", requests, gotMethod, gotPath)
+	if requests != 1 || gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/stack" {
+		t.Errorf("request = %d× %s %s, want one POST /api/v1/p/fam/photos/stack", requests, gotMethod, gotPath)
 	}
 	if len(gotBody.PhotoUIDs) != 2 {
 		t.Errorf("body photo_uids = %v, want the repeat dropped", gotBody.PhotoUIDs)
@@ -91,17 +91,17 @@ func TestClient_stackMutations(t *testing.T) {
 	}{
 		{
 			name:     "set primary",
-			wantPath: "/api/v1/photos/pht 01/stack/primary",
+			wantPath: "/api/v1/p/fam/photos/pht 01/stack/primary",
 			call:     func(c *Client) (json.RawMessage, error) { return c.SetStackPrimary(t.Context(), "pht 01") },
 		},
 		{
 			name:     "unstack one",
-			wantPath: "/api/v1/photos/pht 01/unstack",
+			wantPath: "/api/v1/p/fam/photos/pht 01/unstack",
 			call:     func(c *Client) (json.RawMessage, error) { return c.UnstackPhoto(t.Context(), "pht 01") },
 		},
 		{
 			name:     "unstack all",
-			wantPath: "/api/v1/photos/pht 01/unstack-all",
+			wantPath: "/api/v1/p/fam/photos/pht 01/unstack-all",
 			call:     func(c *Client) (json.RawMessage, error) { return c.UnstackAll(t.Context(), "pht 01") },
 		},
 	}

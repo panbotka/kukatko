@@ -25,7 +25,7 @@ func TestSaveRendition_thumbnail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveRendition returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/thumb/fit_720" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/thumb/fit_720" {
 		t.Errorf("path = %q, want the thumbnail route", gotPath)
 	}
 	if saved.Path != dest || saved.Bytes != int64(len("jpeg-bytes")) || saved.MediaType != "image/jpeg" {
@@ -54,7 +54,7 @@ func TestSaveRendition_originalUsesTheDownloadRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveRendition returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/download" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/download" {
 		t.Errorf("path = %q, want the download route", gotPath)
 	}
 	if saved.Bytes != int64(len("original-bytes")) {

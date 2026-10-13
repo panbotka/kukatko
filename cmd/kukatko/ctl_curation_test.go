@@ -201,9 +201,9 @@ func TestCtlStacksUngroup(t *testing.T) {
 		args     []string
 		wantPath string
 	}{
-		{args: []string{"set-primary", "pht01"}, wantPath: "/api/v1/photos/pht01/stack/primary"},
-		{args: []string{"ungroup", "pht01"}, wantPath: "/api/v1/photos/pht01/unstack"},
-		{args: []string{"ungroup-all", "pht01"}, wantPath: "/api/v1/photos/pht01/unstack-all"},
+		{args: []string{"set-primary", "pht01"}, wantPath: "/api/v1/p/fam/photos/pht01/stack/primary"},
+		{args: []string{"ungroup", "pht01"}, wantPath: "/api/v1/p/fam/photos/pht01/unstack"},
+		{args: []string{"ungroup-all", "pht01"}, wantPath: "/api/v1/p/fam/photos/pht01/unstack-all"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.args[0], func(t *testing.T) {
@@ -421,7 +421,7 @@ func TestCtlDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("duplicates confirm returned %v (%s)", err, out)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/feedback/duplicate-confirmations" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/feedback/duplicate-confirmations" {
 		t.Errorf("request = %s %s, want the confirmation endpoint", gotMethod, gotPath)
 	}
 	if !strings.Contains(out, "nothing was merged") {
@@ -432,7 +432,7 @@ func TestCtlDuplicates(t *testing.T) {
 		"duplicates", "dismiss", "pht01", "pht02"); err != nil {
 		t.Fatalf("duplicates dismiss returned %v", err)
 	}
-	if gotPath != "/api/v1/feedback/duplicate-dismissals" {
+	if gotPath != "/api/v1/p/fam/feedback/duplicate-dismissals" {
 		t.Errorf("path = %q, want the dismissal endpoint", gotPath)
 	}
 }
@@ -458,7 +458,7 @@ func TestCtlTasks(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"comments":[]}`))
-		case r.URL.Path == "/api/v1/tasks" && r.Method == http.MethodPost:
+		case r.URL.Path == "/api/v1/p/fam/tasks" && r.Method == http.MethodPost:
 			_, _ = w.Write([]byte(`{"uid":"tk2","title":"Nová","state":"question"}`))
 		default:
 			_, _ = w.Write([]byte(tasksListBody))
@@ -492,7 +492,7 @@ func TestCtlTasks(t *testing.T) {
 		"tk1", "1987"); err != nil {
 		t.Fatalf("tasks comment: %v", err)
 	}
-	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/tasks/tk1/comments") {
+	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/p/fam/tasks/tk1/comments") {
 		t.Errorf("the comment went to %q", got)
 	}
 	if got := methods[len(methods)-1]; got != http.MethodPost {
@@ -629,7 +629,7 @@ func TestCtlAlbumComments(t *testing.T) {
 		t.Errorf("output %q does not echo the created comment", out)
 	}
 	for _, p := range paths {
-		if p != "/api/v1/albums/alb01/comments" {
+		if p != "/api/v1/p/fam/albums/alb01/comments" {
 			t.Errorf("path %q, want the album thread path", p)
 		}
 	}
@@ -750,7 +750,7 @@ func TestCtlTaskParticipants(t *testing.T) {
 		switch {
 		case strings.Contains(r.URL.Path, "/participants"):
 			_, _ = w.Write([]byte(participantsBody))
-		case r.URL.Path == "/api/v1/p/v/users":
+		case r.URL.Path == "/api/v1/p/fam/users":
 			_, _ = w.Write([]byte(`{"users":[{"uid":"us1","name":"Pan Botka"}]}`))
 		default:
 			_, _ = w.Write([]byte(tasksListBody))
@@ -782,7 +782,7 @@ func TestCtlTaskParticipants(t *testing.T) {
 	if got, want := methods[len(methods)-1], http.MethodDelete; got != want {
 		t.Errorf("unassign used %s, want %s", got, want)
 	}
-	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/tasks/tk1/participants/us2") {
+	if got := paths[len(paths)-1]; !strings.HasPrefix(got, "/api/v1/p/fam/tasks/tk1/participants/us2") {
 		t.Errorf("unassign went to %q", got)
 	}
 

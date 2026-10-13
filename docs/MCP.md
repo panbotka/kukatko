@@ -27,12 +27,31 @@ at the unprefixed **`/api/v1/mcp`** (the transition alias, which addresses the b
 an existing connector keeps working. A slug that is unknown or names a project the token's owner is no
 member of answers **404**, exactly like every other project route. There is no top-level `/mcp`.
 
-Both paths advertise themselves identically, because nothing the endpoint advertises carries a URL: the
-401 challenge is the bare `WWW-Authenticate: Bearer` (no `resource_metadata`), and there is no
-protected-resource metadata document (see below). The thumbnail URLs in tool results are built on
-`auth.APIBase(ctx)`, so they lead back through the prefix the call came through. When a URL is ever
-advertised (`resource_metadata="…"`), it must be built from `auth.APIBase(ctx)` too, so a client
-discovers the endpoint it actually called.
+**One token, several projects — by URL.** An API token belongs to its owner, not to a project, so the
+same `kkt_…` reaches every project its owner is a member of (a maintainer's reaches all of them); which
+project a connection works in is decided by the URL alone. An agent that should work in two libraries is
+given two connectors, `…/p/rodina/mcp` and `…/p/klub/mcp`, with the same `Authorization` header. The
+tools are unchanged; every catalogue read and write is confined to the URL's project (`caller.projectUID`),
+so a uid from one project is "not found" through the other's endpoint.
+
+**Each endpoint says where it is.** Everything the endpoint advertises is built on `auth.APIBase(ctx)`, so
+a client is told the endpoint it actually called:
+
+- **The `instructions`** handed over on `initialize` end with a paragraph naming the project — its name
+  and slug — and saying that the same token reaches the owner's other projects at `/api/v1/p/<slug>/mcp`.
+  **Through the alias** they carry one more line: `Deprecated: this connection uses the transition alias
+  /api/v1/mcp; reconfigure it to /api/v1/p/<slug>/mcp before the alias is removed.` The servers are built
+  per write permission × instructions text on first use and cached (`API.server`), so a project costs one
+  pair of servers, not one per request.
+- **The 401 challenge** is `WWW-Authenticate: Bearer realm="https://<host>/api/v1/p/<slug>/mcp"` — the
+  absolute URL of the endpoint (scheme from TLS or `X-Forwarded-Proto`, host from the request), or
+  `…/api/v1/mcp` through the alias. `withResourceChallenge` wraps the `RequireAuth` guard so only the
+  guard's own 401 is rewritten; a request it lets through reaches the transport with the original writer.
+  The URL rides in `realm`, **not** in RFC 9728's `resource_metadata`, on purpose: there is no
+  protected-resource metadata document and no OAuth (see below), and a client handed `resource_metadata`
+  would go looking for an authorization server that does not exist. When OAuth is built, the same
+  `resourceURL` is what `resource_metadata` and the metadata document's `resource` must name.
+- **The thumbnail URLs** in tool results lead back through the prefix the call came through.
 
 The route is registered with `chi.Handle`, i.e. for **every** method, and the SDK's handler decides what
 each one means: `POST` is the protocol, a `GET` (which in a session-ful server would open the SSE stream)
@@ -69,8 +88,9 @@ same RBAC as every other route:
 
 ### The 401 and why there is no OAuth discovery
 
-An unauthenticated call is answered **401 with `WWW-Authenticate: Bearer`** (`auth.Challenge`, set by
-`writeUnauthorized`, which every 401 the RBAC guards write goes through). That header is the first thing an MCP client reads.
+An unauthenticated call is answered **401 with `WWW-Authenticate: Bearer realm="<endpoint URL>"`**
+(`auth.Challenge`, set by `writeUnauthorized`, which every 401 the RBAC guards write goes through, with the
+endpoint's URL added as the realm — see *Each endpoint says where it is* above). That header is the first thing an MCP client reads.
 Anthropic's connector documentation says that when it is **missing**, Claude falls back to guessing the
 server's OAuth metadata: it probes `/.well-known/oauth-protected-resource/<path>` and then
 `/.well-known/oauth-protected-resource`, and expects a **404** to mean "this server has no OAuth". Until
@@ -83,7 +103,8 @@ there is nothing to discover. `internal/server` now answers everything under `/.
 The scheme is `Bearer` and deliberately not `Basic`: `Basic` would make a browser pop its own native
 sign-in dialog over the SPA, which handles its 401s itself. **Kukátko implements no OAuth 2.1, no RFC 9728
 protected-resource metadata and no dynamic client registration** — a `kkt_` API token is the whole story.
-When that changes, `resource_metadata="…"` and `scope="…"` get appended to `auth.Challenge`.
+When that changes, `resource_metadata="…"` and `scope="…"` get appended to the challenge, built from the
+same per-project `resourceURL`.
 
 Sources: [Anthropic — connector authentication](https://claude.com/docs/connectors/building/authentication) ·
 [MCP — authorization](https://modelcontextprotocol.io/specification/draft/basic/authorization).
@@ -281,14 +302,18 @@ create a user with the `viewer` role; a token inherits its owner's role, it has 
 Connecting a client (Claude Code):
 
 ```bash
-claude mcp add --transport http kukatko https://<host>/api/v1/mcp \
+claude mcp add --transport http kukatko https://<host>/api/v1/p/<slug>/mcp \
   --header "Authorization: Bearer kkt_…"
 ```
 
+One connector per project; the same token works in each project its owner is a member of. A connector
+still pointing at the unprefixed `/api/v1/mcp` works until the alias-removal step, and its server
+instructions say so.
+
 The same token is what the **OpenAI Responses API** wants in its `mcp` tool's `authorization` field. What
 neither path gives you is a **connector tile in the claude.ai or ChatGPT UI**: those ask the server for OAuth,
-which this one does not have — the 401 says `WWW-Authenticate: Bearer` and every `/.well-known/` probe is a
-404. What it would take, whether it is worth it, and how it would be split up is worked out in
+which this one does not have — the 401 says `WWW-Authenticate: Bearer realm="…"` (no `resource_metadata`)
+and every `/.well-known/` probe is a 404. What it would take, whether it is worth it, and how it would be split up is worked out in
 [`docs/superpowers/specs/2026-09-12-mcp-oauth-design.md`](superpowers/specs/2026-09-12-mcp-oauth-design.md).
 Nothing is decided yet; until it is, a token is the way in.
 
@@ -303,6 +328,14 @@ a viewer sees only the read tools · a viewer is rejected on **every** write too
 destructive tools are not exposed · search returns the compact shape without EXIF and with pagination ·
 the search language works · a write token creates an album and attaches a label · **every mutation writes an audit
 row** · a partial edit does not null out the other fields · bulk is atomic · the tool descriptions are written.
+
+`internal/mcpapi/isolation_integration_test.go` mounts the endpoint as `cmd/kukatko` does (under
+`/api/v1/p/{project}` and as the alias) over the two seeded projects of `internal/projecttest`: every read
+tool called through `/p/<B>/mcp` as B's member never names one of A's uids, and A's photo is not found by
+uid while B's is · the `instructions` name the URL's project, and only the alias adds the deprecation note ·
+an anonymous call to either path gets the challenge naming that path's absolute URL.
+`challenge_test.go` holds the challenge (prefix, alias, TLS, proxy, a hostile `Host`), the guard wrapper and
+the instructions text without a database.
 
 `internal/server/server_test.go` pins the other half of the discovery fix without a database: every
 `/.well-known/…` probe is 404 and not `text/html`, while an ordinary client-side route still reaches the SPA.

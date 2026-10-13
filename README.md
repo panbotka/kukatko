@@ -733,11 +733,14 @@ Read notifications are kept for 30 days, unread ones for 90.
 - **A library an AI agent can use:** Kukátko can expose itself as an **MCP server**, so an agent
   searches and organizes the library directly ("find grandma's photos from the sixties and put them
   in an album"). Off by default, authenticated with an ordinary API token, bound by the same RBAC —
-  and nothing destructive is exposed.
+  and nothing destructive is exposed. Each project has its own endpoint (`/api/v1/p/<slug>/mcp`),
+  which tells the agent which library it is in; one token reaches every project its owner belongs to.
 - **Or the same job from the terminal.** `kukatko ctl photos` is the loop an agent needs per photo:
   read it whole (`get` — who is on it, and the text the recogniser read in it), actually look at it
   (`image`, streamed to a file), and write the evaluation back (`edit`) — with `--dry-run` to show
-  its intent first, and `-o llm` to spend a fraction of the tokens the raw JSON would.
+  its intent first, and `-o llm` to spend a fraction of the tokens the raw JSON would. A context
+  remembers the project it works in (`ctl projects use <slug>`), `--project` switches it for one
+  command, and `ctl projects list` shows the projects the token can enter.
 - **And the rest of the curation, too.** Albums and labels can be renamed, re-described and removed,
   not merely created; the several files one shot was stored as can be grouped into one tile and
   ungrouped again (a stack **groups, it never merges** — every file keeps its own metadata); a

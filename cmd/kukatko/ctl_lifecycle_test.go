@@ -38,12 +38,12 @@ func trashHandler(rec *recorder, rows string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rec.record(r)
 		switch {
-		case r.URL.Path == "/api/v1/trash/info":
+		case r.URL.Path == "/api/v1/p/fam/trash/info":
 			w.Write([]byte(`{"retention_days":30}`))
-		case r.URL.Path == "/api/v1/photos":
+		case r.URL.Path == "/api/v1/p/fam/photos":
 			fmt.Fprintf(w, `{"photos":[%s],"total":2,"limit":500,"offset":0,"next_offset":null}`, rows)
-		case strings.HasSuffix(r.URL.Path, "/purge"), r.URL.Path == "/api/v1/trash/empty",
-			r.URL.Path == "/api/v1/trash/purge-older":
+		case strings.HasSuffix(r.URL.Path, "/purge"), r.URL.Path == "/api/v1/p/fam/trash/empty",
+			r.URL.Path == "/api/v1/p/fam/trash/purge-older":
 			w.Write([]byte(`{"purged":2,"failed":0}`))
 		default:
 			w.Write([]byte(archivedPhotoBody))
@@ -81,7 +81,7 @@ func TestCtlPhotosUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos upload returned %v (%s)", err, out)
 	}
-	if gotPath != "/api/v1/upload" {
+	if gotPath != "/api/v1/p/fam/upload" {
 		t.Errorf("path = %q, want the upload endpoint", gotPath)
 	}
 	for _, want := range []string{"created", "pht01", "duplicate", "1 created", "1 already in the library"} {
@@ -128,7 +128,7 @@ func TestCtlPhotosState(t *testing.T) {
 			if err != nil {
 				t.Fatalf("photos %s returned %v (%s)", state, err, out)
 			}
-			if gotPath != "/api/v1/photos/pht01/"+state {
+			if gotPath != "/api/v1/p/fam/photos/pht01/"+state {
 				t.Errorf("path = %q, want the %s endpoint", gotPath, state)
 			}
 			if !strings.Contains(out, "Lake (pht01)") || !strings.Contains(out, "in the trash since") {
@@ -151,7 +151,7 @@ func TestCtlPhotosPurge_refusesWithoutConfirmation(t *testing.T) {
 	if !strings.Contains(err.Error(), "--yes") || !strings.Contains(err.Error(), "--dry-run") {
 		t.Errorf("error = %q, want it to name --yes and --dry-run", err)
 	}
-	if rec.touched("POST /api/v1/photos/pht01/purge") {
+	if rec.touched("POST /api/v1/p/fam/photos/pht01/purge") {
 		t.Errorf("the photo was purged without confirmation: %v", rec.calls)
 	}
 }
@@ -171,7 +171,7 @@ func TestCtlPhotosPurge_dryRunNamesThePhoto(t *testing.T) {
 			t.Errorf("dry run output is missing %q:\n%s", want, out)
 		}
 	}
-	if rec.touched("POST /api/v1/photos/pht01/purge") {
+	if rec.touched("POST /api/v1/p/fam/photos/pht01/purge") {
 		t.Errorf("a dry run purged the photo: %v", rec.calls)
 	}
 }
@@ -186,7 +186,7 @@ func TestCtlPhotosPurge_confirmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos purge --yes returned %v (%s)", err, out)
 	}
-	if !rec.touched("POST /api/v1/photos/pht01/purge") {
+	if !rec.touched("POST /api/v1/p/fam/photos/pht01/purge") {
 		t.Errorf("the confirmed purge never reached the server: %v", rec.calls)
 	}
 	if !strings.Contains(out, "permanently deleted") {
@@ -212,7 +212,7 @@ func TestCtlTrashInfo(t *testing.T) {
 	if strings.Index(out, "old.jpg") > strings.Index(out, "fresh.jpg") {
 		t.Errorf("the trash is not listed oldest first:\n%s", out)
 	}
-	if rec.touched("POST /api/v1/trash/empty") {
+	if rec.touched("POST /api/v1/p/fam/trash/empty") {
 		t.Errorf("reading the trash emptied it: %v", rec.calls)
 	}
 }
@@ -250,7 +250,7 @@ func TestCtlTrashEmpty_dryRunListsWhatWouldGo(t *testing.T) {
 			t.Errorf("dry run is missing %q:\n%s", want, out)
 		}
 	}
-	if rec.touched("POST /api/v1/trash/empty") {
+	if rec.touched("POST /api/v1/p/fam/trash/empty") {
 		t.Errorf("a dry run emptied the trash: %v", rec.calls)
 	}
 }
@@ -265,7 +265,7 @@ func TestCtlTrashEmpty_confirmed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("trash empty --yes returned %v (%s)", err, out)
 	}
-	if !rec.touched("POST /api/v1/trash/empty") {
+	if !rec.touched("POST /api/v1/p/fam/trash/empty") {
 		t.Errorf("the confirmed empty never reached the server: %v", rec.calls)
 	}
 	if !strings.Contains(out, "2 photos permanently deleted") {
@@ -290,7 +290,7 @@ func TestCtlTrashPurgeOlder_dryRunAppliesTheCutoff(t *testing.T) {
 	if strings.Contains(out, "fresh.jpg") {
 		t.Errorf("a photo archived inside the window is listed as at risk:\n%s", out)
 	}
-	if rec.touched("POST /api/v1/trash/purge-older") {
+	if rec.touched("POST /api/v1/p/fam/trash/purge-older") {
 		t.Errorf("a dry run purged the trash: %v", rec.calls)
 	}
 }
@@ -305,7 +305,7 @@ func TestCtlTrashPurgeOlder_refusesWithoutConfirmation(t *testing.T) {
 	if err == nil {
 		t.Fatalf("trash purge-older ran without --yes:\n%s", out)
 	}
-	if rec.touched("POST /api/v1/trash/purge-older") {
+	if rec.touched("POST /api/v1/p/fam/trash/purge-older") {
 		t.Errorf("a refused purge still ran: %v", rec.calls)
 	}
 }

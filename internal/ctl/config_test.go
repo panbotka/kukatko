@@ -155,7 +155,7 @@ func TestResolve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := Resolve(tt.cfg, tt.contextName, tt.env)
+			got, err := Resolve(tt.cfg, Selection{Context: tt.contextName}, tt.env)
 			if tt.wantErr != nil {
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("Resolve error = %v, want %v", err, tt.wantErr)
@@ -178,15 +178,71 @@ func TestResolve(t *testing.T) {
 	}
 }
 
-// TestEnvFromOS verifies the two environment overrides are read from the process
+// TestResolve_projectPrecedence pins where the project comes from: the
+// --project flag beats KUKATKO_PROJECT, which beats the context's own project,
+// and a context without one leaves the endpoint project-less — not an error,
+// since only the project-scoped commands need it.
+func TestResolve_projectPrecedence(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		CurrentContext: "prod",
+		Contexts: []Context{
+			{Name: "prod", Server: "https://prod.example.com", Project: "rodina"},
+			{Name: "bare", Server: "https://prod.example.com"},
+		},
+	}
+	tests := []struct {
+		name string
+		sel  Selection
+		env  Env
+		want string
+	}{
+		{name: "the context's project", want: "rodina"},
+		{name: "env beats the context", env: Env{Project: "klub"}, want: "klub"},
+		{name: "flag beats env and context", sel: Selection{Project: "skola"}, env: Env{Project: "klub"}, want: "skola"},
+		{name: "flag alone", sel: Selection{Context: "bare", Project: "skola"}, want: "skola"},
+		{name: "blank flag defers to env", sel: Selection{Project: "  "}, env: Env{Project: "klub"}, want: "klub"},
+		{name: "no project anywhere", sel: Selection{Context: "bare"}, want: ""},
+		{name: "env without any context", sel: Selection{}, env: Env{Project: "klub"}, want: "klub"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Resolve(cfg, tt.sel, tt.env)
+			if err != nil {
+				t.Fatalf("Resolve returned %v", err)
+			}
+			if got.Project != tt.want {
+				t.Errorf("Project = %q, want %q", got.Project, tt.want)
+			}
+		})
+	}
+}
+
+// TestErrNoProject_message pins the exact text a project-scoped command fails
+// with: it is the whole message the operator reads, so it must name both ways
+// out verbatim.
+func TestErrNoProject_message(t *testing.T) {
+	t.Parallel()
+
+	const want = "no project selected: run 'kukatko ctl projects use <slug>' or pass --project"
+	if got := ErrNoProject.Error(); got != want {
+		t.Errorf("ErrNoProject = %q, want %q", got, want)
+	}
+}
+
+// TestEnvFromOS verifies the environment overrides are read from the process
 // environment under their documented names.
 func TestEnvFromOS(t *testing.T) {
 	// t.Setenv forbids t.Parallel; the environment is restored afterwards.
 	t.Setenv(EnvServer, "https://env.example.com")
 	t.Setenv(EnvToken, "kkt_env_secret")
+	t.Setenv(EnvProject, "rodina")
 
 	got := EnvFromOS()
-	if got.Server != "https://env.example.com" || got.Token != "kkt_env_secret" {
+	if got.Server != "https://env.example.com" || got.Token != "kkt_env_secret" || got.Project != "rodina" {
 		t.Errorf("EnvFromOS() = %+v, want the environment values", got)
 	}
 }
@@ -196,6 +252,7 @@ func TestEnvFromOS(t *testing.T) {
 func TestEnvFromOS_unset(t *testing.T) {
 	t.Setenv(EnvServer, "")
 	t.Setenv(EnvToken, "")
+	t.Setenv(EnvProject, "")
 
 	if got := EnvFromOS(); got != (Env{}) {
 		t.Errorf("EnvFromOS() = %+v, want the zero Env", got)

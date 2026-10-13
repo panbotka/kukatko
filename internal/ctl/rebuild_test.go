@@ -27,7 +27,7 @@ func TestClient_RebuildPhoto(t *testing.T) {
 			if err != nil {
 				t.Fatalf("RebuildPhoto(%q) returned %v", spec.Name, err)
 			}
-			if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/pht01/"+spec.Path {
+			if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/pht01/"+spec.Path {
 				t.Errorf("request = %s %s, want POST the %s endpoint", gotMethod, gotPath, spec.Path)
 			}
 			decoded, err := DecodePhotoRebuild(raw, spec.Name)

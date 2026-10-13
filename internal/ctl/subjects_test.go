@@ -32,8 +32,8 @@ func TestClient_ListSubjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSubjects returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects" {
-		t.Errorf("path = %q, want /api/v1/subjects", gotPath)
+	if gotPath != "/api/v1/p/fam/subjects" {
+		t.Errorf("path = %q, want /api/v1/p/fam/subjects", gotPath)
 	}
 	subjects, err := DecodeSubjects(raw)
 	if err != nil {
@@ -84,7 +84,7 @@ func TestClient_GetSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSubject returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub 01" {
+	if gotPath != "/api/v1/p/fam/subjects/sub 01" {
 		t.Errorf("path = %q, want the escaped uid", gotPath)
 	}
 	subject, err := DecodeSubject(raw)
@@ -132,7 +132,7 @@ func TestClient_SubjectPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SubjectPhotos returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01/photos" {
+	if gotPath != "/api/v1/p/fam/subjects/sub01/photos" {
 		t.Errorf("path = %q, want the subject gallery path", gotPath)
 	}
 	if gotQuery.Get("limit") != "1" || gotQuery.Get("offset") != "2" {
@@ -207,8 +207,8 @@ func TestClient_CreateSubject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSubject returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects" || gotMethod != http.MethodPost {
-		t.Errorf("request = %s %s, want POST /api/v1/subjects", gotMethod, gotPath)
+	if gotPath != "/api/v1/p/fam/subjects" || gotMethod != http.MethodPost {
+		t.Errorf("request = %s %s, want POST /api/v1/p/fam/subjects", gotMethod, gotPath)
 	}
 	if gotBody["name"] != "Anna" || len(gotBody) != 1 {
 		t.Errorf("body = %v, want the name and nothing else", gotBody)
@@ -335,8 +335,8 @@ func TestClient_DeleteSubject(t *testing.T) {
 	if err := client.DeleteSubject(t.Context(), "sub01"); err != nil {
 		t.Fatalf("DeleteSubject returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01" || gotMethod != http.MethodDelete {
-		t.Errorf("request = %s %s, want DELETE /api/v1/subjects/sub01", gotMethod, gotPath)
+	if gotPath != "/api/v1/p/fam/subjects/sub01" || gotMethod != http.MethodDelete {
+		t.Errorf("request = %s %s, want DELETE /api/v1/p/fam/subjects/sub01", gotMethod, gotPath)
 	}
 }
 
@@ -361,7 +361,7 @@ func TestClient_MergeSubjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MergeSubjects returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01/merge" || gotMethod != http.MethodPost {
+	if gotPath != "/api/v1/p/fam/subjects/sub01/merge" || gotMethod != http.MethodPost {
 		t.Errorf("request = %s %s, want the source's merge endpoint", gotMethod, gotPath)
 	}
 	if gotBody["keeper_uid"] != "sub02" {

@@ -48,8 +48,8 @@ func TestClient_ListFaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListFaces returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/faces" || gotMethod != http.MethodGet {
-		t.Errorf("request = %s %s, want GET /api/v1/photos/pht01/faces", gotMethod, gotPath)
+	if gotPath != "/api/v1/p/fam/photos/pht01/faces" || gotMethod != http.MethodGet {
+		t.Errorf("request = %s %s, want GET /api/v1/p/fam/photos/pht01/faces", gotMethod, gotPath)
 	}
 	list, err := DecodeFaceList(raw)
 	if err != nil {
@@ -180,7 +180,7 @@ func TestClient_AssignFace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssignFace returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/faces/assign" || gotMethod != http.MethodPost {
+	if gotPath != "/api/v1/p/fam/photos/pht01/faces/assign" || gotMethod != http.MethodPost {
 		t.Errorf("request = %s %s, want the assign endpoint", gotMethod, gotPath)
 	}
 	if gotBody["action"] != FaceActionAssignPerson || gotBody["marker_uid"] != "mrk01" {
@@ -230,13 +230,13 @@ func TestClient_faceFeedback(t *testing.T) {
 	}
 	calls := []call{
 		{"reject", func(c *Client) faceOpinionCall { return c.RejectFace },
-			"/api/v1/feedback/face-rejections", http.MethodPost},
+			"/api/v1/p/fam/feedback/face-rejections", http.MethodPost},
 		{"unreject", func(c *Client) faceOpinionCall { return c.UnrejectFace },
-			"/api/v1/feedback/face-rejections", http.MethodDelete},
+			"/api/v1/p/fam/feedback/face-rejections", http.MethodDelete},
 		{"confirm", func(c *Client) faceOpinionCall { return c.ConfirmFace },
-			"/api/v1/feedback/face-confirmations", http.MethodPost},
+			"/api/v1/p/fam/feedback/face-confirmations", http.MethodPost},
 		{"unconfirm", func(c *Client) faceOpinionCall { return c.UnconfirmFace },
-			"/api/v1/feedback/face-confirmations", http.MethodDelete},
+			"/api/v1/p/fam/feedback/face-confirmations", http.MethodDelete},
 	}
 	for _, c := range calls {
 		t.Run(c.name, func(t *testing.T) {

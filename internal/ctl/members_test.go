@@ -67,16 +67,16 @@ func TestClient_memberRoutes(t *testing.T) {
 		wantMethod, wantPath string
 		wantBody             string
 	}{
-		{func() error { _, err := client.ListMembers(ctx, "club"); return err },
-			"GET", "/api/v1/p/club/members", ""},
-		{func() error { _, err := client.AddMember(ctx, "club", "Jan@Example.test", "editor"); return err },
-			"POST", "/api/v1/p/club/members", `{"identifier":"Jan@Example.test","role":"editor"}`},
-		{func() error { _, err := client.SetMemberRole(ctx, "club", "us2", "curator"); return err },
-			"PATCH", "/api/v1/p/club/members/us2", `{"role":"curator"}`},
-		{func() error { _, err := client.ApproveMember(ctx, "club", "us2"); return err },
-			"POST", "/api/v1/p/club/members/us2/approve", ""},
-		{func() error { return client.RemoveMember(ctx, "club", "us2") },
-			"DELETE", "/api/v1/p/club/members/us2", ""},
+		{func() error { _, err := client.ListMembers(ctx); return err },
+			"GET", "/api/v1/p/fam/members", ""},
+		{func() error { _, err := client.AddMember(ctx, "Jan@Example.test", "editor"); return err },
+			"POST", "/api/v1/p/fam/members", `{"identifier":"Jan@Example.test","role":"editor"}`},
+		{func() error { _, err := client.SetMemberRole(ctx, "us2", "curator"); return err },
+			"PATCH", "/api/v1/p/fam/members/us2", `{"role":"curator"}`},
+		{func() error { _, err := client.ApproveMember(ctx, "us2"); return err },
+			"POST", "/api/v1/p/fam/members/us2/approve", ""},
+		{func() error { return client.RemoveMember(ctx, "us2") },
+			"DELETE", "/api/v1/p/fam/members/us2", ""},
 	}
 	for _, step := range steps {
 		if err := step.call(); err != nil {
@@ -97,19 +97,19 @@ func TestClient_memberRoutesRefuseBlankInput(t *testing.T) {
 		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 	})
 	ctx := t.Context()
-	if _, err := client.ListMembers(ctx, " "); !errors.Is(err, ErrNoProjectSlug) {
-		t.Errorf("ListMembers without a project = %v, want ErrNoProjectSlug", err)
+	if _, err := client.WithProject("").ListMembers(ctx); !errors.Is(err, ErrNoProject) {
+		t.Errorf("ListMembers without a project = %v, want ErrNoProject", err)
 	}
-	if _, err := client.AddMember(ctx, "club", "  ", "viewer"); !errors.Is(err, ErrNoIdentifier) {
+	if _, err := client.AddMember(ctx, "  ", "viewer"); !errors.Is(err, ErrNoIdentifier) {
 		t.Errorf("AddMember without an identifier = %v, want ErrNoIdentifier", err)
 	}
-	if _, err := client.SetMemberRole(ctx, "club", "", "viewer"); !errors.Is(err, ErrEmptyUID) {
+	if _, err := client.SetMemberRole(ctx, "", "viewer"); !errors.Is(err, ErrEmptyUID) {
 		t.Errorf("SetMemberRole without a member = %v, want ErrEmptyUID", err)
 	}
-	if _, err := client.ApproveMember(ctx, "", "us1"); !errors.Is(err, ErrNoProjectSlug) {
-		t.Errorf("ApproveMember without a project = %v, want ErrNoProjectSlug", err)
+	if _, err := client.WithProject(" ").ApproveMember(ctx, "us1"); !errors.Is(err, ErrNoProject) {
+		t.Errorf("ApproveMember without a project = %v, want ErrNoProject", err)
 	}
-	if err := client.RemoveMember(ctx, "club", ""); !errors.Is(err, ErrEmptyUID) {
+	if err := client.RemoveMember(ctx, ""); !errors.Is(err, ErrEmptyUID) {
 		t.Errorf("RemoveMember without a member = %v, want ErrEmptyUID", err)
 	}
 }
@@ -119,19 +119,19 @@ func TestClient_memberRoutesRefuseBlankInput(t *testing.T) {
 func TestClient_resolveMember(t *testing.T) {
 	t.Parallel()
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/p/club/members" {
+		if r.URL.Path != "/api/v1/p/fam/members" {
 			t.Errorf("resolve asked %s, want the project's member list", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(membersBody))
 	})
 	ctx := t.Context()
-	if m, err := client.ResolveMember(ctx, "club", "bob"); err != nil || m.UserUID != "us2" {
+	if m, err := client.ResolveMember(ctx, "bob"); err != nil || m.UserUID != "us2" {
 		t.Errorf("ResolveMember(bob) = %+v, %v", m, err)
 	}
-	if m, err := client.ResolveMember(ctx, "club", "us1"); err != nil || m.Username != "anna" {
+	if m, err := client.ResolveMember(ctx, "us1"); err != nil || m.Username != "anna" {
 		t.Errorf("ResolveMember(us1) = %+v, %v", m, err)
 	}
-	if _, err := client.ResolveMember(ctx, "club", "carl"); !errors.Is(err, ErrMemberNotFound) {
+	if _, err := client.ResolveMember(ctx, "carl"); !errors.Is(err, ErrMemberNotFound) {
 		t.Errorf("ResolveMember(carl) = %v, want ErrMemberNotFound", err)
 	}
 }

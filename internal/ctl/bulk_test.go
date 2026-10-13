@@ -45,8 +45,8 @@ func TestClient_Bulk_singleRequest(t *testing.T) {
 	if requests != 1 {
 		t.Errorf("the client made %d requests, want exactly one for the whole batch", requests)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/bulk" {
-		t.Errorf("request = %s %s, want POST /api/v1/photos/bulk", gotMethod, gotPath)
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/bulk" {
+		t.Errorf("request = %s %s, want POST /api/v1/p/fam/photos/bulk", gotMethod, gotPath)
 	}
 	if len(gotBody.PhotoUIDs) != 120 {
 		t.Errorf("body carried %d uids, want all 120 in one request", len(gotBody.PhotoUIDs))

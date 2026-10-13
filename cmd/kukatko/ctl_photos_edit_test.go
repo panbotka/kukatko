@@ -187,7 +187,7 @@ func TestCtlPhotosEdit_dryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos edit --dry-run returned %v", err)
 	}
-	if !strings.Contains(out, "PATCH /api/v1/photos/pht01") {
+	if !strings.Contains(out, "PATCH /api/v1/p/fam/photos/pht01") {
 		t.Errorf("dry run does not name the request:\n%s", out)
 	}
 	if !strings.Contains(out, `"title": "Lake"`) || !strings.Contains(out, `"taken_at": null`) {

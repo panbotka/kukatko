@@ -217,8 +217,9 @@ func TestProjectAPI_unknownAndForeignProjectsAreIndistinguishable(t *testing.T) 
 }
 
 // TestProjectAPI_mcpThroughBothPaths proves the MCP server answers under the
-// project prefix and through the alias alike: the Bearer challenge on an
-// anonymous call, a working handshake for a token, and the foreign-project 404.
+// project prefix and through the alias alike: the Bearer challenge naming the
+// endpoint called on an anonymous call, a working handshake for a token, and
+// the foreign-project 404.
 func TestProjectAPI_mcpThroughBothPaths(t *testing.T) {
 	e := newProjectAPIEnv(t)
 	_, bearer := e.token(t, "agent", auth.AccountEditor)
@@ -235,9 +236,10 @@ func TestProjectAPI_mcpThroughBothPaths(t *testing.T) {
 
 	for _, path := range []string{"/api/v1/mcp", "/api/v1/p/v/mcp"} {
 		status, header, body := e.do(t, http.MethodPost, path, "", initialize)
-		if status != http.StatusUnauthorized || header.Get("WWW-Authenticate") != auth.Challenge {
-			t.Errorf("anonymous %s = %d (WWW-Authenticate %q) %s, want 401 with the challenge",
-				path, status, header.Get("WWW-Authenticate"), body)
+		want := auth.Challenge + ` realm="` + e.server.URL + path + `"`
+		if status != http.StatusUnauthorized || header.Get("WWW-Authenticate") != want {
+			t.Errorf("anonymous %s = %d (WWW-Authenticate %q) %s, want 401 with %q",
+				path, status, header.Get("WWW-Authenticate"), body, want)
 		}
 		if status, _, body := e.do(t, http.MethodPost, path, bearer, initialize); status != http.StatusOK {
 			t.Errorf("initialize at %s = %d %s, want 200", path, status, body)

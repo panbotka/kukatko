@@ -91,8 +91,8 @@ func TestClient_UploadPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadPhotos returned %v", err)
 	}
-	if gotPath != "/api/v1/upload" {
-		t.Errorf("path = %q, want /api/v1/upload", gotPath)
+	if gotPath != "/api/v1/p/fam/upload" {
+		t.Errorf("path = %q, want /api/v1/p/fam/upload", gotPath)
 	}
 	if gotAuth != "Bearer kkt_a_b" {
 		t.Errorf("Authorization = %q, want the bearer token", gotAuth)

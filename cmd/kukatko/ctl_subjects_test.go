@@ -27,8 +27,8 @@ func TestCtlSubjectsCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subjects create returned %v", err)
 	}
-	if seen.method != http.MethodPost || seen.path != "/api/v1/subjects" {
-		t.Errorf("request = %s %s, want POST /api/v1/subjects", seen.method, seen.path)
+	if seen.method != http.MethodPost || seen.path != "/api/v1/p/fam/subjects" {
+		t.Errorf("request = %s %s, want POST /api/v1/p/fam/subjects", seen.method, seen.path)
 	}
 	if seen.body["name"] != "Rex" || seen.body["type"] != "pet" || seen.body["birth_year"] != float64(2018) {
 		t.Errorf("body = %v, want the written fields", seen.body)
@@ -81,9 +81,9 @@ func TestCtlSubjectsMerge(t *testing.T) {
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, recordRequest(r))
 		switch r.URL.Path {
-		case "/api/v1/subjects/sub01":
+		case "/api/v1/p/fam/subjects/sub01":
 			w.Write([]byte(`{"uid":"sub01","name":"Anna N.","type":"person"}`))
-		case "/api/v1/subjects/sub02":
+		case "/api/v1/p/fam/subjects/sub02":
 			w.Write([]byte(`{"uid":"sub02","name":"Anna Nováková","type":"person"}`))
 		default:
 			w.Write([]byte(`{"keeper_uid":"sub02","source_uid":"sub01","markers_moved":17,
@@ -97,7 +97,7 @@ func TestCtlSubjectsMerge(t *testing.T) {
 		t.Fatalf("subjects merge returned %v", err)
 	}
 	last := seen[len(seen)-1]
-	if last.path != "/api/v1/subjects/sub01/merge" || last.body["keeper_uid"] != "sub02" {
+	if last.path != "/api/v1/p/fam/subjects/sub01/merge" || last.body["keeper_uid"] != "sub02" {
 		t.Fatalf("merge request = %+v, want sub01 merged into sub02", last)
 	}
 	for _, want := range []string{"KEEPER", "Anna Nováková (sub02)", "MERGED AWAY", "Anna N. (sub01)", "17"} {
@@ -138,7 +138,7 @@ func TestCtlSubjectsMerge_dryRun(t *testing.T) {
 		if r.Method != http.MethodGet {
 			writes++
 		}
-		if r.URL.Path == "/api/v1/subjects/sub02" {
+		if r.URL.Path == "/api/v1/p/fam/subjects/sub02" {
 			w.Write([]byte(`{"uid":"sub02","name":"Anna Nováková","type":"person"}`))
 			return
 		}
@@ -196,7 +196,7 @@ func TestCtlSubjectsDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subjects delete returned %v", err)
 	}
-	if len(seen) != 2 || seen[1].method != http.MethodDelete || seen[1].path != "/api/v1/subjects/sub01" {
+	if len(seen) != 2 || seen[1].method != http.MethodDelete || seen[1].path != "/api/v1/p/fam/subjects/sub01" {
 		t.Fatalf("requests = %+v, want the subject named then deleted", seen)
 	}
 	if !strings.Contains(out, "Anna (sub01) deleted") || !strings.Contains(out, "unnamed") {

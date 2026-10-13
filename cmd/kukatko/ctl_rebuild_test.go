@@ -21,25 +21,25 @@ func TestCtlPhotosRebuild(t *testing.T) {
 		{
 			name:     ctl.RebuildThumbnail,
 			body:     `{"status":"regenerated","sizes":["fit_1920","tile_500"]}`,
-			wantPath: "/api/v1/photos/pht01/regenerate-thumbnail",
+			wantPath: "/api/v1/p/fam/photos/pht01/regenerate-thumbnail",
 			want:     []string{"thumbnail", "2 sizes", "fit_1920"},
 		},
 		{
 			name:     ctl.RebuildEmbedding,
 			body:     `{"step":"image_embed","status":"rebuilt"}`,
-			wantPath: "/api/v1/photos/pht01/reembed",
+			wantPath: "/api/v1/p/fam/photos/pht01/reembed",
 			want:     []string{"image_embed", "rebuilt"},
 		},
 		{
 			name:     ctl.RebuildFaces,
 			body:     `{"step":"face_detect","status":"rebuilt","faces":3}`,
-			wantPath: "/api/v1/photos/pht01/redetect-faces",
+			wantPath: "/api/v1/p/fam/photos/pht01/redetect-faces",
 			want:     []string{"face_detect", "3 faces"},
 		},
 		{
 			name:     ctl.RebuildPlace,
 			body:     `{"step":"places","status":"rebuilt"}`,
-			wantPath: "/api/v1/photos/pht01/regeocode",
+			wantPath: "/api/v1/p/fam/photos/pht01/regeocode",
 			want:     []string{"places", "rebuilt"},
 		},
 	}

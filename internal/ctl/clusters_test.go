@@ -36,8 +36,8 @@ func TestClient_ListClusters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListClusters returned %v", err)
 	}
-	if gotPath != "/api/v1/faces/clusters" || gotMethod != http.MethodGet {
-		t.Errorf("request = %s %s, want GET /api/v1/faces/clusters", gotMethod, gotPath)
+	if gotPath != "/api/v1/p/fam/faces/clusters" || gotMethod != http.MethodGet {
+		t.Errorf("request = %s %s, want GET /api/v1/p/fam/faces/clusters", gotMethod, gotPath)
 	}
 	// A zero offset is left out; only what was asked for travels.
 	if gotQuery != "limit=2" {
@@ -109,7 +109,7 @@ func TestClient_AssignCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AssignCluster returned %v", err)
 	}
-	if gotPath != "/api/v1/faces/clusters/clu01/assign" || gotMethod != http.MethodPost {
+	if gotPath != "/api/v1/p/fam/faces/clusters/clu01/assign" || gotMethod != http.MethodPost {
 		t.Errorf("request = %s %s, want the cluster assign endpoint", gotMethod, gotPath)
 	}
 	if gotBody["subject_name"] != "Cyril" {
@@ -148,7 +148,7 @@ func TestClient_RemoveClusterFace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveClusterFace returned %v", err)
 	}
-	if gotPath != "/api/v1/faces/clusters/clu01/remove-face" {
+	if gotPath != "/api/v1/p/fam/faces/clusters/clu01/remove-face" {
 		t.Errorf("path = %q, want the remove-face endpoint", gotPath)
 	}
 	if gotBody["photo_uid"] != "pht09" || gotBody["face_index"] != float64(2) {

@@ -30,7 +30,7 @@ func TestClient_ListSimilar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSimilar returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/similar" || gotQuery != "limit=10" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/similar" || gotQuery != "limit=10" {
 		t.Errorf("request = %s?%s, want the similar path with the limit", gotPath, gotQuery)
 	}
 	similar, err := DecodeSimilar(raw)

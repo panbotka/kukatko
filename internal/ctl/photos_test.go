@@ -271,7 +271,7 @@ func TestClient_GetPhoto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPhoto returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht 01" {
+	if gotPath != "/api/v1/p/fam/photos/pht 01" {
 		t.Errorf("path = %q, want the escaped uid", gotPath)
 	}
 	detail, err := DecodePhotoDetail(raw)
@@ -321,8 +321,8 @@ func TestClient_SearchPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SearchPhotos returned %v", err)
 	}
-	if gotPath != "/api/v1/search" {
-		t.Errorf("path = %q, want /api/v1/search", gotPath)
+	if gotPath != "/api/v1/p/fam/search" {
+		t.Errorf("path = %q, want /api/v1/p/fam/search", gotPath)
 	}
 	page, err := DecodePhotoPage(raw)
 	if err != nil {

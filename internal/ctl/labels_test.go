@@ -29,8 +29,8 @@ func TestClient_ListLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListLabels returned %v", err)
 	}
-	if gotPath != "/api/v1/labels" {
-		t.Errorf("path = %q, want /api/v1/labels", gotPath)
+	if gotPath != "/api/v1/p/fam/labels" {
+		t.Errorf("path = %q, want /api/v1/p/fam/labels", gotPath)
 	}
 	labels, err := DecodeLabels(raw)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestClient_GetLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLabel returned %v", err)
 	}
-	if gotPath != "/api/v1/labels/lbl 01" {
+	if gotPath != "/api/v1/p/fam/labels/lbl 01" {
 		t.Errorf("path = %q, want the escaped uid", gotPath)
 	}
 	label, err := DecodeLabel(raw)
@@ -150,7 +150,7 @@ func TestClient_AttachLabel(t *testing.T) {
 	if err := client.AttachLabel(t.Context(), "lbl01", "pht01", SourceAI, 20); err != nil {
 		t.Fatalf("AttachLabel returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/labels/lbl01/photos" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/labels/lbl01/photos" {
 		t.Errorf("request = %s %s, want POST on the label photos path", gotMethod, gotPath)
 	}
 	if gotBody["photo_uid"] != "pht01" || gotBody["source"] != SourceAI || gotBody["uncertainty"] != float64(20) {
@@ -321,7 +321,7 @@ func TestClient_DeleteLabel(t *testing.T) {
 	if err := client.DeleteLabel(t.Context(), "lbl01"); err != nil {
 		t.Fatalf("DeleteLabel returned %v", err)
 	}
-	if gotMethod != http.MethodDelete || gotPath != "/api/v1/labels/lbl01" {
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/p/fam/labels/lbl01" {
 		t.Errorf("request = %s %s, want DELETE on the label path", gotMethod, gotPath)
 	}
 	if err := client.DeleteLabel(t.Context(), ""); !errors.Is(err, ErrEmptyUID) {

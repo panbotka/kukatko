@@ -34,7 +34,7 @@ func TestClient_ListComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListComments returned %v", err)
 	}
-	if gotMethod != http.MethodGet || gotPath != "/api/v1/photos/pht01/comments" {
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/p/fam/photos/pht01/comments" {
 		t.Errorf("request = %s %s, want GET on the thread path", gotMethod, gotPath)
 	}
 	thread, err := DecodeComments(raw)
@@ -72,7 +72,7 @@ func TestClient_AlbumComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAlbumComments returned %v", err)
 	}
-	if gotMethod != http.MethodGet || gotPath != "/api/v1/albums/alb01/comments" {
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/p/fam/albums/alb01/comments" {
 		t.Errorf("request = %s %s, want GET on the album thread path", gotMethod, gotPath)
 	}
 	if thread, err := DecodeComments(raw); err != nil || len(thread) != 2 {
@@ -83,7 +83,7 @@ func TestClient_AlbumComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddAlbumComment returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/albums/alb01/comments" || gotBody["body"] != "Svatba byla v červnu." {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/albums/alb01/comments" || gotBody["body"] != "Svatba byla v červnu." {
 		t.Errorf("request = %s %s %v, want a trimmed POST on the album thread path", gotMethod, gotPath, gotBody)
 	}
 	comment, err := DecodeComment(raw)

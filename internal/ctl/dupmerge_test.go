@@ -76,7 +76,7 @@ func TestClient_MergeGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MergeGroup returned %v", err)
 	}
-	if gotPath != "/api/v1/duplicates/merge" {
+	if gotPath != "/api/v1/p/fam/duplicates/merge" {
 		t.Errorf("path = %q, want the merge endpoint", gotPath)
 	}
 	if gotBody.KeeperUID != "pht01" || len(gotBody.MemberUIDs) != 3 || !gotBody.DryRun {

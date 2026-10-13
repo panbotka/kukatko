@@ -10,6 +10,7 @@
 package ctl
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,9 @@ const (
 	EnvServer = "KUKATKO_SERVER"
 	// EnvToken overrides the active context's API token.
 	EnvToken = "KUKATKO_TOKEN" //nolint:gosec // The name of a variable, not a credential.
+	// EnvProject overrides the active context's project slug; the --project flag
+	// overrides it in turn.
+	EnvProject = "KUKATKO_PROJECT"
 )
 
 const (
@@ -48,21 +52,33 @@ var (
 	// server URL, so there is nothing to talk to.
 	ErrNoServer = errors.New(
 		"ctl: no server configured; set " + EnvServer +
-			" or run `kukatko ctl config set-context <name> --server <url>`")
+			" or run `kukatko ctl context set <name> --server <url>`")
 	// ErrServerRequired indicates a new context was declared without a server URL.
 	ErrServerRequired = errors.New("ctl: a new context needs --server")
 	// ErrContextNameRequired indicates an empty context name.
 	ErrContextNameRequired = errors.New("ctl: context name is required")
+	// ErrNoProject indicates a project-scoped command ran with no project from
+	// the --project flag, KUKATKO_PROJECT or the context. Its text is the whole
+	// message the operator sees, so it names both ways out.
+	ErrNoProject = errors.New("no project selected: run 'kukatko ctl projects use <slug>' or pass --project")
+	// ErrNoCurrentContext indicates a command that edits the current context ran
+	// while no context is current.
+	ErrNoCurrentContext = errors.New(
+		"ctl: no current context; create one with `kukatko ctl context set <name> --server <url>`")
 )
 
-// Context names one Kukátko server and the API token used to reach it, in the
-// style of a kubectl context. Server is the site root (for example
+// Context names one Kukátko server, the API token used to reach it and the
+// project (its slug) the project-scoped commands work in, in the style of a
+// kubectl context. Server is the site root (for example
 // https://kukatko.example.com), not the /api/v1 base path — the client appends
-// that itself.
+// that itself, and /p/<project> after it for a project-scoped call. One token
+// serves every project its owner is a member of, so two contexts may share a
+// server and a token and differ only in the project.
 type Context struct {
-	Name   string `yaml:"name"`
-	Server string `yaml:"server"`
-	Token  string `yaml:"token,omitempty"`
+	Name    string `yaml:"name"`
+	Server  string `yaml:"server"`
+	Token   string `yaml:"token,omitempty"`
+	Project string `yaml:"project,omitempty"`
 }
 
 // Config is the whole client-side context file: a list of named contexts and the
@@ -180,41 +196,53 @@ func writeAndClose(f *os.File, data []byte) error {
 	return nil
 }
 
-// Env carries the two environment overrides. An empty field means "not set" and
-// leaves the context's own value in place.
+// Env carries the three environment overrides. An empty field means "not set"
+// and leaves the context's own value in place.
 type Env struct {
-	Server string
-	Token  string
+	Server  string
+	Token   string
+	Project string
 }
 
-// EnvFromOS reads the KUKATKO_SERVER and KUKATKO_TOKEN overrides from the
-// process environment.
+// EnvFromOS reads the KUKATKO_SERVER, KUKATKO_TOKEN and KUKATKO_PROJECT
+// overrides from the process environment.
 func EnvFromOS() Env {
-	return Env{Server: os.Getenv(EnvServer), Token: os.Getenv(EnvToken)}
+	return Env{Server: os.Getenv(EnvServer), Token: os.Getenv(EnvToken), Project: os.Getenv(EnvProject)}
 }
 
-// Endpoint is the server and credential one invocation resolved to.
-// ContextName is empty when the endpoint came from the environment alone.
+// Selection is what the command line picked: a context by name (--context) and
+// a project by slug (--project). An empty field picks nothing.
+type Selection struct {
+	Context string
+	Project string
+}
+
+// Endpoint is the server, credential and project one invocation resolved to.
+// ContextName is empty when the endpoint came from the environment alone, and
+// Project is empty when nothing selected one.
 type Endpoint struct {
 	ContextName string
 	Server      string
 	Token       string
+	Project     string
 }
 
-// Resolve picks the endpoint for one invocation. contextName selects a context
+// Resolve picks the endpoint for one invocation. sel.Context selects a context
 // explicitly; when empty, the file's current context is used, and when that is
 // empty too, no context contributes anything. The environment then overrides the
-// server and the token independently, so KUKATKO_TOKEN alone can re-credential a
-// stored context.
+// server, the token and the project independently, so KUKATKO_TOKEN alone can
+// re-credential a stored context. The project's precedence is the --project
+// flag (sel.Project), then KUKATKO_PROJECT, then the context's own.
 //
 // It returns ErrContextNotFound when a named (or current) context is absent, and
 // ErrNoServer when nothing supplied a server URL. The returned Server has any
-// trailing slash trimmed.
-func Resolve(cfg *Config, contextName string, env Env) (Endpoint, error) {
+// trailing slash trimmed. A missing project is not an error here: only the
+// project-scoped commands need one, and they say so with ErrNoProject.
+func Resolve(cfg *Config, sel Selection, env Env) (Endpoint, error) {
 	if cfg == nil {
 		cfg = &Config{}
 	}
-	name := contextName
+	name := sel.Context
 	if name == "" {
 		name = cfg.CurrentContext
 	}
@@ -224,7 +252,7 @@ func Resolve(cfg *Config, contextName string, env Env) (Endpoint, error) {
 		if !ok {
 			return Endpoint{}, fmt.Errorf("%w: %q", ErrContextNotFound, name)
 		}
-		ep = Endpoint{ContextName: ctx.Name, Server: ctx.Server, Token: ctx.Token}
+		ep = Endpoint{ContextName: ctx.Name, Server: ctx.Server, Token: ctx.Token, Project: ctx.Project}
 	}
 	if env.Server != "" {
 		ep.Server = env.Server
@@ -232,6 +260,7 @@ func Resolve(cfg *Config, contextName string, env Env) (Endpoint, error) {
 	if env.Token != "" {
 		ep.Token = env.Token
 	}
+	ep.Project = cmp.Or(strings.TrimSpace(sel.Project), strings.TrimSpace(env.Project), ep.Project)
 	if ep.Server == "" {
 		return Endpoint{}, ErrNoServer
 	}

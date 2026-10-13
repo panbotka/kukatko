@@ -119,7 +119,7 @@ func TestProjectPatch_body(t *testing.T) {
 func TestClient_projectRoutes(t *testing.T) {
 	t.Parallel()
 	var method, path, body string
-	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+	client := instanceClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		method, path = r.Method, r.URL.Path
 		var buf bytes.Buffer
 		_, _ = buf.ReadFrom(r.Body)
@@ -165,7 +165,7 @@ func TestClient_projectRoutes(t *testing.T) {
 // by username or uid, and a miss is a typed error.
 func TestClient_resolve(t *testing.T) {
 	t.Parallel()
-	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+	client := instanceClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/users" {
 			_, _ = w.Write([]byte(accountsBody))
 			return
@@ -207,7 +207,7 @@ func TestErrorMessage_withMessage(t *testing.T) {
 func TestClient_rekeyRoutes(t *testing.T) {
 	t.Parallel()
 	var method, path string
-	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+	client := instanceClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		method, path = r.Method, r.URL.Path
 		_, _ = w.Write([]byte(`{}`))
 	})

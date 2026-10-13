@@ -3187,7 +3187,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   mounted in `serve` (`buildExpandAPI` in
   `cmd/kukatko/expand.go`, takes `mediaStore` for URL stamping)),
   `internal/mcpapi/`
-  (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at `POST /api/v1/mcp`;
+  (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at
+  `POST /api/v1/p/{project}/mcp` (and the transition alias `POST /api/v1/mcp`, the bootstrap project);
   `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Processing,Media,RequireAuth,PageSize,MaxPageSize})`
   + `RegisterRoutes`. **`Enabled:false` → the servers aren't built and the path answers a bare JSON 404**
   (`handleDisabled`), not a 403 — the caller learns the feature is absent, not that it exists and is being
@@ -3200,12 +3201,20 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   tool handlers), `JSONResponse:true` (tools don't stream) and `DisableLocalhostProtection:true`
   (the DNS-rebinding guard rejects a loopback+non-loopback `Host`, i.e. a reverse proxy; it protects unauthenticated
   local servers, this one requires a principal). **Auth: nothing new** — behind `RequireAuth` (the agent sends
-  `Bearer kkt_…`), the role is the **token owner's**. The boundary is **double**: `buildHandler` builds **two servers**
-  (read-only and write) and `getServer(*http.Request)` picks by `auth.UserFromContext(...).Role.CanWrite()`
-  → a viewer doesn't even see the write tools in `tools/list`; **and** every write handler calls `writerFromContext`
+  `Bearer kkt_…`), the role is the **token owner's** role in the URL's project. The boundary is **double**:
+  `getServer(*http.Request)` picks a server keyed by `serverKey{canWrite, instructions}` — `canWrite` from
+  `auth.ProjectRoleFromContext(...).CanWrite()`, `instructions` from `instructionsFor(name, slug, alias)`, the
+  general text plus a paragraph naming the request's project and, through the alias (`auth.APIBase(ctx) ==
+  auth.APIBasePath`), a final one-line deprecation note — built on first use and cached under a mutex
+  (`API.server`), so one pair per project → a viewer doesn't even see the write tools in `tools/list`; **and** every write handler calls `writerFromContext`
   (registration = UX, the check = the security boundary). The `withCaller` middleware assembles `caller{user, meta}`
   (`audit.FromRequest`) into the context, because a tool handler sees only `ctx`, not `*http.Request` — without a
-  principal **fail-closed 401** (carrying `auth.Challenge` like every other 401 under `/api/v1`).
+  principal **fail-closed 401**. Every 401 on the endpoint carries `resourceChallenge` (`challenge.go`):
+  `Bearer realm="<absolute URL of the endpoint called>"` — `resourceURL` = scheme (TLS or
+  `X-Forwarded-Proto`) + `Host` + `auth.APIBase(ctx)` + `/mcp`, quotes and backslashes dropped;
+  `withResourceChallenge` wraps `RequireAuth` so only the guard's own 401 passes the rewriting
+  `challengeWriter`, and a request it lets through reaches the transport with the original writer. The URL
+  rides in `realm`, not `resource_metadata`, because there is no OAuth to discover (docs/MCP.md).
   **Every tool carries a `Title` and annotations** (`annotations.go`): `readAnnotations` (readOnly),
   `additiveAnnotations` (`destructiveHint:false` — `create_album`/`create_label` only add a row, and MCP's
   default of `true` makes a client ask a human to approve "make an empty album"), `idempotentAnnotations`
@@ -7106,14 +7115,24 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (which describes the *server* and knows nothing about a remote endpoint); the only state it owns is the client
   file `~/.config/kukatko/ctl.yaml`. The motivation: cheaper in tokens than the MCP server — no tool schema
   is loaded into the model's context, just a short command and a narrow result. Hence the compact output.
-  - `config.go` — `Context{Name,Server,Token}` + `Config{CurrentContext,Contexts}` in the kubectl style.
+  - `config.go` — `Context{Name,Server,Token,Project}` + `Config{CurrentContext,Contexts}` in the kubectl style.
     `Load(path)` (a missing file = an empty config, not an error — running from env variables alone), `Save(path,cfg)`
     (atomically: a temp at 0600 → `Rename` → `Chmod` 0600, the directory 0700; it **tightens an existing
     world-readable file**, it never writes a token into one as it is). `DefaultConfigPath()` honours `XDG_CONFIG_HOME`.
-    `Resolve(cfg, contextName, env)` → `Endpoint`: it picks the context (by name → otherwise `current-context`),
-    then `KUKATKO_SERVER`/`KUKATKO_TOKEN` **override field by field**, so `KUKATKO_TOKEN` on its own
-    re-credentials the stored context. The errors `ErrContextNotFound`, `ErrNoServer`.
-  - `client.go` — `NewClient(server, token)` (validates an absolute http(s) URL → `ErrInvalidServerURL`),
+    `Resolve(cfg, Selection{Context,Project}, env)` → `Endpoint{ContextName,Server,Token,Project}`: it picks
+    the context (by name → otherwise `current-context`), then `KUKATKO_SERVER`/`KUKATKO_TOKEN` **override field
+    by field**, so `KUKATKO_TOKEN` on its own re-credentials the stored context; the project is the `--project`
+    flag (`Selection.Project`), else `KUKATKO_PROJECT` (`EnvProject`), else the context's (`cmp.Or`). A missing
+    project is not `Resolve`'s error — only the project-scoped commands need one. The errors
+    `ErrContextNotFound`, `ErrNoServer`, `ErrNoCurrentContext` (a command that edits the current context
+    while none is) and **`ErrNoProject`**, whose text is the exact message a project-scoped command fails with:
+    `no project selected: run 'kukatko ctl projects use <slug>' or pass --project`.
+  - `client.go` — `NewClient(server, token)` (validates an absolute http(s) URL → `ErrInvalidServerURL`);
+    `WithProject(slug)` returns a copy bound to a project, whose **every** path goes under
+    `/api/v1/p/<slug>` (escaped into its own segment) — `apiPath`, applied once in `newStreamRequest`, the
+    choke point of every request — while a client without one talks to the bare `/api/v1` (the instance-wide
+    routes: `/projects`, `/users`, `/auth/me`). Which client a command gets is decided in `cmd/kukatko/ctl.go`
+    (below);
     the internal `get(ctx, path, query)` and `send(ctx, method, path, body)` send
     `Authorization: Bearer <token>` and return the **raw** body (`json.RawMessage`), because `-o json`
     prints the server's bytes unchanged; `204 No Content` returns a `nil` body. Success is the whole `2xx` range —
@@ -7265,13 +7284,26 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `cmd/kukatko/ctl_projects.go` builds both trees; `changedInt64` keeps "flag not given" apart from 0.
     `errorMessage` (client.go) appends a refusal's `message` to its code (`invalid_slug: …`).
   - `members.go` — a project admin's `ctl members`: `ListMembers`/`AddMember`/`SetMemberRole`/
-    `ApproveMember`/`RemoveMember` under `/p/<slug>/members` (blank slug = `ErrNoProjectSlug`, blank
-    identifier = `ErrNoIdentifier`, both before any request), `ResolveMember` (username or uid over the
-    project's list, `ErrMemberNotFound`), `DecodeMembers`/`DecodeMember`, `WriteMembers`/`WriteMember`.
-    `cmd/kukatko/ctl_members.go` builds the tree with its own persistent `--project` (default `v`) until
-    contexts carry a project; `add` confirms neutrally, never claiming the account exists. `People`
-    (`participants.go`) reads the name directory at `/p/v/users`, since the unprefixed path is the
-    maintainer's account list.
+    `ApproveMember`/`RemoveMember` on `/members` of the client's project (a project-less client =
+    `ErrNoProject`, blank identifier = `ErrNoIdentifier`, both before any request), `ResolveMember` (username
+    or uid over the project's list, `ErrMemberNotFound`), `DecodeMembers`/`DecodeMember`,
+    `WriteMembers`/`WriteMember`. `add` confirms neutrally, never claiming the account exists. `People`
+    (`participants.go`) reads the name directory at `/users` of the client's project and refuses a
+    project-less client with `ErrNoProject`, since the unprefixed path is the maintainer's account list.
+  - **The project, in `cmd/kukatko/ctl.go`.** `--project` is a **persistent** flag of `ctl` (beside `-o`,
+    `--fields`, `--context`); no subcommand declares a local one, which would shadow it. Top-level trees
+    whose routes are instance-wide are wrapped in `markInstance` (an annotation: `context`, `projects`,
+    `users`); the root's `PersistentPreRunE` records `isInstanceCommand(cmd)` on the options, and
+    `ctlOptions.resolve` hands an instance command a project-less client and every other command a client
+    `WithProject(endpoint.Project)` — or fails with `ctl.ErrNoProject`, unwrapped, before any request.
+    `ctl_context.go` is the context tree (`context set|list|use|current`, alias `config` with the old
+    `set-context`/`use-context` names); `context set` reads the persistent `--project`
+    (`Flags().Changed`) and validates it with `project.ValidateSlug`. `ctl projects use <slug>` stores the
+    slug on the current context without a request; `ctl projects list` reads `Me` (`GET /auth/me`,
+    `projects.go`): a maintainer (`Me.IsMaintainer`) gets `GET /projects`, anybody else their memberships
+    (`DecodeMemberships`/`WriteMemberships`, `-o json` = the `projects` array as sent). `WriteEndpoint`
+    (`output.go`) renders `context current`; `WriteContexts` has a `PROJECT` column. `ctl photos edit
+    --dry-run` names `PATCH /api/v1/p/<slug>/photos/<uid>` (`<project>` when none is selected).
   - `savedsearch.go` — the per-user "smart albums": `ListSavedSearches`/`GetSavedSearch`/`CreateSavedSearch`/
     `UpdateSavedSearch`/`DeleteSavedSearch` + `DecodeSavedSearches`/`DecodeSavedSearch` and
     `WriteSavedSearches`/`WriteSavedSearch`. A fifth envelope, `{"saved_searches":[…]}`. **This is the one

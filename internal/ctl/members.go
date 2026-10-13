@@ -13,8 +13,6 @@ import (
 )
 
 var (
-	// ErrNoProjectSlug indicates a member command named no project.
-	ErrNoProjectSlug = errors.New("ctl: a project slug is required (--project)")
 	// ErrMemberNotFound indicates no member of the project has the username (or
 	// uid) a command named.
 	ErrMemberNotFound = errors.New("ctl: no such member of the project")
@@ -34,82 +32,83 @@ type Member struct {
 	HasPicture  bool       `json:"has_picture"`
 }
 
-// membersPath renders the path of the project slug's member routes, plus an
-// optional member uid.
-func membersPath(slug, userUID string) string {
-	path := "/p/" + url.PathEscape(slug) + "/members"
+// membersPath renders the path of the member routes, plus an optional member
+// uid. The client's project prefix names the project.
+func membersPath(userUID string) string {
+	path := "/members"
 	if userUID != "" {
 		path += "/" + url.PathEscape(userUID)
 	}
 	return path
 }
 
-// requireSlug returns ErrNoProjectSlug for a blank project slug.
-func requireSlug(slug string) error {
-	if strings.TrimSpace(slug) == "" {
-		return ErrNoProjectSlug
+// requireProject returns ErrNoProject for a client without a project: the
+// member routes exist only under a project prefix.
+func (c *Client) requireProject() error {
+	if c.project == "" {
+		return ErrNoProject
 	}
 	return nil
 }
 
-// ListMembers fetches GET /p/{slug}/members: the project's members, as raw JSON
+// ListMembers fetches GET /p/{project}/members: the project's members, as raw JSON
 // (a bare array). Decode it with DecodeMembers.
-func (c *Client) ListMembers(ctx context.Context, slug string) (json.RawMessage, error) {
-	if err := requireSlug(slug); err != nil {
+func (c *Client) ListMembers(ctx context.Context) (json.RawMessage, error) {
+	if err := c.requireProject(); err != nil {
 		return nil, err
 	}
-	return c.get(ctx, membersPath(slug, ""), nil)
+	return c.get(ctx, membersPath(""), nil)
 }
 
-// AddMember asks the project slug to add the account identifier names — its
+// AddMember asks the client's project to add the account identifier names — its
 // exact username or e-mail address — with role, approved at once. The server
 // answers the same whether the account was added, already was a member or
 // does not exist, so neither does this: the raw answer is {"status":"accepted"}.
-func (c *Client) AddMember(ctx context.Context, slug, identifier, role string) (json.RawMessage, error) {
-	if err := requireSlug(slug); err != nil {
+func (c *Client) AddMember(ctx context.Context, identifier, role string) (json.RawMessage, error) {
+	if err := c.requireProject(); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(identifier) == "" {
 		return nil, ErrNoIdentifier
 	}
 	body := map[string]string{"identifier": identifier, "role": role}
-	return c.send(ctx, http.MethodPost, membersPath(slug, ""), body)
+	return c.send(ctx, http.MethodPost, membersPath(""), body)
 }
 
-// SetMemberRole changes the role of the member userUID of the project slug and
+// SetMemberRole changes the role of the member userUID of the client's project and
 // returns the member as raw JSON.
-func (c *Client) SetMemberRole(ctx context.Context, slug, userUID, role string) (json.RawMessage, error) {
-	if err := requireSlug(slug); err != nil {
+func (c *Client) SetMemberRole(ctx context.Context, userUID, role string) (json.RawMessage, error) {
+	if err := c.requireProject(); err != nil {
 		return nil, err
 	}
 	if err := requireUID("member", userUID); err != nil {
 		return nil, err
 	}
-	return c.send(ctx, http.MethodPatch, membersPath(slug, userUID), map[string]string{"role": role})
+	return c.send(ctx, http.MethodPatch, membersPath(userUID), map[string]string{"role": role})
 }
 
-// ApproveMember approves the waiting member userUID of the project slug and
+// ApproveMember approves the waiting member userUID of the client's project and
 // returns the member as raw JSON.
-func (c *Client) ApproveMember(ctx context.Context, slug, userUID string) (json.RawMessage, error) {
-	if err := requireSlug(slug); err != nil {
+func (c *Client) ApproveMember(ctx context.Context, userUID string) (json.RawMessage, error) {
+	if err := c.requireProject(); err != nil {
 		return nil, err
 	}
 	if err := requireUID("member", userUID); err != nil {
 		return nil, err
 	}
-	return c.send(ctx, http.MethodPost, membersPath(slug, userUID)+"/approve", nil)
+	return c.send(ctx, http.MethodPost, membersPath(userUID)+"/approve", nil)
 }
 
-// RemoveMember removes the member userUID from the project slug; the account
+// RemoveMember removes the member userUID from the client's project; the account
 // itself stays.
-func (c *Client) RemoveMember(ctx context.Context, slug, userUID string) error {
-	if err := requireSlug(slug); err != nil {
+func (c *Client) RemoveMember(ctx context.Context, userUID string) error {
+	if err := c.requireProject(); err != nil {
 		return err
 	}
 	if err := requireUID("member", userUID); err != nil {
 		return err
 	}
-	if _, err := c.send(ctx, http.MethodDelete, membersPath(slug, userUID), nil); err != nil {
+	if _, err := c.send(ctx, http.MethodDelete, membersPath(userUID), nil); err != nil {
 		return err
 	}
 	return nil
@@ -117,8 +116,8 @@ func (c *Client) RemoveMember(ctx context.Context, slug, userUID string) error {
 
 // ResolveMember finds the member a command names by its username (or its uid)
 // in the project's member list. It returns ErrMemberNotFound when none matches.
-func (c *Client) ResolveMember(ctx context.Context, slug, ref string) (Member, error) {
-	raw, err := c.ListMembers(ctx, slug)
+func (c *Client) ResolveMember(ctx context.Context, ref string) (Member, error) {
+	raw, err := c.ListMembers(ctx)
 	if err != nil {
 		return Member{}, err
 	}
@@ -134,7 +133,7 @@ func (c *Client) ResolveMember(ctx context.Context, slug, ref string) (Member, e
 	return Member{}, fmt.Errorf("%w: %q", ErrMemberNotFound, ref)
 }
 
-// DecodeMembers decodes the bare array of GET /p/{slug}/members.
+// DecodeMembers decodes the bare array of GET /p/{project}/members.
 func DecodeMembers(raw json.RawMessage) ([]Member, error) {
 	var list []Member
 	if err := json.Unmarshal(raw, &list); err != nil {

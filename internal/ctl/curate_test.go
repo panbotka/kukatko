@@ -25,8 +25,8 @@ func TestClient_ListFavorites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListFavorites returned %v", err)
 	}
-	if gotPath != "/api/v1/favorites" {
-		t.Errorf("path = %q, want /api/v1/favorites", gotPath)
+	if gotPath != "/api/v1/p/fam/favorites" {
+		t.Errorf("path = %q, want /api/v1/p/fam/favorites", gotPath)
 	}
 	if gotQuery.Get("limit") != "10" || gotQuery.Get("taken_after") == "" {
 		t.Errorf("query = %v, want the paging and the year range", gotQuery)
@@ -94,7 +94,7 @@ func TestClient_Favorite(t *testing.T) {
 			if err := tt.call(client); err != nil {
 				t.Fatalf("favorite toggle returned %v", err)
 			}
-			if gotMethod != tt.wantMethod || gotPath != "/api/v1/photos/pht 01/favorite" {
+			if gotMethod != tt.wantMethod || gotPath != "/api/v1/p/fam/photos/pht 01/favorite" {
 				t.Errorf("request = %s %s, want %s on the escaped favorite path",
 					gotMethod, gotPath, tt.wantMethod)
 			}
@@ -154,7 +154,7 @@ func TestClient_SetRating(t *testing.T) {
 			if err := client.SetRating(t.Context(), "pht01", tt.rating, tt.flag); err != nil {
 				t.Fatalf("SetRating returned %v", err)
 			}
-			if gotMethod != http.MethodPut || gotPath != "/api/v1/photos/pht01/rating" {
+			if gotMethod != http.MethodPut || gotPath != "/api/v1/p/fam/photos/pht01/rating" {
 				t.Errorf("request = %s %s, want PUT on the rating path", gotMethod, gotPath)
 			}
 			for _, key := range tt.wantKeys {
@@ -211,7 +211,7 @@ func TestClient_ClearRating(t *testing.T) {
 	if err := client.ClearRating(t.Context(), "pht01"); err != nil {
 		t.Fatalf("ClearRating returned %v", err)
 	}
-	if gotMethod != http.MethodDelete || gotPath != "/api/v1/photos/pht01/rating" {
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/p/fam/photos/pht01/rating" {
 		t.Errorf("request = %s %s, want DELETE on the rating path", gotMethod, gotPath)
 	}
 	if gotLength > 0 {

@@ -1,39 +1,104 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/panbotka/kukatko/internal/ctl"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
-// newCtlProjectsCmd builds the "ctl projects" tree: the system administrator's
-// management of the instance's projects (internal/projectapi). Every command
-// needs a maintainer's token; a project is named by its slug.
+// newCtlProjectsCmd builds the "ctl projects" tree: choosing the project the
+// catalogue commands work in ("use", "list" — any account), and the system
+// administrator's management of the instance's projects (internal/projectapi),
+// whose commands need a maintainer's token. A project is named by its slug. The
+// tree is instance-level: it never needs a project selected.
 func newCtlProjectsCmd(opts *ctlOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "projects",
-		Short: "Manage the instance's projects (system administrator)",
+		Short: "Choose the project to work in; manage the instance's projects (system administrator)",
 	}
-	cmd.AddCommand(newCtlProjectsListCmd(opts), newCtlProjectsGetCmd(opts), newCtlProjectsCreateCmd(opts),
+	cmd.AddCommand(newCtlProjectsUseCmd(opts), newCtlProjectsListCmd(opts), newCtlProjectsGetCmd(opts),
+		newCtlProjectsCreateCmd(opts),
 		newCtlProjectsUpdateCmd(opts), newCtlProjectsActiveCmd(opts, false), newCtlProjectsActiveCmd(opts, true),
 		newCtlProjectsAddMemberCmd(opts), newCtlProjectsRekeyCmd(opts))
 	return cmd
 }
 
-// newCtlProjectsListCmd builds "ctl projects list".
+// newCtlProjectsUseCmd builds "ctl projects use", which stores the project on
+// the current context (or the one --context names). It sends no request: the
+// slug is checked for its form only, and a project the token cannot enter
+// answers 404 on the first command that uses it.
+func newCtlProjectsUseCmd(opts *ctlOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "use <slug>",
+		Short: "Make <slug> the project of the current context",
+		Long: "Store the project the catalogue commands work in on the current context (or\n" +
+			"the one --context names). --project and " + ctl.EnvProject + " still override it for\n" +
+			"one invocation. `kukatko ctl projects list` shows the projects you can enter.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return useProject(cmd, opts, strings.TrimSpace(args[0]))
+		},
+	}
+}
+
+// useProject sets slug as the project of the selected context and saves the
+// file, warning when KUKATKO_PROJECT would override it anyway.
+func useProject(cmd *cobra.Command, opts *ctlOptions, slug string) error {
+	if err := project.ValidateSlug(slug); err != nil {
+		return fmt.Errorf("selecting the project: %w", err)
+	}
+	cfg, path, err := opts.load()
+	if err != nil {
+		return err
+	}
+	name := cmp.Or(opts.contextName, cfg.CurrentContext)
+	if name == "" {
+		return ctl.ErrNoCurrentContext
+	}
+	entry, ok := cfg.Find(name)
+	if !ok {
+		return fmt.Errorf("%w: %q", ctl.ErrContextNotFound, name)
+	}
+	entry.Project = slug
+	cfg.Set(entry)
+	if err := ctl.Save(path, cfg); err != nil {
+		return fmt.Errorf("saving the ctl config: %w", err)
+	}
+	cmd.Printf("context %q now works in project %q\n", name, slug)
+	if env := strings.TrimSpace(os.Getenv(ctl.EnvProject)); env != "" && env != slug {
+		cmd.Printf("note: %s=%s overrides it while it is set\n", ctl.EnvProject, env)
+	}
+	return nil
+}
+
+// newCtlProjectsListCmd builds "ctl projects list": every project of the
+// instance for a system administrator, the caller's own memberships (from
+// GET /auth/me) for anybody else — whose token the full list would refuse.
 func newCtlProjectsListCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List every project with its members, photos, originals and limits",
+		Short: "List the projects you can work in (every project, with usage, for a system administrator)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, out, err := opts.resolve()
 			if err != nil {
 				return err
+			}
+			me, err := client.Me(cmd.Context())
+			if err != nil {
+				return fmt.Errorf("reading your account: %w", err)
+			}
+			if !me.IsMaintainer() {
+				return renderRaw(cmd.OutOrStdout(), out, me.Projects, "project list",
+					ctl.DecodeMemberships, ctl.WriteMemberships)
 			}
 			raw, err := client.ListProjects(cmd.Context())
 			if err != nil {

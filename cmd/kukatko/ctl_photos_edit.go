@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -214,7 +215,7 @@ func newCtlPhotosEditCmd(opts *ctlOptions) *cobra.Command {
 				return fmt.Errorf("checking the edit: %w", err)
 			}
 			if dryRun {
-				return printEditBody(cmd, args[0], edit)
+				return printEditBody(cmd, opts, args[0], edit)
 			}
 			client, out, err := opts.resolve()
 			if err != nil {
@@ -235,13 +236,18 @@ func newCtlPhotosEditCmd(opts *ctlOptions) *cobra.Command {
 }
 
 // printEditBody writes what --dry-run promises: the exact JSON body the command
-// would PATCH, and the photo it would go to. Nothing is contacted, so this works
-// without a configured context too.
-func printEditBody(cmd *cobra.Command, uid string, edit *ctl.PhotoEdit) error {
+// would PATCH, and the photo it would go to — in the selected project, or under
+// a "<project>" placeholder when none is selected. Nothing is contacted, so this
+// works without a configured context too.
+func printEditBody(cmd *cobra.Command, opts *ctlOptions, uid string, edit *ctl.PhotoEdit) error {
 	body, err := edit.Body()
 	if err != nil {
 		return fmt.Errorf("rendering the edit: %w", err)
 	}
-	cmd.Printf("PATCH /api/v1/photos/%s\n%s\n", uid, body)
+	slug := "<project>"
+	if endpoint, err := opts.endpoint(); err == nil && endpoint.Project != "" {
+		slug = url.PathEscape(endpoint.Project)
+	}
+	cmd.Printf("PATCH /api/v1/p/%s/photos/%s\n%s\n", slug, uid, body)
 	return nil
 }

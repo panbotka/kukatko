@@ -47,7 +47,7 @@ func (e *UnauthorizedError) Error() string {
 	return "authentication failed (HTTP 401) at " + e.Server + ": " +
 		"the API token is missing, expired, or revoked.\n" +
 		"Create a new one (POST " + apiBasePath + "/auth/tokens while logged in), then store it:\n" +
-		"    kukatko ctl config set-context <name> --server " + e.Server + " --token-stdin\n" +
+		"    kukatko ctl context set <name> --server " + e.Server + " --token-stdin\n" +
 		"or export " + EnvToken + " for a one-off command."
 }
 
@@ -84,10 +84,19 @@ func (e *StatusError) Error() string {
 
 // Client talks to one Kukátko server's /api/v1 with a bearer token. The zero
 // value is unusable; build one with NewClient.
+//
+// A client built for a project (WithProject) sends every request under that
+// project's prefix, /api/v1/p/<slug>/…; one without a project sends them to the
+// bare /api/v1/…, which is where the instance-wide routes (/projects, /users,
+// /auth/…) live. Which kind a command gets is the command's decision: the
+// project-scoped ones refuse to start without a project (ErrNoProject).
 type Client struct {
 	server string
 	token  string
-	httpc  *http.Client
+	// project is the slug of the project every path is prefixed with, or ""
+	// for the instance-wide routes.
+	project string
+	httpc   *http.Client
 	// stream is the client for the media routes, which have no timeout: a
 	// hundred-megabyte original is slow on purpose, and only the caller's context
 	// should be able to end its download. It shares nothing with httpc but the
@@ -119,6 +128,32 @@ func NewClient(server, token string) (*Client, error) {
 // Server returns the server root this client was built for.
 func (c *Client) Server() string {
 	return c.server
+}
+
+// WithProject returns a copy of c whose every request goes to the project-scoped
+// API of the project slug, /api/v1/p/<slug>/…. An empty slug yields a client for
+// the instance-wide routes again. The copy shares c's HTTP clients and so its
+// connection pool.
+func (c *Client) WithProject(slug string) *Client {
+	scoped := *c
+	scoped.project = strings.TrimSpace(slug)
+	return &scoped
+}
+
+// Project returns the slug of the project this client addresses, or "" for a
+// client of the instance-wide routes.
+func (c *Client) Project() string {
+	return c.project
+}
+
+// apiPath returns the path below the server root of the API route path: the
+// project prefix /api/v1/p/<slug> when the client has a project, the bare
+// /api/v1 otherwise. The slug is path-escaped, so it can never leave its segment.
+func (c *Client) apiPath(path string) string {
+	if c.project == "" {
+		return apiBasePath + path
+	}
+	return apiBasePath + "/p/" + url.PathEscape(c.project) + path
 }
 
 // get issues an authenticated GET against apiBasePath+path and returns the raw
@@ -206,7 +241,7 @@ func (c *Client) newRequest(
 func (c *Client) newStreamRequest(
 	ctx context.Context, method, path string, query url.Values, contentType string, payload io.Reader,
 ) (*http.Request, error) {
-	endpoint := c.server + apiBasePath + path
+	endpoint := c.server + c.apiPath(path)
 	if len(query) > 0 {
 		endpoint += "?" + query.Encode()
 	}

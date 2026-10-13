@@ -39,8 +39,8 @@ func TestCtlAlbums_listAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("albums list returned %v", err)
 	}
-	if gotPath != "/api/v1/albums" {
-		t.Errorf("path = %q, want /api/v1/albums", gotPath)
+	if gotPath != "/api/v1/p/fam/albums" {
+		t.Errorf("path = %q, want /api/v1/p/fam/albums", gotPath)
 	}
 	for _, want := range []string{"UID", "TITLE", "PHOTOS", "alb01", "Trip", "12", "moment"} {
 		if !strings.Contains(out, want) {
@@ -60,7 +60,7 @@ func TestCtlAlbums_listAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("albums get returned %v", err)
 	}
-	if gotPath != "/api/v1/albums/alb01" {
+	if gotPath != "/api/v1/p/fam/albums/alb01" {
 		t.Errorf("path = %q, want the detail path", gotPath)
 	}
 	for _, want := range []string{"UID", "alb01", "DESCRIPTION", "Summer", "PRIVATE", "true"} {
@@ -102,8 +102,8 @@ func TestCtlLabels_listAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("labels list returned %v", err)
 	}
-	if gotPath != "/api/v1/labels" {
-		t.Errorf("path = %q, want /api/v1/labels", gotPath)
+	if gotPath != "/api/v1/p/fam/labels" {
+		t.Errorf("path = %q, want /api/v1/p/fam/labels", gotPath)
 	}
 	for _, want := range []string{"UID", "NAME", "PRIORITY", "PHOTOS", "lbl01", "lake", "42"} {
 		if !strings.Contains(out, want) {
@@ -115,7 +115,7 @@ func TestCtlLabels_listAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("labels get returned %v", err)
 	}
-	if gotPath != "/api/v1/labels/lbl01" {
+	if gotPath != "/api/v1/p/fam/labels/lbl01" {
 		t.Errorf("path = %q, want the detail path", gotPath)
 	}
 	for _, want := range []string{"UID", "lbl01", "SLUG", "lake", "PRIORITY", "10"} {
@@ -157,7 +157,7 @@ func TestCtlSubjects_listGetAndPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subjects get returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01" {
+	if gotPath != "/api/v1/p/fam/subjects/sub01" {
 		t.Errorf("path = %q, want the detail path", gotPath)
 	}
 	if !strings.Contains(out, "NOTES") || !strings.Contains(out, "sister") {
@@ -168,7 +168,7 @@ func TestCtlSubjects_listGetAndPhotos(t *testing.T) {
 	if err != nil {
 		t.Fatalf("subjects photos returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01/photos" || !strings.Contains(gotQuery, "limit=2") {
+	if gotPath != "/api/v1/p/fam/subjects/sub01/photos" || !strings.Contains(gotQuery, "limit=2") {
 		t.Errorf("request = %s?%s, want the paged gallery path", gotPath, gotQuery)
 	}
 	if !strings.Contains(out, "pht01") || !strings.Contains(out, "2 of 42 photos") {
@@ -193,8 +193,8 @@ func TestCtlFavorites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("favorites list returned %v", err)
 	}
-	if gotPath != "/api/v1/favorites" {
-		t.Errorf("path = %q, want /api/v1/favorites", gotPath)
+	if gotPath != "/api/v1/p/fam/favorites" {
+		t.Errorf("path = %q, want /api/v1/p/fam/favorites", gotPath)
 	}
 	if !strings.Contains(out, "pht01") {
 		t.Errorf("favorites list does not render the photo page:\n%s", out)
@@ -204,7 +204,7 @@ func TestCtlFavorites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("favorites add returned %v", err)
 	}
-	if gotMethod != http.MethodPut || gotPath != "/api/v1/photos/pht01/favorite" {
+	if gotMethod != http.MethodPut || gotPath != "/api/v1/p/fam/photos/pht01/favorite" {
 		t.Errorf("request = %s %s, want PUT on the favorite path", gotMethod, gotPath)
 	}
 	if out != "photo pht01 favorited\n" {
@@ -298,7 +298,7 @@ func TestCtlLabelsAttach(t *testing.T) {
 	if err != nil {
 		t.Fatalf("labels attach returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/labels/lbl01/photos" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/labels/lbl01/photos" {
 		t.Errorf("request = %s %s, want POST on the label photos path", gotMethod, gotPath)
 	}
 	if gotBody["photo_uid"] != "pht01" {
@@ -607,7 +607,7 @@ func TestCtlTasksLedger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tasks ledger returned %v", err)
 	}
-	if gotPath != "/api/v1/photos" || !strings.Contains(gotQuery, "task=tk1") {
+	if gotPath != "/api/v1/p/fam/photos" || !strings.Contains(gotQuery, "task=tk1") {
 		t.Errorf("ledger read %s?%s, want the task-scoped photo listing", gotPath, gotQuery)
 	}
 	for _, want := range []string{"TAKEN", "LAST COMMENT", "pht01", "1970s", "manual", "Odhad podle uniformy.",
@@ -671,7 +671,7 @@ func TestCtlUploadLinks(t *testing.T) {
 		"upload-links", "restore-code", "ul1", "Ab3dEf7h"); err != nil {
 		t.Errorf("restore-code returned %v", err)
 	}
-	want := []string{"/api/v1/upload-links/ul1/new-code", "/api/v1/upload-links/ul1/restore-code"}
+	want := []string{"/api/v1/p/fam/upload-links/ul1/new-code", "/api/v1/p/fam/upload-links/ul1/restore-code"}
 	if strings.Join(posts, ",") != strings.Join(want, ",") {
 		t.Errorf("posts = %v, want %v", posts, want)
 	}

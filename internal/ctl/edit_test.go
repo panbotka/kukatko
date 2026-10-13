@@ -179,7 +179,7 @@ func TestClient_EditPhoto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EditPhoto returned %v", err)
 	}
-	if gotMethod != http.MethodPatch || gotPath != "/api/v1/photos/pht01" {
+	if gotMethod != http.MethodPatch || gotPath != "/api/v1/p/fam/photos/pht01" {
 		t.Errorf("request = %s %s, want PATCH on the photo", gotMethod, gotPath)
 	}
 	if gotQuery != "people=true" {

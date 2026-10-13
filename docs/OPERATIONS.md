@@ -708,25 +708,59 @@ contexts:
   - name: prod
     server: https://kukatko.example.com   # the web root, WITHOUT /api/v1 (the client appends it)
     token: kkt_ab12_…                     # the token in plaintext; the file is always 0600
+    project: v                            # the slug the catalogue commands work in (/api/v1/p/v/…)
 ```
 
 The file is written **atomically and always with mode `0600`** (the directory `0700`); an existing
 world-readable file is tightened before writing. **The token is never printed anywhere** — not to the
-log, not to an error message, not to `ctl config list`.
+log, not to an error message, not to `ctl context list`.
+
+The group is `ctl context`; `ctl config` (its old name) is an alias, and so are the old subcommand
+names (`set-context`, `use-context`), so existing scripts keep working.
 
 | Command | Meaning |
 | --- | --- |
-| `ctl config set-context <name> --server <url> [--token <t> \| --token-stdin] [--current]` | creates/updates a context; the first one created becomes current. An omitted field is preserved (changing the URL does not clear the token). |
-| `ctl config list` (alias `get-contexts`) | lists the contexts; for the token only `stored`/`not set` |
-| `ctl config use-context <name>` (alias `use`) | switches the current context |
+| `ctl context set [<name>] [--server <url>] [--token <t> \| --token-stdin] [--project <slug>] [--current]` (alias `set-context`) | creates/updates a context — the **current** one when no name is given; the first one created becomes current. An omitted field is preserved (changing the URL keeps the token and the project). `--project ""` clears the project; a malformed slug is refused before saving |
+| `ctl context list` (alias `get-contexts`) | lists the contexts; for the token only `stored`/`not set`, plus the `PROJECT` column |
+| `ctl context use <name>` (alias `use-context`) | switches the current context |
+| `ctl context current` | what the next command would use — context, server, token `set`/`not set`, project — **after** `--project` and the `KUKATKO_*` overrides |
 
 `--token` is visible in `ps` to the whole machine — **prefer `--token-stdin`**:
-`printf '%s' "$TOKEN" | kukatkoctl config set-context prod --server https://… --token-stdin`.
+`printf '%s' "$TOKEN" | kukatkoctl context set prod --server https://… --token-stdin --project v`.
 
-**Env overrides the active context, field by field:** `KUKATKO_SERVER` and `KUKATKO_TOKEN`.
-So `KUKATKO_TOKEN` alone re-credentials the stored context without touching the file.
-With no file and no context, the two variables are enough. The `--context <name>` flag selects a context
+**Env overrides the active context, field by field:** `KUKATKO_SERVER`, `KUKATKO_TOKEN` and
+`KUKATKO_PROJECT`. So `KUKATKO_TOKEN` alone re-credentials the stored context without touching the file.
+With no file and no context, the variables are enough. The `--context <name>` flag selects a context
 other than the current one, `--ctl-config <path>` a different file.
+
+#### The project
+
+Every catalogue command works in **one project** and sends its requests under that project's prefix,
+`/api/v1/p/<slug>/…` (see [`API.md`](API.md) → *Project prefix*). The project is picked, first match wins:
+
+1. **`--project <slug>`** — a **persistent** flag of `ctl`, so it goes before or after the subcommand
+   (`kukatkoctl --project klub photos list` == `kukatkoctl photos list --project klub`). No subcommand may
+   declare a local `--project` (or `--output`): it would shadow the persistent one on that command.
+2. **`KUKATKO_PROJECT`**.
+3. **The context's `project`** — set with `ctl projects use <slug>` or `ctl context set --project <slug>`.
+
+A project-scoped command with none of the three fails **before any request** with exactly
+`no project selected: run 'kukatko ctl projects use <slug>' or pass --project`.
+
+**Instance-level commands ignore the project:** `ctl context`, `ctl projects` and `ctl users` talk to the
+bare `/api/v1` whatever is selected (they are marked so in `cmd/kukatko/ctl.go`, `markInstance`; every
+other top-level command is project-scoped). There is no `ctl auth`/`jobs`/`system`/`backup`/`maintenance`
+— those are server-side subcommands — but they would be instance-level too.
+
+**One token, several projects.** An API token belongs to its owner, not to a project: it works in every
+project the owner is a member of (a maintainer's in every project). Two contexts may share a server and a
+token and differ only in `project`; for a one-off, `--project` is enough. A project the token cannot enter
+answers `404`, like a missing one.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl projects use <slug>` | stores `<slug>` on the current context (or the `--context` one); no request is sent, the slug is checked for its form only. Warns when `KUKATKO_PROJECT` would override it |
+| `ctl projects list` | **your** projects: a maintainer gets every project of the instance (`GET /projects`, see below); anybody else their memberships from `GET /auth/me` — slug, name, role, `active`/`pending`/`inactive`, uid (`-o json` prints the `projects` array as the server sent it) |
 
 #### Output and exit codes
 
@@ -1438,15 +1472,16 @@ Creating, extending and revoking stay in the web UI; the CLI covers handing a li
 
 #### `ctl projects` / `ctl users` — the system administrator
 
-The instance's projects and accounts (`internal/projectapi`, instance-level routes), **a maintainer's
-token** — anybody else gets the CLI's 403. A project is named by its **slug** (its uid works too) and an
+The instance's projects and accounts (`internal/projectapi`, instance-level routes — the selected project
+is ignored), **a maintainer's token** — anybody else gets the CLI's 403 (except `projects list` and
+`projects use`, which any account may run). A project is named by its **slug** (its uid works too) and an
 account by its **username** (or uid); the CLI resolves either through the list first, so a typo is
 "no such project/account" before anything is sent. A refusal prints the server's code and rule, e.g.
 `invalid_slug: "Bad" must be 1–40 lowercase letters…`.
 
 | Command | Meaning |
 | --- | --- |
-| `ctl projects list` | `GET /projects` — slug, name, state, members, photos, originals, `MAX FILE`, `QUOTA` (`unlimited` for none), uid |
+| `ctl projects list` | for a maintainer `GET /projects` — slug, name, state, members, photos, originals, `MAX FILE`, `QUOTA` (`unlimited` for none), uid (a non-maintainer gets their memberships, see [the project](#the-project)) |
 | `ctl projects get <slug>` | `GET /projects/{uid}` — the detail incl. the storage prefix (`(storage root)` when empty) |
 | `ctl projects create --slug <slug> --name <name> [--description <text>] [--max-file-bytes N] [--max-total-bytes N]` | `POST /projects`; you become its first admin. The slug is immutable; a limit left out is no limit (an explicit `0` is sent and refused by the server) |
 | `ctl projects update <slug> [--name] [--description] [--max-file-bytes N] [--max-total-bytes N] [--clear-max-file-bytes] [--clear-max-total-bytes]` | `PATCH /projects/{uid}` with only the flags given (a clear flag sends `null`); no flag at all is refused before any request |
@@ -1457,20 +1492,20 @@ account by its **username** (or uid); the CLI resolves either through the list f
 | `ctl users promote <username>` / `demote <username>` | `PATCH /users/{uid}` `{"instance_role":"maintainer"}` / `"user"`; demoting yourself is the server's `self` refusal |
 
 `ctl users` used to be an alias of `ctl people`; the alias is gone — `ctl people` is the name directory
-(`GET /p/v/users`, the bootstrap project's, until contexts carry a project).
+of the selected project (`GET /p/<slug>/users`).
 
 #### `ctl members` — a project admin
 
 The members of **one project** (`internal/memberapi`, `/api/v1/p/<slug>/members`), with the token of that
-project's **admin** (or a maintainer's). The project is `--project <slug>`, default `v` (the bootstrap
-project), until ctl contexts carry a project. A member is named by its **username** (or uid), resolved
+project's **admin** (or a maintainer's). The project is the selected one ([the project](#the-project));
+there is no default — without one the command fails before any request. A member is named by its **username** (or uid), resolved
 through the project's member list first, so a non-member is "no such member of the project" before
 anything is sent. Refusals print the server's code: `self` (your own role, or leaving as the only admin),
 `last_admin`, `invalid_role`.
 
 | Command | Meaning |
 | --- | --- |
-| `ctl members list [--project <slug>]` | `GET /members` — username, name, role, `approved`/`pending`, last login, uid |
+| `ctl members list` | `GET /members` — username, name, role, `approved`/`pending`, last login, uid |
 | `ctl members add <username-or-email> --role <role>` | `POST /members` `{identifier, role}` — an **exact** username or e-mail (case-insensitive), approved at once. The server answers the same whether the account was added, already was a member or does not exist, so the CLI only says *accepted: if … names an account, it is a member*; check `members list` |
 | `ctl members role <username> <role>` | `PATCH /members/{uid}` — `viewer`, `curator`, `editor` or `admin`; never your own |
 | `ctl members approve <username>` | `POST /members/{uid}/approve` — lets a waiting member in and mails them the project's link |
@@ -1592,7 +1627,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | `ctl tasks participants <uid>` | `GET /tasks/{uid}/participants` |
 | `ctl tasks assign <uid> <user-uid>` | `POST /tasks/{uid}/participants` — ask a particular person |
 | `ctl tasks unassign <uid> <user-uid>` | `DELETE /tasks/{uid}/participants/{user}` |
-| `ctl people` | `GET /p/v/users` (the name directory of the bootstrap project) — the uids the assign commands take |
+| `ctl people` | `GET /p/<slug>/users` (the name directory of the selected project) — the uids the assign commands take |
 
 **`ctl tasks list --waiting` is the command the loop turns on.** It lists the tasks whose move is the
 token's: open, the account is on them, and somebody else acted last (`waiting_on_me`). A question a person

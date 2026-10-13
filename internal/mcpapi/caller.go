@@ -70,7 +70,7 @@ func (a *API) withCaller(next http.Handler) http.Handler {
 			// The challenge belongs on any 401 an MCP client can meet, including this
 			// unreachable one: a client that finds it missing starts guessing OAuth
 			// metadata instead of reporting that it needs a token.
-			w.Header().Set("WWW-Authenticate", auth.Challenge)
+			w.Header().Set("WWW-Authenticate", resourceChallenge(r))
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}

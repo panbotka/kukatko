@@ -42,6 +42,8 @@ func projectServer(t *testing.T) (string, func() []projectRequest) {
 		seen = append(seen, projectRequest{r.Method, r.URL.Path, string(body)})
 		mu.Unlock()
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/auth/me":
+			_, _ = w.Write([]byte(`{"user":{"uid":"us1"},"instance_role":"maintainer","projects":[]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/projects":
 			_, _ = w.Write([]byte(projectsListBody))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/users":

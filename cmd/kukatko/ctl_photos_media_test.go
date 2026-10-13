@@ -25,7 +25,7 @@ func TestCtlPhotosImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos image returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/thumb/fit_720" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/thumb/fit_720" {
 		t.Errorf("path = %q, want the default fit_720 thumbnail", gotPath)
 	}
 	if strings.TrimSpace(out) != dest {
@@ -52,7 +52,7 @@ func TestCtlPhotosImage_original(t *testing.T) {
 		"--size", "original", "--output-file", dest); err != nil {
 		t.Fatalf("photos image --size original returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/download" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/download" {
 		t.Errorf("path = %q, want the download route", gotPath)
 	}
 }

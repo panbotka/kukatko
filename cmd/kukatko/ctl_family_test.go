@@ -75,7 +75,7 @@ func TestCtlFamilyRelations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("family relations returned %v", err)
 	}
-	if gotPath != "/api/v1/subjects/sub01/relations" {
+	if gotPath != "/api/v1/p/fam/subjects/sub01/relations" {
 		t.Errorf("path = %q, want the relations endpoint", gotPath)
 	}
 	for _, want := range []string{
@@ -128,8 +128,8 @@ func TestCtlFamilyAdd_byUID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("family add returned %v", err)
 	}
-	if len(seen) != 2 || seen[0].path != "/api/v1/subjects/sub01" ||
-		seen[1].path != "/api/v1/subjects/sub01/relations" {
+	if len(seen) != 2 || seen[0].path != "/api/v1/p/fam/subjects/sub01" ||
+		seen[1].path != "/api/v1/p/fam/subjects/sub01/relations" {
 		t.Fatalf("requests = %+v, want the subject named, then the relation recorded", seen)
 	}
 	if seen[1].body["role"] != "parent" || seen[1].body["subject_uid"] != "sub02" ||
@@ -152,7 +152,7 @@ func TestCtlFamilyAdd_byExistingName(t *testing.T) {
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, recordRequest(r))
 		switch {
-		case r.URL.Path == "/api/v1/subjects":
+		case r.URL.Path == "/api/v1/p/fam/subjects":
 			w.Write([]byte(ctlSubjectListBody))
 		case r.Method == http.MethodGet:
 			w.Write([]byte(ctlAnnaBody))
@@ -186,7 +186,7 @@ func TestCtlFamilyAdd_byNewName(t *testing.T) {
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, recordRequest(r))
 		switch {
-		case r.URL.Path == "/api/v1/subjects":
+		case r.URL.Path == "/api/v1/p/fam/subjects":
 			w.Write([]byte(ctlSubjectListBody))
 		case r.Method == http.MethodGet:
 			w.Write([]byte(ctlAnnaBody))
@@ -410,9 +410,9 @@ func TestCtlFamilyEdit(t *testing.T) {
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, recordRequest(r))
 		switch r.URL.Path {
-		case "/api/v1/subjects/sub01":
+		case "/api/v1/p/fam/subjects/sub01":
 			w.Write([]byte(ctlAnnaBody))
-		case "/api/v1/subjects/sub04":
+		case "/api/v1/p/fam/subjects/sub04":
 			w.Write([]byte(`{"uid":"sub04","slug":"eva-necasova","name":"Eva Nečasová","type":"person"}`))
 		default:
 			w.Write([]byte(`{"uid":"fam02","partner_a_uid":"sub01","partner_b_uid":"sub04",
@@ -426,7 +426,7 @@ func TestCtlFamilyEdit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("family edit returned %v", err)
 	}
-	if seen[0].method != http.MethodPatch || seen[0].path != "/api/v1/families/fam02" {
+	if seen[0].method != http.MethodPatch || seen[0].path != "/api/v1/p/fam/families/fam02" {
 		t.Fatalf("requests = %+v, want the family patched first", seen)
 	}
 	if seen[0].body["kind"] != "marriage" || seen[0].body["from_year"] != float64(1972) {

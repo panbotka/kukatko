@@ -31,7 +31,7 @@ func TestClient_ListUploadLinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUploadLinks returned %v", err)
 	}
-	if gotPath != "/api/v1/upload-links" {
+	if gotPath != "/api/v1/p/fam/upload-links" {
 		t.Errorf("path = %q, want the upload link list", gotPath)
 	}
 	links, err := DecodeUploadLinks(raw)
@@ -67,7 +67,7 @@ func TestClient_RestoreUploadLinkCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RestoreUploadLinkCode returned %v", err)
 	}
-	if gotPath != "/api/v1/upload-links/ul2/restore-code" || gotBody["code"] != "Ab3dEf7h" {
+	if gotPath != "/api/v1/p/fam/upload-links/ul2/restore-code" || gotBody["code"] != "Ab3dEf7h" {
 		t.Errorf("request = %s %v, want the restore route with the bare code", gotPath, gotBody)
 	}
 	if link, err := DecodeUploadLink(raw); err != nil || link.Path != "/u/Ab3dEf7h" {
@@ -90,7 +90,7 @@ func TestClient_NewUploadLinkCode(t *testing.T) {
 	if _, err := client.NewUploadLinkCode(t.Context(), "ul1"); err != nil {
 		t.Fatalf("NewUploadLinkCode returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/upload-links/ul1/new-code" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/upload-links/ul1/new-code" {
 		t.Errorf("request = %s %s, want POST to the new-code route", gotMethod, gotPath)
 	}
 }

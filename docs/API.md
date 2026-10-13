@@ -13,7 +13,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Two mounts of one API (transition).** `cmd/kukatko/projectapi.go` builds every project-scoped group
   once and mounts it twice (`mountProjectAPI`): under `/api/v1/p/{project}`, where `auth.WithProject`
   names the project from the slug, and **unprefixed under `/api/v1`** — the *transition alias* the
-  embedded frontend, `kukatko ctl` and MCP clients still call. A request through the alias addresses the
+  embedded frontend and old MCP connectors still call (`kukatko ctl` uses the prefix: its contexts carry a
+  project). A request through the alias addresses the
   bootstrap project `v`. The alias is removed in the alias-removal step; until then both paths answer
   with the same bytes. **Exceptions:** the alias leaves out the name directory, because the
   unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`); the
@@ -576,7 +577,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   browser show its own native sign-in dialog on top of the SPA, which handles its 401s itself, and `Bearer`
   names the one credential a non-browser client can actually present here. An MCP client reads the header
   first and, finding none, starts guessing OAuth metadata instead of saying it needs a token — see
-  the `/.well-known` note below and [`docs/MCP.md`](MCP.md).
+  the `/.well-known` note below and [`docs/MCP.md`](MCP.md). On the MCP endpoint the challenge also names
+  the endpoint called, `Bearer realm="https://<host>/api/v1/p/<slug>/mcp"`.
 - **`/.well-known/*` is not the SPA (`internal/server`):** the SPA catch-all
   (`router.NotFound(web.Handler())`) is carved out for `/.well-known` and everything under it, which answer a
   JSON **404**. Kukátko serves nothing there — ACME is terminated by the reverse proxy and the PWA manifest is

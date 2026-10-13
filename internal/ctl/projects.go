@@ -368,3 +368,86 @@ func WriteAccount(w io.Writer, a Account) error {
 		{"PROJECTS", formatMemberships(a.Memberships)},
 	})
 }
+
+const (
+	// instanceRoleMaintainer is the instance role of a system administrator as
+	// GET /auth/me reports it.
+	instanceRoleMaintainer = "maintainer"
+	// jsonNull is JSON's null, which a nil Go slice encodes as.
+	jsonNull = "null"
+)
+
+// Membership is one project the caller belongs to, as GET /auth/me lists it.
+type Membership struct {
+	UID      string `json:"uid"`
+	Slug     string `json:"slug"`
+	Name     string `json:"name"`
+	Active   bool   `json:"active"`
+	Role     string `json:"role"`
+	Approved bool   `json:"approved"`
+}
+
+// Me is the part of GET /auth/me ctl reads: the caller's instance role and its
+// memberships, the latter kept raw too so `-o json` prints the server's bytes.
+type Me struct {
+	InstanceRole string          `json:"instance_role"`
+	Projects     json.RawMessage `json:"projects"`
+}
+
+// IsMaintainer reports whether the caller is a system administrator, who sees
+// every project of the instance rather than only its own.
+func (m Me) IsMaintainer() bool {
+	return m.InstanceRole == instanceRoleMaintainer
+}
+
+// Me fetches GET /auth/me — an instance-wide route, so it is asked of a client
+// without a project — and decodes the instance role and the memberships.
+func (c *Client) Me(ctx context.Context) (Me, error) {
+	raw, err := c.get(ctx, "/auth/me", nil)
+	if err != nil {
+		return Me{}, err
+	}
+	var me Me
+	if err := json.Unmarshal(raw, &me); err != nil {
+		return Me{}, fmt.Errorf("decoding /auth/me: %w", err)
+	}
+	if len(me.Projects) == 0 || string(me.Projects) == jsonNull {
+		me.Projects = json.RawMessage("[]")
+	}
+	return me, nil
+}
+
+// DecodeMemberships decodes the bare array of the caller's memberships.
+func DecodeMemberships(raw json.RawMessage) ([]Membership, error) {
+	var list []Membership
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("decoding the memberships: %w", err)
+	}
+	return list, nil
+}
+
+// membershipState renders a membership's standing: a deactivated project and a
+// membership still waiting for approval are named, anything else is "active".
+func membershipState(m Membership) string {
+	switch {
+	case !m.Active:
+		return "inactive"
+	case !m.Approved:
+		return "pending"
+	default:
+		return "active"
+	}
+}
+
+// WriteMemberships renders the caller's projects as a table: the slug a context
+// names, the name, the caller's role there and the membership's standing.
+func WriteMemberships(w io.Writer, list []Membership) error {
+	if len(list) == 0 {
+		return writeLine(w, "you are a member of no project; ask a project's administrator for an invitation")
+	}
+	rows := make([][]string, 0, len(list))
+	for _, m := range list {
+		rows = append(rows, []string{m.Slug, elide(m.Name, nameWidth), m.Role, membershipState(m), m.UID})
+	}
+	return writeTable(w, []string{"SLUG", "NAME", "ROLE", "STATE", "UID"}, rows)
+}

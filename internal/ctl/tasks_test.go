@@ -40,8 +40,8 @@ func TestListTasks_query(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if gotPath != "/api/v1/tasks" {
-		t.Errorf("path = %q, want /api/v1/tasks", gotPath)
+	if gotPath != "/api/v1/p/fam/tasks" {
+		t.Errorf("path = %q, want /api/v1/p/fam/tasks", gotPath)
 	}
 	for _, want := range []string{
 		"state=question%2Creview", "answered=true", "waiting=true", "q=d%C5%AFm", "photo=ph1",
@@ -208,7 +208,7 @@ func TestTaskMembership(t *testing.T) {
 	if len(methods) != 2 || methods[0] != http.MethodPost || methods[1] != http.MethodDelete {
 		t.Errorf("methods = %v, want POST then DELETE", methods)
 	}
-	if gotPath != "/api/v1/tasks/tk1/photos" {
+	if gotPath != "/api/v1/p/fam/tasks/tk1/photos" {
 		t.Errorf("path = %q", gotPath)
 	}
 	if _, err := client.AddTaskPhotos(t.Context(), "tk1", nil); !errors.Is(err, ErrNoTaskPhotos) {
@@ -252,7 +252,7 @@ func TestAddTaskComment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddTaskComment: %v", err)
 	}
-	if gotPath != "/api/v1/tasks/tk1/comments" {
+	if gotPath != "/api/v1/p/fam/tasks/tk1/comments" {
 		t.Errorf("path = %q", gotPath)
 	}
 	comment, err := DecodeComment(raw)

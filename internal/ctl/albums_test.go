@@ -32,8 +32,8 @@ func TestClient_ListAlbums(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAlbums returned %v", err)
 	}
-	if gotPath != "/api/v1/albums" || gotMethod != http.MethodGet {
-		t.Errorf("request = %s %s, want GET /api/v1/albums", gotMethod, gotPath)
+	if gotPath != "/api/v1/p/fam/albums" || gotMethod != http.MethodGet {
+		t.Errorf("request = %s %s, want GET /api/v1/p/fam/albums", gotMethod, gotPath)
 	}
 	albums, err := DecodeAlbums(raw)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestClient_GetAlbum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAlbum returned %v", err)
 	}
-	if gotPath != "/api/v1/albums/alb 01" {
+	if gotPath != "/api/v1/p/fam/albums/alb 01" {
 		t.Errorf("path = %q, want the escaped uid", gotPath)
 	}
 	album, err := DecodeAlbum(raw)
@@ -216,7 +216,7 @@ func TestClient_AlbumMembership(t *testing.T) {
 			if requests != 1 {
 				t.Errorf("the client made %d requests, want one for the whole list", requests)
 			}
-			if gotMethod != tt.wantMethod || gotPath != "/api/v1/albums/alb01/photos" {
+			if gotMethod != tt.wantMethod || gotPath != "/api/v1/p/fam/albums/alb01/photos" {
 				t.Errorf("request = %s %s, want %s on the membership path", gotMethod, gotPath, tt.wantMethod)
 			}
 			if len(gotBody.PhotoUIDs) != 2 || gotBody.PhotoUIDs[0] != "pht01" {
@@ -376,7 +376,7 @@ func TestClient_DeleteAlbum(t *testing.T) {
 	if err := client.DeleteAlbum(t.Context(), "alb01"); err != nil {
 		t.Fatalf("DeleteAlbum returned %v", err)
 	}
-	if gotMethod != http.MethodDelete || gotPath != "/api/v1/albums/alb01" {
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/p/fam/albums/alb01" {
 		t.Errorf("request = %s %s, want DELETE on the album path", gotMethod, gotPath)
 	}
 	if err := client.DeleteAlbum(t.Context(), " "); !errors.Is(err, ErrEmptyUID) {

@@ -50,8 +50,8 @@ func memberServer(t *testing.T) (string, func() []projectRequest) {
 	}
 }
 
-// TestCtlMembers_list verifies the member table and that --project picks the
-// prefix, the bootstrap project by default.
+// TestCtlMembers_list verifies the member table and that the members of the
+// context's project are listed, the persistent --project overriding it.
 func TestCtlMembers_list(t *testing.T) {
 	configPath, seen := memberServer(t)
 
@@ -59,8 +59,8 @@ func TestCtlMembers_list(t *testing.T) {
 	if err != nil {
 		t.Fatalf("members list: %v", err)
 	}
-	if got := lastRequest(t, seen); got.path != "/api/v1/p/v/members" {
-		t.Errorf("default project request = %+v, want the bootstrap project's members", got)
+	if got := lastRequest(t, seen); got.path != "/api/v1/p/fam/members" {
+		t.Errorf("context project request = %+v, want the context project's members", got)
 	}
 	for _, want := range []string{"USERNAME", "anna", "admin", "pending"} {
 		if !strings.Contains(out, want) {
@@ -108,7 +108,7 @@ func TestCtlMembers_roleApproveRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("members role: %v", err)
 	}
-	if got := lastRequest(t, seen); got.method != http.MethodPatch || got.path != "/api/v1/p/v/members/us2" ||
+	if got := lastRequest(t, seen); got.method != http.MethodPatch || got.path != "/api/v1/p/fam/members/us2" ||
 		got.body != `{"role":"editor"}` || !strings.Contains(out, "editor") {
 		t.Errorf("role request = %+v, output %q", got, out)
 	}
@@ -116,7 +116,7 @@ func TestCtlMembers_roleApproveRemove(t *testing.T) {
 	if _, err := runCtl(t, "", "ctl", "--ctl-config", configPath, "members", "approve", "bob"); err != nil {
 		t.Fatalf("members approve: %v", err)
 	}
-	if got := lastRequest(t, seen); got.method != http.MethodPost || got.path != "/api/v1/p/v/members/us2/approve" {
+	if got := lastRequest(t, seen); got.method != http.MethodPost || got.path != "/api/v1/p/fam/members/us2/approve" {
 		t.Errorf("approve request = %+v", got)
 	}
 
@@ -124,8 +124,8 @@ func TestCtlMembers_roleApproveRemove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("members remove: %v", err)
 	}
-	if got := lastRequest(t, seen); got.method != http.MethodDelete || got.path != "/api/v1/p/v/members/us2" ||
-		!strings.Contains(out, "removed bob from v") {
+	if got := lastRequest(t, seen); got.method != http.MethodDelete || got.path != "/api/v1/p/fam/members/us2" ||
+		!strings.Contains(out, "removed bob from fam") {
 		t.Errorf("remove request = %+v, output %q", got, out)
 	}
 

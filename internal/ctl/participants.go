@@ -8,8 +8,6 @@ import (
 	"io"
 	"net/url"
 	"time"
-
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // ErrNoUser is returned when a participant change names no account.
@@ -79,13 +77,16 @@ func (c *Client) UnassignTask(ctx context.Context, uid, userUID string) (json.Ra
 	return c.send(ctx, "DELETE", taskPath(uid)+"/participants/"+url.PathEscape(userUID), nil)
 }
 
-// People returns the library's accounts — uid and name — which is how a uid is
+// People returns the project's members — uid and name — which is how a uid is
 // found for the assign commands. The name directory is served only under a
 // project prefix (the unprefixed GET /users is the system administrator's
-// account list), so it is read from the bootstrap project — the very project
-// every other unprefixed ctl call resolves to — until contexts carry a project.
+// account list), so a client without a project refuses with ErrNoProject
+// rather than reading the account list by mistake.
 func (c *Client) People(ctx context.Context) (json.RawMessage, error) {
-	return c.send(ctx, "GET", "/p/"+project.BootstrapSlug+"/users", nil)
+	if err := c.requireProject(); err != nil {
+		return nil, err
+	}
+	return c.send(ctx, "GET", "/users", nil)
 }
 
 // DecodeParticipants decodes the participant envelope.

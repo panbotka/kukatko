@@ -31,7 +31,7 @@ func TestCtlPhotosRebuildVideo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos rebuild video: %v (%s)", err, out)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/pht01/process/hls_transcode" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/pht01/process/hls_transcode" {
 		t.Errorf("request = %s %s, want POST the hls_transcode step", gotMethod, gotPath)
 	}
 	for _, want := range []string{"hls_transcode", "queued", "background"} {
@@ -91,7 +91,7 @@ func TestCtlPhotosRebuildStoryboard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos rebuild storyboard: %v (%s)", err, out)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/pht01/regenerate-storyboard" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/pht01/regenerate-storyboard" {
 		t.Errorf("request = %s %s, want POST the storyboard rebuild", gotMethod, gotPath)
 	}
 	if !strings.Contains(out, "storyboard") || !strings.Contains(out, "queued") {
@@ -130,7 +130,7 @@ func TestCtlPhotosRenditions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos renditions: %v (%s)", err, out)
 	}
-	if gotMethod != http.MethodGet || gotPath != "/api/v1/photos/pht01/renditions" {
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/p/fam/photos/pht01/renditions" {
 		t.Errorf("request = %s %s, want GET the rendition inventory", gotMethod, gotPath)
 	}
 	for _, want := range []string{
@@ -202,8 +202,8 @@ func TestCtlProcessHLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process hls: %v (%s)", err, out)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/process/hls" || gotQuery != "" {
-		t.Errorf("request = %s %s?%s, want POST /api/v1/process/hls with no query",
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/process/hls" || gotQuery != "" {
+		t.Errorf("request = %s %s?%s, want POST /api/v1/p/fam/process/hls with no query",
 			gotMethod, gotPath, gotQuery)
 	}
 	if !strings.Contains(out, "12 videos were scheduled") {

@@ -40,7 +40,7 @@ func TestClient_GetRelations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchRelations returned %v", err)
 	}
-	if gotMethod != http.MethodGet || gotPath != "/api/v1/subjects/sub01/relations" {
+	if gotMethod != http.MethodGet || gotPath != "/api/v1/p/fam/subjects/sub01/relations" {
 		t.Errorf("request = %s %s, want GET on the relations path", gotMethod, gotPath)
 	}
 	if len(relations.Parents) != 1 || relations.Parents[0].Name != "Marie Nečasová" {
@@ -105,7 +105,7 @@ func TestClient_AddRelation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddRelation returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/subjects/sub01/relations" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/subjects/sub01/relations" {
 		t.Errorf("request = %s %s, want POST on the relations path", gotMethod, gotPath)
 	}
 	if gotBody["role"] != RoleParent || gotBody["subject_uid"] != "sub02" ||
@@ -185,7 +185,7 @@ func TestClient_RemoveRelation(t *testing.T) {
 	if err := client.RemoveRelation(t.Context(), "sub01", "sub02"); err != nil {
 		t.Fatalf("RemoveRelation returned %v", err)
 	}
-	if gotMethod != http.MethodDelete || gotPath != "/api/v1/subjects/sub01/relations/sub02" {
+	if gotMethod != http.MethodDelete || gotPath != "/api/v1/p/fam/subjects/sub01/relations/sub02" {
 		t.Errorf("request = %s %s, want DELETE naming both people", gotMethod, gotPath)
 	}
 }
@@ -212,7 +212,7 @@ func TestClient_UpdateFamily(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateFamily returned %v", err)
 	}
-	if gotMethod != http.MethodPatch || gotPath != "/api/v1/families/fam02" {
+	if gotMethod != http.MethodPatch || gotPath != "/api/v1/p/fam/families/fam02" {
 		t.Errorf("request = %s %s, want PATCH on the family", gotMethod, gotPath)
 	}
 	if gotBody["kind"] != FamilyMarriage || gotBody["from_year"] != float64(1972) {

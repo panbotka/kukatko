@@ -32,7 +32,7 @@ func TestClient_ListSavedSearches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSavedSearches returned %v", err)
 	}
-	if gotPath != "/api/v1/saved-searches" {
+	if gotPath != "/api/v1/p/fam/saved-searches" {
 		t.Errorf("path = %q, want the saved-search list", gotPath)
 	}
 	searches, err := DecodeSavedSearches(raw)

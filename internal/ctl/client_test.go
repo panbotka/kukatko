@@ -9,8 +9,14 @@ import (
 	"testing"
 )
 
+// testProject is the slug of the project testClient's client works in: every
+// project-scoped path a test expects is under /api/v1/p/fam/.
+const testProject = "fam"
+
 // testClient starts an httptest server with the given handler and returns a
-// client pointed at it, authenticating with token.
+// client pointed at it, authenticating with token and bound to testProject, as
+// a project-scoped ctl command's client is. instanceClient is the same without
+// the project, for the instance-wide routes.
 //
 // The client is re-pointed at a connection pool of its own. NewClient leaves
 // Transport nil, which is right in production — ctl is a CLI, one process holds
@@ -38,7 +44,14 @@ func testClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
 	// The media client shares the same reasoning and the same pool; it keeps its
 	// production absence of a timeout, since a download is meant to be slow.
 	client.stream = &http.Client{Transport: transport}
-	return client
+	return client.WithProject(testProject)
+}
+
+// instanceClient is testClient without a project: the client an
+// instance-level command (projects, users) talks through.
+func instanceClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
+	t.Helper()
+	return testClient(t, token, handler).WithProject("")
 }
 
 // TestNewClient_validURLs verifies absolute http and https URLs are accepted and
@@ -92,8 +105,8 @@ func TestClient_get_sendsBearer(t *testing.T) {
 	if gotAccept != "application/json" {
 		t.Errorf("Accept = %q, want application/json", gotAccept)
 	}
-	if gotPath != "/api/v1/photos" {
-		t.Errorf("path = %q, want /api/v1/photos", gotPath)
+	if gotPath != "/api/v1/p/fam/photos" {
+		t.Errorf("path = %q, want /api/v1/p/fam/photos", gotPath)
 	}
 	if gotQuery != "limit=2" {
 		t.Errorf("query = %q, want limit=2", gotQuery)
@@ -312,5 +325,53 @@ func TestErrorMessage_bounded(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Errorf("truncated message %q is not marked with an ellipsis", got[len(got)-8:])
+	}
+}
+
+// TestClient_pathBuilding pins where a request goes: a client bound to a project
+// sends every path under /api/v1/p/<slug>/ (the slug escaped into its own
+// segment), and one without a project sends it to the bare /api/v1/ — the
+// instance-wide routes.
+func TestClient_pathBuilding(t *testing.T) {
+	t.Parallel()
+
+	var got []string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.EscapedPath())
+		_, _ = w.Write([]byte(`{}`))
+	})
+	ctx := t.Context()
+	if client.Project() != testProject {
+		t.Fatalf("Project() = %q, want %q", client.Project(), testProject)
+	}
+	if _, err := client.get(ctx, "/photos", nil); err != nil {
+		t.Fatalf("scoped get: %v", err)
+	}
+	if _, err := client.WithProject("").get(ctx, "/projects", nil); err != nil {
+		t.Fatalf("instance get: %v", err)
+	}
+	if _, err := client.WithProject("a/b").get(ctx, "/albums", nil); err != nil {
+		t.Fatalf("odd-slug get: %v", err)
+	}
+	want := []string{"/api/v1/p/fam/photos", "/api/v1/projects", "/api/v1/p/a%2Fb/albums"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("paths = %v, want %v", got, want)
+	}
+	if client.Project() != testProject {
+		t.Errorf("WithProject changed the original client's project to %q", client.Project())
+	}
+}
+
+// TestClient_directoryNeedsAProject verifies the name directory is never read
+// without a project: its unprefixed path is the system administrator's account
+// list, so a project-less client refuses before any request.
+func TestClient_directoryNeedsAProject(t *testing.T) {
+	t.Parallel()
+
+	client := instanceClient(t, "kkt_a_b", func(_ http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+	})
+	if _, err := client.People(t.Context()); !errors.Is(err, ErrNoProject) {
+		t.Errorf("People without a project = %v, want ErrNoProject", err)
 	}
 }

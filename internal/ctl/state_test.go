@@ -34,7 +34,7 @@ func TestClient_SetPhotoState(t *testing.T) {
 			if err != nil {
 				t.Fatalf("SetPhotoState(%q) returned %v", state, err)
 			}
-			if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/pht01/"+state {
+			if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/pht01/"+state {
 				t.Errorf("request = %s %s, want POST the %s endpoint", gotMethod, gotPath, state)
 			}
 			decoded, err := DecodePhotoState(raw)

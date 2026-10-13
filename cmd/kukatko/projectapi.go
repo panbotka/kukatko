@@ -85,8 +85,8 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 // The alias leaves out two groups. The name directory GET /users: its
 // unprefixed path belongs to the system administrator's instance-wide account
 // list (internal/projectapi), so the directory is served only under
-// /p/{project} — where the frontend asks for it, and ctl (in the bootstrap
-// project until its contexts carry one). The member management /members and
+// /p/{project} — where the frontend asks for it, and ctl in its context's
+// project. The member management /members and
 // the invitation links /invites, which are new with projects and have no old
 // client to keep working. And the settings and the announcement, which are a
 // project's own and are read only through its prefix — the unprefixed

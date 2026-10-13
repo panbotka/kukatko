@@ -54,7 +54,7 @@ func TestCtlPhotosFaces_table(t *testing.T) {
 	if err != nil {
 		t.Fatalf("photos faces returned %v", err)
 	}
-	if gotPath != "/api/v1/photos/pht01/faces" {
+	if gotPath != "/api/v1/p/fam/photos/pht01/faces" {
 		t.Errorf("path = %q, want the faces endpoint", gotPath)
 	}
 	for _, want := range []string{"FACE", "WHO", "Anna (sub01)", "mrk01", "Bob 0.310", "2 faces"} {
@@ -127,7 +127,7 @@ func TestCtlFacesAssign_routing(t *testing.T) {
 			if len(seen) != 2 || seen[0].method != http.MethodGet {
 				t.Fatalf("requests = %+v, want a face listing then an assignment", seen)
 			}
-			if seen[1].path != "/api/v1/photos/pht01/faces/assign" {
+			if seen[1].path != "/api/v1/p/fam/photos/pht01/faces/assign" {
 				t.Errorf("path = %q, want the assign endpoint", seen[1].path)
 			}
 			if seen[1].body["action"] != tc.wantAction {
@@ -238,17 +238,17 @@ func TestCtlFacesOpinions(t *testing.T) {
 		method  string
 		phrase  string
 	}{
-		{"reject", "/api/v1/feedback/face-rejections", http.MethodPost, "rejected as Anna (sub01)"},
-		{"unreject", "/api/v1/feedback/face-rejections", http.MethodDelete, "no longer rejected as"},
-		{"confirm", "/api/v1/feedback/face-confirmations", http.MethodPost, "confirmed as Anna (sub01)"},
-		{"unconfirm", "/api/v1/feedback/face-confirmations", http.MethodDelete, "no longer confirmed as"},
+		{"reject", "/api/v1/p/fam/feedback/face-rejections", http.MethodPost, "rejected as Anna (sub01)"},
+		{"unreject", "/api/v1/p/fam/feedback/face-rejections", http.MethodDelete, "no longer rejected as"},
+		{"confirm", "/api/v1/p/fam/feedback/face-confirmations", http.MethodPost, "confirmed as Anna (sub01)"},
+		{"unconfirm", "/api/v1/p/fam/feedback/face-confirmations", http.MethodDelete, "no longer confirmed as"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.command, func(t *testing.T) {
 			var seen []recordedRequest
 			configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
 				seen = append(seen, recordRequest(r))
-				if strings.HasPrefix(r.URL.Path, "/api/v1/subjects/") {
+				if strings.HasPrefix(r.URL.Path, "/api/v1/p/fam/subjects/") {
 					w.Write([]byte(`{"uid":"sub01","name":"Anna","type":"person"}`))
 					return
 				}
@@ -260,7 +260,7 @@ func TestCtlFacesOpinions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("faces %s returned %v", tc.command, err)
 			}
-			if len(seen) != 2 || seen[0].path != "/api/v1/subjects/sub01" {
+			if len(seen) != 2 || seen[0].path != "/api/v1/p/fam/subjects/sub01" {
 				t.Fatalf("requests = %+v, want the subject resolved before the opinion", seen)
 			}
 			if seen[1].path != tc.path || seen[1].method != tc.method {
@@ -280,7 +280,7 @@ func TestCtlFacesOpinions(t *testing.T) {
 // format, since there are no server bytes to pass through.
 func TestCtlFacesReject_llm(t *testing.T) {
 	configPath := ctlServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/subjects/") {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/p/fam/subjects/") {
 			w.Write([]byte(`{"uid":"sub01","name":"Anna","type":"person"}`))
 			return
 		}
@@ -316,7 +316,7 @@ func TestCtlClusters_list(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clusters list returned %v", err)
 	}
-	if gotPath != "/api/v1/faces/clusters" {
+	if gotPath != "/api/v1/p/fam/faces/clusters" {
 		t.Errorf("path = %q, want the clusters endpoint", gotPath)
 	}
 	for _, want := range []string{
@@ -344,7 +344,7 @@ func TestCtlClusters_assign(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clusters assign returned %v", err)
 	}
-	if seen.path != "/api/v1/faces/clusters/clu01/assign" || seen.body["subject_name"] != "Cyril" {
+	if seen.path != "/api/v1/p/fam/faces/clusters/clu01/assign" || seen.body["subject_name"] != "Cyril" {
 		t.Fatalf("request = %+v, want the cluster assigned to Cyril by name", seen)
 	}
 	if !strings.Contains(out, "Cyril (sub07)") || !strings.Contains(out, "3 markers") {
@@ -368,7 +368,7 @@ func TestCtlClusters_removeFace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clusters remove-face returned %v", err)
 	}
-	if seen.path != "/api/v1/faces/clusters/clu01/remove-face" ||
+	if seen.path != "/api/v1/p/fam/faces/clusters/clu01/remove-face" ||
 		seen.body["photo_uid"] != "pht09" || seen.body["face_index"] != float64(2) {
 		t.Fatalf("request = %+v, want face 2 of pht09 removed from clu01", seen)
 	}

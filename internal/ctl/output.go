@@ -300,9 +300,33 @@ func WriteContexts(w io.Writer, cfg *Config) error {
 		if ctx.Token != "" {
 			token = "stored"
 		}
-		rows = append(rows, []string{current, ctx.Name, ctx.Server, token})
+		rows = append(rows, []string{current, ctx.Name, ctx.Server, token, dash(ctx.Project)})
 	}
-	return writeTable(w, []string{"CURRENT", "NAME", "SERVER", "TOKEN"}, rows)
+	return writeTable(w, []string{"CURRENT", "NAME", "SERVER", "TOKEN", "PROJECT"}, rows)
+}
+
+// WriteEndpoint renders what one invocation resolved to — the context, the
+// server, whether a token is set and the project — as aligned key/value lines.
+// The token itself is never printed.
+func WriteEndpoint(w io.Writer, ep Endpoint) error {
+	name := ep.ContextName
+	if name == "" {
+		name = "(none — from the environment)"
+	}
+	token := "not set"
+	if ep.Token != "" {
+		token = "set"
+	}
+	project := ep.Project
+	if project == "" {
+		project = "(none — run 'kukatko ctl projects use <slug>')"
+	}
+	return writeKeyValues(w, [][2]string{
+		{"CONTEXT", name},
+		{"SERVER", ep.Server},
+		{"TOKEN", token},
+		{"PROJECT", project},
+	})
 }
 
 // joinRefs renders album or label references as a comma-separated list of their

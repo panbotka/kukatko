@@ -7,33 +7,28 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/panbotka/kukatko/internal/ctl"
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // memberRoleHelp names the roles a member command accepts.
 const memberRoleHelp = "viewer, curator, editor or admin"
 
 // newCtlMembersCmd builds the "ctl members" tree: a project admin's management
-// of the members of one project (internal/memberapi). The project is named by
-// --project (a slug, default the bootstrap project) until ctl contexts carry
-// one; every command needs the token of that project's admin (or a system
-// administrator's).
+// of the members of one project (internal/memberapi). The project is the
+// invocation's own — the persistent --project, KUKATKO_PROJECT or the
+// context's — and every command needs the token of that project's admin (or a
+// system administrator's).
 func newCtlMembersCmd(opts *ctlOptions) *cobra.Command {
-	var slug string
 	cmd := &cobra.Command{
 		Use:   "members",
-		Short: "Manage the members of a project (project admin)",
+		Short: "Manage the members of the project (project admin)",
 	}
-	cmd.PersistentFlags().StringVar(&slug, "project", project.BootstrapSlug,
-		"the project's slug (/p/<slug>/)")
-	cmd.AddCommand(newCtlMembersListCmd(opts, &slug), newCtlMembersAddCmd(opts, &slug),
-		newCtlMembersRoleCmd(opts, &slug), newCtlMembersApproveCmd(opts, &slug),
-		newCtlMembersRemoveCmd(opts, &slug))
+	cmd.AddCommand(newCtlMembersListCmd(opts), newCtlMembersAddCmd(opts),
+		newCtlMembersRoleCmd(opts), newCtlMembersApproveCmd(opts), newCtlMembersRemoveCmd(opts))
 	return cmd
 }
 
 // newCtlMembersListCmd builds "ctl members list".
-func newCtlMembersListCmd(opts *ctlOptions, slug *string) *cobra.Command {
+func newCtlMembersListCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List the project's members with role, approval and last sign-in",
@@ -43,9 +38,9 @@ func newCtlMembersListCmd(opts *ctlOptions, slug *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			raw, err := client.ListMembers(cmd.Context(), *slug)
+			raw, err := client.ListMembers(cmd.Context())
 			if err != nil {
-				return fmt.Errorf("listing the members of %s: %w", *slug, err)
+				return fmt.Errorf("listing the members of %s: %w", client.Project(), err)
 			}
 			return renderRaw(cmd.OutOrStdout(), out, raw, "member list", ctl.DecodeMembers, ctl.WriteMembers)
 		},
@@ -53,7 +48,7 @@ func newCtlMembersListCmd(opts *ctlOptions, slug *string) *cobra.Command {
 }
 
 // newCtlMembersAddCmd builds "ctl members add".
-func newCtlMembersAddCmd(opts *ctlOptions, slug *string) *cobra.Command {
+func newCtlMembersAddCmd(opts *ctlOptions) *cobra.Command {
 	var role string
 	cmd := &cobra.Command{
 		Use:   "add <username-or-email>",
@@ -68,15 +63,15 @@ func newCtlMembersAddCmd(opts *ctlOptions, slug *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			raw, err := client.AddMember(cmd.Context(), *slug, args[0], role)
+			raw, err := client.AddMember(cmd.Context(), args[0], role)
 			if err != nil {
-				return fmt.Errorf("adding %s to %s: %w", args[0], *slug, err)
+				return fmt.Errorf("adding %s to %s: %w", args[0], client.Project(), err)
 			}
 			if out.Format == ctl.FormatJSON {
 				return writeRawJSON(cmd.OutOrStdout(), raw)
 			}
 			return renderAck(cmd.OutOrStdout(), out,
-				fmt.Sprintf("accepted: if %s names an account, it is a member of %s", args[0], *slug))
+				fmt.Sprintf("accepted: if %s names an account, it is a member of %s", args[0], client.Project()))
 		},
 	}
 	cmd.Flags().StringVar(&role, "role", "", "the member's role: "+memberRoleHelp)
@@ -85,35 +80,35 @@ func newCtlMembersAddCmd(opts *ctlOptions, slug *string) *cobra.Command {
 }
 
 // newCtlMembersRoleCmd builds "ctl members role".
-func newCtlMembersRoleCmd(opts *ctlOptions, slug *string) *cobra.Command {
+func newCtlMembersRoleCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "role <username> <role>",
 		Short: "Change a member's role (" + memberRoleHelp + "); never your own",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMemberChange(cmd, opts, *slug, args[0], func(c *ctl.Client, uid string) (json.RawMessage, error) {
-				return c.SetMemberRole(cmd.Context(), *slug, uid, args[1])
+			return runMemberChange(cmd, opts, args[0], func(c *ctl.Client, uid string) (json.RawMessage, error) {
+				return c.SetMemberRole(cmd.Context(), uid, args[1])
 			})
 		},
 	}
 }
 
 // newCtlMembersApproveCmd builds "ctl members approve".
-func newCtlMembersApproveCmd(opts *ctlOptions, slug *string) *cobra.Command {
+func newCtlMembersApproveCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "approve <username>",
 		Short: "Let a waiting member in; they are mailed a link to the project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMemberChange(cmd, opts, *slug, args[0], func(c *ctl.Client, uid string) (json.RawMessage, error) {
-				return c.ApproveMember(cmd.Context(), *slug, uid)
+			return runMemberChange(cmd, opts, args[0], func(c *ctl.Client, uid string) (json.RawMessage, error) {
+				return c.ApproveMember(cmd.Context(), uid)
 			})
 		},
 	}
 }
 
 // newCtlMembersRemoveCmd builds "ctl members remove".
-func newCtlMembersRemoveCmd(opts *ctlOptions, slug *string) *cobra.Command {
+func newCtlMembersRemoveCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <username>",
 		Short: "Remove a member from the project; the account itself stays",
@@ -123,35 +118,35 @@ func newCtlMembersRemoveCmd(opts *ctlOptions, slug *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			member, err := client.ResolveMember(cmd.Context(), *slug, args[0])
+			member, err := client.ResolveMember(cmd.Context(), args[0])
 			if err != nil {
 				return fmt.Errorf("finding member %s: %w", args[0], err)
 			}
-			if err := client.RemoveMember(cmd.Context(), *slug, member.UserUID); err != nil {
-				return fmt.Errorf("removing %s from %s: %w", args[0], *slug, err)
+			if err := client.RemoveMember(cmd.Context(), member.UserUID); err != nil {
+				return fmt.Errorf("removing %s from %s: %w", args[0], client.Project(), err)
 			}
-			return renderAck(cmd.OutOrStdout(), out, fmt.Sprintf("removed %s from %s", args[0], *slug))
+			return renderAck(cmd.OutOrStdout(), out, fmt.Sprintf("removed %s from %s", args[0], client.Project()))
 		},
 	}
 }
 
-// runMemberChange resolves the member username in the project slug, applies
-// change to its uid and renders the member as it now stands.
+// runMemberChange resolves the member username in the project, applies change
+// to its uid and renders the member as it now stands.
 func runMemberChange(
-	cmd *cobra.Command, opts *ctlOptions, slug, username string,
+	cmd *cobra.Command, opts *ctlOptions, username string,
 	change func(*ctl.Client, string) (json.RawMessage, error),
 ) error {
 	client, out, err := opts.resolve()
 	if err != nil {
 		return err
 	}
-	member, err := client.ResolveMember(cmd.Context(), slug, username)
+	member, err := client.ResolveMember(cmd.Context(), username)
 	if err != nil {
 		return fmt.Errorf("finding member %s: %w", username, err)
 	}
 	raw, err := change(client, member.UserUID)
 	if err != nil {
-		return fmt.Errorf("changing member %s of %s: %w", username, slug, err)
+		return fmt.Errorf("changing member %s of %s: %w", username, client.Project(), err)
 	}
 	return renderRaw(cmd.OutOrStdout(), out, raw, "member", ctl.DecodeMember, ctl.WriteMember)
 }

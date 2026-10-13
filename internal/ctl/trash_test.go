@@ -21,7 +21,7 @@ func trashServer(t *testing.T, retentionDays int, rows []string) (*Client, *[]st
 	var seen []string
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
-		if r.URL.Path == "/api/v1/trash/info" {
+		if r.URL.Path == "/api/v1/p/fam/trash/info" {
 			fmt.Fprintf(w, `{"retention_days":%d}`, retentionDays)
 			return
 		}
@@ -103,7 +103,7 @@ func TestClient_FetchTrash_pages(t *testing.T) {
 
 	var offsets []string
 	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/trash/info" {
+		if r.URL.Path == "/api/v1/p/fam/trash/info" {
 			w.Write([]byte(`{"retention_days":365}`))
 			return
 		}
@@ -177,7 +177,7 @@ func TestClient_PurgePhoto(t *testing.T) {
 	if err := client.PurgePhoto(t.Context(), "pht01"); err != nil {
 		t.Fatalf("PurgePhoto returned %v", err)
 	}
-	if gotMethod != http.MethodPost || gotPath != "/api/v1/photos/pht01/purge" || gotQuery != "confirm=true" {
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/p/fam/photos/pht01/purge" || gotQuery != "confirm=true" {
 		t.Errorf("request = %s %s?%s, want the confirmed purge", gotMethod, gotPath, gotQuery)
 	}
 	if err := client.PurgePhoto(t.Context(), " "); !errors.Is(err, ErrEmptyUID) {
@@ -200,7 +200,7 @@ func TestClient_EmptyTrash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EmptyTrash returned %v", err)
 	}
-	if gotPath != "/api/v1/trash/empty" || gotQuery != "confirm=true" {
+	if gotPath != "/api/v1/p/fam/trash/empty" || gotQuery != "confirm=true" {
 		t.Errorf("request = %s?%s, want the confirmed empty", gotPath, gotQuery)
 	}
 	result, err := DecodePurgeResult(raw)

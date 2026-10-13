@@ -34,7 +34,7 @@ func TestClient_ListDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListDuplicates returned %v", err)
 	}
-	if gotPath != "/api/v1/duplicates" || !strings.Contains(gotQuery, "limit=20") ||
+	if gotPath != "/api/v1/p/fam/duplicates" || !strings.Contains(gotQuery, "limit=20") ||
 		!strings.Contains(gotQuery, "offset=40") {
 		t.Errorf("request = %s?%s, want the duplicates path with paging", gotPath, gotQuery)
 	}
@@ -62,25 +62,25 @@ func TestClient_duplicateFeedback(t *testing.T) {
 		{
 			name:       "confirm",
 			wantMethod: http.MethodPost,
-			wantPath:   "/api/v1/feedback/duplicate-confirmations",
+			wantPath:   "/api/v1/p/fam/feedback/duplicate-confirmations",
 			call:       func(c *Client) error { return c.ConfirmDuplicate(t.Context(), "pht01", "pht02") },
 		},
 		{
 			name:       "unconfirm",
 			wantMethod: http.MethodDelete,
-			wantPath:   "/api/v1/feedback/duplicate-confirmations",
+			wantPath:   "/api/v1/p/fam/feedback/duplicate-confirmations",
 			call:       func(c *Client) error { return c.UnconfirmDuplicate(t.Context(), "pht01", "pht02") },
 		},
 		{
 			name:       "dismiss",
 			wantMethod: http.MethodPost,
-			wantPath:   "/api/v1/feedback/duplicate-dismissals",
+			wantPath:   "/api/v1/p/fam/feedback/duplicate-dismissals",
 			call:       func(c *Client) error { return c.DismissDuplicate(t.Context(), "pht01", "pht02") },
 		},
 		{
 			name:       "undismiss",
 			wantMethod: http.MethodDelete,
-			wantPath:   "/api/v1/feedback/duplicate-dismissals",
+			wantPath:   "/api/v1/p/fam/feedback/duplicate-dismissals",
 			call:       func(c *Client) error { return c.UndismissDuplicate(t.Context(), "pht01", "pht02") },
 		},
 	}
