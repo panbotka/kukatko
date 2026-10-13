@@ -176,6 +176,10 @@ type RateLimitConfig struct {
 	// the brake on a link that leaked to somebody with a script and many
 	// addresses. It is keyed by the link, not the client IP.
 	UploadLinkPerLink RateLimitRule `mapstructure:"upload_link_per_link"`
+	// Invite caps the public invitation routes (GET /invite/{code} and its
+	// accept) per client IP, ahead of the code lookup. Like an upload link's,
+	// the code is the whole credential, so this is the brake on guessing.
+	Invite RateLimitRule `mapstructure:"invite"`
 }
 
 // RateLimitRule is one per-client-IP token bucket: RatePerSec tokens replenish
@@ -1657,6 +1661,10 @@ func setUploadLinkDefaults(v *viper.Viper) {
 	// Twenty people uploading at once after an event is the case to allow.
 	v.SetDefault("ratelimit.upload_link_per_link.rate_per_sec", 10)
 	v.SetDefault("ratelimit.upload_link_per_link.burst", 300)
+	// The invitation routes are guarded like the upload-link page: a person
+	// opens one invite and accepts it, so the upload link's budget is ample.
+	v.SetDefault("ratelimit.invite.rate_per_sec", 2)
+	v.SetDefault("ratelimit.invite.burst", 60)
 }
 
 // Validate checks that required fields are present and inter-field invariants

@@ -50,6 +50,25 @@ func (a *API) RequireImport(next http.Handler) http.Handler {
 	return a.requireRole(requireImport, next)
 }
 
+// RequireSignedIn wraps next so it runs for any authenticated account, with its
+// principal on the context but no project resolved: the request's project and
+// membership are not consulted at all, so an account that belongs to no
+// project yet passes. It is for the few instance-level routes about the
+// account itself rather than any project's content — accepting an invitation
+// into a project the caller is not yet a member of. Unauthenticated requests
+// get 401.
+func (a *API) RequireSignedIn(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, err := a.authenticateRequest(r)
+		if err != nil {
+			a.clearExpiredCookie(w, err)
+			writeUnauthorized(w, "authentication required")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
+	})
+}
+
 // OptionalAuth wraps next so a request carrying a valid credential (an API
 // token or the session cookie) runs with its principal on the context, exactly
 // as RequireAuth would put it there, while a request with none — or with one

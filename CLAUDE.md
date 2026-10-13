@@ -111,6 +111,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/importer` — bookkeeping of import runs + persisted per-photo/per-file failures (`partial` status); keeps the finished migration's runs as provenance
 - `internal/ingest` — upload pipeline: stream, SHA256 dedup, metadata, thumbnails, enqueue jobs
 - `internal/inventory` — the upgrade's before/after snapshot (counts, columns, allow-listed digests, photo/user rosters, one-listing storage check) and its expectation-judged diff; read-only, never migrates
+- `internal/invite` — invitation links into a project: code by hash (kept readable), role, expiry 7/90 days, use cap, revoke; `Resolve` answers one `ErrInvalid` for every dead code; `Accept` raises never lowers (idempotent), `RedeemTx` counts a registration's use; all audited in the mutation's transaction
+- `internal/inviteapi` — a project admin's `/p/{project}/invites` (RequireAdmin) + the public `/invite/{code}` page and accept (RequireSignedIn, per-IP limit) + `RegistrationGate` (an invite registers an approved member, editor at most)
 - `internal/jobs` — persistent job queue in Postgres (retry, dedup, backoff, `Defer`, terminal failure, enqueue inside the caller's transaction)
 - `internal/jobsapi` — maintainer-only `/jobs` (stats, list, requeue)
 - `internal/mailer` — the only way to send an e-mail: the `Sender` interface + SMTP (stdlib only), a no-op for when mail is off and a socket-free fake for tests; Czech templates rendered purely (the notification kinds' mails included); a `.invalid` recipient is refused, never dialled

@@ -968,3 +968,8 @@ ratelimit:
   upload_link_per_link:
     rate_per_sec: 10
     burst: 300
+  # The public invitation routes (GET /invite/{code} and its accept), per client
+  # IP, ahead of the code lookup.
+  invite:
+    rate_per_sec: 2
+    burst: 60

@@ -621,6 +621,12 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   it onto the membership, while the profile picture and `/auth/me` still read the users copy). Only the step
   that finishes the move drops the `users` columns (never in the migration that adds the new ones, so a
   rollback stays possible).
+- **`project_invites`** (migration 0109) — invitation links into a project: `uid` (`iv…`), `project_uid` (FK
+  `ON DELETE CASCADE`), `code_hash` UNIQUE + readable `code` (as upload links), `role` (the project ladder),
+  `expires_at`, `max_uses` (NULL = no cap), `uses`, final `revoked_at`, `created_by` (`ON DELETE SET NULL`),
+  `created_at`. Accepting signed in adds or raises (never lowers) an approved membership; registering through
+  one creates an approved account and membership capped at editor. Store: `internal/invite`. Wiped by a reset
+  (catalogue-side).
 - **`project_id` on the catalogue** (migration 0102) — every catalogue root row names its project:
   `project_id TEXT NOT NULL DEFAULT 'pj0000000000000000veselice' REFERENCES projects(uid) ON DELETE CASCADE`
   (backfilled to the bootstrap project). Child tables are scoped through their FK to a root row:

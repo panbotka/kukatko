@@ -153,7 +153,16 @@ to `## Package map` in `CLAUDE.md`.
   (`LinkGrant.ProjectUID`, empty = bootstrap): its settings decide whether registration is open, the new
   account's membership is created there only (the unexported `User.joinProject`, read by
   `insertUserArgs`/`projectToJoin`), the entry's `ProjectUID` names it and `ListApprovalRecipients(ctx,
-  projectUID)` picks its admins (plus the maintainers) to notify. The account is
+  projectUID)` picks its admins (plus the maintainers) to notify.
+  `RegisterWithInvite(ctx, in, InviteGrant, entry)` is the third gate: an invitation admitted through
+  the optional `InviteGate` (`APIConfig.Invites`, implemented by `inviteapi.RegistrationGate`;
+  `RegisterInput.InviteCode` / the body's `invite_code`, which wins over a link) replaces the secret
+  **and the approval** and ignores the registration switch: the account is built by `prepareNewUser`
+  (approved now) with `AccountRole(grant.Role)` — capped at editor again here, defence in depth — joins
+  `grant.ProjectUID` only, and `grant.Redeem` runs in the `alongside` transaction (the invite's use and
+  its `project.invite.accept` entry; an invite that died meanwhile rolls the account back). No mail, no
+  approver notices; a dead invite is `ErrRegistrationInvite`. `withRegistrationDetails` stamps the
+  username/role details all three paths share. The account is
   built by `prepareRegistration` (role `viewer`, `ApprovedAt` nil) and written by
   `Store.CreateUserAuditedWith` — `CreateUserAudited` plus an `alongside` hook that runs on the **same
   transaction**, which is how the mails are enqueued: a rolled-back registration schedules
@@ -1554,7 +1563,9 @@ to `## Package map` in `CLAUDE.md`.
   (`Cache-Control`/`ETag`/`304`, `Content-Length` from the DB, the thumbnail generated on-miss),
   guard `RequireAuthOrDownloadToken` = a session cookie or `?t=download_token`; `OptionalAuth` (auth
 package) puts a valid credential's principal on the context and lets an anonymous request through — the
-public upload-link upload uses it to attribute a signed-in uploader; **video streaming**
+public upload-link upload uses it to attribute a signed-in uploader; `RequireSignedIn` (auth package)
+admits any authenticated account **without entering a project** (no membership consulted) — the
+instance-level invitation accept, for an account that belongs to no project yet; **video streaming**
   (`video.go`): `GET /photos/{uid}/video` streams video **with HTTP Range** via `http.ServeContent`
   (206 partial, `Accept-Ranges`, seek, If-Range/If-None-Match, memory-bounded from `*os.File` via
   `storage.Materialize`, once per request — the transcode fallback shares it too) for inline HTML5
@@ -6767,6 +6778,40 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     account and enqueues `mailjob.AccountApproved` (project name + `/p/<slug>/` link) on the approval's
     transaction — nil without mail, so an approval then sends nothing. The member JSON carries no address.
   - `respond.go` — the error codes and the sentinel → status table; anything else is a logged `500`.
+- **Invitation links (`internal/invite`):** the domain of `project_invites` (migration 0109): a short
+  code (the upload links' `uploadlink.NewCode`/`ValidCode`/`HashSecret`, looked up by hash, kept
+  readable), a project role, `expires_at` (`NewInvite.Days`, 0 → `DefaultDays` 7, at most `MaxDays` 90),
+  an optional `max_uses`, `uses`, final `revoked_at`, `created_by` (SET NULL). Catalogue-side for the
+  reset (`internal/reset/tables.go`); the project's deletion cascades.
+  - `models.go` — `Invite` (`Code`, `ProjectUID/Slug/Name` never serialised), `StateAt`
+    (`revoked` > `expired` > `used_up` > `active`), `NewInvite.Validate` (`ErrInvalidRole`,
+    `ErrInvalidDays`, `ErrInvalidMaxUses`), `Acceptance`, `RegistrationRole` (admin → editor) and the
+    local role ladder `rank`/`higher` that "raise, never lower" needs.
+  - `store.go` — `Store` (`NewStore(pool)`, clock `time.Now`): `Create(ctx, projectUID, NewInvite, meta)`
+    (code redrawn on a hash collision; `project.invite.create` in the transaction), `Get`/`List` (scoped
+    to the project; another project's uid is `ErrNotFound`), `Revoke` (`project.invite.revoke`; repeat =
+    no-op) and `Resolve(ctx, code)` — instance-wide by code, **`ErrInvalid` for every unusable reason**
+    (malformed, unknown, expired, revoked, used up, deactivated project).
+  - `accept.go` — `Accept(ctx, code, userUID, meta)` in one transaction: locks the invite **and its
+    project** (`FOR UPDATE OF i, p` — the project row is the membership mutex `internal/project` takes),
+    then the membership; an approved membership at or above the invite's role → `Changed: false`, nothing
+    written (idempotent, even past the cap); otherwise the cap is checked, the membership upserted
+    (`higher(current, invite)`, approval filled), one use counted and `project.invite.accept` written.
+    `RedeemTx(ctx, tx, code, userUID, meta)` is the registration half on the account's transaction: the
+    same lock and checks, one use, the audit entry with `RegistrationRole` (auth inserts the membership).
+- **Invites API (`internal/inviteapi`):** the HTTP half (see `docs/API.md`, *Invites*), wired by
+  `cmd/kukatko/invites.go` (`buildInviteAPI` in `readAPIOptions`, `inviteGate` in `buildAuth`'s
+  `APIConfig.Invites`). `RegisterRoutes` is the project-scoped `/invites` (`projectAPI.invites`,
+  blanked by `aliasAPI`, `RequireAdmin`); `RegisterPublicRoutes` the instance-level `/invite/{code}`
+  (`IPLimit` = `ratelimit.invite` ahead of everything, `OptionalAuth` on the page, `RequireSignedIn` on
+  the accept). `Store` is an interface over `*invite.Store` so the handlers unit-test with a fake.
+  - `handlers.go` — the five handlers; the view adds `code`, `url` (`Config.BaseURL` = `mail.base_url` +
+    `InvitePath` + code) and `state`; `days: 0` is refused before the store.
+  - `gate.go` — `RegistrationGate` implements `auth.InviteGate` over a `Redeemer` (`Resolve` +
+    `RedeemTx`): the grant's role is `invite.RegistrationRole`, its `Redeem` maps `ErrInvalid` to
+    `auth.ErrRegistrationInvite`.
+  - `respond.go` — the error codes; `ErrInvalid` and `ErrNotFound` share the one `404 not_found`, anything
+    unknown is a logged bare `500 internal`.
 - **Tenant-isolation harness (`internal/projecttest`):** test support, **compiled only under the
   `integration` build tag** (so `make check` neither builds nor lints it — run
   `golangci-lint run --build-tags=integration ./internal/projecttest/...` after changing it). It exists

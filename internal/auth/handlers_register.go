@@ -23,12 +23,17 @@ type registerRequest struct {
 	// UploadLink is the short code of an upload link the person just uploaded
 	// through; when set it replaces Secret (see RegisterWithLink).
 	UploadLink string `json:"upload_link"`
+	// InviteCode is the short code of an invitation link; when set it replaces
+	// Secret and the approval (see RegisterWithInvite).
+	InviteCode string `json:"invite_code"`
 }
 
 // registerResponse is the body of a successful registration. It echoes the
 // stored (normalized) values so the client can show what was really saved, and
-// says out loud that the account is waiting — there is no session and no cookie,
-// and signing in now answers "waiting for approval" rather than success.
+// says whether the account is waiting — there is no session and no cookie, and
+// signing in answers "waiting for approval" until an administrator approves it.
+// An account registered through an invitation is approved at once
+// (pending_approval false) and may sign in straight away.
 //
 // It is deliberately not the User payload: an anonymous caller has no business
 // learning the account's UID or role, and the three fields it does get are the
@@ -41,14 +46,16 @@ type registerResponse struct {
 }
 
 // handleRegister creates an account for somebody who knows the instance's shared
-// registration secret. It is the one write in this package an anonymous caller
-// may perform, which is why it is rate-limited per client address (see
-// registerLimiterFor) and why every refusal below says as little as it can.
+// registration secret, holds a live upload link or holds a usable invitation.
+// It is the one write in this package an anonymous caller may perform, which is
+// why it is rate-limited per client address (see registerLimiterFor) and why
+// every refusal below says as little as it can.
 //
-// It responds 201 with the pending account, 400 for a bad body or input the
+// It responds 201 with the account (pending, or approved through an invite), 400 for a bad body or input the
 // account store will not take (over-long username, malformed address, weak
-// password), 403 when registration is not open, the secret is wrong or the
-// upload link standing in for it is not live, 409 for a
+// password), 403 when registration is not open, the secret is wrong, the
+// upload link standing in for it is not live or the invitation is not usable,
+// 409 for a
 // username somebody already holds, 429 when the address has spent its budget, or
 // 500.
 func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -74,15 +81,20 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Username:        user.Username,
 		DisplayName:     user.DisplayName,
 		Email:           user.Email,
-		PendingApproval: true,
+		PendingApproval: user.ApprovedAt == nil,
 	})
 }
 
-// register runs the registration path in asks for: through an upload link when
-// it names one — the gate resolves the link and the session cookie on r — and
-// through the shared secret otherwise. A link on an instance that wires no gate
-// is ErrRegistrationLink, the same answer an unknown link gets.
+// register runs the registration path in asks for: through an invitation when
+// it names one, through an upload link when it names one — the gate resolves
+// the link and the session cookie on r — and through the shared secret
+// otherwise. A link or an invite on an instance that wires no gate is
+// ErrRegistrationLink or ErrRegistrationInvite, the same answer an unknown one
+// gets.
 func (a *API) register(r *http.Request, in RegisterInput, entry audit.Entry) (User, error) {
+	if in.InviteCode != "" {
+		return a.registerWithInvite(r, in, entry)
+	}
 	if in.UploadLink == "" {
 		return a.registration.Register(r.Context(), in, entry)
 	}
@@ -94,6 +106,19 @@ func (a *API) register(r *http.Request, in RegisterInput, entry audit.Entry) (Us
 		return User{}, fmt.Errorf("auth: admitting the upload link: %w", err)
 	}
 	return a.registration.RegisterWithLink(r.Context(), in, grant, entry)
+}
+
+// registerWithInvite admits in's invitation through the invite gate and
+// registers the account into the invite's project, approved.
+func (a *API) registerWithInvite(r *http.Request, in RegisterInput, entry audit.Entry) (User, error) {
+	if a.invites == nil {
+		return User{}, ErrRegistrationInvite
+	}
+	grant, err := a.invites.AdmitInvite(r.Context(), in.InviteCode)
+	if err != nil {
+		return User{}, fmt.Errorf("auth: admitting the invitation: %w", err)
+	}
+	return a.registration.RegisterWithInvite(r.Context(), in, grant, entry)
 }
 
 // writeRegisterError maps a failed registration onto its response. The two
@@ -114,6 +139,8 @@ func writeRegisterError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, ErrRegistrationSecret.Error())
 	case errors.Is(err, ErrRegistrationLink):
 		writeError(w, http.StatusForbidden, ErrRegistrationLink.Error())
+	case errors.Is(err, ErrRegistrationInvite):
+		writeError(w, http.StatusForbidden, ErrRegistrationInvite.Error())
 	default:
 		if !isCreateUserInputError(err) {
 			log.Printf("auth: registration failed unexpectedly: %v", err)

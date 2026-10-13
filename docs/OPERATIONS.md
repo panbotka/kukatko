@@ -1860,8 +1860,8 @@ other type; values ≤ 0 are ignored and a type
   jobs, default 1), `cooldown` (min. spacing between packets, default 5m). `ErrInvalidWake` validation:
   enabled requires a valid MAC + at least one target (`broadcast_addr`/`interface`).
 - **Rate-limit keys (`ratelimit.*`, `internal/ratelimit`):** per-client-IP token-bucket limits on
-  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`, each
-  `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
+  heavy endpoints. Sections `upload`/`bulk`/`comment`/`tiles`/`upload_link`/`upload_link_per_link`/`invite`,
+  each `{rate_per_sec, burst}`; defaults 5/30, 2/10, 0.5/10, 50/200, 2/60, 10/300, 2/60; `rate_per_sec ≤ 0` disables the rule (middleware no-op). Env e.g.
   `KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC`. **`comment` (POST `/photos/{uid}/comments`) is keyed by the
   authenticated user**, not by IP (`Limiter.KeyedMiddleware`, mounted *inside* the auth guard so the
   principal is on the context): a household shares one address, and throttling everyone's conversation
@@ -1873,7 +1873,10 @@ other type; values ≤ 0 are ignored and a type
   (default 10/300) throttles the uploads through **one link**, keyed by the link whoever sends them — the
   brake on a link that leaked to somebody with many addresses. Both count **requests**, not files: the
   page sends one file per request, a script up to 50 (the upload's per-request cap); the files are bounded
-  by `upload_links.max_uploads_per_link`.
+  by `upload_links.max_uploads_per_link`. **`invite`** (default 2/60, env e.g.
+  `KUKATKO_RATELIMIT_INVITE_BURST`) throttles the public invitation routes (`GET /invite/{code}` and
+  `POST /invite/{code}/accept`, `internal/inviteapi`) per client IP, ahead of the code lookup — the brake
+  on guessing invite codes. An invite's URL is built from `mail.base_url` (+ `/invite/<code>`).
 - **Upload-link keys (`upload_links.*`, `internal/uploadlinkapi`):** `max_file_size_mb` (default
   **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` — the
   smaller wins; 0 = no cap of its own), `max_uploads_per_link` (default **2000** files over a link's life,

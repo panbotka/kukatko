@@ -1117,6 +1117,28 @@ Silence is not evidence; these areas were examined and are clean.
   goes through the hash. "Restore code" for pre-0091 rows stores a code only when it hashes to the
   stored `code_hash` (constant-time compare), so it cannot be used to plant a chosen code, and it is
   open only to the link's manager, who could rotate the link anyway — no extra rate limit.
+- **Invitation links — abuse considerations (2026-10, multi-tenancy step 26).** An invite
+  (`project_invites`, `internal/invite`) is a stronger credential than an upload link: whoever holds
+  the code joins a project — and an **admin** invite accepted by a signed-in account grants admin.
+  What bounds it: (1) **guessing** — 8 symbols of the 55-symbol unambiguous alphabet (~46 bits), the
+  public `/invite/{code}` routes throttled per client IP *ahead of the lookup* (`ratelimit.invite`),
+  and every unusable code (malformed, unknown, expired, revoked, used up, deactivated project) answers
+  one byte-identical 404, so a guess learns nothing about which codes exist or why one died;
+  (2) **leaks** — every invite expires (default 7, at most 90 days), may carry `max_uses`, and is
+  revocable for good; the readable `code` is the same accepted trade as upload links (above): a
+  database or backup leak exposes live codes, the remedy is revoke; the listing is `RequireAdmin` and
+  project-scoped (another project's invites are a 404 identical to an unknown slug's);
+  (3) **privilege minting through registration** — an anonymous registration through an invite is
+  approved at once but **capped at editor**, so a leaked admin invite cannot mint fresh admin
+  accounts; only an existing, signed-in account can take an admin invite, and that is recorded
+  (`project.invite.accept` with the role granted and the previous one); (4) **downgrade / lock-out** —
+  accepting never lowers a role, so an invite cannot be used to demote an admin, and the last-admin
+  rule is untouched; (5) **use-count races** — the invite row is locked in the accepting (or
+  registering) transaction, so two requests cannot both take the last use, and a repeated accept by
+  the same account counts nothing. Registration through an invite deliberately ignores the project's
+  registration switch (that is what invites are for); the registration endpoint keeps its own per-IP
+  limit. Residual risk: an admin who sends a long-lived, uncapped admin invite to a group chat; the
+  admin's list shows each invite's uses and state so it can be revoked.
 - **Logging — clean.** `internal/obs`: the access log records `slog.String("path", r.URL.Path)`
   only — **not** `RawQuery` — so the `?t=<download_token>` media tokens never reach the log, and
   a redacting `ReplaceAttr` hook scrubs any attr keyed `password/token/secret/dsn/authorization/cookie`.

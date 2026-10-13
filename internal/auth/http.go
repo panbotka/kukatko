@@ -35,6 +35,7 @@ type API struct {
 	usernameLimiter *Limiter
 	registration    *Registration
 	uploadLinks     UploadLinkGate
+	invites         InviteGate
 	rename          *Rename
 	passwordReset   *PasswordReset
 	registerLimit   *ratelimit.Limiter
@@ -74,6 +75,10 @@ type APIConfig struct {
 	// Optional: when nil, a registration naming a link is refused as if the link
 	// were unknown.
 	UploadLinks UploadLinkGate
+	// Invites lets an invitation link stand in for the registration secret and
+	// the approval. Optional: when nil, a registration naming an invite is
+	// refused as if the invite were unknown.
+	Invites InviteGate
 	// Rename is the administrator's change of an account's username. Optional:
 	// when nil, NewAPI derives one that renames accounts and sends no mail.
 	Rename *Rename
@@ -110,6 +115,7 @@ func NewAPI(cfg APIConfig) *API {
 		usernameLimiter:    usernameLimiterFor(cfg),
 		registration:       cfg.Registration,
 		uploadLinks:        cfg.UploadLinks,
+		invites:            cfg.Invites,
 		rename:             renameFor(cfg),
 		passwordReset:      passwordResetFor(cfg),
 		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),

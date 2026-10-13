@@ -435,9 +435,11 @@ func discoveryAPIOptions(
 // and labels, feedback, the places browse hierarchy, the task queue, per-user
 // saved searches and search history, the announcement banner, the instance
 // settings, the returning-reader digest, the notification inbox and the
-// grouped global search, and a project admin's member management. It returns the instance-wide groups built alongside:
-// the push subscriptions (the other half of the notification API), the audit
-// log and the system administrator's project and account management.
+// grouped global search, and a project admin's member management and
+// invitation links. It returns the instance-wide groups built alongside: the
+// push subscriptions (the other half of the notification API), the audit log,
+// the system administrator's project and account management and the public
+// invitation page and accept.
 // Splitting them out keeps buildServices within the function-length limit.
 //
 // The groups that return photo records take mediaStore, which decides where
@@ -463,6 +465,8 @@ func readAPIOptions(
 	api.announcement = buildAnnouncementAPI(db, authAPI).RegisterRoutes
 	api.settings = buildSettingsAPI(cfg, db, authAPI).RegisterRoutes
 	api.members = buildMemberAPI(cfg, db, authAPI).RegisterRoutes
+	invites := buildInviteAPI(cfg, db, authAPI)
+	api.invites = invites.RegisterRoutes
 	api.whatsNew = buildWhatsNewAPI(db, authAPI).RegisterRoutes
 	api.globalSearch = buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes
 	notifications := buildNotificationAPI(cfg, db, authAPI, mediaStore)
@@ -471,5 +475,6 @@ func readAPIOptions(
 		server.WithAPI(notifications.RegisterPushRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(invites.RegisterPublicRoutes),
 	}
 }

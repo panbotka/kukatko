@@ -60,6 +60,11 @@ var (
 	// place of the shared secret, and the link is unknown, expired or revoked —
 	// or this instance wires no upload links at all.
 	ErrRegistrationLink = errors.New("auth: the upload link is not valid")
+	// ErrRegistrationInvite indicates the registration named an invitation link
+	// and the invite is unknown, expired, revoked or used up — or this instance
+	// wires no invitations at all. One error for every reason, so registration
+	// confirms nothing about which codes exist.
+	ErrRegistrationInvite = errors.New("auth: the invitation is not valid")
 	// ErrNoteTooLong indicates the user note exceeds MaxNoteLen characters. Its
 	// message names the offending field so it can be surfaced verbatim in a 400.
 	ErrNoteTooLong = errors.New("auth: note must be at most 1000 characters")

@@ -73,6 +73,7 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Limiter:       limiter,
 		Registration:  registration,
 		UploadLinks:   uploadLinkGate(cfg, db),
+		Invites:       inviteGate(db),
 		Rename:        rename,
 		PasswordReset: passwordReset,
 		Passkeys:      passkeys,

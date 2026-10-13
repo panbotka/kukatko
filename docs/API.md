@@ -220,7 +220,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   credentials — the check runs after the bcrypt comparison — so it tells a guesser nothing. The
   client maps it to its own message (`login.errorPendingApproval`).
   **`POST /auth/register` (no authentication) — self-service registration.** Body:
-  `{username, display_name?, email, password, secret, upload_link?}`; unknown fields → 400. It creates the account
+  `{username, display_name?, email, password, secret, upload_link?, invite_code?}`; unknown fields → 400. It
+  creates the account
   as a **viewer**, **not approved**, so it exists and cannot be used until an administrator fills
   `approved_at`; there is no session and no cookie in the answer. **201** returns
   `{username, display_name, email, pending_approval: true}` — the stored (normalised) values, and
@@ -263,6 +264,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`photos.uploaded_by`, only where still unowned; what the same browser uploaded into another project is
   not claimed); their sidecars are rescheduled after the commit. The gate is
   `uploadlinkapi.RegistrationGate` behind the `auth.UploadLinkGate` interface.
+  **Registering through an invitation.** The body may carry `invite_code` (an invite's short code, see
+  the Invites API) in place of `secret` — it wins over `upload_link` when both are sent. A usable invite
+  stands in for the secret **and for the approval**, and does **not** consult the registration switch
+  (an invite is a project admin's decision about one person, the way to let somebody in while public
+  registration is closed): the account is created **approved**, as an **approved member of the invite's
+  project only**, with the invite's role **capped at `editor`** (an invite never mints an admin through
+  registration). **201** answers `pending_approval: false` — the person may sign in at once. In the
+  account's transaction the invite counts **one use** (under its row lock, so two registrations cannot
+  both take its last use) and `project.invite.accept` is recorded next to `user.register` (whose details
+  gain `invite: <invite uid>`). No confirmation mail and no "registration pending" notices — nothing is
+  waiting. An unknown, expired, revoked or used-up invite (or one of a deactivated project) is **403**
+  `auth: the invitation is not valid` (one answer for all). The gate is `inviteapi.RegistrationGate`
+  behind the `auth.InviteGate` interface.
   **`POST /admin/users/{uid}/approve` — removed** (multi-tenancy step 24). Letting somebody in is
   approving their membership of one project, `POST /p/{project}/members/{user_uid}/approve` (Members
   API); a blocked account stays blocked whatever its memberships say.
@@ -405,6 +419,38 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
     only admin; for the **caller themselves 409 `self`** unless another admin remains (then they leave and
     the project answers them 404 from then on); 404 `not_member`.
+- **Invites (project admin) (`/api/v1/p/{project}/invites`, public `/api/v1/invite/{code}`,
+  `internal/inviteapi`):** invitation links into a project. The code (8 symbols, the upload links'
+  unambiguous alphabet) is the whole credential: looked up through its SHA-256, kept readable for the
+  project's admins. Refusals are `{"error":"<code>"}` (+ `message` where the client should show the rule).
+  - The management half is mounted **only under `/p/{project}`** (no transition alias), every route
+    **`RequireAdmin`**; an admin of A addressing B's invites gets the very 404 an unknown slug gets, and
+    B's invite uid under A's prefix is the very 404 a missing uid gets.
+  - `GET /invites` → `{invites: [{uid, role, expires_at, max_uses, uses, revoked_at, created_by,
+    created_by_name, created_at, code, url, state}], default_days: 7, max_days: 90}`, newest first.
+    `state` is `active|expired|revoked|used_up`; `url` is `mail.base_url` + `/invite/<code>` (a
+    host-relative path without a base URL); `max_uses: null` is no cap.
+  - `POST /invites` `{role, days?, max_uses?}` → **201** + one invite as listed. `role` is
+    `viewer|curator|editor|admin` (422 `invalid_role`); `days` defaults to **7**, at most **90** (422
+    `invalid_days` outside 1..90); `max_uses` ≥ 1 or absent (422 `invalid_max_uses`); 400 `invalid_body`.
+    Audited `project.invite.create`.
+  - `DELETE /invites/{uid}` → **204**: revoked for good (the row stays, `state: revoked`); revoking a
+    revoked invite records nothing. Audited `project.invite.revoke`. 404 `not_found`.
+  - **Public, instance-level**, throttled per client IP **ahead of the lookup** (`ratelimit.invite`, →
+    429). Every unusable code — malformed, unknown, expired, revoked, used up, or of a deactivated
+    project — is the **same 404 `{"error":"not_found"}`**, byte for byte.
+  - `GET /invite/{code}` (anybody; a session is read when present) → `{project_name, role,
+    registration_role, signed_in}` — `role` is what accepting signed in grants, `registration_role` what
+    registering through it grants (capped at `editor`), `signed_in` picks between the two flows.
+  - `POST /invite/{code}/accept` (**any signed-in account** — `RequireSignedIn`, no project is entered, so
+    an account that belongs to no project yet may accept) → `{slug, role, changed}`: navigate to
+    `/p/<slug>/`. In one transaction: a new **approved** membership with the invite's role, or an
+    existing **lower role raised** to it (a higher one is **never lowered**) and a waiting membership
+    approved; the invite counts **one use**; audited `project.invite.accept` (`user_uid`, `role`,
+    `previous_role`, `invite_role`). An account that already holds an approved membership at or above
+    the invite's role gets `changed: false` — nothing written, **no use counted** — so accepting twice is
+    idempotent, even once the invite's cap is reached. An admin invite accepted this way grants admin.
+    Unauthenticated → 401.
 - **API tokens (`/api/v1/auth/tokens`, all behind `RequireAuth`):** long-lived bearer credentials for
   non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?, unlimited?}`) → 201
   `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?,unlimited}, secret:"kkt_<id>_<secret>"}`

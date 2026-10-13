@@ -83,6 +83,38 @@ type RegisterInput struct {
 	// through. When set it stands in for Secret (see RegisterWithLink); the
 	// handler resolves it, the service never reads it.
 	UploadLink string
+	// InviteCode is the short code of an invitation link. When set it stands in
+	// for Secret and for the approval (see RegisterWithInvite); the handler
+	// resolves it, the service never reads it.
+	InviteCode string
+}
+
+// InviteGate lets an invitation link stand in for the shared registration
+// secret and for the approval: a project admin who sends somebody an invite
+// has already decided to let them in. It is an interface so auth stays
+// ignorant of invites (internal/inviteapi implements it).
+type InviteGate interface {
+	// AdmitInvite resolves code to a live invite and returns the grant; it
+	// returns ErrRegistrationInvite when code names no usable invite.
+	AdmitInvite(ctx context.Context, code string) (InviteGrant, error)
+}
+
+// InviteGrant is an invitation admitted in place of the secret.
+type InviteGrant struct {
+	// InviteUID names the invite, for the audit entry.
+	InviteUID string
+	// ProjectUID is the invite's project: the account becomes an approved
+	// member of it and of no other.
+	ProjectUID string
+	// Role is the membership's role, already capped for registration (an
+	// invite never mints an admin account); RegisterWithInvite caps it again.
+	Role project.Role
+	// Redeem runs on the account's transaction once the account and its
+	// membership exist: it counts the invite's use and records the accept, and
+	// fails (rolling the account back) when the invite stopped being usable in
+	// the meantime. meta carries the new account as the actor and the request's
+	// address. Nil redeems nothing.
+	Redeem func(ctx context.Context, tx pgx.Tx, userUID string, meta audit.Meta) error
 }
 
 // UploadLinkGate lets a live upload link stand in for the shared registration
@@ -232,6 +264,65 @@ func (rg *Registration) RegisterWithLink(
 	return user, nil
 }
 
+// RegisterWithInvite creates the account described by in with grant, an
+// invitation the caller already admitted, in place of the shared secret — and
+// in place of the approval: the account is approved at once and becomes an
+// approved member of the invite's project with grant.Role, capped at editor.
+// Unlike the other two paths it does not consult the project's registration
+// switch: an invite is a project admin's deliberate decision about one person,
+// which is the whole point of sending it while public registration is closed.
+// For the same reason nobody is told a registration is waiting and no "we
+// received your registration" mail is sent — there is nothing to wait for.
+//
+// The account, its membership, entry (stamped like Register's, its details
+// naming the invite) and grant.Redeem (the invite's use and its own audit
+// entry) commit together. It returns the same account errors as Register.
+func (rg *Registration) RegisterWithInvite(
+	ctx context.Context, in RegisterInput, grant InviteGrant, entry audit.Entry,
+) (User, error) {
+	role := grant.Role
+	if role.IsAdmin() || !role.Valid() {
+		// Defence in depth: the gate already capped it.
+		role = project.RoleEditor
+	}
+	user, err := rg.svc.prepareNewUser(CreateUserInput{
+		Username: in.Username, Password: in.Password, DisplayName: in.DisplayName, Email: in.Email,
+		Role: AccountRole(role),
+	})
+	if err != nil {
+		return User{}, err
+	}
+	user.joinProject = grant.ProjectUID
+	entry.ActorUID, entry.TargetUID = user.UID, user.UID
+	entry.Details = withRegistrationDetails(entry.Details, user)
+	entry.Details["invite"] = grant.InviteUID
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = grant.ProjectUID
+	}
+	meta := audit.Meta{ActorUID: user.UID, IP: entry.IP, UserAgent: entry.UserAgent}
+	if err := rg.svc.store.CreateUserAuditedWith(ctx, user, entry,
+		func(ctx context.Context, tx pgx.Tx) error {
+			if grant.Redeem == nil {
+				return nil
+			}
+			return grant.Redeem(ctx, tx, user.UID, meta)
+		}); err != nil {
+		return User{}, err
+	}
+	return rg.svc.store.GetUserByUID(ctx, user.UID)
+}
+
+// withRegistrationDetails returns details (allocated when nil) with the new
+// account's username and role, the details every registration entry carries.
+func withRegistrationDetails(details map[string]any, user User) map[string]any {
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["username"] = user.Username
+	details["role"] = string(user.AccountRole)
+	return details
+}
+
 // register is the account creation both registration paths share once their
 // gate let the request through: the account joins projectUID, unapproved.
 // claim, when not nil, runs on the account's transaction after the account row
@@ -263,11 +354,7 @@ func (rg *Registration) register(
 
 	entry.ActorUID = user.UID
 	entry.TargetUID = user.UID
-	if entry.Details == nil {
-		entry.Details = map[string]any{}
-	}
-	entry.Details["username"] = user.Username
-	entry.Details["role"] = string(user.AccountRole)
+	entry.Details = withRegistrationDetails(entry.Details, user)
 	if entry.ProjectUID == "" {
 		entry.ProjectUID = projectUID
 	}

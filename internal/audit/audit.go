@@ -471,6 +471,19 @@ const (
 	// project being set or cleared. The details carry project_uid, the role and
 	// the previous and new subject uid.
 	ActionProjectMemberSubject = "project.member.subject"
+	// ActionProjectInviteCreate records a project admin creating an invitation
+	// link. The target is the invite (target type "project_invites"); the details
+	// carry project_uid, the role it grants, its expiry and its use cap.
+	ActionProjectInviteCreate = "project.invite.create"
+	// ActionProjectInviteRevoke records a project admin revoking an invitation
+	// link for good. The details carry project_uid and the role it granted.
+	ActionProjectInviteRevoke = "project.invite.revoke"
+	// ActionProjectInviteAccept records an account joining a project — or having
+	// its role there raised — through an invitation link, either by accepting it
+	// signed in or by registering through it. The target is the invite; the
+	// details carry project_uid, the account, the role granted and the previous
+	// role (empty for a new membership).
+	ActionProjectInviteAccept = "project.invite.accept"
 	// ActionAuditPurge records a maintainer purging old audit entries by retention
 	// (deleting rows older than a cutoff). The applied cutoff, the retention window
 	// in days and the number of deleted rows are recorded in the entry's details.
@@ -531,7 +544,8 @@ var knownActions = map[string]struct{}{
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
 	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectMemberAdd: {},
 	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
-	ActionProjectMemberSubject: {},
+	ActionProjectMemberSubject: {}, ActionProjectInviteCreate: {}, ActionProjectInviteRevoke: {},
+	ActionProjectInviteAccept: {},
 }
 
 // KnownAction reports whether action is one of the trail's own action labels. An

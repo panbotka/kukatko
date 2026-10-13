@@ -209,6 +209,8 @@ func TestLoad_defaults(t *testing.T) {
 		{"ratelimit.upload_link.burst", cfg.RateLimit.UploadLink.Burst, 60},
 		{"ratelimit.upload_link_per_link.rate_per_sec", cfg.RateLimit.UploadLinkPerLink.RatePerSec, 10.0},
 		{"ratelimit.upload_link_per_link.burst", cfg.RateLimit.UploadLinkPerLink.Burst, 300},
+		{"ratelimit.invite.rate_per_sec", cfg.RateLimit.Invite.RatePerSec, 2.0},
+		{"ratelimit.invite.burst", cfg.RateLimit.Invite.Burst, 60},
 		{"upload_links.max_file_size_mb", cfg.UploadLinks.MaxFileSizeMB, 1024},
 		{"upload_links.max_uploads_per_link", cfg.UploadLinks.MaxUploadsPerLink, 2000},
 		{"upload_links.default_days", cfg.UploadLinks.DefaultDays, 30},
@@ -479,6 +481,7 @@ func TestLoad_rateLimitEnvOverride(t *testing.T) {
 	t.Setenv("KUKATKO_RATELIMIT_UPLOAD_RATE_PER_SEC", "12.5")
 	t.Setenv("KUKATKO_RATELIMIT_UPLOAD_BURST", "60")
 	t.Setenv("KUKATKO_RATELIMIT_TILES_RATE_PER_SEC", "0")
+	t.Setenv("KUKATKO_RATELIMIT_INVITE_BURST", "7")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -492,6 +495,9 @@ func TestLoad_rateLimitEnvOverride(t *testing.T) {
 	}
 	if cfg.RateLimit.Tiles.RatePerSec != 0 {
 		t.Errorf("ratelimit.tiles.rate_per_sec = %v, want 0 (disabled)", cfg.RateLimit.Tiles.RatePerSec)
+	}
+	if cfg.RateLimit.Invite.Burst != 7 {
+		t.Errorf("ratelimit.invite.burst = %d, want 7", cfg.RateLimit.Invite.Burst)
 	}
 }
 
