@@ -8720,8 +8720,37 @@ set to the byte elsewhere is never rounded by the form), **Stav** (an `active` s
 `/p/<slug>/members`, the page a later step builds; **„Přidat mě jako člena"** POSTs the caller as
 `admin`, then `refresh()`es the session so the switcher learns the project — hidden when
 `useAuth().projects` already holds the project's uid), **Využití** and **Úložiště**
-(`storage_prefix` monospace, or „v kořeni úložiště" when empty — the placeholder the storage-move UI
-fills later).
+(`components/system/StorageMoveCard.tsx`, keyed by the project's uid, below).
+
+**`StorageMoveCard`** — the „Úložiště" card: the project's storage move (`internal/rekeyapi`, client
+`services/rekey.ts` via `instancePath`: `fetchRekeyRun` — a 404 is `null`, "no run" —, `startRekey`,
+`pauseRekey`, `resumeRekey`, `retryRekey`; a refusal is `RekeyApiError` with its `code`). Faces:
+**root, no run** — „v kořeni úložiště", the promise „…Přesun je bezpečný: každý soubor se nejdřív
+zkopíruje a ověří, teprve potom se smaže původní." and **„Spustit přesun"** behind a `primary`
+`ConfirmModal` that repeats the guarantee, names the target `projects/<uid>/` and says the move can be
+paused; **a prefix and no run** (a project founded with its own) — just the prefix; **running / paused /
+failed** — the target prefix, react-bootstrap `ProgressBar` (the bar is a **nested child**
+`<ProgressBar><ProgressBar now aria-label/></ProgressBar>`: a child spreads its props onto the
+`role=progressbar` node, so the bar has a name — the outer one would put it on the track), „420 z 1 000
+fotek · 420,0 MB z 1 000,0 MB · 42 %", while running the rate („600 fotek/min", „měřím rychlost…" until two
+polls exist) and the ETA (`etaPhrase` from `lib/uploadEta`), started/updated, the last key (monospace,
+middle-truncated to 48 chars, full key in `title`), the error count as a toggle (`aria-expanded`) over the
+last errors **newest first**, and **Pozastavit** (running) / **Pokračovat** (paused) / **Zkusit znovu**
+(failed, with an explanatory danger alert); **done** — a success alert „Přesun je hotový. Objekty projektu
+leží pod projects/…, dokončeno …" (`finished_at`). The state badge (Probíhá/Pozastaveno/Hotovo/Selhalo)
+sits by the title. A start refused `already_running` re-reads and shows that run; `invalid_state` on an
+action re-reads („Stav přesunu se mezitím změnil…"). The polling is **`hooks/useRekeyRun(uid)`** →
+`{status, run, ratePerMinute, adopt, reload}`: one read at once, then every **3 s while running, 15 s
+otherwise** (paused, failed, no run — a CLI start shows up on its own), **none once done**; it stands
+down while `document.visibilityState` is `hidden` and reads at once on return; a failed poll after the
+first answer keeps the run (`status` turns `error` only for the first read → `ErrorState` with retry);
+`adopt(run)` takes an action's answer and re-arms the timer at its cadence. The arithmetic is pure
+**`lib/rekeyProgress.ts`**: `rekeyPollInterval`, `rekeyInProgress`, `rekeyFraction`/`rekeyPercent`
+(floored, so 100 % means all moved), `rekeyRate(prev, next)` (photos/min between two client-stamped
+samples; `null` without a pair, without elapsed time or after a count went down), `rekeyEtaSeconds`,
+`truncateMiddle`. **`SystemProjectsPage`** reads every project's run once after the list
+(`Promise.allSettled`, a failed read = no chip) and puts a pill „přesun 42 %" (`primary` running,
+`warning` paused, `title` says which) beside the name of a project whose move is running or paused.
 
 **`SystemUsersPage`** = `/system/users`: a `RecordTable` of every account — username (monospace),
 display name, e-mail, the instance-role badge („Správce systému"/„Uživatel") + „Zablokovaný",
@@ -8735,6 +8764,11 @@ Tests: `pages/SystemProjectsPage.test.tsx` (table columns and values, retry, liv
 a refused empty form, create with limits in bytes → detail, `slug_taken` on the field),
 `pages/SystemProjectPage.test.tsx` (pick by slug, storage root text, unknown slug, save of changed
 fields only, deactivate confirm + cancel, add-me + hidden for a member),
+`components/system/StorageMoveCard.test.tsx` (the four states, the confirmation gates the start,
+pause/resume/retry, errors newest first, the measured rate + ETA under fake timers, `already_running`,
+load retry), `hooks/useRekeyRun.test.tsx` (3 s / 15 s cadence, stop on done, hidden-tab suspension,
+the rate, `adopt` — fake timers with `shouldAdvanceTime`), `lib/rekeyProgress.test.ts`,
+`services/rekey.test.ts` (URLs, 404 → `null`, codes), the move chip in `SystemProjectsPage.test.tsx`,
 `pages/SystemUsersPage.test.tsx` (chips/badges, own row inert, promote, demote with
 `last_maintainer`), `services/projects.test.ts` (URLs, error codes, `slugProblem`),
 `lib/byteLimit.test.ts`, `navItems.test.ts` (`adminItems`, `systemProjectPath`), the admin-section

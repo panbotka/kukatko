@@ -4647,7 +4647,10 @@
       "nameRequired": "Vyplňte název.",
       "limitInvalid": "Zadejte kladné číslo, nebo pole nechte prázdné.",
       "createFailed": "Projekt se nepodařilo založit."
-    }
+    },
+    "moveChip": "přesun {{percent}} %",
+    "moveChipRunning": "Úložiště projektu se přesouvá",
+    "moveChipPaused": "Přesun úložiště je pozastavený"
   },
   "systemProject": {
     "back": "Zpět na projekty",
@@ -4679,7 +4682,51 @@
     "originals": "Originály",
     "storageTitle": "Úložiště",
     "storagePrefix": "Prefix v úložišti",
-    "storageRoot": "v kořeni úložiště"
+    "storageRoot": "v kořeni úložiště",
+    "storageMove": {
+      "loading": "Načítám stav přesunu…",
+      "loadFailed": "Stav přesunu se nepodařilo načíst.",
+      "rootText": "Objekty tohoto projektu leží v kořeni úložiště. Přesun je bezpečný: každý soubor se nejdřív zkopíruje a ověří, teprve potom se smaže původní.",
+      "start": "Spustit přesun",
+      "confirmTitle": "Přesunout úložiště projektu {{name}}?",
+      "confirmBody": "Objekty projektu se přesunou pod {{prefix}}. Každý soubor se nejdřív zkopíruje a ověří, teprve potom se smaže původní, takže nic nezmizí ani při přerušení. Nové fotky se od této chvíle ukládají rovnou pod nový prefix. Přesun můžete kdykoli pozastavit a později v něm pokračovat.",
+      "state": {
+        "running": "Probíhá",
+        "paused": "Pozastaveno",
+        "done": "Hotovo",
+        "failed": "Selhalo"
+      },
+      "barLabel": "Průběh přesunu",
+      "percent": "{{percent}} %",
+      "counts": "{{done}} z {{total}} fotek · {{doneBytes}} z {{totalBytes}} · {{percent}}",
+      "rate": "{{rate}} fotek/min",
+      "rateUnknown": "měřím rychlost…",
+      "eta": {
+        "calculating": "zbývající čas počítám…",
+        "lessThanMinute": "zbývá necelá minuta",
+        "minutes": "zbývá asi {{n}} min",
+        "hours_one": "zbývá asi {{count}} hodina",
+        "hours_few": "zbývají asi {{count}} hodiny",
+        "hours_many": "zbývá asi {{count}} hodiny",
+        "hours_other": "zbývá asi {{count}} hodin"
+      },
+      "startedAt": "Spuštěno",
+      "updatedAt": "Aktualizováno",
+      "lastKey": "Poslední soubor",
+      "errorCount_one": "{{count}} chyba",
+      "errorCount_few": "{{count}} chyby",
+      "errorCount_many": "{{count}} chyby",
+      "errorCount_other": "{{count}} chyb",
+      "pause": "Pozastavit",
+      "resume": "Pokračovat",
+      "retry": "Zkusit znovu",
+      "failedText": "Přesun se zastavil chybou. Už přesunuté soubory jsou v pořádku; „Zkusit znovu“ projde zbylé fotky ještě jednou.",
+      "doneSummary": "Přesun je hotový. Objekty projektu leží pod {{prefix}}, dokončeno {{at}}.",
+      "alreadyRunning": "Přesun už běží — ukazuji jeho průběh.",
+      "alreadyPrefixed": "Projekt už má vlastní prefix a přesun nepotřebuje.",
+      "stateChanged": "Stav přesunu se mezitím změnil — ukazuji aktuální.",
+      "actionFailed": "Akci se nepodařilo provést."
+    }
   },
   "systemUsers": {
     "title": "Účty",

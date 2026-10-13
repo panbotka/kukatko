@@ -4417,7 +4417,10 @@
       "nameRequired": "Fill in the name.",
       "limitInvalid": "Enter a positive number, or leave the field empty.",
       "createFailed": "The project could not be created."
-    }
+    },
+    "moveChip": "moving {{percent}}%",
+    "moveChipRunning": "The project’s storage is being moved",
+    "moveChipPaused": "The storage move is paused"
   },
   "systemProject": {
     "back": "Back to projects",
@@ -4449,7 +4452,47 @@
     "originals": "Originals",
     "storageTitle": "Storage",
     "storagePrefix": "Storage prefix",
-    "storageRoot": "in the storage root"
+    "storageRoot": "in the storage root",
+    "storageMove": {
+      "loading": "Loading the move’s status…",
+      "loadFailed": "The move’s status could not be loaded.",
+      "rootText": "This project’s objects lie in the root of the storage. The move is safe: every file is first copied and verified, and only then is the original deleted.",
+      "start": "Start the move",
+      "confirmTitle": "Move the storage of the project {{name}}?",
+      "confirmBody": "The project’s objects move under {{prefix}}. Every file is first copied and verified, and only then is the original deleted, so nothing disappears even if the move is interrupted. New photos land under the new prefix from now on. You can pause the move at any time and resume it later.",
+      "state": {
+        "running": "Running",
+        "paused": "Paused",
+        "done": "Done",
+        "failed": "Failed"
+      },
+      "barLabel": "Move progress",
+      "percent": "{{percent}}%",
+      "counts": "{{done}} of {{total}} photos · {{doneBytes}} of {{totalBytes}} · {{percent}}",
+      "rate": "{{rate}} photos/min",
+      "rateUnknown": "measuring the rate…",
+      "eta": {
+        "calculating": "working out the time left…",
+        "lessThanMinute": "less than a minute left",
+        "minutes": "about {{n}} min left",
+        "hours_one": "about {{count}} hour left",
+        "hours_other": "about {{count}} hours left"
+      },
+      "startedAt": "Started",
+      "updatedAt": "Updated",
+      "lastKey": "Last file",
+      "errorCount_one": "{{count}} error",
+      "errorCount_other": "{{count}} errors",
+      "pause": "Pause",
+      "resume": "Resume",
+      "retry": "Try again",
+      "failedText": "The move stopped on an error. The files already moved are fine; “Try again” goes over the remaining photos once more.",
+      "doneSummary": "The move is done. The project’s objects lie under {{prefix}}, finished {{at}}.",
+      "alreadyRunning": "A move is already running — showing its progress.",
+      "alreadyPrefixed": "The project already has its own prefix and needs no move.",
+      "stateChanged": "The move’s state changed in the meantime — showing the current one.",
+      "actionFailed": "The action could not be carried out."
+    }
   },
   "systemUsers": {
     "title": "Accounts",

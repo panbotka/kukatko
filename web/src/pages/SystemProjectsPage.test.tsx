@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '../i18n'
 import type { AdminProject } from '../services/projects'
+import type { RekeyRun, RekeyState } from '../services/rekey'
 
 import { SystemProjectsPage } from './SystemProjectsPage'
 
@@ -14,7 +15,14 @@ vi.mock('../services/projects', async (importOriginal) => {
   return { ...actual, fetchAdminProjects: vi.fn(), createProject: vi.fn() }
 })
 
+vi.mock('../services/rekey', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/rekey')>()
+  return { ...actual, fetchRekeyRun: vi.fn() }
+})
+
 const { fetchAdminProjects, createProject, ProjectApiError } = await import('../services/projects')
+const { fetchRekeyRun } = await import('../services/rekey')
+const rekeyMock = vi.mocked(fetchRekeyRun)
 const fetchMock = vi.mocked(fetchAdminProjects)
 const createMock = vi.mocked(createProject)
 
@@ -40,6 +48,25 @@ function project(overrides: Partial<AdminProject> = {}): AdminProject {
   }
 }
 
+/** A storage move of `projectUid` in `state`, `done` of 200 photos moved. */
+function move(projectUid: string, state: RekeyState, done: number): RekeyRun {
+  return {
+    uid: `rk-${projectUid}`,
+    project_uid: projectUid,
+    state,
+    target_prefix: `projects/${projectUid}/`,
+    total_photos: 200,
+    total_bytes: 200 * 1024,
+    done_photos: done,
+    done_bytes: done * 1024,
+    last_key: '',
+    errors: [],
+    error_count: 0,
+    started_at: '2026-10-13T08:00:00Z',
+    updated_at: '2026-10-13T08:00:00Z',
+  }
+}
+
 function renderPage() {
   return render(
     <I18nextProvider i18n={i18n}>
@@ -57,6 +84,8 @@ beforeEach(async () => {
   await i18n.changeLanguage('cs')
   fetchMock.mockReset()
   createMock.mockReset()
+  rekeyMock.mockReset()
+  rekeyMock.mockResolvedValue(null)
   fetchMock.mockResolvedValue([
     project(),
     project({
@@ -197,5 +226,34 @@ describe('SystemProjectsPage', () => {
     expect(within(dialog).getByLabelText('Slug')).toHaveClass('is-invalid')
     // Unlimited limits are left out of the body, not sent as null.
     expect(createMock).toHaveBeenCalledWith({ slug: 'v2', name: 'Druhá', description: '' })
+  })
+
+  it('marks a project whose storage move is running or paused with its percent', async () => {
+    rekeyMock.mockImplementation((uid) =>
+      Promise.resolve(uid === 'pjv' ? move('pjv', 'running', 84) : move('pjr', 'done', 200)),
+    )
+    renderPage()
+
+    const chip = await screen.findByTestId('move-chip-v')
+    expect(chip).toHaveTextContent('přesun 42 %')
+    expect(chip).toHaveAttribute('title', 'Úložiště projektu se přesouvá')
+    expect(rekeyMock).toHaveBeenCalledTimes(2)
+    // A done move is history, not news.
+    expect(screen.queryByTestId('move-chip-rodina')).not.toBeInTheDocument()
+  })
+
+  it('marks a paused move too, and shows the list when a run cannot be read', async () => {
+    rekeyMock.mockImplementation((uid) =>
+      uid === 'pjv'
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(move('pjr', 'paused', 50)),
+    )
+    renderPage()
+
+    const chip = await screen.findByTestId('move-chip-rodina')
+    expect(chip).toHaveTextContent('přesun 25 %')
+    expect(chip).toHaveAttribute('title', 'Přesun úložiště je pozastavený')
+    expect(screen.getByRole('link', { name: 'Veselice' })).toBeInTheDocument()
+    expect(screen.queryByTestId('move-chip-v')).not.toBeInTheDocument()
   })
 })

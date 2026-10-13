@@ -630,7 +630,11 @@ automatically.** Design: `internal/rekey` (the safe per-photo move) and `interna
 | `kukatko storage rekey v --retry` | Starts another pass of a **failed** move over every photo still in the old layout. Audited. |
 
 The same actions over the API: `GET`/`POST /projects/{uid}/rekey`, `POST …/rekey/{pause,resume,retry}`
-(maintainer, [`API.md`](API.md)), and `kukatko ctl projects rekey <slug> [--status|--pause|--resume|--retry]`.
+(maintainer, [`API.md`](API.md)), `kukatko ctl projects rekey <slug> [--status|--pause|--resume|--retry]`,
+and **in the app**: the „Úložiště" card of `/system/projects/<slug>` starts the move (behind a confirmation),
+shows its live progress (photos and bytes, percent, the rate and ETA, the last key, the errors) and pauses,
+resumes and retries it; `/system/projects` marks a project being moved with „přesun 42 %"
+([`FRONTEND.md`](FRONTEND.md)).
 Every report goes to **stderr**; the command exits **0 unless the run it reports is `failed`** (or the
 action was refused — `already_running`, `already_prefixed`, a pause of a run that is not running, …).
 
@@ -650,10 +654,12 @@ above: inventory B diffed clean, the UI spot-checked, **a fresh backup** taken. 
    originals; `kukatko maintenance scan` beforehand should report nothing missing).
 2. Start it at a quiet time (`kukatko storage rekey v`, or the `ctl`/API equivalent). It needs the **running
    server's worker** — the command only queues the job.
-3. **Watch** it: `--status` (photos moved / total should climb by about `per_second` a second), the
-   maintainer's `/jobs` (one `storage_rekey` job, queued/running), and the server log. The library stays
-   usable throughout; a photo whose row was just moved is served from its new key.
-4. If it competes with serving, `--pause`, lower `storage.rekey.per_second`, restart, `--resume`.
+3. **Watch** it: `/system/projects/v` (the bar and the measured rate — about `per_second` × 60 photos a
+   minute — refresh every 3 s), `--status` (photos moved / total should climb by about `per_second` a
+   second), the maintainer's `/jobs` (one `storage_rekey` job, queued/running), and the server log. The
+   library stays usable throughout; a photo whose row was just moved is served from its new key.
+4. If it competes with serving, `--pause` (or „Pozastavit" on the page), lower `storage.rekey.per_second`,
+   restart, `--resume` („Pokračovat").
 
 **What "done" means.** The run's state is `done` and `finished_at` is set: every photo row of the project
 points under `projects/<uid>/`, the sidecar of every photo and the project's `families.yaml` have been

@@ -21,7 +21,14 @@ vi.mock('../services/projects', async (importOriginal) => {
   }
 })
 
+// The storage card reads the project's move; these tests are about everything else.
+vi.mock('../services/rekey', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/rekey')>()
+  return { ...actual, fetchRekeyRun: vi.fn() }
+})
+
 const { fetchAdminProjects, updateProject, addProjectMember } = await import('../services/projects')
+const { fetchRekeyRun } = await import('../services/rekey')
 const fetchMock = vi.mocked(fetchAdminProjects)
 const updateMock = vi.mocked(updateProject)
 const addMock = vi.mocked(addProjectMember)
@@ -78,6 +85,7 @@ beforeEach(async () => {
   fetchMock.mockReset()
   updateMock.mockReset()
   addMock.mockReset()
+  vi.mocked(fetchRekeyRun).mockResolvedValue(null)
   fetchMock.mockResolvedValue([project({ uid: 'pjv', slug: 'v', name: 'Veselice' }), project()])
 })
 
@@ -93,9 +101,9 @@ describe('SystemProjectPage', () => {
       'href',
       '/p/rodina/members',
     )
-    expect(within(screen.getByTestId('project-storage')).getByText('projects/pjr/')).toHaveClass(
-      'font-monospace',
-    )
+    expect(
+      await within(screen.getByTestId('project-storage')).findByText('projects/pjr/'),
+    ).toHaveClass('font-monospace')
   })
 
   it('says "v kořeni úložiště" for the empty storage prefix', async () => {
@@ -103,7 +111,7 @@ describe('SystemProjectPage', () => {
     renderPage()
 
     const storage = await screen.findByTestId('project-storage')
-    expect(within(storage).getByText('v kořeni úložiště')).toBeInTheDocument()
+    expect(await within(storage).findByText('v kořeni úložiště')).toBeInTheDocument()
   })
 
   it('names a slug that does not exist', async () => {

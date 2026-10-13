@@ -218,7 +218,12 @@ shared library is tidied by more than one person.
   later — with an optional largest-file limit and a quota for all originals together. A project's own
   page edits its name, description and limits, switches it off (its members can no longer open it;
   nothing is deleted) or back on, adds you as its administrator when you are not a member yet, and
-  shows where in the storage its files live. *Účty* (`/system/users`) lists every account of the
+  shows where in the storage its files live. A project that still lives in the root of the storage
+  (the original library, from before projects) is moved under its own prefix from that same page:
+  *Spustit přesun* — after a confirmation that repeats the promise: every file is copied and verified
+  before the original is deleted — and then a live progress bar with photos and bytes moved, the
+  speed and the time left, the last file and any errors, and *Pozastavit* / *Pokračovat* /
+  *Zkusit znovu*. The project list marks a project being moved with „přesun 42 %". *Účty* (`/system/users`) lists every account of the
   instance with its memberships, and is where another account is promoted to a system administrator
   or demoted again — never your own, somebody else has to do that.
 - **The limits hold at every upload.** A project's largest-file limit and its quota are enforced on

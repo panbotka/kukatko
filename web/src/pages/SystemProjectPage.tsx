@@ -15,6 +15,7 @@ import { Icon } from '../components/Icon'
 import { NarrowPage } from '../components/NarrowPage'
 import { SYSTEM_PROJECTS_PATH } from '../components/navItems'
 import { LimitField } from '../components/system/LimitField'
+import { StorageMoveCard } from '../components/system/StorageMoveCard'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { type LimitDraft, limitDraft, parseLimit } from '../lib/byteLimit'
 import { formatBytes, formatCount } from '../lib/format'
@@ -69,8 +70,8 @@ function sameLimit(a: LimitDraft, b: LimitDraft): boolean {
  *
  * The page is addressed by slug, as the project is everywhere else, while the
  * API addresses it by uid — so it reads the project list and picks the row. The
- * „Úložiště" section only shows the prefix for now; it is the place the storage
- * move's controls will take.
+ * „Úložiště" section is {@link StorageMoveCard}: the prefix and, for a project
+ * still in the root of the store, its storage move with live progress.
  *
  * Saving sends only what changed: a limit left as it was is not re-sent, so a
  * value set to the byte elsewhere (`kukatko ctl`) is never rounded by this form.
@@ -385,21 +386,7 @@ export function SystemProjectPage() {
         </Card.Body>
       </Card>
 
-      <Card className="mb-4" data-testid="project-storage">
-        <Card.Body>
-          <h2 className="kk-section-title mb-3">{t('systemProject.storageTitle')}</h2>
-          <dl className="row mb-0">
-            <dt className="col-6 fw-normal text-secondary">{t('systemProject.storagePrefix')}</dt>
-            <dd className="col-6 mb-0">
-              {current.storage_prefix === '' ? (
-                t('systemProject.storageRoot')
-              ) : (
-                <span className="font-monospace">{current.storage_prefix}</span>
-              )}
-            </dd>
-          </dl>
-        </Card.Body>
-      </Card>
+      <StorageMoveCard key={current.uid} project={current} />
 
       <ConfirmModal
         show={confirm.show}
