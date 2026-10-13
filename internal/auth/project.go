@@ -292,7 +292,8 @@ func RequireActiveProject(next http.Handler) http.Handler {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicProjectKey{}, req.project)))
+		ctx := obs.WithProject(r.Context(), req.project.UID, req.project.Slug)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, publicProjectKey{}, req.project)))
 	})
 }
 

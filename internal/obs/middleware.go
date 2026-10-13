@@ -55,6 +55,11 @@ type fields struct {
 	// — "maintainer" for a system administrator entering a project it is not a
 	// member of — or "".
 	actorRole string
+	// projectUID and projectSlug name the project the request was admitted
+	// into, once auth has resolved it; both empty for an instance-level
+	// request.
+	projectUID  string
+	projectSlug string
 }
 
 // fieldsContextKey is the unexported context key under which the request fields
@@ -130,10 +135,69 @@ func ActorRole(ctx context.Context) string {
 	return f.actorRole
 }
 
+// SetProject records the project the request was admitted into — its uid and
+// its slug — so the access-log line carries the slug as project and an audit
+// entry built from the request (audit.FromRequest) records the uid. auth stamps
+// it once a caller has entered the project; a later call (the inner
+// /p/{project} resolution) replaces an earlier one. It is a no-op when uid is
+// empty or no fields bag is present.
+func SetProject(ctx context.Context, uid, slug string) {
+	if uid == "" {
+		return
+	}
+	f := fieldsFrom(ctx)
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	f.projectUID, f.projectSlug = uid, slug
+	f.mu.Unlock()
+}
+
+// projectContextKey is the context key under which WithProject records the
+// request's project uid.
+type projectContextKey struct{}
+
+// WithProject records the project a request was admitted into on both halves:
+// the fields bag, for the access-log line (SetProject), and a child context it
+// returns, so ProjectUID answers for a handler even where no AccessLog
+// installed a bag (a test server, a handler driven directly). auth calls it
+// when it admits a caller into a project.
+func WithProject(ctx context.Context, uid, slug string) context.Context {
+	if uid == "" {
+		return ctx
+	}
+	SetProject(ctx, uid, slug)
+	return context.WithValue(ctx, projectContextKey{}, uid)
+}
+
+// ProjectUID returns the uid of the project the request was admitted into —
+// WithProject's, else SetProject's — or "" when it was admitted into none.
+func ProjectUID(ctx context.Context) string {
+	if uid, ok := ctx.Value(projectContextKey{}).(string); ok {
+		return uid
+	}
+	uid, _ := projectOf(ctx)
+	return uid
+}
+
+// projectOf returns the uid and slug SetProject stamped on ctx, both "" when
+// none.
+func projectOf(ctx context.Context) (string, string) {
+	f := fieldsFrom(ctx)
+	if f == nil {
+		return "", ""
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.projectUID, f.projectSlug
+}
+
 // AccessLog returns a middleware that installs the request fields bag and logs
 // one structured line per request through logger after the handler returns. The
 // line carries the request id, method, path, matched route pattern, status,
-// duration, response bytes, remote IP, and the authenticated user when known.
+// duration, response bytes, remote IP, the authenticated user when known and
+// the project's slug (never its name) when the request was admitted into one.
 // Requests to /metrics are served without logging. A nil logger falls back to
 // the slog default.
 func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
@@ -179,6 +243,9 @@ func logRequest(
 	}
 	if role := ActorRole(ctx); role != "" {
 		attrs = append(attrs, slog.String("actor_role", role))
+	}
+	if _, slug := projectOf(ctx); slug != "" {
+		attrs = append(attrs, slog.String("project", slug))
 	}
 	logger.LogAttrs(ctx, levelForStatus(ww.Status()), "http request", attrs...)
 }

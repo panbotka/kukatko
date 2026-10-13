@@ -8,28 +8,38 @@ import (
 	"time"
 )
 
-// sampleSnapshot is a small but complete library snapshot: every labelled family
-// has at least two label values and one import source is finished while another
-// is still running, so a scrape of it exercises every branch of the collector.
+// sampleSnapshot is a small but complete library snapshot: two projects, every
+// labelled family with at least two label values, and one import source
+// finished while another is still running, so a scrape of it exercises every
+// branch of the collector.
 func sampleSnapshot() LibrarySnapshot {
 	started := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
 	finished := time.Date(2026, 8, 1, 10, 30, 0, 0, time.UTC)
 	return LibrarySnapshot{
-		PhotosByMediaType: map[string]int{"image": 20_500, "video": 380, "live": 9},
-		PhotosArchived:    42,
-		PhotosProcessed: map[string]int{
-			StageEmbedding: 20_647, StageFaces: 9_800, StagePlaces: 4_010,
+		Projects: map[string]LibraryCounts{
+			"v": {
+				PhotosByMediaType: map[string]int{"image": 20_500, "video": 380, "live": 9},
+				PhotosArchived:    42,
+				PhotosProcessed: map[string]int{
+					StageEmbedding: 20_647, StageFaces: 9_800, StagePlaces: 4_010,
+				},
+				PhotosPending: map[string]int{
+					StageEmbedding: 242, StageFaces: 11_089, StagePlaces: 130,
+				},
+				Embeddings:             20_647,
+				Faces:                  115_457,
+				MarkersByState:         map[string]int{MarkerAssigned: 18_003, MarkerUnassigned: 3_164},
+				SubjectsByType:         map[string]int{"person": 100, "pet": 4, "other": 1},
+				AlbumsByType:           map[string]int{"album": 400, "folder": 30, "month": 7},
+				Labels:                 113,
+				VideosWithoutStreaming: 57,
+			},
+			"rodina": {
+				PhotosByMediaType: map[string]int{"image": 12},
+				Faces:             3,
+				Labels:            2,
+			},
 		},
-		PhotosPending: map[string]int{
-			StageEmbedding: 242, StageFaces: 11_089, StagePlaces: 130,
-		},
-		Embeddings:             20_647,
-		Faces:                  115_457,
-		MarkersByState:         map[string]int{MarkerAssigned: 18_003, MarkerUnassigned: 3_164},
-		SubjectsByType:         map[string]int{"person": 100, "pet": 4, "other": 1},
-		AlbumsByType:           map[string]int{"album": 400, "folder": 30, "month": 7},
-		Labels:                 113,
-		VideosWithoutStreaming: 57,
 		Imports: []ImportRun{
 			{
 				Source: "photoprism", Status: "done",
@@ -58,19 +68,23 @@ func TestRegisterLibrary_exportsCounts(t *testing.T) {
 
 	body := scrape(t, r)
 	want := []string{
-		`kukatko_library_photos{media_type="image"} 20500`,
-		`kukatko_library_photos{media_type="video"} 380`,
-		`kukatko_library_photos{media_type="live"} 9`,
-		`kukatko_library_photos_archived 42`,
-		`kukatko_library_photos_processed{stage="embedding"} 20647`,
-		`kukatko_library_photos_pending{stage="places"} 130`,
-		`kukatko_library_embeddings 20647`,
-		`kukatko_library_faces 115457`,
-		`kukatko_library_markers{state="unassigned"} 3164`,
-		`kukatko_library_subjects{type="person"} 100`,
-		`kukatko_library_albums{type="folder"} 30`,
-		`kukatko_library_labels 113`,
-		`kukatko_library_videos_without_streaming 57`,
+		`kukatko_library_photos{media_type="image",project="v"} 20500`,
+		`kukatko_library_photos{media_type="video",project="v"} 380`,
+		`kukatko_library_photos{media_type="live",project="v"} 9`,
+		`kukatko_library_photos{media_type="image",project="rodina"} 12`,
+		`kukatko_library_photos_archived{project="v"} 42`,
+		`kukatko_library_photos_archived{project="rodina"} 0`,
+		`kukatko_library_photos_processed{project="v",stage="embedding"} 20647`,
+		`kukatko_library_photos_pending{project="v",stage="places"} 130`,
+		`kukatko_library_embeddings{project="v"} 20647`,
+		`kukatko_library_faces{project="v"} 115457`,
+		`kukatko_library_faces{project="rodina"} 3`,
+		`kukatko_library_markers{project="v",state="unassigned"} 3164`,
+		`kukatko_library_subjects{project="v",type="person"} 100`,
+		`kukatko_library_albums{project="v",type="folder"} 30`,
+		`kukatko_library_labels{project="v"} 113`,
+		`kukatko_library_labels{project="rodina"} 2`,
+		`kukatko_library_videos_without_streaming{project="v"} 57`,
 		`kukatko_library_collect_errors_total 0`,
 	}
 	for _, series := range want {
@@ -167,7 +181,7 @@ func TestLibraryCollector_errorHidesGauges(t *testing.T) {
 
 	failing = false
 	body = scrape(t, r)
-	if !strings.Contains(body, `kukatko_library_photos{media_type="image"} 20500`) {
+	if !strings.Contains(body, `kukatko_library_photos{media_type="image",project="v"} 20500`) {
 		t.Errorf("the collector must recover once the aggregation succeeds, got:\n%s", body)
 	}
 	if !strings.Contains(body, "kukatko_library_collect_errors_total 1") {
@@ -192,7 +206,7 @@ func TestLibraryCollector_staleValueIsNotServed(t *testing.T) {
 
 	r := New()
 	r.reg.MustRegister(collector)
-	if body := scrape(t, r); !strings.Contains(body, "kukatko_library_faces 115457") {
+	if body := scrape(t, r); !strings.Contains(body, `kukatko_library_faces{project="v"} 115457`) {
 		t.Fatalf("expected the first scrape to succeed, got:\n%s", body)
 	}
 

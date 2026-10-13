@@ -176,8 +176,8 @@ func TestRun_onePairOneMail(t *testing.T) {
 	if len(sent) != 2 {
 		t.Fatalf("delivered %d mails, want 2", len(sent))
 	}
-	if sent[0].To != "a@example.com" || sent[0].Subject != "Čekají na tebe 2 úkoly" {
-		t.Errorf("first mail = %q %q, want a's two tasks", sent[0].To, sent[0].Subject)
+	if sent[0].To != "a@example.com" || sent[0].Subject != "Kukátko · Knihovna v: Čekají na tebe 2 úkoly" {
+		t.Errorf("first mail = %q %q, want a's two tasks, the subject naming the project", sent[0].To, sent[0].Subject)
 	}
 	if !strings.Contains(sent[0].Body, "Projekt Knihovna v\n\n- Otázka A (čeká na odpověď)\n"+
 		"  https://kukatko.example.com/p/v/tasks/us-a-ta\n") {

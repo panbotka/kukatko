@@ -842,6 +842,20 @@ describe('the rendered service worker, receiving a push', () => {
     expect(harness.openWindow).toHaveBeenCalledWith(`${origin}/notifications/nt_1`)
   })
 
+  it("opens a project's deeplink exactly as given, in a window of another project", async () => {
+    const harness = await installed(manifest)
+    const open = new FakeWindowClient(`${origin}/p/v/albums`, true)
+    harness.windows.push(open)
+
+    // The server puts every deeplink under its project (/p/<slug>/…); the
+    // worker must neither strip nor rewrite that prefix, even when the window
+    // it reuses is in another project.
+    await click(harness, { url: '/p/rodina/n/nt_1?x=1#c', kind: 'tagged' })
+
+    expect(open.navigate).toHaveBeenCalledWith(`${origin}/p/rodina/n/nt_1?x=1#c`)
+    expect(harness.openWindow).not.toHaveBeenCalled()
+  })
+
   it('opens a window when the open one refuses to navigate', async () => {
     const harness = await installed(manifest)
     harness.windows.push(new FakeWindowClient(`${origin}/`, true, false))

@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mailjob"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
@@ -42,11 +43,11 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 	limiter := auth.NewLimiter(cfg.Auth.LoginRateLimit, cfg.Auth.LoginRateWindow)
 	mail := mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: cfg.Mail.Enabled})
 	registration := auth.NewRegistration(auth.RegistrationConfig{
-		Service:     svc,
-		Settings:    settings.NewStore(db.Pool()),
-		Mail:        mail,
-		ApprovalURL: approvalURL(cfg.Mail.BaseURL),
-		Notify:      buildDeliverer(cfg, db),
+		Service:  svc,
+		Settings: settings.NewStore(db.Pool()),
+		Mail:     mail,
+		Projects: project.NewStore(db.Pool()),
+		Notify:   buildDeliverer(cfg, db),
 	})
 	rename := auth.NewRename(auth.RenameConfig{
 		Service:   svc,
@@ -125,14 +126,6 @@ const signInPath = "/login"
 // would send somebody to the wrong one.
 func signInURL(baseURL string) string {
 	return instanceURL(baseURL, signInPath)
-}
-
-// approvalURL builds the address the administrators' "registration pending" mail
-// links to — the approval screen, auth.ApprovalPath — from this instance's public
-// URL, on the same terms as signInURL: an empty base yields an empty URL, which
-// leaves the link out of the mail.
-func approvalURL(baseURL string) string {
-	return instanceURL(baseURL, auth.ApprovalPath)
 }
 
 // projectURL builds the address of the project slug's page (/p/<slug>/), which

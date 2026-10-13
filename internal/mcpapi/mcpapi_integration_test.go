@@ -23,6 +23,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/database"
@@ -58,6 +59,7 @@ func newEnvWith(t *testing.T, enabled bool) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 
 	authSvc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})

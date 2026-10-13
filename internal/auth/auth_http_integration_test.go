@@ -74,15 +74,16 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 		// e-mail preference. Push is off: these tests read mail,
 		// register_push_integration_test the pushes.
 		Registration: auth.NewRegistration(auth.RegistrationConfig{
-			Service:     svc,
-			Settings:    settingsStore,
-			Mail:        mail,
-			ApprovalURL: testApprovalURL,
+			Service:  svc,
+			Settings: settingsStore,
+			Mail:     mail,
+			Projects: project.NewStore(db.Pool()),
 			Notify: notifydeliver.New(notifydeliver.Config{
 				Projects:      project.NewStore(db.Pool()),
 				Notifications: notification.NewStore(db.Pool()),
 				Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{}),
 				Mail:          mail,
+				BaseURL:       testBaseURL,
 			}),
 		}),
 		// Password resets go through the same queue, so a test reads the link
@@ -122,9 +123,13 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 // stand-in for mail.base_url + /login.
 const testSignInURL = "https://kukatko.example.test/login"
 
-// testApprovalURL is the approval screen's address in these tests, the last line
-// of the administrators' "registration pending" mail.
-const testApprovalURL = "https://kukatko.example.test/users"
+// testBaseURL is the instance's public address in these tests (mail.base_url).
+const testBaseURL = "https://kukatko.example.test"
+
+// testApprovalURL is the approval screen's address in these tests — the member
+// screen of the project registered into (the bootstrap `v`) — the last line of
+// the administrators' "registration pending" mail.
+const testApprovalURL = testBaseURL + "/p/v/members"
 
 // testResetLinkBase is the base of a password-reset link in these tests, the
 // stand-in for mail.base_url + /password-reset.

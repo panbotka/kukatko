@@ -80,6 +80,74 @@ func TestAccessLog_skipsMetrics(t *testing.T) {
 	}
 }
 
+// TestAccessLog_project verifies the line names the project the request was
+// admitted into by its slug, the last SetProject winning, and leaves the field
+// out of a request admitted into none.
+func TestAccessLog_project(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		stamp    func(ctx context.Context)
+		wantSlug any
+	}{
+		{name: "no project", stamp: func(context.Context) {}, wantSlug: nil},
+		{name: "one project", stamp: func(ctx context.Context) { SetProject(ctx, "pj1", "veselice") },
+			wantSlug: "veselice"},
+		{name: "the inner resolution wins", stamp: func(ctx context.Context) {
+			SetProject(ctx, "pj0", "v")
+			SetProject(ctx, "pj1", "veselice")
+		}, wantSlug: "veselice"},
+		{name: "an empty uid is ignored", stamp: func(ctx context.Context) {
+			SetProject(ctx, "pj1", "veselice")
+			SetProject(ctx, "", "other")
+		}, wantSlug: "veselice"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var buf bytes.Buffer
+			logger, err := NewLogger(&buf, "info")
+			if err != nil {
+				t.Fatalf("NewLogger: %v", err)
+			}
+			var uid string
+			handler := AccessLog(logger)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tt.stamp(r.Context())
+				uid = ProjectUID(r.Context())
+				w.WriteHeader(http.StatusOK)
+			}))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/p/x/photos", nil)
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			line := decodeLogLine(t, buf.Bytes())
+			if line["project"] != tt.wantSlug {
+				t.Errorf("project = %v, want %v", line["project"], tt.wantSlug)
+			}
+			if tt.wantSlug != nil && uid == "" {
+				t.Error("ProjectUID is empty for a stamped request")
+			}
+		})
+	}
+}
+
+// TestProjectUID_withoutBag verifies SetProject is inert outside AccessLog,
+// while WithProject still answers through the context it returns.
+func TestProjectUID_withoutBag(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	SetProject(ctx, "pj1", "veselice")
+	if got := ProjectUID(ctx); got != "" {
+		t.Errorf("ProjectUID after SetProject = %q, want empty", got)
+	}
+	if got := ProjectUID(WithProject(ctx, "pj1", "veselice")); got != "pj1" {
+		t.Errorf("ProjectUID after WithProject = %q, want pj1", got)
+	}
+	if WithProject(ctx, "", "x") != ctx {
+		t.Error("WithProject without a uid returned a new context")
+	}
+}
+
 // decodeLogLine parses the single JSON log record in b.
 func decodeLogLine(t *testing.T, b []byte) map[string]any {
 	t.Helper()

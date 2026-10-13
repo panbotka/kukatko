@@ -13,6 +13,8 @@ const RESPONSE: AuditListResponse = {
   entries: [
     {
       id: 7,
+      project_uid: 'pj1',
+      project: 'v',
       actor_uid: 'us1',
       action: 'photo.update',
       target_type: 'photos',
@@ -30,14 +32,14 @@ const RESPONSE: AuditListResponse = {
 }
 
 describe('fetchAuditLog', () => {
-  it('requests /audit and parses the body', async () => {
+  it("requests the current project's /audit and parses the body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(RESPONSE, 200))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchAuditLog()).resolves.toEqual(RESPONSE)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/v1/audit')
+    expect(url).toBe('/api/v1/p/v/audit')
     expect(init.credentials).toBe('same-origin')
   })
 
@@ -57,7 +59,7 @@ describe('fetchAuditLog', () => {
     })
 
     const [url] = fetchMock.mock.calls[0] as [string]
-    expect(url).toContain('/api/v1/audit?')
+    expect(url).toContain('/api/v1/p/v/audit?')
     expect(url).toContain('user=us1')
     expect(url).toContain('action=photo.update')
     expect(url).toContain('entity_type=photos')

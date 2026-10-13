@@ -216,8 +216,8 @@ func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 			owners[boss.UID].inApp, owners[keeper.UID].inApp, owners[quiet.UID].inApp)
 	}
 	for _, n := range stored {
-		if n.kind != string(notification.KindRegistrationPending) || n.link != "/p/"+project.BootstrapSlug+"/users" {
-			t.Errorf("notification %+v: want kind registration_pending, link /users", n)
+		if n.kind != string(notification.KindRegistrationPending) || n.link != "/p/"+project.BootstrapSlug+"/members" {
+			t.Errorf("notification %+v: want kind registration_pending, link /p/v/members", n)
 		}
 		if n.title != "Nová registrace čeká na schválení" || !strings.Contains(n.body, "Nový Rodák") {
 			t.Errorf("notification %+v: want the fixed title and a body naming Nový Rodák", n)
@@ -230,7 +230,10 @@ func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 	}
 	for _, p := range pushes {
 		want := push.Notification{
-			Title: owners[boss.UID].title, Body: owners[boss.UID].body, URL: "/p/" + project.BootstrapSlug + "/users",
+			// The push names the project; the stored title does not need to,
+			// the inbox it is listed in is the project's own.
+			Title: "Veselice · " + owners[boss.UID].title, Body: owners[boss.UID].body,
+			URL:  "/p/" + project.BootstrapSlug + "/members",
 			Kind: string(notification.KindRegistrationPending), Tag: owners[boss.UID].uid,
 		}
 		if p.Notification != want || !strings.HasPrefix(p.SubscriptionID, "psboss-") {

@@ -27,7 +27,7 @@ func (f fakeProjects) Get(_ context.Context, uid string) (*project.Project, erro
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &project.Project{UID: uid, Slug: "rodina"}, nil
+	return &project.Project{UID: uid, Slug: "rodina", Name: "Rodina"}, nil
 }
 
 // fakeNotes is a Recorder over an in-memory choice of channels.
@@ -205,12 +205,14 @@ func TestDeliver_payloads(t *testing.T) {
 	if _, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", name: "Anna"}, "us1", message()); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
-	wantPush := push.Notification{Title: "Title", Body: "Body", URL: "/p/rodina/n/nt1", Kind: "tagged", Tag: "nt1"}
+	// The push is titled with the project's name, its URL under the project.
+	wantPush := push.Notification{Title: "Rodina · Title", Body: "Body", URL: "/p/rodina/n/nt1", Kind: "tagged", Tag: "nt1"}
 	if !reflect.DeepEqual(pusher.sent, []push.Notification{wantPush}) {
 		t.Errorf("push = %+v, want %+v", pusher.sent, wantPush)
 	}
 	wantMail := mailjob.Notification("anna@example.org", mailer.NotificationData{
-		DisplayName: "Anna", Title: "Title", Body: "Body", URL: "https://k.example/p/rodina/n/nt1",
+		DisplayName: "Anna", ProjectName: "Rodina", Title: "Title", Body: "Body",
+		URL: "https://k.example/p/rodina/n/nt1",
 	})
 	if !reflect.DeepEqual(mail.sent, []mailjob.Mail{wantMail}) {
 		t.Errorf("mail = %+v, want %+v", mail.sent, wantMail)
@@ -246,7 +248,7 @@ func TestDeliver_linkUnderTheProject(t *testing.T) {
 		t.Errorf("push = %+v, want URL %q", pusher.sent, want)
 	}
 	if len(mail.sent) != 1 || !reflect.DeepEqual(mail.sent[0], mailjob.Notification("anna@example.org",
-		mailer.NotificationData{Title: "Title", Body: "Body", URL: "https://k.example" + want})) {
+		mailer.NotificationData{ProjectName: "Rodina", Title: "Title", Body: "Body", URL: "https://k.example" + want})) {
 		t.Errorf("mail = %+v, want the link under the base URL", mail.sent)
 	}
 
@@ -288,15 +290,15 @@ func TestDeliver_customMailAndNoBaseURL(t *testing.T) {
 		Push:          &fakePush{on: true}, Mail: mail,
 	})
 	msg := message()
-	var gotURL string
-	msg.Mail = func(to Recipient, n notification.Notification, url string) mailjob.Mail {
-		gotURL = url
-		return mailjob.Tagged(to.Email, mailer.TaggedData{DisplayName: to.DisplayName, Count: 2, URL: url})
+	var gotURL, gotProject string
+	msg.Mail = func(to Recipient, n notification.Notification, mail MailContext) mailjob.Mail {
+		gotURL, gotProject = mail.URL, mail.ProjectName
+		return mailjob.Tagged(to.Email, mailer.TaggedData{DisplayName: to.DisplayName, Count: 2, URL: mail.URL})
 	}
 	if _, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org"}, "us1", msg); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
-	if len(mail.sent) != 1 || mail.sent[0].Template != mailer.TemplateTagged || gotURL != "" {
+	if len(mail.sent) != 1 || mail.sent[0].Template != mailer.TemplateTagged || gotURL != "" || gotProject != "Rodina" {
 		t.Fatalf("mail = %+v (url %q), want the tagged template without a link", mail.sent, gotURL)
 	}
 }
@@ -432,5 +434,17 @@ func TestChannelsAny(t *testing.T) {
 	}
 	if (Channels{}).Any() {
 		t.Error("the zero Channels reads as delivering")
+	}
+}
+
+// TestPushTitle checks the push title names the project, and a blank name
+// leaves the title alone.
+func TestPushTitle(t *testing.T) {
+	t.Parallel()
+
+	for name, want := range map[string]string{"": "Title", " ": "Title", " Rodina ": "Rodina · Title"} {
+		if got := PushTitle(name, "Title"); got != want {
+			t.Errorf("PushTitle(%q) = %q, want %q", name, got, want)
+		}
 	}
 }

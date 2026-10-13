@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/dupmarkers"
@@ -63,6 +64,7 @@ func newIsolationServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 func TestDuplicateMarkers_neverCrossProjects(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	second := map[projecttest.Side]string{}

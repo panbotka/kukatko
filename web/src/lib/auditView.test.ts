@@ -16,6 +16,8 @@ import {
 function record(overrides: Partial<AuditRecord> = {}): AuditRecord {
   return {
     id: 1,
+    project_uid: 'pj1',
+    project: 'v',
     actor_uid: 'us1',
     action: 'photo.update',
     target_type: 'photos',

@@ -570,6 +570,37 @@ var knownActions = map[string]struct{}{
 	ActionProjectInviteAccept: {},
 }
 
+// instanceActions are the actions about the instance rather than one project's
+// library: accounts and their credentials, the lifecycle of a project as the
+// system administrator runs it (create, edit, purge, the storage move), the
+// retention purge and the library wipe. Such an entry may carry no project —
+// and Meta.Entry never stamps the request's project onto one, so an account
+// renamed on an unprefixed route is not filed under the bootstrap project its
+// request happened to resolve. Every other known action is about one project's
+// content or membership and must record it (ProjectScoped).
+var instanceActions = map[string]struct{}{
+	ActionUserCreate: {}, ActionUserUpdate: {}, ActionUserDisable: {}, ActionUserPassword: {},
+	ActionUserPasswordReset: {}, ActionUserPasswordResetUse: {}, ActionUserApprove: {},
+	ActionUserRename: {}, ActionUserInstanceRole: {}, ActionUserRegister: {},
+	ActionPasskeyRegister: {}, ActionPasskeyLogin: {}, ActionPasskeyDelete: {},
+	ActionAPITokenCreate: {}, ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {},
+	ActionNotificationPrefsUpdate: {}, ActionAuditPurge: {}, ActionLibraryReset: {},
+	ActionProjectCreate: {}, ActionProjectUpdate: {}, ActionProjectStoragePrefix: {},
+	ActionProjectPurge: {}, ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {},
+	ActionProjectRekeyResume: {}, ActionProjectRekeyRetry: {},
+}
+
+// ProjectScoped reports whether action is about one project's library or
+// membership, so an entry of it must record the project (Entry.ProjectUID) —
+// a project admin's listing (GET /p/{project}/audit) shows only the entries
+// that do. It is false for an instance action and for an unknown label.
+func ProjectScoped(action string) bool {
+	if _, instance := instanceActions[action]; instance {
+		return false
+	}
+	return KnownAction(action)
+}
+
 // KnownAction reports whether action is one of the trail's own action labels. An
 // unrecognised value is always a caller's mistake — the set is closed and only
 // this package writes into the action column — so a reader may refuse it rather
@@ -682,6 +713,10 @@ type Meta struct {
 	// strength of that role alone — or "". Entry records it as the
 	// "actor_role" detail.
 	ActorRole string
+	// ProjectUID is the project the request was admitted into, or "" for an
+	// instance-level request. Entry stamps it onto a project-scoped action only
+	// (ProjectScoped); a store that knows the project better still sets its own.
+	ProjectUID string
 }
 
 // FromRequest builds a Meta from r and the actorUID resolved by the caller from
@@ -691,19 +726,20 @@ type Meta struct {
 // the real client — so a row records where the request came from and not what
 // its sender wished to claim.
 //
-// The actor role comes from the request's observability fields (obs.ActorRole),
-// where internal/auth stamps it.
+// The actor role and the project come from the request's observability fields
+// (obs.ActorRole, obs.ProjectUID), where internal/auth stamps them.
 func FromRequest(r *http.Request, actorUID string) Meta {
 	return Meta{
 		ActorUID: actorUID, IP: clientip.FromRequest(r), UserAgent: r.UserAgent(),
-		ActorRole: obs.ActorRole(r.Context()),
+		ActorRole: obs.ActorRole(r.Context()), ProjectUID: obs.ProjectUID(r.Context()),
 	}
 }
 
 // Entry stamps the meta's actor/IP/User-Agent onto a new Entry with the given
 // action, target and details, so handlers do not repeat those fields. A meta
 // carrying an ActorRole adds it to a copy of details as "actor_role"; the
-// caller's map is never modified.
+// caller's map is never modified. A project-scoped action (ProjectScoped) is
+// filed under the meta's project; an instance action never is.
 func (m Meta) Entry(action, targetType, targetUID string, details map[string]any) Entry {
 	if m.ActorRole != "" {
 		withRole := make(map[string]any, len(details)+1)
@@ -719,12 +755,26 @@ func (m Meta) Entry(action, targetType, targetUID string, details map[string]any
 		Details:    details,
 		IP:         m.IP,
 		UserAgent:  m.UserAgent,
+		ProjectUID: m.projectFor(action),
 	}
 }
 
-// Record is a stored audit entry as read back from the table.
+// projectFor returns the project an entry of action is filed under: the meta's
+// for a project-scoped action, "" for an instance one.
+func (m Meta) projectFor(action string) string {
+	if !ProjectScoped(action) {
+		return ""
+	}
+	return m.ProjectUID
+}
+
+// Record is a stored audit entry as read back from the table. ProjectUID and
+// Project (the project's slug, never its name) are null for an instance-level
+// entry; Project is null too once the project itself is gone.
 type Record struct {
 	ID         int64          `json:"id"`
+	ProjectUID *string        `json:"project_uid"`
+	Project    *string        `json:"project"`
 	ActorUID   *string        `json:"actor_uid"`
 	Action     string         `json:"action"`
 	TargetType string         `json:"target_type"`
@@ -802,6 +852,9 @@ func (s *Store) Record(ctx context.Context, entry Entry) error {
 // ignored, so a zero Filter matches every entry. Limit/Offset paginate the
 // result newest-first.
 type Filter struct {
+	// ProjectUID restricts to the entries filed under one project; instance
+	// entries (no project) never match it.
+	ProjectUID string
 	// ActorUID restricts to entries by one acting user.
 	ActorUID string
 	// TargetType restricts to one entity kind (for example "photos").
@@ -842,17 +895,18 @@ func (f Filter) buildWhere() (string, []any) {
 		args = append(args, value)
 		clauses = append(clauses, fmt.Sprintf(expr, len(args)))
 	}
-	if f.ActorUID != "" {
-		add("actor_uid = $%d", f.ActorUID)
-	}
-	if f.TargetType != "" {
-		add("target_type = $%d", f.TargetType)
-	}
-	if f.TargetUID != "" {
-		add("target_uid = $%d", f.TargetUID)
-	}
-	if f.Action != "" {
-		add("action = $%d", f.Action)
+	// The equality filters, in the order their placeholders are numbered; an
+	// empty value imposes nothing.
+	for _, eq := range []struct{ expr, value string }{
+		{"project_id = $%d", f.ProjectUID},
+		{"actor_uid = $%d", f.ActorUID},
+		{"target_type = $%d", f.TargetType},
+		{"target_uid = $%d", f.TargetUID},
+		{"action = $%d", f.Action},
+	} {
+		if eq.value != "" {
+			add(eq.expr, eq.value)
+		}
 	}
 	if len(f.Actions) > 0 {
 		add("action = ANY($%d)", f.Actions)
@@ -864,11 +918,12 @@ func (f Filter) buildWhere() (string, []any) {
 		// internal/review/answer.go and the predicate in migration 0037.
 		clauses = append(clauses, "details ->> 'via' = 'review'")
 	}
+	// created_at is qualified: List joins projects, which has one too.
 	if f.Since != nil {
-		add("created_at >= $%d", *f.Since)
+		add("audit_log.created_at >= $%d", *f.Since)
 	}
 	if f.Until != nil {
-		add("created_at <= $%d", *f.Until)
+		add("audit_log.created_at <= $%d", *f.Until)
 	}
 	if len(clauses) == 0 {
 		return "", nil
@@ -886,9 +941,12 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Record, error) {
 	}
 	offset := max(f.Offset, 0)
 	where, args := f.buildWhere()
-	query := "SELECT id, actor_uid, action, target_type, target_uid, details, ip, user_agent, created_at" +
-		" FROM audit_log" + where +
-		fmt.Sprintf(" ORDER BY id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	// The project's slug is joined in for display; buildWhere qualifies the one
+	// column name the two tables share (created_at).
+	query := "SELECT audit_log.id, audit_log.project_id, projects.slug, actor_uid, action, target_type," +
+		" target_uid, details, ip, user_agent, audit_log.created_at" +
+		" FROM audit_log LEFT JOIN projects ON projects.uid = audit_log.project_id" + where +
+		fmt.Sprintf(" ORDER BY audit_log.id DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
 	args = append(args, limit, offset)
 
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -924,7 +982,7 @@ func scanRecord(row rowScanner) (Record, error) {
 		rec     Record
 		details []byte
 	)
-	if err := row.Scan(&rec.ID, &rec.ActorUID, &rec.Action, &rec.TargetType,
+	if err := row.Scan(&rec.ID, &rec.ProjectUID, &rec.Project, &rec.ActorUID, &rec.Action, &rec.TargetType,
 		&rec.TargetUID, &details, &rec.IP, &rec.UserAgent, &rec.CreatedAt); err != nil {
 		return Record{}, fmt.Errorf("audit: scanning entry: %w", err)
 	}

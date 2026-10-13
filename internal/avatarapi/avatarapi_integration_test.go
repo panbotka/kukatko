@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/avatarapi"
@@ -79,6 +80,7 @@ func admitBootstrap(t *testing.T, db *database.DB) func(http.Handler) http.Handl
 func TestAvatarRoute_rendersFromTheCatalogue(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := context.Background()
 	peopleStore := people.NewStore(db.Pool())
 	photoStore := photos.NewStore(db.Pool())
@@ -150,6 +152,7 @@ func TestAvatarRoute_rendersFromTheCatalogue(t *testing.T) {
 func TestAvatarRoute_subjectWithoutAPictureIs404(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := context.Background()
 	peopleStore := people.NewStore(db.Pool())
 

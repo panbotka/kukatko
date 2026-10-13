@@ -51,6 +51,7 @@ type projectAPI struct {
 	users         func(chi.Router) // GET /users, the name directory
 	members       func(chi.Router) // /members, the project admin's member management
 	invites       func(chi.Router) // /invites, the project admin's invitation links
+	audit         func(chi.Router) // /audit, the project's own audit trail
 	imports       func(chi.Router)
 	process       func(chi.Router)
 	mcp           func(chi.Router)
@@ -67,7 +68,7 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 		api.dupMarkers, api.expand, api.bulk, api.tasks, api.feedback, api.savedSearches,
 		api.searchHistory, api.whatsNew, api.places, api.maps, api.upload, api.uploadLinks,
 		api.notifications, api.capabilities, api.settings, api.announcement, api.users,
-		api.members, api.invites, api.imports, api.process, api.mcp,
+		api.members, api.invites, api.audit, api.imports, api.process, api.mcp,
 	} {
 		register(r)
 	}
@@ -86,7 +87,9 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 // unprefixed path belongs to the system administrator's instance-wide account
 // list (internal/projectapi), so the directory is served only under
 // /p/{project} — where the frontend asks for it, and ctl in its context's
-// project. The member management /members and
+// project. The project's audit trail GET /audit(/mine): its unprefixed path is
+// the maintainer's instance listing (and an account's own actions everywhere).
+// The member management /members and
 // the invitation links /invites, which are new with projects and have no old
 // client to keep working. And the settings and the announcement, which are a
 // project's own and are read only through its prefix — the unprefixed
@@ -107,9 +110,12 @@ func projectRoutes(store *project.Store, api *projectAPI) server.Option {
 // aliasAPI is the copy of api the unprefixed transition alias mounts: every
 // group but the name directory, whose unprefixed GET /users is the instance
 // account list, and the member management, invitation links, settings and
-// announcement, which live only under a project (see projectRoutes).
+// announcement, which live only under a project, and the project's audit trail,
+// whose unprefixed /audit is the maintainer's instance listing (see
+// projectRoutes).
 func aliasAPI(api *projectAPI) *projectAPI {
 	alias := *api
+	alias.audit = func(chi.Router) {}
 	alias.users = func(chi.Router) {}
 	alias.members = func(chi.Router) {}
 	alias.invites = func(chi.Router) {}

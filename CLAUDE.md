@@ -62,8 +62,9 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/announcement` — the banner message, one per project (`Get`/`Set`/`Clear` take the project), publish/clear audited in the mutation's transaction
 - `internal/announcementapi` — dual-guard `/p/{project}/announcement`, one banner per project (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/apitest` — the HTTP client the API packages' tests drive their `httptest` servers with; never `http.DefaultClient`, whose process-wide pool a closing test server empties under a parallel test
-- `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
-- `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
+- `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation; a `ProjectScoped` action records its project
+- `internal/audit/audittest` — `Guard`: fails an (API package's integration) test whose mutation wrote a project-scoped audit entry without a project
+- `internal/auditapi` — read-only listings: maintainer's `GET /audit` (`?project=<slug>`), a project admin's `GET /p/{project}/audit`, own-actions `/audit/mine` on both
 - `internal/auth` — two ladders: instance role user/maintainer + the request's project role (viewer…admin, resolved by `WithProject`; `ProjectFromContext` is the only way to learn the project), bcrypt, sliding sessions, RBAC middleware, API tokens (Bearer), passkeys (WebAuthn), all-authenticated name directory of the project's approved members (`GET /p/{project}/users`)
 - `internal/avatar` — a face as a small square picture, cut server-side (the subject avatar and `GET /photos/{uid}/face` alike): the crop geometry, the per-face choice of source thumbnail and the cache-only rendition
 - `internal/avatarapi` — all-authenticated `GET /subjects/{uid}/avatar` (JPEG + ETag; "no picture" of any kind is a 404)

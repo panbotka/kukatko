@@ -3117,7 +3117,8 @@ here.
   `--kk-palette-accent`, `--kk-semantic-danger` when full (`.kk-usage-bar` in `styles/app.css`) — and,
   **for a maintainer only**, the project's
   `AnnouncementComposer` (publishing stays `RequireMaintainer` server-side). Tests: `SettingsPage.test.tsx`,
-  `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
+  `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from
+  the project's own `GET /p/<slug>/audit` (only the entries filed under the current project)
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
   card per entry** —; an entry with no actor is a dash, **except an anonymous `upload_link.upload`**, which
   `uploadLinkActor` (`lib/auditView.ts`) names by its link and the typed name from the details
@@ -3155,9 +3156,11 @@ here.
   `isAdmin`,
   `MyActivityPage` = `/account/activity` (**no role gate** — every signed-in user, viewer included) **the user's
   own history**: the same audit records as `/audit`, but from `GET /audit/mine`, which the server narrows to the
-  caller. It exists for self-repair, not supervision — *"I know I clicked something wrong a minute ago, what was
-  it?"* — and everything follows from that. Three columns through the shared `RecordTable` (a phone gets one card
-  per entry): **Kdy** (`formatDateTime`), **Co** (the action in words via `activityActionKey`, e.g. `photo.update`
+  caller — across **every** project the account acts in. It exists for self-repair, not supervision — *"I know I
+  clicked something wrong a minute ago, what was it?"* — and everything follows from that. Four columns through
+  the shared `RecordTable` (a phone gets one card per entry), the last one **Projekt** (the entry's
+  `project` slug, a dash for an instance action), and every link of a row opens **in the entry's own project**
+  (`entryPath` → `projectPathFor(record.project, …)`), never in whichever project is current: **Kdy** (`formatDateTime`), **Co** (the action in words via `activityActionKey`, e.g. `photo.update`
   → *Úprava fotky*; an unknown action falls back to the raw label) and **Kde** — a `<Link>` to the thing that
   changed, named by its kind (*Fotka* / *Album* / *Štítek* / *Osoba*) rather than by UID, resolved by the very
   same `auditTargetHref` the admin log uses. Two fallbacks in the Kde cell: an entry with no target of its own
@@ -7771,11 +7774,13 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
   nothing** — the backend's 202 is identical for a hit and a miss, and the client keeps it that way; only a
   request with no answer (network) rejects. `MEMBER_ROLES` = viewer/curator/editor/admin, lowest first,
-  `audit.ts` = the audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
+  `audit.ts` = the audit client: `fetchAuditLog(params,signal)` over the current project's
+  `GET /api/v1/p/<slug>/audit` (`apiPath`) →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters
-  (it omits empty ones/a zero offset); the types `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
-  `user_agent`/`details`)/`AuditListParams` (incl. `via:'review'` + `decision:'yes'|'no'` for the admin
-  overview of review decisions); plus `fetchMyActivity(params,signal)` over `GET /api/v1/audit/mine` — the same
+  (it omits empty ones/a zero offset); the types `AuditRecord` (nullable `project_uid`/`project` (the slug;
+  `null` for an instance entry)/`actor_uid`/`target_uid`/`ip`/`user_agent`/`details`)/`AuditListParams` (incl. `via:'review'` + `decision:'yes'|'no'` for the admin
+  overview of review decisions); plus `fetchMyActivity(params,signal)` over the instance `GET /api/v1/audit/mine`
+  (`instancePath` — the account's own actions in every project) — the same
   response, the same query builder, but `MyActivityParams` = `AuditListParams` **without `user`**: whose actions
   the listing shows is the server's decision (it takes the actor from the session and answers a request naming
   somebody else with 403), so there is nothing for the client to say about it; it shares `ApiError` from `auth.ts`. Mind the terminology:

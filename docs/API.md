@@ -2729,9 +2729,20 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `cmd/kukatko/restore.go`; a nil service = not configured). Runtime dep `pg_restore`
   (`postgresql-client`, the same package as pg_dump). Runbook: `docs/RESTORE.md`.
 - **Audit API (`/api/v1`, `internal/auditapi`):** a read-only listing of
-  the durable audit trail — the whole trail for an admin (`GET /audit`, `RequireAdmin`), one's own actions for
-  anybody signed in (`GET /audit/mine`, `RequireAuth`). `GET /audit` → `{entries,total,limit,offset,next_offset}` (entry =
-  `{id,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}`, newest-first;
+  the durable audit trail, mounted twice. **On the instance:** the whole trail for the system administrator
+  (`GET /audit`, `RequireMaintainer` — a project admin is 403 here) and one's own actions in every project for
+  any signed-in account (`GET /audit/mine`, `RequireSignedIn`, so an account outside the bootstrap project reads
+  its own too). **Under a project:** `GET /p/{project}/audit` (`RequireAdmin` — the project's admins and the
+  maintainer) and `GET /p/{project}/audit/mine` (`RequireAuth`, any member) list **only the entries filed under
+  that project** (`audit_log.project_id`), never another project's and never the instance's (accounts,
+  sessions, a project's lifecycle); both refuse `?project=` with 400 — the route already names the one project
+  they read, and nothing in the query widens it. The unprefixed transition alias does **not** carry the project
+  pair: unprefixed `/audit` is the instance listing. The instance `GET /audit` alone takes
+  **`?project=<slug>`**, narrowing to that project's entries (an unknown slug → **400** naming it, a deactivated
+  project's history still resolves; the slug goes through the `ResolveProject` lookup in `auditapi.Config`).
+  Body `{entries,total,limit,offset,next_offset}` (entry =
+  `{id,project_uid,project,actor_uid,action,target_type,target_uid,details,ip,user_agent,created_at}` —
+  `project_uid` and `project` (the slug, joined from `projects`) are `null` for an instance entry; newest-first;
   for edit actions `details.changes` = `{"<field>":{"old":…,"new":…}}` with only the changed fields — see
   the `internal/audit` convention; a bulk edit `photos.bulk` does not have it)
   with the filters `?user=`/`?entity_type=`/`?entity_uid=`/`?action=`/`?since=`/`?until=` (RFC3339) and
@@ -2751,7 +2762,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `details.via='review'`, i.e. the actions `face.assign`/`label.attach`/`face.reject`/`label.reject`;
   the literal matches the partial index from migration 0037) and `?decision=yes|no` (the Yes bucket = assign+attach /
   No = reject); another `via`/`decision` value → 400.
-  **`GET /audit/mine`** (`RequireAuth`, so viewer and up) answers the same body with the same filters and paging,
+  **`GET /audit/mine`** (instance: `RequireSignedIn`; under a project: `RequireAuth`, so viewer and up) answers
+  the same body with the same filters and paging,
   except the actor is **taken from the session** and overwrites whatever the query asked for, on every page —
   a non-admin therefore never reads somebody else's rows, and never the **system's** either (an entry with an
   empty `actor_uid` matches no actor filter). `?user=` naming **somebody else → 403**, not a silent narrowing:
@@ -2763,6 +2775,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   The records are served **whole, `ip` and `user_agent` included** — that is the caller's own address and
   browser, and seeing it is how a user recognises (or disowns) an action. For an admin nothing changes:
   `GET /audit` still lists every actor including the system's, and `?user=` still selects anybody.
+  **Which entries carry a project:** every `audit.ProjectScoped` action (everything but the instance actions —
+  accounts and credentials, notification preferences, a project's create/edit/purge/storage move, the
+  retention purge and the library wipe). `audit.FromRequest` picks the request's project up from the guard
+  that admitted the caller and `Meta.Entry` files a project-scoped entry under it; the stores that write
+  into a project default an entry's project to their own as well. The API packages' integration tests run
+  `audittest.Guard`, which fails a test whose mutation wrote a project-scoped entry without one.
   Audit entries are **not added
   over HTTP** — they arise inside mutation transactions (in-tx `audit.Write`, see the `internal/audit`
   convention); the only HTTP mutation of the trail is the maintainer-only **retention purge**

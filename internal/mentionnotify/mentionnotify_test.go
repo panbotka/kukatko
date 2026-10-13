@@ -121,10 +121,11 @@ func TestMessage(t *testing.T) {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
 	}
 	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},
-		notification.Notification{}, "https://k.example/tasks/pt1#comment-cm1")
+		notification.Notification{},
+		notifydeliver.MailContext{URL: "https://k.example/p/v/tasks/pt1#comment-cm1", ProjectName: "Veselice"})
 	wantData := mailer.CommentMentionData{
-		DisplayName: "Anna", Who: "Pan Botka", OnTask: true, Title: "Kdy to bylo?",
-		Excerpt: "Hele @Anna, víš to?", URL: "https://k.example/tasks/pt1#comment-cm1",
+		DisplayName: "Anna", ProjectName: "Veselice", Who: "Pan Botka", OnTask: true, Title: "Kdy to bylo?",
+		Excerpt: "Hele @Anna, víš to?", URL: "https://k.example/p/v/tasks/pt1#comment-cm1",
 	}
 	if mail.Template != mailer.TemplateCommentMention || mail.To != "anna@example.test" ||
 		!reflect.DeepEqual(mail.Data, wantData) {
@@ -148,7 +149,7 @@ func TestMessage_album(t *testing.T) {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
 	}
 	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},
-		notification.Notification{}, "https://k.example/albums/al1?panel=comments#comment-cm1")
+		notification.Notification{}, notifydeliver.MailContext{URL: "https://k.example/albums/al1?panel=comments#comment-cm1"})
 	data, ok := mail.Data.(mailer.CommentMentionData)
 	if !ok || data.OnTask || !data.OnAlbum || data.Title != "Svatba 1987" {
 		t.Fatalf("mail data = %+v, want an album mention of Svatba 1987", mail.Data)

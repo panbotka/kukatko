@@ -1,12 +1,18 @@
 // Package auditapi exposes the HTTP API over the durable audit trail
-// (internal/audit). It serves two read endpoints. GET /audit is the admin-only
-// listing of the whole trail, newest-first, with optional filters (acting user,
-// entity type and UID, action, review-game decisions via=review, Ano/Ne bucket
+// (internal/audit). It serves two read endpoints twice. On the instance, GET
+// /audit is the system administrator's (maintainer) listing of the whole trail,
+// newest-first, with optional filters (project=<slug>, acting user, entity type
+// and UID, action, review-game decisions via=review, Ano/Ne bucket
 // decision=yes|no, created-at date range) and limit/offset pagination, plus the
-// total matching count so the admin UI can page. GET /audit/mine is the same
-// listing for any signed-in user, narrowed to their own actions. The audit log
-// is write-only from the application's side — entries are appended within
-// mutation transactions elsewhere — so this package never mutates it.
+// total matching count so the UI can page; GET /audit/mine is the same listing
+// for any signed-in account, narrowed to its own actions in every project.
+// Under a project, GET /p/{project}/audit is that project's admin's listing and
+// GET /p/{project}/audit/mine a member's own actions there — both narrowed to
+// the entries filed under the project, so an admin of one project never reads
+// another's (or the instance's) entries. Every record names its project
+// (project_uid, and project = the slug). The audit log is write-only from the
+// application's side — entries are appended within mutation transactions
+// elsewhere — so this package never mutates it.
 //
 // # Every filter is checked
 //
@@ -58,13 +64,17 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 )
 
-// API serves the audit log over HTTP: the whole trail behind the admin guard,
-// and the caller's own actions behind the plain auth guard.
+// API serves the audit log over HTTP: the whole trail behind the maintainer
+// guard, a project's entries behind its admin guard, and the caller's own
+// actions behind the plain sign-in and membership guards.
 type API struct {
-	store        *audit.Store
-	resolveUser  ResolveUser
-	requireAdmin func(http.Handler) http.Handler
-	requireAuth  func(http.Handler) http.Handler
+	store             *audit.Store
+	resolveUser       ResolveUser
+	resolveProject    ResolveProject
+	requireMaintainer func(http.Handler) http.Handler
+	requireAdmin      func(http.Handler) http.Handler
+	requireAuth       func(http.Handler) http.Handler
+	requireSignedIn   func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. All fields are required.
@@ -75,31 +85,55 @@ type Config struct {
 	// into an account UID, so the trail can be filtered by the name a human
 	// knows. Without it a user filter is answered 500 rather than guessed at.
 	ResolveUser ResolveUser
-	// RequireAdmin guards the full listing so only admins can read the trail.
+	// ResolveProject turns the instance listing's project filter — a slug —
+	// into the project's uid. Without it a project filter is answered 500.
+	ResolveProject ResolveProject
+	// RequireMaintainer guards the instance listing of the whole trail.
+	RequireMaintainer func(http.Handler) http.Handler
+	// RequireAdmin guards a project's listing: its admins (and maintainers).
 	RequireAdmin func(http.Handler) http.Handler
-	// RequireAuth guards the own-activity listing, which any signed-in user may
-	// read because it never leaves their own actions.
+	// RequireAuth guards a member's own actions in a project.
 	RequireAuth func(http.Handler) http.Handler
+	// RequireSignedIn guards the instance own-activity listing, which any
+	// signed-in account may read — member of a project or not — because it
+	// never leaves its own actions.
+	RequireSignedIn func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		store:        cfg.Store,
-		resolveUser:  cfg.ResolveUser,
-		requireAdmin: cfg.RequireAdmin,
-		requireAuth:  cfg.RequireAuth,
+		store:             cfg.Store,
+		resolveUser:       cfg.ResolveUser,
+		resolveProject:    cfg.ResolveProject,
+		requireMaintainer: cfg.RequireMaintainer,
+		requireAdmin:      cfg.RequireAdmin,
+		requireAuth:       cfg.RequireAuth,
+		requireSignedIn:   cfg.RequireSignedIn,
 	}
 }
 
-// RegisterRoutes mounts the audit endpoints onto r, which the caller has scoped
-// under the API base path (for example /api/v1):
+// RegisterRoutes mounts the instance audit endpoints onto r, which the caller
+// has scoped under the API base path (for example /api/v1):
 //
-//	GET /audit        RequireAdmin   list audit entries with filters + pagination
-//	GET /audit/mine   RequireAuth    the same, narrowed to the caller's own actions
+//	GET /audit        RequireMaintainer  the whole trail, filters (project= too) + pagination
+//	GET /audit/mine   RequireSignedIn    the same, narrowed to the caller's own actions
 func (a *API) RegisterRoutes(r chi.Router) {
-	r.With(a.requireAdmin).Get("/audit", a.handleList)
-	r.With(a.requireAuth).Get("/audit/mine", a.handleListMine)
+	r.With(a.requireMaintainer).Get("/audit", a.handleList)
+	r.With(a.requireSignedIn).Get("/audit/mine", a.handleListMine)
+}
+
+// RegisterProjectRoutes mounts the project audit endpoints onto r, which the
+// caller has scoped to one project (/api/v1/p/{project}):
+//
+//	GET /audit        RequireAdmin  the project's entries, filters + pagination
+//	GET /audit/mine   RequireAuth   the same, narrowed to the caller's own actions
+//
+// Both are narrowed to the request's project on every page, and refuse a
+// project parameter: the route already names the one project they read.
+func (a *API) RegisterProjectRoutes(r chi.Router) {
+	r.With(a.requireAdmin).Get("/audit", a.inProject(a.handleList))
+	r.With(a.requireAuth).Get("/audit/mine", a.inProject(a.handleListMine))
 }
 
 // listResponse is the JSON body returned by the list endpoint. NextOffset is the
@@ -117,12 +151,56 @@ type listResponse struct {
 // for pagination. An invalid filter or pagination value is answered with 400 and
 // a store failure with 500.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
-	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
+	filter, err := a.parseRequest(r)
 	if err != nil {
 		writeFilterError(w, err)
 		return
 	}
 	a.respond(w, r, filter)
+}
+
+// projectScopeKey is the context key under which inProject records the
+// project a listing is narrowed to.
+type projectScopeKey struct{}
+
+// inProject wraps a listing handler for a project route: it refuses a project
+// parameter by name (the route names the project) and narrows the listing to
+// the request's project, which the guard in front resolved. A request that
+// reached it without a project is refused rather than listed unfiltered.
+func (a *API) inProject(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has(projectParam) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown query parameter %q", projectParam))
+			return
+		}
+		projectUID := auth.ProjectUIDFromContext(r.Context())
+		if projectUID == "" {
+			// Unreachable behind the project guards; refuse rather than list
+			// every project's entries.
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		next(w, r.WithContext(context.WithValue(r.Context(), projectScopeKey{}, projectUID)))
+	}
+}
+
+// parseRequest builds the request's filter: the query's filters, then the
+// project — the route's (inProject) when it has one, which nothing in the query
+// can widen, or else the query's project=<slug>.
+func (a *API) parseRequest(r *http.Request) (audit.Filter, error) {
+	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
+	if err != nil {
+		return audit.Filter{}, err
+	}
+	if scoped, ok := r.Context().Value(projectScopeKey{}).(string); ok {
+		filter.ProjectUID = scoped
+		return filter, nil
+	}
+	filter.ProjectUID, err = resolveProjectFilter(r.Context(), r.URL.Query().Get(projectParam), a.resolveProject)
+	if err != nil {
+		return audit.Filter{}, err
+	}
+	return filter, nil
 }
 
 // handleListMine serves the caller's own actions: the same filters and paging as
@@ -141,7 +219,7 @@ func (a *API) handleListMine(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	filter, err := parseFilter(r.Context(), r.URL.Query(), a.resolveUser)
+	filter, err := a.parseRequest(r)
 	if err != nil {
 		writeFilterError(w, err)
 		return
@@ -212,7 +290,7 @@ const (
 // below, and the frontend's audit client (web/src/services/audit.ts) sends
 // nothing else.
 var recognisedParams = map[string]struct{}{
-	"user": {}, "entity_type": {}, "entity_uid": {}, "action": {},
+	projectParam: {}, "user": {}, "entity_type": {}, "entity_uid": {}, "action": {},
 	"via": {}, "decision": {}, "since": {}, "until": {},
 	"limit": {}, "offset": {},
 }
@@ -226,14 +304,48 @@ var recognisedParams = map[string]struct{}{
 // of the trail and does not grow a dependency on the whole user service.
 type ResolveUser func(ctx context.Context, value string) (string, error)
 
+// projectParam is the instance listing's project filter: a project's slug.
+const projectParam = "project"
+
+// ResolveProject maps the project filter's value — a project's slug, the name
+// in its URL — onto that project's uid. It returns ErrUnknownProject when the
+// slug names no project, and any other error when the lookup itself failed.
+type ResolveProject func(ctx context.Context, slug string) (string, error)
+
+// ErrUnknownProject is returned by a ResolveProject for a slug that names no
+// project.
+var ErrUnknownProject = errors.New("auditapi: no such project")
+
+// resolveProjectFilter turns the project filter's slug into a project uid. An
+// empty value means "every project, and the instance" and needs no lookup; a
+// slug naming no project is the caller's error, a failing lookup the server's
+// (wrapped in errLookup).
+func resolveProjectFilter(ctx context.Context, slug string, resolve ResolveProject) (string, error) {
+	if slug == "" {
+		return "", nil
+	}
+	if resolve == nil {
+		return "", fmt.Errorf("%w: no project lookup is configured", errLookup)
+	}
+	uid, err := resolve(ctx, slug)
+	switch {
+	case errors.Is(err, ErrUnknownProject):
+		return "", fmt.Errorf("project %q does not exist", slug)
+	case err != nil:
+		return "", fmt.Errorf("%w: %w", errLookup, err)
+	}
+	return uid, nil
+}
+
 // ErrUnknownUser is returned by a ResolveUser for a value that is neither an
 // account UID nor a username.
 var ErrUnknownUser = errors.New("auditapi: no such user")
 
-// errUserLookup marks a failure of the user lookup itself — the store could not
-// be reached. It is the one filter error that is the server's fault rather than
-// the caller's, so it is answered 500 while everything else is a 400.
-var errUserLookup = errors.New("resolving the user filter failed")
+// errLookup marks a failure of a lookup itself (the user or the project
+// filter's) — the store could not be reached. It is the one filter error that
+// is the server's fault rather than the caller's, so it is answered 500 while
+// everything else is a 400.
+var errLookup = errors.New("resolving a filter failed")
 
 // parseFilter builds an audit.Filter from the request query parameters. Every
 // value is checked, because an unchecked filter answers a typo with an empty
@@ -300,20 +412,20 @@ func rejectUnknownParams(q url.Values) error {
 // resolveActor turns the user filter's value into an actor UID, accepting either
 // an account UID or a username. An empty value means "every actor" and needs no
 // lookup; a value naming no account is a caller error, while a failing lookup is
-// wrapped in errUserLookup so the handler can tell the two apart.
+// wrapped in errLookup so the handler can tell the two apart.
 func resolveActor(ctx context.Context, value string, resolve ResolveUser) (string, error) {
 	if value == "" {
 		return "", nil
 	}
 	if resolve == nil {
-		return "", fmt.Errorf("%w: no user lookup is configured", errUserLookup)
+		return "", fmt.Errorf("%w: no user lookup is configured", errLookup)
 	}
 	uid, err := resolve(ctx, value)
 	switch {
 	case errors.Is(err, ErrUnknownUser):
 		return "", fmt.Errorf("user %q is neither an account uid nor a username", value)
 	case err != nil:
-		return "", fmt.Errorf("%w: %w", errUserLookup, err)
+		return "", fmt.Errorf("%w: %w", errLookup, err)
 	}
 	return uid, nil
 }
@@ -408,8 +520,8 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 // failed — the server's fault, and nothing the caller can rewrite — and 400 with
 // the parser's own message, which names the offending value, for everything else.
 func writeFilterError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errUserLookup) {
-		writeError(w, http.StatusInternalServerError, "resolving the user filter failed")
+	if errors.Is(err, errLookup) {
+		writeError(w, http.StatusInternalServerError, "resolving the filter failed")
 		return
 	}
 	writeError(w, http.StatusBadRequest, err.Error())

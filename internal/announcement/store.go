@@ -88,7 +88,7 @@ func (s *Store) Set(
 		Scan(&a.Message, &a.Level, &a.AuthorUID, &a.UpdatedAt); scanErr != nil {
 		return Announcement{}, fmt.Errorf("announcement: publishing: %w", scanErr)
 	}
-	if err := audit.Write(ctx, tx, entry); err != nil {
+	if err := audit.Write(ctx, tx, inProject(entry, projectUID)); err != nil {
 		return Announcement{}, fmt.Errorf("announcement: writing audit entry: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -111,7 +111,7 @@ func (s *Store) Clear(ctx context.Context, projectUID string, entry audit.Entry)
 	if _, err := tx.Exec(ctx, "DELETE FROM announcements WHERE project_id = $1", projectUID); err != nil {
 		return fmt.Errorf("announcement: clearing: %w", err)
 	}
-	if err := audit.Write(ctx, tx, entry); err != nil {
+	if err := audit.Write(ctx, tx, inProject(entry, projectUID)); err != nil {
 		return fmt.Errorf("announcement: writing audit entry: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -128,4 +128,13 @@ func nullableUID(uid string) any {
 		return nil
 	}
 	return uid
+}
+
+// inProject returns entry filed under projectUID, the project whose banner was
+// written, unless the caller already named one.
+func inProject(entry audit.Entry, projectUID string) audit.Entry {
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
+	return entry
 }

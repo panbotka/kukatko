@@ -23,6 +23,8 @@ const fetchMock = vi.mocked(fetchMyActivity)
 function record(overrides: Partial<AuditRecord> = {}): AuditRecord {
   return {
     id: 1,
+    project_uid: 'pj1',
+    project: 'v',
     actor_uid: 'me',
     action: 'photo.update',
     target_type: 'photos',
@@ -100,6 +102,41 @@ describe('MyActivityPage', () => {
 
     const link = await screen.findByRole('link', { name: /Photo/ })
     expect(link).toHaveAttribute('href', '/p/v/photos/ph9')
+  })
+
+  it("names each entry's project and links into that project, not the current one", async () => {
+    fetchMock.mockResolvedValue(
+      response([
+        record({ project_uid: 'pj2', project: 'rodina' }),
+        record({
+          id: 2,
+          project_uid: 'pj2',
+          project: 'rodina',
+          action: 'photos.bulk',
+          target_type: '',
+          target_uid: null,
+          details: { photo_uids: ['ph1'] },
+        }),
+        record({
+          id: 3,
+          project_uid: null,
+          project: null,
+          action: 'user.update',
+          target_type: 'users',
+        }),
+      ]),
+    )
+    renderPage()
+
+    expect(await screen.findByRole('columnheader', { name: 'Project' })).toBeInTheDocument()
+    expect(screen.getAllByRole('cell', { name: 'rodina' })).toHaveLength(2)
+    expect(screen.getByRole('cell', { name: '—' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Photo/ })).toHaveAttribute(
+      'href',
+      '/p/rodina/photos/ph9',
+    )
+    const links = within(screen.getByTestId('activity-links')).getAllByRole('link')
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/p/rodina/photos/ph1'])
   })
 
   it('links the photos of a bulk edit from its payload', async () => {

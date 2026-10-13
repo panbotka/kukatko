@@ -1,12 +1,14 @@
 import { ApiError } from './auth'
-import { instancePath } from './api'
+import { apiPath, instancePath } from './api'
 
 /**
  * Audit-log client, mirroring the backend JSON shapes from `internal/auditapi`
- * and `internal/audit`. It powers two read-only pages over the same records: the
- * `/audit` administration listing of the whole durable trail
- * ({@link fetchAuditLog}), and every user's own activity page
- * ({@link fetchMyActivity}), which the server narrows to the caller. Both are
+ * and `internal/audit`. It powers two read-only pages over the same records: a
+ * project's `/p/<slug>/audit` administration listing of that project's trail
+ * ({@link fetchAuditLog}, the project-scoped `GET /p/<slug>/audit`, which never
+ * holds another project's entries), and every user's own activity page
+ * ({@link fetchMyActivity}, the instance `GET /audit/mine`, across every
+ * project), which the server narrows to the caller. Both are
  * newest-first, filterable and offset-paginated. The session cookie is sent
  * automatically (same-origin); every call throws {@link ApiError} on a non-OK
  * response so callers can branch on `status`.
@@ -34,9 +36,9 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
-async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(instancePath(path), {
+/** Issues a GET of `url` and parses the JSON body, throwing ApiError on a non-OK status. */
+async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -73,6 +75,10 @@ export type AuditChanges = Record<string, AuditChange>
  */
 export interface AuditRecord {
   id: number
+  /** The project the entry is filed under; `null` for an instance-level entry. */
+  project_uid: string | null
+  /** That project's slug; `null` for an instance entry (or a project since deleted). */
+  project: string | null
   actor_uid: string | null
   action: string
   target_type: string
@@ -151,7 +157,7 @@ export async function fetchAuditLog(
 ): Promise<AuditListResponse> {
   const query = buildAuditQuery(params)
   const suffix = query === '' ? '' : `?${query}`
-  return getJSON<AuditListResponse>(`/audit${suffix}`, signal)
+  return getJSON<AuditListResponse>(apiPath(`/audit${suffix}`), signal)
 }
 
 /**
@@ -174,5 +180,5 @@ export async function fetchMyActivity(
 ): Promise<AuditListResponse> {
   const query = buildAuditQuery(params)
   const suffix = query === '' ? '' : `?${query}`
-  return getJSON<AuditListResponse>(`/audit/mine${suffix}`, signal)
+  return getJSON<AuditListResponse>(instancePath(`/audit/mine${suffix}`), signal)
 }

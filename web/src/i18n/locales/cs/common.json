@@ -752,7 +752,8 @@
     "columns": {
       "when": "Kdy",
       "what": "Co",
-      "where": "Kde"
+      "where": "Kde",
+      "project": "Projekt"
     },
     "target": {
       "unknown": "Neznámý cíl"

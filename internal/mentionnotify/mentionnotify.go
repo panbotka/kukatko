@@ -294,12 +294,12 @@ func (n *Notifier) message(c comments.Comment, subj comments.Subject, p place) n
 // mailBuilder returns the e-mail of the notification: the comment_mention
 // template with the writer, the place, the excerpt and the absolute link.
 func mailBuilder(who string, p place, excerpt string) notifydeliver.MailBuilder {
-	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
+	return func(to notifydeliver.Recipient, _ notification.Notification, mail notifydeliver.MailContext) mailjob.Mail {
 		return mailjob.CommentMention(to.Email, mailer.CommentMentionData{
-			DisplayName: to.DisplayName, Who: strings.TrimSpace(who),
+			DisplayName: to.DisplayName, ProjectName: mail.ProjectName, Who: strings.TrimSpace(who),
 			OnTask:  p.kind == notification.MentionPlaceTask,
 			OnAlbum: p.kind == notification.MentionPlaceAlbum,
-			Title:   p.title, Excerpt: excerpt, URL: url,
+			Title:   p.title, Excerpt: excerpt, URL: mail.URL,
 		})
 	}
 }

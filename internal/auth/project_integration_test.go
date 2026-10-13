@@ -4,6 +4,7 @@ package auth_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/project"
 )
 
@@ -31,6 +33,9 @@ type projectProbe struct {
 	ProjectUID string `json:"project_uid"`
 	Role       string `json:"role"`
 	APIBase    string `json:"api_base"`
+	// LoggedProject is the project uid the access log and audit.FromRequest
+	// see (obs.ProjectUID).
+	LoggedProject string `json:"logged_project"`
 }
 
 // writeProjectProbe is the handler behind the probe routes.
@@ -40,6 +45,8 @@ func writeProjectProbe(w http.ResponseWriter, r *http.Request) {
 		ProjectUID: auth.ProjectUIDFromContext(r.Context()),
 		Role:       string(auth.ProjectRoleFromContext(r.Context())),
 		APIBase:    auth.APIBase(r.Context()),
+
+		LoggedProject: obs.ProjectUID(r.Context()),
 	})
 }
 
@@ -58,6 +65,7 @@ func newProjectEnv(t *testing.T) *projectEnv {
 		r.With(api.RequireAuthOrDownloadToken).Get("/probe/media", writeProjectProbe)
 	}
 	r := chi.NewRouter()
+	r.Use(obs.AccessLog(slog.New(slog.DiscardHandler)))
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(auth.WithProject(projects))
 		api.RegisterRoutes(r)
@@ -156,6 +164,8 @@ func TestProject_apiBaseFollowsTheRoute(t *testing.T) {
 		}
 		if got := decodeProbe(t, body); got.APIBase != want || got.ProjectUID != project.BootstrapUID {
 			t.Errorf("%s probe = %+v, want api_base %q in the bootstrap project", path, got, want)
+		} else if got.LoggedProject != project.BootstrapUID {
+			t.Errorf("%s logged project = %q, want the bootstrap project", path, got.LoggedProject)
 		}
 	}
 }

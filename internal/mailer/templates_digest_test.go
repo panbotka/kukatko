@@ -58,12 +58,20 @@ func TestRenderTasksWaitingDigest_projectHeading(t *testing.T) {
 		QueueURL: "https://k.example/p/v/tasks?waiting=1",
 	}
 	want := "v Kukátku na tebe čeká 1 úkol:\n\nProjekt Veselice\n\n- Rok? (čeká na odpověď)\n"
-	if got := RenderTasksWaitingDigest(data).Body; !strings.Contains(got, want) {
-		t.Errorf("Body =\n%s\nwant it to contain %q", got, want)
+	got := RenderTasksWaitingDigest(data)
+	if !strings.Contains(got.Body, want) {
+		t.Errorf("Body =\n%s\nwant it to contain %q", got.Body, want)
+	}
+	if wantSubject := "Kukátko · Veselice: Čeká na tebe 1 úkol"; got.Subject != wantSubject {
+		t.Errorf("Subject = %q, want %q", got.Subject, wantSubject)
 	}
 	data.ProjectName = ""
-	if got := RenderTasksWaitingDigest(data).Body; strings.Contains(got, "Projekt") {
-		t.Errorf("Body without a project name = %q, want no heading", got)
+	got = RenderTasksWaitingDigest(data)
+	if strings.Contains(got.Body, "Projekt") {
+		t.Errorf("Body without a project name = %q, want no heading", got.Body)
+	}
+	if got.Subject != "Čeká na tebe 1 úkol" {
+		t.Errorf("Subject without a project name = %q", got.Subject)
 	}
 }
 

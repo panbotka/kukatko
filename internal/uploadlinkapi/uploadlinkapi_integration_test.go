@@ -23,6 +23,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -89,6 +90,7 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := t.Context()
 	e := &integrationEnv{db: db, settings: settings.NewStore(db.Pool()), photos: map[string]string{}}
 	org := organize.NewStore(db.Pool())

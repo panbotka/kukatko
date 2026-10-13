@@ -9,11 +9,11 @@ import (
 	"github.com/panbotka/kukatko/internal/system"
 )
 
-// TestLibrarySnapshot_MapsEveryCount verifies the adapter between the shared
+// TestLibraryCounts_MapsEveryCount verifies the adapter between the shared
 // library aggregation and the metric shape: every count lands under the label
 // value an operator queries by, and the plain-image count comes from the derived
 // field rather than being recomputed here.
-func TestLibrarySnapshot_MapsEveryCount(t *testing.T) {
+func TestLibraryCounts_MapsEveryCount(t *testing.T) {
 	t.Parallel()
 
 	counts := system.Library{
@@ -28,7 +28,7 @@ func TestLibrarySnapshot_MapsEveryCount(t *testing.T) {
 		Labels: 11,
 	}
 
-	got := librarySnapshot(counts, system.Video{Videos: 4, Streamable: 1, Missing: 3})
+	got := libraryCounts(counts, 3)
 	checks := []struct {
 		name string
 		got  int
@@ -61,6 +61,20 @@ func TestLibrarySnapshot_MapsEveryCount(t *testing.T) {
 		if check.got != check.want {
 			t.Errorf("%s = %d, want %d", check.name, check.got, check.want)
 		}
+	}
+}
+
+// TestLibraryByProject_keyedBySlug verifies every project lands under its slug
+// — the label value, never its name or uid — with its own counts.
+func TestLibraryByProject_keyedBySlug(t *testing.T) {
+	t.Parallel()
+
+	got := libraryByProject([]system.ProjectLibrary{
+		{UID: "pj1", Slug: "v", Library: system.Library{Faces: 7}, VideosWithoutStreaming: 2},
+		{UID: "pj2", Slug: "rodina", Library: system.Library{Faces: 1}},
+	})
+	if len(got) != 2 || got["v"].Faces != 7 || got["v"].VideosWithoutStreaming != 2 || got["rodina"].Faces != 1 {
+		t.Errorf("libraryByProject = %+v, want v and rodina with their own counts", got)
 	}
 }
 

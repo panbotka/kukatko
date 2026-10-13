@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/apitest"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -60,6 +61,7 @@ func newEnv(t *testing.T, opts envOptions) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 
 	authSvc := auth.NewService(auth.NewStore(db.Pool()), auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})

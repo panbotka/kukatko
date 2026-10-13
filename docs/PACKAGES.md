@@ -183,10 +183,13 @@ to `## Package map` in `CLAUDE.md`.
   `RegistrationConfig.Notify` (`Notifier`, satisfied by `*notifydeliver.Deliverer`) is set, every
   recipient gets one `Deliver` of `KindRegistrationPending` — the Czech
   `notification.RenderRegistrationPending` text naming the newcomer (display name, else username), link
-  `/users`, the approval screen — through **exactly the channels they opted into** (in-app, push,
-  e-mail; **all off by default**). The e-mail is the detailed `new_registration_pending` template ending
-  with `RegistrationConfig.ApprovalURL` (`mail.base_url` + `ApprovalPath`, built in `cmd/kukatko`;
-  empty leaves the link out). Each recipient runs under its own **savepoint**, because a failed statement
+  `ApprovalPath` = `/members` (stored under the project: `/p/<slug>/members`, the project's member screen)
+  — through **exactly the channels they opted into** (in-app, push, e-mail; **all off by default**). The
+  e-mail is the detailed `new_registration_pending` template naming the project (`MailContext.ProjectName`)
+  and ending with the absolute approval link (`MailContext.URL` = `mail.base_url` + `/p/<slug>/members`;
+  no base URL leaves the link out). The person's own `registration_received` confirmation names the
+  project too, read through the optional `RegistrationConfig.Projects` (`ProjectReader`, `*project.Store`;
+  a failed read names none and never refuses the registration). Each recipient runs under its own **savepoint**, because a failed statement
   would otherwise abort the whole registration: a delivery that will not record or schedule is rolled back
   to it **whole** (no mail without its record, no record without its push), logged, and the registration
   goes on. `Notify` nil means only the person is mailed. The audit entry
@@ -4561,9 +4564,22 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   unrecognised value instead of answering with the empty listing it would match, and
   `TestKnownActionsCoverEveryConstant` parses `audit.go` itself so a new constant cannot be added without
   landing in the set; `Store` = `NewStore(pool)` with `Record(ctx,Entry)`
-  (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ActorUID,
-  TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100)
-  for the admin listing; **retention purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = one
+  (its own connection) and **filtered reads** `List(ctx,Filter)`/`Count(ctx,Filter)` (`Filter{ProjectUID,
+  ActorUID,TargetType,TargetUID,Action,Since,Until,Limit,Offset}`, newest-first, limit cap 500/default 100;
+  `List` joins `projects` so a `Record` carries `ProjectUID` and `Project` = the slug, both nil for an
+  instance entry) for the admin listing; **projects**: `Entry.ProjectUID` files an entry under a project
+  (`audit_log.project_id`); `ProjectScoped(action)` is every known action but the hand-kept
+  `instanceActions` (accounts and credentials, notification preferences, a project's
+  create/update/purge/storage prefix/rekey, `audit.purge`, `library.reset`); `FromRequest` reads the
+  request's project (`obs.ProjectUID`, stamped by `auth` when it admits the caller) into
+  `Meta.ProjectUID`, and `Meta.Entry` files only a project-scoped action under it — an instance action on
+  an unprefixed route is never attributed to the bootstrap project its request resolved;
+  **`internal/audit/audittest`** (test helper): `Guard(t, db)` marks the end of the trail and, at
+  cleanup, fails the test for every entry written since that is `ProjectScoped` but names no project
+  (`Unscoped(ctx, pool, mark)` is the query); the API packages' integration tests call it right after
+  `dbtest.TruncateAll` (not `auditapi`, whose seeded rows are fixtures) — it found `settings`,
+  `announcement`, `family` and `uploadlink` stores that did not stamp their project, which now default an
+  entry's project to the one they write into; **retention purge** `PurgeOlderThan(ctx, cutoff) (int, error)` = one
   `DELETE FROM audit_log WHERE created_at < $1` over `idx_audit_log_created_at`, returns the number deleted
   (maintainer-only via `internal/maintenanceapi`, action `audit.purge`, it audits itself — the fresh
   purge record survives the purge). **Wired-in in-tx mutations**: bulk (`internal/bulk`) + photo PATCH/archive/unarchive
@@ -4572,8 +4588,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   and **user management** `auth.Store.{CreateUser,UpdateUserProfile,SetUserDisabled,SetPasswordHash}Audited`
   (`user.*`) — every mutation + audit in one tx via the shared `rowQuerier`/`mutateAudited` (photos) and
   `inAuditedTx` (auth); further domains (albums/labels/people) follow the same convention), `internal/auditapi/`
-  (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,RequireAdmin,RequireAuth})`+`RegisterRoutes`
-  mounts `GET /audit` behind `RequireAdmin` and `GET /audit/mine` behind `RequireAuth`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
+  (HTTP API over the audit trail: `NewAPI(Config{Store,ResolveUser,ResolveProject,RequireMaintainer,
+  RequireAdmin,RequireAuth,RequireSignedIn})`; `RegisterRoutes` (instance, mounted once) mounts `GET /audit`
+  behind `RequireMaintainer` (with `project=<slug>` → `Filter.ProjectUID` through `ResolveProject`, unknown →
+  400) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
+  under `/p/{project}` only — the alias leaves it out) mounts the same two behind `RequireAdmin`/`RequireAuth`,
+  wrapped in `inProject`, which refuses a `project` parameter and pins `Filter.ProjectUID` to
+  `auth.ProjectUIDFromContext`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
   time/number/`via`/`decision` → 400), returns `{entries,total,limit,offset,next_offset}` newest-first;
   **every filter is checked and the parameter set is closed**, because an ignored typo answers 200 + an empty
@@ -4583,7 +4604,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `func(ctx, value) (uid, error)` rather than the whole user service, wired in `cmd/kukatko/audit.go` to
   `auth.Store.GetUserByUIDOrUsername`, so a **UID or a username** both work and a value naming neither → 400,
   while an existing account with no rows keeps answering 200 + an empty list. A failure of the lookup itself is
-  wrapped in `errUserLookup` and answered **500** by `writeFilterError`, the one filter error that is not the
+  wrapped in `errLookup` (the project lookup's too) and answered **500** by `writeFilterError`, the one filter error that is not the
   caller's fault. `entity_uid`/`entity_type` are **deliberately left unchecked**: the trail outlives what it
   describes (an entry about a purged photo is the point of keeping one) and the entity type is a free string;
   **`via=review`** → `Filter.ReviewOnly` (the literal `details ->> 'via' = 'review'`, matches the partial
@@ -6116,7 +6137,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   a **redaction `ReplaceAttr` hook** (`redactAttr`) blanks the value of every attribute whose key carries a
   secret (password/passwd/secret/token/apikey/access_key/secret_key/authorization/cookie/
   credential/dsn) to `[REDACTED]` — inside groups too, so a secret never escapes into the log, not even when
-  somebody logs it by mistake; the **`AccessLog` middleware** emits one structured line per HTTP
+  somebody logs it by mistake; the request's project: `SetProject(ctx, uid, slug)` stamps the fields bag,
+  `WithProject(ctx, uid, slug)` does that and returns a context carrying the uid, `ProjectUID(ctx)` reads
+  it back (context first, then the bag) — `auth` calls `WithProject` when it admits a caller into a
+  project, so the access line carries `project=<slug>` and `audit.FromRequest` the uid even where no
+  `AccessLog` installed a bag; the **`AccessLog` middleware** emits one structured line per HTTP
   request (the request id from chi's `RequestID`, method/path/route pattern/status/duration/bytes/remote IP
   + the authenticated user when known — the auth middleware stamps it via `SetUser` into a
   request-scoped `fields` bag shared by pointer through the context, because a write deep in the chain must
@@ -6204,24 +6229,31 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `kukatko_geocode_credits_remaining`/`_limit`, sampled at scrape time so the gauge follows the budget
   window rolling over even while no job runs; a nil func = no budget wired) read their data at scrape time
   without extra goroutines; `RegisterLibrary(LibraryStatsFunc, ttl)` (`library.go`) adds the **library-content**
-  gauges — `kukatko_library_photos{media_type}`/`_photos_archived`/`_photos_processed{stage}`/
+  gauges, **one series set per active project, each labelled `project="<slug>"`** (the slug, never the
+  name — `/metrics` is unauthenticated; the instance total is `sum without (project)`) —
+  `kukatko_library_photos{media_type}`/`_photos_archived`/`_photos_processed{stage}`/
   `_photos_pending{stage}`/`_embeddings`/`_faces`/`_markers{state}`/`_subjects{type}`/`_albums{type}`/`_labels`/
   `_videos_without_streaming` (the streaming-encode backlog, exported whatever `video.hls.enabled` says — with
   streaming off it is every video, and saying so is the alert's job, not the gauge's)
   and `kukatko_import_last_run_status{source,status}` (1 for the status the run is in, **0** for every other
   known one, so a transition is visible instead of a series vanishing) + `_start`/`_finish_timestamp_seconds{source}`
-  (Unix seconds; the age is `time() - gauge`, not a pre-computed one) — over a `LibrarySnapshot` whose every
-  labelled dimension is a `map[string]int`, so a new album/media type needs no change here; the snapshot is
+  (Unix seconds; the age is `time() - gauge`, not a pre-computed one; instance-wide, no project label) — over a
+  `LibrarySnapshot{Projects map[slug]LibraryCounts, Imports}` whose every labelled dimension is a
+  `map[string]int`, so a new album/media type needs no change here; `_collect_errors_total` carries no project
+  label (one aggregation fails for every project at once); the snapshot is
   **memoised** for `metrics.library_ttl` (`defaultLibraryTTL` 1 min) because these are aggregates over the
   largest tables and a scrape arrives forever — without it `/metrics` becomes the load it reports on; a stale
   value is **never** served past the TTL: a failure exports no library gauges (a gap, not a number the library
   no longer has) and bumps `kukatko_library_collect_errors_total`; the gauges carry no `_total` suffix on
   purpose, that is reserved for counters. The func is wired in `cmd/kukatko/obs.go`
-  (`registerLibraryMetrics`/`librarySnapshot`/`importRuns`) onto `system.Service.LibraryStats`+`LatestRuns`+
-  `VideoBacklog` — the **same** memoised aggregations the admin dashboard reads, so `/metrics`,
-  `GET /system/stats` and `GET /system/status` cannot disagree and a scrape re-counts nothing;
-  `/metrics` is unauthenticated, so only instance-wide aggregates go in it, never a per-user number or a
-  photo/album/label/person name as a label value; `RegisterPlatform(PlatformFunc)` (`platform.go`) adds the
+  (`registerLibraryMetrics`/`libraryByProject`/`libraryCounts`/`importRuns`) onto
+  `system.Service.LibraryByProject` (one grouped statement, `system.Store.CountLibraryByProject`, over the
+  active projects — the instance statistics' own predicates grouped by `project_id`, `markers` and
+  `photo_places` through their photo, so the per-project gauges sum to `GET /system/stats`) + `LatestRuns`;
+  `/metrics` is unauthenticated, so only aggregates go in it — per project at most, labelled by slug — never
+  a per-user number or a photo/album/label/person/project name as a label value. The platform collector's
+  `kukatko_library_*` families (encode states, backlogs, bytes, below) stay instance-wide: they read the
+  dashboard's instance-wide caches and describe the shared pipeline and disk, like the pool and queue gauges; `RegisterPlatform(PlatformFunc)` (`platform.go`) adds the
   **platform** families read from one `PlatformSnapshot` per scrape — `kukatko_backup_configured`/`_running`/
   `_last_run_success`/`_last_run_finish_timestamp_seconds`/`_last_success_timestamp_seconds`/
   `_last_run_originals{result}`, `kukatko_disk_tree_bytes{tree}`/`_filesystem_free_bytes`/`_filesystem_size_bytes`,
@@ -6290,11 +6322,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     survive a server that only takes ASCII headers.
   - **Eight Czech templates**, each a **pure function of its own data struct** returning
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
-    expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
-    account exists and waits for an administrator), `RenderAccountApproved`
+    expected text. **Every data struct of a project's event carries `ProjectName`**: with one, the subject
+    is `InProject(name, subject)` = `"Kukátko · <name>: <subject>"` and the body says where it happened
+    (`v projektu „<name>“ v Kukátku`; the generic notification mail adds a `Z projektu „<name>“ v Kukátku:`
+    line, the digest keeps its `Projekt <name>` heading), all links already under `/p/<slug>/`; without one —
+    a job queued before projects — the old text, byte for byte (the goldens of both live side by side,
+    `templates_project_test.go`). `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,
+    Username,ProjectName}` — your account exists and waits for an administrator), `RenderAccountApproved`
     (`AccountApprovedData{DisplayName,ProjectName,ProjectURL,SignInURL}`: with a project it names it and
     links to its `/p/<slug>/`; without one — a job queued before projects — the old sign-in text), `RenderNewRegistrationPending`
-    (`NewRegistrationPendingData{Username,DisplayName,Email}` — the administrator's copy, naming all three),
+    (`NewRegistrationPendingData{Username,DisplayName,Email,ProjectName,ApprovalURL}` — the administrator's
+    copy, naming all three and linking the project's member screen),
     and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). The `Template*` name
     constants exist so a log or audit line can say which message went out without repeating its subject. Two
     details the tests pin: an empty display name degrades to the impersonal `Dobrý den,` rather than greeting a
@@ -6851,7 +6889,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     project (`Projects.Get` = `project.Store.Get`) and stores the link under its root (`projectLink` →
     `/p/<slug>/tasks/tk1`), a `SelfLink` as `/p/<slug>/n/<uid>` — so the record, the push's `URL` and the
     mail's absolute link all open in the notification's project, and no producer spells or hard-codes a
-    slug. Producers: the tagging window (the photos' project), mentions (the subject's), task hand-over
+    slug. The project's **name** travels as well: the push's title is `PushTitle(name, title)` =
+    `"<name> · <title>"`, and every `MailBuilder` receives a `MailContext{URL, ProjectName}` (the absolute
+    link and the name its template puts into the subject — `mailer.InProject`: `"Kukátko · <name>: …"` —
+    and the body). Producers: the tagging window (the photos' project), mentions (the subject's), task hand-over
     (the task's), featured albums (the album's), registration (the project registered into — the
     bootstrap project until registration is per project).
   - **`ChannelsTx(ctx, tx, userUID, kind)`** → `Channels{InApp, Push, Email}`: the channels the account

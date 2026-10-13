@@ -23,7 +23,10 @@
 // e-mail's — opens inside the project, under /p/<slug>/. A producer names the
 // project (Message.ProjectUID) and the path inside it (Message.Link, e.g.
 // "/tasks/tk1"); Deliver loads the project (project.Store.Get) and puts the path
-// under the project's slug, so no producer spells or hard-codes a slug.
+// under the project's slug, so no producer spells or hard-codes a slug. The
+// project's name travels too: the push's title is prefixed by it ("Veselice ·
+// …") and every mail builder receives it (MailContext.ProjectName), so a
+// person in several projects can tell them apart before opening anything.
 package notifydeliver
 
 import (
@@ -91,10 +94,20 @@ type Recipient struct {
 	DisplayName string
 }
 
+// MailContext is what a MailBuilder knows beyond the stored record: the
+// absolute address of its link and the project it belongs to.
+type MailContext struct {
+	// URL is the absolute address of the notification's link, under /p/<slug>/
+	// — empty when it has no link or no public URL is configured.
+	URL string
+	// ProjectName is the name of the notification's project, which the mail's
+	// subject and body name (never the slug).
+	ProjectName string
+}
+
 // MailBuilder turns a recorded notification into its e-mail: to is the
-// recipient, n the stored record and url the absolute address of its link
-// (empty when the notification has no link or no public URL is configured).
-type MailBuilder func(to Recipient, n notification.Notification, url string) mailjob.Mail
+// recipient, n the stored record and mail its link and project.
+type MailBuilder func(to Recipient, n notification.Notification, mail MailContext) mailjob.Mail
 
 // Message is one notification to deliver to one account.
 type Message struct {
@@ -243,14 +256,15 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 			slog.String("user_uid", userUID), slog.String("kind", string(msg.Kind)))
 		return Result{}, nil
 	}
-	record, err := d.record(ctx, tx, userUID, msg, channels.InApp)
+	p, record, err := d.record(ctx, tx, userUID, msg, channels.InApp)
 	if err != nil {
 		return Result{}, err
 	}
 	result := Result{Channels: channels, Notification: &record}
 	if channels.Push {
 		result.Devices, err = d.push.Enqueue(ctx, tx, userUID, push.Notification{
-			Title: record.Title, Body: record.Body, URL: record.Link, Kind: string(record.Kind), Tag: record.UID,
+			Title: PushTitle(p.Name, record.Title), Body: record.Body, URL: record.Link,
+			Kind: string(record.Kind), Tag: record.UID,
 		})
 		if err != nil {
 			return Result{}, fmt.Errorf("notifydeliver: scheduling the push of %s: %w", userUID, err)
@@ -258,7 +272,7 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 	}
 	result.Channels.Email = false
 	if channels.Email && !msg.SkipMail {
-		mailed, err := d.sendMail(ctx, tx, record, msg.Mail)
+		mailed, err := d.sendMail(ctx, tx, record, p.Name, msg.Mail)
 		if err != nil {
 			return Result{}, err
 		}
@@ -268,13 +282,15 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 }
 
 // record loads msg's project and records msg for userUID on tx, its link put
-// under the project's root and listed in the inbox when inApp.
+// under the project's root and listed in the inbox when inApp. It returns the
+// project too, whose name the push and the mail carry.
 func (d *Deliverer) record(
 	ctx context.Context, tx pgx.Tx, userUID string, msg Message, inApp bool,
-) (notification.Notification, error) {
+) (*project.Project, notification.Notification, error) {
 	p, err := d.projects.Get(ctx, msg.ProjectUID)
 	if err != nil {
-		return notification.Notification{}, fmt.Errorf("notifydeliver: loading project %s: %w", msg.ProjectUID, err)
+		return nil, notification.Notification{}, fmt.Errorf("notifydeliver: loading project %s: %w",
+			msg.ProjectUID, err)
 	}
 	record, err := d.notes.CreateTx(ctx, tx, notification.New{
 		ProjectUID: p.UID, ProjectSlug: p.Slug,
@@ -282,10 +298,22 @@ func (d *Deliverer) record(
 		Link: projectLink(p.Slug, msg.Link), SelfLink: msg.SelfLink, PhotoUIDs: msg.PhotoUIDs, InApp: inApp,
 	})
 	if err != nil {
-		return notification.Notification{}, fmt.Errorf("notifydeliver: recording the notification of %s: %w",
+		return nil, notification.Notification{}, fmt.Errorf("notifydeliver: recording the notification of %s: %w",
 			userUID, err)
 	}
-	return record, nil
+	return p, record, nil
+}
+
+// PushTitle is a push's title naming the project it came from: "Veselice ·
+// Označili vás na fotkách". The device's shade shows no address, so the name is
+// the only way to tell two projects' notifications apart there. A blank name
+// leaves the title as it is.
+func PushTitle(projectName, title string) string {
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return title
+	}
+	return name + " · " + title
 }
 
 // projectLink returns link, a path inside the project, under the project's root
@@ -304,10 +332,11 @@ const recipientSQL = `SELECT email, display_name FROM users WHERE uid = $1`
 var errNoAddress = errors.New("notifydeliver: the account has no e-mail address")
 
 // sendMail schedules the e-mail of record on tx, built by build (nil means the
-// generic notification mail). It reports whether a mail was scheduled: an
-// account without an address is skipped and logged, not failed.
+// generic notification mail) and naming projectName. It reports whether a mail
+// was scheduled: an account without an address is skipped and logged, not
+// failed.
 func (d *Deliverer) sendMail(
-	ctx context.Context, tx pgx.Tx, record notification.Notification, build MailBuilder,
+	ctx context.Context, tx pgx.Tx, record notification.Notification, projectName string, build MailBuilder,
 ) (bool, error) {
 	to, err := readRecipient(ctx, tx, record.UserUID)
 	if errors.Is(err, errNoAddress) {
@@ -321,7 +350,8 @@ func (d *Deliverer) sendMail(
 	if build == nil {
 		build = GenericMail
 	}
-	if err := d.mail.Enqueue(ctx, tx, build(to, record, d.Absolute(record.Link))); err != nil {
+	mail := MailContext{URL: d.Absolute(record.Link), ProjectName: projectName}
+	if err := d.mail.Enqueue(ctx, tx, build(to, record, mail)); err != nil {
 		return false, fmt.Errorf("notifydeliver: scheduling the mail of %s: %w", record.UserUID, err)
 	}
 	return true, nil
@@ -353,9 +383,9 @@ func (d *Deliverer) Absolute(link string) string {
 }
 
 // GenericMail is the e-mail of a kind without a template of its own: the
-// notification's title, body and link.
-func GenericMail(to Recipient, n notification.Notification, url string) mailjob.Mail {
+// notification's title, body and link, naming its project.
+func GenericMail(to Recipient, n notification.Notification, mail MailContext) mailjob.Mail {
 	return mailjob.Notification(to.Email, mailer.NotificationData{
-		DisplayName: to.DisplayName, Title: n.Title, Body: n.Body, URL: url,
+		DisplayName: to.DisplayName, ProjectName: mail.ProjectName, Title: n.Title, Body: n.Body, URL: mail.URL,
 	})
 }

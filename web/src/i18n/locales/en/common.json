@@ -740,7 +740,8 @@
     "columns": {
       "when": "When",
       "what": "What",
-      "where": "Where"
+      "where": "Where",
+      "project": "Project"
     },
     "target": {
       "unknown": "Unknown target"

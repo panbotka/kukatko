@@ -102,6 +102,10 @@ func (s *Store) Set(
 	); scanErr != nil {
 		return Settings{}, fmt.Errorf("settings: writing instance settings: %w", scanErr)
 	}
+	if entry.ProjectUID == "" {
+		// The settings are one project's: the entry is filed under it.
+		entry.ProjectUID = projectUID
+	}
 	if err := audit.Write(ctx, tx, entry); err != nil {
 		return Settings{}, fmt.Errorf("settings: writing audit entry: %w", err)
 	}

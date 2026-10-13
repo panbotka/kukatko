@@ -256,6 +256,10 @@ type Config struct {
 	// makes LibraryStats fail rather than panic, so a caller that only needs
 	// Collect may leave it unset.
 	Library LibraryCounter
+	// ProjectLibrary supplies the per-project library counts behind
+	// LibraryByProject (the metrics' project label). A nil one makes
+	// LibraryByProject fail rather than panic.
+	ProjectLibrary ProjectLibraryCounter
 	// Charts supplies the chart aggregates behind LibraryCharts. A nil Charts makes
 	// LibraryCharts fail rather than panic, on the same terms as Library.
 	Charts ChartCounter
@@ -312,28 +316,31 @@ type Service struct {
 	projects     ProjectLister
 	storage      *storageCache
 	library      *snapshotCache[Library]
-	charts       *snapshotCache[Charts]
-	dashboard    *snapshotCache[Dashboard]
-	duplicates   *asyncCache[map[string]int]
+	// projectLibrary counts each active project's library for the metrics.
+	projectLibrary ProjectLibraryCounter
+	charts         *snapshotCache[Charts]
+	dashboard      *snapshotCache[Dashboard]
+	duplicates     *asyncCache[map[string]int]
 }
 
 // New constructs a Service from cfg.
 func New(cfg Config) *Service {
 	s := &Service{
-		db:           cfg.DB,
-		embeddings:   cfg.Embeddings,
-		embeddingURL: cfg.EmbeddingURL,
-		streaming:    cfg.StreamingEnabled,
-		jobs:         cfg.Jobs,
-		backup:       cfg.Backup,
-		maps:         cfg.Maps,
-		geocode:      cfg.Geocode,
-		imports:      cfg.Imports,
-		projects:     cfg.Projects,
-		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
-		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
-		charts:       newChartsCache(cfg.Charts, cfg.ChartsTTL, cfg.Clock),
-		dashboard:    newDashboardCache(cfg.Dashboard, cfg.DashboardTTL, cfg.Clock),
+		db:             cfg.DB,
+		embeddings:     cfg.Embeddings,
+		embeddingURL:   cfg.EmbeddingURL,
+		streaming:      cfg.StreamingEnabled,
+		jobs:           cfg.Jobs,
+		backup:         cfg.Backup,
+		maps:           cfg.Maps,
+		geocode:        cfg.Geocode,
+		imports:        cfg.Imports,
+		projects:       cfg.Projects,
+		storage:        newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
+		library:        newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
+		projectLibrary: cfg.ProjectLibrary,
+		charts:         newChartsCache(cfg.Charts, cfg.ChartsTTL, cfg.Clock),
+		dashboard:      newDashboardCache(cfg.Dashboard, cfg.DashboardTTL, cfg.Clock),
 	}
 	// The duplicate scan walks the active projects, so it is built over the
 	// service that knows them.

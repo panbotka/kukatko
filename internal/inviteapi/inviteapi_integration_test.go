@@ -18,6 +18,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/invite"
@@ -52,6 +53,7 @@ func newEnv(t *testing.T, limit *ratelimit.Limiter) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	projects := project.NewStore(pool)

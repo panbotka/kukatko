@@ -479,9 +479,11 @@ func readAPIOptions(
 	api.globalSearch = buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes
 	notifications := buildNotificationAPI(cfg, db, authAPI, mediaStore)
 	api.notifications = notifications.RegisterInboxRoutes
+	auditAPI := buildAuditAPI(db, authAPI)
+	api.audit = auditAPI.RegisterProjectRoutes
 	return []server.Option{
 		server.WithAPI(notifications.RegisterPushRoutes),
-		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(auditAPI.RegisterRoutes),
 		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
 		server.WithAPI(invites.RegisterPublicRoutes),
 		server.WithAPI(settingsAPI.RegisterInstanceRoutes),

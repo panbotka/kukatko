@@ -20,11 +20,12 @@ import (
 	"github.com/panbotka/kukatko/internal/settings"
 )
 
-// ApprovalPath is the frontend route where an administrator approves a waiting
-// account — the user administration screen (web/src/App.tsx, UsersPage). The
-// administrators' notification opens it, and their mail links to it (the
-// caller builds the absolute address, see RegistrationConfig.ApprovalURL).
-const ApprovalPath = "/users"
+// ApprovalPath is the route, inside the project a registration joins, where its
+// administrator approves a waiting membership — the project's member screen
+// (web/src/App.tsx, MembersPage). The administrators' notification opens it
+// and their mail links to it, both under /p/<slug>/ (notifydeliver puts the
+// path under the project and builds the absolute address).
+const ApprovalPath = "/members"
 
 // SettingsSource reads the instance settings self-service registration depends
 // on: whether it is open at all and the shared secret it asks for. It is an
@@ -34,6 +35,13 @@ const ApprovalPath = "/users"
 type SettingsSource interface {
 	// Get returns the project's settings, or the defaults when none are stored.
 	Get(ctx context.Context, projectUID string) (settings.Settings, error)
+}
+
+// ProjectReader reads a project by uid, for the name a registration's
+// confirmation names. It is satisfied by *project.Store.
+type ProjectReader interface {
+	// Get returns the project uid names, or project.ErrNotFound.
+	Get(ctx context.Context, uid string) (*project.Project, error)
 }
 
 // MailScheduler schedules one message for delivery through a caller-supplied
@@ -166,10 +174,10 @@ type RegistrationConfig struct {
 	Settings SettingsSource
 	// Mail schedules the person's own confirmation (required).
 	Mail MailScheduler
-	// ApprovalURL is the absolute address of the approval screen
-	// (ApprovalPath under the instance's public URL), the last line of the
-	// administrators' mail. Empty leaves the link out.
-	ApprovalURL string
+	// Projects reads the name of the project a registration joins, which the
+	// person's confirmation names. It is optional: without it (or when the read
+	// fails) the confirmation names no project.
+	Projects ProjectReader
 	// Notify delivers the administrators' "a registration is waiting"
 	// notification to whichever channels each of them opted into. It is
 	// optional: without it a registration notifies nobody but the person
@@ -189,12 +197,12 @@ type RegistrationConfig struct {
 // because an instance may run without it — an API built with no Registration
 // simply answers "registration is not open".
 type Registration struct {
-	svc         *Service
-	settings    SettingsSource
-	mail        MailScheduler
-	approvalURL string
-	notify      Notifier
-	log         *slog.Logger
+	svc      *Service
+	settings SettingsSource
+	mail     MailScheduler
+	projects ProjectReader
+	notify   Notifier
+	log      *slog.Logger
 }
 
 // NewRegistration returns a Registration from cfg, defaulting Logger to
@@ -205,7 +213,7 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 		log = slog.Default()
 	}
 	return &Registration{
-		svc: cfg.Service, settings: cfg.Settings, mail: cfg.Mail, approvalURL: cfg.ApprovalURL,
+		svc: cfg.Service, settings: cfg.Settings, mail: cfg.Mail, projects: cfg.Projects,
 		notify: cfg.Notify, log: log,
 	}
 }
@@ -363,6 +371,7 @@ func (rg *Registration) register(
 	// holding them under the insert would only lengthen it. A failure here costs
 	// the notification, not the registration.
 	recipients := rg.approvalRecipients(ctx, projectUID)
+	projectName := rg.projectName(ctx, projectUID)
 
 	entry.ActorUID = user.UID
 	entry.TargetUID = user.UID
@@ -378,7 +387,7 @@ func (rg *Registration) register(
 					return fmt.Errorf("auth: claiming the uploaded photos: %w", err)
 				}
 			}
-			if err := rg.scheduleConfirmation(ctx, tx, user); err != nil {
+			if err := rg.scheduleConfirmation(ctx, tx, user, projectName); err != nil {
 				return err
 			}
 			rg.notifyApprovers(ctx, tx, projectUID, user, recipients)
@@ -428,13 +437,32 @@ func (rg *Registration) approvalRecipients(ctx context.Context, projectUID strin
 	return recipients
 }
 
-// scheduleConfirmation enqueues the person's own confirmation on tx, so it is
-// scheduled if and only if the account commits. It is the one message that
-// must not be lost: failing to schedule it fails the registration, and they are
-// better off retrying than holding an account they were never told about.
-func (rg *Registration) scheduleConfirmation(ctx context.Context, tx pgx.Tx, user User) error {
+// projectName returns the name of the project a registration joins, or "" when
+// no project reader is wired or the read fails — the confirmation then names no
+// project, which is a worse mail but never a reason to refuse somebody.
+func (rg *Registration) projectName(ctx context.Context, projectUID string) string {
+	if rg.projects == nil {
+		return ""
+	}
+	p, err := rg.projects.Get(ctx, projectUID)
+	if err != nil {
+		rg.log.WarnContext(ctx, "registration: could not read the project's name",
+			slog.String("project_uid", projectUID), slog.String("error", err.Error()))
+		return ""
+	}
+	return p.Name
+}
+
+// scheduleConfirmation enqueues the person's own confirmation on tx, naming the
+// project they asked to join, so it is scheduled if and only if the account
+// commits. It is the one message that must not be lost: failing to schedule it
+// fails the registration, and they are better off retrying than holding an
+// account they were never told about.
+func (rg *Registration) scheduleConfirmation(ctx context.Context, tx pgx.Tx, user User, projectName string) error {
 	if err := rg.mail.Enqueue(ctx, tx, mailjob.RegistrationReceived(user.Email,
-		mailer.RegistrationReceivedData{DisplayName: user.DisplayName, Username: user.Username},
+		mailer.RegistrationReceivedData{
+			DisplayName: user.DisplayName, Username: user.Username, ProjectName: projectName,
+		},
 	)); err != nil {
 		return fmt.Errorf("auth: scheduling the registration confirmation: %w", err)
 	}
@@ -478,23 +506,21 @@ func (rg *Registration) notifyApprovers(
 }
 
 // pendingMessage is the administrators' notification about user: the short
-// text the inbox and the push show, opening the approval screen, and the
-// detailed mail naming the registrant's username and address.
+// text the inbox and the push show, opening the project's approval screen, and
+// the detailed mail naming the registrant's username and address, the project
+// and the absolute link to that screen.
 func (rg *Registration) pendingMessage(user User) notifydeliver.Message {
-	pending := mailer.NewRegistrationPendingData{
-		Username:    user.Username,
-		DisplayName: user.DisplayName,
-		Email:       user.Email,
-		ApprovalURL: rg.approvalURL,
-	}
 	return notifydeliver.Message{
 		Kind: notification.KindRegistrationPending,
 		Text: notification.RenderRegistrationPending(notification.RegistrationPendingData{
 			DisplayName: user.DisplayName, Username: user.Username,
 		}),
 		Link: ApprovalPath,
-		Mail: func(to notifydeliver.Recipient, _ notification.Notification, _ string) mailjob.Mail {
-			return mailjob.NewRegistrationPending(to.Email, pending)
+		Mail: func(to notifydeliver.Recipient, _ notification.Notification, mail notifydeliver.MailContext) mailjob.Mail {
+			return mailjob.NewRegistrationPending(to.Email, mailer.NewRegistrationPendingData{
+				Username: user.Username, DisplayName: user.DisplayName, Email: user.Email,
+				ProjectName: mail.ProjectName, ApprovalURL: mail.URL,
+			})
 		},
 	}
 }

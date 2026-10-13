@@ -16,6 +16,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/apitest"
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database"
@@ -52,6 +53,7 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	store, err := storage.NewFS(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewFS: %v", err)

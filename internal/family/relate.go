@@ -134,7 +134,7 @@ func (s *Store) AddRelationAudited(
 	if entry.Details == nil {
 		entry.Details = map[string]any{}
 	}
-	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (AddResult, error) {
+	return mutateAudited(ctx, s.pool, projectUID, entry, func(tx pgx.Tx) (AddResult, error) {
 		return addRelation(ctx, tx, projectUID, subjectUID, rel, kind, entry.Details)
 	})
 }

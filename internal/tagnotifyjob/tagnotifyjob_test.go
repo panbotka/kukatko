@@ -145,19 +145,19 @@ func TestTaggedMail(t *testing.T) {
 
 	svc := New(Config{DB: panicDB{t: t}, Deliver: fakeDeliver{}})
 	to := notifydeliver.Recipient{Email: "anna@example.org", DisplayName: "Anna"}
-	plain := svc.taggedMail(nil, group{Photos: []string{"p1", "p2", "p3"}}, 3)(to, notification.Notification{}, "https://k.example/n/nt1")
+	plain := svc.taggedMail(nil, group{Photos: []string{"p1", "p2", "p3"}}, 3)(to, notification.Notification{}, at("https://k.example/n/nt1"))
 	if plain.Template != mailer.TemplateTagged || plain.To != "anna@example.org" {
 		t.Fatalf("mail = %+v, want the tagged template to anna", plain)
 	}
-	want := mailer.TaggedData{DisplayName: "Anna", Count: 3, URL: "https://k.example/n/nt1"}
+	want := mailer.TaggedData{DisplayName: "Anna", ProjectName: "Veselice", Count: 3, URL: "https://k.example/n/nt1"}
 	if !reflect.DeepEqual(plain.Data, want) {
 		t.Fatalf("plain data = %+v, want %+v", plain.Data, want)
 	}
 
 	fair := albumRef{UID: "al-fair", Title: "Pouť 2026"}
 	before := []mailGroup{{group: group{Album: &fair, Photos: []string{"p1", "p2"}}, url: "https://k.example/n/a"}}
-	grouped := svc.taggedMail(before, group{Photos: []string{"p3"}}, 3)(to, notification.Notification{}, "https://k.example/n/b")
-	wantGrouped := mailer.TaggedData{DisplayName: "Anna", Count: 3, Groups: []mailer.TaggedGroup{
+	grouped := svc.taggedMail(before, group{Photos: []string{"p3"}}, 3)(to, notification.Notification{}, at("https://k.example/n/b"))
+	wantGrouped := mailer.TaggedData{DisplayName: "Anna", ProjectName: "Veselice", Count: 3, Groups: []mailer.TaggedGroup{
 		{Album: "Pouť 2026", Count: 2, URL: "https://k.example/n/a"},
 		{Count: 1, URL: "https://k.example/n/b"},
 	}}
@@ -166,10 +166,16 @@ func TestTaggedMail(t *testing.T) {
 	}
 
 	// A single album group is still the breakdown: the album deserves its name.
-	only := svc.taggedMail(nil, group{Album: &fair, Photos: []string{"p1"}}, 1)(to, notification.Notification{}, "https://k.example/n/a")
+	only := svc.taggedMail(nil, group{Album: &fair, Photos: []string{"p1"}}, 1)(to, notification.Notification{}, at("https://k.example/n/a"))
 	if data, ok := only.Data.(mailer.TaggedData); !ok || len(data.Groups) != 1 || data.URL != "" || data.Groups[0].Album != "Pouť 2026" {
 		t.Fatalf("single album data = %+v, want one group named Pouť 2026", only.Data)
 	}
+}
+
+// at is the mail context of a notification in project Veselice whose link is
+// url.
+func at(url string) notifydeliver.MailContext {
+	return notifydeliver.MailContext{URL: url, ProjectName: "Veselice"}
 }
 
 // TestServiceText checks which wording a group gets: the album's for an album

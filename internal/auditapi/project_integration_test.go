@@ -1,0 +1,159 @@
+//go:build integration
+
+package auditapi_test
+
+import (
+	"net/http"
+	"slices"
+	"testing"
+
+	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
+)
+
+// projectFixture is two projects — the bootstrap `v` and a created `b` — with
+// one entry filed under each, one instance entry under neither, an admin of
+// each project and a maintainer.
+type projectFixture struct {
+	env        *env
+	b          *project.Project
+	adminV     *http.Client
+	adminB     *http.Client
+	maintainer *http.Client
+}
+
+// newProjectFixture seeds the two projects, their admins and the three entries:
+// photo.update on ph-v (in v), photo.update on ph-b (in b) and user.create (no
+// project).
+func newProjectFixture(t *testing.T) projectFixture {
+	t.Helper()
+	env := newEnv(t)
+	b, err := env.projects.Create(t.Context(), audit.Meta{}, project.CreateParams{Slug: "b", Name: "Projekt B"})
+	if err != nil {
+		t.Fatalf("creating project b: %v", err)
+	}
+	adminV := env.login(t, "admin-v", auth.AccountAdmin)
+	adminB, adminBUID := env.loginUser(t, "admin-b", auth.AccountViewer)
+	// admin-b is a viewer of v (the account role's project) and the admin of b.
+	if _, err := env.projects.AddMember(t.Context(), audit.Meta{}, b.UID, adminBUID, project.RoleAdmin, true); err != nil {
+		t.Fatalf("adding admin-b to b: %v", err)
+	}
+	env.seed(t,
+		audit.Entry{Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-v",
+			ProjectUID: project.BootstrapUID},
+		audit.Entry{Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-b", ProjectUID: b.UID},
+		audit.Entry{Action: audit.ActionUserCreate, TargetType: "users", TargetUID: "us-x"},
+	)
+	return projectFixture{
+		env: env, b: b, adminV: adminV, adminB: adminB,
+		maintainer: env.login(t, "boss", auth.AccountMaintainer),
+	}
+}
+
+// targets returns the target uids of a listing, in order.
+func targets(resp listResponse) []string {
+	out := make([]string, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		if e.TargetUID != nil {
+			out = append(out, *e.TargetUID)
+		}
+	}
+	return out
+}
+
+// TestProjectListing_isolation proves a project admin's listing holds only that
+// project's entries — never another project's, never the instance's — and that
+// nothing in the query widens it.
+func TestProjectListing_isolation(t *testing.T) {
+	f := newProjectFixture(t)
+	base := f.env.baseURL + "/api/v1"
+
+	for name, tc := range map[string]struct {
+		client  *http.Client
+		path    string
+		want    string
+		foreign string
+		project string
+	}{
+		"admin of v": {client: f.adminV, path: "/p/v/audit", want: "ph-v", foreign: "ph-b", project: "v"},
+		"admin of b": {client: f.adminB, path: "/p/b/audit", want: "ph-b", foreign: "ph-v", project: "b"},
+	} {
+		got := list(t, tc.client, base+tc.path)
+		seen := targets(got)
+		if !slices.Contains(seen, tc.want) || slices.Contains(seen, tc.foreign) || slices.Contains(seen, "us-x") {
+			t.Errorf("%s: listing targets = %v, want %s and neither %s nor the instance entry",
+				name, seen, tc.want, tc.foreign)
+		}
+		for _, e := range got.Entries {
+			if e.Project == nil || *e.Project != tc.project {
+				t.Errorf("%s: entry %d project = %v, want %q", name, e.ID, e.Project, tc.project)
+			}
+		}
+	}
+
+	// The admin of v is no member of b: the project is a 404, like an unknown one.
+	if resp := do(t, f.adminV, http.MethodGet, base+"/p/b/audit", nil); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("admin of v reading b = %d, want 404", resp.StatusCode)
+	} else {
+		_ = resp.Body.Close()
+	}
+	// A project route cannot be widened by a project parameter.
+	badRequest(t, f.adminV, base+"/p/v/audit?project=b", "project")
+	// A viewer of v is no admin there.
+	if resp := do(t, f.adminB, http.MethodGet, base+"/p/v/audit", nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("viewer of v reading v = %d, want 403", resp.StatusCode)
+	} else {
+		_ = resp.Body.Close()
+	}
+}
+
+// TestInstanceListing_projectFilter proves the maintainer's ?project=<slug>
+// narrows the whole trail to that project, every record names its project, and
+// an unknown slug is refused rather than answered with an empty page.
+func TestInstanceListing_projectFilter(t *testing.T) {
+	f := newProjectFixture(t)
+	base := f.env.baseURL + "/api/v1/audit"
+
+	all := targets(list(t, f.maintainer, base))
+	for _, want := range []string{"ph-v", "ph-b", "us-x"} {
+		if !slices.Contains(all, want) {
+			t.Errorf("unfiltered listing %v misses %s", all, want)
+		}
+	}
+	onlyB := list(t, f.maintainer, base+"?project=b")
+	if seen := targets(onlyB); !slices.Contains(seen, "ph-b") || slices.Contains(seen, "ph-v") || slices.Contains(seen, "us-x") {
+		t.Errorf("?project=b targets = %v, want b's entries only", seen)
+	}
+	for _, e := range onlyB.Entries {
+		if e.ProjectUID == nil || *e.ProjectUID != f.b.UID || e.Project == nil || *e.Project != "b" {
+			t.Errorf("entry %d project = %v/%v, want %s/b", e.ID, e.ProjectUID, e.Project, f.b.UID)
+		}
+	}
+	badRequest(t, f.maintainer, base+"?project=nowhere", "nowhere")
+}
+
+// TestProjectMine_narrowedToProject proves a member's own actions under a
+// project are only those filed there, while the instance /audit/mine lists
+// them in every project.
+func TestProjectMine_narrowedToProject(t *testing.T) {
+	f := newProjectFixture(t)
+	client, uid := f.env.loginUser(t, "eva", auth.AccountEditor)
+	if _, err := f.env.projects.AddMember(t.Context(), audit.Meta{}, f.b.UID, uid, project.RoleEditor, true); err != nil {
+		t.Fatalf("adding eva to b: %v", err)
+	}
+	f.env.seed(t,
+		audit.Entry{ActorUID: uid, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-v",
+			ProjectUID: project.BootstrapUID},
+		audit.Entry{ActorUID: uid, Action: audit.ActionAlbumCreate, TargetType: "albums", TargetUID: "al-b",
+			ProjectUID: f.b.UID},
+	)
+	base := f.env.baseURL + "/api/v1"
+
+	if seen := targets(list(t, client, base+"/p/b/audit/mine")); len(seen) != 1 || seen[0] != "al-b" {
+		t.Errorf("/p/b/audit/mine targets = %v, want [al-b]", seen)
+	}
+	if seen := targets(list(t, client, base+"/audit/mine")); !slices.Contains(seen, "al-v") || !slices.Contains(seen, "al-b") {
+		t.Errorf("/audit/mine targets = %v, want both projects' entries", seen)
+	}
+}

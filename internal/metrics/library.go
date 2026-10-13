@@ -52,15 +52,30 @@ type ImportRun struct {
 }
 
 // LibrarySnapshot is the library-content aggregation the collector turns into
-// gauges. It is shaped for the metric families rather than for a domain reader:
-// every dimension that becomes a label is a map keyed by that label's value, so
-// the collector never has to know the label values in advance and a new album
-// type or media type shows up without touching this package.
+// gauges: one LibraryCounts per active project, keyed by the project's slug —
+// every kukatko_library_* gauge carries it as its `project` label — plus the
+// instance-wide import runs.
 //
-// The counts are instance-wide and unpartitioned by user — /metrics is
-// unauthenticated (see server.WithMetricsHandler), so nothing per-user, and
-// nothing that names a photo, album, label or person, may be exported here.
+// The label is the slug, never the project's name: /metrics is unauthenticated
+// (see server.WithMetricsHandler), and the slug is already public in every URL
+// of the project, while a name may say more than its owners want said. For the
+// same reason nothing per-user, and nothing that names a photo, album, label or
+// person, may be exported here. A dashboard that wants the instance total sums
+// over the label (sum without (project) (…)).
 type LibrarySnapshot struct {
+	// Projects maps an active project's slug to its library counts.
+	Projects map[string]LibraryCounts
+	// Imports is the last recorded run of each import source; sources that have
+	// never run are simply absent. They stay instance-wide (no project label).
+	Imports []ImportRun
+}
+
+// LibraryCounts is one project's library-content counts. It is shaped for the
+// metric families rather than for a domain reader: every dimension that becomes
+// a label is a map keyed by that label's value, so the collector never has to
+// know the label values in advance and a new album type or media type shows up
+// without touching this package.
+type LibraryCounts struct {
 	// PhotosByMediaType counts catalogue rows per media_type, archived included.
 	PhotosByMediaType map[string]int
 	// PhotosArchived is how many photos are soft-deleted, i.e. in the trash.
@@ -86,9 +101,6 @@ type LibrarySnapshot struct {
 	// the admin dashboard shows, taken from the same aggregation, so the two
 	// cannot disagree.
 	VideosWithoutStreaming int
-	// Imports is the last recorded run of each import source; sources that have
-	// never run are simply absent.
-	Imports []ImportRun
 }
 
 // LibraryStatsFunc returns the current library snapshot. It is the seam between
@@ -136,9 +148,13 @@ type libraryDescs struct {
 // newLibraryDescs wires the descriptors for the library-content gauges. The
 // names carry no _total suffix: these are gauges of a current size, and _total is
 // reserved for counters so rate() over them stays meaningful.
+//
+// Every library gauge ends in the project label (its slug); the collect-error
+// counter does not, since a failed aggregation fails for every project at once.
 func newLibraryDescs() libraryDescs {
 	desc := func(name, help string, labels ...string) *prometheus.Desc {
-		return prometheus.NewDesc(prometheus.BuildFQName(namespace, "library", name), help, labels, nil)
+		return prometheus.NewDesc(prometheus.BuildFQName(namespace, "library", name), help,
+			append(labels, projectLabel), nil)
 	}
 	return libraryDescs{
 		photos: desc("photos", "Photos in the catalogue, archived included, partitioned by media type.",
@@ -159,7 +175,8 @@ func newLibraryDescs() libraryDescs {
 		videosNoStream: desc("videos_without_streaming",
 			"Browsable videos with no encoded streaming rendition, i.e. the streaming-encode "+
 				"backlog. With video.hls.enabled off this is every video and is not work outstanding."),
-		collectErrors: desc("collect_errors_total", "Scrapes whose library aggregation failed."),
+		collectErrors: prometheus.NewDesc(prometheus.BuildFQName(namespace, "library", "collect_errors_total"),
+			"Scrapes whose library aggregation failed.", nil, nil),
 		importStatus: prometheus.NewDesc(prometheus.BuildFQName(namespace, "import", "last_run_status"),
 			"Status of the most recent import run per source (1 for the status it is in, 0 for the rest).",
 			[]string{"source", "status"}, nil),
@@ -257,20 +274,26 @@ func (c *libraryCollector) snapshot(ctx context.Context) (LibrarySnapshot, float
 	return c.cached, c.errors, true
 }
 
-// emitLibrary writes the catalogue-content gauges of one snapshot.
+// projectLabel is the label every library gauge carries: the project's slug.
+const projectLabel = "project"
+
+// emitLibrary writes the catalogue-content gauges of every project of one
+// snapshot, each series labelled with its project's slug.
 func (c *libraryCollector) emitLibrary(ch chan<- prometheus.Metric, s LibrarySnapshot) {
 	d := c.descs
-	emitLabelled(ch, d.photos, s.PhotosByMediaType)
-	emitLabelled(ch, d.photosProcessed, s.PhotosProcessed)
-	emitLabelled(ch, d.photosPending, s.PhotosPending)
-	emitLabelled(ch, d.markers, s.MarkersByState)
-	emitLabelled(ch, d.subjects, s.SubjectsByType)
-	emitLabelled(ch, d.albums, s.AlbumsByType)
-	emitScalar(ch, d.photosArchived, s.PhotosArchived)
-	emitScalar(ch, d.embeddings, s.Embeddings)
-	emitScalar(ch, d.faces, s.Faces)
-	emitScalar(ch, d.labels, s.Labels)
-	emitScalar(ch, d.videosNoStream, s.VideosWithoutStreaming)
+	for slug, counts := range s.Projects {
+		emitLabelled(ch, d.photos, counts.PhotosByMediaType, slug)
+		emitLabelled(ch, d.photosProcessed, counts.PhotosProcessed, slug)
+		emitLabelled(ch, d.photosPending, counts.PhotosPending, slug)
+		emitLabelled(ch, d.markers, counts.MarkersByState, slug)
+		emitLabelled(ch, d.subjects, counts.SubjectsByType, slug)
+		emitLabelled(ch, d.albums, counts.AlbumsByType, slug)
+		emitScalar(ch, d.photosArchived, counts.PhotosArchived, slug)
+		emitScalar(ch, d.embeddings, counts.Embeddings, slug)
+		emitScalar(ch, d.faces, counts.Faces, slug)
+		emitScalar(ch, d.labels, counts.Labels, slug)
+		emitScalar(ch, d.videosNoStream, counts.VideosWithoutStreaming, slug)
+	}
 }
 
 // emitImports writes the per-source import-run gauges. The status is published as
@@ -300,14 +323,16 @@ func (c *libraryCollector) emitImports(ch chan<- prometheus.Metric, runs []Impor
 }
 
 // emitLabelled writes one gauge per entry of counts, using the map key as the
-// series' single label value.
-func emitLabelled(ch chan<- prometheus.Metric, desc *prometheus.Desc, counts map[string]int) {
+// series' first label value and extra (the project, where there is one) as the
+// rest.
+func emitLabelled(ch chan<- prometheus.Metric, desc *prometheus.Desc, counts map[string]int, extra ...string) {
 	for label, n := range counts {
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(n), label)
+		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(n), append([]string{label}, extra...)...)
 	}
 }
 
-// emitScalar writes one unlabelled gauge.
-func emitScalar(ch chan<- prometheus.Metric, desc *prometheus.Desc, value int) {
-	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value))
+// emitScalar writes one gauge whose only label values are labels (the project,
+// where there is one; none for an unlabelled gauge).
+func emitScalar(ch chan<- prometheus.Metric, desc *prometheus.Desc, value int, labels ...string) {
+	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, float64(value), labels...)
 }

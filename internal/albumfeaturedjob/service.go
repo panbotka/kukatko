@@ -226,11 +226,12 @@ func (s *Service) message(projectUID string, album organize.FeaturedAlbum) notif
 }
 
 // albumFeaturedMail returns the builder of the album_featured mail for the
-// album titled title; url is the absolute link to the album's page.
+// album titled title, naming the project; its URL is the absolute link to the
+// album's page.
 func albumFeaturedMail(title string) notifydeliver.MailBuilder {
-	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
+	return func(to notifydeliver.Recipient, _ notification.Notification, mail notifydeliver.MailContext) mailjob.Mail {
 		return mailjob.AlbumFeatured(to.Email, mailer.AlbumFeaturedData{
-			DisplayName: to.DisplayName, Title: title, URL: url,
+			DisplayName: to.DisplayName, ProjectName: mail.ProjectName, Title: title, URL: mail.URL,
 		})
 	}
 }

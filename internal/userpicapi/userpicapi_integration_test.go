@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -79,6 +80,7 @@ func newEnv(t *testing.T) *env {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 
 	pool := db.Pool()
 	authStore := auth.NewStore(pool)

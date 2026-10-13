@@ -2611,11 +2611,14 @@ becomes a label value.
   `kukatko_jobs_queue_depth{state}` / `_by_type{type}` / `_by_type_state{type,state}` (all three folded
   from **one** `GROUP BY type, state` — the two one-dimensional families are sums over the third, so
   they can never disagree) and `kukatko_geocode_credits_remaining` / `_limit`.
-- **Library content**, memoised for `metrics.library_ttl` (default 1 m) over the same aggregations the
-  admin dashboard reads (`internal/system`: one SQL statement for the counts, the dashboard's own round
-  trip for the streaming backlog), so the gauges, `GET /system/stats` and `GET /system/status` cannot
-  disagree and a scrape does not re-count the catalogue:
-  `kukatko_library_photos{media_type="image|video|live"}` (the total is `sum()` over the label),
+- **Library content, per project**, memoised for `metrics.library_ttl` (default 1 m): every gauge below
+  carries a **`project` label = the project's slug** (never its name — `/metrics` is unauthenticated), one
+  series set per **active** project, counted by one grouped SQL statement (`internal/system`'s
+  `CountLibraryByProject`: the statistics page's own predicates grouped by project, so the gauges summed
+  over the label agree with `GET /system/stats`). **A dashboard or alert that wants the instance total sums
+  over the label**: `sum without (project) (kukatko_library_photos)`, `sum(kukatko_library_faces)`; a bare
+  selector now returns one series per project:
+  `kukatko_library_photos{media_type="image|video|live",project}` (the total is `sum()` over the labels),
   `_photos_archived` (the trash), `_photos_processed{stage="embedding|faces|places"}` and
   `_photos_pending{stage=…}` (the processing coverage and its gap — note the `faces` gap also counts
   photos that genuinely contain no face, which the counts cannot tell apart), `_embeddings`, `_faces`,
@@ -2624,8 +2627,10 @@ becomes a label value.
   number the System page's video card shows, out of the same memoised aggregation; with `video.hls.enabled`
   off it is every video and is the instance working as configured, so alert on it only where streaming is
   on), plus
-  `kukatko_library_collect_errors_total` (a failed aggregation exports **no** library gauges for that
-  scrape — a gap, not a stale number — and bumps this counter, so alert on it).
+  `kukatko_library_collect_errors_total` (no project label — a failed aggregation exports **no** library
+  gauges of any project for that scrape — a gap, not a stale number — and bumps this counter, so alert on
+  it). The pool, queue, import and platform families (including the platform's `kukatko_library_*`
+  encode-state, backlog and bytes gauges below) stay **instance-wide**, without a project label.
   RAW originals are deliberately **not** a media type here: RAW-ness is a per-file property judged by
   extension (`internal/stacks`), not a column, so counting it would mean an unindexed scan on every
   refresh; use `media_type`, which is what the catalogue actually models.

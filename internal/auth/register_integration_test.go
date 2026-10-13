@@ -170,14 +170,19 @@ func TestRegister_createsAWaitingAccountAndMailsEverybody(t *testing.T) {
 		t.Errorf("first mail = %s to %s, want %s to the newcomer",
 			mail[0].Template, mail[0].To, mailer.TemplateRegistrationReceived)
 	}
+	var confirmation mailer.RegistrationReceivedData
+	if err := json.Unmarshal(mail[0].Data, &confirmation); err != nil || confirmation.ProjectName != "Veselice" {
+		t.Errorf("confirmation carries %s, want it to name the project Veselice", mail[0].Data)
+	}
 	notified := map[string]bool{}
 	for _, m := range mail[1:] {
 		if m.Template != mailer.TemplateNewRegistrationPending {
 			t.Errorf("mail to %s = %s, want %s", m.To, m.Template, mailer.TemplateNewRegistrationPending)
 		}
 		var data mailer.NewRegistrationPendingData
-		if err := json.Unmarshal(m.Data, &data); err != nil || data.ApprovalURL != testApprovalURL {
-			t.Errorf("mail to %s carries %s, want the approval URL %s", m.To, m.Data, testApprovalURL)
+		if err := json.Unmarshal(m.Data, &data); err != nil || data.ApprovalURL != testApprovalURL ||
+			data.ProjectName != "Veselice" {
+			t.Errorf("mail to %s carries %s, want the approval URL %s in project Veselice", m.To, m.Data, testApprovalURL)
 		}
 		notified[m.To] = true
 	}

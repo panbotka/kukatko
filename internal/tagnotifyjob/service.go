@@ -293,13 +293,13 @@ func albumUID(g group) string {
 // delivered before plus last, whose link the builder receives — with its title,
 // count and link, total being the window's distinct photos.
 func (s *Service) taggedMail(before []mailGroup, last group, total int) notifydeliver.MailBuilder {
-	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
-		data := mailer.TaggedData{DisplayName: to.DisplayName, Count: total}
+	return func(to notifydeliver.Recipient, _ notification.Notification, mail notifydeliver.MailContext) mailjob.Mail {
+		data := mailer.TaggedData{DisplayName: to.DisplayName, ProjectName: mail.ProjectName, Count: total}
 		if len(before) == 0 && last.Album == nil {
-			data.URL = url
+			data.URL = mail.URL
 			return mailjob.Tagged(to.Email, data)
 		}
-		for _, g := range append(before, mailGroup{group: last, url: url}) {
+		for _, g := range append(before, mailGroup{group: last, url: mail.URL}) {
 			line := mailer.TaggedGroup{Count: len(g.Photos), URL: g.url}
 			if g.Album != nil {
 				line.Album = g.Album.Title

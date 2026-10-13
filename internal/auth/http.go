@@ -250,6 +250,11 @@ const principalContextKey contextKey = iota
 // access-log line can attribute the request to its caller.
 func withPrincipal(ctx context.Context, p principal) context.Context {
 	obs.SetUser(ctx, p.user.UID)
+	if p.project != nil {
+		// The access log names the project the request ran in, and an audit
+		// entry built from the request (audit.FromRequest) records it.
+		ctx = obs.WithProject(ctx, p.project.UID, p.project.Slug)
+	}
 	return context.WithValue(ctx, principalContextKey, p)
 }
 

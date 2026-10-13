@@ -49,7 +49,7 @@ const releaseUploadSQL = `UPDATE upload_links SET upload_count = upload_count - 
 const stampUploadSQL = `
 UPDATE upload_links SET last_used_at = now()
 WHERE uid = $1
-RETURNING title`
+RETURNING title, project_id`
 
 // ReserveUpload takes one slot of the link uid's lifetime file cap for a file
 // about to be ingested, atomically with checking the link is live at now: the
@@ -108,8 +108,8 @@ func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) 
 		outcome = outcomeCreated
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		var title string
-		err := tx.QueryRow(ctx, stampUploadSQL, up.LinkUID).Scan(&title)
+		var title, projectUID string
+		err := tx.QueryRow(ctx, stampUploadSQL, up.LinkUID).Scan(&title, &projectUID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -124,6 +124,8 @@ func (s *Store) RecordUpload(ctx context.Context, up Upload, entry audit.Entry) 
 			return err
 		}
 		entry.TargetType, entry.TargetUID = photoTargetType, up.PhotoUID
+		// The upload lands in the link's project, and so does its record.
+		entry = inProject(entry, projectUID)
 		// The title rides along so the audit list can name an anonymous upload by
 		// its link without a second lookup, and keeps naming it after the link is
 		// renamed or deleted.

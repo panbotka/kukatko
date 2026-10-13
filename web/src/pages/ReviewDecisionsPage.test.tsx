@@ -47,6 +47,8 @@ function record(
 ): AuditRecord {
   return {
     id,
+    project_uid: 'pj1',
+    project: 'v',
     actor_uid: 'u1',
     action,
     target_type: '',

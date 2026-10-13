@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/bulkapi"
@@ -51,6 +52,7 @@ func newIsolationServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 func TestBulk_foreignPhotoRefusesTheWholeBatch(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	client := f.ClientFor(t, newIsolationServer(t, pool), projecttest.SideB)
@@ -103,6 +105,7 @@ func TestBulk_foreignPhotoRefusesTheWholeBatch(t *testing.T) {
 func TestBulk_summariesCountOnlyTheProject(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	client := f.ClientFor(t, newIsolationServer(t, pool), projecttest.SideB)

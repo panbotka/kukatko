@@ -8,8 +8,13 @@ import "strings"
 // notification) or the per-album breakdown (Groups — one entry per album
 // notification plus one for the photos outside them, each with its own link).
 // An empty URL leaves the link out; a non-empty Groups wins over URL.
+//
+// ProjectName is the project the photos are in; the subject and the body name
+// it. Empty (a mail queued before projects) names none. Every other mail data
+// struct of a notification kind carries it with the same meaning.
 type TaggedData struct {
 	DisplayName string
+	ProjectName string
 	Count       int
 	URL         string
 	Groups      []TaggedGroup
@@ -40,7 +45,7 @@ func RenderTagged(d TaggedData) Rendered {
 	lines := []string{informalGreeting(d.DisplayName), ""}
 	switch {
 	case len(d.Groups) > 0:
-		lines = append(lines, "v Kukátku vás někdo označil na "+photos+". Podle alb:")
+		lines = append(lines, inKukatko(d.ProjectName)+" vás někdo označil na "+photos+". Podle alb:")
 		for _, g := range d.Groups {
 			lines = append(lines, "", taggedGroupLine(g))
 			if url := strings.TrimSpace(g.URL); url != "" {
@@ -48,13 +53,13 @@ func RenderTagged(d TaggedData) Rendered {
 			}
 		}
 	default:
-		lines = append(lines, "v Kukátku vás někdo označil na "+photos+".")
+		lines = append(lines, inKukatko(d.ProjectName)+" vás někdo označil na "+photos+".")
 		if url := strings.TrimSpace(d.URL); url != "" {
 			lines = append(lines, "", "Podívat se na ně můžeš tady:", "", url)
 		}
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
-	return Rendered{Template: TemplateTagged, Subject: subject, Body: body(lines...)}
+	return Rendered{Template: TemplateTagged, Subject: InProject(d.ProjectName, subject), Body: body(lines...)}
 }
 
 // taggedSubject and taggedSubjectOne are the tagged mail's subject lines for
@@ -80,6 +85,7 @@ func taggedGroupLine(g TaggedGroup) string {
 // An empty Body or URL leaves that part out.
 type NotificationData struct {
 	DisplayName string
+	ProjectName string
 	Title       string
 	Body        string
 	URL         string
@@ -87,10 +93,13 @@ type NotificationData struct {
 
 // RenderNotification builds the e-mail channel of a notification kind that has
 // no template of its own: the title is the subject, the body and the link are
-// the message. It is what lets a new kind be mailed from the day it exists. It
-// is a pure function of d.
+// the message, under a line naming the project. It is what lets a new kind be
+// mailed from the day it exists. It is a pure function of d.
 func RenderNotification(d NotificationData) Rendered {
 	lines := []string{informalGreeting(d.DisplayName), ""}
+	if name := strings.TrimSpace(d.ProjectName); name != "" {
+		lines = append(lines, "Z projektu „"+name+"“ v Kukátku:", "")
+	}
 	text := strings.TrimSpace(d.Body)
 	if text == "" {
 		text = strings.TrimSpace(d.Title)
@@ -100,7 +109,11 @@ func RenderNotification(d NotificationData) Rendered {
 		lines = append(lines, "", url)
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
-	return Rendered{Template: TemplateNotification, Subject: strings.TrimSpace(d.Title), Body: body(lines...)}
+	return Rendered{
+		Template: TemplateNotification,
+		Subject:  InProject(d.ProjectName, strings.TrimSpace(d.Title)),
+		Body:     body(lines...),
+	}
 }
 
 // notificationFooter closes every notification mail: it says why the message
@@ -113,6 +126,7 @@ const notificationFooter = "Tenhle e-mail ti chodí, protože sis ho zapnul(a) v
 // leaves the link out.
 type AlbumFeaturedData struct {
 	DisplayName string
+	ProjectName string
 	Title       string
 	URL         string
 }
@@ -129,13 +143,17 @@ func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
 	}
 	lines := []string{
 		informalGreeting(d.DisplayName), "",
-		"v Kukátku je na úvodní stránce nově doporučené album " + title + ".",
+		inKukatko(d.ProjectName) + " je na úvodní stránce nově doporučené album " + title + ".",
 	}
 	if url := strings.TrimSpace(d.URL); url != "" {
 		lines = append(lines, "", "Podívat se na něj můžeš tady:", "", url)
 	}
 	lines = append(lines, "", notificationFooter, "", signature)
-	return Rendered{Template: TemplateAlbumFeatured, Subject: "Nové doporučené album: " + title, Body: body(lines...)}
+	return Rendered{
+		Template: TemplateAlbumFeatured,
+		Subject:  InProject(d.ProjectName, "Nové doporučené album: "+title),
+		Body:     body(lines...),
+	}
 }
 
 // TaskAssignedData is what the "you were put on a task" message needs: whom to
@@ -143,6 +161,7 @@ func RenderAlbumFeatured(d AlbumFeaturedData) Rendered {
 // absolute link to the task. An empty URL leaves the link out.
 type TaskAssignedData struct {
 	DisplayName string
+	ProjectName string
 	Who         string
 	Title       string
 	URL         string
@@ -163,7 +182,7 @@ func RenderTaskAssigned(d TaskAssignedData) Rendered {
 	}
 	lines := []string{
 		informalGreeting(d.DisplayName), "",
-		"v Kukátku tě " + who + " přidal(a) k úkolu „" + title + "“.",
+		inKukatko(d.ProjectName) + " tě " + who + " přidal(a) k úkolu „" + title + "“.",
 	}
 	if url := strings.TrimSpace(d.URL); url != "" {
 		lines = append(lines, "", "Podívat se na něj a odpovědět můžeš tady:", "", url)
@@ -171,7 +190,7 @@ func RenderTaskAssigned(d TaskAssignedData) Rendered {
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{
 		Template: TemplateTaskAssigned,
-		Subject:  who + " tě přidal(a) k úkolu: " + title,
+		Subject:  InProject(d.ProjectName, who+" tě přidal(a) k úkolu: "+title),
 		Body:     body(lines...),
 	}
 }
@@ -187,6 +206,7 @@ const untitled = "(bez názvu)"
 // link to the comment. An empty URL leaves the link out.
 type CommentMentionData struct {
 	DisplayName string
+	ProjectName string
 	Who         string
 	OnTask      bool
 	OnAlbum     bool
@@ -207,7 +227,7 @@ func RenderCommentMention(d CommentMentionData) Rendered {
 	place := mentionPlace(d)
 	lines := []string{
 		informalGreeting(d.DisplayName), "",
-		"v Kukátku tě " + who + " zmínil(a) v komentáři u " + place + ":",
+		inKukatko(d.ProjectName) + " tě " + who + " zmínil(a) v komentáři u " + place + ":",
 	}
 	if excerpt := strings.TrimSpace(d.Excerpt); excerpt != "" {
 		lines = append(lines, "", "    "+excerpt)
@@ -218,7 +238,7 @@ func RenderCommentMention(d CommentMentionData) Rendered {
 	lines = append(lines, "", notificationFooter, "", signature)
 	return Rendered{
 		Template: TemplateCommentMention,
-		Subject:  who + " tě zmínil(a) v komentáři u " + place,
+		Subject:  InProject(d.ProjectName, who+" tě zmínil(a) v komentáři u "+place),
 		Body:     body(lines...),
 	}
 }

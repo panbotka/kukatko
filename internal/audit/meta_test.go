@@ -116,12 +116,23 @@ func TestFilterBuildWhere(t *testing.T) {
 	t.Run("populated filter builds ordered clause", func(t *testing.T) {
 		t.Parallel()
 		where, args := Filter{ActorUID: "us-1", Action: ActionPhotoArchive, Since: &since}.buildWhere()
-		wantWhere := " WHERE actor_uid = $1 AND action = $2 AND created_at >= $3"
+		wantWhere := " WHERE actor_uid = $1 AND action = $2 AND audit_log.created_at >= $3"
 		if where != wantWhere {
 			t.Errorf("buildWhere() where = %q, want %q", where, wantWhere)
 		}
 		if len(args) != 3 || args[0] != "us-1" || args[1] != ActionPhotoArchive || args[2] != since {
 			t.Errorf("buildWhere() args = %v, want [us-1 %s %v]", args, ActionPhotoArchive, since)
+		}
+	})
+
+	t.Run("project comes first", func(t *testing.T) {
+		t.Parallel()
+		where, args := Filter{ProjectUID: "pj1", ActorUID: "us-1"}.buildWhere()
+		if want := " WHERE project_id = $1 AND actor_uid = $2"; where != want {
+			t.Errorf("buildWhere() where = %q, want %q", where, want)
+		}
+		if len(args) != 2 || args[0] != "pj1" || args[1] != "us-1" {
+			t.Errorf("buildWhere() args = %v, want [pj1 us-1]", args)
 		}
 	})
 
@@ -176,6 +187,53 @@ func TestMetaEntry_actorRole(t *testing.T) {
 	}
 }
 
+// TestMetaEntry_project verifies a meta files a project-scoped action under its
+// project and never an instance action, whatever project the request resolved.
+func TestMetaEntry_project(t *testing.T) {
+	t.Parallel()
+
+	meta := Meta{ActorUID: "us1", ProjectUID: "pj1"}
+	tests := []struct {
+		action string
+		want   string
+	}{
+		{action: ActionPhotoUpdate, want: "pj1"},
+		{action: ActionProjectMemberRole, want: "pj1"},
+		{action: ActionUserRename, want: ""},
+		{action: ActionProjectCreate, want: ""},
+		{action: "not.an.action", want: ""},
+	}
+	for _, tt := range tests {
+		if got := meta.Entry(tt.action, "t", "uid", nil).ProjectUID; got != tt.want {
+			t.Errorf("Entry(%s).ProjectUID = %q, want %q", tt.action, got, tt.want)
+		}
+	}
+}
+
+// TestProjectScoped verifies the split: every instance action is a known one
+// (so the list cannot hold a typo), and the catalogue's actions are scoped.
+func TestProjectScoped(t *testing.T) {
+	t.Parallel()
+
+	for action := range instanceActions {
+		if !KnownAction(action) {
+			t.Errorf("instance action %q is not a known action", action)
+		}
+		if ProjectScoped(action) {
+			t.Errorf("ProjectScoped(%q) = true for an instance action", action)
+		}
+	}
+	for _, action := range []string{ActionPhotoUpdate, ActionAlbumCreate, ActionSettingsUpdate,
+		ActionAnnouncementSet, ActionProjectInviteCreate} {
+		if !ProjectScoped(action) {
+			t.Errorf("ProjectScoped(%q) = false, want true", action)
+		}
+	}
+	if ProjectScoped("nope") {
+		t.Error("ProjectScoped of an unknown label = true")
+	}
+}
+
 // TestFromRequest_actorRole verifies FromRequest picks up the actor role the
 // request's observability fields carry.
 func TestFromRequest_actorRole(t *testing.T) {
@@ -184,10 +242,14 @@ func TestFromRequest_actorRole(t *testing.T) {
 	var meta Meta
 	handler := obs.AccessLog(slog.New(slog.DiscardHandler))(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		obs.SetActorRole(r.Context(), "maintainer")
+		obs.SetProject(r.Context(), "pj1", "veselice")
 		meta = FromRequest(r, "us1")
 	}))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
 	if meta.ActorRole != "maintainer" {
 		t.Errorf("ActorRole = %q, want maintainer", meta.ActorRole)
+	}
+	if meta.ProjectUID != "pj1" {
+		t.Errorf("ProjectUID = %q, want pj1", meta.ProjectUID)
 	}
 }

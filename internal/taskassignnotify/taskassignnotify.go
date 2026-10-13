@@ -207,11 +207,12 @@ func (n *Notifier) message(projectUID, taskUID, who, title string) notifydeliver
 }
 
 // mailBuilder returns the e-mail of the notification: the task_assigned
-// template with who asked, the task's title and the absolute task link.
+// template with who asked, the task's title, the project and the absolute task
+// link.
 func mailBuilder(who, title string) notifydeliver.MailBuilder {
-	return func(to notifydeliver.Recipient, _ notification.Notification, url string) mailjob.Mail {
+	return func(to notifydeliver.Recipient, _ notification.Notification, mail notifydeliver.MailContext) mailjob.Mail {
 		return mailjob.TaskAssigned(to.Email, mailer.TaskAssignedData{
-			DisplayName: to.DisplayName, Who: who, Title: title, URL: url,
+			DisplayName: to.DisplayName, ProjectName: mail.ProjectName, Who: who, Title: title, URL: mail.URL,
 		})
 	}
 }

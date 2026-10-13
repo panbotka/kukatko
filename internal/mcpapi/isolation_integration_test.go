@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/apitest"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -118,6 +119,7 @@ func instructionsAt(t *testing.T, client *http.Client, server *httptest.Server, 
 func TestMCP_projectPrefixNeverLeaksTheOtherProject(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	server := isolationServer(t, pool)
@@ -174,6 +176,7 @@ func TestMCP_projectPrefixNeverLeaksTheOtherProject(t *testing.T) {
 func TestMCP_instructionsNameTheProject(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	server := isolationServer(t, pool)
@@ -197,6 +200,7 @@ func TestMCP_instructionsNameTheProject(t *testing.T) {
 func TestMCP_challengeAdvertisesThePrefixedURL(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	pool := db.Pool()
 	f := projecttest.Seed(t, pool)
 	server := isolationServer(t, pool)

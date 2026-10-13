@@ -141,7 +141,7 @@ func (s *Store) addChildRelation(
 	if err := checkPair(childUID, parentUID); err != nil {
 		return Family{}, err
 	}
-	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
+	return mutateAudited(ctx, s.pool, projectUID, entry, func(tx pgx.Tx) (Family, error) {
 		if err := requireSubjects(ctx, tx, projectUID, childUID, parentUID); err != nil {
 			return Family{}, err
 		}
@@ -171,7 +171,7 @@ func (s *Store) AddPartnerAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = subjectUID
 	}
-	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
+	return mutateAudited(ctx, s.pool, projectUID, entry, func(tx pgx.Tx) (Family, error) {
 		if err := requireSubjects(ctx, tx, projectUID, subjectUID, partnerUID); err != nil {
 			return Family{}, err
 		}
@@ -199,7 +199,7 @@ func (s *Store) UpdateFamilyAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = familyUID
 	}
-	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
+	return mutateAudited(ctx, s.pool, projectUID, entry, func(tx pgx.Tx) (Family, error) {
 		fam, err := scanFamily(tx.QueryRow(ctx, updateFamilySQL,
 			familyUID, checked.Kind, checked.FromYear, checked.ToYear, checked.Note, projectUID))
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -231,7 +231,7 @@ func (s *Store) RemoveRelationAudited(
 	if entry.TargetUID == "" {
 		entry.TargetUID = subjectUID
 	}
-	_, err := mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (struct{}, error) {
+	_, err := mutateAudited(ctx, s.pool, projectUID, entry, func(tx pgx.Tx) (struct{}, error) {
 		if err := requireSubjects(ctx, tx, projectUID, subjectUID, otherUID); err != nil {
 			if errors.Is(err, ErrSubjectNotFound) {
 				return struct{}{}, fmt.Errorf("%w: %s and %s", ErrRelationNotFound, subjectUID, otherUID)

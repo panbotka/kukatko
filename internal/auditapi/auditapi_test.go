@@ -52,7 +52,7 @@ func TestListMineWithoutPrincipal(t *testing.T) {
 	t.Parallel()
 	passthrough := func(next http.Handler) http.Handler { return next }
 	// A nil store is safe here precisely because the handler must not reach it.
-	api := NewAPI(Config{RequireAdmin: passthrough, RequireAuth: passthrough})
+	api := NewAPI(Config{RequireMaintainer: passthrough, RequireSignedIn: passthrough})
 	router := chi.NewRouter()
 	api.RegisterRoutes(router)
 
@@ -228,7 +228,7 @@ func TestParseFilterRejectsNonsense(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("error = %q, want it to name %q", err, tt.want)
 			}
-			if errors.Is(err, errUserLookup) {
+			if errors.Is(err, errLookup) {
 				t.Errorf("error = %q, want a caller error, not a lookup failure", err)
 			}
 		})
@@ -312,6 +312,71 @@ func TestParseFilterAcceptsTheFrontendQuery(t *testing.T) {
 	}
 }
 
+// TestResolveProjectFilter verifies the project filter: no value needs no
+// lookup, a known slug becomes its uid, an unknown one is the caller's error and
+// a failing or missing lookup the server's.
+func TestResolveProjectFilter(t *testing.T) {
+	t.Parallel()
+
+	known := func(_ context.Context, slug string) (string, error) {
+		if slug == "veselice" {
+			return "pj1", nil
+		}
+		return "", ErrUnknownProject
+	}
+	broken := func(context.Context, string) (string, error) { return "", errors.New("connection refused") }
+	tests := []struct {
+		name    string
+		slug    string
+		resolve ResolveProject
+		want    string
+		lookup  bool // the error is the server's
+		wantErr bool
+	}{
+		{name: "empty", resolve: nil},
+		{name: "known", slug: "veselice", resolve: known, want: "pj1"},
+		{name: "unknown", slug: "nikde", resolve: known, wantErr: true},
+		{name: "broken", slug: "veselice", resolve: broken, wantErr: true, lookup: true},
+		{name: "unconfigured", slug: "veselice", resolve: nil, wantErr: true, lookup: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := resolveProjectFilter(t.Context(), tt.slug, tt.resolve)
+			if (err != nil) != tt.wantErr || errors.Is(err, errLookup) != tt.lookup {
+				t.Fatalf("error = %v, wantErr %v lookup %v", err, tt.wantErr, tt.lookup)
+			}
+			if got != tt.want {
+				t.Errorf("uid = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestProjectRoutesRefuseProjectParam verifies a project route refuses a
+// project parameter by name — it cannot widen the listing to another project —
+// and fails closed when it is reached without a project.
+func TestProjectRoutesRefuseProjectParam(t *testing.T) {
+	t.Parallel()
+	passthrough := func(next http.Handler) http.Handler { return next }
+	// A nil store is safe: neither request may reach it.
+	api := NewAPI(Config{RequireAdmin: passthrough, RequireAuth: passthrough})
+	router := chi.NewRouter()
+	api.RegisterProjectRoutes(router)
+
+	for path, want := range map[string]int{
+		"/audit?project=other":      http.StatusBadRequest,
+		"/audit/mine?project=other": http.StatusBadRequest,
+		"/audit":                    http.StatusNotFound,
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+		if rec.Code != want {
+			t.Errorf("%s = %d, want %d", path, rec.Code, want)
+		}
+	}
+}
+
 // TestResolveActorFailures verifies the two ways the lookup can go wrong are
 // told apart: a value naming no account is the caller's mistake, an unreachable
 // or unconfigured store is the server's and must not be reported as a bad filter.
@@ -321,11 +386,11 @@ func TestResolveActorFailures(t *testing.T) {
 	broken := func(_ context.Context, _ string) (string, error) {
 		return "", errors.New("connection refused")
 	}
-	if _, err := parseFilter(t.Context(), url.Values{"user": {"panbotka"}}, broken); !errors.Is(err, errUserLookup) {
-		t.Errorf("error for a failing lookup = %v, want it to wrap errUserLookup", err)
+	if _, err := parseFilter(t.Context(), url.Values{"user": {"panbotka"}}, broken); !errors.Is(err, errLookup) {
+		t.Errorf("error for a failing lookup = %v, want it to wrap errLookup", err)
 	}
-	if _, err := parseFilter(t.Context(), url.Values{"user": {"panbotka"}}, nil); !errors.Is(err, errUserLookup) {
-		t.Errorf("error for an unconfigured lookup = %v, want it to wrap errUserLookup", err)
+	if _, err := parseFilter(t.Context(), url.Values{"user": {"panbotka"}}, nil); !errors.Is(err, errLookup) {
+		t.Errorf("error for an unconfigured lookup = %v, want it to wrap errLookup", err)
 	}
 	// No user filter, no lookup needed — an unconfigured resolver is not an error.
 	if _, err := parseFilter(t.Context(), url.Values{"limit": {"10"}}, nil); err != nil {
@@ -348,7 +413,7 @@ func TestWriteFilterError(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	writeFilterError(rec, fmt.Errorf("%w: down", errUserLookup))
+	writeFilterError(rec, fmt.Errorf("%w: down", errLookup))
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status for a lookup failure = %d, want 500", rec.Code)
 	}

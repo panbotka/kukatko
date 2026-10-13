@@ -111,9 +111,11 @@ func TestMessage(t *testing.T) {
 		t.Fatalf("text %+v, link %q", msg.Text, msg.Link)
 	}
 	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},
-		notification.Notification{}, "https://k.example/tasks/pt1")
+		notification.Notification{},
+		notifydeliver.MailContext{URL: "https://k.example/p/v/tasks/pt1", ProjectName: "Veselice"})
 	wantData := mailer.TaskAssignedData{
-		DisplayName: "Anna", Who: "Pan Botka", Title: "Kdy to bylo?", URL: "https://k.example/tasks/pt1",
+		DisplayName: "Anna", ProjectName: "Veselice", Who: "Pan Botka", Title: "Kdy to bylo?",
+		URL: "https://k.example/p/v/tasks/pt1",
 	}
 	if mail.Template != mailer.TemplateTaskAssigned || mail.To != "anna@example.test" ||
 		!reflect.DeepEqual(mail.Data, wantData) {

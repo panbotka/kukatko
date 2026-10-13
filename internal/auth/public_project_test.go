@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/obs"
 	"github.com/panbotka/kukatko/internal/project"
 )
 
@@ -34,9 +36,11 @@ func TestRequireActiveProject(t *testing.T) {
 			t.Parallel()
 			var seen *project.Project
 			var authorised bool
+			var logged string
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				seen, _ = PublicProjectFromContext(r.Context())
 				_, authorised = ProjectFromContext(r.Context())
+				logged = obs.ProjectUID(r.Context())
 				w.WriteHeader(http.StatusOK)
 			})
 			ctx := context.Background()
@@ -45,7 +49,7 @@ func TestRequireActiveProject(t *testing.T) {
 			}
 			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/p/x/settings/public", nil)
 			rec := httptest.NewRecorder()
-			RequireActiveProject(next).ServeHTTP(rec, req)
+			obs.AccessLog(slog.New(slog.DiscardHandler))(RequireActiveProject(next)).ServeHTTP(rec, req)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
@@ -61,6 +65,9 @@ func TestRequireActiveProject(t *testing.T) {
 			}
 			if authorised {
 				t.Fatal("ProjectFromContext reports a project behind the anonymous guard")
+			}
+			if logged != active.UID {
+				t.Fatalf("logged project = %q, want %q", logged, active.UID)
 			}
 		})
 	}

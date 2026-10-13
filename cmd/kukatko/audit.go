@@ -9,23 +9,45 @@ import (
 	"github.com/panbotka/kukatko/internal/auditapi"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
-// buildAuditAPI assembles the audit-log HTTP API over the shared pool. GET
-// /audit lists the durable audit trail with filters and pagination for an admin,
-// GET /audit/mine the same listing narrowed to the caller's own actions for any
-// signed-in user; entries themselves are written within mutation transactions
-// elsewhere, so this API is read-only. Both guards are supplied via authAPI so
-// auditapi stays decoupled from auth's wiring, and the user filter is resolved
-// through a lookup function for the same reason — auditapi reads accounts, it
-// does not own them.
+// buildAuditAPI assembles the audit-log HTTP API over the shared pool. On the
+// instance, GET /audit lists the whole durable trail with filters (a project's
+// slug among them) and pagination for a maintainer, GET /audit/mine the same
+// listing narrowed to the caller's own actions for any signed-in account; under
+// a project, the same two routes list only that project's entries, for its
+// admin and for a member. Entries themselves are written within mutation
+// transactions elsewhere, so this API is read-only. The guards are supplied via
+// authAPI so auditapi stays decoupled from auth's wiring, and the user and
+// project filters are resolved through lookup functions for the same reason —
+// auditapi reads accounts and projects, it does not own them.
 func buildAuditAPI(db *database.DB, authAPI *auth.API) *auditapi.API {
 	return auditapi.NewAPI(auditapi.Config{
-		Store:        audit.NewStore(db.Pool()),
-		ResolveUser:  resolveAuditUser(auth.NewStore(db.Pool())),
-		RequireAdmin: authAPI.RequireAdmin,
-		RequireAuth:  authAPI.RequireAuth,
+		Store:             audit.NewStore(db.Pool()),
+		ResolveUser:       resolveAuditUser(auth.NewStore(db.Pool())),
+		ResolveProject:    resolveAuditProject(project.NewStore(db.Pool())),
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireAdmin:      authAPI.RequireAdmin,
+		RequireAuth:       authAPI.RequireAuth,
+		RequireSignedIn:   authAPI.RequireSignedIn,
 	})
+}
+
+// resolveAuditProject resolves the instance audit listing's project filter — a
+// slug, the name a maintainer sees in the project's URL — against the project
+// store. A deactivated project resolves too: its history is still history.
+func resolveAuditProject(store *project.Store) auditapi.ResolveProject {
+	return func(ctx context.Context, slug string) (string, error) {
+		p, err := store.GetBySlug(ctx, slug)
+		if errors.Is(err, project.ErrNotFound) {
+			return "", auditapi.ErrUnknownProject
+		}
+		if err != nil {
+			return "", fmt.Errorf("resolving audit project %q: %w", slug, err)
+		}
+		return p.UID, nil
+	}
 }
 
 // resolveAuditUser resolves the audit listing's user filter against the account

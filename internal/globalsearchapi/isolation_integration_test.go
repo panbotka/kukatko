@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/globalsearchapi"
@@ -30,6 +31,7 @@ func newIsolationEnv(t *testing.T) (*httptest.Server, *projecttest.Fixture) {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 
 	authSvc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})

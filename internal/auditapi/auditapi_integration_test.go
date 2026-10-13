@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -34,9 +35,10 @@ const testPassword = "correct horse battery staple"
 // env wires the auth and audit APIs behind an httptest server over the
 // integration database.
 type env struct {
-	baseURL string
-	authSvc *auth.Service
-	store   *audit.Store
+	baseURL  string
+	authSvc  *auth.Service
+	store    *audit.Store
+	projects *project.Store
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database and
@@ -51,11 +53,15 @@ func newEnv(t *testing.T) *env {
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
 	store := audit.NewStore(db.Pool())
+	projects := project.NewStore(db.Pool())
 	api := auditapi.NewAPI(auditapi.Config{
-		Store:        store,
-		ResolveUser:  resolveUser(authStore),
-		RequireAdmin: authAPI.RequireAdmin,
-		RequireAuth:  authAPI.RequireAuth,
+		Store:             store,
+		ResolveUser:       resolveUser(authStore),
+		ResolveProject:    resolveProject(projects),
+		RequireMaintainer: authAPI.RequireMaintainer,
+		RequireAdmin:      authAPI.RequireAdmin,
+		RequireAuth:       authAPI.RequireAuth,
+		RequireSignedIn:   authAPI.RequireSignedIn,
 	})
 
 	r := chi.NewRouter()
@@ -63,12 +69,32 @@ func newEnv(t *testing.T) *env {
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(auth.WithProject(projects))
 		authAPI.RegisterRoutes(r)
 		api.RegisterRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(projects))
+			api.RegisterProjectRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{baseURL: server.URL, authSvc: authSvc, store: store}
+	return &env{baseURL: server.URL, authSvc: authSvc, store: store, projects: projects}
+}
+
+// resolveProject mirrors the server's own wiring (resolveAuditProject in
+// cmd/kukatko): the project filter is a slug resolved against the project store.
+func resolveProject(store *project.Store) auditapi.ResolveProject {
+	return func(ctx context.Context, slug string) (string, error) {
+		p, err := store.GetBySlug(ctx, slug)
+		if errors.Is(err, project.ErrNotFound) {
+			return "", auditapi.ErrUnknownProject
+		}
+		if err != nil {
+			return "", err
+		}
+		return p.UID, nil
+	}
 }
 
 // resolveUser mirrors the server's own wiring (resolveAuditUser in
@@ -151,14 +177,17 @@ type listResponse struct {
 	NextOffset *int           `json:"next_offset"`
 }
 
-// TestListForbiddenForNonAdmin verifies a non-admin cannot read the audit log.
+// TestListForbiddenForNonAdmin verifies only a maintainer reads the instance
+// trail: an editor and a project admin alike are refused.
 func TestListForbiddenForNonAdmin(t *testing.T) {
 	env := newEnv(t)
-	editor := env.login(t, "editor", auth.AccountEditor)
-	resp := do(t, editor, http.MethodGet, env.baseURL+"/api/v1/audit", nil)
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Errorf("audit status for editor = %d, want 403", resp.StatusCode)
+	for _, role := range []auth.AccountRole{auth.AccountEditor, auth.AccountAdmin} {
+		client := env.login(t, "u-"+string(role), role)
+		resp := do(t, client, http.MethodGet, env.baseURL+"/api/v1/audit", nil)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("audit status for %s = %d, want 403", role, resp.StatusCode)
+		}
 	}
 }
 
@@ -167,7 +196,7 @@ func TestListForbiddenForNonAdmin(t *testing.T) {
 // total and next_offset.
 func TestListFiltersAndPagination(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.AccountAdmin)
+	admin := env.login(t, "admin", auth.AccountMaintainer)
 	env.seed(t,
 		audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-1"},
 		audit.Entry{Action: audit.ActionPhotoUpdate, TargetType: "photos", TargetUID: "ph-1"},
@@ -234,7 +263,7 @@ func reviewRows(actorUID string) []audit.Entry {
 // selectivity (by actor and by via=review) is exercised.
 func TestReviewDecisionFilter(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.AccountAdmin)
+	admin := env.login(t, "admin", auth.AccountMaintainer)
 	actorA := env.createUser(t, "actor-a", auth.AccountEditor)
 	actorB := env.createUser(t, "actor-b", auth.AccountEditor)
 
@@ -428,7 +457,7 @@ func TestMineNarrowingSurvivesPagingAndFilters(t *testing.T) {
 // anybody — while the admin's own /audit/mine shows only the admin's rows.
 func TestAdminListingUnchanged(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountMaintainer)
 	otherUID := env.createUser(t, "other", auth.AccountEditor)
 	seed := ownRows(otherUID)
 	seed = append(seed,
@@ -508,7 +537,7 @@ func badRequest(t *testing.T, client *http.Client, url, want string) string {
 // refused with 400 naming the offending value.
 func TestListRejectsNonsenseFilters(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountMaintainer)
 	env.seed(t, ownRows(adminUID)...)
 
 	base := env.baseURL + "/api/v1/audit"
@@ -528,7 +557,7 @@ func TestListRejectsNonsenseFilters(t *testing.T) {
 // with no recorded actions still gets the true answer: 200 and an empty list.
 func TestListAcceptsUsernameAsUser(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.AccountAdmin)
+	admin := env.login(t, "admin", auth.AccountMaintainer)
 	actorUID := env.createUser(t, "panbotka", auth.AccountEditor)
 	env.createUser(t, "quiet", auth.AccountEditor)
 	env.seed(t, ownRows(actorUID)...)
@@ -562,7 +591,7 @@ func TestListAcceptsUsernameAsUser(t *testing.T) {
 // returns its entries, and an entity_type nobody has registered is accepted too.
 func TestListKeepsEntriesOfVanishedEntities(t *testing.T) {
 	env := newEnv(t)
-	admin := env.login(t, "admin", auth.AccountAdmin)
+	admin := env.login(t, "admin", auth.AccountMaintainer)
 	env.seed(t,
 		audit.Entry{Action: audit.ActionPhotoPurge, TargetType: "photos", TargetUID: "ph-gone"},
 		audit.Entry{Action: audit.ActionPhotoArchive, TargetType: "photos", TargetUID: "ph-gone"},
@@ -611,7 +640,7 @@ func TestMineRejectsAnotherUsersName(t *testing.T) {
 // listing answers 200.
 func TestListAcceptsTheFrontendFilters(t *testing.T) {
 	env := newEnv(t)
-	admin, adminUID := env.loginUser(t, "admin", auth.AccountAdmin)
+	admin, adminUID := env.loginUser(t, "admin", auth.AccountMaintainer)
 	env.seed(t, reviewRows(adminUID)...)
 
 	frontendParams := url.Values{

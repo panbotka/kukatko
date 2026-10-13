@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/apitest"
+	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/globalsearchapi"
@@ -88,6 +89,7 @@ func newEnv(t *testing.T, limit int) *httptest.Server {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := context.Background()
 
 	organizeStore := organize.NewStore(db.Pool())
@@ -196,6 +198,7 @@ func newUIDEnv(t *testing.T) uidEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := context.Background()
 
 	organizeStore := organize.NewStore(db.Pool())
@@ -388,6 +391,7 @@ func newCoverEnv(t *testing.T) *httptest.Server {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	audittest.Guard(t, db)
 	ctx := context.Background()
 
 	organizeStore := organize.NewStore(db.Pool())

@@ -24,6 +24,7 @@ import { auditDetailLinks, auditTargetHref } from '../lib/auditView'
 import { formatDateTime } from '../lib/format'
 import { useUrlState } from '../lib/urlState'
 import { ProjectLink } from '../project/ProjectLink'
+import { projectPathFor } from '../project/paths'
 import { type AuditListResponse, type AuditRecord, fetchMyActivity } from '../services/audit'
 
 /** Load state of the own-activity listing. */
@@ -81,8 +82,9 @@ export function MyActivityPage() {
     setView({ offset: String(Math.max(0, next)) })
   }
 
-  // One definition drives both layouts: three columns on a tablet or desktop,
-  // the same fields as "label: value" lines on a phone card.
+  // One definition drives both layouts: four columns on a tablet or desktop,
+  // the same fields as "label: value" lines on a phone card. The listing spans
+  // every project the account acts in, so each entry names its own.
   const columns: RecordColumn<AuditRecord>[] = [
     {
       key: 'when',
@@ -99,6 +101,11 @@ export function MyActivityPage() {
       key: 'where',
       header: t('activity.columns.where'),
       cell: (record) => <ActivityTarget record={record} />,
+    },
+    {
+      key: 'project',
+      header: t('activity.columns.project'),
+      cell: (record) => record.project ?? '—',
     },
   ]
 
@@ -167,7 +174,7 @@ function ActivityTarget({ record }: { record: AuditRecord }) {
   const { t } = useTranslation()
   const typeKey = activityTargetKey(record.target_type)
   const typeLabel = typeKey === undefined ? record.target_type : t(typeKey)
-  const href = auditTargetHref(record)
+  const href = entryPath(record, auditTargetHref(record))
   if (href !== null) {
     return (
       <ProjectLink to={href} className="d-inline-flex align-items-center gap-1">
@@ -184,7 +191,7 @@ function ActivityTarget({ record }: { record: AuditRecord }) {
           {groups.map((group) =>
             group.links.map((link) => (
               <li key={link.href} className="text-break">
-                <ProjectLink to={link.href}>{link.uid}</ProjectLink>
+                <ProjectLink to={entryPath(record, link.href) ?? link.href}>{link.uid}</ProjectLink>
               </li>
             )),
           )}
@@ -196,6 +203,19 @@ function ActivityTarget({ record }: { record: AuditRecord }) {
     )
   }
   return <span className="text-secondary">{typeLabel || t('activity.target.unknown')}</span>
+}
+
+/**
+ * The page an entry links to, inside the entry's own project: the listing spans
+ * every project, so an entry from another one must not open in whichever
+ * project happens to be current. An entry with no project (an instance action)
+ * keeps the path as it is.
+ */
+function entryPath(record: AuditRecord, href: string | null): string | null {
+  if (href === null || record.project === null) {
+    return href
+  }
+  return projectPathFor(record.project, href)
 }
 
 /** Props for {@link ActivityPager}. */

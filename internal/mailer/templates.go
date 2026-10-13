@@ -62,11 +62,15 @@ func (r Rendered) Message(to string) Message {
 }
 
 // RegistrationReceivedData is what the "registration received" message needs:
-// who registered (DisplayName may be empty — then the greeting is impersonal)
-// and under which username.
+// who registered (DisplayName may be empty — then the greeting is impersonal),
+// under which username and into which project.
+//
+// ProjectName is the project the registration asked to join; the subject and
+// the body name it. Empty (a mail queued before projects) names none.
 type RegistrationReceivedData struct {
 	DisplayName string
 	Username    string
+	ProjectName string
 }
 
 // RenderRegistrationReceived builds the message confirming a registration was
@@ -75,11 +79,11 @@ type RegistrationReceivedData struct {
 func RenderRegistrationReceived(d RegistrationReceivedData) Rendered {
 	return Rendered{
 		Template: TemplateRegistrationReceived,
-		Subject:  "Registrace do Kukátka čeká na schválení",
+		Subject:  InProject(d.ProjectName, "Registrace do Kukátka čeká na schválení"),
 		Body: body(
 			greeting(d.DisplayName),
 			"",
-			"vaši registraci do Kukátka jsme přijali. Účet „"+d.Username+"“ je založený,",
+			"vaši registraci "+intoKukatko(d.ProjectName)+" jsme přijali. Účet „"+d.Username+"“ je založený,",
 			"zatím ale není aktivní — musí ho nejdřív schválit správce.",
 			"",
 			"Až se tak stane, přijde vám další e-mail a budete se moct přihlásit.",
@@ -177,12 +181,14 @@ func RenderUsernameChanged(d UsernameChangedData) Rendered {
 }
 
 // NewRegistrationPendingData is what the administrator's message needs: who
-// registered, under which username and with which e-mail address, and where the
-// waiting account is approved.
+// registered, under which username and with which e-mail address, into which
+// project (empty names none), and where the waiting account is approved — the
+// project's member screen, under /p/<slug>/.
 type NewRegistrationPendingData struct {
 	Username    string
 	DisplayName string
 	Email       string
+	ProjectName string
 	ApprovalURL string
 }
 
@@ -194,7 +200,7 @@ func RenderNewRegistrationPending(d NewRegistrationPendingData) Rendered {
 	lines := []string{
 		"Dobrý den,",
 		"",
-		"do Kukátka se zaregistroval nový uživatel a čeká na schválení:",
+		intoKukatko(d.ProjectName) + " se zaregistroval nový uživatel a čeká na schválení:",
 		"",
 		"Uživatelské jméno: " + d.Username,
 		"Jméno: " + orDash(d.DisplayName),
@@ -208,7 +214,7 @@ func RenderNewRegistrationPending(d NewRegistrationPendingData) Rendered {
 	lines = append(lines, "", signature)
 	return Rendered{
 		Template: TemplateNewRegistrationPending,
-		Subject:  "Nová registrace čeká na schválení: " + d.Username,
+		Subject:  InProject(d.ProjectName, "Nová registrace čeká na schválení: "+d.Username),
 		Body:     body(lines...),
 	}
 }
@@ -279,6 +285,7 @@ func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 	lines := []string{
 		informalGreeting(d.DisplayName),
 		"",
+		// The project is named by the heading under this line, not twice.
 		"v Kukátku na tebe " + waitVerb(d.Total) + " " + taskCount(d.Total) + ":",
 		"",
 	}
@@ -302,7 +309,7 @@ func RenderTasksWaitingDigest(d TasksWaitingDigestData) Rendered {
 	)
 	return Rendered{
 		Template: TemplateTasksWaitingDigest,
-		Subject:  capitalize(waitVerb(d.Total)) + " na tebe " + taskCount(d.Total),
+		Subject:  InProject(d.ProjectName, capitalize(waitVerb(d.Total))+" na tebe "+taskCount(d.Total)),
 		Body:     body(lines...),
 	}
 }
@@ -365,6 +372,39 @@ func informalGreeting(name string) string {
 		return "Ahoj,"
 	}
 	return "Ahoj, " + trimmed + ","
+}
+
+// InProject is a mail's subject naming the project it is about:
+// "Kukátko · Veselice: Označili vás na fotkách". A recipient in several
+// projects sorts the mail by the project before they open it. An empty project
+// name (a mail queued before projects) leaves the subject as it is. The
+// project's name — never its slug — is what a person knows it by.
+func InProject(projectName, subject string) string {
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return subject
+	}
+	return "Kukátko · " + name + ": " + subject
+}
+
+// inKukatko is where a message's event happened: "v Kukátku", or with a
+// project "v projektu „Veselice“ v Kukátku".
+func inKukatko(projectName string) string {
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return "v Kukátku"
+	}
+	return "v projektu „" + name + "“ v Kukátku"
+}
+
+// intoKukatko is what a registration joins: "do Kukátka", or with a project
+// "do projektu „Veselice“ v Kukátku".
+func intoKukatko(projectName string) string {
+	name := strings.TrimSpace(projectName)
+	if name == "" {
+		return "do Kukátka"
+	}
+	return "do projektu „" + name + "“ v Kukátku"
 }
 
 // body joins the lines of a message body with newlines and terminates the last

@@ -255,8 +255,11 @@ func TestMessage(t *testing.T) {
 		t.Fatalf("photos = %v, want the cover", msg.PhotoUIDs)
 	}
 	mail := msg.Mail(notifydeliver.Recipient{Email: "anna@example.test", DisplayName: "Anna"},
-		notification.Notification{}, "https://k.example/albums/al1")
-	wantData := mailer.AlbumFeaturedData{DisplayName: "Anna", Title: "Pouť 2026", URL: "https://k.example/albums/al1"}
+		notification.Notification{},
+		notifydeliver.MailContext{URL: "https://k.example/p/v/albums/al1", ProjectName: "Veselice"})
+	wantData := mailer.AlbumFeaturedData{
+		DisplayName: "Anna", ProjectName: "Veselice", Title: "Pouť 2026", URL: "https://k.example/p/v/albums/al1",
+	}
 	if mail.Template != mailer.TemplateAlbumFeatured || mail.To != "anna@example.test" ||
 		!reflect.DeepEqual(mail.Data, wantData) {
 		t.Fatalf("mail = %+v, want the album_featured template with %+v", mail, wantData)

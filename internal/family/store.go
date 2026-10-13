@@ -63,11 +63,16 @@ func isMissingSubject(err error) bool {
 //
 // entry is taken by value and copied into the transaction as it was passed, so a
 // caller that means to stamp entry.TargetUID must do it *before* calling: a stamp
-// made inside mutate is lost and the audit row gets a NULL target.
+// made inside mutate is lost and the audit row gets a NULL target. An entry that
+// names no project is filed under projectUID, the project the write happens in.
 func mutateAudited[T any](
-	ctx context.Context, pool *pgxpool.Pool, entry audit.Entry, mutate func(tx pgx.Tx) (T, error),
+	ctx context.Context, pool *pgxpool.Pool, projectUID string, entry audit.Entry,
+	mutate func(tx pgx.Tx) (T, error),
 ) (T, error) {
 	var zero T
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return zero, fmt.Errorf("family: begin audited transaction: %w", err)

@@ -168,19 +168,19 @@ func registerJobQueueMetrics(reg *metrics.Registry, store *jobs.Store) {
 	})
 }
 
-// registerLibraryMetrics wires the library-content collector into reg, reshaping
-// internal/system's aggregation — the very one the admin dashboard reads — into
-// the label maps the metric families need. Sharing that source is deliberate:
-// the counts have one SQL statement behind them, so /metrics and the dashboard
-// can never disagree. The streaming backlog comes from the same place for the
-// same reason, out of the memoised dashboard aggregation rather than a count of
-// the collector's own. It is a no-op when reg is nil.
+// registerLibraryMetrics wires the library-content collector into reg: one set
+// of kukatko_library_* gauges per active project, labelled with its slug,
+// reshaped from internal/system's per-project aggregation into the label maps
+// the metric families need. The counts mirror the instance-wide statistics the
+// admin dashboard reads — the same predicates, grouped by project — so the
+// gauges summed over the label agree with the dashboard. The import runs stay
+// instance-wide. It is a no-op when reg is nil.
 func registerLibraryMetrics(reg *metrics.Registry, svc *system.Service, ttl time.Duration) {
 	if reg == nil {
 		return
 	}
 	reg.RegisterLibrary(func(ctx context.Context) (metrics.LibrarySnapshot, error) {
-		counts, err := svc.LibraryStats(ctx)
+		projects, err := svc.LibraryByProject(ctx)
 		if err != nil {
 			return metrics.LibrarySnapshot{}, fmt.Errorf("collecting library stats: %w", err)
 		}
@@ -188,20 +188,24 @@ func registerLibraryMetrics(reg *metrics.Registry, svc *system.Service, ttl time
 		if err != nil {
 			return metrics.LibrarySnapshot{}, fmt.Errorf("collecting import runs: %w", err)
 		}
-		video, err := svc.VideoBacklog(ctx)
-		if err != nil {
-			return metrics.LibrarySnapshot{}, fmt.Errorf("collecting the streaming backlog: %w", err)
-		}
-		snapshot := librarySnapshot(counts, video)
-		snapshot.Imports = importRuns(runs)
-		return snapshot, nil
+		return metrics.LibrarySnapshot{Projects: libraryByProject(projects), Imports: importRuns(runs)}, nil
 	}, ttl)
 }
 
-// librarySnapshot maps the system package's library counts and streaming-encode
-// backlog onto the metric shape, one map entry per label value.
-func librarySnapshot(counts system.Library, video system.Video) metrics.LibrarySnapshot {
-	return metrics.LibrarySnapshot{
+// libraryByProject maps every project's counts onto the metric shape, keyed by
+// the project's slug — the label value, never its name.
+func libraryByProject(projects []system.ProjectLibrary) map[string]metrics.LibraryCounts {
+	out := make(map[string]metrics.LibraryCounts, len(projects))
+	for _, p := range projects {
+		out[p.Slug] = libraryCounts(p.Library, p.VideosWithoutStreaming)
+	}
+	return out
+}
+
+// libraryCounts maps one project's library counts and streaming-encode backlog
+// onto the metric shape, one map entry per label value.
+func libraryCounts(counts system.Library, videosWithoutStreaming int) metrics.LibraryCounts {
+	return metrics.LibraryCounts{
 		PhotosByMediaType: map[string]int{
 			"image": counts.Images, "video": counts.Videos, "live": counts.LivePhotos,
 		},
@@ -236,7 +240,7 @@ func librarySnapshot(counts system.Library, video system.Video) metrics.LibraryS
 		// The backlog is exported whatever video.hls.enabled says: with streaming
 		// off it is every video, which is the instance working as configured and
 		// not work outstanding — a distinction the alert, not the gauge, makes.
-		VideosWithoutStreaming: video.Missing,
+		VideosWithoutStreaming: videosWithoutStreaming,
 	}
 }
 
