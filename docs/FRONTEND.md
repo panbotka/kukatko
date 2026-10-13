@@ -1961,7 +1961,25 @@ here.
   themselves (`register.doneNoMail`) is `mail_enabled`: on an instance with mail off the promised message
   would never arrive. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
   submission, mismatched passwords, a wrong secret, a taken username, the closed state and both mail
-  wordings,
+  wordings. **Through an invitation** (`/register?invite=<code>`, from `InvitePage`) it asks
+  `fetchPublicInvite` for the project's name (`useInviteLookup`), greets with it (`register.introInvite`),
+  drops the secret field and posts `invite_code`; the instance's registration switch does **not** apply (an
+  invite works while registration is closed), an unusable invite shows `register.errorInvite` instead of the
+  form (`register-invite-invalid`), and the account comes back `pending_approval: false`, so the confirmation
+  says it may sign in right away (`register.doneApproved`) instead of "waiting for an administrator",
+  `InvitePage` (route **`/invite/:code`**, **public**, instance-level — outside `RequireAuth`, `Layout` and
+  any project): the page behind an invitation link, in the `AuthFrame`. It reads `fetchPublicInvite` and
+  says „Pozvánka do projektu **<name>** jako <role>" (`Trans`, role lower-cased). When the answer's
+  `signed_in` is true, **„Přijmout pozvánku"** → `acceptInvite` → `refresh()` of the session (the new
+  membership must be known before its project opens, or `ProjectGate` answers not-found) → navigate to
+  `/p/<slug>/` with a toast (`invitePage.accepted`, or `alreadyMember` when `changed` is false). Signed
+  out: **„Zaregistrovat se"** → `/register?invite=<code>` and **„Přihlásit se"** →
+  `/login?returnTo=/invite/<code>`, plus a note when registering grants less than accepting
+  (`registration_role` ≠ `role`). Every unusable code — the backend's one 404 — is the generic
+  `NotFoundPage`, the same for every reason; an invite that dies between loading and accepting turns into
+  it too. Texts in `invitePage.*`; `InvitePage.test.tsx` (signed in, signed out, invalid).
+  `LoginPage` honours a **`?returnTo=`** query ahead of the guard's stashed location, but only a local path
+  (one leading `/`, never `//` or `/\`), so a link cannot send a fresh sign-in to another host,
   `UploadLinkPage` (route **`/u/:code`**, **public** — whoever holds an upload link may upload without
   an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`, shows the title, the
   note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
@@ -2020,8 +2038,9 @@ here.
   `UploadLinksPage` (route **`/upload-links`**, **curator**, in the Tools menu as "Odkazy pro nahrávání"
   with `link-45deg`): the links as cards (title, state badge, album/label `EntityChip`s, expiry or
   revocation date, upload count, last use, the creator's name for an admin looking at somebody else's),
-  an **active** link with a known `path` shows its absolute address in `LinkAddress` (read-only field,
-  copy → "Zkopírováno", share where `navigator.share` exists — the same control the create flow uses);
+  an **active** link with a known `path` shows its absolute address in `LinkAddress` (`components/`,
+  shared with the invitations: read-only field, copy → "Zkopírováno" via `CopyLinkButton`, share where
+  `navigator.share` exists — the same control the create flow uses; texts in `linkAddress.*`);
   revoked and expired links show none. A non-revoked link **without** a known code (created before the
   backend kept codes) says so (`upload-link-code-unknown`; an expired one says it has expired and
   that "Prodloužit" revives the same address, never that it still works) and offers "Obnovit původní kód" as its
@@ -3019,6 +3038,20 @@ here.
   `ADMIN_ITEMS`); like the old one it carries no count badge. States: spinner, `ErrorState` with retry,
   `EmptyState`. Tests: `MembersPage.test.tsx`, `services/members.test.ts` (the add resolves alike for 202, 404,
   409, 422 and 500).
+  Below the list sits **`InvitesSection`** (`components/members/`, heading „Pozvánky") over
+  **`services/invites.ts`** (`fetchInvites`/`createInvite`/`revokeInvite` under `apiPath('/invites')`;
+  errors are `InviteApiError` with the backend's `code`). A create form: the **role** (`MEMBER_ROLES`, default
+  viewer; an admin invite shows `invites.adminNote` — registering through it grants editor at most), the
+  **validity in days** (`default_days` from the list, 1..`max_days`, out of range = `isInvalid` + the submit off)
+  and **max uses** (empty = no cap, so the field is left out of the body). The created invite's absolute address
+  (`inviteAddress` — the backend's `url`, resolved against `window.location.origin` when it is host-relative) is
+  shown in **`LinkAddress`** (read-only field + copy + share) with a word that it stays copyable from the list.
+  The list (`RecordTable`): role, state badge (`active|expired|revoked|used_up`), expiry, uses „2 / 5" (or „0 / bez
+  omezení"), the creator's name (or „smazaný účet"), and for an **active** invite a **`CopyLinkButton`** — the
+  code stays readable for the admin, so the address can be copied again at any time — and **„Zrušit pozvánku"**
+  behind a `ConfirmModal`; a revoke flips the row to revoked in place, `not_found` toasts and refetches. A 422
+  (`invalid_role|invalid_days|invalid_max_uses`) is worded under `invites.refusal.*`. Texts in `invites.*`;
+  tests: `InvitesSection.test.tsx`, `services/invites.test.ts`.
   `SettingsPage` = `/settings` (admin **or** maintainer, `isAdmin`) **the instance's own settings** —
   the three values behind `GET`/`PUT /settings`: whether self-service registration is open, the shared
   secret it asks a newcomer for, and the Markdown greeting a person meets on their first sign-in. It is

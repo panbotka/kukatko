@@ -1,9 +1,9 @@
-import { type SyntheticEvent, useState } from 'react'
+import { type SyntheticEvent, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
-import { useTranslation } from 'react-i18next'
+import { Trans, useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { AuthFrame } from '../components/AuthFrame'
@@ -13,6 +13,7 @@ import { mailEnabledFrom } from '../hooks/useMailEnabled'
 import { usePublicSettings } from '../hooks/usePublicSettings'
 import { registrationOpenFrom } from '../hooks/useRegistrationOpen'
 import { ApiError, MIN_PASSWORD_LENGTH, NetworkError, register } from '../services/auth'
+import { fetchPublicInvite, InviteApiError } from '../services/invites'
 
 /** The inputs of the form, so a rejection can name the one that caused it. */
 type FieldName = 'username' | 'displayName' | 'email' | 'password' | 'passwordRepeat' | 'secret'
@@ -27,6 +28,7 @@ type RegisterErrorKey =
   | 'register.errorSecret'
   | 'register.errorClosed'
   | 'register.errorLink'
+  | 'register.errorInvite'
   | 'register.errorRateLimited'
   | 'register.errorOffline'
   | 'register.errorGeneric'
@@ -46,7 +48,20 @@ type SubmitState =
   | { status: 'idle' }
   | { status: 'submitting' }
   | { status: 'error'; rejection: Rejection }
-  | { status: 'done'; username: string }
+  | { status: 'done'; username: string; pendingApproval: boolean }
+
+/**
+ * What the invitation in the address (`/register?invite=<code>`) turned out to
+ * be: still being asked about, live (with the project it leads into), unusable,
+ * or unknown because the question failed — then the form is shown anyway and
+ * the server has the final word.
+ */
+type InviteLookup =
+  | { status: 'none' }
+  | { status: 'loading' }
+  | { status: 'ready'; projectName: string }
+  | { status: 'invalid' }
+  | { status: 'unknown' }
 
 /**
  * Maps a failed `POST /auth/register` onto the sentence to print and the field
@@ -75,6 +90,9 @@ function rejectionFor(error: unknown): Rejection {
       if (error.message.includes('upload link')) {
         return { field: null, messageKey: 'register.errorLink' }
       }
+      if (error.message.includes('invitation')) {
+        return { field: null, messageKey: 'register.errorInvite' }
+      }
       return error.message.includes('secret')
         ? { field: 'secret', messageKey: 'register.errorSecret' }
         : { field: null, messageKey: 'register.errorClosed' }
@@ -97,6 +115,43 @@ function rejectionFor(error: unknown): Rejection {
     }
   }
   return { field: null, messageKey: 'register.errorGeneric' }
+}
+
+/**
+ * Asks the backend about the invitation `code` (`GET /invite/<code>`), for the
+ * project name the form greets with. An empty code is no invitation at all.
+ */
+function useInviteLookup(code: string): InviteLookup {
+  // The answer is kept with the code it belongs to, so a changed code reads as
+  // "loading" until its own answer arrives — without resetting state in the effect.
+  const [answer, setAnswer] = useState<{ code: string; lookup: InviteLookup } | null>(null)
+  useEffect(() => {
+    if (code === '') {
+      return
+    }
+    const controller = new AbortController()
+    fetchPublicInvite(code, controller.signal)
+      .then((invite) => {
+        setAnswer({ code, lookup: { status: 'ready', projectName: invite.project_name } })
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return
+        }
+        const lookup: InviteLookup =
+          error instanceof InviteApiError && error.status === 404
+            ? { status: 'invalid' }
+            : { status: 'unknown' }
+        setAnswer({ code, lookup })
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [code])
+  if (code === '') {
+    return { status: 'none' }
+  }
+  return answer?.code === code ? answer.lookup : { status: 'loading' }
 }
 
 /** One labelled input of the registration form, with its own error slot. */
@@ -191,6 +246,14 @@ function RegisterField({
  * for an administrator, so there is no session to hand out and there is nothing
  * to browse yet.
  *
+ * Arriving through an invitation (`/register?invite=<code>`, from the
+ * `/invite/:code` page) the form asks `GET /invite/<code>` for the project's
+ * name, greets with it, leaves out the registration word and sends the code as
+ * `invite_code`. The instance's registration switch does not apply — an invite
+ * is a project admin's decision about one person — and the account is created
+ * approved, so the confirmation says it may sign in right away. An unusable
+ * invite shows one plain sentence instead of the form.
+ *
  * The same public response says whether this instance sends mail, and both the
  * e-mail field's hint and the confirmation say only what will actually happen:
  * an instance with `mail.enabled` off wires the no-op sender, so a promised
@@ -208,7 +271,14 @@ export function RegisterPage() {
   // the shared secret, so the secret field is not asked for at all.
   const [searchParams] = useSearchParams()
   const uploadLink = searchParams.get('link')?.trim() ?? ''
-  const viaLink = uploadLink !== ''
+  // Arriving from an invitation (/register?invite=<code>): the invite stands in
+  // for the secret too, wins over a link, and works while registration is closed
+  // — it is a project admin's decision about one person. The account it makes
+  // is approved at once.
+  const inviteCode = searchParams.get('invite')?.trim() ?? ''
+  const viaInvite = inviteCode !== ''
+  const viaLink = !viaInvite && uploadLink !== ''
+  const invite = useInviteLookup(inviteCode)
 
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -245,7 +315,7 @@ export function RegisterPage() {
       email.trim() === '' ||
       password === '' ||
       passwordRepeat === '' ||
-      (!viaLink && secret.trim() === '')
+      (!viaLink && !viaInvite && secret.trim() === '')
     ) {
       setValidated(true)
       return
@@ -266,20 +336,34 @@ export function RegisterPage() {
         display_name: displayName.trim(),
         email: email.trim(),
         password,
-        secret: viaLink ? '' : secret.trim(),
+        secret: viaLink || viaInvite ? '' : secret.trim(),
         ...(viaLink ? { upload_link: uploadLink } : {}),
+        ...(viaInvite ? { invite_code: inviteCode } : {}),
       })
-      setSubmit({ status: 'done', username: account.username })
+      setSubmit({
+        status: 'done',
+        username: account.username,
+        pendingApproval: account.pending_approval,
+      })
     } catch (error: unknown) {
       setSubmit({ status: 'error', rejection: rejectionFor(error) })
     }
   }
 
   const submitting = submit.status === 'submitting'
+  // An invitation decides on its own whether the form is shown: the instance's
+  // registration switch does not apply to it.
+  const gate = viaInvite
+    ? invite.status === 'loading'
+      ? 'loading'
+      : invite.status === 'invalid'
+        ? 'invalid'
+        : 'open'
+    : registration
 
   return (
     <AuthFrame title={t('register.title')}>
-      {registration === 'loading' && (
+      {gate === 'loading' && (
         <div className="text-center py-3">
           <Spinner animation="border" role="status">
             <span className="visually-hidden">{t('register.loading')}</span>
@@ -287,7 +371,19 @@ export function RegisterPage() {
         </div>
       )}
 
-      {registration === 'closed' && (
+      {gate === 'invalid' && (
+        <div data-testid="register-invite-invalid">
+          <Alert variant="secondary" role="status">
+            <Icon name="slash-circle" className="me-2" />
+            {t('register.errorInvite')}
+          </Alert>
+          <div className="text-center">
+            <Link to="/login">{t('register.backToLogin')}</Link>
+          </div>
+        </div>
+      )}
+
+      {gate === 'closed' && (
         <div data-testid="register-closed">
           <Alert variant="secondary" role="status">
             <Icon name="slash-circle" className="me-2" />
@@ -299,7 +395,7 @@ export function RegisterPage() {
         </div>
       )}
 
-      {registration !== 'loading' && registration !== 'closed' && (
+      {gate !== 'loading' && gate !== 'closed' && gate !== 'invalid' && (
         <>
           {submit.status === 'done' ? (
             <div data-testid="register-done">
@@ -308,10 +404,16 @@ export function RegisterPage() {
                   <Icon name="person-check" className="me-2" />
                   {t('register.doneTitle', { username: submit.username })}
                 </Alert.Heading>
-                <p className="mb-0">{t('register.donePending')}</p>
-                <p className="mb-0">
-                  {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
-                </p>
+                {submit.pendingApproval ? (
+                  <>
+                    <p className="mb-0">{t('register.donePending')}</p>
+                    <p className="mb-0">
+                      {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
+                    </p>
+                  </>
+                ) : (
+                  <p className="mb-0">{t('register.doneApproved')}</p>
+                )}
               </Alert>
               <div className="text-center">
                 <Link to="/login">{t('register.backToLogin')}</Link>
@@ -319,8 +421,22 @@ export function RegisterPage() {
             </div>
           ) : (
             <>
-              <p className="text-secondary">
-                {viaLink ? t('register.introLink') : t('register.intro')}
+              <p className="text-secondary" data-testid="register-intro">
+                {viaInvite ? (
+                  invite.status === 'ready' ? (
+                    <Trans
+                      i18nKey="register.introInvite"
+                      values={{ project: invite.projectName }}
+                      components={{ strong: <strong /> }}
+                    />
+                  ) : (
+                    t('register.introInviteNoName')
+                  )
+                ) : viaLink ? (
+                  t('register.introLink')
+                ) : (
+                  t('register.intro')
+                )}
               </p>
 
               {rejection !== null && rejection.field === null && (
@@ -413,7 +529,7 @@ export function RegisterPage() {
                       : t('register.passwordRepeatRequired')
                   }
                 />
-                {!viaLink && (
+                {!viaLink && !viaInvite && (
                   <RegisterField
                     id="register-secret"
                     label={t('register.secret')}

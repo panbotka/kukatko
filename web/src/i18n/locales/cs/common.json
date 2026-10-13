@@ -485,7 +485,11 @@
     "errorOffline": "Kukátko se nedovolalo serveru, registraci tedy nikdo neposoudil. Zkontrolujte připojení a zkuste to znovu.",
     "errorGeneric": "Registrace se nezdařila. Zkuste to prosím znovu.",
     "introLink": "Registrujete se přes odkaz pro nahrávání, takže registrační slovo nepotřebujete. Fotky, které jste z tohoto prohlížeče právě nahráli, budou vedené pod vaším účtem. Účet ještě musí schválit správce.",
-    "errorLink": "Odkaz pro nahrávání už neplatí, takže přes něj se registrovat nejde. Zeptejte se na registrační slovo."
+    "errorLink": "Odkaz pro nahrávání už neplatí, takže přes něj se registrovat nejde. Zeptejte se na registrační slovo.",
+    "introInvite": "Registrujete se přes pozvánku do projektu <strong>{{project}}</strong>, takže registrační slovo nepotřebujete. Účet bude rovnou schválený.",
+    "introInviteNoName": "Registrujete se přes pozvánku, takže registrační slovo nepotřebujete. Účet bude rovnou schválený.",
+    "errorInvite": "Tahle pozvánka neplatí. Požádejte toho, kdo vás zval, o novou.",
+    "doneApproved": "Účet je rovnou schválený — můžete se přihlásit."
   },
   "passwordReset": {
     "title": "Nové heslo",
@@ -3994,6 +3998,70 @@
       "failed": "Požadavek se nepodařilo odeslat — zkontrolujte připojení a zkuste to znovu."
     }
   },
+  "invites": {
+    "title": "Pozvánky",
+    "intro": "Odkaz, přes který se do projektu dostane i někdo, kdo tu ještě nemá účet. Pošlete ho tomu, koho zvete: kdo má účet, se přihlásí a pozvánku přijme, kdo nemá, se zaregistruje — bez registračního slova a bez čekání na schválení.",
+    "loading": "Načítám pozvánky…",
+    "loadFailed": "Pozvánky se nepodařilo načíst.",
+    "empty": "Zatím tu nejsou žádné pozvánky.",
+    "roleLabel": "Role",
+    "daysLabel": "Platnost (dní)",
+    "maxUsesLabel": "Nejvýš použití",
+    "maxUsesPlaceholder": "bez omezení",
+    "adminNote": "Kdo pozvánku přijme se svým účtem, bude správcem. Kdo se přes ni teprve zaregistruje, dostane nejvýš roli editora — správcem ho pak můžete udělat sami.",
+    "create": "Vytvořit pozvánku",
+    "createFailed": "Pozvánku se nepodařilo vytvořit. Zkuste to prosím znovu.",
+    "refusal": {
+      "invalid_role": "Tuhle roli pozvánka dát nemůže.",
+      "invalid_days": "Zadejte celé číslo od 1 do {{max}}.",
+      "invalid_max_uses": "Zadejte celé číslo alespoň 1, nebo pole nechte prázdné."
+    },
+    "createdLead": "Pozvánka je hotová. Zkopírujte odkaz a pošlete ho tomu, koho zvete:",
+    "linkLabel": "Odkaz pozvánky",
+    "copyLater": "Odkaz platné pozvánky půjde zkopírovat i později ze seznamu níže.",
+    "columns": {
+      "role": "Role",
+      "state": "Stav",
+      "expires": "Platí do",
+      "uses": "Použito",
+      "createdBy": "Vytvořil(a)",
+      "actions": "Akce"
+    },
+    "state": {
+      "active": "Platná",
+      "expired": "Vypršela",
+      "revoked": "Zrušená",
+      "used_up": "Vyčerpaná"
+    },
+    "uses": "{{uses}} / {{max}}",
+    "usesUnlimited": "{{uses}} / bez omezení",
+    "creatorGone": "smazaný účet",
+    "revoke": "Zrušit pozvánku",
+    "revokeTitle": "Zrušit pozvánku?",
+    "revokeBody": "Odkaz přestane fungovat hned a natrvalo. Kdo ho už použil, členem projektu zůstane.",
+    "revokedToast": "Pozvánka je zrušená.",
+    "revokeFailed": "Pozvánku se nepodařilo zrušit.",
+    "notFound": "Tahle pozvánka už neexistuje — seznam jsem obnovil."
+  },
+  "invitePage": {
+    "title": "Pozvánka",
+    "loading": "Načítám pozvánku…",
+    "loadFailed": "Pozvánku se nepodařilo načíst.",
+    "lead": "Pozvánka do projektu <strong>{{project}}</strong> jako {{role}}",
+    "accept": "Přijmout pozvánku",
+    "accepted": "Vítejte v projektu {{project}}.",
+    "alreadyMember": "V projektu {{project}} už jste.",
+    "acceptFailed": "Pozvánku se nepodařilo přijmout. Zkuste to prosím znovu.",
+    "signedOutHint": "Máte už v Kukátku účet? Přihlaste se a pozvánku přijmete. Jestli ne, zaregistrujte se — registrační slovo nepotřebujete a účet bude rovnou schválený.",
+    "registrationRole": "Při registraci přes pozvánku dostanete roli {{role}}. Vyšší vám pak může dát správce projektu.",
+    "register": "Zaregistrovat se",
+    "login": "Přihlásit se"
+  },
+  "linkAddress": {
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno",
+    "share": "Sdílet"
+  },
   "audit": {
     "title": "Auditní log",
     "subtitle": "Trvalý záznam změn v této instanci, od nejnovějších. Filtrujte podle aktéra, akce, entity nebo data.",
@@ -4483,9 +4551,6 @@
     "createdTitle": "Odkaz je připravený",
     "createdLead": "Pošlete tento odkaz lidem, od kterých chcete fotky:",
     "linkLabel": "Odkaz pro nahrávání",
-    "copy": "Kopírovat",
-    "copied": "Zkopírováno",
-    "share": "Sdílet",
     "copyLater": "Odkaz můžete kdykoli znovu zkopírovat ze seznamu odkazů.",
     "codeUnknown": "Odkaz vznikl dřív, než si Kukátko adresy odkazů pamatovalo, proto ji nelze zobrazit. Odkaz dál funguje — zadejte jeho původní kód a půjde tu znovu zkopírovat.",
     "codeUnknownExpired": "Odkaz vznikl dřív, než si Kukátko adresy odkazů pamatovalo, proto ji nelze zobrazit. Platnost odkazu vypršela a nahrávat přes něj nejde — tlačítkem „Prodloužit“ ožije na stejné adrese. Původní kód můžete i tak zadat a půjde tu znovu zkopírovat.",

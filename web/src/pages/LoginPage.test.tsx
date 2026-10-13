@@ -59,20 +59,23 @@ function LocationProbe() {
 
 /**
  * Mounts the login page. `state` is what the route guard stashes when it bounces
- * a visitor here — the location they actually asked for.
+ * a visitor here — the location they actually asked for; `search` is the login
+ * page's own query (an invitation page's `?returnTo=`).
  */
 function renderLogin(
   value: AuthContextValue,
   state?: { from: { pathname: string; search: string } },
+  search = '',
 ) {
   return render(
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={value}>
-        <MemoryRouter initialEntries={[{ pathname: '/login', state }]}>
+        <MemoryRouter initialEntries={[{ pathname: '/login', search, state }]}>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<div>home page</div>} />
             <Route path="/share-target" element={<div>share page</div>} />
+            <Route path="/invite/:code" element={<div>invite page</div>} />
           </Routes>
           <LocationProbe />
         </MemoryRouter>
@@ -161,6 +164,29 @@ describe('LoginPage', () => {
 
     expect(await screen.findByText('share page')).toBeInTheDocument()
     expect(screen.getByTestId('location')).toHaveTextContent('/share-target?share=abc')
+  })
+
+  it('returns to a ?returnTo= path, ahead of the stashed address', async () => {
+    const user = userEvent.setup()
+    const login = vi.fn().mockResolvedValue(undefined)
+    renderLogin(
+      authValue({ login }),
+      { from: { pathname: '/share-target', search: '' } },
+      '?returnTo=%2Finvite%2FAB3DEF7H',
+    )
+
+    await user.type(screen.getByLabelText('Username'), 'alice')
+    await user.type(screen.getByLabelText('Password'), 'secret')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByText('invite page')).toBeInTheDocument()
+    expect(screen.getByTestId('location')).toHaveTextContent('/invite/AB3DEF7H')
+  })
+
+  it('ignores a ?returnTo= that names another host', async () => {
+    renderLogin(authValue({ status: 'authenticated' }), undefined, '?returnTo=//evil.example/x')
+
+    expect(await screen.findByText('home page')).toBeInTheDocument()
   })
 
   it('falls back to the library when the guard stashed nothing', async () => {

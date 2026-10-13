@@ -4,7 +4,6 @@ import Badge from 'react-bootstrap/Badge'
 import Button from 'react-bootstrap/Button'
 import Card from 'react-bootstrap/Card'
 import Form from 'react-bootstrap/Form'
-import InputGroup from 'react-bootstrap/InputGroup'
 import Modal from '../components/Modal'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +13,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { EntityChip } from '../components/EntityChip'
 import { Icon } from '../components/Icon'
+import { LinkAddress } from '../components/LinkAddress'
 import { UploadOrganize } from '../components/upload/UploadOrganize'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { type OrganizeLoadState } from '../hooks/useUploadOrganize'
@@ -359,7 +359,12 @@ function LinkCard({
             ` · ${t('uploadLinks.createdBy', { name: link.created_by_name })}`}
         </p>
         {link.state === 'active' && link.path !== undefined && (
-          <LinkAddress url={publicLinkURL(link.path)} title={link.title} size="sm" />
+          <LinkAddress
+            url={publicLinkURL(link.path)}
+            label={t('uploadLinks.linkLabel')}
+            shareTitle={link.title}
+            size="sm"
+          />
         )}
         {link.state !== 'revoked' && link.path === undefined && (
           <p className="small text-warning mb-2" data-testid="upload-link-code-unknown">
@@ -584,80 +589,13 @@ function CreatedLink({ created }: { created: CreatedUploadLink }) {
   return (
     <div data-testid="upload-link-created">
       <p>{t('uploadLinks.createdLead')}</p>
-      <LinkAddress url={publicLinkURL(created.path)} title={created.link.title} />
+      <LinkAddress
+        url={publicLinkURL(created.path)}
+        label={t('uploadLinks.linkLabel')}
+        shareTitle={created.link.title}
+      />
       <p className="small text-secondary mb-0">{t('uploadLinks.copyLater')}</p>
     </div>
-  )
-}
-
-/** Props of {@link LinkAddress}. */
-interface LinkAddressProps {
-  /** The absolute address of the public page. */
-  url: string
-  /** The link's title, offered to the share sheet. */
-  title: string
-  /** `sm` for the compact list cards. */
-  size?: 'sm'
-}
-
-/**
- * A link's address in a read-only field, a copy button that confirms with
- * "Copied" and — where the device offers it — the system share sheet. The create
- * flow and every live card in the list use this one control.
- */
-function LinkAddress({ url, title, size }: LinkAddressProps) {
-  const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
-  const canShare = typeof navigator.share === 'function'
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(url)
-      setCopied(true)
-    } catch {
-      // Clipboard refused: the link is in the field, ready to select by hand.
-    }
-  }
-
-  async function share() {
-    try {
-      await navigator.share({ title, url })
-    } catch {
-      // Dismissed, or the share sheet failed: the field and copy button remain.
-    }
-  }
-
-  return (
-    <InputGroup className="mb-2" size={size}>
-      <Form.Control
-        readOnly
-        value={url}
-        aria-label={t('uploadLinks.linkLabel')}
-        onFocus={(e) => {
-          e.target.select()
-        }}
-      />
-      <Button
-        variant="outline-secondary"
-        onClick={() => {
-          void copy()
-        }}
-      >
-        <Icon name={copied ? 'check-lg' : 'clipboard'} className="me-1" />
-        {copied ? t('uploadLinks.copied') : t('uploadLinks.copy')}
-      </Button>
-      {canShare && (
-        <Button
-          variant="outline-secondary"
-          onClick={() => {
-            void share()
-          }}
-        >
-          <Icon name="share" className="me-1" />
-          {t('uploadLinks.share')}
-        </Button>
-      )}
-    </InputGroup>
   )
 }
 

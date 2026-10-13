@@ -15,6 +15,7 @@ import { PersonAvatar } from '../components/PersonAvatar'
 import { ReasonedButton } from '../components/ReasonedButton'
 import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { AddMemberModal } from '../components/members/AddMemberModal'
+import { InvitesSection } from '../components/members/InvitesSection'
 import { useToast } from '../components/toast/ToastContext'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatDateTime } from '../lib/format'
@@ -110,6 +111,9 @@ function RoleSelect({ member, disabledReason, busy, onChange }: RoleSelectProps)
  * admin has to do that — and the backend's refusals arrive as toasts: `last_admin`
  * („Projekt musí mít alespoň jednoho administrátora"), `self`, and `not_member`
  * (somebody else removed the member meanwhile; the list is refetched).
+ *
+ * Below the list sits the invitations section ({@link InvitesSection}): links
+ * that let somebody in who may not have an account yet.
  */
 export function MembersPage() {
   const { t, i18n } = useTranslation()
@@ -376,6 +380,8 @@ export function MembersPage() {
           )}
         </Card.Body>
       </Card>
+
+      <InvitesSection />
 
       <AddMemberModal
         show={adding}

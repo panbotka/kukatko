@@ -23,6 +23,16 @@ vi.mock('../services/members', async (importOriginal) => {
   }
 })
 
+// The invitations section below the list fetches on its own; its behaviour is
+// covered by InvitesSection.test.tsx.
+vi.mock('../services/invites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/invites')>()
+  return {
+    ...actual,
+    fetchInvites: vi.fn().mockResolvedValue({ invites: [], default_days: 7, max_days: 90 }),
+  }
+})
+
 const { fetchMembers, setMemberRole, approveMember, removeMember, addMember, MemberApiError } =
   await import('../services/members')
 const fetchMock = vi.mocked(fetchMembers)

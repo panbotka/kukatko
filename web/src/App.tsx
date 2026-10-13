@@ -24,6 +24,7 @@ import { FamilyTreePage } from './pages/FamilyTreePage'
 import { FavoritesPage } from './pages/FavoritesPage'
 import { HelpPage } from './pages/HelpPage'
 import { ImportPage } from './pages/ImportPage'
+import { InvitePage } from './pages/InvitePage'
 import { LabelDetailPage } from './pages/LabelDetailPage'
 import { LabelsPage } from './pages/LabelsPage'
 import { LeaderboardPage } from './pages/LeaderboardPage'
@@ -217,10 +218,10 @@ const PROJECT_ROUTES = (
 const PROJECT_ROUTE_OBJECTS = createRoutesFromChildren(PROJECT_ROUTES)
 
 /**
- * The app's route table. `/login`, `/register`, `/password-reset/:token` and
- * the upload-link page `/u/:code` are public; everything else is gated by
- * {@link RequireAuth}. A library's pages live under `/p/:slug` (see
- * {@link PROJECT_ROUTES}); the account, operations and the project chooser are
+ * The app's route table. `/login`, `/register`, `/password-reset/:token`, the
+ * upload-link page `/u/:code` and the invitation page `/invite/:code` are
+ * public; everything else is gated by {@link RequireAuth}. A library's pages
+ * live under `/p/:slug` (see {@link PROJECT_ROUTES}); the account, operations and the project chooser are
  * instance-level and carry no project. `/` and every address from before
  * projects existed forward into the project the entry rule picks.
  *
@@ -245,6 +246,11 @@ export function AppRoutes() {
           because whoever holds the link may upload without an account. It shows
           only where the photos go; a signed-in visitor uploads as themselves. */}
       <Route path="/u/:code" element={<UploadLinkPage />} />
+      {/* The page behind a project's invitation link: public, because whoever
+          follows it may have no account yet. Signed in it accepts the invite;
+          signed out it offers registering through it or signing in first. It
+          belongs to no project until the invite is accepted. */}
+      <Route path="/invite/:code" element={<InvitePage />} />
       <Route element={<RequireAuth />}>
         {/* The front door: into the project the account works in, or to the
             chooser when there is no single one to pick. */}

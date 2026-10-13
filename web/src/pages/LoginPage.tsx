@@ -4,7 +4,7 @@ import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/AuthContext'
 import { AuthFrame } from '../components/AuthFrame'
@@ -21,15 +21,30 @@ interface LocationState {
 }
 
 /**
+ * Whether `path` is an address inside this app: one leading slash, never a
+ * second one or a backslash right after it (`//evil.example` and `/\evil.example`
+ * are another host to a browser). A `?returnTo=` is typed by whoever wrote the
+ * link, so only such a path may steer where signing in lands.
+ */
+function isLocalPath(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\')
+}
+
+/**
  * Rebuilds the address the guard bounced the visitor off, query string and all.
  *
  * The search matters: it is where the app keeps view state (filters, sorting,
  * paging), and it is how a share from the phone's share sheet names the files
  * waiting in the cache — `/share-target?share=<id>`. Dropping it used to mean a
  * shared batch of photos was lost the moment the sharer turned out to be signed
- * out. Falls back to the library when there is nothing stashed.
+ * out. A `?returnTo=` query (an invitation page's "Přihlásit se" sends one)
+ * wins over the stashed state when it names a local path. Falls back to the
+ * library when there is nothing stashed.
  */
-function returnTo(state: LocationState | null): string {
+function returnTo(state: LocationState | null, query: string | null): string {
+  if (query !== null && isLocalPath(query)) {
+    return query
+  }
   const pathname = state?.from?.pathname
   if (pathname === undefined || pathname === '') {
     return '/'
@@ -183,7 +198,8 @@ export function LoginPage() {
   const [validated, setValidated] = useState(false)
   const [submit, setSubmit] = useState<SubmitState>({ status: 'idle' })
 
-  const from = returnTo(location.state as LocationState | null)
+  const [searchParams] = useSearchParams()
+  const from = returnTo(location.state as LocationState | null, searchParams.get('returnTo'))
 
   // If an already-authenticated user lands on /login, bounce them onward.
   useEffect(() => {

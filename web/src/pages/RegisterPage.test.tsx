@@ -16,10 +16,17 @@ vi.mock('../services/auth', async (importOriginal) => {
 
 vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
 
+vi.mock('../services/invites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/invites')>()
+  return { ...actual, fetchPublicInvite: vi.fn() }
+})
+
 const { register } = await import('../services/auth')
 const { fetchPublicSettings } = await import('../services/settings')
 const registerMock = vi.mocked(register)
 const settingsMock = vi.mocked(fetchPublicSettings)
+const { fetchPublicInvite, InviteApiError } = await import('../services/invites')
+const inviteMock = vi.mocked(fetchPublicInvite)
 
 /** The account the backend echoes back after a successful registration. */
 function created(overrides: Partial<RegisteredAccount> = {}): RegisteredAccount {
@@ -140,6 +147,60 @@ describe('RegisterPage', () => {
       upload_link: 'Ab3dEf7h',
     })
     expect(await screen.findByTestId('register-done')).toBeInTheDocument()
+  })
+
+  it('registers through an invitation: no word, the project named, the code sent', async () => {
+    // Registration is closed on the instance: an invite does not care.
+    settingsMock.mockResolvedValue({
+      registration_enabled: false,
+      passkeys_enabled: false,
+      mail_enabled: true,
+    })
+    inviteMock.mockResolvedValue({
+      project_name: 'Veselice',
+      role: 'editor',
+      registration_role: 'editor',
+      signed_in: false,
+    })
+    registerMock.mockResolvedValue(created({ pending_approval: false }))
+    const user = userEvent.setup()
+    renderRegister('/register?invite=AB3DEF7H')
+
+    await user.type(await screen.findByLabelText('Username'), 'newcomer')
+    expect(inviteMock).toHaveBeenCalledWith('AB3DEF7H', expect.any(AbortSignal))
+    expect(screen.getByTestId('register-intro')).toHaveTextContent(
+      'invitation to the project Veselice',
+    )
+    expect(screen.queryByLabelText('Registration word')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('register-closed')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Display name'), 'New Comer')
+    await user.type(screen.getByLabelText('E-mail'), 'newcomer@example.com')
+    await user.type(screen.getByLabelText('Password'), 'hunter2hunter2')
+    await user.type(screen.getByLabelText('Password again'), 'hunter2hunter2')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+
+    expect(registerMock).toHaveBeenCalledWith({
+      username: 'newcomer',
+      display_name: 'New Comer',
+      email: 'newcomer@example.com',
+      password: 'hunter2hunter2',
+      secret: '',
+      invite_code: 'AB3DEF7H',
+    })
+    // The account is approved at once: no "waiting for an administrator".
+    const done = await screen.findByTestId('register-done')
+    expect(done).toHaveTextContent('approved already')
+    expect(done).not.toHaveTextContent('waiting')
+  })
+
+  it('shows no form for an invitation that is not valid', async () => {
+    inviteMock.mockRejectedValue(new InviteApiError(404, 'not_found'))
+    renderRegister('/register?invite=NOPE2345')
+
+    expect(await screen.findByTestId('register-invite-invalid')).toHaveTextContent(
+      'invitation is not valid',
+    )
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
   })
 
   it('says a dead upload link cannot be registered through', async () => {

@@ -32,6 +32,13 @@ vi.mock('./services/audit', async (importOriginal) => {
   return { ...actual, fetchMyActivity: vi.fn(() => new Promise(() => undefined)) }
 })
 
+// The public invitation route asks what the invite grants; stub the call (never
+// resolving) so the route test exercises the wiring, not the network.
+vi.mock('./services/invites', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/invites')>()
+  return { ...actual, fetchPublicInvite: vi.fn(() => new Promise(() => undefined)) }
+})
+
 // The public registration route asks the instance whether registration is open,
 // and the shell's first-run welcome asks for the administrator's greeting; stub
 // both so the route tests exercise the wiring, not the network. The greeting
@@ -237,6 +244,15 @@ describe('routing', () => {
 
     expect(await screen.findByTestId('upload-link-page')).toBeInTheDocument()
     expect(screen.getByTestId('pathname')).toHaveTextContent('/u/Ab3dEf7h')
+  })
+
+  it('renders the invitation page at /invite/:code without a session', async () => {
+    // Whoever follows an invitation may have no account yet, so the route must
+    // resolve outside RequireAuth and outside any project's layout.
+    renderRoutes(['/invite/AB3DEF7H'], 0, unauthenticated)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Invitation' })).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/invite/AB3DEF7H')
   })
 
   it('renders the password-reset landing page at /password-reset/:token without a session', async () => {

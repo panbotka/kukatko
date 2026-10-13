@@ -231,6 +231,16 @@ shared library is tidied by more than one person.
   exists, it has been added", so nobody can use the form to find out who else has an account here.
   Your own role and your own removal are left to another administrator, and a project never loses
   its last one.
+- **Inviting somebody takes one link.** Under the members, *Pozvánky* creates an invitation: pick the
+  role, how many days it stays valid (7 unless you change it, at most 90) and, if you like, how many
+  times it may be used. Copy the link and send it — by mail, in a chat, however you like; the list
+  keeps every invitation with its state, its expiry and how many times it was used, so you can copy a
+  live one again later or revoke it for good. Whoever opens the link sees which project they are
+  invited to and as what. With an account they sign in and press *Přijmout pozvánku*; without one
+  they register right there — no registration word, no waiting for approval, even while public
+  registration is closed — and land in the project. Registering through an invitation grants editor
+  at most; an administrator invitation makes an administrator only of somebody who already has an
+  account.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

@@ -216,7 +216,7 @@ export interface RegisterInput {
   display_name: string
   email: string
   password: string
-  /** The instance's shared registration secret; empty when `upload_link` stands in for it. */
+  /** The shared registration secret; empty when `upload_link` or `invite_code` stands in for it. */
   secret: string
   /**
    * The short code of an upload link the person just uploaded through. When set
@@ -224,6 +224,12 @@ export interface RegisterInput {
    * become the new account's (the backend reads its upload-session cookie).
    */
   upload_link?: string
+  /**
+   * The short code of an invitation into a project. When set it replaces the
+   * secret (and wins over `upload_link`); the account is created approved, as a
+   * member of the invite's project.
+   */
+  invite_code?: string
 }
 
 /**

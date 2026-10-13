@@ -473,7 +473,11 @@
     "errorOffline": "Kukátko could not reach the server, so nobody judged the registration. Check your connection and try again.",
     "errorGeneric": "Registration failed. Please try again.",
     "introLink": "You are registering through an upload link, so you do not need the registration word. The photos you just uploaded from this browser will be kept under your account. An administrator still has to approve the account.",
-    "errorLink": "The upload link is no longer valid, so you cannot register through it. Ask for the registration word."
+    "errorLink": "The upload link is no longer valid, so you cannot register through it. Ask for the registration word.",
+    "introInvite": "You are registering through an invitation to the project <strong>{{project}}</strong>, so you do not need the registration word. The account is approved at once.",
+    "introInviteNoName": "You are registering through an invitation, so you do not need the registration word. The account is approved at once.",
+    "errorInvite": "This invitation is not valid. Ask whoever invited you for a new one.",
+    "doneApproved": "The account is approved already — you can sign in."
   },
   "passwordReset": {
     "title": "New password",
@@ -3810,6 +3814,70 @@
       "failed": "The request could not be sent — check the connection and try again."
     }
   },
+  "invites": {
+    "title": "Invitations",
+    "intro": "A link that lets somebody into the project, even somebody without an account yet. Send it to whoever you invite: with an account they sign in and accept it, without one they register — no registration word, no waiting for approval.",
+    "loading": "Loading invitations…",
+    "loadFailed": "Could not load the invitations.",
+    "empty": "There are no invitations yet.",
+    "roleLabel": "Role",
+    "daysLabel": "Valid for (days)",
+    "maxUsesLabel": "Maximum uses",
+    "maxUsesPlaceholder": "no limit",
+    "adminNote": "Whoever accepts it with their account becomes an administrator. Whoever registers through it gets editor at most — you can make them an administrator yourself afterwards.",
+    "create": "Create invitation",
+    "createFailed": "Could not create the invitation. Please try again.",
+    "refusal": {
+      "invalid_role": "An invitation cannot grant that role.",
+      "invalid_days": "Enter a whole number from 1 to {{max}}.",
+      "invalid_max_uses": "Enter a whole number of at least 1, or leave the field empty."
+    },
+    "createdLead": "The invitation is ready. Copy the link and send it to whoever you invite:",
+    "linkLabel": "Invitation link",
+    "copyLater": "A valid invitation’s link can be copied again later from the list below.",
+    "columns": {
+      "role": "Role",
+      "state": "State",
+      "expires": "Valid until",
+      "uses": "Used",
+      "createdBy": "Created by",
+      "actions": "Actions"
+    },
+    "state": {
+      "active": "Valid",
+      "expired": "Expired",
+      "revoked": "Revoked",
+      "used_up": "Used up"
+    },
+    "uses": "{{uses}} / {{max}}",
+    "usesUnlimited": "{{uses}} / no limit",
+    "creatorGone": "deleted account",
+    "revoke": "Revoke invitation",
+    "revokeTitle": "Revoke the invitation?",
+    "revokeBody": "The link stops working at once and for good. Whoever already used it stays a member of the project.",
+    "revokedToast": "The invitation has been revoked.",
+    "revokeFailed": "Could not revoke the invitation.",
+    "notFound": "This invitation no longer exists — the list has been refreshed."
+  },
+  "invitePage": {
+    "title": "Invitation",
+    "loading": "Loading the invitation…",
+    "loadFailed": "Could not load the invitation.",
+    "lead": "An invitation to the project <strong>{{project}}</strong> as {{role}}",
+    "accept": "Accept invitation",
+    "accepted": "Welcome to the project {{project}}.",
+    "alreadyMember": "You are already in the project {{project}}.",
+    "acceptFailed": "Could not accept the invitation. Please try again.",
+    "signedOutHint": "Do you already have a Kukátko account? Sign in and accept the invitation. If not, register — you need no registration word and the account is approved at once.",
+    "registrationRole": "Registering through the invitation gives you the role {{role}}. A project administrator can give you a higher one afterwards.",
+    "register": "Register",
+    "login": "Sign in"
+  },
+  "linkAddress": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "share": "Share"
+  },
   "audit": {
     "title": "Audit log",
     "subtitle": "A durable record of changes on this instance, newest first. Filter by actor, action, entity or date.",
@@ -4253,9 +4321,6 @@
     "createdTitle": "The link is ready",
     "createdLead": "Send this link to the people you want photos from:",
     "linkLabel": "Upload link",
-    "copy": "Copy",
-    "copied": "Copied",
-    "share": "Share",
     "copyLater": "You can copy the link again any time from the list of links.",
     "codeUnknown": "This link was created before Kukátko kept link addresses, so its address cannot be shown. It still works — enter its original code to copy it here again.",
     "codeUnknownExpired": "This link was created before Kukátko kept link addresses, so its address cannot be shown. The link has expired and accepts no uploads — “Extend” revives it at the same address. You can still enter its original code to copy it here again.",
