@@ -56,6 +56,9 @@ func (publishing) Stat(context.Context, string) (os.FileInfo, error) { panic("un
 // Delete panics: the builder never deletes.
 func (publishing) Delete(context.Context, string) error { panic("unexpected Delete") }
 
+// Copy panics: the builder never copies.
+func (publishing) Copy(context.Context, string, string) error { panic("unexpected Copy") }
+
 // Materialize panics: the builder never downloads.
 func (publishing) Materialize(context.Context, string) (string, func(), error) {
 	panic("unexpected Materialize")

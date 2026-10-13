@@ -837,6 +837,16 @@ to `## Package map` in `CLAUDE.md`.
   **`SizedKeyLister`** (also optional, both backends) adds the size: `KeySizes(ctx, yield(key, size))` — `R2`
   takes it from the listing itself (no `HEAD` per object), `FS` stats each walked file. Only the upgrade
   inventory's storage check (`internal/inventory`) uses it.
+  **`Copy(ctx, from, to)`** (part of `Storage`) duplicates an object inside the store, replacing whatever
+  occupies `to`, leaving the source untouched; copying a key onto itself is a no-op and a missing source
+  wraps `os.ErrNotExist`. `FS` **hard-links** through the `.tmp` staging dir and renames into place (a byte
+  copy when the filesystem refuses a link; a staged link left by `rename(2)` between two links of one inode is
+  removed), `R2` issues one **server-side `CopyObject`** (no byte crosses the network; content type and the
+  `sha256` metadata travel with the copy) and refuses an object over 5 GiB with **`ErrTooLargeToCopy`** rather
+  than copying it in parts. Only the storage move (`internal/rekey`) calls it.
+  **`ETagStater`** (optional, `R2` only — the filesystem has no entity tags): `StatETag(ctx, key)` →
+  `ObjectStat{Size, ETag}` from one metadata request; `IsContentETag(etag)` tells a single-part tag (the hex
+  MD5 of the content, comparable) from a multipart one (`-<parts>` suffix, says nothing about the bytes).
   **Signed URLs** (`sign.go`, `URLSigner`): `https://<media_base_url>/<key>?exp=<unix>&sig=<hex>`,
   where `sig = HMAC-SHA256(secret, key + "\n" + exp)` — the signature covers both the key and the expiry, and the key is
   signed **unescaped** (the UTF-8 name is percent-encoded only when the path is rendered).
@@ -893,6 +903,49 @@ to `## Package map` in `CLAUDE.md`.
   `KUKATKO_TEST_DATABASE_URL`) kills the run mid-photo, resumes it, and asserts that every object
   landed **exactly once** and that nobody deleted the original of a photo whose verification failed;
   a second case asserts each photo's sidecar lands in the bucket and its local copy is reclaimed),
+  `internal/rekey/`
+  (**the storage move of one project** from the root layout (`storage_prefix = ''`, the bootstrap project
+  until its move) under `projects/<uid>/`, one photo at a time while the app runs; the model only — the
+  worker job, CLI, API and UI are later steps. **`Plan(photo PhotoFiles, newPrefix) []Move{From, To, Kind}`**
+  is pure: the original first, then the sidecar (`sidecarexport.KeyFor`), every size of `thumb.SizeNames()`
+  and every object of every recorded HLS rendition (`init.mp4` + `00000.m4s…` up to `segment_count`, unioned
+  with the names the stored media playlist lists, invalid names dropped), each `To =
+  storekeys.Join(newPrefix, rest-of-From)`; it walks `storekeys.Kinds()` with a default-less switch like
+  `storagemigrate`, `KindFamilies` declined (project-wide, moved by `Finish`). **`Service`** (`New(Config{Pool,
+  Store, Jobs})`, `Store` = `Copy`/`Stat`/`Open`/`Delete`/`KeysWithPrefix`, satisfied by both backends; `Jobs`
+  = `EnqueueFamilyExport`/`EnqueueSidecar`, satisfied by `*jobs.Enqueuer`) owns `storage_rekey_runs`
+  (migration `0112`; preserved by the wipe). **`Start(ctx, meta, projectUID)`** in one transaction locks the
+  project, refuses (`ErrProjectNotFound`; `ErrRunActive` for a running/paused run; `ErrAlreadyPrefixed` for a
+  project with its own prefix and no run ever — a created project), sets `projects.storage_prefix =
+  'projects/<uid>/'` — **new uploads land in the new layout at once** — audits it
+  (`project.storage_prefix`, with `old`/`new`/`rekey_run`; a second run of a moved project does not switch
+  again) and inserts the run with totals = count and `sum(file_size)` of the photos whose `file_path` lacks
+  the prefix. `Pause` (running→paused), `Resume` (paused→running), `Retry` (failed→running, **cursor reset**
+  so the pass takes the photos it skipped again), `Status` (the latest run; `ErrNoRun`) act on the project's
+  latest run (`ErrInvalidState` otherwise). **`Step(ctx, run, batchSize)`** re-reads the run
+  (`ErrNotRunning` unless running), finishes the **pending** photo first, then takes the next photos still in
+  the old layout in `file_path` order after `last_key`; per photo, in this order and no other: copy the
+  original unless a verifying copy is already there → **verify** (size = `photos.file_size`, then the copy's
+  ETag = the source's *content* ETag, else stream it and compare SHA-256 with `file_hash`) → one transaction
+  moves `photos.file_path`, the `photo_files` row and names the photo in `pending_photo_uid`/`pending_old_key`
+  → copy the derived objects that exist (a missing one is skipped) and delete each old one → delete the old
+  original (never while any photo row names it) → count it, advance `last_key`, clear pending. A crash before
+  the commit leaves both copies and the old row (the next pass re-verifies the copy); a crash after it leaves
+  the photo pending, and the next step verifies the new copy again — re-copying from the still-present old key
+  when it does not verify — before deleting anything. A per-photo failure goes into the `errors` ring (last
+  50 `{key, message, at}`) and is skipped; `error_count > 100` fails the run (`ErrRunFailed`); a cancelled
+  context or `storage.IsSystemic` error returns without recording. **`Finish(ctx, run)`**: no photo left in
+  the old layout (else the run fails with `ErrPhotosRemain`; `ErrPendingCleanup` while one is pending) →
+  enqueue `family_export` for the project and a `sidecar` rewrite for **every** photo → copy the root
+  `families.yaml` under the prefix when no export landed there yet, then delete the root one and every root
+  `sidecars/` key **only once a listing shows its prefixed replacement** (nothing at the root is touched while
+  any project is still in the root layout) → `done`. The local thumbnail cache is not moved: it is a
+  regenerable cache, and the published objects are. Tests: `plan_test.go` (plan, rendition names,
+  verification over an in-memory fake with S3-style ETags) and `rekey_integration_test.go` (tag
+  `integration`, real DB + the fake): a full run, a crash after copy and after commit, a verification failure
+  (old kept, run continues, `Finish` fails it, `Retry` completes it), the error threshold, pause/resume and
+  the `Start` refusals, with an invariant — every `photos.file_path` names an existing object of the right
+  size — checked after **every** step),
   `internal/storekeys/`
   (**the one place that says what lives in the object store and which layout owns it.** The store has no
   per-application prefix — an original sits at `YYYY/MM/<name>` and the derived artefacts sit beside it — so
@@ -921,7 +974,8 @@ to `## Package map` in `CLAUDE.md`.
   the same without the uid. A leading slash and surrounding whitespace are tolerated, everything else is
   foreign. **Why it exists:** the streaming segments were added to the store and two whole-store operations
   (the backup and the storage migration) went on not knowing about them for four commits. Consumers —
-  `internal/backup` (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/reset`
+  `internal/backup` (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/rekey`
+  (`planKind`), `internal/reset`
   (`classifyKey`) and `internal/maintenance` (`projectObject`) — switch over or match on `Kind`, all four
   **without a default clause**, so a new member fails the `exhaustive` linter in each of
   them until that operation says what it does about the new prefix; per-kind tests in each package back this

@@ -235,6 +235,71 @@ func (s *FS) Delete(_ context.Context, relPath string) error {
 	return nil
 }
 
+// Copy duplicates the file at from to the key to. See the Storage interface.
+//
+// The duplicate is a hard link: no bytes are written and the two keys share one
+// inode, so deleting either later leaves the other whole. Where the filesystem
+// refuses a link the bytes are copied instead. Either way the new file is built
+// under the in-progress directory and renamed into place, so no half-written
+// file is ever visible at to.
+func (s *FS) Copy(ctx context.Context, from, to string) error {
+	srcAbs, err := s.safeAbs(from)
+	if err != nil {
+		return err
+	}
+	dstAbs, err := s.safeAbs(to)
+	if err != nil {
+		return err
+	}
+	if srcAbs == dstAbs {
+		return nil
+	}
+	if _, err := os.Stat(srcAbs); err != nil {
+		return fmt.Errorf("storage: copying %s: %w", from, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dstAbs), dirPerm); err != nil {
+		return fmt.Errorf("storage: creating directory for %s: %w", to, err)
+	}
+	tmpPath, err := s.stageCopy(ctx, srcAbs)
+	if err != nil {
+		return fmt.Errorf("storage: copying %s to %s: %w", from, to, err)
+	}
+	// rename(2) between two links of one inode succeeds without doing anything,
+	// which leaves the staged link behind; removing it is then a no-op otherwise.
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := os.Rename(tmpPath, dstAbs); err != nil {
+		return fmt.Errorf("storage: publishing copy %s: %w", to, err)
+	}
+	return nil
+}
+
+// stageCopy puts a duplicate of the file at srcAbs into the in-progress
+// directory and returns its path: a hard link where the filesystem allows one,
+// a byte copy otherwise.
+func (s *FS) stageCopy(ctx context.Context, srcAbs string) (string, error) {
+	staged, err := os.CreateTemp(s.tmpDir, "copy-*")
+	if err != nil {
+		return "", fmt.Errorf("creating staging file: %w", err)
+	}
+	tmpPath := staged.Name()
+	_ = staged.Close()
+	// The name is reserved; link needs it free, so it is released first.
+	_ = os.Remove(tmpPath)
+	if os.Link(srcAbs, tmpPath) == nil {
+		return tmpPath, nil
+	}
+	src, err := os.Open(srcAbs) //nolint:gosec // G304: srcAbs is confined to the storage root by safeAbs.
+	if err != nil {
+		return "", fmt.Errorf("opening source: %w", err)
+	}
+	defer func() { _ = src.Close() }()
+	tmp, err := streamToTemp(ctx, s.tmpDir, src)
+	if err != nil {
+		return "", err
+	}
+	return tmp.Path, nil
+}
+
 // Keys walks the storage root and yields the relative key of every regular file
 // under it, skipping the in-progress upload directory (.tmp), whose contents are
 // not objects but half-written ones. See the KeyLister interface.

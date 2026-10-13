@@ -132,6 +132,11 @@ var catalogueTables = []string{
 // (see migration 0078), so a row pointing at a photo the wipe removes is left
 // dangling — and a dangling pick means exactly what no pick means, so the
 // account falls through to the next source of the chain by itself.
+// storage_rekey_runs stays for the same reason projects does: a storage move
+// describes where a project's objects live in the store, not the photographs,
+// and a wipe empties the library without moving its prefix back — a run row
+// that vanished would leave the project's prefix switched with no record of
+// how it got there.
 // And audit_log stays, because the record of the deletion is the only
 // thing left to read afterwards; the reset writes its own entry into it, in the
 // same transaction as the truncation.
@@ -148,6 +153,7 @@ var preservedTables = []string{
 	"push_subscriptions",
 	"schema_migrations",
 	"sessions",
+	"storage_rekey_runs",
 	"user_pictures",
 	"users",
 }

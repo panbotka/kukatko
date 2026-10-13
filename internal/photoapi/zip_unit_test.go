@@ -49,8 +49,9 @@ func (f *fakeZipStorage) Check(context.Context) error { return nil }
 func (f *fakeZipStorage) Stat(context.Context, string) (os.FileInfo, error) {
 	return nil, errors.New("unused")
 }
-func (f *fakeZipStorage) Delete(context.Context, string) error { return errors.New("unused") }
-func (f *fakeZipStorage) URL(string) string                    { return "" }
+func (f *fakeZipStorage) Delete(context.Context, string) error       { return errors.New("unused") }
+func (f *fakeZipStorage) Copy(context.Context, string, string) error { return errors.New("unused") }
+func (f *fakeZipStorage) URL(string) string                          { return "" }
 func (f *fakeZipStorage) Materialize(context.Context, string) (string, func(), error) {
 	return "", func() {}, errors.New("unused")
 }

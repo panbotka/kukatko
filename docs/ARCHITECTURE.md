@@ -217,6 +217,19 @@ research ([§17](#17-reference)).
   never empty and holds its own uid, two projects storing identical bytes (one hash) never share a key —
   not for the original, nor for anything derived from it. `storekeys.ClassifyWithProject` reads both layouts
   back (kind + project uid); `db/` and `.tmp/` exist only at the root.
+- **The storage move (`internal/rekey`).** The root layout is moved under `projects/<uid>/` **one photo at a
+  time while the app runs**, which the rule above is what makes possible. Starting it switches the project's
+  `storage_prefix` at once (new uploads land in the new layout) and records a `storage_rekey_runs` row
+  (state `running`/`paused`/`done`/`failed`, totals, done counts, bytes, the `file_path` cursor, a ring of the
+  last 50 errors). Per photo, in `file_path` order: copy the original server-side → verify the copy (size,
+  and the ETag against the source's content ETag or SHA-256 against `file_hash`) → move `photos.file_path`
+  and `photo_files` in one transaction that also marks the photo *pending* on the run → copy the derived
+  objects that exist → **only then** delete the old original and old derived objects. **The old object is
+  deleted only after the row points at a verified copy**; a crash anywhere leaves both copies or the new one,
+  and the pending mark makes the next step re-verify and finish the deletion. A failing photo is recorded and
+  skipped (over 100 errors fail the run; retry starts another pass). At the end the sidecars and
+  `families.yaml` are rewritten by their jobs, and the root ones are deleted only once a listing shows their
+  prefixed replacements. The worker job, CLI, API and progress page drive this model (later steps).
 - **Signed URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, the signature covers
   both the key and the expiry. **Two secrets are verified at once** (current + previous), so rotation has no window
   of broken URLs. Default TTL 1 h; every API response carries a freshly signed URL.

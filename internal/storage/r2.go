@@ -116,6 +116,7 @@ var (
 	_ Storage      = (*R2)(nil)
 	_ KeyLister    = (*R2)(nil)
 	_ PrefixLister = (*R2)(nil)
+	_ ETagStater   = (*R2)(nil)
 )
 
 // NewR2 returns an R2 backend for the destination in opts, creating the temp
@@ -421,6 +422,60 @@ func (r *R2) Delete(ctx context.Context, relPath string) error {
 		return fmt.Errorf("storage: deleting %s: %w", relPath, err)
 	}
 	return nil
+}
+
+// maxCopySize is the largest object one server-side CopyObject request can
+// produce on S3 and R2: 5 GiB. A larger one would need a multipart copy.
+const maxCopySize int64 = 5 << 30
+
+// Copy duplicates the object at from to the key to with one server-side
+// CopyObject request, so no byte crosses the network to the application. The
+// copy keeps the source's content type and its recorded SHA256 metadata, which
+// is what lets Store recognise it later. See the Storage interface.
+//
+// An object over 5 GiB is refused with ErrTooLargeToCopy rather than copied in
+// parts: a family archive holds next to none, and a caller moving a library
+// records the refusal for that one object and carries on.
+func (r *R2) Copy(ctx context.Context, from, to string) error {
+	src, err := objectKey(from)
+	if err != nil {
+		return err
+	}
+	dst, err := objectKey(to)
+	if err != nil {
+		return err
+	}
+	if src == dst {
+		return nil
+	}
+	info, err := r.client.StatObject(ctx, r.bucket, src, minio.StatObjectOptions{})
+	if err != nil {
+		return objectError("copying", from, err)
+	}
+	if info.Size > maxCopySize {
+		return fmt.Errorf("%w: %s holds %d bytes", ErrTooLargeToCopy, from, info.Size)
+	}
+	_, err = r.client.CopyObject(ctx,
+		minio.CopyDestOptions{Bucket: r.bucket, Object: dst},
+		minio.CopySrcOptions{Bucket: r.bucket, Object: src})
+	if err != nil {
+		return objectError("copying "+from+" to", to, err)
+	}
+	return nil
+}
+
+// StatETag returns the size and entity tag of the object at relPath from one
+// metadata request. See the ETagStater interface.
+func (r *R2) StatETag(ctx context.Context, relPath string) (ObjectStat, error) {
+	key, err := objectKey(relPath)
+	if err != nil {
+		return ObjectStat{}, err
+	}
+	info, err := r.client.StatObject(ctx, r.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return ObjectStat{}, objectError("stat", relPath, err)
+	}
+	return ObjectStat{Size: info.Size, ETag: strings.Trim(info.ETag, `"`)}, nil
 }
 
 // Keys lists the bucket recursively and yields every object key it holds,

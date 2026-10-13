@@ -160,6 +160,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/query` — pure parser of the search query language (`q=`): free text + key:value filters → AST; unknown tokens degrade to free text; compiled to SQL in `internal/photos`; publishes its own key registry (`Keys`/`Aliases`) so nothing else keeps a copy
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
+- `internal/rekey` — the storage move of one project from the root layout under `projects/<uid>/`: the pure per-photo move `Plan`, the `storage_rekey_runs` state (start/pause/resume/retry/status) and `Step`: copy → verify → commit the row → only then delete the old objects; `Finish` rewrites sidecars/families and clears the root
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates, mixed from a confident tier and the uncertainty band; answers reuse existing write paths
@@ -175,7 +176,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)
 - `internal/sidecarjob` — worker handler `sidecar` + backfill: rewrites a photo's sidecar whenever its metadata/curation changes; idempotent, debounced by the queue's dedup
 - `internal/stacks` — group RAW+JPEG / edited variants of one shot into a stack (detection rules + manual stack/unstack/set-primary); **grouping, never merging**
-- `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs
+- `internal/storage` — storage of originals (`YYYY/MM`, SHA256): local `FS` or Cloudflare `R2` with signed URLs; in-store `Copy` (hard link / server-side `CopyObject`)
 - `internal/storagemigrate` — resumable move of the library to object store; verify → commit the row → only then delete the original
 - `internal/storekeys` — what lives in the object store and which layout owns it: one `Kind` per prefix, so a new one cannot be forgotten by backup, migration or wipe
 - `internal/storyboard` — a video's scrub-preview sprite: the grid layout (`Plan`/`Spec`) and its ffmpeg render into the local derived-media cache; cache-only, never published to the object store

@@ -656,3 +656,48 @@ func TestR2Keys_stopsOnYieldError(t *testing.T) {
 		t.Errorf("Keys() = %v, want the yield's own error", err)
 	}
 }
+
+func TestR2Copy_serverSideKeepsIdentityAndETag(t *testing.T) {
+	store, tempDir := newTestR2(t)
+	ctx := t.Context()
+	content := jpegBytes("copy")
+	stored := storeFixture(t, store, "copy.jpg", content)
+	const to = "projects/pjaaaaaaaaaaaaaaaaaaaaaaaa/2024/05/copy.jpg"
+
+	if err := store.Copy(ctx, stored.RelPath, to); err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	head, err := store.Head(ctx, to)
+	if err != nil {
+		t.Fatalf("Head copy: %v", err)
+	}
+	if head.Hash != stored.Hash || head.Size != stored.Size || head.MIME != stored.MIME {
+		t.Errorf("copy = %+v, want the source's identity %+v", head, stored)
+	}
+	srcTag, err := store.StatETag(ctx, stored.RelPath)
+	if err != nil {
+		t.Fatalf("StatETag source: %v", err)
+	}
+	dstTag, err := store.StatETag(ctx, to)
+	if err != nil {
+		t.Fatalf("StatETag copy: %v", err)
+	}
+	if !IsContentETag(srcTag.ETag) || srcTag != dstTag {
+		t.Errorf("ETags = %+v and %+v, want one equal content tag", srcTag, dstTag)
+	}
+	if _, err := store.Stat(ctx, stored.RelPath); err != nil {
+		t.Errorf("source after Copy: %v, want it untouched", err)
+	}
+	assertTempDirEmpty(t, tempDir)
+}
+
+func TestR2Copy_missingSourceIsNotExist(t *testing.T) {
+	store, _ := newTestR2(t)
+	err := store.Copy(t.Context(), "2024/05/none.jpg", "projects/pjaaaaaaaaaaaaaaaaaaaaaaaa/2024/05/none.jpg")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Copy of a missing object = %v, want os.ErrNotExist", err)
+	}
+	if _, err := store.StatETag(t.Context(), "2024/05/none.jpg"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("StatETag of a missing object = %v, want os.ErrNotExist", err)
+	}
+}

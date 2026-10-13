@@ -46,6 +46,10 @@ var (
 	// ErrTooManyCollisions indicates that suffix resolution exhausted its attempt
 	// budget for a single target filename (effectively never under normal use).
 	ErrTooManyCollisions = errors.New("storage: too many filename collisions")
+	// ErrTooLargeToCopy indicates that Copy was asked to duplicate an object
+	// larger than the backend copies in one request (5 GiB on S3 and R2). The
+	// object is untouched; the caller records it and moves on.
+	ErrTooLargeToCopy = errors.New("storage: object too large to copy server-side")
 )
 
 // StoredFile describes a file as it lives in the store. RelPath is always
@@ -108,6 +112,18 @@ type Storage interface {
 	// Delete removes the file at relPath. It returns an error wrapping
 	// os.ErrNotExist when the file is absent.
 	Delete(ctx context.Context, relPath string) error
+	// Copy duplicates the object at from to the key to inside the store,
+	// replacing whatever occupies to, without the bytes passing through the
+	// application where the backend can avoid it: the filesystem hard-links (or
+	// copies when it cannot), the object store copies server-side and keeps the
+	// object's content type and recorded digest. The source is left untouched,
+	// and copying an object onto its own key is a no-op.
+	//
+	// It returns an error wrapping os.ErrNotExist when nothing is stored at
+	// from, and ErrTooLargeToCopy when the backend cannot copy an object of that
+	// size in one request. It is how a project's storage move re-keys an object
+	// before — and only before — the old key may be deleted.
+	Copy(ctx context.Context, from, to string) error
 	// URL returns the address at which a client can fetch the object at relPath
 	// directly, bypassing the application. It returns the empty string when the
 	// backend exposes no such address — as the filesystem backend does, its
@@ -225,4 +241,47 @@ type PrefixLister interface {
 	// one naming a directory that does not exist — yields nothing and is not an
 	// error. Like Keys it streams, never materialising the key set.
 	KeysWithPrefix(ctx context.Context, prefix string, yield func(key string) error) error
+}
+
+// ObjectStat is an object's size and its entity tag, as the store reports them
+// without reading the object's content.
+type ObjectStat struct {
+	// Size is the object's size in bytes.
+	Size int64
+	// ETag is the store's entity tag, unquoted. For an object written in one part
+	// it is the hex MD5 of the content; for a multipart object it is an opaque
+	// value with a "-<parts>" suffix that says nothing about the bytes.
+	ETag string
+}
+
+// ETagStater reports an object's size and entity tag from one metadata request.
+// *R2 implements it; the filesystem has no entity tags, so *FS does not, and a
+// caller falls back to reading the bytes.
+//
+// It is deliberately not part of Storage for the reason KeyLister gives: only
+// the storage move verifies a copy by its tag, and every other fake would have
+// to grow a method it never calls.
+type ETagStater interface {
+	// StatETag returns the size and entity tag of the object at relPath, or an
+	// error wrapping os.ErrNotExist when nothing is stored there.
+	StatETag(ctx context.Context, relPath string) (ObjectStat, error)
+}
+
+// md5HexLen is the length of a hex MD5 digest: what a single-part ETag is.
+const md5HexLen = 32
+
+// IsContentETag reports whether etag is the hex MD5 of the object's content —
+// the ETag of an object written in a single part — rather than the opaque tag of
+// a multipart upload, which carries a "-<parts>" suffix. Only a content ETag may
+// be compared with another to conclude two objects hold the same bytes.
+func IsContentETag(etag string) bool {
+	if len(etag) != md5HexLen {
+		return false
+	}
+	for _, r := range etag {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return true
 }

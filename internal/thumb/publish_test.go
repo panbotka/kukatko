@@ -165,6 +165,11 @@ func (n *nonListingFS) Delete(ctx context.Context, relPath string) error {
 	return n.inner.Delete(ctx, relPath)
 }
 
+// Copy delegates to the wrapped publishing fake.
+func (n *nonListingFS) Copy(ctx context.Context, from, to string) error {
+	return n.inner.Copy(ctx, from, to)
+}
+
 // Materialize delegates to the wrapped publishing fake.
 func (n *nonListingFS) Materialize(ctx context.Context, relPath string) (string, func(), error) {
 	return n.inner.Materialize(ctx, relPath)
