@@ -348,12 +348,11 @@ func TestProject_meShape(t *testing.T) {
 
 // TestProject_registrationCreatesAPendingMembership proves a self-service
 // registration creates a plain user with an unapproved viewer membership of the
-// bootstrap project, and that approving the account approves the membership.
+// bootstrap project, and that approving the membership approves the account.
 func TestProject_registrationCreatesAPendingMembership(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	projects := project.NewStore(env.db.Pool())
 	env.mustCreate(t, "boss", auth.AccountAdmin)
-	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 
 	if waiting.Role != auth.RoleUser {
@@ -367,15 +366,13 @@ func TestProject_registrationCreatesAPendingMembership(t *testing.T) {
 		t.Errorf("membership = %s approved %v, want an unapproved viewer", member.Role, member.ApprovedAt)
 	}
 
-	if status, body := approve(t, env, admin, waiting.UID); status != http.StatusOK {
-		t.Fatalf("approve = %d (body %s)", status, body)
-	}
+	approve(t, env, waiting.UID)
 	member, err = projects.Membership(t.Context(), project.BootstrapUID, waiting.UID)
 	if err != nil {
 		t.Fatalf("reading the membership: %v", err)
 	}
 	if member.ApprovedAt == nil {
-		t.Error("approving the account left its membership pending")
+		t.Error("approving left the membership pending")
 	}
 	user, err := env.store.GetUserByUID(t.Context(), waiting.UID)
 	if err != nil || user.ApprovedAt == nil {

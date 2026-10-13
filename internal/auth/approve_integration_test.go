@@ -6,11 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
-	"github.com/panbotka/kukatko/internal/mailer"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // waitingAccount registers one account through the public endpoint and returns
@@ -34,220 +33,35 @@ func waitingAccount(t *testing.T, env *httpEnv, username string) auth.User {
 	return user
 }
 
-// approve posts one approval as client and returns the status and body.
-func approve(t *testing.T, env *httpEnv, client *http.Client, uid string) (int, []byte) {
+// approve lets the waiting account uid into the bootstrap project the way a
+// project admin now does it — through the membership (internal/memberapi over
+// project.Store.Approve), which stamps the account's own approval too during
+// the transition. The instance-wide approval route is gone.
+func approve(t *testing.T, env *httpEnv, uid string) {
 	t.Helper()
-	return env.do(t, client, http.MethodPost, "/api/v1/admin/users/"+uid+"/approve", "")
-}
-
-// approvalMail returns the queued `account_approved` messages, oldest first.
-func approvalMail(t *testing.T, env *httpEnv) []mailPayload {
-	t.Helper()
-	var out []mailPayload
-	for _, m := range queuedMail(t, env) {
-		if m.Template == mailer.TemplateAccountApproved {
-			out = append(out, m)
-		}
+	if _, err := project.NewStore(env.db.Pool()).Approve(t.Context(), audit.Meta{},
+		project.BootstrapUID, uid); err != nil {
+		t.Fatalf("approving %s: %v", uid, err)
 	}
-	return out
 }
 
-// TestApprove_letsAWaitingAccountIn is the happy path: an administrator approves
-// somebody who registered, the account comes back stamped and still on the role
-// it registered with, the decision is in the audit trail, and the person has a
-// message waiting on the queue that points them at the sign-in page.
-func TestApprove_letsAWaitingAccountIn(t *testing.T) {
+// TestApprove_instanceRouteIsGone proves the instance-wide approval endpoint
+// no longer exists: approval is a membership's, and only a project admin of
+// that project gives it (/p/{project}/members/{user_uid}/approve). The account
+// stays waiting.
+func TestApprove_instanceRouteIsGone(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
-	admin := signInAs(t, env, "boss")
-	waiting := waitingAccount(t, env, "newcomer")
-	before := time.Now()
-
-	status, body := approve(t, env, admin, waiting.UID)
-	if status != http.StatusOK {
-		t.Fatalf("POST approve = %d, body %s", status, body)
-	}
-	var approved struct {
-		accountFlags
-		Role auth.AccountRole `json:"role"`
-	}
-	if err := json.Unmarshal(body, &approved); err != nil {
-		t.Fatalf("decoding the approved account: %v", err)
-	}
-	if approved.ApprovedAt == nil {
-		t.Fatal("the approved account still has approved_at = null")
-	}
-	if approved.ApprovedAt.Before(before.Add(-time.Minute)) {
-		t.Errorf("approved_at = %v, want roughly now (%v)", *approved.ApprovedAt, before)
-	}
-	if approved.Disabled {
-		t.Error("approving disabled the account")
-	}
-	// Approving is not promoting: the role the registration handed out stays.
-	if approved.Role != auth.AccountViewer {
-		t.Errorf("role after approval = %q, want %q", approved.Role, auth.AccountViewer)
-	}
-
-	stored, err := env.store.GetUserByUID(t.Context(), waiting.UID)
-	if err != nil {
-		t.Fatalf("re-reading the approved account: %v", err)
-	}
-	if stored.ApprovedAt == nil || !stored.ApprovedAt.Equal(*approved.ApprovedAt) {
-		t.Errorf("stored approved_at = %v, want the answered %v", stored.ApprovedAt, *approved.ApprovedAt)
-	}
-
-	if n := countAudit(t, env, audit.ActionUserApprove); n != 1 {
-		t.Errorf("%q audit entries = %d, want 1", audit.ActionUserApprove, n)
-	}
-
-	mails := approvalMail(t, env)
-	if len(mails) != 1 {
-		t.Fatalf("queued approval mails = %d, want 1", len(mails))
-	}
-	if mails[0].To != "newcomer@example.test" {
-		t.Errorf("approval mail to %q, want the account's address", mails[0].To)
-	}
-	var data mailer.AccountApprovedData
-	if err := json.Unmarshal(mails[0].Data, &data); err != nil {
-		t.Fatalf("decoding the approval mail data: %v", err)
-	}
-	if data.SignInURL != testSignInURL {
-		t.Errorf("approval mail sign-in URL = %q, want %q", data.SignInURL, testSignInURL)
-	}
-}
-
-// TestApprove_twiceChangesNothing pins the idempotence an administrator's second
-// click depends on: the same 200, the first stamp untouched, and neither a
-// second audit entry nor a second mail promising somebody something twice.
-func TestApprove_twiceChangesNothing(t *testing.T) {
-	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 
-	status, body := approve(t, env, admin, waiting.UID)
-	if status != http.StatusOK {
-		t.Fatalf("first approve = %d, body %s", status, body)
+	status, body := env.do(t, admin, http.MethodPost, "/api/v1/admin/users/"+waiting.UID+"/approve", "")
+	if status != http.StatusNotFound && status != http.StatusMethodNotAllowed {
+		t.Errorf("POST /admin/users/{uid}/approve = %d, want 404/405 (body %s)", status, body)
 	}
-	var first accountFlags
-	if err := json.Unmarshal(body, &first); err != nil {
-		t.Fatalf("decoding the first approval: %v", err)
-	}
-
-	status, body = approve(t, env, admin, waiting.UID)
-	if status != http.StatusOK {
-		t.Fatalf("second approve = %d, body %s — approving twice must not fail", status, body)
-	}
-	var second accountFlags
-	if err := json.Unmarshal(body, &second); err != nil {
-		t.Fatalf("decoding the second approval: %v", err)
-	}
-	if second.ApprovedAt == nil || !second.ApprovedAt.Equal(*first.ApprovedAt) {
-		t.Errorf("second approval moved approved_at to %v, want the first %v",
-			second.ApprovedAt, *first.ApprovedAt)
-	}
-	if n := countAudit(t, env, audit.ActionUserApprove); n != 1 {
-		t.Errorf("%q audit entries = %d, want 1 — a repeat click is not a decision",
-			audit.ActionUserApprove, n)
-	}
-	if n := len(approvalMail(t, env)); n != 1 {
-		t.Errorf("queued approval mails = %d, want 1", n)
-	}
-}
-
-// TestApprove_blockedAccountIsRefused covers the state that must not be
-// conflated with waiting: a blocked account is refused with 409 and nothing —
-// stamp, trail, mail — moves, because unblocking is its own action.
-func TestApprove_blockedAccountIsRefused(t *testing.T) {
-	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
-	admin := signInAs(t, env, "boss")
-	waiting := waitingAccount(t, env, "newcomer")
-	if _, err := env.svc.SetUserDisabled(t.Context(), waiting.UID, true); err != nil {
-		t.Fatalf("blocking the waiting account: %v", err)
-	}
-
-	status, body := approve(t, env, admin, waiting.UID)
-	if status != http.StatusConflict {
-		t.Fatalf("approving a blocked account = %d, want 409 (body %s)", status, body)
-	}
-
-	stored, err := env.store.GetUserByUID(t.Context(), waiting.UID)
-	if err != nil {
-		t.Fatalf("re-reading the blocked account: %v", err)
-	}
-	if stored.ApprovedAt != nil {
-		t.Errorf("the refused approval stamped approved_at = %v", *stored.ApprovedAt)
-	}
-	if n := countAudit(t, env, audit.ActionUserApprove); n != 0 {
-		t.Errorf("%q audit entries = %d, want 0", audit.ActionUserApprove, n)
-	}
-	if n := len(approvalMail(t, env)); n != 0 {
-		t.Errorf("queued approval mails = %d, want 0", n)
-	}
-}
-
-// TestApprove_auditEntryNamesBothParties reads the stored entry: the decision is
-// attributed to the administrator who made it and points at the account it let
-// in, which is what the trail is for.
-func TestApprove_auditEntryNamesBothParties(t *testing.T) {
-	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
-	admin := signInAs(t, env, "boss")
-	waiting := waitingAccount(t, env, "newcomer")
-
-	if status, body := approve(t, env, admin, waiting.UID); status != http.StatusOK {
-		t.Fatalf("approve = %d, body %s", status, body)
-	}
-
-	var actorUID, targetType, targetUID string
-	if err := env.db.Pool().QueryRow(t.Context(),
-		`SELECT actor_uid, target_type, target_uid FROM audit_log WHERE action = $1`,
-		audit.ActionUserApprove).Scan(&actorUID, &targetType, &targetUID); err != nil {
-		t.Fatalf("reading the approval audit entry: %v", err)
-	}
-	if actorUID != boss.UID {
-		t.Errorf("audit actor = %q, want the approving admin %q", actorUID, boss.UID)
-	}
-	if targetType != "users" {
-		t.Errorf("audit target type = %q, want %q", targetType, "users")
-	}
-	if targetUID != waiting.UID {
-		t.Errorf("audit target = %q, want the approved account %q", targetUID, waiting.UID)
-	}
-}
-
-// TestApprove_maintainerBoundaryAndMissingAccount covers the two refusals that
-// are not about approval at all: an admin may not touch a maintainer account
-// through this endpoint any more than through the others, and a UID naming
-// nobody is a 404.
-func TestApprove_maintainerBoundaryAndMissingAccount(t *testing.T) {
-	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
-	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
-	admin := signInAs(t, env, "boss")
-
-	if status, body := approve(t, env, admin, keeper.UID); status != http.StatusForbidden {
-		t.Errorf("admin approving a maintainer = %d, want 403 (body %s)", status, body)
-	}
-	if status, body := approve(t, env, admin, "usr_nobody"); status != http.StatusNotFound {
-		t.Errorf("approving an unknown account = %d, want 404 (body %s)", status, body)
-	}
-}
-
-// TestApprove_isAdminOnly pins the guard on the route itself: a viewer holding a
-// session cannot approve anybody.
-func TestApprove_isAdminOnly(t *testing.T) {
-	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "mia", auth.AccountViewer)
-	viewer := signInAs(t, env, "mia")
-	waiting := waitingAccount(t, env, "newcomer")
-
-	if status, body := approve(t, env, viewer, waiting.UID); status != http.StatusForbidden {
-		t.Errorf("viewer approving = %d, want 403 (body %s)", status, body)
-	}
-	if status, body := approve(t, env, newClient(t), waiting.UID); status != http.StatusUnauthorized {
-		t.Errorf("anonymous approving = %d, want 401 (body %s)", status, body)
+	user, err := env.store.GetUserByUID(t.Context(), waiting.UID)
+	if err != nil || user.ApprovedAt != nil {
+		t.Errorf("account after the removed route = approved %v (%v), want still waiting", user.ApprovedAt, err)
 	}
 }
 
@@ -276,9 +90,7 @@ func TestListUsers_pendingFilter(t *testing.T) {
 	}
 
 	// And once approved, the account leaves the waiting list.
-	if status, body = approve(t, env, admin, waiting.UID); status != http.StatusOK {
-		t.Fatalf("approve = %d, body %s", status, body)
-	}
+	approve(t, env, waiting.UID)
 	if got := listUsernames(t, env, admin, "?pending=true"); len(got) != 0 {
 		t.Errorf("pending=true after the approval listed %v, want nothing", got)
 	}

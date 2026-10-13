@@ -35,7 +35,6 @@ type API struct {
 	usernameLimiter *Limiter
 	registration    *Registration
 	uploadLinks     UploadLinkGate
-	approval        *Approval
 	rename          *Rename
 	passwordReset   *PasswordReset
 	registerLimit   *ratelimit.Limiter
@@ -75,10 +74,6 @@ type APIConfig struct {
 	// Optional: when nil, a registration naming a link is refused as if the link
 	// were unknown.
 	UploadLinks UploadLinkGate
-	// Approval is the administrator's half of that flow: letting a waiting
-	// account in. Optional: when nil, NewAPI derives one that approves accounts
-	// and sends no mail, so an instance that wires no mail still has the action.
-	Approval *Approval
 	// Rename is the administrator's change of an account's username. Optional:
 	// when nil, NewAPI derives one that renames accounts and sends no mail.
 	Rename *Rename
@@ -115,7 +110,6 @@ func NewAPI(cfg APIConfig) *API {
 		usernameLimiter:    usernameLimiterFor(cfg),
 		registration:       cfg.Registration,
 		uploadLinks:        cfg.UploadLinks,
-		approval:           approvalFor(cfg),
 		rename:             renameFor(cfg),
 		passwordReset:      passwordResetFor(cfg),
 		registerLimit:      perAddressLimiter(cfg.RegisterLimiter, cfg.Limiter),
@@ -153,22 +147,9 @@ func usernameLimiterFor(cfg APIConfig) *Limiter {
 	return NewLimiter(cfg.Limiter.max*usernameLimitFactor, cfg.Limiter.window)
 }
 
-// approvalFor returns the approval flow cfg asks for, deriving a mail-less one
-// from the service when the caller supplied none. Approval is not optional the
-// way Registration is — an administrator must always be able to let somebody in,
-// including on an instance that sends no mail — so the fallback answers the
-// request rather than refusing it.
-func approvalFor(cfg APIConfig) *Approval {
-	if cfg.Approval != nil {
-		return cfg.Approval
-	}
-	return NewApproval(ApprovalConfig{Service: cfg.Service})
-}
-
 // renameFor returns the rename flow cfg asks for, deriving a mail-less one from
-// the service when the caller supplied none — for the reason approvalFor does:
-// an administrator must be able to rename an account on an instance that sends
-// no mail too.
+// the service when the caller supplied none: an administrator must be able to
+// rename an account on an instance that sends no mail too.
 func renameFor(cfg APIConfig) *Rename {
 	if cfg.Rename != nil {
 		return cfg.Rename

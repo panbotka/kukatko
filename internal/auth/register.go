@@ -44,6 +44,15 @@ type MailScheduler interface {
 	Enqueue(ctx context.Context, exec jobs.Execer, m mailjob.Mail) error
 }
 
+// noMail is the scheduler a flow built without one uses (Rename,
+// PasswordReset): it schedules nothing and reports success, so an instance that
+// wires no mail still performs the action. It is a value rather than a nil
+// check at every call site, so the mailing path has exactly one shape.
+type noMail struct{}
+
+// Enqueue discards the message and reports success.
+func (noMail) Enqueue(context.Context, jobs.Execer, mailjob.Mail) error { return nil }
+
 // Notifier delivers one notification to the channels an account wants — the
 // inbox, its devices, its e-mail — on a caller-supplied transaction, which is
 // how the administrators' notice joins the transaction of the registration that

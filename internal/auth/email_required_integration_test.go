@@ -186,7 +186,7 @@ func TestHTTP_createUserRequiresEmail(t *testing.T) {
 // mistyping it — and that a refused update leaves the stored address alone.
 func TestHTTP_updateUserRejectsInvalidEmail(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "updadmin", auth.AccountAdmin)
+	env.mustCreate(t, "updadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "updadmin")
 	target := env.mustCreate(t, "updtarget", auth.AccountViewer)
 	path := "/api/v1/admin/users/" + target.UID

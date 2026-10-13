@@ -228,7 +228,7 @@ func TestSubjectLink_adminSetsAndAudits(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_a", "Babička")
 	env.addSubject(t, "sub_b", "Dědeček")
-	env.seedUser(t, "admin", auth.AccountAdmin)
+	env.seedUser(t, "admin", auth.AccountMaintainer)
 	admin := env.signIn(t, "admin")
 
 	status, body := env.do(t, admin, http.MethodPost, "/api/v1/admin/users",

@@ -49,6 +49,7 @@ type projectAPI struct {
 	settings      func(chi.Router)
 	announcement  func(chi.Router)
 	users         func(chi.Router) // GET /users, the name directory
+	members       func(chi.Router) // /members, the project admin's member management
 	imports       func(chi.Router)
 	process       func(chi.Router)
 	mcp           func(chi.Router)
@@ -65,7 +66,7 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 		api.dupMarkers, api.expand, api.bulk, api.tasks, api.feedback, api.savedSearches,
 		api.searchHistory, api.whatsNew, api.places, api.maps, api.upload, api.uploadLinks,
 		api.notifications, api.capabilities, api.settings, api.announcement, api.users,
-		api.imports, api.process, api.mcp,
+		api.members, api.imports, api.process, api.mcp,
 	} {
 		register(r)
 	}
@@ -80,11 +81,12 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 // project `v`. Under /p/{project} that outer resolution is redone by the inner
 // one, which wins.
 //
-// The alias leaves out one group: the name directory GET /users. Its
+// The alias leaves out two groups. The name directory GET /users: its
 // unprefixed path belongs to the system administrator's instance-wide account
 // list (internal/projectapi), so the directory is served only under
 // /p/{project} — where the frontend asks for it, and ctl (in the bootstrap
-// project until its contexts carry one).
+// project until its contexts carry one). And the member management /members,
+// which is new with projects and has no old client to keep working.
 func projectRoutes(store *project.Store, api *projectAPI) server.Option {
 	alias := aliasAPI(api)
 	return server.WithAPI(func(r chi.Router) {
@@ -99,9 +101,11 @@ func projectRoutes(store *project.Store, api *projectAPI) server.Option {
 
 // aliasAPI is the copy of api the unprefixed transition alias mounts: every
 // group but the name directory, whose unprefixed GET /users is the instance
-// account list (see projectRoutes).
+// account list, and the member management, which only ever lived under a
+// project (see projectRoutes).
 func aliasAPI(api *projectAPI) *projectAPI {
 	alias := *api
 	alias.users = func(chi.Router) {}
+	alias.members = func(chi.Router) {}
 	return &alias
 }

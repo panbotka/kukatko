@@ -85,13 +85,6 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 				Mail:          mail,
 			}),
 		}),
-		// The other half of the same flow, wired the same way, so an approval
-		// enqueues a real `mail_send` job a test can read off the queue.
-		Approval: auth.NewApproval(auth.ApprovalConfig{
-			Service:   svc,
-			Mail:      mail,
-			SignInURL: testSignInURL,
-		}),
 		// Password resets go through the same queue, so a test reads the link
 		// off a real `mail_send` job — and the base is a real absolute URL, so
 		// the link an administrator is handed is the one that was mailed.
@@ -600,7 +593,7 @@ func (e *httpEnv) createNotedUser(t *testing.T, admin *http.Client, username, no
 
 func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "noteadmin", auth.AccountAdmin)
+	env.mustCreate(t, "noteadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "noteadmin")
 
 	const note = "Contractor; account kept for the 2026 audit."
@@ -672,7 +665,7 @@ func TestHTTP_adminUserNoteListedAndPersisted(t *testing.T) {
 
 func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "lenadmin", auth.AccountAdmin)
+	env.mustCreate(t, "lenadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "lenadmin")
 
 	tooLong := strings.Repeat("a", auth.MaxNoteLen+1)

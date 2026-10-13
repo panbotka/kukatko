@@ -90,24 +90,54 @@ func RenderRegistrationReceived(d RegistrationReceivedData) Rendered {
 }
 
 // AccountApprovedData is what the "account approved" message needs: whom to
-// greet and where to sign in.
+// greet, which project let them in and where to open it.
+//
+// The message names a project since approval is on a project's membership:
+// ProjectName and ProjectURL (/p/<slug>/ on this instance) say where the
+// person may now go. SignInURL is what a message scheduled before projects
+// carried, and is still honoured when ProjectURL is empty, so a job queued
+// across an upgrade renders a usable link.
 type AccountApprovedData struct {
 	DisplayName string
+	ProjectName string
+	ProjectURL  string
 	SignInURL   string
 }
 
-// RenderAccountApproved builds the message telling somebody their account is
-// active, with the link to sign in. It is a pure function of d.
+// RenderAccountApproved builds the message telling somebody their membership
+// of a project is approved, with the link to the project — or, for a message
+// that names no project, the older "your account is active" text with the
+// sign-in link. It is a pure function of d.
 func RenderAccountApproved(d AccountApprovedData) Rendered {
+	if d.ProjectName == "" {
+		return Rendered{
+			Template: TemplateAccountApproved,
+			Subject:  "Váš účet v Kukátku byl schválen",
+			Body: body(
+				greeting(d.DisplayName),
+				"",
+				"váš účet v Kukátku je od teď aktivní. Přihlásit se můžete tady:",
+				"",
+				d.SignInURL,
+				"",
+				signature,
+			),
+		}
+	}
+	link := d.ProjectURL
+	if link == "" {
+		link = d.SignInURL
+	}
 	return Rendered{
 		Template: TemplateAccountApproved,
-		Subject:  "Váš účet v Kukátku byl schválen",
+		Subject:  "Přístup do projektu „" + d.ProjectName + "“ v Kukátku byl schválen",
 		Body: body(
 			greeting(d.DisplayName),
 			"",
-			"váš účet v Kukátku je od teď aktivní. Přihlásit se můžete tady:",
+			"správce vás schválil jako člena projektu „"+d.ProjectName+"“ v Kukátku.",
+			"Projekt otevřete tady:",
 			"",
-			d.SignInURL,
+			link,
 			"",
 			signature,
 		),

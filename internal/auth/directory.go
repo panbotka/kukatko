@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // DirectoryEntry is one account as everybody in the library may see it: a name
@@ -19,20 +21,26 @@ type DirectoryEntry struct {
 	Name string `json:"name"`
 }
 
-// directoryQuery lists the accounts a signed-in person may name. Disabled ones
-// and ones still waiting for an administrator are left out: neither can be
-// asked a question, and both would be a stranger in a picker.
+// directoryQuery lists the accounts a signed-in person of the project $1 may
+// name: its members. Disabled accounts and memberships still waiting for a
+// project admin are left out: neither can be asked a question, and both would
+// be a stranger in a picker. An account of another project is never listed —
+// a tenant must not learn who else uses the instance.
 const directoryQuery = `
-SELECT uid, COALESCE(NULLIF(display_name, ''), username)
-FROM users
-WHERE NOT disabled AND approved_at IS NOT NULL
-ORDER BY COALESCE(NULLIF(display_name, ''), username), uid`
+SELECT u.uid, COALESCE(NULLIF(u.display_name, ''), u.username)
+FROM project_members m JOIN users u ON u.uid = m.user_uid
+WHERE m.project_uid = $1 AND m.approved_at IS NOT NULL AND NOT u.disabled
+ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.uid`
 
-// Directory returns the people of the library — the accounts a signed-in person
-// may name — ordered by the name they are shown under. The slice is empty, not
-// nil, when there are none.
-func (s *Store) Directory(ctx context.Context) ([]DirectoryEntry, error) {
-	rows, err := s.pool.Query(ctx, directoryQuery)
+// Directory returns the people of the project projectUID — its approved members
+// that are not disabled, the accounts a signed-in person there may name —
+// ordered by the name they are shown under. An empty projectUID is the
+// bootstrap project. The slice is empty, not nil, when there are none.
+func (s *Store) Directory(ctx context.Context, projectUID string) ([]DirectoryEntry, error) {
+	if projectUID == "" {
+		projectUID = project.BootstrapUID // transition: removed in the alias-removal step
+	}
+	rows, err := s.pool.Query(ctx, directoryQuery, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("auth: querying the directory: %w", err)
 	}
@@ -52,13 +60,14 @@ func (s *Store) Directory(ctx context.Context) ([]DirectoryEntry, error) {
 	return out, nil
 }
 
-// Directory returns the accounts a signed-in person may name, ordered by name.
-func (s *Service) Directory(ctx context.Context) ([]DirectoryEntry, error) {
-	return s.store.Directory(ctx)
+// Directory returns the accounts a signed-in person of the project projectUID
+// may name — its approved members — ordered by name.
+func (s *Service) Directory(ctx context.Context, projectUID string) ([]DirectoryEntry, error) {
+	return s.store.Directory(ctx, projectUID)
 }
 
-// handleDirectory answers with the people of the library: uid and name, for
-// every active account.
+// handleDirectory answers with the people of the request's project: uid and
+// name, for every approved member whose account is active.
 //
 // It is open to every signed-in role, which is a deliberate widening of what
 // used to be admin-only. The reason is that naming a person is now something an
@@ -69,7 +78,7 @@ func (s *Service) Directory(ctx context.Context) ([]DirectoryEntry, error) {
 // administrative record: the e-mail addresses, the roles, who is disabled and
 // who is still waiting to be let in.
 func (a *API) handleDirectory(w http.ResponseWriter, r *http.Request) {
-	people, err := a.svc.Directory(r.Context())
+	people, err := a.svc.Directory(r.Context(), ProjectUIDFromContext(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing people failed")
 		return

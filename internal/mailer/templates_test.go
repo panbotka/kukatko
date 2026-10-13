@@ -60,6 +60,41 @@ func TestRenderAccountApproved(t *testing.T) {
 	}
 }
 
+// TestRenderAccountApproved_namesTheProject pins the project form of the
+// approval message: the subject and the body name the project and the link is
+// the project's own page; a missing project link falls back to the sign-in one.
+func TestRenderAccountApproved_namesTheProject(t *testing.T) {
+	t.Parallel()
+
+	got := RenderAccountApproved(AccountApprovedData{
+		DisplayName: "Eva",
+		ProjectName: "Hasiči",
+		ProjectURL:  "https://kukatko.example.com/p/hasici/",
+		SignInURL:   "https://kukatko.example.com/login",
+	})
+	if want := "Přístup do projektu „Hasiči“ v Kukátku byl schválen"; got.Subject != want {
+		t.Errorf("Subject = %q, want %q", got.Subject, want)
+	}
+	want := "Dobrý den, Eva,\n" +
+		"\n" +
+		"správce vás schválil jako člena projektu „Hasiči“ v Kukátku.\n" +
+		"Projekt otevřete tady:\n" +
+		"\n" +
+		"https://kukatko.example.com/p/hasici/\n" +
+		"\n" +
+		"Kukátko\n"
+	if got.Body != want {
+		t.Errorf("Body =\n%q\nwant\n%q", got.Body, want)
+	}
+
+	fallback := RenderAccountApproved(AccountApprovedData{
+		ProjectName: "Hasiči", SignInURL: "https://kukatko.example.com/login",
+	})
+	if !strings.Contains(fallback.Body, "https://kukatko.example.com/login") {
+		t.Errorf("Body without a project link = %q, want the sign-in link", fallback.Body)
+	}
+}
+
 // TestRenderUsernameChanged pins the text of the rename message: it names the
 // new username, says the password is unchanged, and carries the sign-in link —
 // or leaves the link paragraph out when no public URL is configured.

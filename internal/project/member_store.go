@@ -19,7 +19,8 @@ const foreignKeyViolation = "23503"
 // order; it reads project_members as m joined with users as u.
 const memberColumns = `m.project_uid, m.user_uid, m.role, m.approved_at, m.subject_uid,
 	m.last_seen_at, m.visit_reference_at, m.task_digest_at, m.created_at,
-	u.username, u.display_name, u.last_login_at`
+	u.username, u.display_name, u.last_login_at,
+	(u.subject_uid IS NOT NULL OR EXISTS (SELECT 1 FROM user_pictures up WHERE up.user_uid = u.uid))`
 
 // memberFrom joins a membership with its account.
 const memberFrom = ` FROM project_members m JOIN users u ON u.uid = m.user_uid`
@@ -29,7 +30,7 @@ func scanMember(row pgx.Row) (*Member, error) {
 	var m Member
 	if err := row.Scan(&m.ProjectUID, &m.UserUID, &m.Role, &m.ApprovedAt, &m.SubjectUID,
 		&m.LastSeenAt, &m.VisitReferenceAt, &m.TaskDigestAt, &m.CreatedAt,
-		&m.Username, &m.DisplayName, &m.LastLoginAt); err != nil {
+		&m.Username, &m.DisplayName, &m.LastLoginAt, &m.HasPicture); err != nil {
 		return nil, fmt.Errorf("scanning project member: %w", err)
 	}
 	return &m, nil
@@ -154,6 +155,11 @@ func (s *Store) AddMember(
 		if err != nil {
 			return fmt.Errorf("inserting membership: %w", err)
 		}
+		if approved {
+			if err := stampAccountApproved(ctx, tx, userUID); err != nil {
+				return err
+			}
+		}
 		added, err = lockMember(ctx, tx, projectUID, userUID)
 		return err
 	})
@@ -196,8 +202,25 @@ func (s *Store) SetRole(ctx context.Context, meta audit.Meta, projectUID, userUI
 // records ActionProjectMemberApprove in the same transaction. Approving an
 // already approved member keeps the original approval time and records nothing.
 // It returns ErrNotFound for an unknown project and ErrNotMember when the
-// account is not a member.
+// account is not a member. It is ApproveWith without a hook.
 func (s *Store) Approve(ctx context.Context, meta audit.Meta, projectUID, userUID string) (*Member, error) {
+	return s.ApproveWith(ctx, meta, projectUID, userUID, nil)
+}
+
+// ApproveHook runs inside an approval's transaction, after the membership is
+// stamped and before the audit entry is written, with the member as it was
+// before the approval. It is how the "you may come in" mail is scheduled if
+// and only if the approval commits; an error rolls the approval back.
+type ApproveHook func(ctx context.Context, tx pgx.Tx, member *Member) error
+
+// ApproveWith approves the member userUID of the project projectUID like
+// Approve and, when the approval really changes something, runs hook (nil: no
+// hook) on the same transaction. Approving an already approved member runs no
+// hook. During the transition the account's own approval (users.approved_at,
+// which sign-in still reads) is stamped too when it is missing.
+func (s *Store) ApproveWith(
+	ctx context.Context, meta audit.Meta, projectUID, userUID string, hook ApproveHook,
+) (*Member, error) {
 	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberApprove, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID,
 	})
@@ -206,9 +229,18 @@ func (s *Store) Approve(ctx context.Context, meta audit.Meta, projectUID, userUI
 			return false, nil
 		}
 		entry.Details["role"] = string(current.Role)
-		return true, execMember(ctx, tx,
+		if err := execMember(ctx, tx,
 			`UPDATE project_members SET approved_at = now() WHERE project_uid = $1 AND user_uid = $2`,
-			projectUID, userUID)
+			projectUID, userUID); err != nil {
+			return false, err
+		}
+		if err := stampAccountApproved(ctx, tx, userUID); err != nil {
+			return false, err
+		}
+		if hook == nil {
+			return true, nil
+		}
+		return true, hook(ctx, tx, current)
 	})
 }
 
@@ -319,6 +351,19 @@ func (s *Store) mutateMember(
 		return nil, wrapMemberErr("changing", projectUID, userUID, err)
 	}
 	return result, nil
+}
+
+// stampAccountApproved stamps the account's own approval (users.approved_at)
+// when it is still missing, inside tx. Transition: sign-in still reads the
+// account's column, so a membership approved by a project admin must let the
+// account sign in; an account already approved keeps its original time.
+func stampAccountApproved(ctx context.Context, tx pgx.Tx, userUID string) error {
+	if _, err := tx.Exec(ctx,
+		`UPDATE users SET approved_at = now(), updated_at = now() WHERE uid = $1 AND approved_at IS NULL`,
+		userUID); err != nil {
+		return fmt.Errorf("approving account %s: %w", userUID, err)
+	}
+	return nil
 }
 
 // execMember runs one membership write inside tx, wrapping its failure.

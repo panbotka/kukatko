@@ -1325,6 +1325,23 @@ account by its **username** (or uid); the CLI resolves either through the list f
 `ctl users` used to be an alias of `ctl people`; the alias is gone — `ctl people` is the name directory
 (`GET /p/v/users`, the bootstrap project's, until contexts carry a project).
 
+#### `ctl members` — a project admin
+
+The members of **one project** (`internal/memberapi`, `/api/v1/p/<slug>/members`), with the token of that
+project's **admin** (or a maintainer's). The project is `--project <slug>`, default `v` (the bootstrap
+project), until ctl contexts carry a project. A member is named by its **username** (or uid), resolved
+through the project's member list first, so a non-member is "no such member of the project" before
+anything is sent. Refusals print the server's code: `self` (your own role, or leaving as the only admin),
+`last_admin`, `invalid_role`.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl members list [--project <slug>]` | `GET /members` — username, name, role, `approved`/`pending`, last login, uid |
+| `ctl members add <username-or-email> --role <role>` | `POST /members` `{identifier, role}` — an **exact** username or e-mail (case-insensitive), approved at once. The server answers the same whether the account was added, already was a member or does not exist, so the CLI only says *accepted: if … names an account, it is a member*; check `members list` |
+| `ctl members role <username> <role>` | `PATCH /members/{uid}` — `viewer`, `curator`, `editor` or `admin`; never your own |
+| `ctl members approve <username>` | `POST /members/{uid}/approve` — lets a waiting member in and mails them the project's link |
+| `ctl members remove <username>` | `DELETE /members/{uid}` — the account stays; the project's only admin cannot be removed |
+
 #### `ctl saved-searches` — smart albums
 
 Named library views, stored per user (`internal/savedsearchapi`). Alias: `smart-albums`. Any signed-in role

@@ -145,3 +145,30 @@ func TestHTTP_disableIsMaintainerOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestHTTP_accountUpdateIsMaintainerOnly pins that the account edit — which
+// carries the instance-wide disabled flag and the transitional role — is the
+// system administrator's: a project admin manages roles of their own members
+// through /p/{project}/members instead, and is refused here before anything
+// changes.
+func TestHTTP_accountUpdateIsMaintainerOnly(t *testing.T) {
+	env := newTokenEnv(t, 50)
+	target := env.user(t, "upd-target", auth.AccountViewer)
+	body := `{"display_name":"","email":"upd-target@example.test","role":"editor","disabled":false}`
+	tests := []struct {
+		role auth.AccountRole
+		user string
+		want int
+	}{
+		{auth.AccountAdmin, "upd-admin", http.StatusForbidden},
+		{auth.AccountMaintainer, "upd-maint", http.StatusOK},
+	}
+	for _, tt := range tests {
+		u := env.user(t, tt.user, tt.role)
+		_, token := env.mintToken(t, u, "cli", nil)
+		path := "/api/v1/admin/users/" + target.UID
+		if status, data := env.request(t, http.MethodPatch, path, token, body); status != tt.want {
+			t.Errorf("update by %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
+		}
+	}
+}

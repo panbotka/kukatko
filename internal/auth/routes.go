@@ -25,12 +25,11 @@ import "github.com/go-chi/chi/v5"
 //	GET    /auth/tokens           RequireAuth
 //	PATCH  /auth/tokens/{id}      RequireAuth (admin-only in the handler)
 //	DELETE /auth/tokens/{id}      RequireAuth
-//	GET    /users                 RequireAuth (uid + name only)
+//	GET    /users                 RequireAuth (uid + name of the project's members)
 //	GET    /admin/users           RequireAdmin
 //	POST   /admin/users           RequireAdmin
-//	PATCH  /admin/users/{uid}     RequireAdmin
+//	PATCH  /admin/users/{uid}     RequireMaintainer
 //	PUT    /admin/users/{uid}/username   RequireAdmin
-//	POST   /admin/users/{uid}/approve    RequireAdmin
 //	POST   /admin/users/{uid}/disable    RequireMaintainer
 //	POST   /admin/users/{uid}/password   RequireAdmin
 //	POST   /admin/users/{uid}/password-reset RequireAdmin
@@ -111,9 +110,13 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 		r.Use(a.RequireAdmin)
 		r.Get("/", a.handleListUsers)
 		r.Post("/", a.handleCreateUser)
-		r.Patch("/{uid}", a.handleUpdateUser)
+		// The account record carries the instance-wide disabled flag and, in the
+		// transitional vocabulary, a role; a project admin manages roles and
+		// approval of their own members through /p/{project}/members
+		// (internal/memberapi), so this edit is the system administrator's.
+		// Approval has no instance-wide route any more: it is a membership's.
+		r.With(a.RequireMaintainer).Patch("/{uid}", a.handleUpdateUser)
 		r.Put("/{uid}/username", a.handleRenameUser)
-		r.Post("/{uid}/approve", a.handleApproveUser)
 		// Disabling locks the account out of every project of the instance, so
 		// it is the system administrator's call, not one project admin's.
 		r.With(a.RequireMaintainer).Post("/{uid}/disable", a.handleDisableUser)

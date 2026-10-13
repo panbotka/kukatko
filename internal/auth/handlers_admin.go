@@ -179,7 +179,7 @@ func verbatimInputError(err error) (error, bool) {
 	return nil, false
 }
 
-// handleUpdateUser replaces a user's profile fields (admin only). It responds 200
+// handleUpdateUser replaces a user's profile fields (system administrator only). It responds 200
 // with the updated user, 400 for a bad body, invalid role, missing or malformed
 // e-mail address, or over-length note,
 // 404 if the user does not exist, 409 when the change would demote or disable the
@@ -270,40 +270,6 @@ func (a *API) handleDisableUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, adminUser(user))
-}
-
-// handleApproveUser lets a waiting account in (admin only): it stamps the
-// approval time, writes the decision to the audit trail and enqueues the mail
-// telling the person they can sign in — all in one transaction.
-//
-// It responds 200 with the updated account, 403 when the maintainer boundary
-// forbids the actor this account (the same rule as every other user-management
-// action — approval must not become a way around it), 404 if the account does
-// not exist, 409 for a blocked account (unblocking is its own action), or 500.
-// Approving an already approved account is 200 with the account unchanged: an
-// administrator clicking twice must not see a failure.
-func (a *API) handleApproveUser(w http.ResponseWriter, r *http.Request) {
-	uid := chi.URLParam(r, "uid")
-	actor, _ := UserFromContext(r.Context())
-	entry := adminAuditMeta(r).Entry(audit.ActionUserApprove, userTargetType, uid, nil)
-	user, err := a.approval.Approve(r.Context(), uid, actor.Role, entry)
-	if err != nil {
-		writeApproveUserError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, adminUser(user))
-}
-
-// writeApproveUserError maps a failed approval onto its response. A blocked
-// account is a 409 for the same reason ErrLastMaintainer is: the caller is
-// allowed to make the change, it is the account's current state that forbids it,
-// and re-enabling it first makes the identical request succeed.
-func writeApproveUserError(w http.ResponseWriter, err error) {
-	if errors.Is(err, ErrUserDisabled) {
-		writeError(w, http.StatusConflict, ErrUserDisabled.Error())
-		return
-	}
-	writeUserMutationError(w, err, "could not approve user")
 }
 
 // handleResetPassword sets a new password for a user and invalidates all their

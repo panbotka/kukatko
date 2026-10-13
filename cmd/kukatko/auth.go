@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -47,11 +48,6 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		ApprovalURL: approvalURL(cfg.Mail.BaseURL),
 		Notify:      buildDeliverer(cfg, db),
 	})
-	approval := auth.NewApproval(auth.ApprovalConfig{
-		Service:   svc,
-		Mail:      mail,
-		SignInURL: signInURL(cfg.Mail.BaseURL),
-	})
 	rename := auth.NewRename(auth.RenameConfig{
 		Service:   svc,
 		Mail:      mail,
@@ -77,7 +73,6 @@ func buildAuth(cfg *config.Config, db *database.DB) (*auth.API, *auth.Service, e
 		Limiter:       limiter,
 		Registration:  registration,
 		UploadLinks:   uploadLinkGate(cfg, db),
-		Approval:      approval,
 		Rename:        rename,
 		PasswordReset: passwordReset,
 		Passkeys:      passkeys,
@@ -122,7 +117,7 @@ func buildPasskeys(rp config.RelyingParty, svc *auth.Service) (*auth.Passkeys, e
 // signInPath is the frontend route of the sign-in screen (see web/src/App.tsx).
 const signInPath = "/login"
 
-// signInURL builds the address the approval mail points at from this instance's
+// signInURL builds the address the rename mail points at from this instance's
 // public URL, tolerating a trailing slash. An empty base yields an empty URL —
 // mail.base_url is required whenever mail is enabled, so the only instances that
 // reach that case are the ones that send nothing anyway, and inventing a host
@@ -137,6 +132,13 @@ func signInURL(baseURL string) string {
 // leaves the link out of the mail.
 func approvalURL(baseURL string) string {
 	return instanceURL(baseURL, auth.ApprovalPath)
+}
+
+// projectURL builds the address of the project slug's page (/p/<slug>/), which
+// the member approval mail links to, from this instance's public URL on the
+// same terms as signInURL: an empty base yields an empty URL.
+func projectURL(baseURL, slug string) string {
+	return instanceURL(baseURL, "/p/"+url.PathEscape(slug)+"/")
 }
 
 // instanceURL appends the frontend route path to this instance's public URL,

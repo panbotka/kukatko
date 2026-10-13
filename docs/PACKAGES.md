@@ -86,8 +86,9 @@ to `## Package map` in `CLAUDE.md`.
   `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin`/`RequireMaintainer`/`RequireImport` +
   `RegisterRoutes`; sessions and users in migration `0002_auth.sql`.
   **`directory.go`** is the one all-authenticated view of accounts: `DirectoryEntry{UID,Name}`,
-  `Store.Directory`/`Service.Directory` and `GET /users`, listing the active approved accounts by the
-  name each is shown under. It exists because naming a person is now something an ordinary user does —
+  `Store.Directory(ctx, projectUID)`/`Service.Directory` and `GET /p/{project}/users`, listing the
+  project's **approved members** whose account is not disabled (a `project_members` join; an empty uid is
+  the bootstrap project) by the name each is shown under — never an account of another project. It exists because naming a person is now something an ordinary user does —
   putting somebody on a task is how a question reaches the relative who would know — and it is a type and
   a query of its own rather than a trimmed `User`: the address, the role, the approval state and the hash
   never leave the database, so no handler can forget to strip them.
@@ -176,26 +177,16 @@ to `## Package map` in `CLAUDE.md`.
   `ratelimit.Limiter` from the login budget when the caller supplies none (shared with the
   password-reset endpoints as `perAddressLimiter`), and `RegisterRoutes` mounts it as middleware on the
   route — one of the two writes an anonymous caller may perform.
-  **Approving a waiting account** (`approval.go`, `store_user_approve.go`) is the administrator's half
-  of that flow, behind `POST /admin/users/{uid}/approve`. It is its own type, `Approval` (built with
-  `NewApproval`, wired into `APIConfig.Approval`), for the same reason `Registration` is one — it sends
-  mail and `Service` deliberately knows nothing about mail — and it reuses the same `MailScheduler`
-  interface. Unlike `Registration` it is **not** optional in effect: `approvalFor` derives a mail-less
-  `Approval` from the service when the caller supplies none (`noMail{}` schedules nothing and reports
-  success), so an instance that wires no mail still has the action. `Approve` applies
-  `guardMaintainerBoundary` first — whatever an actor may not otherwise do to an account, approval is
-  not a way around it — then calls `Store.ApproveUserAudited`, which does everything on one
-  transaction: `SELECT … FOR UPDATE` on the row (so two administrators clicking at once queue),
-  `ErrUserDisabled` (→ **409**) for a blocked account, the stamp `approved_at = $2` with `updated_at`
-  bumped, the `alongside` hook that enqueues the `account_approved` mail, and the audit entry
-  (`audit.ActionUserApprove`, `user.approve`). An account that already carries a stamp returns
-  unchanged through `errNoAuditableChange`: no update, no mail, no second entry — approving twice is a
-  repeated click, not a failure. The role is untouched (raising it stays a separate `PATCH`), and the
-  mail's link comes from `ApprovalConfig.SignInURL`, built in `cmd/kukatko` by `signInURL(cfg.Mail.BaseURL)`
-  (`mail.base_url` + `/login`; empty when no public URL is configured — the instances that reach that
-  case send nothing anyway).
+  **Approving a waiting account** is no longer here: the instance-wide `POST /admin/users/{uid}/approve`,
+  its `Approval` type and `Store.ApproveUserAudited` were removed in multi-tenancy step 24. Approval is a
+  membership's, given by that project's admin through `internal/memberapi` over
+  `project.Store.ApproveWith`, which also stamps `users.approved_at` (sign-in still reads it). The
+  `noMail{}` scheduler the mail-sending flows fall back to lives in `register.go`.
+  `PATCH /admin/users/{uid}` (profile, `disabled`, the transitional five-rung `role`) is
+  **`RequireMaintainer`** like `/disable`: a project admin manages their members' roles through the
+  members API instead.
   **Renaming an account** (`rename.go`, `store_user_rename.go`) is behind `PUT /admin/users/{uid}/username`.
-  Another mail-sending type beside `Approval`, `Rename` (built with `NewRename(RenameConfig{Service,Mail,SignInURL})`,
+  Another mail-sending type beside `Registration`, `Rename` (built with `NewRename(RenameConfig{Service,Mail,SignInURL})`,
   wired into `APIConfig.Rename`, derived mail-less by `renameFor`). `Rename.Rename` applies
   `guardMaintainerBoundary`, normalises and validates the name with `validateAccountUsername` (the rule creation
   and registration share: not empty → `ErrUsernameRequired`, at most `MaxUsernameLen` runes → `ErrUsernameTooLong`;
@@ -6058,7 +6049,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `Rendered{Template,Subject,Body}` (`Rendered.Message(to)` addresses it), unit-tested against the exact
     expected text: `RenderRegistrationReceived` (`RegistrationReceivedData{DisplayName,Username}` — your
     account exists and waits for an administrator), `RenderAccountApproved`
-    (`AccountApprovedData{DisplayName,SignInURL}`), `RenderNewRegistrationPending`
+    (`AccountApprovedData{DisplayName,ProjectName,ProjectURL,SignInURL}`: with a project it names it and
+    links to its `/p/<slug>/`; without one — a job queued before projects — the old sign-in text), `RenderNewRegistrationPending`
     (`NewRegistrationPendingData{Username,DisplayName,Email}` — the administrator's copy, naming all three),
     and `RenderPasswordReset` (`PasswordResetData{DisplayName,ResetURL,ValidFor}`). The `Template*` name
     constants exist so a log or audit line can say which message went out without repeating its subject. Two
@@ -6706,7 +6698,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     row joined with `users.username`/`display_name`/`last_login_at`), `MembershipSummary` (`ProjectUID`,
     `Slug`, `Name`, `Active`, `Role`, `Approved` — what the project chooser will list),
     `MemberTargetType = "project_member"`. Sentinels `ErrNotMember`, `ErrAlreadyMember`, `ErrLastAdmin`,
-    `ErrUserNotFound`, `ErrSubjectNotFound`.
+    `ErrUserNotFound`, `ErrSubjectNotFound`. `Member.HasPicture` (`json:"has_picture"`) is computed in
+    `memberColumns`: a `user_pictures` row or a linked `users.subject_uid` — "worth asking for the avatar".
   - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
     one; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
     (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included). Writes, each
@@ -6714,7 +6707,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the account, details `project_uid` + the role): `AddMember(…, role, approved)` → `project.member.add`
     (an existing row is left untouched and `ErrAlreadyMember` returned, nothing audited; unknown project =
     `ErrNotFound`, unknown account = `ErrUserNotFound`); `SetRole` → `project.member.role` (+
-    `previous_role`); `Approve` → `project.member.approve` (an approved member keeps its original time);
+    `previous_role`); `Approve` → `project.member.approve` (an approved member keeps its original time;
+    `ApproveWith(…, hook ApproveHook)` runs `hook(ctx, tx, member)` on the approval's transaction when it
+    really changes something — how `internal/memberapi` queues the approval mail); an approval, and an
+    approved `AddMember`, also stamp a missing `users.approved_at` (`stampAccountApproved`, transition:
+    sign-in still reads it);
     `RemoveMember` → `project.member.remove`; `SetSubject(…, *string)` → `project.member.subject` (+
     `previous_subject_uid`; nil clears; unknown subject = `ErrSubjectNotFound`). A change to nothing writes
     neither the row nor an audit entry. Every write **locks the project row** first, so concurrent changes
@@ -6723,6 +6720,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (who may remove whom — themselves included — is the HTTP layer's rule, later).
     `TouchLastProject(userUID, projectUID)` writes `users.last_project_uid` (not audited, no membership
     check; unknown account = `ErrUserNotFound`, unknown project = `ErrNotFound`).
+  - `member_identifier.go` — `AddByIdentifier(meta, projectUID, identifier, role) (AddOutcome, error)`, the
+    project admin's exact-match add: one transaction locks the project, resolves the identifier as an
+    exact username (trimmed + lower-cased, as sign-in normalises it) or else a case-insensitive e-mail
+    address (`LIMIT 2`: two hits = `OutcomeAmbiguous`, nobody added), inserts the **approved** membership
+    and **always** writes `project.member.add` with `details.outcome` (`added`/`already_member`/
+    `no_such_account`/`ambiguous`; the typed `identifier` when nobody was resolved). The outcome is for
+    the trail and the tests, never for the person who asked. `ErrEmptyIdentifier` for a blank one.
   - `internal/reset` keeps `projects` and `project_members` among the **preserved** tables (account-side,
     like `users`); `project_members.subject_uid` points into the wiped `subjects`, so the reset lifts,
     nulls and restores `project_members_subject_uid_fkey` exactly like `users_subject_uid_fkey`
@@ -6748,6 +6752,21 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - `respond.go` — the error codes and `classify`, one table mapping every `project`/`auth` sentinel to
     status + code (the slug and limit rules carry the store's own explanation as `message`); anything else
     is a logged `500 internal`.
+- **Project members API (`internal/memberapi`):** a project admin's `/members` (see `docs/API.md`,
+  *Members*), project-scoped and mounted **only under `/p/{project}`** (`projectAPI.members`; `aliasAPI`
+  blanks it like the name directory), every route behind the injected `RequireAdmin`
+  (`cmd/kukatko/members.go` → `buildMemberAPI`, wired in `readAPIOptions`). Interfaces so the handlers
+  unit-test over fakes: `Members` (the `*project.Store` methods), `Accounts` (`auth.Store.GetUserByUID`,
+  for the mail's address) and `MailScheduler` (`mailjob.Enqueuer`).
+  - `memberapi.go` — `Config` (+ `ProjectURL func(slug)`, built from `mail.base_url` by `projectURL` in
+    `cmd/kukatko/auth.go`), `NewAPI`, `RegisterRoutes`.
+  - `handlers.go` — the five routes. The project is always `auth.ProjectUIDFromContext`; the self rules
+    are the handler's (`PATCH` of the caller's own uid → `self` before the store; `DELETE` of oneself maps
+    the store's `ErrLastAdmin` to `self`). `POST /members` answers the one `202 {"status":"accepted"}`
+    whatever `AddByIdentifier` reports. `approvalMail` builds the `project.ApproveHook` that reads the
+    account and enqueues `mailjob.AccountApproved` (project name + `/p/<slug>/` link) on the approval's
+    transaction — nil without mail, so an approval then sends nothing. The member JSON carries no address.
+  - `respond.go` — the error codes and the sentinel → status table; anything else is a logged `500`.
 - **Tenant-isolation harness (`internal/projecttest`):** test support, **compiled only under the
   `integration` build tag** (so `make check` neither builds nor lints it — run
   `golangci-lint run --build-tags=integration ./internal/projecttest/...` after changing it). It exists
@@ -6975,7 +6994,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ResolveAccount` (username or uid) over the lists (`ErrProjectNotFound`/`ErrAccountNotFound`), the
     bare-array decoders and `WriteProjects`/`WriteProject`/`WriteAccounts`/`WriteAccount`.
     `cmd/kukatko/ctl_projects.go` builds both trees; `changedInt64` keeps "flag not given" apart from 0.
-    `errorMessage` (client.go) appends a refusal's `message` to its code (`invalid_slug: …`). `People`
+    `errorMessage` (client.go) appends a refusal's `message` to its code (`invalid_slug: …`).
+  - `members.go` — a project admin's `ctl members`: `ListMembers`/`AddMember`/`SetMemberRole`/
+    `ApproveMember`/`RemoveMember` under `/p/<slug>/members` (blank slug = `ErrNoProjectSlug`, blank
+    identifier = `ErrNoIdentifier`, both before any request), `ResolveMember` (username or uid over the
+    project's list, `ErrMemberNotFound`), `DecodeMembers`/`DecodeMember`, `WriteMembers`/`WriteMember`.
+    `cmd/kukatko/ctl_members.go` builds the tree with its own persistent `--project` (default `v`) until
+    contexts carry a project; `add` confirms neutrally, never claiming the account exists. `People`
     (`participants.go`) reads the name directory at `/p/v/users`, since the unprefixed path is the
     maintainer's account list.
   - `savedsearch.go` — the per-user "smart albums": `ListSavedSearches`/`GetSavedSearch`/`CreateSavedSearch`/

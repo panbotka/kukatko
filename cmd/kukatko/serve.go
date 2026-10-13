@@ -435,7 +435,7 @@ func discoveryAPIOptions(
 // and labels, feedback, the places browse hierarchy, the task queue, per-user
 // saved searches and search history, the announcement banner, the instance
 // settings, the returning-reader digest, the notification inbox and the
-// grouped global search. It returns the instance-wide groups built alongside:
+// grouped global search, and a project admin's member management. It returns the instance-wide groups built alongside:
 // the push subscriptions (the other half of the notification API), the audit
 // log and the system administrator's project and account management.
 // Splitting them out keeps buildServices within the function-length limit.
@@ -462,6 +462,7 @@ func readAPIOptions(
 	api.searchHistory = buildSearchHistoryAPI(db, authAPI).RegisterRoutes
 	api.announcement = buildAnnouncementAPI(db, authAPI).RegisterRoutes
 	api.settings = buildSettingsAPI(cfg, db, authAPI).RegisterRoutes
+	api.members = buildMemberAPI(cfg, db, authAPI).RegisterRoutes
 	api.whatsNew = buildWhatsNewAPI(db, authAPI).RegisterRoutes
 	api.globalSearch = buildGlobalSearchAPI(db, authAPI, mediaStore).RegisterRoutes
 	notifications := buildNotificationAPI(cfg, db, authAPI, mediaStore)

@@ -88,7 +88,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
   `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below).
   **`GET /api/v1/p/{project}/users`** (project-scoped, RequireAuth) → `{users:[{uid,name}]}`, the
-  people of the library ordered by the name each is known under, disabled and not-yet-approved accounts left out. It is the directory a *name* is
+  **project's approved members** ordered by the name each is known under — disabled accounts, memberships
+  still waiting for approval and every account of another project left out, so a tenant never learns who
+  else uses the instance. It is the directory a *name* is
   picked from — putting somebody on a task is how a question reaches the one relative who would know — and
   it is deliberately **not** the administrative view below: no addresses, no roles, no approval state, no
   notes. Widening it to every signed-in role exposes nothing a thread does not already, since every comment
@@ -110,17 +112,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin` then check the **project** role,
   `RequireMaintainer`/`RequireImport` the **instance** role (checked before the project, so a
   non-maintainer always gets the same 403).
-  Admin-only: `GET|POST /admin/users`,
-  `PATCH /admin/users/{uid}`, `PUT /admin/users/{uid}/username` (rename, see below),
-  `POST /admin/users/{uid}/approve`, `POST /admin/users/{uid}/disable` (**maintainer-only**: blocking
-  locks the account out of every project), `POST /admin/users/{uid}/password` (reset revokes all of the
-  user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
+  Admin-only: `GET|POST /admin/users`, `PUT /admin/users/{uid}/username` (rename, see below),
+  `POST /admin/users/{uid}/password` (reset revokes all of the user's sessions),
+  `POST /admin/users/{uid}/password-reset` (see below). **Maintainer-only** (the account record is
+  instance-level): `PATCH /admin/users/{uid}` (profile, `disabled`, transitional `role`) and
+  `POST /admin/users/{uid}/disable` (blocking locks the account out of every project). A project admin
+  manages roles and approval of their own members through the **Members API** below. **Removed:**
+  `POST /admin/users/{uid}/approve` — approval is a membership's (`POST /p/{project}/members/{user_uid}/approve`).
   **Roles on the admin user endpoints (transition):** `role` in the bodies and responses is still the
   five-rung `viewer|curator|editor|admin|maintainer`: `maintainer` sets `users.role = 'maintainer'` (and
   an admin membership of the bootstrap project), any other value sets `users.role = 'user'` and the
   account's bootstrap membership to that role (created when missing). A registration creates a `user`
-  with an **unapproved viewer membership**; `POST /admin/users/{uid}/approve` approves that membership
-  and also stamps `users.approved_at`.
+  with an **unapproved viewer membership**; a project admin's `POST /p/{project}/members/{user_uid}/approve`
+  approves that membership and also stamps `users.approved_at` (sign-in still reads it).
   Responses of the admin user endpoints carry a free-form **`note`** alongside
   `display_name` (an admin note on why the account exists / who it is). Both fields are optional,
   defaulting to the empty string. A `note` longer than **1000 characters** (runes, not bytes) → 400
@@ -165,7 +169,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   **`approved_at`** is when an administrator let the account in; `null` means *registered, waiting for
   an administrator*. Every account made through `POST /admin/users` (and the bootstrap maintainer) is
   approved on creation — an administrator creating an account **is** the approval — so `null` belongs
-  to the accounts `POST /auth/register` makes, until `POST /admin/users/{uid}/approve` (below) fills it; accounts predating migration 0064
+  to the accounts `POST /auth/register` makes, until a project admin approves their membership (Members
+  API below), which fills it too; accounts predating migration 0064
   were backfilled as approved with their `created_at`. It is **not** the inverse of `disabled` and no
   reader may collapse the two: *never approved* and *approved and later blocked* are different states,
   they mean opposite things to the person holding the account, and the admin listing shows both
@@ -258,21 +263,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`photos.uploaded_by`, only where still unowned; what the same browser uploaded into another project is
   not claimed); their sidecars are rescheduled after the commit. The gate is
   `uploadlinkapi.RegistrationGate` behind the `auth.UploadLinkGate` interface.
-  **`POST /admin/users/{uid}/approve` (admin) — letting a waiting account in.** No body; **200**
-  returns the updated account (the admin view, `note` included) with `approved_at` filled from the
-  server clock. It **does not change the role**: the account was registered on `viewer` and raising it
-  is a separate, deliberate `PATCH /admin/users/{uid}` — "may come in" and "may edit the library" are
-  two decisions. Approving an **already approved** account is **200 with the account unchanged** —
-  no second stamp, no second mail, no second audit entry — because an administrator clicking twice must
-  not see a failure. Approving a **blocked** account is **409** (`auth: user is disabled`): unblocking
-  is the existing action (`PATCH` clearing `disabled`) and conflating the two would hide which one was
-  meant; it is a 409 rather than a 403 for the same reason `ErrLastMaintainer` is — re-enabling the
-  account first makes the identical request succeed. The **maintainer boundary** applies exactly as on
-  the other user-management endpoints: an admin approving a **maintainer** account → **403**
-  (`auth: only a maintainer may manage the maintainer role`); a UID naming nobody → **404**. On a real
-  approval one mail is enqueued on the job queue (`account_approved`, `mail_send`) **in the same
-  transaction** as the stamp and the `user.approve` audit entry, so a rolled-back approval promises
-  nobody anything; its sign-in link is `mail.base_url` + `/login`.
+  **`POST /admin/users/{uid}/approve` — removed** (multi-tenancy step 24). Letting somebody in is
+  approving their membership of one project, `POST /p/{project}/members/{user_uid}/approve` (Members
+  API); a blocked account stays blocked whatever its memberships say.
   **`PUT /admin/users/{uid}/username` (admin) — renaming an account.** Body `{"username": "…"}`; **200**
   returns the account (the admin view). It is a route of its own rather than a field of `PATCH`, because
   that endpoint replaces the profile and is resent whole by every save, while a rename has its own audit
@@ -381,6 +374,37 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     404 `not_found`.
   - Blocking an account stays `POST /admin/users/{uid}/disable`, now **maintainer-only** (it locks the
     account out of every project).
+- **Members (project admin) (`/api/v1/p/{project}/members`, `internal/memberapi`):** a project admin's
+  management of the members of **their** project. Mounted **only under `/p/{project}`** (no transition
+  alias) and every route **`RequireAdmin`** — the project's admin, or a maintainer, who enters every project
+  as its admin. The project is the URL's: an admin of A addressing B's members gets **the very 404 an
+  unknown slug gets** (`{"error":"project not found"}`), on every route. Refusals are `{"error":"<code>"}`
+  (+ a human `message` where the client should show the rule); every mutation is audited by
+  `internal/project` in the change's transaction, with the project.
+  - `GET /members` → a bare array by display name: `[{user_uid, username, display_name, role,
+    approved_at, last_login_at, has_picture}]` — `approved_at: null` is a membership waiting for
+    approval; `has_picture` says `GET /users/{uid}/avatar` is worth asking (an uploaded/picked picture
+    or a linked person; a 404 there still means none). **No e-mail address.**
+  - `POST /members` `{identifier, role}` — add an **existing** account by its **exact** username (as
+    sign-in normalises it: trimmed, lower-cased) or its e-mail address (**case-insensitive**); nothing is
+    matched partially and a username wins over an address. The answer is **always `202
+    {"status":"accepted"}`**, byte for byte, whether the account was added, already was a member, or does
+    not exist — no enumeration. The membership starts **approved** (and stamps `users.approved_at`). The
+    `project.member.add` audit entry records the real `outcome`: `added`, `already_member` (the
+    membership is left untouched), `no_such_account` (with the typed `identifier`), or `ambiguous` (an
+    address several accounts share — nobody is added). Only a malformed request is refused: 400
+    `invalid_body`, 422 `invalid_role` (`viewer|curator|editor|admin`; `maintainer` is not a project role),
+    422 `invalid_identifier` (blank).
+  - `PATCH /members/{user_uid}` `{role}` → 200 + the member. **The caller's own membership → 409 `self`**
+    (another admin must change it); **409 `last_admin`** when it would demote the project's only admin;
+    404 `not_member`; 422 `invalid_role`; 400 `invalid_body`. Setting the role it has records nothing.
+  - `POST /members/{user_uid}/approve` → 200 + the member. Stamps the membership (and, transition,
+    `users.approved_at`) and enqueues the `account_approved` mail **in the same transaction** — it names
+    the project and links to `mail.base_url` + `/p/<slug>/`. Approving an approved member is 200 with
+    nothing changed, mailed or audited; 404 `not_member`.
+  - `DELETE /members/{user_uid}` → 204; the account itself stays. **409 `last_admin`** for the project's
+    only admin; for the **caller themselves 409 `self`** unless another admin remains (then they leave and
+    the project answers them 404 from then on); 404 `not_member`.
 - **API tokens (`/api/v1/auth/tokens`, all behind `RequireAuth`):** long-lived bearer credentials for
   non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?, unlimited?}`) → 201
   `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?,unlimited}, secret:"kkt_<id>_<secret>"}`
