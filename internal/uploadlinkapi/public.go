@@ -165,13 +165,13 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, uploadResponse{Results: results})
 }
 
-// liveTarget is a live link together with what its project says about where
-// its uploads go: the object-store prefix of the link's project.
+// liveTarget is a live link together with the project its uploads go into —
+// which the pipeline needs whole, for its uid and its storage prefix.
 type liveTarget struct {
 	uploadlink.Link
-	// storagePrefix is the link's project's storage prefix ("" for the
-	// bootstrap project).
-	storagePrefix string
+	// project is the link's project. Without a ProjectResolver wired it is the
+	// bare uid with the root layout's empty prefix.
+	project *project.Project
 }
 
 // liveLink resolves the {code} link — instance-wide, by its code alone — and
@@ -189,7 +189,7 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool
 		a.serverError(w, r, "resolving upload link", err)
 		return liveTarget{}, false
 	}
-	target := liveTarget{Link: link}
+	target := liveTarget{Link: link, project: &project.Project{UID: link.ProjectUID, Active: true}}
 	if a.projects != nil {
 		p, err := a.projects.Get(r.Context(), link.ProjectUID)
 		if errors.Is(err, project.ErrNotFound) || (err == nil && !p.Active) {
@@ -200,7 +200,7 @@ func (a *API) liveLink(w http.ResponseWriter, r *http.Request) (liveTarget, bool
 			a.serverError(w, r, "resolving the upload link's project", err)
 			return liveTarget{}, false
 		}
-		target.storagePrefix = p.StoragePrefix
+		target.project = p
 	}
 	if state := link.StateAt(a.now()); state != uploadlink.StateActive {
 		writeJSON(w, http.StatusGone, goneBody{Error: linkGoneMessage, State: state})
@@ -325,9 +325,8 @@ func (a *API) ingestOne(r *http.Request, part *multipart.Part, link liveTarget, 
 	}
 	// The photo goes into the link's project, under that project's prefix,
 	// whoever is uploading: the public route has no project of its own.
-	res := a.ingest.IngestFile(r.Context(), src, ingest.Request{
+	res := a.ingest.IngestFile(r.Context(), link.project, src, ingest.Request{
 		Filename: filename, UploadedBy: who.userUID,
-		ProjectUID: link.ProjectUID, StoragePrefix: link.storagePrefix,
 	})
 	if res.Outcome == ingest.OutcomeError || res.PhotoUID == "" {
 		a.release(r, link)

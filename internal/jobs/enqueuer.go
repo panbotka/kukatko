@@ -200,8 +200,9 @@ type FamilyExportPayload struct {
 // export of that project's whole genealogy. Its payload is FamilyExportPayload:
 // the project and nothing else, because there is one file per project and the
 // handler reads the current state of every family of it when it runs. An empty
-// projectUID is refused — a job naming no project would be read as the bootstrap
-// project's, which is never what a caller without one meant.
+// projectUID is refused with ErrProjectRequired — a job naming no project would
+// be read as the bootstrap project's, which is never what a caller without one
+// meant.
 //
 // Dedup is per project and scoped to the queued state
 // (idx_jobs_family_export_dedup on payload ->> 'project_uid', migration 0106): a
@@ -217,7 +218,7 @@ type FamilyExportPayload struct {
 // state rather than the old one.
 func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context, projectUID string) error {
 	if projectUID == "" {
-		return fmt.Errorf("jobs: enqueuing %s: no project given", TypeFamilyExport)
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeFamilyExport, ErrProjectRequired)
 	}
 	payload, err := json.Marshal(FamilyExportPayload{ProjectUID: projectUID})
 	if err != nil {
@@ -258,8 +259,11 @@ type TaskDigestPayload struct {
 // fresh one; the handler's own stamp on the membership is what keeps the
 // second run from repeating the mail.
 func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context, projectUID, userUID string) error {
-	if projectUID == "" || userUID == "" {
-		return fmt.Errorf("jobs: enqueuing %s: a digest names one project and one person", TypeTaskDigest)
+	if projectUID == "" {
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeTaskDigest, ErrProjectRequired)
+	}
+	if userUID == "" {
+		return fmt.Errorf("jobs: enqueuing %s: a digest names one person", TypeTaskDigest)
 	}
 	payload, err := json.Marshal(TaskDigestPayload{ProjectUID: projectUID, UserUID: userUID})
 	if err != nil {
@@ -275,11 +279,20 @@ func (e *Enqueuer) EnqueueTaskDigest(ctx context.Context, projectUID, userUID st
 }
 
 // EnqueueNotificationPurge schedules one run of the notification retention
-// purge. Like EnqueueTaskDigest it takes no identifier and no delay, and a job
-// already queued (idx_jobs_notification_purge_dedup, migration 0096) makes it a
-// no-op, so a restart cannot pile up purges.
-func (e *Enqueuer) EnqueueNotificationPurge(ctx context.Context) error {
-	if _, err := e.store.Enqueue(ctx, TypeNotificationPurge, nil, EnqueueOptions{}); err != nil {
+// purge of the project projectUID. It takes no delay, and a job already queued
+// for the same project (idx_jobs_notification_purge_dedup, migration 0108)
+// makes it a no-op, so a restart cannot pile up purges while another project's
+// queued purge never swallows this one. An empty projectUID is refused
+// (ErrProjectRequired): the purge is per project.
+func (e *Enqueuer) EnqueueNotificationPurge(ctx context.Context, projectUID string) error {
+	if projectUID == "" {
+		return fmt.Errorf("jobs: enqueuing %s: %w", TypeNotificationPurge, ErrProjectRequired)
+	}
+	payload, err := projectJSON(projectUID)
+	if err != nil {
+		return err
+	}
+	if _, err := e.store.Enqueue(ctx, TypeNotificationPurge, payload, EnqueueOptions{}); err != nil {
 		if errors.Is(err, ErrDuplicate) {
 			return nil
 		}

@@ -197,9 +197,15 @@ func jpegBytes(t *testing.T, r, g, b uint8, quality int) []byte {
 	return buf.Bytes()
 }
 
+// bootstrapProject is the project a test upload goes into unless the test
+// names another: the bootstrap project, with the root layout's empty prefix.
+func bootstrapProject() *project.Project {
+	return &project.Project{UID: project.BootstrapUID, Slug: project.BootstrapSlug, Active: true}
+}
+
 // ingest is a helper that runs one in-memory file through the pipeline.
 func (e *testEnv) ingest(ctx context.Context, data []byte, name string) ingest.FileResult {
-	return e.svc.Ingest(ctx, bytes.NewReader(data), name, e.uploader)
+	return e.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(data), name, e.uploader)
 }
 
 // TestIngest_singleCreatesEverything verifies a fresh upload creates the photo,
@@ -340,7 +346,7 @@ func TestIngest_concurrentIdentical(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			results[i] = env.svc.Ingest(ctx, bytes.NewReader(data), "race.jpg", env.uploader)
+			results[i] = env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(data), "race.jpg", env.uploader)
 		}()
 	}
 	wg.Wait()

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/exif"
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecar"
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -448,4 +450,35 @@ func TestExtractMedia_datesFromTheUploadNameNotTheStagedFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestIngestFile_refusesWithoutAProject checks a file handed over without the
+// project it belongs to is refused before anything is read or stored: there is
+// no default project to catalogue it in.
+func TestIngestFile_refusesWithoutAProject(t *testing.T) {
+	t.Parallel()
+
+	svc := New(Config{TempDir: t.TempDir()})
+	for name, proj := range map[string]*project.Project{"nil": nil, "no uid": {}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			src := &countingReader{}
+			res := svc.IngestFile(t.Context(), proj, src, Request{Filename: "a.jpg"})
+			if res.Outcome != OutcomeError || res.Status != http.StatusInternalServerError {
+				t.Fatalf("result = %+v, want a 500 error", res)
+			}
+			if src.reads != 0 {
+				t.Fatalf("the source was read %d times, want 0", src.reads)
+			}
+		})
+	}
+}
+
+// countingReader is an io.Reader that counts its reads and is always empty.
+type countingReader struct{ reads int }
+
+// Read counts the call and reports end of input.
+func (c *countingReader) Read([]byte) (int, error) {
+	c.reads++
+	return 0, io.EOF
 }

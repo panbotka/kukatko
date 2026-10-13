@@ -54,27 +54,24 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // dedupIndexes names every index whose violation means "this work is already
 // scheduled" rather than a broken insert, so Enqueue answers ErrDuplicate for it.
 //
-// There are two shapes of duplicate. idx_jobs_dedup (migrations 0005 and
-// 0044) keys the per-photo types on (type, payload ->> 'photo_uid'); the
-// library-wide genealogy export idx_jobs_family_export_dedup keys on the
-// payload's project_uid (migration 0106, on the type alone before it); the
-// task digest idx_jobs_task_digest_dedup keys on the payload's project_uid and
-// user_uid (migration 0107, on the type alone before it); the library-wide
-// idx_jobs_notification_purge_dedup (migration 0096) keys on the type alone, since
-// their payloads name no photo and NULLs would otherwise be distinct. The
-// per-account tag_notify job (idx_jobs_tag_notify_dedup, migration 0089) keys
-// on the payload's user_uid for the same reason, and the per-album
-// album_featured_notify job (idx_jobs_album_featured_notify_dedup, migration
-// 0097) on the payload's album_uid.
+// The shape of a duplicate follows the job's category (see the package doc).
+// idx_jobs_dedup (migrations 0005 and 0044) keys the per-photo types on (type,
+// payload ->> 'photo_uid'). The library-wide types key on (type, payload ->>
+// 'project_uid') — face_cluster, family_export and notification_purge
+// (migration 0108), plus the further identifier a job carries: the task digest
+// on the project and the person (0107), the nameless repair on the project and
+// the subject (0105). The per-account tag_notify job keys on the payload's
+// user_uid (0089) and the per-album album_featured_notify job on its album_uid
+// (0097).
 var dedupIndexes = map[string]bool{
 	"idx_jobs_dedup":                       true,
 	"idx_jobs_family_export_dedup":         true,
 	"idx_jobs_task_digest_dedup":           true,
 	"idx_jobs_tag_notify_dedup":            true,
 	"idx_jobs_album_featured_notify_dedup": true,
-	// The daily inbox retention purge, keyed on the type alone.
+	// The daily inbox retention purge, one queued per project (migration 0108).
 	"idx_jobs_notification_purge_dedup": true,
-	// The face-grouping pass, one queued per project (migration 0105).
+	// The face-grouping pass, one queued per project (migrations 0105, 0108).
 	"idx_jobs_face_cluster_dedup": true,
 	// The nameless repair, one queued per (type, project, subject) (migration 0105).
 	"idx_jobs_nameless_dedup": true,
@@ -136,10 +133,17 @@ type Execer interface {
 // It is idempotent with respect to the dedup key: if an active (queued or
 // running) job already exists for the same (type, payload->>'photo_uid') it
 // returns ErrDuplicate without inserting. A payload without a photo_uid — a mail,
-// a backup — never dedupes, because NULLs are distinct in a unique index.
+// a backup — never dedupes, because NULLs are distinct in a unique index; the
+// library-wide types have dedup indexes of their own, keyed on their project.
+//
+// A library-wide type (IsLibraryWide) whose payload names no project_uid is
+// refused with ErrProjectRequired before anything is written.
 func Enqueue(
 	ctx context.Context, exec Execer, jobType string, payload json.RawMessage, opts EnqueueOptions,
 ) (Job, error) {
+	if err := checkProject(jobType, payload); err != nil {
+		return Job{}, err
+	}
 	const q = `INSERT INTO jobs (type, state, priority, payload, max_attempts, run_after)
 		VALUES ($1, 'queued', $2, $3, $4, $5)
 		RETURNING ` + jobColumns
@@ -190,9 +194,15 @@ const enqueueOrSkipSQL = `INSERT INTO jobs (type, state, priority, payload, max_
 // is already scheduled". A concurrent transaction holding an uncommitted row
 // with the same key makes the insert wait for that transaction to finish, as
 // any unique insert does, and then skip or insert according to its outcome.
+//
+// Like Enqueue it refuses a library-wide type naming no project with
+// ErrProjectRequired, before the statement runs (so the transaction survives).
 func EnqueueOrSkip(
 	ctx context.Context, exec Execer, jobType string, payload json.RawMessage, opts EnqueueOptions,
 ) (Job, error) {
+	if err := checkProject(jobType, payload); err != nil {
+		return Job{}, err
+	}
 	maxAttempts, runAfter := opts.resolve()
 	job, err := scanJob(exec.QueryRow(ctx, enqueueOrSkipSQL,
 		jobType, opts.Priority, payloadOrEmpty(payload), maxAttempts, runAfter))
@@ -777,11 +787,15 @@ func (s *Store) requeueMissReason(ctx context.Context, id int64) error {
 	return ErrNotDead
 }
 
-// ListOptions filters and paginates Store.List. The zero value lists the most
-// recently updated jobs across all states up to defaultListLimit.
+// ListOptions filters and paginates List.
 type ListOptions struct {
 	// State, when non-nil, restricts the result to jobs in that lifecycle state.
 	State *State
+	// Project, when non-empty, restricts the result to the jobs of the project
+	// with that slug: a library-wide job naming it in its payload's project_uid,
+	// or a per-photo job whose photo belongs to it. An unknown slug matches
+	// nothing.
+	Project string
 	// Limit caps the page size; a non-positive value uses defaultListLimit and
 	// any value above maxListLimit is clamped to it.
 	Limit int
@@ -789,10 +803,37 @@ type ListOptions struct {
 	Offset int
 }
 
+// ListedJob is one row of List: the job and the slug of the project it works
+// on. Project is read from the payload's project_uid for a library-wide job and
+// from the photo for a per-photo one; it is "" for an instance-wide job (a
+// backup, a mail) and for a job whose project or photo is gone.
+type ListedJob struct {
+	Job
+	// Project is the slug of the job's project, or "" when it has none.
+	Project string `json:"project"`
+}
+
+// listSQL pages through the queue newest-updated first with each job's project
+// slug: the project the payload names (the library-wide jobs), else the
+// project of the photo the payload names (the per-photo jobs). $3 filters on the
+// state and $4 on the project slug; NULL and the empty string mean "any".
+const listSQL = `SELECT j.id, j.type, j.state, j.priority, j.payload, j.attempts, j.max_attempts,
+	j.last_error, j.run_after, j.locked_by, j.locked_at, j.created_at, j.updated_at,
+	coalesce(pj.slug, pp.slug, '')
+FROM jobs j
+LEFT JOIN projects pj ON pj.uid = j.payload ->> 'project_uid'
+LEFT JOIN photos ph ON ph.uid = j.payload ->> 'photo_uid'
+LEFT JOIN projects pp ON pp.uid = ph.project_id
+WHERE ($3::text IS NULL OR j.state = $3::text)
+  AND ($4::text = '' OR coalesce(pj.slug, pp.slug) = $4::text)
+ORDER BY j.updated_at DESC, j.id DESC
+LIMIT $1 OFFSET $2`
+
 // List returns a page of jobs ordered most-recently-updated first (id breaks
-// ties), optionally restricted to a single state. It backs the admin job
-// browser and dead-letter view.
-func (s *Store) List(ctx context.Context, opts ListOptions) ([]Job, error) {
+// ties), each with the slug of its project, optionally restricted to a single
+// state and to one project (see ListOptions). It backs the admin job browser
+// and dead-letter view.
+func (s *Store) List(ctx context.Context, opts ListOptions) ([]ListedJob, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultListLimit
@@ -800,26 +841,30 @@ func (s *Store) List(ctx context.Context, opts ListOptions) ([]Job, error) {
 	if limit > maxListLimit {
 		limit = maxListLimit
 	}
-	args := []any{limit, opts.Offset}
-	where := ""
+	var state *string
 	if opts.State != nil {
-		where = "WHERE state = $3 "
-		args = append(args, string(*opts.State))
+		st := string(*opts.State)
+		state = &st
 	}
-	q := "SELECT " + jobColumns + " FROM jobs " + where +
-		"ORDER BY updated_at DESC, id DESC LIMIT $1 OFFSET $2"
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.pool.Query(ctx, listSQL, limit, opts.Offset, state, opts.Project)
 	if err != nil {
 		return nil, fmt.Errorf("jobs: listing jobs: %w", err)
 	}
 	defer rows.Close()
-	list := make([]Job, 0, limit)
+	list := make([]ListedJob, 0, limit)
 	for rows.Next() {
-		job, err := scanJob(rows)
-		if err != nil {
-			return nil, err
+		var listed ListedJob
+		var payload []byte
+		j := &listed.Job
+		if err := rows.Scan(
+			&j.ID, &j.Type, &j.State, &j.Priority, &payload, &j.Attempts, &j.MaxAttempts,
+			&j.LastError, &j.RunAfter, &j.LockedBy, &j.LockedAt, &j.CreatedAt, &j.UpdatedAt,
+			&listed.Project,
+		); err != nil {
+			return nil, fmt.Errorf("jobs: scanning listed job: %w", err)
 		}
-		list = append(list, job)
+		j.Payload = payload
+		list = append(list, listed)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("jobs: iterating jobs: %w", err)

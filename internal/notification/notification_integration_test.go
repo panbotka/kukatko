@@ -506,10 +506,18 @@ func TestPurgeRespectsBothThresholds(t *testing.T) {
 		}
 	}
 
-	if _, err := f.store.Purge(ctx, now, notification.Retention{Read: 90 * time.Hour, Unread: time.Hour}); !errors.Is(err, notification.ErrInvalidRetention) {
+	if _, err := f.store.Purge(ctx, project.BootstrapUID, now,
+		notification.Retention{Read: 90 * time.Hour, Unread: time.Hour}); !errors.Is(err, notification.ErrInvalidRetention) {
 		t.Fatalf("Purge with unread < read = %v, want ErrInvalidRetention", err)
 	}
-	deleted, err := f.store.Purge(ctx, now, retention)
+	if _, err := f.store.Purge(ctx, "", now, retention); !errors.Is(err, notification.ErrNoProject) {
+		t.Fatalf("Purge without a project = %v, want ErrNoProject", err)
+	}
+	// Another project's purge leaves this project's notifications alone, however old.
+	if other, err := f.store.Purge(ctx, "pj000000000000000000000other", now, retention); err != nil || other != 0 {
+		t.Fatalf("Purge of another project = %d, %v; want 0, nil", other, err)
+	}
+	deleted, err := f.store.Purge(ctx, project.BootstrapUID, now, retention)
 	if err != nil {
 		t.Fatalf("Purge: %v", err)
 	}

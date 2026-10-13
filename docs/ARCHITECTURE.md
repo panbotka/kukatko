@@ -880,6 +880,20 @@ lost on restart).
   stops claiming and leaves abandoned in-flight jobs to the queue for recovery — except a deferral
   (`RetryAfterError`), which is still written so it never burns a retry attempt. The queue state is read via the **admin Jobs API**
   (`internal/jobsapi`: `GET /jobs/stats`, `GET /jobs`, `POST /jobs/{id}/requeue`); the UI polls it.
+- **Jobs and projects — three categories.** Every job type is exactly one of: **per-photo** (`thumbnail`,
+  `image_embed`, `face_detect`, `metadata`, `ocr`, `sidecar`, `places`, `storyboard`, `hls_transcode`) —
+  payload `{photo_uid}`, deduped on (type, photo), the handler reads the project from the photo row it loads;
+  **library-wide** (`face_cluster`, `family_export`, `nameless_detach`/`nameless_restore`, `task_digest`,
+  `notification_purge`, the future `storage_rekey`) — the payload names the project as `project_uid`,
+  `jobs.Enqueue` refuses one without it (`ErrProjectRequired`), the dedup index keys on (type, `project_uid`)
+  (migration 0108) so one project's queued job never swallows another's, and the handler reads it with
+  `jobs.ProjectUIDOf(job)`, never from a global; **instance-wide** (`backup`, `mail_send`, `push_send`,
+  `tag_notify` keyed per account) — no project. Every scheduler-style trigger (the daily digest, the
+  recluster, the notification purge; the in-process trash retention purge alike) works per **active**
+  project. The admin job listing shows each job's project and filters on it (`GET /jobs?project=<slug>`).
+  Ingest is per project the same way: the dedup key is `(project_id, file_hash)` and an original's key is
+  the project's storage prefix + `YYYY/MM/<name>`, so the same bytes in two projects are two photos with two
+  keys.
 - **Job types:** `thumbnail`, `places`, `metadata`, `sidecar`, `storyboard`, `hls_transcode`, `mail_send`,
   `push_send`, `task_digest`, `tag_notify`, `album_featured_notify`, `face_cluster`
   (run locally on the

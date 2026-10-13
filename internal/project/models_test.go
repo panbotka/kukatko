@@ -226,3 +226,52 @@ func TestAppPath(t *testing.T) {
 		}
 	}
 }
+
+// TestActive verifies only active projects survive, in their order.
+func TestActive(t *testing.T) {
+	t.Parallel()
+
+	list := []Project{{UID: "a", Active: true}, {UID: "b"}, {UID: "c", Active: true}}
+	got := Active(list)
+	if len(got) != 2 || got[0].UID != "a" || got[1].UID != "c" {
+		t.Fatalf("Active = %+v, want a and c", got)
+	}
+	if got := Active(nil); len(got) != 0 {
+		t.Fatalf("Active(nil) = %+v, want none", got)
+	}
+}
+
+// TestForKey verifies a key resolves to the project whose prefix it is under,
+// the longest prefix winning, and a bare key to the root-layout project.
+func TestForKey(t *testing.T) {
+	t.Parallel()
+
+	root := Project{UID: "root"}
+	a := Project{UID: "a", StoragePrefix: "projects/a/"}
+	ab := Project{UID: "ab", StoragePrefix: "projects/a/b/"}
+	tests := []struct {
+		name   string
+		list   []Project
+		key    string
+		want   string
+		wantOK bool
+	}{
+		{name: "bare key is the root layout", list: []Project{root, a}, key: "2024/05/x.jpg", want: "root", wantOK: true},
+		{name: "prefixed key", list: []Project{root, a}, key: "projects/a/2024/05/x.jpg", want: "a", wantOK: true},
+		{name: "longest prefix wins", list: []Project{a, ab, root}, key: "projects/a/b/2024/x.jpg", want: "ab", wantOK: true},
+		{name: "no root and no prefix match", list: []Project{a}, key: "2024/05/x.jpg"},
+		{name: "empty list", key: "2024/05/x.jpg"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := ForKey(tt.list, tt.key)
+			if ok != tt.wantOK {
+				t.Fatalf("ForKey(%q) ok = %v, want %v", tt.key, ok, tt.wantOK)
+			}
+			if ok && got.UID != tt.want {
+				t.Fatalf("ForKey(%q) = %s, want %s", tt.key, got.UID, tt.want)
+			}
+		})
+	}
+}

@@ -8,6 +8,31 @@
 // This package owns only the storage and claim semantics; the execution loop
 // that drains the queue and calls the embedding service lives in the worker
 // runtime.
+//
+// # Job categories and the project
+//
+// One instance holds several projects (independent libraries), and every job
+// type falls into exactly one of three categories by how it learns which
+// project it works on:
+//
+//   - Per-photo (thumbnail, image_embed, face_detect, metadata, ocr, sidecar,
+//     places, storyboard, hls_transcode): the payload is {"photo_uid": …}, the
+//     dedup key is (type, photo_uid), and the handler reads the project from the
+//     photo row it loads (the photos store's ForJob loader). The payload names
+//     no project — a photo belongs to exactly one. album_featured_notify is the
+//     same shape keyed on an album: the album row carries the project.
+//   - Library-wide (face_cluster, family_export, nameless_detach,
+//     nameless_restore, task_digest, notification_purge, storage_rekey): the job
+//     works on one project's library as a whole, so its payload must name the
+//     project as project_uid (ProjectPayload) and its dedup index keys on (type,
+//     payload ->> 'project_uid') — one project's queued job never swallows
+//     another's. Enqueue refuses such a type without it (ErrProjectRequired),
+//     and the handler reads it back with ProjectUIDOf, never from a global. A
+//     scheduler-style trigger enqueues one job per active project.
+//   - Instance-wide (backup, mail_send, push_send, and tag_notify keyed per
+//     account): no project at all — one backup covers the instance, a mail or a
+//     push goes to one address or device, and tag_notify groups one account's
+//     tags by project inside its own run.
 package jobs
 
 import (
@@ -153,11 +178,12 @@ const (
 	// (migration 0097) keeps at most one queued job per album. See
 	// internal/albumfeaturedjob.
 	TypeAlbumFeaturedNotify = "album_featured_notify"
-	// TypeNotificationPurge deletes the notification records past their
-	// retention (read ones after 30 days, unread ones after 90). It runs locally
-	// and is enqueued once a day by the scheduler in internal/notifypurgejob; it
-	// belongs to no photo, so a dedup index of its own (migration 0096) keeps at
-	// most one queued job.
+	// TypeNotificationPurge deletes one project's notification records past
+	// their retention (read ones after 30 days, unread ones after 90). It runs
+	// locally and is enqueued once a day per active project by the scheduler in
+	// internal/notifypurgejob; its payload is ProjectPayload, and a dedup index
+	// of its own (migration 0108, on the type alone before it) keeps at most one
+	// queued job per project.
 	TypeNotificationPurge = "notification_purge"
 	// TypeNamelessDetach detaches one nameless catch-all subject: the subject row
 	// is deleted and every marker and cached face that pointed at it is left
@@ -191,6 +217,11 @@ const (
 	// videos serialises instead of saturating the machine and starving everything
 	// else. See internal/hlsjob.
 	TypeHLSTranscode = "hls_transcode"
+	// TypeStorageRekey moves one project's objects from the root layout to its
+	// own projects/<uid>/ prefix. It is reserved here — library-wide, so its
+	// payload must name the project — ahead of the step that implements it; no
+	// handler is registered for it yet.
+	TypeStorageRekey = "storage_rekey"
 )
 
 // ForceOutcome says what a forced enqueue did to the queue. A forced job carries

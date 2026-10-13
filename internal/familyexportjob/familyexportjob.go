@@ -118,19 +118,18 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	return err
 }
 
-// projectOf returns the project a family_export job's payload names, or the
-// bootstrap project for a job that names none.
+// projectOf returns the project a family_export job's payload names
+// (jobs.ProjectUIDOf), or the bootstrap project for a job queued before the
+// payload carried one. A payload that is not JSON at all is an error rather
+// than silently the bootstrap project's.
 func projectOf(job jobs.Job) (string, error) {
-	var payload jobs.FamilyExportPayload
-	if len(job.Payload) > 0 {
-		if err := json.Unmarshal(job.Payload, &payload); err != nil {
-			return "", fmt.Errorf("familyexportjob: decoding the payload of job %d: %w", job.ID, err)
-		}
+	if len(job.Payload) > 0 && !json.Valid(job.Payload) {
+		return "", fmt.Errorf("familyexportjob: the payload of job %d is not JSON", job.ID)
 	}
-	if payload.ProjectUID == "" {
-		return project.BootstrapUID, nil
+	if projectUID := jobs.ProjectUIDOf(job); projectUID != "" {
+		return projectUID, nil
 	}
-	return payload.ProjectUID, nil
+	return project.BootstrapUID, nil
 }
 
 // Export reads the whole genealogy of the project projectUID and writes its

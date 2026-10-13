@@ -22,7 +22,7 @@ func gpsSidecar() *sidecar.Metadata {
 // sidecar metadata folded in.
 func (e *testEnv) ingestWithSidecar(t *testing.T, data []byte, name string, sc *sidecar.Metadata) ingest.FileResult {
 	t.Helper()
-	return e.svc.IngestFile(t.Context(), bytes.NewReader(data), ingest.Request{
+	return e.svc.IngestFile(t.Context(), bootstrapProject(), bytes.NewReader(data), ingest.Request{
 		Filename: name, UploadedBy: e.uploader, Sidecar: sc,
 	})
 }

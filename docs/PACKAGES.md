@@ -1227,13 +1227,19 @@ to `## Package map` in `CLAUDE.md`.
   `imgconvert.ReserveDecode` to the pre-store decode (`verifyPixels`, whose reservation rides in `stagedPixels`
   and is released by `done()` right after the hashes — before the thumbnailer decodes again) and to the pHash
   decode; a rejected source becomes a `phash_failed` warning, the photo is still catalogued; the blurhash is
-  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,src,Request{Filename,UploadedBy,ProjectUID,StoragePrefix,Sidecar})`** (the full form;
-  `ProjectUID` confines the dedup lookup to that project (`GetByFileHashInProject`) and creates the row
-  there (`Photo.ProjectID` → `photos.Store.Create` writes `project_id`), `StoragePrefix` publishes the
-  original through `storage.PrefixStorer` (a store without it refuses a prefixed upload rather than share
-  an unprefixed key); both empty = the transition default, the bootstrap project at the root — the public
-  upload-link route passes its link's project, the other callers follow in the ingest-scoping step;
-  `Ingest(ctx,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
+  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,proj,src,Request{Filename,UploadedBy,Sidecar})`** (the full form; `proj` is the
+  **`*project.Project`** the caller resolved — the request's project on `POST /upload`
+  (`auth.ProjectFromContext`), the link's on the public upload-link route, the `--project` target of
+  `import dir`, the project whose prefix an orphan key is under for the maintenance re-import
+  (`project.ForKey`). The SHA-256 dedup looks up `(project_id, file_hash)` only
+  (`GetByFileHashInProject`), so the same bytes in two projects become **two photo rows**; the row is
+  created there (`Photo.ProjectID` → `photos.Store.Create` writes `project_id`); and the original is
+  published at `proj.StoragePrefix` + the usual `YYYY/MM/<name>` key through `storage.PrefixStorer` (a
+  store without it refuses a prefixed upload rather than share an unprefixed key). The bootstrap project's
+  prefix is empty and every other one's is `projects/<uid>/`, so **two projects never share a key**
+  (`TestIngest_dedupAndKeysArePerProject`). A nil project is refused before a byte is read (`ErrNoProject`,
+  a 500 result — a wiring bug, there is no default project);
+  `Ingest(ctx,proj,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
   — streams to a temp +
   SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
   every signature the pipeline ingests — `imgconvert.MagicFormat`'s rasters/HEIC/TIFF, the non-TIFF RAW
@@ -1333,9 +1339,9 @@ to `## Package map` in `CLAUDE.md`.
   — Google has no face boxes, so from them **no subject or marker may be created**),
   `internal/dirimport/`
   (**import of a directory from disk** — `kukatko import dir --project <slug> <path>`; `Service` = `New(Config{Ingest,Runs,
-  Photos,Filler,Curation,Albums,Labels,ProjectUID,StoragePrefix,Concurrency,Logger})` — `ProjectUID` is **the one
+  Photos,Filler,Curation,Albums,Labels,Project,Concurrency,Logger})` — `Project` (`*project.Project`) is **the one
   project of the whole run** (required: `Import` without one is `ErrNoProject` and touches nothing): every file goes
-  to ingest with `ingest.Request{ProjectUID,StoragePrefix}` (catalogued there, original under the prefix), the dry
+  to `ingest.IngestFile` with that project (catalogued there, original under its prefix), the dry
   run and the duplicate report look up `GetByFileHashInProject`/`GetByUIDInProject` (the same bytes in another
   project are new here), the run is `RunStore.Start(ctx, projectUID, SourceFolder)`, and `--album`, `--labels` and
   the export's favourites/ratings resolve there; the CLI resolves `--project` by slug and refuses a deactivated
@@ -1730,6 +1736,26 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `photo_uid`, so the index above cannot see it and every enqueue would be distinct — the queued-only scope is
   the sidecar's reasoning applied to the one file per project. Both index names map to `ErrDuplicate`
   (`dedupIndexes`);
+  **the three job categories** (`project.go`, the package doc) — every type is exactly one of:
+  **per-photo** (`thumbnail`, `image_embed`, `face_detect`, `metadata`, `ocr`, `sidecar`, `places`,
+  `storyboard`, `hls_transcode`; payload `{photo_uid}`, deduped on (type, `photo_uid`), the handler reads the
+  project from the photo row through the photos store's `ForJob` loader; `album_featured_notify` is the same
+  shape keyed on an album), **library-wide** (`face_cluster`, `family_export`, `nameless_detach`,
+  `nameless_restore`, `task_digest`, `notification_purge`, the reserved `storage_rekey` = `TypeStorageRekey`
+  with no handler yet; `IsLibraryWide(type)`) whose payload must name the project as `project_uid`
+  (`ProjectPayload{ProjectUID}`) — **`Enqueue` and `EnqueueOrSkip` refuse one without it with
+  `ErrProjectRequired`** before any SQL runs (so a caller's transaction survives), and the handler reads it
+  back with **`ProjectUIDOf(job)`** (`""` for a payload naming none: the handlers read that as the bootstrap
+  project, the only one a job queued before the field existed can mean), never from a global — and
+  **instance-wide** (`backup`, `mail_send`, `push_send`, `tag_notify` keyed per account and grouping by
+  project inside its run). The library-wide dedup indexes key on **(type, `payload->>'project_uid'`)** plus
+  the job's further identifier: migration **0108** rebuilds `idx_jobs_notification_purge_dedup` (on the type
+  alone since 0096), `idx_jobs_face_cluster_dedup` and `idx_jobs_family_export_dedup` (on the project alone
+  since 0105/0106) to that one shape, all still `state='queued'` only; the task digest keeps (project,
+  person) from 0107 and the nameless repair (type, project, subject) from 0105. Every scheduler-style trigger
+  enqueues one job per **active** project (`project.Active` over `project.Store.List`): the daily digest,
+  the recluster trigger, the notification purge (the trash retention purge sweeps the active projects in
+  process, no job);
   `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
   `EnqueueOptions{Priority,MaxAttempts,RunAfter}`) — a thin wrapper over the **package-level
@@ -1773,9 +1799,13 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   failed → queued, for the admin endpoint)/`RequeueAllDead(ctx, types...)` (the **bulk** requeue behind
   `POST /jobs/requeue-dead`: one `UPDATE` over the whole dead letter, or only the given job types, returning
   how many rows moved — the dashboard used to list the dead jobs and requeue one row per round trip, which is
-  hopeless for a dead letter of thousands)/`List`(`ListOptions{State,Limit,Offset}`, ordered
-  updated_at DESC, limit cap 500, for the admin listing)/`Get`; sentinels
-  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`/`ErrNoActiveJob`/`ErrEnqueueRaced`;
+  hopeless for a dead letter of thousands)/`List`(`ListOptions{State,Project,Limit,Offset}` →
+  `[]ListedJob{Job, Project}`, ordered updated_at DESC, limit cap 500, for the admin listing: `Project` is the
+  slug of the job's project — joined on `payload->>'project_uid'` for a library-wide job, through the photo
+  for a per-photo one, `""` for an instance-wide one — and `ListOptions.Project` keeps only that slug's
+  jobs, an unknown slug none)/`Get`; sentinels
+  `ErrDuplicate`/`ErrNoJobs`/`ErrJobNotFound`/`ErrLockLost`/`ErrNotDead`/`ErrNoActiveJob`/`ErrEnqueueRaced`/
+  `ErrProjectRequired`;
   `UpgradeToForced(ctx,type,photoUID,payload)` rewrites the payload of the **queued** job covering that photo to
   the forced one and reports what the collision was — `ForceUpgraded` (a queued plain job was rewritten),
   `ForceAbsorbed` (it was already forced) or `ForceInFlight` (it is running and beyond reach), `ErrNoActiveJob`
@@ -1817,7 +1847,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   every time, `metadata` is a gap-filler that never overwrites a value, and `storyboard` is a content-addressed
   cache file with nothing persisted behind it),
   `internal/worker/`
-  (the in-process background worker runtime, **the main queue execution loop**: `Registry` =
+  (the in-process background worker runtime, **the main queue execution loop**; it is project-blind —
+  a handler that needs the project of a library-wide job reads it with `jobs.ProjectUIDOf(job)`, a per-photo
+  handler from the photo it loads, never from a global: `Registry` =
   `NewRegistry()`+`Register(type, HandlerFunc)`+`Handler`/`Types` (panics on an empty type/nil
   handler/duplicate registration); `HandlerFunc` = `func(ctx, jobs.Job) error`; `Worker` =
   `New(Config{Queue,Registry,Concurrency,TypeConcurrency,PollInterval,StaleAfter,StaleScanInterval,
@@ -4057,8 +4089,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `view(user, link)` for a link `canManage` allows) and the public, **instance-level**
   `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`): `liveLink` resolves the link by code,
   then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
-  link's 404) into a `liveTarget{Link, storagePrefix}`, and every file is ingested with
-  `ingest.Request{ProjectUID, StoragePrefix}` of **the link's project** (its audit entry names it too); the upload walks the multipart stream once (the `name`
+  link's 404) into a `liveTarget{Link, project}`, and every file is handed to `IngestFile` with
+  **the link's project** (its audit entry names it too); the upload walks the multipart stream once (the `name`
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
   caps a request at `maxFilesPerRequest` = 50 file parts (refused ones count; the 51st is a 413 and ends
@@ -6349,10 +6381,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     keyed `"kind/channel"`. A (kind, channel) named twice is **`ErrDuplicateKind`** (no silent
     last-write-wins), an unknown kind `ErrUnknownKind`, a channel the kind lacks (an empty one included)
     `ErrUnsupportedChannel`, a missing account `ErrUserNotFound`; each writes nothing.
-  - **Retention.** `Purge(ctx, now, Retention{Read, Unread})` deletes read notifications recorded more
-    than `Read` ago and unread ones more than `Unread` ago (both measured from `created_at`); `Unread`
+  - **Retention.** `Purge(ctx, projectUID, now, Retention{Read, Unread})` deletes the project's read
+    notifications recorded more than `Read` ago and unread ones more than `Unread` ago (both measured from
+    `created_at`); another project's rows are never touched; an empty project is `ErrNoProject`, `Unread`
     shorter than `Read`, or a non-positive threshold, is `ErrInvalidRetention`. `DefaultRetention()` is
-    30 d / 90 d. It runs daily through the `notification_purge` job (`internal/notifypurgejob`).
+    30 d / 90 d. It runs daily, one job per active project, through the `notification_purge` job
+    (`internal/notifypurgejob`).
   - The wipe (`internal/reset`) empties `notifications` + `notification_photos` and preserves
     `notification_prefs`. Tests: field rules, the registry, preference merge and audit-entry shaping as
     unit tests; over a real database — atomic create (a missing photo or account leaves nothing), the
@@ -6599,17 +6633,22 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     builder without a base URL, both instance switches off (no record), a blank address skipping only the
     mail, the wrapped failures, the required dependencies.
 
-- **Notification retention (`internal/notifypurgejob`):** the `notification_purge` job and its scheduler.
-  `New(Config{Notifications, Retention, Clock, Logger})` — `Handle` runs `notification.Store.Purge` as of
-  the clock with `notification.DefaultRetention()` (read 30 d, unread 90 d) unless a retention is given;
-  a failure goes back to the queue. `NewScheduler(enqueuer, interval, logger)` enqueues through
-  `jobs.Enqueuer.EnqueueNotificationPurge` **at startup and every `Interval` (24 h)** after, until its
-  context ends; a failed enqueue is logged and the loop goes on. Dedup: `idx_jobs_notification_purge_dedup`
-  (migration 0096) keeps at most one **queued** purge, so restarts cannot pile them up. Wired in
-  `cmd/kukatko/notifydeliver.go` (`buildNotifyPurgeService` registered unconditionally,
-  `buildNotifyPurgeScheduler` started by `serve`). Tests: the retention defaulting, the clock, the
-  returned failure, the scheduler's startup + periodic enqueues surviving failures, its defaults; the
-  dedup is covered in `internal/jobs`' integration tests.
+- **Notification retention (`internal/notifypurgejob`):** the `notification_purge` job and its scheduler,
+  **one purge per project** (a library-wide job). `New(Config{Notifications, Retention, Clock, Logger})` —
+  `Handle` runs `notification.Store.Purge(ctx, projectUID, now, retention)` for the project the payload
+  names (`jobs.ProjectUIDOf`; a legacy payload naming none = the bootstrap project) as of the clock with
+  `notification.DefaultRetention()` (read 30 d, unread 90 d) unless a retention is given; the purge deletes
+  only that project's rows (`notifications.project_id`); a failure goes back to the queue.
+  `NewScheduler(enqueuer, projects, interval, logger)` enqueues through
+  `jobs.Enqueuer.EnqueueNotificationPurge(ctx, projectUID)` one purge per **active** project (`Tick`,
+  `project.Active`; a failed project does not stop the others) **at startup and every `Interval` (24 h)**
+  after, until its context ends; a failed round is logged and the loop goes on. Dedup:
+  `idx_jobs_notification_purge_dedup` (migration 0108, on the type alone since 0096) keeps at most one
+  **queued** purge per project, so restarts cannot pile them up. Wired in `cmd/kukatko/notifydeliver.go`
+  (`buildNotifyPurgeService` registered unconditionally, `buildNotifyPurgeScheduler` started by `serve`).
+  Tests: the retention defaulting, the clock, the payload's project and the legacy fallback, the returned
+  failure, the scheduler's startup + periodic enqueues surviving failures, one enqueue per active project,
+  its defaults; the dedup is covered in `internal/jobs`' integration tests.
 
 - **Projects (`internal/project`):** the first step of multi-tenancy
   ([design](superpowers/specs/2026-10-11-multi-tenancy-design.md)) — the `projects` table (migration
@@ -6623,6 +6662,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the reserved words `p`, `api`, `u`, `invite`, `system`, `login`, `register`, `projects`, `account`,
     `healthz`, `metrics` — path segments the app itself needs next to `/p/<slug>/`), `ValidateStoragePrefix`
     (empty, or relative and ending in `/` — the CHECK again), `StoragePrefixFor(uid)` = `projects/<uid>/`;
+    `Active(list)` keeps the active projects (what a scheduler enqueues one job per), `ForKey(list, key)` names
+    the project whose storage layout an object key belongs to (the longest non-empty prefix it is under, else
+    the empty-prefix root-layout project; false when none claims it);
     `AppPath(slug, path)` = `/p/<slug>` + path, the in-app address of a project's page that every deep link
     leaving the app (push, e-mail, a notification's link) carries (`AppPathPrefix = "/p/"`);
     the `pj` uid generator (the `internal/photos` pattern: 24 base32 chars, 26 total). Sentinels

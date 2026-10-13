@@ -1256,7 +1256,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   503 rule is the photo thread's.
 - **Jobs API (`/api/v1`, `internal/jobsapi`, maintainer-only via `RequireMaintainer`):**
   `GET /jobs/stats` → `{by_state,by_type,total}`; `GET /jobs` → `{jobs,limit,offset}`
-  (recent/dead-letter listing, query `state`/`limit`/`offset`, invalid → 400);
+  (recent/dead-letter listing, query `state`/`project`/`limit`/`offset`, invalid → 400); every job carries
+  `project` — the slug of the project it works on, read from the payload's `project_uid` for a library-wide
+  job and through the photo for a per-photo one, `""` for an instance-wide job (backup, mail, push) —
+  and `?project=<slug>` keeps only that project's jobs (an unknown slug lists none);
   `POST /jobs/{id}/requeue` → refreshed job (dead/failed → queued; 404 missing, 409
   non-requeueable);
   `POST /jobs/requeue-dead` → `{requeued}` — the **bulk** requeue, optionally narrowed by the query

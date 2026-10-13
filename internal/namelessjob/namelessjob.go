@@ -308,9 +308,9 @@ type restorePayload struct {
 	Actor      actor                  `json:"actor,omitzero"`
 }
 
-// projectOrBootstrap returns the project a job's payload names, or the bootstrap
-// project for a job queued before the payload carried one — the only project
-// there was when it was queued.
+// projectOrBootstrap returns projectUID — the project a job's payload names, as
+// jobs.ProjectUIDOf reads it — or the bootstrap project for a job queued before
+// the payload carried one, the only project there was when it was queued.
 func projectOrBootstrap(projectUID string) string {
 	if projectUID == "" {
 		return project.BootstrapUID
@@ -339,7 +339,7 @@ func (s *Service) HandleDetach(ctx context.Context, job jobs.Job) error {
 		"markers": p.MarkerCount,
 		"faces":   p.FaceCount,
 	})
-	projectUID := projectOrBootstrap(p.ProjectUID)
+	projectUID := projectOrBootstrap(jobs.ProjectUIDOf(job))
 	entry.ProjectUID = projectUID
 	snap, err := s.store.DetachSubject(ctx, projectUID, p.SubjectUID, entry)
 	if err != nil {
@@ -378,7 +378,7 @@ func (s *Service) HandleRestore(ctx context.Context, job jobs.Job) error {
 		"markers": len(p.Snapshot.MarkerUIDs),
 		"faces":   len(p.Snapshot.Faces),
 	})
-	projectUID := projectOrBootstrap(p.ProjectUID)
+	projectUID := projectOrBootstrap(jobs.ProjectUIDOf(job))
 	entry.ProjectUID = projectUID
 	restored, err := s.store.RestoreSubject(ctx, projectUID, p.Snapshot, entry)
 	if err != nil {

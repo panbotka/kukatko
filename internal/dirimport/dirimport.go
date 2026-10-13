@@ -19,7 +19,7 @@
 //     finishes the rest. A per-file failure is recorded and the walk continues —
 //     one corrupt JPEG never aborts a 2000-file run.
 //
-// Every import lands in one project (Config.ProjectUID, the CLI's required
+// Every import lands in one project (Config.Project, the CLI's required
 // --project): the photos are catalogued there, their originals stored under the
 // project's storage prefix, the dedup looks only at that project's photos, and
 // the album, labels and per-user marks resolve inside it.
@@ -44,6 +44,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Concurrency bounds for the ingest fan-out. The cap is a hard limit, not a
@@ -222,10 +223,11 @@ type Options struct {
 // internal/ingest, satisfied by *ingest.Service. Depending on the interface keeps
 // the walk testable without storage, a thumbnailer or a database.
 type Ingester interface {
-	// IngestFile streams one file through the pipeline and reports its per-file
-	// outcome; it never returns an error, failures are carried in the result. The
-	// request carries the file's sidecar metadata, when it had one.
-	IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult
+	// IngestFile streams one file through the pipeline into the project proj
+	// and reports its per-file outcome; it never returns an error, failures are
+	// carried in the result. The request carries the file's sidecar metadata,
+	// when it had one.
+	IngestFile(ctx context.Context, proj *project.Project, src io.Reader, req ingest.Request) ingest.FileResult
 }
 
 // RunStore records the run in import_runs, satisfied by *importer.Store.
@@ -324,13 +326,11 @@ type Config struct {
 	Albums AlbumStore
 	// Labels resolves and attaches --labels (required only when --labels is used).
 	Labels LabelStore
-	// ProjectUID is the project every photo is imported into, the run recorded
-	// in, and --album, --labels and an export's favourites and ratings resolved
-	// and written in (required: Import refuses with ErrNoProject without one).
-	ProjectUID string
-	// StoragePrefix is that project's object-store prefix ("" for the root
-	// layout), under which the originals are stored.
-	StoragePrefix string
+	// Project is the project every photo is imported into — its originals stored
+	// under its storage prefix — the run recorded in, and --album, --labels and
+	// an export's favourites and ratings resolved and written in (required:
+	// Import refuses with ErrNoProject without one).
+	Project *project.Project
 	// Concurrency is how many files are ingested in parallel; a non-positive value
 	// means DefaultConcurrency and anything above MaxConcurrency is clamped to it.
 	Concurrency int
@@ -349,8 +349,8 @@ type Service struct {
 	curation    CurationStore
 	albums      AlbumStore
 	labels      LabelStore
+	project     *project.Project
 	projectUID  string
-	prefix      string
 	concurrency int
 	log         *slog.Logger
 }
@@ -370,11 +370,19 @@ func New(cfg Config) *Service {
 		curation:    cfg.Curation,
 		albums:      cfg.Albums,
 		labels:      cfg.Labels,
-		projectUID:  cfg.ProjectUID,
-		prefix:      cfg.StoragePrefix,
+		project:     cfg.Project,
+		projectUID:  projectUIDOf(cfg.Project),
 		concurrency: clampConcurrency(cfg.Concurrency),
 		log:         log,
 	}
+}
+
+// projectUIDOf returns p's uid, or "" for no project.
+func projectUIDOf(p *project.Project) string {
+	if p == nil {
+		return ""
+	}
+	return p.UID
 }
 
 // clampConcurrency maps a requested fan-out onto the supported range: a

@@ -63,8 +63,9 @@ type Store interface {
 // Ingester runs one file through the upload pipeline. It is satisfied by
 // *ingest.Service.
 type Ingester interface {
-	// IngestFile ingests the file read from src and reports its outcome.
-	IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult
+	// IngestFile ingests the file read from src into the project proj and
+	// reports its outcome.
+	IngestFile(ctx context.Context, proj *project.Project, src io.Reader, req ingest.Request) ingest.FileResult
 }
 
 // ProjectResolver reads the project a link files into. It is satisfied by

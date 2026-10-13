@@ -181,12 +181,10 @@ func (s *Service) ingestOne(
 	}
 	defer func() { _ = file.Close() }()
 
-	ingested := s.ingest.IngestFile(ctx, file, ingest.Request{
-		Filename:      filepath.Base(entry.abs),
-		UploadedBy:    uploadedBy,
-		ProjectUID:    s.projectUID,
-		StoragePrefix: s.prefix,
-		Sidecar:       sc,
+	ingested := s.ingest.IngestFile(ctx, s.project, file, ingest.Request{
+		Filename:   filepath.Base(entry.abs),
+		UploadedBy: uploadedBy,
+		Sidecar:    sc,
 	})
 	s.logWarnings(entry.rel, ingested.Warnings, tal)
 

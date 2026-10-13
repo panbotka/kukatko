@@ -24,6 +24,8 @@ func TestParseListOptions(t *testing.T) {
 		{name: "empty", query: "", want: jobs.ListOptions{}},
 		{name: "state and paging", query: "state=dead&limit=20&offset=40",
 			want: jobs.ListOptions{State: &dead, Limit: 20, Offset: 40}},
+		{name: "project", query: "project=rodina&state=dead",
+			want: jobs.ListOptions{State: &dead, Project: "rodina"}},
 		{name: "invalid state", query: "state=bogus", wantErr: errInvalidState},
 		{name: "negative limit", query: "limit=-1", wantErr: errInvalidLimit},
 		{name: "non-numeric limit", query: "limit=abc", wantErr: errInvalidLimit},
@@ -57,6 +59,9 @@ func TestParseListOptions(t *testing.T) {
 // comparison is by value.
 func assertOptions(t *testing.T, got, want jobs.ListOptions) {
 	t.Helper()
+	if got.Project != want.Project {
+		t.Errorf("project = %q, want %q", got.Project, want.Project)
+	}
 	if got.Limit != want.Limit || got.Offset != want.Offset {
 		t.Errorf("paging = {limit %d offset %d}, want {limit %d offset %d}",
 			got.Limit, got.Offset, want.Limit, want.Offset)

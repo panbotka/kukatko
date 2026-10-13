@@ -183,7 +183,7 @@ func (e *namelessEnv) queued(t *testing.T, jobType string) []jobs.Job {
 	out := make([]jobs.Job, 0, len(listed))
 	for _, job := range listed {
 		if job.Type == jobType {
-			out = append(out, job)
+			out = append(out, job.Job)
 		}
 	}
 	return out

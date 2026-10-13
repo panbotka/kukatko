@@ -5,10 +5,13 @@ package jobs_test
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -150,7 +153,8 @@ func TestEnqueueDedup_sidecarScopedToQueued(t *testing.T) {
 }
 
 // TestEnqueueDedup_familyExportIsPerProjectWhileQueued verifies migration 0106's
-// index: the genealogy export dedups on the payload's project — one queued
+// index (rebuilt as (type, project) by 0108): the genealogy export dedups on
+// the payload's project — one queued
 // rewrite per project, another project's is not a duplicate — and only while a
 // job is queued, so a relation changed mid-run schedules the follow-up rewrite
 // that the running job could not have included. A legacy job naming no project
@@ -170,9 +174,7 @@ func TestEnqueueDedup_familyExportIsPerProjectWhileQueued(t *testing.T) {
 		t.Fatalf("family_export for B while A's is queued = %v, want success", err)
 	}
 	for range 2 {
-		if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
-			t.Fatalf("legacy family_export with no project = %v, want success", err)
-		}
+		insertLegacy(t, db, jobs.TypeFamilyExport, `{}`)
 	}
 	// Only A's job is left queued, so the claim below takes A's.
 	const retireOthers = "UPDATE jobs SET state = 'done' " +
@@ -202,7 +204,7 @@ func TestEnqueueDedup_familyExportIsPerProjectWhileQueued(t *testing.T) {
 // same person's digest of another project — or another person's — is not a
 // duplicate, and a job already running never blocks the next one.
 func TestEnqueueDedup_taskDigestIsPerPairWhileQueued(t *testing.T) {
-	store, _ := newStore(t)
+	store, db := newStore(t)
 	ctx := t.Context()
 	pair := func(projectUID, userUID string) []byte {
 		t.Helper()
@@ -225,32 +227,38 @@ func TestEnqueueDedup_taskDigestIsPerPairWhileQueued(t *testing.T) {
 		}
 	}
 	for range 2 {
-		if _, err := store.Enqueue(ctx, jobs.TypeTaskDigest, nil, jobs.EnqueueOptions{}); err != nil {
-			t.Fatalf("legacy task_digest with no pair = %v, want success", err)
-		}
+		insertLegacy(t, db, jobs.TypeTaskDigest, `{}`)
 	}
 }
 
-// TestEnqueueDedup_notificationPurgeIsSingleton verifies migration 0096's
-// index through the Enqueuer: a second purge while one is queued is a silent
-// no-op, so a restart cannot pile them up.
-func TestEnqueueDedup_notificationPurgeIsSingleton(t *testing.T) {
+// TestEnqueueDedup_notificationPurgeIsPerProject verifies migration 0108's
+// index through the Enqueuer: a second purge of a project while one is queued
+// is a silent no-op, so a restart cannot pile them up, while another project's
+// purge is queued beside it, and a purge naming no project is refused.
+func TestEnqueueDedup_notificationPurgeIsPerProject(t *testing.T) {
 	store, db := newStore(t)
 	ctx := t.Context()
 	enqueuer := jobs.NewEnqueuer(store)
 
-	for range 2 {
-		if err := enqueuer.EnqueueNotificationPurge(ctx); err != nil {
-			t.Fatalf("EnqueueNotificationPurge: %v", err)
+	for _, projectUID := range []string{"pj_a", "pj_a", "pj_b"} {
+		if err := enqueuer.EnqueueNotificationPurge(ctx, projectUID); err != nil {
+			t.Fatalf("EnqueueNotificationPurge(%s): %v", projectUID, err)
 		}
 	}
-	var queued int
-	if err := db.Pool().QueryRow(ctx, "SELECT count(*) FROM jobs WHERE type = $1",
-		jobs.TypeNotificationPurge).Scan(&queued); err != nil {
-		t.Fatalf("counting: %v", err)
+	if err := enqueuer.EnqueueNotificationPurge(ctx, ""); !errors.Is(err, jobs.ErrProjectRequired) {
+		t.Fatalf("EnqueueNotificationPurge without a project = %v, want ErrProjectRequired", err)
 	}
-	if queued != 1 {
-		t.Fatalf("queued notification_purge jobs = %d, want 1", queued)
+	rows, err := db.Pool().Query(ctx, "SELECT payload ->> 'project_uid' FROM jobs WHERE type = $1 ORDER BY 1",
+		jobs.TypeNotificationPurge)
+	if err != nil {
+		t.Fatalf("listing: %v", err)
+	}
+	queued, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("collecting: %v", err)
+	}
+	if !slices.Equal(queued, []string{"pj_a", "pj_b"}) {
+		t.Fatalf("queued notification_purge projects = %v, want [pj_a pj_b]", queued)
 	}
 }
 

@@ -263,10 +263,10 @@ func TestSidecarsNotConfigured(t *testing.T) {
 	writeFile(t, root, "a.jpg.json", takeoutJSON)
 	env := newEnv(t, nil)
 	svc := New(Config{
-		Ingest:     env.ingester,
-		Runs:       env.runs,
-		Photos:     &fakePhotos{byHash: map[string]photos.Photo{}, byUID: map[string]photos.Photo{}},
-		ProjectUID: testProject,
+		Ingest:  env.ingester,
+		Runs:    env.runs,
+		Photos:  &fakePhotos{byHash: map[string]photos.Photo{}, byUID: map[string]photos.Photo{}},
+		Project: testTarget(),
 	})
 
 	result, err := svc.Import(t.Context(), Options{Root: root, UploadedBy: "user-1"})

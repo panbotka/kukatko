@@ -53,7 +53,9 @@ type seededIngest struct {
 }
 
 // IngestFile drains src and reports the seeded photo as created.
-func (s seededIngest) IngestFile(_ context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
+func (s seededIngest) IngestFile(
+	_ context.Context, _ *project.Project, src io.Reader, req ingest.Request,
+) ingest.FileResult {
 	_, _ = io.Copy(io.Discard, src)
 	return ingest.FileResult{Filename: req.Filename, Status: 201, Outcome: ingest.OutcomeCreated, PhotoUID: s.photos[req.Filename]}
 }
@@ -607,7 +609,9 @@ type barrierIngest struct {
 }
 
 // IngestFile waits at the barrier (first parties calls only), then ingests.
-func (b *barrierIngest) IngestFile(ctx context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
+func (b *barrierIngest) IngestFile(
+	ctx context.Context, proj *project.Project, src io.Reader, req ingest.Request,
+) ingest.FileResult {
 	b.mu.Lock()
 	b.arrived++
 	wait := b.arrived <= b.parties
@@ -621,7 +625,7 @@ func (b *barrierIngest) IngestFile(ctx context.Context, src io.Reader, req inges
 		case <-time.After(5 * time.Second):
 		}
 	}
-	return b.seededIngest.IngestFile(ctx, src, req)
+	return b.seededIngest.IngestFile(ctx, proj, src, req)
 }
 
 // filesBody builds a multipart upload of filenames, each a few bytes.

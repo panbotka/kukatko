@@ -142,7 +142,7 @@ func TestIngest_clientHangsUpAfterTheOriginalIsStored(t *testing.T) {
 		return hangUpAfterStore{Storage: s, hangUp: hangUp}
 	})
 
-	res := env.svc.Ingest(ctx, bytes.NewReader(jpegBytes(t, 120, 40, 200, 90)), "les.jpg", "")
+	res := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(jpegBytes(t, 120, 40, 200, 90)), "les.jpg", "")
 	if ctx.Err() == nil {
 		t.Fatal("the client never hung up — the test proves nothing")
 	}
@@ -168,7 +168,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 	ctx := t.Context()
 	data := jpegBytes(t, 30, 160, 60, 90)
 
-	first := env.svc.Ingest(ctx, bytes.NewReader(data), "first.jpg", "")
+	first := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(data), "first.jpg", "")
 	if first.Outcome != ingest.OutcomeCreated {
 		t.Fatalf("first upload = %+v, want created", first)
 	}
@@ -199,7 +199,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 		t.Errorf("Unscheduled = %v, %v; want the photo's three gaps", gaps, err)
 	}
 
-	second := env.svc.Ingest(ctx, bytes.NewReader(data), "again.jpg", "")
+	second := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(data), "again.jpg", "")
 	if second.Outcome != ingest.OutcomeDuplicate || second.Status != 409 || second.PhotoUID != photo.UID {
 		t.Fatalf("re-upload = %+v, want duplicate/409 of %s", second, photo.UID)
 	}
@@ -216,7 +216,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 	}
 
 	// A third upload of a complete photo changes nothing and stays a duplicate.
-	third := env.svc.Ingest(ctx, bytes.NewReader(data), "third.jpg", "")
+	third := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(data), "third.jpg", "")
 	if third.Outcome != ingest.OutcomeDuplicate {
 		t.Errorf("third upload = %+v, want duplicate", third)
 	}
@@ -241,7 +241,7 @@ func TestIngest_thumbnailStateMatchesReality(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(env.cacheDir, 0o700) })
 
-	res := env.svc.Ingest(ctx, bytes.NewReader(jpegBytes(t, 90, 90, 10, 90)), "nocache.jpg", "")
+	res := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(jpegBytes(t, 90, 90, 10, 90)), "nocache.jpg", "")
 	if res.Outcome != ingest.OutcomeCreated || !hasWarning(res.Warnings, "thumbnail_failed") {
 		t.Fatalf("result = %+v, want created with a thumbnail_failed warning", res)
 	}
@@ -258,7 +258,7 @@ func TestIngest_thumbnailStateMatchesReality(t *testing.T) {
 	if err := os.Chmod(env.cacheDir, 0o700); err != nil {
 		t.Fatalf("chmod cache back: %v", err)
 	}
-	again := env.svc.Ingest(ctx, bytes.NewReader(jpegBytes(t, 90, 90, 10, 90)), "nocache.jpg", "")
+	again := env.svc.Ingest(ctx, bootstrapProject(), bytes.NewReader(jpegBytes(t, 90, 90, 10, 90)), "nocache.jpg", "")
 	if again.Outcome != ingest.OutcomeDuplicate {
 		t.Fatalf("re-upload = %+v, want duplicate", again)
 	}

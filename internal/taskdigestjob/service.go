@@ -138,9 +138,10 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 			return fmt.Errorf("taskdigestjob: decoding payload of job %d: %w", job.ID, err)
 		}
 	}
-	outcome, err := s.Run(ctx, payload.ProjectUID, payload.UserUID)
+	projectUID := jobs.ProjectUIDOf(job)
+	outcome, err := s.Run(ctx, projectUID, payload.UserUID)
 	s.log.InfoContext(ctx, "task digest run",
-		slog.Int64("job_id", job.ID), slog.String("project_uid", payload.ProjectUID),
+		slog.Int64("job_id", job.ID), slog.String("project_uid", projectUID),
 		slog.String("user_uid", payload.UserUID), slog.String("outcome", string(outcome)))
 	return err
 }

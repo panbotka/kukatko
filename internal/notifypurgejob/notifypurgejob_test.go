@@ -3,24 +3,28 @@ package notifypurgejob
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // fakePurger records the arguments of the last purge.
 type fakePurger struct {
+	project   string
 	now       time.Time
 	retention notification.Retention
 	err       error
 }
 
 // Purge records its arguments and reports three deletions.
-func (f *fakePurger) Purge(_ context.Context, now time.Time, r notification.Retention) (int64, error) {
-	f.now, f.retention = now, r
+func (f *fakePurger) Purge(_ context.Context, projectUID string, now time.Time, r notification.Retention) (int64, error) {
+	f.project, f.now, f.retention = projectUID, now, r
 	return 3, f.err
 }
 
@@ -54,6 +58,37 @@ func TestHandle_purgesWithTheRetention(t *testing.T) {
 	}
 }
 
+// TestHandle_purgesThePayloadsProject checks a run purges the project its
+// payload names, and a legacy payload naming none the bootstrap project.
+func TestHandle_purgesThePayloadsProject(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name    string
+		payload string
+		want    string
+	}{
+		{name: "named", payload: `{"project_uid":"pjb"}`, want: "pjb"},
+		{name: "legacy empty payload", payload: `{}`, want: project.BootstrapUID},
+		{name: "no payload", want: project.BootstrapUID},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			purger := &fakePurger{}
+			job := jobs.Job{Type: jobs.TypeNotificationPurge}
+			if tt.payload != "" {
+				job.Payload = []byte(tt.payload)
+			}
+			if err := New(Config{Notifications: purger}).Handle(t.Context(), job); err != nil {
+				t.Fatalf("Handle: %v", err)
+			}
+			if purger.project != tt.want {
+				t.Fatalf("purged project %q, want %q", purger.project, tt.want)
+			}
+		})
+	}
+}
+
 // TestHandle_returnsTheFailure checks a failed purge goes back to the queue.
 func TestHandle_returnsTheFailure(t *testing.T) {
 	t.Parallel()
@@ -77,17 +112,36 @@ func TestNew_requiresThePurger(t *testing.T) {
 	New(Config{})
 }
 
-// countingEnqueuer counts enqueues and fails when told to.
+// countingEnqueuer counts enqueues per project and fails when told to.
 type countingEnqueuer struct {
-	calls atomic.Int32
-	err   error
+	mu       sync.Mutex
+	calls    atomic.Int32
+	projects []string
+	err      error
 }
 
-// EnqueueNotificationPurge counts one call.
-func (c *countingEnqueuer) EnqueueNotificationPurge(context.Context) error {
+// EnqueueNotificationPurge counts one call and records its project.
+func (c *countingEnqueuer) EnqueueNotificationPurge(_ context.Context, projectUID string) error {
 	c.calls.Add(1)
+	c.mu.Lock()
+	c.projects = append(c.projects, projectUID)
+	c.mu.Unlock()
 	return c.err
 }
+
+// fakeProjects lists a fixed set of projects, or fails.
+type fakeProjects struct {
+	list []project.Project
+	err  error
+}
+
+// List returns the fixed list.
+func (f fakeProjects) List(context.Context) ([]project.Project, error) {
+	return f.list, f.err
+}
+
+// oneProject is a lister with just the bootstrap project, active.
+var oneProject = fakeProjects{list: []project.Project{{UID: project.BootstrapUID, Active: true}}}
 
 // TestScheduler_firesAtStartAndOnEveryTick checks the scheduler enqueues at
 // once, again on each interval, keeps going after a failed enqueue and stops
@@ -99,7 +153,7 @@ func TestScheduler_firesAtStartAndOnEveryTick(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
-		NewScheduler(enqueuer, 5*time.Millisecond, nil).Run(ctx)
+		NewScheduler(enqueuer, oneProject, 5*time.Millisecond, nil).Run(ctx)
 		close(done)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -113,18 +167,50 @@ func TestScheduler_firesAtStartAndOnEveryTick(t *testing.T) {
 	}
 }
 
+// TestScheduler_TickEnqueuesEveryActiveProject checks one round enqueues one
+// purge per active project, skips a deactivated one, and reports a lister
+// failure.
+func TestScheduler_TickEnqueuesEveryActiveProject(t *testing.T) {
+	t.Parallel()
+
+	enqueuer := &countingEnqueuer{}
+	projects := fakeProjects{list: []project.Project{
+		{UID: "pja", Active: true}, {UID: "pjoff"}, {UID: "pjb", Active: true},
+	}}
+	n, err := NewScheduler(enqueuer, projects, time.Hour, nil).Tick(t.Context())
+	if err != nil || n != 2 {
+		t.Fatalf("Tick = %d, %v; want 2, nil", n, err)
+	}
+	if !slices.Equal(enqueuer.projects, []string{"pja", "pjb"}) {
+		t.Fatalf("enqueued %v, want [pja pjb]", enqueuer.projects)
+	}
+
+	boom := errors.New("db down")
+	if _, err := NewScheduler(enqueuer, fakeProjects{err: boom}, time.Hour, nil).Tick(t.Context()); !errors.Is(err, boom) {
+		t.Fatalf("Tick with a failing lister = %v, want the failure", err)
+	}
+}
+
 // TestNewScheduler_defaults checks a non-positive interval falls back to a day
-// and a missing enqueuer panics.
+// and a missing enqueuer or lister panics.
 func TestNewScheduler_defaults(t *testing.T) {
 	t.Parallel()
 
-	if s := NewScheduler(&countingEnqueuer{}, 0, nil); s.interval != Interval || s.log == nil {
+	if s := NewScheduler(&countingEnqueuer{}, oneProject, 0, nil); s.interval != Interval || s.log == nil {
 		t.Fatalf("defaults: interval %s, logger set %v", s.interval, s.log != nil)
 	}
-	defer func() {
-		if recover() == nil {
-			t.Fatal("NewScheduler without an enqueuer did not panic")
-		}
-	}()
-	NewScheduler(nil, time.Hour, nil)
+	for name, build := range map[string]func(){
+		"no enqueuer": func() { NewScheduler(nil, oneProject, time.Hour, nil) },
+		"no lister":   func() { NewScheduler(&countingEnqueuer{}, nil, time.Hour, nil) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("NewScheduler with %s did not panic", name)
+				}
+			}()
+			build()
+		})
+	}
 }

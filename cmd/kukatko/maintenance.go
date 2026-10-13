@@ -53,23 +53,35 @@ func maintenanceStore(cfg *config.Config, store storage.Storage) (*maintenance.S
 
 // orphanImporter adapts the upload pipeline to maintenance.OrphanImporter: it
 // opens an orphan original through the storage layer and runs it through ingest,
-// which catalogues it (deduplicating on content hash).
+// which catalogues it (deduplicating on content hash) in the project whose
+// storage layout the key belongs to.
 type orphanImporter struct {
-	storage storage.Storage
-	ingest  *ingest.Service
+	storage  storage.Storage
+	ingest   *ingest.Service
+	projects projectLister
 }
 
-// ImportOriginal opens the original at key and ingests it, mapping the ingest
-// outcome to a maintenance ImportOutcome. A per-file ingest error is surfaced as
-// an error so the caller can tally it.
+// ImportOriginal opens the original at key and ingests it into the project the
+// key's prefix names (project.ForKey: a bare key is the root layout's project),
+// mapping the ingest outcome to a maintenance ImportOutcome. A key no project
+// claims, and a per-file ingest error, are surfaced as errors so the caller can
+// tally them.
 func (o orphanImporter) ImportOriginal(ctx context.Context, key string) (maintenance.ImportOutcome, error) {
+	all, err := o.projects.List(ctx)
+	if err != nil {
+		return maintenance.ImportCreated, fmt.Errorf("listing projects for orphan %s: %w", key, err)
+	}
+	owner, ok := project.ForKey(all, key)
+	if !ok {
+		return maintenance.ImportCreated, fmt.Errorf("orphan %s is under no project's storage prefix", key)
+	}
 	reader, err := o.storage.Open(ctx, key)
 	if err != nil {
 		return maintenance.ImportCreated, fmt.Errorf("opening orphan %s: %w", key, err)
 	}
 	defer func() { _ = reader.Close() }()
 
-	res := o.ingest.Ingest(ctx, reader, path.Base(key), "")
+	res := o.ingest.Ingest(ctx, owner, reader, path.Base(key), "")
 	switch res.Outcome {
 	case ingest.OutcomeCreated:
 		return maintenance.ImportCreated, nil
@@ -181,7 +193,7 @@ func buildMaintenanceService(
 		Embed:     instanceEmbed{svc: embedSvc, projects: projects},
 		Faces:     instanceFaces{svc: faceSvc, projects: projects},
 		FaceCache: buildFaceMatch(cfg, db),
-		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
+		Importer:  orphanImporter{storage: store, ingest: ingestSvc, projects: projects},
 		Places:    maintenancePlaceBackfillerOrNil(placesSvc, projects),
 		Sidecar:   maintenanceSidecarOrNil(cfg, enqueuer),
 		Streaming: streaming,

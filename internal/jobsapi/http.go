@@ -87,16 +87,18 @@ func (a *API) handleStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, statsResponse{ByState: byState, ByType: byType, Total: total})
 }
 
-// listResponse is the JSON body of the list endpoint.
+// listResponse is the JSON body of the list endpoint: each job carries the
+// slug of its project ("" for an instance-wide job).
 type listResponse struct {
-	Jobs   []jobs.Job `json:"jobs"`
-	Limit  int        `json:"limit"`
-	Offset int        `json:"offset"`
+	Jobs   []jobs.ListedJob `json:"jobs"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
 }
 
-// handleList returns a page of recent jobs, optionally filtered to a single
-// state, ordered most-recently-updated first. Invalid query parameters are
-// answered with 400.
+// handleList returns a page of recent jobs with their project's slug,
+// optionally filtered to a single state (?state=) and to one project
+// (?project=<slug>; an unknown slug lists nothing), ordered
+// most-recently-updated first. Invalid query parameters are answered with 400.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	opts, err := parseListOptions(r.URL.Query())
 	if err != nil {

@@ -57,6 +57,7 @@ import (
 	"github.com/panbotka/kukatko/internal/imgconvert"
 	"github.com/panbotka/kukatko/internal/phash"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecar"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -75,6 +76,12 @@ const processTimeout = 30 * time.Minute
 // ErrFileTooLarge indicates an uploaded file exceeded the configured maximum
 // size and was rejected without being catalogued.
 var ErrFileTooLarge = errors.New("ingest: file exceeds maximum upload size")
+
+// ErrNoProject indicates a file was handed to the pipeline without the project
+// it belongs to. Every photo is catalogued in exactly one project, so there is
+// no default to fall back on: the file is refused before a byte is stored. It is
+// a wiring bug in the caller, never the uploader's fault.
+var ErrNoProject = errors.New("ingest: no project to catalogue the file in")
 
 // Warning codes attached to a per-file result. They flag non-fatal conditions
 // (the photo was still created) such as a near-duplicate match or a failed but
@@ -242,28 +249,24 @@ type Request struct {
 	// UploadedBy is the UID of the authenticated uploader (empty for
 	// anonymous/system imports).
 	UploadedBy string
-	// ProjectUID is the project the photo is catalogued in: the dedup looks for
-	// the same bytes in that project only, and the row is created there. Empty
-	// is the transition default — the bootstrap project, with the dedup lookup
-	// it always had — until every caller passes its project.
-	ProjectUID string
-	// StoragePrefix is that project's object-store prefix ("" for the bootstrap
-	// project, "projects/<uid>/" for every other one); the original's key is
-	// published under it, so two projects never share a key. A non-empty prefix
-	// needs a store that implements storage.PrefixStorer.
-	StoragePrefix string
 	// Sidecar is the metadata an export wrote *beside* the file (a Google Takeout
 	// JSON, an XMP), already read by the caller; nil when the file has none. It
 	// fills what the file's own EXIF does not carry — which, for a Takeout export
 	// whose EXIF was stripped in re-encoding, is the capture date, the caption and
 	// the GPS fix. See internal/sidecar for the precedence rules.
 	Sidecar *sidecar.Metadata
+
+	// project is the project the file is catalogued in, set by IngestFile from
+	// its argument so every step below reads the one the caller resolved.
+	project *project.Project
 }
 
 // Ingest runs the pipeline for one uploaded file with no sidecar — the plain
-// upload. See IngestFile for the full form.
-func (s *Service) Ingest(ctx context.Context, src io.Reader, filename, uploadedBy string) FileResult {
-	return s.IngestFile(ctx, src, Request{Filename: filename, UploadedBy: uploadedBy})
+// upload — into the project proj. See IngestFile for the full form.
+func (s *Service) Ingest(
+	ctx context.Context, proj *project.Project, src io.Reader, filename, uploadedBy string,
+) FileResult {
+	return s.IngestFile(ctx, proj, src, Request{Filename: filename, UploadedBy: uploadedBy})
 }
 
 // IngestFile runs the full pipeline for one file read from src and returns a
@@ -279,7 +282,26 @@ func (s *Service) Ingest(ctx context.Context, src io.Reader, filename, uploadedB
 // original is stored is deliberate: from that point the client contributes
 // nothing more, and stopping half-way only ever produces a worse state than
 // finishing — an orphaned original, or a photo row without its processing.
-func (s *Service) IngestFile(ctx context.Context, src io.Reader, req Request) FileResult {
+//
+// proj is the project the file belongs to, as the caller resolved it (the
+// request's project, an upload link's, the import's target). The SHA-256 dedup
+// looks for the same bytes in that project only — the same file in two projects
+// is two photos — the row is created there, and the original is published under
+// proj.StoragePrefix + the usual YYYY/MM key, so two projects never share a key
+// (the bootstrap project's prefix is empty, every other one's is
+// "projects/<uid>/"; a non-empty prefix needs a store that implements
+// storage.PrefixStorer). A nil proj is refused with ErrNoProject.
+func (s *Service) IngestFile(ctx context.Context, proj *project.Project, src io.Reader, req Request) FileResult {
+	if proj == nil || proj.UID == "" {
+		return errorResult(req.Filename, ErrNoProject)
+	}
+	req.project = proj
+	return s.ingestFile(ctx, src, req)
+}
+
+// ingestFile is IngestFile's pipeline once req names its project: stage,
+// admit, dedup, decode, extract, store, catalogue and post-process.
+func (s *Service) ingestFile(ctx context.Context, src io.Reader, req Request) FileResult {
 	staged, err := s.stage(ctx, src)
 	if err != nil {
 		return errorResult(req.Filename, err)
@@ -395,10 +417,10 @@ func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error)
 // at insert time, which also covers the concurrent-upload race this check cannot
 // see.
 //
-// The lookup is confined to req's project when it names one: the same bytes in
-// another project are not a duplicate, they become a photo of their own.
+// The lookup is confined to req's project: the same bytes in another project
+// are not a duplicate, they become a photo of their own.
 func (s *Service) existingDuplicate(ctx context.Context, req Request, hash string) (FileResult, bool) {
-	existing, err := s.byFileHash(ctx, req.ProjectUID, hash)
+	existing, err := s.byFileHash(ctx, req.project.UID, hash)
 	if err != nil {
 		return FileResult{}, false
 	}
@@ -406,12 +428,9 @@ func (s *Service) existingDuplicate(ctx context.Context, req Request, hash strin
 	return duplicateResult(req.Filename, existing.UID), true
 }
 
-// byFileHash returns the photo with hash in projectUID, or — for the
-// transition's empty project — in whichever project holds it.
+// byFileHash returns the photo with hash in the project projectUID — the dedup
+// key is (project_id, file_hash).
 func (s *Service) byFileHash(ctx context.Context, projectUID, hash string) (photos.Photo, error) {
-	if projectUID == "" {
-		return s.photos.GetByFileHash(ctx, hash) //nolint:wrapcheck // callers only test for success
-	}
 	return s.photos.GetByFileHashInProject(ctx, projectUID, hash) //nolint:wrapcheck // callers only test for success
 }
 
@@ -473,14 +492,15 @@ func (s *Service) storeOriginal(
 		when = *takenAt
 	}
 	var stored storage.StoredFile
-	if req.StoragePrefix == "" {
+	prefix := req.project.StoragePrefix
+	if prefix == "" {
 		stored, err = s.storage.Store(ctx, file, when, req.Filename)
 	} else {
 		prefixed, ok := s.storage.(storage.PrefixStorer)
 		if !ok {
 			return storage.StoredFile{}, errors.New("ingest: the store cannot publish under a project prefix")
 		}
-		stored, err = prefixed.StoreUnder(ctx, file, req.StoragePrefix, when, req.Filename)
+		stored, err = prefixed.StoreUnder(ctx, file, prefix, when, req.Filename)
 	}
 	if err != nil && !errors.Is(err, storage.ErrAlreadyExists) {
 		return storage.StoredFile{}, fmt.Errorf("ingest: storing original: %w", err)
@@ -496,7 +516,7 @@ func (s *Service) catalogue(
 	ctx context.Context, req Request, stored storage.StoredFile, media mediaMeta,
 ) (photos.Photo, *FileResult, error) {
 	photo := buildPhoto(stored, media, req.Filename, req.UploadedBy)
-	photo.ProjectID = req.ProjectUID
+	photo.ProjectID = req.project.UID
 	created, err := s.photos.Create(ctx, photo)
 	if errors.Is(err, photos.ErrFileHashTaken) {
 		dup := s.resolveRace(ctx, req, stored)
@@ -521,7 +541,7 @@ func (s *Service) catalogue(
 // is removed; a shared path is left untouched so the winner's file survives.
 func (s *Service) resolveRace(ctx context.Context, req Request, stored storage.StoredFile) FileResult {
 	filename := req.Filename
-	existing, err := s.byFileHash(ctx, req.ProjectUID, stored.Hash)
+	existing, err := s.byFileHash(ctx, req.project.UID, stored.Hash)
 	if err != nil {
 		return duplicateResult(filename, "")
 	}

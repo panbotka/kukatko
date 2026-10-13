@@ -39,11 +39,8 @@ func eachActiveProject(ctx context.Context, projects projectLister, fn func(proj
 	if err != nil {
 		return fmt.Errorf("listing projects: %w", err)
 	}
-	for i := range all {
-		if !all[i].Active {
-			continue
-		}
-		if err := fn(all[i].UID); err != nil {
+	for _, p := range project.Active(all) {
+		if err := fn(p.UID); err != nil {
 			return err
 		}
 	}

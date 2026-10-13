@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecar"
 )
 
@@ -41,14 +42,16 @@ type fakeIngester struct {
 
 // IngestFile records the call, drains the reader (as the real pipeline does) and
 // replies from the script.
-func (f *fakeIngester) IngestFile(_ context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
+func (f *fakeIngester) IngestFile(
+	_ context.Context, proj *project.Project, src io.Reader, req ingest.Request,
+) ingest.FileResult {
 	_, _ = io.Copy(io.Discard, src)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.seen = append(f.seen, req.Filename)
 	f.uploaders = append(f.uploaders, req.UploadedBy)
-	f.projects = append(f.projects, req.ProjectUID+"|"+req.StoragePrefix)
+	f.projects = append(f.projects, proj.UID+"|"+proj.StoragePrefix)
 	if f.sidecars == nil {
 		f.sidecars = map[string]*sidecar.Metadata{}
 	}
@@ -390,10 +393,15 @@ func newEnv(t *testing.T, script map[string]ingest.FileResult) *testEnv {
 		Albums:   env.organizer,
 		Labels:   env.organizer,
 		// A created project's layout, so the prefix is visibly passed on.
-		ProjectUID:    testProject,
-		StoragePrefix: testPrefix,
+		Project: testTarget(),
 	})
 	return env
+}
+
+// testTarget is the project every unit-test import lands in: testProject with
+// testPrefix as its storage prefix.
+func testTarget() *project.Project {
+	return &project.Project{UID: testProject, StoragePrefix: testPrefix, Active: true}
 }
 
 // The project every unit-test import lands in, and its storage prefix.

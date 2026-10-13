@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -18,9 +19,11 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/jobsapi"
+	"github.com/panbotka/kukatko/internal/projecttest"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -35,6 +38,7 @@ type env struct {
 	baseURL string
 	authSvc *auth.Service
 	store   *jobs.Store
+	db      *database.DB
 }
 
 // newEnv builds the HTTP test environment over a freshly truncated database.
@@ -60,7 +64,7 @@ func newEnv(t *testing.T) *env {
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &env{baseURL: server.URL, authSvc: authSvc, store: store}
+	return &env{baseURL: server.URL, authSvc: authSvc, store: store, db: db}
 }
 
 // login creates a user with the given role and returns a cookie-bearing client.
@@ -197,6 +201,54 @@ func TestListEndpoint(t *testing.T) {
 	}
 }
 
+// TestListEndpoint_project verifies every listed job carries its project's
+// slug — from the payload's project_uid for a library-wide job, from the photo
+// for a per-photo one, none for an instance-wide one — and that ?project=<slug>
+// keeps only that project's jobs (an unknown slug lists nothing).
+func TestListEndpoint_project(t *testing.T) {
+	env := newEnv(t)
+	f := projecttest.Seed(t, env.db.Pool())
+	maint := env.login(t, "maint", auth.AccountMaintainer)
+	env.enqueue(t, jobs.TypeThumbnail, f.A.PhotoUID, jobs.EnqueueOptions{})
+	inB := env.enqueue(t, jobs.TypeImageEmbed, f.B.PhotoUID, jobs.EnqueueOptions{})
+	cluster, err := env.store.Enqueue(t.Context(), jobs.TypeFaceCluster,
+		json.RawMessage(`{"project_uid":"`+f.B.ProjectUID+`"}`), jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue face_cluster: %v", err)
+	}
+	backup, err := env.store.Enqueue(t.Context(), jobs.TypeBackup, nil, jobs.EnqueueOptions{})
+	if err != nil {
+		t.Fatalf("enqueue backup: %v", err)
+	}
+
+	want := map[string]string{
+		jobs.TypeThumbnail: f.A.Slug, jobs.TypeImageEmbed: f.B.Slug,
+		jobs.TypeFaceCluster: f.B.Slug, jobs.TypeBackup: "",
+	}
+	all := listJobs(t, maint, env.baseURL+"/api/v1/jobs")
+	if len(all) != len(want) {
+		t.Fatalf("unfiltered list len = %d, want %d", len(all), len(want))
+	}
+	for _, job := range all {
+		if job.Project != want[job.Type] {
+			t.Errorf("%s job lists project %q, want %q", job.Type, job.Project, want[job.Type])
+		}
+	}
+
+	onlyB := listJobs(t, maint, env.baseURL+"/api/v1/jobs?project="+f.B.Slug)
+	ids := make([]int64, 0, len(onlyB))
+	for _, job := range onlyB {
+		ids = append(ids, job.ID)
+	}
+	slices.Sort(ids)
+	if wantIDs := []int64{inB.ID, cluster.ID}; !slices.Equal(ids, wantIDs) {
+		t.Errorf("?project=%s ids = %v, want %v (backup %d excluded)", f.B.Slug, ids, wantIDs, backup.ID)
+	}
+	if none := listJobs(t, maint, env.baseURL+"/api/v1/jobs?project=no-such-project"); len(none) != 0 {
+		t.Errorf("unknown project lists %d jobs, want 0", len(none))
+	}
+}
+
 // TestRequeueEndpoint verifies POST /jobs/{id}/requeue revives a dead job and
 // answers 404/409 for missing and non-requeueable jobs.
 func TestRequeueEndpoint(t *testing.T) {
@@ -281,7 +333,7 @@ func requeueDead(t *testing.T, client *http.Client, url string) int {
 }
 
 // listJobs GETs url with the given client and returns the decoded jobs slice.
-func listJobs(t *testing.T, client *http.Client, url string) []jobs.Job {
+func listJobs(t *testing.T, client *http.Client, url string) []jobs.ListedJob {
 	t.Helper()
 	resp := do(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()
@@ -289,7 +341,7 @@ func listJobs(t *testing.T, client *http.Client, url string) []jobs.Job {
 		t.Fatalf("list status = %d, want 200", resp.StatusCode)
 	}
 	var body struct {
-		Jobs []jobs.Job `json:"jobs"`
+		Jobs []jobs.ListedJob `json:"jobs"`
 	}
 	decode(t, resp, &body)
 	return body.Jobs

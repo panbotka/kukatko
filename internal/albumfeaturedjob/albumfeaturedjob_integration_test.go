@@ -140,7 +140,7 @@ func (f *fixture) queuedJobs(t *testing.T) []jobs.Job {
 	var out []jobs.Job
 	for _, job := range list {
 		if job.Type == jobs.TypeAlbumFeaturedNotify {
-			out = append(out, job)
+			out = append(out, job.Job)
 		}
 	}
 	return out

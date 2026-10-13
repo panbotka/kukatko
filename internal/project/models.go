@@ -195,6 +195,43 @@ func StoragePrefixFor(uid string) string {
 	return StoragePrefixRoot + uid + "/"
 }
 
+// Active returns the active projects of list, in list's order — the projects a
+// scheduler-style trigger (a daily digest, a purge, a recluster) enqueues one
+// job for. A deactivated project keeps its data but gets no background work.
+func Active(list []Project) []Project {
+	out := make([]Project, 0, len(list))
+	for i := range list {
+		if list[i].Active {
+			out = append(out, list[i])
+		}
+	}
+	return out
+}
+
+// ForKey returns the project of list whose storage layout an object-store key
+// belongs to: the project with the longest non-empty StoragePrefix the key
+// starts with, or — for a key under none of them — the project with the empty
+// prefix (the root layout, the bootstrap project's before its storage move). It
+// returns false when no project claims the key: every project has a prefix and
+// the key is under none of them.
+func ForKey(list []Project, key string) (*Project, bool) {
+	var root, best *Project
+	for i := range list {
+		p := &list[i]
+		switch {
+		case p.StoragePrefix == "":
+			root = p
+		case strings.HasPrefix(key, p.StoragePrefix) &&
+			(best == nil || len(p.StoragePrefix) > len(best.StoragePrefix)):
+			best = p
+		}
+	}
+	if best != nil {
+		return best, true
+	}
+	return root, root != nil
+}
+
 // normalizeName trims name and returns ErrInvalidName when nothing is left.
 func normalizeName(name string) (string, error) {
 	trimmed := strings.TrimSpace(name)

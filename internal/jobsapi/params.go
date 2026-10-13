@@ -33,9 +33,9 @@ var validStates = map[jobs.State]bool{
 	jobs.StateDead:    true,
 }
 
-// parseListOptions validates the list query parameters (state, limit, offset)
-// into a jobs.ListOptions, returning one of the package's sentinel errors on
-// invalid input.
+// parseListOptions validates the list query parameters (state, project, limit,
+// offset) into a jobs.ListOptions — project is a slug passed through as is —
+// returning one of the package's sentinel errors on invalid input.
 func parseListOptions(q url.Values) (jobs.ListOptions, error) {
 	var opts jobs.ListOptions
 	if raw := q.Get("state"); raw != "" {
@@ -55,6 +55,7 @@ func parseListOptions(q url.Values) (jobs.ListOptions, error) {
 		return jobs.ListOptions{}, errInvalidOffset
 	}
 	opts.Offset = offset
+	opts.Project = q.Get("project")
 	return opts, nil
 }
 

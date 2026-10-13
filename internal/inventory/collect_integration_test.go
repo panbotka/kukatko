@@ -30,6 +30,9 @@ func readFile(t *testing.T, dir, name string) string {
 // absent and the one with the wrong size.
 func TestCollect_deterministicSnapshotAndStorageCheck(t *testing.T) {
 	db := dbtest.New(t)
+	// The counts and the storage check read the whole database, so whatever the
+	// previous package left behind must not be counted with the seeded rows.
+	dbtest.TruncateAll(t, db)
 	ctx := t.Context()
 	if _, err := db.Pool().Exec(ctx, `
 		INSERT INTO users (uid, username, email, password_hash, role, approved_at)

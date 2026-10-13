@@ -273,10 +273,7 @@ func (s *Service) PurgeExpired(ctx context.Context) (Result, error) {
 		return Result{}, fmt.Errorf("trash: listing projects: %w", err)
 	}
 	var total Result
-	for _, p := range projects {
-		if !p.Active {
-			continue
-		}
+	for _, p := range project.Active(projects) {
 		res, err := s.purgeArchived(ctx, p.UID, &cutoff, audit.Meta{}, sourceRetention)
 		total.Purged += res.Purged
 		total.Failed += res.Failed

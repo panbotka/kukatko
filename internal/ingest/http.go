@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/auth"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // API exposes the ingest pipeline over HTTP. It mounts the multipart upload
@@ -77,8 +78,12 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The files go into the request's project — the one the sign-in guard just
+	// let the caller into — under that project's storage prefix. A request with
+	// none (a wiring bug) has every file refused by the pipeline (ErrNoProject).
+	proj, _ := auth.ProjectFromContext(r.Context())
 	uploadedBy := uploaderUID(r)
-	results, err := a.ingestParts(r, reader, uploadedBy)
+	results, err := a.ingestParts(r, reader, proj, uploadedBy)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "malformed multipart upload")
 		return
@@ -91,10 +96,11 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // ingestParts walks the multipart stream, ingesting every part that carries a
-// filename and skipping plain form fields. It returns the per-file results in
-// order, or an error if the multipart stream itself is malformed.
+// filename into the project proj and skipping plain form fields. It returns the
+// per-file results in order, or an error if the multipart stream itself is
+// malformed.
 func (a *API) ingestParts(
-	r *http.Request, reader *multipart.Reader, uploadedBy string,
+	r *http.Request, reader *multipart.Reader, proj *project.Project, uploadedBy string,
 ) ([]FileResult, error) {
 	var results []FileResult
 	for {
@@ -109,7 +115,7 @@ func (a *API) ingestParts(
 			_ = part.Close()
 			continue
 		}
-		results = append(results, a.svc.Ingest(r.Context(), part, part.FileName(), uploadedBy))
+		results = append(results, a.svc.Ingest(r.Context(), proj, part, part.FileName(), uploadedBy))
 		_ = part.Close()
 	}
 }

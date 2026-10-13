@@ -434,15 +434,14 @@ func buildDirImportService(
 		DecodeBudget: processDecodeBudget(cfg),
 	})
 	return dirimport.New(dirimport.Config{
-		Ingest:        ingestSvc,
-		Runs:          importer.NewStore(pool),
-		Photos:        photoStore,
-		Filler:        photoStore,
-		Curation:      organizeStore,
-		Albums:        organizeStore,
-		Labels:        organizeStore,
-		ProjectUID:    target.UID,
-		StoragePrefix: target.StoragePrefix,
-		Concurrency:   concurrency,
+		Ingest:      ingestSvc,
+		Runs:        importer.NewStore(pool),
+		Photos:      photoStore,
+		Filler:      photoStore,
+		Curation:    organizeStore,
+		Albums:      organizeStore,
+		Labels:      organizeStore,
+		Project:     target,
+		Concurrency: concurrency,
 	}), nil
 }

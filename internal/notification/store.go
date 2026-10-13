@@ -197,27 +197,33 @@ func (s *Store) Photos(ctx context.Context, projectUID, ownerUID, uid string, vi
 	return out, nil
 }
 
-// purgeSQL deletes the notifications past their retention: read ones recorded
-// before $1, unread ones recorded before $2. The photo sets go with them (the
-// cascade).
+// purgeSQL deletes one project's notifications past their retention: read ones
+// recorded before $2, unread ones recorded before $3, of the project $1. The
+// photo sets go with them (the cascade).
 const purgeSQL = `
 DELETE FROM notifications
-WHERE (read_at IS NOT NULL AND created_at < $1)
-   OR (read_at IS NULL AND created_at < $2)`
+WHERE project_id = $1
+  AND ((read_at IS NOT NULL AND created_at < $2)
+    OR (read_at IS NULL AND created_at < $3))`
 
-// Purge deletes, as of now, every read notification recorded more than r.Read
-// ago and every unread one recorded more than r.Unread ago, and returns how many
-// it deleted. Both ages count from when the notification was recorded, not from
-// when it was read. A retention with a non-positive threshold, or an unread
-// threshold shorter than the read one, is ErrInvalidRetention and deletes
-// nothing.
-func (s *Store) Purge(ctx context.Context, now time.Time, r Retention) (int64, error) {
+// Purge deletes, as of now, every notification of the project projectUID that
+// was read and recorded more than r.Read ago, and every unread one recorded more
+// than r.Unread ago, and returns how many it deleted. Both ages count from when
+// the notification was recorded, not from when it was read. Another project's
+// notifications are never touched: the purge runs once per project. An empty
+// projectUID is ErrNoProject; a retention with a non-positive threshold, or an
+// unread threshold shorter than the read one, is ErrInvalidRetention. Either
+// deletes nothing.
+func (s *Store) Purge(ctx context.Context, projectUID string, now time.Time, r Retention) (int64, error) {
+	if projectUID == "" {
+		return 0, ErrNoProject
+	}
 	if err := r.validate(); err != nil {
 		return 0, err
 	}
-	tag, err := s.pool.Exec(ctx, purgeSQL, now.Add(-r.Read), now.Add(-r.Unread))
+	tag, err := s.pool.Exec(ctx, purgeSQL, projectUID, now.Add(-r.Read), now.Add(-r.Unread))
 	if err != nil {
-		return 0, fmt.Errorf("notification: purging: %w", err)
+		return 0, fmt.Errorf("notification: purging project %s: %w", projectUID, err)
 	}
 	return tag.RowsAffected(), nil
 }

@@ -196,15 +196,20 @@ func (f *fakeStore) RecordUpload(ctx context.Context, up uploadlink.Upload, entr
 type fakeIngest struct {
 	mu       sync.Mutex
 	requests []ingest.Request
+	// projects records the project each file was handed over with.
+	projects []*project.Project
 	// hangUp, when set, runs once the file has been read: the client
 	// disconnecting right after its last byte.
 	hangUp func()
 }
 
 // IngestFile mimics the pipeline closely enough for the handler.
-func (f *fakeIngest) IngestFile(_ context.Context, src io.Reader, req ingest.Request) ingest.FileResult {
+func (f *fakeIngest) IngestFile(
+	_ context.Context, proj *project.Project, src io.Reader, req ingest.Request,
+) ingest.FileResult {
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
+	f.projects = append(f.projects, proj)
 	f.mu.Unlock()
 	body, err := io.ReadAll(src)
 	if f.hangUp != nil {
@@ -553,6 +558,12 @@ func TestUpload_anonymous(t *testing.T) {
 	}
 	if len(h.ingest.requests) != 2 || h.ingest.requests[0].UploadedBy != "" {
 		t.Errorf("ingested = %+v", h.ingest.requests)
+	}
+	// Every file goes into the link's project: the public route has none of its own.
+	for i, proj := range h.ingest.projects {
+		if proj == nil {
+			t.Errorf("file %d was handed over with no project", i)
+		}
 	}
 	var cookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
