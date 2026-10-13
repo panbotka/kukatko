@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { type AuditListResponse, type AuditRecord } from '../services/audit'
-import { type AdminUser } from '../services/users'
+import { type DirectoryUser } from '../services/directory'
 
 import { AuditPage } from './AuditPage'
 
@@ -16,15 +16,15 @@ vi.mock('../services/audit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/audit')>()
   return { ...actual, fetchAuditLog: vi.fn() }
 })
-vi.mock('../services/users', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/users')>()
-  return { ...actual, fetchUsers: vi.fn() }
+vi.mock('../services/directory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/directory')>()
+  return { ...actual, listDirectory: vi.fn() }
 })
 
 const { fetchAuditLog } = await import('../services/audit')
-const { fetchUsers } = await import('../services/users')
+const { listDirectory } = await import('../services/directory')
 const fetchAuditMock = vi.mocked(fetchAuditLog)
-const fetchUsersMock = vi.mocked(fetchUsers)
+const listDirectoryMock = vi.mocked(listDirectory)
 
 const ME = 'me-admin'
 
@@ -72,19 +72,7 @@ function response(
   return { entries, total, limit: 100, offset, next_offset: nextOffset }
 }
 
-const ROSTER: AdminUser[] = [
-  {
-    uid: 'us1',
-    username: 'ada',
-    display_name: 'Ada Admin',
-    email: '',
-    role: 'admin',
-    disabled: false,
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-    note: '',
-  },
-]
+const ROSTER: DirectoryUser[] = [{ uid: 'us1', name: 'Ada Admin' }]
 
 /** The shared setup stubs a non-matching (desktop) `matchMedia`; restore it after. */
 const realMatchMedia = window.matchMedia
@@ -129,8 +117,8 @@ function renderPage(isAdmin = true, initialEntry = '/audit') {
 beforeEach(async () => {
   await i18n.changeLanguage('en')
   fetchAuditMock.mockReset()
-  fetchUsersMock.mockReset()
-  fetchUsersMock.mockResolvedValue(ROSTER)
+  listDirectoryMock.mockReset()
+  listDirectoryMock.mockResolvedValue(ROSTER)
   fetchAuditMock.mockResolvedValue(response([record()]))
 })
 

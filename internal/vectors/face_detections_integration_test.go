@@ -136,6 +136,7 @@ func TestFacesDetected_unprocessed(t *testing.T) {
 func makeClip(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID: project.BootstrapUID,
 		FileHash:  hash,
 		FilePath:  "2026/09/" + hash + ".mp4",
 		FileName:  hash + ".mp4",

@@ -73,11 +73,12 @@ func (f *fixture) makePhotos(t *testing.T, names ...string) []string {
 	uids := make([]string, 0, len(names))
 	for _, name := range names {
 		created, err := f.photos.Create(context.Background(), photos.Photo{
-			FileHash: (name + strings.Repeat("0", 64))[:64],
-			FilePath: "2026/09/" + name + ".jpg",
-			FileName: name + ".jpg",
-			FileSize: 1024,
-			FileMime: "image/jpeg",
+			ProjectID: project.BootstrapUID,
+			FileHash:  (name + strings.Repeat("0", 64))[:64],
+			FilePath:  "2026/09/" + name + ".jpg",
+			FileName:  name + ".jpg",
+			FileSize:  1024,
+			FileMime:  "image/jpeg",
 		})
 		if err != nil {
 			t.Fatalf("creating photo %s: %v", name, err)

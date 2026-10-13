@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/searchhistory"
 	"github.com/panbotka/kukatko/internal/searchhistoryapi"
 )
@@ -29,6 +30,9 @@ import (
 // they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// apiV is the bootstrap project's API prefix every search-history request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
 
 // env wires the auth and search-history APIs behind an httptest server over the
 // integration database.
@@ -55,8 +59,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -110,7 +118,7 @@ func (e *env) mustDo(t *testing.T, c *http.Client, method, path string, body []b
 func (e *env) record(t *testing.T, c *http.Client, query string, wantStatus int) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"query": query})
-	resp := e.mustDo(t, c, http.MethodPost, "/api/v1/search-history", body)
+	resp := e.mustDo(t, c, http.MethodPost, apiV+"/search-history", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != wantStatus {
 		t.Fatalf("record(%q) status = %d, want %d", query, resp.StatusCode, wantStatus)
@@ -120,7 +128,7 @@ func (e *env) record(t *testing.T, c *http.Client, query string, wantStatus int)
 // list returns the queries of one client's history, newest first.
 func (e *env) list(t *testing.T, c *http.Client) []string {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/search-history", nil)
+	resp := e.mustDo(t, c, http.MethodGet, apiV+"/search-history", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", resp.StatusCode)
@@ -211,7 +219,7 @@ func TestSearchHistoryClear(t *testing.T) {
 
 	e.record(t, client, "svatba", http.StatusNoContent)
 	for range 2 {
-		resp := e.mustDo(t, client, http.MethodDelete, "/api/v1/search-history", nil)
+		resp := e.mustDo(t, client, http.MethodDelete, apiV+"/search-history", nil)
 		if resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("clear status = %d, want 204", resp.StatusCode)
 		}
@@ -243,7 +251,7 @@ func TestSearchHistoryRequiresAuth(t *testing.T) {
 		if method == http.MethodPost {
 			body = []byte(`{"query":"svatba"}`)
 		}
-		resp := e.mustDo(t, &http.Client{}, method, "/api/v1/search-history", body)
+		resp := e.mustDo(t, &http.Client{}, method, apiV+"/search-history", body)
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s status = %d, want 401", method, resp.StatusCode)
 		}
@@ -270,7 +278,7 @@ func TestSearchHistoryPerUserIsolation(t *testing.T) {
 	}
 
 	// Bob clearing his own history cannot reach Alice's.
-	resp := e.mustDo(t, bob, http.MethodDelete, "/api/v1/search-history", nil)
+	resp := e.mustDo(t, bob, http.MethodDelete, apiV+"/search-history", nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("bob clear status = %d, want 204", resp.StatusCode)
 	}

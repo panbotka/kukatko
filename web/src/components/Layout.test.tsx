@@ -452,7 +452,7 @@ describe('Layout navbar', () => {
     const { rerender, container } = renderLayout(auth())
     expect(container.querySelector('#user-menu img')).toHaveAttribute(
       'src',
-      '/api/v1/users/u1/avatar',
+      '/api/v1/p/v/users/u1/avatar',
     )
 
     rerender(
@@ -472,7 +472,7 @@ describe('Layout navbar', () => {
     )
     expect(container.querySelector('#user-menu img')).toHaveAttribute(
       'src',
-      '/api/v1/users/u1/avatar?v=1',
+      '/api/v1/p/v/users/u1/avatar?v=1',
     )
   })
 

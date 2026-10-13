@@ -50,8 +50,10 @@ func writeProjectProbe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// newProjectEnv builds the environment: /api/v1 resolves the bootstrap project
-// (no parameter — the transition rule), /api/v1/p/{project} the named one.
+// newProjectEnv builds the environment the way the server is wired:
+// /api/v1/p/{project} names its project through WithProject, /api/v1 names
+// none (the probes are mounted there too, to prove a guard there has no
+// project to fall back to).
 func newProjectEnv(t *testing.T) *projectEnv {
 	t.Helper()
 	base := newHTTPEnv(t, 50)
@@ -67,8 +69,7 @@ func newProjectEnv(t *testing.T) *projectEnv {
 	r := chi.NewRouter()
 	r.Use(obs.AccessLog(slog.New(slog.DiscardHandler)))
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(auth.WithProject(projects))
-		api.RegisterRoutes(r)
+		api.RegisterInstanceRoutes(r)
 		probes(r)
 		r.Route("/p/{project}", func(r chi.Router) {
 			r.Use(auth.WithProject(projects))
@@ -126,19 +127,29 @@ func decodeProbe(t *testing.T, body []byte) projectProbe {
 	return p
 }
 
-// TestProject_bootstrapFallback proves the transition rule: a route without the
-// parameter addresses the bootstrap project, with the caller's role there.
-func TestProject_bootstrapFallback(t *testing.T) {
+// TestProject_noDefaultProject proves there is no default project: a
+// project-scoped guard on a route that names none is a wiring bug and answers
+// 500 — never the bootstrap project — while the instance-level guard needs no
+// project and checks the instance role alone.
+func TestProject_noDefaultProject(t *testing.T) {
 	env := newProjectEnv(t)
-	client, _ := env.signIn(t, "eva", auth.AccountEditor)
+	client, _ := env.signIn(t, "eva", auth.AccountAdmin)
+	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)
 
-	status, body := env.get(t, client, "/api/v1/probe/auth")
-	if status != http.StatusOK {
-		t.Fatalf("probe = %d, body %s", status, body)
+	for _, path := range []string{"/api/v1/probe/auth", "/api/v1/probe/admin", "/api/v1/probe/media"} {
+		if status, body := env.get(t, maint, path); status != http.StatusInternalServerError {
+			t.Errorf("%s without a project = %d %s, want 500", path, status, body)
+		}
 	}
-	got := decodeProbe(t, body)
-	if got.ProjectUID != project.BootstrapUID || got.Role != string(project.RoleEditor) {
-		t.Errorf("probe = %+v, want the bootstrap project as editor", got)
+	status, body := env.get(t, maint, "/api/v1/probe/maintain")
+	if status != http.StatusOK {
+		t.Fatalf("instance-level probe = %d, body %s", status, body)
+	}
+	if got := decodeProbe(t, body); got.ProjectUID != "" || got.Role != "" || got.APIBase != "/api/v1" {
+		t.Errorf("instance-level probe = %+v, want no project at all", got)
+	}
+	if status, _ := env.get(t, client, "/api/v1/probe/maintain"); status != http.StatusForbidden {
+		t.Errorf("instance-level probe as a project admin = %d, want 403", status)
 	}
 	if status, _ := env.get(t, client, "/api/v1/p/v/probe/auth"); status != http.StatusOK {
 		t.Errorf("the bootstrap project by slug = %d, want 200", status)
@@ -146,15 +157,12 @@ func TestProject_bootstrapFallback(t *testing.T) {
 }
 
 // TestProject_apiBaseFollowsTheRoute proves the API base a handler builds its
-// links on is the prefix the request came through: the project's when it was
-// addressed by slug, the bare /api/v1 through the unprefixed alias — for the
-// same project and the same caller.
+// links on is the prefix the request came through.
 func TestProject_apiBaseFollowsTheRoute(t *testing.T) {
 	env := newProjectEnv(t)
 	client, _ := env.signIn(t, "eva", auth.AccountEditor)
 
 	for path, want := range map[string]string{
-		"/api/v1/probe/auth":      "/api/v1",
 		"/api/v1/p/v/probe/auth":  "/api/v1/p/v",
 		"/api/v1/p/v/probe/media": "/api/v1/p/v",
 	} {
@@ -302,24 +310,37 @@ type meBody struct {
 	InstanceRole    string `json:"instance_role"`
 	LastProjectSlug string `json:"last_project_slug"`
 	Projects        []struct {
-		UID      string `json:"uid"`
-		Slug     string `json:"slug"`
-		Name     string `json:"name"`
-		Active   bool   `json:"active"`
-		Role     string `json:"role"`
-		Approved bool   `json:"approved"`
+		UID        string  `json:"uid"`
+		Slug       string  `json:"slug"`
+		Name       string  `json:"name"`
+		Active     bool    `json:"active"`
+		Role       string  `json:"role"`
+		Approved   bool    `json:"approved"`
+		SubjectUID *string `json:"subject_uid"`
 	} `json:"projects"`
 }
 
 // TestProject_meShape pins GET /auth/me: the instance role, every membership
-// with its role and approval, the remembered last project, and the user's
-// "role" as the role in the resolved project — "maintainer" for a maintainer,
-// so the frontend's maintainer screens keep working.
+// with its role, approval and "this is me" person, the remembered last
+// project, and the user's "role" — "maintainer" for a maintainer, so the
+// frontend's maintainer screens keep working.
 func TestProject_meShape(t *testing.T) {
 	env := newProjectEnv(t)
 	alfa := env.createProject(t, "alfa")
 	client, user := env.signIn(t, "eva", auth.AccountCurator)
 	env.addMember(t, alfa, user, project.RoleAdmin, false)
+	// /auth/me enters no project; visiting one is what remembers it.
+	if status, body := env.get(t, client, "/api/v1/p/v/probe/auth"); status != http.StatusOK {
+		t.Fatalf("visiting v = %d %s", status, body)
+	}
+	if _, err := env.db.Pool().Exec(t.Context(), `INSERT INTO subjects (uid, project_id, slug, name, type)
+		VALUES ('sub_eva', $1, 'eva', 'Eva', 'person')`, project.BootstrapUID); err != nil {
+		t.Fatalf("seeding a subject: %v", err)
+	}
+	if _, err := env.db.Pool().Exec(t.Context(), `UPDATE project_members SET subject_uid = 'sub_eva'
+		WHERE project_uid = $1 AND user_uid = $2`, project.BootstrapUID, user.UID); err != nil {
+		t.Fatalf("linking eva in v: %v", err)
+	}
 
 	status, body := env.get(t, client, "/api/v1/auth/me")
 	if status != http.StatusOK {
@@ -339,11 +360,13 @@ func TestProject_meShape(t *testing.T) {
 	for i, p := range me.Projects {
 		byslug[p.Slug] = i
 	}
-	if p := me.Projects[byslug["alfa"]]; p.UID != alfa.UID || p.Role != "admin" || p.Approved || !p.Active {
-		t.Errorf("alfa membership = %+v, want an unapproved admin of an active project", p)
+	if p := me.Projects[byslug["alfa"]]; p.UID != alfa.UID || p.Role != "admin" || p.Approved || !p.Active ||
+		p.SubjectUID != nil {
+		t.Errorf("alfa membership = %+v, want an unapproved admin of an active project, nobody linked", p)
 	}
-	if p := me.Projects[byslug["v"]]; p.UID != project.BootstrapUID || p.Role != "curator" || !p.Approved {
-		t.Errorf("bootstrap membership = %+v, want an approved curator", p)
+	if p := me.Projects[byslug["v"]]; p.UID != project.BootstrapUID || p.Role != "curator" || !p.Approved ||
+		p.SubjectUID == nil || *p.SubjectUID != "sub_eva" {
+		t.Errorf("bootstrap membership = %+v, want an approved curator linked to sub_eva", p)
 	}
 
 	maint, _ := env.signIn(t, "ops", auth.AccountMaintainer)

@@ -77,7 +77,7 @@ func putSegment(t *testing.T, e *env, store storage.Storage, photo photos.Photo,
 
 // hlsURL builds the address of one of the three streaming routes for a photo.
 func hlsURL(e *env, uid, suffix string) string {
-	return e.server.URL + "/api/v1/photos/" + uid + "/hls/" + suffix
+	return e.server.URL + apiV + "/photos/" + uid + "/hls/" + suffix
 }
 
 // TestHLSMaster_advertisesEveryRendition checks the master playlist: the HLS
@@ -335,7 +335,7 @@ func TestPhotoDetail_reportsStreamingAvailability(t *testing.T) {
 		{uid: still.UID, want: false},
 	}
 	for _, tt := range tests {
-		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos/"+tt.uid, nil)
+		resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/photos/"+tt.uid, nil)
 		var body struct {
 			HLS bool `json:"hls"`
 		}
@@ -371,7 +371,7 @@ func TestPhotoList_reportsStreamingAvailability(t *testing.T) {
 	pending := env.seedVideo(t, "pending.mp4", []byte("pending-bytes"))
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 1, 2, 3)
 
-	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos", nil)
+	resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/photos", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)

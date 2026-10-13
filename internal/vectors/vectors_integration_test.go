@@ -33,9 +33,10 @@ func newStore(t *testing.T) (*vectors.Store, *photos.Store, *database.DB) {
 func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
-		FileHash: hash,
-		FilePath: "2024/01/" + hash + ".jpg",
-		FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash,
+		FilePath:  "2024/01/" + hash + ".jpg",
+		FileName:  hash + ".jpg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)

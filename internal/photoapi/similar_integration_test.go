@@ -33,7 +33,7 @@ func imageVecAt(set map[int]float32) []float32 {
 // on a non-200 status.
 func getSimilar(t *testing.T, client *http.Client, base, uid, query string) similarResp {
 	t.Helper()
-	url := base + "/api/v1/photos/" + uid + "/similar"
+	url := base + apiV + "/photos/" + uid + "/similar"
 	if query != "" {
 		url += "?" + query
 	}
@@ -127,7 +127,7 @@ func TestSimilar_noEmbeddingIsEmpty(t *testing.T) {
 		t.Errorf("similar for un-embedded photo = %+v, want empty", got.Similar)
 	}
 
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/ph_missing/similar", nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/ph_missing/similar", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("similar for missing photo = %d, want 404", resp.StatusCode)

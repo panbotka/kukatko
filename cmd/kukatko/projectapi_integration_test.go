@@ -106,7 +106,8 @@ func (e *projectAPIEnv) seedPhoto(t *testing.T, hash, name string) photos.Photo 
 	t.Helper()
 	lat, lng := 49.05, 17.36
 	created, err := photos.NewStore(e.db.Pool()).Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/05/" + name, FileName: name, FileSize: 1,
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/05/" + name, FileName: name, FileSize: 1,
 		FileMime: "image/jpeg", FileWidth: 64, FileHeight: 48, FileOrientation: 1,
 		TakenAtSource: "unknown", Lat: &lat, Lng: &lng,
 	})
@@ -153,31 +154,53 @@ func (e *projectAPIEnv) get(t *testing.T, path, bearer string) []byte {
 	return body
 }
 
-// TestProjectAPI_prefixAndAliasServeTheSameListing proves the project prefix
-// and the transition alias are one API: the same listing answers with the same
-// bytes, except for the media URLs, which lead back through the prefix the
-// request came through.
-func TestProjectAPI_prefixAndAliasServeTheSameListing(t *testing.T) {
+// TestProjectAPI_onlyThePrefixServesAProject proves, through the whole serve
+// wiring, that a project-scoped route answers only under /api/v1/p/<slug> —
+// with media URLs leading back through that prefix — while the same path
+// without the prefix is the API's JSON 404, never somebody's library and
+// never the SPA.
+func TestProjectAPI_onlyThePrefixServesAProject(t *testing.T) {
 	e := newProjectAPIEnv(t)
 	_, bearer := e.token(t, "eva", auth.AccountEditor)
 	photo := e.seedPhoto(t, strings.Repeat("ab", 32), "a.jpg")
-	e.seedPhoto(t, strings.Repeat("cd", 32), "b.jpg")
 
+	for _, path := range []string{"/photos", "/map/photos", "/albums", "/mcp"} {
+		status, header, body := e.do(t, http.MethodGet, "/api/v1"+path, bearer, nil)
+		if status != http.StatusNotFound || !strings.HasPrefix(header.Get("Content-Type"), "application/json") {
+			t.Errorf("GET /api/v1%s = %d (%s) %s, want the API's JSON 404", path, status,
+				header.Get("Content-Type"), body)
+		}
+	}
 	for _, path := range []string{"/photos", "/map/photos"} {
-		alias := e.get(t, "/api/v1"+path, bearer)
 		prefixed := e.get(t, "/api/v1/p/v"+path, bearer)
-
-		thumb := "/photos/" + photo.UID + "/thumb/"
-		if !bytes.Contains(prefixed, []byte(`"/api/v1/p/v`+thumb)) {
+		if !bytes.Contains(prefixed, []byte(`"/api/v1/p/v/photos/`+photo.UID+`/thumb/`)) {
 			t.Errorf("%s through the prefix carries no prefixed thumbnail URL: %s", path, prefixed)
 		}
-		if !bytes.Contains(alias, []byte(`"/api/v1`+thumb)) || bytes.Contains(alias, []byte("/api/v1/p/")) {
-			t.Errorf("%s through the alias does not link through the alias: %s", path, alias)
-		}
-		if unprefixed := bytes.ReplaceAll(prefixed, []byte(`"/api/v1/p/v/`), []byte(`"/api/v1/`)); !bytes.Equal(
-			unprefixed, alias) {
-			t.Errorf("%s differs beyond the media URLs:\nalias    %s\nprefixed %s", path, alias, prefixed)
-		}
+	}
+}
+
+// TestProjectAPI_instanceRoutesEnterNoProject proves the instance-wide routes
+// work without any project: an account that belongs to no project reads
+// /auth/me (and lists no membership), and a maintainer reaches /jobs/stats —
+// neither request names a project, and neither is refused for it.
+func TestProjectAPI_instanceRoutesEnterNoProject(t *testing.T) {
+	e := newProjectAPIEnv(t)
+	loner, bearer := e.token(t, "samotar", auth.AccountViewer)
+	_, maint := e.token(t, "marek", auth.AccountMaintainer)
+	if _, err := e.db.Pool().Exec(t.Context(), `DELETE FROM project_members WHERE user_uid = $1`,
+		loner.UID); err != nil {
+		t.Fatalf("removing samotar from every project: %v", err)
+	}
+
+	var me struct {
+		Projects []json.RawMessage `json:"projects"`
+	}
+	if err := json.Unmarshal(e.get(t, "/api/v1/auth/me", bearer), &me); err != nil || len(me.Projects) != 0 {
+		t.Errorf("GET /auth/me of an account in no project = %+v, %v; want no memberships", me, err)
+	}
+	e.get(t, "/api/v1/jobs/stats", maint)
+	if status, _, body := e.do(t, http.MethodGet, "/api/v1/p/v/photos", bearer, nil); status != http.StatusNotFound {
+		t.Errorf("GET /p/v/photos by an account in no project = %d %s, want 404", status, body)
 	}
 }
 
@@ -216,11 +239,11 @@ func TestProjectAPI_unknownAndForeignProjectsAreIndistinguishable(t *testing.T) 
 	e.get(t, "/api/v1/p/alfa/photos", outsider)
 }
 
-// TestProjectAPI_mcpThroughBothPaths proves the MCP server answers under the
-// project prefix and through the alias alike: the Bearer challenge naming the
-// endpoint called on an anonymous call, a working handshake for a token, and
-// the foreign-project 404.
-func TestProjectAPI_mcpThroughBothPaths(t *testing.T) {
+// TestProjectAPI_mcpUnderThePrefix proves the MCP server answers under the
+// project prefix: the Bearer challenge naming the endpoint called on an
+// anonymous call, a working handshake for a token, and the foreign-project
+// 404 — and that the unprefixed path of the transition is gone.
+func TestProjectAPI_mcpUnderThePrefix(t *testing.T) {
 	e := newProjectAPIEnv(t)
 	_, bearer := e.token(t, "agent", auth.AccountEditor)
 	initialize, err := json.Marshal(map[string]any{
@@ -234,7 +257,10 @@ func TestProjectAPI_mcpThroughBothPaths(t *testing.T) {
 		t.Fatalf("marshal initialize: %v", err)
 	}
 
-	for _, path := range []string{"/api/v1/mcp", "/api/v1/p/v/mcp"} {
+	if status, _, body := e.do(t, http.MethodPost, "/api/v1/mcp", bearer, initialize); status != http.StatusNotFound {
+		t.Errorf("initialize at the unprefixed /api/v1/mcp = %d %s, want 404", status, body)
+	}
+	for _, path := range []string{"/api/v1/p/v/mcp"} {
 		status, header, body := e.do(t, http.MethodPost, path, "", initialize)
 		want := auth.Challenge + ` realm="` + e.server.URL + path + `"`
 		if status != http.StatusUnauthorized || header.Get("WWW-Authenticate") != want {

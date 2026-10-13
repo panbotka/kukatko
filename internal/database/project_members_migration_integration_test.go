@@ -47,7 +47,8 @@ func TestMigrate_projectMembersBackfill(t *testing.T) {
 
 	subject := "sbj_backfill"
 	if _, err := db.Pool().Exec(ctx,
-		`INSERT INTO subjects (uid, slug, name, type) VALUES ($1, $2, 'Backfill', 'person')`, subject, subject); err != nil {
+		`INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, 'Backfill', 'person', $3)`,
+		subject, subject, project.BootstrapUID); err != nil {
 		t.Fatalf("seeding the subject: %v", err)
 	}
 	approved := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)

@@ -52,7 +52,7 @@ func newRecoveryEnv(t *testing.T) *passkeyEnv {
 
 	r := chi.NewRouter()
 	r.Use(clientip.Middleware(nil))
-	r.Route("/api/v1", api.RegisterRoutes)
+	r.Route("/api/v1", api.RegisterInstanceRoutes)
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -203,7 +203,7 @@ func TestRecovery_leavesAPITokensAlive(t *testing.T) {
 	for _, path := range recoveryPaths() {
 		t.Run(path.name, func(t *testing.T) {
 			env := newRecoveryEnv(t)
-			env.user(t, "boss", auth.AccountAdmin)
+			env.user(t, "boss", auth.AccountMaintainer)
 			alice := env.user(t, "alice", auth.AccountEditor)
 
 			victim := newClient(t)
@@ -243,7 +243,7 @@ func TestRecovery_leavesPasskeysAlive(t *testing.T) {
 	for _, path := range recoveryPaths() {
 		t.Run(path.name, func(t *testing.T) {
 			env := newRecoveryEnv(t)
-			env.user(t, "boss", auth.AccountAdmin)
+			env.user(t, "boss", auth.AccountMaintainer)
 			alice := env.user(t, "alice", auth.AccountEditor)
 
 			victim := newClient(t)

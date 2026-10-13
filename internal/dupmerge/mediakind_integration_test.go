@@ -19,6 +19,7 @@ func seedMedia(t *testing.T, store *photos.Store, hash string, kind photos.Media
 	t.Helper()
 	taken := time.Date(2023, 6, 1, 12, 0, 0, 0, time.UTC)
 	created, err := store.Create(t.Context(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2023/06/" + hash + ".mp4",
 		FileName:   hash + ".mp4",

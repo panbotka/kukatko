@@ -254,7 +254,7 @@ func TestWelcomeSeen_stampsOnceAndIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestWelcomeSeen_requiresAuth asserts the endpoint is behind RequireAuth: it
+// TestWelcomeSeen_requiresAuth asserts the endpoint is behind RequireSignedIn: it
 // writes to the *session's* account, so an anonymous caller has none to write to.
 func TestWelcomeSeen_requiresAuth(t *testing.T) {
 	env := newHTTPEnv(t, 10)

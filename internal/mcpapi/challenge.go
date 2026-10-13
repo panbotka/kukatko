@@ -12,8 +12,7 @@ const mcpPath = "/mcp"
 
 // resourceURL returns the absolute URL of the MCP endpoint the request reached:
 // the request's own origin plus the API base path it came through — so a call
-// to /api/v1/p/<slug>/mcp is told that URL, and a call through the transition
-// alias the alias's. The scheme follows the TLS state or a proxy's
+// to /api/v1/p/<slug>/mcp is told that URL. The scheme follows the TLS state or a proxy's
 // X-Forwarded-Proto; either way the answer goes back only to the caller that
 // sent the headers.
 func resourceURL(r *http.Request) string {

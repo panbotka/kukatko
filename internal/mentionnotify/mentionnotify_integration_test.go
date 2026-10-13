@@ -96,7 +96,8 @@ func (f *fixture) exec(t *testing.T, sql string, args ...any) {
 func (f *fixture) makePhoto(t *testing.T, name, title string) photos.Photo {
 	t.Helper()
 	created, err := f.photos.Create(t.Context(), photos.Photo{
-		FileHash: (name + strings.Repeat("0", 64))[:64], FilePath: "2026/10/" + name + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  (name + strings.Repeat("0", 64))[:64], FilePath: "2026/10/" + name + ".jpg",
 		FileName: name + ".jpg", FileSize: 1024, FileMime: "image/jpeg", Title: title,
 	})
 	if err != nil {
@@ -221,7 +222,8 @@ func TestPhotoComment_announcesEveryMentionButTheWriter(t *testing.T) {
 // links to the comment on the task's page.
 func TestTaskComment_linksToTheTask(t *testing.T) {
 	f := newFixture(t)
-	f.exec(t, `INSERT INTO photo_tasks (uid, title, created_by) VALUES ('pt-one', 'Kdy to bylo?', $1)`, writerUID)
+	f.exec(t, `INSERT INTO photo_tasks (uid, title, created_by, project_id) VALUES ('pt-one', 'Kdy to bylo?', $1, $2)`,
+		writerUID, project.BootstrapUID)
 	c := f.comment(t, comments.TaskSubject("pt-one"), "@[Anna](user:us-anna) víš to?")
 
 	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u úkolu Kdy to bylo?",
@@ -240,7 +242,8 @@ func TestTaskComment_linksToTheTask(t *testing.T) {
 // every signed-in role.
 func TestAlbumComment_linksToTheAlbum(t *testing.T) {
 	f := newFixture(t)
-	f.exec(t, `INSERT INTO albums (uid, slug, title, private) VALUES ('al-one', 'svatba', 'Svatba 1987', true)`)
+	f.exec(t, `INSERT INTO albums (uid, slug, title, private, project_id) VALUES ('al-one', 'svatba', 'Svatba 1987', true, $1)`,
+		project.BootstrapUID)
 	c := f.comment(t, comments.AlbumSubject("al-one"), "@[Anna](user:us-anna) kdo tam ještě byl?")
 
 	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987",

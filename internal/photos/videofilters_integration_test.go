@@ -36,6 +36,9 @@ func seedVideoLibrary(t *testing.T) videoLibrary {
 	lib := videoLibrary{store: store, names: map[string]string{}}
 
 	add := func(name string, p photos.Photo) photos.Photo {
+		if p.ProjectID == "" {
+			p.ProjectID = project.BootstrapUID
+		}
 		p.FileHash = "vf-" + name
 		p.FilePath = "2026/03/" + name
 		p.FileName = name

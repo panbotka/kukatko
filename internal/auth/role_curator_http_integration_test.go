@@ -28,8 +28,8 @@ func TestHTTP_curatorRoleAssignable(t *testing.T) {
 func TestHTTP_curatorGuardRoleMatrix(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	paths := []string{
-		"/api/v1/probe/auth", "/api/v1/probe/curate", "/api/v1/probe/write",
-		"/api/v1/probe/admin", "/api/v1/probe/import",
+		apiV + "/probe/auth", apiV + "/probe/curate", apiV + "/probe/write",
+		apiV + "/probe/admin", apiV + "/probe/import",
 	}
 	const ok, no = http.StatusOK, http.StatusForbidden
 	tests := []struct {

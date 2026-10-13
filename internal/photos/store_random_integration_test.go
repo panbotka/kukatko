@@ -24,7 +24,8 @@ func seedShuffleSet(t *testing.T, store *photos.Store, n int) []string {
 	for i := range n {
 		hash := "shuffle" + strconv.Itoa(i)
 		photo := mustCreate(t, store, photos.Photo{
-			FileHash: hash, FilePath: "p/" + hash + ".jpg",
+			ProjectID: project.BootstrapUID,
+			FileHash:  hash, FilePath: "p/" + hash + ".jpg",
 			FileName: hash + ".jpg", FileMime: "image/jpeg",
 			TakenAtSource: "unknown",
 		})

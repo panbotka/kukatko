@@ -14,7 +14,7 @@ type CreateAPITokenInput struct {
 	Name      string
 	ExpiresAt *time.Time
 	// Unlimited asks for a token exempt from the comment, upload and bulk rate
-	// limiters. Only an admin may ask for it; anybody else gets
+	// limiters. Only a maintainer may ask for it; anybody else gets
 	// ErrAPITokenUnlimitedForbidden and no token at all.
 	Unlimited bool
 }
@@ -25,7 +25,7 @@ type CreateAPITokenInput struct {
 // be shown again. The token row and entry are committed in one transaction. It
 // returns ErrAPITokenNameRequired for an empty name, ErrAPITokenExpiryInPast for
 // an expiry that has already passed, and ErrAPITokenUnlimitedForbidden when a
-// non-admin asks for the rate-limit exemption — in which case no token is
+// non-maintainer asks for the rate-limit exemption — in which case no token is
 // created at all.
 func (s *Service) CreateAPIToken(
 	ctx context.Context, actor User, in CreateAPITokenInput, entry audit.Entry,
@@ -73,9 +73,9 @@ func (s *Service) ListAPITokens(ctx context.Context, userUID string) ([]APIToken
 }
 
 // RevokeAPIToken revokes the token identified by id on behalf of actor. A user
-// may revoke only their own tokens; an admin may revoke anyone's. A token that
+// may revoke only their own tokens; a maintainer may revoke anyone's. A token that
 // belongs to somebody else is reported as ErrAPITokenNotFound rather than a
-// permission error, so a non-admin cannot probe which token ids exist.
+// permission error, so a non-maintainer cannot probe which token ids exist.
 // Revocation is idempotent: revoking an already-revoked token succeeds and
 // writes no second audit entry.
 func (s *Service) RevokeAPIToken(ctx context.Context, id string, actor User, entry audit.Entry) error {
@@ -98,11 +98,11 @@ func (s *Service) RevokeAPIToken(ctx context.Context, id string, actor User, ent
 }
 
 // SetAPITokenUnlimited turns the rate-limit exemption on or off on one of
-// actor's own tokens, reporting whether the flag actually moved. It is an
-// admin's decision — anybody else gets ErrAPITokenUnlimitedForbidden — and it
+// actor's own tokens, reporting whether the flag actually moved. It is a
+// maintainer's decision — anybody else gets ErrAPITokenUnlimitedForbidden — and it
 // reaches only the caller's own credentials: a token belonging to somebody else
 // is reported as ErrAPITokenNotFound, exactly as an unknown id is, so not even
-// an admin can flip a colleague's token from here (revocation, which an admin
+// a maintainer can flip a colleague's token from here (revocation, which a maintainer
 // may do to anyone, remains the way to deal with somebody else's credential).
 // The flag and its audit entry commit in one transaction; setting the value a
 // token already has changes nothing and writes no entry.

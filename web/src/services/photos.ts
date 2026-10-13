@@ -263,7 +263,7 @@ export interface Photo {
 export type RatingFlag = 'none' | 'pick' | 'reject' | 'eye'
 
 /**
- * Response body of `GET /api/v1/photos`. `next_offset` is the offset to request
+ * Response body of `GET /api/v1/p/<slug>/photos`. `next_offset` is the offset to request
  * for the following page, or `null` when the current page is the last one —
  * letting an infinite-scroll client page until it is absent.
  */
@@ -543,7 +543,7 @@ export function buildPhotoQuery(params: PhotoListParams): URLSearchParams {
 }
 
 /**
- * Fetches a page of photos from `GET /api/v1/photos`. The session cookie is sent
+ * Fetches a page of photos from `GET /api/v1/p/<slug>/photos`. The session cookie is sent
  * automatically (same-origin); the backend filters, sorts and paginates.
  *
  * @throws ApiError with `status` 400 (invalid filter/sort/page) or 5xx so the
@@ -566,7 +566,7 @@ export async function fetchPhotos(
 }
 
 /**
- * Searches the catalogue via `GET /api/v1/search`. `params.q` is the search text
+ * Searches the catalogue via `GET /api/v1/p/<slug>/search`. `params.q` is the search text
  * (required by the backend; an empty value yields a 400). `mode` selects the
  * ranking strategy (default `hybrid`); list filters and pagination in `params`
  * apply in every mode. The response mirrors {@link fetchPhotos} and additionally
@@ -783,7 +783,7 @@ export interface PhotoTaskRef {
 }
 
 /**
- * Partial metadata update for `PATCH /api/v1/photos/{uid}`. An omitted key leaves
+ * Partial metadata update for `PATCH /api/v1/p/<slug>/photos/{uid}`. An omitted key leaves
  * the field unchanged; `null` clears a nullable field (`taken_at`, `lat`, `lng`).
  * Mirrors the backend `updateBody`.
  */
@@ -826,7 +826,7 @@ export interface PhotoMetadataUpdate {
 }
 
 /**
- * Applies a partial metadata update to a photo via `PATCH /api/v1/photos/{uid}`
+ * Applies a partial metadata update to a photo via `PATCH /api/v1/p/<slug>/photos/{uid}`
  * and returns the refreshed detail. Editor/admin only.
  *
  * @throws ApiError with `status` 400 (invalid field/coordinate), 403 (viewer),
@@ -870,7 +870,7 @@ export interface PhotoEdit {
 
 /**
  * Fetches the stored non-destructive edit for a photo via
- * `GET /api/v1/photos/{uid}/edit`. An unedited photo returns a neutral edit
+ * `GET /api/v1/p/<slug>/photos/{uid}/edit`. An unedited photo returns a neutral edit
  * (rotation 0, brightness/contrast 0, no crop), so the caller always has a value.
  *
  * @throws ApiError with `status` 404 (no such photo) or 5xx.
@@ -888,7 +888,7 @@ export async function fetchEdit(uid: string, signal?: AbortSignal): Promise<Phot
 }
 
 /**
- * Saves the non-destructive edit for a photo via `PUT /api/v1/photos/{uid}/edit`
+ * Saves the non-destructive edit for a photo via `PUT /api/v1/p/<slug>/photos/{uid}/edit`
  * and returns the persisted edit. The original file is never modified; downloads
  * honour the edit. Editor/admin only.
  *
@@ -929,7 +929,7 @@ export async function saveEdit(
 }
 
 /**
- * Builds the URL of a photo's download (`GET /api/v1/photos/{uid}/download`). By
+ * Builds the URL of a photo's download (`GET /api/v1/p/<slug>/photos/{uid}/download`). By
  * default the download honours any saved edit; pass `original: true` for the
  * untouched original bytes. A download token can be appended for cookie-less
  * contexts.
@@ -983,7 +983,7 @@ export interface ZipDownloadRequest {
 
 /**
  * Downloads a set of photos' originals as a single ZIP via
- * `POST /api/v1/photos/download-zip` and hands the archive to the browser as a
+ * `POST /api/v1/p/<slug>/photos/download-zip` and hands the archive to the browser as a
  * file download. The server streams the archive; the response is read as a Blob
  * and saved through a temporary object URL, so the caller only has to reflect the
  * pending/error state.
@@ -1044,7 +1044,7 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 /**
- * Fetches one photo's full detail via `GET /api/v1/photos/{uid}`.
+ * Fetches one photo's full detail via `GET /api/v1/p/<slug>/photos/{uid}`.
  *
  * @throws ApiError with `status` 404 (no such photo) or 5xx so the caller can
  *   render the matching message.
@@ -1070,14 +1070,14 @@ export interface SimilarPhoto extends Photo {
   distance: number
 }
 
-/** Response body of `GET /api/v1/photos/{uid}/similar`. */
+/** Response body of `GET /api/v1/p/<slug>/photos/{uid}/similar`. */
 export interface SimilarResponse {
   similar: SimilarPhoto[]
 }
 
 /**
  * Fetches the photos most visually similar to `uid` via
- * `GET /api/v1/photos/{uid}/similar`, ordered nearest-first and excluding the
+ * `GET /api/v1/p/<slug>/photos/{uid}/similar`, ordered nearest-first and excluding the
  * source photo. The endpoint is empty-friendly: a photo that has not been
  * embedded yet (or a server with no search backend) yields an empty list with
  * 200, so an empty array is a normal result, not an error.
@@ -1145,7 +1145,7 @@ export function thumbUrl(
 
 /**
  * Builds the URL of a photo's inline video stream
- * (`GET /api/v1/photos/{uid}/video`). The endpoint supports HTTP range requests
+ * (`GET /api/v1/p/<slug>/photos/{uid}/video`). The endpoint supports HTTP range requests
  * (seeking) and serves a live photo's motion clip. The browser sends the session
  * cookie for same-origin `<video>` requests; an optional download token is
  * appended for cookie-less contexts.
@@ -1165,7 +1165,7 @@ export function videoUrl(uid: string, downloadToken?: string | null): string {
 
 /**
  * Builds the URL of a video's HLS master playlist
- * (`GET /api/v1/photos/{uid}/hls/master.m3u8`) — the entry point a streaming
+ * (`GET /api/v1/p/<slug>/photos/{uid}/hls/master.m3u8`) — the entry point a streaming
  * player loads, listing one variant per encoded rendition.
  *
  * Only a photo whose detail payload reports `hls` has one; every other photo
@@ -1183,7 +1183,7 @@ export function hlsMasterUrl(uid: string, downloadToken?: string | null): string
 }
 
 /**
- * A video's scrub-preview storyboard as `GET /api/v1/photos/{uid}/storyboard`
+ * A video's scrub-preview storyboard as `GET /api/v1/p/<slug>/photos/{uid}/storyboard`
  * reports it. Mirrors the backend `storyboardResponse`.
  *
  * `status` is the only field always present:
@@ -1208,7 +1208,7 @@ export interface Storyboard {
 /**
  * Asks whether a video's scrub-preview sprite is ready, scheduling its
  * generation in the background when it is not
- * (`GET /api/v1/photos/{uid}/storyboard`).
+ * (`GET /api/v1/p/<slug>/photos/{uid}/storyboard`).
  *
  * The GET is what schedules the work, deliberately: previews are for whoever is
  * watching, viewers included, and the queue dedups per photo so asking on every
@@ -1248,7 +1248,7 @@ export function storyboardSpriteUrl(uid: string, downloadToken?: string | null):
 
 /**
  * Toggles whether the current user has favorited a photo via
- * `PUT /api/v1/photos/{uid}/favorite` (favorite) or `DELETE …` (unfavorite).
+ * `PUT /api/v1/p/<slug>/photos/{uid}/favorite` (favorite) or `DELETE …` (unfavorite).
  * Both are idempotent and resolve with no body (204). Favoriting is a personal
  * action available to every signed-in user, including viewers.
  *
@@ -1281,7 +1281,7 @@ export interface RegenerateThumbnailResult {
 
 /**
  * Rebuilds a photo's cached thumbnails and perceptual hashes from its original
- * via `POST /api/v1/photos/{uid}/regenerate-thumbnail`. It is a maintenance
+ * via `POST /api/v1/p/<slug>/photos/{uid}/regenerate-thumbnail`. It is a maintenance
  * action for a missing or stale thumbnail: editors/admins only, idempotent, and
  * it never touches the original file. It runs synchronously and resolves once the
  * derived data has been rebuilt, so the caller can then cache-bust the displayed
@@ -1307,7 +1307,7 @@ export async function regenerateThumbnail(
 
 /**
  * Schedules one per-photo computation via
- * `POST /api/v1/photos/{uid}/process/{step}` and resolves with that step's new
+ * `POST /api/v1/p/<slug>/photos/{uid}/process/{step}` and resolves with that step's new
  * state, so the caller can update the row without re-fetching the photo.
  *
  * It is the repair for a photo the pipeline missed: maintainers only, and
@@ -1334,7 +1334,7 @@ export async function runProcessingStep(
 }
 
 /**
- * A partial rating update for `PUT /api/v1/photos/{uid}/rating`: a star rating
+ * A partial rating update for `PUT /api/v1/p/<slug>/photos/{uid}/rating`: a star rating
  * (0–5) and/or a pick/reject flag. At least one must be present; an omitted key
  * leaves that field unchanged. Mirrors the backend `ratingBody`.
  */
@@ -1345,7 +1345,7 @@ export interface RatingUpdate {
 
 /**
  * Sets the current user's star rating and/or pick/reject flag on a photo via
- * `PUT /api/v1/photos/{uid}/rating`. Idempotent, resolves with no body (204).
+ * `PUT /api/v1/p/<slug>/photos/{uid}/rating`. Idempotent, resolves with no body (204).
  * Rating is a personal action available to every signed-in user. Pass just the
  * field you are changing (e.g. `{ rating: 4 }` or `{ flag: 'reject' }`).
  *
@@ -1372,7 +1372,7 @@ export async function ratePhoto(
 
 /**
  * Clears the current user's rating and flag on a photo via
- * `DELETE /api/v1/photos/{uid}/rating` (resets it to rating 0 / flag `none`).
+ * `DELETE /api/v1/p/<slug>/photos/{uid}/rating` (resets it to rating 0 / flag `none`).
  * Idempotent, resolves with no body (204).
  *
  * @throws ApiError with `status` 404 (no such photo), 503 (ratings backend
@@ -1390,7 +1390,7 @@ export async function clearRating(uid: string, signal?: AbortSignal): Promise<vo
 }
 
 /**
- * Archives a photo via `POST /api/v1/photos/{uid}/archive`, setting its
+ * Archives a photo via `POST /api/v1/p/<slug>/photos/{uid}/archive`, setting its
  * `archived_at` so it is soft-deleted: it leaves the library and moves to the
  * trash, from where it can be restored (see {@link unarchivePhoto}) or later
  * purged. Editor/admin only.
@@ -1409,7 +1409,7 @@ export async function archivePhoto(uid: string, signal?: AbortSignal): Promise<v
 }
 
 /**
- * Restores an archived photo via `POST /api/v1/photos/{uid}/unarchive`, clearing
+ * Restores an archived photo via `POST /api/v1/p/<slug>/photos/{uid}/unarchive`, clearing
  * its `archived_at` so it leaves the trash and reappears in the library. Editor/
  * admin only.
  *
@@ -1427,7 +1427,7 @@ export async function unarchivePhoto(uid: string, signal?: AbortSignal): Promise
 }
 
 /**
- * Hides a photo from the library via `POST /api/v1/photos/{uid}/hide`, setting
+ * Hides a photo from the library via `POST /api/v1/p/<slug>/photos/{uid}/hide`, setting
  * its `hidden_from_library`. It is not archiving: the photo stays in the
  * catalogue, in its albums and labels, in favourites and at its own URL — it
  * only leaves the library grid, the timeline, the map, the slideshow, the review
@@ -1449,7 +1449,7 @@ export async function hidePhoto(uid: string, signal?: AbortSignal): Promise<void
 
 /**
  * Brings a hidden photo back into the library via
- * `POST /api/v1/photos/{uid}/unhide`, clearing its `hidden_from_library`.
+ * `POST /api/v1/p/<slug>/photos/{uid}/unhide`, clearing its `hidden_from_library`.
  * Editor/admin only.
  *
  * @throws ApiError with `status` 404 (no such photo), 403 (not an editor) or 5xx.
@@ -1466,7 +1466,7 @@ export async function unhidePhoto(uid: string, signal?: AbortSignal): Promise<vo
 }
 
 /**
- * Groups the given photos into one new stack via `POST /api/v1/photos/stack`
+ * Groups the given photos into one new stack via `POST /api/v1/p/<slug>/photos/stack`
  * (manual stacking, for the cases automatic detection misses) and returns the
  * new stack's primary detail. Editor/admin only.
  *
@@ -1489,7 +1489,7 @@ export async function stackPhotos(photoUids: string[], signal?: AbortSignal): Pr
 
 /**
  * Makes the photo the primary of its stack via
- * `POST /api/v1/photos/{uid}/stack/primary` and returns the refreshed detail.
+ * `POST /api/v1/p/<slug>/photos/{uid}/stack/primary` and returns the refreshed detail.
  * Editor/admin only.
  *
  * @throws ApiError with `status` 404 (no such photo), 409 (not stacked), 403
@@ -1500,7 +1500,7 @@ export async function setStackPrimary(uid: string, signal?: AbortSignal): Promis
 }
 
 /**
- * Removes the photo from its stack via `POST /api/v1/photos/{uid}/unstack`,
+ * Removes the photo from its stack via `POST /api/v1/p/<slug>/photos/{uid}/unstack`,
  * turning it back into a standalone photo, and returns its refreshed detail.
  * Editor/admin only.
  */
@@ -1510,7 +1510,7 @@ export async function unstackMember(uid: string, signal?: AbortSignal): Promise<
 
 /**
  * Dissolves the whole stack the photo belongs to via
- * `POST /api/v1/photos/{uid}/unstack-all` and returns its refreshed detail.
+ * `POST /api/v1/p/<slug>/photos/{uid}/unstack-all` and returns its refreshed detail.
  * Editor/admin only.
  */
 export async function unstackAll(uid: string, signal?: AbortSignal): Promise<PhotoDetail> {
@@ -1531,7 +1531,7 @@ async function postStackMutation(url: string, signal?: AbortSignal): Promise<Pho
 
 /**
  * Permanently deletes a single archived photo via
- * `POST /api/v1/photos/{uid}/purge?confirm=true`. This is irreversible: the row,
+ * `POST /api/v1/p/<slug>/photos/{uid}/purge?confirm=true`. This is irreversible: the row,
  * its originals and thumbnails are removed. The explicit `confirm=true` guard
  * mirrors the server's requirement. Editor/admin only.
  *
@@ -1557,7 +1557,7 @@ export interface PurgeResult {
 
 /**
  * Permanently deletes every archived photo via
- * `POST /api/v1/trash/empty?confirm=true` and returns how many were purged and
+ * `POST /api/v1/p/<slug>/trash/empty?confirm=true` and returns how many were purged and
  * failed. Irreversible; editor/admin only.
  *
  * @throws ApiError with `status` 503 (purge backend unwired) or 5xx.
@@ -1576,7 +1576,7 @@ export async function emptyTrash(signal?: AbortSignal): Promise<PurgeResult> {
 
 /**
  * Permanently deletes every archived photo older than `days` days via
- * `POST /api/v1/trash/purge-older?days=<days>&confirm=true` and returns how many
+ * `POST /api/v1/p/<slug>/trash/purge-older?days=<days>&confirm=true` and returns how many
  * were purged and failed. `days` must be an integer ≥ 0; `days = 0` purges the
  * whole trash. Irreversible; admin only (backend guard `RequireAdmin`), and the
  * explicit `confirm=true` mirrors the server's requirement.
@@ -1606,7 +1606,7 @@ export interface TrashInfo {
 }
 
 /**
- * Fetches the trash retention window via `GET /api/v1/trash/info` so the trash
+ * Fetches the trash retention window via `GET /api/v1/p/<slug>/trash/info` so the trash
  * UI can compute how long each archived photo has before it is auto-purged.
  *
  * @throws ApiError on a non-2xx response.
@@ -1621,7 +1621,7 @@ export async function fetchTrashInfo(signal?: AbortSignal): Promise<TrashInfo> {
 
 /**
  * One month-granularity bucket of the library timeline (`photos.TimelineBucket`,
- * `GET /api/v1/photos/timeline`): the number of photos captured in that calendar
+ * `GET /api/v1/p/<slug>/photos/timeline`): the number of photos captured in that calendar
  * month (`count`) and the number of photos that sort before this bucket in the
  * default newest-first grid order (`cumulative`). Because buckets are ordered
  * newest-first and never overlap, `cumulative` is the scroll index of the
@@ -1643,7 +1643,7 @@ export interface TimelineBucket {
 
 /**
  * The month date-histogram of the library (`photos.Timeline`,
- * `GET /api/v1/photos/timeline`): the buckets in newest-first order plus the
+ * `GET /api/v1/p/<slug>/photos/timeline`): the buckets in newest-first order plus the
  * overall `total`. `total` counts every matching photo — including those with an
  * unknown capture time that belong to no bucket — so it may exceed the sum of the
  * bucket counts.
@@ -1655,7 +1655,7 @@ export interface Timeline {
 
 /**
  * Fetches the month date-histogram of the library via
- * `GET /api/v1/photos/timeline`. It accepts the same filter params as
+ * `GET /api/v1/p/<slug>/photos/timeline`. It accepts the same filter params as
  * {@link fetchPhotos} (sort/order and pagination are ignored server-side — the
  * histogram is always grouped by capture date, newest-first) so the buckets line
  * up with the default-sorted grid and a scrubber can map a month to a scroll
@@ -1692,7 +1692,7 @@ export interface YearBucket {
 
 /**
  * The year histogram of the catalog (`photos.Years`,
- * `GET /api/v1/photos/years`): the years that actually hold photos, newest first,
+ * `GET /api/v1/p/<slug>/photos/years`): the years that actually hold photos, newest first,
  * plus the overall `total`. `total` counts every matching photo — including those
  * with an unknown capture time that belong to no year — so it may exceed the sum
  * of the bucket counts.
@@ -1704,7 +1704,7 @@ export interface YearsResponse {
 
 /**
  * Fetches the years that hold photos, newest first, each with its count, via
- * `GET /api/v1/photos/years` — the option list behind the library's period filter,
+ * `GET /api/v1/p/<slug>/photos/years` — the option list behind the library's period filter,
  * which groups them into decades.
  *
  * It accepts the same filter params as {@link fetchPhotos}, and the counts respect
@@ -1749,14 +1749,14 @@ export interface UploaderBucket {
   count: number
 }
 
-/** The uploader facet of the current view (`GET /api/v1/photos/uploaders`). */
+/** The uploader facet of the current view (`GET /api/v1/p/<slug>/photos/uploaders`). */
 export interface UploadersResponse {
   uploaders: UploaderBucket[]
 }
 
 /**
  * Fetches who uploaded the photos of the current view, largest contribution
- * first, each with its count, via `GET /api/v1/photos/uploaders` — the option
+ * first, each with its count, via `GET /api/v1/p/<slug>/photos/uploaders` — the option
  * list behind the library's uploader filter.
  *
  * It accepts the same filter params as {@link fetchPhotos}, and the counts

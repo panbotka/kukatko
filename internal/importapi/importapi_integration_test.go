@@ -66,11 +66,12 @@ func newEnv(t *testing.T) *env {
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
-		// The unprefixed transition alias: WithProject resolves the bootstrap
-		// project, as it does for every /api/v1 route of the real server.
-		r.Use(auth.WithProject(project.NewStore(db.Pool())))
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -143,7 +144,7 @@ func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 		t.Fatalf("complete folder run: %v", err)
 	}
 
-	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/import/runs", nil)
+	resp := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/p/"+project.BootstrapSlug+"/import/runs", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -191,7 +192,7 @@ func TestImportFailures_servesFolderFailures(t *testing.T) {
 	}
 
 	resp := do(t, maint, http.MethodGet,
-		env.baseURL+"/api/v1/import/failures?source=folder&unresolved=true", nil)
+		env.baseURL+"/api/v1/p/"+project.BootstrapSlug+"/import/failures?source=folder&unresolved=true", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -225,13 +226,13 @@ func TestImportAPI_hasNoTriggers(t *testing.T) {
 	maint := env.login(t, "maint", auth.AccountMaintainer)
 
 	for _, path := range []string{"/import/photoprism", "/import/photosorter", "/import/photosorter-feeds"} {
-		resp := do(t, maint, http.MethodPost, env.baseURL+"/api/v1"+path, nil)
+		resp := do(t, maint, http.MethodPost, env.baseURL+"/api/v1/p/"+project.BootstrapSlug+path, nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("POST %s status = %d, want 404", path, resp.StatusCode)
 		}
 	}
-	verify := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/import/verify", nil)
+	verify := do(t, maint, http.MethodGet, env.baseURL+"/api/v1/p/"+project.BootstrapSlug+"/import/verify", nil)
 	defer func() { _ = verify.Body.Close() }()
 	if verify.StatusCode != http.StatusNotFound {
 		t.Errorf("GET /import/verify status = %d, want 404", verify.StatusCode)
@@ -245,7 +246,7 @@ func TestImportRuns_requiresMaintainer(t *testing.T) {
 	admin := env.login(t, "admin", auth.AccountAdmin)
 
 	for _, path := range []string{"/import/runs", "/import/failures"} {
-		resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1"+path, nil)
+		resp := do(t, admin, http.MethodGet, env.baseURL+"/api/v1/p/"+project.BootstrapSlug+path, nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("admin GET %s status = %d, want 403", path, resp.StatusCode)

@@ -27,11 +27,13 @@ func TestList_handAttachedPerson(t *testing.T) {
 	ctx := t.Context()
 
 	attached := mustCreate(t, store, photos.Photo{
-		FileHash: "hp-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hp-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
 		Title: "attached",
 	})
 	detected := mustCreate(t, store, photos.Photo{
-		FileHash: "hp-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hp-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		Title: "detected",
 	})
 
@@ -101,7 +103,8 @@ func TestList_handAttachedPersonOnAVideo(t *testing.T) {
 	ctx := t.Context()
 
 	clip := mustCreate(t, store, photos.Photo{
-		FileHash: "hv-1", FilePath: "p/1.mp4", FileName: "1.mp4", FileMime: "video/mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hv-1", FilePath: "p/1.mp4", FileName: "1.mp4", FileMime: "video/mp4",
 		MediaType: photos.MediaVideo, Title: "clip",
 	})
 

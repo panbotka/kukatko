@@ -14,6 +14,7 @@ import (
 // catalogued but nothing the container states was ever written.
 func brokenVideo(hash string) photos.Photo {
 	return photos.Photo{
+		ProjectID:     project.BootstrapUID,
 		FileHash:      hash,
 		FilePath:      "2024/05/" + hash + ".mp4",
 		FileName:      hash + ".mp4",

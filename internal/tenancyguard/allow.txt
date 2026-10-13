@@ -66,7 +66,7 @@ internal/people/subjects.go:428 requireSubjectInProject proved the subject in th
 internal/people/subjects.go:435 requireSubjectInProject proved the subject in the project earlier in the same tx
 
 # internal/photos
-internal/photos/store.go:592 only caller is the ingest rollback, which deletes the row it just created in the request's project
+internal/photos/store.go:585 only caller is the ingest rollback, which deletes the row it just created in the request's project
 internal/photos/store_aliases.go:90 ListPhotoprismAliases has no production caller (tests only); an instance-wide read for import reconciliation
 internal/photos/store_blurhash.go:18 worker/ingest only: thumbjob (GetForJob or photoInProject before ForceRegenerate) and ingest's own new photo
 internal/photos/store_extras.go:138 thumbjob ForceRegenerate: job via GetForJob, or HTTP regenerate after the scoped a.photoInProject check

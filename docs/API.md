@@ -5,35 +5,36 @@ the rules live in [`CLAUDE.md`](../CLAUDE.md). Record any new or changed endpoin
 
 ## Project prefix
 
-Kukátko is becoming multi-tenant: every endpoint that reads or writes catalogue data is
+Kukátko is multi-tenant: every endpoint that reads or writes catalogue data is
 **project-scoped** and lives under **`/api/v1/p/{project}/…`**, where `{project}` is the project's slug
 (`v` is the bootstrap project, the library that existed before projects). The sections below show a
 project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/v1`.
 
-- **Two mounts of one API (transition).** `cmd/kukatko/projectapi.go` builds every project-scoped group
-  once and mounts it twice (`mountProjectAPI`): under `/api/v1/p/{project}`, where `auth.WithProject`
-  names the project from the slug, and **unprefixed under `/api/v1`** — the *transition alias* the
-  embedded frontend and old MCP connectors still call (`kukatko ctl` uses the prefix: its contexts carry a
-  project). A request through the alias addresses the
-  bootstrap project `v`. The alias is removed in the alias-removal step; until then both paths answer
-  with the same bytes. **Exceptions:** the alias leaves out the name directory, because the
-  unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`); the
-  directory is served only as `/api/v1/p/{project}/users`. It also leaves out the member management
-  `/members`, the invitation links `/invites`, the settings `/settings` and the announcement
-  `/announcement`, which are a project's own and live only under the prefix — the unprefixed
-  `GET /api/v1/settings/public` is the separate instance-level route of the sign-in screen.
+- **One mount, no default project.** `cmd/kukatko/projectapi.go` builds every project-scoped group
+  once and mounts it once (`mountProjectAPI`), under `/api/v1/p/{project}`, where `auth.WithProject`
+  names the project from the slug. A project-scoped path **without** the prefix (`GET /api/v1/photos`)
+  is an unknown API path: the API's own JSON **404** `{"error":"not found"}` (every unmatched
+  `/api/v1/*` path gets it — never the SPA's `index.html`). There is no default project: a
+  project-scoped guard (`RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin`) reached by a
+  request that names no project is a wiring bug and answers **500**, logging the route;
+  `RequireMaintainer` on an instance route checks the instance role alone.
 - **Project-scoped:** photos (incl. trash, stacks, comments, edits, media), `/search/*`, albums and
   labels, subjects/people, families, subject avatars, face clusters, review, sweep, candidates, outliers,
   duplicates, duplicate markers, expand, bulk, tasks, feedback, saved searches, search history,
   `/whats-new`, places, maps (`/map/*`), `POST /upload`, the `/upload-links` management, the
-  `/notifications` inbox, `/capabilities`, `/settings` and `/announcement` (both under the prefix
-  only), the name directory `GET /users` (under the prefix only), `/import/*`, `/process/*` and `/mcp`.
-- **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`),
-  `/admin/users`, `/users/{uid}/avatar`, `/projects` and the account list `GET /users` +
-  `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
-  `/restore`, `/audit`, the public `/u/{code}` (no prefix: **the link resolves its own project** from
-  `upload_links.project_id` and files the upload there), the sign-in screen's anonymous
-  `GET /settings/public`, plus `/metrics` and `/healthz` outside `/api/v1`.
+  `/notifications` inbox, `/capabilities`, `/settings`, `/announcement`, the name directory
+  `GET /users`, the member management `/members`, the invitation links `/invites`, the project's own
+  `/audit`, `/stats`, `/import/*`, `/process/*`, the nameless-subject repair
+  `/maintenance/nameless-subjects*`, the caller's "this is me" `PUT /auth/subject`, the per-project
+  picture reads `GET /users/{uid}/avatar` + `GET /auth/picture`, and `/mcp`.
+- **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`; all of it
+  behind `RequireSignedIn`, which enters no project — an account in no project yet may use it),
+  `/admin/users` (maintainer-only), `/users/{uid}/avatar`, `/projects` and the account list
+  `GET /users` + `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`,
+  `/maintenance/scan|repair|audit/purge`, `/restore`, `/audit`, the public `/u/{code}` (no prefix:
+  **the link resolves its own project** from `upload_links.project_id` and files the upload there), the
+  public `/invite/{code}`, the sign-in screen's anonymous `GET /settings/public`, plus `/metrics` and
+  `/healthz` outside `/api/v1`.
 - **The one anonymous project route:** `GET /api/v1/p/{project}/settings/public` answers without a
   session (`auth.RequireActiveProject`, which admits an existing, active project and records it for
   `auth.PublicProjectFromContext` — never as an authorised project). An unknown slug and a deactivated
@@ -85,8 +86,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   The remaining groups are scoped step by step (see `docs/PACKAGES.md`, `internal/photos`).
 - **Links follow the prefix.** Every URL a response carries to another project-scoped route — a photo's
   `thumb_url`/`preview_url`/`download_url` when the store mints no signed URL, a GeoJSON feature's
-  `thumb`, a search hit's cover — is built on `auth.APIBase(ctx)`: `/api/v1/p/<slug>/photos/…` when the
-  request came through the prefix, `/api/v1/photos/…` through the alias. Signed edge URLs are unaffected.
+  `thumb`, a search hit's cover — is built on `auth.APIBase(ctx)`: `/api/v1/p/<slug>/photos/…`, the
+  prefix the request came through. Signed edge URLs are unaffected.
 
 ## Endpoints
 
@@ -94,8 +95,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
 - **Auth API (`/api/v1`):** `POST /auth/login` (set HttpOnly+SameSite=Strict cookie + opaque
   `download_token`), `POST /auth/register` (anonymous, see below), `POST /auth/logout`,
   `GET /auth/me`, `POST /auth/password` (revokes other
-  sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below), `PUT /auth/subject`,
-  `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below).
+  sessions), `GET|POST /auth/password-reset/{token}` (anonymous, see below),
+  `POST /auth/welcome-seen`, the passkey routes under `/auth/passkeys/*` (see below) — every signed-in
+  one behind `RequireSignedIn` (no project entered). `PUT /api/v1/p/{project}/auth/subject` is
+  project-scoped (see *Which person the account is*).
   **`GET /api/v1/p/{project}/users`** (project-scoped, RequireAuth) → `{users:[{uid,name}]}`, the
   **project's approved members** ordered by the name each is known under — disabled accounts, memberships
   still waiting for approval and every account of another project left out, so a tenant never learns who
@@ -107,13 +110,15 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   administrative record never leave the database, because the query selects two of them. It sits beside
   `GET /users/{uid}/avatar` (`internal/userpicapi`), which is the picture for the same uid.
   **`GET /auth/me`** → the login payload (`user` + `download_token`) plus `instance_role`
-  (`user`|`maintainer`), `projects: [{uid, slug, name, active, role, approved}]` (every membership,
-  inactive projects included, by name) and `last_project_slug` (the project the account last entered,
-  `""` when none). `user.role` is the caller's role **in the request's project** (the bootstrap project
-  while routes carry no `{project}`) and `"maintainer"` for a maintainer, so the frontend's maintainer
-  screens keep working; `user.instance_role` repeats the instance role.
-  **Project resolution (every guarded route):** the project comes from the `{project}` URL slug, or is
-  the bootstrap project `v` when the route has none (transition). After authentication: an unknown slug,
+  (`user`|`maintainer`), `projects: [{uid, slug, name, active, role, approved, subject_uid}]` (every
+  membership, inactive projects included, by name; `subject_uid` is the account's "this is me" in that
+  project) and `last_project_slug` (the project the account last entered, `""` when none). The
+  per-project facts live in `projects`: the frontend reads the role and the linked person of the
+  current project from there. `user.role` is the account record's five-rung role (see *Roles on the
+  admin user endpoints*) and `"maintainer"` for a maintainer; `user.instance_role` repeats the
+  instance role.
+  **Project resolution (every project-scoped route):** the project comes from the `{project}` URL
+  slug; there is no default. After authentication: an unknown slug,
   a project the caller is no member of and a deactivated project (except for a maintainer) all answer
   **404 `{"error":"project not found"}`** — byte-for-byte the same, so a tenant cannot probe for other
   projects; an anonymous caller gets 401 before any of it. A membership nobody approved yet answers
@@ -121,17 +126,20 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin` then check the **project** role,
   `RequireMaintainer`/`RequireImport` the **instance** role (checked before the project, so a
   non-maintainer always gets the same 403).
-  Admin-only: `GET|POST /admin/users`, `PUT /admin/users/{uid}/username` (rename, see below),
+  **Maintainer-only, all of it** (the account record is instance-level, so `/admin/users` enters no
+  project): `GET|POST /admin/users`, `PUT /admin/users/{uid}/username` (rename, see below),
   `POST /admin/users/{uid}/password` (reset revokes all of the user's sessions),
-  `POST /admin/users/{uid}/password-reset` (see below). **Maintainer-only** (the account record is
-  instance-level): `PATCH /admin/users/{uid}` (profile, `disabled`, transitional `role`) and
-  `POST /admin/users/{uid}/disable` (blocking locks the account out of every project). A project admin
+  `POST /admin/users/{uid}/password-reset` (see below), `PATCH /admin/users/{uid}` (profile,
+  `disabled`, `role`) and `POST /admin/users/{uid}/disable` (blocking locks the account out of every
+  project). The SPA no longer calls them (its system screens use `/users` and `/projects`); they stay for
+  scripts and the agent account of `docs/MCP.md`. A project admin
   manages roles and approval of their own members through the **Members API** below. **Removed:**
   `POST /admin/users/{uid}/approve` — approval is a membership's (`POST /p/{project}/members/{user_uid}/approve`).
-  **Roles on the admin user endpoints (transition):** `role` in the bodies and responses is still the
+  **Roles on the admin user endpoints:** `role` in the bodies and responses is the pre-project
   five-rung `viewer|curator|editor|admin|maintainer`: `maintainer` sets `users.role = 'maintainer'` (and
   an admin membership of the bootstrap project), any other value sets `users.role = 'user'` and the
-  account's bootstrap membership to that role (created when missing). A registration creates a `user`
+  account's membership **of the bootstrap project** to that role (created when missing). Memberships of
+  any other project are managed through `/projects/{uid}/members` or the Members API. A registration creates a `user`
   with an **unapproved viewer membership**; a project admin's `POST /p/{project}/members/{user_uid}/approve`
   approves that membership — sign-in lets an account in once **any** of its memberships is approved (a
   maintainer, or an account in no project, always); the account carries no approval of its own (`approved_at` in a user payload is derived:
@@ -160,16 +168,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `note` it *is* in the login and `/auth/me` payloads, deliberately: the client cannot render the
   "my photos" entry or draw the account's face without it, and it is the caller's own fact about
   themselves. The link lives **only on the membership** (`project_members.subject_uid`; the account-wide
-  `users.subject_uid` was dropped by migration 0110): a user payload carries the bootstrap project's link
-  (transition), `GET /auth/me` the request's project's. `PUT /auth/subject` writes the caller's membership
-  of the request's project (the bootstrap one through the unprefixed route) and answers with that link — a
-  caller who is no member there (a maintainer visiting) gets `null` and nothing is written;
+  `users.subject_uid` was dropped by migration 0110): `GET /auth/me` lists it **per membership**
+  (`projects[].subject_uid`), the admin listings carry the bootstrap project's. `PUT
+  /api/v1/p/{project}/auth/subject` writes the caller's membership of that project and answers with that
+  link — a caller who is no member there (a maintainer visiting) gets `null` and nothing is written;
   **`person:me`/`family:me` resolve the membership's link** (`project_members.subject_uid`) of
   the project the query runs in, so the same account is a different person — or nobody — in each of its
   projects. **Several accounts may name the same subject** (a shared
   family login and a personal one are both that person), and **deleting the subject clears the link**
   (`ON DELETE SET NULL`), so every reader must survive `null` — the common case.
-  Self-service: **`PUT /auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
+  Self-service: **`PUT /api/v1/p/{project}/auth/subject`** (`RequireAuth`, any role) with `{"subject_uid": "sub…"}` or
   `{"subject_uid": null}` → 200 with the refreshed user; the account written to is **the session's**,
   never one named in the body. A UID naming no person **of that project** (unknown, or another project's)
   → **400**. It writes **no audit entry**,
@@ -241,7 +249,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{username, display_name?, email, password, secret, upload_link?, invite_code?, project?}`; unknown fields
   → 400. It creates the account
   as a **viewer**, **not approved**, of the project `project` names (its slug — what the project's
-  registration page `/p/<slug>/register` sends; an empty one is the bootstrap project, transition), so it
+  registration page `/p/<slug>/register` sends; an empty one names no project and is refused like a
+  closed registration), so it
   exists and cannot be used until a project admin approves the membership; there is no session and no cookie in the answer. **201** returns
   `{username, display_name, email, pending_approval: true}` — the stored (normalised) values, and
   deliberately not the user payload: an anonymous caller learns neither the UID nor the role.
@@ -433,8 +442,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     cursor reset (its error count and ring kept). **409 `invalid_state`** when the latest run is not in the
     state the action starts from; 404 `not_found` when there is no run.
 - **Members (project admin) (`/api/v1/p/{project}/members`, `internal/memberapi`):** a project admin's
-  management of the members of **their** project. Mounted **only under `/p/{project}`** (no transition
-  alias) and every route **`RequireAdmin`** — the project's admin, or a maintainer, who enters every project
+  management of the members of **their** project. Mounted **only under `/p/{project}`** and every route **`RequireAdmin`** — the project's admin, or a maintainer, who enters every project
   as its admin. The project is the URL's: an admin of A addressing B's members gets **the very 404 an
   unknown slug gets** (`{"error":"project not found"}`), on every route. Refusals are `{"error":"<code>"}`
   (+ a human `message` where the client should show the rule); every mutation is audited by
@@ -467,7 +475,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `internal/inviteapi`):** invitation links into a project. The code (8 symbols, the upload links'
   unambiguous alphabet) is the whole credential: looked up through its SHA-256, kept readable for the
   project's admins. Refusals are `{"error":"<code>"}` (+ `message` where the client should show the rule).
-  - The management half is mounted **only under `/p/{project}`** (no transition alias), every route
+  - The management half is mounted **only under `/p/{project}`**, every route
     **`RequireAdmin`**; an admin of A addressing B's invites gets the very 404 an unknown slug gets, and
     B's invite uid under A's prefix is the very 404 a missing uid gets.
   - `GET /invites` → `{invites: [{uid, role, expires_at, max_uses, uses, revoked_at, created_by,
@@ -502,18 +510,19 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   expiry in the past / unknown field), **429** (the creation rate-limit shares the login limiter, key
   `apitoken:<uid>|<ip>`). `GET /auth/tokens` → `{tokens:[…]}` — **only the caller's own tokens**,
   never secrets or hashes. `DELETE /auth/tokens/{id}` → 204 (idempotent; an already-revoked token is
-  also 204 and writes no second audit entry); **someone else's token → 404, not 403** (an admin may
+  also 204 and writes no second audit entry); **someone else's token → 404, not 403** (a maintainer may
   revoke anyone's). Both create and revoke write an audit entry (`api_token.create`/`api_token.revoke`)
   **in the same transaction** as the mutation.
   `unlimited` (default `false`, always present in the response) exempts requests bearing the token from the
   **comment, upload and bulk** rate limiters — for an agent driving the library through `kukatko ctl`, whose
-  bursts are what those limiters are shaped to stop. **Only an admin may set it**: any other role asking for it
+  bursts are what those limiters are shaped to stop. **Only a maintainer (the system administrator) may set it** —
+  a token works in every project of its owner, so no project's admin governs it: anybody else asking for it
   on the create → **403 and no token is created at all**. The map-tile limiter is deliberately *not* covered —
   it protects paid mapy.com credit, not our CPU — and a **session cookie is never exempt**, whatever the user's
   role: the exemption belongs to one revocable credential, so a stolen cookie cannot spend it.
-  `PATCH /auth/tokens/{id}` `{unlimited}` → **204** turns the flag on and off afterwards; **admin-only (403
-  otherwise)** and only on **the caller's own** token — somebody else's, or an unknown id, is **404 even for an
-  admin** (revocation is the power an admin holds over a colleague's credential; this is not). It is idempotent:
+  `PATCH /auth/tokens/{id}` `{unlimited}` → **204** turns the flag on and off afterwards; **maintainer-only (403
+  otherwise)** and only on **the caller's own** token — somebody else's, or an unknown id, is **404 even for a
+  maintainer** (revocation is the power a maintainer holds over a colleague's credential; this is not). It is idempotent:
   re-sending the value the token already has is still 204 and writes no second entry. Each actual change writes
   `api_token.update` (details: the token's name and the value it moved to) **in the same transaction**.
 - **Passkeys (`/api/v1/auth/passkeys/*`, `internal/auth`):** WebAuthn sign-in beside the password —
@@ -1919,12 +1928,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   A subject that does not exist, has no picture at all, or whose picture names a photo that is gone all
   answer **404** (the grid draws its placeholder for each). Mounted by `server.WithAPI` (`buildAvatarAPI` in
   `cmd/kukatko/avatar.go`).
-- **Profile picture (`/api/v1`, `internal/userpicapi`):** `GET /users/{uid}/avatar` (RequireAuth) → the
+- **Profile picture (`/api/v1`, `internal/userpicapi`):** `GET /users/{uid}/avatar` (`RequireSignedIn` on
+  the instance route; `RequireAuth` under `/api/v1/p/{project}`, where the SPA asks it inside a project) → the
   square **`image/jpeg`** that stands for one **account**, and three self-service routes that change the
   caller's own. The picture is the first answer of a chain the **server** resolves — an uploaded picture, a
   library photo the user picked, the avatar of the subject the account's membership of the **request's
-  project** links (the unprefixed route is in the bootstrap project, the transition alias; a request without
-  a project skips this step), nothing — so the client
+  project** links (only the `/api/v1/p/{project}` route has one; the instance route skips this step),
+  nothing — so the client
   asks one URL and either gets a picture or a **404**, which is its cue to draw the coloured initial. Which
   of the three answered is deliberately not in the response. The linked subject is the **default**: an
   account that has said which person it is wears that face with no action from anybody. Same serving shape as
@@ -1942,16 +1952,17 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   account falls down the chain instead of erroring — and so does a picked photo of a project the **caller**
   may not see (no approved membership there, not a maintainer): it is refused exactly as a private one is,
   ending in the same 404 when nothing below it answers, never a 403.
-  `GET /auth/picture` (RequireAuth) → `{origin: "upload"|"photo"|"subject"|"none", photo_uid?, subject_uid?}`
+  `GET /auth/picture` (`RequireSignedIn`; also under the project prefix, `RequireAuth`, where `subject`
+  can answer) → `{origin: "upload"|"photo"|"subject"|"none", photo_uid?, subject_uid?}`
   — for the account page, which has to label the picture it shows and say what clearing it falls back to; it
-  never returns the bytes. `PUT /auth/picture` (RequireAuth) sets it, and the two ways to give one are told
+  never returns the bytes. `PUT /auth/picture` (`RequireSignedIn`, instance route only) sets it, and the two ways to give one are told
   apart by the content type: **`multipart/form-data`** with a `picture` file uploads one (JPEG/PNG/WebP, at
   most 8 MiB — an over-large request is refused **413** before it is buffered, not read into memory), while
   **`application/json`** `{photo_uid}` points at a library photo. A photo flagged **`private` or
   `hidden_from_library` is refused 400**: a profile picture is shown to every reader of every thread the
   account writes in, so allowing one would be the plainest way to sidestep the flag. A photo of a project the
   caller is no approved member of (a maintainer excepted) is **400 `no such photo`**, the same answer as one
-  that does not exist. An undecodable upload is 400 too. `DELETE /auth/picture` (RequireAuth) clears it, idempotently — which restores the *chain*, not
+  that does not exist. An undecodable upload is 400 too. `DELETE /auth/picture` (`RequireSignedIn`) clears it, idempotently — which restores the *chain*, not
   necessarily the initial: a linked account falls back to that person's face. All three are **self-scoped**
   (the account is the session's, never the request's) and, following `POST /auth/password`, **not audited** —
   the audit trail records what was done *to* an account by somebody else.
@@ -2440,8 +2451,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   of the new photographs was of them, and the client shows no line for it either way; being a subset of
   `photos` it can never be the only news, so it does not affect `has_news`. Mounted by `server.WithAPI` (`buildWhatsNewAPI` in `cmd/kukatko/whatsnew.go`).
 - **Notification API (`/api/v1/p/{project}` for `/notifications/*`, `/api/v1` for the instance-wide
-  `/push/*`, `internal/notificationapi` over `internal/push` + `internal/notification`, every route
-  `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
+  `/push/*`, `internal/notificationapi` over `internal/push` + `internal/notification`; the inbox
+  `RequireAuth`, `/push/*` `RequireSignedIn` — a device belongs to an account, not a project):** the HTTP surface of Web Push and of the notification records. **Every role
   may use every route**, viewers included — being told you were tagged is not a curation power — and every
   operation is **scoped to the calling account**. The inbox routes are **per project** as well: a
   notification belongs to the project it is about (the tagged photos', the task's, the album's, the
@@ -2736,8 +2747,7 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   maintainer) and `GET /p/{project}/audit/mine` (`RequireAuth`, any member) list **only the entries filed under
   that project** (`audit_log.project_id`), never another project's and never the instance's (accounts,
   sessions, a project's lifecycle); both refuse `?project=` with 400 — the route already names the one project
-  they read, and nothing in the query widens it. The unprefixed transition alias does **not** carry the project
-  pair: unprefixed `/audit` is the instance listing. The instance `GET /audit` alone takes
+  they read, and nothing in the query widens it. The instance `GET /audit` alone takes
   **`?project=<slug>`**, narrowing to that project's entries (an unknown slug → **400** naming it, a deactivated
   project's history still resolves; the slug goes through the `ResolveProject` lookup in `auditapi.Config`).
   Body `{entries,total,limit,offset,next_offset}` (entry =
@@ -2910,9 +2920,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   cannot be written to → nothing scheduled, nothing to detach → 409; all three leave the catalogue untouched.
   The body carries no `Content-Length`, so a client that reads it to EOF (any browser taking it as a Blob) knows
   the jobs are queued. `POST /maintenance/nameless-subjects/restore` takes that file back (raw JSON body, ≤64 MiB;
-  unparsable or subject-less → 400, a file of another project → 400) → `202 {queued}`. All three work in the
-  request's project — through these instance routes the bootstrap project; `kukatko maintenance
-  nameless-subjects --project <slug>` reaches the others — and the undo file records it (`project_uid`,
+  unparsable or subject-less → 400, a file of another project → 400) → `202 {queued}`. All three are mounted
+  **under `/api/v1/p/{project}`** and work in that project — as does `kukatko maintenance
+  nameless-subjects --project <slug>` — and the undo file records it (`project_uid`,
   `project_slug`). Both destructive directions run as the `nameless_detach` /
   `nameless_restore` jobs over `people.DetachSubject`/`RestoreSubject` (audited inside their own transaction),
   never inline: detaching production's catch-all moves ~111 000 faces into the partial HNSW index of migration

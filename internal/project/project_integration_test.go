@@ -375,9 +375,9 @@ func TestUsage(t *testing.T) {
 		t.Errorf("Usage(empty library) = %+v, %v; want zeros", empty, err)
 	}
 	if _, err := db.Pool().Exec(ctx, `
-		INSERT INTO photos (uid, file_hash, file_path, file_size, archived_at) VALUES
-		('phusage00000000000000001', 'h1', '2020/01/a.jpg', 100, NULL),
-		('phusage00000000000000002', 'h2', '2020/01/b.jpg', 250, now())`); err != nil {
+		INSERT INTO photos (uid, file_hash, file_path, file_size, archived_at, project_id) VALUES
+		('phusage00000000000000001', 'h1', '2020/01/a.jpg', 100, NULL, $1),
+		('phusage00000000000000002', 'h2', '2020/01/b.jpg', 250, now(), $1)`, project.BootstrapUID); err != nil {
 		t.Fatalf("seeding photos: %v", err)
 	}
 

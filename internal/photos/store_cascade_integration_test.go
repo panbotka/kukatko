@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -57,19 +58,22 @@ func TestDeletePhoto_cascadesAllDependents(t *testing.T) {
 	}
 	exec(`INSERT INTO users (uid, username, email, password_hash, role)
 		 VALUES ('u_casc', 'casc', 'casc@example.test', 'x', 'user')`)
-	exec(`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid) VALUES ('su_casc', 'casc', 'Casc', 'person', $1)`, uid)
-	exec(`INSERT INTO albums (uid, slug, title, cover_photo_uid) VALUES ('al_casc', 'casc', 'Casc', $1)`, uid)
-	exec(`INSERT INTO labels (uid, slug, name) VALUES ('lb_casc', 'casc', 'Casc')`)
-	exec(`INSERT INTO face_clusters (uid, centroid, size, model) VALUES ('fc_casc', '` + zerosHalfvec(512) + `'::halfvec(512), 1, 'm')`)
+	exec(`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid, project_id)
+	      VALUES ('su_casc', 'casc', 'Casc', 'person', $1, $2)`, uid, project.BootstrapUID)
+	exec(`INSERT INTO albums (uid, slug, title, cover_photo_uid, project_id)
+	      VALUES ('al_casc', 'casc', 'Casc', $1, $2)`, uid, project.BootstrapUID)
+	exec(`INSERT INTO labels (uid, slug, name, project_id) VALUES ('lb_casc', 'casc', 'Casc', $1)`, project.BootstrapUID)
+	exec(`INSERT INTO face_clusters (uid, centroid, size, model, project_id)
+	      VALUES ('fc_casc', '`+zerosHalfvec(512)+`'::halfvec(512), 1, 'm', $1)`, project.BootstrapUID)
 
 	// One child row in every photo-referencing table (CASCADE).
 	exec(`INSERT INTO photo_files (photo_uid, file_path, role) VALUES ($1, '2023/06/casc.jpg', 'original')`, uid)
 	exec(`INSERT INTO photo_phashes (photo_uid, phash, dhash) VALUES ($1, 1, 2)`, uid)
 	exec(`INSERT INTO photo_edits (photo_uid, rotation) VALUES ($1, 90)`, uid)
-	exec(`INSERT INTO embeddings (photo_uid, embedding) VALUES ($1, '`+
-		zerosHalfvec(vectors.ImageDim)+`'::halfvec(1152))`, uid)
-	exec(`INSERT INTO faces (photo_uid, face_index, embedding, bbox, cluster_uid)
-	      VALUES ($1, 0, '`+zerosHalfvec(512)+`'::halfvec(512), '{0,0,1,1}', 'fc_casc')`, uid)
+	exec(`INSERT INTO embeddings (photo_uid, embedding, project_id) VALUES ($1, '`+
+		zerosHalfvec(vectors.ImageDim)+`'::halfvec(1152), $2)`, uid, project.BootstrapUID)
+	exec(`INSERT INTO faces (photo_uid, face_index, embedding, bbox, cluster_uid, project_id)
+	      VALUES ($1, 0, '`+zerosHalfvec(512)+`'::halfvec(512), '{0,0,1,1}', 'fc_casc', $2)`, uid, project.BootstrapUID)
 	exec(`INSERT INTO face_detections (photo_uid, face_count, model) VALUES ($1, 1, 'm')`, uid)
 	exec(`INSERT INTO markers (uid, photo_uid, subject_uid, type) VALUES ('mk_casc', $1, 'su_casc', 'face')`, uid)
 	exec(`INSERT INTO album_photos (album_uid, photo_uid) VALUES ('al_casc', $1)`, uid)
@@ -150,7 +154,8 @@ func TestDeleteUser_setsNullAndCascades(t *testing.T) {
 	exec(`INSERT INTO users (uid, username, email, password_hash, role)
 		 VALUES ('u_del', 'udel', 'udel@example.test', 'x', 'user')`)
 	exec(`UPDATE photos SET uploaded_by = 'u_del' WHERE uid = $1`, uid)
-	exec(`INSERT INTO albums (uid, slug, title, created_by) VALUES ('al_del', 'aldel', 'AlDel', 'u_del')`)
+	exec(`INSERT INTO albums (uid, slug, title, created_by, project_id) VALUES ('al_del', 'aldel', 'AlDel', 'u_del', $1)`,
+		project.BootstrapUID)
 	exec(`INSERT INTO user_favorites (user_uid, photo_uid) VALUES ('u_del', $1)`, uid)
 
 	if _, err := db.Pool().Exec(ctx, "DELETE FROM users WHERE uid = 'u_del'"); err != nil {

@@ -90,14 +90,14 @@ func (e *httpEnv) assertCreatedAdmin(t *testing.T, status int, body []byte, user
 	return created
 }
 
-// TestCSRF_textPlainJSONCreatesAdmin shows that the strongest blind write, an
-// admin creating an admin account, accepts a raw JSON body declared as
-// text/plain — what `fetch(url, {method: "POST", mode: "no-cors", credentials:
-// "include", body: json})` sends from a same-site page — with a sibling Origin
-// and `Sec-Fetch-Site: same-site` on it.
+// TestCSRF_textPlainJSONCreatesAdmin shows that the strongest blind write, a
+// maintainer (the only one who administers accounts) creating an admin account,
+// accepts a raw JSON body declared as text/plain — what `fetch(url, {method:
+// "POST", mode: "no-cors", credentials: "include", body: json})` sends from a
+// same-site page — with a sibling Origin and `Sec-Fetch-Site: same-site` on it.
 func TestCSRF_textPlainJSONCreatesAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "victim-admin", auth.AccountAdmin)
+	env.mustCreate(t, "victim-admin", auth.AccountMaintainer)
 	victim := env.loginClient(t, "victim-admin")
 
 	body := adminUserBody(t, map[string]any{
@@ -120,7 +120,7 @@ func TestCSRF_textPlainJSONCreatesAdmin(t *testing.T) {
 // never read.
 func TestCSRF_textPlainFormCreatesAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "victim-admin", auth.AccountAdmin)
+	env.mustCreate(t, "victim-admin", auth.AccountMaintainer)
 	victim := env.loginClient(t, "victim-admin")
 
 	name := `{"username":"csrf-form","email":"csrf-form@example.test",` +

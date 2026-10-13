@@ -85,16 +85,19 @@ func TestLatestAmong_isIndexBacked(t *testing.T) {
 	ctx := context.Background()
 	pool := f.db.Pool()
 	const seedPhotos = `
-		INSERT INTO photos (uid, file_hash, file_path, file_name, file_mime, taken_at_source)
+		INSERT INTO photos (uid, file_hash, file_path, file_name, file_mime, taken_at_source, project_id)
 		SELECT 'lat' || lpad(i::text, 29, '0'), 'lat-hash-' || lpad(i::text, 55, '0'),
-		       'p/' || i || '.jpg', i || '.jpg', 'image/jpeg', 'exif'
+		       'p/' || i || '.jpg', i || '.jpg', 'image/jpeg', 'exif', $1
 		FROM generate_series(1, 20000) i`
 	const seedComments = `
 		INSERT INTO comments (uid, photo_uid, body, created_at)
 		SELECT 'cm' || lpad(i::text, 30, '0'), 'lat' || lpad(((i % 20000) + 1)::text, 29, '0'),
 		       'note ' || i, timestamptz '2026-01-01' + (i || ' minutes')::interval
 		FROM generate_series(1, 60000) i`
-	for _, stmt := range []string{seedPhotos, seedComments, "ANALYZE photos", "ANALYZE comments"} {
+	if _, err := pool.Exec(ctx, seedPhotos, project.BootstrapUID); err != nil {
+		t.Fatalf("seeding photos: %v", err)
+	}
+	for _, stmt := range []string{seedComments, "ANALYZE photos", "ANALYZE comments"} {
 		if _, err := pool.Exec(ctx, stmt); err != nil {
 			t.Fatalf("seeding: %v", err)
 		}

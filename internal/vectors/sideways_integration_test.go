@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -17,6 +18,7 @@ func makePhotoWithGeometry(
 ) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        hash,
 		FilePath:        "2026/08/" + hash + ".jpg",
 		FileName:        hash + ".jpg",

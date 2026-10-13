@@ -4,7 +4,7 @@ import { apiPath } from './api'
 
 /**
  * Grouped global-search client, mirroring the backend JSON shape from
- * `internal/globalsearchapi` (`GET /api/v1/search/global?q=`). The endpoint runs
+ * `internal/globalsearchapi` (`GET /api/v1/p/<slug>/search/global?q=`). The endpoint runs
  * one query across several entity kinds at once — albums, labels, people
  * (subjects) and photos — capped at a small top-N per group, so it is light
  * enough to power the navbar type-ahead dropdown and the search page's
@@ -147,7 +147,7 @@ export function directHitRoute(direct: GlobalSearchDirect): string | null {
 }
 
 /**
- * Runs a grouped global search via `GET /api/v1/search/global?q=`. The query is
+ * Runs a grouped global search via `GET /api/v1/p/<slug>/search/global?q=`. The query is
  * required by the backend (an empty/whitespace value yields a 400), so callers
  * should skip the call for an empty query and treat that as an idle state.
  *
@@ -194,7 +194,7 @@ export function isEmptyResult(result: GlobalSearchResult): boolean {
 
 /**
  * One filter key of the query language, as the backend publishes it at
- * `GET /api/v1/search/schema`. The list comes from the parser's own registry
+ * `GET /api/v1/p/<slug>/search/schema`. The list comes from the parser's own registry
  * (`internal/query`), so a client that completes keys from it can never offer a
  * filter that no longer parses — nor miss one that was just added.
  */
@@ -215,7 +215,7 @@ export interface QueryFilterKey {
   values?: string[]
 }
 
-/** The body of `GET /api/v1/search/schema`. */
+/** The body of `GET /api/v1/p/<slug>/search/schema`. */
 interface QuerySchemaBody {
   keys: QueryFilterKey[]
 }

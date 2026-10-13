@@ -100,7 +100,8 @@ func (e *purgeEnv) seedPhoto(t *testing.T, name string, at *time.Time) (photos.P
 	}
 
 	photo, err := e.store.Create(ctx, photos.Photo{
-		FileHash: stored.Hash, FilePath: stored.RelPath, FileName: name + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  stored.Hash, FilePath: stored.RelPath, FileName: name + ".jpg",
 		FileSize: stored.Size, FileMime: stored.MIME, FileOrientation: 1, TakenAtSource: "unknown",
 	})
 	if err != nil {

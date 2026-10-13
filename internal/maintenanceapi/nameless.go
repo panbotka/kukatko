@@ -43,9 +43,8 @@ const (
 // by *namelessjob.Service; a nil NamelessRepair makes the three endpoints answer
 // 503.
 //
-// Every method works inside one project: the request's (auth.ProjectFromContext).
-// These routes are instance routes, so through the unprefixed path that is the
-// bootstrap project; the CLI's --project reaches any other.
+// Every method works inside one project: the request's (auth.ProjectFromContext),
+// named by the /api/v1/p/{project} prefix the routes are mounted under.
 type NamelessRepair interface {
 	// List reports the project's subjects whose name identifies nobody
 	// (read-only).

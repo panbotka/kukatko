@@ -38,7 +38,8 @@ var fullImport = photos.ImportMetadata{
 func blankPhoto(t *testing.T, store *photos.Store, hash string) photos.Photo {
 	t.Helper()
 	created, err := store.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2016/02/" + hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2016/02/" + hash + ".jpg",
 		FileName: hash + ".jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {

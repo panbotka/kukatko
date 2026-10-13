@@ -26,7 +26,7 @@ type shareManifestFile struct {
 }
 
 // shareURL is the share-manifest endpoint under the API base path.
-func shareURL(base string) string { return base + "/api/v1/photos/share-manifest" }
+func shareURL(base string) string { return base + apiV + "/photos/share-manifest" }
 
 // postShareManifest posts a selection to the share-manifest endpoint and returns
 // the response; the caller closes the body.
@@ -217,7 +217,7 @@ func TestMediaRoutes_proxyStreamsBytesOnPublishedBackend(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "remote.jpg", 33, 44, 55)
 	mirrorOriginal(t, env, media, seeded)
 
-	base := env.server.URL + "/api/v1/photos/" + seeded.UID
+	base := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	redirected := mustDo(t, client, http.MethodGet, base+"/download?original=true", nil)
 	defer func() { _ = redirected.Body.Close() }()
@@ -272,7 +272,7 @@ func TestMediaRoutes_proxyStillRequiresTheGuard(t *testing.T) {
 	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Local", TakenAtSource: "unknown"}, "local.jpg", 13, 23, 33)
 
-	base := env.server.URL + "/api/v1/photos/" + seeded.UID
+	base := env.server.URL + apiV + "/photos/" + seeded.UID
 	for _, path := range []string{"/download?original=true&proxy=true", "/thumb/fit_720?proxy=true"} {
 		resp := mustDo(t, &http.Client{}, http.MethodGet, base+path, nil)
 		if resp.StatusCode != http.StatusUnauthorized {

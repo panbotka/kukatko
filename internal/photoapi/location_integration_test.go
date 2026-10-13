@@ -32,7 +32,7 @@ func TestUpdateMetadata_pickLocation(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Svatba u kostela", TakenAtSource: "manual",
 	}, "pick-location.jpg", 12, 34, 56)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 	if seeded.Lat != nil || seeded.Lng != nil {
 		t.Fatalf("seeded photo already has a location: %+v", seeded)
 	}
@@ -69,7 +69,7 @@ func TestUpdateMetadata_pickLocationOverEstimate(t *testing.T) {
 		Title: "Odhad", TakenAtSource: "manual",
 		Lat: &guessLat, Lng: &guessLng, LocationSource: photos.LocationSourceEstimate,
 	}, "estimate-location.jpg", 21, 43, 65)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	patched := patchPhoto(t, editor, url, []byte(`{"lat":48.95363,"lng":17.37649}`))
 	if patched.Lat == nil || *patched.Lat != veseliLat {
@@ -94,7 +94,7 @@ func TestUpdateMetadata_removeLocation(t *testing.T) {
 		Title: "Ke smazání", TakenAtSource: "manual", Lat: &lat, Lng: &lng,
 		LocationSource: photos.LocationSourceManual,
 	}, "remove-location.jpg", 31, 41, 51)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	patched := patchPhoto(t, editor, url, []byte(`{"lat":null,"lng":null}`))
 	if patched.Lat != nil || patched.Lng != nil {
@@ -115,7 +115,7 @@ func TestUpdateMetadata_untouchedLocationSchedulesNoGeocode(t *testing.T) {
 		Title: "Beze změny", TakenAtSource: "manual", Lat: &lat, Lng: &lng,
 		LocationSource: photos.LocationSourceManual,
 	}, "same-location.jpg", 61, 71, 81)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	// A title-only edit, and then a PATCH resending the coordinates the photo
 	// already has: neither is a move, so neither is worth a credit.

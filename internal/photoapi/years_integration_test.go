@@ -27,7 +27,7 @@ type yearsResp struct {
 // failing the test on a non-200 status.
 func getYears(t *testing.T, client *http.Client, base, query string) yearsResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/years?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/years?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("years status = %d for %q, want 200", resp.StatusCode, query)
@@ -162,12 +162,12 @@ func TestYears(t *testing.T) {
 
 	t.Run("invalid year is 400", func(t *testing.T) {
 		for _, query := range []string{"year=nineteen", "year=42", "archived=maybe"} {
-			resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/years?"+query, nil)
+			resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/years?"+query, nil)
 			_ = resp.Body.Close()
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("years?%s status = %d, want 400", query, resp.StatusCode)
 			}
-			resp = mustDo(t, client, http.MethodGet, base+"/api/v1/photos?"+query, nil)
+			resp = mustDo(t, client, http.MethodGet, base+apiV+"/photos?"+query, nil)
 			_ = resp.Body.Close()
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("photos?%s status = %d, want 400", query, resp.StatusCode)
@@ -176,7 +176,7 @@ func TestYears(t *testing.T) {
 	})
 
 	t.Run("requires auth", func(t *testing.T) {
-		resp := mustDo(t, &http.Client{}, http.MethodGet, base+"/api/v1/photos/years", nil)
+		resp := mustDo(t, &http.Client{}, http.MethodGet, base+apiV+"/photos/years", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("anonymous status = %d, want 401", resp.StatusCode)

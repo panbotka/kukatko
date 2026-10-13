@@ -28,7 +28,7 @@ type featuredList struct {
 // listFeatured fetches the homepage's featured albums as c sees them.
 func (e *env) listFeatured(t *testing.T, c *http.Client) featuredList {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/albums/featured", nil)
+	resp := e.mustDo(t, c, http.MethodGet, apiV+"/albums/featured", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /albums/featured = %d, want 200", resp.StatusCode)
 	}
@@ -40,7 +40,7 @@ func (e *env) listFeatured(t *testing.T, c *http.Client) featuredList {
 // createAlbum creates an album through the API as c and returns it.
 func (e *env) createAlbum(t *testing.T, c *http.Client, body string) organize.Album {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodPost, "/api/v1/albums", []byte(body))
+	resp := e.mustDo(t, c, http.MethodPost, apiV+"/albums", []byte(body))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /albums %s = %d, want 201", body, resp.StatusCode)
 	}
@@ -70,19 +70,19 @@ func TestFeatured_overHTTP(t *testing.T) {
 	album := env.createAlbum(t, curator, `{"title":"Pouť 2026"}`)
 	secret := env.createAlbum(t, curator, `{"title":"Rodinné","private":true}`)
 	month := env.createAlbum(t, curator, `{"title":"January 2026","type":"month"}`)
-	if got := env.status(t, curator, http.MethodPost, "/api/v1/albums/"+album.UID+"/photos",
+	if got := env.status(t, curator, http.MethodPost, apiV+"/albums/"+album.UID+"/photos",
 		`{"photo_uids":["`+photo+`"]}`); got != http.StatusOK {
 		t.Fatalf("adding the photo = %d", got)
 	}
 
-	path := "/api/v1/albums/" + album.UID + "/featured"
+	path := apiV + "/albums/" + album.UID + "/featured"
 	if got := env.status(t, viewer, http.MethodPut, path, ""); got != http.StatusForbidden {
 		t.Errorf("viewer PUT featured = %d, want 403", got)
 	}
 	if got := env.status(t, curator, http.MethodPut, path, ""); got != http.StatusOK {
 		t.Fatalf("curator PUT featured = %d, want 200", got)
 	}
-	if got := env.status(t, curator, http.MethodPut, "/api/v1/albums/"+secret.UID+"/featured", ""); got != http.StatusOK {
+	if got := env.status(t, curator, http.MethodPut, apiV+"/albums/"+secret.UID+"/featured", ""); got != http.StatusOK {
 		t.Fatalf("curator PUT featured (private) = %d, want 200", got)
 	}
 
@@ -118,7 +118,7 @@ func TestFeatured_overHTTP(t *testing.T) {
 	if got := env.status(t, curator, http.MethodPut, path, `{"until":"`+tooFar+`"}`); got != http.StatusBadRequest {
 		t.Errorf("PUT a date beyond a year = %d, want 400", got)
 	}
-	if got := env.status(t, curator, http.MethodPut, "/api/v1/albums/"+month.UID+"/featured", ""); got != http.StatusBadRequest {
+	if got := env.status(t, curator, http.MethodPut, apiV+"/albums/"+month.UID+"/featured", ""); got != http.StatusBadRequest {
 		t.Errorf("PUT featured on a month album = %d, want 400", got)
 	}
 

@@ -25,13 +25,13 @@ const listApprovalRecipientsQuery = `SELECT ` + userColumns + `
 
 // ListApprovalRecipients returns every enabled account that may approve a
 // registration into projectUID — its admins and the maintainers — so each can
-// be told somebody is waiting. An empty projectUID is the bootstrap project.
+// be told somebody is waiting. An empty projectUID is ErrNoProject.
 // The slice is empty (not nil) when there is nobody: a project whose only
 // administrator is disabled still accepts registrations, it just has nobody to
 // notify.
 func (s *Store) ListApprovalRecipients(ctx context.Context, projectUID string) ([]User, error) {
 	if projectUID == "" {
-		projectUID = project.BootstrapUID
+		return nil, ErrNoProject
 	}
 	rows, err := s.pool.Query(ctx, listApprovalRecipientsQuery,
 		projectUID, string(RoleMaintainer), string(project.RoleAdmin))

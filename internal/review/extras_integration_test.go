@@ -84,7 +84,8 @@ func (h *reviewHarness) estimated(t *testing.T, hash, city string, lat, lng floa
 	t.Helper()
 	ctx := context.Background()
 	created, err := h.photos.Create(ctx, photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileWidth: 1000, FileHeight: 800, FileOrientation: 1,
 		Lat: &lat, Lng: &lng, LocationSource: photos.LocationSourceEstimate,
 	})

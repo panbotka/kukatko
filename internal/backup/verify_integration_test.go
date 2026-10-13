@@ -36,6 +36,7 @@ func insertPhoto(t *testing.T, store *photos.Store, hash, key string) {
 	t.Helper()
 	ctx := t.Context()
 	photo, err := store.Create(ctx, photos.Photo{
+		ProjectID:     project.BootstrapUID,
 		FileHash:      hash,
 		FilePath:      key,
 		FileName:      hash + ".jpg",

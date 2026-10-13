@@ -14,7 +14,7 @@ export interface WhatsNewPerson {
 
 /**
  * The digest of what happened in the library since the caller's previous visit,
- * as returned by `GET /api/v1/whats-new` (`whatsnew.Summary`).
+ * as returned by `GET /api/v1/p/<slug>/whats-new` (`whatsnew.Summary`).
  *
  * `has_news` is the only flag a client branches on: it is false both for a
  * first-ever visit — which has no reference point yet — and for a visit that
@@ -57,7 +57,7 @@ export interface WhatsNew {
 }
 
 /**
- * Fetches the caller's digest from `GET /api/v1/whats-new`. The endpoint is
+ * Fetches the caller's digest from `GET /api/v1/p/<slug>/whats-new`. The endpoint is
  * behind auth, so the session cookie is sent with the request.
  *
  * Note that the request is a GET that writes: reading the digest is what stamps

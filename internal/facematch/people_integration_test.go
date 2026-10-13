@@ -15,7 +15,7 @@ import (
 // raw keys, so a test can tell an absent faces block from an empty one.
 func (e *env) getDetail(t *testing.T, client *http.Client, photoUID, query string) map[string]json.RawMessage {
 	t.Helper()
-	url := e.server.URL + "/api/v1/photos/" + photoUID + query
+	url := e.server.URL + apiV + "/photos/" + photoUID + query
 	resp := mustDo(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -131,7 +131,7 @@ func TestUpdate_returnsPeopleWhenAsked(t *testing.T) {
 
 	patch, _ := json.Marshal(map[string]any{"title": "Alice by the lake"})
 	resp := mustDo(t, client, http.MethodPatch,
-		env.server.URL+"/api/v1/photos/"+uid+"?people=true", patch)
+		env.server.URL+apiV+"/photos/"+uid+"?people=true", patch)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200", resp.StatusCode)

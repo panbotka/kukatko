@@ -17,7 +17,7 @@ import (
 
 // buildMCPAPI assembles the Model Context Protocol server that lets an AI agent
 // drive the library — search it, read it, organise it — over the existing HTTP
-// server at POST /api/v1/mcp. It calls the same stores the HTTP handlers call, so
+// server at POST /api/v1/p/{project}/mcp. It calls the same stores the HTTP handlers call, so
 // its mutations keep their transaction boundaries and their audit rows.
 //
 // The endpoint is off unless mcp.enabled is set: when it is false the API mounts

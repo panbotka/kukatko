@@ -4,6 +4,8 @@ package vectors_test
 
 import (
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestCountMarkersWithoutFace_ignoresHandAttached verifies the outlier report's
@@ -19,7 +21,7 @@ func TestCountMarkersWithoutFace_ignoresHandAttached(t *testing.T) {
 
 	photoUID := makePhoto(t, photoStore, "hash-unscored")
 	if _, err := db.Pool().Exec(ctx,
-		`INSERT INTO subjects (uid, slug, name) VALUES ('su_1', 'ota', 'Ota')`); err != nil {
+		`INSERT INTO subjects (uid, slug, name, project_id) VALUES ('su_1', 'ota', 'Ota', $1)`, project.BootstrapUID); err != nil {
 		t.Fatalf("seeding subject: %v", err)
 	}
 	if _, err := db.Pool().Exec(ctx,

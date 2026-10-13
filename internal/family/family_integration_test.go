@@ -132,7 +132,8 @@ func TestRelations_areDerivedFromTheFamilyRows(t *testing.T) {
 
 	// One photo of Anna, so the sibling chip carries a count rather than a guess.
 	photo, err := photoStore.Create(ctx, photos.Photo{
-		FileHash: "familyhash1", FilePath: "2024/01/a.jpg", FileName: "a.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "familyhash1", FilePath: "2024/01/a.jpg", FileName: "a.jpg",
 		FileWidth: 4000, FileHeight: 3000,
 	})
 	if err != nil {

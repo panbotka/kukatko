@@ -22,6 +22,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storagemigrate"
 	"github.com/panbotka/kukatko/internal/thumb"
@@ -316,10 +317,10 @@ func (l *library) addPhoto(t *testing.T, i int, poisoned bool) libraryPhoto {
 func (l *library) insertRow(t *testing.T, photo libraryPhoto) {
 	t.Helper()
 	const insertSQL = `
-		INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-		VALUES ($1, $2, $3, $4, $5, 'image/jpeg')`
+		INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+		VALUES ($1, $2, $3, $4, $5, 'image/jpeg', $6)`
 	_, err := l.db.Pool().Exec(t.Context(), insertSQL,
-		photo.uid, photo.catalogueHash, photo.relPath, filepath.Base(photo.relPath), photo.size)
+		photo.uid, photo.catalogueHash, photo.relPath, filepath.Base(photo.relPath), photo.size, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("inserting photo %s: %v", photo.uid, err)
 	}

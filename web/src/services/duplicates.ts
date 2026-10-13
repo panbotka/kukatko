@@ -92,7 +92,7 @@ async function readErrorMessage(res: Response): Promise<string> {
 }
 
 /**
- * Fetches one page of duplicate groups from `GET /api/v1/duplicates`. Throws an
+ * Fetches one page of duplicate groups from `GET /api/v1/p/<slug>/duplicates`. Throws an
  * {@link ApiError} carrying the HTTP status on failure (503 when detection is
  * disabled server-side).
  */
@@ -119,7 +119,7 @@ export async function fetchDuplicates(
 }
 
 /**
- * Resolves a duplicate group via `POST /api/v1/duplicates/merge`: the redundant
+ * Resolves a duplicate group via `POST /api/v1/p/<slug>/duplicates/merge`: the redundant
  * copies are merged into the chosen keeper (their albums, labels and people are
  * unioned onto it and its missing scalar fields filled) and then archived. Pass
  * `dry_run: true` to preview what would move without changing anything. Throws an

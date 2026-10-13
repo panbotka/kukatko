@@ -68,11 +68,12 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 func (f *fixture) makePhoto(t *testing.T, name string) photos.Photo {
 	t.Helper()
 	created, err := f.photos.Create(context.Background(), photos.Photo{
-		FileHash: (name + strings.Repeat("0", 64))[:64],
-		FilePath: "2026/08/" + name + ".jpg",
-		FileName: name + ".jpg",
-		FileSize: 1024,
-		FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  (name + strings.Repeat("0", 64))[:64],
+		FilePath:  "2026/08/" + name + ".jpg",
+		FileName:  name + ".jpg",
+		FileSize:  1024,
+		FileMime:  "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", name, err)
@@ -424,8 +425,8 @@ func (f *fixture) makeSubject(t *testing.T, uid, name, coverPhotoUID string) str
 		cover = &coverPhotoUID
 	}
 	_, err := f.db.Pool().Exec(context.Background(),
-		`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid)
-		 VALUES ($1, $2, $3, 'person', $4)`, uid, uid, name, cover)
+		`INSERT INTO subjects (uid, slug, name, type, cover_photo_uid, project_id)
+		 VALUES ($1, $2, $3, 'person', $4, $5)`, uid, uid, name, cover, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("creating subject %s: %v", uid, err)
 	}
@@ -435,7 +436,7 @@ func (f *fixture) makeSubject(t *testing.T, uid, name, coverPhotoUID string) str
 // linkUser points an account at a person of the library.
 func (f *fixture) linkUser(t *testing.T, userUID, subjectUID string) {
 	t.Helper()
-	if _, err := f.users.SetUserSubject(context.Background(), "", userUID, &subjectUID); err != nil {
+	if _, err := f.users.SetUserSubject(context.Background(), project.BootstrapUID, userUID, &subjectUID); err != nil {
 		t.Fatalf("linking %s to %s: %v", userUID, subjectUID, err)
 	}
 }

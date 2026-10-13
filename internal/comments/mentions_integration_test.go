@@ -98,7 +98,7 @@ func TestCreate_storesAndResolvesMentions(t *testing.T) {
 	bob := f.makeApprovedUser(t, "us_bob", "bob", "Bob B.", false)
 	off := f.makeApprovedUser(t, "us_off", "off", "Vypnutý", true)
 	pending := f.makeUser(t, "us_new", "newcomer", "Nováček")
-	f.exec(t, `INSERT INTO subjects (uid, slug, name) VALUES ('su_bob', 'bob', 'Bob')`)
+	f.exec(t, `INSERT INTO subjects (uid, slug, name, project_id) VALUES ('su_bob', 'bob', 'Bob', $1)`, project.BootstrapUID)
 	f.exec(t, `UPDATE project_members SET subject_uid = 'su_bob' WHERE user_uid = $1`, bob)
 	photo := f.makePhoto(t, "one")
 
@@ -247,7 +247,8 @@ func TestMentions_taskThread(t *testing.T) {
 	store := f.comments.WithMentionObserver(observer)
 	alice := f.makeApprovedUser(t, "us_alice", "alice", "Alice", false)
 	bob := f.makeApprovedUser(t, "us_bob", "bob", "Bob", false)
-	f.exec(t, `INSERT INTO photo_tasks (uid, title, created_by) VALUES ('pt_one', 'Kdy to bylo?', $1)`, alice)
+	f.exec(t, `INSERT INTO photo_tasks (uid, title, created_by, project_id) VALUES ('pt_one', 'Kdy to bylo?', $1, $2)`,
+		alice, project.BootstrapUID)
 
 	created, err := store.Create(context.Background(), project.BootstrapUID, comments.TaskSubject("pt_one"), alice,
 		"@[Bob](user:us_bob)?", audit.Entry{ActorUID: alice, Action: audit.ActionCommentCreate, TargetType: "photo_tasks"})

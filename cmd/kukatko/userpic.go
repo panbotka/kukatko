@@ -39,8 +39,9 @@ func buildUserPicAPI(
 			// An uploaded picture is decoded in-process like any other image.
 			DecodeBudget: processDecodeBudget(cfg),
 		}),
-		Photos:      photoStore,
-		Renderer:    avatar.New(thumbnailer, cfg.Storage.CachePath),
-		RequireAuth: authAPI.RequireAuth,
+		Photos:          photoStore,
+		Renderer:        avatar.New(thumbnailer, cfg.Storage.CachePath),
+		RequireAuth:     authAPI.RequireAuth,
+		RequireSignedIn: authAPI.RequireSignedIn,
 	})
 }

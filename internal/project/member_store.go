@@ -89,14 +89,15 @@ func (s *Store) Membership(ctx context.Context, projectUID, userUID string) (*Me
 
 // membershipsOfSQL lists the projects one account belongs to, by project name.
 const membershipsOfSQL = `
-SELECT p.uid, p.slug, p.name, p.active, m.role, m.approved_at IS NOT NULL
+SELECT p.uid, p.slug, p.name, p.active, m.role, m.approved_at IS NOT NULL, m.subject_uid
 FROM project_members m JOIN projects p ON p.uid = m.project_uid
 WHERE m.user_uid = $1
 ORDER BY p.name, p.uid`
 
 // MembershipsOf returns every project the account userUID belongs to, ordered by
 // project name, with its role there and whether it is approved — inactive
-// projects included, so the caller decides how to show them. An account without
+// projects included, so the caller decides how to show them — and the person it
+// says it is there. An account without
 // memberships (or an unknown one) yields an empty slice.
 func (s *Store) MembershipsOf(ctx context.Context, userUID string) ([]MembershipSummary, error) {
 	rows, err := s.pool.Query(ctx, membershipsOfSQL, userUID)
@@ -108,7 +109,8 @@ func (s *Store) MembershipsOf(ctx context.Context, userUID string) ([]Membership
 	out := []MembershipSummary{}
 	for rows.Next() {
 		var ms MembershipSummary
-		if err := rows.Scan(&ms.ProjectUID, &ms.Slug, &ms.Name, &ms.Active, &ms.Role, &ms.Approved); err != nil {
+		err := rows.Scan(&ms.ProjectUID, &ms.Slug, &ms.Name, &ms.Active, &ms.Role, &ms.Approved, &ms.SubjectUID)
+		if err != nil {
 			return nil, fmt.Errorf("project: scanning membership of %s: %w", userUID, err)
 		}
 		out = append(out, ms)

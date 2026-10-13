@@ -36,6 +36,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every project-scoped request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth API and the notification API behind an httptest server over
 // the integration database.
 type env struct {
@@ -71,12 +74,19 @@ func newEnv(t *testing.T, opts envOptions) *env {
 		Photos:            photos.NewStore(db.Pool()),
 		Push:              notificationapi.PushSettings{Enabled: !opts.pushOff, PublicKey: "public-key"},
 		RequireAuth:       authAPI.RequireAuth,
+		RequireSignedIn:   authAPI.RequireSignedIn,
 		SubscribeThrottle: opts.throttle,
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: the devices once, instance-wide,
+		// the inbox under the project prefix.
+		api.RegisterPushRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterInboxRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -345,7 +355,7 @@ func TestPreferences_readAndReplace(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	user := e.login(t, "vera", auth.AccountViewer)
 
-	status, body := e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
+	status, body := e.do(t, user, http.MethodGet, apiV+"/notifications/preferences", "")
 	var got preferences
 	decode(t, body, &got)
 	want := 0
@@ -361,7 +371,7 @@ func TestPreferences_readAndReplace(t *testing.T) {
 		}
 	}
 
-	status, body = e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences",
+	status, body = e.do(t, user, http.MethodPut, apiV+"/notifications/preferences",
 		`{"preferences":[{"kind":"tagged","enabled":false},`+
 			`{"kind":"registration_pending","channel":"email","enabled":true}]}`)
 	decode(t, body, &got)
@@ -388,18 +398,18 @@ func TestPreferences_readAndReplace(t *testing.T) {
 		`{"preferences":[{"kind":"tagged","enabled":true},{"kind":"tagged","channel":"push","enabled":false}]}`,
 		`{"preferences":[{"kind":"tagged"}]}`,
 	} {
-		if status, resp := e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences", bad); status != 400 {
+		if status, resp := e.do(t, user, http.MethodPut, apiV+"/notifications/preferences", bad); status != 400 {
 			t.Errorf("replace %s = %d, want 400: %s", bad, status, resp)
 		}
 	}
-	_, body = e.do(t, user, http.MethodGet, "/api/v1/notifications/preferences", "")
+	_, body = e.do(t, user, http.MethodGet, apiV+"/notifications/preferences", "")
 	decode(t, body, &got)
 	if tagged := got.find(notification.KindTagged, notification.ChannelPush); tagged.IsDefault ||
 		!got.find(notification.KindRegistrationPending, notification.ChannelEmail).Enabled {
 		t.Errorf("after refused replaces %s, want the stored choices unchanged", body)
 	}
 
-	_, body = e.do(t, user, http.MethodPut, "/api/v1/notifications/preferences", `{"preferences":[]}`)
+	_, body = e.do(t, user, http.MethodPut, apiV+"/notifications/preferences", `{"preferences":[]}`)
 	decode(t, body, &got)
 	for _, pref := range got.Preferences {
 		if !pref.IsDefault || pref.Enabled {
@@ -431,7 +441,8 @@ func (e *env) seedPhotos(t *testing.T, n int) []string {
 	for i := range n {
 		name := "ntf-" + string(rune('a'+i))
 		p, err := store.Create(t.Context(), photos.Photo{
-			Title: name, FileHash: name + "-hash", FilePath: "2026/09/" + name + ".jpg", FileName: name + ".jpg",
+			ProjectID: project.BootstrapUID,
+			Title:     name, FileHash: name + "-hash", FilePath: "2026/09/" + name + ".jpg", FileName: name + ".jpg",
 		})
 		if err != nil {
 			t.Fatalf("Create photo %s: %v", name, err)
@@ -461,7 +472,7 @@ func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 	e.exec(t, "UPDATE photos SET hidden_from_library = true WHERE uid = $1", p[1])
 	e.exec(t, "UPDATE photos SET private = true WHERE uid = $1", p[3])
 
-	status, body := e.do(t, owner, http.MethodGet, "/api/v1/notifications/"+n.UID, "")
+	status, body := e.do(t, owner, http.MethodGet, apiV+"/notifications/"+n.UID, "")
 	if status != http.StatusOK {
 		t.Fatalf("detail = %d: %s", status, body)
 	}
@@ -476,7 +487,7 @@ func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 	if got.TotalCount != 5 || got.DroppedCount != 3 {
 		t.Errorf("counts = total %d dropped %d, want 5 and 3", got.TotalCount, got.DroppedCount)
 	}
-	if want := "/api/v1/photos/" + p[4] + "/thumb/"; !strings.HasPrefix(got.Photos[0].ThumbURL, want) ||
+	if want := apiV + "/photos/" + p[4] + "/thumb/"; !strings.HasPrefix(got.Photos[0].ThumbURL, want) ||
 		got.Photos[0].DownloadURL == "" {
 		t.Errorf("media urls = %q, %q, want the app's own routes", got.Photos[0].ThumbURL, got.Photos[0].DownloadURL)
 	}
@@ -486,7 +497,7 @@ func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 
 	// Un-archiving brings the photograph back: visibility is read now.
 	e.exec(t, "UPDATE photos SET archived_at = NULL WHERE uid = $1", p[0])
-	_, body = e.do(t, owner, http.MethodGet, "/api/v1/notifications/"+n.UID, "")
+	_, body = e.do(t, owner, http.MethodGet, apiV+"/notifications/"+n.UID, "")
 	decode(t, body, &got)
 	if len(got.Photos) != 3 || got.Photos[1].UID != p[0] || got.DroppedCount != 2 {
 		t.Errorf("after un-archiving = %s, want %s back in second place and 2 dropped", body, p[0])
@@ -507,7 +518,7 @@ func TestNotification_scopedToOwner(t *testing.T) {
 		t.Fatalf("Create notification: %v", err)
 	}
 
-	for _, path := range []string{"/api/v1/notifications/" + n.UID, "/api/v1/notifications/ntunknown"} {
+	for _, path := range []string{apiV + "/notifications/" + n.UID, apiV + "/notifications/ntunknown"} {
 		if status, body := e.do(t, admin, http.MethodGet, path, ""); status != http.StatusNotFound {
 			t.Errorf("GET %s as another account = %d, want 404: %s", path, status, body)
 		}
@@ -516,26 +527,26 @@ func TestNotification_scopedToOwner(t *testing.T) {
 		}
 	}
 
-	status, body := e.do(t, owner, http.MethodGet, "/api/v1/notifications/"+n.UID, "")
+	status, body := e.do(t, owner, http.MethodGet, apiV+"/notifications/"+n.UID, "")
 	var got detail
 	decode(t, body, &got)
 	if status != http.StatusOK || got.Photos == nil || len(got.Photos) != 0 || got.ReadAt != nil {
 		t.Fatalf("detail of a photo-less notification = %d %s, want 200, photos [], unread", status, body)
 	}
 
-	status, body = e.do(t, owner, http.MethodPost, "/api/v1/notifications/"+n.UID+"/read", "")
+	status, body = e.do(t, owner, http.MethodPost, apiV+"/notifications/"+n.UID+"/read", "")
 	var first detail
 	decode(t, body, &first)
 	if status != http.StatusOK || first.ReadAt == nil {
 		t.Fatalf("mark read = %d %s, want 200 with read_at", status, body)
 	}
-	_, body = e.do(t, owner, http.MethodPost, "/api/v1/notifications/"+n.UID+"/read", "")
+	_, body = e.do(t, owner, http.MethodPost, apiV+"/notifications/"+n.UID+"/read", "")
 	var second detail
 	decode(t, body, &second)
 	if second.ReadAt == nil || !second.ReadAt.Equal(*first.ReadAt) {
 		t.Errorf("second mark read = %v, want the first reading %v kept", second.ReadAt, first.ReadAt)
 	}
-	status, body = e.do(t, admin, http.MethodGet, "/api/v1/notifications/"+n.UID, "")
+	status, body = e.do(t, admin, http.MethodGet, apiV+"/notifications/"+n.UID, "")
 	if status != http.StatusNotFound || bytes.Contains([]byte(body), []byte(n.Title)) {
 		t.Errorf("foreign read after marking = %d %s, want a bare 404", status, body)
 	}
@@ -549,13 +560,13 @@ func TestRoutes_requireAuth(t *testing.T) {
 		{http.MethodGet, "/api/v1/push/subscriptions"},
 		{http.MethodPost, "/api/v1/push/subscriptions"},
 		{http.MethodDelete, "/api/v1/push/subscriptions?endpoint=x"},
-		{http.MethodGet, "/api/v1/notifications"},
-		{http.MethodGet, "/api/v1/notifications/unread-count"},
-		{http.MethodPost, "/api/v1/notifications/read-all"},
-		{http.MethodGet, "/api/v1/notifications/preferences"},
-		{http.MethodPut, "/api/v1/notifications/preferences"},
-		{http.MethodGet, "/api/v1/notifications/nt1"},
-		{http.MethodPost, "/api/v1/notifications/nt1/read"},
+		{http.MethodGet, apiV + "/notifications"},
+		{http.MethodGet, apiV + "/notifications/unread-count"},
+		{http.MethodPost, apiV + "/notifications/read-all"},
+		{http.MethodGet, apiV + "/notifications/preferences"},
+		{http.MethodPut, apiV + "/notifications/preferences"},
+		{http.MethodGet, apiV + "/notifications/nt1"},
+		{http.MethodPost, apiV + "/notifications/nt1/read"},
 	} {
 		if status, _ := e.do(t, session{}, route.method, route.path, ""); status != http.StatusUnauthorized {
 			t.Errorf("anonymous %s %s = %d, want 401", route.method, route.path, status)

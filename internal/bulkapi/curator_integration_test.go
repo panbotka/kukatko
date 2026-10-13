@@ -42,7 +42,7 @@ func TestBulk_curatorFilesIntoAlbumsAndLabels(t *testing.T) {
 			"set_flag":      "pick",
 		},
 	})
-	resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, curator, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("curator bulk status = %d, want 200", resp.StatusCode)
 	}
@@ -91,7 +91,7 @@ func TestBulk_curatorRefusedBeyondCuration(t *testing.T) {
 			"photo_uids": []string{uid},
 			"operations": map[string]any{"add_to_albums": []string{album.UID}, key: value},
 		})
-		resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/photos/bulk", body)
+		resp := env.mustDo(t, curator, http.MethodPost, apiV+"/photos/bulk", body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("curator batch with %s = %d, want 403", key, resp.StatusCode)
@@ -129,7 +129,7 @@ func TestBulk_editorUnaffectedByFieldRule(t *testing.T) {
 			"archive":      true,
 		},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("editor mixed batch = %d, want 200", resp.StatusCode)
@@ -145,7 +145,7 @@ func TestBulkLocationSummary_curatorForbidden(t *testing.T) {
 	uid := env.seedPhoto(t, "cursum1")
 
 	body, _ := json.Marshal(map[string]any{"photo_uids": []string{uid}})
-	resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/photos/bulk/location-summary", body)
+	resp := env.mustDo(t, curator, http.MethodPost, apiV+"/photos/bulk/location-summary", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("curator summary status = %d, want 403", resp.StatusCode)

@@ -48,7 +48,7 @@ func TestCreate_handsTheTaskToSomebody(t *testing.T) {
 		"participants": []string{e.uids["agent"], e.uids["anna"]},
 	})
 	var task phototask.Task
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks", body, http.StatusCreated, &task)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks", body, http.StatusCreated, &task)
 
 	if task.State != phototask.StateWorking || task.PhotoCount != 1 {
 		t.Errorf("task = state %q, %d photos; want working over one photo", task.State, task.PhotoCount)
@@ -83,7 +83,7 @@ func TestCreate_handsTheTaskToSomebody(t *testing.T) {
 
 	// And the person asked is found under "what is Anna on?".
 	var mine tasksBody
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?participant="+e.uids["anna"], nil, http.StatusOK, &mine)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?participant="+e.uids["anna"], nil, http.StatusOK, &mine)
 	if mine.Total != 1 {
 		t.Errorf("participant filter for the asked person = %d tasks, want 1", mine.Total)
 	}
@@ -98,10 +98,10 @@ func TestCreate_unknownParticipantIs404(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"title": "Komu?", "participants": []string{"us-nobody"},
 	})
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks", body, http.StatusNotFound, nil)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks", body, http.StatusNotFound, nil)
 
 	var all tasksBody
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, &all)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks", nil, http.StatusOK, &all)
 	if all.Total != 0 {
 		t.Errorf("after the refusal the queue holds %d tasks, want none", all.Total)
 	}
@@ -121,12 +121,12 @@ func TestCreate_withoutPhotos(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			payload, _ := json.Marshal(body)
 			var task phototask.Task
-			e.do(t, editor, http.MethodPost, "/api/v1/tasks", payload, http.StatusCreated, &task)
+			e.do(t, editor, http.MethodPost, apiV+"/tasks", payload, http.StatusCreated, &task)
 			if task.PhotoCount != 0 || task.CoverPhotoUID != "" {
 				t.Errorf("created = %d photos, cover %q; want none", task.PhotoCount, task.CoverPhotoUID)
 			}
 			var read phototask.Task
-			e.do(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusOK, &read)
+			e.do(t, editor, http.MethodGet, apiV+"/tasks/"+task.UID, nil, http.StatusOK, &read)
 			if read.PhotoCount != 0 || read.CoverPhotoUID != "" || read.Title != body["title"] {
 				t.Errorf("read back = %+v, want the same task with no photographs", read)
 			}
@@ -134,7 +134,7 @@ func TestCreate_withoutPhotos(t *testing.T) {
 	}
 
 	var all tasksBody
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, &all)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks", nil, http.StatusOK, &all)
 	if all.Total != 2 {
 		t.Errorf("listing = %d tasks, want both photo-less ones", all.Total)
 	}

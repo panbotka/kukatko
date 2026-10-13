@@ -90,6 +90,7 @@ func (h *harness) storeJPEG(t *testing.T, name string) photos.Photo {
 		t.Fatalf("store original: %v", err)
 	}
 	created, err := h.photos.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        sf.Hash,
 		FilePath:        sf.RelPath,
 		FileName:        name + ".jpg",
@@ -274,6 +275,7 @@ func TestDetect_requeuesWhenOffline(t *testing.T) {
 func (h *harness) storeClip(t *testing.T, name string) photos.Photo {
 	t.Helper()
 	created, err := h.photos.Create(context.Background(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   name + "-hash",
 		FilePath:   "2026/09/" + name + ".mp4",
 		FileName:   name + ".mp4",

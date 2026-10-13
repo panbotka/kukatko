@@ -32,7 +32,8 @@ func (h *harness) storeVideo(t *testing.T, name string, seed uint8) photos.Photo
 		t.Fatalf("storage.Store(%s): %v", name, err)
 	}
 	created, err := h.photos.Create(ctx, photos.Photo{
-		FileHash: stored.Hash, FilePath: stored.RelPath, FileName: name + ".mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  stored.Hash, FilePath: stored.RelPath, FileName: name + ".mp4",
 		FileSize: stored.Size, FileMime: "video/mp4", FileWidth: 1920, FileHeight: 1080,
 		FileOrientation: 1, TakenAtSource: "unknown", MediaType: photos.MediaVideo,
 	})

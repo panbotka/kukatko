@@ -12,24 +12,26 @@ import (
 )
 
 // TestRegistration_RegisterWithLink_refusals covers what a link cannot get past:
-// an instance whose registration is switched off, and a settings read that
-// fails. Neither reaches the account store.
+// an instance whose registration is switched off, a settings read that fails,
+// and a grant that names no project. None reaches the account store.
 func TestRegistration_RegisterWithLink_refusals(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name     string
 		settings fakeSettings
+		project  string
 		want     error
 	}{
-		{"switched off", fakeSettings{stored: settings.Settings{RegistrationSecret: "x"}}, ErrRegistrationClosed},
-		{"settings unavailable", fakeSettings{err: errSettingsUnavailable}, errSettingsUnavailable},
+		{"switched off", fakeSettings{stored: settings.Settings{RegistrationSecret: "x"}}, "pj1", ErrRegistrationClosed},
+		{"settings unavailable", fakeSettings{err: errSettingsUnavailable}, "pj1", errSettingsUnavailable},
+		{"no project", fakeSettings{stored: settings.Settings{RegistrationEnabled: true}}, "", ErrNoProject},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			rg := NewRegistration(RegistrationConfig{Settings: tt.settings})
-			_, err := rg.RegisterWithLink(context.Background(), RegisterInput{}, LinkGrant{LinkUID: "ul1"}, audit.Entry{})
+			_, err := rg.RegisterWithLink(context.Background(), RegisterInput{}, LinkGrant{LinkUID: "ul1", ProjectUID: tt.project}, audit.Entry{})
 			if !errors.Is(err, tt.want) {
 				t.Errorf("RegisterWithLink error = %v, want %v", err, tt.want)
 			}

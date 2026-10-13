@@ -68,9 +68,10 @@ func newEnv(t *testing.T) *env {
 	// Mirrors the real server: a forwarding header is only believed from a
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
+	// Mounted as the server mounts it: the instance-wide trail (the maintainer's
+	// /audit, everybody's own /audit/mine) bare, a project's under its prefix.
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(auth.WithProject(projects))
-		authAPI.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
 		api.RegisterRoutes(r)
 		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
 			r.Use(auth.WithProject(projects))

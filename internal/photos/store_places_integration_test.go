@@ -40,7 +40,8 @@ func seedPlaces(
 			takenAt = &at
 		}
 		photo := mustCreate(t, store, photos.Photo{
-			FileHash: f.hash, FilePath: "p/" + f.hash + ".jpg",
+			ProjectID: project.BootstrapUID,
+			FileHash:  f.hash, FilePath: "p/" + f.hash + ".jpg",
 			FileName: f.hash + ".jpg", FileMime: "image/jpeg", TakenAt: takenAt,
 		})
 		uids[f.hash] = photo.UID

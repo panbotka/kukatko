@@ -8,7 +8,7 @@ import (
 
 // TestToFeature_thumbFollowsTheAPIBase proves a feature's thumbnail leads back
 // through the prefix the feed was asked through: the project's when it was
-// addressed by slug, the bare /api/v1 through the transition alias.
+// addressed by slug, the bare /api/v1 for a request that named no project.
 func TestToFeature_thumbFollowsTheAPIBase(t *testing.T) {
 	t.Parallel()
 	lat, lng := 49.1, 16.6

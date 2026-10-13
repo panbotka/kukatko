@@ -19,7 +19,8 @@ import (
 func (f *fixture) makeAlbum(t *testing.T, uid, title string) string {
 	t.Helper()
 	if _, err := f.db.Pool().Exec(context.Background(),
-		`INSERT INTO albums (uid, slug, title) VALUES ($1, $2, $3)`, uid, uid, title); err != nil {
+		`INSERT INTO albums (uid, slug, title, project_id) VALUES ($1, $2, $3, $4)`,
+		uid, uid, title, project.BootstrapUID); err != nil {
 		t.Fatalf("creating album %s: %v", uid, err)
 	}
 	return uid

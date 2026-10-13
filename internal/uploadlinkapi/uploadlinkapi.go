@@ -250,7 +250,7 @@ func (a *API) defaultCallerResolvers() {
 // upload is additionally throttled per link once the link is known.
 //
 // The server mounts the two halves apart: RegisterManagementRoutes with the
-// project-scoped API (under /api/v1/p/{project} and its transition alias),
+// project-scoped API (under /api/v1/p/{project}),
 // where every route works in the request's project and another project's link
 // is a 404; RegisterPublicRoutes once, instance-level — a public link resolves
 // its own project from the link row (upload_links.project_id) and files the

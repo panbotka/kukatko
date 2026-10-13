@@ -23,7 +23,7 @@ func TestUpdateMetadata_takenAtEstimate(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Babička na dvoře", TakenAtSource: "manual",
 	}, "estimate.jpg", 11, 21, 31)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	// A fresh photo is not an estimate and carries no note.
 	if seeded.TakenAtEstimated || seeded.TakenAtNote != "" {
@@ -73,7 +73,7 @@ func TestUpdateMetadata_takenAtEstimateUndated(t *testing.T) {
 	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	seeded := env.seedPhoto(t, photos.Photo{TakenAtSource: "unknown"}, "undated.jpg", 12, 22, 32)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	patched := patchPhoto(t, editor, url,
 		[]byte(`{"taken_at_estimated":true,"taken_at_note":"někdy ve 40. letech"}`))
@@ -94,7 +94,7 @@ func TestUpdateMetadata_takenAtEstimateValidation(t *testing.T) {
 	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	seeded := env.seedPhoto(t, photos.Photo{TakenAtSource: "exif"}, "estimate-limits.jpg", 13, 23, 33)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	t.Run("over-long note is 400", func(t *testing.T) {
 		body := []byte(`{"taken_at_estimated":true,"taken_at_note":"` + strings.Repeat("a", 501) + `"}`)

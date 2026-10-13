@@ -113,6 +113,7 @@ func (e *testEnv) seedBrokenVideo(
 
 	read := time.Now().UTC()
 	photo := photos.Photo{
+		ProjectID: project.BootstrapUID,
 		FileHash:  hash,
 		FilePath:  relPath,
 		FileName:  hash + ".mp4",

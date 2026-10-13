@@ -128,7 +128,7 @@ export interface AlbumInput {
   private: boolean
 }
 
-/** Response body of `GET /api/v1/albums`. */
+/** Response body of `GET /api/v1/p/<slug>/albums`. */
 interface AlbumsResponse {
   albums: AlbumSummary[]
 }
@@ -258,7 +258,7 @@ export interface LabelInput {
   review_enabled?: boolean
 }
 
-/** Response body of `GET /api/v1/labels`. */
+/** Response body of `GET /api/v1/p/<slug>/labels`. */
 interface LabelsResponse {
   labels: LabelCount[]
 }

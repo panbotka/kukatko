@@ -101,6 +101,7 @@ func (h *harness) storeJPEG(t *testing.T, name string) photos.Photo {
 		t.Fatalf("store original: %v", err)
 	}
 	created, err := h.photos.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        sf.Hash,
 		FilePath:        sf.RelPath,
 		FileName:        name + ".jpg",

@@ -120,8 +120,8 @@ func (f *fixture) count(t *testing.T, sql string, args ...any) int {
 func (f *fixture) addPhoto(t *testing.T, name string, daysAgo int) string {
 	t.Helper()
 	uid := "ph" + name
-	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at) VALUES ($1, $2, $3, $4)`,
-		uid, uid, uid+".jpg", f.now.AddDate(0, 0, -daysAgo))
+	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at, project_id) VALUES ($1, $2, $3, $4, $5)`,
+		uid, uid, uid+".jpg", f.now.AddDate(0, 0, -daysAgo), project.BootstrapUID)
 	return uid
 }
 
@@ -615,9 +615,9 @@ func TestBulk_clusterInOneTransactionQueuesOneJob(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	const faces = 300
-	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at)
-		SELECT 'phbulk' || g, 'phbulk' || g, 'phbulk' || g || '.jpg', now() - g * interval '1 day'
-		FROM generate_series(1, $1) AS g`, faces)
+	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at, project_id)
+		SELECT 'phbulk' || g, 'phbulk' || g, 'phbulk' || g || '.jpg', now() - g * interval '1 day', $2
+		FROM generate_series(1, $1) AS g`, faces, project.BootstrapUID)
 	f.exec(t, `INSERT INTO markers (uid, photo_uid, subject_uid, type, x, y, w, h)
 		SELECT 'mkbulk' || g, 'phbulk' || g, $2, 'face', 0, 0, 0.1, 0.1
 		FROM generate_series(1, $1) AS g`, faces, f.subject)

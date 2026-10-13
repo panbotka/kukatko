@@ -68,7 +68,8 @@ func newFixture(t *testing.T) fixture {
 func (f fixture) makePhoto(t *testing.T, hash string) string {
 	t.Helper()
 	created, err := f.photos.Create(context.Background(), photos.Photo{
-		FileHash: hash, FilePath: "2026/06/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2026/06/" + hash + ".jpg", FileName: hash + ".jpg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)

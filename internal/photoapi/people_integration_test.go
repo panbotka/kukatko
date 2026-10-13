@@ -53,7 +53,7 @@ func TestAttachPerson_roundTrip(t *testing.T) {
 	// this endpoint is the only way a clip names anybody.
 	photo := env.seedPhoto(t, photos.Photo{Title: "Clip", MediaType: photos.MediaVideo}, "clip.jpg", 10, 20, 30)
 	subjectUID := env.seedSubject(t, "Ludmila")
-	base := env.server.URL + "/api/v1/photos/" + photo.UID + "/people"
+	base := env.server.URL + apiV + "/photos/" + photo.UID + "/people"
 
 	body, _ := json.Marshal(map[string]string{"subject_uid": subjectUID})
 	resp := mustDo(t, client, http.MethodPost, base, body)
@@ -98,7 +98,7 @@ func TestAttachPerson_roundTrip(t *testing.T) {
 // getDetailPeople fetches a photo's detail and returns its hand-attached people.
 func getDetailPeople(t *testing.T, client *http.Client, base, uid string) []people.PhotoSubject {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -133,52 +133,52 @@ func TestAttachPerson_guards(t *testing.T) {
 	}{
 		{
 			name: "viewer may not attach", client: viewer, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people",
 			body: body, want: http.StatusForbidden,
 		},
 		{
 			name: "viewer may not detach", client: viewer, method: http.MethodDelete,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people/" + subjectUID,
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people/" + subjectUID,
 			want: http.StatusForbidden,
 		},
 		{
 			name: "viewer may not assign a face", client: viewer, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/faces/assign",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/faces/assign",
 			body: []byte(`{}`), want: http.StatusForbidden,
 		},
 		{
 			name: "curator may attach", client: curator, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people",
 			body: body, want: http.StatusOK,
 		},
 		{
 			name: "curator may detach", client: curator, method: http.MethodDelete,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people/" + subjectUID,
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people/" + subjectUID,
 			want: http.StatusOK,
 		},
 		{
 			name: "curator reaches face assignment", client: curator, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/faces/assign",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/faces/assign",
 			body: []byte(`{}`), want: http.StatusServiceUnavailable,
 		},
 		{
 			name: "curator may not edit the photo's metadata", client: curator, method: http.MethodPatch,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID,
+			url:  env.server.URL + apiV + "/photos/" + photo.UID,
 			body: []byte(`{"title":"Renamed"}`), want: http.StatusForbidden,
 		},
 		{
 			name: "unknown photo", client: editor, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/ph_nope/people",
+			url:  env.server.URL + apiV + "/photos/ph_nope/people",
 			body: body, want: http.StatusNotFound,
 		},
 		{
 			name: "unknown subject", client: editor, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people",
 			body: []byte(`{"subject_uid":"su_nope"}`), want: http.StatusNotFound,
 		},
 		{
 			name: "no subject named", client: editor, method: http.MethodPost,
-			url:  env.server.URL + "/api/v1/photos/" + photo.UID + "/people",
+			url:  env.server.URL + apiV + "/photos/" + photo.UID + "/people",
 			body: []byte(`{}`), want: http.StatusBadRequest,
 		},
 	}
@@ -203,7 +203,7 @@ func TestAttachPerson_schedulesSidecar(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"subject_uid": subjectUID})
 	resp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/photos/"+photo.UID+"/people", body)
+		env.server.URL+apiV+"/photos/"+photo.UID+"/people", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("attach status = %d, want 200", resp.StatusCode)

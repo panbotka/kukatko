@@ -61,14 +61,15 @@ func (e *tokenEnv) countTokens(t *testing.T, userUID string) int {
 	return n
 }
 
-// TestHTTP_apiTokenUnlimitedCreate verifies that only an admin may mint a token
-// exempt from the rate limits: a non-admin asking for one is refused with 403
-// and ends up with no token whatsoever, while an admin's token comes back
-// carrying the flag and an audit entry recording it.
+// TestHTTP_apiTokenUnlimitedCreate verifies that only a maintainer (the system
+// administrator) may mint a token exempt from the rate limits: anybody else —
+// a project's admin included — asking for one is refused with 403 and ends up
+// with no token whatsoever, while a maintainer's token comes back carrying the
+// flag and an audit entry recording it. ("admin" below is the maintainer.)
 func TestHTTP_apiTokenUnlimitedCreate(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	editor := env.user(t, "editor", auth.AccountEditor)
-	admin := env.user(t, "admin", auth.AccountAdmin)
+	admin := env.user(t, "admin", auth.AccountMaintainer)
 
 	editorCookie := env.login(t, "editor")
 	status, body := env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", editorCookie,
@@ -81,6 +82,14 @@ func TestHTTP_apiTokenUnlimitedCreate(t *testing.T) {
 	}
 	if n := env.auditCount(t, audit.ActionAPITokenCreate, editor.UID); n != 0 {
 		t.Errorf("refused creation wrote %d audit rows, want 0", n)
+	}
+
+	// A project's admin is no system administrator: refused just the same.
+	projectAdmin := env.user(t, "spravce", auth.AccountAdmin)
+	status, body = env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", env.login(t, "spravce"),
+		`{"name":"agent","unlimited":true}`)
+	if status != http.StatusForbidden || env.countTokens(t, projectAdmin.UID) != 0 {
+		t.Fatalf("project admin create status = %d, want 403 and no token (body %s)", status, body)
 	}
 
 	// The same editor may still mint an ordinary, throttled token.
@@ -126,7 +135,7 @@ func TestHTTP_apiTokenUnlimitedCreate(t *testing.T) {
 func TestHTTP_apiTokenUnlimitedPatch(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	editor := env.user(t, "editor", auth.AccountEditor)
-	admin := env.user(t, "admin", auth.AccountAdmin)
+	admin := env.user(t, "admin", auth.AccountMaintainer)
 
 	editorToken, _ := env.mintToken(t, editor, "editor's", nil)
 	adminToken, _ := env.mintToken(t, admin, "admin's", nil)
@@ -186,7 +195,7 @@ func TestHTTP_apiTokenUnlimitedPatch(t *testing.T) {
 // else's — the exemption belongs to the credential, not to the role.
 func TestHTTP_unlimitedTokenSkipsTheRateLimiter(t *testing.T) {
 	env := newTokenEnv(t, 50)
-	admin := env.user(t, "admin", auth.AccountAdmin)
+	admin := env.user(t, "admin", auth.AccountMaintainer)
 	adminCookie := env.login(t, "admin")
 
 	status, body := env.cookieRequest(t, http.MethodPost, "/api/v1/auth/tokens", adminCookie,
@@ -203,7 +212,7 @@ func TestHTTP_unlimitedTokenSkipsTheRateLimiter(t *testing.T) {
 	// Well past the burst, every one of them allowed.
 	const beyondBurst = throttledProbeBurst*3 + 1
 	for i := range beyondBurst {
-		status, body = env.request(t, http.MethodGet, "/api/v1/probe/throttled", created.Secret, "")
+		status, body = env.request(t, http.MethodGet, apiV+"/probe/throttled", created.Secret, "")
 		if status != http.StatusOK {
 			t.Fatalf("unlimited token request %d: status = %d, want 200 (body %s)", i, status, body)
 		}
@@ -212,24 +221,24 @@ func TestHTTP_unlimitedTokenSkipsTheRateLimiter(t *testing.T) {
 	// The plain token spends the burst and is then refused — and the exempt
 	// requests above must not have eaten any of it.
 	for i := range throttledProbeBurst {
-		status, body = env.request(t, http.MethodGet, "/api/v1/probe/throttled", plainSecret, "")
+		status, body = env.request(t, http.MethodGet, apiV+"/probe/throttled", plainSecret, "")
 		if status != http.StatusOK {
 			t.Fatalf("plain token request %d: status = %d, want 200 (body %s)", i, status, body)
 		}
 	}
-	status, _ = env.request(t, http.MethodGet, "/api/v1/probe/throttled", plainSecret, "")
+	status, _ = env.request(t, http.MethodGet, apiV+"/probe/throttled", plainSecret, "")
 	if status != http.StatusTooManyRequests {
 		t.Fatalf("plain token past the burst: status = %d, want 429", status)
 	}
 
 	// The admin's browser session shares that exhausted bucket: a cookie is never
 	// exempt, whatever the role.
-	status, _ = env.cookieRequest(t, http.MethodGet, "/api/v1/probe/throttled", adminCookie, "")
+	status, _ = env.cookieRequest(t, http.MethodGet, apiV+"/probe/throttled", adminCookie, "")
 	if status != http.StatusTooManyRequests {
 		t.Fatalf("admin cookie after the bucket ran dry: status = %d, want 429", status)
 	}
 	// The unlimited token still passes through the empty bucket.
-	status, _ = env.request(t, http.MethodGet, "/api/v1/probe/throttled", created.Secret, "")
+	status, _ = env.request(t, http.MethodGet, apiV+"/probe/throttled", created.Secret, "")
 	if status != http.StatusOK {
 		t.Fatalf("unlimited token after the bucket ran dry: status = %d, want 200", status)
 	}

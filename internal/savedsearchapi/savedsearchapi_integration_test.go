@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit/audittest"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/savedsearch"
 	"github.com/panbotka/kukatko/internal/savedsearchapi"
 )
@@ -28,6 +29,9 @@ import (
 // they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// apiV is the bootstrap project's API prefix every saved-search request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
 
 // env wires the auth and saved-search APIs behind an httptest server over the
 // integration database.
@@ -63,8 +67,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -144,7 +152,7 @@ func TestSavedSearchLifecycle(t *testing.T) {
 	e := newEnv(t)
 	client := e.login(t, "alice", auth.AccountViewer)
 
-	resp := e.mustDo(t, client, http.MethodPost, "/api/v1/saved-searches",
+	resp := e.mustDo(t, client, http.MethodPost, apiV+"/saved-searches",
 		[]byte(`{"name":"Recent","params":{"sort":"newest","q":"hory"}}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201", resp.StatusCode)
@@ -155,7 +163,7 @@ func TestSavedSearchLifecycle(t *testing.T) {
 		t.Fatalf("unexpected created search: %+v", created)
 	}
 
-	resp = e.mustDo(t, client, http.MethodGet, "/api/v1/saved-searches", nil)
+	resp = e.mustDo(t, client, http.MethodGet, apiV+"/saved-searches", nil)
 	var list struct {
 		SavedSearches []searchView `json:"saved_searches"`
 	}
@@ -164,13 +172,13 @@ func TestSavedSearchLifecycle(t *testing.T) {
 		t.Fatalf("list mismatch: %+v", list.SavedSearches)
 	}
 
-	resp = e.mustDo(t, client, http.MethodGet, "/api/v1/saved-searches/"+created.UID, nil)
+	resp = e.mustDo(t, client, http.MethodGet, apiV+"/saved-searches/"+created.UID, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get status = %d, want 200", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
-	resp = e.mustDo(t, client, http.MethodPatch, "/api/v1/saved-searches/"+created.UID,
+	resp = e.mustDo(t, client, http.MethodPatch, apiV+"/saved-searches/"+created.UID,
 		[]byte(`{"name":"Older","params":{"sort":"oldest"}}`))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200", resp.StatusCode)
@@ -181,12 +189,12 @@ func TestSavedSearchLifecycle(t *testing.T) {
 		t.Fatalf("unexpected updated search: %+v", updated)
 	}
 
-	resp = e.mustDo(t, client, http.MethodDelete, "/api/v1/saved-searches/"+created.UID, nil)
+	resp = e.mustDo(t, client, http.MethodDelete, apiV+"/saved-searches/"+created.UID, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
-	resp = e.mustDo(t, client, http.MethodGet, "/api/v1/saved-searches/"+created.UID, nil)
+	resp = e.mustDo(t, client, http.MethodGet, apiV+"/saved-searches/"+created.UID, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete status = %d, want 404", resp.StatusCode)
 	}
@@ -198,7 +206,7 @@ func TestSavedSearchCreateEmptyName(t *testing.T) {
 	e := newEnv(t)
 	client := e.login(t, "alice", auth.AccountViewer)
 
-	resp := e.mustDo(t, client, http.MethodPost, "/api/v1/saved-searches", []byte(`{"name":"   "}`))
+	resp := e.mustDo(t, client, http.MethodPost, apiV+"/saved-searches", []byte(`{"name":"   "}`))
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("create status = %d, want 400", resp.StatusCode)
@@ -208,7 +216,7 @@ func TestSavedSearchCreateEmptyName(t *testing.T) {
 // TestSavedSearchRequiresAuth checks that an unauthenticated client is rejected.
 func TestSavedSearchRequiresAuth(t *testing.T) {
 	e := newEnv(t)
-	resp := e.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/saved-searches", nil)
+	resp := e.mustDo(t, &http.Client{}, http.MethodGet, apiV+"/saved-searches", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
@@ -223,14 +231,14 @@ func TestSavedSearchOwnerIsolation(t *testing.T) {
 	alice := e.login(t, "alice", auth.AccountViewer)
 	bob := e.login(t, "bob", auth.AccountViewer)
 
-	resp := e.mustDo(t, alice, http.MethodPost, "/api/v1/saved-searches",
+	resp := e.mustDo(t, alice, http.MethodPost, apiV+"/saved-searches",
 		[]byte(`{"name":"Alice only","params":{}}`))
 	var created searchView
 	decodeBody(t, resp, &created)
 	if created.UID == "" {
 		t.Fatalf("alice create failed: %+v", created)
 	}
-	path := "/api/v1/saved-searches/" + created.UID
+	path := apiV + "/saved-searches/" + created.UID
 
 	// Bob cannot read, patch or delete Alice's search — each is a 404.
 	for _, tc := range []struct {
@@ -249,7 +257,7 @@ func TestSavedSearchOwnerIsolation(t *testing.T) {
 	}
 
 	// Bob's own list does not include Alice's search.
-	r := e.mustDo(t, bob, http.MethodGet, "/api/v1/saved-searches", nil)
+	r := e.mustDo(t, bob, http.MethodGet, apiV+"/saved-searches", nil)
 	var bobList struct {
 		SavedSearches []searchView `json:"saved_searches"`
 	}

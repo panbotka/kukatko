@@ -13,7 +13,7 @@ Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in
 
 | | |
 | --- | --- |
-| **Path** | `/api/v1/p/{project}/mcp` — a client only ever POSTs to it; `/api/v1/mcp` is the transition alias (project `v`) |
+| **Path** | `/api/v1/p/{project}/mcp` — a client only ever POSTs to it; there is no unprefixed path |
 | **Transport** | Streamable HTTP, **stateless**, `application/json` response (not SSE) |
 | **Guard** | `RequireAuth` (the same auth as the rest of `/api/v1`) |
 | **Default** | **disabled** — `mcp.enabled: false` |
@@ -22,10 +22,10 @@ Implementation: [`internal/mcpapi`](../internal/mcpapi), wiring `buildMCPAPI` in
 The path is `/api/v1/p/{project}/mcp` because the MCP server is **project-scoped** like every catalogue
 route (see `docs/API.md` → *Project prefix*): the slug in the URL picks the library the agent works in,
 and its tools are unchanged and scoped by it. An agent connector is therefore configured with the
-project's URL, e.g. `https://…/api/v1/p/v/mcp`. Until the alias-removal step the same server also answers
-at the unprefixed **`/api/v1/mcp`** (the transition alias, which addresses the bootstrap project `v`), so
-an existing connector keeps working. A slug that is unknown or names a project the token's owner is no
-member of answers **404**, exactly like every other project route. There is no top-level `/mcp`.
+project's URL, e.g. `https://…/api/v1/p/v/mcp`. The unprefixed `/api/v1/mcp` of the transition is gone:
+it is an unknown API path (the API's JSON 404), so a connector still configured with it must be pointed at
+its project's URL. A slug that is unknown or names a project the token's owner is no member of answers
+**404**, exactly like every other project route. There is no top-level `/mcp`.
 
 **One token, several projects — by URL.** An API token belongs to its owner, not to a project, so the
 same `kkt_…` reaches every project its owner is a member of (a maintainer's reaches all of them); which
@@ -39,13 +39,12 @@ a client is told the endpoint it actually called:
 
 - **The `instructions`** handed over on `initialize` end with a paragraph naming the project — its name
   and slug — and saying that the same token reaches the owner's other projects at `/api/v1/p/<slug>/mcp`.
-  **Through the alias** they carry one more line: `Deprecated: this connection uses the transition alias
-  /api/v1/mcp; reconfigure it to /api/v1/p/<slug>/mcp before the alias is removed.` The servers are built
+  The servers are built
   per write permission × instructions text on first use and cached (`API.server`), so a project costs one
   pair of servers, not one per request.
 - **The 401 challenge** is `WWW-Authenticate: Bearer realm="https://<host>/api/v1/p/<slug>/mcp"` — the
-  absolute URL of the endpoint (scheme from TLS or `X-Forwarded-Proto`, host from the request), or
-  `…/api/v1/mcp` through the alias. `withResourceChallenge` wraps the `RequireAuth` guard so only the
+  absolute URL of the endpoint (scheme from TLS or `X-Forwarded-Proto`, host from the request).
+  `withResourceChallenge` wraps the `RequireAuth` guard so only the
   guard's own 401 is rewritten; a request it lets through reaches the transport with the original writer.
   The URL rides in `realm`, **not** in RFC 9728's `resource_metadata`, on purpose: there is no
   protected-resource metadata document and no OAuth (see below), and a client handed `resource_metadata`
@@ -274,7 +273,7 @@ mcp:
 
 Disabled = **no MCP server is built** and the path answers a bare **404** (`handleDisabled`). Not a 403 — a
 403 would still tell an attacker that the endpoint is there. The 404 is *mounted* rather than left to the
-router on purpose: without it `/api/v1/mcp` fell into the **SPA catch-all** (`server.routes()` has
+router on purpose: without it `/api/v1/p/<slug>/mcp` fell into the **SPA catch-all** (`server.routes()` has
 `router.NotFound(web.Handler())`) like any other unknown path and returned **`200` and `index.html`**, so
 the client got HTML where it expected JSON-RPC and failed for the wrong reason. A client can now tell
 "this server does not have that" from "this server did not answer".
@@ -284,10 +283,11 @@ A token for the agent (the lowest write-capable role is `editor`; `admin`/`maint
 one on someone else's behalf. So two steps:
 
 ```bash
-# 1) an admin creates a user with the editor role
+# 1) a maintainer creates the account (the role here is its role in the bootstrap project `v`;
+#    make it an editor of any other project via /system/projects or POST /api/v1/projects/{uid}/members)
 curl -X POST https://<host>/api/v1/admin/users \
-  -b admin-session.txt -H 'Content-Type: application/json' \
-  -d '{"username":"agent","password":"…","role":"editor"}'
+  -b maintainer-session.txt -H 'Content-Type: application/json' \
+  -d '{"username":"agent","email":"agent@example.org","password":"…","role":"editor"}'
 
 # 2) that user logs in and mints a token for themselves
 curl -X POST https://<host>/api/v1/auth/login -c agent.txt \
@@ -306,9 +306,7 @@ claude mcp add --transport http kukatko https://<host>/api/v1/p/<slug>/mcp \
   --header "Authorization: Bearer kkt_…"
 ```
 
-One connector per project; the same token works in each project its owner is a member of. A connector
-still pointing at the unprefixed `/api/v1/mcp` works until the alias-removal step, and its server
-instructions say so.
+One connector per project; the same token works in each project its owner is a member of.
 
 The same token is what the **OpenAI Responses API** wants in its `mcp` tool's `authorization` field. What
 neither path gives you is a **connector tile in the claude.ai or ChatGPT UI**: those ask the server for OAuth,
@@ -330,11 +328,11 @@ the search language works · a write token creates an album and attaches a label
 row** · a partial edit does not null out the other fields · bulk is atomic · the tool descriptions are written.
 
 `internal/mcpapi/isolation_integration_test.go` mounts the endpoint as `cmd/kukatko` does (under
-`/api/v1/p/{project}` and as the alias) over the two seeded projects of `internal/projecttest`: every read
+`/api/v1/p/{project}`) over the two seeded projects of `internal/projecttest`: every read
 tool called through `/p/<B>/mcp` as B's member never names one of A's uids, and A's photo is not found by
-uid while B's is · the `instructions` name the URL's project, and only the alias adds the deprecation note ·
-an anonymous call to either path gets the challenge naming that path's absolute URL.
-`challenge_test.go` holds the challenge (prefix, alias, TLS, proxy, a hostile `Host`), the guard wrapper and
+uid while B's is · the `instructions` name the URL's project · an anonymous call gets the challenge naming
+the endpoint's absolute URL.
+`challenge_test.go` holds the challenge (prefix, TLS, proxy, a hostile `Host`), the guard wrapper and
 the instructions text without a database.
 
 `internal/server/server_test.go` pins the other half of the discovery fix without a database: every

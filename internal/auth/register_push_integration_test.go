@@ -59,7 +59,8 @@ func pushRegistration(
 	}), logs
 }
 
-// registerNewcomer registers "newcomer" with the right secret and entry.
+// registerNewcomer registers "newcomer" into the bootstrap project with the
+// right secret and entry.
 func registerNewcomer(t *testing.T, rg *auth.Registration, entry audit.Entry) (auth.User, error) {
 	t.Helper()
 	return rg.Register(t.Context(), auth.RegisterInput{
@@ -68,6 +69,7 @@ func registerNewcomer(t *testing.T, rg *auth.Registration, entry audit.Entry) (a
 		Email:       "newcomer@example.test",
 		Password:    testPassword,
 		Secret:      theSecret,
+		ProjectUID:  project.BootstrapUID,
 	}, entry)
 }
 

@@ -147,8 +147,8 @@ func (h *harness) seedPhotos(n int) {
 		content := []byte("bytes of " + uid)
 		sum := sha256.Sum256(content)
 		hash := hex.EncodeToString(sum[:])
-		h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-			VALUES ($1, $2, $3, $4, $5, 'image/jpeg')`, uid, hash, key, uid+".jpg", len(content))
+		h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+			VALUES ($1, $2, $3, $4, $5, 'image/jpeg', $6)`, uid, hash, key, uid+".jpg", len(content), project.BootstrapUID)
 		h.exec(`INSERT INTO photo_files (photo_uid, file_path, file_hash, file_size, file_mime, is_primary, role)
 			VALUES ($1, $2, $3, $4, 'image/jpeg', true, 'original')`, uid, key, hash, len(content))
 		h.mem.objects[key] = content

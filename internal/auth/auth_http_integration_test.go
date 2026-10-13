@@ -29,7 +29,8 @@ import (
 )
 
 // httpEnv is an httptest server wrapping the auth API plus two probe routes that
-// exercise the RequireWrite and RequireAuth middlewares directly. It keeps the
+// exercise the RequireWrite and RequireAuth middlewares directly, in the
+// bootstrap project (see apiV). It keeps the
 // database and the instance-settings store beside them, because self-service
 // registration is decided by settings a test has to write and produces mail jobs
 // a test has to read.
@@ -109,15 +110,25 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 	r := chi.NewRouter()
 	r.Use(clientip.Middleware(trustedSet))
 	r.Route("/api/v1", func(r chi.Router) {
-		api.RegisterRoutes(r)
-		r.With(api.RequireWrite).Get("/probe/write", probeOK)
-		r.With(api.RequireAuth).Get("/probe/auth", probeOK)
+		api.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: the project-scoped half — and
+		// the probes behind project-level guards — under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterProjectRoutes(r)
+			r.With(api.RequireWrite).Get("/probe/write", probeOK)
+			r.With(api.RequireAuth).Get("/probe/auth", probeOK)
+		})
 	})
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
 	return &httpEnv{server: server, svc: svc, store: store, db: db, settings: settingsStore}
 }
+
+// apiV is the bootstrap project's API prefix every project-scoped request goes
+// through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
 
 // testSignInURL is the address the approval mail points at in these tests, the
 // stand-in for mail.base_url + /login.
@@ -313,18 +324,19 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 	env.mustCreate(t, "viewer", auth.AccountViewer)
 	env.mustCreate(t, "editor", auth.AccountEditor)
 	env.mustCreate(t, "admin", auth.AccountAdmin)
+	env.mustCreate(t, "maint", auth.AccountMaintainer)
 
 	t.Run("unauthenticated blocked", func(t *testing.T) {
 		client := newClient(t)
-		if status, _ := env.do(t, client, http.MethodGet, "/api/v1/probe/auth", ""); status != http.StatusUnauthorized {
+		if status, _ := env.do(t, client, http.MethodGet, apiV+"/probe/auth", ""); status != http.StatusUnauthorized {
 			t.Errorf("anon probe/auth = %d, want 401", status)
 		}
 	})
 
 	t.Run("viewer is read-only", func(t *testing.T) {
 		client := env.loginClient(t, "viewer")
-		assertStatus(t, env, client, http.MethodGet, "/api/v1/probe/auth", "", http.StatusOK)
-		assertStatus(t, env, client, http.MethodGet, "/api/v1/probe/write", "", http.StatusForbidden)
+		assertStatus(t, env, client, http.MethodGet, apiV+"/probe/auth", "", http.StatusOK)
+		assertStatus(t, env, client, http.MethodGet, apiV+"/probe/write", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
 			`{"username":"x","email":"x@example.test","password":"password123","role":"viewer"}`, http.StatusForbidden)
@@ -332,12 +344,20 @@ func TestHTTP_rbacEnforcement(t *testing.T) {
 
 	t.Run("editor can write but not administer", func(t *testing.T) {
 		client := env.loginClient(t, "editor")
-		assertStatus(t, env, client, http.MethodGet, "/api/v1/probe/write", "", http.StatusOK)
+		assertStatus(t, env, client, http.MethodGet, apiV+"/probe/write", "", http.StatusOK)
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
 	})
 
-	t.Run("admin can administer", func(t *testing.T) {
+	// The account record is instance-wide, so administering it is the system
+	// administrator's: a project admin manages members, not accounts.
+	t.Run("project admin cannot administer accounts", func(t *testing.T) {
 		client := env.loginClient(t, "admin")
+		assertStatus(t, env, client, http.MethodGet, apiV+"/probe/write", "", http.StatusOK)
+		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusForbidden)
+	})
+
+	t.Run("maintainer can administer", func(t *testing.T) {
+		client := env.loginClient(t, "maint")
 		assertStatus(t, env, client, http.MethodGet, "/api/v1/admin/users", "", http.StatusOK)
 		assertStatus(t, env, client, http.MethodPost, "/api/v1/admin/users",
 			`{"username":"newbie","email":"newbie@example.test","password":"password123","role":"editor"}`, http.StatusCreated)
@@ -516,11 +536,11 @@ func TestHTTP_loginRejectsOverLongUsername(t *testing.T) {
 		loginJSON("quinn", testPassword), http.StatusOK)
 }
 
-// TestHTTP_createUserRejectsOverLongUsername verifies an admin cannot create an
+// TestHTTP_createUserRejectsOverLongUsername verifies a maintainer cannot create an
 // account whose username exceeds the login cap, which could never log in.
 func TestHTTP_createUserRejectsOverLongUsername(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "root", auth.AccountAdmin)
+	env.mustCreate(t, "root", auth.AccountMaintainer)
 	client := env.loginClient(t, "root")
 
 	body := adminUserBody(t, map[string]any{
@@ -644,7 +664,7 @@ func TestHTTP_adminUserNoteLifecycle(t *testing.T) {
 
 func TestHTTP_adminUserNoteListedAndPersisted(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "listadmin", auth.AccountAdmin)
+	env.mustCreate(t, "listadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "listadmin")
 
 	const note = "Owner of the shared family album."
@@ -713,7 +733,7 @@ func TestHTTP_adminUserNoteTooLong(t *testing.T) {
 
 func TestHTTP_userNoteNeverReachesNonAdmin(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "secretadmin", auth.AccountAdmin)
+	env.mustCreate(t, "secretadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "secretadmin")
 
 	const note = "Do not surface this to the account holder."
@@ -758,7 +778,7 @@ func assertNoteAbsent(t *testing.T, label string, body []byte) {
 
 func TestHTTP_adminResetPassword(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "rootadmin", auth.AccountAdmin)
+	env.mustCreate(t, "rootadmin", auth.AccountMaintainer)
 	target := env.mustCreate(t, "victim", auth.AccountViewer)
 	admin := env.loginClient(t, "rootadmin")
 

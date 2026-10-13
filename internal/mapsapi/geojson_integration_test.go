@@ -84,6 +84,9 @@ func admitBootstrap(t *testing.T, pool *pgxpool.Pool) func(http.Handler) http.Ha
 // non-geotagged photo) and metadata, returning it.
 func (e *geoEnv) seedGeo(t *testing.T, hash string, p photos.Photo) photos.Photo {
 	t.Helper()
+	if p.ProjectID == "" {
+		p.ProjectID = project.BootstrapUID
+	}
 	p.FileHash = hash
 	p.FilePath = hash + ".jpg"
 	p.FileName = hash + ".jpg"

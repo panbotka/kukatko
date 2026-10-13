@@ -20,7 +20,7 @@ func (e *env) threadOf(t *testing.T, c *http.Client, taskUID string) []comments.
 	var thread struct {
 		Comments []comments.Comment `json:"comments"`
 	}
-	e.do(t, c, http.MethodGet, "/api/v1/tasks/"+taskUID+"/comments", nil, http.StatusOK, &thread)
+	e.do(t, c, http.MethodGet, apiV+"/tasks/"+taskUID+"/comments", nil, http.StatusOK, &thread)
 	return thread.Comments
 }
 
@@ -28,7 +28,7 @@ func (e *env) threadOf(t *testing.T, c *http.Client, taskUID string) []comments.
 func (e *env) taskOf(t *testing.T, c *http.Client, taskUID string) phototask.Task {
 	t.Helper()
 	var task phototask.Task
-	e.do(t, c, http.MethodGet, "/api/v1/tasks/"+taskUID, nil, http.StatusOK, &task)
+	e.do(t, c, http.MethodGet, apiV+"/tasks/"+taskUID, nil, http.StatusOK, &task)
 	return task
 }
 
@@ -43,7 +43,7 @@ func TestAnswer_handsTheTaskOn(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{"body": "Strýc Karel, oprav jméno.", "state": "working"})
 	var created comments.Comment
-	e.do(t, person, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", body,
+	e.do(t, person, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", body,
 		http.StatusCreated, &created)
 	if created.Body != "Strýc Karel, oprav jméno." || created.TaskUID != task.UID {
 		t.Errorf("created = %+v, want the answer on the task", created)
@@ -96,7 +96,7 @@ func TestAnswer_refusesAndWritesNothing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		body, _ := json.Marshal(map[string]any{"body": "1987", "state": tc.state})
-		e.do(t, tc.client, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", body, tc.want, nil)
+		e.do(t, tc.client, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", body, tc.want, nil)
 		if n := len(e.threadOf(t, editor, task.UID)); n != 0 {
 			t.Errorf("%s: thread has %d comments, want none", tc.name, n)
 		}
@@ -117,7 +117,7 @@ func TestAnswer_refusesAndWritesNothing(t *testing.T) {
 
 	// The same viewer answering without a state is still welcome.
 	plain, _ := json.Marshal(map[string]any{"body": "1987"})
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", plain, http.StatusCreated, nil)
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", plain, http.StatusCreated, nil)
 }
 
 // hasParticipant reports whether userUID is among the people on a task.

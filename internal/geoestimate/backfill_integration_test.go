@@ -109,6 +109,9 @@ func (e *backfillEnv) seed(t *testing.T, f fixture) photos.Photo {
 		Scan:             f.scan,
 		ProjectID:        f.project,
 	}
+	if p.ProjectID == "" {
+		p.ProjectID = project.BootstrapUID
+	}
 	if !f.at.IsZero() {
 		at := f.at
 		p.TakenAt = &at

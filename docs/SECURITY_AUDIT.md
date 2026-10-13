@@ -966,6 +966,63 @@ Everything else below is open as written.
 ---
 
 
+## Multi-tenancy (projects) — the tenant boundary
+
+Reviewed **2026-10-13** at the end of the multi-tenancy programme (the alias removal, step 39 of 40). One
+instance holds several projects; a tenant is a project's members, and the threat is a member — or an
+anonymous visitor — of one project learning or touching another's library. The design is
+`docs/superpowers/specs/2026-10-11-multi-tenancy-design.md`, the model `ARCHITECTURE.md` §10. No finding
+below is open; each is an attack scenario with the mitigation that closes it and the test that pins it.
+
+- **Foreign-uid probing.** *Attack:* a member of A replays a uid of B's (a photo, album, subject, task, …)
+  under `/api/v1/p/A/…`, or names B's slug, to read it or to learn it exists. *Mitigation:* every store
+  method over a root table takes the project and every statement names `project_id` (`make check`'s
+  `internal/tenancyguard` fails on one that does not); a uid of another project is answered **exactly like
+  a uid that does not exist** — same status, same `Content-Type`, byte-identical body — and a listing simply
+  lacks it, so a probe cannot tell "elsewhere" from "nowhere". An unknown slug, a project the caller is no
+  member of and a deactivated one are one and the same 404 (`auth.enterProject`). There is **no default
+  project** any more: a catalogue path without `/p/<slug>/` is the API's 404 and a project-scoped guard
+  reached without a project is a 500, so no request can fall into `v` by omission, and no request path may
+  name `v` (`TestRepository_noRequestPathNamesTheBootstrapProject`). *Tests:* `internal/projecttest`
+  (`AssertInvisible`, `AssertSameShape`, `AssertStoreScoped`) in every scoped package; the server-level
+  `TestProjectAPI_unknownAndForeignProjectsAreIndistinguishable` and `…_onlyThePrefixServesAProject`.
+- **Directory enumeration.** *Attack:* list the instance's accounts or other projects' members (to phish
+  them, or to learn who uses the instance). *Mitigation:* the name directory `GET /p/<slug>/users` lists
+  only that project's approved, enabled members (uid + name); the account list `GET /users` and
+  `/admin/users` are maintainer-only; a project admin's "add member" answers **202 whether or not the
+  account exists** and matches a username/e-mail exactly (`internal/memberapi`); an `@`-mention resolves
+  only to an approved member of the comment's project (or a maintainer). *Accepted residue:* usernames are instance-wide, so
+  registration or a rename can learn that a name is taken somewhere (a 409, as before projects), and the
+  anonymous `GET /p/<slug>/settings/public` confirms an **active** project's slug and name — the registration
+  page needs both; the slug is not a secret.
+- **Hash collision across projects.** *Attack:* upload into A the exact bytes of a photo in B, hoping the
+  SHA-256 dedup answers "already have it" (an oracle for B's content) or merges the upload into B's row.
+  *Mitigation:* dedup is per project — `UNIQUE (project_id, file_hash)` and `GetByFileHashInProject` — so the
+  same bytes in two projects are two rows, the duplicate answer only ever names the uploader's own project,
+  and the original is stored under the project's own prefix (`projects/<uid>/YYYY/MM/…`; only the bootstrap
+  project uses the root layout until its storage move), so equal file names or hashes never share a key.
+  Near-duplicate and similarity searches (`vectors`, `duplicates`, `expand`, `candidates`, `sweep`) filter the
+  HNSW kNN by the denormalised `embeddings.project_id`/`faces.project_id`.
+- **Derived-object sharing.** *Attack:* reach B's thumbnails, avatars, scrub sprites, HLS segments, metadata
+  sidecars or `families.yaml` through a derived object A's identical content produced, or through a cache
+  key that ignores the project. *Mitigation:* every derived object — in the store and in the local
+  derived-media cache alike (thumbnails, `avatar/`, storyboards, `hls/<file_hash>/…`, sidecars) — lives under
+  the storage prefix of **its own original** (`storekeys.PrefixOf(photos.file_path)`), so two projects never
+  share one even for byte-identical photos; the media routes read the photo through the project-scoped store
+  before they open anything, and a signed URL is minted per object. A profile picture picked from a library
+  photo is refused for a photo of a project the viewer may not see, and the inherited face is the account's
+  person **in the viewer's project** only. *Tests:* `internal/storekeys` and the isolation tests of the
+  photo media routes (`internal/photoapi`) and of `internal/userpic`.
+- **Invite abuse.** *Attack:* guess or replay an invitation code, stretch one beyond its intent, or use one to
+  become a project admin. *Mitigation:* a code is 8 symbols of a 55-symbol alphabet (~46 bits) looked up
+  through its SHA-256; the public `GET /invite/{code}` and its accept sit behind a per-IP limiter
+  (`ratelimit.invite`, 2/s, burst 60) **ahead of** the lookup, and every dead code — unknown, expired,
+  revoked, used up — is the same `ErrInvalid`; a code expires (7 or 90 days), has an optional use cap counted
+  in the redeeming transaction, and is revocable. Accepting raises a role, never lowers it; **registering**
+  through an invite mints at most an **editor** (`invite.RegistrationRole`) — an admin invite grants admin
+  only to an existing account accepting it signed in; only the project's admin (or a maintainer) creates,
+  lists or revokes invites, and every one of those is audited in its transaction.
+
 ## Areas checked — no finding ("reviewed, no findings")
 
 Silence is not evidence; these areas were examined and are clean.

@@ -41,7 +41,7 @@ func TestHideFromLibrary(t *testing.T) {
 	}
 
 	t.Run("viewer cannot hide", func(t *testing.T) {
-		resp := mustDo(t, viewer, http.MethodPost, base+"/api/v1/photos/"+scan.UID+"/hide", nil)
+		resp := mustDo(t, viewer, http.MethodPost, base+apiV+"/photos/"+scan.UID+"/hide", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("viewer hide status = %d, want 403", resp.StatusCode)
@@ -49,7 +49,7 @@ func TestHideFromLibrary(t *testing.T) {
 	})
 
 	t.Run("editor hides and it leaves the library", func(t *testing.T) {
-		detail, _ := decodeDetail(t, editor, http.MethodPost, base+"/api/v1/photos/"+scan.UID+"/hide", nil)
+		detail, _ := decodeDetail(t, editor, http.MethodPost, base+apiV+"/photos/"+scan.UID+"/hide", nil)
 		if !detail.HiddenFromLibrary {
 			t.Errorf("hide response hidden_from_library = false, want true")
 		}
@@ -76,7 +76,7 @@ func TestHideFromLibrary(t *testing.T) {
 	})
 
 	t.Run("and is reachable by its own url", func(t *testing.T) {
-		detail, _ := decodeDetail(t, editor, http.MethodGet, base+"/api/v1/photos/"+scan.UID, nil)
+		detail, _ := decodeDetail(t, editor, http.MethodGet, base+apiV+"/photos/"+scan.UID, nil)
 		if detail.UID != scan.UID || !detail.HiddenFromLibrary {
 			t.Errorf("detail = %+v, want the hidden photo", detail)
 		}
@@ -90,7 +90,7 @@ func TestHideFromLibrary(t *testing.T) {
 	})
 
 	t.Run("unhide brings it back", func(t *testing.T) {
-		detail, _ := decodeDetail(t, editor, http.MethodPost, base+"/api/v1/photos/"+scan.UID+"/unhide", nil)
+		detail, _ := decodeDetail(t, editor, http.MethodPost, base+apiV+"/photos/"+scan.UID+"/unhide", nil)
 		if detail.HiddenFromLibrary {
 			t.Error("unhide response hidden_from_library = true, want false")
 		}
@@ -101,7 +101,7 @@ func TestHideFromLibrary(t *testing.T) {
 	})
 
 	t.Run("a missing photo is a 404", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/photos/nope/hide", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/photos/nope/hide", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("hide missing photo status = %d, want 404", resp.StatusCode)

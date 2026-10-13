@@ -37,10 +37,10 @@ func TestCollect_deterministicSnapshotAndStorageCheck(t *testing.T) {
 	if _, err := db.Pool().Exec(ctx, `
 		INSERT INTO users (uid, username, email, password_hash, role)
 		VALUES ('us_inv', 'inv', 'inv@example.test', 'x', 'user');
-		INSERT INTO photos (uid, file_hash, file_path, file_size) VALUES
-			('ph_inv_ok', 'h1', '2024/01/ok.jpg', 3),
-			('ph_inv_gone', 'h2', '2024/01/gone.jpg', 5),
-			('ph_inv_short', 'h3', '2024/01/short.jpg', 9)`); err != nil {
+		INSERT INTO photos (uid, file_hash, file_path, file_size, project_id) VALUES
+			('ph_inv_ok', 'h1', '2024/01/ok.jpg', 3, 'pj0000000000000000veselice'),
+			('ph_inv_gone', 'h2', '2024/01/gone.jpg', 5, 'pj0000000000000000veselice'),
+			('ph_inv_short', 'h3', '2024/01/short.jpg', 9, 'pj0000000000000000veselice')`); err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
 	root := t.TempDir()

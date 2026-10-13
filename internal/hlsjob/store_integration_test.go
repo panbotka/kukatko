@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // storeHarness prepares a clean database with one catalogued video and the
@@ -30,6 +31,7 @@ func storeHarnessDB(t *testing.T) (*database.DB, *hlsjob.Store, photos.Photo) {
 	dbtest.TruncateAll(t, db)
 
 	photo, err := photos.NewStore(db.Pool()).Create(t.Context(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		FilePath:        "2026/01/clip.mp4",
 		FileName:        "clip.mp4",

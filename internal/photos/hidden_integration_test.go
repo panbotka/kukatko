@@ -36,11 +36,13 @@ func newHiddenLibrary(t *testing.T) hiddenLibrary {
 
 	lib := hiddenLibrary{store: store, db: db, user: "u_hidden"}
 	lib.visible = mustCreate(t, store, photos.Photo{
-		FileHash: "h-visible", FilePath: "2024/03/v.jpg", FileName: "v.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "h-visible", FilePath: "2024/03/v.jpg", FileName: "v.jpg", FileMime: "image/jpeg",
 		Title: "sunset", TakenAt: &taken, TakenAtSource: "exif",
 	})
 	lib.scan = mustCreate(t, store, photos.Photo{
-		FileHash: "h-scan", FilePath: "2024/03/s.jpg", FileName: "s.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "h-scan", FilePath: "2024/03/s.jpg", FileName: "s.jpg", FileMime: "image/jpeg",
 		Title: "tiraz", TakenAt: &taken, TakenAtSource: "exif", HiddenFromLibrary: true,
 	})
 

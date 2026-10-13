@@ -4,7 +4,9 @@ package auth_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
@@ -44,6 +46,7 @@ func registerJSON(username, email, secret string) string {
 		"email":        email,
 		"password":     testPassword,
 		"secret":       secret,
+		"project":      project.BootstrapSlug,
 	})
 	return string(b)
 }
@@ -334,6 +337,24 @@ func TestRegister_duplicateUsernameIsRejected(t *testing.T) {
 	}
 }
 
+// TestRegister_noProjectIsAClosedDoor verifies a secret registration that
+// names no project is refused like a closed registration — there is no default
+// project to drop the account into — and creates nothing.
+func TestRegister_noProjectIsAClosedDoor(t *testing.T) {
+	env := newHTTPEnv(t, 10)
+	openRegistration(t, env)
+
+	body := `{"username":"nikde","email":"nikde@example.test","password":"` + testPassword +
+		`","secret":"` + theSecret + `"}`
+	status, raw := env.do(t, newClient(t), http.MethodPost, "/api/v1/auth/register", body)
+	if status != http.StatusForbidden || !strings.Contains(string(raw), "registration is not open") {
+		t.Fatalf("POST /auth/register without a project = %d %s, want the closed-registration 403", status, raw)
+	}
+	if _, err := env.store.GetUserByUsername(t.Context(), "nikde"); !errors.Is(err, auth.ErrUserNotFound) {
+		t.Errorf("account after a refused registration: %v, want ErrUserNotFound", err)
+	}
+}
+
 // TestRegister_validatesLikeTheAdminAPI checks that registration is held to the
 // same input rules as POST /admin/users: an address that cannot receive mail and
 // a password nobody could use are refused before anything is stored.
@@ -348,22 +369,22 @@ func TestRegister_validatesLikeTheAdminAPI(t *testing.T) {
 		{
 			name: "no e-mail address",
 			body: `{"username":"nomail","display_name":"","email":"","password":"` +
-				testPassword + `","secret":"` + theSecret + `"}`,
+				testPassword + `","secret":"` + theSecret + `","project":"v"}`,
 		},
 		{
 			name: "malformed e-mail address",
 			body: `{"username":"badmail","display_name":"","email":"nobody@localhost","password":"` +
-				testPassword + `","secret":"` + theSecret + `"}`,
+				testPassword + `","secret":"` + theSecret + `","project":"v"}`,
 		},
 		{
 			name: "password too short",
 			body: `{"username":"weak","display_name":"","email":"weak@example.test","password":"short",` +
-				`"secret":"` + theSecret + `"}`,
+				`"secret":"` + theSecret + `","project":"v"}`,
 		},
 		{
 			name: "unknown field",
 			body: `{"username":"sneaky","email":"sneaky@example.test","password":"` + testPassword +
-				`","secret":"` + theSecret + `","role":"admin"}`,
+				`","secret":"` + theSecret + `","project":"v","role":"admin"}`,
 		},
 	}
 	for _, tt := range tests {

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { setCurrentProjectSlug } from './api'
+
 import {
   ApiError,
   canCurate,
@@ -18,6 +20,7 @@ import {
   revokeApiToken,
   roleAtLeast,
   setApiTokenUnlimited,
+  setMySubject,
   type Role,
 } from './auth'
 
@@ -143,6 +146,22 @@ describe('logout', () => {
       '/api/v1/auth/logout',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+})
+
+describe('setMySubject', () => {
+  it('writes the link in the current project, never instance-wide', async () => {
+    setCurrentProjectSlug('rodina')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(SESSION.user, 200))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(setMySubject('sub1')).resolves.toEqual(SESSION.user)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/p/rodina/auth/subject')
+    expect(init.method).toBe('PUT')
+    expect(init.body).toBe(JSON.stringify({ subject_uid: 'sub1' }))
+    setCurrentProjectSlug(null)
   })
 })
 

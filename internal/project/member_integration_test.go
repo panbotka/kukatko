@@ -29,7 +29,8 @@ func seedUser(t *testing.T, db *database.DB, uid, username, displayName string) 
 func seedSubject(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
 	if _, err := db.Pool().Exec(context.Background(),
-		`INSERT INTO subjects (uid, slug, name, type) VALUES ($1, $2, $3, 'person')`, uid, uid, uid); err != nil {
+		`INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, $3, 'person', $4)`,
+		uid, uid, uid, project.BootstrapUID); err != nil {
 		t.Fatalf("seeding subject %s: %v", uid, err)
 	}
 }

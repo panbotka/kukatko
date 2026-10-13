@@ -67,6 +67,7 @@ func (f fixture) addPhoto(t *testing.T, hash string, w, h int, size int64) strin
 	t.Helper()
 	taken := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	created, err := f.photos.Create(t.Context(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2024/01/" + hash + ".jpg",
 		FileName:   hash + ".jpg",

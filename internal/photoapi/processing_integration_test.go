@@ -38,7 +38,7 @@ func detailProcessing(
 	t *testing.T, client *http.Client, base, uid string,
 ) map[string]processingEntry {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -289,7 +289,7 @@ func TestRunProcessingStep_rbac(t *testing.T) {
 		t.Run(string(tt.role), func(t *testing.T) {
 			client, _ := env.login(t, "user-"+string(tt.role), tt.role)
 			resp := mustDo(t, client, http.MethodPost,
-				env.server.URL+"/api/v1/photos/"+photo.UID+"/process/thumbnail", nil)
+				env.server.URL+apiV+"/photos/"+photo.UID+"/process/thumbnail", nil)
 			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != tt.want {
 				t.Errorf("%s status = %d, want %d", tt.role, resp.StatusCode, tt.want)
@@ -299,7 +299,7 @@ func TestRunProcessingStep_rbac(t *testing.T) {
 
 	// Anonymous callers never reach the handler.
 	resp := mustDo(t, &http.Client{}, http.MethodPost,
-		env.server.URL+"/api/v1/photos/"+photo.UID+"/process/thumbnail", nil)
+		env.server.URL+apiV+"/photos/"+photo.UID+"/process/thumbnail", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous status = %d, want 401", resp.StatusCode)
@@ -316,7 +316,7 @@ func TestRunProcessingStep_enqueuesAndIsIdempotent(t *testing.T) {
 
 	for range 2 {
 		resp := mustDo(t, client, http.MethodPost,
-			env.server.URL+"/api/v1/photos/"+photo.UID+"/process/image_embed", nil)
+			env.server.URL+apiV+"/photos/"+photo.UID+"/process/image_embed", nil)
 		var status processingEntry
 		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
 			t.Fatalf("decode: %v", err)
@@ -363,7 +363,7 @@ func TestRunProcessingStep_refusals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resp := mustDo(t, client, http.MethodPost,
-				env.server.URL+"/api/v1/photos/"+tt.uid+"/process/"+tt.step, nil)
+				env.server.URL+apiV+"/photos/"+tt.uid+"/process/"+tt.step, nil)
 			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != tt.want {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tt.want)

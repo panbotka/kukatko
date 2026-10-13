@@ -49,6 +49,7 @@ func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 func makeSizedPhoto(t *testing.T, store *photos.Store, hash string, width, height int) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2024/01/" + hash + ".jpg",
 		FileName:   hash + ".jpg",

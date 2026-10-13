@@ -27,7 +27,7 @@ type uploadersResp struct {
 // body, failing the test on a non-200 status.
 func getUploaders(t *testing.T, client *http.Client, base, query string) uploadersResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/uploaders?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/uploaders?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("uploaders status = %d for %q, want 200", resp.StatusCode, query)
@@ -240,7 +240,7 @@ func TestUploaders(t *testing.T) {
 	})
 
 	t.Run("invalid filter is 400", func(t *testing.T) {
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/uploaders?archived=maybe", nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/uploaders?archived=maybe", nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
@@ -248,7 +248,7 @@ func TestUploaders(t *testing.T) {
 	})
 
 	t.Run("requires auth", func(t *testing.T) {
-		resp := mustDo(t, &http.Client{}, http.MethodGet, base+"/api/v1/photos/uploaders", nil)
+		resp := mustDo(t, &http.Client{}, http.MethodGet, base+apiV+"/photos/uploaders", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("anonymous status = %d, want 401", resp.StatusCode)

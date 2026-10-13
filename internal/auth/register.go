@@ -97,7 +97,7 @@ type RegisterInput struct {
 	InviteCode string
 	// ProjectUID is the project a secret registration is into: its switch and
 	// its secret decide, and the account becomes an unapproved viewer of it and
-	// of no other. Empty is the bootstrap project. The handler resolves it from
+	// of no other. Empty is a closed door. The handler resolves it from
 	// the slug the registration page sent; the link and invite paths ignore it,
 	// because their grant names the project.
 	ProjectUID string
@@ -150,8 +150,8 @@ type LinkGrant struct {
 	// ProjectUID is the link's project: its registration settings decide
 	// whether the door is open, the account becomes a member of it (a viewer,
 	// unapproved — the same approval flow as any registration) and of no other,
-	// and its admins are the ones told somebody is waiting. Empty is the
-	// bootstrap project.
+	// and its admins are the ones told somebody is waiting. Every link has
+	// one; empty is refused with ErrNoProject.
 	ProjectUID string
 	// Claim runs on the account's transaction once the account row exists: it
 	// hands the photos the registering browser uploaded through links to the new
@@ -228,15 +228,17 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 // registration that fails at any point leaves neither an account, nor a trail
 // entry, nor a mail, an inbox entry or a push anybody will receive.
 //
-// It returns ErrRegistrationClosed when registration is switched off — or is
-// switched on with a blank secret, which is the same refusal — ErrRegistrationSecret
+// It returns ErrRegistrationClosed when in names no project or registration is
+// switched off — or is switched on with a blank secret, which is the same
+// refusal — ErrRegistrationSecret
 // for a wrong secret, ErrUsernameTaken for a name somebody already holds, and
 // the validation errors of the admin user API (ErrUsernameTooLong,
 // ErrInvalidEmail, ErrPasswordTooShort) for input it will not store.
 func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry audit.Entry) (User, error) {
 	projectUID := in.ProjectUID
 	if projectUID == "" {
-		projectUID = project.BootstrapUID
+		// No project's door was knocked on; there is no default project.
+		return User{}, ErrRegistrationClosed
 	}
 	if err := rg.checkSecret(ctx, projectUID, in.Secret); err != nil {
 		return User{}, err
@@ -254,14 +256,15 @@ func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry au
 // entry's details name the link, and grant.Claim runs on the account's
 // transaction so the photos the person uploaded become theirs atomically.
 //
-// It returns ErrRegistrationClosed when registration is switched off, and the
-// same account errors as Register.
+// It returns ErrRegistrationClosed when registration is switched off,
+// ErrNoProject for a grant that names no project, and the same account errors
+// as Register.
 func (rg *Registration) RegisterWithLink(
 	ctx context.Context, in RegisterInput, grant LinkGrant, entry audit.Entry,
 ) (User, error) {
 	projectUID := grant.ProjectUID
 	if projectUID == "" {
-		projectUID = project.BootstrapUID
+		return User{}, ErrNoProject
 	}
 	stored, err := rg.settings.Get(ctx, projectUID)
 	if err != nil {

@@ -21,7 +21,7 @@ export interface DirectoryUser {
   name: string
 }
 
-/** Response body of `GET /api/v1/users`. */
+/** Response body of `GET /api/v1/p/<slug>/users`. */
 interface DirectoryResponse {
   users: DirectoryUser[]
 }

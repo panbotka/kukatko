@@ -144,7 +144,7 @@ func TestMigration0063_fillsPlaceholders(t *testing.T) {
 // accepted and stored normalized.
 func TestHTTP_createUserRequiresEmail(t *testing.T) {
 	env := newHTTPEnv(t, 50)
-	env.mustCreate(t, "mailadmin", auth.AccountAdmin)
+	env.mustCreate(t, "mailadmin", auth.AccountMaintainer)
 	admin := env.loginClient(t, "mailadmin")
 
 	rejected := []struct {

@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
@@ -37,6 +38,7 @@ func (e *env) seedTimedVideo(t *testing.T, name string, durationMs int) photos.P
 		t.Fatalf("storage.Store(%s): %v", name, err)
 	}
 	created, err := e.store.Create(t.Context(), photos.Photo{
+		ProjectID:     project.BootstrapUID,
 		FileHash:      stored.Hash,
 		FilePath:      stored.RelPath,
 		FileName:      name,
@@ -96,7 +98,7 @@ func TestStoryboard_pendingThenReady(t *testing.T) {
 	// previews, and the status endpoint must not be write-gated.
 	client, token := env.login(t, "viewer", auth.AccountViewer)
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
-	statusURL := env.server.URL + "/api/v1/photos/" + video.UID + "/storyboard"
+	statusURL := env.server.URL + apiV + "/photos/" + video.UID + "/storyboard"
 	spriteURL := statusURL + "/sprite?t=" + token
 
 	body := getStoryboard(t, client, statusURL)
@@ -159,7 +161,7 @@ func TestStoryboard_unavailableForStills(t *testing.T) {
 	client, token := env.login(t, "viewer", auth.AccountViewer)
 	still := env.seedPhoto(t, photos.Photo{TakenAtSource: "unknown"}, "still.jpg", 10, 20, 30)
 
-	body := getStoryboard(t, client, env.server.URL+"/api/v1/photos/"+still.UID+"/storyboard")
+	body := getStoryboard(t, client, env.server.URL+apiV+"/photos/"+still.UID+"/storyboard")
 	if body.Status != "unavailable" {
 		t.Errorf("status = %q, want unavailable", body.Status)
 	}
@@ -168,7 +170,7 @@ func TestStoryboard_unavailableForStills(t *testing.T) {
 	}
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+still.UID+"/storyboard/sprite?t="+token, nil)
+		env.server.URL+apiV+"/photos/"+still.UID+"/storyboard/sprite?t="+token, nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("sprite for a still = %d, want 404", resp.StatusCode)
@@ -182,7 +184,7 @@ func TestStoryboard_missingPhoto(t *testing.T) {
 	client, token := env.login(t, "viewer", auth.AccountViewer)
 
 	for _, path := range []string{"/storyboard", "/storyboard/sprite?t=" + token} {
-		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos/ph_missing"+path, nil)
+		resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/photos/ph_missing"+path, nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, resp.StatusCode)
@@ -199,7 +201,7 @@ func TestStoryboard_spriteRequiresAuthorization(t *testing.T) {
 	env.plantSprite(t, video, []byte("sprite-bytes"))
 
 	resp := mustDo(t, &http.Client{}, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+video.UID+"/storyboard/sprite", nil)
+		env.server.URL+apiV+"/photos/"+video.UID+"/storyboard/sprite", nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous sprite fetch = %d, want 401", resp.StatusCode)

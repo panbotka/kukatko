@@ -34,7 +34,8 @@ func TestRunRekey_againstTheDatabase(t *testing.T) {
 		t.Fatalf("NewFS: %v", err)
 	}
 	if _, err := db.Pool().Exec(t.Context(), `INSERT INTO photos (uid, file_hash, file_path, file_name, file_size,
-		file_mime) VALUES ('ph1', repeat('a', 64), '2023/01/a.jpg', 'a.jpg', 2048, 'image/jpeg')`); err != nil {
+		file_mime, project_id) VALUES ('ph1', repeat('a', 64), '2023/01/a.jpg', 'a.jpg', 2048, 'image/jpeg', $1)`,
+		project.BootstrapUID); err != nil {
 		t.Fatalf("seeding a photo: %v", err)
 	}
 	mover := rekey.New(rekey.Config{Pool: db.Pool(), Store: store, Jobs: cliNoRewrites{}})

@@ -32,7 +32,8 @@ func seedTimelineBuckets(t *testing.T, store *photos.Store, fixtures []timelineB
 			src = "unknown"
 		}
 		photo := mustCreate(t, store, photos.Photo{
-			FileHash: f.hash, FilePath: "p/" + f.hash + ".jpg",
+			ProjectID: project.BootstrapUID,
+			FileHash:  f.hash, FilePath: "p/" + f.hash + ".jpg",
 			FileName: f.hash + ".jpg", FileMime: "image/jpeg",
 			TakenAt: f.takenAt, TakenAtSource: src,
 		})

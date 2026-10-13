@@ -19,7 +19,7 @@ const geoThumbSize = "tile_224"
 // thumbPath is the path, below the request's API base (auth.APIBase), under
 // which photo thumbnails are served, so a feature carries a ready-to-use
 // relative thumbnail URL leading back through the prefix the feed was asked
-// through (/api/v1/p/<slug> or the /api/v1 transition alias).
+// through (/api/v1/p/<slug>).
 const thumbPath = "/photos/"
 
 // featureCollection is a GeoJSON FeatureCollection (RFC 7946).

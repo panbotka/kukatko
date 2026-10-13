@@ -14,7 +14,7 @@ import (
 // These tests document what an expiring API token may mint today (SEC-022 in
 // docs/SECURITY_AUDIT.md). A bearer principal carries the owner's full standing
 // and nothing about the token it came from: neither its id nor its expiry. The
-// credential-management routes need only RequireAuth, so a token that expires in
+// credential-management routes need only RequireSignedIn, so a token that expires in
 // an hour mints a token that never expires and registers a passkey, and both
 // outlive the token that made them, whether it expires or is revoked. The role
 // never grows; what is lost is the parent's bounded lifetime and its single
@@ -203,12 +203,12 @@ func TestTokenMinting_expiringTokenRegistersPasskey(t *testing.T) {
 }
 
 // TestTokenMinting_adminTokenMintsUnlimitedChild shows the rate-limit exemption
-// follows the owner's role, not the presenting credential: an admin's throttled,
+// follows the owner's role, not the presenting credential: a maintainer's throttled,
 // expiring token mints an unlimited child that never expires. The exemption is
 // documented as belonging to "one revocable credential", and it still does —
 // but that credential can be a fresh one minted by any other.
 func TestTokenMinting_adminTokenMintsUnlimitedChild(t *testing.T) {
-	s := newParentSetup(t, auth.AccountAdmin)
+	s := newParentSetup(t, auth.AccountMaintainer)
 	env, parent, presenter := s.env, s.parent, s.presenter
 	if parent.Token.Unlimited {
 		t.Fatal("the parent token is unlimited; the setup is wrong")

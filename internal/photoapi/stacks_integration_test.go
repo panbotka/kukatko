@@ -51,7 +51,7 @@ func TestIntegration_StackHTTPEndpoints(t *testing.T) {
 
 	// Manual stack of the selection answers with the primary's detail + strip.
 	body, _ := json.Marshal(map[string][]string{"photo_uids": {raw.UID, jpg.UID}})
-	detail := postStack(t, editor, e.server.URL+"/api/v1/photos/stack", body)
+	detail := postStack(t, editor, e.server.URL+apiV+"/photos/stack", body)
 	if detail.UID != jpg.UID {
 		t.Errorf("stacked primary detail uid = %s, want %s (jpeg)", detail.UID, jpg.UID)
 	}
@@ -60,7 +60,7 @@ func TestIntegration_StackHTTPEndpoints(t *testing.T) {
 	}
 
 	// The grid returns one tile carrying the member-count badge.
-	list := getStackList(t, editor, e.server.URL+"/api/v1/photos")
+	list := getStackList(t, editor, e.server.URL+apiV+"/photos")
 	if list.Total != 1 || len(list.Photos) != 1 || list.Photos[0].UID != jpg.UID {
 		t.Fatalf("list = %+v, want only the jpeg primary", list)
 	}
@@ -69,20 +69,20 @@ func TestIntegration_StackHTTPEndpoints(t *testing.T) {
 	}
 
 	// Set-primary moves the primary onto the RAW; its detail then shows it primary.
-	moved := postStack(t, editor, e.server.URL+"/api/v1/photos/"+raw.UID+"/stack/primary", nil)
+	moved := postStack(t, editor, e.server.URL+apiV+"/photos/"+raw.UID+"/stack/primary", nil)
 	if moved.UID != raw.UID || moved.primaryUID() != raw.UID {
 		t.Errorf("after set-primary detail = %+v, want raw primary", moved)
 	}
-	if got := getStackList(t, editor, e.server.URL+"/api/v1/photos"); got.Total != 1 || got.Photos[0].UID != raw.UID {
+	if got := getStackList(t, editor, e.server.URL+apiV+"/photos"); got.Total != 1 || got.Photos[0].UID != raw.UID {
 		t.Errorf("after set-primary list = %+v, want only the raw", got)
 	}
 
 	// Unstacking the JPEG leaves the RAW alone, so the stack dissolves and both
 	// photos stand on their own again.
-	if resp := mustDo(t, editor, http.MethodPost, e.server.URL+"/api/v1/photos/"+jpg.UID+"/unstack", nil); resp.StatusCode != http.StatusOK {
+	if resp := mustDo(t, editor, http.MethodPost, e.server.URL+apiV+"/photos/"+jpg.UID+"/unstack", nil); resp.StatusCode != http.StatusOK {
 		t.Fatalf("unstack status = %d, want 200", resp.StatusCode)
 	}
-	if got := getStackList(t, editor, e.server.URL+"/api/v1/photos"); got.Total != 2 {
+	if got := getStackList(t, editor, e.server.URL+apiV+"/photos"); got.Total != 2 {
 		t.Errorf("after unstack list total = %d, want 2 standalone photos", got.Total)
 	}
 
@@ -126,7 +126,7 @@ func TestIntegration_StackForbiddenForViewer(t *testing.T) {
 	b := e.seedPhoto(t, photos.Photo{Title: "b"}, "B.jpg", 4, 5, 6)
 
 	body, _ := json.Marshal(map[string][]string{"photo_uids": {a.UID, b.UID}})
-	resp := mustDo(t, viewer, http.MethodPost, e.server.URL+"/api/v1/photos/stack", body)
+	resp := mustDo(t, viewer, http.MethodPost, e.server.URL+apiV+"/photos/stack", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("viewer stack status = %d, want 403", resp.StatusCode)

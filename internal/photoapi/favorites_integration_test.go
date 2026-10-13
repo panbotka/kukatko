@@ -27,7 +27,7 @@ type favListResp struct {
 
 // favoriteURL builds the per-photo favorite endpoint URL.
 func favoriteURL(base, uid string) string {
-	return base + "/api/v1/photos/" + uid + "/favorite"
+	return base + apiV + "/photos/" + uid + "/favorite"
 }
 
 // getFavList fetches a list-shaped endpoint (the path includes the query) and
@@ -49,7 +49,7 @@ func getFavList(t *testing.T, client *http.Client, urlStr string) favListResp {
 // getFavFlag fetches a photo's detail and returns its is_favorite flag.
 func getFavFlag(t *testing.T, client *http.Client, base, uid string) bool {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -106,7 +106,7 @@ func TestFavoritesAPI(t *testing.T) {
 
 	t.Run("favorite=true filter scopes to the caller", func(t *testing.T) {
 		mustStatus(t, alice, http.MethodPut, favoriteURL(e.server.URL, p3.UID), http.StatusNoContent)
-		got := getFavList(t, alice, e.server.URL+"/api/v1/photos?favorite=true")
+		got := getFavList(t, alice, e.server.URL+apiV+"/photos?favorite=true")
 		set := favUIDs(got)
 		if got.Total != 2 || !set[p1.UID] || !set[p3.UID] || set[p2.UID] {
 			t.Fatalf("favorite filter = %v (total %d), want {p1,p3}", set, got.Total)
@@ -119,7 +119,7 @@ func TestFavoritesAPI(t *testing.T) {
 	})
 
 	t.Run("favorites listing matches the filter and honours pagination", func(t *testing.T) {
-		got := getFavList(t, alice, e.server.URL+"/api/v1/favorites?limit=1")
+		got := getFavList(t, alice, e.server.URL+apiV+"/favorites?limit=1")
 		if got.Total != 2 || len(got.Photos) != 1 {
 			t.Fatalf("/favorites?limit=1 = %d photos (total %d), want 1 of 2", len(got.Photos), got.Total)
 		}
@@ -127,7 +127,7 @@ func TestFavoritesAPI(t *testing.T) {
 
 	t.Run("per-user isolation", func(t *testing.T) {
 		// Bob has favorited nothing; alice's favorites are invisible to him.
-		bobList := getFavList(t, bob, e.server.URL+"/api/v1/favorites")
+		bobList := getFavList(t, bob, e.server.URL+apiV+"/favorites")
 		if bobList.Total != 0 || len(bobList.Photos) != 0 {
 			t.Fatalf("bob favorites = %d, want 0 (isolation)", bobList.Total)
 		}
@@ -148,7 +148,7 @@ func TestFavoritesAPI(t *testing.T) {
 		if getFavFlag(t, alice, e.server.URL, p1.UID) {
 			t.Error("p1 is_favorite = true for alice after unfavorite, want false")
 		}
-		got := getFavList(t, alice, e.server.URL+"/api/v1/favorites")
+		got := getFavList(t, alice, e.server.URL+apiV+"/favorites")
 		if set := favUIDs(got); got.Total != 1 || !set[p3.UID] || set[p1.UID] {
 			t.Fatalf("alice favorites after unfavorite = %v (total %d), want {p3}", set, got.Total)
 		}

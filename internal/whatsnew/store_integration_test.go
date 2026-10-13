@@ -83,8 +83,9 @@ func (e *env) addUser(t *testing.T, uid string) {
 // after the uploader's account was deleted).
 func (e *env) addPhoto(t *testing.T, uid, uploader string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, uploaded_by, created_at, updated_at)
-	           VALUES ($1, $2, $3, nullif($4, ''), $5, $5)`, uid, uid, uid+".jpg", uploader, createdAt)
+	e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, uploaded_by, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, nullif($4, ''), $5, $5, $6)`,
+		uid, uid, uid+".jpg", uploader, createdAt, project.BootstrapUID)
 }
 
 // addComment inserts a live comment on a photo, written by author (empty = the
@@ -98,8 +99,9 @@ func (e *env) addComment(t *testing.T, uid, photoUID, author string, createdAt t
 // addAlbum inserts a hand-curated album created by creator (empty = nobody).
 func (e *env) addAlbum(t *testing.T, uid, title, creator string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO albums (uid, slug, title, type, created_by, created_at, updated_at)
-	           VALUES ($1, $2, $3, 'album', nullif($4, ''), $5, $5)`, uid, uid, title, creator, createdAt)
+	e.exec(t, `INSERT INTO albums (uid, slug, title, type, created_by, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, 'album', nullif($4, ''), $5, $5, $6)`,
+		uid, uid, title, creator, createdAt, project.BootstrapUID)
 }
 
 // addTask opens a task in the given state, created by creator (empty = nobody).
@@ -114,17 +116,17 @@ func (e *env) addTask(t *testing.T, uid, state, creator string, createdAt time.T
 		resolution, closedAt = "hotovo", createdAt
 	}
 	e.exec(t, `INSERT INTO photo_tasks (uid, title, state, resolution, created_by,
-	               created_at, updated_at, state_at, closed_at)
-	           VALUES ($1, 'V kterém roce?', $2, $3, nullif($4, ''), $5, $5, $5, $6)`,
-		uid, state, resolution, creator, createdAt, closedAt)
+	               created_at, updated_at, state_at, closed_at, project_id)
+	           VALUES ($1, 'V kterém roce?', $2, $3, nullif($4, ''), $5, $5, $5, $6, $7)`,
+		uid, state, resolution, creator, createdAt, closedAt, project.BootstrapUID)
 }
 
 // addSubject inserts a named person. Subjects record no creator, which is why
 // they are news to everybody.
 func (e *env) addSubject(t *testing.T, uid, name string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)
-	           VALUES ($1, $2, $3, 'person', $4, $4)`, uid, uid, name, createdAt)
+	e.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, 'person', $4, $4, $5)`, uid, uid, name, createdAt, project.BootstrapUID)
 }
 
 // openVisits gives every named account a reference point (the first read has
@@ -312,14 +314,17 @@ func TestCountsStayIndexBacked(t *testing.T) {
 	env.addUser(t, "usr-a")
 
 	old := env.now.Add(-30 * 24 * time.Hour)
-	env.exec(t, `INSERT INTO photos (uid, file_hash, file_path, created_at, updated_at)
-	             SELECT 'ph'||i, 'h'||i, 'p'||i||'.jpg', $1, $1 FROM generate_series(1, 4000) i`, old)
+	env.exec(t, `INSERT INTO photos (uid, file_hash, file_path, created_at, updated_at, project_id)
+	             SELECT 'ph'||i, 'h'||i, 'p'||i||'.jpg', $1, $1, $2 FROM generate_series(1, 4000) i`,
+		old, project.BootstrapUID)
 	env.exec(t, `INSERT INTO comments (uid, photo_uid, body, created_at)
 	             SELECT 'cm'||i, 'ph'||i, 'x', $1 FROM generate_series(1, 4000) i`, old)
-	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at)
-	             SELECT 'al'||i, 'al'||i, 'a'||i, 'album', $1, $1 FROM generate_series(1, 4000) i`, old)
-	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)
-	             SELECT 'su'||i, 'su'||i, 's'||i, 'person', $1, $1 FROM generate_series(1, 4000) i`, old)
+	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at, project_id)
+	             SELECT 'al'||i, 'al'||i, 'a'||i, 'album', $1, $1, $2 FROM generate_series(1, 4000) i`,
+		old, project.BootstrapUID)
+	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at, project_id)
+	             SELECT 'su'||i, 'su'||i, 's'||i, 'person', $1, $1, $2 FROM generate_series(1, 4000) i`,
+		old, project.BootstrapUID)
 	env.exec(t, `ANALYZE photos, comments, albums, subjects`)
 
 	for _, table := range []string{"photos", "comments", "albums", "subjects"} {

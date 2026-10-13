@@ -54,7 +54,7 @@ func storedUsername(t *testing.T, env *httpEnv, uid string) string {
 // has a message on the queue telling them the name to sign in with.
 func TestRename_renamesAuditsAndMails(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
+	boss := env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	silly := env.mustCreate(t, "xxx_jan_xxx", auth.AccountViewer)
 
@@ -109,7 +109,7 @@ func TestRename_renamesAuditsAndMails(t *testing.T) {
 // leaves neither an audit entry nor a mail behind.
 func TestRename_sameNameIsANoOp(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 
@@ -131,7 +131,7 @@ func TestRename_sameNameIsANoOp(t *testing.T) {
 // would not see. Nothing changes on a refusal.
 func TestRename_refusesATakenName(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	env.mustCreate(t, "eva", auth.AccountViewer)
@@ -167,7 +167,7 @@ func TestRename_refusesATakenName(t *testing.T) {
 // over MaxUsernameLen runes, the same rules creation applies.
 func TestRename_refusesAnInvalidName(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 
@@ -198,14 +198,15 @@ func TestRename_refusesAnInvalidName(t *testing.T) {
 	}
 }
 
-// TestRename_roleBoundaries covers who may rename: an admin may not rename a
-// maintainer account (the maintainer boundary, 403), a maintainer may, every
-// role below admin is refused by the route guard (403), an unknown account is
-// 404, and an administrator may rename their own account.
+// TestRename_roleBoundaries covers who may rename: renaming is account
+// administration, the system administrator's, so a maintainer may rename any
+// account — another maintainer's and their own included — every role below it,
+// a project admin too, is refused by the route guard (403), and an unknown
+// account is 404.
 func TestRename_roleBoundaries(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	boss := env.mustCreate(t, "boss", auth.AccountAdmin)
-	env.mustCreate(t, "root", auth.AccountMaintainer)
+	env.mustCreate(t, "boss", auth.AccountAdmin)
+	root := env.mustCreate(t, "root", auth.AccountMaintainer)
 	keeper := env.mustCreate(t, "keeper", auth.AccountMaintainer)
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
@@ -229,18 +230,21 @@ func TestRename_roleBoundaries(t *testing.T) {
 			t.Errorf("%s renaming = %d, want 403 (body %s)", role, status, body)
 		}
 	}
+	if status, body := renameUser(t, env, admin, jan.UID, "renamed-by-admin"); status != http.StatusForbidden {
+		t.Errorf("a project admin renaming = %d, want 403 (body %s)", status, body)
+	}
 	if got := storedUsername(t, env, jan.UID); got != "jan" {
-		t.Errorf("a non-admin renamed the account to %q", got)
+		t.Errorf("a non-maintainer renamed the account to %q", got)
 	}
 
-	if status, body := renameUser(t, env, admin, "us-doesnotexist", "ghost"); status != http.StatusNotFound {
+	if status, body := renameUser(t, env, maintainer, "us-doesnotexist", "ghost"); status != http.StatusNotFound {
 		t.Errorf("renaming an unknown account = %d, want 404 (body %s)", status, body)
 	}
 
-	if status, body := renameUser(t, env, admin, boss.UID, "chief"); status != http.StatusOK {
-		t.Fatalf("admin renaming themselves = %d, want 200 (body %s)", status, body)
+	if status, body := renameUser(t, env, maintainer, root.UID, "chief"); status != http.StatusOK {
+		t.Fatalf("maintainer renaming themselves = %d, want 200 (body %s)", status, body)
 	}
-	if status, body := env.do(t, admin, http.MethodGet, "/api/v1/auth/me", ""); status != http.StatusOK ||
+	if status, body := env.do(t, maintainer, http.MethodGet, "/api/v1/auth/me", ""); status != http.StatusOK ||
 		!strings.Contains(string(body), `"username":"chief"`) {
 		t.Errorf("GET /auth/me after renaming oneself = %d %s, want 200 with the new name", status, body)
 	}
@@ -255,7 +259,7 @@ func TestRename_roleBoundaries(t *testing.T) {
 // password sign-in now takes the new name only.
 func TestRename_keepsEverythingKeyedOnUID(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	janClient := signInAs(t, env, "jan")
@@ -349,7 +353,7 @@ func assertUsersReferencedOnlyByUID(t *testing.T, env *httpEnv) {
 // placeholder address itself is left as it was.
 func TestRename_mailIsSkippedNotFailed(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	jan := env.mustCreate(t, "jan", auth.AccountViewer)
 	const placeholder = "jan-us123@kukatko.invalid"

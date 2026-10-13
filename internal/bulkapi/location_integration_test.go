@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/bulk"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // seedPlacedPhoto inserts a photo that already knows where it was taken — the
@@ -19,7 +20,8 @@ import (
 func (e *env) seedPlacedPhoto(t *testing.T, hash string, lat, lng float64) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileMime: "image/jpeg",
 		Lat:      &lat, Lng: &lng, LocationSource: photos.LocationSourceExif,
 	})
@@ -130,7 +132,7 @@ func TestBulkLocation_rejectsCoordinatesOffTheGlobe(t *testing.T) {
 			"photo_uids": []string{uid},
 			"operations": map[string]any{"set_location": coords},
 		})
-		resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+		resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("set_location %v status = %d, want 400", coords, resp.StatusCode)
@@ -148,7 +150,7 @@ func (e *env) setLocation(
 		"photo_uids": uids,
 		"operations": map[string]any{"set_location": location},
 	})
-	resp := e.mustDo(t, client, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := e.mustDo(t, client, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
@@ -172,7 +174,7 @@ func TestBulkLocationSummary_countsPlacedPhotos(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"photo_uids": []string{empty, placed, placed, "phMISSING0000000000000000000000"},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk/location-summary", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk/location-summary", body)
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		t.Fatalf("summary status = %d, want 200", resp.StatusCode)
@@ -193,7 +195,7 @@ func TestBulkLocationSummary_roleEnforcement(t *testing.T) {
 	uid := env.seedPhoto(t, "sum-view-1")
 
 	body, _ := json.Marshal(map[string]any{"photo_uids": []string{uid}})
-	resp := env.mustDo(t, viewer, http.MethodPost, "/api/v1/photos/bulk/location-summary", body)
+	resp := env.mustDo(t, viewer, http.MethodPost, apiV+"/photos/bulk/location-summary", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer summary status = %d, want 403", resp.StatusCode)

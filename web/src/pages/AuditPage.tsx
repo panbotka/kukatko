@@ -35,7 +35,7 @@ import {
   type AuditRecord,
   fetchAuditLog,
 } from '../services/audit'
-import { type AdminUser, fetchUsers } from '../services/users'
+import { type DirectoryUser, listDirectory } from '../services/directory'
 
 /** Top-level load status of the audit listing. */
 type State =
@@ -84,7 +84,7 @@ function detailsId(record: AuditRecord): string {
  * is named by its link and the name the guest typed (just the link when they
  * typed none).
  */
-function actorLabel(record: AuditRecord, users: Map<string, AdminUser>, t: TFunction): string {
+function actorLabel(record: AuditRecord, users: Map<string, DirectoryUser>, t: TFunction): string {
   const actorUid = record.actor_uid
   if (actorUid === null) {
     const guest = uploadLinkActor(record)
@@ -102,15 +102,17 @@ function actorLabel(record: AuditRecord, users: Map<string, AdminUser>, t: TFunc
       : t('audit.uploadLinkActor.named', { title, name })
   }
   const user = users.get(actorUid)
-  return user ? user.display_name || user.username : actorUid
+  return user ? user.name : actorUid
 }
 
 /**
  * The admin audit-log page (`/audit`): a newest-first, filterable, paginated
- * view of the durable audit trail from `GET /api/v1/audit`. Filters and the page
- * offset live in the URL so Back restores the exact view. Actor UIDs are shown
- * as names by reusing the admin user roster; name resolution is best-effort and
- * never blocks the table from rendering.
+ * view of the project's durable audit trail from `GET /api/v1/p/<slug>/audit`.
+ * Filters and the page offset live in the URL so Back restores the exact view.
+ * Actor UIDs are shown as names by reusing the project's member directory
+ * (`GET /api/v1/p/<slug>/users`); name resolution is best-effort and never
+ * blocks the table from rendering — an actor who is no longer a member shows
+ * as their UID.
  */
 export function AuditPage() {
   const { t, i18n } = useTranslation()
@@ -120,7 +122,7 @@ export function AuditPage() {
   const params = useMemo(() => viewToParams(view), [view])
   const [state, setState] = useState<State>({ status: 'loading' })
   const [reloadKey, setReloadKey] = useState(0)
-  const [users, setUsers] = useState<Map<string, AdminUser>>(new Map())
+  const [users, setUsers] = useState<Map<string, DirectoryUser>>(new Map())
   const [draft, setDraft] = useState<AuditFilters>(() => pickFilters(view))
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
 
@@ -136,7 +138,7 @@ export function AuditPage() {
       return undefined
     }
     const controller = new AbortController()
-    fetchUsers(controller.signal)
+    listDirectory(controller.signal)
       .then((list) => {
         setUsers(new Map(list.map((user) => [user.uid, user])))
       })
@@ -171,10 +173,7 @@ export function AuditPage() {
   }, [isAdmin, params, reloadKey])
 
   const userOptions = useMemo(
-    () =>
-      [...users.values()].sort((a, b) =>
-        (a.display_name || a.username).localeCompare(b.display_name || b.username),
-      ),
+    () => [...users.values()].sort((a, b) => a.name.localeCompare(b.name)),
     [users],
   )
 
@@ -296,7 +295,7 @@ export function AuditPage() {
                     <option value="">{t('audit.filters.allActors')}</option>
                     {userOptions.map((user) => (
                       <option key={user.uid} value={user.uid}>
-                        {user.display_name || user.username}
+                        {user.name}
                       </option>
                     ))}
                   </Form.Select>

@@ -266,7 +266,7 @@ func repairRestoredDatabase(cmd *cobra.Command, cfg *config.Config) error {
 	}
 	if cleared > 0 {
 		cmd.Printf("%d streaming rendition(s) cleared: the segments are not in the backup, "+
-			"re-encode them with `POST /api/v1/process/hls`\n", cleared)
+			"re-encode them with `POST /api/v1/p/<slug>/process/hls` in each project\n", cleared)
 	}
 	return nil
 }

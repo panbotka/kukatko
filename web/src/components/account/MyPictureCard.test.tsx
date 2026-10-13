@@ -108,7 +108,7 @@ describe('MyPictureCard', () => {
     expect(
       await screen.findByText('Showing the face of the person you are linked to.'),
     ).toBeInTheDocument()
-    expect(preview()?.getAttribute('src')).toBe('/api/v1/users/u1/avatar')
+    expect(preview()?.getAttribute('src')).toBe('/api/v1/p/v/users/u1/avatar')
     expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument()
   })
 
@@ -130,7 +130,7 @@ describe('MyPictureCard', () => {
     expect(await screen.findByText('Showing the picture you uploaded.')).toBeInTheDocument()
     // No avatar of this account may keep showing the old picture out of the
     // browser's cache, so the URL moves with every saved change.
-    expect(preview()?.getAttribute('src')).toBe('/api/v1/users/u1/avatar?v=1')
+    expect(preview()?.getAttribute('src')).toBe('/api/v1/p/v/users/u1/avatar?v=1')
   })
 
   it('offers to fall back to the linked face when clearing, and does it', async () => {

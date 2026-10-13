@@ -77,7 +77,8 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 	}
 
 	beach := add("beach", photos.Photo{
-		FileHash: "ql-1", FilePath: "p/1.jpg", FileName: "IMG_0001.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-1", FilePath: "p/1.jpg", FileName: "IMG_0001.jpg", FileMime: "image/jpeg",
 		FileWidth: 6000, FileHeight: 4000,
 		Title: "Beach sunset", Description: "warm evening", Keywords: "beach,summer",
 		TakenAt: ptrOf(time.Date(2024, 5, 1, 10, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
@@ -86,14 +87,16 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 		ISO: ptrOf(100), Aperture: ptrOf(2.8), FocalLength: ptrOf(50.0), ImageCodec: "jpeg",
 	})
 	prague2 := add("prague2", photos.Photo{
-		FileHash: "ql-2", FilePath: "p/2.jpg", FileName: "IMG_0002.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-2", FilePath: "p/2.jpg", FileName: "IMG_0002.jpg", FileMime: "image/jpeg",
 		FileWidth: 4000, FileHeight: 1500,
 		Title:   "Prague sunset streets",
 		TakenAt: ptrOf(time.Date(2024, 5, 3, 18, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 		Lat: ptrOf(50.085), Lng: ptrOf(14.43),
 	})
 	winter := add("winter", photos.Photo{
-		FileHash: "ql-3", FilePath: "p/3.jpg", FileName: "DSC_0003.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-3", FilePath: "p/3.jpg", FileName: "DSC_0003.jpg", FileMime: "image/jpeg",
 		FileWidth: 4000, FileHeight: 6000,
 		Title: "Winter cabin", Notes: "todo edit", Private: true,
 		PhotoprismUID: ptrOf(winterPhotoprismUID),
@@ -103,19 +106,22 @@ func seedQueryLibrary(t *testing.T) queryLibrary {
 		ISO: ptrOf(800), Aperture: ptrOf(1.8), FocalLength: ptrOf(35.0),
 	})
 	clip := add("clip", photos.Photo{
-		FileHash: "ql-4", FilePath: "p/4.mp4", FileName: "MOV_0004.mp4", FileMime: "video/mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-4", FilePath: "p/4.mp4", FileName: "MOV_0004.mp4", FileMime: "video/mp4",
 		FileWidth: 1920, FileHeight: 1080, MediaType: photos.MediaVideo, VideoCodec: "hevc",
 		Title:   "Birthday clip",
 		TakenAt: ptrOf(time.Date(2022, 6, 15, 15, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 	})
 	add("shelf", photos.Photo{
-		FileHash: "ql-5", FilePath: "p/5.jpg", FileName: "IMG_0005.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-5", FilePath: "p/5.jpg", FileName: "IMG_0005.jpg", FileMime: "image/jpeg",
 		FileWidth: 2000, FileHeight: 2000,
 		Title:   "Book shelf",
 		TakenAt: ptrOf(time.Date(2021, 3, 10, 12, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 	})
 	attic := add("attic", photos.Photo{
-		FileHash: "ql-6", FilePath: "p/6.jpg", FileName: "IMG_0006.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ql-6", FilePath: "p/6.jpg", FileName: "IMG_0006.jpg", FileMime: "image/jpeg",
 		Title:   "Old attic",
 		TakenAt: ptrOf(time.Date(2020, 1, 1, 12, 0, 0, 0, time.UTC)), TakenAtSource: "exif",
 	})
@@ -182,9 +188,9 @@ func seedQueryOrganisation(
 	// content is irrelevant to the filter; a zero vector satisfies the column.
 	zeroVec := "[" + strings.TrimSuffix(strings.Repeat("0,", 512), ",") + "]"
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO faces (photo_uid, face_index, embedding, bbox, det_score, model)
-		 VALUES ($1, 0, $2::halfvec, '{0.1,0.1,0.2,0.2}', 0.9, 'test')`,
-		winter.UID, zeroVec); err != nil {
+		`INSERT INTO faces (photo_uid, face_index, embedding, bbox, det_score, model, project_id)
+		 VALUES ($1, 0, $2::halfvec, '{0.1,0.1,0.2,0.2}', 0.9, 'test', $3)`,
+		winter.UID, zeroVec, project.BootstrapUID); err != nil {
 		t.Fatalf("insert face: %v", err)
 	}
 

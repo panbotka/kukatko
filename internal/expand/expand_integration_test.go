@@ -75,7 +75,8 @@ func nearE0() []float32 { return imgVec(map[int]float32{0: 0.8, 1: 0.6}) }
 func (h expandHarness) photo(t *testing.T, hash string) string {
 	t.Helper()
 	created, err := h.photos.Create(context.Background(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileWidth: 1000, FileHeight: 800, FileOrientation: 1,
 	})
 	if err != nil {

@@ -25,6 +25,7 @@ func seedPhoto(t *testing.T, store *photos.Store, hash string, year int, hidden 
 	t.Helper()
 	taken := time.Date(year, 6, 1, 12, 0, 0, 0, time.UTC)
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:         project.BootstrapUID,
 		FileHash:          hash,
 		FilePath:          "2024/01/" + hash + ".jpg",
 		FileName:          hash + ".jpg",

@@ -10,12 +10,14 @@ import (
 
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // makeDatedPhoto inserts a photo captured at takenAt and returns its uid.
 func makeDatedPhoto(t *testing.T, store *photos.Store, hash string, takenAt time.Time) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2024/01/" + hash + ".jpg",
 		FileName:   hash + ".jpg",

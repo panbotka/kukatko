@@ -33,6 +33,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every family request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and family APIs behind an httptest server over the
 // integration database. The real guards are mounted rather than pass-throughs,
 // because who may write here is half of what these routes promise.
@@ -62,8 +65,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -174,7 +181,7 @@ func (e *env) countAudit(t *testing.T, action string) int {
 func (e *env) addRelation(t *testing.T, c *http.Client, uid string, body string) family.AddResult {
 	t.Helper()
 	var result family.AddResult
-	e.decode(t, c, http.MethodPost, "/api/v1/subjects/"+uid+"/relations",
+	e.decode(t, c, http.MethodPost, apiV+"/subjects/"+uid+"/relations",
 		[]byte(body), http.StatusCreated, &result)
 	return result
 }
@@ -197,7 +204,7 @@ func TestRelations_roundTrip(t *testing.T) {
 	env.addRelation(t, editor, daughter, `{"role":"parent","subject_uid":"`+mother+`"}`)
 
 	var relations family.Relations
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/relations",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+son+"/relations",
 		nil, http.StatusOK, &relations)
 
 	if len(relations.Parents) != 2 {
@@ -208,7 +215,7 @@ func TestRelations_roundTrip(t *testing.T) {
 	}
 
 	// The father's own page sees the couple and both children.
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+father+"/relations",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+father+"/relations",
 		nil, http.StatusOK, &relations)
 	if len(relations.Children) != 2 {
 		t.Errorf("children = %d, want 2: %+v", len(relations.Children), relations.Children)
@@ -272,7 +279,7 @@ func TestAddRelation_newSubjectIsAtomic(t *testing.T) {
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+env.subject(t, "Otec")+`"}`)
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+env.subject(t, "Matka")+`"}`)
 
-	got := env.status(t, editor, http.MethodPost, "/api/v1/subjects/"+son+"/relations",
+	got := env.status(t, editor, http.MethodPost, apiV+"/subjects/"+son+"/relations",
 		[]byte(`{"role":"parent","new_subject":{"name":"Třetí Rodič"}}`))
 	if got != http.StatusConflict {
 		t.Fatalf("third parent status = %d, want 409", got)
@@ -296,7 +303,7 @@ func TestAddRelation_cycleIsConflict(t *testing.T) {
 	son := env.subject(t, "Syn")
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
 
-	got := env.status(t, editor, http.MethodPost, "/api/v1/subjects/"+father+"/relations",
+	got := env.status(t, editor, http.MethodPost, apiV+"/subjects/"+father+"/relations",
 		[]byte(`{"role":"parent","subject_uid":"`+son+`"}`))
 	if got != http.StatusConflict {
 		t.Fatalf("cycle status = %d, want 409", got)
@@ -310,19 +317,19 @@ func TestAddRelation_unknownSubject(t *testing.T) {
 	editor := env.login(t, "editor", auth.AccountEditor)
 	known := env.subject(t, "Známý")
 
-	if got := env.status(t, editor, http.MethodPost, "/api/v1/subjects/su_ghost/relations",
+	if got := env.status(t, editor, http.MethodPost, apiV+"/subjects/su_ghost/relations",
 		[]byte(`{"role":"parent","subject_uid":"`+known+`"}`)); got != http.StatusNotFound {
 		t.Errorf("unknown path subject status = %d, want 404", got)
 	}
-	if got := env.status(t, editor, http.MethodPost, "/api/v1/subjects/"+known+"/relations",
+	if got := env.status(t, editor, http.MethodPost, apiV+"/subjects/"+known+"/relations",
 		[]byte(`{"role":"parent","subject_uid":"su_ghost"}`)); got != http.StatusNotFound {
 		t.Errorf("unknown body subject status = %d, want 404", got)
 	}
-	if got := env.status(t, editor, http.MethodGet, "/api/v1/subjects/su_ghost/relations",
+	if got := env.status(t, editor, http.MethodGet, apiV+"/subjects/su_ghost/relations",
 		nil); got != http.StatusNotFound {
 		t.Errorf("relations of an unknown subject status = %d, want 404", got)
 	}
-	if got := env.status(t, editor, http.MethodGet, "/api/v1/subjects/su_ghost/tree",
+	if got := env.status(t, editor, http.MethodGet, apiV+"/subjects/su_ghost/tree",
 		nil); got != http.StatusNotFound {
 		t.Errorf("tree of an unknown subject status = %d, want 404", got)
 	}
@@ -338,12 +345,12 @@ func TestRemoveRelation_roundTrip(t *testing.T) {
 	son := env.subject(t, "Syn")
 	env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
 
-	path := "/api/v1/subjects/" + son + "/relations/" + father
+	path := apiV + "/subjects/" + son + "/relations/" + father
 	if got := env.status(t, editor, http.MethodDelete, path, nil); got != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204", got)
 	}
 	var relations family.Relations
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/relations",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+son+"/relations",
 		nil, http.StatusOK, &relations)
 	if len(relations.Parents) != 0 {
 		t.Errorf("parents after removal = %+v, want none", relations.Parents)
@@ -371,7 +378,7 @@ func TestTree_ignoresTheRetiredParams(t *testing.T) {
 	env.addRelation(t, editor, child, `{"role":"parent","subject_uid":"`+father+`"}`)
 
 	var plain family.Tree
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+child+"/tree",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+child+"/tree",
 		nil, http.StatusOK, &plain)
 	want := map[string]int{grandfather: -2, father: -1, child: 0}
 	if got := memberGenerations(plain.Members); !maps.Equal(got, want) {
@@ -390,7 +397,7 @@ func TestTree_ignoresTheRetiredParams(t *testing.T) {
 		"?direction=sideways&generations=-2",
 	} {
 		var tree family.Tree
-		env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+child+"/tree"+query,
+		env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+child+"/tree"+query,
 			nil, http.StatusOK, &tree)
 		if got := memberGenerations(tree.Members); !maps.Equal(got, want) || len(tree.Families) != 2 {
 			t.Errorf("%s: generations = %v with %d families, want the whole network %v",
@@ -433,7 +440,7 @@ func TestTree_network(t *testing.T) {
 		Families  []family.TreeFamily `json:"families"`
 		Direction *string             `json:"direction"`
 	}
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/tree",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+son+"/tree",
 		nil, http.StatusOK, &raw)
 	if raw.Direction != nil {
 		t.Errorf("the payload still names a direction: %q", *raw.Direction)
@@ -477,7 +484,7 @@ func TestUpdateFamily_roundTrip(t *testing.T) {
 		`{"role":"partner","new_subject":{"name":"Marie"}}`)
 
 	var updated family.Family
-	env.decode(t, editor, http.MethodPatch, "/api/v1/families/"+result.Family.UID,
+	env.decode(t, editor, http.MethodPatch, apiV+"/families/"+result.Family.UID,
 		[]byte(`{"kind":"marriage","from_year":1948,"note":"oddáni v Křtinách"}`),
 		http.StatusOK, &updated)
 	if updated.Kind != family.KindMarriage || updated.FromYear == nil || *updated.FromYear != 1948 {
@@ -487,11 +494,11 @@ func TestUpdateFamily_roundTrip(t *testing.T) {
 		t.Errorf("note = %q, want the wedding note", updated.Note)
 	}
 
-	if got := env.status(t, editor, http.MethodPatch, "/api/v1/families/fm_ghost",
+	if got := env.status(t, editor, http.MethodPatch, apiV+"/families/fm_ghost",
 		[]byte(`{"kind":"marriage"}`)); got != http.StatusNotFound {
 		t.Errorf("unknown family status = %d, want 404", got)
 	}
-	if got := env.status(t, editor, http.MethodPatch, "/api/v1/families/"+result.Family.UID,
+	if got := env.status(t, editor, http.MethodPatch, apiV+"/families/"+result.Family.UID,
 		[]byte(`{"kind":"marriage","from_year":1300}`)); got != http.StatusBadRequest {
 		t.Errorf("impossible year status = %d, want 400", got)
 	}
@@ -512,12 +519,12 @@ func TestRBAC_curatorMayWrite(t *testing.T) {
 	result := env.addRelation(t, curator, son, `{"role":"parent","new_subject":{"name":"Otec"}}`)
 	father := result.Relative.UID
 
-	if got := env.status(t, curator, http.MethodPatch, "/api/v1/families/"+result.Family.UID,
+	if got := env.status(t, curator, http.MethodPatch, apiV+"/families/"+result.Family.UID,
 		[]byte(`{"kind":"marriage"}`)); got != http.StatusOK {
 		t.Errorf("curator PATCH family = %d, want 200", got)
 	}
 	if got := env.status(t, curator, http.MethodDelete,
-		"/api/v1/subjects/"+son+"/relations/"+father, nil); got >= http.StatusMultipleChoices {
+		apiV+"/subjects/"+son+"/relations/"+father, nil); got >= http.StatusMultipleChoices {
 		t.Errorf("curator DELETE relation = %d, want 2xx", got)
 	}
 }
@@ -534,8 +541,8 @@ func TestRBAC_viewerMayReadButNotWrite(t *testing.T) {
 	result := env.addRelation(t, editor, son, `{"role":"parent","subject_uid":"`+father+`"}`)
 
 	for _, path := range []string{
-		"/api/v1/subjects/" + son + "/relations",
-		"/api/v1/subjects/" + son + "/tree",
+		apiV + "/subjects/" + son + "/relations",
+		apiV + "/subjects/" + son + "/tree",
 	} {
 		if got := env.status(t, viewer, http.MethodGet, path, nil); got != http.StatusOK {
 			t.Errorf("viewer GET %s = %d, want 200", path, got)
@@ -547,12 +554,12 @@ func TestRBAC_viewerMayReadButNotWrite(t *testing.T) {
 		body         []byte
 	}{
 		{
-			method: http.MethodPost, path: "/api/v1/subjects/" + son + "/relations",
+			method: http.MethodPost, path: apiV + "/subjects/" + son + "/relations",
 			body: []byte(`{"role":"partner","new_subject":{"name":"Nikdo"}}`),
 		},
-		{method: http.MethodDelete, path: "/api/v1/subjects/" + son + "/relations/" + father},
+		{method: http.MethodDelete, path: apiV + "/subjects/" + son + "/relations/" + father},
 		{
-			method: http.MethodPatch, path: "/api/v1/families/" + result.Family.UID,
+			method: http.MethodPatch, path: apiV + "/families/" + result.Family.UID,
 			body: []byte(`{"kind":"marriage"}`),
 		},
 	} {
@@ -565,7 +572,7 @@ func TestRBAC_viewerMayReadButNotWrite(t *testing.T) {
 		t.Errorf("a refused viewer still created %d subjects, want 0", n)
 	}
 	var relations family.Relations
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+son+"/relations",
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+son+"/relations",
 		nil, http.StatusOK, &relations)
 	if len(relations.Parents) != 1 {
 		t.Errorf("parents after the refused writes = %+v, want the father still there", relations.Parents)
@@ -578,8 +585,8 @@ func TestUnauthenticated_isRefused(t *testing.T) {
 	env := newEnv(t)
 	anonymous := &http.Client{}
 	for _, path := range []string{
-		"/api/v1/subjects/su_a/relations",
-		"/api/v1/subjects/su_a/tree",
+		apiV + "/subjects/su_a/relations",
+		apiV + "/subjects/su_a/tree",
 	} {
 		if got := env.status(t, anonymous, http.MethodGet, path, nil); got != http.StatusUnauthorized {
 			t.Errorf("anonymous GET %s = %d, want 401", path, got)
@@ -607,7 +614,7 @@ func TestAddRelation_siblingWithNoParents(t *testing.T) {
 	}
 
 	var relations family.Relations
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+josef+"/relations", nil, http.StatusOK, &relations)
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+josef+"/relations", nil, http.StatusOK, &relations)
 	if len(relations.Siblings) != 1 || relations.Siblings[0].UID != anna {
 		t.Errorf("siblings = %+v, want Anna", relations.Siblings)
 	}
@@ -626,7 +633,7 @@ func TestAddRelation_siblingWithNoParents(t *testing.T) {
 
 	// Parentless: the link is the whole relation, so it can be taken back.
 	if got := env.status(t, editor, http.MethodDelete,
-		"/api/v1/subjects/"+josef+"/relations/"+created.Relative.UID, nil); got != http.StatusNoContent {
+		apiV+"/subjects/"+josef+"/relations/"+created.Relative.UID, nil); got != http.StatusNoContent {
 		t.Errorf("removing a parentless sibling = %d, want 204", got)
 	}
 
@@ -635,10 +642,10 @@ func TestAddRelation_siblingWithNoParents(t *testing.T) {
 	mother := env.subject(t, "Ludmila Nečasová")
 	env.addRelation(t, editor, josef, `{"role":"parent","subject_uid":"`+mother+`"}`)
 	if got := env.status(t, editor, http.MethodDelete,
-		"/api/v1/subjects/"+josef+"/relations/"+anna, nil); got != http.StatusConflict {
+		apiV+"/subjects/"+josef+"/relations/"+anna, nil); got != http.StatusConflict {
 		t.Errorf("removing a derived sibling = %d, want 409", got)
 	}
-	env.decode(t, editor, http.MethodGet, "/api/v1/subjects/"+anna+"/relations", nil, http.StatusOK, &relations)
+	env.decode(t, editor, http.MethodGet, apiV+"/subjects/"+anna+"/relations", nil, http.StatusOK, &relations)
 	if len(relations.Parents) != 1 || relations.Parents[0].UID != mother {
 		t.Errorf("Anna's parents = %+v, want the mother her brother gained", relations.Parents)
 	}

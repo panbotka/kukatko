@@ -22,6 +22,7 @@ func seedPhoto(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
 	taken := time.Date(2023, 6, 1, 12, 0, 0, 0, time.UTC)
 	created, err := store.Create(t.Context(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2023/06/" + hash + ".jpg",
 		FileName:   hash + ".jpg",

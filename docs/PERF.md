@@ -661,7 +661,7 @@ No index was added. A trigram (`pg_trgm` GIN) index over the folded expression
 would be the move if the library grows an order of magnitude and the whole-table
 count becomes a real path — it is not one today.
 
-### The album index (`GET /api/v1/albums`)
+### The album index (`GET /api/v1/p/<slug>/albums`)
 
 **Symptom (production, 2026-08-02).** The endpoint took **32.8 s** to return
 151 kB for 437 albums / 20 197 visible photos / 40 459 memberships, and the
@@ -811,7 +811,7 @@ worth more than the saved scan, because two implementations of "the newest photo
 carrying this label" would drift.
 
 
-### The review queue (`GET /api/v1/review/queue`)
+### The review queue (`GET /api/v1/p/<slug>/review/queue`)
 
 **Symptom (production, 2026-08-02).** The endpoint answered **200 OK after
 250.8 s** with a valid 89 kB payload for 105 named subjects / 113 628 faces /
@@ -937,7 +937,7 @@ binary) was sampled every 15 s for a whole `--full` run and peaked at **33 MB**,
 so it was not the importer;
 the idle serve process holds 45–60 MB. The log at that minute carries
 `review: queue rebuild hit its deadline, serving a partial queue` and a
-`GET /api/v1/review/queue` lasting **15 086 ms** — the rebuild deadline firing,
+`GET /api/v1/p/<slug>/review/queue` lasting **15 086 ms** — the rebuild deadline firing,
 which bounds *time* and says nothing at all about memory.
 
 **Root cause — two unbounded axes in `internal/candidates`, one request wide.**
@@ -1399,7 +1399,7 @@ re-reads a fresh one from the photo payload (`useThumbSrc`).
 ## 6. The map at library scale (`/map`, 2026-10-12)
 
 The map shows **every** located photo at once, so its cost scales with the library, not with a page.
-Measured against production (read-only account, `GET /api/v1/map/photos`; a throwaway Vite proxy
+Measured against production (read-only account, `GET /api/v1/p/<slug>/map/photos`; a throwaway Vite proxy
 serving the working tree, built with `vite build` and served by `vite preview` — dev-mode React is
 several times slower and its numbers mean nothing here) in the Pi's own Chromium. There is no CPU
 throttling: the Pi 5's Cortex-A76 cores are themselves in mid-range-phone territory.

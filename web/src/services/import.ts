@@ -87,7 +87,7 @@ export interface ImportRun {
   last_error: string
 }
 
-/** Response body of `GET /api/v1/import/runs`. */
+/** Response body of `GET /api/v1/p/<slug>/import/runs`. */
 export interface ImportRunsResponse {
   runs: ImportRun[]
   limit: number
@@ -145,7 +145,7 @@ export interface ImportFailure {
   resolved_at: string | null
 }
 
-/** Response body of `GET /api/v1/import/failures`. */
+/** Response body of `GET /api/v1/p/<slug>/import/failures`. */
 export interface ImportFailuresResponse {
   failures: ImportFailure[]
   limit: number

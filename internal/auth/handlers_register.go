@@ -31,9 +31,8 @@ type registerRequest struct {
 	InviteCode string `json:"invite_code"`
 	// Project is the slug of the project whose registration page the form was
 	// on: its switch and its secret decide, and the account becomes a member of
-	// it. Empty is the bootstrap project (transition: removed in the
-	// alias-removal step). A link or an invite names its own project, so this is
-	// read only on the secret path.
+	// it. Empty names no project, so the secret path is closed. A link or an
+	// invite names its own project, so this is read only on the secret path.
 	Project string `json:"project"`
 }
 
@@ -127,16 +126,12 @@ func (a *API) register(r *http.Request, in RegisterInput, slug string, entry aud
 }
 
 // registrationProject resolves the slug a secret registration names into the
-// project's uid. An empty slug is the bootstrap project (transition: removed in
-// the alias-removal step). A slug naming no project, or a deactivated one, is
-// ErrRegistrationClosed — a door that does not exist is as shut as one whose
+// project's uid. An empty slug, a slug naming no project and a deactivated
+// project are all ErrRegistrationClosed — a door that does not exist is as shut as one whose
 // admin closed it, and the anonymous GET /p/{project}/settings/public already
 // tells the two apart for anybody who asks.
 func (a *API) registrationProject(ctx context.Context, slug string) (string, error) {
-	if slug == "" {
-		return project.BootstrapUID, nil
-	}
-	if a.projects == nil {
+	if slug == "" || a.projects == nil {
 		return "", ErrRegistrationClosed
 	}
 	p, err := a.projects.GetBySlug(ctx, slug)

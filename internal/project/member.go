@@ -149,4 +149,7 @@ type MembershipSummary struct {
 	Role Role `json:"role"`
 	// Approved reports whether a project admin approved the membership.
 	Approved bool `json:"approved"`
+	// SubjectUID is the person in this project the account says it is ("this
+	// is me"), or nil when it has not said.
+	SubjectUID *string `json:"subject_uid"`
 }

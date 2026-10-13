@@ -145,7 +145,7 @@ export interface TaskRef {
   state: TaskState
 }
 
-/** Response body of `GET /api/v1/tasks`. */
+/** Response body of `GET /api/v1/p/<slug>/tasks`. */
 export interface TaskPage {
   tasks: Task[]
   /** How many match before paging, so a listing can say "1-25 of 63". */
@@ -155,7 +155,7 @@ export interface TaskPage {
 }
 
 /**
- * The queue at a glance, as returned by `GET /api/v1/tasks/summary`
+ * The queue at a glance, as returned by `GET /api/v1/p/<slug>/tasks/summary`
  * (`phototask.Summary`): how many tasks stand in each state, how many are open,
  * and — relative to the signed-in caller — how many wait on them and how many
  * have been answered. `by_state` always names every state, zero included.
@@ -193,7 +193,7 @@ export interface TaskListParams {
   offset?: number
 }
 
-/** Body of `POST /api/v1/tasks`. */
+/** Body of `POST /api/v1/p/<slug>/tasks`. */
 export interface TaskInput {
   title: string
   body?: string
@@ -214,7 +214,7 @@ export interface TaskInput {
 }
 
 /**
- * Body of `PATCH /api/v1/tasks/{uid}`. An absent field is left alone and an
+ * Body of `PATCH /api/v1/p/<slug>/tasks/{uid}`. An absent field is left alone and an
  * explicit empty string clears it, which is how a resolution is removed.
  */
 export interface TaskEdit {

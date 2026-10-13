@@ -10,7 +10,7 @@ export interface VersionInfo {
 }
 
 /**
- * What this instance is, as returned by `GET /api/v1/capabilities`: its optional
+ * What this instance is, as returned by `GET /api/v1/p/<slug>/capabilities`: its optional
  * feature flags plus the build the server runs. The shape is deliberately open
  * so future flags (e.g. whether maps are configured) can be added without a new
  * endpoint or a new provider.
@@ -50,7 +50,7 @@ export interface Capabilities {
 }
 
 /**
- * Fetches the instance feature flags from `GET /api/v1/capabilities`. The
+ * Fetches the instance feature flags from `GET /api/v1/p/<slug>/capabilities`. The
  * endpoint is behind auth, so the session cookie is sent with the request.
  *
  * @param signal optional AbortSignal to cancel the request (e.g. on unmount).

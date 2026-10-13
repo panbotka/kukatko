@@ -11,36 +11,39 @@ import "github.com/go-chi/chi/v5"
 //	POST   /auth/logout           public (idempotent)
 //	GET    /auth/password-reset/{token}   public, rate-limited per address
 //	POST   /auth/password-reset/{token}   public, rate-limited per address
-//	GET    /auth/me               RequireAuth
-//	POST   /auth/password         RequireAuth
-//	PUT    /auth/subject          RequireAuth
-//	POST   /auth/welcome-seen     RequireAuth
-//	POST   /auth/passkeys/register/begin   RequireAuth
-//	POST   /auth/passkeys/register/finish  RequireAuth
+//	GET    /auth/me               RequireSignedIn
+//	POST   /auth/password         RequireSignedIn
+//	POST   /auth/welcome-seen     RequireSignedIn
+//	POST   /auth/passkeys/register/begin   RequireSignedIn
+//	POST   /auth/passkeys/register/finish  RequireSignedIn
 //	POST   /auth/passkeys/login/begin      public, rate-limited per address
 //	POST   /auth/passkeys/login/finish     public, rate-limited per address
-//	GET    /auth/passkeys         RequireAuth
-//	DELETE /auth/passkeys/{id}    RequireAuth
-//	POST   /auth/tokens           RequireAuth
-//	GET    /auth/tokens           RequireAuth
-//	PATCH  /auth/tokens/{id}      RequireAuth (admin-only in the handler)
-//	DELETE /auth/tokens/{id}      RequireAuth
-//	GET    /users                 RequireAuth (uid + name of the project's members)
-//	GET    /admin/users           RequireAdmin
-//	POST   /admin/users           RequireAdmin
+//	GET    /auth/passkeys         RequireSignedIn
+//	DELETE /auth/passkeys/{id}    RequireSignedIn
+//	POST   /auth/tokens           RequireSignedIn
+//	GET    /auth/tokens           RequireSignedIn
+//	PATCH  /auth/tokens/{id}      RequireSignedIn (admin-only in the handler)
+//	DELETE /auth/tokens/{id}      RequireSignedIn
+//	GET    /admin/users           RequireMaintainer
+//	POST   /admin/users           RequireMaintainer
 //	PATCH  /admin/users/{uid}     RequireMaintainer
-//	PUT    /admin/users/{uid}/username   RequireAdmin
+//	PUT    /admin/users/{uid}/username   RequireMaintainer
 //	POST   /admin/users/{uid}/disable    RequireMaintainer
-//	POST   /admin/users/{uid}/password   RequireAdmin
-//	POST   /admin/users/{uid}/password-reset RequireAdmin
+//	POST   /admin/users/{uid}/password   RequireMaintainer
+//	POST   /admin/users/{uid}/password-reset RequireMaintainer
+//
+// and, in a project (under /api/v1/p/{project}):
+//
+//	GET    /users                 RequireAuth (uid + name of the project's members)
+//	PUT    /auth/subject          RequireAuth (the caller's "this is me" in the project)
 //
 // The server mounts the two halves apart: RegisterInstanceRoutes once under
-// /api/v1, RegisterDirectoryRoutes with the project-scoped API (under
-// /api/v1/p/{project} and its transition alias). RegisterRoutes mounts both on
-// one router, for a test or any caller with no project prefix to tell apart.
+// /api/v1, RegisterProjectRoutes with the project-scoped API under
+// /api/v1/p/{project}. RegisterRoutes mounts both on one router, for a test
+// that tells no project prefix apart.
 func (a *API) RegisterRoutes(r chi.Router) {
 	a.RegisterInstanceRoutes(r)
-	a.RegisterDirectoryRoutes(r)
+	a.RegisterProjectRoutes(r)
 }
 
 // RegisterInstanceRoutes mounts the instance-wide half of RegisterRoutes: every
@@ -67,16 +70,12 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 			r.Get("/{token}", a.handlePasswordResetStatus)
 			r.Post("/{token}", a.handlePasswordResetConsume)
 		})
-		r.With(a.RequireAuth).Get("/me", a.handleMe)
-		r.With(a.RequireAuth).Post("/password", a.handlePassword)
-		// Self-service and self-scoped: the account it changes is the session's,
-		// so it needs no role beyond being signed in — a viewer is as much a
-		// person in the photographs as a maintainer is.
-		r.With(a.RequireAuth).Put("/subject", a.handleSubject)
-		// Self-service for the same reason, and needs no role for a second one:
-		// the welcome is shown to everybody who signs in, so everybody who signs
-		// in must be able to say they have read it.
-		r.With(a.RequireAuth).Post("/welcome-seen", a.handleWelcomeSeen)
+		r.With(a.RequireSignedIn).Get("/me", a.handleMe)
+		r.With(a.RequireSignedIn).Post("/password", a.handlePassword)
+		// Self-service and self-scoped: the account written to is the session's,
+		// and the welcome is shown to everybody who signs in, so everybody who
+		// signs in must be able to say they have read it.
+		r.With(a.RequireSignedIn).Post("/welcome-seen", a.handleWelcomeSeen)
 		// The two public halves of a passkey sign-in sit beside the two
 		// authenticated halves of a passkey registration, because they are one
 		// feature and a client discovers them together. Their rate limiting is
@@ -87,13 +86,13 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 		r.Route("/passkeys", func(r chi.Router) {
 			r.Post("/login/begin", a.handleBeginPasskeyLogin)
 			r.Post("/login/finish", a.handleFinishPasskeyLogin)
-			r.With(a.RequireAuth).Post("/register/begin", a.handleBeginPasskeyRegistration)
-			r.With(a.RequireAuth).Post("/register/finish", a.handleFinishPasskeyRegistration)
-			r.With(a.RequireAuth).Get("/", a.handleListPasskeys)
-			r.With(a.RequireAuth).Delete("/{id}", a.handleDeletePasskey)
+			r.With(a.RequireSignedIn).Post("/register/begin", a.handleBeginPasskeyRegistration)
+			r.With(a.RequireSignedIn).Post("/register/finish", a.handleFinishPasskeyRegistration)
+			r.With(a.RequireSignedIn).Get("/", a.handleListPasskeys)
+			r.With(a.RequireSignedIn).Delete("/{id}", a.handleDeletePasskey)
 		})
 		r.Route("/tokens", func(r chi.Router) {
-			r.Use(a.RequireAuth)
+			r.Use(a.RequireSignedIn)
 			r.Post("/", a.handleCreateAPIToken)
 			r.Get("/", a.handleListAPITokens)
 			// The rate-limit exemption is an admin's decision, but the role check
@@ -106,30 +105,33 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 		})
 	})
 
+	// The account record is instance-wide — one account, every project it
+	// belongs to — so administering it is the system administrator's: a project
+	// admin manages roles and approval of their own members through
+	// /p/{project}/members (internal/memberapi).
 	r.Route("/admin/users", func(r chi.Router) {
-		r.Use(a.RequireAdmin)
+		r.Use(a.RequireMaintainer)
 		r.Get("/", a.handleListUsers)
 		r.Post("/", a.handleCreateUser)
-		// The account record carries the instance-wide disabled flag and, in the
-		// transitional vocabulary, a role; a project admin manages roles and
-		// approval of their own members through /p/{project}/members
-		// (internal/memberapi), so this edit is the system administrator's.
-		// Approval has no instance-wide route any more: it is a membership's.
-		r.With(a.RequireMaintainer).Patch("/{uid}", a.handleUpdateUser)
+		r.Patch("/{uid}", a.handleUpdateUser)
 		r.Put("/{uid}/username", a.handleRenameUser)
-		// Disabling locks the account out of every project of the instance, so
-		// it is the system administrator's call, not one project admin's.
-		r.With(a.RequireMaintainer).Post("/{uid}/disable", a.handleDisableUser)
+		r.Post("/{uid}/disable", a.handleDisableUser)
 		r.Post("/{uid}/password", a.handleResetPassword)
 		r.Post("/{uid}/password-reset", a.handleIssuePasswordReset)
 	})
 }
 
-// RegisterDirectoryRoutes mounts the project-scoped half of RegisterRoutes:
-// GET /users, the people of the library for every signed-in role — uid and
-// name only. It sits beside /users/{uid}/avatar (internal/userpicapi), which
-// is the picture for the same uid, and deliberately apart from /admin/users,
-// which is the administrative record of an account.
-func (a *API) RegisterDirectoryRoutes(r chi.Router) {
+// RegisterProjectRoutes mounts the project-scoped half of RegisterRoutes:
+// GET /users, the people of the project for every signed-in role — uid and
+// name only — and PUT /auth/subject, the caller's own "this is me" among the
+// project's people. GET /users sits beside /users/{uid}/avatar
+// (internal/userpicapi), which is the picture for the same uid, and
+// deliberately apart from /admin/users, which is the administrative record of
+// an account.
+func (a *API) RegisterProjectRoutes(r chi.Router) {
 	r.With(a.RequireAuth).Get("/users", a.handleDirectory)
+	// Self-service and self-scoped: the membership it changes is the session
+	// account's in the request's project, so it needs no role beyond being a
+	// member — a viewer is as much a person in the photographs as an admin is.
+	r.With(a.RequireAuth).Put("/auth/subject", a.handleSubject)
 }

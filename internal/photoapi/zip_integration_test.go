@@ -18,7 +18,7 @@ import (
 )
 
 // zipURL is the bulk ZIP download endpoint under the API base path.
-func zipURL(base string) string { return base + "/api/v1/photos/download-zip" }
+func zipURL(base string) string { return base + apiV + "/photos/download-zip" }
 
 // postZip posts a zipDownloadRequest-shaped body to the ZIP endpoint and returns
 // the response; the caller closes the body.

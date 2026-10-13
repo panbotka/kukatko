@@ -18,6 +18,7 @@ import (
 // text fields, leaving the rest of the metadata at zero values.
 func textPhoto(hash, fileName, title, description, notes string) photos.Photo {
 	return photos.Photo{
+		ProjectID:   project.BootstrapUID,
 		FileHash:    hash,
 		FilePath:    "2023/06/" + hash + ".jpg",
 		FileName:    fileName,

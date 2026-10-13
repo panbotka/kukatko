@@ -575,8 +575,8 @@ var knownActions = map[string]struct{}{
 // system administrator runs it (create, edit, purge, the storage move), the
 // retention purge and the library wipe. Such an entry may carry no project —
 // and Meta.Entry never stamps the request's project onto one, so an account
-// renamed on an unprefixed route is not filed under the bootstrap project its
-// request happened to resolve. Every other known action is about one project's
+// renamed is never filed under whatever project its request happened to
+// resolve. Every other known action is about one project's
 // content or membership and must record it (ProjectScoped).
 var instanceActions = map[string]struct{}{
 	ActionUserCreate: {}, ActionUserUpdate: {}, ActionUserDisable: {}, ActionUserPassword: {},

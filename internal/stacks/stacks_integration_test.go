@@ -38,7 +38,8 @@ func makePhoto(t *testing.T, store *photos.Store, hash, name, mime string, w, h 
 	t.Helper()
 	taken := time.Date(2021, 7, 4, 10, 0, 0, 0, time.UTC)
 	created, err := store.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2021/07/" + hash, FileName: name, FileSize: int64(w * h),
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2021/07/" + hash, FileName: name, FileSize: int64(w * h),
 		FileMime: mime, FileWidth: w, FileHeight: h, MediaType: photos.MediaImage,
 		TakenAt: &taken, TakenAtSource: "exif", Title: "Title " + hash,
 		Lat: ptr(50.08), Lng: ptr(14.42),

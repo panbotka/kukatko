@@ -35,6 +35,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every cluster request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and cluster APIs behind an httptest server over the
 // integration database.
 type env struct {
@@ -73,8 +76,12 @@ func newEnv(t *testing.T) *env {
 	})
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -131,7 +138,8 @@ func mustDo(t *testing.T, client *http.Client, method, urlStr string, body []byt
 func (e *env) seedFace(t *testing.T, hash string) {
 	t.Helper()
 	created, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileWidth: 1000, FileHeight: 1000, FileOrientation: 1,
 	})
 	if err != nil {
@@ -177,7 +185,7 @@ func TestListClusters_EditorSeesClusters(t *testing.T) {
 	env.firstClusterUID(t)
 	client := env.login(t, "editor", auth.AccountEditor)
 
-	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
+	resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/faces/clusters", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)
@@ -200,9 +208,9 @@ func TestListClusters_ViewerForbidden(t *testing.T) {
 	client := env.login(t, "viewer", auth.AccountViewer)
 
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/api/v1/faces/clusters"},
-		{http.MethodPost, "/api/v1/faces/clusters/fcany/assign"},
-		{http.MethodPost, "/api/v1/faces/clusters/fcany/remove-face"},
+		{http.MethodGet, apiV + "/faces/clusters"},
+		{http.MethodPost, apiV + "/faces/clusters/fcany/assign"},
+		{http.MethodPost, apiV + "/faces/clusters/fcany/remove-face"},
 	} {
 		resp := mustDo(t, client, tc.method, env.server.URL+tc.path, []byte(`{}`))
 		_ = resp.Body.Close()
@@ -222,14 +230,14 @@ func TestClusters_CuratorReachesEveryRoute(t *testing.T) {
 	uid := env.firstClusterUID(t)
 	client := env.login(t, "curator", auth.AccountCurator)
 
-	listResp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
+	listResp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/faces/clusters", nil)
 	_ = listResp.Body.Close()
 	if listResp.StatusCode != http.StatusOK {
 		t.Errorf("curator GET clusters status = %d, want 200", listResp.StatusCode)
 	}
 
 	removeResp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/faces/clusters/"+uid+"/remove-face", []byte(`not json`))
+		env.server.URL+apiV+"/faces/clusters/"+uid+"/remove-face", []byte(`not json`))
 	_ = removeResp.Body.Close()
 	if removeResp.StatusCode != http.StatusBadRequest {
 		t.Errorf("curator remove-face status = %d, want 400 from the handler", removeResp.StatusCode)
@@ -237,7 +245,7 @@ func TestClusters_CuratorReachesEveryRoute(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"subject_name": "Dana"})
 	assignResp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/faces/clusters/"+uid+"/assign", body)
+		env.server.URL+apiV+"/faces/clusters/"+uid+"/assign", body)
 	_ = assignResp.Body.Close()
 	if assignResp.StatusCode != http.StatusOK {
 		t.Errorf("curator assign status = %d, want 200", assignResp.StatusCode)
@@ -253,7 +261,7 @@ func TestAssignCluster_Endpoint(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"subject_name": "Carol"})
 	resp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/faces/clusters/"+uid+"/assign", body)
+		env.server.URL+apiV+"/faces/clusters/"+uid+"/assign", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("assign status = %d, want 200", resp.StatusCode)
@@ -279,7 +287,7 @@ func TestAssignCluster_UnknownCluster(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]string{"subject_name": "Nobody"})
 	resp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/faces/clusters/fcdoesnotexist/assign", body)
+		env.server.URL+apiV+"/faces/clusters/fcdoesnotexist/assign", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("assign unknown status = %d, want 404", resp.StatusCode)
@@ -308,7 +316,7 @@ func TestRemoveFace_Endpoint(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{"photo_uid": strayPhoto, "face_index": 0})
 	resp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/faces/clusters/"+uid+"/remove-face", body)
+		env.server.URL+apiV+"/faces/clusters/"+uid+"/remove-face", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("remove-face status = %d, want 200", resp.StatusCode)
@@ -334,7 +342,7 @@ func TestListClusters_SchedulesPreparation(t *testing.T) {
 	client := env.login(t, "editor", auth.AccountEditor)
 
 	for range 3 {
-		resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/faces/clusters", nil)
+		resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/faces/clusters", nil)
 		var out cluster.Listing
 		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			t.Fatalf("decode: %v", err)
@@ -365,7 +373,7 @@ func TestListClusters_Pages(t *testing.T) {
 	client := env.login(t, "editor", auth.AccountEditor)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/faces/clusters?limit=1&offset=0", nil)
+		env.server.URL+apiV+"/faces/clusters?limit=1&offset=0", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)
@@ -391,7 +399,7 @@ func (e *env) listGroups(t *testing.T, client *http.Client) struct {
 		Pending  int            `json:"pending"`
 		Grouping bool           `json:"grouping"`
 	}
-	resp := mustDo(t, client, http.MethodGet, e.server.URL+"/api/v1/faces/clusters", nil)
+	resp := mustDo(t, client, http.MethodGet, e.server.URL+apiV+"/faces/clusters", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET clusters status = %d, want 200", resp.StatusCode)

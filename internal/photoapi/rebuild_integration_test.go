@@ -71,7 +71,7 @@ func TestRebuildEndpoints_rbac(t *testing.T) {
 			t.Run(path+"/"+string(tt.role), func(t *testing.T) {
 				client, _ := env.login(t, "rb-"+path+"-"+string(tt.role), tt.role)
 				resp := mustDo(t, client, http.MethodPost,
-					env.server.URL+"/api/v1/photos/"+photo.UID+"/"+path, nil)
+					env.server.URL+apiV+"/photos/"+photo.UID+"/"+path, nil)
 				defer func() { _ = resp.Body.Close() }()
 				if resp.StatusCode != tt.want {
 					t.Errorf("%s status = %d, want %d", tt.role, resp.StatusCode, tt.want)
@@ -80,7 +80,7 @@ func TestRebuildEndpoints_rbac(t *testing.T) {
 		}
 		t.Run(path+"/anonymous", func(t *testing.T) {
 			resp := mustDo(t, &http.Client{}, http.MethodPost,
-				env.server.URL+"/api/v1/photos/"+photo.UID+"/"+path, nil)
+				env.server.URL+apiV+"/photos/"+photo.UID+"/"+path, nil)
 			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusUnauthorized {
 				t.Errorf("anonymous status = %d, want 401", resp.StatusCode)
@@ -99,7 +99,7 @@ func TestRedetectFaces_reportsAndAudits(t *testing.T) {
 	photo := env.seedPhoto(t, photos.Photo{Title: "audited"}, "rebuild-audit.jpg", 51, 52, 53)
 
 	resp := mustDo(t, client, http.MethodPost,
-		env.server.URL+"/api/v1/photos/"+photo.UID+"/redetect-faces", nil)
+		env.server.URL+apiV+"/photos/"+photo.UID+"/redetect-faces", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -140,7 +140,7 @@ func TestReembed_offlineQueuesTheForcedJob(t *testing.T) {
 
 	for range 2 {
 		resp := mustDo(t, client, http.MethodPost,
-			env.server.URL+"/api/v1/photos/"+photo.UID+"/reembed", nil)
+			env.server.URL+apiV+"/photos/"+photo.UID+"/reembed", nil)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200 — an offline sidecar queues, it does not fail", resp.StatusCode)
 		}
@@ -196,7 +196,7 @@ func hasAuditAction(entries []audit.Record, action, targetUID string) bool {
 // code and the decoded status word (empty when the body is not a rebuild).
 func postReembed(t *testing.T, client *http.Client, url, photoUID string) (int, string) {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodPost, url+"/api/v1/photos/"+photoUID+"/reembed", nil)
+	resp := mustDo(t, client, http.MethodPost, url+apiV+"/photos/"+photoUID+"/reembed", nil)
 	defer func() { _ = resp.Body.Close() }()
 	var body struct {
 		Status string `json:"status"`

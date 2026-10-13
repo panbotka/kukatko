@@ -71,9 +71,9 @@ func seedOCRDone(t *testing.T, db *database.DB, uid string) {
 // seedCluster inserts one auto-cluster waiting for a name.
 func seedCluster(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
-	const stmt = `INSERT INTO face_clusters (uid, centroid, size) VALUES ($1, $2, 2)`
+	const stmt = `INSERT INTO face_clusters (uid, centroid, size, project_id) VALUES ($1, $2, 2, $3)`
 	vec := vectors.ToHalfVec(make([]float32, vectors.FaceDim))
-	if _, err := db.Pool().Exec(t.Context(), stmt, uid, vec); err != nil {
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, vec, project.BootstrapUID); err != nil {
 		t.Fatalf("seed cluster %s: %v", uid, err)
 	}
 }

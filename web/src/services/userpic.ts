@@ -1,5 +1,5 @@
 import { ApiError, NetworkError } from './auth'
-import { instancePath } from './api'
+import { apiPath, getCurrentProjectSlug, instancePath } from './api'
 
 /**
  * Which source currently answers for an account's picture, as the server
@@ -45,13 +45,24 @@ export const PICTURE_ACCEPT = 'image/jpeg,image/png,image/webp'
  * two.
  */
 export function userAvatarUrl(uid: string, version = 0): string {
-  const url = instancePath(`/users/${encodeURIComponent(uid)}/avatar`)
+  const url = projectAwarePath(`/users/${encodeURIComponent(uid)}/avatar`)
   return version === 0 ? url : `${url}?v=${String(version)}`
+}
+
+/**
+ * The URL of a picture read whose answer depends on the project: inside one it
+ * is the project's own route (`/api/v1/p/<slug>/…`), whose chain falls back to
+ * the account's person **in that project**; with no project current (a
+ * sign-in or chooser page) the instance route, which has no person to fall
+ * back to.
+ */
+function projectAwarePath(path: string): string {
+  return getCurrentProjectSlug() === null ? instancePath(path) : apiPath(path)
 }
 
 /** Reads which source currently answers for the signed-in account. */
 export async function fetchMyPicture(signal?: AbortSignal): Promise<PictureState> {
-  const res = await request('/auth/picture', { method: 'GET', signal })
+  const res = await requestUrl(projectAwarePath('/auth/picture'), { method: 'GET', signal })
   if (!res.ok) {
     throw new ApiError(res.status, await readErrorMessage(res))
   }
@@ -110,8 +121,13 @@ export async function clearMyPicture(signal?: AbortSignal): Promise<void> {
 
 /** Issues one request, turning a transport failure into a NetworkError. */
 async function request(path: string, init: RequestInit): Promise<Response> {
+  return requestUrl(instancePath(path), init)
+}
+
+/** {@link request} for an already built URL. */
+async function requestUrl(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(instancePath(path), { credentials: 'same-origin', ...init })
+    return await fetch(url, { credentials: 'same-origin', ...init })
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error

@@ -20,6 +20,7 @@ import (
 // leaving everything else at its zero value.
 func ocrPhoto(hash, title string) photos.Photo {
 	return photos.Photo{
+		ProjectID: project.BootstrapUID,
 		FileHash:  hash,
 		FilePath:  "2024/06/" + hash + ".jpg",
 		FileName:  hash + ".jpg",

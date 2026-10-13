@@ -28,9 +28,10 @@ func seedRepeatFixture(t *testing.T, db *database.DB) {
 			t.Fatalf("seeding (%s): %v", sql, err)
 		}
 	}
-	exec(`INSERT INTO photos (uid, file_hash, file_path, file_name)
-	      VALUES ('ph_1', 'h1', '2026/01/h1.jpg', 'h1.jpg'), ('ph_2', 'h2', '2026/01/h2.jpg', 'h2.jpg')`)
-	exec(`INSERT INTO subjects (uid, slug, name) VALUES ('su_1', 'jana', 'Jana')`)
+	exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, project_id)
+	      VALUES ('ph_1', 'h1', '2026/01/h1.jpg', 'h1.jpg', $1), ('ph_2', 'h2', '2026/01/h2.jpg', 'h2.jpg', $1)`,
+		project.BootstrapUID)
+	exec(`INSERT INTO subjects (uid, slug, name, project_id) VALUES ('su_1', 'jana', 'Jana', $1)`, project.BootstrapUID)
 	exec(`INSERT INTO markers (uid, photo_uid, subject_uid, type, x, y, w, h) VALUES
 	      ('mk_1', 'ph_1', 'su_1', 'face', 0.1, 0.1, 0.2, 0.2),
 	      ('mk_2', 'ph_1', 'su_1', 'face', 0.5, 0.5, 0.2, 0.2)`)

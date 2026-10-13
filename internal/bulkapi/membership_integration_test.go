@@ -21,7 +21,7 @@ func (e *env) postMembershipSummary(t *testing.T, c *http.Client, uids []string)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	return e.mustDo(t, c, http.MethodPost, "/api/v1/photos/bulk/membership-summary", body)
+	return e.mustDo(t, c, http.MethodPost, apiV+"/photos/bulk/membership-summary", body)
 }
 
 // TestBulkMembershipSummary_countsAndNamesFiledPhotos covers the question the

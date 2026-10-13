@@ -87,7 +87,7 @@ export interface KeepMarkerResult {
 
 /**
  * Fetches one page of repeated-marker findings from
- * `GET /api/v1/duplicate-markers`, worst (most markers) first. Throws an
+ * `GET /api/v1/p/<slug>/duplicate-markers`, worst (most markers) first. Throws an
  * {@link ApiError} carrying the HTTP status on failure (503 when the review is
  * not wired server-side).
  */
@@ -114,7 +114,7 @@ export async function fetchDuplicateMarkers(
 }
 
 /**
- * Resolves one finding via `POST /api/v1/duplicate-markers/keep`: the named
+ * Resolves one finding via `POST /api/v1/p/<slug>/duplicate-markers/keep`: the named
  * marker stays with the person and every other valid face marker of theirs on
  * that photo loses its subject — but survives as a region, because on a group
  * shot it usually belongs to somebody else.
@@ -141,7 +141,7 @@ export async function keepMarker(
 
 /**
  * Flags one marker as holding no face at all via
- * `POST /api/v1/duplicate-markers/invalid`. The marker is not deleted — only the
+ * `POST /api/v1/p/<slug>/duplicate-markers/invalid`. The marker is not deleted — only the
  * flag changes, which is enough for every listing that means "a real face" to
  * skip it.
  */

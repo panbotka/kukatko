@@ -17,7 +17,7 @@ export interface UploadWarning {
 export type UploadOutcome = 'created' | 'duplicate' | 'error'
 
 /**
- * Per-file result returned by `POST /api/v1/upload`, mirroring the backend
+ * Per-file result returned by `POST /api/v1/p/<slug>/upload`, mirroring the backend
  * `ingest.FileResult`. `status` carries HTTP-style per-file semantics (201
  * created, 409 duplicate, 413/415/500 error) so a single multi-file upload can
  * report mixed outcomes. `code` is the stable identifier of a refusal the UI can
@@ -48,7 +48,7 @@ export const LIMIT_CODES: ReadonlySet<string> = new Set(['file_too_large', 'quot
  */
 export const SIZE_FIELD = 'size'
 
-/** Response body of `POST /api/v1/upload`: one result per uploaded file. */
+/** Response body of `POST /api/v1/p/<slug>/upload`: one result per uploaded file. */
 export interface UploadResponse {
   results: UploadFileResult[]
 }
@@ -60,7 +60,7 @@ export interface UploadFileOptions {
   /** Aborts the in-flight request when triggered. */
   signal?: AbortSignal
   /**
-   * Where to post the file; defaults to the curator upload (`/api/v1/upload`).
+   * Where to post the file; defaults to the curator upload (`/api/v1/p/<slug>/upload`).
    * An upload link posts to `/api/v1/u/<code>/upload` instead.
    */
   url?: string
@@ -181,7 +181,7 @@ function errorMessage(body: unknown): string | undefined {
 }
 
 /**
- * Uploads a single file to `POST /api/v1/upload` and resolves with its per-file
+ * Uploads a single file to `POST /api/v1/p/<slug>/upload` and resolves with its per-file
  * result. One file per request keeps progress accurate and lets the caller cap
  * concurrency by scheduling many independent uploads.
  *

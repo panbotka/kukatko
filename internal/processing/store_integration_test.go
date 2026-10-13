@@ -40,7 +40,8 @@ func TestEvidence_freshPhotoHasNone(t *testing.T) {
 	store := photos.NewStore(db.Pool())
 
 	photo, err := store.Create(t.Context(), photos.Photo{
-		FileHash: "hash-fresh", FilePath: "2026/08/fresh.jpg", FileName: "fresh.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-fresh", FilePath: "2026/08/fresh.jpg", FileName: "fresh.jpg",
 		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
 	})
 	if err != nil {
@@ -78,7 +79,8 @@ func TestEvidence_hlsIsTheNewestRendition(t *testing.T) {
 	dbtest.TruncateAll(t, db)
 
 	photo, err := photos.NewStore(db.Pool()).Create(t.Context(), photos.Photo{
-		FileHash: "hash-hls", FilePath: "2026/08/clip.mp4", FileName: "clip.mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-hls", FilePath: "2026/08/clip.mp4", FileName: "clip.mp4",
 		FileSize: 1, FileMime: "video/mp4", MediaType: photos.MediaVideo,
 	})
 	if err != nil {
@@ -125,7 +127,8 @@ func TestEvidence_thumbnailNeedsTheThumbnails(t *testing.T) {
 	store := processing.NewStore(db.Pool())
 
 	photo, err := photoStore.Create(t.Context(), photos.Photo{
-		FileHash: "hash-thumb", FilePath: "2026/10/thumb.jpg", FileName: "thumb.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-thumb", FilePath: "2026/10/thumb.jpg", FileName: "thumb.jpg",
 		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
 	})
 	if err != nil {
@@ -148,7 +151,8 @@ func TestEvidence_thumbnailNeedsTheThumbnails(t *testing.T) {
 	}
 
 	other, err := photoStore.Create(t.Context(), photos.Photo{
-		FileHash: "hash-thumb-2", FilePath: "2026/10/thumb2.jpg", FileName: "thumb2.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-thumb-2", FilePath: "2026/10/thumb2.jpg", FileName: "thumb2.jpg",
 		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
 	})
 	if err != nil {
@@ -184,14 +188,16 @@ func TestLibraryReads(t *testing.T) {
 	ctx := t.Context()
 
 	live, err := photoStore.Create(ctx, photos.Photo{
-		FileHash: "hash-live", FilePath: "2026/10/live.jpg", FileName: "live.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-live", FilePath: "2026/10/live.jpg", FileName: "live.jpg",
 		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
 	})
 	if err != nil {
 		t.Fatalf("Create live: %v", err)
 	}
 	archived, err := photoStore.Create(ctx, photos.Photo{
-		FileHash: "hash-archived", FilePath: "2026/10/archived.jpg", FileName: "archived.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "hash-archived", FilePath: "2026/10/archived.jpg", FileName: "archived.jpg",
 		FileSize: 1, FileMime: "image/jpeg", MediaType: photos.MediaImage,
 	})
 	if err != nil {

@@ -295,10 +295,10 @@ func TestSystemStatus_VideoSection(t *testing.T) {
 func seedStatusVideo(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
 	const stmt = `
-INSERT INTO photos (uid, file_hash, file_path, file_name, media_type)
-VALUES ($1, $2, $3, $4, 'video')`
+INSERT INTO photos (uid, file_hash, file_path, file_name, media_type, project_id)
+VALUES ($1, $2, $3, $4, 'video', $5)`
 	_, err := db.Pool().Exec(t.Context(), stmt,
-		uid, "hash-"+uid, "2026/08/"+uid+".mp4", uid+".mp4")
+		uid, "hash-"+uid, "2026/08/"+uid+".mp4", uid+".mp4", project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("seed video %s: %v", uid, err)
 	}
@@ -308,10 +308,10 @@ VALUES ($1, $2, $3, $4, 'video')`
 func seedStatusPhoto(t *testing.T, db *database.DB, uid string, size int64, archived bool) {
 	t.Helper()
 	const stmt = `
-INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, archived_at)
-VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END)`
+INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, archived_at, project_id)
+VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END, $7)`
 	_, err := db.Pool().Exec(t.Context(), stmt,
-		uid, "hash-"+uid, "2026/08/"+uid+".jpg", uid+".jpg", size, archived)
+		uid, "hash-"+uid, "2026/08/"+uid+".jpg", uid+".jpg", size, archived, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("seed photo %s: %v", uid, err)
 	}

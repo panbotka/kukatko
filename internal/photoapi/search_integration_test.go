@@ -16,7 +16,7 @@ import (
 // the body, asserting a 200.
 func getSearch(t *testing.T, client *http.Client, base, query string) listResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/search?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/search?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("search status = %d for %q, want 200", resp.StatusCode, query)
@@ -62,7 +62,7 @@ func TestSearch_endpoint(t *testing.T) {
 	})
 
 	t.Run("missing query is 400", func(t *testing.T) {
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/search", nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/search", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("search without q status = %d, want 400", resp.StatusCode)
@@ -70,7 +70,7 @@ func TestSearch_endpoint(t *testing.T) {
 	})
 
 	t.Run("blank query is 400", func(t *testing.T) {
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/search?q=%20%20", nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/search?q=%20%20", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("search with blank q status = %d, want 400", resp.StatusCode)

@@ -39,9 +39,10 @@ func newStores(t *testing.T) (*organize.Store, *photos.Store, *auth.Store, *data
 func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
-		FileHash: hash,
-		FilePath: "2024/01/" + hash + ".jpg",
-		FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash,
+		FilePath:  "2024/01/" + hash + ".jpg",
+		FileName:  hash + ".jpg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)
@@ -53,10 +54,11 @@ func makePhoto(t *testing.T, store *photos.Store, hash string) string {
 func makePhotoAt(t *testing.T, store *photos.Store, hash string, takenAt time.Time) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
-		FileHash: hash,
-		FilePath: "2024/01/" + hash + ".jpg",
-		FileName: hash + ".jpg",
-		TakenAt:  &takenAt,
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash,
+		FilePath:  "2024/01/" + hash + ".jpg",
+		FileName:  hash + ".jpg",
+		TakenAt:   &takenAt,
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)

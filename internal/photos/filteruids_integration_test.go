@@ -36,15 +36,18 @@ func TestFilterUIDs_appliesFiltersAndIgnoresUnknown(t *testing.T) {
 	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
 
 	pub := mustCreate(t, store, photos.Photo{
-		FileHash: "f-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "f-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
 		Title: "public", TakenAt: &jun, TakenAtSource: "exif",
 	})
 	recent := mustCreate(t, store, photos.Photo{
-		FileHash: "f-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "f-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		Title: "recent", TakenAt: &jun, TakenAtSource: "exif",
 	})
 	old := mustCreate(t, store, photos.Photo{
-		FileHash: "f-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "f-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
 		Title: "old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 

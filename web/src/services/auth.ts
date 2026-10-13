@@ -1,4 +1,4 @@
-import { instancePath } from './api'
+import { apiPath, instancePath } from './api'
 
 /**
  * User roles mirrored from the backend (`internal/auth/role.go`), on a strict
@@ -80,6 +80,12 @@ export interface ProjectMembership {
   role: ProjectRole
   /** False while a project admin has not approved the membership yet. */
   approved: boolean
+  /**
+   * The person of this project the account says it is ("this is me"), or
+   * null when it has not said. Inside a project `useAuth` puts it on
+   * `user.subject_uid`.
+   */
+  subject_uid?: string | null
 }
 
 /** Successful auth response body (`POST /auth/login`, `GET /auth/me`). */
@@ -165,8 +171,13 @@ async function readErrorMessage(res: Response): Promise<string> {
  * recognising `AbortError`, since their own cancellation is not an outage.
  */
 async function apiFetch(path: string, init: RequestInit): Promise<Response> {
+  return fetchUrl(instancePath(path), init)
+}
+
+/** {@link apiFetch} for an already built URL — a project-scoped one, say. */
+async function fetchUrl(url: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(instancePath(path), init)
+    return await fetch(url, init)
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw error
@@ -340,8 +351,10 @@ export async function changePassword(
 }
 
 /**
- * Says which person of the library the signed-in user is, or takes it back when
- * `subjectUid` is null (`PUT /api/v1/auth/subject`).
+ * Says which person of the current project's library the signed-in user is, or
+ * takes it back when `subjectUid` is null (`PUT /api/v1/p/<slug>/auth/subject`).
+ * Who you are is a fact about one project's people, so the link lives on the
+ * membership of the current project and `GET /auth/me` reports it per project.
  *
  * It is self-service: the account written to is the session's, never one named
  * in the body. Setting it publishes that person's cover photo — when they have
@@ -352,7 +365,7 @@ export async function changePassword(
  * @throws ApiError with `status` 400 when the UID names nobody in the library.
  */
 export async function setMySubject(subjectUid: string | null, signal?: AbortSignal): Promise<User> {
-  const res = await apiFetch('/auth/subject', {
+  const res = await fetchUrl(apiPath('/auth/subject'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',

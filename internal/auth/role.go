@@ -64,14 +64,13 @@ func (r Role) CanImport() bool {
 	return r.CanMaintain()
 }
 
-// AccountRole is the transitional five-rung vocabulary — viewer, curator,
-// editor, admin, maintainer — that the admin user endpoints accept and that the
-// "role" field of a serialised User still reports, so the frontend keeps working
-// until it reads instance_role and the per-project roles itself. It is never an
-// authorization decision: Split turns it into the instance role and the role in
-// the bootstrap project, which is what is stored and what is checked.
-//
-// Transition: removed together with the unprefixed admin user endpoints.
+// AccountRole is the pre-project five-rung vocabulary — viewer, curator,
+// editor, admin, maintainer — that the maintainer-only /admin/users endpoints
+// accept and that the "role" field of a serialised User reports. The frontend
+// no longer reads it (it reads instance_role and the per-project roles of
+// GET /auth/me). It is never an authorization decision: Split turns it into the
+// instance role and the role in the bootstrap project, which is what is stored
+// and what is checked.
 type AccountRole string
 
 const (

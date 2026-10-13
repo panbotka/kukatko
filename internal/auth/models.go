@@ -73,6 +73,10 @@ var (
 	// project is nobody there). It is a rejected input rather than a
 	// missing account, so callers answer it with 400 and not 404.
 	ErrSubjectNotFound = errors.New("auth: no such person in the library")
+	// ErrNoProject indicates a project-scoped read or write was asked for
+	// without naming its project. There is no default project, so it is a
+	// programming error, never a client's.
+	ErrNoProject = errors.New("auth: no project given")
 	// ErrUsernameTooLong indicates the username exceeds MaxUsernameLen
 	// characters. Its message names the offending field so it can be surfaced
 	// verbatim in a 400.
@@ -117,11 +121,11 @@ type User struct {
 	// Role is the account's instance role (users.role): user or maintainer.
 	Role Role `json:"instance_role"`
 	// ProjectRole is the account's role in the bootstrap project, or "" when it
-	// is not a member there. Transition: read alongside the account until the
-	// users.* readers move to the per-project membership; the request's own
-	// project role is ProjectRoleFromContext.
+	// is not a member there: the vocabulary of the maintainer-only /admin/users
+	// record. It decides nothing — the request's own project role is
+	// ProjectRoleFromContext.
 	ProjectRole project.Role `json:"-"`
-	// AccountRole is the transitional five-rung "role" the frontend still reads
+	// AccountRole is the pre-project five-rung "role" of the /admin/users record
 	// (see AccountRole): "maintainer" for a maintainer, otherwise ProjectRole.
 	AccountRole AccountRole `json:"role"`
 	Disabled    bool        `json:"disabled"`
@@ -138,8 +142,9 @@ type User struct {
 	// SubjectUID names the person of the library this account belongs to, or is
 	// nil when nobody has said. It is read off a membership — who you are is a
 	// fact about one project's people: the bootstrap project's on an account
-	// read (transition, like ProjectRole), the request's project on GET
-	// /auth/me and on the account page's own write. Several accounts may name the same subject (a
+	// read (the /admin/users record, like ProjectRole); GET /auth/me lists each
+	// membership's own, and PUT /p/{project}/auth/subject answers with that
+	// project's. Several accounts may name the same subject (a
 	// shared family login and a personal one are both that person), and deleting
 	// the subject clears it back to nil, so every reader has to survive an absent
 	// link — which is also the common case.
@@ -222,9 +227,9 @@ func slideExpiry(created, current, now time.Time, ttl, maxLifetime time.Duration
 
 // governs reports whether u holds the governance privileges of an
 // account-wide decision that is not about one project — the rate-limit exemption
-// on API tokens, revoking somebody else's token: a maintainer, or an admin of the
-// bootstrap project. Transition: account-wide governance becomes the
-// maintainer's alone once projects have admins of their own.
+// on API tokens, revoking somebody else's token. A token works in every project
+// its owner belongs to, so that is the system administrator's (a maintainer's)
+// alone: a project's admin governs that project, never the accounts.
 func (u User) governs() bool {
-	return u.Role.CanMaintain() || u.ProjectRole.IsAdmin()
+	return u.Role.CanMaintain()
 }

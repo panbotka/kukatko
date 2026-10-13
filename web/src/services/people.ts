@@ -156,7 +156,7 @@ export interface SubjectCount extends Subject {
   cover_face?: SubjectFace
 }
 
-/** Response body of `GET /api/v1/subjects`. */
+/** Response body of `GET /api/v1/p/<slug>/subjects`. */
 interface SubjectsResponse {
   subjects: SubjectCount[]
 }
@@ -350,7 +350,7 @@ export interface FaceView {
   suggestions: Suggestion[]
 }
 
-/** Response body of `GET /api/v1/photos/{uid}/faces` (`facematch.FacesResponse`). */
+/** Response body of `GET /api/v1/p/<slug>/photos/{uid}/faces` (`facematch.FacesResponse`). */
 export interface FacesResponse {
   photo_uid: string
   width: number
@@ -493,7 +493,7 @@ export interface ClusterView {
 }
 
 /**
- * One page of `GET /api/v1/faces/clusters` (`cluster.Listing` plus `grouping`).
+ * One page of `GET /api/v1/p/<slug>/faces/clusters` (`cluster.Listing` plus `grouping`).
  *
  * `total` counts the groups that are *ready* — the ones whose cached summary the
  * server has already built — and `pending` the ones it is still preparing in the
@@ -610,7 +610,7 @@ export interface OutlierFace {
 }
 
 /**
- * Response body of `GET /api/v1/subjects/{uid}/outliers`. `meaningful` is false
+ * Response body of `GET /api/v1/p/<slug>/subjects/{uid}/outliers`. `meaningful` is false
  * when too few faces exist to single any out (the faces are still returned,
  * ranked). `count` and `avg_distance` describe the full scored set even when a
  * threshold/limit narrows `faces`; `no_embedding` is how many of the subject's

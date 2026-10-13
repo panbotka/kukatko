@@ -19,6 +19,7 @@ import (
 // order shows up as a mismatch rather than as a plausible-looking zero.
 func iptcPhoto(hash string) photos.Photo {
 	return photos.Photo{
+		ProjectID:    project.BootstrapUID,
 		FileHash:     hash,
 		FilePath:     "2023/06/" + hash + ".jpg",
 		FileName:     hash + ".jpg",
@@ -106,7 +107,8 @@ func TestIPTCColumns_defaults(t *testing.T) {
 	store, _ := newStore(t)
 
 	created, err := store.Create(t.Context(), photos.Photo{
-		FileHash: "iptc-empty", FilePath: "2023/06/e.jpg", FileName: "e.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "iptc-empty", FilePath: "2023/06/e.jpg", FileName: "e.jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

@@ -33,6 +33,7 @@ func buildNotificationAPI(
 		Storage:           mediaStore,
 		Push:              pushSettings(cfg),
 		RequireAuth:       authAPI.RequireAuth,
+		RequireSignedIn:   authAPI.RequireSignedIn,
 		SubscribeThrottle: limit.KeyedMiddlewareExcept(commentRateKey, auth.RateLimitExempt),
 	})
 }

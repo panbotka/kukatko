@@ -26,7 +26,7 @@ export interface SearchHistoryEntry {
   searched_at: string
 }
 
-/** Response body of `GET /api/v1/search-history`. */
+/** Response body of `GET /api/v1/p/<slug>/search-history`. */
 interface SearchHistoryResponse {
   searches: SearchHistoryEntry[]
 }

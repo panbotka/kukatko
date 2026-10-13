@@ -146,7 +146,7 @@ configuration key both here **and** into `config.example.yaml`.
   **initialisation segment alone** — a player fetches it before any media segment, so a rendition without it
   cannot be played whatever else survives — and the playlist is no evidence at all, being a database column
   rather than an object. `--missing-renditions` **drops the row** (`renditions dropped=N`): the clip stops
-  claiming it streams and lands in exactly the state `POST /api/v1/process/hls` looks for, so recovery is one
+  claiming it streams and lands in exactly the state `POST /api/v1/p/<slug>/process/hls` looks for, so recovery is one
   background job. It removes no media — not the original, and not the stray segments of a partly-surviving
   rendition, which simply become orphans the next scan reports.
   `--delete-orphan-segments` is the **only repair that deletes anything from the store**, which is why the scan
@@ -180,7 +180,7 @@ configuration key both here **and** into `config.example.yaml`.
   can be run from cron and, above all, **before any risky operation** (a migration, upgrade, restore drill),
   which is exactly the moment a person is at the terminal. When `sidecar.enabled: false`, the command
   **fails** instead of a silent “0 scheduled”. The full format is in [`docs/RESTORE.md`](RESTORE.md),
-  the HTTP counterpart is `POST /api/v1/process/sidecars`.
+  the HTTP counterpart is `POST /api/v1/p/<slug>/process/sidecars`.
   `sidecar families` writes **every project's family tree export** (`families.yaml` under each project's storage
   prefix — the root of the storage for `v` — `internal/familyexportjob`) **now**, printing each key written, and
   unlike its sibling it writes the files itself rather than enqueuing: there is one file per project and the work
@@ -355,11 +355,11 @@ kukatko storage migrate-to-r2 --delete-local                 # upload and clean 
 This library was originally filled by importers written for the two systems that held it before.
 They ran once, reconciled COMPLETE on 2026-08-05, and were deleted — some 20 000 lines kept alive
 only to prove a finished job. **`kukatko import dir` is the only import there is**, and the
-`POST /api/v1/import/*` triggers and `GET /api/v1/import/verify` are gone with them.
+`POST /api/v1/p/<slug>/import/*` triggers and `GET /api/v1/p/<slug>/import/verify` are gone with them.
 
 What stays is live data, not leftovers:
 
-- the `import_runs`/`import_failures` history (`GET /api/v1/import/runs`, `GET /api/v1/import/failures`,
+- the `import_runs`/`import_failures` history (`GET /api/v1/p/<slug>/import/runs`, `GET /api/v1/p/<slug>/import/failures`,
   the `/import` page), including those first runs as provenance;
 - the `photos.photoprism_uid`/`photoprism_file_hash`/`photosorter_uid` columns and the
   `photoprism_aliases` table. **Do not drop them** — `uid:pt…` search resolves through them and every
@@ -374,7 +374,7 @@ and `TestLoad_retiredImportEnvIsIgnored` in `internal/config`).
 ### `kukatko maintenance nameless-subjects` — the nameless catch-all subject
 
 Reports, and on request removes, subjects whose **name identifies nobody** — empty, whitespace, or punctuation
-alone. Such a subject cannot be created deliberately: `POST /api/v1/subjects` rejects a name with no letter or
+alone. Such a subject cannot be created deliberately: `POST /api/v1/p/<slug>/subjects` rejects a name with no letter or
 digit. One in the catalogue was therefore minted by an importer, and it behaves as a **catch-all**: the
 find-or-create-by-name paths used to key on `people.Slugify`, which is total and answers `subject` for a
 nameless face, so the first unnamed face created one empty-named subject and every unnamed face after it was
@@ -426,8 +426,8 @@ browser replays with `--undo` and one written by `--undo-file` uploads to the pa
 as the `nameless_detach` / `nameless_restore` **jobs** rather than inside the request: detaching production's
 catch-all moves ~111 000 faces into the partial "unassigned faces" HNSW index (migration 0047), which is
 minutes of index maintenance. Watch the job queue on the same page for progress. The page works on the
-request's project — through the instance route that is the bootstrap project; use the CLI's `--project` for
-any other. Both jobs carry `project_uid` in their payload, and their dedup key is (type, project, subject)
+current project (the switcher's; the routes are `/api/v1/p/<slug>/maintenance/nameless-subjects*`), as the
+CLI does with `--project`. Both jobs carry `project_uid` in their payload, and their dedup key is (type, project, subject)
 (`idx_jobs_nameless_dedup`, migration 0105), so scheduling the same detach or restore twice while the first
 is still queued collapses into it.
 
@@ -591,6 +591,14 @@ role collapse, and every catalogue difference (`digest:photos`, `digest:album_ph
 `audit_log` entry written in the window (`created_at` after A). An unexplained catalogue difference stops
 the rollout.
 
+**Migrations past 0104.** A deploy from a release older than the whole chain also crosses 0105–0114, which
+add `table-added:project_invites` and `table-added:storage_rekey_runs` and drop the five per-library
+`users` columns the memberships now hold (0110: `column-removed:users.approved_at`, `…subject_uid`,
+`…last_seen_at`, `…visit_reference_at`, `…task_digest_at`). 0114 only drops the transitional `DEFAULT` of
+every `project_id` column, which the inventory (names and types only) does not see. The exact set for a
+given pair of releases is the one the pre-release rehearsal records in
+[`MIGRATION_SAFETY.md`](MIGRATION_SAFETY.md); use that, not a guess.
+
 The owner's checklist — in this order, and the storage move only at the very end:
 
 1. **Backup.** `kukatko backup` in the running (old) container, and note the dump key. A dump of a schema
@@ -602,12 +610,28 @@ The owner's checklist — in this order, and the storage move only at the very e
 3. **Inventory A** with the **new** image, against the production database, before switching:
    `docker run --rm --network <db-network> --entrypoint /app/kukatko -e KUKATKO_DATABASE_URL=… -e
    KUKATKO_STORAGE_…(read-only key) -v /root/inventory:/inv <new-image> maintenance inventory --storage --out /inv/A`.
-4. **Deploy.** The container's start applies the migrations (rehearsed: 0.27 s on the box, ~1–2 s expected
+4. **Repoint the API clients.** There is no unprefixed project route any more: `GET /api/v1/photos` and
+   every other catalogue path without `/p/<slug>/` is the API's 404. The embedded frontend is shipped with
+   the binary, but anything configured by hand must name its project before the switch: an MCP connector
+   on `…/api/v1/mcp` becomes `…/api/v1/p/v/mcp` ([`MCP.md`](MCP.md)), a `kukatko ctl` context needs a
+   project (`ctl context set <name> --project v`), and a script calling the API gets the `/p/v` prefix.
+5. **Deploy.** The container's start applies the migrations (rehearsed: 0.27 s on the box, ~1–2 s expected
    on the VPS) — the outage is the container restart plus that.
-5. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
+6. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
    once the live drift has been read and allowed.
-6. **UI spot-check:** sign in, the library grid, a search, one album, one person, the timeline, `/auth/me`.
-7. **Only then** consider starting the storage move — it is a separate job, started by hand (runbook below).
+7. **Verify `v`.** The bootstrap project is the whole old library, so check it is whole and reachable:
+   `/system/projects` lists `v` (Veselice), active, with the member count of `users.tsv` and the photo count
+   of inventory A; `/system/projects/v` shows its storage layout as the store root. Sign in as an ordinary
+   member: the chooser (or `/` straight into `/p/v/`) opens the library grid, a search, one album, one
+   person, the timeline and the map, and `GET /api/v1/auth/me` lists the membership of `v` with its role.
+   `kukatko maintenance scan` reports nothing missing for `v`. Anything off stops here — roll back below.
+8. **Start the storage move** of `v` — a separate job, started by hand, only after a **fresh backup** taken
+   on the new release: `kukatko storage rekey v --dry-run`, then the „Spustit přesun" button on
+   `/system/projects/v` (or `kukatko storage rekey v`). The runbook below says what it does and refuses.
+9. **Watch the page.** `/system/projects/v` refreshes every 3 s: photos and bytes moved, the rate and ETA,
+   the last key, the errors; `/system/projects` shows „přesun 42 %" beside `v`. Pause, resume or retry from
+   the same card. When the run says `done`, run `kukatko maintenance scan` again and review any root-layout
+   orphan it reports before deleting anything.
 
 **Rollback** without restoring a backup: [`docs/migrations-rollback/`](migrations-rollback/README.md) holds
 the hand-run down scripts (newest first, each `psql -1`), proven to return inventory A exactly; then start
@@ -1838,7 +1862,7 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   only, never values). `media_base_url` + `url_signing_secret` are a **pair and optional as a pair**:
   set both and objects are served as signed URLs by the edge Worker (then `url_ttl` must be positive);
   set neither and nothing is signed — `R2.URL()` returns `""`, `internal/mediaurl` falls back to the
-  application's own `/api/v1/photos/…` routes and the app streams the bytes itself, which is what a
+  application's own `/api/v1/p/<slug>/photos/…` routes and the app streams the bytes itself, which is what a
   bucket with no Worker in front of it (development against a local MinIO) needs. Exactly one of the
   pair fails startup, since it means either URLs the Worker will reject or a secret that signs nothing. Neither the secrets nor the access key are ever logged or appear in an error.
   **The Worker itself is not in this repo** — the bucket, its source, bindings, and hostname are defined and deployed by
@@ -1925,14 +1949,14 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   does, so an instance that does not stream its videos should not spend the CPU. With it **on**, every
   subsequently uploaded video enqueues its encode (the enqueue lives in the upload pipeline next to
   `image_embed`/`face_detect`); videos already in the library are **not** encoded retroactively — the
-  maintainer-only **`POST /api/v1/process/hls`** is what catches them up, enqueueing an `hls_transcode` job
+  maintainer-only **`POST /api/v1/p/<slug>/process/hls`** is what catches them up, enqueueing an `hls_transcode` job
   for every non-archived video with no `photo_hls_renditions` row (and, with **`?all=true`**, for every
   non-archived video, which is how a newly enabled quality level or a changed `segment_seconds` reaches the
   library — the job replaces a rendition rather than adding to it). It only enqueues: with the one-slot pool
   below, a library of videos is hours of background work. The same encode is also a per-photo processing step
   (`hls_transcode` in the photo detail's `processing` block), so its state is visible next to the thumbnails
   and the embedding, and a maintainer can re-run it for one video with
-  `POST /api/v1/photos/{uid}/process/hls_transcode`. With the switch off both refuse — `/process/hls` with
+  `POST /api/v1/p/<slug>/photos/{uid}/process/hls_transcode`. With the switch off both refuse — `/process/hls` with
   **503**, the per-photo step with **409** — rather than queueing work no handler would claim. With it
   **off** no handler is registered and nothing is enqueued — a job of a type nothing can claim would wait in
   the queue forever — and the renditions already in the store are left exactly as they are.
@@ -1946,7 +1970,7 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   unknown) rather than being a flat constant. The temp directory it encodes into is `storage.temp_path`, which
   must have room for a whole rendition. Objects land under `hls/<file_hash>/<rendition>/` and the row goes to
   `photo_hls_renditions`; both are removed with the photo (purge cascades the row, the trash sweep the prefix).
-  `enabled` is also reported to every signed-in client as **`video_streaming`** on `GET /api/v1/capabilities`,
+  `enabled` is also reported to every signed-in client as **`video_streaming`** on `GET /api/v1/p/<slug>/capabilities`,
   alongside `semantic_search` and `passkeys` — a static deployment fact, read once by the frontend's
   `CapabilitiesProvider`. It is what lets a grid tile mark a clip whose rendition has not been produced yet
   (the listing's `hls:false`) without lying on an instance that will never produce one: with the switch off,
@@ -2194,7 +2218,7 @@ pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 
   and worst to discover. When `false` no `family_export` job is enqueued or registered either, and the file
   already in storage stays as it is; write it by hand with `kukatko sidecar families`.
 - **MCP keys (`mcp.*`, `internal/config` + `internal/mcpapi`):** the **MCP server** — the library exposed
-  to an AI agent (Model Context Protocol) at `POST /api/v1/mcp`, so it can search, read, and organize within it
+  to an AI agent (Model Context Protocol) at `POST /api/v1/p/<slug>/mcp`, so it can search, read, and organize within it
   ("find all photos of grandma from the sixties and put them in an album"). `enabled` (bool, **default false**) is
   the **master switch and is deliberately off**: the endpoint is a new attack surface, so it is **opt-in** — and when
   `false` the route is **not mounted at all** (`RegisterRoutes` registers nothing), so the path **does not exist**,

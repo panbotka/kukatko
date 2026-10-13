@@ -196,7 +196,22 @@ invalidates anything on its own. Stepping out to look at a photo properly (the c
 question, same score — rather than starting over. A leaderboard counts who has answered the most and how many days in a row, because a
 shared library is tidied by more than one person.
 
-### The everyday library
+### Projects — several libraries in one instance
+
+One Kukátko can hold several **projects**: independent libraries with their own photos, people,
+albums, labels, tasks, settings and members — a family archive and a village chronicle side by side,
+neither able to see into the other. You only ever see the projects you belong to, and in each you have
+a role of your own (*prohlížeč*, *kurátor*, *editor*, *správce*): you may curate one library and only
+look at another. Two kinds of administrator look after them: a **project's administrator** decides who
+is in that one project — members, roles, approvals, invitations, its registration page and welcome
+text — and nothing beyond it; the **system administrator** runs the instance: founds, edits and switches
+off projects, sets their limits and banners, moves their storage, and manages accounts, imports, backups
+and maintenance. You join a project through its own registration page (`/p/<project>/register`,
+open only while that project's administrator allows it, and approved by them), through an invitation link
+(no waiting), or by being added by an administrator. Who you are among the people of a library — the
+*this is me* that gives you *Moje fotky* and your face on your comments — is set per project, so you can
+be somebody in one library and nobody in another. Scripts, `kukatko ctl` and AI agents address a project
+the same way, by its slug in the URL (`/api/v1/p/<project>/…`).
 
 - **Addresses now start with `/p/<project>`.** One instance can hold several independent libraries
   (projects), so every page of a library carries it: the library is `/p/v`, a photo
@@ -265,6 +280,8 @@ shared library is tidied by more than one person.
   under its folder, and leaves the other projects untouched. It only reports what it would delete
   until it is run with `--yes --confirm <slug>`, it refuses the first project of the instance unless
   told otherwise, and it writes a report of what it removed.
+### The everyday library
+
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

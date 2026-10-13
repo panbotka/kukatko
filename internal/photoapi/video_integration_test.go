@@ -25,6 +25,7 @@ func (e *env) seedVideo(t *testing.T, name string, data []byte) photos.Photo {
 		t.Fatalf("storage.Store(%s): %v", name, err)
 	}
 	created, err := e.store.Create(t.Context(), photos.Photo{
+		ProjectID:     project.BootstrapUID,
 		FileHash:      stored.Hash,
 		FilePath:      stored.RelPath,
 		FileName:      name,
@@ -59,7 +60,7 @@ func TestVideoStream_rangeRequest(t *testing.T) {
 		data[i] = byte(i % 251)
 	}
 	video := env.seedVideo(t, "clip.mp4", data)
-	url := env.server.URL + "/api/v1/photos/" + video.UID + "/video"
+	url := env.server.URL + apiV + "/photos/" + video.UID + "/video"
 
 	// Ranged fetch: bytes 1000-1999 inclusive (1000 bytes).
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
@@ -100,7 +101,7 @@ func TestVideoStream_fullAndMime(t *testing.T) {
 
 	data := bytes.Repeat([]byte("kukatko-video"), 64)
 	video := env.seedVideo(t, "movie.mp4", data)
-	url := env.server.URL + "/api/v1/photos/" + video.UID + "/video"
+	url := env.server.URL + apiV + "/photos/" + video.UID + "/video"
 
 	resp := mustDo(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()
@@ -130,7 +131,7 @@ func TestVideoStream_notAVideo(t *testing.T) {
 	client, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	image := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
-	url := env.server.URL + "/api/v1/photos/" + image.UID + "/video"
+	url := env.server.URL + apiV + "/photos/" + image.UID + "/video"
 
 	resp := mustDo(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()

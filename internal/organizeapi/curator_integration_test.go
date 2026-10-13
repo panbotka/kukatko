@@ -28,20 +28,20 @@ func TestRoleEnforcement_curatorOwnsAlbumsAndLabels(t *testing.T) {
 	viewer := env.login(t, "viewer", auth.AccountViewer)
 	photo := env.seedPhoto(t, "cur1")
 
-	resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Pouť"}`))
+	resp := env.mustDo(t, curator, http.MethodPost, apiV+"/albums", []byte(`{"title":"Pouť"}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("curator POST /albums = %d, want 201", resp.StatusCode)
 	}
 	var album organize.Album
 	decodeBody(t, resp, &album)
-	resp = env.mustDo(t, curator, http.MethodPost, "/api/v1/labels", []byte(`{"name":"Průvod"}`))
+	resp = env.mustDo(t, curator, http.MethodPost, apiV+"/labels", []byte(`{"name":"Průvod"}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("curator POST /labels = %d, want 201", resp.StatusCode)
 	}
 	var label organize.Label
 	decodeBody(t, resp, &label)
 
-	albumPath, labelPath := "/api/v1/albums/"+album.UID, "/api/v1/labels/"+label.UID
+	albumPath, labelPath := apiV+"/albums/"+album.UID, apiV+"/labels/"+label.UID
 	steps := []curatorStep{
 		{http.MethodPatch, albumPath, `{"title":"Pouť 2026"}`, http.StatusOK},
 		{http.MethodPost, albumPath + "/photos", `{"photo_uids":["` + photo + `"]}`, http.StatusOK},
@@ -55,8 +55,8 @@ func TestRoleEnforcement_curatorOwnsAlbumsAndLabels(t *testing.T) {
 	// The viewer goes first, so each of its refusals hits a route whose target
 	// still exists and a 403 cannot be a 404 in disguise.
 	for _, step := range append([]curatorStep{
-		{http.MethodPost, "/api/v1/albums", `{"title":"Trip"}`, 0},
-		{http.MethodPost, "/api/v1/labels", `{"name":"Beach"}`, 0},
+		{http.MethodPost, apiV + "/albums", `{"title":"Trip"}`, 0},
+		{http.MethodPost, apiV + "/labels", `{"name":"Beach"}`, 0},
 	}, steps...) {
 		resp := env.mustDo(t, viewer, step.method, step.path, bodyOf(step.body))
 		_ = resp.Body.Close()

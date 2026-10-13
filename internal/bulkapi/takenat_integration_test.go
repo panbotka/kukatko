@@ -85,7 +85,7 @@ func TestBulk_setTakenAtEachPrecision(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			uid := env.seedPhoto(t, "scan-"+tt.precision)
-			resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+			resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 				setTakenAtBody(tt.precision, tt.value, uid))
 			if resp.StatusCode != http.StatusOK {
 				t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
@@ -128,7 +128,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 	ctx := t.Context()
 
 	uid := env.seedPhoto(t, "guessed")
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 		setTakenAtBody("decade", "1970", uid))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("first bulk status = %d, want 200", resp.StatusCode)
@@ -149,7 +149,7 @@ func TestBulk_setTakenAtExactDateDropsTheEstimate(t *testing.T) {
 		t.Fatalf("seed note: %v", err)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 		setTakenAtBody("day", "1974-06-14", uid))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("second bulk status = %d, want 200", resp.StatusCode)
@@ -188,7 +188,7 @@ func TestBulk_setTakenAtIsTransactional(t *testing.T) {
 			"add_to_albums": []string{"missing-album-uid"},
 		},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bulk status = %d, want 400", resp.StatusCode)
 	}
@@ -217,7 +217,7 @@ func TestBulk_setTakenAtRejectsABadDate(t *testing.T) {
 	editor, _ := env.login(t, "editor", auth.AccountEditor)
 
 	uid := env.seedPhoto(t, "badvalue")
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 		setTakenAtBody("year", "1974-06-14", uid))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bulk status = %d, want 400", resp.StatusCode)
@@ -240,7 +240,7 @@ func TestBulk_setTakenAtViewerForbidden(t *testing.T) {
 	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	uid := env.seedPhoto(t, "viewerdate")
-	resp := env.mustDo(t, viewer, http.MethodPost, "/api/v1/photos/bulk",
+	resp := env.mustDo(t, viewer, http.MethodPost, apiV+"/photos/bulk",
 		setTakenAtBody("year", "1974", uid))
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("bulk status = %d, want 403", resp.StatusCode)
@@ -277,7 +277,7 @@ func TestBulk_setTakenAtLandsInTheRightPeriod(t *testing.T) {
 		t.Fatalf("date the control photo: %v", err)
 	}
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 		setTakenAtBody("year", "1974", scanned...))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
@@ -393,7 +393,7 @@ func TestBulk_clearTakenAtPreservesTheOutgoingDate(t *testing.T) {
 		t.Fatalf("date the control photo: %v", err)
 	}
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 		clearTakenAtBody(uids...))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
@@ -461,7 +461,7 @@ func TestBulk_clearTakenAtOnUndatedPhotosPreservesNothing(t *testing.T) {
 	}
 
 	for range 2 {
-		resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk",
+		resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk",
 			clearTakenAtBody(never, cleared))
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
@@ -502,7 +502,7 @@ func TestBulk_clearTakenAtRejectsSetTakenAt(t *testing.T) {
 			"clear_taken_at": true,
 		},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bulk status = %d, want 400", resp.StatusCode)
 	}

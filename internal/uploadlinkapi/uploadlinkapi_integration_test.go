@@ -48,6 +48,9 @@ import (
 // integrationPassword is the password of every account these tests sign in.
 const integrationPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix the upload-link management goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // seededIngest answers every file with the photo seeded under its filename.
 type seededIngest struct {
 	photos map[string]string
@@ -103,7 +106,7 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 	}
 	photoStore := photos.NewStore(db.Pool())
 	for _, name := range []string{"a.jpg", "b.jpg", "c.jpg", "d.jpg"} {
-		created, err := photoStore.Create(ctx, photos.Photo{FileHash: "h-" + name, FilePath: "2026/06/" + name, FileName: name})
+		created, err := photoStore.Create(ctx, photos.Photo{ProjectID: project.BootstrapUID, FileHash: "h-" + name, FilePath: "2026/06/" + name, FileName: name})
 		if err != nil {
 			t.Fatalf("creating photo: %v", err)
 		}
@@ -129,8 +132,14 @@ func newIntegrationEnvWith(t *testing.T, opts ...envOption) *integrationEnv {
 	api := uploadlinkapi.NewAPI(cfg)
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: the public /u/{code} half at
+		// the instance level, the curators' management under the project prefix.
+		api.RegisterPublicRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterManagementRoutes(r)
+		})
 	})
 	e.server = httptest.NewServer(r)
 	t.Cleanup(e.server.Close)
@@ -187,7 +196,7 @@ func (e *integrationEnv) createLink(t *testing.T, cookies []*http.Cookie) (strin
 	body, _ := json.Marshal(map[string]any{
 		"title": "Pouť", "album_uids": []string{e.album.UID}, "label_uids": []string{e.label.UID}, "valid_days": 7,
 	})
-	resp := e.send(t, http.MethodPost, "/api/v1/upload-links", "application/json", bytes.NewReader(body), cookies)
+	resp := e.send(t, http.MethodPost, apiV+"/upload-links", "application/json", bytes.NewReader(body), cookies)
 	if resp.StatusCode != http.StatusCreated {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("create = %d: %s", resp.StatusCode, raw)
@@ -355,7 +364,7 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 	code, linkUID := e.createLink(t, curator)
 	e.openRegistration(t, true)
 
-	if resp := e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/revoke", "", nil, curator); resp.StatusCode != http.StatusOK {
+	if resp := e.send(t, http.MethodPost, apiV+"/upload-links/"+linkUID+"/revoke", "", nil, curator); resp.StatusCode != http.StatusOK {
 		t.Fatalf("revoke = %d", resp.StatusCode)
 	}
 	if resp := e.send(t, http.MethodGet, "/api/v1/u/"+code, "", nil, nil); resp.StatusCode != http.StatusGone {
@@ -367,7 +376,7 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 	if resp := e.register(t, code, nil); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("register = %d, want 403", resp.StatusCode)
 	}
-	if resp := e.send(t, http.MethodGet, "/api/v1/upload-links", "", nil, nil); resp.StatusCode != http.StatusUnauthorized {
+	if resp := e.send(t, http.MethodGet, apiV+"/upload-links", "", nil, nil); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous management list = %d, want 401", resp.StatusCode)
 	}
 }
@@ -376,7 +385,7 @@ func TestRevokedLinkRefusesEverything(t *testing.T) {
 // by UID — "" for a link listed without one.
 func (e *integrationEnv) listedCodes(t *testing.T, cookies []*http.Cookie) map[string]string {
 	t.Helper()
-	resp := e.send(t, http.MethodGet, "/api/v1/upload-links", "", nil, cookies)
+	resp := e.send(t, http.MethodGet, apiV+"/upload-links", "", nil, cookies)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list = %d", resp.StatusCode)
 	}
@@ -413,7 +422,7 @@ func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
 	if _, listed := e.listedCodes(t, other)[linkUID]; listed {
 		t.Error("another curator lists the link")
 	}
-	if resp := e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/new-code", "", nil, other); resp.StatusCode != http.StatusNotFound {
+	if resp := e.send(t, http.MethodPost, apiV+"/upload-links/"+linkUID+"/new-code", "", nil, other); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("other curator new-code = %d, want 404", resp.StatusCode)
 	}
 
@@ -428,7 +437,7 @@ func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
 	}
 	restore := func(c string) int {
 		body := strings.NewReader(`{"code":"` + c + `"}`)
-		return e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/restore-code", "application/json",
+		return e.send(t, http.MethodPost, apiV+"/upload-links/"+linkUID+"/restore-code", "application/json",
 			body, curator).StatusCode
 	}
 	if status := restore("Zz9Zz9Zz"); status != http.StatusUnprocessableEntity {
@@ -441,7 +450,7 @@ func TestLinkCodeCanBeCopiedRestoredAndReplaced(t *testing.T) {
 		t.Errorf("restored link lists code %q, want %q", got, code)
 	}
 
-	if resp := e.send(t, http.MethodPost, "/api/v1/upload-links/"+linkUID+"/new-code", "", nil, curator); resp.StatusCode != http.StatusOK {
+	if resp := e.send(t, http.MethodPost, apiV+"/upload-links/"+linkUID+"/new-code", "", nil, curator); resp.StatusCode != http.StatusOK {
 		t.Fatalf("new-code = %d", resp.StatusCode)
 	}
 	fresh := e.listedCodes(t, curator)[linkUID]

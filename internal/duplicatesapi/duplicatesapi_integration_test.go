@@ -34,6 +34,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every duplicates request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and duplicates APIs behind an httptest server over the
 // integration database, plus the stores used to seed and verify state.
 type env struct {
@@ -64,8 +67,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -108,7 +115,8 @@ func (e *env) login(t *testing.T, username string, role auth.AccountRole) (*http
 func (e *env) seedPhoto(t *testing.T, hash, title, description string, width, height int) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileMime: "image/jpeg", FileWidth: width, FileHeight: height,
 		Title: title, Description: description,
 	})
@@ -182,7 +190,7 @@ func (e *env) merge(t *testing.T, c *http.Client, keeper string, members []strin
 	body, _ := json.Marshal(map[string]any{
 		"keeper_uid": keeper, "member_uids": members, "dry_run": dryRun,
 	})
-	resp := e.do(t, c, http.MethodPost, "/api/v1/duplicates/merge", body)
+	resp := e.do(t, c, http.MethodPost, apiV+"/duplicates/merge", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return dupmerge.Result{}, resp.StatusCode

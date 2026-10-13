@@ -289,17 +289,14 @@ func appendOpsAPIs(
 }
 
 // requestOptions builds the server options that decide who and where a request
-// is: the trusted proxies that may rename the client, auth.WithProject in front
-// of every /api/v1 route, which names the request's project before any Require*
-// guard runs (the bootstrap project for a route without {project}), and the
-// project-scoped API mounted under /api/v1/p/{project} plus its unprefixed
-// transition alias (see projectRoutes).
+// is: the trusted proxies that may rename the client, and the project-scoped
+// API mounted under /api/v1/p/{project}, where auth.WithProject names the
+// request's project before any Require* guard runs (see projectRoutes). The
+// instance-wide routes carry no project at all.
 func requestOptions(cfg *config.Config, db *database.DB, logger *slog.Logger, api *projectAPI) []server.Option {
-	projects := project.NewStore(db.Pool())
 	return []server.Option{
 		server.WithTrustedProxies(trustedProxies(cfg, logger)),
-		server.WithAPIMiddleware(auth.WithProject(projects)),
-		projectRoutes(projects, api),
+		projectRoutes(project.NewStore(db.Pool()), api),
 	}
 }
 
@@ -395,11 +392,12 @@ func buildServices(
 		bulk:       buildBulkAPI(cfg, db, authAPI, exports.sidecar, enqueuer).RegisterRoutes,
 		duplicates: buildDuplicatesAPI(cfg, db, authAPI, vectorStore).RegisterRoutes,
 		process:    processAPI.RegisterRoutes, imports: buildImportAPI(db, authAPI).RegisterRoutes,
-		upload: uploads.upload, uploadLinks: uploads.uploadLinks, users: authAPI.RegisterDirectoryRoutes,
+		upload: uploads.upload, uploadLinks: uploads.uploadLinks, users: authAPI.RegisterProjectRoutes,
+		maintenance: maintenanceAPI.RegisterProjectRoutes,
 	}
 	opts := slices.Concat([]server.Option{ // the instance-wide groups; the rest mount with projectRoutes
 		server.WithAPI(authAPI.RegisterInstanceRoutes), server.WithAPI(uploads.public),
-		server.WithAPI(jobAPI.RegisterRoutes), server.WithAPI(maintenanceAPI.RegisterRoutes),
+		server.WithAPI(jobAPI.RegisterRoutes), server.WithAPI(maintenanceAPI.RegisterInstanceRoutes),
 	}, discoveryAPIOptions(api, cfg, db, authAPI, mediaStore, matchSvc),
 		readAPIOptions(api, cfg, db, authAPI, mediaStore, exports))
 	return opts, api, backgroundServices{worker: jobWorker, trash: trashSvc}, nil
@@ -434,7 +432,9 @@ func discoveryAPIOptions(
 	api.avatars = buildAvatarAPI(cfg, db, authAPI, mediaStore).RegisterRoutes
 	// The same crop, for an account rather than a person: it shares the
 	// avatar renderer and its cache, so a photo cut for one is not cut twice.
-	return []server.Option{server.WithAPI(buildUserPicAPI(cfg, db, authAPI, mediaStore).RegisterRoutes)}
+	pictures := buildUserPicAPI(cfg, db, authAPI, mediaStore)
+	api.userPictures = pictures.RegisterProjectRoutes
+	return []server.Option{server.WithAPI(pictures.RegisterRoutes)}
 }
 
 // readAPIOptions fills api with the project-scoped read/curation groups that

@@ -66,7 +66,7 @@ func newPasskeyEnv(t *testing.T, loginLimit int, enabled bool) *passkeyEnv {
 
 	r := chi.NewRouter()
 	r.Use(clientip.Middleware(nil))
-	r.Route("/api/v1", api.RegisterRoutes)
+	r.Route("/api/v1", api.RegisterInstanceRoutes)
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)

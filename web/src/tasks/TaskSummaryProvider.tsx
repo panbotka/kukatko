@@ -16,7 +16,7 @@ import { TaskSummaryContext, type TaskSummaryState } from './TaskSummaryContext'
 export const REFRESH_INTERVAL_MS = 60_000
 
 /**
- * Provides the queue's counts (`GET /api/v1/tasks/summary`) to the shell: the
+ * Provides the queue's counts (`GET /api/v1/p/<slug>/tasks/summary`) to the shell: the
  * navigation badge, the hamburger's dot and the queue page's chips all read
  * from here, so they can never disagree with one another.
  *

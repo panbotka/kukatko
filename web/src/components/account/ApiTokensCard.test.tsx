@@ -62,25 +62,33 @@ function stamp(iso: string): string {
 }
 
 /**
- * A signed-in identity for the card. Only `isAdmin` matters to it: the
- * rate-limit switch exists for an admin and for nobody else.
+ * A signed-in identity for the card. Only `isMaintainer` matters to it: the
+ * rate-limit switch exists for the system administrator and for nobody else —
+ * not even a project's admin (`isAdmin` stays true for every identity here, so
+ * a switch that still read it would be caught).
  */
-function auth(isAdmin: boolean): AuthContextValue {
+function auth(isMaintainer: boolean): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'jana', display_name: 'Jana', role: isAdmin ? 'admin' : 'editor' },
-    role: isAdmin ? 'admin' : 'editor',
+    user: {
+      uid: 'u1',
+      username: 'jana',
+      display_name: 'Jana',
+      role: isMaintainer ? 'maintainer' : 'admin',
+    },
+    role: isMaintainer ? 'maintainer' : 'admin',
     downloadToken: null,
     canCurate: true,
     canWrite: true,
-    isAdmin,
+    isAdmin: true,
+    isMaintainer,
   } as unknown as AuthContextValue
 }
 
-function renderCard(isAdmin = false) {
+function renderCard(isMaintainer = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <AuthContext.Provider value={auth(isAdmin)}>
+      <AuthContext.Provider value={auth(isMaintainer)}>
         <MemoryRouter>
           <ApiTokensCard />
         </MemoryRouter>
@@ -285,7 +293,7 @@ describe('ApiTokensCard rate-limit exemption', () => {
     return row
   }
 
-  it('badges an exempt token for everybody, admin or not', async () => {
+  it('badges an exempt token for everybody, maintainer or not', async () => {
     listMock.mockResolvedValue([USED_TOKEN, UNLIMITED_TOKEN])
     renderCard()
 
@@ -295,7 +303,7 @@ describe('ApiTokensCard rate-limit exemption', () => {
     expect(within(rowFor('backup script')).queryByText('No rate limit')).not.toBeInTheDocument()
   })
 
-  it('offers the switch to nobody below admin', async () => {
+  it('offers the switch to nobody but the maintainer, a project admin included', async () => {
     listMock.mockResolvedValue([UNLIMITED_TOKEN])
     renderCard()
     await screen.findByText('agent')
@@ -305,7 +313,7 @@ describe('ApiTokensCard rate-limit exemption', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('lets an admin ask for an exempt token when creating one', async () => {
+  it('lets the maintainer ask for an exempt token when creating one', async () => {
     const user = userEvent.setup()
     listMock.mockResolvedValue([])
     renderCard(true)

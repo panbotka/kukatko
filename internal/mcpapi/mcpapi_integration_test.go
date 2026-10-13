@@ -37,6 +37,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every MCP request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and MCP APIs behind an httptest server over the integration
 // database.
 type env struct {
@@ -78,8 +81,12 @@ func newEnvWith(t *testing.T, enabled bool) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -120,7 +127,8 @@ func (e *env) token(t *testing.T, username string, role auth.AccountRole) string
 func (e *env) seedPhoto(t *testing.T, hash string) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg",
 		FileName: hash + ".jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {
@@ -207,7 +215,7 @@ func (e *env) rpcWithHeader(t *testing.T, bearer, method string, params any) (in
 		t.Fatalf("marshal request: %v", err)
 	}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		e.server.URL+"/api/v1/mcp", bytes.NewReader(encoded))
+		e.server.URL+apiV+"/mcp", bytes.NewReader(encoded))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

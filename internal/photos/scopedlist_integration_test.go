@@ -36,20 +36,24 @@ func TestList_albumScope(t *testing.T) {
 	dec := time.Date(2023, 12, 15, 12, 0, 0, 0, time.UTC)
 
 	older := mustCreate(t, store, photos.Photo{
-		FileHash: "a-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "a-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
 		Title: "older", TakenAt: &jan, TakenAtSource: "exif",
 	})
 	mid := mustCreate(t, store, photos.Photo{
-		FileHash: "a-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "a-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		Title: "mid", TakenAt: &jun, TakenAtSource: "exif",
 	})
 	newer := mustCreate(t, store, photos.Photo{
-		FileHash: "a-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "a-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
 		Title: "newer", TakenAt: &dec, TakenAtSource: "exif",
 	})
 	// outsider is not added to the album, so the scope must exclude it.
 	outsider := mustCreate(t, store, photos.Photo{
-		FileHash: "a-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "a-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg",
 		Title: "outsider", TakenAt: &jun, TakenAtSource: "exif",
 	})
 
@@ -124,13 +128,16 @@ func TestList_multipleAlbumsAND(t *testing.T) {
 	ctx := t.Context()
 
 	inBoth := mustCreate(t, store, photos.Photo{
-		FileHash: "m-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "m-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
 	})
 	inFirst := mustCreate(t, store, photos.Photo{
-		FileHash: "m-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "first-only",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "m-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "first-only",
 	})
 	inSecond := mustCreate(t, store, photos.Photo{
-		FileHash: "m-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "second-only",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "m-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "second-only",
 	})
 
 	first, err := org.CreateAlbum(ctx, project.BootstrapUID, organize.Album{Title: "First"})
@@ -194,19 +201,23 @@ func TestList_subjectScope(t *testing.T) {
 	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
 
 	withSubject := mustCreate(t, store, photos.Photo{
-		FileHash: "s-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "with",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "s-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "with",
 		TakenAt: &jun, TakenAtSource: "exif",
 	})
 	withSubjectOld := mustCreate(t, store, photos.Photo{
-		FileHash: "s-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "s-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		Title: "with-old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 	rejected := mustCreate(t, store, photos.Photo{
-		FileHash: "s-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "rejected",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "s-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "rejected",
 	})
 	// without carries no marker for the subject, so the scope must exclude it.
 	without := mustCreate(t, store, photos.Photo{
-		FileHash: "s-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg", Title: "without",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "s-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg", Title: "without",
 	})
 
 	subject, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
@@ -257,10 +268,12 @@ func TestList_multipleSubjectsAND(t *testing.T) {
 	ctx := t.Context()
 
 	both := mustCreate(t, store, photos.Photo{
-		FileHash: "ms-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ms-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
 	})
 	onlyAlice := mustCreate(t, store, photos.Photo{
-		FileHash: "ms-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "alice-only",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ms-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "alice-only",
 	})
 
 	alice, err := ppl.CreateSubject(ctx, project.BootstrapUID, people.Subject{Name: "Alice", Type: people.SubjectPerson})
@@ -302,15 +315,18 @@ func TestList_labelScope(t *testing.T) {
 	jun := time.Date(2023, 6, 15, 12, 0, 0, 0, time.UTC)
 
 	tagged := mustCreate(t, store, photos.Photo{
-		FileHash: "l-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "tagged",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "l-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "tagged",
 		TakenAt: &jun, TakenAtSource: "exif",
 	})
 	taggedOld := mustCreate(t, store, photos.Photo{
-		FileHash: "l-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "l-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		Title: "tagged-old", TakenAt: &jan, TakenAtSource: "exif",
 	})
 	untagged := mustCreate(t, store, photos.Photo{
-		FileHash: "l-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "untagged",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "l-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "untagged",
 	})
 
 	label, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Beach"})
@@ -361,10 +377,12 @@ func TestList_multipleLabelsAND(t *testing.T) {
 	ctx := t.Context()
 
 	both := mustCreate(t, store, photos.Photo{
-		FileHash: "ml-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ml-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "both",
 	})
 	onlyBeach := mustCreate(t, store, photos.Photo{
-		FileHash: "ml-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "beach-only",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "ml-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "beach-only",
 	})
 
 	beach, err := org.CreateLabel(ctx, project.BootstrapUID, organize.Label{Name: "Beach"})

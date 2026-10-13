@@ -1,5 +1,5 @@
 import { ApiError } from './auth'
-import { instancePath } from './api'
+import { apiPath, instancePath } from './api'
 
 /**
  * Admin library-maintenance client, mirroring the backend JSON shapes from
@@ -200,7 +200,7 @@ export interface NamelessReport {
 
 /** Runs the read-only nameless-subject report. Safe: it never writes. */
 export async function fetchNamelessSubjects(signal?: AbortSignal): Promise<NamelessReport> {
-  const res = await fetch(instancePath('/maintenance/nameless-subjects'), {
+  const res = await fetch(apiPath('/maintenance/nameless-subjects'), {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -245,7 +245,7 @@ function attachmentName(res: Response, fallback: string): string {
  *   or 5xx so the caller can render the matching message.
  */
 export async function detachNamelessSubjects(signal?: AbortSignal): Promise<NamelessUndoFile> {
-  const res = await fetch(instancePath('/maintenance/nameless-subjects/detach'), {
+  const res = await fetch(apiPath('/maintenance/nameless-subjects/detach'), {
     method: 'POST',
     credentials: 'same-origin',
     signal,
@@ -280,7 +280,7 @@ export async function restoreNamelessSubjects(
   file: File,
   signal?: AbortSignal,
 ): Promise<NamelessRestoreResult> {
-  const res = await fetch(instancePath('/maintenance/nameless-subjects/restore'), {
+  const res = await fetch(apiPath('/maintenance/nameless-subjects/restore'), {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },

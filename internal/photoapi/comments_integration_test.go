@@ -33,7 +33,7 @@ type apiCommentList struct {
 
 // commentsURL builds a photo's thread endpoint URL.
 func commentsURL(base, photoUID string) string {
-	return base + "/api/v1/photos/" + photoUID + "/comments"
+	return base + apiV + "/photos/" + photoUID + "/comments"
 }
 
 // commentURL builds the URL of one comment inside a photo's thread.
@@ -88,7 +88,7 @@ func getComments(t *testing.T, client *http.Client, base, photoUID string) []api
 // getCommentCount fetches a photo's detail and returns its comment_count.
 func getCommentCount(t *testing.T, client *http.Client, base, photoUID string) int {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+photoUID, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+photoUID, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -409,9 +409,9 @@ func TestCommentsAPI_cascadeOnPurge(t *testing.T) {
 
 	// A purge only applies to an archived photo.
 	mustStatus(t, admin, http.MethodPost,
-		e.server.URL+"/api/v1/photos/"+doomed.UID+"/archive", http.StatusOK)
+		e.server.URL+apiV+"/photos/"+doomed.UID+"/archive", http.StatusOK)
 	mustStatus(t, admin, http.MethodPost,
-		e.server.URL+"/api/v1/photos/"+doomed.UID+"/purge?confirm=true", http.StatusNoContent)
+		e.server.URL+apiV+"/photos/"+doomed.UID+"/purge?confirm=true", http.StatusNoContent)
 
 	counts, err := e.comments.CountsAmong(t.Context(), project.BootstrapUID, comments.SubjectPhoto, []string{doomed.UID, kept.UID})
 	if err != nil {

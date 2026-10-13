@@ -39,16 +39,16 @@ func seedChartPhoto(t *testing.T, db *database.DB, p chartPhoto) {
 	t.Helper()
 	const stmt = `
 INSERT INTO photos (uid, file_hash, file_path, file_name, media_type, taken_at, created_at,
-                    file_size, camera_make, camera_model, archived_at)
+                    file_size, camera_make, camera_model, archived_at, project_id)
 VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8, $9, $10,
-        CASE WHEN $11 THEN now() ELSE NULL END)`
+        CASE WHEN $11 THEN now() ELSE NULL END, $12)`
 	var takenAt any
 	if p.takenAt != "" {
 		takenAt = p.takenAt
 	}
 	_, err := db.Pool().Exec(t.Context(), stmt,
 		p.uid, "hash-"+p.uid, "2026/07/"+p.fileName, p.fileName, p.mediaType, takenAt,
-		p.createdAt, p.size, p.brand, p.model, p.archived)
+		p.createdAt, p.size, p.brand, p.model, p.archived, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("seed chart photo %s: %v", p.uid, err)
 	}

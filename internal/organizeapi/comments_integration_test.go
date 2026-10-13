@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/organizeapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
@@ -51,8 +52,12 @@ func newCommentEnv(t *testing.T, burst int) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -74,7 +79,7 @@ func (e *env) newAlbum(t *testing.T, c *http.Client, title string) string {
 func (e *env) postComment(t *testing.T, c *http.Client, albumUID, body string) (int, comments.Comment) {
 	t.Helper()
 	payload, _ := json.Marshal(map[string]string{"body": body})
-	resp := e.mustDo(t, c, http.MethodPost, "/api/v1/albums/"+albumUID+"/comments", payload)
+	resp := e.mustDo(t, c, http.MethodPost, apiV+"/albums/"+albumUID+"/comments", payload)
 	if resp.StatusCode != http.StatusCreated {
 		_ = resp.Body.Close()
 		return resp.StatusCode, comments.Comment{}
@@ -87,7 +92,7 @@ func (e *env) postComment(t *testing.T, c *http.Client, albumUID, body string) (
 // listComments reads the album's thread as c, failing on anything but 200.
 func (e *env) listComments(t *testing.T, c *http.Client, albumUID string) []comments.Comment {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/albums/"+albumUID+"/comments", nil)
+	resp := e.mustDo(t, c, http.MethodGet, apiV+"/albums/"+albumUID+"/comments", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", resp.StatusCode)
 	}
@@ -101,7 +106,7 @@ func (e *env) listComments(t *testing.T, c *http.Client, albumUID string) []comm
 // albumCommentCount reads comment_count off GET /albums/{uid}.
 func (e *env) albumCommentCount(t *testing.T, c *http.Client, albumUID string) int {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/albums/"+albumUID, nil)
+	resp := e.mustDo(t, c, http.MethodGet, apiV+"/albums/"+albumUID, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("album status = %d, want 200", resp.StatusCode)
 	}
@@ -145,18 +150,18 @@ func TestAlbumCommentsAPI_everyRoleReadsAndWrites(t *testing.T) {
 	}
 
 	anon := &http.Client{}
-	resp := env.mustDo(t, anon, http.MethodGet, "/api/v1/albums/"+album+"/comments", nil)
+	resp := env.mustDo(t, anon, http.MethodGet, apiV+"/albums/"+album+"/comments", nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous list status = %d, want 401", resp.StatusCode)
 	}
-	resp = env.mustDo(t, anon, http.MethodPost, "/api/v1/albums/"+album+"/comments", []byte(`{"body":"x"}`))
+	resp = env.mustDo(t, anon, http.MethodPost, apiV+"/albums/"+album+"/comments", []byte(`{"body":"x"}`))
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous post status = %d, want 401", resp.StatusCode)
 	}
 
-	resp = env.mustDo(t, viewer, http.MethodGet, "/api/v1/albums/al_missing/comments", nil)
+	resp = env.mustDo(t, viewer, http.MethodGet, apiV+"/albums/al_missing/comments", nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("missing album list status = %d, want 404 like GET /albums/{uid}", resp.StatusCode)
@@ -181,7 +186,7 @@ func TestAlbumCommentsAPI_ownershipAndAudit(t *testing.T) {
 	_, foreign := env.postComment(t, curator, album, "cizí")
 
 	path := func(albumUID, commentUID string) string {
-		return "/api/v1/albums/" + albumUID + "/comments/" + commentUID
+		return apiV + "/albums/" + albumUID + "/comments/" + commentUID
 	}
 	expect := func(name string, c *http.Client, method, p string, body []byte, want int) {
 		resp := env.mustDo(t, c, method, p, body)
@@ -235,14 +240,14 @@ func TestAlbumCommentsAPI_validationAndCascade(t *testing.T) {
 			t.Errorf("%s body: status = %d, want 400", name, status)
 		}
 	}
-	resp := env.mustDo(t, curator, http.MethodPost, "/api/v1/albums/"+album+"/comments", []byte(`{"body":"x","album_uid":"y"}`))
+	resp := env.mustDo(t, curator, http.MethodPost, apiV+"/albums/"+album+"/comments", []byte(`{"body":"x","album_uid":"y"}`))
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("unknown field: status = %d, want 400", resp.StatusCode)
 	}
 
 	_, kept := env.postComment(t, curator, album, "zůstane v logu")
-	resp = env.mustDo(t, curator, http.MethodDelete, "/api/v1/albums/"+album, nil)
+	resp = env.mustDo(t, curator, http.MethodDelete, apiV+"/albums/"+album, nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete album status = %d, want 204", resp.StatusCode)

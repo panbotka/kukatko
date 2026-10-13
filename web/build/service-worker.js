@@ -15,7 +15,7 @@
  * Everything else is left strictly alone. The worker never touches:
  *   - anything under /api/ — the whole backend, including photo thumbnails,
  *     original downloads and video streaming, all of which live under
- *     /api/v1/photos/… (see internal/mediaurl). Caching those would serve stale
+ *     /api/v1/p/<slug>/photos/… (see internal/mediaurl). Caching those would serve stale
  *     or cross-user bytes, break Range requests mid-scrub, and hold responses
  *     that an auth cookie gated;
  *   - cross-origin requests — with object storage in front of the library, the

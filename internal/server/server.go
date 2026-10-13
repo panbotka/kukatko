@@ -160,6 +160,11 @@ func (s *Server) routes() {
 	if len(s.apiGroups) > 0 {
 		s.router.Route("/api/v1", func(r chi.Router) {
 			r.Use(s.apiMiddlewares...)
+			// An unknown API path is the API's own JSON 404, never the SPA's
+			// index.html: a client that asked for JSON must learn there is
+			// nothing here — e.g. a project-scoped route without its
+			// /p/{project} prefix — rather than parse a web page.
+			r.NotFound(handleNotFound)
 			for _, register := range s.apiGroups {
 				register(r)
 			}

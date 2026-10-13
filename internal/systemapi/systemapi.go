@@ -82,8 +82,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 }
 
 // RegisterProjectRoutes mounts the library-statistics endpoints onto r, which
-// the caller has scoped to one project (/api/v1/p/{project}, or the transition
-// alias):
+// the caller has scoped to one project (/api/v1/p/{project}):
 //
 //	GET /stats         the project's library counts (any member)
 //	GET /stats/charts  the chart series over those counts (any member)

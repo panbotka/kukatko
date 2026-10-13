@@ -120,7 +120,7 @@ single transaction and rolls back cleanly if interrupted. Migrations are then re
 **streaming renditions are cleared**:
 
 ```text
-# 214 streaming rendition(s) cleared: the segments are not in the backup, re-encode them with `POST /api/v1/process/hls`
+# 214 streaming rendition(s) cleared: the segments are not in the backup, re-encode them with `POST /api/v1/p/<slug>/process/hls` in each project
 ```
 
 That is deliberate, and it is the other half of what the backup omits (see
@@ -242,7 +242,7 @@ clip at a time over the following hours:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $KUKATKO_TOKEN" \
-  https://<host>/api/v1/process/hls
+  https://<host>/api/v1/p/<slug>/process/hls
 # {"enqueued":214}
 ```
 
@@ -519,7 +519,7 @@ Details inside `curation` that a rebuild must not drop:
 - They are large and binary. They would dwarf everything else and make the file unreadable, which
   defeats the purpose of a format a human can open cold.
 - They are **cheap to recompute from the original**. That is exactly what the `image_embed` and
-  `face_detect` backfill jobs are for (`POST /api/v1/process/embeddings`, `/process/faces`).
+  `face_detect` backfill jobs are for (`POST /api/v1/p/<slug>/process/embeddings`, `/process/faces`).
 
 What cannot be recomputed is what a **person decided**, and that is all here. The same reasoning
 excludes the raw EXIF blob: it is in the original, and `kukatko` re-reads it via the `metadata` job.
@@ -557,7 +557,7 @@ kukatko sidecar backfill          # every photo whose sidecar is missing or stal
 kukatko sidecar backfill --all    # forced full re-run over every non-archived photo
 ```
 
-Or, admin-only, over HTTP: `POST /api/v1/process/sidecars` (`?all=true` for the full re-run).
+Or, admin-only, over HTTP: `POST /api/v1/p/<slug>/process/sidecars` (`?all=true` for the full re-run).
 
 Both **enqueue** jobs; the running server's worker writes the files, so the command returns as soon
 as the work is scheduled and prints the count. It is idempotent — a run over a library whose

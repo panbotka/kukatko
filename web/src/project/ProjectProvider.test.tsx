@@ -11,7 +11,15 @@ import { useProject, useProjectPath } from './ProjectContext'
 import { ProjectProvider } from './ProjectProvider'
 
 const MEMBERSHIPS: ProjectMembership[] = [
-  { uid: 'pv', slug: 'v', name: 'Veselice', active: true, role: 'editor', approved: true },
+  {
+    uid: 'pv',
+    slug: 'v',
+    name: 'Veselice',
+    active: true,
+    role: 'editor',
+    approved: true,
+    subject_uid: 'sub_v',
+  },
   { uid: 'pr', slug: 'rodina', name: 'Rodina', active: true, role: 'viewer', approved: true },
 ]
 
@@ -23,7 +31,7 @@ const MEMBERSHIPS: ProjectMembership[] = [
 function auth(instanceRole: InstanceRole = 'user'): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer' },
+    user: { uid: 'u1', username: 'u', display_name: 'U', role: 'viewer', subject_uid: 'sub_acct' },
     role: 'viewer',
     instanceRole,
     projects: MEMBERSHIPS,
@@ -39,13 +47,14 @@ function auth(instanceRole: InstanceRole = 'user'): AuthContextValue {
 /** Prints what the provider and `useAuth` report for the current address. */
 function Probe() {
   const { project, status } = useProject()
-  const { role, canCurate, canWrite, isAdmin, isMaintainer, canImport } = useAuth()
+  const { user, role, canCurate, canWrite, isAdmin, isMaintainer, canImport } = useAuth()
   const projectPath = useProjectPath()
   return (
     <dl>
       <dd data-testid="status">{status}</dd>
       <dd data-testid="project">{project?.slug ?? '-'}</dd>
       <dd data-testid="role">{role ?? '-'}</dd>
+      <dd data-testid="me">{user?.subject_uid ?? '-'}</dd>
       <dd data-testid="flags">
         {[canCurate, canWrite, isAdmin, isMaintainer, canImport].map(String).join(',')}
       </dd>
@@ -90,6 +99,16 @@ describe('ProjectProvider', () => {
     renderAt('/p/rodina')
     expect(screen.getByTestId('role')).toHaveTextContent('viewer')
     expect(screen.getByTestId('flags')).toHaveTextContent('false,false,false,false,false')
+  })
+
+  it('says who the account is in the current project, not account-wide', () => {
+    const { unmount } = renderAt('/p/v')
+    expect(screen.getByTestId('me')).toHaveTextContent('sub_v')
+    unmount()
+
+    // No "this is me" in rodina: the account's own field must not leak in.
+    renderAt('/p/rodina')
+    expect(screen.getByTestId('me')).toHaveTextContent('-')
   })
 
   it('gives the instance maintainer every power in any project it belongs to', () => {

@@ -4,7 +4,7 @@ import { type Subject } from './people'
 import { apiPath } from './api'
 
 /**
- * Client for the recognition sweep (`GET /api/v1/faces/sweep`), which scans every
+ * Client for the recognition sweep (`GET /api/v1/p/<slug>/faces/sweep`), which scans every
  * named person for confident matches among unnamed faces and streams the result as
  * newline-delimited JSON. Streaming lets the page show results person by person as
  * they arrive instead of after the whole (slow) scan — the wait is the worst part of

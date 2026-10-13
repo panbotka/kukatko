@@ -78,7 +78,8 @@ func assertNames(t *testing.T, input string, got, want []string) {
 // matchPhoto builds a minimal image fixture carrying the given title.
 func matchPhoto(hash, title string) photos.Photo {
 	return photos.Photo{
-		FileHash: hash, FilePath: "m/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "m/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileMime: "image/jpeg", FileWidth: 100, FileHeight: 100, Title: title,
 	}
 }

@@ -19,7 +19,8 @@ import (
 func (f *fixture) addAlbum(t *testing.T, name, title string, private bool) string {
 	t.Helper()
 	uid := "al" + name
-	f.exec(t, `INSERT INTO albums (uid, slug, title, type, private) VALUES ($1, $2, $3, 'album', $4)`, uid, uid, title, private)
+	f.exec(t, `INSERT INTO albums (uid, slug, title, type, private, project_id) VALUES ($1, $2, $3, 'album', $4, $5)`,
+		uid, uid, title, private, project.BootstrapUID)
 	return uid
 }
 
@@ -183,7 +184,8 @@ func TestWindow_everyPhotoInOneAlbum(t *testing.T) {
 // automatic moment does not become a group: only a hand-made album is named.
 func TestWindow_otherAlbumTypesAreNotAlbums(t *testing.T) {
 	f := newFixture(t)
-	f.exec(t, `INSERT INTO albums (uid, slug, title, type) VALUES ('alfolder', 'alfolder', '2026-05', 'folder')`)
+	f.exec(t, `INSERT INTO albums (uid, slug, title, type, project_id) VALUES ('alfolder', 'alfolder', '2026-05', 'folder', $1)`,
+		project.BootstrapUID)
 	p1 := f.addPhoto(t, "p1", 0)
 	f.put(t, "alfolder", p1)
 	f.tag(t, p1, taggerUID)

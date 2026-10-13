@@ -115,7 +115,8 @@ export const AuthContext = createContext<AuthContextValue | null>(null)
  * Within a `ProjectProvider` (the whole app) the role and the predicates that
  * hang off it — `canCurate`, `canWrite`, `isAdmin` — are those of the
  * **current project**: the same account may curate one library and only look
- * at another. `isMaintainer` (and `canImport`, which equals it) reads the
+ * at another. So is `user.subject_uid`, the person the account says it is:
+ * that is a fact about one project's people, read off its membership. `isMaintainer` (and `canImport`, which equals it) reads the
  * instance role.
  *
  * @throws Error when used outside of an `AuthProvider`.
@@ -129,8 +130,13 @@ export function useAuth(): AuthContextValue {
       return ctx
     }
     const role = ctx.user === null ? null : projectRoleOf(ctx.instanceRole, project)
+    const user =
+      ctx.user === null || project === null
+        ? ctx.user
+        : { ...ctx.user, subject_uid: project.subject_uid ?? null }
     return {
       ...ctx,
+      user,
       role,
       canCurate: role !== null && canCurate(role),
       canWrite: role !== null && canWrite(role),

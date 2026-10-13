@@ -32,6 +32,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every project-scoped request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and bulk APIs behind an httptest server over the
 // integration database, plus the stores used to seed and verify state.
 type env struct {
@@ -80,8 +83,12 @@ func newEnv(t *testing.T, maxBatch int) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -123,7 +130,8 @@ func (e *env) login(t *testing.T, username string, role auth.AccountRole) (*http
 func (e *env) seedPhoto(t *testing.T, hash string) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("seed photo %s: %v", hash, err)
@@ -189,7 +197,7 @@ func TestBulk_appliesAlbumLabelAndLocation(t *testing.T) {
 			"set_caption":   "Trip 2024",
 		},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
 	}
@@ -270,7 +278,7 @@ func TestBulk_missingPhotoRefusesTheBatch(t *testing.T) {
 		"photo_uids": []string{good, "phMISSING0000000000000000000000"},
 		"operations": map[string]any{"archive": true},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("bulk status = %d, want 404", resp.StatusCode)
@@ -295,7 +303,7 @@ func TestBulk_roleEnforcement(t *testing.T) {
 		"photo_uids": []string{uid},
 		"operations": map[string]any{"archive": true},
 	})
-	resp := env.mustDo(t, viewer, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, viewer, http.MethodPost, apiV+"/photos/bulk", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer bulk status = %d, want 403", resp.StatusCode)
@@ -315,7 +323,7 @@ func TestBulk_batchSizeLimit(t *testing.T) {
 		"photo_uids": []string{p1, p2, p3},
 		"operations": map[string]any{"archive": true},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized batch status = %d, want 413", resp.StatusCode)
@@ -334,7 +342,7 @@ func TestBulk_favoriteIsPerUser(t *testing.T) {
 		"photo_uids": []string{uid},
 		"operations": map[string]any{"set_favorite": true},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
 	}
@@ -361,7 +369,7 @@ func TestBulk_ratingIsPerUser(t *testing.T) {
 		"photo_uids": []string{uid},
 		"operations": map[string]any{"set_rating": 4, "set_flag": "pick"},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
 	}
@@ -380,7 +388,7 @@ func TestBulk_ratingIsPerUser(t *testing.T) {
 		"photo_uids": []string{uid},
 		"operations": map[string]any{"set_rating": 9},
 	})
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", bad)
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", bad)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid rating status = %d, want 400", resp.StatusCode)
@@ -394,7 +402,7 @@ func TestBulk_unknownOperationRejected(t *testing.T) {
 	uid := env.seedPhoto(t, "bad1")
 
 	body := []byte(`{"photo_uids":["` + uid + `"],"operations":{"frobnicate":true}}`)
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", body)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown op status = %d, want 400", resp.StatusCode)
@@ -416,7 +424,7 @@ func TestBulk_hidesAndUnhides(t *testing.T) {
 		"photo_uids": []string{p1, p2},
 		"operations": map[string]any{"hide": true},
 	})
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", hide)
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", hide)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk hide status = %d, want 200", resp.StatusCode)
 	}
@@ -426,7 +434,7 @@ func TestBulk_hidesAndUnhides(t *testing.T) {
 		"photo_uids": []string{p1, p2},
 		"operations": map[string]any{"unhide": true},
 	})
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", unhide)
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", unhide)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("bulk unhide status = %d, want 200", resp.StatusCode)
 	}
@@ -436,7 +444,7 @@ func TestBulk_hidesAndUnhides(t *testing.T) {
 		"photo_uids": []string{p1},
 		"operations": map[string]any{"hide": true, "unhide": true},
 	})
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", both)
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/photos/bulk", both)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("bulk hide+unhide status = %d, want 400", resp.StatusCode)
 	}

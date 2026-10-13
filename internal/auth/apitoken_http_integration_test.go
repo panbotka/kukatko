@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 )
 
@@ -59,19 +60,25 @@ func newTokenEnv(t *testing.T, createLimit int) *tokenEnv {
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
-		api.RegisterRoutes(r)
-		r.With(api.RequireAuth).Get("/probe/auth", probeOK)
-		r.With(api.RequireCurator).Get("/probe/curate", probeOK)
-		r.With(api.RequireWrite).Get("/probe/write", probeOK)
-		// The shape every throttled write in the library has: the real limiter
-		// mounted *inside* the write guard with the real exemption predicate, so
-		// the bucket keys on the client address for everybody except a bearer
-		// token an admin marked unlimited.
-		throttle := ratelimit.New(0.5, throttledProbeBurst)
-		r.With(api.RequireWrite, throttle.MiddlewareExcept(auth.RateLimitExempt)).
-			Get("/probe/throttled", probeOK)
-		r.With(api.RequireAdmin).Get("/probe/admin", probeOK)
-		r.With(api.RequireImport).Get("/probe/import", probeOK)
+		api.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts the library's routes: under the
+		// project prefix, where the project-level guards have a project to enter.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterProjectRoutes(r)
+			r.With(api.RequireAuth).Get("/probe/auth", probeOK)
+			r.With(api.RequireCurator).Get("/probe/curate", probeOK)
+			r.With(api.RequireWrite).Get("/probe/write", probeOK)
+			// The shape every throttled write in the library has: the real limiter
+			// mounted *inside* the write guard with the real exemption predicate, so
+			// the bucket keys on the client address for everybody except a bearer
+			// token an admin marked unlimited.
+			throttle := ratelimit.New(0.5, throttledProbeBurst)
+			r.With(api.RequireWrite, throttle.MiddlewareExcept(auth.RateLimitExempt)).
+				Get("/probe/throttled", probeOK)
+			r.With(api.RequireAdmin).Get("/probe/admin", probeOK)
+			r.With(api.RequireImport).Get("/probe/import", probeOK)
+		})
 	})
 
 	server := httptest.NewServer(r)
@@ -276,13 +283,13 @@ func TestHTTP_apiTokenCreateListRevoke(t *testing.T) {
 	}
 
 	// The token authenticates before revocation and not after.
-	if status, _ := env.request(t, http.MethodGet, "/api/v1/probe/auth", created.Secret, ""); status != http.StatusOK {
+	if status, _ := env.request(t, http.MethodGet, apiV+"/probe/auth", created.Secret, ""); status != http.StatusOK {
 		t.Errorf("bearer probe before revoke = %d, want 200", status)
 	}
 	if status, body := env.cookieRequest(t, http.MethodDelete, "/api/v1/auth/tokens/"+id, cookie, ""); status != http.StatusNoContent {
 		t.Fatalf("revoke status = %d, want 204 (body %s)", status, body)
 	}
-	if status, _ := env.request(t, http.MethodGet, "/api/v1/probe/auth", created.Secret, ""); status != http.StatusUnauthorized {
+	if status, _ := env.request(t, http.MethodGet, apiV+"/probe/auth", created.Secret, ""); status != http.StatusUnauthorized {
 		t.Errorf("bearer probe after revoke = %d, want 401", status)
 	}
 
@@ -320,11 +327,11 @@ func TestHTTP_bearerInheritsUserRole(t *testing.T) {
 		path   string
 		want   int
 	}{
-		{"viewer reads", viewerSecret, "/api/v1/probe/auth", http.StatusOK},
-		{"viewer cannot write", viewerSecret, "/api/v1/probe/write", http.StatusForbidden},
-		{"viewer cannot administer", viewerSecret, "/api/v1/probe/admin", http.StatusForbidden},
-		{"admin writes", adminSecret, "/api/v1/probe/write", http.StatusOK},
-		{"admin administers", adminSecret, "/api/v1/probe/admin", http.StatusOK},
+		{"viewer reads", viewerSecret, apiV + "/probe/auth", http.StatusOK},
+		{"viewer cannot write", viewerSecret, apiV + "/probe/write", http.StatusForbidden},
+		{"viewer cannot administer", viewerSecret, apiV + "/probe/admin", http.StatusForbidden},
+		{"admin writes", adminSecret, apiV + "/probe/write", http.StatusOK},
+		{"admin administers", adminSecret, apiV + "/probe/admin", http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -372,7 +379,7 @@ func TestHTTP_bearerRejectsBadCredentials(t *testing.T) {
 	*env.now = env.now.Add(2 * time.Hour)
 
 	// The valid token still works after the clock moves, anchoring the negatives.
-	if status, _ := env.request(t, http.MethodGet, "/api/v1/probe/auth", validSecret, ""); status != http.StatusOK {
+	if status, _ := env.request(t, http.MethodGet, apiV+"/probe/auth", validSecret, ""); status != http.StatusOK {
 		t.Fatalf("valid token = %d, want 200", status)
 	}
 
@@ -397,7 +404,7 @@ func TestHTTP_bearerRejectsBadCredentials(t *testing.T) {
 	var bodies []string
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, body := env.request(t, http.MethodGet, "/api/v1/probe/auth", tt.bearer, "")
+			status, body := env.request(t, http.MethodGet, apiV+"/probe/auth", tt.bearer, "")
 			if status != http.StatusUnauthorized {
 				t.Errorf("%s = %d, want 401 (never 403; body %s)", tt.name, status, body)
 			}
@@ -418,13 +425,13 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 	cookie := env.login(t, "alice")
 
 	// No Authorization header: the cookie path is untouched.
-	if status, _ := env.cookieRequest(t, http.MethodGet, "/api/v1/probe/auth", cookie, ""); status != http.StatusOK {
+	if status, _ := env.cookieRequest(t, http.MethodGet, apiV+"/probe/auth", cookie, ""); status != http.StatusOK {
 		t.Errorf("cookie probe = %d, want 200", status)
 	}
 
 	// A bad bearer credential is final: it is not retried against the cookie the
 	// same request happens to carry.
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, env.server.URL+"/api/v1/probe/auth", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, env.server.URL+apiV+"/probe/auth", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -440,7 +447,7 @@ func TestHTTP_bearerDoesNotDisturbCookieAuth(t *testing.T) {
 	}
 
 	// A non-Bearer Authorization scheme falls through to the cookie.
-	req2, err := http.NewRequestWithContext(t.Context(), http.MethodGet, env.server.URL+"/api/v1/probe/auth", nil)
+	req2, err := http.NewRequestWithContext(t.Context(), http.MethodGet, env.server.URL+apiV+"/probe/auth", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -466,7 +473,7 @@ func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 	}
 
 	// First use stamps the token.
-	env.request(t, http.MethodGet, "/api/v1/probe/auth", secret, "")
+	env.request(t, http.MethodGet, apiV+"/probe/auth", secret, "")
 	first := env.lastUsedAt(t, tok.ID)
 	if first == nil {
 		t.Fatal("first use did not stamp last_used_at")
@@ -478,7 +485,7 @@ func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 	// A burst of requests inside the same minute must not rewrite the stamp.
 	*env.now = env.now.Add(30 * time.Second)
 	for range 5 {
-		env.request(t, http.MethodGet, "/api/v1/probe/auth", secret, "")
+		env.request(t, http.MethodGet, apiV+"/probe/auth", secret, "")
 	}
 	if at := env.lastUsedAt(t, tok.ID); !at.Equal(*first) {
 		t.Errorf("last_used_at moved to %v within the guard interval, want %v", at, first)
@@ -486,7 +493,7 @@ func TestHTTP_apiTokenLastUsedThrottled(t *testing.T) {
 
 	// Past the interval, the next request refreshes it.
 	*env.now = env.now.Add(time.Minute)
-	env.request(t, http.MethodGet, "/api/v1/probe/auth", secret, "")
+	env.request(t, http.MethodGet, apiV+"/probe/auth", secret, "")
 	if at := env.lastUsedAt(t, tok.ID); !at.Equal(*env.now) {
 		t.Errorf("last_used_at = %v after the guard interval, want %v", at, *env.now)
 	}
@@ -496,7 +503,7 @@ func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 	env := newTokenEnv(t, 50)
 	alice := env.user(t, "alice", auth.AccountEditor)
 	env.user(t, "bob", auth.AccountEditor)
-	env.user(t, "root", auth.AccountAdmin)
+	env.user(t, "root", auth.AccountMaintainer)
 
 	aliceToken, aliceSecret := env.mintToken(t, alice, "alice's", nil)
 	otherToken, _ := env.mintToken(t, alice, "alice's second", nil)
@@ -524,7 +531,7 @@ func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 		t.Errorf("bob sees %d tokens, want 0", len(listed.Tokens))
 	}
 	// Alice's token still authenticates: bob's attempt changed nothing.
-	if status, _ := env.request(t, http.MethodGet, "/api/v1/probe/auth", aliceSecret, ""); status != http.StatusOK {
+	if status, _ := env.request(t, http.MethodGet, apiV+"/probe/auth", aliceSecret, ""); status != http.StatusOK {
 		t.Errorf("alice's token after bob's attempt = %d, want 200", status)
 	}
 
@@ -540,7 +547,7 @@ func TestHTTP_apiTokenRevokeOwnership(t *testing.T) {
 		"/api/v1/auth/tokens/"+aliceToken.ID, aliceSecret, ""); status != http.StatusNoContent {
 		t.Errorf("token revoking itself = %d, want 204", status)
 	}
-	if status, _ := env.request(t, http.MethodGet, "/api/v1/probe/auth", aliceSecret, ""); status != http.StatusUnauthorized {
+	if status, _ := env.request(t, http.MethodGet, apiV+"/probe/auth", aliceSecret, ""); status != http.StatusUnauthorized {
 		t.Errorf("self-revoked token = %d, want 401", status)
 	}
 }

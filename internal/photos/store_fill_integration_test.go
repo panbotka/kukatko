@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // sidecarTakenAt is the capture time an import offers from a Google Takeout JSON.
@@ -21,7 +22,8 @@ func TestFillMissingMetadata_fillsGapsAndIsIdempotent(t *testing.T) {
 	ctx := t.Context()
 
 	photo := mustCreate(t, store, photos.Photo{
-		FileHash: "fill-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "fill-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg",
 		TakenAtSource: "unknown",
 	})
 
@@ -85,7 +87,8 @@ func TestFillMissingMetadata_neverOverwrites(t *testing.T) {
 
 	own := time.Date(2016, 6, 6, 12, 0, 0, 0, time.UTC)
 	photo := mustCreate(t, store, photos.Photo{
-		FileHash: "fill-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "fill-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg",
 		TakenAt: &own, TakenAtSource: "manual", Title: "Mine", Description: "My own caption",
 		Lat: ptrFloat(50.1), Lng: ptrFloat(14.4),
 	})
@@ -133,7 +136,8 @@ func TestFillMissingMetadata_overrulesAFilenameGuess(t *testing.T) {
 
 	guessed := time.Date(2016, 6, 6, 0, 0, 0, 0, time.UTC)
 	photo := mustCreate(t, store, photos.Photo{
-		FileHash: "fill-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "fill-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg",
 		TakenAt: &guessed, TakenAtSource: "filename",
 	})
 
@@ -162,7 +166,8 @@ func TestFillMissingMetadata_halfAFixIsNotALocation(t *testing.T) {
 	ctx := t.Context()
 
 	photo := mustCreate(t, store, photos.Photo{
-		FileHash: "fill-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "fill-4", FilePath: "p/4.jpg", FileName: "4.jpg", FileMime: "image/jpeg",
 		TakenAtSource: "unknown",
 	})
 

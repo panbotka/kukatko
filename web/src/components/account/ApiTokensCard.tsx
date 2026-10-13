@@ -95,7 +95,7 @@ function tokenPrefix(token: ApiToken): string {
  *
  * A token exempt from the rate limits is badged for everybody who can see it,
  * because "why is this one different" is a question the list should answer. The
- * switch that moves the flag is rendered only for an admin (`onToggleUnlimited`
+ * switch that moves the flag is rendered only for a maintainer (`onToggleUnlimited`
  * is undefined otherwise) — the backend refuses anybody else, and an affordance
  * that always fails is worse than none.
  */
@@ -261,13 +261,14 @@ function CreatedSecret({
  * form that answers every submission with an error.
  *
  * The one thing a token can carry that its owner's role does not is the
- * rate-limit exemption, and that is an admin's decision: the switch — on the
- * creation form and on each row — is rendered only for an admin, because the
- * backend refuses everybody else.
+ * rate-limit exemption, and that is the system administrator's decision — a
+ * token works in every project of its owner, so a project's admin does not
+ * govern it: the switch — on the creation form and on each row — is rendered
+ * only for a maintainer, because the backend refuses everybody else.
  */
 export function ApiTokensCard() {
   const { t } = useTranslation()
-  const { isAdmin } = useAuth()
+  const { isMaintainer } = useAuth()
   const [state, setState] = useState<ListState>({ status: 'loading' })
   const [reloadKey, reload] = useReloadKey()
   const [name, setName] = useState('')
@@ -308,7 +309,7 @@ export function ApiTokensCard() {
     setCreating(true)
     setCreateError(null)
     try {
-      const result = await createApiToken(name.trim(), isAdmin && unlimited)
+      const result = await createApiToken(name.trim(), isMaintainer && unlimited)
       setCreated(result)
       setName('')
       setUnlimited(false)
@@ -434,7 +435,7 @@ export function ApiTokensCard() {
                 token={token}
                 onRevoke={setPendingRevoke}
                 onToggleUnlimited={
-                  isAdmin
+                  isMaintainer
                     ? (item, next) => {
                         void toggleUnlimited(item, next)
                       }
@@ -494,7 +495,7 @@ export function ApiTokensCard() {
               </InputGroup>
               <Form.Text className="text-secondary">{t('account.apiTokens.nameHint')}</Form.Text>
             </Form.Group>
-            {isAdmin && (
+            {isMaintainer && (
               <Form.Group controlId="api-token-unlimited" className="mt-3">
                 <Form.Check
                   type="switch"

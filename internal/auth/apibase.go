@@ -6,7 +6,7 @@ import (
 )
 
 // APIBasePath is the path the server mounts the JSON API on (internal/server
-// routes it as /api/v1). The project-scoped API is mounted a second time under
+// routes it as /api/v1). The project-scoped API is mounted under
 // APIBasePath + "/p/{project}"; see APIBase.
 const APIBasePath = "/api/v1"
 
@@ -22,8 +22,7 @@ func ContextWithAPIBase(ctx context.Context, base string) context.Context {
 
 // apiBaseFor returns the API base path of a request whose project route
 // parameter is slug: APIBasePath + "/p/<slug>" for a project-prefixed route,
-// APIBasePath for one without the parameter (the transition alias and the
-// instance-wide routes).
+// APIBasePath for one without the parameter (an instance-wide route).
 func apiBaseFor(slug string) string {
 	if slug == "" {
 		return APIBasePath
@@ -33,9 +32,9 @@ func apiBaseFor(slug string) string {
 
 // APIBase returns the path prefix the request came through, without a trailing
 // slash: "/api/v1/p/<slug>" when it reached a project-prefixed route,
-// "/api/v1" when it came through the unprefixed transition alias or an
-// instance-wide route — and for a request that never passed WithProject (a
-// router assembled without it, as most package tests do).
+// "/api/v1" when it came through an instance-wide route — and for a request
+// that never passed WithProject (a router assembled without it, as most
+// package tests do).
 //
 // Every URL a handler hands back that points at another project-scoped route
 // of this API (a thumbnail, a download, a GeoJSON feature's picture) is built

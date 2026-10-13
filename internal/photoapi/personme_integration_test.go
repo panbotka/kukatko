@@ -9,14 +9,15 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // addSubject inserts a person into the library and returns its UID.
 func (e *env) addSubject(t *testing.T, uid, name string) string {
 	t.Helper()
 	_, err := e.db.Pool().Exec(t.Context(),
-		`INSERT INTO subjects (uid, slug, name, type) VALUES ($1, $2, $3, 'person')`,
-		uid, name, name)
+		`INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, $3, 'person', $4)`,
+		uid, name, name, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("inserting subject %s: %v", uid, err)
 	}
@@ -40,7 +41,7 @@ func (e *env) markPerson(t *testing.T, markerUID, photoUID, subjectUID string) {
 // same self-service endpoint the account page uses.
 func linkAccount(t *testing.T, client *http.Client, base, subjectUID string) {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodPut, base+"/api/v1/auth/subject",
+	resp := mustDo(t, client, http.MethodPut, base+apiV+"/auth/subject",
 		[]byte(`{"subject_uid":"`+subjectUID+`"}`))
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -119,7 +120,7 @@ func TestPersonMe_unlinkedCallerGetsNothingAndAReason(t *testing.T) {
 
 	// The year facet counts the same photos the grid lists: none.
 	resp := mustDo(t, client, http.MethodGet,
-		base+"/api/v1/photos/years?q="+url.QueryEscape("person:me"), nil)
+		base+apiV+"/photos/years?q="+url.QueryEscape("person:me"), nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("years status = %d, want 200", resp.StatusCode)

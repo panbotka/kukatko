@@ -9,11 +9,12 @@ to `## Package map` in `CLAUDE.md`.
   serve wiring splits the API groups by where they mount: `buildServices`, `discoveryAPIOptions`,
   `readAPIOptions` and `appendOpsAPIs` fill one `projectAPI` struct with every **project-scoped** group
   (`projectapi.go`) and return the **instance-wide** ones as `server.WithAPI` options; `requestOptions`
-  adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
-  `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
-  transition alias, removed in the alias-removal step — **minus the name directory** (`aliasAPI`), whose
-  unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`). Each group
-  is built once, so a limiter or cache is shared by both mounts. The request-project shim (`projectshim.go`) is gone: candidates, outliers, sweep,
+  adds `projectRoutes`, which mounts the `projectAPI` once through `mountProjectAPI`, under
+  `/api/v1/p/{project}` behind `auth.WithProject` — there is no unprefixed copy and no outer
+  `WithProject`, so a project-scoped path without the prefix is the API's 404
+  (`TestProjectRoutes_mountsTheAPIOnlyUnderTheProject`, `TestProjectAPI_onlyThePrefixServesAProject`). A
+  package that serves both halves exposes them apart (`RegisterInstanceRoutes`/`RegisterProjectRoutes`
+  in `auth`, `maintenanceapi`, `userpicapi`, …). The request-project shim (`projectshim.go`) is gone: candidates, outliers, sweep,
   review and the cluster assignment pass the project themselves since step 14, and expand — its last
   consumer — since step 15 hands `vectors.Store.FindSimilar` the project it was given. A package with
   routes on both sides exposes the halves separately:
@@ -27,7 +28,10 @@ to `## Package map` in `CLAUDE.md`.
   which answer a JSON **404** via `handleNotFound` — the application publishes nothing under that
   prefix (ACME is terminated by the reverse proxy, the PWA manifest is `/manifest.webmanifest`), and
   a client probing for `oauth-protected-resource` metadata has to get "nothing here" rather than
-  `index.html` with a 200, which it would try to parse as JSON), `internal/version/`
+  `index.html` with a 200, which it would try to parse as JSON; likewise the `/api/v1` group has its own
+  `NotFound(handleNotFound)`, so an unmatched API path — a project-scoped route without its
+  `/p/{project}` prefix among them — is the API's JSON 404, never the SPA (`TestUnknownAPIPathIsTheAPI404`)),
+  `internal/version/`
   (ldflags-injectable `Version`/`Commit`), `internal/config/` (typed configuration,
   Viper, `Load()`), `internal/database/` (pgxpool wrapper `DB` with `Ping`/`Close`/`Pool`,
   embedded migration runner `Migrate` — each file in its own transaction, logged as
@@ -62,21 +66,25 @@ to `## Package map` in `CLAUDE.md`.
   viewer…maintainer vocabulary the admin user endpoints and a user payload's `role` still speak;
   `Split` → instance role + bootstrap-project role, never an authorization decision) and the pure
   `authorize(instance, projectRole, req)`. **`project.go`**: `WithProject(store)` names the request's
-  project (chi param `{project}`, else the bootstrap slug — transition), the guards' `enterProject`
-  decides access after authentication (unknown/foreign/deactivated → identical 404, unapproved → 403
+  project (chi param `{project}`; a request without it names no project — there is no default), the
+  guards' `enterProject` decides access after authentication (a project-scoped guard on a request that
+  names no project → 500 with the route logged, a wiring bug) (unknown/foreign/deactivated → identical 404, unapproved → 403
   `pending_approval`, maintainer → `admin` + `obs.SetActorRole("maintainer")`), throttles
   `TouchLastProject` to once a minute per account, and the principal carries `project` + `projectRole` +
   `projectSubject` (the membership's `subject_uid`, read for a maintainer too when it has a membership;
   **`LinkedSubjectFromContext(ctx)`** is what `person:me`/`family:me` resolve to).
   `WithProject` also records the prefix the request came through: **`APIBase(ctx)`** (`apibase.go`) is
-  `/api/v1/p/<slug>` under the project prefix and `APIBasePath` (`/api/v1`) through the transition alias,
-  an instance-wide route or a router without `WithProject`; every handler that links to another
+  `/api/v1/p/<slug>` under the project prefix and `APIBasePath` (`/api/v1`) on an instance-wide route
+  or a router without `WithProject`; every handler that links to another
   project-scoped route builds the link on it (`ContextWithAPIBase` sets it in tests).
   `ProjectFromContext`/`ProjectUIDFromContext`/`ProjectRoleFromContext` are the **only** way a handler
-  or store learns the current project. A `User` carries `Role` (instance), `ProjectRole` (bootstrap
-  membership, read by a correlated subquery in `userColumns` — transition) and the derived `AccountRole`
-  (JSON `role`); creating or updating an account writes its bootstrap membership in the same statement
-  (CTE), and an approval stamps the membership too. `sessions.role` is gone (0103). Bcrypt cost 12
+  or store learns the current project. `RequireSignedIn` (every `/auth/*` route but the project's
+  `PUT /auth/subject`, and `/push/*`, `/users/{uid}/avatar`) authenticates and enters no project;
+  `RequireMaintainer`/`RequireImport` on a route that names no project check the instance role alone. A
+  `User` carries `Role` (instance), `ProjectRole` (bootstrap membership, read by a correlated subquery in
+  `userColumns` — the maintainer-only `/admin/users` vocabulary) and the derived `AccountRole` (JSON
+  `role`); creating or updating an account through `/admin/users` writes its bootstrap membership in the
+  same statement (CTE), and an approval stamps the membership too. `sessions.role` is gone (0103). Bcrypt cost 12
   `HashPassword`/`CheckPassword` — the cost is a **build-tag-selected** identifier
   (`password_cost.go` = production 12, `password_cost_integration.go` = `bcrypt.MinCost` and the
   `KUKATKO_TEST_BCRYPT_COST` override, compiled only under the `integration` tag), so no running
@@ -89,7 +97,7 @@ to `## Package map` in `CLAUDE.md`.
   **`directory.go`** is the one all-authenticated view of accounts: `DirectoryEntry{UID,Name}`,
   `Store.Directory(ctx, projectUID)`/`Service.Directory` and `GET /p/{project}/users`, listing the
   project's **approved members** whose account is not disabled (a `project_members` join; an empty uid is
-  the bootstrap project) by the name each is shown under — never an account of another project. It exists because naming a person is now something an ordinary user does —
+  `ErrNoProject`) by the name each is shown under — never an account of another project. It exists because naming a person is now something an ordinary user does —
   putting somebody on a task is how a question reaches the relative who would know — and it is a type and
   a query of its own rather than a trimmed `User`: the address, the role, the approval state and the hash
   never leave the database, so no handler can forget to strip them.
@@ -106,9 +114,10 @@ to `## Package map` in `CLAUDE.md`.
   (several accounts may legitimately be the same person), FK `project_members_subject_uid_fkey` →
   `subjects(uid)` **ON DELETE SET NULL** — named explicitly because `kukatko maintenance reset` drops and
   restores it around its truncation (see `internal/reset`). `auth.User.SubjectUID` is read off a
-  membership by a correlated subquery in `userColumns`: the bootstrap project's on an account read
-  (transition, like `ProjectRole`), overwritten with the request's project's (`p.projectSubject`) on
-  `GET /auth/me`. It **is** serialised into the login/`/auth/me` payloads, deliberately — the client
+  membership by a correlated subquery in `userColumns`: the bootstrap project's on an account read (the
+  `/admin/users` record, like `ProjectRole`); `GET /auth/me` lists every membership's own
+  (`projects[].subject_uid`, `project.MembershipSummary.SubjectUID`), and the frontend reads the current
+  project's from there. It **is** serialised into the login/`/auth/me` payloads, deliberately — the client
   needs it for the "my photos" entry and the account's avatar. `Store.SetUserSubject(ctx, projectUID,
   uid, subject)` is the self-service write behind `PUT /auth/subject` (outside the maintainer guard: the
   link carries no permission): it writes the membership of `projectUID` and returns the account carrying
@@ -140,8 +149,8 @@ to `## Package map` in `CLAUDE.md`.
   flow behind `POST /auth/register`: somebody who knows a project's shared secret creates their own
   account, an unapproved viewer of that project, which exists but cannot be used until a project admin
   approves the membership. The secret path is **per project**: the body's `project` (the slug the
-  registration page `/p/<slug>/register` sends) is resolved by the handler (`registrationProject`; empty =
-  the bootstrap project, transition; an unknown or deactivated slug = `ErrRegistrationClosed`) into
+  registration page `/p/<slug>/register` sends) is resolved by the handler (`registrationProject`; an
+  empty, unknown or deactivated slug = `ErrRegistrationClosed`) into
   `RegisterInput.ProjectUID`, whose switch and secret `checkSecret` reads — so one project's secret posted
   with another's slug is the same `ErrRegistrationSecret` a made-up one gets. It is a separate type,
   `Registration` (built with `NewRegistration`, wired into `APIConfig.Registration`), rather than more
@@ -363,7 +372,7 @@ to `## Package map` in `CLAUDE.md`.
   row in one transaction; `errNoAuditableChange` turns a repeated revocation into a no-op with no audit
   record. `bearerToken` parses `Authorization` case-insensitively per RFC 7235; a missing or
   non-Bearer scheme falls through to the cookie.
-  **The rate-limit exemption** (`unlimited`, migration `0077_api_tokens_unlimited.sql`): a token an admin
+  **The rate-limit exemption** (`unlimited`, migration `0077_api_tokens_unlimited.sql`): a token a maintainer
   marked unlimited skips the comment, upload and bulk throttles entirely — the case is an agent driving the
   library through `kukatko ctl`, whose bursts are exactly what those limiters are shaped to stop while being
   work somebody asked for. It is a property of **the credential, never of the person**: `authenticateRequest`
@@ -371,12 +380,13 @@ to `## Package map` in `CLAUDE.md`.
   the owner's role (a stolen cookie gains nothing) and the exemption dies with the token when it is revoked.
   `RateLimitExempt(r)` is the exported predicate the throttled routes hand to
   `ratelimit.Limiter.MiddlewareExcept`; it reads the principal, so a route mounting it must sit **inside** its
-  auth guard. Setting the flag is admin-only in the **service**, not in middleware —
-  `Service.CreateAPIToken` (which now takes the acting `User`) refuses a non-admin's `Unlimited` with
+  auth guard. Setting the flag is maintainer-only in the **service** (`User.governs`: the instance role alone — a
+  project's admin governs a project, never an account's credentials), not in middleware —
+  `Service.CreateAPIToken` (which now takes the acting `User`) refuses a non-maintainer's `Unlimited` with
   `ErrAPITokenUnlimitedForbidden` → **403 and no token at all**, and `Service.SetAPITokenUnlimited` refuses the
   same way — because creation needs that check *conditionally* (only when the body asks) and one place cannot
   drift from the other. The toggle reaches **only the caller's own** token (somebody else's → `ErrAPITokenNotFound`
-  → 404, even for an admin: revocation is the power an admin holds over a colleague's credential, this is not),
+  → 404, even for a maintainer: revocation is the power a maintainer holds over a colleague's credential, this is not),
   and `Store.SetAPITokenUnlimitedAudited` writes it `inAuditedTx` with `UPDATE … WHERE unlimited IS DISTINCT
   FROM $2`, so re-sending the value a token already carries changes nothing and writes no audit row
   (`api_token.update`, details `name` + the value moved to).
@@ -471,7 +481,9 @@ to `## Package map` in `CLAUDE.md`.
   an `EXISTS` on the parent. **Worker loaders:** a background job has no request and so no project;
   it loads through the explicitly named, unscoped **`GetForJob(ctx, uid)`** / **`FilesForJob(ctx, uid)`**
   and learns the project from the row — every read now fills **`Photo.ProjectID`** (`photos.project_id`
-  is the last of `photoColumns`; `json:"-"`, it never leaves the server). `thumbjob`, `embedjob`, `facejob`,
+  is the last of `photoColumns`; `json:"-"`, it never leaves the server). **`Create`** writes it as the
+  last insert parameter and refuses an empty `Photo.ProjectID` with `ErrNoProject` (the column has had
+  no default since migration 0114). `thumbjob`, `embedjob`, `facejob`,
   `metajob`, `ocrjob`, `sidecarjob`, `placesjob`, `storyboardjob` and `hlsjob`
   use them (`tagnotifyjob` reads its rows with its own SQL). `forjob_guard_test.go` walks every
   `internal/*api` package's non-test source and fails on `ForJob(` / `.…ForJob`: a handler loads through
@@ -1022,8 +1034,8 @@ to `## Package map` in `CLAUDE.md`.
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
   backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(ctx,uid,filePath,fileHash,size)` /
   `Download(ctx,uid,filePath,fileName)` (the client address: the signed Worker URL, otherwise a fallback to the own
-  route `<auth.APIBase(ctx)>/photos/...` — `/api/v1/p/<slug>/photos/...` through the project prefix,
-  `/api/v1/photos/...` through the alias), `Object(relPath)` / `ThumbObject(filePath,fileHash,size)` (the thumbnail key under the storage prefix of
+  route `<auth.APIBase(ctx)>/photos/...` — `/api/v1/p/<slug>/photos/...`, the project prefix the request
+  came through), `Object(relPath)` / `ThumbObject(filePath,fileHash,size)` (the thumbnail key under the storage prefix of
   the original at `filePath`; the **raw** backend
   response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this),
   `DownloadObject(filePath,fileName)` (the same raw answer for an **original**, decorated to download)
@@ -3191,7 +3203,7 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `cmd/kukatko/expand.go`, takes `mediaStore` for URL stamping)),
   `internal/mcpapi/`
   (**MCP server** — a library exposed to an AI agent over the Model Context Protocol at
-  `POST /api/v1/p/{project}/mcp` (and the transition alias `POST /api/v1/mcp`, the bootstrap project);
+  `POST /api/v1/p/{project}/mcp` (there is no unprefixed path);
   `NewAPI(Config{Enabled,Photos,Organize,People,Bulk,Similar,Processing,Media,RequireAuth,PageSize,MaxPageSize})`
   + `RegisterRoutes`. **`Enabled:false` → the servers aren't built and the path answers a bare JSON 404**
   (`handleDisabled`), not a 403 — the caller learns the feature is absent, not that it exists and is being
@@ -3206,9 +3218,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   local servers, this one requires a principal). **Auth: nothing new** — behind `RequireAuth` (the agent sends
   `Bearer kkt_…`), the role is the **token owner's** role in the URL's project. The boundary is **double**:
   `getServer(*http.Request)` picks a server keyed by `serverKey{canWrite, instructions}` — `canWrite` from
-  `auth.ProjectRoleFromContext(...).CanWrite()`, `instructions` from `instructionsFor(name, slug, alias)`, the
-  general text plus a paragraph naming the request's project and, through the alias (`auth.APIBase(ctx) ==
-  auth.APIBasePath`), a final one-line deprecation note — built on first use and cached under a mutex
+  `auth.ProjectRoleFromContext(...).CanWrite()`, `instructions` from `instructionsFor(name, slug)`, the
+  general text plus a paragraph naming the request's project — built on first use and cached under a mutex
   (`API.server`), so one pair per project → a viewer doesn't even see the write tools in `tools/list`; **and** every write handler calls `writerFromContext`
   (registration = UX, the check = the security boundary). The `withCaller` middleware assembles `caller{user, meta}`
   (`audit.FromRequest`) into the context, because a tool handler sees only `ctx`, not `*http.Request` — without a
@@ -3735,8 +3746,11 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   maps outcomes: `ErrTooLarge` → **413**, `ErrUnsupportedFormat`/`ErrPhotoNotAllowed`/`ErrPhotoNotFound` →
   **400**, everything else a logged 500. The three writes are **self-scoped** — the account comes from
   `auth.UserFromContext`, never from the request. `viewerOf(r)` builds the chain's `userpic.Viewer` from the
-  principal (uid, `Role.CanMaintain()`) and `auth.ProjectUIDFromContext` — through the unprefixed routes
-  the bootstrap project, which `RequireAuth` enters (transition alias). Mounted in `serve` (`buildUserPicAPI` in
+  principal (uid, `Role.CanMaintain()`) and `auth.ProjectUIDFromContext` — empty on the instance routes
+  of `RegisterRoutes` (`RequireSignedIn`: `GET /users/{uid}/avatar`, `GET`/`PUT`/`DELETE /auth/picture`), so
+  the inherited face is skipped there, and the request's project on `RegisterProjectRoutes` (`RequireAuth`:
+  the avatar and `GET /auth/picture` under `/p/{project}`, `projectAPI.userPictures`), which the SPA asks
+  inside a project. Mounted in `serve` (`buildUserPicAPI` in
   `cmd/kukatko/userpic.go`, in `discoveryAPIOptions`, sharing the avatar renderer's cache directory)),
   `internal/organize/`
   (the DB layer for **organization** — albums, labels, **per-user favorites** (replacing the global
@@ -4201,7 +4215,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **Project scope (`store_project.go`, the photos convention):** a saved search belongs to one owner
   inside one project, and **the store enforces both** — every statement names the project and the owner
   (`ownerProjectClause`), an empty project is `ErrNoProject`, `Create` writes `project_id` explicitly (the
-  column's transitional default is never relied on), and a missing uid, another owner's search and the
+  column has had no default since migration 0114), and a missing uid, another owner's search and the
   owner's own search in another project are all the **same `ErrNotFound`** (a refused `Update`/`Delete`
   writes nothing); `SavedSearch` carries `ProjectUID`)), `internal/savedsearchapi/`
   (a read/curation HTTP API over saved searches: the `Store` interface (a subset of `savedsearch.Store`) →
@@ -4351,7 +4365,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   write the audit** (`announcement.set`/`announcement.clear`, message/level into details) in the **same transaction**
   as the change (mirrors `internal/organize`)), `internal/announcementapi/`
   (a dual-guard HTTP API over the announcement of the request's project — `auth.ProjectUIDFromContext`, mounted
-  **only under `/p/{project}`** (the transition alias leaves it out), so a banner published in one project is never
+  **only under `/p/{project}`**, so a banner published in one project is never
   read in another: the `Store` interface (a subset of `announcement.Store`) → unit-testable
   with a fake; `NewAPI(Config{Store,RequireAuth,RequireMaintainer})`+`RegisterRoutes` mounts `/announcement`:
   `GET /` behind `RequireAuth` (anyone logged in reads; when nothing is published → **200 `{"message":""}`** instead of 404,
@@ -4389,8 +4403,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
   `settings.Store`) and `UsageSource` (`Usage(ctx,uid)`, satisfied by `*project.Store`) → unit-testable with
   fakes; `NewAPI(Config{Store,Usage,Passkeys,Mail,RequireActiveProject,RequireAuth,RequireAdmin})`.
-  `RegisterRoutes` mounts the **project's** `/settings`, only under `/p/{project}` (the transition alias
-  leaves it out), every route on the project the guard admitted (`auth.ProjectUIDFromContext`):
+  `RegisterRoutes` mounts the **project's** `/settings`, only under `/p/{project}`, every route on the project the guard admitted (`auth.ProjectUIDFromContext`):
   `GET /settings/public` behind `RequireActiveProject` (anonymous, `auth.PublicProjectFromContext`) →
   `{project_name,registration_enabled}` only — what the project's registration page needs before there is
   an account; `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` only (the project's;
@@ -4572,8 +4585,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `instanceActions` (accounts and credentials, notification preferences, a project's
   create/update/purge/storage prefix/rekey, `audit.purge`, `library.reset`); `FromRequest` reads the
   request's project (`obs.ProjectUID`, stamped by `auth` when it admits the caller) into
-  `Meta.ProjectUID`, and `Meta.Entry` files only a project-scoped action under it — an instance action on
-  an unprefixed route is never attributed to the bootstrap project its request resolved;
+  `Meta.ProjectUID`, and `Meta.Entry` files only a project-scoped action under it — an instance action is
+  never attributed to whatever project its request resolved;
   **`internal/audit/audittest`** (test helper): `Guard(t, db)` marks the end of the trail and, at
   cleanup, fails the test for every entry written since that is `ProjectScoped` but names no project
   (`Unscoped(ctx, pool, mark)` is the query); the API packages' integration tests call it right after
@@ -4592,7 +4605,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   RequireAdmin,RequireAuth,RequireSignedIn})`; `RegisterRoutes` (instance, mounted once) mounts `GET /audit`
   behind `RequireMaintainer` (with `project=<slug>` → `Filter.ProjectUID` through `ResolveProject`, unknown →
   400) and `GET /audit/mine` behind `RequireSignedIn`; `RegisterProjectRoutes` (the `projectAPI.audit` group,
-  under `/p/{project}` only — the alias leaves it out) mounts the same two behind `RequireAdmin`/`RequireAuth`,
+  under `/p/{project}` only) mounts the same two behind `RequireAdmin`/`RequireAuth`,
   wrapped in `inProject`, which refuses a `project` parameter and pins `Filter.ProjectUID` to
   `auth.ProjectUIDFromContext`; `parseFilter` from the query `user`/`entity_type`/`entity_uid`/
   `action`/`via`/`decision`/`since`/`until` (RFC3339)/`limit`/`offset` → `audit.Filter` (an invalid
@@ -4766,8 +4779,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **FeatureCollection**, `parseGeoParams` forces `HasGPS=true` + honours `taken_after`/`taken_before`/
   `album`/`label`/`archived`, `Limit=MaxGeoPhotos`, ordering taken_at desc; every feature is a
   `Point` with an RFC 7946 `[lng,lat]` coordinate and the properties `uid`/`title`/`taken_at`/`media_type`/
-  the relative `thumb` path `tile_224` (built on `auth.APIBase(ctx)`, so it follows the project prefix or
-  the alias the feed was asked through) and the photo's `blurhash` (omitted when none — the map's photo tiles
+  the relative `thumb` path `tile_224` (built on `auth.APIBase(ctx)`, so it follows the project prefix the
+  feed was asked through) and the photo's `blurhash` (omitted when none — the map's photo tiles
   paint it while the thumbnail loads), photos missing either coordinate are skipped; the route alone is wrapped
   in chi's `middleware.Compress` (gzip level 5, `geoCompressLevel`) — ~0.8 MB of JSON for prod's located
   library, ~0.18 MB on the wire (docs/PERF.md § 6); the collection also
@@ -5601,8 +5614,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   nil → 503) and `AuditPurger` (`PurgeOlderThan`+`Record`, satisfied by `*audit.Store`, nil → 503);
   plus `NamelessRepair` (`List`/`Snapshot`/`EnqueueDetach`/`EnqueueRestore`, satisfied by
   `*namelessjob.Service`, nil → 503), every call made in the request's project (`auth.ProjectFromContext`
-  through the swappable `projectOf`; these are instance routes, so the unprefixed path is the bootstrap project
-  — the CLI's `--project` reaches the others; a request without a project → 500, an undo file of another
+  through the swappable `projectOf`; the three nameless routes are mounted by `RegisterProjectRoutes` under
+  `/p/{project}` (`projectAPI.maintenance`), the scan/repair/purge by `RegisterInstanceRoutes` once — the
+  CLI's `--project` reaches the same repair; a request without a project → 500, an undo file of another
   project → 400);
   `NewAPI(Config{Service,Audit,Nameless,RequireMaintainer})`+`RegisterRoutes` mounts `/maintenance`:
   `GET /maintenance/scan` (the integrity report), `POST /maintenance/repair` (body `RepairOptions`,
@@ -6702,6 +6716,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (archived, hidden and private all drop out, whoever the caller is), restores the frozen order after
     `ListByUIDs`, and reports `dropped_count = PhotoCount − visible` (clamped at 0, the two reads being
     separate statements).
+  - `/push/*` sits behind `Config.RequireSignedIn` (a device is the account's, so no project is entered;
+    nil falls back to `RequireAuth` for a test router), the inbox behind `RequireAuth` in the request's
+    project.
   - The subscription write takes an optional `SubscribeThrottle`, mounted inside the auth guard; the wiring
     passes a per-account limiter built from the `ratelimit.comment` settings (its own bucket) with the
     unlimited-token exemption. With push off the write is a 503 before anything is decoded.
@@ -6896,8 +6913,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `"<name> · <title>"`, and every `MailBuilder` receives a `MailContext{URL, ProjectName}` (the absolute
     link and the name its template puts into the subject — `mailer.InProject`: `"Kukátko · <name>: …"` —
     and the body). Producers: the tagging window (the photos' project), mentions (the subject's), task hand-over
-    (the task's), featured albums (the album's), registration (the project registered into — the
-    bootstrap project until registration is per project).
+    (the task's), featured albums (the album's), registration (the project registered into).
   - **`ChannelsTx(ctx, tx, userUID, kind)`** → `Channels{InApp, Push, Email}`: the channels the account
     wants (`notification.Store.WantedTx`, one read) **and** the instance can deliver — push counts only
     with `push.enabled`, e-mail only with `mail.enabled`, in-app always. The tagging recorder asks it
@@ -6991,7 +7007,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `memberColumns`: a `user_pictures` row or the membership's own `subject_uid` — "worth asking for the avatar".
   - `member_store.go` — reads: `Members(projectUID)` (by display name, the username standing in for an empty
     one; unknown project = `ErrNotFound`, no members = empty slice), `Membership(projectUID, userUID)`
-    (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included). Writes, each
+    (`ErrNotMember`), `MembershipsOf(userUID)` (by project name, inactive projects included, each with the membership's
+    `SubjectUID` — what `GET /auth/me` lists per project). Writes, each
     **audited in its transaction** with the caller's `audit.Meta` (target type `project_member`, target uid =
     the account, details `project_uid` + the role): `AddMember(…, role, approved)` → `project.member.add`
     (an existing row is left untouched and `ErrAlreadyMember` returned, nothing audited; unknown project =
@@ -7168,6 +7185,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     that only *selects* the column (`photoColumns` ends in `project_id`, which is why the worker loaders
     `GetForJob`/`FilesForJob` need no entry). It is a tripwire for the common mistake, not a proof; the
     isolation tests stay the proof.
+  - `BootstrapReferences(root, patterns...)` (`bootstrap.go`) is the request-path half of "there is no
+    default project": it parses the non-test `.go` files directly inside every directory matching a
+    pattern and reports each `project.BootstrapUID` / `project.BootstrapSlug` (under the package's import
+    name, aliases included) and each string literal spelling out the bootstrap uid.
+    `TestRepository_noRequestPathNamesTheBootstrapProject` runs it over `internal/*api` and `cmd/kukatko`
+    and fails on every reference not in its (empty) `allowedBootstrapReferences`; the migrations, the
+    rekey runbook, the stores' tests and the test fixtures may still name `v`.
 
 - **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
   behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in

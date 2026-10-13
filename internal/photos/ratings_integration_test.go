@@ -39,14 +39,17 @@ func TestList_ratingFiltersAndSort(t *testing.T) {
 	bob := makeRatingUser(t, users, "rat_bob")
 
 	high := mustCreate(t, store, photos.Photo{
-		FileHash: "r-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "high",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "r-1", FilePath: "p/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "high",
 	})
 	low := mustCreate(t, store, photos.Photo{
-		FileHash: "r-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "low",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "r-2", FilePath: "p/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "low",
 	})
 	// unrated has no rating row, so it counts as rating 0 / flag none.
 	unrated := mustCreate(t, store, photos.Photo{
-		FileHash: "r-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "unrated",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "r-3", FilePath: "p/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "unrated",
 	})
 
 	if err := org.SetRating(ctx, project.BootstrapUID, alice, high.UID, 5); err != nil {
@@ -160,14 +163,17 @@ func TestList_eyeFlagFilter(t *testing.T) {
 	bob := makeRatingUser(t, users, "eye_bob")
 
 	eyed := mustCreate(t, store, photos.Photo{
-		FileHash: "eye-1", FilePath: "e/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "eyed",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "eye-1", FilePath: "e/1.jpg", FileName: "1.jpg", FileMime: "image/jpeg", Title: "eyed",
 	})
 	picked := mustCreate(t, store, photos.Photo{
-		FileHash: "eye-2", FilePath: "e/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "picked",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "eye-2", FilePath: "e/2.jpg", FileName: "2.jpg", FileMime: "image/jpeg", Title: "picked",
 	})
 	// A photo with no rating row counts as flag "none", so the eye filter drops it.
 	mustCreate(t, store, photos.Photo{
-		FileHash: "eye-3", FilePath: "e/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "plain",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "eye-3", FilePath: "e/3.jpg", FileName: "3.jpg", FileMime: "image/jpeg", Title: "plain",
 	})
 
 	if err := org.SetFlag(ctx, project.BootstrapUID, alice, eyed.UID, "eye"); err != nil {

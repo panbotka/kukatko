@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -37,6 +38,7 @@ var displaySpaceBBox = [4]float64{0.60, 0.70, 0.10, 0.10}
 func makeRotatedPhoto(t *testing.T, store *photos.Store, hash string) string {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        hash,
 		FilePath:        "2024/01/" + hash + ".jpg",
 		FileName:        hash + ".jpg",
@@ -225,6 +227,7 @@ func TestFaceBoxRepair_ignoresUnrotatedPhotos(t *testing.T) {
 	store, photoStore, db := newStore(t)
 	ctx := t.Context()
 	created, err := photoStore.Create(ctx, photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        "upright",
 		FilePath:        "2024/01/upright.jpg",
 		FileName:        "upright.jpg",

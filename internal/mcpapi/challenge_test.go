@@ -23,7 +23,7 @@ func refuse(http.Handler) http.Handler {
 
 // TestResourceChallenge_namesThePrefixedEndpoint pins the 401 an MCP client
 // reads: the Bearer scheme with the URL of the very endpoint it called — the
-// project's prefixed one, or the alias's — and the scheme the caller used.
+// project's prefixed one — and the scheme the caller used.
 func TestResourceChallenge_namesThePrefixedEndpoint(t *testing.T) {
 	t.Parallel()
 
@@ -36,8 +36,6 @@ func TestResourceChallenge_namesThePrefixedEndpoint(t *testing.T) {
 	}{
 		{name: "project prefix", base: "/api/v1/p/rodina",
 			want: `Bearer realm="http://kukatko.test/api/v1/p/rodina/mcp"`},
-		{name: "transition alias", base: "",
-			want: `Bearer realm="http://kukatko.test/api/v1/mcp"`},
 		{name: "tls", base: "/api/v1/p/v", https: true,
 			want: `Bearer realm="https://kukatko.test/api/v1/p/v/mcp"`},
 		{name: "behind a proxy", base: "/api/v1/p/v", proxy: "https",
@@ -110,28 +108,21 @@ func TestWithResourceChallenge(t *testing.T) {
 	}
 }
 
-// TestInstructionsFor verifies the text names the project and, only through
-// the transition alias, ends with the one-line deprecation note naming the
-// prefixed URL.
+// TestInstructionsFor verifies the text keeps the general instructions and
+// names the project, and carries no deprecation note: there is no alias left
+// to deprecate.
 func TestInstructionsFor(t *testing.T) {
 	t.Parallel()
 
-	prefixed := instructionsFor("Rodina Nováků", "rodina", false)
-	if !strings.HasPrefix(prefixed, instructions) {
+	text := instructionsFor("Rodina Nováků", "rodina")
+	if !strings.HasPrefix(text, instructions) {
 		t.Error("the project text does not keep the general instructions")
 	}
-	if !strings.Contains(prefixed, `"Rodina Nováků"`) || !strings.Contains(prefixed, `"rodina"`) {
-		t.Errorf("instructions do not name the project:\n%s", prefixed)
+	if !strings.Contains(text, `"Rodina Nováků"`) || !strings.Contains(text, `"rodina"`) {
+		t.Errorf("instructions do not name the project:\n%s", text)
 	}
-	if strings.Contains(prefixed, "Deprecated") {
-		t.Errorf("the prefixed endpoint carries the alias note:\n%s", prefixed)
-	}
-
-	alias := instructionsFor("Veselice", "v", true)
-	lines := strings.Split(alias, "\n")
-	last := lines[len(lines)-1]
-	if !strings.HasPrefix(last, "Deprecated:") || !strings.Contains(last, "/api/v1/p/v/mcp") {
-		t.Errorf("alias instructions end with %q, want the one-line deprecation note", last)
+	if strings.Contains(text, "Deprecated") {
+		t.Errorf("the endpoint carries a deprecation note:\n%s", text)
 	}
 }
 

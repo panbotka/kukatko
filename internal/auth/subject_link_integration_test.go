@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/clientip"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // linkEnv is an httptest server over the auth API together with the pool, so a
@@ -25,7 +26,8 @@ type linkEnv struct {
 }
 
 // newLinkEnv builds the environment for the account↔person link tests: the same
-// routes newHTTPEnv mounts, plus the database handle.
+// auth routes newHTTPEnv mounts (the link itself in the bootstrap project, see
+// apiV), plus the database handle.
 func newLinkEnv(t *testing.T) *linkEnv {
 	t.Helper()
 	db := dbtest.New(t)
@@ -41,7 +43,15 @@ func newLinkEnv(t *testing.T) *linkEnv {
 	}
 	r := chi.NewRouter()
 	r.Use(clientip.Middleware(trustedSet))
-	r.Route("/api/v1", func(r chi.Router) { api.RegisterRoutes(r) })
+	r.Route("/api/v1", func(r chi.Router) {
+		api.RegisterInstanceRoutes(r)
+		// PUT /auth/subject is project-scoped — who you are is a fact about one
+		// project's people — so it is mounted as the server mounts it.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterProjectRoutes(r)
+		})
+	})
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -52,8 +62,8 @@ func newLinkEnv(t *testing.T) *linkEnv {
 func (e *linkEnv) addSubject(t *testing.T, uid, name string) string {
 	t.Helper()
 	_, err := e.pool.Exec(t.Context(),
-		`INSERT INTO subjects (uid, slug, name, type) VALUES ($1, $2, $3, 'person')`,
-		uid, name, name)
+		`INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, $3, 'person', $4)`,
+		uid, name, name, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("inserting subject %s: %v", uid, err)
 	}
@@ -92,8 +102,8 @@ func (e *linkEnv) signIn(t *testing.T, username string) *http.Client {
 	return client
 }
 
-// meSubject reads the caller's own linked subject off GET /auth/me, which is
-// where the client gets it from.
+// meSubject reads the caller's own linked subject in the bootstrap project off
+// GET /auth/me — its membership there, which is where the client gets it from.
 func (e *linkEnv) meSubject(t *testing.T, client *http.Client) *string {
 	t.Helper()
 	status, body := e.do(t, client, http.MethodGet, "/api/v1/auth/me", "")
@@ -101,14 +111,21 @@ func (e *linkEnv) meSubject(t *testing.T, client *http.Client) *string {
 		t.Fatalf("GET /auth/me = %d, body %s", status, body)
 	}
 	var resp struct {
-		User struct {
+		Projects []struct {
+			Slug       string  `json:"slug"`
 			SubjectUID *string `json:"subject_uid"`
-		} `json:"user"`
+		} `json:"projects"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decoding /auth/me: %v", err)
 	}
-	return resp.User.SubjectUID
+	for _, p := range resp.Projects {
+		if p.Slug == project.BootstrapSlug {
+			return p.SubjectUID
+		}
+	}
+	t.Fatalf("GET /auth/me lists no membership of %q: %s", project.BootstrapSlug, body)
+	return nil
 }
 
 // TestSubjectLink_selfService covers the account page's whole loop: a user says
@@ -123,7 +140,7 @@ func TestSubjectLink_selfService(t *testing.T) {
 		t.Fatalf("a fresh account is linked to %q, want no link", *got)
 	}
 
-	status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
+	status, body := env.do(t, client, http.MethodPut, apiV+"/auth/subject",
 		`{"subject_uid":"sub_self"}`)
 	if status != http.StatusOK {
 		t.Fatalf("PUT /auth/subject = %d, body %s", status, body)
@@ -133,7 +150,7 @@ func TestSubjectLink_selfService(t *testing.T) {
 	}
 
 	// Clearing it is how a user says "that is not me after all".
-	if status, body = env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
+	if status, body = env.do(t, client, http.MethodPut, apiV+"/auth/subject",
 		`{"subject_uid":null}`); status != http.StatusOK {
 		t.Fatalf("PUT /auth/subject (clear) = %d, body %s", status, body)
 	}
@@ -149,7 +166,7 @@ func TestSubjectLink_unknownSubjectIsRejected(t *testing.T) {
 	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
-	status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
+	status, body := env.do(t, client, http.MethodPut, apiV+"/auth/subject",
 		`{"subject_uid":"sub_nope"}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("PUT /auth/subject with an unknown person = %d, body %s", status, body)
@@ -165,7 +182,7 @@ func TestSubjectLink_requiresAuthentication(t *testing.T) {
 	env := newLinkEnv(t)
 	env.addSubject(t, "sub_self", "Babička")
 
-	status, _ := env.do(t, newClient(t), http.MethodPut, "/api/v1/auth/subject",
+	status, _ := env.do(t, newClient(t), http.MethodPut, apiV+"/auth/subject",
 		`{"subject_uid":"sub_self"}`)
 	if status != http.StatusUnauthorized {
 		t.Fatalf("PUT /auth/subject unauthenticated = %d, want 401", status)
@@ -182,7 +199,7 @@ func TestSubjectLink_sharedBetweenAccounts(t *testing.T) {
 
 	for _, username := range []string{"family", "babicka"} {
 		client := env.signIn(t, username)
-		status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
+		status, body := env.do(t, client, http.MethodPut, apiV+"/auth/subject",
 			`{"subject_uid":"sub_shared"}`)
 		if status != http.StatusOK {
 			t.Fatalf("PUT /auth/subject for %s = %d, body %s", username, status, body)
@@ -202,7 +219,7 @@ func TestSubjectLink_survivesSubjectDeletion(t *testing.T) {
 	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
-	if status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject",
+	if status, body := env.do(t, client, http.MethodPut, apiV+"/auth/subject",
 		`{"subject_uid":"sub_gone"}`); status != http.StatusOK {
 		t.Fatalf("PUT /auth/subject = %d, body %s", status, body)
 	}

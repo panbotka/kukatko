@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // DirectoryEntry is one account as everybody in the library may see it: a name
@@ -34,11 +32,12 @@ ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username), u.uid`
 
 // Directory returns the people of the project projectUID — its approved members
 // that are not disabled, the accounts a signed-in person there may name —
-// ordered by the name they are shown under. An empty projectUID is the
-// bootstrap project. The slice is empty, not nil, when there are none.
+// ordered by the name they are shown under. An empty projectUID is refused
+// with ErrNoProject: there is no default project. The slice is empty, not nil,
+// when there are none.
 func (s *Store) Directory(ctx context.Context, projectUID string) ([]DirectoryEntry, error) {
 	if projectUID == "" {
-		projectUID = project.BootstrapUID // transition: removed in the alias-removal step
+		return nil, ErrNoProject
 	}
 	rows, err := s.pool.Query(ctx, directoryQuery, projectUID)
 	if err != nil {

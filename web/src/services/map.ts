@@ -61,7 +61,7 @@ export interface MapCoverage {
 }
 
 /**
- * The GeoJSON `FeatureCollection` returned by `GET /api/v1/map/photos`: every
+ * The GeoJSON `FeatureCollection` returned by `GET /api/v1/p/<slug>/map/photos`: every
  * geotagged photo matching the active filters, capped server-side, plus the
  * coverage those features represent.
  */
@@ -129,7 +129,7 @@ export function buildMapQuery(params: MapPhotoParams): URLSearchParams {
 
 /**
  * Fetches geotagged photos as a GeoJSON FeatureCollection from
- * `GET /api/v1/map/photos`, honouring the active filters. The session cookie is
+ * `GET /api/v1/p/<slug>/map/photos`, honouring the active filters. The session cookie is
  * sent automatically (same-origin).
  *
  * @throws ApiError with `status` 400 (invalid filter) or 5xx so the caller can
@@ -269,7 +269,7 @@ export interface GeocodeResult {
 
 /**
  * Reverse-geocodes a coordinate via the backend proxy
- * `GET /api/v1/map/rgeocode?lat=&lng=` (the mapy.com key stays server-side). The
+ * `GET /api/v1/p/<slug>/map/rgeocode?lat=&lng=` (the mapy.com key stays server-side). The
  * backend caches and rate-limits the upstream call to conserve credits.
  *
  * @throws ApiError with `status` 404 (no place found), 429 (rate limited), 503
@@ -323,7 +323,7 @@ interface PlacesBody {
 
 /**
  * Searches places by name via the backend proxy
- * `GET /api/v1/map/geocode?q=&limit=` (the mapy.com key stays server-side), for
+ * `GET /api/v1/p/<slug>/map/geocode?q=&limit=` (the mapy.com key stays server-side), for
  * turning "Veselí nad Moravou" into a coordinate. The backend caches and
  * rate-limits the upstream call to conserve credits; callers must still debounce,
  * since a typeahead would otherwise fire a request per keystroke.

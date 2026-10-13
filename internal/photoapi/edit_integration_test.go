@@ -30,7 +30,7 @@ type editResp struct {
 // getEdit fetches and decodes the stored edit for a photo.
 func getEdit(t *testing.T, client *http.Client, base, uid string) editResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid+"/edit", nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid+"/edit", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET edit status = %d, want 200", resp.StatusCode)
@@ -64,7 +64,7 @@ func TestEdit_putThenGet(t *testing.T) {
 	// Use values exactly representable as float32 (the REAL column type) so the
 	// round-trip is exact: 0.5 and -0.25 have no binary rounding.
 	body, _ := json.Marshal(map[string]any{"rotation": 90, "brightness": 0.5, "contrast": -0.25})
-	resp := mustDo(t, client, http.MethodPut, env.server.URL+"/api/v1/photos/"+photo.UID+"/edit", body)
+	resp := mustDo(t, client, http.MethodPut, env.server.URL+apiV+"/photos/"+photo.UID+"/edit", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT edit status = %d, want 200", resp.StatusCode)
@@ -83,7 +83,7 @@ func TestEdit_putValidation(t *testing.T) {
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 12, 22, 32)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 45})
-	resp := mustDo(t, client, http.MethodPut, env.server.URL+"/api/v1/photos/"+photo.UID+"/edit", body)
+	resp := mustDo(t, client, http.MethodPut, env.server.URL+apiV+"/photos/"+photo.UID+"/edit", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("PUT invalid rotation status = %d, want 400", resp.StatusCode)
@@ -97,7 +97,7 @@ func TestEdit_putForbiddenForViewer(t *testing.T) {
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 13, 23, 33)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 90})
-	resp := mustDo(t, client, http.MethodPut, env.server.URL+"/api/v1/photos/"+photo.UID+"/edit", body)
+	resp := mustDo(t, client, http.MethodPut, env.server.URL+apiV+"/photos/"+photo.UID+"/edit", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer PUT edit status = %d, want 403", resp.StatusCode)
@@ -111,7 +111,7 @@ func putEdit(t *testing.T, client *http.Client, base, uid string, edit map[strin
 	if err != nil {
 		t.Fatalf("marshal edit: %v", err)
 	}
-	resp := mustDo(t, client, http.MethodPut, base+"/api/v1/photos/"+uid+"/edit", body)
+	resp := mustDo(t, client, http.MethodPut, base+apiV+"/photos/"+uid+"/edit", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT edit status = %d, want 200", resp.StatusCode)
@@ -220,7 +220,7 @@ func TestDownload_honorsRotationEdit(t *testing.T) {
 	photo := env.seedPhoto(t, photos.Photo{Title: "p"}, "p.jpg", 14, 24, 34)
 
 	body, _ := json.Marshal(map[string]any{"rotation": 90})
-	resp := mustDo(t, client, http.MethodPut, env.server.URL+"/api/v1/photos/"+photo.UID+"/edit", body)
+	resp := mustDo(t, client, http.MethodPut, env.server.URL+apiV+"/photos/"+photo.UID+"/edit", body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT edit status = %d, want 200", resp.StatusCode)
@@ -241,7 +241,7 @@ func TestDownload_honorsRotationEdit(t *testing.T) {
 // the decoded image's dimensions.
 func downloadImageSize(t *testing.T, client *http.Client, base, uid, query string) (int, int) {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid+"/download"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid+"/download"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("download status = %d, want 200", resp.StatusCode)

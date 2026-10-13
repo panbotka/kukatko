@@ -29,7 +29,7 @@ func TestPatchClearsTakenAtAndPreservesIt(t *testing.T) {
 		TakenAtEstimated: true,
 		TakenAtNote:      "podle babičky svatba",
 	}, "scan.jpg", 5, 5, 200)
-	url := base + "/api/v1/photos/" + photo.UID
+	url := base + apiV + "/photos/" + photo.UID
 
 	t.Run("clearing preserves the outgoing date", func(t *testing.T) {
 		detail, _ := decodeDetail(t, editor, http.MethodPatch, url, []byte(`{"taken_at":null}`))
@@ -96,7 +96,7 @@ func TestDatedFilterFindsUndatedPhotos(t *testing.T) {
 		Title: "Holiday", TakenAt: &scannedIn, TakenAtSource: "exif",
 	}, "holiday.jpg", 200, 5, 5)
 
-	clearedURL := base + "/api/v1/photos/" + cleared.UID
+	clearedURL := base + apiV + "/photos/" + cleared.UID
 	decodeDetail(t, editor, http.MethodPatch, clearedURL, []byte(`{"taken_at":null}`))
 
 	undated := getList(t, editor, base, "q=dated%3Ano")

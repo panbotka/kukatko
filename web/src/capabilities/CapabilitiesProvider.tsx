@@ -20,7 +20,7 @@ const REFRESH_INTERVAL_MS = 60_000
 /**
  * Provides the instance feature flags to the app. On mount — and then on an
  * interval and whenever the tab becomes visible again — it loads them from
- * `GET /api/v1/capabilities`, so the UI reflects the embeddings box coming
+ * `GET /api/v1/p/<slug>/capabilities`, so the UI reflects the embeddings box coming
  * on- or offline without a reload. A failed fetch leaves the last known flags in
  * place; the flags are a hint, never load-bearing, so an offline backend simply
  * keeps the last state rather than erroring.

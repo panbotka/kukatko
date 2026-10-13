@@ -41,12 +41,16 @@ func TestPlaceholders(t *testing.T) {
 func TestInsertPhotoSQL_consistency(t *testing.T) {
 	t.Parallel()
 
-	wantPlaceholder := placeholders(len(photoInsertColumns))
-	if !strings.Contains(insertPhotoSQL, "VALUES ("+wantPlaceholder+")") {
-		t.Errorf("insertPhotoSQL missing VALUES (%s); got %q", wantPlaceholder, insertPhotoSQL)
+	// One placeholder per insert column plus the project, named last.
+	wantPlaceholder := placeholders(len(photoInsertColumns) + 1)
+	if !strings.Contains(insertPhotoInProjectSQL, "VALUES ("+wantPlaceholder+")") {
+		t.Errorf("insertPhotoInProjectSQL missing VALUES (%s); got %q", wantPlaceholder, insertPhotoInProjectSQL)
 	}
-	if !strings.HasSuffix(insertPhotoSQL, "RETURNING "+photoColumns) {
-		t.Errorf("insertPhotoSQL does not return photoColumns; got %q", insertPhotoSQL)
+	if !strings.Contains(insertPhotoInProjectSQL, ", project_id) VALUES") {
+		t.Errorf("insertPhotoInProjectSQL does not name project_id last; got %q", insertPhotoInProjectSQL)
+	}
+	if !strings.HasSuffix(insertPhotoInProjectSQL, "RETURNING "+photoColumns) {
+		t.Errorf("insertPhotoInProjectSQL does not return photoColumns; got %q", insertPhotoInProjectSQL)
 	}
 	// photoColumns adds created_at, updated_at and the owning project to the
 	// insert columns.

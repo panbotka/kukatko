@@ -33,7 +33,7 @@ export interface SavedSearchUpdate {
   params?: SavedSearchParams
 }
 
-/** Response body of `GET /api/v1/saved-searches`. */
+/** Response body of `GET /api/v1/p/<slug>/saved-searches`. */
 interface SavedSearchesResponse {
   saved_searches: SavedSearch[]
 }

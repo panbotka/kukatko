@@ -197,7 +197,8 @@ func TestFaceSuggestions_neverNameAnotherProjectsPerson(t *testing.T) {
 		t.Fatalf("saving B's face: %v", err)
 	}
 	twin, err := e.photos.Create(ctx, photos.Photo{
-		FileHash: "isolation-twin", FilePath: "2026/10/twin.jpg", FileName: "twin.jpg", FileWidth: 640, FileHeight: 480,
+		ProjectID: project.BootstrapUID,
+		FileHash:  "isolation-twin", FilePath: "2026/10/twin.jpg", FileName: "twin.jpg", FileWidth: 640, FileHeight: 480,
 	})
 	if err != nil {
 		t.Fatalf("creating A's twin photo: %v", err)

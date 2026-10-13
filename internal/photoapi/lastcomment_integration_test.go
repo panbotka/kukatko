@@ -25,7 +25,7 @@ type rawListRow struct {
 // getRawList fetches a listing page and returns its rows undecoded.
 func getRawList(t *testing.T, client *http.Client, base, query string) []rawListRow {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d for %q, want 200", resp.StatusCode, query)

@@ -22,12 +22,12 @@ var (
 	ErrAPITokenNameRequired = errors.New("auth: api token name is required")
 	// ErrAPITokenExpiryInPast indicates a requested expiry that has already passed.
 	ErrAPITokenExpiryInPast = errors.New("auth: api token expiry must be in the future")
-	// ErrAPITokenUnlimitedForbidden indicates a caller who is not an admin tried
+	// ErrAPITokenUnlimitedForbidden indicates a caller who is not a maintainer tried
 	// to mint or change a token exempt from the rate limits. The exemption spends
-	// a shared resource on one credential's behalf, so it is an administrator's
+	// a shared resource on one credential's behalf, so it is the system administrator's
 	// decision; the request is refused outright rather than silently downgraded
 	// to a throttled token nobody asked for.
-	ErrAPITokenUnlimitedForbidden = errors.New("auth: only an admin may set a token unlimited")
+	ErrAPITokenUnlimitedForbidden = errors.New("auth: only a maintainer may set a token unlimited")
 )
 
 const (

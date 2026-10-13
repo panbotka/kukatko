@@ -135,7 +135,9 @@ func (a *API) authenticateDownloadToken(r *http.Request) (principal, error) {
 // — attaches the principal to the context, and calls next. It writes 401 when
 // authentication fails, 404/403 for the project rules and 403 when the role is
 // insufficient. An instance-level requirement is checked before the project, so
-// a non-maintainer gets the same 403 whatever project it addressed.
+// a non-maintainer gets the same 403 whatever project it addressed; on a route
+// that names no project it is the whole check. A project-level requirement on
+// a route that names no project is a wiring bug and answers 500.
 func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, err := a.authenticateRequest(r)
@@ -144,9 +146,17 @@ func (a *API) requireRole(req requirement, next http.Handler) http.Handler {
 			writeUnauthorized(w, "authentication required")
 			return
 		}
-		if req.instanceLevel() && !authorize(p.user.Role, "", req) {
-			writeError(w, http.StatusForbidden, "insufficient permissions")
-			return
+		if req.instanceLevel() {
+			if !authorize(p.user.Role, "", req) {
+				writeError(w, http.StatusForbidden, "insufficient permissions")
+				return
+			}
+			if !namesProject(r) {
+				// An instance-wide route (/jobs, /system, /backup, …): there is
+				// no project to enter, and the instance role was enough.
+				next.ServeHTTP(w, r.WithContext(withPrincipal(r.Context(), p)))
+				return
+			}
 		}
 		p, err = a.enterProject(w, r, p)
 		if err != nil {

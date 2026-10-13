@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/video"
 )
@@ -112,6 +113,7 @@ func newHarness(t *testing.T) harness {
 	photoStore := photos.NewStore(db.Pool())
 	duration := clipSeconds * 1000
 	photo, err := photoStore.Create(t.Context(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        stored.Hash,
 		FilePath:        stored.RelPath,
 		FileName:        "clip.mp4",

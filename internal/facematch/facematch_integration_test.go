@@ -36,6 +36,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every photo request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and photo APIs (with the face service) behind an httptest
 // server over the integration database.
 type env struct {
@@ -84,8 +87,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -151,7 +158,7 @@ func mustDo(t *testing.T, client *http.Client, method, urlStr string, body []byt
 // getFaces fetches and decodes the faces response for a photo.
 func (e *env) getFaces(t *testing.T, client *http.Client, photoUID string) facematch.FacesResponse {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, e.server.URL+"/api/v1/photos/"+photoUID+"/faces", nil)
+	resp := mustDo(t, client, http.MethodGet, e.server.URL+apiV+"/photos/"+photoUID+"/faces", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET faces status = %d, want 200", resp.StatusCode)
@@ -167,14 +174,15 @@ func (e *env) getFaces(t *testing.T, client *http.Client, photoUID string) facem
 func (e *env) assign(t *testing.T, client *http.Client, photoUID string, req facematch.AssignRequest) *http.Response {
 	t.Helper()
 	body, _ := json.Marshal(req)
-	return mustDo(t, client, http.MethodPost, e.server.URL+"/api/v1/photos/"+photoUID+"/faces/assign", body)
+	return mustDo(t, client, http.MethodPost, e.server.URL+apiV+"/photos/"+photoUID+"/faces/assign", body)
 }
 
 // makePhoto inserts a photo with stored dimensions and returns its uid.
 func (e *env) makePhoto(t *testing.T, hash string) string {
 	t.Helper()
 	created, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileWidth: 1000, FileHeight: 1000, FileOrientation: 1,
 	})
 	if err != nil {

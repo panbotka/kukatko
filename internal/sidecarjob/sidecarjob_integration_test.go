@@ -99,10 +99,11 @@ func makePhoto(t *testing.T, store *photos.Store, hash string) photos.Photo {
 	t.Helper()
 
 	created, err := store.Create(context.Background(), photos.Photo{
-		FileHash: hash,
-		FilePath: "2024/01/" + hash + ".jpg",
-		FileName: hash + ".jpg",
-		FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash,
+		FilePath:  "2024/01/" + hash + ".jpg",
+		FileName:  hash + ".jpg",
+		FileMime:  "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", hash, err)

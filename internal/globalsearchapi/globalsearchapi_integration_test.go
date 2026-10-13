@@ -109,7 +109,8 @@ func newEnv(t *testing.T, limit int) *httptest.Server {
 		t.Fatalf("CreateSubject: %v", err)
 	}
 	if _, err := photoStore.Create(ctx, photos.Photo{
-		Title: "Dovolená 2024", FileHash: "gs-hash", FilePath: "2024/01/gs.jpg", FileName: "gs.jpg",
+		ProjectID: project.BootstrapUID,
+		Title:     "Dovolená 2024", FileHash: "gs-hash", FilePath: "2024/01/gs.jpg", FileName: "gs.jpg",
 	}); err != nil {
 		t.Fatalf("Create photo: %v", err)
 	}
@@ -208,20 +209,23 @@ func newUIDEnv(t *testing.T) uidEnv {
 
 	ppUID := uidFixturePhotoprism
 	photo, err := photoStore.Create(ctx, photos.Photo{
-		Title: "Beach sunset", FileHash: "uid-1", FilePath: "2024/01/a.jpg", FileName: "a.jpg",
+		ProjectID: project.BootstrapUID,
+		Title:     "Beach sunset", FileHash: "uid-1", FilePath: "2024/01/a.jpg", FileName: "a.jpg",
 		PhotoprismUID: &ppUID,
 	})
 	if err != nil {
 		t.Fatalf("Create photo: %v", err)
 	}
 	variant, err := photoStore.Create(ctx, photos.Photo{
-		FileHash: "uid-2", FilePath: "2024/01/a.dng", FileName: "a.dng",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "uid-2", FilePath: "2024/01/a.dng", FileName: "a.dng",
 	})
 	if err != nil {
 		t.Fatalf("Create variant: %v", err)
 	}
 	archived, err := photoStore.Create(ctx, photos.Photo{
-		Title: "Old attic", FileHash: "uid-3", FilePath: "2020/01/c.jpg", FileName: "c.jpg",
+		ProjectID: project.BootstrapUID,
+		Title:     "Old attic", FileHash: "uid-3", FilePath: "2020/01/c.jpg", FileName: "c.jpg",
 	})
 	if err != nil {
 		t.Fatalf("Create archived photo: %v", err)
@@ -399,7 +403,8 @@ func newCoverEnv(t *testing.T) *httptest.Server {
 	photoStore := photos.NewStore(db.Pool())
 
 	photo, err := photoStore.Create(ctx, photos.Photo{
-		Title: "Beach", FileHash: "cov-1", FilePath: "2024/01/cov.jpg", FileName: "cov.jpg",
+		ProjectID: project.BootstrapUID,
+		Title:     "Beach", FileHash: "cov-1", FilePath: "2024/01/cov.jpg", FileName: "cov.jpg",
 	})
 	if err != nil {
 		t.Fatalf("Create photo: %v", err)

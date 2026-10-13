@@ -23,10 +23,10 @@ import (
 func seedPhoto(t *testing.T, db *database.DB, uid, mediaType string, archived bool) {
 	t.Helper()
 	const stmt = `
-INSERT INTO photos (uid, file_hash, file_path, file_name, media_type, archived_at)
-VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END)`
+INSERT INTO photos (uid, file_hash, file_path, file_name, media_type, archived_at, project_id)
+VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END, $7)`
 	_, err := db.Pool().Exec(t.Context(), stmt,
-		uid, "hash-"+uid, "2026/07/"+uid+".jpg", uid+".jpg", mediaType, archived)
+		uid, "hash-"+uid, "2026/07/"+uid+".jpg", uid+".jpg", mediaType, archived, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("seed photo %s: %v", uid, err)
 	}
@@ -36,9 +36,10 @@ VALUES ($1, $2, $3, $4, $5, CASE WHEN $6 THEN now() ELSE NULL END)`
 // content is irrelevant to a count; only its dimension has to satisfy the column.
 func seedEmbedding(t *testing.T, db *database.DB, photoUID string) {
 	t.Helper()
-	const stmt = `INSERT INTO embeddings (photo_uid, embedding) VALUES ($1, $2)`
+	const stmt = `INSERT INTO embeddings (photo_uid, embedding, project_id)
+VALUES ($1, $2, (SELECT project_id FROM photos WHERE uid = $3))`
 	vec := vectors.ToHalfVec(make([]float32, vectors.ImageDim))
-	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, vec); err != nil {
+	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, vec, photoUID); err != nil {
 		t.Fatalf("seed embedding for %s: %v", photoUID, err)
 	}
 }
@@ -46,10 +47,11 @@ func seedEmbedding(t *testing.T, db *database.DB, photoUID string) {
 // seedFace inserts one detected face for the photo at the given slot.
 func seedFace(t *testing.T, db *database.DB, photoUID string, index int) {
 	t.Helper()
-	const stmt = `INSERT INTO faces (photo_uid, face_index, embedding, bbox) VALUES ($1, $2, $3, $4)`
+	const stmt = `INSERT INTO faces (photo_uid, face_index, embedding, bbox, project_id)
+VALUES ($1, $2, $3, $4, (SELECT project_id FROM photos WHERE uid = $5))`
 	vec := vectors.ToHalfVec(make([]float32, vectors.FaceDim))
 	bbox := []float64{0.1, 0.1, 0.2, 0.2}
-	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, index, vec, bbox); err != nil {
+	if _, err := db.Pool().Exec(t.Context(), stmt, photoUID, index, vec, bbox, photoUID); err != nil {
 		t.Fatalf("seed face %s/%d: %v", photoUID, index, err)
 	}
 }
@@ -68,8 +70,8 @@ func seedFaceSubject(t *testing.T, db *database.DB, photoUID string, index int, 
 // seedSubject inserts one subject of the given kind (person, pet, other).
 func seedSubject(t *testing.T, db *database.DB, uid, kind string) {
 	t.Helper()
-	const stmt = `INSERT INTO subjects (uid, slug, name, type) VALUES ($1, $2, $3, $4)`
-	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, kind); err != nil {
+	const stmt = `INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1, $2, $3, $4, $5)`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, kind, project.BootstrapUID); err != nil {
 		t.Fatalf("seed subject %s: %v", uid, err)
 	}
 }
@@ -91,8 +93,8 @@ func seedMarker(t *testing.T, db *database.DB, uid, photoUID, subjectUID string)
 // seedAlbum inserts one album of the given type ('album', 'folder', 'month', ...).
 func seedAlbum(t *testing.T, db *database.DB, uid, albumType string) {
 	t.Helper()
-	const stmt = `INSERT INTO albums (uid, slug, title, type) VALUES ($1, $2, $3, $4)`
-	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, albumType); err != nil {
+	const stmt = `INSERT INTO albums (uid, slug, title, type, project_id) VALUES ($1, $2, $3, $4, $5)`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, albumType, project.BootstrapUID); err != nil {
 		t.Fatalf("seed album %s: %v", uid, err)
 	}
 }
@@ -143,8 +145,8 @@ func seedStackMember(t *testing.T, db *database.DB, uid, stackUID string, primar
 // seedLabel inserts one label.
 func seedLabel(t *testing.T, db *database.DB, uid string) {
 	t.Helper()
-	const stmt = `INSERT INTO labels (uid, slug, name) VALUES ($1, $2, $3)`
-	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid); err != nil {
+	const stmt = `INSERT INTO labels (uid, slug, name, project_id) VALUES ($1, $2, $3, $4)`
+	if _, err := db.Pool().Exec(t.Context(), stmt, uid, "slug-"+uid, uid, project.BootstrapUID); err != nil {
 		t.Fatalf("seed label %s: %v", uid, err)
 	}
 }

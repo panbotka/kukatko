@@ -68,7 +68,7 @@ func newEnv(t *testing.T, opts ...projecttest.Option) *env {
 		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
 			r.Use(auth.WithProject(projects))
 			api.RegisterRoutes(r)
-			authAPI.RegisterDirectoryRoutes(r)
+			authAPI.RegisterProjectRoutes(r)
 		})
 	})
 	server := httptest.NewServer(r)

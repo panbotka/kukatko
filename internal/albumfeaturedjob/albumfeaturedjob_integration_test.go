@@ -103,7 +103,8 @@ func (f *fixture) album(t *testing.T, title string, private bool) string {
 		t.Fatalf("CreateAlbum: %v", err)
 	}
 	photo := "ph" + album.UID
-	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at) VALUES ($1, $1, $2, now())`, photo, photo+".jpg")
+	f.exec(t, `INSERT INTO photos (uid, file_hash, file_path, taken_at, project_id) VALUES ($1, $1, $2, now(), $3)`,
+		photo, photo+".jpg", project.BootstrapUID)
 	if err := f.store.AddPhoto(t.Context(), project.BootstrapUID, album.UID, photo); err != nil {
 		t.Fatalf("AddPhoto: %v", err)
 	}

@@ -157,7 +157,8 @@ func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMe returns the authenticated user and the session download token. It
-// runs behind RequireAuth, so the principal is always present.
+// runs behind RequireSignedIn, so the principal is always present and no
+// project is entered: the per-project facts are in the memberships it lists.
 func (a *API) handleMe(w http.ResponseWriter, r *http.Request) {
 	p, ok := principalFromContext(r.Context())
 	if !ok {
@@ -181,12 +182,16 @@ type meProject struct {
 	Active   bool         `json:"active"`
 	Role     project.Role `json:"role"`
 	Approved bool         `json:"approved"`
+	// SubjectUID is the person the caller says it is in this project ("this is
+	// me"), nil when it has not said: who you are is a fact about one project.
+	SubjectUID *string `json:"subject_uid"`
 }
 
 // meResponse is the body of GET /auth/me: the login response plus the caller's
 // instance role, its memberships and the slug of the project it last worked in
-// ("" when none is remembered). The user's "role" is its role in the request's
-// project (see AccountRole) — "maintainer" for a maintainer.
+// ("" when none is remembered). Each membership carries the role and the "this
+// is me" person of that project; the user's own "role" and "subject_uid" are
+// the account record's (see AccountRole) — "maintainer" for a maintainer.
 type meResponse struct {
 	loginResponse
 
@@ -206,19 +211,15 @@ func (a *API) meResponseFor(ctx context.Context, p principal) (meResponse, error
 	for _, ms := range memberships {
 		projects = append(projects, meProject{
 			UID: ms.ProjectUID, Slug: ms.Slug, Name: ms.Name, Active: ms.Active, Role: ms.Role, Approved: ms.Approved,
+			SubjectUID: ms.SubjectUID,
 		})
 	}
 	last, err := a.svc.store.LastProjectSlug(ctx, p.user.UID)
 	if err != nil {
 		return meResponse{}, err
 	}
-	user := p.user
-	if p.project != nil {
-		user = withProjectRole(user, p.projectRole)
-		user.SubjectUID = p.projectSubject
-	}
 	return meResponse{
-		loginResponse:   loginResponse{User: user, DownloadToken: p.session.DownloadToken},
+		loginResponse:   loginResponse{User: p.user, DownloadToken: p.session.DownloadToken},
 		InstanceRole:    p.user.Role,
 		Projects:        projects,
 		LastProjectSlug: last,

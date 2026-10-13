@@ -34,9 +34,9 @@ const projectNotFoundMessage = "project not found"
 // request.
 const lastProjectTouchInterval = time.Minute
 
-// errNoProjectStore is the resolution error of an API built without any way to
-// read projects.
-var errNoProjectStore = errors.New("auth: no project store configured")
+// errNoProject is the error of a project-scoped guard whose request names no
+// project (see enterProject).
+var errNoProject = errors.New("auth: project-scoped route reached without a project")
 
 // errProjectDenied marks a project resolution that already wrote its response.
 var errProjectDenied = errors.New("auth: project access denied")
@@ -58,46 +58,39 @@ type projectRequestKey struct{}
 // WithProject returns the middleware that names the request's project: the
 // chi URL parameter ProjectURLParam (a slug), looked up through store. It must
 // run before the Require* guards, which decide whether the authenticated caller
-// may enter that project and with which role (see enterProject).
-//
-// Transition: removed in the alias-removal step. While no route carries the
-// parameter, a request without it addresses the bootstrap project
-// (project.BootstrapSlug), so every unprefixed route keeps meaning the library
-// that existed before multi-tenancy.
+// may enter that project and with which role (see enterProject). The server
+// applies it to the /api/v1/p/{project} group only; a request without the
+// parameter names no project at all — there is no default project.
 //
 // It also records the path prefix the request came through (see APIBase), so
-// the URLs a handler builds lead back through the same prefix. Applied twice —
-// once in front of the whole /api/v1 group, once more under /p/{project} — the
-// inner one wins.
+// the URLs a handler builds lead back through the same prefix.
 func WithProject(store *project.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			param := chi.URLParam(r, ProjectURLParam)
-			slug := param
-			if slug == "" {
-				slug = project.BootstrapSlug // transition: removed in the alias-removal step
+			slug := chi.URLParam(r, ProjectURLParam)
+			ctx := ContextWithAPIBase(r.Context(), apiBaseFor(slug))
+			if slug != "" {
+				p, err := store.GetBySlug(ctx, slug)
+				ctx = context.WithValue(ctx, projectRequestKey{}, projectRequest{store: store, project: p, err: err})
 			}
-			p, err := store.GetBySlug(r.Context(), slug)
-			req := projectRequest{store: store, project: p, err: err}
-			ctx := ContextWithAPIBase(context.WithValue(r.Context(), projectRequestKey{}, req), apiBaseFor(param))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// projectRequestFor returns the projectRequest WithProject recorded on ctx. A
-// request that did not pass through WithProject — a router assembled without
-// it, as most package tests do — addresses the bootstrap project, resolved here
-// through the API's own store (transition: removed in the alias-removal step).
-func (a *API) projectRequestFor(ctx context.Context) projectRequest {
-	if req, ok := ctx.Value(projectRequestKey{}).(projectRequest); ok {
-		return req
-	}
-	if a.projects == nil {
-		return projectRequest{err: errNoProjectStore}
-	}
-	p, err := a.projects.Get(ctx, project.BootstrapUID)
-	return projectRequest{store: a.projects, project: p, err: err}
+// projectRequestFor returns the projectRequest WithProject recorded on ctx,
+// reporting whether there is one: false for a request that named no project —
+// an instance-wide route, or a router assembled without WithProject.
+func projectRequestFor(ctx context.Context) (projectRequest, bool) {
+	req, ok := ctx.Value(projectRequestKey{}).(projectRequest)
+	return req, ok
+}
+
+// namesProject reports whether the request names a project (passed WithProject
+// with a {project} parameter), whatever that project turns out to be.
+func namesProject(r *http.Request) bool {
+	_, ok := projectRequestFor(r.Context())
+	return ok
 }
 
 // enterProject decides whether the authenticated principal p may enter the
@@ -117,7 +110,16 @@ func (a *API) projectRequestFor(ctx context.Context) projectRequest {
 // is a 500 already written too. On success the account's last project is
 // remembered (throttled per account).
 func (a *API) enterProject(w http.ResponseWriter, r *http.Request, p principal) (principal, error) {
-	req := a.projectRequestFor(r.Context())
+	req, ok := projectRequestFor(r.Context())
+	if !ok {
+		// A project-scoped guard on a route that names no project is a wiring
+		// mistake on the server, never a client's: the route belongs under
+		// /api/v1/p/{project}, or behind an instance-level guard.
+		slog.ErrorContext(r.Context(), "auth: project-scoped route reached without a project",
+			"method", r.Method, "route", routePattern(r), "path", r.URL.Path)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return p, errNoProject
+	}
 	if errors.Is(req.err, project.ErrNotFound) {
 		writeError(w, http.StatusNotFound, projectNotFoundMessage)
 		return p, errProjectDenied
@@ -271,8 +273,7 @@ type publicProjectKey struct{}
 // records for PublicProjectFromContext. An unknown slug and a deactivated
 // project are the same 404 every other project route answers a tenant that may
 // not see the project, so the route tells a stranger nothing a sign-in screen
-// would not. A request that did not pass through WithProject names no project
-// and is a 404 too.
+// would not. A request that names no project is a 404 too.
 //
 // It is for the one anonymous project route, GET /p/{project}/settings/public,
 // which the project's registration page asks before anybody has an account. It
@@ -282,7 +283,7 @@ type publicProjectKey struct{}
 // one.
 func RequireActiveProject(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req, ok := r.Context().Value(projectRequestKey{}).(projectRequest)
+		req, ok := projectRequestFor(r.Context())
 		if !ok || errors.Is(req.err, project.ErrNotFound) || (req.err == nil && !req.project.Active) {
 			writeError(w, http.StatusNotFound, projectNotFoundMessage)
 			return
@@ -304,4 +305,15 @@ func RequireActiveProject(next http.Handler) http.Handler {
 func PublicProjectFromContext(ctx context.Context) (*project.Project, bool) {
 	p, ok := ctx.Value(publicProjectKey{}).(*project.Project)
 	return p, ok && p != nil
+}
+
+// routePattern returns the chi route pattern r matched ("/p/{project}/photos"),
+// or its path when chi recorded none, for a log line naming the route.
+func routePattern(r *http.Request) string {
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		if pattern := rc.RoutePattern(); pattern != "" {
+			return pattern
+		}
+	}
+	return r.URL.Path
 }

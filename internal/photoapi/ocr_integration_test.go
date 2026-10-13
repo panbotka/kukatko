@@ -15,7 +15,7 @@ import (
 // for it, together with whether the key was present at all.
 func detailOCR(t *testing.T, env *env, client *http.Client, uid string) (string, bool) {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, env.server.URL+"/api/v1/photos/"+uid, nil)
+	resp := mustDo(t, client, http.MethodGet, env.server.URL+apiV+"/photos/"+uid, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -96,7 +96,7 @@ func TestList_neverServesOCRText(t *testing.T) {
 		t.Fatalf("SaveOCR: %v", err)
 	}
 
-	for _, path := range []string{"/api/v1/photos", "/api/v1/search?q=Shop"} {
+	for _, path := range []string{apiV + "/photos", apiV + "/search?q=Shop"} {
 		resp := mustDo(t, client, http.MethodGet, env.server.URL+path, nil)
 		var page struct {
 			Photos []map[string]json.RawMessage `json:"photos"`
@@ -125,7 +125,7 @@ func TestDetail_omitsPeopleWithoutAFaceBackend(t *testing.T) {
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Shop"}, "shop.jpg", 10, 20, 30)
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+photo.UID+"?people=true", nil)
+		env.server.URL+apiV+"/photos/"+photo.UID+"?people=true", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)

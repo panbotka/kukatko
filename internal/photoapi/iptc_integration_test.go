@@ -22,7 +22,7 @@ func TestUpdateMetadata_iptcFields(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Vinobraní", TakenAtSource: "exif",
 	}, "iptc.jpg", 10, 20, 30)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	body := []byte(`{
 		"subject":"  Sklizeň hroznů na jižní Moravě  ",
@@ -77,7 +77,7 @@ func TestUpdateMetadata_iptcValidation(t *testing.T) {
 	viewer, _ := env.login(t, "viewer", auth.AccountViewer)
 
 	seeded := env.seedPhoto(t, photos.Photo{TakenAtSource: "exif"}, "iptc-limits.jpg", 40, 50, 60)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID
+	url := env.server.URL + apiV + "/photos/" + seeded.UID
 
 	// Each field's cap, one rune over. The values are plain ASCII so the rune count
 	// is the byte count and the intent stays readable.

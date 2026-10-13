@@ -26,6 +26,7 @@ func ptr[T any](v T) *T { return &v }
 func makePhoto(t *testing.T, store *photos.Store, name string, lat, lng *float64) photos.Photo {
 	t.Helper()
 	created, err := store.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        "hash-" + name,
 		FilePath:        "2024/01/" + name + ".jpg",
 		FileName:        name + ".jpg",

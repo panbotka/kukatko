@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // explainPlan returns the textual EXPLAIN output for query, run inside a
@@ -74,7 +76,7 @@ func seedTimeline(t *testing.T, pool *pgxpool.Pool, n int) {
 	const insert = `
 		INSERT INTO photos (
 			uid, file_hash, file_path, file_name, file_mime,
-			taken_at, taken_at_source, created_at, archived_at
+			taken_at, taken_at_source, created_at, archived_at, project_id
 		)
 		SELECT
 			'perf' || lpad(i::text, 28, '0'),
@@ -89,9 +91,10 @@ func seedTimeline(t *testing.T, pool *pgxpool.Pool, n int) {
 			timestamptz '2024-01-01 12:00:00Z' - (i || ' minutes')::interval,
 			-- A minority of archived photos keeps the partial predicate honest:
 			-- they must stay out of both indexes and out of the live grid.
-			CASE WHEN i % 25 = 0 THEN timestamptz '2024-06-01 12:00:00Z' ELSE NULL END
+			CASE WHEN i % 25 = 0 THEN timestamptz '2024-06-01 12:00:00Z' ELSE NULL END,
+			$2
 		FROM generate_series(1, $1) i`
-	if _, err := pool.Exec(ctx, insert, n); err != nil {
+	if _, err := pool.Exec(ctx, insert, n, project.BootstrapUID); err != nil {
 		t.Fatalf("bulk insert %d photos: %v", n, err)
 	}
 	if _, err := pool.Exec(ctx, "ANALYZE photos"); err != nil {

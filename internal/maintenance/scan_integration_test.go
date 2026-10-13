@@ -224,7 +224,8 @@ func (h *harness) storeRealPhotoAt(t *testing.T, name string, seed uint8, lat, l
 		t.Fatalf("storage.Store(%s): %v", name, err)
 	}
 	created, err := h.photos.Create(ctx, photos.Photo{
-		FileHash: stored.Hash, FilePath: stored.RelPath, FileName: name + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  stored.Hash, FilePath: stored.RelPath, FileName: name + ".jpg",
 		FileSize: stored.Size, FileMime: "image/jpeg", FileWidth: 32, FileHeight: 32,
 		FileOrientation: 1, TakenAtSource: "unknown", Lat: lat, Lng: lng,
 	})
@@ -332,7 +333,8 @@ func (h *harness) catalogueMissingOriginal(t *testing.T) photos.Photo {
 	t.Helper()
 	ctx := context.Background()
 	created, err := h.photos.Create(ctx, photos.Photo{
-		FileHash: seededHash, FilePath: "2098/01/missing.jpg", FileName: "missing.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  seededHash, FilePath: "2098/01/missing.jpg", FileName: "missing.jpg",
 		FileSize: 100, FileMime: "image/jpeg", FileOrientation: 1, TakenAtSource: "unknown",
 	})
 	if err != nil {

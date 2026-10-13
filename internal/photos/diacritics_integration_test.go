@@ -48,7 +48,8 @@ func seedDiacriticsLibrary(t *testing.T) diacriticsLibrary {
 
 	taken := time.Date(2024, 8, 10, 12, 0, 0, 0, time.UTC)
 	accented := mustCreate(t, store, photos.Photo{
-		FileHash: "dia-1", FilePath: "p/1.jpg", FileName: "Dovolená_2024.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "dia-1", FilePath: "p/1.jpg", FileName: "Dovolená_2024.jpg", FileMime: "image/jpeg",
 		FileWidth: 4000, FileHeight: 3000,
 		Title: "Pouť ve Veselici", Description: "Krásné odpoledne", Notes: "Dodělat popisky",
 		Keywords: "pouť,vesnice", LensModel: "Meyer-Optik Görlitz Trioplan",
@@ -56,7 +57,8 @@ func seedDiacriticsLibrary(t *testing.T) diacriticsLibrary {
 		TakenAt: &taken, TakenAtSource: "exif",
 	})
 	bare := mustCreate(t, store, photos.Photo{
-		FileHash: "dia-2", FilePath: "p/2.jpg", FileName: "Dovolena_2025.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "dia-2", FilePath: "p/2.jpg", FileName: "Dovolena_2025.jpg", FileMime: "image/jpeg",
 		FileWidth: 4000, FileHeight: 3000,
 		Title:   "Pout ve Veselici",
 		TakenAt: &taken, TakenAtSource: "exif",
@@ -127,8 +129,8 @@ func seedDiacriticsRelations(t *testing.T, pool *pgxpool.Pool, lib diacriticsLib
 	}
 
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO photo_tasks (uid, title, created_by) VALUES ('pt_dia', 'Doplnit popisky pouti', $1)`,
-		lib.user); err != nil {
+		`INSERT INTO photo_tasks (uid, title, created_by, project_id) VALUES ('pt_dia', 'Doplnit popisky pouti', $1, $2)`,
+		lib.user, project.BootstrapUID); err != nil {
 		t.Fatalf("insert task: %v", err)
 	}
 	if _, err := pool.Exec(ctx,

@@ -32,7 +32,7 @@ type detailUploadLink struct {
 // block, nil when the response carries none.
 func fetchUploadLink(t *testing.T, client *http.Client, base, uid string) *detailUploadLink {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)

@@ -96,7 +96,8 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 		"ses1", "tok1", "dl1", "usr000000001", time.Now().Add(time.Hour))
 	e.exec(t, `INSERT INTO api_tokens (id, user_uid, name, secret_hash) VALUES ($1,$2,$3,$4)`,
 		"tokid1", "usr000000001", "migration", "secret")
-	e.exec(t, `INSERT INTO announcements (message) VALUES ($1)`, "migration in progress")
+	e.exec(t, `INSERT INTO announcements (message, project_id) VALUES ($1, $2)`,
+		"migration in progress", project.BootstrapUID)
 	if err := audit.NewStore(e.db.Pool()).Record(t.Context(), audit.Entry{
 		Action: "photo.update", TargetType: "photos", TargetUID: "pht000000001",
 	}); err != nil {
@@ -107,9 +108,9 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 		{uid: "pht000000001", hash: "aa11bb22cc33dd44", path: "2024/05/IMG_1.jpg"},
 		{uid: "pht000000002", hash: "bb22cc33dd44ee55", path: "2024/06/IMG_2.jpg"},
 	} {
-		e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-			VALUES ($1,$2,$3,$4,$5,$6)`,
-			photo.uid, photo.hash, photo.path, filepath.Base(photo.path), 100, "image/jpeg")
+		e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			photo.uid, photo.hash, photo.path, filepath.Base(photo.path), 100, "image/jpeg", project.BootstrapUID)
 		e.exec(t, `INSERT INTO photo_files (photo_uid, file_path, file_hash, file_size, file_mime, is_primary, role)
 			VALUES ($1,$2,$3,$4,$5,true,'original')`,
 			photo.uid, photo.path, photo.hash, 100, "image/jpeg")
@@ -134,19 +135,22 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 	// the wipe must remove all the same.
 	e.writeObject(t, familyexport.Key, "family tree")
 
-	e.exec(t, `INSERT INTO albums (uid, title, slug) VALUES ($1,$2,$3)`, "alb000000001", "Trip", "trip")
+	e.exec(t, `INSERT INTO albums (uid, title, slug, project_id) VALUES ($1,$2,$3,$4)`,
+		"alb000000001", "Trip", "trip", project.BootstrapUID)
 	e.exec(t, `INSERT INTO album_photos (album_uid, photo_uid) VALUES ($1,$2)`, "alb000000001", "pht000000001")
-	e.exec(t, `INSERT INTO labels (uid, name, slug) VALUES ($1,$2,$3)`, "lbl000000001", "Dog", "dog")
+	e.exec(t, `INSERT INTO labels (uid, name, slug, project_id) VALUES ($1,$2,$3,$4)`,
+		"lbl000000001", "Dog", "dog", project.BootstrapUID)
 	e.exec(t, `INSERT INTO photo_labels (photo_uid, label_uid) VALUES ($1,$2)`, "pht000000001", "lbl000000001")
 	e.exec(t, `INSERT INTO jobs (type, payload) VALUES ('thumbnail', '{}'::jsonb)`)
-	e.exec(t, `INSERT INTO import_runs (source, status) VALUES ('photoprism', 'done')`)
+	e.exec(t, `INSERT INTO import_runs (source, status, project_id) VALUES ('photoprism', 'done', $1)`,
+		project.BootstrapUID)
 	e.exec(t, `INSERT INTO user_favorites (user_uid, photo_uid) VALUES ($1,$2)`,
 		"usr000000001", "pht000000001")
 	// A person, and the account as a member of the bootstrap project that says
 	// it is that person there: the one pointer a preserved table holds into the
 	// library being wiped.
-	e.exec(t, `INSERT INTO subjects (uid, slug, name, type) VALUES ($1,$2,$3,'person')`,
-		"sbj000000001", "babicka", "Babička")
+	e.exec(t, `INSERT INTO subjects (uid, slug, name, type, project_id) VALUES ($1,$2,$3,'person',$4)`,
+		"sbj000000001", "babicka", "Babička", project.BootstrapUID)
 	e.exec(t, `INSERT INTO project_members (project_uid, user_uid, role, approved_at, subject_uid)
 		VALUES ($1, $2, 'admin', now(), $3)`, project.BootstrapUID, "usr000000001", "sbj000000001")
 }

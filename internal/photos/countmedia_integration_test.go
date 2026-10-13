@@ -19,19 +19,23 @@ func TestCountMedia_splitsVideosFromStills(t *testing.T) {
 	ctx := t.Context()
 
 	mustCreate(t, store, photos.Photo{
-		FileHash: "cm-still", FilePath: "2024/05/a.jpg", FileName: "a.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "cm-still", FilePath: "2024/05/a.jpg", FileName: "a.jpg",
 		FileMime: "image/jpeg", MediaType: photos.MediaImage, Title: "sunset garden",
 	})
 	mustCreate(t, store, photos.Photo{
-		FileHash: "cm-live", FilePath: "2024/05/b.heic", FileName: "b.heic",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "cm-live", FilePath: "2024/05/b.heic", FileName: "b.heic",
 		FileMime: "image/heic", MediaType: photos.MediaLive, Title: "garden party",
 	})
 	mustCreate(t, store, photos.Photo{
-		FileHash: "cm-clip-1", FilePath: "2024/05/c.mp4", FileName: "c.mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "cm-clip-1", FilePath: "2024/05/c.mp4", FileName: "c.mp4",
 		FileMime: "video/mp4", MediaType: photos.MediaVideo, Title: "sunset walk",
 	})
 	mustCreate(t, store, photos.Photo{
-		FileHash: "cm-clip-2", FilePath: "2024/05/d.mp4", FileName: "d.mp4",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "cm-clip-2", FilePath: "2024/05/d.mp4", FileName: "d.mp4",
 		FileMime: "video/mp4", MediaType: photos.MediaVideo, Title: "harvest",
 	})
 

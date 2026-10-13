@@ -54,10 +54,11 @@ func newEnv(t *testing.T) *env {
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 
+	// The audit purge is instance-wide, mounted bare as the server mounts it.
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		api.RegisterInstanceRoutes(r)
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)

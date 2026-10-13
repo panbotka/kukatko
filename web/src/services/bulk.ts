@@ -4,7 +4,7 @@ import { ApiError } from './auth'
 import { apiPath } from './api'
 
 /**
- * Bulk-metadata client for `POST /api/v1/photos/bulk` (`internal/bulkapi`):
+ * Bulk-metadata client for `POST /api/v1/p/<slug>/photos/bulk` (`internal/bulkapi`):
  * applies one operation set to many photos in a single transaction. The UI uses
  * it from the grid-selection bulk-edit toolbar to add/remove albums and labels,
  * set or clear the description and location, change the archive state, hide the
@@ -171,7 +171,7 @@ export interface BulkCounts {
   errored: number
 }
 
-/** Response body of `POST /api/v1/photos/bulk` (`bulk.Result`). */
+/** Response body of `POST /api/v1/p/<slug>/photos/bulk` (`bulk.Result`). */
 export interface BulkResult {
   results: BulkPhotoResult[]
   counts: BulkCounts

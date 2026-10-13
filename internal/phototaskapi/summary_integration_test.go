@@ -22,21 +22,21 @@ func TestSummary_isPerCaller(t *testing.T) {
 
 	asked := e.openTask(t, editor, "V kterém roce?")
 	ask, _ := json.Marshal(map[string]string{"user_uid": e.uids["pametnik"]})
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks/"+asked.UID+"/participants", ask, http.StatusOK, nil)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks/"+asked.UID+"/participants", ask, http.StatusOK, nil)
 
 	answered := e.openTask(t, editor, "Kdo je vlevo?")
 	time.Sleep(10 * time.Millisecond)
 	answer, _ := json.Marshal(map[string]string{"body": "Anna."})
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+answered.UID+"/comments", answer, http.StatusCreated, nil)
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks/"+answered.UID+"/comments", answer, http.StatusCreated, nil)
 
 	closed := e.openTask(t, editor, "Hotovo")
 	finish, _ := json.Marshal(map[string]string{"state": "done", "resolution": "Opraveno."})
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+closed.UID, finish, http.StatusOK, nil)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+closed.UID, finish, http.StatusOK, nil)
 
 	summary := func(c *http.Client) phototask.Summary {
 		t.Helper()
 		var got phototask.Summary
-		e.do(t, c, http.MethodGet, "/api/v1/tasks/summary", nil, http.StatusOK, &got)
+		e.do(t, c, http.MethodGet, apiV+"/tasks/summary", nil, http.StatusOK, &got)
 		return got
 	}
 
@@ -59,7 +59,7 @@ func TestSummary_isPerCaller(t *testing.T) {
 			forViewer.WaitingOnMe, forViewer.Answered)
 	}
 
-	resp := e.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/tasks/summary", nil)
+	resp := e.mustDo(t, &http.Client{}, http.MethodGet, apiV+"/tasks/summary", nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous summary status = %d, want 401", resp.StatusCode)

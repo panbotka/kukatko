@@ -44,9 +44,10 @@ func (f fakeCollector) LibraryCharts(context.Context, string) (system.Charts, er
 func passThrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts the system API with the given collector behind pass-through
-// guards — the instance routes and the project routes both under /api/v1, the
-// way the transition alias mounts the latter — returning the router ready for
-// httptest requests.
+// guards — the instance routes and the project routes both under /api/v1 (the
+// server mounts the latter under /api/v1/p/{project}, which the pass-through
+// guards make irrelevant here) — returning the router ready for httptest
+// requests.
 func newRouter(collector StatusCollector) chi.Router {
 	api := NewAPI(Config{
 		Service:           collector,

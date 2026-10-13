@@ -29,7 +29,7 @@ describe('PersonAvatar', () => {
     const img = screen.getByRole('presentation', { hidden: true })
     // One endpoint, whatever the picture turns out to be: the server resolves
     // the chain and the client never has to know which source answered.
-    expect(img.getAttribute('src')).toBe('/api/v1/users/usr_1/avatar')
+    expect(img.getAttribute('src')).toBe('/api/v1/p/v/users/usr_1/avatar')
     expect(img).toHaveAttribute('aria-hidden', 'true')
     expect(img).toHaveAttribute('alt', '')
   })
@@ -63,7 +63,7 @@ describe('PersonAvatar', () => {
       </AuthContext.Provider>,
     )
     expect(screen.getByRole('presentation', { hidden: true }).getAttribute('src')).toBe(
-      '/api/v1/users/usr_1/avatar?v=3',
+      '/api/v1/p/v/users/usr_1/avatar?v=3',
     )
   })
 
@@ -76,7 +76,7 @@ describe('PersonAvatar', () => {
       </AuthContext.Provider>,
     )
     expect(screen.getByRole('presentation', { hidden: true }).getAttribute('src')).toBe(
-      '/api/v1/users/usr_2/avatar',
+      '/api/v1/p/v/users/usr_2/avatar',
     )
   })
 
@@ -96,6 +96,6 @@ describe('PersonAvatar', () => {
         <PersonAvatar name="Jarmila" userUid="usr_1" />
       </AuthContext.Provider>,
     )
-    expect(photo()?.getAttribute('src')).toBe('/api/v1/users/usr_1/avatar?v=1')
+    expect(photo()?.getAttribute('src')).toBe('/api/v1/p/v/users/usr_1/avatar?v=1')
   })
 })

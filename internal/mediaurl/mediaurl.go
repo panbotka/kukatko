@@ -54,9 +54,8 @@ import (
 // photosPath is the path, below the request's API base (auth.APIBase), under
 // which this application serves photo media itself. It is the fallback target
 // for a backend that mints no URLs. The base is the prefix the request came
-// through — /api/v1/p/<slug> for a project-prefixed route, /api/v1 through the
-// transition alias — so a client that addressed one project fetches the media
-// from that project too.
+// through — /api/v1/p/<slug> for a project-prefixed route — so a client that
+// addressed one project fetches the media from that project too.
 const photosPath = "/photos/"
 
 // ownPhotoPath returns this application's route for uid's media below the

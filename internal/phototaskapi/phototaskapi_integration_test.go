@@ -25,6 +25,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/phototaskapi"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -32,6 +33,9 @@ import (
 // they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// apiV is the bootstrap project's API prefix every project-scoped request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
 
 // env wires the auth and task APIs behind an httptest server over the
 // integration database.
@@ -65,8 +69,13 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			authAPI.RegisterProjectRoutes(r)
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -142,11 +151,12 @@ func (e *env) do(
 func (e *env) makePhoto(t *testing.T, name string) photos.Photo {
 	t.Helper()
 	created, err := e.photos.Create(context.Background(), photos.Photo{
-		FileHash: (name + strings.Repeat("0", 64))[:64],
-		FilePath: "2026/09/" + name + ".jpg",
-		FileName: name + ".jpg",
-		FileSize: 1024,
-		FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  (name + strings.Repeat("0", 64))[:64],
+		FilePath:  "2026/09/" + name + ".jpg",
+		FileName:  name + ".jpg",
+		FileSize:  1024,
+		FileMime:  "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", name, err)
@@ -161,7 +171,7 @@ func (e *env) openTask(t *testing.T, c *http.Client, title string, photoUIDs ...
 		"title": title, "body": "kontext", "query": "camera:Olympus", "photo_uids": photoUIDs,
 	})
 	var task phototask.Task
-	e.do(t, c, http.MethodPost, "/api/v1/tasks", body, http.StatusCreated, &task)
+	e.do(t, c, http.MethodPost, apiV+"/tasks", body, http.StatusCreated, &task)
 	return task
 }
 
@@ -183,23 +193,23 @@ func TestTaskLifecycle(t *testing.T) {
 		Task    phototask.Task `json:"task"`
 	}
 	body, _ := json.Marshal(map[string]any{"photo_uids": []string{two.UID}})
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks/"+task.UID+"/photos", body, http.StatusOK, &added)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks/"+task.UID+"/photos", body, http.StatusOK, &added)
 	if added.Changed != 1 || added.Task.PhotoCount != 2 {
 		t.Errorf("after adding: changed = %d, photo_count = %d", added.Changed, added.Task.PhotoCount)
 	}
 
 	silent, _ := json.Marshal(map[string]any{"state": "done"})
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, silent, http.StatusBadRequest, nil)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, silent, http.StatusBadRequest, nil)
 
 	closing, _ := json.Marshal(map[string]any{"state": "done", "resolution": "1987 podle kroniky"})
 	var closed phototask.Task
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, closing, http.StatusOK, &closed)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, closing, http.StatusOK, &closed)
 	if closed.ClosedAt == nil || closed.Resolution == "" {
 		t.Errorf("closed task = %+v, want a closing stamp and a resolution", closed)
 	}
 
-	e.do(t, editor, http.MethodDelete, "/api/v1/tasks/"+task.UID, nil, http.StatusNoContent, nil)
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusNotFound, nil)
+	e.do(t, editor, http.MethodDelete, apiV+"/tasks/"+task.UID, nil, http.StatusNoContent, nil)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks/"+task.UID, nil, http.StatusNotFound, nil)
 }
 
 // TestTaskOptions walks the answer options through the API: opened with a set,
@@ -213,7 +223,7 @@ func TestTaskOptions(t *testing.T) {
 		"title": "Je na nápisu rok 1936, nebo 1938?", "options": []string{" 1936", "1938", "nevím"},
 	})
 	var task phototask.Task
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks", body, http.StatusCreated, &task)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks", body, http.StatusCreated, &task)
 	if !slices.Equal(task.Options, []string{"1936", "1938", "nevím"}) {
 		t.Fatalf("options after create = %q", task.Options)
 	}
@@ -221,7 +231,7 @@ func TestTaskOptions(t *testing.T) {
 	var page struct {
 		Tasks []phototask.Task `json:"tasks"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, &page)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks", nil, http.StatusOK, &page)
 	if len(page.Tasks) != 1 || !slices.Equal(page.Tasks[0].Options, task.Options) {
 		t.Errorf("listing options = %v, want %q", page.Tasks, task.Options)
 	}
@@ -233,7 +243,7 @@ func TestTaskOptions(t *testing.T) {
 		"repeated": {"1936", "1936"},
 	} {
 		patch, _ := json.Marshal(map[string]any{"options": bad})
-		resp := e.mustDo(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, patch)
+		resp := e.mustDo(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, patch)
 		payload, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(payload), "option") {
@@ -243,18 +253,18 @@ func TestTaskOptions(t *testing.T) {
 
 	untouched, _ := json.Marshal(map[string]any{"body": "jiný kontext"})
 	var edited phototask.Task
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, untouched, http.StatusOK, &edited)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, untouched, http.StatusOK, &edited)
 	if !slices.Equal(edited.Options, task.Options) {
 		t.Errorf("an edit naming no options changed them to %q", edited.Options)
 	}
 
 	cleared, _ := json.Marshal(map[string]any{"options": []string{}})
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, cleared, http.StatusOK, &edited)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, cleared, http.StatusOK, &edited)
 	if edited.Options == nil || len(edited.Options) != 0 {
 		t.Errorf("options after clearing = %v, want an empty array", edited.Options)
 	}
 	// The wire must say [] rather than null: a client is promised an array.
-	resp := e.mustDo(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID, nil)
+	resp := e.mustDo(t, editor, http.MethodGet, apiV+"/tasks/"+task.UID, nil)
 	raw, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if !strings.Contains(string(raw), `"options":[]`) {
@@ -272,13 +282,13 @@ func TestViewerMayAnswerButNotCurate(t *testing.T) {
 	task := e.openTask(t, editor, "V kterém roce?")
 
 	// Reading is open to them.
-	e.do(t, viewer, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusOK, nil)
-	e.do(t, viewer, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, nil)
+	e.do(t, viewer, http.MethodGet, apiV+"/tasks/"+task.UID, nil, http.StatusOK, nil)
+	e.do(t, viewer, http.MethodGet, apiV+"/tasks", nil, http.StatusOK, nil)
 
 	// Answering is open to them.
 	answer, _ := json.Marshal(map[string]string{"body": "Bylo to v roce 1987."})
 	var created comments.Comment
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", answer,
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", answer,
 		http.StatusCreated, &created)
 	if created.TaskUID != task.UID || created.PhotoUID != "" {
 		t.Errorf("comment = %+v, want it hung off the task alone", created)
@@ -286,16 +296,16 @@ func TestViewerMayAnswerButNotCurate(t *testing.T) {
 
 	// Curating is not.
 	open, _ := json.Marshal(map[string]any{"title": "Vlastní úkol"})
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks", open, http.StatusForbidden, nil)
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks", open, http.StatusForbidden, nil)
 	patch, _ := json.Marshal(map[string]any{"title": "Přepsáno"})
-	e.do(t, viewer, http.MethodPatch, "/api/v1/tasks/"+task.UID, patch, http.StatusForbidden, nil)
-	e.do(t, viewer, http.MethodDelete, "/api/v1/tasks/"+task.UID, nil, http.StatusForbidden, nil)
+	e.do(t, viewer, http.MethodPatch, apiV+"/tasks/"+task.UID, patch, http.StatusForbidden, nil)
+	e.do(t, viewer, http.MethodDelete, apiV+"/tasks/"+task.UID, nil, http.StatusForbidden, nil)
 
 	// The answer is visible to everybody, and marks the task as replied to.
 	var thread struct {
 		Comments []comments.Comment `json:"comments"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks/"+task.UID+"/comments", nil, http.StatusOK, &thread)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks/"+task.UID+"/comments", nil, http.StatusOK, &thread)
 	if len(thread.Comments) != 1 || thread.Comments[0].AuthorName == "" {
 		t.Errorf("thread = %+v, want one comment with its author resolved", thread.Comments)
 	}
@@ -304,7 +314,7 @@ func TestViewerMayAnswerButNotCurate(t *testing.T) {
 		Tasks []phototask.Task `json:"tasks"`
 		Total int              `json:"total"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?answered=true", nil, http.StatusOK, &listed)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?answered=true", nil, http.StatusOK, &listed)
 	if listed.Total != 1 || !listed.Tasks[0].HasNewAnswer {
 		t.Errorf("answered listing = %+v, want the replied-to task flagged", listed)
 	}
@@ -321,18 +331,18 @@ func TestCommentScoping(t *testing.T) {
 
 	answer, _ := json.Marshal(map[string]string{"body": "1987"})
 	var created comments.Comment
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", answer,
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", answer,
 		http.StatusCreated, &created)
 
 	edit, _ := json.Marshal(map[string]string{"body": "Vlastně 1988"})
 	e.do(t, viewer, http.MethodPatch,
-		"/api/v1/tasks/"+other.UID+"/comments/"+created.UID, edit, http.StatusNotFound, nil)
+		apiV+"/tasks/"+other.UID+"/comments/"+created.UID, edit, http.StatusNotFound, nil)
 	e.do(t, editor, http.MethodPatch,
-		"/api/v1/tasks/"+task.UID+"/comments/"+created.UID, edit, http.StatusForbidden, nil)
+		apiV+"/tasks/"+task.UID+"/comments/"+created.UID, edit, http.StatusForbidden, nil)
 	e.do(t, viewer, http.MethodPatch,
-		"/api/v1/tasks/"+task.UID+"/comments/"+created.UID, edit, http.StatusOK, nil)
+		apiV+"/tasks/"+task.UID+"/comments/"+created.UID, edit, http.StatusOK, nil)
 	e.do(t, viewer, http.MethodDelete,
-		"/api/v1/tasks/"+task.UID+"/comments/"+created.UID, nil, http.StatusNoContent, nil)
+		apiV+"/tasks/"+task.UID+"/comments/"+created.UID, nil, http.StatusNoContent, nil)
 }
 
 // TestListFiltering verifies the listing's parameters, including the refusal of
@@ -343,7 +353,7 @@ func TestListFiltering(t *testing.T) {
 	e.openTask(t, editor, "Otevřená")
 	closed := e.openTask(t, editor, "Zavřená")
 	closing, _ := json.Marshal(map[string]any{"state": "rejected", "resolution": "nedohledatelné"})
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+closed.UID, closing, http.StatusOK, nil)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+closed.UID, closing, http.StatusOK, nil)
 
 	var all struct {
 		Tasks  []phototask.Task `json:"tasks"`
@@ -351,7 +361,7 @@ func TestListFiltering(t *testing.T) {
 		Limit  int              `json:"limit"`
 		Offset int              `json:"offset"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks", nil, http.StatusOK, &all)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks", nil, http.StatusOK, &all)
 	if all.Total != 2 || all.Limit != phototask.DefaultLimit {
 		t.Errorf("listing = %+v, want both tasks and the default page size echoed", all)
 	}
@@ -359,7 +369,7 @@ func TestListFiltering(t *testing.T) {
 	var open struct {
 		Total int `json:"total"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?open=true", nil, http.StatusOK, &open)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?open=true", nil, http.StatusOK, &open)
 	if open.Total != 1 {
 		t.Errorf("open listing total = %d, want 1", open.Total)
 	}
@@ -367,13 +377,13 @@ func TestListFiltering(t *testing.T) {
 	var byState struct {
 		Total int `json:"total"`
 	}
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?state=rejected", nil, http.StatusOK, &byState)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?state=rejected", nil, http.StatusOK, &byState)
 	if byState.Total != 1 {
 		t.Errorf("rejected listing total = %d, want 1", byState.Total)
 	}
 
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?state=parked", nil, http.StatusBadRequest, nil)
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?limit=-1", nil, http.StatusBadRequest, nil)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?state=parked", nil, http.StatusBadRequest, nil)
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?limit=-1", nil, http.StatusBadRequest, nil)
 }
 
 // TestAnonymousIsRefused verifies nothing is readable without signing in — the
@@ -384,8 +394,8 @@ func TestAnonymousIsRefused(t *testing.T) {
 	task := e.openTask(t, editor, "V kterém roce?")
 
 	anon := &http.Client{}
-	for _, path := range []string{"/api/v1/tasks", "/api/v1/tasks/" + task.UID,
-		"/api/v1/tasks/" + task.UID + "/comments"} {
+	for _, path := range []string{apiV + "/tasks", apiV + "/tasks/" + task.UID,
+		apiV + "/tasks/" + task.UID + "/comments"} {
 		resp := e.mustDo(t, anon, http.MethodGet, path, nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -411,19 +421,19 @@ func TestWhoseTurn(t *testing.T) {
 	waitingOn := func(c *http.Client) page {
 		t.Helper()
 		var got page
-		e.do(t, c, http.MethodGet, "/api/v1/tasks?waiting=1", nil, http.StatusOK, &got)
+		e.do(t, c, http.MethodGet, apiV+"/tasks?waiting=1", nil, http.StatusOK, &got)
 		return got
 	}
 	detail := func(c *http.Client) phototask.Task {
 		t.Helper()
 		var got phototask.Task
-		e.do(t, c, http.MethodGet, "/api/v1/tasks/"+task.UID, nil, http.StatusOK, &got)
+		e.do(t, c, http.MethodGet, apiV+"/tasks/"+task.UID, nil, http.StatusOK, &got)
 		return got
 	}
 
 	// Asked and untouched: the viewer's move, not the editor's.
 	ask, _ := json.Marshal(map[string]string{"user_uid": e.uids["pametnik"]})
-	e.do(t, editor, http.MethodPost, "/api/v1/tasks/"+task.UID+"/participants", ask, http.StatusOK, nil)
+	e.do(t, editor, http.MethodPost, apiV+"/tasks/"+task.UID+"/participants", ask, http.StatusOK, nil)
 	if got := waitingOn(viewer); got.Total != 1 || !got.Tasks[0].WaitingOnMe {
 		t.Errorf("waiting=1 for the person asked = %+v, want the task", got)
 	}
@@ -441,7 +451,7 @@ func TestWhoseTurn(t *testing.T) {
 	// alone — the viewer sees no new answer in their own words.
 	time.Sleep(10 * time.Millisecond)
 	answer, _ := json.Marshal(map[string]string{"body": "Bylo to v roce 1987."})
-	e.do(t, viewer, http.MethodPost, "/api/v1/tasks/"+task.UID+"/comments", answer, http.StatusCreated, nil)
+	e.do(t, viewer, http.MethodPost, apiV+"/tasks/"+task.UID+"/comments", answer, http.StatusCreated, nil)
 	if got := detail(editor); !got.HasNewAnswer || !got.WaitingOnMe || got.LastActivityByUID != e.uids["pametnik"] {
 		t.Errorf("editor's read after the answer = answer %v / waiting %v / by %q, want true / true / the viewer",
 			got.HasNewAnswer, got.WaitingOnMe, got.LastActivityByUID)
@@ -456,7 +466,7 @@ func TestWhoseTurn(t *testing.T) {
 
 	// The waiting filter combines with the others and is a plain boolean.
 	var combined page
-	e.do(t, editor, http.MethodGet, "/api/v1/tasks?waiting=true&state=question&participant=me",
+	e.do(t, editor, http.MethodGet, apiV+"/tasks?waiting=true&state=question&participant=me",
 		nil, http.StatusOK, &combined)
 	if combined.Total != 1 {
 		t.Errorf("waiting+state+participant = %+v, want the task", combined)
@@ -465,7 +475,7 @@ func TestWhoseTurn(t *testing.T) {
 	// The editor moves the state: seen, and nobody's move until the viewer acts.
 	time.Sleep(10 * time.Millisecond)
 	advance, _ := json.Marshal(map[string]string{"state": "working"})
-	e.do(t, editor, http.MethodPatch, "/api/v1/tasks/"+task.UID, advance, http.StatusOK, nil)
+	e.do(t, editor, http.MethodPatch, apiV+"/tasks/"+task.UID, advance, http.StatusOK, nil)
 	if got := detail(editor); got.HasNewAnswer || got.WaitingOnMe || got.StateByUID != e.uids["editor"] {
 		t.Errorf("editor's read after moving = answer %v / waiting %v / state_by %q, want false / false / self",
 			got.HasNewAnswer, got.WaitingOnMe, got.StateByUID)

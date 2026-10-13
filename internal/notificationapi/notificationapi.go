@@ -116,10 +116,11 @@ type API struct {
 	notifications NotificationStore
 	photos        PhotoStore
 	// media stamps the thumb/download URLs onto every photo this API returns.
-	media       *mediaurl.Builder
-	push        PushSettings
-	requireAuth func(http.Handler) http.Handler
-	throttle    func(http.Handler) http.Handler
+	media         *mediaurl.Builder
+	push          PushSettings
+	requireAuth   func(http.Handler) http.Handler
+	requireSigned func(http.Handler) http.Handler
+	throttle      func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. Every store and RequireAuth are
@@ -137,10 +138,17 @@ type Config struct {
 	// Push is what the capability route reports and what gates the
 	// subscription write.
 	Push PushSettings
-	// RequireAuth guards every route for any signed-in user.
+	// RequireAuth guards the project-scoped inbox routes for any member of the
+	// request's project.
 	RequireAuth func(http.Handler) http.Handler
+	// RequireSignedIn guards the instance-wide /push/* routes for any signed-in
+	// account: a device belongs to an account, not to a project, so no project
+	// is entered. Nil falls back to RequireAuth (for a test router that mounts
+	// both halves without the auth stack).
+	RequireSignedIn func(http.Handler) http.Handler
 	// SubscribeThrottle rate-limits the subscription write; it is mounted inside
-	// RequireAuth so a keyed limiter sees the caller. Nil throttles nothing.
+	// the /push guard (RequireSignedIn) so a keyed limiter sees the caller. Nil
+	// throttles nothing.
 	SubscribeThrottle func(http.Handler) http.Handler
 }
 
@@ -150,6 +158,10 @@ func NewAPI(cfg Config) *API {
 	if throttle == nil {
 		throttle = func(next http.Handler) http.Handler { return next }
 	}
+	signedIn := cfg.RequireSignedIn
+	if signedIn == nil {
+		signedIn = cfg.RequireAuth
+	}
 	return &API{
 		subscriptions: cfg.Subscriptions,
 		notifications: cfg.Notifications,
@@ -157,13 +169,14 @@ func NewAPI(cfg Config) *API {
 		media:         mediaurl.NewBuilder(cfg.Storage),
 		push:          cfg.Push,
 		requireAuth:   cfg.RequireAuth,
+		requireSigned: signedIn,
 		throttle:      throttle,
 	}
 }
 
 // RegisterRoutes mounts the endpoints onto r, which the caller has scoped under
-// the API base path (for example /api/v1). Every route requires an
-// authenticated user of any role:
+// the API base path (for example /api/v1). Every route requires a signed-in
+// account; the inbox ones a member of the request's project, of any role:
 //
 //	GET    /push/config                  is push on, and the VAPID public key
 //	GET    /push/subscriptions           the caller's subscribed devices
@@ -179,7 +192,7 @@ func NewAPI(cfg Config) *API {
 //
 // The server mounts the two halves apart: RegisterPushRoutes once (a device
 // belongs to an account, not a project), RegisterInboxRoutes with the
-// project-scoped API, under /api/v1/p/{project} and its transition alias.
+// project-scoped API, under /api/v1/p/{project}.
 func (a *API) RegisterRoutes(r chi.Router) {
 	a.RegisterPushRoutes(r)
 	a.RegisterInboxRoutes(r)
@@ -188,7 +201,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 // RegisterPushRoutes mounts the instance-wide /push/* half of RegisterRoutes.
 func (a *API) RegisterPushRoutes(r chi.Router) {
 	r.Route("/push", func(r chi.Router) {
-		r.Use(a.requireAuth)
+		r.Use(a.requireSigned)
 		r.Get("/config", a.handlePushConfig)
 		r.Get("/subscriptions", a.handleListSubscriptions)
 		r.With(a.throttle).Post("/subscriptions", a.handleSubscribe)

@@ -31,6 +31,9 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every what's-new request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // testGap is the inactivity threshold the test store runs on. A test cannot wait
 // six hours to see a visit rotate, so the clock is moved instead: the store is
 // built with a one-minute gap and the API with an injectable clock, which
@@ -66,8 +69,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	e.server = httptest.NewServer(r)
 	t.Cleanup(e.server.Close)
@@ -120,7 +127,7 @@ func (e *env) mustDo(t *testing.T, c *http.Client, method, path string, body []b
 // summary GETs /whats-new and returns the decoded digest.
 func (e *env) summary(t *testing.T, c *http.Client) whatsnew.Summary {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/whats-new", nil)
+	resp := e.mustDo(t, c, http.MethodGet, apiV+"/whats-new", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /whats-new status = %d, want 200", resp.StatusCode)
@@ -148,22 +155,22 @@ func (e *env) exec(t *testing.T, sql string, args ...any) {
 // insertPhoto inserts a live library photo created at the given time.
 func (e *env) insertPhoto(t *testing.T, uid string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, created_at, updated_at)
-	           VALUES ($1, $2, $3, $4, $4)`, uid, uid, uid+".jpg", createdAt)
+	e.exec(t, `INSERT INTO photos (uid, file_hash, file_path, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, $4, $4, $5)`, uid, uid, uid+".jpg", createdAt, project.BootstrapUID)
 }
 
 // insertAlbum inserts a hand-curated album created at the given time.
 func (e *env) insertAlbum(t *testing.T, uid, title string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at)
-	           VALUES ($1, $2, $3, 'album', $4, $4)`, uid, uid, title, createdAt)
+	e.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, 'album', $4, $4, $5)`, uid, uid, title, createdAt, project.BootstrapUID)
 }
 
 // insertSubject inserts a named person created at the given time.
 func (e *env) insertSubject(t *testing.T, uid, name string, createdAt time.Time) {
 	t.Helper()
-	e.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)
-	           VALUES ($1, $2, $3, 'person', $4, $4)`, uid, uid, name, createdAt)
+	e.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at, project_id)
+	           VALUES ($1, $2, $3, 'person', $4, $4, $5)`, uid, uid, name, createdAt, project.BootstrapUID)
 }
 
 // insertComment inserts a live comment on a photo, created at the given time.
@@ -300,10 +307,10 @@ func TestExcludedFromCounts(t *testing.T) {
 	env.exec(t, `UPDATE photos SET hidden_from_library = true WHERE uid = $1`, "ph-hidden")
 	env.insertComment(t, "cm-gone", "ph-visible", at)
 	env.exec(t, `UPDATE comments SET deleted_at = $2 WHERE uid = $1`, "cm-gone", at)
-	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at)
-	             VALUES ('al-folder', 'al-folder', '2026/08', 'folder', $1, $1)`, at)
-	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at)
-	             VALUES ('su-blank', 'su-blank', '', 'person', $1, $1)`, at)
+	env.exec(t, `INSERT INTO albums (uid, slug, title, type, created_at, updated_at, project_id)
+	             VALUES ('al-folder', 'al-folder', '2026/08', 'folder', $1, $1, $2)`, at, project.BootstrapUID)
+	env.exec(t, `INSERT INTO subjects (uid, slug, name, type, created_at, updated_at, project_id)
+	             VALUES ('su-blank', 'su-blank', '', 'person', $1, $1, $2)`, at, project.BootstrapUID)
 
 	got := env.summary(t, viewer)
 	if got.Photos != 1 {
@@ -374,7 +381,7 @@ func TestEveryRoleMayRead(t *testing.T) {
 // authenticated read.
 func TestUnauthenticatedRejected(t *testing.T) {
 	env := newEnv(t)
-	resp := env.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/whats-new", nil)
+	resp := env.mustDo(t, &http.Client{}, http.MethodGet, apiV+"/whats-new", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous GET status = %d, want 401", resp.StatusCode)

@@ -102,24 +102,40 @@ func requestProject(ctx context.Context) (uid, slug string, ok bool) {
 	return p.UID, p.Slug, true
 }
 
-// RegisterRoutes mounts the maintenance endpoints onto r, which the caller has
-// scoped under the API base path (for example /api/v1):
+// RegisterRoutes mounts every maintenance endpoint onto one router — the
+// instance-wide ones and the project's nameless repair — for a test that tells
+// no project prefix apart. The server mounts the two halves apart:
+// RegisterInstanceRoutes once under /api/v1, RegisterProjectRoutes with the
+// project-scoped API under /api/v1/p/{project}.
+func (a *API) RegisterRoutes(r chi.Router) {
+	a.RegisterInstanceRoutes(r)
+	a.RegisterProjectRoutes(r)
+}
+
+// RegisterInstanceRoutes mounts the instance-wide maintenance endpoints onto r,
+// which the caller has scoped under the API base path (for example /api/v1).
+// They span every project and enter none:
 //
 //	GET  /maintenance/scan                        RequireMaintainer  run an integrity scan
 //	POST /maintenance/repair                      RequireMaintainer  run the selected repairs
 //	POST /maintenance/audit/purge                 RequireMaintainer  delete old audit entries (retention)
+func (a *API) RegisterInstanceRoutes(r chi.Router) {
+	r.With(a.requireMaintainer).Get("/maintenance/scan", a.handleScan)
+	r.With(a.requireMaintainer).Post("/maintenance/repair", a.handleRepair)
+	r.With(a.requireMaintainer).Post("/maintenance/audit/purge", a.handleAuditPurge)
+}
+
+// RegisterProjectRoutes mounts the nameless-subject repair onto the router the
+// caller scoped to one project (/api/v1/p/{project}); it works inside that
+// project only:
+//
 //	GET  /maintenance/nameless-subjects           RequireMaintainer  report the nameless catch-all subjects
 //	POST /maintenance/nameless-subjects/detach    RequireMaintainer  download the undo file, then detach them
 //	POST /maintenance/nameless-subjects/restore   RequireMaintainer  replay an undo file
-func (a *API) RegisterRoutes(r chi.Router) {
-	r.Route("/maintenance", func(r chi.Router) {
-		r.With(a.requireMaintainer).Get("/scan", a.handleScan)
-		r.With(a.requireMaintainer).Post("/repair", a.handleRepair)
-		r.With(a.requireMaintainer).Post("/audit/purge", a.handleAuditPurge)
-		r.With(a.requireMaintainer).Get("/nameless-subjects", a.handleNamelessReport)
-		r.With(a.requireMaintainer).Post("/nameless-subjects/detach", a.handleNamelessDetach)
-		r.With(a.requireMaintainer).Post("/nameless-subjects/restore", a.handleNamelessRestore)
-	})
+func (a *API) RegisterProjectRoutes(r chi.Router) {
+	r.With(a.requireMaintainer).Get("/maintenance/nameless-subjects", a.handleNamelessReport)
+	r.With(a.requireMaintainer).Post("/maintenance/nameless-subjects/detach", a.handleNamelessDetach)
+	r.With(a.requireMaintainer).Post("/maintenance/nameless-subjects/restore", a.handleNamelessRestore)
 }
 
 // handleScan runs an integrity scan and returns the report. It answers 503 when

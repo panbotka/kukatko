@@ -40,9 +40,9 @@ func TestHTTP_maintainerBoundary(t *testing.T) {
 			path   string
 			want   int
 		}{
-			{"write allowed", http.MethodGet, "/api/v1/probe/write", http.StatusOK},
-			{"admin allowed", http.MethodGet, "/api/v1/probe/admin", http.StatusOK},
-			{"import allowed", http.MethodGet, "/api/v1/probe/import", http.StatusOK},
+			{"write allowed", http.MethodGet, apiV + "/probe/write", http.StatusOK},
+			{"admin allowed", http.MethodGet, apiV + "/probe/admin", http.StatusOK},
+			{"import allowed", http.MethodGet, apiV + "/probe/import", http.StatusOK},
 			{"list users allowed", http.MethodGet, "/api/v1/admin/users", http.StatusOK},
 		}
 		for _, tc := range cases {
@@ -59,7 +59,7 @@ func TestHTTP_maintainerBoundary(t *testing.T) {
 	t.Run("maintainer session cookie", func(t *testing.T) {
 		cookie := env.login(t, "ops-agent")
 		for _, path := range []string{
-			"/api/v1/probe/write", "/api/v1/probe/admin", "/api/v1/probe/import",
+			apiV + "/probe/write", apiV + "/probe/admin", apiV + "/probe/import",
 		} {
 			t.Run(path, func(t *testing.T) {
 				if status, data := env.cookieRequest(t, http.MethodGet, path, cookie, ""); status != http.StatusOK {
@@ -89,7 +89,7 @@ func TestHTTP_importGuardRoleMatrix(t *testing.T) {
 		t.Run(string(tt.role), func(t *testing.T) {
 			u := env.user(t, tt.user, tt.role)
 			_, token := env.mintToken(t, u, "cli", nil)
-			if status, data := env.request(t, http.MethodGet, "/api/v1/probe/import", token, ""); status != tt.want {
+			if status, data := env.request(t, http.MethodGet, apiV+"/probe/import", token, ""); status != tt.want {
 				t.Errorf("import probe for %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
 			}
 		})
@@ -115,7 +115,7 @@ func TestHTTP_adminGuardRoleMatrix(t *testing.T) {
 		t.Run(string(tt.role), func(t *testing.T) {
 			u := env.user(t, tt.user, tt.role)
 			_, token := env.mintToken(t, u, "cli", nil)
-			if status, data := env.request(t, http.MethodGet, "/api/v1/probe/admin", token, ""); status != tt.want {
+			if status, data := env.request(t, http.MethodGet, apiV+"/probe/admin", token, ""); status != tt.want {
 				t.Errorf("admin probe for %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
 			}
 		})

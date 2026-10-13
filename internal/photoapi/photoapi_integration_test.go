@@ -55,6 +55,10 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix every project-scoped request goes
+// through; the photo routes have no unprefixed mount.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and photo APIs behind an httptest server over the
 // integration database, plus the storage used to seed real files.
 type env struct {
@@ -231,16 +235,18 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		RequireDownload:   authAPI.RequireAuthOrDownloadToken,
 	})
 
-	// The photo routes are mounted the way the server mounts them: unprefixed
-	// (the transition alias every older test drives) and under /p/{project},
-	// where the tenant-isolation tests address a project by its slug.
+	// The photo routes are mounted the way the server mounts them: only under
+	// /p/{project}, so every request names its project (apiV for the bootstrap
+	// one) and the tenant-isolation tests address another by its slug. The
+	// instance-level auth routes (login & co.) stay unprefixed.
 	projects := project.NewStore(db.Pool())
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
 		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
 			r.Use(auth.WithProject(projects))
+			// PUT /auth/subject (person:me's link) is project-scoped.
+			authAPI.RegisterProjectRoutes(r)
 			api.RegisterRoutes(r)
 		})
 	})
@@ -310,6 +316,9 @@ func (e *env) seedPhoto(t *testing.T, template photos.Photo, name string, r, g, 
 		t.Fatalf("storage.Store: %v", err)
 	}
 
+	if template.ProjectID == "" {
+		template.ProjectID = project.BootstrapUID
+	}
 	template.FileHash = stored.Hash
 	template.FilePath = stored.RelPath
 	template.FileName = name
@@ -398,7 +407,7 @@ type listResp struct {
 // getList fetches the list endpoint with the given query and decodes the body.
 func getList(t *testing.T, client *http.Client, base, query string) listResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list status = %d for %q, want 200", resp.StatusCode, query)
@@ -493,7 +502,7 @@ func TestList_filters(t *testing.T) {
 		}
 	})
 	t.Run("invalid filter is 400", func(t *testing.T) {
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos?limit=lots", nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos?limit=lots", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400 for invalid limit", resp.StatusCode)
@@ -639,7 +648,7 @@ func TestDetail(t *testing.T) {
 		Exif: json.RawMessage(`{"Make":"Canon"}`),
 	}, "detail.jpg", 30, 60, 90)
 
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+seeded.UID, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+seeded.UID, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -664,7 +673,7 @@ func TestDetail(t *testing.T) {
 		t.Errorf("detail files = %+v, want one primary file", detail.Files)
 	}
 
-	missing := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/ph_nope", nil)
+	missing := mustDo(t, client, http.MethodGet, base+apiV+"/photos/ph_nope", nil)
 	defer func() { _ = missing.Body.Close() }()
 	if missing.StatusCode != http.StatusNotFound {
 		t.Errorf("missing detail status = %d, want 404", missing.StatusCode)
@@ -691,7 +700,7 @@ func TestDetailUploader(t *testing.T) {
 	}
 	decodeUploader := func(t *testing.T, uid string) *uploaderRef {
 		t.Helper()
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("detail status = %d, want 200", resp.StatusCode)
@@ -734,7 +743,7 @@ func TestUpdateMetadata(t *testing.T) {
 		Title: "Before", Description: "keep", TakenAtSource: "exif",
 		Lat: new(10.0), Lng: new(20.0),
 	}, "edit.jpg", 70, 80, 90)
-	url := base + "/api/v1/photos/" + seeded.UID
+	url := base + apiV + "/photos/" + seeded.UID
 
 	t.Run("editor updates title and clears gps", func(t *testing.T) {
 		body := []byte(`{"title":"After","lat":null,"lng":null}`)
@@ -802,7 +811,7 @@ func TestUpdateMetadata(t *testing.T) {
 	})
 
 	t.Run("unknown photo is 404", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPatch, base+"/api/v1/photos/ph_missing", []byte(`{"title":"x"}`))
+		resp := mustDo(t, editor, http.MethodPatch, base+apiV+"/photos/ph_missing", []byte(`{"title":"x"}`))
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("status = %d, want 404", resp.StatusCode)
@@ -822,7 +831,7 @@ func TestUpdateMetadata_returnsFullDetail(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{
 		Title: "Before", Description: "old caption", TakenAtSource: "exif",
 	}, "detail-patch.jpg", 100, 110, 120)
-	url := base + "/api/v1/photos/" + seeded.UID
+	url := base + apiV + "/photos/" + seeded.UID
 
 	// The photo belongs to an album, carries a label and is favorited: exactly the
 	// state the buggy PATCH response used to drop.
@@ -929,7 +938,7 @@ func TestArchive(t *testing.T) {
 	trash := env.seedPhoto(t, photos.Photo{Title: "Trash", TakenAtSource: "unknown"}, "trash.jpg", 200, 5, 5)
 
 	t.Run("viewer cannot archive", func(t *testing.T) {
-		resp := mustDo(t, viewer, http.MethodPost, base+"/api/v1/photos/"+trash.UID+"/archive", nil)
+		resp := mustDo(t, viewer, http.MethodPost, base+apiV+"/photos/"+trash.UID+"/archive", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("viewer archive status = %d, want 403", resp.StatusCode)
@@ -937,7 +946,7 @@ func TestArchive(t *testing.T) {
 	})
 
 	t.Run("editor archives and it leaves the default list", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/photos/"+trash.UID+"/archive", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/photos/"+trash.UID+"/archive", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("archive status = %d, want 200", resp.StatusCode)
@@ -958,7 +967,7 @@ func TestArchive(t *testing.T) {
 	})
 
 	t.Run("unarchive restores it", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/photos/"+trash.UID+"/unarchive", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/photos/"+trash.UID+"/unarchive", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("unarchive status = %d, want 200", resp.StatusCode)
@@ -995,7 +1004,7 @@ func TestTrashPurgeRBAC(t *testing.T) {
 
 	t.Run("editor can archive (soft delete)", func(t *testing.T) {
 		live := env.seedPhoto(t, photos.Photo{Title: "C", TakenAtSource: "unknown"}, "c.jpg", 7, 7, 200)
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/photos/"+live.UID+"/archive", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/photos/"+live.UID+"/archive", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("editor archive status = %d, want 200", resp.StatusCode)
@@ -1004,7 +1013,7 @@ func TestTrashPurgeRBAC(t *testing.T) {
 
 	t.Run("editor cannot purge one", func(t *testing.T) {
 		resp := mustDo(t, editor, http.MethodPost,
-			base+"/api/v1/photos/"+forEditor.UID+"/purge?confirm=true", nil)
+			base+apiV+"/photos/"+forEditor.UID+"/purge?confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("editor purge status = %d, want 403", resp.StatusCode)
@@ -1012,7 +1021,7 @@ func TestTrashPurgeRBAC(t *testing.T) {
 	})
 
 	t.Run("editor cannot empty the trash", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/trash/empty?confirm=true", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/trash/empty?confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("editor empty-trash status = %d, want 403", resp.StatusCode)
@@ -1020,7 +1029,7 @@ func TestTrashPurgeRBAC(t *testing.T) {
 	})
 
 	t.Run("editor can read trash info", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodGet, base+"/api/v1/trash/info", nil)
+		resp := mustDo(t, editor, http.MethodGet, base+apiV+"/trash/info", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("editor trash-info status = %d, want 200", resp.StatusCode)
@@ -1029,7 +1038,7 @@ func TestTrashPurgeRBAC(t *testing.T) {
 
 	t.Run("admin can purge", func(t *testing.T) {
 		resp := mustDo(t, admin, http.MethodPost,
-			base+"/api/v1/photos/"+forAdmin.UID+"/purge?confirm=true", nil)
+			base+apiV+"/photos/"+forAdmin.UID+"/purge?confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusNoContent {
 			t.Errorf("admin purge status = %d, want 204", resp.StatusCode)
@@ -1059,7 +1068,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	}
 
 	t.Run("viewer cannot purge-older", func(t *testing.T) {
-		resp := mustDo(t, viewer, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		resp := mustDo(t, viewer, http.MethodPost, base+apiV+"/trash/purge-older?days=0&confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("viewer purge-older status = %d, want 403", resp.StatusCode)
@@ -1067,7 +1076,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	})
 
 	t.Run("editor cannot purge-older", func(t *testing.T) {
-		resp := mustDo(t, editor, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		resp := mustDo(t, editor, http.MethodPost, base+apiV+"/trash/purge-older?days=0&confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusForbidden {
 			t.Errorf("editor purge-older status = %d, want 403", resp.StatusCode)
@@ -1075,7 +1084,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	})
 
 	t.Run("admin needs confirm", func(t *testing.T) {
-		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=0", nil)
+		resp := mustDo(t, admin, http.MethodPost, base+apiV+"/trash/purge-older?days=0", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("admin purge-older without confirm status = %d, want 400", resp.StatusCode)
@@ -1083,7 +1092,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	})
 
 	t.Run("admin needs valid days", func(t *testing.T) {
-		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=nope&confirm=true", nil)
+		resp := mustDo(t, admin, http.MethodPost, base+apiV+"/trash/purge-older?days=nope&confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("admin purge-older with bad days status = %d, want 400", resp.StatusCode)
@@ -1091,7 +1100,7 @@ func TestTrashPurgeOlderRBAC(t *testing.T) {
 	})
 
 	t.Run("admin purges the whole trash with days=0", func(t *testing.T) {
-		resp := mustDo(t, admin, http.MethodPost, base+"/api/v1/trash/purge-older?days=0&confirm=true", nil)
+		resp := mustDo(t, admin, http.MethodPost, base+apiV+"/trash/purge-older?days=0&confirm=true", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("admin purge-older status = %d, want 200", resp.StatusCode)
@@ -1122,7 +1131,7 @@ func TestThumbnail(t *testing.T) {
 	base := env.server.URL
 
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Thumb", TakenAtSource: "unknown"}, "thumb.jpg", 120, 60, 30)
-	url := base + "/api/v1/photos/" + seeded.UID + "/thumb/tile_100"
+	url := base + apiV + "/photos/" + seeded.UID + "/thumb/tile_100"
 
 	resp := mustDo(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()
@@ -1155,7 +1164,7 @@ func TestThumbnail(t *testing.T) {
 	})
 
 	t.Run("unknown size is 400", func(t *testing.T) {
-		r2 := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+seeded.UID+"/thumb/huge", nil)
+		r2 := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+seeded.UID+"/thumb/huge", nil)
 		defer func() { _ = r2.Body.Close() }()
 		if r2.StatusCode != http.StatusBadRequest {
 			t.Errorf("unknown size status = %d, want 400", r2.StatusCode)
@@ -1177,14 +1186,15 @@ func TestDownload(t *testing.T) {
 		t.Fatalf("seed store: %v", err)
 	}
 	created, err := env.store.Create(t.Context(), photos.Photo{
-		FileHash: stored.Hash, FilePath: stored.RelPath, FileName: "orig.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  stored.Hash, FilePath: stored.RelPath, FileName: "orig.jpg",
 		FileSize: stored.Size, FileMime: stored.MIME, FileWidth: 64, FileHeight: 48,
 		FileOrientation: 1, TakenAtSource: "unknown",
 	})
 	if err != nil {
 		t.Fatalf("seed create: %v", err)
 	}
-	url := base + "/api/v1/photos/" + created.UID + "/download"
+	url := base + apiV + "/photos/" + created.UID + "/download"
 
 	resp := mustDo(t, client, http.MethodGet, url, nil)
 	defer func() { _ = resp.Body.Close() }()
@@ -1240,7 +1250,7 @@ func TestList_requiresAuth(t *testing.T) {
 	base := env.server.URL
 	anon := &http.Client{}
 
-	for _, path := range []string{"/api/v1/photos", "/api/v1/photos/ph_x"} {
+	for _, path := range []string{apiV + "/photos", apiV + "/photos/ph_x"} {
 		resp := mustDo(t, anon, http.MethodGet, base+path, nil)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -1317,7 +1327,7 @@ func TestTimeline(t *testing.T) {
 	})
 
 	t.Run("invalid filter is 400", func(t *testing.T) {
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/timeline?archived=maybe", nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/timeline?archived=maybe", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400 for invalid archived", resp.StatusCode)
@@ -1325,7 +1335,7 @@ func TestTimeline(t *testing.T) {
 	})
 
 	t.Run("requires auth", func(t *testing.T) {
-		resp := mustDo(t, &http.Client{}, http.MethodGet, base+"/api/v1/photos/timeline", nil)
+		resp := mustDo(t, &http.Client{}, http.MethodGet, base+apiV+"/photos/timeline", nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("anonymous status = %d, want 401", resp.StatusCode)
@@ -1337,7 +1347,7 @@ func TestTimeline(t *testing.T) {
 // body, failing the test on a non-200 status.
 func getTimeline(t *testing.T, client *http.Client, base, query string) timelineResp {
 	t.Helper()
-	resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/timeline?"+query, nil)
+	resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/timeline?"+query, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("timeline status = %d for %q, want 200", resp.StatusCode, query)

@@ -93,7 +93,7 @@ func TestThumbRoute_filesystemBackendStreamsBytes(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Local", TakenAtSource: "unknown"}, "local.jpg", 10, 20, 30)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+seeded.UID+"/thumb/tile_100", nil)
+		env.server.URL+apiV+"/photos/"+seeded.UID+"/thumb/tile_100", nil)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -122,7 +122,7 @@ func TestThumbRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "remote.jpg", 40, 50, 60)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+seeded.UID+"/thumb/tile_100", nil)
+		env.server.URL+apiV+"/photos/"+seeded.UID+"/thumb/tile_100", nil)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusFound {
@@ -159,7 +159,7 @@ func TestDownloadRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Remote", TakenAtSource: "unknown"}, "orig.jpg", 70, 80, 90)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+seeded.UID+"/download", nil)
+		env.server.URL+apiV+"/photos/"+seeded.UID+"/download", nil)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusFound {
@@ -183,7 +183,7 @@ func TestVideoRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	}, "clip.mp4", 15, 25, 35)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+seeded.UID+"/video", nil)
+		env.server.URL+apiV+"/photos/"+seeded.UID+"/video", nil)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusFound {
@@ -207,10 +207,10 @@ func TestPhotoPayload_carriesRouteURLsOnFilesystemBackend(t *testing.T) {
 
 	view := fetchFirstPhoto(t, env, client)
 
-	if got, want := view.ThumbURL, "/api/v1/photos/"+seeded.UID+"/thumb/"+thumb.GridSize; got != want {
+	if got, want := view.ThumbURL, apiV+"/photos/"+seeded.UID+"/thumb/"+thumb.GridSize; got != want {
 		t.Errorf("thumb_url = %q, want %q", got, want)
 	}
-	if got, want := view.DownloadURL, "/api/v1/photos/"+seeded.UID+"/download?original=true"; got != want {
+	if got, want := view.DownloadURL, apiV+"/photos/"+seeded.UID+"/download?original=true"; got != want {
 		t.Errorf("download_url = %q, want %q", got, want)
 	}
 }

@@ -143,10 +143,11 @@ func (e *testEnv) seedLegacyPhoto(t *testing.T, hash string, edit func(*photos.P
 	}
 
 	photo := photos.Photo{
-		FileHash: hash,
-		FilePath: "2023/06/" + hash + ".jpg",
-		FileName: hash + ".jpg",
-		FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash,
+		FilePath:  "2023/06/" + hash + ".jpg",
+		FileName:  hash + ".jpg",
+		FileMime:  "image/jpeg",
 	}
 	if edit != nil {
 		edit(&photo)
@@ -259,7 +260,8 @@ func TestReextract_missingOriginalIsSkipped(t *testing.T) {
 	ctx := t.Context()
 
 	created, err := env.store.Create(ctx, photos.Photo{
-		FileHash: "cc33", FilePath: "2023/06/gone.jpg", FileName: "gone.jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "cc33", FilePath: "2023/06/gone.jpg", FileName: "gone.jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)

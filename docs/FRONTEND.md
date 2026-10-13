@@ -2117,12 +2117,13 @@ here.
   an „Zrušit propojení" button. Above the empty field — **before** the decision, not after the save — sits a
   warning that linking **publishes that person's cover photo next to every comment the account has written**,
   and that the „soukromá osoba" flag hides nothing today. Saving goes through `setMySubject`
-  (`PUT /auth/subject`) and then `useAuth().refresh()`, because the menu entry and the avatar both read the
-  link off the session rather than off this card. A link whose person has since been deleted reads as
+  (`PUT /api/v1/p/<slug>/auth/subject` — the link is the current project's) and then `useAuth().refresh()`,
+  because the menu entry and the avatar both read the link off the session (`/auth/me`'s membership of the
+  current project) rather than off this card. A link whose person has since been deleted reads as
   „Propojená osoba už v knihovně není" instead of a blank. Tests: `MySubjectCard.test.tsx`,
   **plus `MyPictureCard`** (`components/account/`, directly *under* the link — the link is the picture's own
   default, so overriding it comes after setting it): what the account looks like wherever it is named.
-  It reads `fetchMyPicture` (`GET /auth/picture`) on mount and shows the resolved source in words
+  It reads `fetchMyPicture` (`GET /api/v1/p/<slug>/auth/picture` in a project, else the instance route) on mount and shows the resolved source in words
   (`account.picture.source.{upload,photo,subject,none}`) beside a live `PersonAvatar` preview at
   `.kk-avatar--lg` — the same endpoint every reader sees. A saved change calls `pictureChanged()` on the auth
   context rather than counting for itself, because the avatar it must not leave stale is the one in the bar
@@ -2233,8 +2234,9 @@ here.
   changes its mind, not a client-side role gate. The **rate-limit exemption** is the one property of a token
   that outlives its minting: a token carrying it is badged (`account.apiTokens.unlimited.badge`) for everybody
   who can see the row — "why is this one different" is a question the list should answer — while the switch
-  that *moves* it, both on each row and beside the create field, is rendered **only for an admin**
-  (`useAuth().isAdmin`), because the backend refuses anybody else and an affordance that always fails is worse
+  that *moves* it, both on each row and beside the create field, is rendered **only for the maintainer**
+  (`useAuth().isMaintainer` — a project's admin does not govern tokens, which work in every project of their
+  owner), because the backend refuses anybody else and an affordance that always fails is worse
   than none. The row switch is optimistic like the revoke: it flips at once and is put back under an alert
   (`account.apiTokens.unlimited.error`) if the server disagrees. `createApiToken(name, unlimited)` and
   `setApiTokenUnlimited(id, unlimited)` (PATCH) live in `services/auth`; the flag resets with the name field
@@ -2998,7 +3000,8 @@ here.
   `POST /maintenance/audit/purge`), and the card **`NamelessSubjectsCard`**
   (`components/maintenance/NamelessSubjectsCard.tsx`, **Osoba bez jména**) — the importer-minted catch-all
   subject that sits first in `/people` owning 96 % of the library's faces, whose repair used to be reachable
-  only over SSH: **Zkontrolovat** (`fetchNamelessSubjects` → `GET /maintenance/nameless-subjects`, read-only)
+  only over SSH: **Zkontrolovat** (`fetchNamelessSubjects` → `GET /api/v1/p/<slug>/maintenance/nameless-subjects` in the
+  current project, read-only)
   renders the found subjects through the shared `RecordTable` („Osoba bez jména" with the uid + slug behind a
   `TechnicalDetail`, markers, faces, created),
   **Odpojit a smazat subjekt** goes through a confirmation that names both the loss and the undo file, and the
@@ -3146,7 +3149,8 @@ here.
   not exceptional: the link is offered anyway and the destination says so itself — a 404 (`isNotFound`) puts
   `AlbumDetailPage`/`LabelDetailPage`/`SubjectPage`/`PhotoDetailPage` into a `missing` state
   (*Toto album už neexistuje.* + a hint) instead of the generic “could not be loaded”.
-  Filters (actor = a `<select>` over the roster via `fetchUsers`, action, entity type+UID,
+  Filters (actor = a `<select>` over the project's member directory via `listDirectory` — `GET
+  /api/v1/p/<slug>/users`; an actor no longer a member shows as its uid — action, entity type+UID,
   date range `od`/`do`) in a **draft** form → **Filtrovat** writes them to the URL and resets
   the page, **Zrušit filtry** clears them; the dates are expanded in `viewToParams` to RFC 3339 day boundaries
   (UTC). prev/next pagination over `offset`/`next_offset` (limit 100) with a `od–do z total` count;
@@ -3726,7 +3730,9 @@ here.
   `photo.comments.submitHint` says `@` mentions somebody. Tests: `MentionTextarea.test.tsx` (lazy fetch and
   filtering, mousedown selection with the caret, keyboard and Escape, keys handed on, a failed directory). **`PersonAvatar`**
   (`components/`) is what a thread actually draws: **whatever picture the author's account resolves to**
-  (`userAvatarUrl(author_uid)` → `GET /users/{uid}/avatar`, `services/userpic`; no download token — the
+  (`userAvatarUrl(author_uid)` → `GET /api/v1/p/<slug>/users/{uid}/avatar` inside a project — whose chain falls
+  back to the account's person **in that project** — else the instance `/api/v1/users/{uid}/avatar`,
+  `services/userpic`; no download token — the
   browser sends the session cookie with a same-origin `<img>`), falling back to `InitialAvatar` when the
   comment names no account (an authorless one carries `author_uid: ''`) or the request answers 404. **Which**
   of the three sources answered — an uploaded picture, a photo the user picked, the face of the person the
@@ -5470,7 +5476,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   so a modified click (ctrl/cmd/shift/middle) still opens the player directly with the settings last
   saved; the `count` prop is what the estimate is computed from — an absent count shows none);
   `components/map/` = `LeafletMap` (an imperative Leaflet bridge: a tile layer on the **backend
-  proxy** `/api/v1/map/tiles/{mapset}/{z}/{x}/{y}{r}` (the key stays server-side, `{r}`→`@2x` on retina),
+  proxy** `/api/v1/p/<slug>/map/tiles/{mapset}/{z}/{x}/{y}{r}` (the key stays server-side, `{r}`→`@2x` on retina),
   the **mandatory mapy.com elements** — the attribution „© Seznam.cz a.s. a další" → `/copyright` and a clickable
   **logo** bottom-left → `mapy.com`; `leaflet.markercluster` clusters (a click zooms in), markers
   from GeoJSON, a popup with a preview → the photo detail (pin mode, the detail's mini-map); in
@@ -5817,7 +5823,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   always used for a viewer: no greyed-out buttons, no explanatory badges),
   `capabilities/` (`CapabilitiesContext`/`useCapabilities` + `CapabilitiesProvider` = what the instance is —
   the feature flags `{semantic_search}` **and the running build `{version?}`** — from
-  `GET /api/v1/capabilities`; the provider sits inside `AuthProvider`,
+  `GET /api/v1/p/<slug>/capabilities`; the provider sits inside `AuthProvider`,
   fetches on mount + after 60 s + on `visibilitychange` (the same pattern as `useJobStats`), a failed
   fetch keeps the last state; **unlike `useAuth` the hook doesn't throw** — the context has a safe default
   `{semantic_search:false, known:false}` (**no `version`**), so a component outside the provider merely hides
@@ -7279,7 +7285,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `toLocaleDateString`/`toLocaleString` with the **active UI language** `i18n.language`, not the browser's default
   language; unparseable input → the original string; used by PhotoTile/DuplicateGroupCard/
   MetadataPanel/Import/System for dates in the cs/en format))),
-  `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/capabilities`
+  `services/` (`health.ts`, `capabilities.ts` = `fetchCapabilities(signal)` over `GET /api/v1/p/<slug>/capabilities`
   → `Capabilities{semantic_search, passkeys, video_streaming, version?: VersionInfo{version,commit}}`
   (`passkeys` says whether
   this instance has a WebAuthn relying party configured — a **static** fact about the deployment, unlike the
@@ -7319,13 +7325,13 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   instance where nobody wrote a greeting answers **200 with an empty string, not a 404** — "there is no
   greeting" is an answer — so a rejection here means the question could not be asked, which `WelcomeModal`
   deliberately does not treat as an empty greeting,
-  `notifications.ts` = `fetchNotification(uid, signal)` over `GET /api/v1/notifications/{uid}` →
+  `notifications.ts` = `fetchNotification(uid, signal)` over `GET /api/v1/p/<slug>/notifications/{uid}` →
   `NotificationDetail` (`NotificationRecord{uid, kind, title, body, link, created_at, read_at}` + `photos`
   in the frozen order, `total_count`, `dropped_count`) and `markNotificationRead(uid)` over `POST
   …/{uid}/read`; both throw `ApiError` so a page tells a 404 (unknown, foreign or purged — never a 403)
   apart from a failure. `NOTIFICATION_PATH_PREFIX` (`/n/`) + `notificationPath(uid)` mirror
   `notification.PathPrefix`,
-  `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/whats-new` → `WhatsNew{has_news, since?,
+  `whatsNew.ts` = `fetchWhatsNew(signal)` over `GET /api/v1/p/<slug>/whats-new` → `WhatsNew{has_news, since?,
   photos?, comments?, albums?:WhatsNewAlbum[], album_count?, people?:WhatsNewPerson[], person_count?}`
   (`has_news` is the only flag to branch on — false covers both a first-ever visit and an empty one;
   the request **writes** server-side, stamping the reader's visit, so it is issued once per library-home
@@ -7359,7 +7365,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `roleAtLeast`, `canWrite` (editor+), `isAdmin` (admin+), `isMaintainer` (maintainer) and
   `canImport` (= maintainer; import is an operational capability) — all via `ROLE_RANK` mirroring the backend's
   `internal/auth/role.go`; `MIN_PASSWORD_LENGTH`; **`setMySubject(subjectUid|null, signal)`**
-  over `PUT /api/v1/auth/subject` → the refreshed `User` (which person of the library the signed-in user is;
+  over `PUT /api/v1/p/<slug>/auth/subject` (`apiPath`, the current project) → the refreshed `User` (which person of the library the signed-in user is;
   the account written to is always the session's, and `User.subject_uid` is what the "my photos" entry, the
   `person:me` filter and the comment avatar all read); `User` additionally carries **`approved_at`**
   (when an administrator let the account in, `null` while nobody has — **not** the inverse of
@@ -7395,20 +7401,20 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   HTTP 409 → `duplicate`, 501 → `unavailable`, 401 → `refused`, 403 → `pendingApproval`, 429 → `rateLimited`,
   a transport failure → `offline`. `passkeys.test.ts` drives the real code against a fake authenticator and a
   stubbed `fetch`, asserting the wire encoding as well as the reasons;
-  `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/photos`
+  `photos.ts` = `fetchPhotos(params,signal)` over `GET /api/v1/p/<slug>/photos`
   (filters/sorting/pagination → `PhotoListResponse{photos,total,limit,offset,next_offset}`),
-  `searchPhotos(params,mode?,signal)` over `GET /api/v1/search` (the mode
+  `searchPhotos(params,mode?,signal)` over `GET /api/v1/p/<slug>/search` (the mode
   `fulltext`/`semantic`/`hybrid`, the response additionally has `mode`+`degraded`),
-  `fetchSimilar(uid,limit?,signal)` over `GET /api/v1/photos/{uid}/similar` → `SimilarPhoto[]`
+  `fetchSimilar(uid,limit?,signal)` over `GET /api/v1/p/<slug>/photos/{uid}/similar` → `SimilarPhoto[]`
   (`Photo`+`distance`; empty-friendly), the types `SimilarPhoto`/`SimilarResponse`,
-  `fetchTimeline(params,signal)` over `GET /api/v1/photos/timeline` → `Timeline{buckets,total}`
+  `fetchTimeline(params,signal)` over `GET /api/v1/p/<slug>/photos/timeline` → `Timeline{buckets,total}`
   (a monthly date histogram, the same filters as the list; the backend ignores sort/pagination), the types
   `Timeline`/`TimelineBucket{year,month,count,cumulative}` — the basis for `TimelineScrubber`,
-  `fetchPhotoYears(params,signal)` over `GET /api/v1/photos/years` → `YearsResponse{years,total}`
+  `fetchPhotoYears(params,signal)` over `GET /api/v1/p/<slug>/photos/years` → `YearsResponse{years,total}`
   (a year histogram, the same filters as the list; sort/pagination are ignored, and the caller drops the
   period first), the types `YearsResponse`/`YearBucket{year,count}` — the basis for the decades the
   period filter offers (`useLibraryFacets`),
-  `fetchPhotoUploaders(params,signal)` over `GET /api/v1/photos/uploaders` → `UploadersResponse{uploaders}`
+  `fetchPhotoUploaders(params,signal)` over `GET /api/v1/p/<slug>/photos/uploaders` → `UploadersResponse{uploaders}`
   (who uploaded into the current view, largest first, the same filters as the list; the caller drops the
   `uploader` scope first), the types `UploadersResponse`/`UploaderBucket{uid,name,count}` — where the
   imported photos are the entry with an **empty `uid` and an empty `name`**, which the client words itself
@@ -7416,15 +7422,15 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `PhotoListParams` scopes the time axis **only** through `taken_after`/`taken_before` (the backend's
   single-year `year` param has no caller here — one filter, one representation), `buildPhotoQuery`
   serializes them,
-  `favoritePhoto(uid,favorite,signal)` over `PUT`/`DELETE /api/v1/photos/{uid}/favorite` (a per-user
+  `favoritePhoto(uid,favorite,signal)` over `PUT`/`DELETE /api/v1/p/<slug>/photos/{uid}/favorite` (a per-user
   toggle, 204, the basis for the optimistic `useFavorite`),
-  `ratePhoto(uid,{rating?,flag?},signal)` over `PUT /api/v1/photos/{uid}/rating` +
+  `ratePhoto(uid,{rating?,flag?},signal)` over `PUT /api/v1/p/<slug>/photos/{uid}/rating` +
   `clearRating(uid,signal)` over `DELETE …/rating` (per-user stars 0–5 + a personal flag
   none|pick|reject|eye, 204, the basis for `useRating`), the types `RatingUpdate`/`RatingFlag`,
-  `regenerateThumbnail(uid,signal)` over `POST /api/v1/photos/{uid}/regenerate-thumbnail`
+  `regenerateThumbnail(uid,signal)` over `POST /api/v1/p/<slug>/photos/{uid}/regenerate-thumbnail`
   (an editor/admin service action, synchronous, `RegenerateThumbnailResult{status,sizes}`, 422 =
   the original is undecodable; the basis for `RegenerateThumbnailButton`),
-  `runProcessingStep(uid,step,signal)` over `POST /api/v1/photos/{uid}/process/{step}` (a **maintainer**
+  `runProcessingStep(uid,step,signal)` over `POST /api/v1/p/<slug>/photos/{uid}/process/{step}` (a **maintainer**
   action scheduling one per-photo computation, idempotent, resolves with that step's new
   `PhotoProcessing`, 409 = the step does not apply to this photo; the basis for `ProcessingPanel`), the
   types `ProcessingStep`/`ProcessingState`/`PhotoProcessing` and `PhotoDetail.processing`,
@@ -7457,7 +7463,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   size the payload doesn't carry (the lightbox, the editor's canvas, a cover by UID) and `downloadUrl(uid,…)`
   for **rendering a non-destructive edit**, which only the application can do;
   `comments.ts` (**NEW**) = the per-photo comment client: `fetchComments(photoUid,signal)` over
-  `GET /api/v1/photos/{uid}/comments` → `PhotoComment[]` **oldest first** (an empty thread — and a photo
+  `GET /api/v1/p/<slug>/photos/{uid}/comments` → `PhotoComment[]` **oldest first** (an empty thread — and a photo
   that does not exist — is an empty array, not a 404), `createComment(photoUid,body,signal)` over `POST`
   (201; **guarded by `RequireAuth`, not `RequireWrite`**, so a viewer may post — the one documented
   exception to the read-only rule — and rate-limited per user, 429), `updateComment(photoUid,uid,body,signal)`
@@ -7490,17 +7496,17 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   when each file starts) and `publicLinkURL(path)`; `RegisterInput` in `auth.ts` gained an optional
   `upload_link` that replaces `secret`;
   `savedSearches.ts` = the saved-searches client: `fetchSavedSearches`/`createSavedSearch(name,params)`/
-  `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/saved-searches`, the types
+  `updateSavedSearch(uid,{name?,params?})`/`deleteSavedSearch(uid)` over `/api/v1/p/<slug>/saved-searches`, the types
   `SavedSearch`/`SavedSearchParams` (= the verbatim URL view state `Record<string,string>`)/
   `SavedSearchUpdate`;
   `searchHistory.ts` = the search-history client: `fetchSearchHistory()`/`recordSearch(query)`/
-  `clearSearchHistory()` over `/api/v1/search-history` + `SEARCH_HISTORY_LIMIT` (20) and the type
+  `clearSearchHistory()` over `/api/v1/p/<slug>/search-history` + `SEARCH_HISTORY_LIMIT` (20) and the type
   `SearchHistoryEntry{query,searched_at}`; it sends no owner and addresses nothing — every call is about the
   signed-in user's own history; `announcement.ts` = the current project's announcement client: `fetchAnnouncement()`/
   `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/p/<slug>/announcement` (`apiPath`), the types `Announcement`
   (`{message, level?, author_uid?, updated_at?}`, an empty `message` = nothing published)/`AnnouncementLevel`
   (`'info'|'warning'`); `search.ts` = the grouped **global search** client: `globalSearch(q,signal)` over
-  `GET /api/v1/search/global` → `GlobalSearchResult{query,direct?,albums,labels,people,photos}` (top-N per
+  `GET /api/v1/p/<slug>/search/global` → `GlobalSearchResult{query,direct?,albums,labels,people,photos}` (top-N per
   group, each always an array) + the pure helpers `hasEntityMatches`/`isEmptyResult`/`directHitRoute`, the types
   `GlobalSearchAlbum`/`GlobalSearchLabel`/`GlobalSearchPerson`/`GlobalSearchResult` +
   `GlobalSearchDirect{uid,kind,found,target_kind?,target_uid?,title?,photo?,cover?,thumb_url?,states?}` with
@@ -7514,7 +7520,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   small square size a row wants, and it is the *signed* address when the library sits behind a media Worker.
   Separate
   from the photo `searchPhotos` (fulltext/semantic/hybrid), the basis for `GlobalSearchSections`. The same
-  module also carries `fetchQuerySchema(signal)` over `GET /api/v1/search/schema` → `QueryFilterKey[]`
+  module also carries `fetchQuerySchema(signal)` over `GET /api/v1/p/<slug>/search/schema` → `QueryFilterKey[]`
   (`{key, kind, values?}`) — the **query language's own filter keys**, minted from the backend parser's
   registry, `values` present only where the vocabulary is closed and `kind` typed as a plain `string` so a
   bundle talking to a newer server cannot break on a kind it has never heard of; the answer is compiled into
@@ -7529,21 +7535,21 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `fetchBulkMembershipSummary(uids,signal)` over `POST /photos/bulk/membership-summary` →
   `BulkMembershipSummary{total,filed,albums:[{uid,title,photo_count}],labels:[{uid,name,photo_count}]}`, which
   is what lets the upload page's done stage say truthfully whether a batch is already filed; `duplicates.ts` =
-  `fetchDuplicates(params,signal)` over `GET /api/v1/duplicates` (duplicate groups →
+  `fetchDuplicates(params,signal)` over `GET /api/v1/p/<slug>/duplicates` (duplicate groups →
   `DuplicatesResponse{groups,total,limit,offset,next_offset}`) + `mergeDuplicates(input,signal)` over
-  `POST /api/v1/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,
+  `POST /api/v1/p/<slug>/duplicates/merge` (resolving a group → `MergeResult{albums_added,labels_added,people_added,
   metadata_filled[],archived,dry_run}`; `dry_run:true` = a preview), the types `DuplicateReason`/
   `DuplicateMember`/`DuplicateGroup`/`DuplicatesParams`/`MergeInput`/`MergeResult`;
   `dupmarkers.ts` = the repeated-marker client (one **person** marked more than once on one photo, not two
-  photos): `fetchDuplicateMarkers(params,signal)` over `GET /api/v1/duplicate-markers` →
+  photos): `fetchDuplicateMarkers(params,signal)` over `GET /api/v1/p/<slug>/duplicate-markers` →
   `DuplicateMarkersResponse{groups,total,limit,offset,next_offset}`, `keepMarker(input,signal)` over
-  `POST /api/v1/duplicate-markers/keep` → `KeepMarkerResult{…,detached[]}` (the losing markers are **not**
+  `POST /api/v1/p/<slug>/duplicate-markers/keep` → `KeepMarkerResult{…,detached[]}` (the losing markers are **not**
   sent — the server resolves the group from `(photo_uid, subject_uid)`, so a stale list cannot detach a marker
   that was meanwhile re-tagged) and `invalidateMarker(markerUid,signal)` over
-  `POST /api/v1/duplicate-markers/invalid` (204); the types `DuplicateMarker`/`DuplicateMarkerGroup`/
+  `POST /api/v1/p/<slug>/duplicate-markers/invalid` (204); the types `DuplicateMarker`/`DuplicateMarkerGroup`/
   `DuplicateMarkersResponse`/`DuplicateMarkersParams`/`KeepMarkerResult`. The third decision („nechat být") is
   feedback, so it lives in `feedback.ts`; `upload.ts` =
-  `uploadFile(file,{onProgress,signal,url?,fields?})` (`url` defaults to `/api/v1/upload`; `fields` are plain
+  `uploadFile(file,{onProgress,signal,url?,fields?})` (`url` defaults to `/api/v1/p/<slug>/upload`; `fields` are plain
   form fields appended **before** the file, because the backend reads the stream once — an upload link posts
   its `name` that way; the file's own `size` field (`SIZE_FIELD`) always goes right before it, so the
   server refuses a file over a project limit before reading its bytes; a request-level **413**
@@ -7692,11 +7698,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   window),
   the type `LeaderboardWindow` = `'all'|'7d'|'today'` + `LEADERBOARD_WINDOWS` (the toggle's order);
   the basis for `LeaderboardPage`;
-  `map.ts` = the map client: `fetchMapPhotos(params,signal)` over `GET /api/v1/map/photos`
+  `map.ts` = the map client: `fetchMapPhotos(params,signal)` over `GET /api/v1/p/<slug>/map/photos`
   (a GeoJSON FeatureCollection of geotagged photos + `buildMapQuery`), `tileLayerUrl(mapset)` (a Leaflet
   URL template onto the backend proxy, **without the API key**), `reverseGeocode(lat,lng,signal?)` over
-  `GET /api/v1/map/rgeocode` (an on-demand reverse geocode for the photo detail → `GeocodeResult`),
-  `searchPlaces(query,limit?,signal?)` over `GET /api/v1/map/geocode` (a **forward** geocode for the
+  `GET /api/v1/p/<slug>/map/rgeocode` (an on-demand reverse geocode for the photo detail → `GeocodeResult`),
+  `searchPlaces(query,limit?,signal?)` over `GET /api/v1/p/<slug>/map/geocode` (a **forward** geocode for the
   location editor → `Place[]` = `{name,label,type,location,lat,lng}` best match first; no match
   = an **empty array**, not an error; the caller **must debounce** — the backend does cache and
   rate-limit, but a request per keystroke is like burning a month's credit in an afternoon),
@@ -7710,14 +7716,14 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   adding it to `MAPSETS` and leaving it out of the light set is the whole change); the types
   `MapFeature`/`MapFeatureCollection`/`MapFeatureProperties`/`MapPhotoParams`/`MapCoverage`/`Mapset`/
   `TileFailure`/`GeocodeResult`/`RegionalItem`/`Place`);
-  `places.ts` = the place-hierarchy client: `fetchPlaces(country?,signal)` over `GET /api/v1/places`
+  `places.ts` = the place-hierarchy client: `fetchPlaces(country?,signal)` over `GET /api/v1/p/<slug>/places`
   → `PlaceCountry[]` (countries with counts, a `cover_uid` preview + nested `cities` carrying the same, the
   optional `country` drills into the cities of one
   country); the types `PlaceCountry`/`PlaceCity`; browsing a place's photos goes through the shared
   `fetchPhotos({country,city})`;
   `import.ts` = the **read-only** admin import client: `fetchImportRuns(signal)` over
-  `GET /api/v1/import/runs` (`{runs,limit,offset}`), `fetchImportFailures({unresolvedOnly,limit},signal)`
-  over `GET /api/v1/import/failures` and `fetchJobStats(signal)` over `GET /api/v1/jobs/stats`;
+  `GET /api/v1/p/<slug>/import/runs` (`{runs,limit,offset}`), `fetchImportFailures({unresolvedOnly,limit},signal)`
+  over `GET /api/v1/p/<slug>/import/failures` and `fetchJobStats(signal)` over `GET /api/v1/jobs/stats`;
   the types `RunSource`/`RunStatus`/`ImportCounts`/`ImportRun`/`ImportRunsResponse`/`FailureStage`/
   `FailureSource`/`ImportFailure`/`ImportFailuresResponse`/`JobStats`. There is no trigger: `startImport`
   and `fetchVerifyReport` went with the migration in August 2026),
@@ -7725,8 +7731,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `GET /api/v1/maintenance/scan` → `ScanReport`, `runMaintenanceRepair(options,signal)` over
   `POST /api/v1/maintenance/repair` → `RepairResult`, `purgeAuditLog(olderThanDays,signal)` over
   `POST /api/v1/maintenance/audit/purge` → `AuditPurgeResult` (`{deleted,older_than_days,cutoff}`),
-  plus the nameless-subject repair: `fetchNamelessSubjects(signal)` over
-  `GET /api/v1/maintenance/nameless-subjects` → `NamelessReport`, `detachNamelessSubjects(signal)` over
+  plus the nameless-subject repair, in the **current project** (`apiPath`): `fetchNamelessSubjects(signal)` over
+  `GET /api/v1/p/<slug>/maintenance/nameless-subjects` → `NamelessReport`, `detachNamelessSubjects(signal)` over
   `POST …/detach` — the response body *is* the undo file, so it `saveBlob`s it to the user's downloads under the
   server-chosen `Content-Disposition` name and returns `NamelessUndoFile` (`{filename,subjects,markers,faces}`
   read from the `X-Kukatko-Nameless-*` headers) — and `restoreNamelessSubjects(file,signal)` over `POST …/restore`
@@ -7765,8 +7771,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   **`subject_uid: string | null`** (which person of the library the account is), and because `PATCH` replaces
   the profile, `null` **clears** the link rather than leaving it alone, which is why `setUserDisabled`'s
   re-enabling `PATCH` echoes the row's own link back; the password hash has nowhere to leak — the backend
-  doesn't serialize it and no type has a field for it. Since `/users` became the project's members page, only
-  `AuditPage` (actor names) calls into it; the account actions wait for a home on the system side,
+  doesn't serialize it and no type has a field for it. Since `/users` became the project's members page and
+  `/admin/users` maintainer-only, no page calls into it (`AuditPage` names actors from the project's
+  directory); the account actions wait for a home on the system side,
   `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
   `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_login_at`,
   `has_picture`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
@@ -8609,7 +8616,9 @@ hook uses the API's current slug, which `src/test/setup.ts` sets to `v` — so c
 `projectRoleOf(instanceRole, project)` — `maintainer` for the instance maintainer, else the
 membership's role — and `canCurate`/`canWrite`/`isAdmin` derive from it; `isMaintainer` and
 `canImport` read `instance_role` (`AuthContextValue` now also carries `instanceRole`, `projects`,
-`lastProjectSlug`). The bare `AuthProvider` value (what a test passing `AuthContext.Provider`
+`lastProjectSlug`). So does `user.subject_uid`: it is the current membership's `subject_uid` (`null` when
+the account has not said who it is there), never the account record's — "this is me" is a fact about one
+project's people. The bare `AuthProvider` value (what a test passing `AuthContext.Provider`
 directly sees) keeps the role `/auth/me` reported. `RequireRole` refuses a signed-in user with no
 role at all (no project) with `ForbiddenPage` instead of bouncing to `/login`.
 

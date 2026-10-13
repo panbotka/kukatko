@@ -38,8 +38,8 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // Three columns are read off the memberships by correlated subqueries, so every
 // user read — SELECT … FROM users and UPDATE users … RETURNING alike, which is
 // why the table is never aliased — carries them without a join: the linked
-// person and the role in the bootstrap project (transition: what the
-// unprefixed account payloads still speak), and the account's approval
+// person and the role in the bootstrap project (what the maintainer-only
+// /admin/users record speaks), and the account's approval
 // (accountApprovedSQL). A RETURNING clause sees the membership as it was before
 // the statement, so a statement that also writes the membership patches the
 // result in Go.
@@ -392,9 +392,9 @@ func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUser
 }
 
 // SetUserSubject points the account identified by uid at the subject named by
-// subjectUID in the project projectUID (empty = the bootstrap project, the
-// transition default of the unprefixed account routes), or clears the link
-// when subjectUID is nil (or empty). The link lives on the membership: who you
+// subjectUID in the project projectUID, or clears the link when subjectUID is
+// nil (or empty). An empty projectUID is ErrNoProject: there is no default
+// project. The link lives on the membership: who you
 // are is a fact about one project's people. It is the self-service write
 // behind the account page and returns the refreshed user carrying the link of
 // that project — nil when the account is no member there (a maintainer
@@ -408,7 +408,7 @@ func (s *Store) UpdateUserProfile(ctx context.Context, uid string, in UpdateUser
 // their own account page is not that.
 func (s *Store) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
 	if projectUID == "" {
-		projectUID = project.BootstrapUID
+		return User{}, ErrNoProject
 	}
 	subjectUID = normalizeSubjectUID(subjectUID)
 	user, err := s.GetUserByUID(ctx, uid)

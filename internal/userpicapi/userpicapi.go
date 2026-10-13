@@ -112,10 +112,11 @@ type Renderer interface {
 
 // API exposes the profile picture endpoints over HTTP.
 type API struct {
-	pictures    Pictures
-	photos      Photos
-	renderer    Renderer
-	requireAuth func(http.Handler) http.Handler
+	pictures      Pictures
+	photos        Photos
+	renderer      Renderer
+	requireAuth   func(http.Handler) http.Handler
+	requireSigned func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI. A nil Renderer makes the serving
@@ -129,29 +130,51 @@ type Config struct {
 	Photos Photos
 	// Renderer cuts the rendition served for a picked or inherited photo.
 	Renderer Renderer
-	// RequireAuth guards every route here for any signed-in user.
+	// RequireAuth guards the project-scoped reads (RegisterProjectRoutes) for
+	// any member of the request's project.
 	RequireAuth func(http.Handler) http.Handler
+	// RequireSignedIn guards the instance-wide routes (RegisterRoutes) for any
+	// signed-in account, entering no project. Nil falls back to RequireAuth
+	// (for a test router that mounts the routes without the auth stack).
+	RequireSignedIn func(http.Handler) http.Handler
 }
 
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
+	signedIn := cfg.RequireSignedIn
+	if signedIn == nil {
+		signedIn = cfg.RequireAuth
+	}
 	return &API{
-		pictures:    cfg.Pictures,
-		photos:      cfg.Photos,
-		renderer:    cfg.Renderer,
-		requireAuth: cfg.RequireAuth,
+		pictures:      cfg.Pictures,
+		photos:        cfg.Photos,
+		renderer:      cfg.Renderer,
+		requireAuth:   cfg.RequireAuth,
+		requireSigned: signedIn,
 	}
 }
 
-// RegisterRoutes mounts the profile picture endpoints onto r, which the caller
-// has scoped under the API base path (for example /api/v1). The routes are flat
-// patterns rather than mounted subrouters so /auth/picture can coexist with
-// auth's own /auth group on the same router without a chi Mount conflict.
+// RegisterRoutes mounts the instance-wide profile picture endpoints onto r,
+// which the caller has scoped under the API base path (for example /api/v1).
+// They enter no project, so the chain's inherited face — the account's person
+// in the viewer's project — is not consulted there; the project-scoped reads
+// of RegisterProjectRoutes are. The routes are flat patterns rather than
+// mounted subrouters so /auth/picture can coexist with auth's own /auth group
+// on the same router without a chi Mount conflict.
 func (a *API) RegisterRoutes(r chi.Router) {
+	r.With(a.requireSigned).Get("/users/{uid}/avatar", a.handleAvatar)
+	r.With(a.requireSigned).Get("/auth/picture", a.handleDescribe)
+	r.With(a.requireSigned).Put("/auth/picture", a.handleSet)
+	r.With(a.requireSigned).Delete("/auth/picture", a.handleClear)
+}
+
+// RegisterProjectRoutes mounts the two reads whose answer depends on the
+// project — the avatar and the caller's own picture state, both of which fall
+// back to the account's person in the request's project — onto the router the
+// caller scoped to one project (/api/v1/p/{project}).
+func (a *API) RegisterProjectRoutes(r chi.Router) {
 	r.With(a.requireAuth).Get("/users/{uid}/avatar", a.handleAvatar)
 	r.With(a.requireAuth).Get("/auth/picture", a.handleDescribe)
-	r.With(a.requireAuth).Put("/auth/picture", a.handleSet)
-	r.With(a.requireAuth).Delete("/auth/picture", a.handleClear)
 }
 
 // handleAvatar streams the account's picture as a JPEG. An account that does not

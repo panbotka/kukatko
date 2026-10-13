@@ -29,8 +29,7 @@ import (
 )
 
 // isolationServer mounts the MCP endpoint the way cmd/kukatko does: under
-// /api/v1/p/{project}, and unprefixed as the transition alias, with
-// auth.WithProject in front of every /api/v1 route.
+// /api/v1/p/{project} only, behind auth.WithProject.
 func isolationServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 	t.Helper()
 	svc := auth.NewService(auth.NewStore(pool), auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
@@ -46,13 +45,11 @@ func isolationServer(t *testing.T, pool *pgxpool.Pool) *httptest.Server {
 	projects := project.NewStore(pool)
 	r := chi.NewRouter()
 	r.Route(auth.APIBasePath, func(r chi.Router) {
-		r.Use(auth.WithProject(projects))
-		authAPI.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
 		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
 			r.Use(auth.WithProject(projects))
 			api.RegisterRoutes(r)
 		})
-		api.RegisterRoutes(r)
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -171,8 +168,7 @@ func TestMCP_projectPrefixNeverLeaksTheOtherProject(t *testing.T) {
 }
 
 // TestMCP_instructionsNameTheProject verifies the server introduces the
-// project the URL named, and that only the transition alias adds the
-// deprecation note.
+// project the URL named, and only that one.
 func TestMCP_instructionsNameTheProject(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
@@ -188,10 +184,10 @@ func TestMCP_instructionsNameTheProject(t *testing.T) {
 	}
 
 	clientA := f.ClientFor(t, server, projecttest.SideA)
-	alias := instructionsAt(t, clientA, server, auth.APIBasePath+"/mcp")
-	if !strings.Contains(alias, `"`+f.A.Slug+`"`) || !strings.Contains(alias, "Deprecated") ||
-		!strings.Contains(alias, "/api/v1/p/"+f.A.Slug+"/mcp") {
-		t.Errorf("alias instructions lack the project or the deprecation note:\n%s", alias)
+	inA := instructionsAt(t, clientA, server, f.PathFor(projecttest.SideA, "mcp"))
+	if !strings.Contains(inA, `"`+f.A.Slug+`"`) || strings.Contains(inA, `"`+f.B.Slug+`"`) ||
+		strings.Contains(inA, "Deprecated") {
+		t.Errorf("A's instructions do not name A alone:\n%s", inA)
 	}
 }
 
@@ -205,7 +201,8 @@ func TestMCP_challengeAdvertisesThePrefixedURL(t *testing.T) {
 	f := projecttest.Seed(t, pool)
 	server := isolationServer(t, pool)
 
-	for _, path := range []string{f.PathFor(projecttest.SideB, "mcp"), auth.APIBasePath + "/mcp"} {
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		path := f.PathFor(side, "mcp")
 		status, header, raw := mcpCall(t, apitest.Client(), server, path, "tools/list", nil)
 		if status != http.StatusUnauthorized {
 			t.Fatalf("anonymous %s = %d, want 401: %s", path, status, raw)
@@ -214,5 +211,10 @@ func TestMCP_challengeAdvertisesThePrefixedURL(t *testing.T) {
 		if got := header.Get("WWW-Authenticate"); got != want {
 			t.Errorf("WWW-Authenticate at %s = %q, want %q", path, got, want)
 		}
+	}
+	// The unprefixed path of the transition is gone: nothing answers there.
+	status, _, raw := mcpCall(t, apitest.Client(), server, auth.APIBasePath+"/mcp", "tools/list", nil)
+	if status != http.StatusNotFound {
+		t.Errorf("anonymous %s/mcp = %d, want 404: %s", auth.APIBasePath, status, raw)
 	}
 }

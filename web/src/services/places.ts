@@ -52,13 +52,13 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** JSON envelope returned by `GET /api/v1/places`. */
+/** JSON envelope returned by `GET /api/v1/p/<slug>/places`. */
 interface PlacesResponse {
   places: PlaceCountry[]
 }
 
 /**
- * Fetches the country → city place hierarchy from `GET /api/v1/places`. Counts
+ * Fetches the country → city place hierarchy from `GET /api/v1/p/<slug>/places`. Counts
  * are aggregated over non-archived photos that carry place data; countries and
  * cities are sorted by count then name. A non-empty `country` drills into that
  * one country's cities only. The session cookie is sent automatically

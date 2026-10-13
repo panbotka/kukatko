@@ -71,11 +71,12 @@ func (f *fixture) makeUser(t *testing.T, uid, username, displayName string) stri
 func (f *fixture) makePhoto(t *testing.T, name string) photos.Photo {
 	t.Helper()
 	created, err := f.photos.Create(context.Background(), photos.Photo{
-		FileHash: (name + strings.Repeat("0", 64))[:64],
-		FilePath: "2026/09/" + name + ".jpg",
-		FileName: name + ".jpg",
-		FileSize: 1024,
-		FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  (name + strings.Repeat("0", 64))[:64],
+		FilePath:  "2026/09/" + name + ".jpg",
+		FileName:  name + ".jpg",
+		FileSize:  1024,
+		FileMime:  "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("creating photo %s: %v", name, err)

@@ -14,7 +14,7 @@ import { NotificationInboxContext, type NotificationInboxState } from './Notific
 export const REFRESH_INTERVAL_MS = 60_000
 
 /**
- * Provides the in-app inbox's unread count (`GET /api/v1/notifications/unread-count`)
+ * Provides the in-app inbox's unread count (`GET /api/v1/p/<slug>/notifications/unread-count`)
  * to the shell — the bell's badge reads it, and so does anything that wants to
  * know whether there is news.
  *

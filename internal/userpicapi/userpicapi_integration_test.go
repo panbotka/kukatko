@@ -38,6 +38,11 @@ import (
 
 const testPassword = "correct horse battery staple"
 
+// apiV is the bootstrap project's API prefix: the project-scoped reads (the
+// avatar and the caller's own picture state) go through it, because only there
+// does the chain know whose person to inherit a face from.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // env wires the auth and profile-picture APIs behind an httptest server over the
 // integration database.
 type env struct {
@@ -96,15 +101,22 @@ func newEnv(t *testing.T) *env {
 			Subjects: peopleStore,
 			Photos:   photoStore,
 		}),
-		Photos:      photoStore,
-		Renderer:    avatar.New(&previewSource{data: squareJPEG(t, 1280)}, t.TempDir()),
-		RequireAuth: authAPI.RequireAuth,
+		Photos:          photoStore,
+		Renderer:        avatar.New(&previewSource{data: squareJPEG(t, 1280)}, t.TempDir()),
+		RequireAuth:     authAPI.RequireAuth,
+		RequireSignedIn: authAPI.RequireSignedIn,
 	})
 
+	// Mounted as the server mounts it: the instance-wide routes bare, the
+	// project-scoped reads under the project prefix.
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
 		api.RegisterRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(pool)))
+			api.RegisterProjectRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -189,11 +201,19 @@ func (e *env) upload(t *testing.T, client *http.Client, field string, data []byt
 	return resp.StatusCode
 }
 
-// avatarOf fetches one account's picture, optionally conditionally.
+// avatarOf fetches one account's picture in the bootstrap project, optionally
+// conditionally.
 func (e *env) avatarOf(t *testing.T, client *http.Client, uid, etag string) *http.Response {
 	t.Helper()
+	return e.avatarAt(t, client, apiV, uid, etag)
+}
+
+// avatarAt fetches one account's picture through the API prefix base — a
+// project's, or the bare instance-wide /api/v1 — optionally conditionally.
+func (e *env) avatarAt(t *testing.T, client *http.Client, base, uid, etag string) *http.Response {
+	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
-		e.server.URL+"/api/v1/users/"+uid+"/avatar", nil)
+		e.server.URL+base+"/users/"+uid+"/avatar", nil)
 	if err != nil {
 		t.Fatalf("building the avatar request: %v", err)
 	}
@@ -207,10 +227,17 @@ func (e *env) avatarOf(t *testing.T, client *http.Client, uid, etag string) *htt
 	return resp
 }
 
-// describe reads the account page's view of the caller's own picture.
+// describe reads the account page's view of the caller's own picture in the
+// bootstrap project.
 func (e *env) describe(t *testing.T, client *http.Client) userpic.State {
 	t.Helper()
-	resp := e.do(t, client, http.MethodGet, "/api/v1/auth/picture", "", nil)
+	return e.describeAt(t, client, apiV)
+}
+
+// describeAt reads the caller's own picture state through the API prefix base.
+func (e *env) describeAt(t *testing.T, client *http.Client, base string) userpic.State {
+	t.Helper()
+	resp := e.do(t, client, http.MethodGet, base+"/auth/picture", "", nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /auth/picture status = %d, want 200", resp.StatusCode)
@@ -226,7 +253,8 @@ func (e *env) describe(t *testing.T, client *http.Client) userpic.State {
 func (e *env) catalogue(t *testing.T, hash string, apply func(*photos.Photo)) photos.Photo {
 	t.Helper()
 	photo := photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileWidth: 4000, FileHeight: 3000,
 	}
 	if apply != nil {
@@ -383,7 +411,7 @@ func TestPicture_theLinkedSubjectIsTheDefault(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("creating the marker: %v", err)
 	}
-	if _, err := env.authStore.SetUserSubject(t.Context(), "", uid, &subject.UID); err != nil {
+	if _, err := env.authStore.SetUserSubject(t.Context(), project.BootstrapUID, uid, &subject.UID); err != nil {
 		t.Fatalf("linking the account: %v", err)
 	}
 
@@ -395,6 +423,16 @@ func TestPicture_theLinkedSubjectIsTheDefault(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("avatar status = %d, want 200", resp.StatusCode)
+	}
+	// The face is the person's in a project: the instance-wide route, which
+	// enters none, has nobody to inherit it from.
+	bare := env.avatarAt(t, client, "/api/v1", uid, "")
+	_ = bare.Body.Close()
+	if bare.StatusCode != http.StatusNotFound {
+		t.Errorf("instance-wide avatar status = %d, want 404", bare.StatusCode)
+	}
+	if state := env.describeAt(t, client, "/api/v1"); state.Origin != userpic.OriginNone {
+		t.Errorf("instance-wide state = %+v, want nothing", state)
 	}
 
 	// An upload overrides the inherited face, and clearing it hands the face back.
@@ -438,16 +476,19 @@ func TestPicture_writingIsSelfScoped(t *testing.T) {
 }
 
 // TestPicture_requiresASession keeps the whole surface behind authentication:
-// the library is not a public profile directory.
+// the library is not a public profile directory — neither in a project nor on
+// the instance-wide route.
 func TestPicture_requiresASession(t *testing.T) {
 	env := newEnv(t)
 	uid, _ := env.login(t, "somebody")
 	anonymous := &http.Client{}
 
-	resp := env.avatarOf(t, anonymous, uid, "")
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", resp.StatusCode)
+	for _, base := range []string{apiV, "/api/v1"} {
+		resp := env.avatarAt(t, anonymous, base, uid, "")
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("%s: status = %d, want 401", base, resp.StatusCode)
+		}
 	}
 }
 
@@ -531,9 +572,10 @@ func (e *env) facedSubject(t *testing.T, projectUID, name, hash string) people.S
 }
 
 // TestPicture_theInheritedFaceIsTheRequestsProjects verifies the face step
-// reads the membership of the request's project (the bootstrap project on the
-// unprefixed route): an account linked to a person only in project B wears no
-// face in A, and once its A membership names a person, that one is the face.
+// reads the membership of the request's project (the one in the /p/{project}
+// prefix): an account linked to a person only in project B wears no face in A
+// but B's person in B, and once its A membership names a person, that one is
+// the face in A.
 func TestPicture_theInheritedFaceIsTheRequestsProjects(t *testing.T) {
 	env := newEnv(t)
 	uid, client := env.login(t, "twofaced")
@@ -551,6 +593,16 @@ func TestPicture_theInheritedFaceIsTheRequestsProjects(t *testing.T) {
 	}
 	if state := env.describe(t, client); state.Origin != userpic.OriginNone || state.SubjectUID != "" {
 		t.Errorf("linked only in B, described in A: %+v, want nothing", state)
+	}
+	inProjectB := "/api/v1/p/" + b.Slug
+	if state := env.describeAt(t, client, inProjectB); state.Origin != userpic.OriginSubject ||
+		state.SubjectUID != inB.UID {
+		t.Errorf("linked in B, described in B: %+v, want B's person %s", state, inB.UID)
+	}
+	askedInB := env.avatarAt(t, client, inProjectB, uid, "")
+	_ = askedInB.Body.Close()
+	if askedInB.StatusCode != http.StatusOK {
+		t.Errorf("linked in B, asked in B: status = %d, want 200", askedInB.StatusCode)
 	}
 
 	inA := env.facedSubject(t, project.BootstrapUID, "Anna v A",

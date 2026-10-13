@@ -86,6 +86,7 @@ func TestAvatarRoute_rendersFromTheCatalogue(t *testing.T) {
 	photoStore := photos.NewStore(db.Pool())
 
 	photo, err := photoStore.Create(ctx, photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
 		FilePath:   "2024/01/face.jpg",
 		FileName:   "face.jpg",

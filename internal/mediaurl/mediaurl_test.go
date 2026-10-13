@@ -148,7 +148,8 @@ func TestThumb_filesystemBackendFallsBackToRoute(t *testing.T) {
 
 // TestOwnRoutes_followTheRequestsAPIBase proves the application's own media
 // routes are built on the prefix the request came through: the project's when
-// it was addressed by slug, the bare /api/v1 through the transition alias.
+// it was addressed by slug, the bare /api/v1 for a request that named no
+// project.
 func TestOwnRoutes_followTheRequestsAPIBase(t *testing.T) {
 	t.Parallel()
 
@@ -157,7 +158,7 @@ func TestOwnRoutes_followTheRequestsAPIBase(t *testing.T) {
 		base string
 		want string
 	}{
-		{name: "alias", base: "/api/v1", want: "/api/v1/photos/ph1/"},
+		{name: "no project", base: "/api/v1", want: "/api/v1/photos/ph1/"},
 		{name: "project prefix", base: "/api/v1/p/v", want: "/api/v1/p/v/photos/ph1/"},
 	}
 	for _, tt := range tests {

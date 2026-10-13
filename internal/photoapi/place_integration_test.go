@@ -33,7 +33,7 @@ func TestDetailPlace(t *testing.T) {
 
 	decodePlace := func(t *testing.T, uid string) (*placeRef, bool) {
 		t.Helper()
-		resp := mustDo(t, client, http.MethodGet, base+"/api/v1/photos/"+uid, nil)
+		resp := mustDo(t, client, http.MethodGet, base+apiV+"/photos/"+uid, nil)
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("detail status = %d, want 200", resp.StatusCode)

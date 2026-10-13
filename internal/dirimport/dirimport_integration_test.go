@@ -459,7 +459,8 @@ func TestImport_landsInTheNamedProject(t *testing.T) {
 	write(t, root, "a.jpg", payload)
 	sum := sha256.Sum256(payload)
 	if _, err := env.photos.Create(t.Context(), photos.Photo{
-		FileHash: hex.EncodeToString(sum[:]), FilePath: "2020/01/a.jpg", FileName: "a.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hex.EncodeToString(sum[:]), FilePath: "2020/01/a.jpg", FileName: "a.jpg",
 		FileSize: int64(len(payload)), FileMime: "image/jpeg",
 	}); err != nil {
 		t.Fatalf("seeding the bootstrap project's copy: %v", err)

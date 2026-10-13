@@ -468,7 +468,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `0012_audit_log.sql` + `0014_audit_request.sql` add `ip`/`user_agent` and an index
   `(target_type, target_uid)`, package `internal/audit`: `Write(ctx, exec, Entry)` over the pool **and**
   a `pgx.Tx`; handler convention `FromRequest`→`Meta`→`Entry`). Consumers: bulk metadata editing
-  (`POST /api/v1/photos/bulk`) and photo PATCH/archive/unarchive (audited variants of `photos.Store`).
+  (`POST /api/v1/p/<slug>/photos/bulk`) and photo PATCH/archive/unarchive (audited variants of `photos.Store`).
   Admin read: `GET /api/v1/audit` (`internal/auditapi`, user/entity/action/date filters +
   pagination, admin-only); every signed-in user reads **their own** actions through the sibling route
   `GET /api/v1/audit/mine`, whose handler forces the actor filter to the session's user (so the narrowing
@@ -632,7 +632,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   Bulk lookups (`FaceRejectionsForSubject`, `LabelRejectionsForLabel`) serve the search paths as an
   exclusion filter **without N+1**.
 
-### 5.2a Projects (multi-tenancy, in progress)
+### 5.2a Projects — the tables (the model: §10)
 
 - **`projects`** (migration 0100) — one independent library (tenant) of the instance: `uid` (`pj…`),
   `slug` (the immutable URL segment, `^[a-z0-9][a-z0-9-]{0,39}$`, UNIQUE), `name`, `description`,
@@ -663,8 +663,9 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   one creates an approved account and membership capped at editor. Store: `internal/invite`. Wiped by a reset
   (catalogue-side).
 - **`project_id` on the catalogue** (migration 0102) — every catalogue root row names its project:
-  `project_id TEXT NOT NULL DEFAULT 'pj0000000000000000veselice' REFERENCES projects(uid) ON DELETE CASCADE`
-  (backfilled to the bootstrap project). Child tables are scoped through their FK to a root row:
+  `project_id TEXT NOT NULL REFERENCES projects(uid) ON DELETE CASCADE` (backfilled to the bootstrap
+  project; the transitional `DEFAULT` of the bootstrap uid was dropped by migration **0114**, so an insert
+  that forgets its project fails instead of landing in `v`). Child tables are scoped through their FK to a root row:
 
   | Scoping | Tables |
   | --- | --- |
@@ -679,17 +680,14 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   `announcements` lost their one-row `id BOOLEAN` key and are keyed by `project_id` (one row per project — the
   old row became the bootstrap project's; `internal/settings`/`internal/announcement` take the project on every
   call). The import watermark index is per `(project_id, source)`, and each root table has a copy of its listing
-  index with `project_id` leading. **Transitional:** the DEFAULT keeps every existing INSERT working; reads are
-  **not** scoped yet (later steps add `WHERE project_id` package by package, the callers pass
-  `project.BootstrapUID` with a `TODO multi-tenancy` marker), `idx_photos_file_hash` serves the unscoped
-  file-hash lookups until then, and a final step drops the defaults.
+  index with `project_id` leading. Every statement over a root table names its project; `make check`
+  enforces it (`internal/tenancyguard`, §10).
 
-- **Routing** — every project-scoped API group is mounted under **`/api/v1/p/{project}`** (the slug picks
-  the project, `auth.WithProject`) and, until the alias-removal step, a second time unprefixed under
-  `/api/v1` as the **transition alias** for project `v` (`cmd/kukatko/projectapi.go`); instance-wide
-  routes (`/auth/*`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`, `/restore`, `/audit`, the public
-  `/u/{code}`) are mounted once. Links a response carries follow the prefix the request came through
-  (`auth.APIBase`). Details: `docs/API.md` → *Project prefix*.
+- **Routing** — every project-scoped API group is mounted once, under **`/api/v1/p/{project}`** (the slug
+  picks the project, `auth.WithProject`; `cmd/kukatko/projectapi.go`); instance-wide routes (`/auth/*`,
+  `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`, `/restore`, `/audit`, `/projects`, the public
+  `/u/{code}` and `/invite/{code}`) are mounted once without it. Links a response carries follow the prefix
+  the request came through (`auth.APIBase`). Details: `docs/API.md` → *Project prefix*.
 - **Public routes resolve their own project.** `/u/{code}` has no prefix and no member: the link row
   (`upload_links.project_id`) names the project, and the upload is ingested **into it** (`ingest.Request`
   `ProjectUID` + `StoragePrefix`: per-project dedup, the original under the project's prefix through
@@ -697,8 +695,7 @@ Originals in the `YYYY/MM/<filename>` layout — on disk a path under the root, 
   the membership in that project only (unapproved viewer) and claims only that project's anonymous
   uploads. A link of a deactivated project answers like an unknown one.
 
-**The model is completed in later steps** (membership readers, scoped reads, per-project storage,
-limits, removing the alias); the design is
+The model these tables carry is §10; the design it was built from is
 [`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
 
 ### 5.3 Identity mapping (provenance)
@@ -752,7 +749,7 @@ One HTTP service, offline-aware by default; the reference implementation is
 
 ### 6.2 Search
 
-- **Implementation:** a single endpoint `GET /api/v1/search?q=…&mode=…` (`internal/photoapi`),
+- **Implementation:** a single endpoint `GET /api/v1/p/<slug>/search?q=…&mode=…` (`internal/photoapi`),
   the `mode` parameter = `fulltext` | `semantic` | `hybrid` (**default `hybrid`**). All modes
   honor the standard list filters (date/GPS/…) and pagination; the response has the same shape as
   the list + a `mode` field (the effective mode) and `degraded` (see below).
@@ -819,7 +816,7 @@ Workflow:
 6. **Outlier detection:** for each person compute the centroid and sort faces by distance
    → reveals the mis-assigned ones. Implementation: `internal/outliers` (`Outliers(subjectUID)` over
    `vectors.ListFacesBySubject` + shared `vectors.Centroid`/`CosineDistance`) behind the endpoint
-   `GET /api/v1/subjects/{uid}/outliers` (editor/admin, `internal/outlierapi`); small sets
+   `GET /api/v1/p/<slug>/subjects/{uid}/outliers` (editor/admin, `internal/outlierapi`); small sets
    (< 3 faces) are returned with `meaningful:false`. A wrong face is detached via the existing assign
    API — the outlier layer does not mutate.
 7. **People pages:** overview, cover, counts, occurrences.
@@ -837,7 +834,7 @@ migration 0061) and why the repair for the affected rows is a **re-detection**
 The `face_detect` job (`internal/facejob`) is **idempotent** via the `face_detections` table
 (migration 0009): one row per processed photo distinguishes a photo with no faces from one not yet
 processed (`faces` may have zero rows). Weak detections are filtered by the `faces.min_det_score` threshold.
-Admin backfill: `POST /api/v1/process/faces`.
+Admin backfill: `POST /api/v1/p/<slug>/process/faces`.
 
 **The review game and the uncertainty band (`internal/review`):** alongside the bulk pages
 (`/recognition`, expand) there is a "one question at a time" mode — and its design decision is
@@ -1044,7 +1041,7 @@ lost on restart).
   (same structure as auto-wake, `capabilitiesCheckInterval` = 1 min) probes `embedding.Client.Healthy`
   and **caches** the result in an `atomic.Bool`, so the HTTP handler reads it without a live probe — the box is
   often offline, so a probe on every request would be slow. The flag is exposed by the all-authenticated
-  `GET /api/v1/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), which the frontend polls
+  `GET /api/v1/p/<slug>/capabilities` (`internal/capabilitiesapi`, `{semantic_search}`), which the frontend polls
   to show/hide the semantic-search option depending on whether the box is online. It is **purely
   presentational**: search degrades to full-text on its own (`degraded=true`), so the safe default
   "unavailable" only hides the option, it never breaks the flow. It probes the host that answers
@@ -1203,6 +1200,67 @@ is the primary system and imports from nothing but the disk.
 
 ---
 
+## 10. Projects (multi-tenancy)
+
+One instance — one binary, one database, one bucket — holds **several independent libraries**, the
+*projects*. Each has its own photos, people, families, albums, labels, tasks, saved searches,
+notifications, settings (registration switch and secret, welcome text), banner, storage prefix and limits;
+nothing of one is visible from another. The library that existed before projects is the **bootstrap
+project** `v` (uid `pj0000000000000000veselice`, migration 0100); it is a row like any other, and no
+request path singles it out (see *The guards* below). The tables are §5.2a; the design is
+[`superpowers/specs/2026-10-11-multi-tenancy-design.md`](superpowers/specs/2026-10-11-multi-tenancy-design.md).
+
+- **Members.** An account belongs to a project through a membership (`project_members`): a role on the
+  project ladder viewer < curator < editor < admin, an approval (a self-service registration waits for the
+  project's admin), the account's "this is me" person in that project, and its per-project visit and digest
+  clocks. One account may be a viewer of one library and the admin of another; an API token belongs to the
+  account and works in every project it is a member of. People join through the project's **registration
+  page** (`/p/<slug>/register`, the project's own switch and secret), an **invitation link** (a project
+  admin's, approved on arrival, editor at most) or an **upload link** of that project; the system
+  administrator can add anyone to any project. `users.last_project_uid` remembers where the account worked
+  last, and `/` opens it (or the chooser `/projects` when there is a choice to make).
+- **Two ladders.** The **instance role** (`users.role`: user | maintainer) belongs to the account; a
+  maintainer — the *system administrator* in the UI — runs the instance (`/system/*`, imports, backup,
+  restore, jobs, the projects themselves and their storage moves) and enters **every** project as its admin,
+  member or not. The **project role** belongs to a membership; a *project admin* manages that project's
+  members, invitations, settings, banner and audit trail, and nothing beyond it. `RequireMaintainer` /
+  `RequireImport` read the instance role; `RequireAuth`/`RequireCurator`/`RequireWrite`/`RequireAdmin` read
+  the role in the request's project; `RequireSignedIn` (the account routes, `/auth/*`, `/push/*`) enters no
+  project at all. §11 has the guards.
+- **The URL names the project.** Every catalogue route is `/api/v1/p/<slug>/…` and every catalogue page
+  `/p/<slug>/…` (an old bookmark without the prefix is redirected into the current project by the SPA). The
+  slug is resolved by `auth.WithProject`; `auth.ProjectFromContext` is the only way a handler or store learns
+  the project, and every store method over a root table takes the project uid and never defaults it. There
+  is **no default project**: a project-scoped path without the prefix is the API's 404, a project-scoped
+  guard reached without a project is a 500 (a wiring bug), and an insert without `project_id` fails on
+  NOT NULL (migration 0114 dropped the transitional default). An unknown slug, a project the caller is no
+  member of and a deactivated one answer the **same 404**; a uid of another project is answered exactly
+  like a uid that does not exist.
+- **Jobs.** A per-photo job (thumbnail, embedding, faces, metadata, OCR, sidecar, places, storyboard, HLS)
+  reads the project from its photo; a library-wide job (`face_cluster`, `family_export`, the nameless
+  repair, `task_digest`, `notification_purge`, `storage_rekey`) carries `project_uid` in its payload and its
+  dedup key, so two projects never coalesce.
+- **Storage layouts and the move.** Created projects keep every object under `projects/<uid>/` (originals,
+  thumbnails, HLS segments, metadata sidecars, `families.yaml`); `internal/storekeys` is the one map of what
+  lives where, so backup, migration, scan and wipe cannot forget a kind. The bootstrap project starts in
+  the **root layout** (empty `storage_prefix`) it had before projects. The **storage move**
+  (`internal/rekey`, the one-slot `storage_rekey` job, `kukatko storage rekey <slug>` and the „Úložiště"
+  card of `/system/projects/<slug>`) moves it under its own prefix photo by photo — copy, verify, point the
+  row at the copy, only then delete the old object — pausable, resumable and retryable, never started
+  automatically. Per-project limits (`max_file_bytes`, `max_total_bytes`) are checked by the upload
+  pipeline. Backup and restore stay instance-wide; `kukatko project purge <slug>` removes one project.
+- **Mail, push, metrics, audit.** Deep links carry `/p/<slug>/`; mail and push name the project; the task
+  digest is one mail per (project, person). `kukatko_library_*` metrics carry a `project` label (the slug).
+  A project-scoped audit entry records its project (`audit_log.project_id`); a project admin reads that
+  project's trail, the maintainer the whole one.
+- **The guards.** `internal/tenancyguard` runs in `make check`: every SQL statement under `internal/` and
+  `cmd/` that touches a root table must name `project_id` (or be allow-listed with a reason in
+  `allow.txt`; stale entries fail), the root-table list must match the migrations, and no non-test file of
+  an API package (`internal/*api`) or of `cmd/kukatko` may reference `project.BootstrapUID` /
+  `BootstrapSlug` or spell out the bootstrap uid. `internal/projecttest` seeds two projects with a member
+  and a row of every catalogue kind each, and every scoped package proves project B's rows are invisible
+  from project A through its store and its HTTP handler.
+
 ## 11. Auth and security
 
 - **Users — two ladders** (multi-tenancy, design
@@ -1218,16 +1276,17 @@ is the primary system and imports from nothing but the disk.
 
   Both ladders are explicit predicates, never rank arithmetic, so an inserted rung inherits nothing by
   accident (curator rung: `docs/superpowers/specs/2026-09-26-curator-role-design.md`). **The request's
-  project** is named by `auth.WithProject` (the `{project}` URL slug; while no route carries one, the
-  bootstrap project `v` — a transition rule removed with the unprefixed aliases) and decided by the guard
+  project** is named by `auth.WithProject` (the `{project}` URL slug — there is no default: a project-scoped
+  guard on a route that names none answers 500, `RequireSignedIn` enters no project) and decided by the guard
   after authentication: unknown slug, a project the caller is not a member of and — for non-maintainers —
   a deactivated one all answer the **same 404**, so a tenant never learns another project exists; an
   unapproved membership is 403 `pending_approval`; a maintainer enters as admin and the access log and
   `audit.FromRequest` entries carry `actor_role=maintainer`. `auth.ProjectFromContext` /
   `ProjectUIDFromContext` / `ProjectRoleFromContext` are the only way handlers and stores learn it.
-  During the transition the admin user endpoints and the `role` field of a user payload still speak the
-  old five-rung vocabulary (`auth.AccountRole`: maintainer, or the role in the bootstrap project), so the
-  frontend keeps working until it reads `instance_role` and the memberships. Bcrypt cost 12.
+  The frontend reads `instance_role` and the memberships `GET /auth/me` lists (role and "this is me" per
+  project). Only the maintainer-only `/admin/users` endpoints and the account record's `role` field still
+  speak the pre-project five-rung vocabulary (`auth.AccountRole`: maintainer, or the role in the bootstrap
+  project). Bcrypt cost 12.
   Bootstrap the admin via env (`BOOTSTRAP_ADMIN_*`) on a clean install.
 - **Sessions:** an opaque token in an HttpOnly + SameSite=Strict cookie; a separate `download_token`.
   **Improvements over the previous system:**

@@ -55,7 +55,7 @@ func TestBlurhash_servedInListAndDetail(t *testing.T) {
 		t.Fatalf("SaveBlurhash: %v", err)
 	}
 
-	detail := fetchObject(t, client, env.server.URL+"/api/v1/photos/"+photo.UID)
+	detail := fetchObject(t, client, env.server.URL+apiV+"/photos/"+photo.UID)
 	got, present := blurhashOf(t, detail)
 	if !present {
 		t.Error("the detail carries no blurhash")
@@ -63,7 +63,7 @@ func TestBlurhash_servedInListAndDetail(t *testing.T) {
 		t.Errorf("detail blurhash = %q, want %q", got, hash)
 	}
 
-	for _, path := range []string{"/api/v1/photos", "/api/v1/search?q=Beach"} {
+	for _, path := range []string{apiV + "/photos", apiV + "/search?q=Beach"} {
 		resp := mustDo(t, client, http.MethodGet, env.server.URL+path, nil)
 		var page struct {
 			Photos []map[string]json.RawMessage `json:"photos"`
@@ -94,7 +94,7 @@ func TestBlurhash_omittedWhenNotComputed(t *testing.T) {
 	client, _ := env.login(t, "reader", auth.AccountViewer)
 
 	photo := env.seedPhoto(t, photos.Photo{Title: "Unhashed"}, "unhashed.jpg", 40, 50, 60)
-	detail := fetchObject(t, client, env.server.URL+"/api/v1/photos/"+photo.UID)
+	detail := fetchObject(t, client, env.server.URL+apiV+"/photos/"+photo.UID)
 	if _, present := blurhashOf(t, detail); present {
 		t.Error("blurhash is present for a photo whose placeholder was never computed")
 	}

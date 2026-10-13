@@ -71,7 +71,8 @@ func TestApprove_instanceRouteIsGone(t *testing.T) {
 // value that is not a boolean is refused rather than quietly ignored.
 func TestListUsers_pendingFilter(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	// A maintainer: the account roster is the system administrator's.
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 	waiting := waitingAccount(t, env, "newcomer")
 

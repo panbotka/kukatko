@@ -44,7 +44,7 @@ func TestFaceCropRoute_servesASquareCropOfTheFace(t *testing.T) {
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Face", TakenAtSource: "unknown"}, "face.jpg", 11, 22, 33)
 
 	resp := mustDo(t, client, http.MethodGet,
-		env.server.URL+"/api/v1/photos/"+seeded.UID+"/face"+faceBoxQuery, nil)
+		env.server.URL+apiV+"/photos/"+seeded.UID+"/face"+faceBoxQuery, nil)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
@@ -78,7 +78,7 @@ func TestFaceCropRoute_repeatViewIsAnswered304(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Face", TakenAtSource: "unknown"}, "again.jpg", 44, 55, 66)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face" + faceBoxQuery
+	url := env.server.URL + apiV + "/photos/" + seeded.UID + "/face" + faceBoxQuery
 
 	first := mustDo(t, client, http.MethodGet, url, nil)
 	etag := first.Header.Get("ETag")
@@ -117,7 +117,7 @@ func TestFaceCropRoute_twoFacesOfOnePhotoDiffer(t *testing.T) {
 	env := newEnv(t)
 	client, _ := env.login(t, "editor", auth.AccountEditor)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Two", TakenAtSource: "unknown"}, "two.jpg", 77, 88, 99)
-	base := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face"
+	base := env.server.URL + apiV + "/photos/" + seeded.UID + "/face"
 
 	// The seeded JPEG ramps left to right, so two boxes on opposite sides differ.
 	left := mustDo(t, client, http.MethodGet, base+"?box=0.05,0.3,0.2,0.2", nil)
@@ -151,7 +151,7 @@ func TestFaceCropRoute_guardMatchesTheOtherPhotoImagery(t *testing.T) {
 	env := newEnv(t)
 	client, token := env.login(t, "viewer", auth.AccountViewer)
 	seeded := env.seedPhoto(t, photos.Photo{Title: "Guard", TakenAtSource: "unknown"}, "guard.jpg", 12, 34, 56)
-	url := env.server.URL + "/api/v1/photos/" + seeded.UID + "/face" + faceBoxQuery
+	url := env.server.URL + apiV + "/photos/" + seeded.UID + "/face" + faceBoxQuery
 
 	// A viewer may see the photograph, so a viewer may see a face cut out of it.
 	withCookie := mustDo(t, client, http.MethodGet, url, nil)
@@ -192,17 +192,17 @@ func TestFaceCropRoute_rejectsAnUnusableRequest(t *testing.T) {
 	}{
 		{
 			name:       "malformed box",
-			path:       "/api/v1/photos/" + seeded.UID + "/face?box=nonsense",
+			path:       apiV + "/photos/" + seeded.UID + "/face?box=nonsense",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "box of no size",
-			path:       "/api/v1/photos/" + seeded.UID + "/face?box=0.2,0.2,0,0.2",
+			path:       apiV + "/photos/" + seeded.UID + "/face?box=0.2,0.2,0,0.2",
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "unknown photo",
-			path:       "/api/v1/photos/ph_missing/face" + faceBoxQuery,
+			path:       apiV + "/photos/ph_missing/face" + faceBoxQuery,
 			wantStatus: http.StatusNotFound,
 		},
 	}

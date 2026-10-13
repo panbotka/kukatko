@@ -6,7 +6,7 @@ import { apiPath } from './api'
 
 /**
  * Client of everything sharing photos out of the library needs from the backend:
- * `POST /api/v1/photos/share-manifest` (what a selection is as files) and the
+ * `POST /api/v1/p/<slug>/photos/share-manifest` (what a selection is as files) and the
  * fetches that turn one of those entries into a `File` the phone's share sheet can
  * take.
  *
@@ -36,14 +36,14 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** Response body of `POST /api/v1/photos/share-manifest`. */
+/** Response body of `POST /api/v1/p/<slug>/photos/share-manifest`. */
 interface ShareManifestResponse {
   files: ShareManifestFile[]
 }
 
 /**
  * Asks what a selection looks like as files, in the order the UIDs were given
- * (`POST /api/v1/photos/share-manifest`).
+ * (`POST /api/v1/p/<slug>/photos/share-manifest`).
  *
  * The page holds UIDs, not photos — a selection outlives the grid rows it was made
  * from — so this one request is what supplies the names, types and sizes the

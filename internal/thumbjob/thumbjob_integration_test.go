@@ -96,6 +96,7 @@ func (h *harness) storeJPEG(t *testing.T, name string, c color.RGBA) photos.Phot
 		t.Fatalf("store original: %v", err)
 	}
 	created, err := h.photos.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        sf.Hash,
 		FilePath:        sf.RelPath,
 		FileName:        name + ".jpg",
@@ -340,6 +341,7 @@ func (h *harness) storeVideo(t *testing.T, name, filter string, width, height in
 		t.Fatalf("store original: %v", err)
 	}
 	created, err := h.photos.Create(context.Background(), photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        sf.Hash,
 		FilePath:        sf.RelPath,
 		FileName:        name + ".mp4",

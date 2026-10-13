@@ -42,7 +42,7 @@ func (e *env) seedInbox(t *testing.T, userUID, title string, inApp bool, minutes
 // unread reads the caller's unread count through the API.
 func (e *env) unread(t *testing.T, s session) int {
 	t.Helper()
-	status, body := e.do(t, s, http.MethodGet, "/api/v1/notifications/unread-count", "")
+	status, body := e.do(t, s, http.MethodGet, apiV+"/notifications/unread-count", "")
 	var got struct {
 		Unread *int `json:"unread"`
 	}
@@ -65,14 +65,14 @@ func TestInbox_listCountAndReadAll(t *testing.T) {
 	newest := e.seedInbox(t, vera.uid, "newest", true, 10)
 	e.seedInbox(t, ada.uid, "ada's", true, 5)
 
-	status, body := e.do(t, vera, http.MethodGet, "/api/v1/notifications", "")
+	status, body := e.do(t, vera, http.MethodGet, apiV+"/notifications", "")
 	var page inboxPage
 	decode(t, body, &page)
 	if status != http.StatusOK || page.Total != 2 || len(page.Notifications) != 2 ||
 		page.Notifications[0].UID != newest.UID || page.Notifications[1].Title != "older" {
 		t.Fatalf("inbox = %d %s, want [newest older] of 2", status, body)
 	}
-	status, body = e.do(t, vera, http.MethodGet, "/api/v1/notifications?limit=1&offset=1", "")
+	status, body = e.do(t, vera, http.MethodGet, apiV+"/notifications?limit=1&offset=1", "")
 	decode(t, body, &page)
 	if status != http.StatusOK || len(page.Notifications) != 1 || page.Notifications[0].Title != "older" ||
 		page.Total != 2 || page.Limit != 1 || page.Offset != 1 {
@@ -82,16 +82,16 @@ func TestInbox_listCountAndReadAll(t *testing.T) {
 		t.Fatalf("unread = %d, want 2", got)
 	}
 
-	if status, body := e.do(t, vera, http.MethodPost, "/api/v1/notifications/"+newest.UID+"/read", ""); status != 200 {
+	if status, body := e.do(t, vera, http.MethodPost, apiV+"/notifications/"+newest.UID+"/read", ""); status != 200 {
 		t.Fatalf("mark one read = %d %s", status, body)
 	}
-	status, body = e.do(t, vera, http.MethodGet, "/api/v1/notifications?unread=true", "")
+	status, body = e.do(t, vera, http.MethodGet, apiV+"/notifications?unread=true", "")
 	decode(t, body, &page)
 	if status != http.StatusOK || page.Total != 1 || page.Notifications[0].Title != "older" {
 		t.Fatalf("unread inbox = %d %s, want only older", status, body)
 	}
 
-	status, body = e.do(t, vera, http.MethodPost, "/api/v1/notifications/read-all", "")
+	status, body = e.do(t, vera, http.MethodPost, apiV+"/notifications/read-all", "")
 	var marked struct {
 		Marked *int `json:"marked"`
 	}
@@ -105,7 +105,7 @@ func TestInbox_listCountAndReadAll(t *testing.T) {
 	if got := e.unread(t, ada); got != 1 {
 		t.Errorf("ada's unread after vera's read-all = %d, want her 1 untouched", got)
 	}
-	status, body = e.do(t, ada, http.MethodGet, "/api/v1/notifications", "")
+	status, body = e.do(t, ada, http.MethodGet, apiV+"/notifications", "")
 	decode(t, body, &page)
 	if status != http.StatusOK || page.Total != 1 || page.Notifications[0].Title != "ada's" {
 		t.Errorf("ada's inbox = %d %s, want only her own", status, body)
@@ -117,7 +117,7 @@ func TestInbox_refusesBadQuery(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	vera := e.login(t, "vera", auth.AccountViewer)
 	for _, query := range []string{"?unread=perhaps", "?limit=0", "?limit=x", "?offset=-1", "?offset=x"} {
-		if status, body := e.do(t, vera, http.MethodGet, "/api/v1/notifications"+query, ""); status != 400 {
+		if status, body := e.do(t, vera, http.MethodGet, apiV+"/notifications"+query, ""); status != 400 {
 			t.Errorf("GET /notifications%s = %d, want 400: %s", query, status, body)
 		}
 	}

@@ -96,8 +96,8 @@ func (h *harness) seedPhoto(uid, filePath string, video bool) seeded {
 	h.t.Helper()
 	content := []byte("bytes of " + uid)
 	hash := sha256Hex(content)
-	h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-		VALUES ($1, $2, $3, $4, $5, 'image/jpeg')`, uid, hash, filePath, uid+".jpg", len(content))
+	h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+		VALUES ($1, $2, $3, $4, $5, 'image/jpeg', $6)`, uid, hash, filePath, uid+".jpg", len(content), project.BootstrapUID)
 	h.exec(`INSERT INTO photo_files (photo_uid, file_path, file_hash, file_size, file_mime, is_primary, role)
 		VALUES ($1, $2, $3, $4, 'image/jpeg', true, 'original')`, uid, filePath, hash, len(content))
 	h.mem.put(filePath, content)
@@ -257,8 +257,9 @@ func TestService_fullRun(t *testing.T) {
 		t.Errorf("total bytes = %d, want %d", run.TotalBytes, wantBytes)
 	}
 	// An upload after Start lands in the new layout and is not part of the move.
-	h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-		VALUES ('ph9', $1, $2, 'new.jpg', 3, 'image/jpeg')`, sha256Hex([]byte("new")), bootstrapTarget+"2026/10/new.jpg")
+	h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+		VALUES ('ph9', $1, $2, 'new.jpg', 3, 'image/jpeg', $3)`,
+		sha256Hex([]byte("new")), bootstrapTarget+"2026/10/new.jpg", project.BootstrapUID)
 	h.mem.put(bootstrapTarget+"2026/10/new.jpg", []byte("new"))
 
 	if err := h.stepToEnd(run, 2); err != nil {
@@ -417,8 +418,8 @@ func TestService_errorThresholdFailsTheRun(t *testing.T) {
 		key := fmt.Sprintf("2023/01/%04d.jpg", i)
 		uid := fmt.Sprintf("ph%04d", i)
 		content := []byte("bytes of " + uid)
-		h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime)
-			VALUES ($1, $2, $3, 'x.jpg', $4, 'image/jpeg')`, uid, sha256Hex(content), key, len(content))
+		h.exec(`INSERT INTO photos (uid, file_hash, file_path, file_name, file_size, file_mime, project_id)
+			VALUES ($1, $2, $3, 'x.jpg', $4, 'image/jpeg', $5)`, uid, sha256Hex(content), key, len(content), project.BootstrapUID)
 		h.mem.put(key, content)
 		h.mem.failCopy[bootstrapTarget+key] = errTransient
 	}

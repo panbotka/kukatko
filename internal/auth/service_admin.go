@@ -35,7 +35,7 @@ type CreateUserInput struct {
 	Password    string
 	DisplayName string
 	Email       string
-	// Role is the account's role in the five-rung transitional vocabulary:
+	// Role is the account's role in the five-rung /admin/users vocabulary:
 	// maintainer, or the role in the bootstrap project (see AccountRole.Split).
 	Role AccountRole
 	Note string
@@ -56,7 +56,7 @@ type UpdateUserInput struct {
 	DisplayName string
 	Email       string
 	// Role replaces the account's instance role and its role in the bootstrap
-	// project, in the five-rung transitional vocabulary (see AccountRole.Split).
+	// project, in the five-rung /admin/users vocabulary (see AccountRole.Split).
 	Role     AccountRole
 	Disabled bool
 	Note     *string
@@ -299,7 +299,8 @@ func (s *Service) MarkWelcomeSeen(ctx context.Context, uid string) (User, error)
 // account; the administrator's path through UpdateUserAudited is audited.
 //
 // It returns the refreshed user, ErrUserNotFound when the account does not
-// exist, or ErrSubjectNotFound when the UID names nobody.
+// exist, ErrSubjectNotFound when the UID names nobody, or ErrNoProject when
+// projectUID is empty.
 func (s *Service) SetUserSubject(ctx context.Context, projectUID, uid string, subjectUID *string) (User, error) {
 	return s.store.SetUserSubject(ctx, projectUID, uid, subjectUID)
 }

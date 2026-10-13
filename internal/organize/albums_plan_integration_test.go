@@ -56,7 +56,7 @@ const (
 // listing's visibility predicate has something to exclude in every album.
 const seedPlanFixtureSQL = `
 INSERT INTO photos (uid, file_hash, file_path, file_name, taken_at, archived_at,
-                    stack_uid, stack_primary)
+                    stack_uid, stack_primary, project_id)
 SELECT
     'ph' || lpad(i::text, 10, '0'),
     lpad(i::text, 64, '0'),
@@ -66,11 +66,12 @@ SELECT
          ELSE TIMESTAMPTZ '2010-01-01 00:00:00+00' + (i * INTERVAL '7 hours') END,
     CASE WHEN i %% 50 = 0 THEN now() ELSE NULL END,
     CASE WHEN i %% 60 = 0 THEN 'st' || lpad(i::text, 10, '0') ELSE NULL END,
-    false
+    false,
+    'pj0000000000000000veselice'
 FROM generate_series(1, %d) AS i;
 
-INSERT INTO albums (uid, slug, title)
-SELECT 'al' || lpad(j::text, 10, '0'), 'album-' || j, 'Album ' || j
+INSERT INTO albums (uid, slug, title, project_id)
+SELECT 'al' || lpad(j::text, 10, '0'), 'album-' || j, 'Album ' || j, 'pj0000000000000000veselice'
 FROM generate_series(1, %d) AS j;
 
 INSERT INTO album_photos (album_uid, photo_uid)

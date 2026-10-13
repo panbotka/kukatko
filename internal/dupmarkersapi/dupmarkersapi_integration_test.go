@@ -102,6 +102,7 @@ func newIntHarness(t *testing.T) intHarness {
 func (h intHarness) makePhoto(t *testing.T, hash string) string {
 	t.Helper()
 	created, err := h.photos.Create(t.Context(), photos.Photo{
+		ProjectID:  project.BootstrapUID,
 		FileHash:   hash,
 		FilePath:   "2024/01/" + hash + ".jpg",
 		FileName:   hash + ".jpg",

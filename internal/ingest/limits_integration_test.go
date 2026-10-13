@@ -160,7 +160,7 @@ func (e *httpEnv) uploadParts(t *testing.T, client *http.Client, parts ...upload
 		_, _ = w.Write(p.data)
 	}
 	_ = writer.Close()
-	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, e.server.URL+"/api/v1/upload", &body)
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, e.server.URL+apiV+"/upload", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := client.Do(req)
 	if err != nil {

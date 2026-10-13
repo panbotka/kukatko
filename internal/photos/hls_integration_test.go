@@ -14,6 +14,7 @@ import (
 // hlsVideo builds a catalogued standalone video with a distinct file hash.
 func hlsVideo(hash string) photos.Photo {
 	return photos.Photo{
+		ProjectID: project.BootstrapUID,
 		FileHash:  hash,
 		FilePath:  "2026/02/" + hash + ".mp4",
 		FileName:  hash + ".mp4",

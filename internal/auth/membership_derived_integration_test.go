@@ -98,7 +98,7 @@ func TestSubjectLink_anotherProjectsPersonIsRejected(t *testing.T) {
 	env.seedUser(t, "viewer", auth.AccountViewer)
 	client := env.signIn(t, "viewer")
 
-	status, body := env.do(t, client, http.MethodPut, "/api/v1/auth/subject", `{"subject_uid":"sub_b"}`)
+	status, body := env.do(t, client, http.MethodPut, apiV+"/auth/subject", `{"subject_uid":"sub_b"}`)
 	if status != http.StatusBadRequest {
 		t.Fatalf("PUT /auth/subject with another project's person = %d, body %s", status, body)
 	}

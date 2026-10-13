@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/organize"
 	"github.com/panbotka/kukatko/internal/organizeapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -30,6 +31,9 @@ import (
 // so they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// apiV is the bootstrap project's API prefix every project-scoped request goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
 
 // env wires the auth and organize APIs behind an httptest server over the
 // integration database, plus the photos store used to seed real photo rows.
@@ -64,8 +68,12 @@ func newEnv(t *testing.T) *env {
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -100,7 +108,8 @@ func (e *env) login(t *testing.T, username string, role auth.AccountRole) *http.
 func (e *env) seedPhoto(t *testing.T, hash string) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg", FileMime: "image/jpeg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg", FileMime: "image/jpeg",
 	})
 	if err != nil {
 		t.Fatalf("seed photo %s: %v", hash, err)
@@ -113,7 +122,8 @@ func (e *env) seedPhoto(t *testing.T, hash string) string {
 func (e *env) seedPhotoAt(t *testing.T, hash string, takenAt time.Time) string {
 	t.Helper()
 	p, err := e.photos.Create(t.Context(), photos.Photo{
-		FileHash: hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  hash, FilePath: "2024/01/" + hash + ".jpg", FileName: hash + ".jpg",
 		FileMime: "image/jpeg", TakenAt: &takenAt,
 	})
 	if err != nil {
@@ -157,7 +167,7 @@ func TestAlbumLifecycle(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/albums",
 		[]byte(`{"title":"Léto u Řeky","description":"summer"}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201", resp.StatusCode)
@@ -168,7 +178,7 @@ func TestAlbumLifecycle(t *testing.T) {
 		t.Fatalf("unexpected created album: %+v", created)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/albums", nil)
+	resp = env.mustDo(t, editor, http.MethodGet, apiV+"/albums", nil)
 	var list struct {
 		Albums []organize.AlbumCount `json:"albums"`
 	}
@@ -177,7 +187,7 @@ func TestAlbumLifecycle(t *testing.T) {
 		t.Fatalf("list mismatch: %+v", list.Albums)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/albums/"+created.UID,
+	resp = env.mustDo(t, editor, http.MethodPatch, apiV+"/albums/"+created.UID,
 		[]byte(`{"title":"Hory","private":true}`))
 	var updated organize.Album
 	decodeBody(t, resp, &updated)
@@ -186,12 +196,12 @@ func TestAlbumLifecycle(t *testing.T) {
 		t.Fatalf("unexpected updated album: %+v", updated)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodDelete, "/api/v1/albums/"+created.UID, nil)
+	resp = env.mustDo(t, editor, http.MethodDelete, apiV+"/albums/"+created.UID, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want 204", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
-	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/albums/"+created.UID, nil)
+	resp = env.mustDo(t, editor, http.MethodGet, apiV+"/albums/"+created.UID, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("get after delete status = %d, want 404", resp.StatusCode)
 	}
@@ -208,12 +218,12 @@ func TestAlbumMembership(t *testing.T) {
 	middle := env.seedPhotoAt(t, "m2", time.Date(2021, 3, 1, 8, 0, 0, 0, time.UTC))
 	newest := env.seedPhotoAt(t, "m3", time.Date(2023, 3, 1, 8, 0, 0, 0, time.UTC))
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/albums", []byte(`{"title":"Trip"}`))
 	var album organize.Album
 	decodeBody(t, resp, &album)
 
 	// Add all three newest-first; the echo comes back chronological anyway.
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/albums/"+album.UID+"/photos",
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/albums/"+album.UID+"/photos",
 		[]byte(`{"photo_uids":["`+newest+`","`+middle+`","`+oldest+`"]}`))
 	var order struct {
 		PhotoUIDs []string `json:"photo_uids"`
@@ -226,7 +236,7 @@ func TestAlbumMembership(t *testing.T) {
 	}
 
 	// Remove one.
-	resp = env.mustDo(t, editor, http.MethodDelete, "/api/v1/albums/"+album.UID+"/photos",
+	resp = env.mustDo(t, editor, http.MethodDelete, apiV+"/albums/"+album.UID+"/photos",
 		[]byte(`{"photo_uids":["`+middle+`"]}`))
 	decodeBody(t, resp, &order)
 	if len(order.PhotoUIDs) != 2 || order.PhotoUIDs[0] != oldest || order.PhotoUIDs[1] != newest {
@@ -242,11 +252,11 @@ func TestAlbumReorderRouteRemoved(t *testing.T) {
 	editor := env.login(t, "editor", auth.AccountEditor)
 	p1 := env.seedPhoto(t, "rr1")
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/albums", []byte(`{"title":"Trip"}`))
 	var album organize.Album
 	decodeBody(t, resp, &album)
 
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/albums/"+album.UID+"/order",
+	resp = env.mustDo(t, editor, http.MethodPatch, apiV+"/albums/"+album.UID+"/order",
 		[]byte(`{"photo_uids":["`+p1+`"]}`))
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("reorder route status = %d, want 404 (route removed)", resp.StatusCode)
@@ -259,17 +269,17 @@ func TestAlbumMembershipNotFound(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/albums/al_missing/photos",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/albums/al_missing/photos",
 		[]byte(`{"photo_uids":["ph_x"]}`))
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing album status = %d, want 404", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/albums", []byte(`{"title":"Trip"}`))
 	var album organize.Album
 	decodeBody(t, resp, &album)
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/albums/"+album.UID+"/photos",
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/albums/"+album.UID+"/photos",
 		[]byte(`{"photo_uids":["ph_missing"]}`))
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing photo status = %d, want 404", resp.StatusCode)
@@ -283,7 +293,7 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 	editor := env.login(t, "editor", auth.AccountEditor)
 	photo := env.seedPhoto(t, "lbl1")
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/labels",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/labels",
 		[]byte(`{"name":"Pláž","priority":3}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create label status = %d, want 201", resp.StatusCode)
@@ -295,7 +305,7 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 	}
 
 	// Attach to the photo.
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/labels/"+label.UID+"/photos",
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/labels/"+label.UID+"/photos",
 		[]byte(`{"photo_uid":"`+photo+`","source":"manual"}`))
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("attach status = %d, want 204", resp.StatusCode)
@@ -303,7 +313,7 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 	_ = resp.Body.Close()
 
 	// The label's photo count now reflects the attachment.
-	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/labels", nil)
+	resp = env.mustDo(t, editor, http.MethodGet, apiV+"/labels", nil)
 	var list struct {
 		Labels []organize.LabelCount `json:"labels"`
 	}
@@ -313,14 +323,14 @@ func TestLabelLifecycleAndAttach(t *testing.T) {
 	}
 
 	// Detach.
-	resp = env.mustDo(t, editor, http.MethodDelete, "/api/v1/labels/"+label.UID+"/photos",
+	resp = env.mustDo(t, editor, http.MethodDelete, apiV+"/labels/"+label.UID+"/photos",
 		[]byte(`{"photo_uid":"`+photo+`"}`))
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("detach status = %d, want 204", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
-	resp = env.mustDo(t, editor, http.MethodDelete, "/api/v1/labels/"+label.UID, nil)
+	resp = env.mustDo(t, editor, http.MethodDelete, apiV+"/labels/"+label.UID, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete label status = %d, want 204", resp.StatusCode)
 	}
@@ -335,7 +345,7 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 	env := newEnv(t)
 	editor := env.login(t, "editor", auth.AccountEditor)
 
-	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/labels",
+	resp := env.mustDo(t, editor, http.MethodPost, apiV+"/labels",
 		[]byte(`{"name":"Výlet","priority":0}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create label status = %d, want 201", resp.StatusCode)
@@ -346,7 +356,7 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 		t.Fatalf("a created label is review_enabled=%v, want true", label.ReviewEnabled)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+	resp = env.mustDo(t, editor, http.MethodPatch, apiV+"/labels/"+label.UID,
 		[]byte(`{"name":"Výlet","priority":0,"review_enabled":false}`))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("patch status = %d, want 200", resp.StatusCode)
@@ -357,13 +367,13 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 		t.Fatalf("patched label = %+v, want review_enabled false", off)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/labels/"+label.UID, nil)
+	resp = env.mustDo(t, editor, http.MethodGet, apiV+"/labels/"+label.UID, nil)
 	var fetched organize.Label
 	decodeBody(t, resp, &fetched)
 	if fetched.ReviewEnabled {
 		t.Errorf("GET /labels/%s = %+v, want review_enabled false", label.UID, fetched)
 	}
-	resp = env.mustDo(t, editor, http.MethodGet, "/api/v1/labels", nil)
+	resp = env.mustDo(t, editor, http.MethodGet, apiV+"/labels", nil)
 	var list struct {
 		Labels []organize.LabelCount `json:"labels"`
 	}
@@ -373,7 +383,7 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 	}
 
 	// A rename that says nothing about the switch must not flip it back on.
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+	resp = env.mustDo(t, editor, http.MethodPatch, apiV+"/labels/"+label.UID,
 		[]byte(`{"name":"Výlety","priority":1}`))
 	var renamed organize.Label
 	decodeBody(t, resp, &renamed)
@@ -381,7 +391,7 @@ func TestLabelReviewEnabledRoundTrip(t *testing.T) {
 		t.Errorf("renamed label = %+v, want the new name with review_enabled still false", renamed)
 	}
 
-	resp = env.mustDo(t, editor, http.MethodPatch, "/api/v1/labels/"+label.UID,
+	resp = env.mustDo(t, editor, http.MethodPatch, apiV+"/labels/"+label.UID,
 		[]byte(`{"name":"Výlety","priority":1,"review_enabled":true}`))
 	var back organize.Label
 	decodeBody(t, resp, &back)
@@ -398,7 +408,7 @@ func TestRoleEnforcement(t *testing.T) {
 	editor := env.login(t, "editor", auth.AccountEditor)
 
 	// Viewer can read.
-	for _, path := range []string{"/api/v1/albums", "/api/v1/labels"} {
+	for _, path := range []string{apiV + "/albums", apiV + "/labels"} {
 		resp := env.mustDo(t, viewer, http.MethodGet, path, nil)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("viewer GET %s = %d, want 200", path, resp.StatusCode)
@@ -407,26 +417,26 @@ func TestRoleEnforcement(t *testing.T) {
 	}
 
 	// Viewer cannot create.
-	resp := env.mustDo(t, viewer, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	resp := env.mustDo(t, viewer, http.MethodPost, apiV+"/albums", []byte(`{"title":"Trip"}`))
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer POST /albums = %d, want 403", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
-	resp = env.mustDo(t, viewer, http.MethodPost, "/api/v1/labels", []byte(`{"name":"Beach"}`))
+	resp = env.mustDo(t, viewer, http.MethodPost, apiV+"/labels", []byte(`{"name":"Beach"}`))
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("viewer POST /labels = %d, want 403", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
 	// Editor can create.
-	resp = env.mustDo(t, editor, http.MethodPost, "/api/v1/albums", []byte(`{"title":"Trip"}`))
+	resp = env.mustDo(t, editor, http.MethodPost, apiV+"/albums", []byte(`{"title":"Trip"}`))
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("editor POST /albums = %d, want 201", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
 	// Unauthenticated cannot even read.
-	resp = env.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/albums", nil)
+	resp = env.mustDo(t, &http.Client{}, http.MethodGet, apiV+"/albums", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous GET /albums = %d, want 401", resp.StatusCode)
 	}

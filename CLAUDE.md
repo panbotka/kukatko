@@ -191,7 +191,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/tagnotifyjob` — "you were tagged", grouped by album: the people store's tag observer records `tag_notices` in the assignment's transaction (never self, never a private/hidden/archived photo, never for an account no channel would reach; untag un-announces) and opens a `notifications.tags.window` window; the `tag_notify` job closes it into one notification per album the photos are in (a private album only for a curator+, at most `MaxAlbumGroups`) plus one for the other photos, one e-mail for the whole window, all through `internal/notifydeliver`
 - `internal/taskassignnotify` — "somebody put you on a task": the task store's assign observer delivers the `task_assigned` kind to the person asked inside the assignment's transaction (under a savepoint), never to the asker, never for joining by acting, never to a disabled account; the store reports only a fresh hand-over, so re-asking is silent
 - `internal/taskdigestjob` — the `task_digest` job + its daily scheduler: one job and one mail per (project, person) listing the open tasks of that project whose move is theirs, only when something changed since the membership's `task_digest_at`; sends through `mail_send`, never itself; on only with `tasks.digest.enabled` **and** mail
-- `internal/tenancyguard` — the `make check` guard: every SQL statement over a root table (`RootTables`, checked against the migrations) must name `project_id`; reasoned exceptions in `allow.txt`, stale entries fail
+- `internal/tenancyguard` — the `make check` guard: every SQL statement over a root table (`RootTables`, checked against the migrations) must name `project_id`; reasoned exceptions in `allow.txt`, stale entries fail; no `internal/*api` or `cmd/kukatko` file names the bootstrap project
 - `internal/thumb` — thumbnailer (pure-Go default, optional `vips` engine), cache layout
 - `internal/thumbjob` — worker handler `thumbnail` (thumbnail regeneration + pHashes + the blur placeholder)
 - `internal/trash` — permanent deletion (purge) of archived photos + scheduled retention
@@ -225,6 +225,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
   iteration won't break. Details in `docs/ARCHITECTURE.md` §19.
 - **Every statement over a root table carries `project_id`; `internal/tenancyguard` enforces it.** Scope
   it, or allow-list `path:line reason` in `internal/tenancyguard/allow.txt` — never weaken the guard.
+  **There is no default project:** a request names it in `/api/v1/p/<slug>`, a store never defaults it.
 - Frontend: **ESLint** (strict) + **Prettier** (`--check`) + **Vitest** must pass (wired into
   `make`). No `any` without a reason.
 

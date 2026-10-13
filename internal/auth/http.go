@@ -47,8 +47,8 @@ type API struct {
 	// available" instead of vanishing.
 	passkeys      *Passkeys
 	secureCookies bool
-	// projects resolves the bootstrap project for a request that did not pass
-	// through WithProject, and the memberships GET /auth/me lists.
+	// projects reads the memberships GET /auth/me lists and the project a
+	// registration names.
 	projects *project.Store
 	// lastProject throttles the per-account "last project" write.
 	lastProject *lastProjectThrottle

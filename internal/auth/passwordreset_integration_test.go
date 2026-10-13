@@ -129,7 +129,7 @@ const theNewPassword = "a-brand-new-password"
 // hash rather than the link itself.
 func TestPasswordReset_issuesALinkAndMailsIt(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 	before := time.Now()
@@ -181,7 +181,7 @@ func TestPasswordReset_issuesALinkAndMailsIt(t *testing.T) {
 // the same request a second time fails and the old password is gone.
 func TestPasswordReset_setsThePasswordAndBurnsTheLink(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
@@ -228,7 +228,7 @@ func TestPasswordReset_setsThePasswordAndBurnsTheLink(t *testing.T) {
 // signed out by it.
 func TestPasswordReset_invalidatesEverySession(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 	first := signInAs(t, env, "forgetful")
@@ -254,7 +254,7 @@ func TestPasswordReset_invalidatesEverySession(t *testing.T) {
 // reports itself unusable and sets nothing.
 func TestPasswordReset_expiredLinkIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
@@ -285,7 +285,7 @@ func TestPasswordReset_expiredLinkIsRefused(t *testing.T) {
 // works: issuing a second one kills the first, and exactly one row is left.
 func TestPasswordReset_supersededLinkIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
@@ -344,7 +344,7 @@ func TestPasswordReset_blockedAccountIsRefused(t *testing.T) {
 // endpoints answer to a caller who has no link, or a password the rules refuse.
 func TestPasswordReset_refusesTheUnknownAndTheWeak(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
@@ -369,12 +369,14 @@ func TestPasswordReset_refusesTheUnknownAndTheWeak(t *testing.T) {
 }
 
 // TestPasswordReset_maintainerBoundary pins that the link does not become a way
-// around the maintainer boundary: it ultimately sets a password, so an admin may
-// not start one for a maintainer.
+// around the maintainer boundary: it ultimately sets a password, and setting an
+// account's password is the system administrator's — so a project admin may
+// start one for nobody, a maintainer least of all.
 func TestPasswordReset_maintainerBoundary(t *testing.T) {
 	env := newHTTPEnv(t, 10)
 	env.mustCreate(t, "boss", auth.AccountAdmin)
 	root := env.mustCreate(t, "root", auth.AccountMaintainer)
+	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 
 	if code, body := issueReset(t, env, admin, root.UID); code != http.StatusForbidden {
@@ -383,7 +385,13 @@ func TestPasswordReset_maintainerBoundary(t *testing.T) {
 	if n := countResetTokens(t, env, root.UID); n != 0 {
 		t.Errorf("reset rows for the maintainer = %d, want 0", n)
 	}
-	if code, _ := issueReset(t, env, admin, "usnosuchaccount"); code != http.StatusNotFound {
+	if code, body := issueReset(t, env, admin, forgetful.UID); code != http.StatusForbidden {
+		t.Errorf("a project admin resetting a viewer = %d, body %s, want 403", code, body)
+	}
+	if n := countResetTokens(t, env, forgetful.UID); n != 0 {
+		t.Errorf("reset rows for the viewer = %d, want 0", n)
+	}
+	if code, _ := issueReset(t, env, signInAs(t, env, "root"), "usnosuchaccount"); code != http.StatusNotFound {
 		t.Errorf("resetting an unknown account = %d, want 404", code)
 	}
 }

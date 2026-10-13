@@ -31,7 +31,7 @@ var jobOutcomes = []string{OutcomeSuccess, OutcomeError, OutcomeDeferred, Outcom
 var callOutcomes = []string{OutcomeSuccess, OutcomeError}
 
 // routeLabel returns the bounded HTTP route label for req: the chi route
-// pattern (for example "/api/v1/photos/{uid}") when routing matched one,
+// pattern (for example "/api/v1/p/{project}/photos/{uid}") when routing matched one,
 // otherwise the constant "unmatched". It is the routeOf argument the serve
 // command passes to Middleware so the route label can never be a raw,
 // unbounded URL path. Pass it post-handler: chi populates the pattern as

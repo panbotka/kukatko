@@ -30,3 +30,8 @@ in step: approved once any membership is (a maintainer, or an account in no proj
 rest from the bootstrap-project
 membership. Run it first when going back to a release older than 0110; 0105–0109 have no down
 scripts of their own.
+
+**`0114_down.sql`** puts back the transitional `DEFAULT 'pj0000000000000000veselice'` (project `v`)
+that migration 0114 dropped from every `project_id` column, for a release whose writers may still
+insert without naming the project. It leaves NOT NULL and the foreign keys alone. Run it first when
+going back to a release older than 0114.

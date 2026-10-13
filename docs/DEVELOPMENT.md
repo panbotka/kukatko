@@ -373,7 +373,7 @@ The corresponding `.secrets/db.env` block sets `KUKATKO_STORAGE_BACKEND=r2`, the
 
 **`storage.r2.media_base_url` stays unset in dev, on purpose.** With no base URL
 `newSignerFor` leaves the signer nil, `R2.URL()` returns the empty string, and `internal/mediaurl`
-falls back to the application's own `/api/v1/photos/…` routes, which stream the bytes. That means
+falls back to the application's own `/api/v1/p/<slug>/photos/…` routes, which stream the bytes. That means
 no Cloudflare Worker has to be reproduced locally — and it means **the signed-URL path is the one
 thing dev does not exercise**. It is covered by the unit tests in `internal/storage` against the
 frozen vectors in `testdata/url_signature_vectors.json`; treat a change to signing as

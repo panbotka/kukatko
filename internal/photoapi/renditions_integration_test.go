@@ -30,7 +30,7 @@ type renditionsBody struct {
 
 // renditionsURL builds the address of the inventory endpoint for one photo.
 func renditionsURL(e *env, uid string) string {
-	return e.server.URL + "/api/v1/photos/" + uid + "/renditions"
+	return e.server.URL + apiV + "/photos/" + uid + "/renditions"
 }
 
 // getRenditions fetches the inventory and decodes it, failing on anything but 200.
@@ -112,12 +112,12 @@ func TestRegenerateStoryboard_discardsAndSchedules(t *testing.T) {
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
 	env.plantSprite(t, video, []byte("stale-sprite-bytes"))
 
-	statusURL := env.server.URL + "/api/v1/photos/" + video.UID + "/storyboard"
+	statusURL := env.server.URL + apiV + "/photos/" + video.UID + "/storyboard"
 	if body := getStoryboard(t, viewer, statusURL); body.Status != "ready" {
 		t.Fatalf("status before the rebuild = %q, want ready", body.Status)
 	}
 
-	rebuildURL := env.server.URL + "/api/v1/photos/" + video.UID + "/regenerate-storyboard"
+	rebuildURL := env.server.URL + apiV + "/photos/" + video.UID + "/regenerate-storyboard"
 	resp := mustDo(t, maintainer, http.MethodPost, rebuildURL, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -157,21 +157,21 @@ func TestRegenerateStoryboard_guardAndRefusals(t *testing.T) {
 	video := env.seedTimedVideo(t, "clip.mp4", 20000)
 	still := env.seedPhoto(t, photos.Photo{Title: "still", TakenAtSource: "unknown"}, "still.jpg", 9, 9, 9)
 
-	url := env.server.URL + "/api/v1/photos/" + video.UID + "/regenerate-storyboard"
+	url := env.server.URL + apiV + "/photos/" + video.UID + "/regenerate-storyboard"
 	resp := mustDo(t, editor, http.MethodPost, url, nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("editor rebuild = %d, want 403", resp.StatusCode)
 	}
 
-	stillURL := env.server.URL + "/api/v1/photos/" + still.UID + "/regenerate-storyboard"
+	stillURL := env.server.URL + apiV + "/photos/" + still.UID + "/regenerate-storyboard"
 	resp = mustDo(t, maintainer, http.MethodPost, stillURL, nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Errorf("rebuild of a still = %d, want 409", resp.StatusCode)
 	}
 
-	missingURL := env.server.URL + "/api/v1/photos/ptnosuchphotoatall000000000000000/regenerate-storyboard"
+	missingURL := env.server.URL + apiV + "/photos/ptnosuchphotoatall000000000000000/regenerate-storyboard"
 	resp = mustDo(t, maintainer, http.MethodPost, missingURL, nil)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {

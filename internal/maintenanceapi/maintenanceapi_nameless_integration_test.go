@@ -39,10 +39,14 @@ import (
 // internal/people/nameless_integration_test.go; what is proved here is the HTTP
 // contract on top of it and the queue hand-off in between.
 
+// apiV is the bootstrap project's API prefix: the nameless repair works inside
+// one project, so it is reached through that project's prefix.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 const (
-	namelessReportPath  = "/api/v1/maintenance/nameless-subjects"
-	namelessDetachPath  = "/api/v1/maintenance/nameless-subjects/detach"
-	namelessRestorePath = "/api/v1/maintenance/nameless-subjects/restore"
+	namelessReportPath  = apiV + "/maintenance/nameless-subjects"
+	namelessDetachPath  = apiV + "/maintenance/nameless-subjects/detach"
+	namelessRestorePath = apiV + "/maintenance/nameless-subjects/restore"
 )
 
 // namelessEnv wires the auth and maintenance APIs over the integration database
@@ -84,10 +88,16 @@ func newNamelessEnv(t *testing.T, wrap func(maintenanceapi.NamelessRepair) maint
 		RequireMaintainer: authAPI.RequireMaintainer,
 	})
 
+	// Mounted as the server mounts it: the instance-wide maintenance routes
+	// bare, the nameless repair under the project prefix.
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		api.RegisterInstanceRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterProjectRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -149,7 +159,8 @@ func (e *namelessEnv) plantCatchAll(t *testing.T) (subject people.Subject, marke
 		t.Fatalf("CreateSubject nameless: %v", err)
 	}
 	photo, err := e.photos.Create(ctx, photos.Photo{
-		FileHash: "nameless_http", FilePath: "2026/08/nameless.jpg", FileName: "nameless.jpg",
+		ProjectID: project.BootstrapUID,
+		FileHash:  "nameless_http", FilePath: "2026/08/nameless.jpg", FileName: "nameless.jpg",
 		FileWidth: 4000, FileHeight: 3000,
 	})
 	if err != nil {

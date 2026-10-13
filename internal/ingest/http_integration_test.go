@@ -27,6 +27,9 @@ import (
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
+// apiV is the bootstrap project's API prefix every upload goes through.
+const apiV = "/api/v1/p/" + project.BootstrapSlug
+
 // httpEnv wires the auth and ingest APIs behind an httptest server so the
 // upload endpoint can be exercised end to end (multipart streaming + RBAC).
 type httpEnv struct {
@@ -68,8 +71,12 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
-		authAPI.RegisterRoutes(r)
-		ingestAPI.RegisterRoutes(r)
+		authAPI.RegisterInstanceRoutes(r)
+		// Mounted as the real server mounts it: under the project prefix.
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			ingestAPI.RegisterRoutes(r)
+		})
 	})
 
 	server := httptest.NewServer(r)
@@ -140,7 +147,7 @@ func (e *httpEnv) uploadFiles(
 	}
 
 	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		e.server.URL+"/api/v1/upload", &body)
+		e.server.URL+apiV+"/upload", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := client.Do(req)
 	if err != nil {

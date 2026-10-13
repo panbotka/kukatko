@@ -177,6 +177,37 @@ func TestSPAFallbackStillOwnsUnknownPaths(t *testing.T) {
 	}
 }
 
+// TestUnknownAPIPathIsTheAPI404 verifies an /api/v1 path no API group mounts —
+// a project-scoped route without its /p/{project} prefix among them — is
+// answered by the API's JSON 404, never by the SPA fallback, while a mounted
+// route keeps answering and a wrong method on it stays 405.
+func TestUnknownAPIPathIsTheAPI404(t *testing.T) {
+	t.Parallel()
+	srv := New("", WithAPI(func(r chi.Router) {
+		r.Get("/p/{project}/photos", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	})).Handler()
+
+	tests := []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/api/v1/photos", http.StatusNotFound},
+		{http.MethodGet, "/api/v1/albums/al1", http.StatusNotFound},
+		{http.MethodGet, "/api/v1/p/v/photos", http.StatusNoContent},
+		{http.MethodPost, "/api/v1/p/v/photos", http.StatusMethodNotAllowed},
+	}
+	for _, tt := range tests {
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), tt.method, tt.path, nil))
+		if rec.Code != tt.want {
+			t.Errorf("%s %s = %d, want %d", tt.method, tt.path, rec.Code, tt.want)
+		}
+		if tt.want == http.StatusNotFound && rec.Body.String() != notFoundBody {
+			t.Errorf("%s %s body = %q, want the API's %q", tt.method, tt.path, rec.Body.String(), notFoundBody)
+		}
+	}
+}
+
 // TestWithAPIMiddleware_wrapsOnlyTheAPIGroup verifies an API middleware runs in
 // front of every route a WithAPI register mounts — in the order given — and
 // never in front of the routes outside /api/v1.

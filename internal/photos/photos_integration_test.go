@@ -31,6 +31,7 @@ func newStore(t *testing.T) (*photos.Store, *database.DB) {
 func samplePhoto(hash string) photos.Photo {
 	taken := time.Date(2023, 6, 1, 12, 0, 0, 0, time.UTC)
 	return photos.Photo{
+		ProjectID:       project.BootstrapUID,
 		FileHash:        hash,
 		FilePath:        "2023/06/" + hash + ".jpg",
 		FileName:        hash + ".jpg",
