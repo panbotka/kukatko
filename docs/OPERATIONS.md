@@ -1303,6 +1303,28 @@ Creating, extending and revoking stay in the web UI; the CLI covers handing a li
 | `ctl upload-links restore-code <uid> <code-or-url>` | `POST /upload-links/{uid}/restore-code` — stores the original code only when it matches the link's hash, so the URL never changes; a wrong code is the server's 422 |
 | `ctl upload-links new-code <uid>` | `POST /upload-links/{uid}/new-code` — a fresh code; **the old URL stops working at once**, so it sits behind `--yes` (`--dry-run` names the link) |
 
+#### `ctl projects` / `ctl users` — the system administrator
+
+The instance's projects and accounts (`internal/projectapi`, instance-level routes), **a maintainer's
+token** — anybody else gets the CLI's 403. A project is named by its **slug** (its uid works too) and an
+account by its **username** (or uid); the CLI resolves either through the list first, so a typo is
+"no such project/account" before anything is sent. A refusal prints the server's code and rule, e.g.
+`invalid_slug: "Bad" must be 1–40 lowercase letters…`.
+
+| Command | Meaning |
+| --- | --- |
+| `ctl projects list` | `GET /projects` — slug, name, state, members, photos, originals, `MAX FILE`, `QUOTA` (`unlimited` for none), uid |
+| `ctl projects get <slug>` | `GET /projects/{uid}` — the detail incl. the storage prefix (`(storage root)` when empty) |
+| `ctl projects create --slug <slug> --name <name> [--description <text>] [--max-file-bytes N] [--max-total-bytes N]` | `POST /projects`; you become its first admin. The slug is immutable; a limit left out is no limit (an explicit `0` is sent and refused by the server) |
+| `ctl projects update <slug> [--name] [--description] [--max-file-bytes N] [--max-total-bytes N] [--clear-max-file-bytes] [--clear-max-total-bytes]` | `PATCH /projects/{uid}` with only the flags given (a clear flag sends `null`); no flag at all is refused before any request |
+| `ctl projects deactivate <slug>` / `activate <slug>` | `PATCH {"active":false}` / `{"active":true}` — a deactivated project is entered by nobody but a maintainer; its data stays |
+| `ctl projects add-member <slug> <username> --role <role>` | `POST /projects/{uid}/members` — an **approved** membership (`viewer`, `curator`, `editor`, `admin`); your own username enters the project yourself |
+| `ctl users list` | `GET /users` — every account: username, name, instance role (`, disabled`), its projects as `slug (role)` (`, pending` while unapproved) |
+| `ctl users promote <username>` / `demote <username>` | `PATCH /users/{uid}` `{"instance_role":"maintainer"}` / `"user"`; demoting yourself is the server's `self` refusal |
+
+`ctl users` used to be an alias of `ctl people`; the alias is gone — `ctl people` is the name directory
+(`GET /p/v/users`, the bootstrap project's, until contexts carry a project).
+
 #### `ctl saved-searches` — smart albums
 
 Named library views, stored per user (`internal/savedsearchapi`). Alias: `smart-albums`. Any signed-in role
@@ -1419,7 +1441,7 @@ signed-in role, viewers included; opening, editing, closing and changing members
 | `ctl tasks participants <uid>` | `GET /tasks/{uid}/participants` |
 | `ctl tasks assign <uid> <user-uid>` | `POST /tasks/{uid}/participants` — ask a particular person |
 | `ctl tasks unassign <uid> <user-uid>` | `DELETE /tasks/{uid}/participants/{user}` |
-| `ctl people` | `GET /users` — the uids the assign commands take |
+| `ctl people` | `GET /p/v/users` (the name directory of the bootstrap project) — the uids the assign commands take |
 
 **`ctl tasks list --waiting` is the command the loop turns on.** It lists the tasks whose move is the
 token's: open, the account is on them, and somebody else acted last (`waiting_on_me`). A question a person

@@ -366,6 +366,10 @@ const (
 	// the account by, so the trail is where "who was this before" is answered.
 	// It is written only when the name really changes.
 	ActionUserRename = "user.rename"
+	// ActionUserInstanceRole records a system administrator promoting an account
+	// to the maintainer instance role or demoting it to a plain user. The target
+	// is the account; the details carry the new and the previous instance role.
+	ActionUserInstanceRole = "user.instance_role"
 	// ActionUserRegister records somebody creating their own account through
 	// self-service registration. The new account is both the actor and the
 	// target — nobody else was involved — and it is not usable until an
@@ -518,8 +522,8 @@ var knownActions = map[string]struct{}{
 	ActionSubjectRelationAdd: {}, ActionSubjectRelationRemove: {}, ActionFamilyUpdate: {},
 	ActionUserCreate: {}, ActionUserUpdate: {}, ActionUserDisable: {},
 	ActionUserPassword: {}, ActionUserPasswordReset: {}, ActionUserPasswordResetUse: {},
-	ActionUserApprove: {}, ActionUserRename: {}, ActionUserRegister: {}, ActionPasskeyRegister: {},
-	ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
+	ActionUserApprove: {}, ActionUserRename: {}, ActionUserInstanceRole: {}, ActionUserRegister: {},
+	ActionPasskeyRegister: {}, ActionPasskeyLogin: {}, ActionPasskeyDelete: {}, ActionAPITokenCreate: {},
 	ActionAPITokenRevoke: {}, ActionAPITokenUpdate: {}, ActionAnnouncementSet: {},
 	ActionUploadLinkCreate: {}, ActionUploadLinkExtend: {}, ActionUploadLinkRevoke: {},
 	ActionUploadLinkUpload: {}, ActionUploadLinkRestoreCode: {}, ActionUploadLinkRotateCode: {},

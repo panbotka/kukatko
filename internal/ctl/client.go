@@ -240,13 +240,19 @@ func (c *Client) statusError(status int, body []byte) error {
 	}
 }
 
-// errorMessage extracts the server's {"error": …} text from an error body,
-// falling back to a bounded snippet of whatever it actually sent.
+// errorMessage extracts the server's {"error": …} text from an error body —
+// followed by its "message" when the error is a code that comes with one
+// ("invalid_slug: …") — falling back to a bounded snippet of whatever it
+// actually sent.
 func errorMessage(body []byte) string {
 	var payload struct {
-		Error string `json:"error"`
+		Error   string `json:"error"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &payload); err == nil && payload.Error != "" {
+		if payload.Message != "" {
+			return payload.Error + ": " + payload.Message
+		}
 		return payload.Error
 	}
 	snippet := strings.TrimSpace(string(body))

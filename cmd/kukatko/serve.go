@@ -436,8 +436,9 @@ func discoveryAPIOptions(
 // saved searches and search history, the announcement banner, the instance
 // settings, the returning-reader digest, the notification inbox and the
 // grouped global search. It returns the instance-wide groups built alongside:
-// the push subscriptions (the other half of the notification API) and the audit
-// log. Splitting them out keeps buildServices within the function-length limit.
+// the push subscriptions (the other half of the notification API), the audit
+// log and the system administrator's project and account management.
+// Splitting them out keeps buildServices within the function-length limit.
 //
 // The groups that return photo records take mediaStore, which decides where
 // their clients fetch each photo's thumbnail and original. The instance
@@ -468,5 +469,6 @@ func readAPIOptions(
 	return []server.Option{
 		server.WithAPI(notifications.RegisterPushRoutes),
 		server.WithAPI(buildAuditAPI(db, authAPI).RegisterRoutes),
+		server.WithAPI(buildProjectsAPI(db, authAPI).RegisterRoutes),
 	}
 }

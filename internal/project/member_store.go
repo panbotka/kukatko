@@ -138,7 +138,7 @@ func (s *Store) AddMember(
 	if !role.Valid() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidRole, role)
 	}
-	entry := meta.Entry(audit.ActionProjectMemberAdd, MemberTargetType, userUID, map[string]any{
+	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberAdd, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID, "role": string(role), "approved": approved,
 	})
 	var added *Member
@@ -173,7 +173,7 @@ func (s *Store) SetRole(ctx context.Context, meta audit.Meta, projectUID, userUI
 	if !role.Valid() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidRole, role)
 	}
-	entry := meta.Entry(audit.ActionProjectMemberRole, MemberTargetType, userUID, map[string]any{
+	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberRole, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID, "role": string(role),
 	})
 	return s.mutateMember(ctx, entry, projectUID, userUID, func(tx pgx.Tx, current *Member) (bool, error) {
@@ -198,7 +198,7 @@ func (s *Store) SetRole(ctx context.Context, meta audit.Meta, projectUID, userUI
 // It returns ErrNotFound for an unknown project and ErrNotMember when the
 // account is not a member.
 func (s *Store) Approve(ctx context.Context, meta audit.Meta, projectUID, userUID string) (*Member, error) {
-	entry := meta.Entry(audit.ActionProjectMemberApprove, MemberTargetType, userUID, map[string]any{
+	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberApprove, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID,
 	})
 	return s.mutateMember(ctx, entry, projectUID, userUID, func(tx pgx.Tx, current *Member) (bool, error) {
@@ -221,7 +221,7 @@ func (s *Store) Approve(ctx context.Context, meta audit.Meta, projectUID, userUI
 func (s *Store) SetSubject(
 	ctx context.Context, meta audit.Meta, projectUID, userUID string, subjectUID *string,
 ) (*Member, error) {
-	entry := meta.Entry(audit.ActionProjectMemberSubject, MemberTargetType, userUID, map[string]any{
+	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberSubject, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID, "subject_uid": subjectUID,
 	})
 	return s.mutateMember(ctx, entry, projectUID, userUID, func(tx pgx.Tx, current *Member) (bool, error) {
@@ -243,7 +243,7 @@ func (s *Store) SetSubject(
 // admin. Who may remove whom (themselves included) is the caller's rule; the
 // store only keeps the project governable.
 func (s *Store) RemoveMember(ctx context.Context, meta audit.Meta, projectUID, userUID string) error {
-	entry := meta.Entry(audit.ActionProjectMemberRemove, MemberTargetType, userUID, map[string]any{
+	entry := projectEntry(meta, projectUID, audit.ActionProjectMemberRemove, MemberTargetType, userUID, map[string]any{
 		"project_uid": projectUID,
 	})
 	_, err := s.mutateMember(ctx, entry, projectUID, userUID, func(tx pgx.Tx, current *Member) (bool, error) {

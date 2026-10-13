@@ -85,9 +85,10 @@ func newCtlTasksUnassignCmd(opts *ctlOptions) *cobra.Command {
 // assign commands take come from.
 func newCtlPeopleCmd(opts *ctlOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:     "people",
-		Aliases: []string{"users"},
-		Short:   "List the library's accounts — the uids tasks are assigned to",
+		Use: "people",
+		// No "users" alias: "ctl users" is the system administrator's
+		// account management (ctl_projects.go).
+		Short: "List the library's accounts — the uids tasks are assigned to",
 		Long: "List the accounts of the library: a uid and the name each is known by.\n\n" +
 			"This is the directory every signed-in role may read. It is deliberately\n" +
 			"not the administrative view: no addresses, no roles, no approval state\n" +

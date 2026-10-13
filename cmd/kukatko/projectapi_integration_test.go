@@ -252,3 +252,35 @@ func TestProjectAPI_mcpThroughBothPaths(t *testing.T) {
 		t.Errorf("protected-resource probe = %d, want 404", status)
 	}
 }
+
+// TestProjectAPI_usersSplitsDirectoryAndAccountList proves, through the whole
+// serve wiring, that the unprefixed GET /users is the system administrator's
+// account list (a viewer is refused, a maintainer gets every account with its
+// memberships) while the name directory stays reachable for everybody under
+// the project prefix; and that /projects is mounted instance-level.
+func TestProjectAPI_usersSplitsDirectoryAndAccountList(t *testing.T) {
+	e := newProjectAPIEnv(t)
+	_, viewer := e.token(t, "vera", auth.AccountViewer)
+	_, maint := e.token(t, "marek", auth.AccountMaintainer)
+
+	if status, _, body := e.do(t, http.MethodGet, "/api/v1/users", viewer, nil); status != http.StatusForbidden {
+		t.Errorf("GET /api/v1/users as a viewer = %d, want 403 (body %s)", status, body)
+	}
+	var accounts []struct {
+		Username    string            `json:"username"`
+		Memberships []json.RawMessage `json:"memberships"`
+	}
+	if err := json.Unmarshal(e.get(t, "/api/v1/users", maint), &accounts); err != nil || len(accounts) != 2 {
+		t.Errorf("GET /api/v1/users as a maintainer = %+v, %v; want both accounts", accounts, err)
+	}
+	directory := e.get(t, "/api/v1/p/v/users", viewer)
+	if !bytes.Contains(directory, []byte(`"users"`)) || !bytes.Contains(directory, []byte("vera")) {
+		t.Errorf("the name directory under the prefix = %s", directory)
+	}
+	if status, _, body := e.do(t, http.MethodGet, "/api/v1/projects", viewer, nil); status != http.StatusForbidden {
+		t.Errorf("GET /api/v1/projects as a viewer = %d, want 403 (body %s)", status, body)
+	}
+	if list := e.get(t, "/api/v1/projects", maint); !bytes.Contains(list, []byte(`"slug":"v"`)) {
+		t.Errorf("GET /api/v1/projects = %s, want the bootstrap project", list)
+	}
+}

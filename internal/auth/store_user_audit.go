@@ -88,6 +88,30 @@ func (s *Store) SetUserDisabledAudited(
 	return s.updateUserReturningAudited(ctx, entry, setUserDisabledQuery, uid, disabled)
 }
 
+// setInstanceRoleQuery replaces one account's instance role.
+const setInstanceRoleQuery = `UPDATE users SET role = $2, updated_at = now()
+	WHERE uid = $1 RETURNING ` + userColumns
+
+// SetInstanceRoleAudited sets the instance role (user or maintainer) of the
+// account identified by uid, bumps updated_at, and writes entry in the same
+// transaction, returning the refreshed user. It touches no project membership,
+// and who may call it — a maintainer, never demoting themselves — is the
+// caller's rule. See CreateUserAudited for the atomicity guarantee. entry's
+// TargetUID defaults to uid. It returns ErrInvalidRole for a role that is not
+// an instance role, ErrUserNotFound if no such user exists, or
+// ErrLastMaintainer when the demotion would leave the instance without a single
+// enabled maintainer (see withMaintainerGuard); in every case nothing changes
+// and no audit row is written.
+func (s *Store) SetInstanceRoleAudited(ctx context.Context, uid string, role Role, entry audit.Entry) (User, error) {
+	if !role.Valid() {
+		return User{}, fmt.Errorf("%w: %q", ErrInvalidRole, role)
+	}
+	if entry.TargetUID == "" {
+		entry.TargetUID = uid
+	}
+	return s.updateUserReturningAudited(ctx, entry, setInstanceRoleQuery, uid, string(role))
+}
+
 // SetPasswordHashAudited replaces the password hash for the user identified by
 // uid, bumps updated_at, and writes entry in the same transaction. See
 // CreateUserAudited for the atomicity guarantee. entry's TargetUID defaults to

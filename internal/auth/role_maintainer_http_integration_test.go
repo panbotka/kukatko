@@ -121,3 +121,27 @@ func TestHTTP_adminGuardRoleMatrix(t *testing.T) {
 		})
 	}
 }
+
+// TestHTTP_disableIsMaintainerOnly pins that blocking an account — which locks
+// it out of every project of the instance — is the system administrator's
+// call: a project admin is refused, a maintainer gets through.
+func TestHTTP_disableIsMaintainerOnly(t *testing.T) {
+	env := newTokenEnv(t, 50)
+	target := env.user(t, "dis-target", auth.AccountViewer)
+	tests := []struct {
+		role auth.AccountRole
+		user string
+		want int
+	}{
+		{auth.AccountAdmin, "dis-admin", http.StatusForbidden},
+		{auth.AccountMaintainer, "dis-maint", http.StatusOK},
+	}
+	for _, tt := range tests {
+		u := env.user(t, tt.user, tt.role)
+		_, token := env.mintToken(t, u, "cli", nil)
+		path := "/api/v1/admin/users/" + target.UID + "/disable"
+		if status, data := env.request(t, http.MethodPost, path, token, ""); status != tt.want {
+			t.Errorf("disable by %s = %d, want %d (body %s)", tt.role, status, tt.want, data)
+		}
+	}
+}

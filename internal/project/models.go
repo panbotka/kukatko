@@ -116,6 +116,10 @@ type CreateParams struct {
 	MaxFileBytes *int64
 	// MaxTotalBytes is the limit on the sum of originals, or nil for none.
 	MaxTotalBytes *int64
+	// CreatorUID, when set, is the account that becomes the project's first,
+	// approved admin in the creating transaction; empty creates a project
+	// without members.
+	CreatorUID string
 }
 
 // UpdatePatch lists the editable fields of a project; a nil field is left

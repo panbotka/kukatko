@@ -11,8 +11,9 @@ to `## Package map` in `CLAUDE.md`.
   (`projectapi.go`) and return the **instance-wide** ones as `server.WithAPI` options; `requestOptions`
   adds `projectRoutes`, which mounts the `projectAPI` twice through `mountProjectAPI` — under
   `/api/v1/p/{project}` behind its own `auth.WithProject`, and unprefixed under `/api/v1` as the
-  transition alias, removed in the alias-removal step. Each group is built once, so a limiter or cache is
-  shared by both mounts. The request-project shim (`projectshim.go`) is gone: candidates, outliers, sweep,
+  transition alias, removed in the alias-removal step — **minus the name directory** (`aliasAPI`), whose
+  unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`). Each group
+  is built once, so a limiter or cache is shared by both mounts. The request-project shim (`projectshim.go`) is gone: candidates, outliers, sweep,
   review and the cluster assignment pass the project themselves since step 14, and expand — its last
   consumer — since step 15 hands `vectors.Store.FindSimilar` the project it was given. A package with
   routes on both sides exposes the halves separately:
@@ -328,6 +329,11 @@ to `## Package map` in `CLAUDE.md`.
   seeding (they share the core `prepareNewUser`/`validateUserUpdate`/`invalidateIfDisabled`). The handler takes
   the actor from `UserFromContext` and builds `audit.FromRequest(r,uid).Entry(...)`; `details` carries
   `username`/`role` (create) or `role`/`disabled` (update/disable).
+  `Store.SetInstanceRoleAudited(uid, Role, entry)` is the instance-role write behind the system
+  administrator's promote/demote (`internal/projectapi`): it touches no membership, validates the role
+  (`ErrInvalidRole`) and runs under the same `withMaintainerGuard` (`ErrLastMaintainer`).
+  `POST /admin/users/{uid}/disable` is mounted behind `RequireMaintainer` (inside the `RequireAdmin`
+  group): blocking an account locks it out of every project, so it is the system administrator's call.
   **API tokens** (`apitoken.go`, `store_apitoken.go`, `service_apitoken.go`,
   `handlers_apitoken.go`, migration `0020_api_tokens.sql`): a long-lived bearer credential
   `kkt_<id>_<secret>` for non-interactive clients. `<id>` is the row PK (prefix `at`), so verification
@@ -6675,14 +6681,24 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `audit.Meta` (the package must not import `internal/auth`, so the actor is passed in):
     `Create` → `project.create` (fresh `pj` uid, `storage_prefix = projects/<uid>/` — **a created project
     never has the empty root prefix**, only the bootstrap row does; name/description trimmed; the slug's
-    unique violation → `ErrSlugTaken`); `Update(uid, UpdatePatch)` → `project.update` with the
+    unique violation → `ErrSlugTaken`; in the same transaction the project's `instance_settings` row with
+    the column defaults — registration closed, empty secret, empty welcome — and, when
+    `CreateParams.CreatorUID` is set, the creator's **approved `admin` membership** with its own
+    `project.member.add` entry; an unknown creator rolls it all back with `ErrUserNotFound`); `Update(uid, UpdatePatch)` → `project.update` with the
     `audit.ChangesKey` old → new diff, row locked `FOR UPDATE` for the read-modify-write; **the slug is
     immutable** (no field for it); a limit is set by value or removed by its `Clear…` flag (both at once =
     `ErrInvalidLimit`); a patch that changes nothing writes neither the row nor an audit entry;
     `SetStoragePrefix(uid, prefix)` → `project.storage_prefix` (details `old`/`new`) — the only way the
     prefix changes, meant for the storage move. `Usage(uid)` = photo rows + `sum(file_size)` (archived
     included: their originals are still stored until purged) of **that project's** photos
-    (`photos.project_id = uid`).
+    (`photos.project_id = uid`). **Every audit entry of the package — project and membership mutations
+    alike — carries the project it touched as `audit.Entry.ProjectUID`** (`projectEntry`), so a
+    project's own trail lists its governance.
+  - `overview.go` — the system administrator's reads: `Overviews()` / `OverviewOf(uid)` return `Overview`
+    (the `Project` embedded + `MembersCount`, `PhotosCount`, `OriginalsBytes`) from one query — the member
+    count a scalar subquery, the usage a lateral sum identical to `Usage`'s; `AllMemberships()` maps every
+    user uid to its `MembershipSummary` list (by project name) in one query, instead of one
+    `MembershipsOf` per account.
   - `member.go` — the per-project `Role` (`RoleViewer` < `RoleCurator` < `RoleEditor` < `RoleAdmin`, a
     strict ladder like `internal/auth`'s **without maintainer**, which stays the instance role on `users`):
     `ParseRole` (anything else, `maintainer` included = `ErrInvalidRole`), `Valid`, `CanCurate` (curator+),
@@ -6713,6 +6729,25 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     (`subjectLinks` in `reset.go`), and
     `dbtest.TruncateAll` re-seeds the bootstrap row after truncating, so a truncated test database looks
     like a freshly migrated one.
+- **System administrator's projects API (`internal/projectapi`):** the instance-level `/projects` and
+  account routes (see `docs/API.md`, *Projects (maintainer)*), mounted once with `server.WithAPI` in
+  `readAPIOptions` (`cmd/kukatko/projects.go` → `buildProjectsAPI`), every route behind the injected
+  `RequireMaintainer`. Depends on two interfaces so the handlers unit-test over fakes: `Projects` (the
+  `*project.Store` methods it calls) and `Accounts` (`*auth.Store`: `ListUsers`, `GetUserByUID`,
+  `SetInstanceRoleAudited`).
+  - `projectapi.go` — `Config`, `NewAPI`, `RegisterRoutes` (`/projects` as a sub-router; `GET /users` and
+    `PATCH /users/{uid}` flat, because `GET /users/{uid}/avatar` shares the prefix under another guard).
+  - `projects.go` — list/get/create/update and the two membership routes. The create passes the caller as
+    `CreatorUID`; the PATCH body tells an absent limit from `null` from a number through `optionalLimit`
+    (its `UnmarshalJSON` runs for an explicit `null` too) and refuses a `slug` key with `slug_immutable`
+    before touching the store; a membership is always added **approved**.
+  - `users.go` — the account list (`ListUsers` joined with `AllMemberships`) and the instance-role change:
+    `self` when a maintainer would demote themselves, a no-op (no audit row) when the role is unchanged,
+    otherwise `auth.Store.SetInstanceRoleAudited` with a `user.instance_role` entry (`instance_role`,
+    `previous`) under the store's last-maintainer guard.
+  - `respond.go` — the error codes and `classify`, one table mapping every `project`/`auth` sentinel to
+    status + code (the slug and limit rules carry the store's own explanation as `message`); anything else
+    is a logged `500 internal`.
 - **Tenant-isolation harness (`internal/projecttest`):** test support, **compiled only under the
   `integration` build tag** (so `make check` neither builds nor lints it — run
   `golangci-lint run --build-tags=integration ./internal/projecttest/...` after changing it). It exists
@@ -6933,6 +6968,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ParseUploadLinkCode` reads the bare code out of a pasted code or whole link; a blank one is
     `ErrEmptyLinkCode` without a round trip. `cmd/kukatko/ctl_uploadlinks.go` puts `new-code` behind the
     irreversible `--yes`/`--dry-run` gate, naming the link from the listing.
+  - `projects.go` — the system administrator's `ctl projects` / `ctl users`: `ListProjects`/`GetProject`/
+    `CreateProject`/`UpdateProject` (`ProjectPatch.body` sends only the set keys, a cleared limit as `null`;
+    empty = `ErrEmptyProjectPatch`, set + clear = `ErrConflictingLimit`, both before any request)/
+    `AddProjectMember`/`ListAccounts`/`SetInstanceRole`, `ResolveProject` (slug or uid) and
+    `ResolveAccount` (username or uid) over the lists (`ErrProjectNotFound`/`ErrAccountNotFound`), the
+    bare-array decoders and `WriteProjects`/`WriteProject`/`WriteAccounts`/`WriteAccount`.
+    `cmd/kukatko/ctl_projects.go` builds both trees; `changedInt64` keeps "flag not given" apart from 0.
+    `errorMessage` (client.go) appends a refusal's `message` to its code (`invalid_slug: …`). `People`
+    (`participants.go`) reads the name directory at `/p/v/users`, since the unprefixed path is the
+    maintainer's account list.
   - `savedsearch.go` — the per-user "smart albums": `ListSavedSearches`/`GetSavedSearch`/`CreateSavedSearch`/
     `UpdateSavedSearch`/`DeleteSavedSearch` + `DecodeSavedSearches`/`DecodeSavedSearch` and
     `WriteSavedSearches`/`WriteSavedSearch`. A fifth envelope, `{"saved_searches":[…]}`. **This is the one

@@ -79,13 +79,29 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 // requestOptions) finds no {project} parameter and resolves the bootstrap
 // project `v`. Under /p/{project} that outer resolution is redone by the inner
 // one, which wins.
+//
+// The alias leaves out one group: the name directory GET /users. Its
+// unprefixed path belongs to the system administrator's instance-wide account
+// list (internal/projectapi), so the directory is served only under
+// /p/{project} — where the frontend asks for it, and ctl (in the bootstrap
+// project until its contexts carry one).
 func projectRoutes(store *project.Store, api *projectAPI) server.Option {
+	alias := aliasAPI(api)
 	return server.WithAPI(func(r chi.Router) {
 		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
 			r.Use(auth.WithProject(store))
 			mountProjectAPI(r, api)
 		})
 		// transition alias — removed in the alias-removal step
-		mountProjectAPI(r, api)
+		mountProjectAPI(r, alias)
 	})
+}
+
+// aliasAPI is the copy of api the unprefixed transition alias mounts: every
+// group but the name directory, whose unprefixed GET /users is the instance
+// account list (see projectRoutes).
+func aliasAPI(api *projectAPI) *projectAPI {
+	alias := *api
+	alias.users = func(chi.Router) {}
+	return &alias
 }

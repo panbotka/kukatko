@@ -15,15 +15,18 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   names the project from the slug, and **unprefixed under `/api/v1`** — the *transition alias* the
   embedded frontend, `kukatko ctl` and MCP clients still call. A request through the alias addresses the
   bootstrap project `v`. The alias is removed in the alias-removal step; until then both paths answer
-  with the same bytes.
+  with the same bytes. **One exception:** the alias leaves out the name directory, because the
+  unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`); the
+  directory is served only as `/api/v1/p/{project}/users`.
 - **Project-scoped:** photos (incl. trash, stacks, comments, edits, media), `/search/*`, albums and
   labels, subjects/people, families, subject avatars, face clusters, review, sweep, candidates, outliers,
   duplicates, duplicate markers, expand, bulk, tasks, feedback, saved searches, search history,
   `/whats-new`, places, maps (`/map/*`), `POST /upload`, the `/upload-links` management, the
   `/notifications` inbox, `/capabilities`, `/settings`, `/announcement`, the name directory
-  `GET /users`, `/import/*`, `/process/*` and `/mcp`.
+  `GET /users` (under the prefix only), `/import/*`, `/process/*` and `/mcp`.
 - **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`),
-  `/admin/users`, `/users/{uid}/avatar`, `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
+  `/admin/users`, `/users/{uid}/avatar`, `/projects` and the account list `GET /users` +
+  `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
   `/restore`, `/audit`, the public `/u/{code}` (no prefix: **the link resolves its own project** from
   `upload_links.project_id` and files the upload there), plus `/metrics` and `/healthz` outside
   `/api/v1`.
@@ -109,7 +112,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   non-maintainer always gets the same 403).
   Admin-only: `GET|POST /admin/users`,
   `PATCH /admin/users/{uid}`, `PUT /admin/users/{uid}/username` (rename, see below),
-  `POST /admin/users/{uid}/approve`, `POST /admin/users/{uid}/disable`, `POST /admin/users/{uid}/password` (reset revokes all of the
+  `POST /admin/users/{uid}/approve`, `POST /admin/users/{uid}/disable` (**maintainer-only**: blocking
+  locks the account out of every project), `POST /admin/users/{uid}/password` (reset revokes all of the
   user's sessions), `POST /admin/users/{uid}/password-reset` (see below).
   **Roles on the admin user endpoints (transition):** `role` in the bodies and responses is still the
   five-rung `viewer|curator|editor|admin|maintainer`: `maintainer` sets `users.role = 'maintainer'` (and
@@ -329,6 +333,54 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `auth.bootstrap_admin_username/password`. In addition, the middleware `RequireAuthOrDownloadToken`
   (session cookie or `?t=download_token` via `Service.AuthenticateDownloadToken` →
   `Store.GetSessionByDownloadToken`) for media without a cookie.
+- **Projects (maintainer) (`/api/v1`, `internal/projectapi`):** the system administrator's management of
+  the instance's projects and accounts. **Instance-level** — mounted once, never under `/p/{project}` —
+  and **every route `RequireMaintainer`**: a project admin who is not a system administrator gets 403
+  like a viewer, an anonymous caller 401. Every refusal is `{"error":"<code>"}`, plus a human
+  `"message"` where the client should be able to show the rule (`invalid_slug`, `invalid_limit`,
+  `slug_immutable`, `invalid_role`, `self`, `invalid_body`). Every mutation is audited in the change's
+  transaction **with the project it touched** (`audit_log.project_id`); the account routes record no
+  project.
+  - `GET /projects` → a bare array, by name: `[{uid, slug, name, description, active, storage_prefix,
+    max_file_bytes, max_total_bytes, members_count, photos_count, originals_bytes, created_at,
+    updated_at}]`. A limit is bytes or `null` (none); `storage_prefix` is `""` for the storage root
+    (the bootstrap project until its storage move) or `projects/<uid>/`; `members_count` counts
+    approved and waiting memberships; `photos_count`/`originals_bytes` are every photo row of the
+    project, archived included (their originals stay stored until purged) — one query, not cached.
+  - `POST /projects` `{slug, name, description?, max_file_bytes?, max_total_bytes?}` → **201** + the
+    project (same shape, `members_count: 1`). In the same transaction: the project's settings row
+    (registration closed, empty secret, empty welcome) and the **caller as its approved `admin`**, so
+    somebody can enter it (`project.create` + `project.member.add`). Refusals: **409 `slug_taken`**;
+    **422 `invalid_slug`** with the rule as `message` (1–40 lowercase letters, digits or hyphens, not
+    starting with a hyphen, not a reserved word such as `api`/`system`/`projects`); 422 `invalid_name`
+    (empty after trimming); 422 `invalid_limit` (zero or negative); 400 `invalid_body` (malformed JSON,
+    an unknown field).
+  - `GET /projects/{uid}` → the project; 404 `not_found`.
+  - `PATCH /projects/{uid}` `{name?, description?, active?, max_file_bytes?: number|null,
+    max_total_bytes?: number|null}` → 200 + the project as it now stands. A key left out keeps the
+    value, **`null` clears a limit**, a number sets it. `active: false` deactivates the project (nobody
+    but a maintainer enters it, its data stays), `true` reactivates it. **A `slug` in the body → 422
+    `slug_immutable`** (the slug is the URL). Otherwise the refusals of `POST`, plus 404 `not_found`.
+    A patch that changes nothing records nothing (`project.update` carries the field diff).
+  - `POST /projects/{uid}/members` `{user_uid, role}` → **201** + the membership (`{project_uid,
+    user_uid, role, approved_at, …, username, display_name}`), **approved at once** — the maintainer's
+    path into any project, themselves included. `role` is `viewer|curator|editor|admin` (422
+    `invalid_role`; `maintainer` is not a project role); 409 `already_member` (the existing membership
+    is left untouched); 422 `user_not_found`; 404 `not_found` for the project.
+  - `DELETE /projects/{uid}/members/{user_uid}` → 204; 404 `not_member`; **409 `last_admin`** when it is
+    the project's only admin (the store's guard, under the project row's lock).
+  - **`GET /users`** (the unprefixed path — **not** the name directory, which lives only under
+    `/api/v1/p/{project}/users`) → a bare array by username: `[{uid, username, display_name, email,
+    instance_role, disabled, memberships: [{project_uid, project_slug, project_name, active, role,
+    approved}]}]` — every account of the instance, memberships by project name, `[]` for none.
+  - **`PATCH /users/{uid}`** `{instance_role: "user"|"maintainer"}` → 200 + the account in the shape
+    above: promotes an account to a system administrator or demotes one; its memberships are left as
+    they are. Setting the role it already has records nothing; a change records `user.instance_role`
+    (`instance_role`, `previous`). **A maintainer demoting themselves → 409 `self`** (somebody else
+    must); 409 `last_maintainer` if the demotion would leave no enabled maintainer; 422 `invalid_role`;
+    404 `not_found`.
+  - Blocking an account stays `POST /admin/users/{uid}/disable`, now **maintainer-only** (it locks the
+    account out of every project).
 - **API tokens (`/api/v1/auth/tokens`, all behind `RequireAuth`):** long-lived bearer credentials for
   non-interactive clients (CLI, scripts, agents). `POST /auth/tokens` (`{name, expires_at?, unlimited?}`) → 201
   `{token:{id,user_uid,name,created_at,expires_at?,last_used_at?,revoked_at?,unlimited}, secret:"kkt_<id>_<secret>"}`

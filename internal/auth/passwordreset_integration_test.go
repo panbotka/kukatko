@@ -317,7 +317,8 @@ func TestPasswordReset_supersededLinkIsRefused(t *testing.T) {
 // stops working.
 func TestPasswordReset_blockedAccountIsRefused(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	// A maintainer, because blocking an account is the system administrator's call.
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	forgetful := env.mustCreate(t, "forgetful", auth.AccountViewer)
 	admin := signInAs(t, env, "boss")
 

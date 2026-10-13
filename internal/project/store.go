@@ -107,30 +107,31 @@ INSERT INTO projects (uid, slug, name, description, storage_prefix, max_file_byt
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING ` + columns
 
+// insertSettingsSQL gives a new project its settings row with the column
+// defaults — registration closed, no secret, no welcome text — so the project's
+// sign-in screen and settings page find a row exactly as the bootstrap project's
+// do. An existing row (none can exist for a fresh uid) is left alone.
+const insertSettingsSQL = `INSERT INTO instance_settings (project_id) VALUES ($1) ON CONFLICT (project_id) DO NOTHING`
+
 // Create validates p, inserts a new active project with a fresh "pj…" uid and the
 // storage prefix "projects/<uid>/" — a created project never has the empty root
-// prefix — and records ActionProjectCreate in the same transaction. It returns
-// ErrInvalidSlug, ErrInvalidName or ErrInvalidLimit for bad input and
-// ErrSlugTaken when another project already has the slug.
+// prefix — together with its settings row (see insertSettingsSQL) and, when
+// p.CreatorUID is set, the creator's approved admin membership, so somebody can
+// enter the project at once. It records ActionProjectCreate (and, for the
+// creator, ActionProjectMemberAdd) stamped with the new project, all in one
+// transaction. It returns ErrInvalidSlug, ErrInvalidName or ErrInvalidLimit for
+// bad input, ErrSlugTaken when another project already has the slug and
+// ErrUserNotFound when the creator names no account.
 func (s *Store) Create(ctx context.Context, meta audit.Meta, p CreateParams) (*Project, error) {
-	if err := ValidateSlug(p.Slug); err != nil {
-		return nil, err
-	}
-	name, err := normalizeName(p.Name)
+	name, err := validateCreate(p)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateLimit(p.MaxFileBytes); err != nil {
-		return nil, err
-	}
-	if err := validateLimit(p.MaxTotalBytes); err != nil {
 		return nil, err
 	}
 	uid, err := newUID()
 	if err != nil {
 		return nil, err
 	}
-	entry := meta.Entry(audit.ActionProjectCreate, TargetType, uid, map[string]any{
+	entry := projectEntry(meta, uid, audit.ActionProjectCreate, TargetType, uid, map[string]any{
 		"slug": p.Slug, "name": name,
 		"max_file_bytes": p.MaxFileBytes, "max_total_bytes": p.MaxTotalBytes,
 	})
@@ -140,15 +141,75 @@ func (s *Store) Create(ctx context.Context, meta audit.Meta, p CreateParams) (*P
 		var insertErr error
 		created, insertErr = scanProject(tx.QueryRow(ctx, insertSQL, uid, p.Slug, name,
 			strings.TrimSpace(p.Description), StoragePrefixFor(uid), p.MaxFileBytes, p.MaxTotalBytes))
-		return insertErr
+		if insertErr != nil {
+			return insertErr
+		}
+		return seedProject(ctx, tx, meta, uid, p.CreatorUID)
 	})
 	if isSlugTaken(err) {
 		return nil, fmt.Errorf("%w: %q", ErrSlugTaken, p.Slug)
+	}
+	if errors.Is(err, ErrUserNotFound) {
+		return nil, err
 	}
 	if err != nil {
 		return nil, fmt.Errorf("project: creating %q: %w", p.Slug, err)
 	}
 	return created, nil
+}
+
+// validateCreate checks every caller-supplied field of p and returns the
+// normalized name. It returns ErrInvalidSlug, ErrInvalidName or ErrInvalidLimit.
+func validateCreate(p CreateParams) (string, error) {
+	if err := ValidateSlug(p.Slug); err != nil {
+		return "", err
+	}
+	name, err := normalizeName(p.Name)
+	if err != nil {
+		return "", err
+	}
+	if err := validateLimit(p.MaxFileBytes); err != nil {
+		return "", err
+	}
+	if err := validateLimit(p.MaxTotalBytes); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// seedProject writes what a freshly inserted project uid needs besides its row,
+// inside the creating transaction tx: the settings row and, when creatorUID is
+// set, the creator's approved admin membership with its own audit entry. It
+// returns ErrUserNotFound when creatorUID names no account.
+func seedProject(ctx context.Context, tx pgx.Tx, meta audit.Meta, uid, creatorUID string) error {
+	if _, err := tx.Exec(ctx, insertSettingsSQL, uid); err != nil {
+		return fmt.Errorf("creating the settings row: %w", err)
+	}
+	if creatorUID == "" {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, addMemberSQL, uid, creatorUID, string(RoleAdmin), true); err != nil {
+		if strings.Contains(fkConstraint(err), "user_uid") {
+			return fmt.Errorf("%w: %s", ErrUserNotFound, creatorUID)
+		}
+		return fmt.Errorf("making %s the first admin: %w", creatorUID, err)
+	}
+	memberEntry := projectEntry(meta, uid, audit.ActionProjectMemberAdd, MemberTargetType, creatorUID,
+		map[string]any{"project_uid": uid, "role": string(RoleAdmin), "approved": true})
+	if err := audit.Write(ctx, tx, memberEntry); err != nil {
+		return fmt.Errorf("writing the creator's membership audit entry: %w", err)
+	}
+	return nil
+}
+
+// projectEntry is meta.Entry stamped with projectUID, the project the action
+// happened in, so the audit trail of one project lists its own governance too.
+func projectEntry(
+	meta audit.Meta, projectUID, action, targetType, targetUID string, details map[string]any,
+) audit.Entry {
+	entry := meta.Entry(action, targetType, targetUID, details)
+	entry.ProjectUID = projectUID
+	return entry
 }
 
 // updateSQL writes every editable column of one project and returns the row.
@@ -165,7 +226,7 @@ RETURNING ` + columns
 // it is. It returns ErrNotFound for an unknown uid and ErrInvalidName or
 // ErrInvalidLimit for bad input.
 func (s *Store) Update(ctx context.Context, meta audit.Meta, uid string, patch UpdatePatch) (*Project, error) {
-	entry := meta.Entry(audit.ActionProjectUpdate, TargetType, uid, map[string]any{})
+	entry := projectEntry(meta, uid, audit.ActionProjectUpdate, TargetType, uid, map[string]any{})
 
 	var result *Project
 	err := s.inTx(ctx, entry, func(tx pgx.Tx) error {
@@ -212,7 +273,7 @@ func (s *Store) SetStoragePrefix(ctx context.Context, meta audit.Meta, uid, pref
 	if err := ValidateStoragePrefix(prefix); err != nil {
 		return nil, err
 	}
-	entry := meta.Entry(audit.ActionProjectStoragePrefix, TargetType, uid, map[string]any{})
+	entry := projectEntry(meta, uid, audit.ActionProjectStoragePrefix, TargetType, uid, map[string]any{})
 
 	var result *Project
 	err := s.inTx(ctx, entry, func(tx pgx.Tx) error {

@@ -750,7 +750,7 @@ func TestCtlTaskParticipants(t *testing.T) {
 		switch {
 		case strings.Contains(r.URL.Path, "/participants"):
 			_, _ = w.Write([]byte(participantsBody))
-		case r.URL.Path == "/api/v1/users":
+		case r.URL.Path == "/api/v1/p/v/users":
 			_, _ = w.Write([]byte(`{"users":[{"uid":"us1","name":"Pan Botka"}]}`))
 		default:
 			_, _ = w.Write([]byte(tasksListBody))

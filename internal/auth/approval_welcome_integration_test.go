@@ -155,7 +155,9 @@ func meFlags(t *testing.T, env *httpEnv, client *http.Client) accountFlags {
 // that stamp — separately from the disabled flag — after the account is blocked.
 func TestApproval_adminCreatedAccountIsApproved(t *testing.T) {
 	env := newHTTPEnv(t, 10)
-	env.mustCreate(t, "boss", auth.AccountAdmin)
+	// A maintainer, because blocking an account below is the system
+	// administrator's call.
+	env.mustCreate(t, "boss", auth.AccountMaintainer)
 	admin := signInAs(t, env, "boss")
 
 	body := `{"username":"newcomer","password":"` + testPassword +

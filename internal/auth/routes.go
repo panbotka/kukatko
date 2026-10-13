@@ -31,7 +31,7 @@ import "github.com/go-chi/chi/v5"
 //	PATCH  /admin/users/{uid}     RequireAdmin
 //	PUT    /admin/users/{uid}/username   RequireAdmin
 //	POST   /admin/users/{uid}/approve    RequireAdmin
-//	POST   /admin/users/{uid}/disable    RequireAdmin
+//	POST   /admin/users/{uid}/disable    RequireMaintainer
 //	POST   /admin/users/{uid}/password   RequireAdmin
 //	POST   /admin/users/{uid}/password-reset RequireAdmin
 //
@@ -114,7 +114,9 @@ func (a *API) RegisterInstanceRoutes(r chi.Router) {
 		r.Patch("/{uid}", a.handleUpdateUser)
 		r.Put("/{uid}/username", a.handleRenameUser)
 		r.Post("/{uid}/approve", a.handleApproveUser)
-		r.Post("/{uid}/disable", a.handleDisableUser)
+		// Disabling locks the account out of every project of the instance, so
+		// it is the system administrator's call, not one project admin's.
+		r.With(a.RequireMaintainer).Post("/{uid}/disable", a.handleDisableUser)
 		r.Post("/{uid}/password", a.handleResetPassword)
 		r.Post("/{uid}/password-reset", a.handleIssuePasswordReset)
 	})
