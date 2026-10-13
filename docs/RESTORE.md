@@ -579,15 +579,19 @@ wrote, and a stale sidecar is worth more than none. See `config.example.yaml`.
 
 A relationship is true about **two people**, not about any photograph. It belongs in no photo's
 sidecar — and the great-grandmother nobody ever photographed has no sidecar to belong to at all. So
-the library's whole genealogy travels as one document of its own:
+each project's whole genealogy travels as one document of its own, under the project's storage
+prefix (`projects.storage_prefix`):
 
 ```
-<storage root>/families.yaml
+<storage root>/families.yaml                    the bootstrap project `v` (empty prefix)
+<storage root>/projects/<project uid>/families.yaml   every created project
 ```
 
-One file at the root of the storage, beside the `YYYY/` directories of the originals and the
-`sidecars/` tree. One file rather than a prefix of many, because a genealogy is one graph and is only
-meaningful whole: a reader that found half the families would build half a tree and not know it. It
+One file per project at the root of that project's storage, beside the `YYYY/` directories of its
+originals and its `sidecars/` tree. For `v`, whose prefix is empty, that is the root of the storage —
+the same key the file had before there were projects, so nothing moved. Projects never share a file:
+a relation never crosses a project, and each file describes only its own project's people. One file
+rather than a prefix of many, because a genealogy is one graph and is only meaningful whole: a reader that found half the families would build half a tree and not know it. It
 is small — a family archive holds tens of families, not millions — so it is rewritten entire rather
 than patched.
 
@@ -596,8 +600,11 @@ than patched.
 ```yaml
 # Kukátko family tree.
 # … (the header explains what the file is; comments round-trip, parsers ignore them)
-version: 1
+version: 2
 generated_at: 2026-09-13T08:12:41Z
+project:
+    uid: pj0000000000000000veselice
+    slug: v
 subjects:
     - uid: su000000000000001
       slug: bohumil-necas-st
@@ -629,7 +636,12 @@ families:
 ```
 
 - `version` is the schema version, written first. A reader that does not know a version should
-  **refuse** the file rather than guess at it.
+  **refuse** the file rather than guess at it. Version 2 added `project`; a version 1 file (written
+  before projects existed, always at the root) names none and belonged to the bootstrap project `v`.
+- `project` names the project the tree belongs to: its `uid` (what a reader checks) and its `slug`
+  (what a human recognises). A rebuild reads it first and **refuses a file whose project is not the
+  one it restores** (`familyexport.CheckProject`) — copying one village's `families.yaml` into
+  another's library is the one mistake a perfectly valid-looking file could otherwise make.
 - `subjects` describes **everybody the families below name** — that is the property that makes the
   file usable on its own. `uid` is what the families refer to them by, and it is the same subject uid
   every photo sidecar carries on its markers, so the tree reconnects to the people the sidecars
@@ -659,14 +671,16 @@ of the photos they appear on.
 
 ### When it is written
 
-A `family_export` job rewrites it whenever a relation changes — recorded, removed, or a family row
-edited — and also when a **subject** in one is renamed, deleted or merged, since all three change what
-the tree says. The job carries no payload (there is one genealogy, so there is nothing to name) and is
-debounced by a dedup index of its own: at most one such job is *queued* at a time, and it waits 15
-seconds before running, so filling in a family writes the file once rather than once per click. The
+A `family_export` job rewrites a project's file whenever a relation in that project changes —
+recorded, removed, or a family row edited — and also when a **subject** in one is renamed, deleted or
+merged, since all three change what the tree says. The job's payload names the project
+(`{"project_uid": …}`) and nothing else, and it is debounced per project by a dedup index of its own
+(migration 0106): at most one such job is *queued* per project at a time, and it waits 15 seconds
+before running, so filling in a family writes the file once rather than once per click. A job for one
+project never rewrites another project's file. The
 handler is idempotent — it reads the genealogy as it is now and writes the file as it should be now.
 
-A library whose last relation was removed gets a file with **no families in it**, rather than no file:
+A project whose last relation was removed gets a file with **no families in it**, rather than no file:
 that is what says "there is no tree", instead of leaving yesterday's tree standing for a rebuild to
 restore.
 
@@ -676,7 +690,8 @@ To write it right now — before a migration, an upgrade or a restore rehearsal 
 kukatko sidecar families
 ```
 
-It writes the file itself and needs no running server (see `docs/OPERATIONS.md`).
+It writes every project's file itself, printing each key, and needs no running server (see
+`docs/OPERATIONS.md`).
 
 ### Backup, migration and wipe
 
@@ -685,7 +700,10 @@ whole store each have to say what they do with it, and none of them can forget i
 copies it (it is the only copy of the tree outside the database), `storage migrate-to-r2` **moves** it
 once per run — and removes the local copy with `--delete-local`, after it is verified in the
 destination — and `maintenance reset` **deletes** it, because a family tree that survived a wipe would
-restore itself over the empty library.
+restore itself over the empty library. Until the per-project storage layout lands in
+`internal/storekeys`, only the root-layout file (`v`'s) has that kind; a created project's
+`projects/<uid>/families.yaml` classifies as foreign, which the backup still copies but the migration
+and the wipe leave alone.
 
 ### Known limitations
 

@@ -23,10 +23,16 @@ const pairIndexName = "idx_subject_families_pair"
 // path's check and its write.
 const childIndexName = "idx_subject_family_children_child"
 
-// insertFamilySQL creates a family from an already normalised pair.
+// insertFamilySQL creates a family from an already normalised pair, in the
+// project of the subject $5 — the person the family is created for: its first
+// partner, or for a parentless sibling group one of its children. A family
+// therefore always lives in its members' project; the write paths have already
+// proved that subject inside the request's project (requireSubjects), so the
+// family lands there too. A $5 that names no subject inserts nothing and the
+// scan reports pgx.ErrNoRows.
 const insertFamilySQL = `
-INSERT INTO subject_families (uid, partner_a_uid, partner_b_uid, kind)
-VALUES ($1, $2, $3, $4)
+INSERT INTO subject_families (uid, partner_a_uid, partner_b_uid, kind, project_id)
+SELECT $1, $2, $3, $4, s.project_id FROM subjects s WHERE s.uid = $5
 RETURNING ` + familyColumns
 
 // setFamilyPartnersSQL rewrites a family's pair, which the store only ever does
@@ -36,10 +42,10 @@ UPDATE subject_families SET partner_a_uid = $2, partner_b_uid = $3, updated_at =
 WHERE uid = $1
 RETURNING ` + familyColumns
 
-// updateFamilySQL rewrites a family's editable fields.
+// updateFamilySQL rewrites the editable fields of a family of the project $6.
 const updateFamilySQL = `
 UPDATE subject_families SET kind = $2, from_year = $3, to_year = $4, note = $5, updated_at = now()
-WHERE uid = $1
+WHERE uid = $1 AND project_id = $6
 RETURNING ` + familyColumns
 
 // deleteFamilySQL removes a family row; its children rows cascade.
@@ -85,8 +91,8 @@ WITH RECURSIVE ancestors(uid, depth) AS (
 )
 SELECT DISTINCT uid FROM ancestors`
 
-// AddParentAudited records parentUID as a parent of subjectUID and writes entry in
-// the same transaction, so the relation and the record of who added it commit
+// AddParentAudited records parentUID as a parent of subjectUID in the project and
+// writes entry in the same transaction, so the relation and the record of who added it commit
 // atomically. entry's TargetUID defaults to subjectUID; it is stamped before the
 // transaction opens, because mutateAudited copies the entry and a stamp made
 // inside would be lost.
@@ -94,35 +100,40 @@ SELECT DISTINCT uid FROM ancestors`
 // kind says how the child belongs to the family (empty defaults to ChildBirth).
 // The family the pair end up in is returned, whether it was created, joined or
 // completed by this call. See attachChild for what each of those means and which
-// sentinel each refusal carries.
+// sentinel each refusal carries. Either subject outside the project is
+// ErrSubjectNotFound, and an empty projectUID is ErrNoProject.
 func (s *Store) AddParentAudited(
-	ctx context.Context, subjectUID, parentUID string, kind ChildKind, entry audit.Entry,
+	ctx context.Context, projectUID, subjectUID, parentUID string, kind ChildKind, entry audit.Entry,
 ) (Family, error) {
 	if entry.TargetUID == "" {
 		entry.TargetUID = subjectUID
 	}
-	return s.addChildRelation(ctx, subjectUID, parentUID, kind, entry)
+	return s.addChildRelation(ctx, projectUID, subjectUID, parentUID, kind, entry)
 }
 
 // AddChildAudited records childUID as a child of subjectUID and writes entry in
 // the same transaction. It is AddParentAudited with the roles swapped — the same
 // family row results either way, which is the point of the family being the node
 // — and differs only in that entry's TargetUID defaults to subjectUID, the person
-// whose page the relation was added from.
+// whose page the relation was added from. The project is scoped as there.
 func (s *Store) AddChildAudited(
-	ctx context.Context, subjectUID, childUID string, kind ChildKind, entry audit.Entry,
+	ctx context.Context, projectUID, subjectUID, childUID string, kind ChildKind, entry audit.Entry,
 ) (Family, error) {
 	if entry.TargetUID == "" {
 		entry.TargetUID = subjectUID
 	}
-	return s.addChildRelation(ctx, childUID, subjectUID, kind, entry)
+	return s.addChildRelation(ctx, projectUID, childUID, subjectUID, kind, entry)
 }
 
 // addChildRelation is the shared body of AddParentAudited and AddChildAudited:
-// it validates the kind, then runs attachChild in an audited transaction.
+// it validates the project and the kind, then proves both subjects inside the
+// project and runs attachChild in an audited transaction.
 func (s *Store) addChildRelation(
-	ctx context.Context, childUID, parentUID string, kind ChildKind, entry audit.Entry,
+	ctx context.Context, projectUID, childUID, parentUID string, kind ChildKind, entry audit.Entry,
 ) (Family, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Family{}, err
+	}
 	childKind, err := checkChildKind(kind)
 	if err != nil {
 		return Family{}, err
@@ -131,6 +142,9 @@ func (s *Store) addChildRelation(
 		return Family{}, err
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
+		if err := requireSubjects(ctx, tx, projectUID, childUID, parentUID); err != nil {
+			return Family{}, err
+		}
 		return attachChild(ctx, tx, childUID, parentUID, childKind)
 	})
 }
@@ -142,11 +156,15 @@ func (s *Store) addChildRelation(
 //
 // A childless union is a legitimate row here: a marriage nobody has children from
 // is still a fact about the two people, and the couple's box is what the tree
-// draws. It returns ErrSelfRelation for a subject partnered with itself and
-// ErrSubjectNotFound when either side is missing.
+// draws. It returns ErrSelfRelation for a subject partnered with itself,
+// ErrSubjectNotFound when either side is missing from the project and
+// ErrNoProject for an empty projectUID.
 func (s *Store) AddPartnerAudited(
-	ctx context.Context, subjectUID, partnerUID string, entry audit.Entry,
+	ctx context.Context, projectUID, subjectUID, partnerUID string, entry audit.Entry,
 ) (Family, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Family{}, err
+	}
 	if err := checkPair(subjectUID, partnerUID); err != nil {
 		return Family{}, err
 	}
@@ -154,7 +172,7 @@ func (s *Store) AddPartnerAudited(
 		entry.TargetUID = subjectUID
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
-		if err := requireSubjects(ctx, tx, subjectUID, partnerUID); err != nil {
+		if err := requireSubjects(ctx, tx, projectUID, subjectUID, partnerUID); err != nil {
 			return Family{}, err
 		}
 		first, second := normalisePair(subjectUID, partnerUID)
@@ -165,11 +183,15 @@ func (s *Store) AddPartnerAudited(
 // UpdateFamilyAudited rewrites a family's editable fields — kind, years, note —
 // and writes entry in the same transaction. entry's TargetUID defaults to the
 // family UID. The update rewrites the whole editable set, so a nil year clears
-// the column. It returns ErrFamilyNotFound for a missing family, ErrInvalidKind
-// for an unrecognised kind and ErrInvalidYears for impossible years.
+// the column. It returns ErrFamilyNotFound for a family missing from the
+// project, ErrInvalidKind for an unrecognised kind, ErrInvalidYears for
+// impossible years and ErrNoProject for an empty projectUID.
 func (s *Store) UpdateFamilyAudited(
-	ctx context.Context, familyUID string, upd Update, entry audit.Entry,
+	ctx context.Context, projectUID, familyUID string, upd Update, entry audit.Entry,
 ) (Family, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Family{}, err
+	}
 	checked, err := checkUpdate(upd)
 	if err != nil {
 		return Family{}, err
@@ -179,7 +201,7 @@ func (s *Store) UpdateFamilyAudited(
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (Family, error) {
 		fam, err := scanFamily(tx.QueryRow(ctx, updateFamilySQL,
-			familyUID, checked.Kind, checked.FromYear, checked.ToYear, checked.Note))
+			familyUID, checked.Kind, checked.FromYear, checked.ToYear, checked.Note, projectUID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Family{}, ErrFamilyNotFound
 		}
@@ -194,10 +216,15 @@ func (s *Store) UpdateFamilyAudited(
 // Which relation that is follows from the rows, not from an argument: one is the
 // other's parent, or the other's child, or their partner. It returns
 // ErrRelationNotFound when the two are not related at all, so a caller can answer
-// 404 rather than pretend it removed something.
+// 404 rather than pretend it removed something. A subject outside the project is
+// not related to anybody in it, so naming one is ErrRelationNotFound too — the
+// answer a missing subject has always had. An empty projectUID is ErrNoProject.
 func (s *Store) RemoveRelationAudited(
-	ctx context.Context, subjectUID, otherUID string, entry audit.Entry,
+	ctx context.Context, projectUID, subjectUID, otherUID string, entry audit.Entry,
 ) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if err := checkPair(subjectUID, otherUID); err != nil {
 		return err
 	}
@@ -205,6 +232,12 @@ func (s *Store) RemoveRelationAudited(
 		entry.TargetUID = subjectUID
 	}
 	_, err := mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (struct{}, error) {
+		if err := requireSubjects(ctx, tx, projectUID, subjectUID, otherUID); err != nil {
+			if errors.Is(err, ErrSubjectNotFound) {
+				return struct{}{}, fmt.Errorf("%w: %s and %s", ErrRelationNotFound, subjectUID, otherUID)
+			}
+			return struct{}{}, err
+		}
 		return struct{}{}, removeRelation(ctx, tx, subjectUID, otherUID)
 	})
 	return err
@@ -230,11 +263,9 @@ func (s *Store) RemoveRelationAudited(
 //     which parentage was meant to win.
 //
 // It refuses with ErrCycle when the child is already an ancestor of the
-// prospective parent, and with ErrSubjectNotFound when either side is missing.
+// prospective parent. The caller has already proved both subjects inside the
+// request's project.
 func attachChild(ctx context.Context, tx pgx.Tx, childUID, parentUID string, kind ChildKind) (Family, error) {
-	if err := requireSubjects(ctx, tx, childUID, parentUID); err != nil {
-		return Family{}, err
-	}
 	if err := checkNoCycle(ctx, tx, childUID, parentUID); err != nil {
 		return Family{}, err
 	}
@@ -353,13 +384,11 @@ func adoptInPlace(
 // kind describes the membership this call creates — the person who joins the
 // other's family, or the second child of a new group — and an empty one means
 // birth. Two people who already share a family are already siblings, so the call
-// is idempotent and only rewrites that kind.
+// is idempotent and only rewrites that kind. The caller has already proved both
+// subjects inside the request's project.
 func attachSibling(
 	ctx context.Context, tx pgx.Tx, subjectUID, otherUID string, kind ChildKind,
 ) (Family, error) {
-	if err := requireSubjects(ctx, tx, subjectUID, otherUID); err != nil {
-		return Family{}, err
-	}
 	subjectFam, subjectErr := optionalChildFamily(ctx, tx, subjectUID)
 	if subjectErr != nil {
 		return Family{}, subjectErr
@@ -425,7 +454,7 @@ func newSiblingGroup(
 		return Family{}, err
 	}
 	first, second := normalisePair("", "")
-	fam, err := scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindUnknown))
+	fam, err := scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindUnknown, subjectUID))
 	if err != nil {
 		return Family{}, translateWriteError(err)
 	}
@@ -567,7 +596,9 @@ func ancestorUIDs(ctx context.Context, q querier, uids ...string) ([]string, err
 // findOrCreateFamily returns the family stored for the already normalised pair,
 // creating it when the couple (or lone parent) has none. The pair is looked up
 // rather than inserted blind because one couple is exactly one family: a second
-// row for them is not a new fact, it is the same one written twice.
+// row for them is not a new fact, it is the same one written twice. A created
+// family lands in the project of its first partner (insertFamilySQL), who is
+// never nil here: every caller names at least one partner.
 func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (Family, error) {
 	fam, err := findFamilyByPair(ctx, tx, first, second)
 	if err == nil {
@@ -576,11 +607,14 @@ func findOrCreateFamily(ctx context.Context, tx pgx.Tx, first, second *string) (
 	if !errors.Is(err, ErrFamilyNotFound) {
 		return Family{}, err
 	}
+	if first == nil {
+		return Family{}, errors.New("family: a family needs a partner to be created for")
+	}
 	uid, err := newFamilyUID()
 	if err != nil {
 		return Family{}, err
 	}
-	fam, err = scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindPartnership))
+	fam, err = scanFamily(tx.QueryRow(ctx, insertFamilySQL, uid, first, second, KindPartnership, *first))
 	if err != nil {
 		return Family{}, translateWriteError(err)
 	}

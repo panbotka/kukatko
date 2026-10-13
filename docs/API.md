@@ -1605,6 +1605,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   so they cannot contradict each other.
   Five routes, flat patterns on the shared `/subjects/{uid}` prefix (no `chi.Mount`, same reason
   `outlierapi` hangs there).
+  **Project scope:** every route works inside the request's project. A subject or family of another
+  project is the same 404 a missing one gets (the message names only the uid asked for), a relation can
+  only tie two subjects of the project — naming another project's subject on `POST …/relations` is a 404 —
+  a subject created inline lands in the project, and the tree walks only the project's families.
   `GET /subjects/{uid}/relations` (RequireAuth) → the four derived lists in one response, each entry
   carrying the person **plus their cover and photo count**, so the strip on the subject page renders
   without a request per relative:
@@ -1679,8 +1683,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   Every mutation writes its audit entry **inside the mutation's transaction**
   (`subject.relation.add` / `subject.relation.remove` / `family.update`); the add entry's details name the
   role, who the other person turned out to be and which family the relation joined. Every mutation also
-  **schedules a rewrite of `families.yaml`**, the library-level export of the whole genealogy (a `family_export`
-  job, debounced; see [`RESTORE.md`](RESTORE.md)) — so does a subject rename, delete or merge on
+  **schedules a rewrite of the project's `families.yaml`**, the export of that project's whole genealogy (a
+  `family_export` job naming the project, debounced per project; see [`RESTORE.md`](RESTORE.md)) — so does a
+  subject rename, delete or merge on
   `/subjects/{uid}`, since all three change what the tree says. The schedule is best-effort: it never fails
   the edit, which is safely in Postgres either way. Mounted by
   `server.WithAPI` (`buildFamilyAPI` in `cmd/kukatko/family.go`, in `readAPIOptions`). Not exposed over MCP.

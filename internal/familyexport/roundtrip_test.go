@@ -1,6 +1,7 @@
 package familyexport
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,6 +20,7 @@ func fullDocument() Document {
 	return Document{
 		Version:     Version,
 		GeneratedAt: time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC),
+		Project:     Project{UID: "pj0000000000000000veselice", Slug: "v"},
 		Subjects: []Subject{
 			{
 				UID:       "sbj000000001",
@@ -222,6 +224,69 @@ func TestUnmarshal_rejectsGarbage(t *testing.T) {
 
 	if _, err := Unmarshal([]byte("\tthis: is: not: yaml: at: all\n  - [")); err == nil {
 		t.Error("Unmarshal accepted garbage, want an error")
+	}
+}
+
+// TestMarshal_namesTheProject asserts the project block is written at the top of
+// the document, so a reader learns whose tree the file is before it reads any of
+// it.
+func TestMarshal_namesTheProject(t *testing.T) {
+	t.Parallel()
+
+	data, err := Marshal(fullDocument())
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	want := "project:\n    uid: pj0000000000000000veselice\n    slug: v\n"
+	if !strings.Contains(body(t, data), want) {
+		t.Errorf("document does not carry the project block %q:\n%s", want, body(t, data))
+	}
+}
+
+// TestCheckProject covers the guard every reader runs: only a current-version
+// document of the target project passes.
+func TestCheckProject(t *testing.T) {
+	t.Parallel()
+
+	doc := fullDocument()
+	legacy := fullDocument()
+	legacy.Version = 1
+	legacy.Project = Project{}
+	tests := []struct {
+		name    string
+		doc     Document
+		target  string
+		wantErr error
+	}{
+		{name: "the document's own project", doc: doc, target: doc.Project.UID},
+		{name: "another project", doc: doc, target: "pjother", wantErr: ErrProjectMismatch},
+		{name: "no target", doc: doc, target: "", wantErr: ErrProjectMismatch},
+		{name: "a version 1 file names no project", doc: legacy, target: doc.Project.UID,
+			wantErr: ErrUnsupportedVersion},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := CheckProject(tt.doc, tt.target)
+			if !errors.Is(err, tt.wantErr) || (tt.wantErr == nil && err != nil) {
+				t.Errorf("CheckProject(%q) = %v, want %v", tt.target, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestKeyFor joins the project's storage prefix and the file name; the empty
+// prefix of the root layout leaves the key where it always was.
+func TestKeyFor(t *testing.T) {
+	t.Parallel()
+
+	for prefix, want := range map[string]string{
+		"":                Key,
+		"projects/pjabc/": "projects/pjabc/families.yaml",
+	} {
+		if got := KeyFor(prefix); got != want {
+			t.Errorf("KeyFor(%q) = %q, want %q", prefix, got, want)
+		}
 	}
 }
 

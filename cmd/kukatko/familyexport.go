@@ -9,12 +9,13 @@ import (
 	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/familyexportjob"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // buildFamilyExportServiceOrNil assembles the genealogy export service — the
-// `family_export` job handler that writes the library's whole family tree to
-// families.yaml at the root of the store — or nil when the sidecar export is
-// switched off.
+// `family_export` job handler that writes a project's whole family tree to
+// families.yaml under the project's storage prefix — or nil when the sidecar
+// export is switched off.
 //
 // It rides the same switch as the per-photo sidecars (sidecar.enabled) because it
 // is the same promise: the curation survives the database. Splitting it into a
@@ -35,17 +36,18 @@ func buildFamilyExportServiceOrNil(
 	}
 	return familyexportjob.New(familyexportjob.Config{
 		Families: family.NewStore(db.Pool()),
+		Projects: project.NewStore(db.Pool()),
 		Writer:   familyexport.NewWriter(store),
 	}), nil
 }
 
-// familyExportScheduler schedules a rewrite of the library's genealogy export
-// after a relation — or a subject inside one — has changed. It is the shape the
+// familyExportScheduler schedules a rewrite of a project's genealogy export
+// after a relation — or a subject inside one — has changed in that project. It is the shape the
 // mutating APIs take (each as its own locally-declared interface), and it is
 // satisfied by jobs.Enqueuer.
 type familyExportScheduler interface {
-	// EnqueueFamilyExport schedules a rewrite of the genealogy export.
-	EnqueueFamilyExport(ctx context.Context) error
+	// EnqueueFamilyExport schedules a rewrite of the project's genealogy export.
+	EnqueueFamilyExport(ctx context.Context, projectUID string) error
 }
 
 // nopFamilyExportScheduler drops every enqueue. It is what the mutating APIs are
@@ -53,7 +55,7 @@ type familyExportScheduler interface {
 type nopFamilyExportScheduler struct{}
 
 // EnqueueFamilyExport does nothing and reports success.
-func (nopFamilyExportScheduler) EnqueueFamilyExport(context.Context) error { return nil }
+func (nopFamilyExportScheduler) EnqueueFamilyExport(context.Context, string) error { return nil }
 
 // familyExportSchedulerFor returns the scheduler the mutating APIs enqueue
 // through: the real queue enqueuer when the export is on, a no-op when it is off.
@@ -77,7 +79,7 @@ func familyExportSchedulerFor(cfg *config.Config, enqueuer *jobs.Enqueuer) famil
 type exportSchedulers struct {
 	// sidecar schedules a rewrite of one photo's metadata sidecar.
 	sidecar sidecarScheduler
-	// family schedules a rewrite of the library's genealogy export.
+	// family schedules a rewrite of a project's genealogy export.
 	family familyExportScheduler
 }
 

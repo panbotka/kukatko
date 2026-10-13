@@ -187,24 +187,44 @@ func (e *Enqueuer) EnqueueSidecar(ctx context.Context, photoUID string) error {
 // describe the same file.
 const FamilyExportDebounce = 15 * time.Second
 
-// EnqueueFamilyExport schedules a rewrite of families.yaml, the library-level
-// export of the whole genealogy. It takes no identifier: there is one file for
-// the whole library and the handler reads the current state of every family when
-// it runs.
+// FamilyExportPayload is the payload of a family_export job: the project whose
+// families.yaml the job rewrites. The field is project_uid, the name every
+// library-wide job carries its project under, and the one the dedup index keys
+// on. A job queued before the payload existed has none; its handler reads that
+// as the bootstrap project, the only one there was.
+type FamilyExportPayload struct {
+	ProjectUID string `json:"project_uid"`
+}
+
+// EnqueueFamilyExport schedules a rewrite of one project's families.yaml, the
+// export of that project's whole genealogy. Its payload is FamilyExportPayload:
+// the project and nothing else, because there is one file per project and the
+// handler reads the current state of every family of it when it runs. An empty
+// projectUID is refused — a job naming no project would be read as the bootstrap
+// project's, which is never what a caller without one meant.
 //
-// Dedup is scoped to the queued state (idx_jobs_family_export_dedup, migration
-// 0075): a pre-existing *queued* job is a no-op (nil error), which is what
-// collapses a burst of relation edits into a single file write. An edit that
-// lands while a job is already *running* is not swallowed — it schedules a fresh
-// follow-up, because the running job read the genealogy before that edit and
-// would otherwise leave the file stale.
+// Dedup is per project and scoped to the queued state
+// (idx_jobs_family_export_dedup on payload ->> 'project_uid', migration 0106): a
+// pre-existing *queued* job for the same project is a no-op (nil error), which is
+// what collapses a burst of relation edits into a single file write, while
+// another project's queued job never swallows this one. An edit that lands while
+// a job is already *running* is not swallowed — it schedules a fresh follow-up,
+// because the running job read the genealogy before that edit and would
+// otherwise leave the file stale.
 //
 // Callers enqueue this after their mutation has committed: the job re-reads the
 // genealogy, so enqueuing after the write is what makes it serialise the new
 // state rather than the old one.
-func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context) error {
+func (e *Enqueuer) EnqueueFamilyExport(ctx context.Context, projectUID string) error {
+	if projectUID == "" {
+		return fmt.Errorf("jobs: enqueuing %s: no project given", TypeFamilyExport)
+	}
+	payload, err := json.Marshal(FamilyExportPayload{ProjectUID: projectUID})
+	if err != nil {
+		return fmt.Errorf("jobs: encoding %s payload: %w", TypeFamilyExport, err)
+	}
 	runAfter := e.now().Add(FamilyExportDebounce)
-	if _, err := e.store.Enqueue(ctx, TypeFamilyExport, nil, EnqueueOptions{RunAfter: &runAfter}); err != nil {
+	if _, err := e.store.Enqueue(ctx, TypeFamilyExport, payload, EnqueueOptions{RunAfter: &runAfter}); err != nil {
 		if errors.Is(err, ErrDuplicate) {
 			return nil
 		}

@@ -92,7 +92,7 @@ func seedClan(t *testing.T, store *photos.Store, db *database.DB) clan {
 		{"jan", "petr", "eva"},
 	} {
 		for _, parent := range []string{rel.parentA, rel.parentB} {
-			if _, err := fam.AddParentAudited(ctx, c.subject[rel.child], c.subject[parent], "",
+			if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, c.subject[rel.child], c.subject[parent], "",
 				audit.Entry{
 					ActorUID: actor, Action: audit.ActionSubjectRelationAdd, TargetType: "subjects",
 				}); err != nil {

@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/family"
 	"github.com/panbotka/kukatko/internal/familyexport"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These cover the sibling group: the family with no partners at all that
@@ -25,7 +26,7 @@ import (
 // path the API and the CLI both use.
 func addSibling(t *testing.T, fam *family.Store, actor, subjectUID, otherUID string) family.AddResult {
 	t.Helper()
-	res, err := fam.AddRelationAudited(context.Background(), subjectUID,
+	res, err := fam.AddRelationAudited(context.Background(), project.BootstrapUID, subjectUID,
 		family.AddRelation{Role: family.RoleSibling, SubjectUID: otherUID},
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
@@ -37,7 +38,7 @@ func addSibling(t *testing.T, fam *family.Store, actor, subjectUID, otherUID str
 // siblingUIDs reads one subject's siblings as a set of uids.
 func siblingUIDs(t *testing.T, fam *family.Store, subjectUID string) []string {
 	t.Helper()
-	rel, err := fam.Relations(context.Background(), subjectUID)
+	rel, err := fam.Relations(context.Background(), project.BootstrapUID, subjectUID)
 	if err != nil {
 		t.Fatalf("Relations(%s): %v", subjectUID, err)
 	}
@@ -107,7 +108,7 @@ func TestSibling_withNoParents(t *testing.T) {
 	if got := siblingUIDs(t, fam, anna); !slices.Equal(got, []string{josef}) {
 		t.Errorf("Anna's siblings = %v, want [Josef]", got)
 	}
-	rel, err := fam.Relations(ctx, josef)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, josef)
 	if err != nil {
 		t.Fatalf("Relations(Josef): %v", err)
 	}
@@ -129,7 +130,7 @@ func TestSibling_withNoParents(t *testing.T) {
 	// The network walks through a family by its children as well as by its
 	// partners, so a group nobody parents is not a dead end: Josef's tree is the
 	// three siblings side by side in the one box, all on his own generation.
-	tree, err := fam.Tree(ctx, josef)
+	tree, err := fam.Tree(ctx, project.BootstrapUID, josef)
 	if err != nil {
 		t.Fatalf("Tree(Josef) over a sibling group: %v", err)
 	}
@@ -172,7 +173,7 @@ func TestSibling_withKnownParentsIsUnchanged(t *testing.T) {
 	josef := makeSubject(t, ppl, "Josef Nečas")
 	anna := makeSubject(t, ppl, "Anna Nečasová")
 
-	parentage, err := fam.AddParentAudited(ctx, josef, mother, "",
+	parentage, err := fam.AddParentAudited(ctx, project.BootstrapUID, josef, mother, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddParentAudited: %v", err)
@@ -184,7 +185,7 @@ func TestSibling_withKnownParentsIsUnchanged(t *testing.T) {
 	if got := countFamilies(t, db); got != 1 {
 		t.Errorf("families = %d, want the one the mother already had", got)
 	}
-	annaRel, err := fam.Relations(ctx, anna)
+	annaRel, err := fam.Relations(ctx, project.BootstrapUID, anna)
 	if err != nil {
 		t.Fatalf("Relations(Anna): %v", err)
 	}
@@ -209,7 +210,7 @@ func TestSibling_aParentAdoptsTheWholeGroup(t *testing.T) {
 	group := addSibling(t, fam, actor, josef, anna).Family
 	addSibling(t, fam, actor, josef, marie)
 
-	adopted, err := fam.AddParentAudited(ctx, anna, mother, "",
+	adopted, err := fam.AddParentAudited(ctx, project.BootstrapUID, anna, mother, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddParentAudited onto a sibling group: %v", err)
@@ -221,7 +222,7 @@ func TestSibling_aParentAdoptsTheWholeGroup(t *testing.T) {
 		t.Errorf("families = %d, want the group to have gained the parent rather than split", got)
 	}
 	for _, child := range []string{josef, anna, marie} {
-		rel, relErr := fam.Relations(ctx, child)
+		rel, relErr := fam.Relations(ctx, project.BootstrapUID, child)
 		if relErr != nil {
 			t.Fatalf("Relations(%s): %v", child, relErr)
 		}
@@ -247,7 +248,7 @@ func TestSibling_aParentWithAnOwnFamilyTakesTheGroupIn(t *testing.T) {
 	josef := makeSubject(t, ppl, "Josef Nečas")
 	anna := makeSubject(t, ppl, "Anna Nečasová")
 
-	own, err := fam.AddParentAudited(ctx, petr, mother, "", entryFor(actor, audit.ActionSubjectRelationAdd))
+	own, err := fam.AddParentAudited(ctx, project.BootstrapUID, petr, mother, "", entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddParentAudited: %v", err)
 	}
@@ -255,7 +256,7 @@ func TestSibling_aParentWithAnOwnFamilyTakesTheGroupIn(t *testing.T) {
 
 	// The adopted child keeps the kind it was given; the rest of the group keeps
 	// theirs, which is what moving a whole membership set has to preserve.
-	landed, err := fam.AddParentAudited(ctx, josef, mother, family.ChildAdopted,
+	landed, err := fam.AddParentAudited(ctx, project.BootstrapUID, josef, mother, family.ChildAdopted,
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddParentAudited onto a group whose parent already has a family: %v", err)
@@ -266,17 +267,17 @@ func TestSibling_aParentWithAnOwnFamilyTakesTheGroupIn(t *testing.T) {
 	if got := countFamilies(t, db); got != 1 {
 		t.Errorf("families = %d, want only the mother's; the emptied group must be pruned", got)
 	}
-	if _, err := fam.GetFamily(ctx, group.UID); !errors.Is(err, family.ErrFamilyNotFound) {
+	if _, err := fam.GetFamily(ctx, project.BootstrapUID, group.UID); !errors.Is(err, family.ErrFamilyNotFound) {
 		t.Errorf("the emptied group %s = %v, want it gone", group.UID, err)
 	}
-	rel, err := fam.Relations(ctx, josef)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, josef)
 	if err != nil {
 		t.Fatalf("Relations(Josef): %v", err)
 	}
 	if len(rel.Siblings) != 2 {
 		t.Errorf("Josef's siblings = %v, want Anna and the mother's own child", uidsOf(rel.Siblings))
 	}
-	annaRel, err := fam.Relations(ctx, anna)
+	annaRel, err := fam.Relations(ctx, project.BootstrapUID, anna)
 	if err != nil {
 		t.Fatalf("Relations(Anna): %v", err)
 	}
@@ -315,13 +316,13 @@ func TestSibling_twoDifferentFamiliesAreRefused(t *testing.T) {
 	for _, pair := range []struct{ child, parent string }{
 		{child: josef, parent: oneMother}, {child: petr, parent: otherMother},
 	} {
-		if _, err := fam.AddParentAudited(ctx, pair.child, pair.parent, "",
+		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, pair.child, pair.parent, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("AddParentAudited(%s): %v", pair.child, err)
 		}
 	}
 
-	_, err := fam.AddRelationAudited(ctx, josef,
+	_, err := fam.AddRelationAudited(ctx, project.BootstrapUID, josef,
 		family.AddRelation{Role: family.RoleSibling, SubjectUID: petr},
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if !errors.Is(err, family.ErrDifferentFamilies) {
@@ -331,7 +332,7 @@ func TestSibling_twoDifferentFamiliesAreRefused(t *testing.T) {
 	for _, pair := range []struct{ child, parent string }{
 		{child: josef, parent: oneMother}, {child: petr, parent: otherMother},
 	} {
-		rel, relErr := fam.Relations(ctx, pair.child)
+		rel, relErr := fam.Relations(ctx, project.BootstrapUID, pair.child)
 		if relErr != nil {
 			t.Fatalf("Relations(%s): %v", pair.child, relErr)
 		}
@@ -360,7 +361,7 @@ func TestSibling_removalRules(t *testing.T) {
 	addSibling(t, fam, actor, josef, marie)
 
 	// Three children: removing one leaves a group that still records something.
-	if err := fam.RemoveRelationAudited(ctx, josef, marie,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, josef, marie,
 		entryFor(actor, audit.ActionSubjectRelationRemove)); err != nil {
 		t.Fatalf("removing a parentless sibling: %v", err)
 	}
@@ -373,11 +374,11 @@ func TestSibling_removalRules(t *testing.T) {
 
 	// Two left: removing one more leaves nobody a sibling of anybody, so the row
 	// records nothing and is deleted rather than kept as a family of one.
-	if err := fam.RemoveRelationAudited(ctx, josef, anna,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, josef, anna,
 		entryFor(actor, audit.ActionSubjectRelationRemove)); err != nil {
 		t.Fatalf("removing the last parentless sibling: %v", err)
 	}
-	if _, err := fam.GetFamily(ctx, group.UID); !errors.Is(err, family.ErrFamilyNotFound) {
+	if _, err := fam.GetFamily(ctx, project.BootstrapUID, group.UID); !errors.Is(err, family.ErrFamilyNotFound) {
 		t.Errorf("the emptied group %s = %v, want it deleted", group.UID, err)
 	}
 	if got := countFamilies(t, db); got != 0 {
@@ -388,12 +389,12 @@ func TestSibling_removalRules(t *testing.T) {
 	// there is nothing between the two to remove.
 	mother := makeSubject(t, ppl, "Ludmila Nečasová")
 	for _, child := range []string{josef, anna} {
-		if _, err := fam.AddParentAudited(ctx, child, mother, "",
+		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, mother, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("AddParentAudited(%s): %v", child, err)
 		}
 	}
-	err := fam.RemoveRelationAudited(ctx, josef, anna, entryFor(actor, audit.ActionSubjectRelationRemove))
+	err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, josef, anna, entryFor(actor, audit.ActionSubjectRelationRemove))
 	if !errors.Is(err, family.ErrSiblingsDerived) {
 		t.Fatalf("removing a derived sibling = %v, want ErrSiblingsDerived", err)
 	}
@@ -403,7 +404,7 @@ func TestSibling_removalRules(t *testing.T) {
 
 	// And two people who share nothing are not related at all.
 	stranger := makeSubject(t, ppl, "Cizí Člověk")
-	if err := fam.RemoveRelationAudited(ctx, josef, stranger,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, josef, stranger,
 		entryFor(actor, audit.ActionSubjectRelationRemove)); !errors.Is(err, family.ErrRelationNotFound) {
 		t.Errorf("removing nothing = %v, want ErrRelationNotFound", err)
 	}
@@ -421,7 +422,7 @@ func TestSibling_exportRoundTripsAParentlessFamily(t *testing.T) {
 	anna := makeSubject(t, ppl, "Anna Nečasová")
 	group := addSibling(t, fam, actor, josef, anna).Family
 
-	export, err := fam.Export(ctx)
+	export, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}

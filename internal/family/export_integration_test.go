@@ -21,7 +21,7 @@ func TestExport_readsTheWholeGenealogy(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	export, err := fam.Export(ctx)
+	export, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -79,11 +79,11 @@ func TestExport_isOrderedAndRepeatable(t *testing.T) {
 	ctx := context.Background()
 	seedVillage(t, fam, ppl, db)
 
-	first, err := fam.Export(ctx)
+	first, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("first Export: %v", err)
 	}
-	second, err := fam.Export(ctx)
+	second, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("second Export: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestExport_leavesOutSubjectsInNoFamily(t *testing.T) {
 	seedVillage(t, fam, ppl, db)
 	stranger := makeSubject(t, ppl, "Nikdo Cizí")
 
-	export, err := fam.Export(ctx)
+	export, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestExport_carriesWhatARebuildNeeds(t *testing.T) {
 		t.Fatalf("updating the subject: %v", err)
 	}
 
-	export, err := fam.Export(ctx)
+	export, err := fam.Export(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestExport_carriesWhatARebuildNeeds(t *testing.T) {
 func TestExport_emptyLibrary(t *testing.T) {
 	fam, _, _, _ := stores(t)
 
-	export, err := fam.Export(context.Background())
+	export, err := fam.Export(context.Background(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}

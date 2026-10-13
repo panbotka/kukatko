@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/family"
 	"github.com/panbotka/kukatko/internal/people"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // kozaks is the production shape the network walk exists for, seeded through
@@ -48,7 +49,7 @@ func seedKozaks(t *testing.T, fam *family.Store, ppl *people.Store, db *database
 		{child: k.tomas, parent: k.ales},
 		{child: k.petra, parent: k.dagmar},
 	} {
-		if _, err := fam.AddParentAudited(ctx, rel.child, rel.parent, "",
+		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, rel.child, rel.parent, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("adding parent %s of %s: %v", rel.parent, rel.child, err)
 		}
@@ -100,7 +101,7 @@ func TestNetwork_reachesTheAuntAndTheCousin(t *testing.T) {
 	ctx := context.Background()
 	k := seedKozaks(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, k.tomas)
+	tree, err := fam.Tree(ctx, project.BootstrapUID, k.tomas)
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
@@ -153,13 +154,13 @@ func TestNetwork_aCousinMarriageIsWalkedOnceAndTheNearestWins(t *testing.T) {
 		{"Klára", "Dana"}, {"Klára", "David"},
 		{"Ema", "Cyril"}, {"Ema", "Klára"},
 	} {
-		if _, err := fam.AddParentAudited(ctx, uid[rel.child], uid[rel.parent], "",
+		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, uid[rel.child], uid[rel.parent], "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("adding parent %s of %s: %v", rel.parent, rel.child, err)
 		}
 	}
 
-	tree, err := fam.Tree(ctx, uid["Cyril"])
+	tree, err := fam.Tree(ctx, project.BootstrapUID, uid["Cyril"])
 	if err != nil {
 		t.Fatalf("Tree(network): %v", err)
 	}
@@ -188,7 +189,7 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	ctx := context.Background()
 	k := seedKozaks(t, fam, ppl, db)
 
-	tree, err := fam.NetworkWithin(ctx, k.tomas, 4)
+	tree, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.tomas, 4)
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}
@@ -205,7 +206,7 @@ func TestNetwork_pastTheCapKeepsTheNearest(t *testing.T) {
 	}
 	assertClosed(t, tree)
 
-	whole, err := fam.NetworkWithin(ctx, k.tomas, 5)
+	whole, err := fam.NetworkWithin(ctx, project.BootstrapUID, k.tomas, 5)
 	if err != nil {
 		t.Fatalf("NetworkWithin: %v", err)
 	}
@@ -220,14 +221,14 @@ func TestNetwork_aPersonWithNoFamilyAndAMissingRoot(t *testing.T) {
 	ctx := context.Background()
 	alone := makeSubject(t, ppl, "Samotář")
 
-	tree, err := fam.Tree(ctx, alone)
+	tree, err := fam.Tree(ctx, project.BootstrapUID, alone)
 	if err != nil {
 		t.Fatalf("Tree(network): %v", err)
 	}
 	if len(tree.Members) != 1 || tree.Members[0].UID != alone || tree.Families == nil || len(tree.Families) != 0 {
 		t.Errorf("tree = %+v, want the root alone and an empty (not nil) family list", tree)
 	}
-	if _, err := fam.Tree(ctx, "su_ghost"); !errors.Is(err, family.ErrSubjectNotFound) {
+	if _, err := fam.Tree(ctx, project.BootstrapUID, "su_ghost"); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("Tree(missing root) = %v, want ErrSubjectNotFound", err)
 	}
 }

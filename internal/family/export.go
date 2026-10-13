@@ -37,8 +37,8 @@ type ExportSubject struct {
 	DeathYear *int
 }
 
-// Export is the whole genealogy in one read: every family, every child
-// membership, and every subject either of them names.
+// Export is the whole genealogy of one project in one read: every family, every
+// child membership, and every subject either of them names.
 //
 // It is closed over its own uids — a subject referenced by a family is always
 // present in Subjects — which is what lets it be written to a file that means
@@ -62,37 +62,42 @@ func (e Export) Empty() bool {
 	return len(e.Families) == 0 && len(e.Children) == 0 && len(e.Subjects) == 0
 }
 
-// exportFamiliesSQL reads every family, oldest uid first. The order is by uid
+// exportFamiliesSQL reads every family of the project $1, oldest uid first. The order is by uid
 // rather than by creation so two runs over an unchanged database produce byte-
 // identical output; a file that reshuffles itself on every write is a file whose
 // diffs say nothing.
-const exportFamiliesSQL = "SELECT " + familyColumns + " FROM subject_families ORDER BY uid"
+const exportFamiliesSQL = "SELECT " + familyColumns + " FROM subject_families WHERE project_id = $1 ORDER BY uid"
 
-// exportChildrenSQL reads every child membership, in a stable order for the same
-// reason.
+// exportChildrenSQL reads every child membership of the project's families, in a
+// stable order for the same reason.
 const exportChildrenSQL = `
-SELECT family_uid, child_uid, kind
-FROM subject_family_children
-ORDER BY family_uid, child_uid`
+SELECT c.family_uid, c.child_uid, c.kind
+FROM subject_family_children c
+JOIN subject_families f ON f.uid = c.family_uid
+WHERE f.project_id = $1
+ORDER BY c.family_uid, c.child_uid`
 
-// exportSubjectsSQL reads every subject that appears in a family, whether as a
-// partner or as a child. The three arms are unioned rather than joined so a
-// subject who is both — the usual case, everybody is somebody's child — is read
-// once.
+// exportSubjectsSQL reads every subject of the project $1 that appears in one of
+// its families, whether as a partner or as a child. The three arms are unioned
+// rather than joined so a subject who is both — the usual case, everybody is
+// somebody's child — is read once.
 const exportSubjectsSQL = `
 SELECT s.uid, s.slug, s.name, s.nickname, s.type, s.birth_year, s.death_year
 FROM subjects s
-WHERE s.uid IN (
-    SELECT partner_a_uid FROM subject_families WHERE partner_a_uid IS NOT NULL
+WHERE s.project_id = $1 AND s.uid IN (
+    SELECT partner_a_uid FROM subject_families WHERE partner_a_uid IS NOT NULL AND project_id = $1
     UNION
-    SELECT partner_b_uid FROM subject_families WHERE partner_b_uid IS NOT NULL
+    SELECT partner_b_uid FROM subject_families WHERE partner_b_uid IS NOT NULL AND project_id = $1
     UNION
-    SELECT child_uid FROM subject_family_children
+    SELECT c.child_uid FROM subject_family_children c
+      JOIN subject_families f ON f.uid = c.family_uid WHERE f.project_id = $1
 )
 ORDER BY s.uid`
 
-// Export returns the whole genealogy: every family, every child membership and
-// every subject either names, each in a deterministic order.
+// Export returns the whole genealogy of the project: every family, every child
+// membership and every subject either names, each in a deterministic order.
+// Nothing of another project is read, so one project's file never describes
+// another's people. An empty projectUID is ErrNoProject.
 //
 // It is read in three statements rather than one join because that is what keeps
 // the result a set of rows instead of a cross product to be de-duplicated in Go,
@@ -101,25 +106,28 @@ ORDER BY s.uid`
 // the export is rewritten whenever a relation changes, so a run that catches a
 // concurrent edit half-applied is superseded by the run that edit itself
 // schedules.
-func (s *Store) Export(ctx context.Context) (Export, error) {
-	families, err := s.exportFamilies(ctx)
+func (s *Store) Export(ctx context.Context, projectUID string) (Export, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Export{}, err
+	}
+	families, err := s.exportFamilies(ctx, projectUID)
 	if err != nil {
 		return Export{}, err
 	}
-	children, err := s.exportChildren(ctx)
+	children, err := s.exportChildren(ctx, projectUID)
 	if err != nil {
 		return Export{}, err
 	}
-	subjects, err := s.exportSubjects(ctx)
+	subjects, err := s.exportSubjects(ctx, projectUID)
 	if err != nil {
 		return Export{}, err
 	}
 	return Export{Families: families, Children: children, Subjects: subjects}, nil
 }
 
-// exportFamilies reads every family row.
-func (s *Store) exportFamilies(ctx context.Context) ([]Family, error) {
-	rows, err := s.pool.Query(ctx, exportFamiliesSQL)
+// exportFamilies reads every family row of the project.
+func (s *Store) exportFamilies(ctx context.Context, projectUID string) ([]Family, error) {
+	rows, err := s.pool.Query(ctx, exportFamiliesSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: listing families for export: %w", err)
 	}
@@ -139,9 +147,9 @@ func (s *Store) exportFamilies(ctx context.Context) ([]Family, error) {
 	return out, nil
 }
 
-// exportChildren reads every child membership.
-func (s *Store) exportChildren(ctx context.Context) ([]ChildMembership, error) {
-	rows, err := s.pool.Query(ctx, exportChildrenSQL)
+// exportChildren reads every child membership of the project's families.
+func (s *Store) exportChildren(ctx context.Context, projectUID string) ([]ChildMembership, error) {
+	rows, err := s.pool.Query(ctx, exportChildrenSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: listing child memberships for export: %w", err)
 	}
@@ -161,9 +169,9 @@ func (s *Store) exportChildren(ctx context.Context) ([]ChildMembership, error) {
 	return out, nil
 }
 
-// exportSubjects reads every subject that appears in a family.
-func (s *Store) exportSubjects(ctx context.Context) ([]ExportSubject, error) {
-	rows, err := s.pool.Query(ctx, exportSubjectsSQL)
+// exportSubjects reads every subject of the project that appears in a family.
+func (s *Store) exportSubjects(ctx context.Context, projectUID string) ([]ExportSubject, error) {
+	rows, err := s.pool.Query(ctx, exportSubjectsSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: listing subjects for export: %w", err)
 	}

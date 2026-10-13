@@ -75,14 +75,15 @@ func queryRelatives(ctx context.Context, q querier, what, sql string, args ...an
 	return out, nil
 }
 
-// getRelativeSQL reads one subject as a relative, with no family attached.
+// getRelativeSQL reads one subject of a project as a relative, with no family
+// attached.
 const getRelativeSQL = "SELECT " + relativeColumns + `, NULL::varchar, NULL::text
-FROM subjects s WHERE s.uid = $1`
+FROM subjects s WHERE s.uid = $1 AND s.project_id = $2`
 
-// getRelative reads one subject as a Relative, returning ErrSubjectNotFound when
-// there is no such subject.
-func getRelative(ctx context.Context, q querier, uid string) (Relative, error) {
-	rel, err := scanRelative(q.QueryRow(ctx, getRelativeSQL, uid))
+// getRelative reads one subject of the project as a Relative, returning
+// ErrSubjectNotFound when there is no such subject there.
+func getRelative(ctx context.Context, q querier, projectUID, uid string) (Relative, error) {
+	rel, err := scanRelative(q.QueryRow(ctx, getRelativeSQL, uid, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Relative{}, fmt.Errorf("%w: %s", ErrSubjectNotFound, uid)
@@ -100,7 +101,7 @@ const parentsSQL = "SELECT " + relativeColumns + `, f.uid, c.kind
 FROM subject_family_children c
 JOIN subject_families f ON f.uid = c.family_uid
 JOIN subjects s ON s.uid IN (f.partner_a_uid, f.partner_b_uid)
-WHERE c.child_uid = $1` + relativeOrder
+WHERE c.child_uid = $1 AND f.project_id = $2` + relativeOrder
 
 // siblingsSQL reads the other children of the family the subject is a child in.
 // Siblings are derived rather than stored, which is the whole point of the family
@@ -110,7 +111,7 @@ FROM subject_family_children c
 JOIN subject_families f ON f.uid = c.family_uid
 JOIN subject_family_children c2 ON c2.family_uid = f.uid AND c2.child_uid <> c.child_uid
 JOIN subjects s ON s.uid = c2.child_uid
-WHERE c.child_uid = $1` + relativeOrder
+WHERE c.child_uid = $1 AND f.project_id = $2` + relativeOrder
 
 // childrenSQL reads the children of every family the subject is a partner in, so
 // the children of a second marriage appear beside those of the first, each
@@ -119,7 +120,7 @@ const childrenSQL = "SELECT " + relativeColumns + `, f.uid, c.kind
 FROM subject_families f
 JOIN subject_family_children c ON c.family_uid = f.uid
 JOIN subjects s ON s.uid = c.child_uid
-WHERE f.partner_a_uid = $1 OR f.partner_b_uid = $1` + relativeOrder
+WHERE (f.partner_a_uid = $1 OR f.partner_b_uid = $1) AND f.project_id = $2` + relativeOrder
 
 // partnersSQL reads every family the subject is a partner in together with the
 // person on the other side. The join is a LEFT JOIN because a lone-parent family
@@ -131,7 +132,7 @@ SELECT f.uid, f.partner_a_uid, f.partner_b_uid, f.kind, f.from_year, f.to_year,
 FROM subject_families f
 LEFT JOIN subjects s ON s.uid = CASE WHEN f.partner_a_uid = $1 THEN f.partner_b_uid
                                      ELSE f.partner_a_uid END
-WHERE f.partner_a_uid = $1 OR f.partner_b_uid = $1
+WHERE (f.partner_a_uid = $1 OR f.partner_b_uid = $1) AND f.project_id = $2
 ORDER BY f.from_year NULLS LAST, f.created_at, f.uid`
 
 // Relations returns the four derived lists of one subject's immediate family:
@@ -140,34 +141,39 @@ ORDER BY f.from_year NULLS LAST, f.created_at, f.uid`
 // relations gets four empty lists rather than an error, because "nobody has
 // filled this in yet" is the normal state of a new library.
 //
-// It returns ErrSubjectNotFound if there is no such subject at all.
-func (s *Store) Relations(ctx context.Context, subjectUID string) (Relations, error) {
-	if _, err := getRelative(ctx, s.pool, subjectUID); err != nil {
+// It returns ErrSubjectNotFound if there is no such subject in the project — one
+// of another project is not found either — and ErrNoProject for an empty
+// projectUID.
+func (s *Store) Relations(ctx context.Context, projectUID, subjectUID string) (Relations, error) {
+	if err := requireProject(projectUID); err != nil {
 		return Relations{}, err
 	}
-	parents, err := queryRelatives(ctx, s.pool, "parents", parentsSQL, subjectUID)
+	if _, err := getRelative(ctx, s.pool, projectUID, subjectUID); err != nil {
+		return Relations{}, err
+	}
+	parents, err := queryRelatives(ctx, s.pool, "parents", parentsSQL, subjectUID, projectUID)
 	if err != nil {
 		return Relations{}, err
 	}
-	siblings, err := queryRelatives(ctx, s.pool, "siblings", siblingsSQL, subjectUID)
+	siblings, err := queryRelatives(ctx, s.pool, "siblings", siblingsSQL, subjectUID, projectUID)
 	if err != nil {
 		return Relations{}, err
 	}
-	children, err := queryRelatives(ctx, s.pool, "children", childrenSQL, subjectUID)
+	children, err := queryRelatives(ctx, s.pool, "children", childrenSQL, subjectUID, projectUID)
 	if err != nil {
 		return Relations{}, err
 	}
-	partners, err := s.partnerships(ctx, subjectUID)
+	partners, err := s.partnerships(ctx, projectUID, subjectUID)
 	if err != nil {
 		return Relations{}, err
 	}
 	return Relations{Parents: parents, Siblings: siblings, Partners: partners, Children: children}, nil
 }
 
-// partnerships reads every family the subject is a partner in, each with the
-// person on the other side (nil for a lone-parent family).
-func (s *Store) partnerships(ctx context.Context, subjectUID string) ([]Partnership, error) {
-	rows, err := s.pool.Query(ctx, partnersSQL, subjectUID)
+// partnerships reads every family of the project the subject is a partner in,
+// each with the person on the other side (nil for a lone-parent family).
+func (s *Store) partnerships(ctx context.Context, projectUID, subjectUID string) ([]Partnership, error) {
+	rows, err := s.pool.Query(ctx, partnersSQL, subjectUID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: reading partnerships: %w", err)
 	}

@@ -176,11 +176,12 @@ configuration key both here **and** into `config.example.yaml`.
   which is exactly the moment a person is at the terminal. When `sidecar.enabled: false`, the command
   **fails** instead of a silent “0 scheduled”. The full format is in [`docs/RESTORE.md`](RESTORE.md),
   the HTTP counterpart is `POST /api/v1/process/sidecars`.
-  `sidecar families` writes the library's **family tree export** (`families.yaml` at the root of the storage —
-  `internal/familyexportjob`) **now**, and unlike its sibling it writes the file itself rather than enqueuing:
-  there is one file and the work is one small read, so there is nothing to spread over a queue, and the moment
-  this is typed is exactly the moment a running server cannot be assumed. The server rewrites the file on its
-  own whenever a relation — or a subject in one — changes; this is the "before I do something risky" button. It
+  `sidecar families` writes **every project's family tree export** (`families.yaml` under each project's storage
+  prefix — the root of the storage for `v` — `internal/familyexportjob`) **now**, printing each key written, and
+  unlike its sibling it writes the files itself rather than enqueuing: there is one file per project and the work
+  is one small read each, so there is nothing to spread over a queue, and the moment this is typed is exactly the
+  moment a running server cannot be assumed. The server rewrites a project's file on its own whenever a relation —
+  or a subject in one — changes in that project; this is the "before I do something risky" button. It
   fails the same way when `sidecar.enabled: false`, and it has no HTTP counterpart,
   **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
   `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),

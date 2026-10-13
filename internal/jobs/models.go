@@ -95,12 +95,12 @@ const (
 	// originals that holds its metadata and curation, so the catalogue can be
 	// rebuilt from storage alone. It runs locally. See internal/sidecarexport.
 	TypeSidecar = "sidecar"
-	// TypeFamilyExport rewrites families.yaml, the library-level YAML file at the
-	// root of the store that holds the whole genealogy — who is whose parent,
-	// whose partner, whose child — so the family tree survives losing the
+	// TypeFamilyExport rewrites a project's families.yaml, the YAML file under the
+	// project's storage prefix that holds its whole genealogy — who is whose
+	// parent, whose partner, whose child — so the family tree survives losing the
 	// database. Unlike TypeSidecar it belongs to no photo: one job rewrites the
-	// one file for the whole library. It runs locally. See internal/familyexport
-	// and internal/familyexportjob.
+	// one file of one project, named by FamilyExportPayload. It runs locally. See
+	// internal/familyexport and internal/familyexportjob.
 	TypeFamilyExport = "family_export"
 	// TypeStoryboard renders a video's scrub-preview sprite — the grid of frames
 	// the player shows next to the cursor while its timeline is hovered. It runs

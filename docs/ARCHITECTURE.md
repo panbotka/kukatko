@@ -1025,11 +1025,12 @@ on the same storage as the original.
   sufficiency (and what a future importer will get as its spec). The same is true of the family tree export
   below: both are written, neither is read back yet, and both are pinned by a round-trip test.
 
-### 8.2 The family tree — `families.yaml`, one file for the whole library
+### 8.2 The family tree — `families.yaml`, one file per project
 
-**Decision:** write the library's whole genealogy to a **single YAML document at the root of the store**
-(`families.yaml`), rewritten by a `family_export` job whenever a relation — or a subject inside one —
-changes. Packages `internal/familyexport` (format + atomic write) and `internal/familyexportjob` (the job).
+**Decision:** write each project's whole genealogy to a **single YAML document at the root of the project's
+storage prefix** (`<storage_prefix>families.yaml` — for the bootstrap project `v`, whose prefix is empty, the
+root of the store, where the file always was), rewritten by a `family_export` job for that project whenever a
+relation — or a subject inside one — changes in it. Packages `internal/familyexport` (format + atomic write) and `internal/familyexportjob` (the job).
 The format is in [`RESTORE.md`](RESTORE.md) alongside the photo sidecar's.
 
 **Why it is not in the photo sidecars:** a relationship is true about **two people**, not about any
@@ -1039,7 +1040,12 @@ to belong to at all. Left only in Postgres, the tree would be the one thing a us
 
 **Key decisions:**
 
-- **One file, whole, at the root.** The genealogy is one graph and is only meaningful entire: a reader that
+- **One file per project, whole, at the root of its prefix.** A relation never crosses a project — every write
+  proves its subjects inside the request's project, and a family takes its members' project — so each project's
+  genealogy is a graph of its own, and its file describes nobody else's people. The document carries a
+  top-level `project: {uid, slug}` (format version 2), and a reader refuses a file whose project is not the one
+  it restores into (`familyexport.CheckProject`). Within a project, the genealogy is one graph and is only
+  meaningful entire: a reader that
   found half the families would build half a tree and not know it. It is small — a family archive holds tens
   of families — so it is rewritten rather than patched.
 - **It is closed over its own identifiers.** Every subject a family names is described in the same file
@@ -1050,18 +1056,21 @@ to belong to at all. Left only in Postgres, the tree would be the one thing a us
   That is what makes the backup copy it, the storage migration move it (once per run, not once per photo) and
   `maintenance reset` delete it — each of those switches over the enum without a default clause, so a new kind
   of object in the store cannot be silently forgotten.
-- **Debounced by the queue, on an index of its own.** The job carries no payload — there is one genealogy, so
-  there is nothing to name — and `idx_jobs_dedup` keys on `payload ->> 'photo_uid'`, which would make every
-  enqueue distinct. Migration 0075 adds a partial unique index on the type alone, scoped to `queued` for the
-  reason [§8.1](#81-metadata-sidecars--curation-data-independent-of-the-database) gives for the sidecar's: an
-  edit arriving while a job runs must schedule a follow-up rather than be swallowed. `run_after` is 15 s,
+- **Debounced by the queue, on an index of its own.** The job's payload names the project (`project_uid`, the
+  field every library-wide job uses) and nothing else — there is one genealogy per project — and
+  `idx_jobs_dedup` keys on `payload ->> 'photo_uid'`, which would make every enqueue distinct. Migration 0075
+  added a partial unique index on the type alone; migration 0106 rekeyed it on `payload ->> 'project_uid'`, so
+  one project's queued rewrite never swallows another's. It is scoped to `queued` for the reason
+  [§8.1](#81-metadata-sidecars--curation-data-independent-of-the-database) gives for the sidecar's: an
+  edit arriving while a job runs must schedule a follow-up rather than be swallowed. A job queued before 0106
+  names no project and is read as the bootstrap project's. `run_after` is 15 s,
   longer than the sidecar's, because filling in a family is a denser burst over a bigger unit of work.
 - **A subject write schedules it too.** Renaming somebody changes what the tree says their name is, deleting
   them cascades away every family they were in, and a merge moves their place in it — so `internal/peopleapi`
   enqueues alongside `internal/familyapi`.
 - **The same switch as the photo sidecars** (`sidecar.enabled`): it is the same promise, and a second key
   would let an instance end up half-covered — the state hardest to notice and worst to discover.
-- **An empty genealogy is written, not skipped.** A library whose last relation was removed is described by a
+- **An empty genealogy is written, not skipped.** A project whose last relation was removed is described by a
   file with no families in it; leaving the previous file would let a rebuild restore a tree the user deleted.
 
 ### 8.3 The family tree page — one drawing of the reachable network

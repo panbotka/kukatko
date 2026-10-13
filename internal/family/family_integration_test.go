@@ -114,7 +114,7 @@ func seedVillage(t *testing.T, fam *family.Store, ppl *people.Store, db *databas
 		{child: v.jan, parentA: v.petr, parentB: v.eva},
 	} {
 		for _, parent := range []string{rel.parentA, rel.parentB} {
-			got, err := fam.AddParentAudited(ctx, rel.child, parent, "",
+			got, err := fam.AddParentAudited(ctx, project.BootstrapUID, rel.child, parent, "",
 				entryFor(v.actor, audit.ActionSubjectRelationAdd))
 			if err != nil {
 				t.Fatalf("adding parent %s of %s: %v", parent, rel.child, err)
@@ -145,7 +145,7 @@ func TestRelations_areDerivedFromTheFamilyRows(t *testing.T) {
 		t.Fatalf("creating marker: %v", err)
 	}
 
-	rel, err := fam.Relations(ctx, v.josef)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, v.josef)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestTree_cousinMarriageIsDrawnOnce(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	tree, err := fam.Tree(ctx, v.bohumil)
+	tree, err := fam.Tree(ctx, project.BootstrapUID, v.bohumil)
 	if err != nil {
 		t.Fatalf("Tree: %v", err)
 	}
@@ -229,14 +229,14 @@ func TestAddParent_refusesASecondParentage(t *testing.T) {
 	v := seedVillage(t, fam, ppl, db)
 
 	stranger := makeSubject(t, ppl, "Cizí Člověk")
-	_, err := fam.AddParentAudited(ctx, v.petr, stranger, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
+	_, err := fam.AddParentAudited(ctx, project.BootstrapUID, v.petr, stranger, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
 	if !errors.Is(err, family.ErrAlreadyChild) {
 		t.Fatalf("a third parent = %v, want ErrAlreadyChild", err)
 	}
 
 	// The index behind that rule is the one that keeps the walk a tree, so it is
 	// asserted against the schema directly and not only through the store.
-	other, err := fam.AddPartnerAudited(ctx, stranger, v.marie, entryFor(v.actor, audit.ActionSubjectRelationAdd))
+	other, err := fam.AddPartnerAudited(ctx, project.BootstrapUID, stranger, v.marie, entryFor(v.actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("creating a second couple: %v", err)
 	}
@@ -259,11 +259,11 @@ func TestAddParent_refusesAnAncestorAsAChild(t *testing.T) {
 	// Bohumil is Jan's great-grandfather; making Jan his parent would close a loop
 	// that no walk could terminate on. Bohumil is nobody's child yet, so the only
 	// thing refusing this is the cycle check.
-	_, err := fam.AddParentAudited(ctx, v.bohumil, v.jan, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
+	_, err := fam.AddParentAudited(ctx, project.BootstrapUID, v.bohumil, v.jan, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
 	if !errors.Is(err, family.ErrCycle) {
 		t.Fatalf("attaching a descendant as a parent = %v, want ErrCycle", err)
 	}
-	_, err = fam.AddParentAudited(ctx, v.josef, v.josef, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
+	_, err = fam.AddParentAudited(ctx, project.BootstrapUID, v.josef, v.josef, "", entryFor(v.actor, audit.ActionSubjectRelationAdd))
 	if !errors.Is(err, family.ErrSelfRelation) {
 		t.Fatalf("a subject as its own parent = %v, want ErrSelfRelation", err)
 	}
@@ -277,12 +277,12 @@ func TestAddParent_completesALoneParentFamily(t *testing.T) {
 	father := makeSubject(t, ppl, "Otec")
 	child := makeSubject(t, ppl, "Dítě")
 
-	lone, err := fam.AddParentAudited(ctx, child, mother, family.ChildAdopted,
+	lone, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, mother, family.ChildAdopted,
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("adding the mother: %v", err)
 	}
-	completed, err := fam.AddParentAudited(ctx, child, father, "",
+	completed, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, father, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("adding the father: %v", err)
@@ -296,7 +296,7 @@ func TestAddParent_completesALoneParentFamily(t *testing.T) {
 	if *completed.PartnerA >= *completed.PartnerB {
 		t.Errorf("partners %s/%s are not in byte order", *completed.PartnerA, *completed.PartnerB)
 	}
-	rel, err := fam.Relations(ctx, child)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, child)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
@@ -318,25 +318,25 @@ func TestAddParent_aSecondChildOfTheSameMotherKeepsHerAlone(t *testing.T) {
 	second := makeSubject(t, ppl, "Mladší")
 
 	for _, child := range []string{first, second} {
-		if _, err := fam.AddParentAudited(ctx, child, mother, "",
+		if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, mother, "",
 			entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 			t.Fatalf("adding the mother of %s: %v", child, err)
 		}
 	}
 	// Naming a father for one of them must not hand the other one the same father
 	// by rewriting the pair of the family they happen to share.
-	if _, err := fam.AddParentAudited(ctx, first, father, "",
+	if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, first, father, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 		t.Fatalf("adding the father: %v", err)
 	}
-	elder, err := fam.Relations(ctx, first)
+	elder, err := fam.Relations(ctx, project.BootstrapUID, first)
 	if err != nil {
 		t.Fatalf("Relations(elder): %v", err)
 	}
 	if len(elder.Parents) != 2 {
 		t.Errorf("the elder's parents = %v, want both", uidsOf(elder.Parents))
 	}
-	younger, err := fam.Relations(ctx, second)
+	younger, err := fam.Relations(ctx, project.BootstrapUID, second)
 	if err != nil {
 		t.Fatalf("Relations(younger): %v", err)
 	}
@@ -349,7 +349,7 @@ func TestAddParent_aSecondChildOfTheSameMotherKeepsHerAlone(t *testing.T) {
 		t.Errorf("the younger's siblings = %v, want none — they are half-siblings now",
 			uidsOf(younger.Siblings))
 	}
-	mothersChildren, err := fam.Relations(ctx, mother)
+	mothersChildren, err := fam.Relations(ctx, project.BootstrapUID, mother)
 	if err != nil {
 		t.Fatalf("Relations(mother): %v", err)
 	}
@@ -363,29 +363,29 @@ func TestRemoveRelation_aChildKeepsTheOtherParent(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	if err := fam.RemoveRelationAudited(ctx, v.josef, v.petr,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, v.josef, v.petr,
 		entryFor(v.actor, audit.ActionSubjectRelationRemove)); err != nil {
 		t.Fatalf("removing Josef as Petr's father: %v", err)
 	}
-	rel, err := fam.Relations(ctx, v.petr)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, v.petr)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
 	if len(rel.Parents) != 1 || rel.Parents[0].UID != v.ludmila {
 		t.Fatalf("parents = %v, want only Ludmila", uidsOf(rel.Parents))
 	}
-	if err := fam.RemoveRelationAudited(ctx, v.ludmila, v.petr,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, v.ludmila, v.petr,
 		entryFor(v.actor, audit.ActionSubjectRelationRemove)); err != nil {
 		t.Fatalf("removing the last parent: %v", err)
 	}
-	rel, err = fam.Relations(ctx, v.petr)
+	rel, err = fam.Relations(ctx, project.BootstrapUID, v.petr)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
 	if len(rel.Parents) != 0 {
 		t.Errorf("parents = %v, want none", uidsOf(rel.Parents))
 	}
-	err = fam.RemoveRelationAudited(ctx, v.ludmila, v.petr,
+	err = fam.RemoveRelationAudited(ctx, project.BootstrapUID, v.ludmila, v.petr,
 		entryFor(v.actor, audit.ActionSubjectRelationRemove))
 	if !errors.Is(err, family.ErrRelationNotFound) {
 		t.Errorf("removing it twice = %v, want ErrRelationNotFound", err)
@@ -397,11 +397,11 @@ func TestRemoveRelation_partnersPartAndTheChildrenStay(t *testing.T) {
 	ctx := context.Background()
 	v := seedVillage(t, fam, ppl, db)
 
-	if err := fam.RemoveRelationAudited(ctx, v.bohumil, v.marie,
+	if err := fam.RemoveRelationAudited(ctx, project.BootstrapUID, v.bohumil, v.marie,
 		entryFor(v.actor, audit.ActionSubjectRelationRemove)); err != nil {
 		t.Fatalf("separating the couple: %v", err)
 	}
-	rel, err := fam.Relations(ctx, v.josef)
+	rel, err := fam.Relations(ctx, project.BootstrapUID, v.josef)
 	if err != nil {
 		t.Fatalf("Relations: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestRemoveRelation_partnersPartAndTheChildrenStay(t *testing.T) {
 	if len(rel.Siblings) != 1 || rel.Siblings[0].UID != v.anna {
 		t.Errorf("siblings = %v, want Anna to stay", uidsOf(rel.Siblings))
 	}
-	marie, err := fam.Relations(ctx, v.marie)
+	marie, err := fam.Relations(ctx, project.BootstrapUID, v.marie)
 	if err != nil {
 		t.Fatalf("Relations(Marie): %v", err)
 	}
@@ -428,14 +428,14 @@ func TestUpdateFamily_editsTheUnionItself(t *testing.T) {
 	a := makeSubject(t, ppl, "Jeden")
 	b := makeSubject(t, ppl, "Druhá")
 
-	created, err := fam.AddPartnerAudited(ctx, a, b, entryFor(actor, audit.ActionSubjectRelationAdd))
+	created, err := fam.AddPartnerAudited(ctx, project.BootstrapUID, a, b, entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddPartnerAudited: %v", err)
 	}
 	if created.Kind != family.KindPartnership {
 		t.Errorf("kind = %q, want the %q default", created.Kind, family.KindPartnership)
 	}
-	again, err := fam.AddPartnerAudited(ctx, b, a, entryFor(actor, audit.ActionSubjectRelationAdd))
+	again, err := fam.AddPartnerAudited(ctx, project.BootstrapUID, b, a, entryFor(actor, audit.ActionSubjectRelationAdd))
 	if err != nil {
 		t.Fatalf("AddPartnerAudited twice: %v", err)
 	}
@@ -444,7 +444,7 @@ func TestUpdateFamily_editsTheUnionItself(t *testing.T) {
 	}
 
 	from, to := 1948, 1991
-	updated, err := fam.UpdateFamilyAudited(ctx, created.UID, family.Update{
+	updated, err := fam.UpdateFamilyAudited(ctx, project.BootstrapUID, created.UID, family.Update{
 		Kind: family.KindMarriage, FromYear: &from, ToYear: &to, Note: "svatba ve Sloupu",
 	}, audit.Entry{ActorUID: actor, Action: audit.ActionFamilyUpdate, TargetType: "families"})
 	if err != nil {
@@ -453,12 +453,12 @@ func TestUpdateFamily_editsTheUnionItself(t *testing.T) {
 	if updated.Kind != family.KindMarriage || updated.FromYear == nil || *updated.FromYear != from {
 		t.Errorf("updated = %+v, want a marriage from %d", updated, from)
 	}
-	_, err = fam.UpdateFamilyAudited(ctx, created.UID, family.Update{Kind: "engagement"},
+	_, err = fam.UpdateFamilyAudited(ctx, project.BootstrapUID, created.UID, family.Update{Kind: "engagement"},
 		audit.Entry{ActorUID: actor, Action: audit.ActionFamilyUpdate})
 	if !errors.Is(err, family.ErrInvalidKind) {
 		t.Errorf("an unknown kind = %v, want ErrInvalidKind", err)
 	}
-	_, err = fam.UpdateFamilyAudited(ctx, "fmmissing", family.Update{},
+	_, err = fam.UpdateFamilyAudited(ctx, project.BootstrapUID, "fmmissing", family.Update{},
 		audit.Entry{ActorUID: actor, Action: audit.ActionFamilyUpdate})
 	if !errors.Is(err, family.ErrFamilyNotFound) {
 		t.Errorf("a missing family = %v, want ErrFamilyNotFound", err)
@@ -473,7 +473,7 @@ func TestAudit_theRowLandsInTheMutationsTransaction(t *testing.T) {
 	parent := makeSubject(t, ppl, "Rodič")
 	child := makeSubject(t, ppl, "Potomek")
 
-	if _, err := fam.AddParentAudited(ctx, child, parent, "",
+	if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, child, parent, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd)); err != nil {
 		t.Fatalf("AddParentAudited: %v", err)
 	}
@@ -494,7 +494,7 @@ func TestAudit_theRowLandsInTheMutationsTransaction(t *testing.T) {
 
 	// A refused mutation rolls back, and its audit row goes with it: the trail
 	// must not claim a relation that was never recorded.
-	if _, err := fam.AddParentAudited(ctx, parent, child, "",
+	if _, err := fam.AddParentAudited(ctx, project.BootstrapUID, parent, child, "",
 		entryFor(actor, audit.ActionSubjectRelationAdd)); !errors.Is(err, family.ErrCycle) {
 		t.Fatalf("the cycle was not refused: %v", err)
 	}
@@ -513,13 +513,13 @@ func TestStore_missingSubjectsAreSentinels(t *testing.T) {
 	actor := makeUser(t, db, "usfamily0000000000000005", "tester")
 	known := makeSubject(t, ppl, "Známá")
 
-	if _, err := fam.Relations(ctx, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
+	if _, err := fam.Relations(ctx, project.BootstrapUID, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("Relations(missing) = %v, want ErrSubjectNotFound", err)
 	}
-	if _, err := fam.Tree(ctx, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
+	if _, err := fam.Tree(ctx, project.BootstrapUID, "sumissing"); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("Tree(missing) = %v, want ErrSubjectNotFound", err)
 	}
-	if _, err := fam.AddPartnerAudited(ctx, known, "sumissing",
+	if _, err := fam.AddPartnerAudited(ctx, project.BootstrapUID, known, "sumissing",
 		entryFor(actor, audit.ActionSubjectRelationAdd)); !errors.Is(err, family.ErrSubjectNotFound) {
 		t.Errorf("AddPartnerAudited(missing) = %v, want ErrSubjectNotFound", err)
 	}

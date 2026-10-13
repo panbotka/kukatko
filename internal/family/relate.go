@@ -93,8 +93,8 @@ type AddResult struct {
 	Created  bool     `json:"created"`
 }
 
-// AddRelationAudited records one relation on subjectUID and writes entry in the
-// same transaction. When rel.New is set the subject is created in that same
+// AddRelationAudited records one relation on subjectUID in the project and writes
+// entry in the same transaction. When rel.New is set the subject is created in that same
 // transaction first, so a refused relation — a cycle, a second parentage, a
 // subject that vanished meanwhile — leaves no orphan person behind. That
 // atomicity is the whole reason this path exists rather than two API calls.
@@ -107,12 +107,17 @@ type AddResult struct {
 //
 // It returns ErrInvalidRole for an unrecognised role, ErrAmbiguousRelation when
 // the request names both an existing and a new subject or neither,
-// ErrSubjectNotFound when a named subject does not exist, and whatever the
-// attachment refuses with: ErrSelfRelation, ErrCycle, ErrAlreadyChild,
-// ErrDifferentFamilies.
+// ErrSubjectNotFound when a named subject does not exist in the project — one of
+// another project is not found, the same answer — ErrNoProject for an empty
+// projectUID, and whatever the attachment refuses with: ErrSelfRelation,
+// ErrCycle, ErrAlreadyChild, ErrDifferentFamilies. A subject created inline lands
+// in the project.
 func (s *Store) AddRelationAudited(
-	ctx context.Context, subjectUID string, rel AddRelation, entry audit.Entry,
+	ctx context.Context, projectUID, subjectUID string, rel AddRelation, entry audit.Entry,
 ) (AddResult, error) {
+	if err := requireProject(projectUID); err != nil {
+		return AddResult{}, err
+	}
 	if !rel.Role.valid() {
 		return AddResult{}, fmt.Errorf("%w: %q", ErrInvalidRole, rel.Role)
 	}
@@ -130,7 +135,7 @@ func (s *Store) AddRelationAudited(
 		entry.Details = map[string]any{}
 	}
 	return mutateAudited(ctx, s.pool, entry, func(tx pgx.Tx) (AddResult, error) {
-		return addRelation(ctx, tx, subjectUID, rel, kind, entry.Details)
+		return addRelation(ctx, tx, projectUID, subjectUID, rel, kind, entry.Details)
 	})
 }
 
@@ -150,17 +155,18 @@ func checkRelationTarget(rel AddRelation) error {
 	return nil
 }
 
-// addRelation is the body of AddRelationAudited, inside the transaction: resolve
-// the other person (creating them when asked), attach them in the requested role,
-// and report what the audit trail and the caller should see.
+// addRelation is the body of AddRelationAudited, inside the transaction: prove
+// the subject inside the project, resolve the other person there (creating them
+// when asked), attach them in the requested role, and report what the audit
+// trail and the caller should see.
 func addRelation(
-	ctx context.Context, tx pgx.Tx, subjectUID string, rel AddRelation,
+	ctx context.Context, tx pgx.Tx, projectUID, subjectUID string, rel AddRelation,
 	kind ChildKind, details map[string]any,
 ) (AddResult, error) {
-	if err := requireSubjects(ctx, tx, subjectUID); err != nil {
+	if err := requireSubjects(ctx, tx, projectUID, subjectUID); err != nil {
 		return AddResult{}, err
 	}
-	otherUID, created, err := resolveOther(ctx, tx, subjectUID, rel)
+	otherUID, created, err := resolveOther(ctx, tx, projectUID, rel)
 	if err != nil {
 		return AddResult{}, err
 	}
@@ -171,7 +177,7 @@ func addRelation(
 	if err != nil {
 		return AddResult{}, err
 	}
-	relative, err := getRelative(ctx, tx, otherUID)
+	relative, err := getRelative(ctx, tx, projectUID, otherUID)
 	if err != nil {
 		return AddResult{}, err
 	}
@@ -185,19 +191,15 @@ func addRelation(
 
 // resolveOther returns the UID of the person on the other side of the relation,
 // creating the subject first when the request described one instead of naming it,
-// and reporting which of the two happened. A created subject lands in the project
-// of anchorUID, the person the relation is added to.
-func resolveOther(ctx context.Context, tx pgx.Tx, anchorUID string, rel AddRelation) (string, bool, error) {
+// and reporting which of the two happened. A named subject must live in the
+// project (one of another project is ErrSubjectNotFound), and a created one lands
+// in it — so a relation never ties two projects together.
+func resolveOther(ctx context.Context, tx pgx.Tx, projectUID string, rel AddRelation) (string, bool, error) {
 	if rel.New == nil {
-		if err := requireSubjects(ctx, tx, rel.SubjectUID); err != nil {
+		if err := requireSubjects(ctx, tx, projectUID, rel.SubjectUID); err != nil {
 			return "", false, err
 		}
 		return rel.SubjectUID, false, nil
-	}
-	var projectUID string
-	if err := tx.QueryRow(ctx, "SELECT project_id FROM subjects WHERE uid = $1", anchorUID).
-		Scan(&projectUID); err != nil {
-		return "", false, fmt.Errorf("family: reading the project of %s: %w", anchorUID, err)
 	}
 	subj, err := people.CreateSubjectTx(ctx, tx, projectUID, people.Subject{
 		Name:      strings.TrimSpace(rel.New.Name),

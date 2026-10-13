@@ -162,7 +162,7 @@ type fakeFamilyExport struct {
 }
 
 // EnqueueFamilyExport counts the call.
-func (f *fakeFamilyExport) EnqueueFamilyExport(context.Context) error {
+func (f *fakeFamilyExport) EnqueueFamilyExport(context.Context, string) error {
 	f.calls++
 	return nil
 }

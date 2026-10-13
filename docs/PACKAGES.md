@@ -411,7 +411,8 @@ to `## Package map` in `CLAUDE.md`.
   share `buildWhere(projectUID, params)`, whose **first clause is always the project predicate bound as
   `$1`** (also under `MatchNone`), and whose placeholder `whereClauses` hands to the query-language
   compiler (`condEnv.project`): every condition that resolves a name or an id against another root table
-  — `album:`, `label:`, `task:`, `person:`, `family:` (the root of the walk, kept uncorrelated), the
+  — `album:`, `label:`, `task:`, `person:`, `family:` (the root of the walk and every family it steps
+  through, kept uncorrelated), the
   alias arm of `uid:`, the reference photo of `near:` — confines that lookup to the project too
   (`TestQueryKeys_compileInsideTheProject` walks `query.Keys()`, so a new key is covered the day it is
   added); the single-row lookups `GetByUIDInProject`, `GetByFileHashInProject`, `GetByPhotoprismUID`,
@@ -1672,10 +1673,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   (migration `0044` scopes the **sidecar** dedup to `queued` only, so an edit landing while a
   sidecar job runs schedules a follow-up rewrite instead of being swallowed as a duplicate — the
   running job wrote the file before it saw that edit; other types keep queued|running dedup), plus
-  `idx_jobs_family_export_dedup` on `(type) WHERE type='family_export' AND state='queued'`
-  (migration `0075`): the library-wide genealogy export carries **no** `photo_uid`, so the index above
-  cannot see it and every enqueue would be distinct — the queued-only scope is the sidecar's reasoning
-  applied to the one file for the whole library. Both index names map to `ErrDuplicate` (`dedupIndexes`);
+  `idx_jobs_family_export_dedup` on `(payload->>'project_uid') WHERE type='family_export' AND state='queued'`
+  (migration `0075` keyed it on the type alone, `0106` on the project): the genealogy export carries **no**
+  `photo_uid`, so the index above cannot see it and every enqueue would be distinct — the queued-only scope is
+  the sidecar's reasoning applied to the one file per project. Both index names map to `ErrDuplicate`
+  (`dedupIndexes`);
   `Store` = `NewStore(pool)` with
   `Enqueue(ctx,type,payload,opts)` (idempotent on the dedup key → `ErrDuplicate`,
   `EnqueueOptions{Priority,MaxAttempts,RunAfter}`) — a thin wrapper over the **package-level
@@ -1737,9 +1739,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   implements `ingest.JobEnqueuer` (`EnqueueImageEmbed`/`EnqueueFaceDetect`/`EnqueueThumbnail`/
   `EnqueuePlaces`/`EnqueueMetadata`, `ErrDuplicate`=no-op);
   `EnqueueSidecar` delays its job by `SidecarDebounce` (5 s), the window a burst of edits collapses into,
-  and **`EnqueueFamilyExport(ctx)`** takes no identifier at all — there is one genealogy for the whole
-  library, so the payload names nothing — and waits `FamilyExportDebounce` (15 s), longer because filling
-  in a family is a denser burst over a bigger unit of work;
+  and **`EnqueueFamilyExport(ctx,projectUID)`** names only the project — there is one genealogy per project, so
+  the payload is `FamilyExportPayload{project_uid}` — refuses an empty project, and waits `FamilyExportDebounce`
+  (15 s), longer because filling in a family is a denser burst over a bigger unit of work;
   `EnqueueThumbnailRebuild` is the **forced** thumbnail enqueue (payload `{photo_uid,force:true}`, handled by
   `thumbjob`): what a changed rendering — a saved or reset non-destructive edit — schedules, since the thumbnail
   cache is keyed by the original's hash and would otherwise serve the previous rendering forever. The flag rides in
@@ -2053,11 +2055,24 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   of A's), so every attachment first walks the prospective parent's ancestors (`ancestorUIDsSQL` → the pure
   `wouldCycle`) and refuses with `ErrCycle`; every recursive walk also carries a **`depth < 20`** guard
   (`MaxDepth`), so a cycle that somehow reached the tables ends the query instead of the request.
-  `Store` = `NewStore(pool)`. **Reads:** `Relations(subjectUID)` → `{Parents,Siblings,Partners,Children}`, the
+  `Store` = `NewStore(pool)`.
+  **Project scope (`project.go`, the people convention):** `subject_families` carries `project_id`,
+  `subject_family_children` belongs to its family's project. Every method takes `projectUID` after `ctx`,
+  never defaulted (`ErrNoProject`), and a subject or family of another project is the same error as a missing
+  one (`ErrSubjectNotFound`, `ErrFamilyNotFound`; `RemoveRelationAudited` answers `ErrRelationNotFound`, what a
+  missing subject always got). The scope is enforced **where a request enters the graph**: every write proves
+  each subject it names inside the project (the scoped `requireSubjects`) before it touches a row — so a
+  relation never ties two projects together and a refused write leaves no audit row — an inline `NewPerson`
+  is created in the project, and `insertFamilySQL` takes the new family's `project_id` **from the subject it is
+  created for** (the first partner, or a sibling group's first child), so a family always lives in its
+  members' project. A walk that starts from a subject of the project therefore stays in it by construction;
+  the read statements (`getRelativeSQL`, the four relation lists, `networkFamiliesSQL`/`networkMembersSQL`,
+  the three export reads) still filter on the project, so a broken row could not leak either.
+  **Reads:** `Relations(projectUID,subjectUID)` → `{Parents,Siblings,Partners,Children}`, the
   four derived lists the subject page's strip draws, each carrying a `Relative` (subject identity, life years,
   cover and the **photo count counted the way the people index counts it**, so a chip's badge is a promise about
   the next page) — a `Partnership` keeps its `Family` and a **nil `Partner` for a lone-parent family**;
-  `Tree(rootUID)` → the **layout-ready** payload (root, members with their signed `Generation`, the family
+  `Tree(projectUID,rootUID)` → the **layout-ready** payload (root, members with their signed `Generation`, the family
   boxes tying them together, `Truncated`, `Total`), produced by the package's **one read walk**
   (`network.go`) — the whole **connected component** over the bipartite graph of people and families, a
   person joined to a family by being one of its partners *or one of its children*, both edges followed both
@@ -2080,14 +2095,15 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   filter is **not** built on this walk: it keeps its own recursive SQL in `internal/photos` (`familyDepthLimit`)
   and keeps meaning *the descendants of a root plus their partners* — the tree page shows a family, the filter
   narrows a listing, and the two answer **different questions on purpose**; do not unify them.
-  `GetFamily(uid)`.
+  `GetFamily(projectUID,uid)`.
   **Writes** all go through the generic `mutateAudited(ctx, pool, entry, fn)` (the `internal/people` convention),
   so the audit row lands **in the mutation's own transaction** — and `entry.TargetUID` is stamped **before** the
   call, because `mutateAudited` copies the entry and a stamp made inside the closure is lost:
   `AddParentAudited`/`AddChildAudited` (the same core with the roles swapped, actions `subject.relation.add`),
   `AddPartnerAudited` (find-or-create, so adding the same couple twice returns the one family),
   `RemoveRelationAudited` (`subject.relation.remove`) and `UpdateFamilyAudited` (`family.update`, kind/years/note).
-  **`AddRelationAudited(subjectUID, AddRelation{Role,SubjectUID|New,ChildKind}, entry)`** is the one the HTTP API
+  **`AddRelationAudited(projectUID, subjectUID, AddRelation{Role,SubjectUID|New,ChildKind}, entry)`** is the one
+  the HTTP API
   uses: one call for all four roles (`RoleParent`/`RoleChild`/`RolePartner`/`RoleSibling`),
   and the other person is **either** an existing subject **or** a `NewPerson` created by that same transaction
   through `people.CreateSubjectTx`. That inline half is the affordance the whole data-entry story rests on, and
@@ -2126,9 +2142,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `ErrFamilyNotFound`/`ErrRelationNotFound` (→404), `ErrCycle`/`ErrAlreadyChild`/`ErrSelfRelation`/
   `ErrFamilyConflict`/`ErrDifferentFamilies`/`ErrSiblingsDerived`/`ErrInvalidKind`/`ErrInvalidRole`/
   `ErrInvalidYears`/`ErrAmbiguousRelation` (→400/409).
-  **`Export(ctx)`** is the read behind `families.yaml` (`internal/familyexport`): three statements — every
-  family, every child membership, and every subject either of them names — each in a deterministic order by
-  uid, so an unchanged genealogy exports to identical bytes. They are deliberately **not** in one
+  **`Export(ctx,projectUID)`** is the read behind a project's `families.yaml` (`internal/familyexport`): three
+  statements — every family of the project, every child membership of those families, and every subject of the
+  project either of them names — each in a deterministic order by uid, so an unchanged genealogy exports to identical bytes. They are deliberately **not** in one
   transaction: the file is rewritten on every relation change, so a run that catches a concurrent edit half
   applied is superseded by the run that edit itself schedules. Both tables are classified in
   `internal/reset` as catalogue tables (a wipe empties them). Unit tests cover pair normalisation, the cycle rule
@@ -2143,7 +2159,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   sibling group end to end — two
   parentless groups coexisting (which the pre-`0076` index would have collapsed), a parent adopting a whole
   group with and without a family of their own, the two-families refusal, both removal rules, and the group's
-  round trip through `families.yaml`),
+  round trip through `families.yaml`; `isolation_integration_test.go` seeds two projects
+  (`internal/projecttest`) with a family each and proves the relations, tree and export of one never name the
+  other's rows, that every write naming a foreign subject or family answers like a missing one and changes
+  nothing, that a sibling group and an inline subject land in the request's project, and that every method
+  refuses an empty project),
   `internal/familyapi/`
   (the HTTP surface over `internal/family`: `Store` (the interface the handlers depend on — `Relations`,
   `Tree`, `AddRelationAudited`, `RemoveRelationAudited`, `GetFamily`, `UpdateFamilyAudited`, satisfied by
@@ -2177,49 +2197,66 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   auth guards over the test database and covers each route end to end plus the three things only the real
   stack can show: a **viewer gets 403 on every write** (and an anonymous client 401 on the reads), the inline
   `new_subject` path leaves **no orphan** when the relation is refused, and a cycle surfaces as **409**.
-  Every mutation additionally calls **`enqueueExport`** after the store has committed —
+  **Project scope:** every handler passes `auth.ProjectUIDFromContext` to the store, so a subject or family of
+  another project is the same 404 as a missing one and a relation naming one is refused; the isolation
+  integration test mounts the API under `/p/{project}` behind `auth.WithProject` over `internal/projecttest`'s
+  two projects and covers the foreign reads, every foreign write, and that an inline subject lands in — and the
+  export is scheduled for — the request's project.
+  Every mutation additionally calls **`enqueueExport(ctx,projectUID)`** after the store has committed —
   `Config.Export` (`ExportEnqueuer`, satisfied by `jobs.Enqueuer`, nil = the export is off) — so the
-  `families.yaml` on disk follows the tree in the database; it is best-effort in exactly the way the
+  project's `families.yaml` on disk follows the tree in the database; it is best-effort in exactly the way the
   sidecar enqueues are: a failed schedule is logged, never returned, because the relation is safely in
   Postgres and the safety net must not be the thing that drops you),
   `internal/familyexport/`
-  (the **library-level genealogy export**: the whole family tree as one versioned YAML document at
-  `families.yaml` in the root of the store, so the tree survives losing the database. It is the
+  (the **per-project genealogy export**: a project's whole family tree as one versioned YAML document at
+  `families.yaml` in the root of the project's storage prefix (`KeyFor(storagePrefix)`; the bootstrap project's
+  empty prefix keeps it at the root of the store), so the tree survives losing the database. It is the
   subject-level counterpart of `internal/sidecarexport` and exists because a relationship is true about
   **two people, not about any photograph** — it belongs in no photo's sidecar, and a great-grandmother
-  nobody photographed has no sidecar to belong to. `Version` (1), `Key` (`families.yaml`), `MIME`;
-  `Document{Version,GeneratedAt,Subjects,Families}` with `Subject{UID,Slug,Name,Nickname,Type,BirthYear,
+  nobody photographed has no sidecar to belong to. `Version` (2 — version 1 had no project block), `Key`
+  (`families.yaml`), `KeyFor(prefix)`, `MIME`;
+  `Document{Version,GeneratedAt,Project{UID,Slug},Subjects,Families}` with `Subject{UID,Slug,Name,Nickname,Type,BirthYear,
   DeathYear}` and `Family{UID,Partners []string,Kind,FromYear,ToYear,Note,Children []Child{SubjectUID,Kind}}`
   — partners as a **list** (two uids for a couple, one for a lone parent, and the key omitted altogether for a
   sibling group, whose children are known to be siblings while their parents are not in the library) because
   the two columns carry no roles, and the children folded into the family they belong to so the file reads as
-  households rather than as two tables to join by eye. `Build(Input{Export family.Export, Now})` is **pure**
+  households rather than as two tables to join by eye. `Build(Input{Project, Export family.Export, Now})` is
+  **pure**
   and orders everything (families and subjects by uid, children within a family by uid), which is what makes
   an unchanged genealogy marshal to identical bytes; `Marshal`/`Unmarshal` add and ignore the explanatory
-  header; `NewWriter(store).Write(ctx, doc)` renders the document into memory and hands the store its exact size and
-  digest, so the key holds either the whole file or the old one — a truncated write here is not a slightly
+  header; **`CheckProject(doc, projectUID)`** is the guard every reader runs before rebuilding anything —
+  `ErrUnsupportedVersion` for any version but the current one, `ErrProjectMismatch` for a document of another
+  project — so one project's tree is never restored into another's library;
+  `NewWriter(store).Write(ctx, storagePrefix, doc)` writes to `KeyFor(storagePrefix)`, renders the document into
+  memory and hands the store its exact size and digest, so the key holds either the whole file or the old one — a truncated write here is not a slightly
   worse tree but every relation in the archive gone. The document is **closed over its own identifiers**
   (every uid a family names is described in `Subjects`); a subject in **no** family is deliberately left
   out, since they have no place in a tree and what is known about them rides in the sidecars of their
   photos. Tests: the round-trip over a fixture that `TestDocument_fixtureIsExhaustive` keeps exhaustive —
   the same pair `internal/sidecarexport` uses to hold its format sufficient — plus the closure property, the
-  header, the ordering and the writer's declared identity),
+  header, the project block, `CheckProject`, `KeyFor` and the writer's key and declared identity),
   `internal/familyexportjob/`
-  (the **`family_export` job**: read the whole genealogy, write `families.yaml`. It is the scheduled half of
-  `internal/familyexport` and follows `internal/sidecarjob`'s shape, differing in the one way the data does
-  — a sidecar job is per photo, this one has no subject at all, so its payload names nothing and it needs no
-  backfill: "write it now" is the whole operation, exposed as `Export(ctx)` for `kukatko sidecar families`.
-  `New(Config{Families,Writer,Logger})` over two narrow interfaces (`FamilyStore.Export`, satisfied by
-  `*family.Store`; `DocumentWriter.Write`, by `*familyexport.Writer`), panicking on a missing one because
-  that is a wiring bug; `Handle` ignores the job payload. The handler is **idempotent and stateless** — it
+  (the **`family_export` job**: read one project's whole genealogy, write its `families.yaml`. It is the
+  scheduled half of `internal/familyexport` and follows `internal/sidecarjob`'s shape, differing in the one way
+  the data does — a sidecar job is per photo, this one is per **project**: its payload is
+  `jobs.FamilyExportPayload{project_uid}` and it needs no backfill: "write it now" is the whole operation,
+  exposed as `Export(ctx,projectUID)` (→ the key written) and `ExportAll(ctx)` (every project, active or not —
+  what `kukatko sidecar families` runs).
+  `New(Config{Families,Projects,Writer,Logger})` over three narrow interfaces (`FamilyStore.Export`, satisfied
+  by `*family.Store`; `ProjectStore.Get`/`List`, by `*project.Store`, which give the document's project block
+  and the storage prefix; `DocumentWriter.Write`, by `*familyexport.Writer`), panicking on a missing one
+  because that is a wiring bug. `Handle` reads the payload's project — a payload naming none (a job queued
+  before 0106) is the bootstrap project, a malformed one fails the job, a project that no longer exists is
+  skipped (its families went with it) — and rewrites only that project's file. The handler is **idempotent and stateless** — it
   reads the genealogy as it is now and writes the file as it should be now — which is why a coalesced job
-  costs nothing. An **empty** genealogy is written rather than skipped: a library whose last relation was
+  costs nothing. An **empty** genealogy is written rather than skipped: a project whose last relation was
   removed is described by a file with no families in it, and leaving the previous one would let a rebuild
   restore a tree the user deleted. Built by `buildFamilyExportServiceOrNil` in `cmd/kukatko` behind
   `sidecar.enabled` — the same switch as the photo sidecars, because it is the same promise — and registered
   as a worker handler only when it exists, so no job of a type nothing can claim is ever enqueued. The
   integration test records a relation through the real store, then reads the file back as if the database
-  were gone),
+  were gone, and seeds two projects to prove each job writes its own project's document at its own key with
+  the right project block — and that a job for A leaves B's file byte-identical),
   `internal/people/`
   (the DB layer for **subjects** (people/animals/other) and **markers** (face/label regions on
   photos), tables `subjects`/`markers` in migration `0008_subjects_markers.sql`.
@@ -2237,7 +2274,7 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   which project a tagging happened in. Deliberately unscoped: `LinkedSubjectAvatar` (an account's
   profile picture, served instance-wide), `ListMarkersWithSubjects` (the sidecar job, keyed by the photo
   it loaded) and `CreateSubjectTx`, which takes the project from its caller (`internal/family` passes the
-  anchor subject's). The nameless repair is scoped since step 14: `ListNamelessSubjects`/`SnapshotSubject`/
+  request's). The nameless repair is scoped since step 14: `ListNamelessSubjects`/`SnapshotSubject`/
   `DetachSubject`/`RestoreSubject` take the project (a subject of another project is `ErrSubjectNotFound`,
   writing nothing), `RestoreSubject` inserts the row **into** the project and re-links only markers on the
   project's photos and faces of the project, and the audited ones default the entry's `ProjectUID`. `subjects`

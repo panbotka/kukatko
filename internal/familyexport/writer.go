@@ -24,7 +24,7 @@ type ObjectStore interface {
 // Writer's store is satisfied by the real storage backends.
 var _ ObjectStore = (storage.Storage)(nil)
 
-// Writer writes the genealogy document into an object store.
+// Writer writes a project's genealogy document into an object store.
 type Writer struct {
 	store ObjectStore
 }
@@ -38,33 +38,36 @@ func NewWriter(store ObjectStore) *Writer {
 	return &Writer{store: store}
 }
 
-// Write renders doc and writes it to Key, replacing whatever was there. It
-// returns the key written.
+// Write renders doc and writes it to KeyFor(storagePrefix) — families.yaml under
+// the prefix of the project the document belongs to — replacing whatever was
+// there. It returns the key written. Another project's file is a different key
+// and is never touched.
 //
 // The write is atomic, and that is not this function's doing: it hands the store
 // the exact size and digest of the bytes it is promising, and the store is
 // obliged to land those bytes at the key or leave the key alone. That matters
-// more here than for most files — this is one document for the whole library, so
+// more here than for most files — this is one document for a whole project, so
 // a truncated write is not a slightly worse tree but every relation in the
 // archive gone.
 //
 // It marshals the whole document into memory first, which the store's contract
 // requires (it verifies against a size and digest declared up front) and which
 // costs nothing: a family archive's genealogy is a few kilobytes of text.
-func (w *Writer) Write(ctx context.Context, doc Document) (string, error) {
+func (w *Writer) Write(ctx context.Context, storagePrefix string, doc Document) (string, error) {
 	data, err := Marshal(doc)
 	if err != nil {
 		return "", err
 	}
+	key := KeyFor(storagePrefix)
 	sum := sha256.Sum256(data)
 	file := storage.StoredFile{
 		Hash:    hex.EncodeToString(sum[:]),
-		RelPath: Key,
+		RelPath: key,
 		Size:    int64(len(data)),
 		MIME:    MIME,
 	}
 	if err := w.store.Put(ctx, bytes.NewReader(data), file); err != nil {
-		return "", fmt.Errorf("familyexport: writing %s: %w", Key, err)
+		return "", fmt.Errorf("familyexport: writing %s: %w", key, err)
 	}
-	return Key, nil
+	return key, nil
 }

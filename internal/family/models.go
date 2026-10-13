@@ -83,6 +83,10 @@ var (
 	// siblings follows from that parent and the way to part them is to remove it.
 	ErrSiblingsDerived = errors.New(
 		"family: these two are siblings through a recorded parent, so there is no sibling relation to remove")
+	// ErrNoProject indicates a scoped Store method was called without a project.
+	// It is a programming error, never "the whole instance": a caller that has no
+	// project has nothing to ask this package about.
+	ErrNoProject = errors.New("family: no project given")
 )
 
 const (

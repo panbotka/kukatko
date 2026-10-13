@@ -18,23 +18,26 @@ import (
 // the drawing only together with everybody in it, so every child it lists is a
 // member by construction. That is the reason aunts and cousins appear here; the
 // descendant and pedigree walks this one replaced filtered them out.
+//
+// Only families of the project $2 are read, so the walk never steps out of it.
 const networkFamiliesSQL = `
 SELECT f.uid, f.partner_a_uid, f.partner_b_uid, f.kind, f.from_year, f.to_year,
        f.note, f.created_at, f.updated_at,
        ARRAY(SELECT c.child_uid FROM subject_family_children c
               WHERE c.family_uid = f.uid) AS child_uids
 FROM subject_families f
-WHERE f.partner_a_uid = ANY($1) OR f.partner_b_uid = ANY($1)
-   OR EXISTS (SELECT 1 FROM subject_family_children c
-               WHERE c.family_uid = f.uid AND c.child_uid = ANY($1))`
+WHERE f.project_id = $2
+  AND (f.partner_a_uid = ANY($1) OR f.partner_b_uid = ANY($1)
+       OR EXISTS (SELECT 1 FROM subject_family_children c
+                   WHERE c.family_uid = f.uid AND c.child_uid = ANY($1)))`
 
 // networkMembersSQL hydrates the walked set: the relative columns of every
 // member plus the signed generation the walk gave them, read side by side from
-// two parallel arrays.
+// two parallel arrays. Only subjects of the project $3 are hydrated.
 const networkMembersSQL = `
 SELECT ` + relativeColumns + `, w.generation
 FROM unnest($1::varchar[], $2::int[]) AS w(uid, generation)
-JOIN subjects s ON s.uid = w.uid
+JOIN subjects s ON s.uid = w.uid AND s.project_id = $3
 ORDER BY w.generation, s.birth_year NULLS LAST, s.name, s.uid`
 
 // familyFetcher reads the families any of uids belongs to, as a partner or as a
@@ -186,20 +189,25 @@ func (w *network) assign(next []string, uid string, generation int) []string {
 // of a root plus their partners: the tree page shows a family, the filter
 // narrows a listing, and the two answer different questions on purpose.
 //
-// A missing root returns ErrSubjectNotFound.
-func (s *Store) Tree(ctx context.Context, rootUID string) (Tree, error) {
-	root, err := getRelative(ctx, s.pool, rootUID)
+// A root missing from the project returns ErrSubjectNotFound — one of another
+// project is not found either — and an empty projectUID ErrNoProject. The walk
+// reads only the project's families, so it never leaves the project.
+func (s *Store) Tree(ctx context.Context, projectUID, rootUID string) (Tree, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Tree{}, err
+	}
+	root, err := getRelative(ctx, s.pool, projectUID, rootUID)
 	if err != nil {
 		return Tree{}, err
 	}
-	return s.network(ctx, root, NetworkLimit)
+	return s.network(ctx, projectUID, root, NetworkLimit)
 }
 
-// network walks the component around rootUID (see walkNetwork), keeping at most
-// limit people, and hydrates it into the tree payload. The caller has already
-// checked that the root exists.
-func (s *Store) network(ctx context.Context, root Relative, limit int) (Tree, error) {
-	walk, err := walkNetwork(ctx, root.UID, limit, s.networkFamilies)
+// network walks the component around rootUID inside the project (see
+// walkNetwork), keeping at most limit people, and hydrates it into the tree
+// payload. The caller has already checked that the root exists there.
+func (s *Store) network(ctx context.Context, projectUID string, root Relative, limit int) (Tree, error) {
+	walk, err := walkNetwork(ctx, root.UID, limit, s.networkFamilies(projectUID))
 	if err != nil {
 		return Tree{}, err
 	}
@@ -209,7 +217,7 @@ func (s *Store) network(ctx context.Context, root Relative, limit int) (Tree, er
 		uids = append(uids, uid)
 		generations = append(generations, walk.generation[uid])
 	}
-	members, err := queryMembers(ctx, s.pool, uids, generations)
+	members, err := queryMembers(ctx, s.pool, projectUID, uids, generations)
 	if err != nil {
 		return Tree{}, err
 	}
@@ -242,10 +250,19 @@ func compareTreeFamilies(a, b TreeFamily) int {
 	return cmp.Compare(a.UID, b.UID)
 }
 
-// networkFamilies is the walk's familyFetcher over the database: the families
-// uids belong to, each with all of its children in byte order.
-func (s *Store) networkFamilies(ctx context.Context, uids []string) ([]TreeFamily, error) {
-	rows, err := s.pool.Query(ctx, networkFamiliesSQL, uids)
+// networkFamilies returns the walk's familyFetcher over the database for one
+// project: the project's families uids belong to, each with all of its children
+// in byte order.
+func (s *Store) networkFamilies(projectUID string) familyFetcher {
+	return func(ctx context.Context, uids []string) ([]TreeFamily, error) {
+		return s.queryNetworkFamilies(ctx, projectUID, uids)
+	}
+}
+
+// queryNetworkFamilies runs networkFamiliesSQL for the project and collects its
+// rows.
+func (s *Store) queryNetworkFamilies(ctx context.Context, projectUID string, uids []string) ([]TreeFamily, error) {
+	rows, err := s.pool.Query(ctx, networkFamiliesSQL, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: reading network families: %w", err)
 	}
@@ -270,9 +287,11 @@ func (s *Store) networkFamilies(ctx context.Context, uids []string) ([]TreeFamil
 }
 
 // queryMembers hydrates the walked set — uids with their generations, pairwise —
-// through networkMembersSQL and collects its rows.
-func queryMembers(ctx context.Context, q querier, uids []string, generations []int) ([]Member, error) {
-	rows, err := q.Query(ctx, networkMembersSQL, uids, generations)
+// through networkMembersSQL inside the project and collects its rows.
+func queryMembers(
+	ctx context.Context, q querier, projectUID string, uids []string, generations []int,
+) ([]Member, error) {
+	rows, err := q.Query(ctx, networkMembersSQL, uids, generations, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("family: reading the network: %w", err)
 	}

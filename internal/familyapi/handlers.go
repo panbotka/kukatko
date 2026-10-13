@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/family"
 )
 
@@ -14,7 +15,7 @@ import (
 // photo count, so the strip on the subject page renders from this one response.
 // An unknown subject answers 404.
 func (a *API) handleRelations(w http.ResponseWriter, r *http.Request) {
-	relations, err := a.store.Relations(r.Context(), chi.URLParam(r, "uid"))
+	relations, err := a.store.Relations(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
@@ -28,7 +29,7 @@ func (a *API) handleRelations(w http.ResponseWriter, r *http.Request) {
 // query string is not read, so the direction and generations an older client
 // sent change nothing. An unknown subject answers 404.
 func (a *API) handleTree(w http.ResponseWriter, r *http.Request) {
-	tree, err := a.store.Tree(r.Context(), chi.URLParam(r, "uid"))
+	tree, err := a.store.Tree(r.Context(), auth.ProjectUIDFromContext(r.Context()), chi.URLParam(r, "uid"))
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
@@ -55,13 +56,14 @@ func (a *API) handleAddRelation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := a.auditEntry(r, audit.ActionSubjectRelationAdd, "subjects", uid, map[string]any{})
-	result, err := a.store.AddRelationAudited(r.Context(), uid, rel, entry)
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	result, err := a.store.AddRelationAudited(r.Context(), projectUID, uid, rel, entry)
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
 		return
 	}
-	a.enqueueExport(r.Context())
+	a.enqueueExport(r.Context(), projectUID)
 	writeJSON(w, http.StatusCreated, result)
 }
 
@@ -73,12 +75,13 @@ func (a *API) handleRemoveRelation(w http.ResponseWriter, r *http.Request) {
 	uid, otherUID := chi.URLParam(r, "uid"), chi.URLParam(r, "uid2")
 	entry := a.auditEntry(r, audit.ActionSubjectRelationRemove, "subjects", uid,
 		map[string]any{"other_uid": otherUID})
-	if err := a.store.RemoveRelationAudited(r.Context(), uid, otherUID, entry); err != nil {
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	if err := a.store.RemoveRelationAudited(r.Context(), projectUID, uid, otherUID, entry); err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
 		return
 	}
-	a.enqueueExport(r.Context())
+	a.enqueueExport(r.Context(), projectUID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -90,7 +93,8 @@ func (a *API) handleRemoveRelation(w http.ResponseWriter, r *http.Request) {
 // it. A malformed body or an impossible year answers 400.
 func (a *API) handleUpdateFamily(w http.ResponseWriter, r *http.Request) {
 	uid := chi.URLParam(r, "uid")
-	existing, err := a.store.GetFamily(r.Context(), uid)
+	projectUID := auth.ProjectUIDFromContext(r.Context())
+	existing, err := a.store.GetFamily(r.Context(), projectUID, uid)
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
@@ -104,13 +108,13 @@ func (a *API) handleUpdateFamily(w http.ResponseWriter, r *http.Request) {
 	details := map[string]any{"family_uid": uid}
 	familyChanges(existing, upd).StampInto(details)
 	entry := a.auditEntry(r, audit.ActionFamilyUpdate, "families", uid, details)
-	updated, err := a.store.UpdateFamilyAudited(r.Context(), uid, upd, entry)
+	updated, err := a.store.UpdateFamilyAudited(r.Context(), projectUID, uid, upd, entry)
 	if err != nil {
 		status, msg := familyStatus(err)
 		writeError(w, status, msg)
 		return
 	}
-	a.enqueueExport(r.Context())
+	a.enqueueExport(r.Context(), projectUID)
 	writeJSON(w, http.StatusOK, updated)
 }
 

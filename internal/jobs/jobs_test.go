@@ -155,8 +155,8 @@ func TestEnqueueSidecar_debounces(t *testing.T) {
 }
 
 // TestEnqueueFamilyExport_debounces verifies the genealogy enqueue maps to
-// TypeFamilyExport, carries no payload — there is one file for the whole library,
-// so there is nothing for a payload to name — and delays the job by
+// TypeFamilyExport, carries the project and nothing else — there is one file per
+// project, so the project is all a payload has to name — and delays the job by
 // FamilyExportDebounce, the window a burst of relation edits collapses into.
 func TestEnqueueFamilyExport_debounces(t *testing.T) {
 	t.Parallel()
@@ -165,20 +165,35 @@ func TestEnqueueFamilyExport_debounces(t *testing.T) {
 	fake := &fakeEnqueuer{}
 	enq := &Enqueuer{store: fake, clock: func() time.Time { return pinned }}
 
-	if err := enq.EnqueueFamilyExport(context.Background()); err != nil {
+	if err := enq.EnqueueFamilyExport(context.Background(), "pj_a"); err != nil {
 		t.Fatalf("EnqueueFamilyExport: %v", err)
 	}
 	if fake.lastType != TypeFamilyExport {
 		t.Errorf("lastType = %q, want %q", fake.lastType, TypeFamilyExport)
 	}
-	if len(fake.lastPayload) != 0 {
-		t.Errorf("payload = %s, want none", fake.lastPayload)
+	if string(fake.lastPayload) != `{"project_uid":"pj_a"}` {
+		t.Errorf("payload = %s, want only the project_uid", fake.lastPayload)
 	}
 	if fake.lastOpts.RunAfter == nil {
 		t.Fatal("RunAfter is nil, want the debounce delay")
 	}
 	if want := pinned.Add(FamilyExportDebounce); !fake.lastOpts.RunAfter.Equal(want) {
 		t.Errorf("RunAfter = %v, want %v (now + FamilyExportDebounce)", *fake.lastOpts.RunAfter, want)
+	}
+}
+
+// TestEnqueueFamilyExport_refusesNoProject verifies an enqueue naming no project
+// is refused before it reaches the queue: the handler would read a missing
+// project as the bootstrap one, which no caller without a project meant.
+func TestEnqueueFamilyExport_refusesNoProject(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeEnqueuer{}
+	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background(), ""); err == nil {
+		t.Error("EnqueueFamilyExport without a project = nil, want an error")
+	}
+	if fake.lastType != "" {
+		t.Errorf("enqueued %q without a project, want nothing", fake.lastType)
 	}
 }
 
@@ -189,7 +204,7 @@ func TestEnqueueFamilyExport_swallowsADuplicate(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeEnqueuer{err: ErrDuplicate}
-	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background()); err != nil {
+	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background(), "pj_a"); err != nil {
 		t.Errorf("EnqueueFamilyExport with a job already queued = %v, want nil", err)
 	}
 }
@@ -201,7 +216,7 @@ func TestEnqueueFamilyExport_reportsOtherFailures(t *testing.T) {
 
 	broken := errors.New("connection refused")
 	fake := &fakeEnqueuer{err: broken}
-	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background()); !errors.Is(err, broken) {
+	if err := (&Enqueuer{store: fake}).EnqueueFamilyExport(context.Background(), "pj_a"); !errors.Is(err, broken) {
 		t.Errorf("EnqueueFamilyExport = %v, want it to wrap %v", err, broken)
 	}
 }

@@ -443,7 +443,9 @@ func familyCond(v query.Value, env condEnv) (string, bool) {
 // caller already bound, never user values. The root arms are accent-folded like
 // personCond's — `family:necas` names the Nečas family — and confined to the
 // project, so the walk starts from this library's Nečas and never another's;
-// the project is a bound value rather than a reference to the outer row, which
+// every family it steps through is confined to the project as well, so even a
+// row that broke the one-project-per-family invariant could not carry the walk
+// out of it. The project is a bound value rather than a reference to the outer row, which
 // keeps the sub-select uncorrelated (built once, see familyCond).
 //
 // UNION rather than UNION ALL is load-bearing in the recursive term: when
@@ -457,13 +459,15 @@ func familyMembersSQL(pattern, uid, project string) string {
 		" OR " + unaccentLike("s.nickname", pattern) + " OR s.uid = " + uid + ")" +
 		" UNION" +
 		" SELECT c.child_uid, d.depth + 1 FROM descendants d" +
-		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
+		" JOIN subject_families f ON (f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid)" +
+		" AND f.project_id = " + project +
 		" JOIN subject_family_children c ON c.family_uid = f.uid" +
 		" WHERE d.depth < " + strconv.Itoa(familyDepthLimit) + ")" +
 		" SELECT uid FROM descendants" +
 		" UNION" +
 		" SELECT " + familyPartnerExpr + " FROM descendants d" +
-		" JOIN subject_families f ON f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid" +
+		" JOIN subject_families f ON (f.partner_a_uid = d.uid OR f.partner_b_uid = d.uid)" +
+		" AND f.project_id = " + project +
 		" WHERE " + familyPartnerExpr + " IS NOT NULL"
 }
 

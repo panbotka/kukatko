@@ -42,12 +42,12 @@ type fakeStore struct {
 }
 
 // Relations returns the canned relations or error.
-func (f *fakeStore) Relations(_ context.Context, _ string) (family.Relations, error) {
+func (f *fakeStore) Relations(_ context.Context, _, _ string) (family.Relations, error) {
 	return f.relations, f.relationsErr
 }
 
 // Tree records the root and returns the canned tree or error.
-func (f *fakeStore) Tree(_ context.Context, rootUID string) (family.Tree, error) {
+func (f *fakeStore) Tree(_ context.Context, _, rootUID string) (family.Tree, error) {
 	f.lastTreeRoot = rootUID
 	return f.tree, f.treeErr
 }
@@ -55,7 +55,7 @@ func (f *fakeStore) Tree(_ context.Context, rootUID string) (family.Tree, error)
 // AddRelationAudited records the request and audit entry and returns the canned
 // result or error.
 func (f *fakeStore) AddRelationAudited(
-	_ context.Context, _ string, rel family.AddRelation, entry audit.Entry,
+	_ context.Context, _, _ string, rel family.AddRelation, entry audit.Entry,
 ) (family.AddResult, error) {
 	f.lastAdd, f.lastEntry = rel, entry
 	return f.added, f.addErr
@@ -64,21 +64,21 @@ func (f *fakeStore) AddRelationAudited(
 // RemoveRelationAudited records both uids and the audit entry and returns the
 // canned error.
 func (f *fakeStore) RemoveRelationAudited(
-	_ context.Context, subjectUID, otherUID string, entry audit.Entry,
+	_ context.Context, _, subjectUID, otherUID string, entry audit.Entry,
 ) error {
 	f.lastRemoved, f.lastEntry = [2]string{subjectUID, otherUID}, entry
 	return f.removeErr
 }
 
 // GetFamily returns the canned family or error.
-func (f *fakeStore) GetFamily(_ context.Context, _ string) (family.Family, error) {
+func (f *fakeStore) GetFamily(_ context.Context, _, _ string) (family.Family, error) {
 	return f.fam, f.getErr
 }
 
 // UpdateFamilyAudited records the update and audit entry and returns the canned
 // family or error.
 func (f *fakeStore) UpdateFamilyAudited(
-	_ context.Context, _ string, upd family.Update, entry audit.Entry,
+	_ context.Context, _, _ string, upd family.Update, entry audit.Entry,
 ) (family.Family, error) {
 	f.lastUpdate, f.lastEntry = upd, entry
 	return f.updated, f.updateErr
@@ -95,7 +95,7 @@ type fakeExport struct {
 }
 
 // EnqueueFamilyExport counts the call and returns the canned error.
-func (f *fakeExport) EnqueueFamilyExport(context.Context) error {
+func (f *fakeExport) EnqueueFamilyExport(context.Context, string) error {
 	f.calls++
 	return f.err
 }

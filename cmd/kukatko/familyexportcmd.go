@@ -11,8 +11,8 @@ import (
 	"github.com/panbotka/kukatko/internal/familyexportjob"
 )
 
-// newSidecarFamiliesCmd builds the "sidecar families" command: write the
-// library's genealogy export now.
+// newSidecarFamiliesCmd builds the "sidecar families" command: write every
+// project's genealogy export now.
 //
 // It writes the file itself instead of enqueuing a job, unlike its per-photo
 // sibling. There is one file and the work is one small read of a small table, so
@@ -22,11 +22,13 @@ import (
 func newSidecarFamiliesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "families",
-		Short: "Write the family tree export (" + familyexport.Key + ") now",
-		Long: "Write the library's whole genealogy — every person who appears in a family and " +
-			"every family tying them together — to " + familyexport.Key + " at the root of the " +
-			"storage, so the family tree can be rebuilt without the database. The server rewrites " +
-			"it whenever a relation changes; this forces it now and does not need a running server.",
+		Short: "Write every project's family tree export (" + familyexport.Key + ") now",
+		Long: "Write each project's whole genealogy — every person who appears in a family and " +
+			"every family tying them together — to " + familyexport.Key + " under the project's " +
+			"storage prefix (the root of the storage for a project with an empty prefix), so the " +
+			"family tree can be rebuilt without the database. The server rewrites a project's file " +
+			"whenever a relation in it changes; this forces all of them now and does not need a " +
+			"running server.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSidecarFamilies(cmd)
@@ -34,8 +36,8 @@ func newSidecarFamiliesCmd() *cobra.Command {
 	}
 }
 
-// runSidecarFamilies opens the database and storage and writes the export,
-// reporting the key it landed at.
+// runSidecarFamilies opens the database and storage and writes every project's
+// export, reporting the key each one landed at.
 func runSidecarFamilies(cmd *cobra.Command) error {
 	svc, cleanup, err := openFamilyExportService(cmd)
 	if err != nil {
@@ -43,10 +45,13 @@ func runSidecarFamilies(cmd *cobra.Command) error {
 	}
 	defer cleanup()
 
-	if err := svc.Export(cmd.Context()); err != nil {
+	keys, err := svc.ExportAll(cmd.Context())
+	for _, key := range keys {
+		cmd.Printf("family tree: written to %s\n", key)
+	}
+	if err != nil {
 		return fmt.Errorf("writing the family tree export: %w", err)
 	}
-	cmd.Printf("family tree: written to %s\n", familyexport.Key)
 	return nil
 }
 

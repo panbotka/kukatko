@@ -104,18 +104,23 @@ func scanFamily(row pgx.Row) (Family, error) {
 	return fam, nil
 }
 
-// getFamilySQL reads one family by UID.
-const getFamilySQL = "SELECT " + familyColumns + " FROM subject_families WHERE uid = $1"
+// getFamilySQL reads one family of a project by UID.
+const getFamilySQL = "SELECT " + familyColumns + " FROM subject_families WHERE uid = $1 AND project_id = $2"
 
-// GetFamily returns the family with the given UID, or ErrFamilyNotFound.
-func (s *Store) GetFamily(ctx context.Context, uid string) (Family, error) {
-	return getFamily(ctx, s.pool, uid)
+// GetFamily returns the family with the given UID in the project, or
+// ErrFamilyNotFound — also for a family of another project. An empty projectUID
+// is ErrNoProject.
+func (s *Store) GetFamily(ctx context.Context, projectUID, uid string) (Family, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Family{}, err
+	}
+	return getFamily(ctx, s.pool, projectUID, uid)
 }
 
-// getFamily reads one family through q, translating pgx.ErrNoRows into
-// ErrFamilyNotFound.
-func getFamily(ctx context.Context, q querier, uid string) (Family, error) {
-	fam, err := scanFamily(q.QueryRow(ctx, getFamilySQL, uid))
+// getFamily reads one family of the project through q, translating
+// pgx.ErrNoRows into ErrFamilyNotFound.
+func getFamily(ctx context.Context, q querier, projectUID, uid string) (Family, error) {
+	fam, err := scanFamily(q.QueryRow(ctx, getFamilySQL, uid, projectUID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Family{}, ErrFamilyNotFound
@@ -171,25 +176,4 @@ func childFamily(ctx context.Context, q querier, subjectUID string) (Family, Chi
 		return Family{}, "", fmt.Errorf("family: reading child family of %s: %w", subjectUID, err)
 	}
 	return fam, kind, nil
-}
-
-// subjectExistsSQL reports whether a subject row exists.
-const subjectExistsSQL = "SELECT 1 FROM subjects WHERE uid = $1"
-
-// requireSubjects returns ErrSubjectNotFound unless every named subject exists.
-// The foreign keys would refuse a missing subject anyway, but a sentinel the
-// caller can map to a 404 is worth the extra round trip: an FK violation names a
-// constraint, not a person.
-func requireSubjects(ctx context.Context, q querier, uids ...string) error {
-	for _, uid := range uids {
-		var one int
-		err := q.QueryRow(ctx, subjectExistsSQL, uid).Scan(&one)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrSubjectNotFound, uid)
-		}
-		if err != nil {
-			return fmt.Errorf("family: checking subject %s: %w", uid, err)
-		}
-	}
-	return nil
 }

@@ -37,23 +37,42 @@ func (f *fakeStore) Put(_ context.Context, src io.Reader, file storage.StoredFil
 	return nil
 }
 
-// TestWriter_Write writes the document at the export's key, declaring the size,
-// digest and media type the store verifies it against.
+// TestWriter_Write writes the document at the export's key under the project's
+// storage prefix, declaring the size, digest and media type the store verifies
+// it against. An empty prefix — the bootstrap project's root layout — is the bare
+// Key, so that project's file does not move.
 func TestWriter_Write(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name, prefix, want string
+	}{
+		{name: "root layout", prefix: "", want: Key},
+		{name: "project prefix", prefix: "projects/pjb/", want: "projects/pjb/" + Key},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			store := &fakeStore{}
+			key, err := NewWriter(store).Write(t.Context(), tt.prefix, fullDocument())
+			if err != nil {
+				t.Fatalf("Write returned error: %v", err)
+			}
+			if key != tt.want || store.file.RelPath != tt.want {
+				t.Errorf("Write returned %q and stored at %q, want %q", key, store.file.RelPath, tt.want)
+			}
+		})
+	}
+}
+
+// TestWriter_WriteDeclaresTheBytes verifies the store is told exactly what it is
+// about to receive: the media type, the marshaled document, its size and digest.
+func TestWriter_WriteDeclaresTheBytes(t *testing.T) {
 	t.Parallel()
 
 	store := &fakeStore{}
 	doc := fullDocument()
-
-	key, err := NewWriter(store).Write(t.Context(), doc)
-	if err != nil {
+	if _, err := NewWriter(store).Write(t.Context(), "", doc); err != nil {
 		t.Fatalf("Write returned error: %v", err)
-	}
-	if key != Key {
-		t.Errorf("Write returned key %q, want %q", key, Key)
-	}
-	if store.file.RelPath != Key {
-		t.Errorf("stored at %q, want %q", store.file.RelPath, Key)
 	}
 	if store.file.MIME != MIME {
 		t.Errorf("stored MIME = %q, want %q", store.file.MIME, MIME)
@@ -75,8 +94,8 @@ func TestWriter_Write(t *testing.T) {
 }
 
 // TestWriter_WriteOverwrites verifies a second write replaces the first rather
-// than accumulating: there is one genealogy, so there is one file, always
-// current.
+// than accumulating: there is one genealogy per project, so there is one file,
+// always current.
 func TestWriter_WriteOverwrites(t *testing.T) {
 	t.Parallel()
 
@@ -85,10 +104,10 @@ func TestWriter_WriteOverwrites(t *testing.T) {
 	first := Build(Input{Now: time.Date(2026, 9, 13, 8, 0, 0, 0, time.UTC)})
 	second := Build(Input{Export: sampleExport(), Now: time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)})
 
-	if _, err := writer.Write(t.Context(), first); err != nil {
+	if _, err := writer.Write(t.Context(), "", first); err != nil {
 		t.Fatalf("first Write returned error: %v", err)
 	}
-	if _, err := writer.Write(t.Context(), second); err != nil {
+	if _, err := writer.Write(t.Context(), "", second); err != nil {
 		t.Fatalf("second Write returned error: %v", err)
 	}
 	if store.puts != 2 {
@@ -105,7 +124,7 @@ func TestWriter_WriteWrapsStoreFailure(t *testing.T) {
 	t.Parallel()
 
 	refused := errors.New("bucket unreachable")
-	_, err := NewWriter(&fakeStore{err: refused}).Write(t.Context(), fullDocument())
+	_, err := NewWriter(&fakeStore{err: refused}).Write(t.Context(), "", fullDocument())
 	if !errors.Is(err, refused) {
 		t.Fatalf("Write error = %v, want it to wrap %v", err, refused)
 	}

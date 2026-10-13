@@ -149,20 +149,36 @@ func TestEnqueueDedup_sidecarScopedToQueued(t *testing.T) {
 	}
 }
 
-// TestEnqueueDedup_familyExportIsSingletonPerQueuedState verifies migration
-// 0075's index: the library-wide genealogy export dedups on its type alone —
-// its payload names no photo, so the per-photo index cannot see it — and only
-// while a job is queued, so a relation changed mid-run schedules the follow-up
-// rewrite that the running job could not have included.
-func TestEnqueueDedup_familyExportIsSingletonPerQueuedState(t *testing.T) {
-	store, _ := newStore(t)
+// TestEnqueueDedup_familyExportIsPerProjectWhileQueued verifies migration 0106's
+// index: the genealogy export dedups on the payload's project — one queued
+// rewrite per project, another project's is not a duplicate — and only while a
+// job is queued, so a relation changed mid-run schedules the follow-up rewrite
+// that the running job could not have included. A legacy job naming no project
+// never collides with anything.
+func TestEnqueueDedup_familyExportIsPerProjectWhileQueued(t *testing.T) {
+	store, db := newStore(t)
 	ctx := t.Context()
+	forA, forB := projectPayload(t, "pj_a", nil), projectPayload(t, "pj_b", nil)
 
-	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
-		t.Fatalf("first family_export enqueue: %v", err)
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, forA, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("first family_export enqueue for A: %v", err)
 	}
-	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
-		t.Fatalf("second queued family_export enqueue = %v, want ErrDuplicate (the debounce)", err)
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, forA, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second queued family_export for A = %v, want ErrDuplicate (the debounce)", err)
+	}
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, forB, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("family_export for B while A's is queued = %v, want success", err)
+	}
+	for range 2 {
+		if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
+			t.Fatalf("legacy family_export with no project = %v, want success", err)
+		}
+	}
+	// Only A's job is left queued, so the claim below takes A's.
+	const retireOthers = "UPDATE jobs SET state = 'done' " +
+		"WHERE type = $1 AND payload ->> 'project_uid' IS DISTINCT FROM 'pj_a'"
+	if _, err := db.Pool().Exec(ctx, retireOthers, jobs.TypeFamilyExport); err != nil {
+		t.Fatalf("retiring the other jobs: %v", err)
 	}
 
 	claimed, err := store.Claim(ctx, "w1", jobs.TypeFamilyExport)
@@ -172,11 +188,11 @@ func TestEnqueueDedup_familyExportIsSingletonPerQueuedState(t *testing.T) {
 	if claimed.State != jobs.StateRunning {
 		t.Fatalf("claimed state = %q, want running", claimed.State)
 	}
-	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); err != nil {
-		t.Fatalf("family_export enqueue while running = %v, want success (a follow-up rewrite)", err)
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, forA, jobs.EnqueueOptions{}); err != nil {
+		t.Fatalf("family_export for A while running = %v, want success (a follow-up rewrite)", err)
 	}
-	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, nil, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
-		t.Fatalf("second follow-up enqueue = %v, want ErrDuplicate", err)
+	if _, err := store.Enqueue(ctx, jobs.TypeFamilyExport, forA, jobs.EnqueueOptions{}); !errors.Is(err, jobs.ErrDuplicate) {
+		t.Fatalf("second follow-up enqueue for A = %v, want ErrDuplicate", err)
 	}
 }
 

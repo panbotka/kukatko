@@ -1,6 +1,7 @@
 package familyexport
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -14,7 +15,10 @@ import (
 // of its own, which is what keeps Build a pure function and the format testable
 // without a database.
 type Input struct {
-	// Export is the genealogy as internal/family read it.
+	// Project names the project the genealogy belongs to; it is written as the
+	// document's project block.
+	Project Project
+	// Export is the project's genealogy as internal/family read it.
 	Export family.Export
 	// Now is the generation timestamp written into the document. A zero value
 	// reads the wall clock; tests pin it.
@@ -37,6 +41,7 @@ func Build(in Input) Document {
 	return Document{
 		Version:     Version,
 		GeneratedAt: now.UTC(),
+		Project:     in.Project,
 		Subjects:    subjectsFrom(in.Export.Subjects),
 		Families:    familiesFrom(in.Export.Families, in.Export.Children),
 	}
@@ -125,18 +130,19 @@ func partnersOf(fam family.Family) []string {
 // what the file is for and what it is not.
 const header = `# Kukátko family tree.
 #
-# This file holds the library's whole genealogy: every person who appears in a
-# family, and every family — a couple, a lone parent, or nobody at all, plus
-# their children — tying them together. Siblings, half-siblings and second
-# marriages are not stored: they are read off these families, which is what stops
-# them from contradicting each other. A family with no partners is a sibling
-# group: people known to be brother and sister whose parents the library never
-# heard of.
+# This file holds one project's whole genealogy — the project named under
+# "project" below: every person who appears in a family, and every family — a
+# couple, a lone parent, or nobody at all, plus their children — tying them
+# together. Siblings, half-siblings and second marriages are not stored: they
+# are read off these families, which is what stops them from contradicting each
+# other. A family with no partners is a sibling group: people known to be brother
+# and sister whose parents the library never heard of.
 #
-# It sits at the root of the storage, beside the originals and the sidecars/
-# tree, so the tree can be rebuilt from the storage alone — no database. It is
-# generated: Kukátko rewrites it whenever a relation changes, so edits made here
-# are overwritten.
+# It sits at the root of the project's storage, beside its originals and the
+# sidecars/ tree, so the tree can be rebuilt from the storage alone — no
+# database. A rebuild refuses a file whose project is not the one it restores.
+# It is generated: Kukátko rewrites it whenever a relation changes, so edits
+# made here are overwritten.
 #
 # NOT in this file, deliberately: which photos these people appear on, and their
 # faces. Those are per-photo facts and they travel in each photo's own sidecar
@@ -163,12 +169,37 @@ func Marshal(doc Document) ([]byte, error) {
 // the header comment.
 //
 // It exists to prove the format is sufficient — the round-trip test is what pins
-// that, and it is what a future rebuild is built against. This package does not
-// otherwise read the file.
+// that, and it is what a future rebuild is built against, together with
+// CheckProject. This package does not otherwise read the file.
 func Unmarshal(data []byte) (Document, error) {
 	var doc Document
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return Document{}, fmt.Errorf("familyexport: unmarshaling document: %w", err)
 	}
 	return doc, nil
+}
+
+// ErrUnsupportedVersion indicates a document whose schema version this package
+// does not know. A reader refuses it rather than guessing at what it means.
+var ErrUnsupportedVersion = errors.New("familyexport: unsupported document version")
+
+// ErrProjectMismatch indicates a document that belongs to another project than
+// the one it is being read into.
+var ErrProjectMismatch = errors.New("familyexport: the document belongs to another project")
+
+// CheckProject is the guard every reader of an export runs before it rebuilds
+// anything from doc: the document must be of the current Version and belong to
+// the project projectUID. It returns ErrUnsupportedVersion for any other version
+// — a version 1 file names no project, so it cannot prove whose tree it is — and
+// ErrProjectMismatch when the document's project is not projectUID, which is
+// what stops one project's tree from being restored into another's library.
+func CheckProject(doc Document, projectUID string) error {
+	if doc.Version != Version {
+		return fmt.Errorf("%w: %d (this build reads %d)", ErrUnsupportedVersion, doc.Version, Version)
+	}
+	if projectUID == "" || doc.Project.UID != projectUID {
+		return fmt.Errorf("%w: document of %q (%s), target %q",
+			ErrProjectMismatch, doc.Project.UID, doc.Project.Slug, projectUID)
+	}
+	return nil
 }

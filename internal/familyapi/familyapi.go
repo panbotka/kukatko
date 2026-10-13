@@ -35,27 +35,31 @@ import (
 // handlers depend on the behaviour rather than on the concrete store, which keeps
 // them unit-testable with fakes. Every mutation takes an audit.Entry the store
 // writes in the same transaction as the change.
+//
+// Every method takes the request's project (auth.ProjectUIDFromContext) after
+// the context. A subject or family of another project is answered exactly like a
+// missing one, so it is a 404 of the same shape.
 type Store interface {
 	// Relations returns the four derived lists of a subject's immediate family,
 	// or family.ErrSubjectNotFound.
-	Relations(ctx context.Context, subjectUID string) (family.Relations, error)
+	Relations(ctx context.Context, projectUID, subjectUID string) (family.Relations, error)
 	// Tree returns the layout-ready network of everybody the family links reach
 	// from rootUID, capped at family.NetworkLimit people, or
 	// family.ErrSubjectNotFound.
-	Tree(ctx context.Context, rootUID string) (family.Tree, error)
+	Tree(ctx context.Context, projectUID, rootUID string) (family.Tree, error)
 	// AddRelationAudited records a relation on the subject, creating the person on
 	// the other side first when the request described one instead of naming it.
 	AddRelationAudited(
-		ctx context.Context, subjectUID string, rel family.AddRelation, entry audit.Entry,
+		ctx context.Context, projectUID, subjectUID string, rel family.AddRelation, entry audit.Entry,
 	) (family.AddResult, error)
 	// RemoveRelationAudited removes whatever relation ties the two subjects
 	// together, or returns family.ErrRelationNotFound.
-	RemoveRelationAudited(ctx context.Context, subjectUID, otherUID string, entry audit.Entry) error
+	RemoveRelationAudited(ctx context.Context, projectUID, subjectUID, otherUID string, entry audit.Entry) error
 	// GetFamily returns one family row, or family.ErrFamilyNotFound.
-	GetFamily(ctx context.Context, uid string) (family.Family, error)
+	GetFamily(ctx context.Context, projectUID, uid string) (family.Family, error)
 	// UpdateFamilyAudited rewrites a family's editable fields — kind, years, note.
 	UpdateFamilyAudited(
-		ctx context.Context, familyUID string, upd family.Update, entry audit.Entry,
+		ctx context.Context, projectUID, familyUID string, upd family.Update, entry audit.Entry,
 	) (family.Family, error)
 }
 

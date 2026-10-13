@@ -1,6 +1,8 @@
-// Package familyexport writes the library's genealogy — who is whose parent,
-// whose partner, whose child — to a single YAML file at the root of the store,
-// so the family tree survives losing the database.
+// Package familyexport writes a project's genealogy — who is whose parent, whose
+// partner, whose child — to a single YAML file under the project's storage
+// prefix, so the family tree survives losing the database. Every project has its
+// own file; the bootstrap project, whose prefix is empty, keeps its file at the
+// root of the store where it always was.
 //
 // It is the subject-level counterpart of internal/sidecarexport. A photo's
 // sidecar can hold everything that is true about one photo, and a relationship
@@ -10,8 +12,8 @@
 // builds in Kukátko that the "yours to keep" promise does not cover — lose the
 // database, lose the tree.
 //
-// So the whole genealogy travels as one document, families.yaml, beside the
-// originals. It is small (a family archive holds tens of families, not
+// So the whole genealogy of a project travels as one document, families.yaml,
+// beside the project's originals. It is small (a family archive holds tens of families, not
 // millions), it is rewritten whole rather than patched, and it is closed over
 // its own identifiers: every subject a family names is described in the same
 // file, because a tree that points at people the file does not contain is not a
@@ -35,11 +37,15 @@ import (
 // that meets a version it does not understand should refuse the file rather than
 // guess at it.
 //
-// Version 1 is the initial format.
-const Version = 1
+// Version 1 is the initial format. Version 2 adds the top-level project block:
+// the file belongs to one project, and a reader must know which before it
+// rebuilds anything from it.
+const Version = 2
 
-// Key is the storage key of the export: a single object at the root of the
-// store, next to the YYYY/ directories of the originals.
+// Key is the name of the export: a single object at the root of its project's
+// storage prefix, next to the YYYY/ directories of the project's originals.
+// KeyFor joins the two; for the bootstrap project, whose prefix is empty, the
+// key is Key itself.
 //
 // One file at the root rather than a prefix of many, because the genealogy is
 // one graph and is only ever meaningful whole: a reader that found half of the
@@ -51,8 +57,15 @@ const Key = "families.yaml"
 // MIME is the media type the export is stored as.
 const MIME = "application/yaml"
 
-// Document is the whole genealogy: every person who appears in a family, and
-// every family tying them together.
+// KeyFor returns the storage key of the export of a project whose storage prefix
+// is storagePrefix: "" for the root layout (Key itself), or a relative prefix
+// ending in "/" such as "projects/<uid>/".
+func KeyFor(storagePrefix string) string {
+	return storagePrefix + Key
+}
+
+// Document is the whole genealogy of one project: every person who appears in a
+// family, and every family tying them together.
 //
 // What is deliberately NOT in here: which photos anybody appears on, their
 // faces, and everything else the photo sidecars already carry. This file answers
@@ -65,6 +78,11 @@ type Document struct {
 	// about anybody: it says how current the file is, which is the first thing
 	// someone rebuilding from it wants to know.
 	GeneratedAt time.Time `yaml:"generated_at"`
+	// Project names the project the genealogy belongs to. A rebuild reads it
+	// before anything else and refuses a file of another project (CheckProject):
+	// restoring one village's tree into another's library is the one mistake a
+	// file that looks perfectly valid could otherwise make.
+	Project Project `yaml:"project"`
 
 	// Subjects is every person named anywhere below, ordered by uid. The list is
 	// closed: a uid appearing in a family always appears here too.
@@ -72,6 +90,15 @@ type Document struct {
 	// Families is every family — a couple or a lone parent plus their children —
 	// ordered by uid.
 	Families []Family `yaml:"families,omitempty"`
+}
+
+// Project identifies the project a document belongs to: its uid, which is what a
+// reader checks, and its slug, which is what a human recognises.
+type Project struct {
+	// UID is the project's Kukátko UID.
+	UID string `yaml:"uid"`
+	// Slug is the project's URL name (/p/<slug>/…).
+	Slug string `yaml:"slug"`
 }
 
 // Subject is one person in the tree, in the shape a rebuild re-creates the
@@ -86,7 +113,7 @@ type Subject struct {
 	// UID is the subject's Kukátko UID, the identifier every family below refers
 	// to them by.
 	UID string `yaml:"uid"`
-	// Slug is the subject's URL name, unique in the library.
+	// Slug is the subject's URL name, unique in the project.
 	Slug string `yaml:"slug"`
 	// Name is what the subject is called, and Nickname what people actually call
 	// them, empty when nobody recorded one.
