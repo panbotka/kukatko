@@ -5913,11 +5913,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   = both left-joined onto the browsable videos), each scanned once — **no per-video query**, which is what
   keeps the dashboard the single memoized round trip a polled page can afford
   (`TestCountDashboard_OneRoundTripPerVideoCount` counts the queries a traced pool actually issues);
-  alongside the operational snapshot it also aggregates the **library statistics** for every logged-in user:
-  `LibraryCounter` (`CountLibrary`, satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
+  alongside the operational snapshot it also aggregates the **library statistics** of one project for its
+  members: `LibraryCounter` (`CountLibrary(ctx, projectUID)` — every subselect scoped by `project_id`,
+  `markers`/`photo_places` through their photo; an empty project is `ErrNoProject`, never "all", satisfied by its own `Store` = `NewStore(pool)` — a single query of scalar
   subselects `countLibrarySQL`, **not** a `maintenance scan` over the tree; partial indexes for archived/video/live,
   semi-joins on the `embeddings` PK / the unique `faces`, one CTE for the album types),
-  **`LibraryStats(ctx) (Library,error)`** returns
+  **`LibraryStats(ctx, projectUID) (Library,error)`** (memoised per project, `projectSnapshotCache`) returns
   `Library{Photos,Videos,LivePhotos,Images,PhotosLive,PhotosArchived,PhotosHidden,PhotosStacked,PhotosListed,
   PhotosWith(out)Embedding,PhotosWith(out)Faces,
   PhotosWithGPS,PhotosGeocoded,PhotosPendingGeocode,Embeddings,Faces,FacesAssigned,FacesUnassigned,Subjects,
@@ -5945,7 +5946,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (an error goes out, the page must not render zeros as real counts); a nil `Library` → `errNoLibraryCounter`
   instead of a panic;
   beside the counts it aggregates the **chart series** of the same statistics page: `ChartCounter`
-  (`AggregateCharts(ctx,since)`, satisfied by the same `Store`) runs five grouped queries in
+  (`AggregateCharts(ctx,projectUID,since)`, every query led by `project_id = $1`, satisfied by the same `Store`) runs five grouped queries in
   `store_charts.go` — capture years, arrivals per month (bounded by `since`, so the range predicate stays
   sargable on `idx_photos_live_created_at`), the top `topCameras`=10 cameras (make+model grouped, folded into a
   display name by `cameraName`, the bare model kept for the library's `camera` filter), the bytes per media
@@ -5954,7 +5955,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **browsable** library (`archived_at IS NULL`, so a bar matches the library view it links to) and buckets time
   **in UTC** (`AT TIME ZONE 'UTC'`, so buckets do not shift with the server's zone); the generic `collect[T]`
   helper is the single query/scan/iterate loop behind all five;
-  **`LibraryCharts(ctx) (Charts,error)`** returns `Charts{PhotosByYear,AddedByMonth,TopCameras,StorageByMedia,
+  **`LibraryCharts(ctx, projectUID) (Charts,error)`** (per project) returns `Charts{PhotosByYear,AddedByMonth,TopCameras,StorageByMedia,
   StorageByYear}` after `Charts.fill(now)` turns the raw series into drawable ones — empty years restored on both
   year axes (a histogram whose gaps are merely missing draws a lie), the month window padded to exactly
   `monthWindow`=12 months ending with the current one, every media bucket present in `mediaBuckets` order, the
@@ -5970,8 +5971,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `*system.Service`, fakeable); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
   mounts `GET /system/status` behind `RequireMaintainer` (the whole dashboard snapshot — the operational
   sections plus `Library`/`Remaining` as instance totals and the per-project breakdown `projects`; a failed collect → 500),
-  `GET /system/stats` behind `RequireAuth` (the library counts for **every logged-in user**; a failed aggregation → 500,
-  never a body of zeros) and `GET /system/stats/charts` behind `RequireAuth` (the chart series; a failed
+  and `RegisterProjectRoutes` mounts, under `/p/{project}` (the `projectAPI.stats` group), `GET /stats`
+  behind `RequireAuth` (the **project's** library counts for every member, read with
+  `auth.ProjectUIDFromContext`; a failed aggregation → 500,
+  never a body of zeros) and `GET /stats/charts` behind `RequireAuth` (the chart series; a failed
   aggregation → 500, never empty series, which would draw as an empty library) — two endpoints rather than one
   because the counts are cheap and are what an import is watched with, while the charts are heavier and change
   slowly, so they get their own longer memoization and never hold the numbers back; always mounted
@@ -6249,7 +6252,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (`registerLibraryMetrics`/`libraryByProject`/`libraryCounts`/`importRuns`) onto
   `system.Service.LibraryByProject` (one grouped statement, `system.Store.CountLibraryByProject`, over the
   active projects — the instance statistics' own predicates grouped by `project_id`, `markers` and
-  `photo_places` through their photo, so the per-project gauges sum to `GET /system/stats`) + `LatestRuns`;
+  `photo_places` through their photo, so each project's gauges equal its `GET /p/{project}/stats`) + `LatestRuns`;
   `/metrics` is unauthenticated, so only aggregates go in it — per project at most, labelled by slug — never
   a per-user number or a photo/album/label/person/project name as a label value. The platform collector's
   `kukatko_library_*` families (encode states, backlogs, bytes, below) stay instance-wide: they read the
@@ -7127,6 +7130,44 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     unknown slug). Worked examples in a package: `internal/photoapi/isolation_integration_test.go`
     (reads; its test env mounts the photo routes under `/p/{project}` too) and
     `write_isolation_integration_test.go` (writes and media bytes, plus the row left unchanged).
+
+- **Tenancy guard (`internal/tenancyguard`):** the static half of tenant isolation, run by `make check`
+  (a plain test, no build tag). `internal/projecttest` proves the scoped paths; this catches the statement
+  nobody wrote a test for — a future query that forgets `project_id`. In the spirit of
+  `web/src/styles/colourLiterals.test.ts`: a ban checked over the source, with a reasoned allow-list.
+  - `RootTables` (`tables.go`) is **the one list** of catalogue root tables, each with the column that
+    names its project (`project_id`; `project_invites` uses `project_uid`). `ExemptTables` lists the
+    tables that carry a project column but are not roots (`audit_log`, `project_members`,
+    `storage_rekey_runs`), each with its reason. `ProjectColumnTables` replays
+    `internal/database/migrations/*.sql` (`ALTER TABLE … ADD COLUMN project_id|project_uid`, the column
+    inside `CREATE TABLE`, `DROP COLUMN`/`DROP TABLE`) and `TestRootTables_matchMigrations` requires the
+    schema's project tables to be exactly `RootTables` ∪ `ExemptTables` — a new root table cannot be
+    forgotten in the list.
+  - `Scan(root, dirs...)` parses every non-test `.go` file under `internal/` and `cmd/` (`go/parser`, one
+    goroutine per package; ~0.2 s on the Pi) and **folds** each string expression into a statement text:
+    literals, `+` chains, package-level `const`/`var` values (a value folded in at a use site is judged
+    there, not on its own), a function's locals accumulated across `:=`/`=`/`+=` (`q := "SELECT …";
+    q += " WHERE …"` is one statement), `fmt.Sprintf` (each verb replaced by its argument, `%[n]s`
+    included) and `strings.Join` over a literal slice. A piece it cannot read is unknown — unless its
+    expression names the project (an identifier containing `project`: `projectClause("$1")`,
+    `buildWhere(projectUID, …)`, `env.project`) or carries a literal with a project column, which counts as
+    the predicate. The text is split on `;`; a statement naming a root table after upper-case `FROM`,
+    `JOIN`, `UPDATE` or `INTO` (`DELETE FROM`/`INSERT INTO` included; lower-case is error-message prose)
+    must mention that table's column. **One finding per statement**, at the line of its first unscoped
+    table name (a raw string's own line, not the literal's first).
+  - `allow.txt` + `ParseAllowList`/`Judge`: `path:line reason` per line (`#` comments; a missing reason, a
+    malformed key or a repeated one is `ErrAllowList`). `TestRepository_rootStatementsNameTheirProject`
+    fails on every finding without an entry and on every **stale allow-list entry** — one whose line no
+    longer holds an unscoped statement — so the list cannot outlive what it excuses. The entries fall in a
+    few kinds: worker handlers keyed by a photo uid from the job payload (`GetForJob` and the write-backs
+    after it), instance-wide maintenance scan/repair, reset, inventory, storage migration and the rekey
+    service, and writes by a uid the same transaction already proved inside the project
+    (`requireSubjectInProject`, a project-scoped `FOR UPDATE`, …).
+  - Deliberately textual, so it has blind spots: a table name built at run time (`FROM %s` with a variable),
+    comma joins (`FROM a, photos`), a project-named piece that is not actually a predicate, and a statement
+    that only *selects* the column (`photoColumns` ends in `project_id`, which is why the worker loaders
+    `GetForJob`/`FilesForJob` need no entry). It is a tripwire for the common mistake, not a proof; the
+    isolation tests stay the proof.
 
 - **Upgrade inventory (`internal/inventory`):** the before/after check of an upgrade that migrates data,
   behind `kukatko maintenance inventory` / `inventory-diff` (runbook in `docs/OPERATIONS.md`, first use in

@@ -12,6 +12,10 @@ import (
 // Every chart query below shares three decisions, so they are stated once here
 // rather than repeated five times.
 //
+// They all count one project's library, $1, and nothing else: every one of them
+// leads its WHERE with project_id = $1, which is what the per-project photo
+// indexes lead with.
+//
 // They all count the **browsable** library (archived_at IS NULL). The trash is a
 // handful of rows a reader has already thrown away; leaving it in would make a
 // bar disagree with the library view it links to.
@@ -40,7 +44,7 @@ const photosByYearSQL = `
 SELECT extract(YEAR FROM taken_at AT TIME ZONE 'UTC')::int AS year,
        count(*)::int                                       AS photos
 FROM photos
-WHERE archived_at IS NULL
+WHERE project_id = $1 AND archived_at IS NULL
   AND taken_at >= '1826-01-01T00:00:00Z'::timestamptz
   AND taken_at < now() + interval '1 year'
 GROUP BY year
@@ -48,13 +52,13 @@ ORDER BY year`
 
 // addedByMonthSQL counts the live library by the month each photo was added,
 // bounded to the window the caller asks for. The bound is on the bare created_at
-// so it stays sargable on idx_photos_live_created_at; only the bucket label is
-// computed per row.
+// so it stays sargable on idx_photos_project_live_created_at; only the bucket
+// label is computed per row.
 const addedByMonthSQL = `
 SELECT to_char(date_trunc('month', created_at AT TIME ZONE 'UTC'), 'YYYY-MM') AS month,
        count(*)::int                                                          AS photos
 FROM photos
-WHERE archived_at IS NULL AND created_at >= $1
+WHERE project_id = $1 AND archived_at IS NULL AND created_at >= $2
 GROUP BY month
 ORDER BY month`
 
@@ -66,10 +70,10 @@ ORDER BY month`
 const topCamerasSQL = `
 SELECT camera_make, camera_model, count(*)::int AS photos
 FROM photos
-WHERE archived_at IS NULL AND (camera_make <> '' OR camera_model <> '')
+WHERE project_id = $1 AND archived_at IS NULL AND (camera_make <> '' OR camera_model <> '')
 GROUP BY camera_make, camera_model
 ORDER BY photos DESC, camera_make, camera_model
-LIMIT $1`
+LIMIT $2`
 
 // storageByMediaSQL splits the live library's bytes across the media buckets.
 // RAW is not a media_type — it is a file format — so it is recognised by the
@@ -80,14 +84,14 @@ LIMIT $1`
 const storageByMediaSQL = `
 SELECT CASE
            WHEN media_type = 'video'                                     THEN 'video'
-           WHEN lower(substring(file_name FROM '\.([^.]+)$')) = ANY($1)  THEN 'raw'
+           WHEN lower(substring(file_name FROM '\.([^.]+)$')) = ANY($2)  THEN 'raw'
            WHEN media_type = 'live'                                      THEN 'live'
            ELSE 'image'
        END                              AS media,
        count(*)::int                    AS photos,
        coalesce(sum(file_size), 0)::bigint AS bytes
 FROM photos
-WHERE archived_at IS NULL
+WHERE project_id = $1 AND archived_at IS NULL
 GROUP BY media`
 
 // storageByYearSQL measures what each year of importing added to the library.
@@ -98,12 +102,13 @@ SELECT extract(YEAR FROM created_at AT TIME ZONE 'UTC')::int AS year,
        count(*)::int                                         AS photos,
        coalesce(sum(file_size), 0)::bigint                    AS bytes
 FROM photos
-WHERE archived_at IS NULL
+WHERE project_id = $1 AND archived_at IS NULL
 GROUP BY year
 ORDER BY year`
 
-// AggregateCharts returns the raw chart series in five grouped queries, one per
-// chart, with since bounding the added-per-month window. Gaps are left unfilled
+// AggregateCharts returns the raw chart series of the project projectUID in five
+// grouped queries, one per chart, with since bounding the added-per-month
+// window. An empty projectUID is ErrNoProject, never "every project". Gaps are left unfilled
 // and the running totals uncomputed — Charts.fill does that — so this method
 // reports only what the database actually counted.
 //
@@ -111,50 +116,54 @@ ORDER BY year`
 // independent, none of them feeds the next, and the whole result is memoised for
 // minutes, so five round trips every few minutes is not a cost worth trading
 // clarity for.
-func (s *Store) AggregateCharts(ctx context.Context, since time.Time) (Charts, error) {
+func (s *Store) AggregateCharts(ctx context.Context, projectUID string, since time.Time) (Charts, error) {
+	if projectUID == "" {
+		return Charts{}, ErrNoProject
+	}
 	var charts Charts
 	var err error
 
 	charts.PhotosByYear, err = collect(ctx, s, "photos by year", photosByYearSQL,
-		func(row *YearPhotos) []any { return []any{&row.Year, &row.Photos} })
+		func(row *YearPhotos) []any { return []any{&row.Year, &row.Photos} }, projectUID)
 	if err != nil {
 		return Charts{}, err
 	}
 	charts.AddedByMonth, err = collect(ctx, s, "photos added by month", addedByMonthSQL,
-		func(row *MonthPhotos) []any { return []any{&row.Month, &row.Photos} }, since)
+		func(row *MonthPhotos) []any { return []any{&row.Month, &row.Photos} }, projectUID, since)
 	if err != nil {
 		return Charts{}, err
 	}
-	charts.TopCameras, err = s.rankCameras(ctx)
+	charts.TopCameras, err = s.rankCameras(ctx, projectUID)
 	if err != nil {
 		return Charts{}, err
 	}
 	charts.StorageByMedia, err = collect(ctx, s, "storage by media type", storageByMediaSQL,
 		func(row *MediaStorage) []any { return []any{&row.Media, &row.Photos, &row.Bytes} },
-		imgconvert.RAWExtensions())
+		projectUID, imgconvert.RAWExtensions())
 	if err != nil {
 		return Charts{}, err
 	}
 	charts.StorageByYear, err = collect(ctx, s, "storage by year", storageByYearSQL,
-		func(row *YearStorage) []any { return []any{&row.Year, &row.Photos, &row.Bytes} })
+		func(row *YearStorage) []any { return []any{&row.Year, &row.Photos, &row.Bytes} }, projectUID)
 	if err != nil {
 		return Charts{}, err
 	}
 	return charts, nil
 }
 
-// rankCameras reads the most-used cameras, most photos first. It is the one
+// rankCameras reads the most-used cameras of the project projectUID, most
+// photos first. It is the one
 // series the database does not hand over in its final shape — make and model are
 // grouped separately and folded into a display name here — so it collects into a
 // private row type and maps it, rather than scanning straight into the result.
-func (s *Store) rankCameras(ctx context.Context) ([]CameraPhotos, error) {
+func (s *Store) rankCameras(ctx context.Context, projectUID string) ([]CameraPhotos, error) {
 	type cameraRow struct {
 		brand  string
 		model  string
 		photos int
 	}
 	rows, err := collect(ctx, s, "cameras", topCamerasSQL,
-		func(row *cameraRow) []any { return []any{&row.brand, &row.model, &row.photos} }, topCameras)
+		func(row *cameraRow) []any { return []any{&row.brand, &row.model, &row.photos} }, projectUID, topCameras)
 	if err != nil {
 		return nil, err
 	}

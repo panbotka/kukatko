@@ -196,7 +196,7 @@ func TestCountDashboard_AgreesWithLibraryStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountDashboard: %v", err)
 	}
-	stats, err := system.New(system.Config{Library: store}).LibraryStats(t.Context())
+	stats, err := system.New(system.Config{Library: store}).LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/system"
 )
 
@@ -38,7 +39,7 @@ func TestCountLibrary_handAttachedPersonIsAssigned(t *testing.T) {
 	seedPersonMarker(t, db, "m2", "p1", "s1")
 
 	svc := system.New(system.Config{Library: system.NewStore(db.Pool())})
-	got, err := svc.LibraryStats(t.Context())
+	got, err := svc.LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}

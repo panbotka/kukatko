@@ -29,12 +29,12 @@ func (f fakeCollector) Collect(context.Context) (system.Status, error) {
 }
 
 // LibraryStats returns the configured library counts or error.
-func (f fakeCollector) LibraryStats(context.Context) (system.Library, error) {
+func (f fakeCollector) LibraryStats(context.Context, string) (system.Library, error) {
 	return f.library, f.err
 }
 
 // LibraryCharts returns the configured chart series or error.
-func (f fakeCollector) LibraryCharts(context.Context) (system.Charts, error) {
+func (f fakeCollector) LibraryCharts(context.Context, string) (system.Charts, error) {
 	return f.charts, f.err
 }
 
@@ -44,7 +44,9 @@ func (f fakeCollector) LibraryCharts(context.Context) (system.Charts, error) {
 func passThrough(next http.Handler) http.Handler { return next }
 
 // newRouter mounts the system API with the given collector behind pass-through
-// guards, returning the router ready for httptest requests.
+// guards — the instance routes and the project routes both under /api/v1, the
+// way the transition alias mounts the latter — returning the router ready for
+// httptest requests.
 func newRouter(collector StatusCollector) chi.Router {
 	api := NewAPI(Config{
 		Service:           collector,
@@ -52,7 +54,10 @@ func newRouter(collector StatusCollector) chi.Router {
 		RequireAuth:       passThrough,
 	})
 	r := chi.NewRouter()
-	r.Route("/api/v1", api.RegisterRoutes)
+	r.Route("/api/v1", func(r chi.Router) {
+		api.RegisterRoutes(r)
+		api.RegisterProjectRoutes(r)
+	})
 	return r
 }
 
@@ -118,7 +123,7 @@ func TestHandleStats_OK(t *testing.T) {
 	r := newRouter(fakeCollector{library: counts})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/system/stats", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/stats", nil)
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -149,7 +154,7 @@ func TestHandleStatsCharts_OK(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
-		"/api/v1/system/stats/charts", nil)
+		"/api/v1/stats/charts", nil)
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -173,7 +178,7 @@ func TestHandleStatsCharts_Error(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
-		"/api/v1/system/stats/charts", nil)
+		"/api/v1/stats/charts", nil)
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
@@ -196,7 +201,7 @@ func TestHandleStats_Error(t *testing.T) {
 	r := newRouter(fakeCollector{err: errors.New("db down")})
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/system/stats", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/stats", nil)
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
@@ -208,5 +213,23 @@ func TestHandleStats_Error(t *testing.T) {
 	}
 	if body.Error == "" {
 		t.Error("error message empty, want a message")
+	}
+}
+
+// TestRegisterRoutes_noInstanceStats verifies the statistics are no longer
+// served at the instance level, under /system: those routes counted every
+// project's rows, so they must not come back by accident.
+func TestRegisterRoutes_noInstanceStats(t *testing.T) {
+	t.Parallel()
+
+	r := newRouter(fakeCollector{})
+	const instance = "/api/v1/system"
+	for _, path := range []string{instance + "/stats", instance + "/stats/charts"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, rec.Code)
+		}
 	}
 }

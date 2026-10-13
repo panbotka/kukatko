@@ -12,10 +12,11 @@ import { useLibraryStats } from '../hooks/useLibraryStats'
 /**
  * The library-statistics page: a small dashboard of what the library looks like.
  *
- * It reads two endpoints side by side. `GET /system/stats` gives the counts —
+ * It reads two endpoints of the current project side by side.
+ * `GET /p/{project}/stats` gives the counts —
  * how big the library is and how much of it has been processed ({@link
  * LibraryStatsCards}) plus the three coverage shares ({@link CoverageMeters}) —
- * and answers in milliseconds. `GET /system/stats/charts` gives the series
+ * and answers in milliseconds. `GET /p/{project}/stats/charts` gives the series
  * behind them ({@link LibraryChartsPanel}): photos per year of capture, arrivals
  * per month, the top cameras, and what the library costs in bytes. They are two
  * requests on purpose: the charts are the heavier aggregation and must never

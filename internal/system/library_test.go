@@ -3,21 +3,30 @@ package system
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
 
 // fakeCounter is a LibraryCounter returning fixed counts (or an error) and
-// recording how many times it was asked, so the memoisation can be observed.
+// recording how many times it was asked and for which projects, so the
+// memoisation and its per-project keying can be observed. perProject, when
+// set, overrides counts for the projects it names.
 type fakeCounter struct {
-	counts Library
-	err    error
-	calls  int
+	counts     Library
+	perProject map[string]Library
+	err        error
+	calls      int
+	projects   []string
 }
 
-// CountLibrary returns the configured counts or error, counting the call.
-func (f *fakeCounter) CountLibrary(context.Context) (Library, error) {
+// CountLibrary returns the configured counts or error, recording the call.
+func (f *fakeCounter) CountLibrary(_ context.Context, projectUID string) (Library, error) {
 	f.calls++
+	f.projects = append(f.projects, projectUID)
+	if counts, ok := f.perProject[projectUID]; ok {
+		return counts, f.err
+	}
 	return f.counts, f.err
 }
 
@@ -162,7 +171,7 @@ func TestLibraryCache_MemoisesWithinTTL(t *testing.T) {
 	counter := &fakeCounter{counts: Library{Photos: 10, PhotosWithEmbedding: 4}}
 	cache := newLibraryCache(counter, time.Minute, func() time.Time { return now })
 
-	first, err := cache.get(t.Context())
+	first, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("first counts: %v", err)
 	}
@@ -171,7 +180,7 @@ func TestLibraryCache_MemoisesWithinTTL(t *testing.T) {
 	}
 
 	now = now.Add(30 * time.Second)
-	second, err := cache.get(t.Context())
+	second, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("second counts: %v", err)
 	}
@@ -192,12 +201,12 @@ func TestLibraryCache_RecomputesAfterTTL(t *testing.T) {
 	counter := &fakeCounter{counts: Library{Photos: 1}}
 	cache := newLibraryCache(counter, time.Minute, func() time.Time { return now })
 
-	if _, err := cache.get(t.Context()); err != nil {
+	if _, err := cache.get(t.Context(), testProject); err != nil {
 		t.Fatalf("first counts: %v", err)
 	}
 	now = now.Add(2 * time.Minute)
 	counter.counts = Library{Photos: 2}
-	got, err := cache.get(t.Context())
+	got, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("second counts: %v", err)
 	}
@@ -219,7 +228,7 @@ func TestLibraryCache_ErrorIsReturnedNotCached(t *testing.T) {
 	counter := &fakeCounter{err: wantErr}
 	cache := newLibraryCache(counter, time.Minute, nil)
 
-	got, err := cache.get(t.Context())
+	got, err := cache.get(t.Context(), testProject)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("counts error = %v, want %v", err, wantErr)
 	}
@@ -229,7 +238,7 @@ func TestLibraryCache_ErrorIsReturnedNotCached(t *testing.T) {
 
 	counter.err = nil
 	counter.counts = Library{Photos: 3}
-	recovered, err := cache.get(t.Context())
+	recovered, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("counts after recovery: %v", err)
 	}
@@ -245,11 +254,59 @@ func TestLibraryCache_Defaults(t *testing.T) {
 	t.Parallel()
 
 	cache := newLibraryCache(&fakeCounter{}, 0, nil)
-	if cache.ttl != defaultLibraryTTL {
-		t.Errorf("ttl = %v, want the default %v", cache.ttl, defaultLibraryTTL)
+	if _, err := cache.get(t.Context(), testProject); err != nil {
+		t.Fatalf("counts: %v", err)
 	}
-	if cache.now == nil {
+	entry := cache.byProject[testProject]
+	if entry.ttl != defaultLibraryTTL {
+		t.Errorf("ttl = %v, want the default %v", entry.ttl, defaultLibraryTTL)
+	}
+	if entry.now == nil {
 		t.Error("clock is nil, want the default time.Now")
+	}
+}
+
+// TestLibraryCache_KeyedByProject verifies the memoisation is per project: a
+// second project is counted on its own rather than served the first one's
+// memoised snapshot, and each project's snapshot stays its own afterwards.
+func TestLibraryCache_KeyedByProject(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeCounter{perProject: map[string]Library{
+		"pr-a": {Photos: 10},
+		"pr-b": {Photos: 2},
+	}}
+	cache := newLibraryCache(counter, time.Minute, nil)
+
+	for _, step := range []struct {
+		project string
+		photos  int
+	}{{"pr-a", 10}, {"pr-b", 2}, {"pr-a", 10}, {"pr-b", 2}} {
+		got, err := cache.get(t.Context(), step.project)
+		if err != nil {
+			t.Fatalf("counts of %s: %v", step.project, err)
+		}
+		if got.Photos != step.photos {
+			t.Errorf("photos of %s = %d, want %d", step.project, got.Photos, step.photos)
+		}
+	}
+	if want := []string{"pr-a", "pr-b"}; !slices.Equal(counter.projects, want) {
+		t.Errorf("counted projects = %v, want %v (each once, then memoised)", counter.projects, want)
+	}
+}
+
+// TestLibraryCache_NoProjectIsAnError verifies an empty project uid is refused
+// before the counter is asked: it must never mean "every project".
+func TestLibraryCache_NoProjectIsAnError(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeCounter{counts: Library{Photos: 5}}
+	svc := New(Config{Library: counter})
+	if _, err := svc.LibraryStats(t.Context(), ""); !errors.Is(err, ErrNoProject) {
+		t.Errorf("LibraryStats error = %v, want %v", err, ErrNoProject)
+	}
+	if counter.calls != 0 {
+		t.Errorf("counter called %d times, want 0", counter.calls)
 	}
 }
 
@@ -259,7 +316,7 @@ func TestServiceLibraryStats_NoCounter(t *testing.T) {
 	t.Parallel()
 
 	svc := New(Config{})
-	if _, err := svc.LibraryStats(t.Context()); !errors.Is(err, errNoLibraryCounter) {
+	if _, err := svc.LibraryStats(t.Context(), testProject); !errors.Is(err, errNoLibraryCounter) {
 		t.Errorf("LibraryStats error = %v, want %v", err, errNoLibraryCounter)
 	}
 }
@@ -273,7 +330,7 @@ func TestServiceLibraryStats_Derives(t *testing.T) {
 		Photos: 20, PhotosArchived: 2, PhotosHidden: 1, PhotosStacked: 3,
 		PhotosWithEmbedding: 18, PhotosWithFaces: 11,
 	}}})
-	got, err := svc.LibraryStats(t.Context())
+	got, err := svc.LibraryStats(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}

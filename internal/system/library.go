@@ -12,22 +12,29 @@ import (
 // instead of panicking on a nil interface.
 var errNoLibraryCounter = errors.New("system: no library counter configured")
 
+// ErrNoProject is returned by every per-project library aggregation (the
+// counts, the charts) when it is asked without a project. An empty project is
+// a wiring bug, never a request for "every project": the statistics of one
+// library must not silently become the instance's.
+var ErrNoProject = errors.New("system: no project given")
+
 // defaultLibraryTTL is how long a library-counts aggregation is memoised before
 // the next request recomputes it. It mirrors defaultStorageTTL: the numbers are
 // cheap but not free, and a page that polls must not turn into a COUNT(*) storm.
 const defaultLibraryTTL = 30 * time.Second
 
-// LibraryCounter reads the library-wide counts from the catalogue. It is
+// LibraryCounter reads one project's library counts from the catalogue. It is
 // satisfied by *Store; an interface so the aggregation is unit-testable with a
 // fake and so the HTTP layer never talks to the database directly.
 type LibraryCounter interface {
-	// CountLibrary returns the raw instance-wide counts. The derived coverage
-	// gaps are filled in by the caller, not by the store.
-	CountLibrary(ctx context.Context) (Library, error)
+	// CountLibrary returns the raw counts of the project projectUID. The
+	// derived coverage gaps are filled in by the caller, not by the store.
+	CountLibrary(ctx context.Context, projectUID string) (Library, error)
 }
 
-// Library is the library-statistics snapshot returned by GET /system/stats: a
-// set of cheap instance-wide counts (never per-user, never a filesystem walk)
+// Library is the library-statistics snapshot returned by GET
+// /p/{project}/stats: a set of cheap counts of one project's library (never
+// per-user, never a filesystem walk)
 // modelled on photo-sorter's status page. It answers "is the catalogue fully
 // processed?" — how many photos exist, how many carry an embedding or a detected
 // face, and, explicitly, how many still carry neither.
@@ -178,9 +185,10 @@ func nonNegative(value int) int {
 	return value
 }
 
-// newLibraryCache returns the memoised library counts over counter: the raw
-// aggregation with its derived values filled in, recomputed at most once per TTL
-// so a page that is opened often does not re-run the COUNT(*)s on every request.
+// newLibraryCache returns the memoised library counts over counter, one entry
+// per project: the raw aggregation with its derived values filled in,
+// recomputed at most once per TTL so a page that is opened often does not
+// re-run the COUNT(*)s on every request.
 // A non-positive ttl defaults to defaultLibraryTTL and a nil now defaults to
 // time.Now, so callers may leave them unset.
 //
@@ -188,12 +196,14 @@ func nonNegative(value int) int {
 // panicking on a nil interface, and neither that nor a query failure is cached
 // (see snapshotCache): the caller must be able to tell an unavailable count from
 // an empty library.
-func newLibraryCache(counter LibraryCounter, ttl time.Duration, now func() time.Time) *snapshotCache[Library] {
-	return newSnapshotCache(func(ctx context.Context) (Library, error) {
+func newLibraryCache(
+	counter LibraryCounter, ttl time.Duration, now func() time.Time,
+) *projectSnapshotCache[Library] {
+	return newProjectSnapshotCache(func(ctx context.Context, projectUID string) (Library, error) {
 		if counter == nil {
 			return Library{}, errNoLibraryCounter
 		}
-		raw, err := counter.CountLibrary(ctx)
+		raw, err := counter.CountLibrary(ctx, projectUID)
 		if err != nil {
 			return Library{}, fmt.Errorf("counting library: %w", err)
 		}

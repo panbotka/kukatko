@@ -99,6 +99,10 @@ func newEnv(t *testing.T) *env {
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
 		api.RegisterRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterProjectRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -338,20 +342,21 @@ func TestSystemStatus_ForbiddenBelowMaintainer(t *testing.T) {
 }
 
 // TestSystemStats_ViewerAllowedAnonymousRejected verifies the library statistics
-// are open to every signed-in role — a viewer, the bottom of the ladder, gets the
-// counts — while an anonymous caller is refused. It is the deliberate opposite of
+// are open to every member of the project — a viewer, the bottom of the ladder,
+// gets the counts — while an anonymous caller is refused. It is the deliberate opposite of
 // the maintainer-only status endpoint above.
 func TestSystemStats_ViewerAllowedAnonymousRejected(t *testing.T) {
 	env := newEnv(t)
 
-	anon := do(t, &http.Client{}, http.MethodGet, env.baseURL+"/api/v1/system/stats", nil)
+	statsURL := env.baseURL + "/api/v1/p/" + project.BootstrapSlug + "/stats"
+	anon := do(t, &http.Client{}, http.MethodGet, statsURL, nil)
 	defer func() { _ = anon.Body.Close() }()
 	if anon.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anonymous status = %d, want 401", anon.StatusCode)
 	}
 
 	viewer := env.login(t, "stats-viewer", auth.AccountViewer)
-	resp := do(t, viewer, http.MethodGet, env.baseURL+"/api/v1/system/stats", nil)
+	resp := do(t, viewer, http.MethodGet, statsURL, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("viewer status = %d, want 200", resp.StatusCode)

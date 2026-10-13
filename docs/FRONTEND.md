@@ -524,7 +524,7 @@ here.
   `streaming_enabled` false the whole table is replaced by a „Vypnuto" badge and one sentence — the numbers
   would read as a backlog for an instance that is simply not encoding — and an empty library says so instead
   of rendering a table of zeroes. Tests: `VideoEncodingPanel.test.tsx`),
-  `LibraryStatsCards` (**the shared rendering of the library counts** `GET /system/stats`: six
+  `LibraryStatsCards` (**the shared rendering of the library counts** `GET /p/{project}/stats`: six
   `Card`s in a responsive `Row` — photos, vyhledávání podle obsahu, obličeje, lidé a zvířata, značky na
   fotkách, alba a štítky — each with a
   headline number (`kk-display`) over its breakdown (`dl`), every value through `formatCount` for the active
@@ -578,7 +578,7 @@ here.
   `ChartStatement` (**what a card holds when its series has no chart in it**: the figure the chart would have
   been scaled to, on `.kk-display` with proportional figures, over a caption naming the one bucket it fell in;
   plain text, so it carries no `aria-label`) and `LibraryChartsPanel` (the four charts assembled from
-  `GET /system/stats/charts`, with every label, tooltip, empty-state sentence and `aria-label` summary from
+  `GET /p/{project}/stats/charts`, with every label, tooltip, empty-state sentence and `aria-label` summary from
   `stats.charts.*`). Both primitives take a summary `ariaLabel` carrying the chart's key numbers and render as
   `role="img"`, or as `role="group"` when their marks link somewhere so those links stay reachable),
   `Icon` (**the app's single icon set**: a bootstrap-icons glyph as `<i class="bi bi-{name}">`,
@@ -4997,7 +4997,7 @@ here.
   the streak column rendering a run and a dash for nobody on one),
   `StatsPage` = `/stats` (**any logged-in user** — read-only aggregate counts, so no role gate, like the
   leaderboard; reachable from the **user menu** and the phone drawer's account section) the **library
-  statistics** over `GET /system/stats` (`useLibraryStats`), modelled on the previous system's status page: six
+  statistics** over `GET /p/{project}/stats` (`useLibraryStats`), modelled on the previous system's status page: six
   cards (`LibraryStatsCards`, this page's own rendering) — **Fotky** (celkem, z toho videa, v koši, mimo
   koš, z toho skrytých, z toho variant ve skupinách, vidíte v Knihovně — the walk from the catalogue down to
   the count the library grid shows), **Vyhledávání podle obsahu** (připravených fotek, zbývá zpracovat),
@@ -5018,7 +5018,7 @@ here.
   load shows `ErrorState` + retry and **renders no grid of zeroes**, so an unavailable count never reads as an
   empty library.
   Below the cards the page turns into a small **charts dashboard** — "what does our library look like?" —
-  drawn from a **second** request, `GET /system/stats/charts` (`useLibraryCharts`), which loads beside the
+  drawn from a **second** request, `GET /p/{project}/stats/charts` (`useLibraryCharts`), which loads beside the
   counts and **fails apart from them**: a chart outage leaves a fully readable page of numbers with its own
   `ErrorState` + retry under them. `CoverageMeters` (from the counts, so it needs no second request) reports
   the three shares as ARIA `meter` rows — fotky se známým místem, fotky prohledatelné podle obsahu, obličeje se
@@ -6083,12 +6083,12 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   correctness one, because the request is what stamps the visit server-side and a digest that reloaded
   itself would change under the reader's eyes; swallows a failure and stays `null` (the panel hides), aborts
   the in-flight request on unmount;
-  `useLibraryStats(enabled=true)` = a loader of the library statistics over `fetchLibraryStats` (`GET /system/stats`)
+  `useLibraryStats(enabled=true)` = a loader of the library statistics over `fetchLibraryStats` (`GET /p/{project}/stats`)
   → `{state,reload}` with the state `loading|error|ready`: it **surfaces an error explicitly** (never swallows it into zeroes —
   an empty library and an unavailable count must not look the same), an aborted request (unmount/retry) is not an error,
   `reload` repeats the fetch (the retry in `ErrorState`); `StatsPage` is its reader (`SystemStatusPage` used to
   be the second, and now reads the dashboard half of `/system/status` instead);
-  `useLibraryCharts(enabled=true)` = its sibling over `fetchLibraryCharts` (`GET /system/stats/charts`) with the
+  `useLibraryCharts(enabled=true)` = its sibling over `fetchLibraryCharts` (`GET /p/{project}/stats/charts`) with the
   same shape and the same rules — a **separate** hook, and therefore a separate request, state and retry,
   because the charts are the heavier aggregation and must never hold the counts back or take the page down
   with them (`StatsPage` renders the numbers and shows a chart error under them);
@@ -7735,9 +7735,9 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `NamelessReport`/`NamelessUndoFile`/`NamelessRestoreResult`; it shares `ApiError`
   from `auth.ts` and `fetchJobStats` from `import.ts` for the progress,
   `system.ts` = the system client: `fetchSystemStatus(signal)` over `GET /api/v1/system/status`
-  → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` over `GET /api/v1/system/stats`
+  → `SystemStatus` (maintainer-only), `fetchLibraryStats(signal)` over `GET /api/v1/p/<slug>/stats`
   → `LibraryStats` (**any logged-in user**; it throws an `ApiError` when the backend can't total the counts — the page then shows
-  an error, not zeroes), `fetchLibraryCharts(signal)` over `GET /api/v1/system/stats/charts` → `LibraryCharts`
+  an error, not zeroes), `fetchLibraryCharts(signal)` over `GET /api/v1/p/<slug>/stats/charts` → `LibraryCharts`
   (the same readers, deliberately a **second** request so the cheap counts are never held up by the heavier
   series; the arrays come gap-filled and never `null`), `triggerBackup(signal)` over `POST /api/v1/backup`
   (409/503 → ApiError),

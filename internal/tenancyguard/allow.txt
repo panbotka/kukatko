@@ -1,0 +1,144 @@
+# The tenancy guard's allow-list: SQL statements over a root table that may
+# legitimately name no project. One `path:line reason` per line, path relative to
+# the repository root, line = the line the guard reports (the first unscoped
+# table name of the statement). `#` starts a comment.
+#
+# Before adding an entry, prefer scoping the statement. An entry is right only
+# when the statement must span every project (maintenance, metrics, reset,
+# backup, storage moves), runs in a worker that works from a photo uid with no
+# request project, or addresses a row the same transaction already resolved
+# inside the project. The reason must say which.
+#
+# The guard fails on an entry whose line no longer holds an unscoped statement
+# ("stale allow-list entry"): when a file shifts, move its entries with it.
+
+# internal/bulk
+internal/bulk/apply.go:297 photo uid is one of the batch that requireBatchInProject proved in projectUID earlier in the same tx
+internal/bulk/apply.go:483 loadCoordinate reads only batch uids that requireBatchInProject proved in the project in the same tx
+
+# internal/dupmerge
+internal/dupmerge/apply.go:40 the archive uids come from loadPhotos(project) once requireGroupInProject proved the group in the same tx
+internal/dupmerge/apply.go:126 the keeper is a group member that requireGroupInProject/loadPhotos proved in the project in the same tx
+
+# internal/family
+internal/family/store.go:142 the pair is made of subjects that requireSubjects proved in the project in the same tx
+internal/family/store.go:165 the child subject was proved in the project by requireSubjects first in the same write tx
+internal/family/write.go:41 the family was reached from subjects proved in the project in the same tx; families never span projects
+internal/family/write.go:52 the family was found from in-project subjects (requireSubjects) in the same tx; it inherits their project
+internal/family/write.go:88 the cycle walk starts from subjects proved in the project in the same tx and stays in it by construction
+
+# internal/hlsjob
+internal/hlsjob/inventory.go:33 ListRecorded serves only the instance-wide maintenance streaming integrity scan
+internal/hlsjob/inventory.go:69 EncodingHashes serves only the instance-wide maintenance scan (jobs-queue join, no request project)
+
+# internal/importer
+internal/importer/importer.go:213 updates the run by the id Start(projectUID) returned to the same CLI caller (dirimport)
+internal/importer/importer.go:236 finishes the run by the id Start(projectUID) returned to the same CLI caller (dirimport Complete/Fail)
+
+# internal/inventory
+internal/inventory/collect.go:199 instance-wide upgrade inventory snapshot, reached only from the `kukatko inventory` CLI
+internal/inventory/collect.go:246 instance-wide inventory storage check, reached only from the CLI
+
+# internal/invite
+internal/invite/accept.go:36 invite uid comes from lockOpen (code hash, FOR UPDATE) in the same tx; it counts a use of that invite
+internal/invite/store.go:206 uid was locked by `uid = $1 AND project_uid = $2 FOR UPDATE` just before, in the same tx
+
+# internal/notification
+internal/notification/store.go:164 Photos first checks the notification with Get(project, owner, uid); this reads its child photo rows
+
+# internal/people
+internal/people/audit.go:179 runs after updateSubjectSQL (`AND project_id = $12`) found the subject in the same tx
+internal/people/audit.go:206 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/audit.go:213 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/markers.go:412 requireMarkerInProject proved the marker in the project earlier in the same DeleteMarker tx
+internal/people/markers.go:446 every caller first proves the marker (or photo) and subject in the project in the same tx
+internal/people/markers.go:458 only caller unassignSubjectTx runs requireMarkerInProject first in the same tx
+internal/people/merge.go:75 lockMergePair (`project_id = $3 FOR UPDATE`) proved both subjects earlier in the same tx
+internal/people/merge.go:103 lockMergePair proved both subjects in the project earlier in the same tx
+internal/people/merge.go:120 lockMergePair proved both subjects in the project earlier in the same tx
+internal/people/merge.go:165 the keeper was locked by the project-scoped lockMergePair earlier in the same tx
+internal/people/merge.go:277 the source was locked by the project-scoped lockMergePair earlier in the same tx
+internal/people/nameless.go:173 snapshotSubjectTx locked the subject (project-scoped FOR UPDATE) earlier in the same tx
+internal/people/nameless.go:218 runs inside snapshotSubjectTx, right after the subject was loaded and locked within the project
+internal/people/sidecar.go:37 ListMarkersWithSubjects is called only by the sidecarjob worker, keyed by a photo uid
+internal/people/subjects.go:191 runs after updateSubjectTx (`AND project_id = $12`) found the subject in the same tx
+internal/people/subjects.go:428 requireSubjectInProject proved the subject in the project earlier in the same tx
+internal/people/subjects.go:435 requireSubjectInProject proved the subject in the project earlier in the same tx
+
+# internal/photos
+internal/photos/store.go:592 only caller is the ingest rollback, which deletes the row it just created in the request's project
+internal/photos/store_aliases.go:90 ListPhotoprismAliases has no production caller (tests only); an instance-wide read for import reconciliation
+internal/photos/store_blurhash.go:18 worker/ingest only: thumbjob (GetForJob or photoInProject before ForceRegenerate) and ingest's own new photo
+internal/photos/store_extras.go:138 thumbjob ForceRegenerate: job via GetForJob, or HTTP regenerate after the scoped a.photoInProject check
+internal/photos/store_extras.go:151 thumbjob Regenerate is a worker-only job handler; the photo uid comes from the job payload via GetForJob
+internal/photos/store_fill.go:53 dirimport duplicate uid comes from ingest's GetByFileHashInProject (dedup scoped to the import's project)
+internal/photos/store_fill.go:189 metajob Reextract is worker-only (job Handle); the uid comes from the payload via GetForJob
+internal/photos/store_geometry.go:64 instance-wide maintenance scan/repair (ListDimensionMismatches), maintainer-only
+internal/photos/store_geometry.go:108 maintenance repair of a row its own instance-wide ListDimensionMismatches found; maintainer-only
+internal/photos/store_hls.go:112 CountVideos is an instance-wide maintenance streaming-check gate (maintenance/streaming.go), maintainer-only
+internal/photos/store_import.go:112 ApplyImportMetadata has no production caller (only tests; the PhotoPrism import was removed)
+internal/photos/store_impossibledate.go:44 instance-wide maintenance scan/repair (maintenance/repair.go, maintenance.go), maintainer-only
+internal/photos/store_impossibledate.go:89 maintenance repair of a uid its own instance-wide ListImpossibleTakenAt found; maintainer-only
+internal/photos/store_ocr.go:34 ocrjob Recognize is worker-only (job Handle); the uid comes from the payload via GetForJob
+internal/photos/store_query.go:832 correlated subquery on photos.uid; the outer photos query is already scoped by project
+internal/photos/store_sidecar.go:61 sidecarjob Export is a worker-only job handler; the uid comes from the job payload
+internal/photos/store_stacks.go:233 applyNewStackTx runs only after requirePhotosInProject/requirePlansInProject in the same tx
+internal/photos/store_stacks.go:289 stack_uid read from a member proved by inProjectTx in the same tx; stacks never span projects
+internal/photos/store_stacks.go:294 memberUID proved in the project by inProjectTx (requirePhotosInProject) in the same tx
+internal/photos/store_stacks.go:305 stack_uid from a member proved by inProjectTx in the same tx; a stack never spans projects
+internal/photos/store_stacks.go:342 memberUID proved in the project by inProjectTx (requirePhotosInProject) in the same tx
+internal/photos/store_stacks.go:383 stack_uid from a member proved by inProjectTx in the same tx; a stack never spans projects
+internal/photos/store_stacks.go:393 stack_uid from a member proved by inProjectTx in the same tx; a stack never spans projects
+internal/photos/store_stacks.go:424 LeaveStackTx callers (archive, delete, bulk, dupmerge) prove the uid in the project in the same tx
+internal/photos/store_stacks.go:435 LeaveStackTx callers (archive, delete, bulk, dupmerge) prove the uid in the project in the same tx
+internal/photos/store_stacks.go:481 memberStackTx is reached only through inProjectTx, which proves memberUID in the project first
+internal/photos/store_stacks.go:498 affectedStacksTx is called from applyNewStackTx after every member uid is proved in the project
+internal/photos/store_stacks.go:525 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
+internal/photos/store_stacks.go:535 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
+internal/photos/store_stacks.go:539 repairStackTx gets a stack_uid read from a member proved in the project; stacks never span projects
+internal/photos/store_verify.go:13 instance-wide integrity count, used by backup restore verification and the maintenance scan
+internal/photos/store_videometa.go:99 metajob reprobeVideo is worker-only; the photo is loaded from the job payload via GetForJob
+
+# internal/phototask
+internal/phototask/store.go:124 the taskJoins fragment; its count and list queries take WHERE from Filter.conditions, which always adds t.project_id
+internal/phototask/store_write.go:128 updateIn first locks the row in the same tx with currentSQL (uid AND project_id = $2 FOR UPDATE)
+internal/phototask/store_write.go:353 touch is only called from AddPhotos/RemovePhotos, after lockTask (uid AND project_id FOR UPDATE) in the same tx
+
+# internal/processing
+internal/processing/store.go:43 evidenceFrom fragment; the uid query runs only on photos loaded scoped (photoInProject, ingest); the scan has project_id
+
+# internal/rekey
+internal/rekey/store.go:153 rekey service; deliberately checks every project before deleting an old object key that any row still names
+
+# internal/reset
+internal/reset/reset.go:496 guarded instance-wide library wipe (maintenance reset CLI), reads every catalogued file path
+internal/reset/reset.go:498 guarded instance-wide library wipe (maintenance reset CLI), reads every catalogued thumbnail set
+
+# internal/storagemigrate
+internal/storagemigrate/store.go:65 instance-wide storage migration progress, used only by the `kukatko storage` CLI
+internal/storagemigrate/store.go:85 instance-wide storage migration work list, used only by the `kukatko storage` CLI
+internal/storagemigrate/store.go:123 storage migration stamps a uid it read from its own instance-wide batch (CLI only)
+
+# internal/tagnotifyjob
+internal/tagnotifyjob/recorder.go:103 tag observer runs in the people store's tx after requirePhotoInProject/requireLinkable proved photo+subject in-project
+
+# internal/uploadlink
+internal/uploadlink/recode.go:71 RestoreCode first locks the link with lockLiveCode (uid AND project_id FOR UPDATE) in the same tx
+internal/uploadlink/recode.go:86 RotateCode locks the link scoped (lockLiveCode) in the same tx; NOT EXISTS is the global code_hash uniqueness
+internal/uploadlink/store.go:306 Extend locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
+internal/uploadlink/store.go:342 Revoke locks the row with uid AND project_id = $2 FOR UPDATE in the same tx before updating
+internal/uploadlink/uploads.go:36 public /u/{code} path; link uid comes from the global code-hash lookup and the link row carries its project
+internal/uploadlink/uploads.go:42 refusal readback for the same code-resolved link uid on the public upload path; the link row is its own scope
+internal/uploadlink/uploads.go:45 gives back the slot of the code-resolved link uid that ReserveUpload just took; the link carries its project
+internal/uploadlink/uploads.go:234 provenance of a photo loaded scoped (photoInProject/GetByUIDInProject) or by the sidecar worker
+
+# internal/vectors
+internal/vectors/carryover.go:77 worker-only: RecordFaceDetection is called only by the facejob handler working from a photo uid
+internal/vectors/facerepair.go:23 instance-wide maintenance repair --dimensions plan (maintainer-only maintenance service)
+internal/vectors/facerepair.go:50 instance-wide maintenance repair --dimensions apply, keyed by rows the scan just planned
+internal/vectors/faces.go:270 replaceFaces: child rows keyed by photo uid; callers are the facejob worker (RecordFaceDetection) and SaveFaces
+internal/vectors/faces.go:325 Outliers runs it only after the subject was loaded with GetSubjectByUID(ctx, projectUID, ...)
+internal/vectors/faces.go:488 DeleteFaces has no non-test caller; a child-row delete keyed by photo uid
+internal/vectors/match.go:15 callers prove the photo first: Apply via GetByUIDInProject, PhotoFaces scoped, ClearSurplusLinks worker
+internal/vectors/match.go:61 instance-wide maintenance scan/repair of duplicate face-marker links (maintainer-only)
+internal/vectors/sideways.go:28 instance-wide maintenance repair --sideways-faces listing (maintainer-only)

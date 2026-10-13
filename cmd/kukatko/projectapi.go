@@ -40,6 +40,7 @@ type projectAPI struct {
 	savedSearches func(chi.Router)
 	searchHistory func(chi.Router)
 	whatsNew      func(chi.Router)
+	stats         func(chi.Router) // GET /stats, /stats/charts: the library statistics
 	places        func(chi.Router)
 	maps          func(chi.Router)
 	upload        func(chi.Router) // POST /upload
@@ -66,7 +67,7 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 		api.photos, api.globalSearch, api.organize, api.people, api.family, api.avatars,
 		api.clusters, api.review, api.sweep, api.candidates, api.outliers, api.duplicates,
 		api.dupMarkers, api.expand, api.bulk, api.tasks, api.feedback, api.savedSearches,
-		api.searchHistory, api.whatsNew, api.places, api.maps, api.upload, api.uploadLinks,
+		api.searchHistory, api.whatsNew, api.stats, api.places, api.maps, api.upload, api.uploadLinks,
 		api.notifications, api.capabilities, api.settings, api.announcement, api.users,
 		api.members, api.invites, api.audit, api.imports, api.process, api.mcp,
 	} {

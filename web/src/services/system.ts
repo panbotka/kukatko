@@ -1,12 +1,12 @@
 import { ApiError } from './auth'
 import type { ImportRun } from './import'
-import { instancePath } from './api'
+import { apiPath, instancePath } from './api'
 
 /**
  * System client, mirroring the backend JSON shapes from `internal/systemapi` and
- * `internal/system`. It covers two endpoints: the maintainer-only status
- * snapshot and the library statistics every signed-in user may read
- * ({@link fetchLibraryStats}). The former powers the status dashboard:
+ * `internal/system`. It covers the maintainer-only status snapshot (an
+ * instance route) and the current project's library statistics every member
+ * of it may read ({@link fetchLibraryStats}, {@link fetchLibraryCharts}). The former powers the status dashboard:
  * one aggregated snapshot of embeddings reachability, job-queue depth, the
  * backup subsystem, the last import per source, storage usage, database
  * reachability, the map provider's health (a rejected mapy.com key shows up
@@ -36,9 +36,12 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `request failed: ${res.status}`
 }
 
-/** Issues a GET and parses the JSON body, throwing ApiError on a non-OK status. */
-async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(instancePath(path), {
+/**
+ * Issues a GET to `url` (an {@link instancePath} or {@link apiPath} result)
+ * and parses the JSON body, throwing ApiError on a non-OK status.
+ */
+async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, {
     method: 'GET',
     credentials: 'same-origin',
     signal,
@@ -324,10 +327,10 @@ export interface ProjectSummary {
 }
 
 /**
- * The library-statistics snapshot (`system.Library`): instance-wide counts of
- * what the catalogue holds and how much of it has been processed. Unlike the
- * status snapshot above it is readable by every signed-in user, not just
- * maintainers. `photos_without_embedding` / `photos_without_faces` /
+ * The library-statistics snapshot (`system.Library`): counts of what one
+ * project's catalogue holds and how much of it has been processed. Unlike the
+ * status snapshot above it is readable by every member of the project, not
+ * just maintainers. `photos_without_embedding` / `photos_without_faces` /
  * `faces_unassigned` are the coverage gaps the backend derives, so the page
  * never has to subtract by hand.
  *
@@ -436,28 +439,30 @@ interface RequeueDeadResponse {
 
 /** Fetches the aggregated system-status snapshot. */
 export async function fetchSystemStatus(signal?: AbortSignal): Promise<SystemStatus> {
-  return getJSON<SystemStatus>('/system/status', signal)
+  return getJSON<SystemStatus>(instancePath('/system/status'), signal)
 }
 
 /**
- * Fetches the library statistics. Open to every signed-in user (unlike the
- * status snapshot) and the single source for both the statistics page and the
- * System page's Library section. It throws {@link ApiError} when the backend
+ * Fetches the current project's library statistics (`GET /p/{project}/stats`):
+ * the counts of that project's library only. Open to every member of the
+ * project (unlike the status snapshot) and the single source for both the
+ * statistics page and the System page's Library section. It throws {@link ApiError} when the backend
  * cannot aggregate the counts, so callers show an error rather than zeroes.
  */
 export async function fetchLibraryStats(signal?: AbortSignal): Promise<LibraryStats> {
-  return getJSON<LibraryStats>('/system/stats', signal)
+  return getJSON<LibraryStats>(apiPath('/stats'), signal)
 }
 
 /**
- * Fetches the chart series behind the statistics page. Open to the same readers
+ * Fetches the chart series behind the current project's statistics page
+ * (`GET /p/{project}/stats/charts`). Open to the same readers
  * as {@link fetchLibraryStats} and deliberately a second request: the counts
  * render as soon as they arrive, while these heavier aggregates fill the charts
  * in behind them. It throws {@link ApiError} when the backend cannot aggregate,
  * so callers show an error rather than an empty-looking library.
  */
 export async function fetchLibraryCharts(signal?: AbortSignal): Promise<LibraryCharts> {
-  return getJSON<LibraryCharts>('/system/stats/charts', signal)
+  return getJSON<LibraryCharts>(apiPath('/stats/charts'), signal)
 }
 
 /**

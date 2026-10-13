@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/system"
 )
 
@@ -107,7 +108,7 @@ func seedChartLibrary(t *testing.T, db *database.DB) {
 func chartsOf(t *testing.T, db *database.DB) system.Charts {
 	t.Helper()
 	svc := system.New(system.Config{Charts: system.NewStore(db.Pool())})
-	charts, err := svc.LibraryCharts(t.Context())
+	charts, err := svc.LibraryCharts(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryCharts: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestAggregateCharts_RawSeriesAreUnfilled(t *testing.T) {
 	seedChartLibrary(t, db)
 
 	since := time.Now().UTC().AddDate(-1, 0, 0)
-	got, err := system.NewStore(db.Pool()).AggregateCharts(t.Context(), since)
+	got, err := system.NewStore(db.Pool()).AggregateCharts(t.Context(), project.BootstrapUID, since)
 	if err != nil {
 		t.Fatalf("AggregateCharts: %v", err)
 	}

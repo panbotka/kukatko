@@ -22,7 +22,8 @@ import (
 )
 
 // buildSystemAPI assembles the system API: the maintainer-only status dashboard
-// and the library statistics every signed-in user may read. It builds a fresh,
+// (an instance route) and the library statistics every member of a project may
+// read of that project (project routes, mounted through projectAPI). It builds a fresh,
 // stateless embeddings client (only used for its cheap Healthy probe) and reuses
 // the shared pool for the job-queue, import-run and library-counts stores; the
 // optional backup service drives the backup section (nil-safe). Both route

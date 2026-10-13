@@ -273,7 +273,7 @@ function StatNoteText({ note }: { note: StatNote }) {
 
 /**
  * The library counts as a grid of cards — the shared rendering of
- * `GET /system/stats`, used both by the statistics page and by the System page's
+ * `GET /p/{project}/stats`, used both by the statistics page and by the System page's
  * Library section, so the two can never drift apart or double-fetch a second
  * aggregation. The caller owns loading, errors and retries. Every number is
  * grouped for the active language (see {@link formatCount}); the coverage gaps

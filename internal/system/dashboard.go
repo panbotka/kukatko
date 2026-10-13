@@ -39,8 +39,8 @@ type Uploads struct {
 // browsable catalogue and the three sets kept out of it, what arrived recently,
 // what the library is organised by, and what it all weighs.
 //
-// It is deliberately a different set of numbers from Library (GET /system/stats),
-// which answers "how much of the catalogue has been processed?". The one thing
+// It is deliberately a different set of numbers from Library (GET
+// /p/{project}/stats), which answers "how much of the catalogue has been processed?". The one thing
 // they must not do is disagree about a shared count, so both are read from the
 // same store in the same shape: Photos here is the not-archived catalogue, which
 // is Library.PhotosLive.

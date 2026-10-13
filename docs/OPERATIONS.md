@@ -2615,7 +2615,7 @@ becomes a label value.
   carries a **`project` label = the project's slug** (never its name — `/metrics` is unauthenticated), one
   series set per **active** project, counted by one grouped SQL statement (`internal/system`'s
   `CountLibraryByProject`: the statistics page's own predicates grouped by project, so the gauges summed
-  over the label agree with `GET /system/stats`). **A dashboard or alert that wants the instance total sums
+  per label agree with that project's `GET /p/{project}/stats`). **A dashboard or alert that wants the instance total sums
   over the label**: `sum without (project) (kukatko_library_photos)`, `sum(kukatko_library_faces)`; a bare
   selector now returns one series per project:
   `kukatko_library_photos{media_type="image|video|live",project}` (the total is `sum()` over the labels),

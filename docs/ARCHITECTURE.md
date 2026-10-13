@@ -1474,6 +1474,19 @@ follow these rules; **a task is not done with red lint or tests.**
   proves the predicate, the HTTP test proves the handler reads through it and that "foreign" and
   "missing" look the same. A case that cannot pass until a later step scopes its package is kept with
   `t.Skip("unscoped until the <name> step")`, so that step only deletes the skip.
+- **The tenancy guard.** The isolation tests prove the paths someone thought to test; the forgotten
+  `WHERE` sits in the one nobody did. **`internal/tenancyguard`** is a plain Go test in `make check` that
+  parses every non-test `.go` file under `internal/` and `cmd/`, folds each SQL string (literals, `+`,
+  package constants, a function's `q +=` locals, `fmt.Sprintf`, `strings.Join`) into a statement, and fails
+  when a statement naming a **root table** after `FROM`/`JOIN`/`UPDATE`/`INTO` does not mention its project
+  column. The root tables are one list (`RootTables`), itself checked against the migrations, so a new
+  table with `project_id` cannot be left out. **How to allow-list:** when a statement must span every
+  project (maintenance scan/repair, metrics, reset/purge, backup, storage moves), works from a worker's
+  photo uid, or writes a row its own transaction already proved inside the project, add
+  `path:line reason` to `internal/tenancyguard/allow.txt` — line = the one the failure names, reason =
+  which of those it is and how. Prefer scoping the statement. An entry whose line no longer holds an
+  unscoped statement fails as a **stale allow-list entry**, so when code moves, its entries move with it.
+  Mechanics and blind spots: `docs/PACKAGES.md`.
 - Meaningful coverage of the logic (not vanity %). New behavior = new/updated tests.
 
 ### 19.3 Frontend tests

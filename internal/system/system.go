@@ -21,10 +21,11 @@
 // background and reported with the time it was taken (see DuplicateScan).
 //
 // Alongside that maintainer view it aggregates the library statistics every
-// signed-in user may see: the instance-wide photo/embedding/face/people counts
-// (Library, Service.LibraryStats) and the chart series behind them — photos per
-// year, arrivals per month, top cameras, storage by media type and by year of
-// addition (Charts, Service.LibraryCharts). Every aggregation memoises its
+// member of a project may see: that project's photo/embedding/face/people
+// counts (Library, Service.LibraryStats) and the chart series behind them —
+// photos per year, arrivals per month, top cameras, storage by media type and
+// by year of addition (Charts, Service.LibraryCharts). Both are computed and
+// memoised per project, never across projects. Every aggregation memoises its
 // expensive part so a polled page cannot turn into a query storm; how long for
 // depends on how fast the numbers move (see defaultLibraryTTL and
 // defaultChartsTTL).
@@ -252,7 +253,7 @@ type Config struct {
 	// Projects lists the projects whose latest import runs and duplicate groups
 	// are read one at a time; nil reads none of them.
 	Projects ProjectLister
-	// Library supplies the library-wide counts behind LibraryStats. A nil Library
+	// Library supplies the per-project counts behind LibraryStats. A nil Library
 	// makes LibraryStats fail rather than panic, so a caller that only needs
 	// Collect may leave it unset.
 	Library LibraryCounter
@@ -315,10 +316,10 @@ type Service struct {
 	imports      ImportLister
 	projects     ProjectLister
 	storage      *storageCache
-	library      *snapshotCache[Library]
+	library      *projectSnapshotCache[Library]
 	// projectLibrary counts each active project's library for the metrics.
 	projectLibrary ProjectLibraryCounter
-	charts         *snapshotCache[Charts]
+	charts         *projectSnapshotCache[Charts]
 	dashboard      *snapshotCache[Dashboard]
 	duplicates     *asyncCache[map[string]int]
 }
@@ -348,12 +349,13 @@ func New(cfg Config) *Service {
 	return s
 }
 
-// LibraryStats returns the instance-wide library counts with their derived
-// coverage gaps, memoised for a short TTL. Unlike Collect it reports a failure
-// as an error rather than inline: a caller must show the reader that the numbers
-// are unavailable instead of rendering zeroes as if they were real counts.
-func (s *Service) LibraryStats(ctx context.Context) (Library, error) {
-	return s.library.get(ctx)
+// LibraryStats returns the library counts of the project projectUID with their
+// derived coverage gaps, memoised per project for a short TTL. An empty
+// projectUID is ErrNoProject. Unlike Collect it reports a failure as an error
+// rather than inline: a caller must show the reader that the numbers are
+// unavailable instead of rendering zeroes as if they were real counts.
+func (s *Service) LibraryStats(ctx context.Context, projectUID string) (Library, error) {
+	return s.library.get(ctx, projectUID)
 }
 
 // VideoBacklog returns the streaming-encode backlog — how many videos the
@@ -374,14 +376,15 @@ func (s *Service) VideoBacklog(ctx context.Context) (Video, error) {
 	return dashboard.Video, nil
 }
 
-// LibraryCharts returns the chart aggregates behind the statistics page —
-// photos per year, arrivals per month, the top cameras and the storage
-// breakdowns — gap-filled and memoised for a longer TTL than the counts, because
-// a century-long histogram does not move in five minutes. Like LibraryStats it
-// reports a failure as an error: a chart drawn from an unavailable aggregation
-// would be indistinguishable from an empty library.
-func (s *Service) LibraryCharts(ctx context.Context) (Charts, error) {
-	return s.charts.get(ctx)
+// LibraryCharts returns the chart aggregates of the project projectUID behind
+// the statistics page — photos per year, arrivals per month, the top cameras
+// and the storage breakdowns — gap-filled and memoised per project for a longer
+// TTL than the counts, because a century-long histogram does not move in five
+// minutes. An empty projectUID is ErrNoProject. Like LibraryStats it reports a
+// failure as an error: a chart drawn from an unavailable aggregation would be
+// indistinguishable from an empty library.
+func (s *Service) LibraryCharts(ctx context.Context, projectUID string) (Charts, error) {
+	return s.charts.get(ctx, projectUID)
 }
 
 // Collect gathers the full status snapshot. Database reachability and storage

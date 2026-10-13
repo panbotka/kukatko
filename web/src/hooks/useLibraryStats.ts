@@ -15,9 +15,10 @@ export interface UseLibraryStatsResult {
 }
 
 /**
- * Loads the instance-wide library counts from `GET /system/stats`, the single
- * source shared by the statistics page and the System page's Library section
- * (the backend memoises the aggregation, so two readers cost one query).
+ * Loads the current project's library counts from `GET /p/{project}/stats`,
+ * the single source shared by the statistics page and the System page's
+ * Library section (the backend memoises the aggregation per project, so two
+ * readers cost one query).
  *
  * A failure is surfaced as an explicit `error` state rather than swallowed into
  * zeroes: an empty library and an unavailable count must not look the same. An

@@ -15,8 +15,9 @@ export interface UseLibraryChartsResult {
 }
 
 /**
- * Loads the chart series from `GET /system/stats/charts` — photos per year,
- * arrivals per month, the top cameras and the two storage breakdowns.
+ * Loads the current project's chart series from `GET /p/{project}/stats/charts`
+ * — photos per year, arrivals per month, the top cameras and the two storage
+ * breakdowns.
  *
  * It is a sibling of `useLibraryStats` rather than part of it: the counts are
  * cheap and the charts are not, so the two requests run side by side and the

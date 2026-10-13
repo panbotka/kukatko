@@ -12,16 +12,18 @@ import (
 // recording the window it was asked for, so both the memoisation and the month
 // bound can be observed.
 type fakeChartCounter struct {
-	charts Charts
-	err    error
-	calls  int
-	since  time.Time
+	charts   Charts
+	err      error
+	calls    int
+	since    time.Time
+	projects []string
 }
 
 // AggregateCharts returns the configured series or error, recording the call.
-func (f *fakeChartCounter) AggregateCharts(_ context.Context, since time.Time) (Charts, error) {
+func (f *fakeChartCounter) AggregateCharts(_ context.Context, projectUID string, since time.Time) (Charts, error) {
 	f.calls++
 	f.since = since
+	f.projects = append(f.projects, projectUID)
 	return f.charts, f.err
 }
 
@@ -184,12 +186,12 @@ func TestChartsCache_MemoisesWithinTTL(t *testing.T) {
 	counter := &fakeChartCounter{charts: Charts{PhotosByYear: []YearPhotos{{Year: 2026, Photos: 5}}}}
 	cache := newChartsCache(counter, time.Hour, func() time.Time { return now })
 
-	first, err := cache.get(t.Context())
+	first, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("first charts: %v", err)
 	}
 	now = now.Add(30 * time.Minute)
-	second, err := cache.get(t.Context())
+	second, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("second charts: %v", err)
 	}
@@ -209,7 +211,7 @@ func TestChartsCache_AsksForTheMonthWindow(t *testing.T) {
 
 	counter := &fakeChartCounter{}
 	cache := newChartsCache(counter, time.Hour, func() time.Time { return at(2026, time.August, 10) })
-	if _, err := cache.get(t.Context()); err != nil {
+	if _, err := cache.get(t.Context(), testProject); err != nil {
 		t.Fatalf("charts: %v", err)
 	}
 
@@ -229,13 +231,13 @@ func TestChartsCache_ErrorIsReturnedNotCached(t *testing.T) {
 	counter := &fakeChartCounter{err: wantErr}
 	cache := newChartsCache(counter, time.Hour, nil)
 
-	if _, err := cache.get(t.Context()); !errors.Is(err, wantErr) {
+	if _, err := cache.get(t.Context(), testProject); !errors.Is(err, wantErr) {
 		t.Fatalf("charts error = %v, want %v", err, wantErr)
 	}
 
 	counter.err = nil
 	counter.charts = Charts{TopCameras: []CameraPhotos{{Camera: "Canon", Photos: 1}}}
-	recovered, err := cache.get(t.Context())
+	recovered, err := cache.get(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("charts after recovery: %v", err)
 	}
@@ -251,11 +253,48 @@ func TestChartsCache_Defaults(t *testing.T) {
 	t.Parallel()
 
 	cache := newChartsCache(&fakeChartCounter{}, 0, nil)
-	if cache.ttl != defaultChartsTTL {
-		t.Errorf("ttl = %v, want the default %v", cache.ttl, defaultChartsTTL)
+	if _, err := cache.get(t.Context(), testProject); err != nil {
+		t.Fatalf("charts: %v", err)
 	}
-	if cache.now == nil {
+	entry := cache.byProject[testProject]
+	if entry.ttl != defaultChartsTTL {
+		t.Errorf("ttl = %v, want the default %v", entry.ttl, defaultChartsTTL)
+	}
+	if entry.now == nil {
 		t.Error("clock is nil, want the default time.Now")
+	}
+}
+
+// TestChartsCache_KeyedByProject verifies each project's charts are aggregated
+// and memoised on their own: a second project is never served the first one's
+// snapshot, and the store is asked for the project it is reading.
+func TestChartsCache_KeyedByProject(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeChartCounter{}
+	cache := newChartsCache(counter, time.Hour, nil)
+	for _, project := range []string{"pr-a", "pr-b", "pr-a", "pr-b"} {
+		if _, err := cache.get(t.Context(), project); err != nil {
+			t.Fatalf("charts of %s: %v", project, err)
+		}
+	}
+	if want := []string{"pr-a", "pr-b"}; !reflect.DeepEqual(counter.projects, want) {
+		t.Errorf("aggregated projects = %v, want %v (each once, then memoised)", counter.projects, want)
+	}
+}
+
+// TestServiceLibraryCharts_NoProjectIsAnError verifies an empty project uid is
+// refused before the store is asked: it must never mean "every project".
+func TestServiceLibraryCharts_NoProjectIsAnError(t *testing.T) {
+	t.Parallel()
+
+	counter := &fakeChartCounter{}
+	svc := New(Config{Charts: counter})
+	if _, err := svc.LibraryCharts(t.Context(), ""); !errors.Is(err, ErrNoProject) {
+		t.Errorf("LibraryCharts error = %v, want %v", err, ErrNoProject)
+	}
+	if counter.calls != 0 {
+		t.Errorf("aggregator called %d times, want 0", counter.calls)
 	}
 }
 
@@ -265,7 +304,7 @@ func TestServiceLibraryCharts_NoCounter(t *testing.T) {
 	t.Parallel()
 
 	svc := New(Config{})
-	if _, err := svc.LibraryCharts(t.Context()); !errors.Is(err, errNoChartCounter) {
+	if _, err := svc.LibraryCharts(t.Context(), testProject); !errors.Is(err, errNoChartCounter) {
 		t.Errorf("LibraryCharts error = %v, want %v", err, errNoChartCounter)
 	}
 }
@@ -282,7 +321,7 @@ func TestServiceLibraryCharts_Fills(t *testing.T) {
 		}},
 		Clock: func() time.Time { return at(2026, time.August, 10) },
 	})
-	got, err := svc.LibraryCharts(t.Context())
+	got, err := svc.LibraryCharts(t.Context(), testProject)
 	if err != nil {
 		t.Fatalf("LibraryCharts: %v", err)
 	}

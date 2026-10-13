@@ -13,7 +13,8 @@ import (
 // and the next read retries. A stale value is never served past its TTL. It is
 // safe for concurrent use.
 //
-// It is the shared shape behind the library counts and the chart aggregates,
+// It is the shared shape behind the library counts and the chart aggregates
+// (each held per project by projectSnapshotCache) and the dashboard,
 // which differ only in what they compute and how long the answer stays good
 // enough (see defaultLibraryTTL and defaultChartsTTL). The storage-usage cache is
 // deliberately not built on it: that one memoises failures too, because a partial
@@ -63,4 +64,56 @@ func (c *snapshotCache[T]) get(ctx context.Context) (T, error) {
 	c.computedAt = c.now()
 	c.valid = true
 	return c.cached, nil
+}
+
+// projectSnapshotCache memoises one aggregation per project: a snapshotCache
+// for each project uid it has been asked about, so one project's snapshot is
+// never served to another and each project's TTL runs on its own. The entries
+// are created on first use and kept for the life of the process; their number
+// is bounded by the projects of the instance. An empty project uid is
+// ErrNoProject and is never computed, so no caller can reach an unscoped
+// aggregation through it. It is safe for concurrent use.
+type projectSnapshotCache[T any] struct {
+	compute     func(ctx context.Context, projectUID string) (T, error)
+	ttl         time.Duration
+	fallbackTTL time.Duration
+	now         func() time.Time
+
+	mu        sync.Mutex
+	byProject map[string]*snapshotCache[T]
+}
+
+// newProjectSnapshotCache returns a per-project cache over compute, with ttl,
+// fallbackTTL and now applied to every project's entry as newSnapshotCache
+// applies them.
+func newProjectSnapshotCache[T any](
+	compute func(context.Context, string) (T, error), ttl, fallbackTTL time.Duration, now func() time.Time,
+) *projectSnapshotCache[T] {
+	return &projectSnapshotCache[T]{
+		compute:     compute,
+		ttl:         ttl,
+		fallbackTTL: fallbackTTL,
+		now:         now,
+		byProject:   map[string]*snapshotCache[T]{},
+	}
+}
+
+// get returns the memoised value of the project projectUID, recomputing it on
+// that project's own TTL (see snapshotCache.get). An empty projectUID returns
+// ErrNoProject.
+func (c *projectSnapshotCache[T]) get(ctx context.Context, projectUID string) (T, error) {
+	if projectUID == "" {
+		var zero T
+		return zero, ErrNoProject
+	}
+	c.mu.Lock()
+	entry, ok := c.byProject[projectUID]
+	if !ok {
+		entry = newSnapshotCache(func(ctx context.Context) (T, error) {
+			return c.compute(ctx, projectUID)
+		}, c.ttl, c.fallbackTTL, c.now)
+		c.byProject[projectUID] = entry
+	}
+	c.mu.Unlock()
+	return entry.get(ctx)
 }

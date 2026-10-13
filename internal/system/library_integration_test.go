@@ -255,7 +255,7 @@ func TestLibraryStats_CountsFixture(t *testing.T) {
 	seedLibrary(t, db)
 
 	svc := system.New(system.Config{Library: system.NewStore(db.Pool())})
-	got, err := svc.LibraryStats(t.Context())
+	got, err := svc.LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestLibraryStats_ListedMatchesTheLibraryGrid(t *testing.T) {
 	seedLibrary(t, db)
 
 	svc := system.New(system.Config{Library: system.NewStore(db.Pool())})
-	stats, err := svc.LibraryStats(t.Context())
+	stats, err := svc.LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestLibraryStats_EmptyLibrary(t *testing.T) {
 	dbtest.TruncateAll(t, db)
 
 	svc := system.New(system.Config{Library: system.NewStore(db.Pool())})
-	got, err := svc.LibraryStats(t.Context())
+	got, err := svc.LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestCountLibrary_RawCountsLeaveDerivedZero(t *testing.T) {
 	dbtest.TruncateAll(t, db)
 	seedLibrary(t, db)
 
-	got, err := system.NewStore(db.Pool()).CountLibrary(t.Context())
+	got, err := system.NewStore(db.Pool()).CountLibrary(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("CountLibrary: %v", err)
 	}

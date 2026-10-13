@@ -3066,8 +3066,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   (`buildSystemAPI` in `cmd/kukatko/system.go`). The admin UI **System** (`/system`, `SystemStatusPage`)
   polls every 5 s and offers quick actions (requeue the dead letter whole or per type, trigger backup, links
   to import/maintenance).
-- **Library statistics (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated
-  user** via `RequireAuth`):** `GET /system/stats` → instance-wide counts of the catalogue, modelled on
+- **Library statistics (`/api/v1/p/{project}`, `internal/systemapi` + `internal/system`, **every member
+  of the project** via `RequireAuth`):** `GET /p/{project}/stats` → the **project's** counts of the
+  catalogue (every statement scoped by `project_id`, child tables through their photo; memoised per project;
+  the instance route `GET /system/stats` is gone — it counted every tenant), modelled on
   the previous system's status page: `{photos,videos,live_photos,images,photos_live,photos_archived,
   photos_hidden,photos_stacked,photos_listed,
   photos_with_embedding,photos_with_faces,photos_without_embedding,photos_without_faces,photos_with_gps,
@@ -3115,12 +3117,12 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   it is processed?") from the same store, so the shared counts still agree. The same aggregation also backs
   the `kukatko_library_*` gauges on `/metrics` (see `docs/OPERATIONS.md` § Prometheus metrics), so the two
   cannot disagree — one query, two readers.
-- **Library charts (`/api/v1`, `internal/systemapi` + `internal/system`, **every authenticated user** via
-  `RequireAuth`):** `GET /system/stats/charts` → the series the statistics page draws over those counts:
+- **Library charts (`/api/v1/p/{project}`, `internal/systemapi` + `internal/system`, **every member of the
+  project** via `RequireAuth`):** `GET /p/{project}/stats/charts` → the project's series the statistics page draws over those counts:
   `{photos_by_year:[{year,photos}], added_by_month:[{month:"YYYY-MM",photos}],
   top_cameras:[{camera,model,photos}], storage_by_media:[{media,photos,bytes}],
   storage_by_year:[{year,photos,bytes,cumulative_bytes}]}`.
-  A **second endpoint rather than more fields on `/system/stats`**: the counts are cheap and are what an
+  A **second endpoint rather than more fields on `/stats`**: the counts are cheap and are what an
   import is watched with, these aggregates are heavier and change slowly, so the two are fetched side by side,
   fail apart, and are cached apart — the counts for 30 s, the charts for **5 min**
   (`system.defaultChartsTTL`), which is the answer to "cheap enough per view, or cached?" for these five.

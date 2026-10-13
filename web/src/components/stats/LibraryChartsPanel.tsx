@@ -18,7 +18,7 @@ const YEAR_TICK = 10
 
 /**
  * The four charts of the statistics dashboard, drawn from
- * `GET /system/stats/charts`: when the photos were taken, when they arrived,
+ * `GET /p/{project}/stats/charts`: when the photos were taken, when they arrived,
  * what took them, and what they cost in bytes.
  *
  * Each chart is one measure, so each is one shape and one colour; what a bar

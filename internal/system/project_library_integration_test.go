@@ -14,15 +14,15 @@ import (
 // TestLibraryByProject_countsEachProjectApart seeds the shared fixture into the
 // bootstrap project and a little of everything into a second one, and proves
 // each project is counted on its own — the bootstrap's numbers are exactly the
-// fixture's (the instance-wide LibraryStats of it), the second project's are
-// its own — while a deactivated project is left out.
+// fixture's (the bootstrap project's LibraryStats of it), the second project's
+// are its own — while a deactivated project is left out.
 func TestLibraryByProject_countsEachProjectApart(t *testing.T) {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	seedLibrary(t, db)
 	store := system.NewStore(db.Pool())
 	svc := system.New(system.Config{Library: store, ProjectLibrary: store})
-	whole, err := svc.LibraryStats(t.Context())
+	whole, err := svc.LibraryStats(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("LibraryStats: %v", err)
 	}

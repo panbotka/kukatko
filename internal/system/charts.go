@@ -98,11 +98,12 @@ type YearStorage struct {
 	CumulativeBytes int64 `json:"cumulative_bytes"`
 }
 
-// Charts is the chart-shaped half of the library statistics, returned by
-// GET /system/stats/charts: the series behind "what does our library look like?"
-// — when its photos were taken, when they arrived, what took them and what they
-// cost in bytes. The scalar counts live in Library and are fetched separately, so
-// the cheap numbers render immediately and are not held up by these aggregates.
+// Charts is the chart-shaped half of the library statistics of one project,
+// returned by GET /p/{project}/stats/charts: the series behind "what does our
+// library look like?" — when its photos were taken, when they arrived, what
+// took them and what they cost in bytes. The scalar counts live in Library and
+// are fetched separately, so the cheap numbers render immediately and are not
+// held up by these aggregates.
 //
 // Every series covers the **browsable** library — archived photos (the trash) are
 // excluded throughout — so a bar a reader clicks leads to exactly the photos it
@@ -131,30 +132,31 @@ type Charts struct {
 // by *Store; an interface so the assembly is unit-testable with a fake and so the
 // HTTP layer never talks to the database directly.
 type ChartCounter interface {
-	// AggregateCharts returns the raw series, with since bounding the
-	// added-per-month window. Empty buckets are simply absent from the result and
-	// the running totals are not computed: filling the gaps is the service's job,
-	// so the store reports only what the database actually counted.
-	AggregateCharts(ctx context.Context, since time.Time) (Charts, error)
+	// AggregateCharts returns the raw series of the project projectUID, with
+	// since bounding the added-per-month window. Empty buckets are simply absent
+	// from the result and the running totals are not computed: filling the gaps
+	// is the service's job, so the store reports only what the database actually
+	// counted.
+	AggregateCharts(ctx context.Context, projectUID string, since time.Time) (Charts, error)
 }
 
-// newChartsCache returns the memoised chart aggregates over counter, recomputed
-// at most once per TTL. A non-positive ttl defaults to defaultChartsTTL and a nil
-// now defaults to time.Now.
+// newChartsCache returns the memoised chart aggregates over counter, one entry
+// per project, each recomputed at most once per TTL. A non-positive ttl
+// defaults to defaultChartsTTL and a nil now defaults to time.Now.
 //
 // The clock is the same one the cache ages its entries with, so the month window
 // and the memoisation cannot drift apart: the twelve months a cached snapshot
 // covers are the twelve months that were current when it was computed.
-func newChartsCache(counter ChartCounter, ttl time.Duration, now func() time.Time) *snapshotCache[Charts] {
+func newChartsCache(counter ChartCounter, ttl time.Duration, now func() time.Time) *projectSnapshotCache[Charts] {
 	if now == nil {
 		now = time.Now
 	}
-	return newSnapshotCache(func(ctx context.Context) (Charts, error) {
+	return newProjectSnapshotCache(func(ctx context.Context, projectUID string) (Charts, error) {
 		if counter == nil {
 			return Charts{}, errNoChartCounter
 		}
 		at := now()
-		raw, err := counter.AggregateCharts(ctx, monthWindowStart(at))
+		raw, err := counter.AggregateCharts(ctx, projectUID, monthWindowStart(at))
 		if err != nil {
 			return Charts{}, fmt.Errorf("aggregating library charts: %w", err)
 		}
