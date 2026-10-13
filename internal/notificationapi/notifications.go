@@ -179,7 +179,7 @@ func (a *API) handleGetNotification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := chi.URLParam(r, "uid")
-	n, err := a.notifications.Get(r.Context(), user.UID, uid)
+	n, err := a.notifications.Get(r.Context(), projectOf(r), user.UID, uid)
 	if err != nil {
 		writeNotificationError(w, err, "reading the notification failed")
 		return
@@ -187,12 +187,12 @@ func (a *API) handleGetNotification(w http.ResponseWriter, r *http.Request) {
 	// The zero Visibility is the strict reading: whatever was archived, hidden
 	// or made private since the notification was sent drops out now, whoever
 	// was allowed to see it then.
-	uids, err := a.notifications.Photos(r.Context(), user.UID, uid, notification.Visibility{})
+	uids, err := a.notifications.Photos(r.Context(), projectOf(r), user.UID, uid, notification.Visibility{})
 	if err != nil {
 		writeNotificationError(w, err, "reading the notification's photos failed")
 		return
 	}
-	list, err := a.photos.ListByUIDs(r.Context(), uids)
+	list, err := a.photos.ListByUIDsInProject(r.Context(), projectOf(r), uids)
 	if err != nil {
 		log.Printf("notificationapi: loading photos of notification %s: %v", uid, err)
 		writeError(w, http.StatusInternalServerError, "reading the notification's photos failed")
@@ -215,7 +215,7 @@ func (a *API) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	n, err := a.notifications.MarkRead(r.Context(), user.UID, chi.URLParam(r, "uid"))
+	n, err := a.notifications.MarkRead(r.Context(), projectOf(r), user.UID, chi.URLParam(r, "uid"))
 	if err != nil {
 		writeNotificationError(w, err, "marking the notification read failed")
 		return

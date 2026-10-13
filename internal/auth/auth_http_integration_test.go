@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/pushjob"
 	"github.com/panbotka/kukatko/internal/settings"
 )
@@ -78,6 +79,7 @@ func newHTTPEnvWithProxies(t *testing.T, loginLimit int, trusted []string) *http
 			Mail:        mail,
 			ApprovalURL: testApprovalURL,
 			Notify: notifydeliver.New(notifydeliver.Config{
+				Projects:      project.NewStore(db.Pool()),
 				Notifications: notification.NewStore(db.Pool()),
 				Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{}),
 				Mail:          mail,

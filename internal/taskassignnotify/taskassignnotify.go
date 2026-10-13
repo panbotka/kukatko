@@ -84,11 +84,12 @@ func New(cfg Config) *Notifier {
 	return &Notifier{deliver: cfg.Deliver, lang: lang, log: log}
 }
 
-// PathPrefix is the in-app route of one task's page, the uid appended.
+// PathPrefix is the route of one task's page inside its project, the uid
+// appended; internal/notifydeliver puts it under the project's root.
 const PathPrefix = "/tasks/"
 
-// TaskPath returns the in-app path of the task uid's page, the link the
-// notification opens.
+// TaskPath returns the path of the task uid's page inside its project, the
+// link the notification opens.
 func TaskPath(uid string) string {
 	return PathPrefix + uid
 }
@@ -121,12 +122,13 @@ func wanted(a phototask.Assignment, acct account) bool {
 }
 
 // contextSQL reads what one notification needs, in one round trip: the task's
-// title, the asking account's name (display name, else username, empty when
-// the account is gone or nobody asked) and the asked account's standing. The
-// task and the asked account are both known to exist — the assignment that
-// just wrote the participant row holds foreign keys to both.
+// project (the inbox the notification lands in) and title, the asking account's
+// name (display name, else username, empty when the account is gone or nobody
+// asked) and the asked account's standing. The task and the asked account are
+// both known to exist — the assignment that just wrote the participant row
+// holds foreign keys to both.
 const contextSQL = `
-SELECT t.title,
+SELECT t.project_id, t.title,
        COALESCE(NULLIF(a.display_name, ''), a.username, ''),
        u.disabled, u.approved_at IS NOT NULL
 FROM photo_tasks t
@@ -136,9 +138,10 @@ WHERE t.uid = $1`
 
 // taskContext is one contextSQL row.
 type taskContext struct {
-	title string
-	who   string
-	acct  account
+	projectUID string
+	title      string
+	who        string
+	acct       account
 }
 
 // Assigned delivers the task_assigned notification to a.UserUID on tx when the
@@ -170,7 +173,7 @@ func (n *Notifier) Assigned(ctx context.Context, tx pgx.Tx, a phototask.Assignme
 func (n *Notifier) notify(ctx context.Context, sp pgx.Tx, a phototask.Assignment) error {
 	var c taskContext
 	err := sp.QueryRow(ctx, contextSQL, a.TaskUID, a.UserUID, a.ActorUID).
-		Scan(&c.title, &c.who, &c.acct.Disabled, &c.acct.Approved)
+		Scan(&c.projectUID, &c.title, &c.who, &c.acct.Disabled, &c.acct.Approved)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("task %s or account %s not found", a.TaskUID, a.UserUID)
 	}
@@ -180,21 +183,23 @@ func (n *Notifier) notify(ctx context.Context, sp pgx.Tx, a phototask.Assignment
 	if !wanted(a, c.acct) {
 		return nil
 	}
-	if _, err := n.deliver.Deliver(ctx, sp, a.UserUID, n.message(a.TaskUID, c.who, c.title)); err != nil {
+	if _, err := n.deliver.Deliver(ctx, sp, a.UserUID, n.message(c.projectUID, a.TaskUID, c.who, c.title)); err != nil {
 		return fmt.Errorf("delivering to %s: %w", a.UserUID, err)
 	}
 	return nil
 }
 
-// message is the notification the asked person gets: the task_assigned kind,
+// message is the notification the asked person gets in the task's project
+// projectUID: the task_assigned kind,
 // the text in the notifier's language naming who asked and the task, the
 // task's page as the link, no photographs, and the task_assigned mail.
-func (n *Notifier) message(taskUID, who, title string) notifydeliver.Message {
+func (n *Notifier) message(projectUID, taskUID, who, title string) notifydeliver.Message {
 	return notifydeliver.Message{
-		Kind: notification.KindTaskAssigned,
-		Text: notification.RenderTaskAssigned(n.lang, who, title),
-		Link: TaskPath(taskUID),
-		Mail: mailBuilder(who, title),
+		ProjectUID: projectUID,
+		Kind:       notification.KindTaskAssigned,
+		Text:       notification.RenderTaskAssigned(n.lang, who, title),
+		Link:       TaskPath(taskUID),
+		Mail:       mailBuilder(who, title),
 	}
 }
 

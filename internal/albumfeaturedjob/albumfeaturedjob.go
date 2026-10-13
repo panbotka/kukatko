@@ -9,8 +9,11 @@
 // feature's transaction, payload = the album's uid, and only when the album
 // was not featured already — prolonging or shortening a running feature is
 // silent. The job (Service) then reads the album as the strip would list it,
-// walks the accounts and delivers to the ones the rules allow:
+// walks the accounts of the album's project (its members and the maintainers)
+// and delivers to the ones the rules allow, into that project's inbox with a
+// link that opens there:
 //
+//   - an account that is no member of the album's project hears nothing;
 //   - the account that featured the album is never told about its own work;
 //   - a private album is announced only to accounts that may curate, the same
 //     rule the strip itself applies;

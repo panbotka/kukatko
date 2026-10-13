@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // names reduces a participant slice to its user UIDs, for readable failures.
@@ -34,7 +35,7 @@ func TestParticipants_actingJoins(t *testing.T) {
 
 	// Opening a question puts its author on it.
 	task := f.mustCreate(t, "Kdy to bylo?", photo.UID)
-	people, err := f.tasks.Participants(ctx, task.UID)
+	people, err := f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
 	if err != nil {
 		t.Fatalf("Participants: %v", err)
 	}
@@ -47,12 +48,12 @@ func TestParticipants_actingJoins(t *testing.T) {
 
 	// A second person moving it along joins by that act alone.
 	second := f.makeUser(t, "us-second", "pametnik", "Pamětník")
-	if _, err := f.tasks.Update(ctx, task.UID,
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID,
 		phototask.Update{State: statePtr(phototask.StateWorking)},
 		audit.Entry{ActorUID: second, Action: audit.ActionTaskUpdate}); err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
-	people, err = f.tasks.Participants(ctx, task.UID)
+	people, err = f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
 	if err != nil {
 		t.Fatalf("Participants: %v", err)
 	}
@@ -61,11 +62,11 @@ func TestParticipants_actingJoins(t *testing.T) {
 	}
 
 	// Acting again changes nothing: the join is idempotent.
-	if _, err := f.tasks.AddPhotos(ctx, task.UID, []string{f.makePhoto(t, "b").UID},
+	if _, err := f.tasks.AddPhotos(ctx, project.BootstrapUID, task.UID, []string{f.makePhoto(t, "b").UID},
 		audit.Entry{ActorUID: second, Action: audit.ActionTaskAddPhotos}); err != nil {
 		t.Fatalf("adding photos: %v", err)
 	}
-	people, _ = f.tasks.Participants(ctx, task.UID)
+	people, _ = f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
 	if len(people) != 2 {
 		t.Errorf("acting twice produced %v, want the same two people", names(people))
 	}
@@ -80,10 +81,10 @@ func TestParticipants_assignAndRemove(t *testing.T) {
 	task := f.mustCreate(t, "Kdo je to?")
 	asked := f.makeUser(t, "us-asked", "teta", "Teta")
 
-	if err := f.tasks.Assign(ctx, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
-	people, err := f.tasks.Participants(ctx, task.UID)
+	people, err := f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
 	if err != nil {
 		t.Fatalf("Participants: %v", err)
 	}
@@ -105,11 +106,11 @@ func TestParticipants_assignAndRemove(t *testing.T) {
 	}
 
 	// Assigning twice is not an error — the end state is what was asked for.
-	if err := f.tasks.Assign(ctx, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign (again): %v", err)
 	}
 
-	removed, err := f.tasks.Unassign(ctx, task.UID, asked, entry(audit.ActionTaskUnassign))
+	removed, err := f.tasks.Unassign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskUnassign))
 	if err != nil {
 		t.Fatalf("Unassign: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestParticipants_assignAndRemove(t *testing.T) {
 		t.Error("Unassign reported nothing removed")
 	}
 	// Removing somebody who is not there is a no-op, not a failure.
-	removed, err = f.tasks.Unassign(ctx, task.UID, asked, entry(audit.ActionTaskUnassign))
+	removed, err = f.tasks.Unassign(ctx, project.BootstrapUID, task.UID, asked, entry(audit.ActionTaskUnassign))
 	if err != nil {
 		t.Fatalf("Unassign (again): %v", err)
 	}
@@ -149,7 +150,7 @@ func TestParticipants_observerHearsFreshAssignmentsOnly(t *testing.T) {
 	anna := f.makeUser(t, "us-anna", "anna", "Anna")
 	bedrich := f.makeUser(t, "us-bedrich", "bedrich", "Bedřich")
 
-	task, err := tasks.Create(ctx, phototask.Task{Title: "Kdy to bylo?"},
+	task, err := tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Kdy to bylo?"},
 		phototask.Opening{AskedUIDs: []string{anna, actor, anna}}, entry(audit.ActionTaskCreate))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -159,18 +160,18 @@ func TestParticipants_observerHearsFreshAssignmentsOnly(t *testing.T) {
 		t.Fatalf("after an opening asking Anna and the actor, heard %+v, want %+v", obs.heard, want)
 	}
 
-	if err := tasks.Assign(ctx, task.UID, anna, entry(audit.ActionTaskAssign)); err != nil {
+	if err := tasks.Assign(ctx, project.BootstrapUID, task.UID, anna, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign (again): %v", err)
 	}
 	if !reflect.DeepEqual(obs.heard, want) {
 		t.Fatalf("re-asking Anna: heard %+v, want unchanged %+v", obs.heard, want)
 	}
 
-	if _, err := tasks.Update(ctx, task.UID, phototask.Update{State: statePtr(phototask.StateWorking)},
+	if _, err := tasks.Update(ctx, project.BootstrapUID, task.UID, phototask.Update{State: statePtr(phototask.StateWorking)},
 		audit.Entry{ActorUID: bedrich, Action: audit.ActionTaskUpdate}); err != nil {
 		t.Fatalf("Update by Bedřich: %v", err)
 	}
-	if err := tasks.Assign(ctx, task.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
+	if err := tasks.Assign(ctx, project.BootstrapUID, task.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign Bedřich: %v", err)
 	}
 	if !reflect.DeepEqual(obs.heard, want) {
@@ -178,7 +179,7 @@ func TestParticipants_observerHearsFreshAssignmentsOnly(t *testing.T) {
 	}
 
 	other := f.mustCreate(t, "Druhý")
-	if err := tasks.Assign(ctx, other.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
+	if err := tasks.Assign(ctx, project.BootstrapUID, other.UID, bedrich, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign Bedřich on another task: %v", err)
 	}
 	want = append(want, phototask.Assignment{TaskUID: other.UID, UserUID: bedrich, ActorUID: actor})
@@ -194,12 +195,12 @@ func TestParticipants_refusesTheImpossible(t *testing.T) {
 	ctx := context.Background()
 	task := f.mustCreate(t, "Kdy?")
 
-	if err := f.tasks.Assign(ctx, task.UID, "us-nobody", entry(audit.ActionTaskAssign)); !errors.Is(
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, "us-nobody", entry(audit.ActionTaskAssign)); !errors.Is(
 		err, phototask.ErrUserNotFound,
 	) {
 		t.Errorf("assigning a missing account = %v, want ErrUserNotFound", err)
 	}
-	if err := f.tasks.Assign(ctx, "tk-nothing", actor, entry(audit.ActionTaskAssign)); !errors.Is(
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, "tk-nothing", actor, entry(audit.ActionTaskAssign)); !errors.Is(
 		err, phototask.ErrNotFound,
 	) {
 		t.Errorf("assigning on a missing task = %v, want ErrNotFound", err)
@@ -215,14 +216,14 @@ func TestParticipants_answeringJoins(t *testing.T) {
 	task := f.mustCreate(t, "V kterém roce?")
 	answerer := f.makeUser(t, "us-viewer", "soused", "Soused")
 
-	if _, err := f.comments.Create(ctx, comments.TaskSubject(task.UID), answerer, "1987.",
+	if _, err := f.comments.Create(ctx, project.BootstrapUID, comments.TaskSubject(task.UID), answerer, "1987.",
 		audit.Entry{ActorUID: answerer, Action: audit.ActionCommentCreate}); err != nil {
 		t.Fatalf("commenting: %v", err)
 	}
-	if err := f.tasks.Join(ctx, task.UID, answerer); err != nil {
+	if err := f.tasks.Join(ctx, project.BootstrapUID, task.UID, answerer); err != nil {
 		t.Fatalf("Join: %v", err)
 	}
-	people, _ := f.tasks.Participants(ctx, task.UID)
+	people, _ := f.tasks.Participants(ctx, project.BootstrapUID, task.UID)
 	if len(people) != 2 {
 		t.Fatalf("participants = %v, want the author and the answerer", names(people))
 	}
@@ -236,19 +237,19 @@ func TestList_byParticipant(t *testing.T) {
 	other := f.makeUser(t, "us-other", "jiny", "Jiný")
 
 	mine := f.mustCreate(t, "Moje otázka")
-	theirs, err := f.tasks.Create(ctx, phototask.Task{Title: "Cizí otázka"}, phototask.Opening{},
+	theirs, err := f.tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Cizí otázka"}, phototask.Opening{},
 		audit.Entry{ActorUID: other, Action: audit.ActionTaskCreate})
 	if err != nil {
 		t.Fatalf("creating the other task: %v", err)
 	}
 	closed := f.mustCreate(t, "Moje hotová")
-	if _, err := f.tasks.Update(ctx, closed.UID, phototask.Update{
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, closed.UID, phototask.Update{
 		State: statePtr(phototask.StateDone), Resolution: new("hotovo"),
 	}, entry(audit.ActionTaskUpdate)); err != nil {
 		t.Fatalf("closing: %v", err)
 	}
 
-	got, total, err := f.tasks.List(ctx, phototask.Filter{ParticipantUID: actor})
+	got, total, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{ParticipantUID: actor})
 	if err != nil {
 		t.Fatalf("List(participant): %v", err)
 	}
@@ -263,7 +264,7 @@ func TestList_byParticipant(t *testing.T) {
 
 	// It combines: "mine, still open" is one query, which is what the page
 	// showing somebody their own work actually asks for.
-	open, _, err := f.tasks.List(ctx, phototask.Filter{ParticipantUID: actor, Open: true})
+	open, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{ParticipantUID: actor, Open: true})
 	if err != nil {
 		t.Fatalf("List(participant, open): %v", err)
 	}
@@ -279,7 +280,7 @@ func TestList_carriesParticipants(t *testing.T) {
 	ctx := context.Background()
 	task := f.mustCreate(t, "Kdo?")
 
-	got, _, err := f.tasks.List(ctx, phototask.Filter{})
+	got, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestList_carriesParticipants(t *testing.T) {
 		t.Errorf("participant name = %q, want the display name", got[0].Participants[0].Name)
 	}
 
-	one, err := f.tasks.Get(ctx, task.UID, actor)
+	one, err := f.tasks.Get(ctx, project.BootstrapUID, task.UID, actor)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -312,7 +313,7 @@ func TestCreate_askedAtOpening(t *testing.T) {
 	anna := f.makeUser(t, "us-anna", "anna", "Anna")
 	agent := f.makeUser(t, "us-agent", "agent", "Agent")
 
-	task, err := f.tasks.Create(ctx, phototask.Task{Title: "Přejmenovat wf: štítky", State: phototask.StateWorking},
+	task, err := f.tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Přejmenovat wf: štítky", State: phototask.StateWorking},
 		phototask.Opening{AskedUIDs: []string{anna, agent, anna}}, entry(audit.ActionTaskCreate))
 	if err != nil {
 		t.Fatalf("Create with asked participants: %v", err)
@@ -351,12 +352,12 @@ func TestCreate_askedUnknownWritesNothing(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	_, err := f.tasks.Create(ctx, phototask.Task{Title: "Komu?"},
+	_, err := f.tasks.Create(ctx, project.BootstrapUID, phototask.Task{Title: "Komu?"},
 		phototask.Opening{AskedUIDs: []string{"us-nobody"}}, entry(audit.ActionTaskCreate))
 	if !errors.Is(err, phototask.ErrUserNotFound) {
 		t.Fatalf("Create with an unknown person: err = %v, want ErrUserNotFound", err)
 	}
-	if _, total, err := f.tasks.List(ctx, phototask.Filter{}); err != nil || total != 0 {
+	if _, total, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{}); err != nil || total != 0 {
 		t.Errorf("after the refusal: total = %d, err = %v; want no task at all", total, err)
 	}
 	if n := f.auditCount(t, audit.ActionTaskCreate) + f.auditCount(t, audit.ActionTaskAssign); n != 0 {

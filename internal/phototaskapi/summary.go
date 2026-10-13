@@ -11,7 +11,7 @@ func (a *API) handleSummary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	summary, err := a.store.Summary(r.Context(), user.UID)
+	summary, err := a.store.Summary(r.Context(), projectOf(r), user.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "summarising tasks failed")
 		return

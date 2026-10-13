@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // inboxPage mirrors the inbox listing response.
@@ -28,7 +29,7 @@ type inboxPage struct {
 func (e *env) seedInbox(t *testing.T, userUID, title string, inApp bool, minutesAgo int) notification.Notification {
 	t.Helper()
 	n, err := notification.NewStore(e.db.Pool()).Create(t.Context(), notification.New{
-		UserUID: userUID, Kind: notification.KindRegistrationPending, Title: title, Link: "/users", InApp: inApp,
+		ProjectUID: project.BootstrapUID, UserUID: userUID, Kind: notification.KindRegistrationPending, Title: title, Link: "/users", InApp: inApp,
 	})
 	if err != nil {
 		t.Fatalf("Create %s: %v", title, err)

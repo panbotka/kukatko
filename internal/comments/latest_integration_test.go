@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestLatestAmong verifies the bulk "newest comment per photo" read: the newest
@@ -31,13 +32,13 @@ func TestLatestAmong(t *testing.T) {
 	f.mustCreate(t, second.UID, alice, "only one")
 	lone := f.mustCreate(t, onlyDeleted.UID, alice, "will be deleted")
 	for _, c := range []comments.Comment{gone, lone} {
-		if err := f.comments.Delete(context.Background(), c.UID,
+		if err := f.comments.Delete(context.Background(), project.BootstrapUID, c.UID,
 			entry(audit.ActionCommentDelete, alice, c.PhotoUID)); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 	}
 
-	latest, err := f.comments.LatestAmong(context.Background(), comments.SubjectPhoto,
+	latest, err := f.comments.LatestAmong(context.Background(), project.BootstrapUID, comments.SubjectPhoto,
 		[]string{first.UID, second.UID, third.UID, onlyDeleted.UID, "ph_missing"})
 	if err != nil {
 		t.Fatalf("LatestAmong: %v", err)
@@ -61,11 +62,11 @@ func TestLatestAmong(t *testing.T) {
 		t.Errorf("latest = %v, want only the two commented photos", latest)
 	}
 
-	empty, err := f.comments.LatestAmong(context.Background(), comments.SubjectPhoto, nil)
+	empty, err := f.comments.LatestAmong(context.Background(), project.BootstrapUID, comments.SubjectPhoto, nil)
 	if err != nil || len(empty) != 0 {
 		t.Errorf("LatestAmong(nil) = %v, %v, want an empty map and no error", empty, err)
 	}
-	if _, err := f.comments.LatestAmong(context.Background(), comments.SubjectKind("nope"),
+	if _, err := f.comments.LatestAmong(context.Background(), project.BootstrapUID, comments.SubjectKind("nope"),
 		[]string{first.UID}); err == nil {
 		t.Error("LatestAmong(unknown kind) = nil error, want ErrInvalidSubject")
 	}
@@ -103,7 +104,7 @@ func TestLatestAmong_isIndexBacked(t *testing.T) {
 		page = append(page, fmt.Sprintf("lat%029d", i))
 	}
 
-	latest, err := f.comments.LatestAmong(ctx, comments.SubjectPhoto, page)
+	latest, err := f.comments.LatestAmong(ctx, project.BootstrapUID, comments.SubjectPhoto, page)
 	if err != nil {
 		t.Fatalf("LatestAmong: %v", err)
 	}

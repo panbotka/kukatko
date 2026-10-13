@@ -32,39 +32,39 @@ type fakeComments struct {
 }
 
 // List returns the canned thread for any subject.
-func (f *fakeComments) List(_ context.Context, subj comments.Subject) ([]comments.Comment, error) {
+func (f *fakeComments) List(_ context.Context, _ string, subj comments.Subject) ([]comments.Comment, error) {
 	f.lastSubject = subj
 	return f.thread, nil
 }
 
 // CountsAmong records the question and answers the canned counts.
 func (f *fakeComments) CountsAmong(
-	_ context.Context, kind comments.SubjectKind, uids []string,
+	_ context.Context, _ string, kind comments.SubjectKind, uids []string,
 ) (map[string]int, error) {
 	f.countedKind, f.countedUIDs = kind, uids
 	return f.counts, f.countsErr
 }
 
 // Get is never reached without a principal.
-func (f *fakeComments) Get(context.Context, string) (comments.Comment, error) {
+func (f *fakeComments) Get(context.Context, string, string) (comments.Comment, error) {
 	return comments.Comment{}, comments.ErrNotFound
 }
 
 // Create records that a write got through — it must not, without a principal.
 func (f *fakeComments) Create(
-	context.Context, comments.Subject, string, string, audit.Entry,
+	context.Context, string, comments.Subject, string, string, audit.Entry,
 ) (comments.Comment, error) {
 	f.created = true
 	return comments.Comment{}, errors.New("unexpected create")
 }
 
 // Update is never reached without a principal.
-func (f *fakeComments) Update(context.Context, string, string, audit.Entry) (comments.Comment, error) {
+func (f *fakeComments) Update(context.Context, string, string, string, audit.Entry) (comments.Comment, error) {
 	return comments.Comment{}, errors.New("unexpected update")
 }
 
 // Delete is never reached without a principal.
-func (f *fakeComments) Delete(context.Context, string, audit.Entry) error {
+func (f *fakeComments) Delete(context.Context, string, string, audit.Entry) error {
 	return errors.New("unexpected delete")
 }
 

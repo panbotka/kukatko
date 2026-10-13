@@ -34,6 +34,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photoapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/phototask"
 	"github.com/panbotka/kukatko/internal/places"
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/project"
@@ -182,7 +183,10 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Users:     authStore,
 		Places:    placeStore,
 		Comments:  commentStore,
-		Stacker:   stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
+		// The real task store: a task-scoped listing is answered only for a task
+		// of the request's project, and the detail names its open tasks.
+		Tasks:   phototask.NewStore(db.Pool()),
+		Stacker: stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		Purger: trash.New(trash.Config{
 			Photos:      store,
 			Storage:     fs,

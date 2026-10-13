@@ -54,6 +54,7 @@ func newFixture(t *testing.T) *fixture {
 	dbtest.TruncateAll(t, db)
 	f := &fixture{db: db, jobs: jobs.NewStore(db.Pool())}
 	deliverer := notifydeliver.New(notifydeliver.Config{
+		Projects:      project.NewStore(db.Pool()),
 		Notifications: notification.NewStore(db.Pool()),
 		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: false}),
 		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
@@ -232,7 +233,7 @@ func TestFeature_announcesToTheRightAccounts(t *testing.T) {
 		t.Fatalf("recipients = %v, want the editor and the viewer", f.recipients(t))
 	}
 	for _, s := range got {
-		if s.title != "Nové doporučené album: Pouť 2026" || s.link != "/albums/"+album || !s.inApp {
+		if s.title != "Nové doporučené album: Pouť 2026" || s.link != "/p/"+project.BootstrapSlug+"/albums/"+album || !s.inApp {
 			t.Errorf("notification of %s = %+v", s.user, s)
 		}
 		if !reflect.DeepEqual(s.photos, []string{"ph" + album}) {
@@ -258,7 +259,7 @@ func TestFeature_announcesToTheRightAccounts(t *testing.T) {
 	if err := json.Unmarshal(raw, &mail); err != nil {
 		t.Fatalf("decoding the mail payload: %v", err)
 	}
-	wantURL := "https://kukatko.example.org/albums/" + album
+	wantURL := "https://kukatko.example.org/p/" + project.BootstrapSlug + "/albums/" + album
 	if mail.Template != "album_featured" || mail.To != editorUID+"@example.test" ||
 		mail.Data.Title != "Pouť 2026" || mail.Data.URL != wantURL {
 		t.Fatalf("mail = %s, want the album_featured template to the editor linking %s", raw, wantURL)

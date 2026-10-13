@@ -23,13 +23,13 @@ type fakeComments struct {
 }
 
 // List returns nothing; the thread endpoint is covered by the integration tests.
-func (f *fakeComments) List(_ context.Context, _ comments.Subject) ([]comments.Comment, error) {
+func (f *fakeComments) List(_ context.Context, _ string, _ comments.Subject) ([]comments.Comment, error) {
 	return nil, f.err
 }
 
 // CountsAmong records the requested UIDs and returns the configured counts or error.
 func (f *fakeComments) CountsAmong(
-	_ context.Context, _ comments.SubjectKind, uids []string,
+	_ context.Context, _ string, _ comments.SubjectKind, uids []string,
 ) (map[string]int, error) {
 	f.gotUIDs = uids
 	if f.err != nil {
@@ -41,7 +41,7 @@ func (f *fakeComments) CountsAmong(
 // LatestAmong records the requested UIDs and returns the configured latest
 // comments or error.
 func (f *fakeComments) LatestAmong(
-	_ context.Context, _ comments.SubjectKind, uids []string,
+	_ context.Context, _ string, _ comments.SubjectKind, uids []string,
 ) (map[string]comments.Comment, error) {
 	f.gotUIDs = uids
 	if f.err != nil {
@@ -51,24 +51,24 @@ func (f *fakeComments) LatestAmong(
 }
 
 // Get is unused by these tests.
-func (f *fakeComments) Get(_ context.Context, _ string) (comments.Comment, error) {
+func (f *fakeComments) Get(_ context.Context, _, _ string) (comments.Comment, error) {
 	return comments.Comment{}, f.err
 }
 
 // Create is unused by these tests.
 func (f *fakeComments) Create(
-	_ context.Context, _ comments.Subject, _, _ string, _ audit.Entry,
+	_ context.Context, _ string, _ comments.Subject, _, _ string, _ audit.Entry,
 ) (comments.Comment, error) {
 	return comments.Comment{}, f.err
 }
 
 // Update is unused by these tests.
-func (f *fakeComments) Update(_ context.Context, _, _ string, _ audit.Entry) (comments.Comment, error) {
+func (f *fakeComments) Update(_ context.Context, _, _, _ string, _ audit.Entry) (comments.Comment, error) {
 	return comments.Comment{}, f.err
 }
 
 // Delete is unused by these tests.
-func (f *fakeComments) Delete(_ context.Context, _ string, _ audit.Entry) error { return f.err }
+func (f *fakeComments) Delete(_ context.Context, _, _ string, _ audit.Entry) error { return f.err }
 
 // TestCanEditComment verifies only the author may rewrite a comment, and that a
 // comment left authorless by a deleted account is editable by nobody.

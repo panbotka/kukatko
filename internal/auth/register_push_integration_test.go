@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notifydeliver"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
@@ -51,7 +52,8 @@ func pushRegistration(
 		Settings: env.settings,
 		Mail:     mail,
 		Notify: notifydeliver.New(notifydeliver.Config{
-			Notifications: notification.NewStore(env.db.Pool()), Push: pusher, Mail: mail,
+			Projects: project.NewStore(env.db.Pool()), Notifications: notification.NewStore(env.db.Pool()),
+			Push: pusher, Mail: mail,
 		}),
 		Logger: slog.New(slog.NewTextHandler(logs, nil)),
 	}), logs
@@ -214,7 +216,7 @@ func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 			owners[boss.UID].inApp, owners[keeper.UID].inApp, owners[quiet.UID].inApp)
 	}
 	for _, n := range stored {
-		if n.kind != string(notification.KindRegistrationPending) || n.link != "/users" {
+		if n.kind != string(notification.KindRegistrationPending) || n.link != "/p/"+project.BootstrapSlug+"/users" {
 			t.Errorf("notification %+v: want kind registration_pending, link /users", n)
 		}
 		if n.title != "Nová registrace čeká na schválení" || !strings.Contains(n.body, "Nový Rodák") {
@@ -228,7 +230,7 @@ func TestRegister_notifiesEveryApproverThroughTheirChannels(t *testing.T) {
 	}
 	for _, p := range pushes {
 		want := push.Notification{
-			Title: owners[boss.UID].title, Body: owners[boss.UID].body, URL: "/users",
+			Title: owners[boss.UID].title, Body: owners[boss.UID].body, URL: "/p/" + project.BootstrapSlug + "/users",
 			Kind: string(notification.KindRegistrationPending), Tag: owners[boss.UID].uid,
 		}
 		if p.Notification != want || !strings.HasPrefix(p.SubscriptionID, "psboss-") {

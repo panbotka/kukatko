@@ -3,6 +3,7 @@
 package whatsnew_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/whatsnew"
 )
 
@@ -38,7 +40,7 @@ func newEnv(t *testing.T) *env {
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
 	return &env{
-		store: whatsnew.NewStore(db.Pool(), phototask.NewStore(db.Pool())).WithGap(testGap),
+		store: whatsnew.NewStore(db.Pool(), bootstrapTasks{phototask.NewStore(db.Pool())}).WithGap(testGap),
 		db:    db,
 		now:   time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC),
 	}
@@ -371,4 +373,17 @@ func (e *env) plan(t *testing.T, table string) string {
 		t.Fatalf("reading plan: %v", err)
 	}
 	return b.String()
+}
+
+// bootstrapTasks is the task store as the digest's caller-only TaskCounter,
+// counting in the bootstrap project — where these fixtures write — the way the
+// server's adapter counts in the request's project.
+type bootstrapTasks struct {
+	tasks *phototask.Store
+}
+
+// WaitingOnMe returns how many of the bootstrap project's open tasks wait on
+// callerUID.
+func (b bootstrapTasks) WaitingOnMe(ctx context.Context, callerUID string) (int, error) {
+	return b.tasks.WaitingOnMe(ctx, project.BootstrapUID, callerUID) //nolint:wrapcheck // a test adapter
 }

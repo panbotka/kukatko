@@ -15,6 +15,48 @@ import (
 // on a fan-out, not a tuning knob anybody should need to turn.
 const MaxAlbumGroups = 5
 
+// consumedPhoto is one photo of a closing window that may still be named, with
+// the project it belongs to — the project a tag notice is recorded in is always
+// its photo's.
+type consumedPhoto struct {
+	UID        string
+	ProjectUID string
+}
+
+// projectWindow is the part of a closing window inside one project: the
+// project and its photos, newest first. It is announced on its own — its own
+// notifications in that project's inbox, its own e-mail — so nothing about one
+// project is ever said inside another.
+type projectWindow struct {
+	ProjectUID string
+	Photos     []string
+}
+
+// groupByProject splits a closing window's photos — newest first — into one
+// window per project, each keeping the photos' order. The projects come in the
+// order of their newest photo, so the most recent tagging is announced first.
+// A photo listed twice counts once. The result is deterministic for the same
+// input. It is a pure function.
+func groupByProject(photos []consumedPhoto) []projectWindow {
+	var out []projectWindow
+	index := make(map[string]int)
+	seen := make(map[string]struct{}, len(photos))
+	for _, p := range photos {
+		if _, dup := seen[p.UID]; dup {
+			continue
+		}
+		seen[p.UID] = struct{}{}
+		i, ok := index[p.ProjectUID]
+		if !ok {
+			i = len(out)
+			index[p.ProjectUID] = i
+			out = append(out, projectWindow{ProjectUID: p.ProjectUID})
+		}
+		out[i].Photos = append(out[i].Photos, p.UID)
+	}
+	return out
+}
+
 // albumRef is one album a tagged photo is in, as read from album_photos.
 type albumRef struct {
 	UID     string

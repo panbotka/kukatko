@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/photos"
 )
@@ -84,7 +85,7 @@ func (a *API) annotateLastComments(ctx context.Context, views []photoView) error
 	for i := range views {
 		uids[i] = views[i].UID
 	}
-	latest, err := a.comments.LatestAmong(ctx, comments.SubjectPhoto, uids)
+	latest, err := a.comments.LatestAmong(ctx, auth.ProjectUIDFromContext(ctx), comments.SubjectPhoto, uids)
 	if err != nil {
 		return fmt.Errorf("photoapi: resolving last comments: %w", err)
 	}

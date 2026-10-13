@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // makeAlbum inserts a hand-made album with the given uid and title, bypassing
@@ -42,7 +43,7 @@ func TestAlbumThread_createListDelete(t *testing.T) {
 	photo := f.makePhoto(t, "one")
 	ctx := context.Background()
 
-	first, err := f.comments.Create(ctx, comments.AlbumSubject(album), alice, "Kdo tam ještě byl?",
+	first, err := f.comments.Create(ctx, project.BootstrapUID, comments.AlbumSubject(album), alice, "Kdo tam ještě byl?",
 		albumEntry(audit.ActionCommentCreate, alice, album))
 	if err != nil {
 		t.Fatalf("Create(album): %v", err)
@@ -51,7 +52,7 @@ func TestAlbumThread_createListDelete(t *testing.T) {
 		first.Subject() != comments.AlbumSubject(album) || first.AuthorName != "Alice A." {
 		t.Fatalf("created = %+v, want an album comment by Alice", first)
 	}
-	second, err := f.comments.Create(ctx, comments.AlbumSubject(album), alice, "Strejda Karel.",
+	second, err := f.comments.Create(ctx, project.BootstrapUID, comments.AlbumSubject(album), alice, "Strejda Karel.",
 		albumEntry(audit.ActionCommentCreate, alice, album))
 	if err != nil {
 		t.Fatalf("Create(album, second): %v", err)
@@ -59,21 +60,21 @@ func TestAlbumThread_createListDelete(t *testing.T) {
 	// A photo's thread stays a photo's thread.
 	f.mustCreate(t, photo.UID, alice, "Na fotce je babička.")
 
-	list, err := f.comments.List(ctx, comments.AlbumSubject(album))
+	list, err := f.comments.List(ctx, project.BootstrapUID, comments.AlbumSubject(album))
 	if err != nil {
 		t.Fatalf("List(album): %v", err)
 	}
 	if len(list) != 2 || list[0].UID != first.UID || list[1].UID != second.UID {
 		t.Fatalf("List(album) = %+v, want the two album comments oldest first", list)
 	}
-	counts, err := f.comments.CountsAmong(ctx, comments.SubjectAlbum, []string{album, "al_none"})
+	counts, err := f.comments.CountsAmong(ctx, project.BootstrapUID, comments.SubjectAlbum, []string{album, "al_none"})
 	if err != nil {
 		t.Fatalf("CountsAmong(album): %v", err)
 	}
 	if counts[album] != 2 || counts["al_none"] != 0 {
 		t.Fatalf("CountsAmong(album) = %v, want 2 for the album and nothing for a stranger", counts)
 	}
-	latest, err := f.comments.LatestAmong(ctx, comments.SubjectAlbum, []string{album})
+	latest, err := f.comments.LatestAmong(ctx, project.BootstrapUID, comments.SubjectAlbum, []string{album})
 	if err != nil {
 		t.Fatalf("LatestAmong(album): %v", err)
 	}
@@ -92,10 +93,10 @@ func TestAlbumThread_createListDelete(t *testing.T) {
 		t.Fatalf("audit rows targeting the album = %d of %+v, want 2", albumTargets, rows)
 	}
 
-	if err := f.comments.Delete(ctx, first.UID, albumEntry(audit.ActionCommentDelete, alice, album)); err != nil {
+	if err := f.comments.Delete(ctx, project.BootstrapUID, first.UID, albumEntry(audit.ActionCommentDelete, alice, album)); err != nil {
 		t.Fatalf("Delete(album comment): %v", err)
 	}
-	list, err = f.comments.List(ctx, comments.AlbumSubject(album))
+	list, err = f.comments.List(ctx, project.BootstrapUID, comments.AlbumSubject(album))
 	if err != nil {
 		t.Fatalf("List(album) after delete: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestAlbumThread_missingAlbum(t *testing.T) {
 	f := newFixture(t)
 	alice := f.makeUser(t, "us_alice", "alice", "Alice A.")
 
-	_, err := f.comments.Create(context.Background(), comments.AlbumSubject("al_gone"), alice, "Haló?",
+	_, err := f.comments.Create(context.Background(), project.BootstrapUID, comments.AlbumSubject("al_gone"), alice, "Haló?",
 		albumEntry(audit.ActionCommentCreate, alice, "al_gone"))
 	if !errors.Is(err, comments.ErrSubjectNotFound) {
 		t.Fatalf("Create(missing album) error = %v, want ErrSubjectNotFound", err)
@@ -152,7 +153,7 @@ func TestAlbumThread_cascadeOnAlbumDelete(t *testing.T) {
 	photo := f.makePhoto(t, "one")
 	ctx := context.Background()
 
-	if _, err := f.comments.Create(ctx, comments.AlbumSubject(album), alice, "Hele.",
+	if _, err := f.comments.Create(ctx, project.BootstrapUID, comments.AlbumSubject(album), alice, "Hele.",
 		albumEntry(audit.ActionCommentCreate, alice, album)); err != nil {
 		t.Fatalf("Create(album): %v", err)
 	}
@@ -164,7 +165,7 @@ func TestAlbumThread_cascadeOnAlbumDelete(t *testing.T) {
 	if got := f.rawCount(t, "album_uid IS NOT NULL"); got != 0 {
 		t.Fatalf("album comments after the album is gone = %d, want 0", got)
 	}
-	if _, err := f.comments.Get(ctx, kept.UID); err != nil {
+	if _, err := f.comments.Get(ctx, project.BootstrapUID, kept.UID); err != nil {
 		t.Fatalf("the photo's comment did not survive: %v", err)
 	}
 }

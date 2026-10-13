@@ -52,6 +52,7 @@ func newFixture(t *testing.T) *fixture {
 	dbtest.TruncateAll(t, db)
 	f := &fixture{db: db}
 	deliverer := notifydeliver.New(notifydeliver.Config{
+		Projects:      project.NewStore(db.Pool()),
 		Notifications: notification.NewStore(db.Pool()),
 		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: false}),
 		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
@@ -91,7 +92,7 @@ func (f *fixture) exec(t *testing.T, sql string, args ...any) {
 // create opens a task titled title on behalf of actor, asking asked.
 func (f *fixture) create(t *testing.T, actor, title string, asked ...string) phototask.Task {
 	t.Helper()
-	task, err := f.tasks.Create(t.Context(), phototask.Task{Title: title},
+	task, err := f.tasks.Create(t.Context(), project.BootstrapUID, phototask.Task{Title: title},
 		phototask.Opening{AskedUIDs: asked}, audit.Entry{ActorUID: actor, Action: audit.ActionTaskCreate})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -103,7 +104,7 @@ func (f *fixture) create(t *testing.T, actor, title string, asked ...string) pho
 func (f *fixture) assign(t *testing.T, taskUID, userUID, actor string) {
 	t.Helper()
 	entry := audit.Entry{ActorUID: actor, Action: audit.ActionTaskAssign}
-	if err := f.tasks.Assign(t.Context(), taskUID, userUID, entry); err != nil {
+	if err := f.tasks.Assign(t.Context(), project.BootstrapUID, taskUID, userUID, entry); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 }
@@ -191,16 +192,16 @@ func TestCreate_asksEveryoneButTheCreator(t *testing.T) {
 	got := f.sentNotifications(t)
 	want := []sent{
 		{user: annaUID, title: "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", body: "Otevři úkol a odpověz.",
-			link: "/tasks/" + task.UID, inApp: true},
+			link: "/p/" + project.BootstrapSlug + "/tasks/" + task.UID, inApp: true},
 		{user: bedrichUID, title: "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?", body: "Otevři úkol a odpověz.",
-			link: "/tasks/" + task.UID, inApp: true},
+			link: "/p/" + project.BootstrapSlug + "/tasks/" + task.UID, inApp: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
 	}
 	mails := f.mails(t)
 	wantMails := [][3]string{{"task_assigned", annaUID + "@example.test",
-		"Pan Botka|Kdy to bylo?|https://kukatko.example.org/tasks/" + task.UID}}
+		"Pan Botka|Kdy to bylo?|https://kukatko.example.org/p/" + project.BootstrapSlug + "/tasks/" + task.UID}}
 	if !reflect.DeepEqual(mails, wantMails) {
 		t.Fatalf("mails = %v, want %v", mails, wantMails)
 	}
@@ -235,7 +236,7 @@ func TestAssign_rules(t *testing.T) {
 	// Bedřich acts on the task (joins by acting), then is asked: already on it.
 	acted := f.create(t, creatorUID, "Už tam je")
 	state := phototask.StateWorking
-	if _, err := f.tasks.Update(t.Context(), acted.UID, phototask.Update{State: &state},
+	if _, err := f.tasks.Update(t.Context(), project.BootstrapUID, acted.UID, phototask.Update{State: &state},
 		audit.Entry{ActorUID: bedrichUID, Action: audit.ActionTaskUpdate}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestAssign_rules(t *testing.T) {
 	}
 	third := f.create(t, creatorUID, "Třetí", bedrichUID)
 	got := f.sentNotifications(t)
-	if len(got) != 2 || got[1].user != bedrichUID || got[1].link != "/tasks/"+third.UID {
+	if len(got) != 2 || got[1].user != bedrichUID || got[1].link != "/p/"+project.BootstrapSlug+"/tasks/"+third.UID {
 		t.Fatalf("after a third task asked of Bedřich, notifications = %+v, want Anna's and Bedřich's", got)
 	}
 }
@@ -264,7 +265,7 @@ func TestAssign_withoutObserver(t *testing.T) {
 	plain := phototask.NewStore(f.db.Pool())
 	task := f.create(t, creatorUID, "Potichu")
 	entry := audit.Entry{ActorUID: creatorUID, Action: audit.ActionTaskAssign}
-	if err := plain.Assign(t.Context(), task.UID, annaUID, entry); err != nil {
+	if err := plain.Assign(t.Context(), project.BootstrapUID, task.UID, annaUID, entry); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 	if got := f.recipients(t); got != nil {

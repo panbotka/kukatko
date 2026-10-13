@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // rawListRow is one listing row decoded loosely, so the test can tell a field
@@ -58,7 +59,7 @@ func TestList_taskScopeCarriesLastComment(t *testing.T) {
 	silent := env.seedPhoto(t, photos.Photo{Title: "Silent"}, "silent.jpg", 10, 200, 10)
 	outside := env.seedPhoto(t, photos.Photo{Title: "Outside"}, "outside.jpg", 10, 10, 200)
 
-	task, err := phototask.NewStore(env.db.Pool()).Create(t.Context(), phototask.Task{Title: "Dávka"},
+	task, err := phototask.NewStore(env.db.Pool()).Create(t.Context(), project.BootstrapUID, phototask.Task{Title: "Dávka"},
 		phototask.Opening{PhotoUIDs: []string{commented.UID, silent.UID}},
 		audit.Entry{ActorUID: editor.UID, Action: audit.ActionTaskCreate})
 	if err != nil {
@@ -66,7 +67,7 @@ func TestList_taskScopeCarriesLastComment(t *testing.T) {
 	}
 	write := func(body string) comments.Comment {
 		t.Helper()
-		c, err := env.comments.Create(t.Context(), comments.PhotoSubject(commented.UID), editor.UID, body,
+		c, err := env.comments.Create(t.Context(), project.BootstrapUID, comments.PhotoSubject(commented.UID), editor.UID, body,
 			audit.Entry{ActorUID: editor.UID, Action: audit.ActionCommentCreate, TargetType: "photos",
 				TargetUID: commented.UID})
 		if err != nil {
@@ -77,7 +78,7 @@ func TestList_taskScopeCarriesLastComment(t *testing.T) {
 	write("first pass")
 	newest := write("moved to 1974 (manual)")
 	gone := write("typo, ignore")
-	if err := env.comments.Delete(t.Context(), gone.UID, audit.Entry{
+	if err := env.comments.Delete(t.Context(), project.BootstrapUID, gone.UID, audit.Entry{
 		ActorUID: editor.UID, Action: audit.ActionCommentDelete, TargetType: "photos", TargetUID: commented.UID,
 	}); err != nil {
 		t.Fatalf("Delete: %v", err)

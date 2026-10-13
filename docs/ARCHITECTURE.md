@@ -925,12 +925,13 @@ lost on restart).
      the kind off, or only the ones switched off for the instance (the table must not fill up for somebody
      who would get nothing); a subject no account is linked to. **Untagging before the window closes deletes the notice.**
   3. **The window closes** when the job runs: in one transaction it consumes every notice (`DELETE …
-     RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), and
-     **groups them by album** — the hand-made albums (`type = 'album'`) the photos are in, a private one
+     RETURNING`), keeps the photos that still qualify *now* (visible, the person still on them), splits
+     them **by project** (each project's part is announced on its own, into that project's inbox, with
+     its own mail) and within a project **groups them by album** — the hand-made albums (`type = 'album'`) the photos are in, a private one
      only when the recipient may curate (the rule the album surfaces apply), a photo in two albums counted
      in each, the albums ordered by their newest tagged photo. It records **one notification per album**
      ("Označili vás na fotkách v albu Pouť 2026", the frozen set **newest photo first**, the link
-     `/n/<uid>` to that notification's own page) and **one for the other photos** — those in no album, in
+     `/p/<slug>/n/<uid>` to that notification's own page in the photos' project) and **one for the other photos** — those in no album, in
      an album the recipient may not see, or in an album past the cap of **`MaxAlbumGroups` (5)** albums per
      window, beyond which the remaining albums collapse into "other" so one afternoon cannot fan out into
      a dozen pushes; a photo already announced under an album is never "other" as well. A window without

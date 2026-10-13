@@ -34,7 +34,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   single-row route), the same `Content-Type` and a byte-identical body — `GET /photos/{uid}` of a
   foreign photo is `404 {"error":"photo not found"}`, as for a made-up uid — and a listing simply does
   not contain the row. A tenant can therefore neither read nor probe for another project's ids. Scoped
-  so far (the photo read side): `GET /photos` (every ordering, offset and `task=`), `/search`,
+  so far (the photo read side): `GET /photos` (every ordering and offset; a `task=` naming another
+  project's task — or none — is `404 {"error":"task not found"}`, on `/search` too), `/search`,
   `/favorites`, `/photos/{uid}` and its read sub-routes (`/faces`, `/edit`, `/renditions`, `/similar`;
   the `/comments` listing answers a foreign photo with the empty thread a missing one gets), `/photos/timeline`, `/years`, `/uploaders`, and `GET /search/global`'s
   photo group and photo/marker/stack/PhotoPrism direct hits. **The photo write side and the media
@@ -52,6 +53,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   missing photo and a foreign one must answer alike); a photo of the project still clears idempotently. Every `q=` filter key is evaluated inside
   the project, including the name/id lookups of `album:`, `label:`, `person:`, `family:`, `task:`,
   `uid:` and the reference photo of `near:` — `album:<another project's album uid>` matches nothing.
+  **Tasks, threads and the inbox** too: every `/tasks/…` route — the detail, `PATCH`/`DELETE`, the
+  photos, the participants (a foreign or missing task is now 404 there instead of an empty list), the
+  thread and its writes — answers another project's task with the missing task's 404 and writes nothing;
+  `GET /tasks` and `GET /tasks/summary` (the navbar badge) count only the project; a task is opened over —
+  or extended with — photos of its own project only (a foreign uid in `photo_uids` is the missing photo's
+  404, nothing created); a comment on a photo, task or album of another project is the missing
+  subject's 404; and `/notifications/*` — the inbox, its unread count, read-all, one notification and its
+  mark-read — sees only the project's notifications (the preferences and `/push/*` stay per account).
   The remaining groups are scoped step by step (see `docs/PACKAGES.md`, `internal/photos`).
 - **Links follow the prefix.** Every URL a response carries to another project-scoped route — a photo's
   `thumb_url`/`preview_url`/`download_url` when the store mints no signed URL, a GeoJSON feature's
@@ -447,7 +456,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   viewer as `bbox` (plus the map's filters, newest first = the feed's own order), so prev/next page
   through exactly the photos the panel listed; a photo without a location never matches;
   the **`task` scope** (`?task={uid}`, multi-valued on the same terms) narrows the listing to one
-  task's **frozen group** — the photographs a question is about. It is how a task's own page reads its
+  task's **frozen group** — the photographs a question is about; a uid that names no task of the
+  project (missing, or another project's) is **`404 {"error":"task not found"}`**, never an empty page. It is how a task's own page reads its
   grid, so the group is browsed with every ordinary filter, sort and page on top of it rather than
   through a gallery endpoint of its own. Like `album`/`label` (and unlike `person`) it **lifts the
   default hidden-from-library scope**: a photograph deliberately filed into a task is meant to be seen
@@ -1090,7 +1100,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   to `/albums/<uid>?panel=comments#comment-<uid>`. Deleting the album cascades its thread away.
 - **Tasks API (`/api/v1/p/{project}`, `internal/phototaskapi` + `internal/phototask`):** the **work queue** — a
   question about a frozen group of photographs ("in which year was house no. 2 rebuilt?"), with the state
-  of play and the conversation that settles it. It exists because curating an inherited library arrives in
+  of play and the conversation that settles it. **Everything is per project**: the listing, its filters,
+  the summary, the frozen group (only the project's photos), the participants and the thread; another
+  project's task is answered exactly like a missing one (404 `{"error":"task not found"}`, same body). It exists because curating an inherited library arrives in
   batches that end at something only a person can answer, and until now that question had nowhere to live.
   `GET /tasks` (authenticated) → `{tasks,total,limit,offset}`, open tasks first and the most recently
   touched at the top, where a **reply counts as a touch**. Filters: `state` (repeatable **and**
@@ -2176,7 +2188,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `/push/*`, `internal/notificationapi` over `internal/push` + `internal/notification`, every route
   `RequireAuth`):** the HTTP surface of Web Push and of the notification records. **Every role
   may use every route**, viewers included — being told you were tagged is not a curation power — and every
-  operation is **scoped to the calling account**. Mounted by `server.WithAPI` (`buildNotificationAPI` in
+  operation is **scoped to the calling account**. The inbox routes are **per project** as well: a
+  notification belongs to the project it is about (the tagged photos', the task's, the album's, the
+  commented subject's), is listed, counted and marked only through that project's prefix, and another
+  project's notification is the very 404 a missing one gets; its `link` opens inside the project
+  (`/p/<slug>/n/<uid>`, `/p/<slug>/tasks/<uid>`, …), in the push and the e-mail alike. The
+  **preferences and the push subscriptions are the account's own, instance-wide** — one choice per kind
+  and channel whichever project the notification comes from, which is why `/notifications/preferences`
+  answers the same through every prefix. Mounted by `server.WithAPI` (`buildNotificationAPI` in
   `cmd/kukatko/notification.go`). **The inbox** (the navbar's bell) lists only the notifications delivered
   **in-app** (`notifications.in_app`); a record written only to back a push or an e-mail the owner wanted
   is never listed or counted, but its own `{uid}` routes still answer — that is what the push and the mail

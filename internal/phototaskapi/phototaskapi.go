@@ -43,62 +43,62 @@ import (
 // them unit-testable with fakes.
 type Store interface {
 	// List returns one page of matching tasks and the total before paging.
-	List(ctx context.Context, f phototask.Filter) ([]phototask.Task, int, error)
+	List(ctx context.Context, projectUID string, f phototask.Filter) ([]phototask.Task, int, error)
 	// Summary returns the queue's counts as callerUID sees them.
-	Summary(ctx context.Context, callerUID string) (phototask.Summary, error)
+	Summary(ctx context.Context, projectUID, callerUID string) (phototask.Summary, error)
 	// Get returns one task as callerUID sees it (the two caller-relative flags
 	// are computed for them), or phototask.ErrNotFound.
-	Get(ctx context.Context, uid, callerUID string) (phototask.Task, error)
+	Get(ctx context.Context, projectUID, uid, callerUID string) (phototask.Task, error)
 	// Create opens a task over opening's photographs (possibly none) with its
 	// people asked, auditing it all in the same transaction.
 	Create(
-		ctx context.Context, t phototask.Task, opening phototask.Opening, entry audit.Entry,
+		ctx context.Context, projectUID string, t phototask.Task, opening phototask.Opening, entry audit.Entry,
 	) (phototask.Task, error)
 	// Update folds a partial change onto a task, auditing it in the same
 	// transaction.
 	Update(
-		ctx context.Context, uid string, upd phototask.Update, entry audit.Entry,
+		ctx context.Context, projectUID, uid string, upd phototask.Update, entry audit.Entry,
 	) (phototask.Task, error)
 	// Delete removes a task, or returns phototask.ErrNotFound.
-	Delete(ctx context.Context, uid string, entry audit.Entry) error
+	Delete(ctx context.Context, projectUID, uid string, entry audit.Entry) error
 	// AddPhotos adds photographs to a task and reports how many were new.
-	AddPhotos(ctx context.Context, uid string, photoUIDs []string, entry audit.Entry) (int, error)
+	AddPhotos(ctx context.Context, projectUID, uid string, photoUIDs []string, entry audit.Entry) (int, error)
 	// RemovePhotos drops photographs from a task and reports how many were removed.
-	RemovePhotos(ctx context.Context, uid string, photoUIDs []string, entry audit.Entry) (int, error)
+	RemovePhotos(ctx context.Context, projectUID, uid string, photoUIDs []string, entry audit.Entry) (int, error)
 	// Participants returns the people on a task, oldest membership first.
-	Participants(ctx context.Context, uid string) ([]phototask.Participant, error)
+	Participants(ctx context.Context, projectUID, uid string) ([]phototask.Participant, error)
 	// Assign puts somebody on a task on purpose, auditing it in the same
 	// transaction.
-	Assign(ctx context.Context, uid, userUID string, entry audit.Entry) error
+	Assign(ctx context.Context, projectUID, uid, userUID string, entry audit.Entry) error
 	// Unassign takes somebody off a task, reporting whether a row was removed.
-	Unassign(ctx context.Context, uid, userUID string, entry audit.Entry) (bool, error)
+	Unassign(ctx context.Context, projectUID, uid, userUID string, entry audit.Entry) (bool, error)
 	// Join records that somebody acted on a task. Idempotent and unaudited: the
 	// act it follows is what the audit trail records.
-	Join(ctx context.Context, uid, userUID string) error
+	Join(ctx context.Context, projectUID, uid, userUID string) error
 }
 
 // CommentStore is the subset of comments.Store a task's thread needs. It is the
 // same store the photo threads use, addressed with a task subject.
 type CommentStore interface {
 	// List returns the live comments on the subject, oldest first.
-	List(ctx context.Context, subj comments.Subject) ([]comments.Comment, error)
+	List(ctx context.Context, projectUID string, subj comments.Subject) ([]comments.Comment, error)
 	// Get returns one live comment, or comments.ErrNotFound.
-	Get(ctx context.Context, uid string) (comments.Comment, error)
+	Get(ctx context.Context, projectUID, uid string) (comments.Comment, error)
 	// Create stores a comment by authorUID on the subject, auditing it in the
 	// same transaction.
 	Create(
-		ctx context.Context, subj comments.Subject, authorUID, body string, entry audit.Entry,
+		ctx context.Context, projectUID string, subj comments.Subject, authorUID, body string, entry audit.Entry,
 	) (comments.Comment, error)
 	// CreateAlong is Create with along run on the comment's own transaction, so
 	// an answer and the state move it carries commit together or not at all.
 	CreateAlong(
-		ctx context.Context, subj comments.Subject, authorUID, body string, entry audit.Entry,
+		ctx context.Context, projectUID string, subj comments.Subject, authorUID, body string, entry audit.Entry,
 		along comments.Along,
 	) (comments.Comment, error)
 	// Update rewrites a live comment's body, auditing it in the same transaction.
-	Update(ctx context.Context, uid, body string, entry audit.Entry) (comments.Comment, error)
+	Update(ctx context.Context, projectUID, uid, body string, entry audit.Entry) (comments.Comment, error)
 	// Delete soft-deletes a live comment, auditing it in the same transaction.
-	Delete(ctx context.Context, uid string, entry audit.Entry) error
+	Delete(ctx context.Context, projectUID, uid string, entry audit.Entry) error
 }
 
 // API exposes the task endpoints over HTTP. The auth guards are supplied by the
@@ -250,4 +250,12 @@ func writeError(w http.ResponseWriter, status int, message string) {
 // taskUID returns the {uid} path parameter.
 func taskUID(r *http.Request) string {
 	return chi.URLParam(r, "uid")
+}
+
+// projectOf returns the uid of the request's project, which auth.WithProject
+// resolved from the {project} segment of the path: every task, thread and
+// participant read or write is confined to it, and a task of another project
+// is the very 404 a missing one gets.
+func projectOf(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }

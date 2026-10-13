@@ -55,6 +55,7 @@ func newFixture(t *testing.T) *fixture {
 	dbtest.TruncateAll(t, db)
 	f := &fixture{db: db, photos: photos.NewStore(db.Pool())}
 	deliverer := notifydeliver.New(notifydeliver.Config{
+		Projects:      project.NewStore(db.Pool()),
 		Notifications: notification.NewStore(db.Pool()),
 		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: false}),
 		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: true}),
@@ -107,7 +108,7 @@ func (f *fixture) makePhoto(t *testing.T, name, title string) photos.Photo {
 // comment writes body on subj as writerUID.
 func (f *fixture) comment(t *testing.T, subj comments.Subject, body string) comments.Comment {
 	t.Helper()
-	c, err := f.comments.Create(t.Context(), subj, writerUID, body,
+	c, err := f.comments.Create(t.Context(), project.BootstrapUID, subj, writerUID, body,
 		audit.Entry{ActorUID: writerUID, Action: audit.ActionCommentCreate, TargetType: "photos"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -200,7 +201,7 @@ func TestPhotoComment_announcesEveryMentionButTheWriter(t *testing.T) {
 		"Hele @[Anna](user:us-anna), @[Bedřich](user:us-bedrich), @[já](user:us-writer), "+
 			"@[Nováček](user:us-new) a @[Vypnutý](user:us-off) — víte, kdo to je?")
 
-	link := "/photos/" + photo.UID + "?panel=info#comment-" + c.UID
+	link := "/p/" + project.BootstrapSlug + "/photos/" + photo.UID + "?panel=info#comment-" + c.UID
 	excerpt := "Hele @Anna, @Bedřich, @já, @Nováček a @Vypnutý — víte, kdo to je?"
 	want := []sent{
 		{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u fotky Pouť 1987", body: excerpt, link: link, inApp: true},
@@ -224,7 +225,7 @@ func TestTaskComment_linksToTheTask(t *testing.T) {
 	c := f.comment(t, comments.TaskSubject("pt-one"), "@[Anna](user:us-anna) víš to?")
 
 	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u úkolu Kdy to bylo?",
-		body: "@Anna víš to?", link: "/tasks/pt-one#comment-" + c.UID, inApp: true}}
+		body: "@Anna víš to?", link: "/p/" + project.BootstrapSlug + "/tasks/pt-one#comment-" + c.UID, inApp: true}}
 	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
 	}
@@ -243,7 +244,7 @@ func TestAlbumComment_linksToTheAlbum(t *testing.T) {
 	c := f.comment(t, comments.AlbumSubject("al-one"), "@[Anna](user:us-anna) kdo tam ještě byl?")
 
 	want := []sent{{user: annaUID, title: "Pan Botka tě zmínil(a) v komentáři u alba Svatba 1987",
-		body: "@Anna kdo tam ještě byl?", link: "/albums/al-one?panel=comments#comment-" + c.UID, inApp: true}}
+		body: "@Anna kdo tam ještě byl?", link: "/p/" + project.BootstrapSlug + "/albums/al-one?panel=comments#comment-" + c.UID, inApp: true}}
 	if got := f.sentNotifications(t); !reflect.DeepEqual(got, want) {
 		t.Fatalf("notifications = %+v, want %+v", got, want)
 	}
@@ -275,7 +276,7 @@ func TestEdit_announcesOnlyTheNewMention(t *testing.T) {
 	f := newFixture(t)
 	photo := f.makePhoto(t, "one", "")
 	c := f.comment(t, comments.PhotoSubject(photo.UID), "@[Anna](user:us-anna)?")
-	if _, err := f.comments.Update(t.Context(), c.UID, "@[Anna](user:us-anna) a @[Bedřich](user:us-bedrich)?",
+	if _, err := f.comments.Update(t.Context(), project.BootstrapUID, c.UID, "@[Anna](user:us-anna) a @[Bedřich](user:us-bedrich)?",
 		audit.Entry{ActorUID: writerUID, Action: audit.ActionCommentUpdate, TargetType: "photos"}); err != nil {
 		t.Fatalf("Update: %v", err)
 	}

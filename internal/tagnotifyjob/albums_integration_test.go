@@ -91,7 +91,7 @@ func (f *fixture) checkSent(t *testing.T, want []wantSent) map[string]sent {
 			t.Errorf("no notification titled %q in:\n%s", w.title, describeSent(got))
 			continue
 		}
-		if !reflect.DeepEqual(g.photos, w.photos) || g.link != notification.Path(g.uid) {
+		if !reflect.DeepEqual(g.photos, w.photos) || g.link != notification.Path(project.BootstrapSlug, g.uid) {
 			t.Errorf("notification %q = %v (link %s), want %v linking its own page", w.title, g.photos, g.link, w.photos)
 		}
 	}

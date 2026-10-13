@@ -333,6 +333,9 @@ func (rg *Registration) notifyApprovers(ctx context.Context, tx pgx.Tx, user Use
 		return
 	}
 	msg := rg.pendingMessage(user)
+	// The notification lands in the inbox of the project the registration is
+	// for, and its approval link opens there.
+	msg.ProjectUID = registrationProject(ctx)
 	for _, recipient := range recipients {
 		err := inSavepoint(ctx, tx, func(savepoint pgx.Tx) error {
 			if _, err := rg.notify.Deliver(ctx, savepoint, recipient.UID, msg); err != nil {

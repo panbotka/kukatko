@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // Kind names what a notification is about. It is stored verbatim in the kind
@@ -226,6 +228,9 @@ var (
 	// ErrInvalidRetention means a purge with a non-positive threshold or an
 	// unread threshold shorter than the read one.
 	ErrInvalidRetention = errors.New("notification: invalid retention")
+	// ErrNoProject means a notification or an inbox read without a project: a
+	// programming error, never "every project of the instance".
+	ErrNoProject = errors.New("notification: no project given")
 )
 
 // Notification is one stored notification as its owner reads it.
@@ -259,6 +264,12 @@ type Notification struct {
 
 // New is a notification to record: everything but what the store assigns.
 type New struct {
+	// ProjectUID is the project the notification is about — the inbox it is
+	// listed in. Required.
+	ProjectUID string
+	// ProjectSlug is that project's URL slug, which the notification's own page
+	// (SelfLink) lives under. Required with SelfLink.
+	ProjectSlug string
 	// UserUID is the account the notification is for. Required.
 	UserUID string
 	// Kind must be a known kind.
@@ -267,11 +278,12 @@ type New struct {
 	Title string
 	// Body is optional, at most MaxBodyLen characters.
 	Body string
-	// Link is an in-app path ("/photos?…"): empty, or starting with a single
-	// "/", at most MaxLinkLen bytes. An absolute URL or a scheme-relative
+	// Link is an in-app path ("/p/<slug>/photos?…"): empty, or starting with a
+	// single "/", at most MaxLinkLen bytes. An absolute URL or a scheme-relative
 	// "//host" is refused — a notification must never open another site.
 	Link string
-	// SelfLink stores the notification's own page, Path(uid), as its link —
+	// SelfLink stores the notification's own page, Path(ProjectSlug, uid), as
+	// its link —
 	// the uid is assigned by the store, so a caller cannot spell that path
 	// itself. Link must be empty when it is set.
 	SelfLink bool
@@ -284,30 +296,56 @@ type New struct {
 	InApp bool
 }
 
-// PathPrefix is the in-app route of one notification's own page, the uid
-// appended. It is deliberately short: the path travels inside a push payload,
-// which has a hard size limit. The frontend page behind it opens the frozen
-// photo set (one photo straight in the viewer, several as a grid).
+// PathPrefix is the route of one notification's own page inside its project,
+// the uid appended. It is deliberately short: the path travels inside a push
+// payload, which has a hard size limit. The frontend page behind it opens the
+// frozen photo set (one photo straight in the viewer, several as a grid).
 const PathPrefix = "/n/"
 
-// Path returns the in-app path of notification uid's own page.
-func Path(uid string) string {
-	return PathPrefix + uid
+// Path returns the in-app path of notification uid's own page in the project
+// slug: /p/<slug>/n/<uid>, so the deep link opens in the notification's project.
+func Path(slug, uid string) string {
+	return project.AppPath(slug, PathPrefix+uid)
 }
 
 // link returns the deeplink to store for n once the store assigned uid: its own
 // page when SelfLink is set, the given Link otherwise.
 func (n New) link(uid string) string {
 	if n.SelfLink {
-		return Path(uid)
+		return Path(n.ProjectSlug, uid)
 	}
 	return n.Link
 }
 
+// validateProject checks the project n belongs to: one is required
+// (ErrNoProject), and its slug too when n links to its own page (ErrInvalid),
+// which lives under that slug.
+func (n New) validateProject() error {
+	switch {
+	case strings.TrimSpace(n.ProjectUID) == "":
+		return ErrNoProject
+	case n.SelfLink && strings.TrimSpace(n.ProjectSlug) == "":
+		return fmt.Errorf("%w: a link to itself needs the project's slug", ErrInvalid)
+	}
+	return nil
+}
+
+// validateLinks checks what n opens: a link to itself or an in-app link, never
+// both (ErrInvalid), and the link itself by validateLink.
+func (n New) validateLinks() error {
+	if n.SelfLink && n.Link != "" {
+		return fmt.Errorf("%w: both a link and a link to itself", ErrInvalid)
+	}
+	return validateLink(n.Link)
+}
+
 // validate checks n against the field rules and returns the normalised photo
-// set (first occurrence wins). It returns ErrInvalid, ErrUnknownKind or
-// ErrTooManyPhotos, wrapped with the rule that failed.
+// set (first occurrence wins). It returns ErrNoProject, ErrInvalid,
+// ErrUnknownKind or ErrTooManyPhotos, wrapped with the rule that failed.
 func (n New) validate() ([]string, error) {
+	if err := n.validateProject(); err != nil {
+		return nil, err
+	}
 	switch {
 	case strings.TrimSpace(n.UserUID) == "":
 		return nil, fmt.Errorf("%w: no account", ErrInvalid)
@@ -320,10 +358,7 @@ func (n New) validate() ([]string, error) {
 	case utf8.RuneCountInString(n.Body) > MaxBodyLen:
 		return nil, fmt.Errorf("%w: body over %d characters", ErrInvalid, MaxBodyLen)
 	}
-	if n.SelfLink && n.Link != "" {
-		return nil, fmt.Errorf("%w: both a link and a link to itself", ErrInvalid)
-	}
-	if err := validateLink(n.Link); err != nil {
+	if err := n.validateLinks(); err != nil {
 		return nil, err
 	}
 	photos := dedupe(n.PhotoUIDs)

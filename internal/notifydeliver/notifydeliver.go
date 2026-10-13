@@ -17,6 +17,13 @@
 // only behind a push or an e-mail never turns up behind the bell. A channel the
 // instance has switched off (push.enabled, mail.enabled) counts as not wanted:
 // nothing is recorded for a delivery that could never happen.
+//
+// Every notification belongs to one project: it is listed in that project's
+// inbox, and every deep link it carries — the stored link, the push's URL, the
+// e-mail's — opens inside the project, under /p/<slug>/. A producer names the
+// project (Message.ProjectUID) and the path inside it (Message.Link, e.g.
+// "/tasks/tk1"); Deliver loads the project (project.Store.Get) and puts the path
+// under the project's slug, so no producer spells or hard-codes a slug.
 package notifydeliver
 
 import (
@@ -33,9 +40,17 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
+
+// Projects loads the project a notification belongs to, for its slug. It is
+// satisfied by *project.Store.
+type Projects interface {
+	// Get returns the project uid names, or project.ErrNotFound.
+	Get(ctx context.Context, uid string) (*project.Project, error)
+}
 
 // Recorder reads an account's wanted channels and records a notification, both
 // on the caller's transaction. It is satisfied by *notification.Store.
@@ -83,15 +98,20 @@ type MailBuilder func(to Recipient, n notification.Notification, url string) mai
 
 // Message is one notification to deliver to one account.
 type Message struct {
+	// ProjectUID is the project the notification is about: the inbox it is
+	// listed in and the project its links open in. Required.
+	ProjectUID string
 	// Kind must be a known kind.
 	Kind notification.Kind
 	// Text is the title and the line under it, as the inbox and the push show
 	// them.
 	Text notification.Text
-	// Link is the in-app path the notification opens; see notification.New.
+	// Link is the path the notification opens inside its project ("/tasks/tk1",
+	// "/photos/ph1?panel=info"); Deliver stores it under the project's root
+	// (/p/<slug>/tasks/tk1). Empty opens nothing in particular.
 	Link string
-	// SelfLink makes the notification open its own page (/n/<uid>), the one
-	// that shows its frozen photo set. Link must be empty when it is set.
+	// SelfLink makes the notification open its own page (/p/<slug>/n/<uid>),
+	// the one that shows its frozen photo set. Link must be empty when it is set.
 	SelfLink bool
 	// PhotoUIDs is the frozen photo set, in display order; empty for a kind
 	// about no photographs.
@@ -138,6 +158,9 @@ type Config struct {
 	// Notifications reads the preferences and records the notification.
 	// Required.
 	Notifications Recorder
+	// Projects loads a notification's project for the slug its links live
+	// under. Required.
+	Projects Projects
 	// Push schedules the push channel. Required.
 	Push PushScheduler
 	// Mail schedules the e-mail channel. Required.
@@ -151,26 +174,27 @@ type Config struct {
 
 // Deliverer fans one notification out to the channels its account wants.
 type Deliverer struct {
-	notes   Recorder
-	push    PushScheduler
-	mail    MailScheduler
-	baseURL string
-	log     *slog.Logger
+	notes    Recorder
+	projects Projects
+	push     PushScheduler
+	mail     MailScheduler
+	baseURL  string
+	log      *slog.Logger
 }
 
 // New returns a Deliverer from cfg. It panics when a required dependency is
 // missing, which is a wiring bug and should fail at startup rather than on the
 // first notification.
 func New(cfg Config) *Deliverer {
-	if cfg.Notifications == nil || cfg.Push == nil || cfg.Mail == nil {
-		panic("notifydeliver: Notifications, Push and Mail are required")
+	if cfg.Notifications == nil || cfg.Projects == nil || cfg.Push == nil || cfg.Mail == nil {
+		panic("notifydeliver: Notifications, Projects, Push and Mail are required")
 	}
 	log := cfg.Logger
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Deliverer{
-		notes: cfg.Notifications, push: cfg.Push, mail: cfg.Mail,
+		notes: cfg.Notifications, projects: cfg.Projects, push: cfg.Push, mail: cfg.Mail,
 		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"), log: log,
 	}
 }
@@ -204,8 +228,12 @@ func (d *Deliverer) ChannelsTx(
 // commits. A failure is returned and leaves tx aborted, as any failed
 // statement does; a caller that must survive one (a registration notifying
 // several administrators) runs Deliver under a savepoint. An account without
-// an e-mail address is not mailed — the other channels still deliver.
+// an e-mail address is not mailed — the other channels still deliver. A message
+// without a project is notification.ErrNoProject and delivers nothing.
 func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg Message) (Result, error) {
+	if msg.ProjectUID == "" {
+		return Result{}, fmt.Errorf("notifydeliver: delivering to %s: %w", userUID, notification.ErrNoProject)
+	}
 	channels, err := d.ChannelsTx(ctx, tx, userUID, msg.Kind)
 	if err != nil {
 		return Result{}, err
@@ -215,12 +243,9 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 			slog.String("user_uid", userUID), slog.String("kind", string(msg.Kind)))
 		return Result{}, nil
 	}
-	record, err := d.notes.CreateTx(ctx, tx, notification.New{
-		UserUID: userUID, Kind: msg.Kind, Title: msg.Text.Title, Body: msg.Text.Body,
-		Link: msg.Link, SelfLink: msg.SelfLink, PhotoUIDs: msg.PhotoUIDs, InApp: channels.InApp,
-	})
+	record, err := d.record(ctx, tx, userUID, msg, channels.InApp)
 	if err != nil {
-		return Result{}, fmt.Errorf("notifydeliver: recording the notification of %s: %w", userUID, err)
+		return Result{}, err
 	}
 	result := Result{Channels: channels, Notification: &record}
 	if channels.Push {
@@ -240,6 +265,36 @@ func (d *Deliverer) Deliver(ctx context.Context, tx pgx.Tx, userUID string, msg 
 		result.Channels.Email = mailed
 	}
 	return result, nil
+}
+
+// record loads msg's project and records msg for userUID on tx, its link put
+// under the project's root and listed in the inbox when inApp.
+func (d *Deliverer) record(
+	ctx context.Context, tx pgx.Tx, userUID string, msg Message, inApp bool,
+) (notification.Notification, error) {
+	p, err := d.projects.Get(ctx, msg.ProjectUID)
+	if err != nil {
+		return notification.Notification{}, fmt.Errorf("notifydeliver: loading project %s: %w", msg.ProjectUID, err)
+	}
+	record, err := d.notes.CreateTx(ctx, tx, notification.New{
+		ProjectUID: p.UID, ProjectSlug: p.Slug,
+		UserUID: userUID, Kind: msg.Kind, Title: msg.Text.Title, Body: msg.Text.Body,
+		Link: projectLink(p.Slug, msg.Link), SelfLink: msg.SelfLink, PhotoUIDs: msg.PhotoUIDs, InApp: inApp,
+	})
+	if err != nil {
+		return notification.Notification{}, fmt.Errorf("notifydeliver: recording the notification of %s: %w",
+			userUID, err)
+	}
+	return record, nil
+}
+
+// projectLink returns link, a path inside the project, under the project's root
+// /p/<slug>; an empty link stays empty.
+func projectLink(slug, link string) string {
+	if link == "" {
+		return ""
+	}
+	return project.AppPath(slug, link)
 }
 
 // recipientSQL reads where an account's mail goes and whom it greets.

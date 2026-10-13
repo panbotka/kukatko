@@ -208,17 +208,18 @@ func (f Filter) Page() (limit, offset int) {
 	return limit, offset
 }
 
-// conditions compiles the filter into WHERE clauses and their arguments. The
-// clauses are ANDed by the caller; an empty filter yields none. The arguments
-// start with the caller, which the projection binds as callerParam whether or
-// not any clause needs it, so the clauses' own placeholders start at $2.
-func (f Filter) conditions() ([]string, []any) {
-	var where []string
+// conditions compiles the filter into WHERE clauses and their arguments, the
+// first clause confining the listing to the project projectUID. The clauses are
+// ANDed by the caller. The arguments start with the caller, which the projection
+// binds as callerParam whether or not any clause needs it, so the clauses' own
+// placeholders start at $2.
+func (f Filter) conditions(projectUID string) ([]string, []any) {
 	args := []any{f.CallerUID}
 	bind := func(value any) string {
 		args = append(args, value)
 		return "$" + strconv.Itoa(len(args))
 	}
+	where := []string{"t.project_id = " + bind(projectUID)}
 	if states := f.effectiveStates(); len(states) > 0 {
 		where = append(where, "t.state = ANY("+bind(stateStrings(states))+")")
 	}
@@ -277,12 +278,16 @@ func whereSQL(clauses []string) string {
 	return "\nWHERE " + strings.Join(clauses, "\n  AND ")
 }
 
-// Get returns the task with the given UID, or ErrNotFound. callerUID is who is
-// reading: HasNewAnswer and WaitingOnMe are computed for them, and an empty
-// caller reads a task nobody is waiting on whose every comment is a reply.
-func (s *Store) Get(ctx context.Context, uid, callerUID string) (Task, error) {
-	query := "SELECT " + taskColumns + taskJoins + "\nWHERE t.uid = $2"
-	t, err := scanTask(s.pool.QueryRow(ctx, query, callerUID, uid))
+// Get returns the task of the project with the given UID, or ErrNotFound — also
+// for a task of another project. callerUID is who is reading: HasNewAnswer and
+// WaitingOnMe are computed for them, and an empty caller reads a task nobody is
+// waiting on whose every comment is a reply.
+func (s *Store) Get(ctx context.Context, projectUID, uid, callerUID string) (Task, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Task{}, err
+	}
+	query := "SELECT " + taskColumns + taskJoins + "\nWHERE t.uid = $2 AND t.project_id = $3"
+	t, err := scanTask(s.pool.QueryRow(ctx, query, callerUID, uid, projectUID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrNotFound
 	}
@@ -292,11 +297,15 @@ func (s *Store) Get(ctx context.Context, uid, callerUID string) (Task, error) {
 	return t, nil
 }
 
-// List returns one page of tasks matching f, together with the total number of
-// matches before paging — so a client can say "1-25 of 63" without a second
-// request. Open tasks come first, most recently touched at the top.
-func (s *Store) List(ctx context.Context, f Filter) ([]Task, int, error) {
-	clauses, args := f.conditions()
+// List returns one page of the project's tasks matching f, together with the
+// total number of matches before paging — so a client can say "1-25 of 63"
+// without a second request. Open tasks come first, most recently touched at the
+// top. A task of another project is never listed nor counted.
+func (s *Store) List(ctx context.Context, projectUID string, f Filter) ([]Task, int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, 0, err
+	}
+	clauses, args := f.conditions(projectUID)
 	where := whereSQL(clauses)
 
 	var total int
@@ -343,22 +352,25 @@ const openForPhotosSQL = `
 SELECT tp.photo_uid, t.uid, t.title, t.state
 FROM photo_task_photos tp
 JOIN photo_tasks t ON t.uid = tp.task_uid
-WHERE tp.photo_uid = ANY($1) AND t.state NOT IN ('done', 'rejected')
+WHERE tp.photo_uid = ANY($1) AND t.project_id = $2 AND t.state NOT IN ('done', 'rejected')
 ORDER BY tp.photo_uid, t.updated_at DESC, t.uid`
 
-// OpenForPhotos returns the open tasks each of photoUIDs belongs to, keyed by
-// photo UID. Photos in no open task are absent from the map, and an empty input
-// yields an empty map without querying.
+// OpenForPhotos returns the open tasks of the project each of photoUIDs belongs
+// to, keyed by photo UID. Photos in no open task are absent from the map, and an
+// empty input yields an empty map without querying.
 //
 // It is the bulk shape for the same reason the comment count is: the photo
 // detail asks about one picture, but a listing would ask about a page of them,
 // and a per-photo query would be an N+1 waiting to be written.
-func (s *Store) OpenForPhotos(ctx context.Context, photoUIDs []string) (map[string][]Ref, error) {
+func (s *Store) OpenForPhotos(ctx context.Context, projectUID string, photoUIDs []string) (map[string][]Ref, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	out := make(map[string][]Ref, len(photoUIDs))
 	if len(photoUIDs) == 0 {
 		return out, nil
 	}
-	rows, err := s.pool.Query(ctx, openForPhotosSQL, photoUIDs)
+	rows, err := s.pool.Query(ctx, openForPhotosSQL, photoUIDs, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("phototask: listing open tasks of photos: %w", err)
 	}

@@ -62,7 +62,7 @@ func expectDigests(t *testing.T, label string, digests []phototask.Digest, want 
 // assign puts uid on the task as somebody asked outright.
 func (f *fixture) assign(t *testing.T, taskUID, uid string) {
 	t.Helper()
-	if err := f.tasks.Assign(context.Background(), taskUID, uid, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(context.Background(), project.BootstrapUID, taskUID, uid, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign(%s): %v", uid, err)
 	}
 }

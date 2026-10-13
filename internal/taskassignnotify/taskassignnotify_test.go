@@ -102,8 +102,9 @@ func TestNew_defaultsAndRequirements(t *testing.T) {
 func TestMessage(t *testing.T) {
 	t.Parallel()
 
-	msg := New(Config{Deliver: fakeDeliver{}}).message("pt1", "Pan Botka", "Kdy to bylo?")
-	if msg.Kind != notification.KindTaskAssigned || msg.SelfLink || msg.SkipMail || msg.PhotoUIDs != nil {
+	msg := New(Config{Deliver: fakeDeliver{}}).message("pj1", "pt1", "Pan Botka", "Kdy to bylo?")
+	if msg.Kind != notification.KindTaskAssigned || msg.SelfLink || msg.SkipMail || msg.PhotoUIDs != nil ||
+		msg.ProjectUID != "pj1" {
 		t.Fatalf("message = %+v", msg)
 	}
 	if msg.Text.Title != "Pan Botka tě přidal(a) k úkolu: Kdy to bylo?" || msg.Link != "/tasks/pt1" {
@@ -120,7 +121,7 @@ func TestMessage(t *testing.T) {
 	}
 
 	english := New(Config{Deliver: fakeDeliver{}, Language: notification.LanguageEnglish})
-	if got := english.message("pt2", "Anna", "When?").Text.Title; got != "Anna added you to the task: When?" {
+	if got := english.message("pj1", "pt2", "Anna", "When?").Text.Title; got != "Anna added you to the task: When?" {
 		t.Fatalf("English title = %q", got)
 	}
 }

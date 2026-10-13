@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/projecttest"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -106,7 +107,7 @@ func TestPhotoCommentWrites_foreignThreadIsMissing(t *testing.T) {
 	e := newEnv(t)
 	f := projecttest.Seed(t, e.db.Pool())
 	ctx := t.Context()
-	created, err := e.comments.Create(ctx, comments.PhotoSubject(f.A.PhotoUID), f.B.UserUID, "B wrote this on A",
+	created, err := e.comments.Create(ctx, f.A.ProjectUID, comments.PhotoSubject(f.A.PhotoUID), f.B.UserUID, "B wrote this on A",
 		audit.Entry{ActorUID: f.B.UserUID, Action: audit.ActionCommentCreate,
 			TargetType: "photos", TargetUID: f.A.PhotoUID})
 	if err != nil {
@@ -130,7 +131,7 @@ func TestPhotoCommentWrites_foreignThreadIsMissing(t *testing.T) {
 	}
 
 	// A deleted comment is no longer found, so a successful read is half the proof.
-	got, err := e.comments.Get(ctx, created.UID)
+	got, err := e.comments.Get(ctx, f.A.ProjectUID, created.UID)
 	if err != nil {
 		t.Fatalf("reading the comment back (deleted through B's prefix?): %v", err)
 	}
@@ -184,7 +185,7 @@ func assertNoSatellites(t *testing.T, e *env, photoUID string) {
 	if _, err := e.store.GetEdit(ctx, photoUID); !errors.Is(err, photos.ErrEditNotFound) {
 		t.Errorf("the other project's photo gained an edit (err %v)", err)
 	}
-	thread, err := e.comments.List(ctx, comments.PhotoSubject(photoUID))
+	thread, err := e.comments.List(ctx, project.BootstrapUID, comments.PhotoSubject(photoUID))
 	if err != nil {
 		t.Fatalf("listing comments: %v", err)
 	}

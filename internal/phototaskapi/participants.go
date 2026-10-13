@@ -27,9 +27,9 @@ type assignRequest struct {
 // Every authenticated role may read it — knowing who else is on a question is
 // part of deciding whether to answer it.
 func (a *API) handleListParticipants(w http.ResponseWriter, r *http.Request) {
-	people, err := a.store.Participants(r.Context(), taskUID(r))
+	people, err := a.store.Participants(r.Context(), projectOf(r), taskUID(r))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "listing participants failed")
+		writeTaskError(w, err, "listing participants failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, participantListResponse{Participants: people})
@@ -55,7 +55,7 @@ func (a *API) handleAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := taskUID(r)
-	if err := a.store.Assign(r.Context(), uid, body.UserUID,
+	if err := a.store.Assign(r.Context(), projectOf(r), uid, body.UserUID,
 		taskEntry(r, user.UID, audit.ActionTaskAssign, uid)); err != nil {
 		writeTaskError(w, err, "assigning failed")
 		return
@@ -72,7 +72,7 @@ func (a *API) handleUnassign(w http.ResponseWriter, r *http.Request) {
 	}
 	uid := taskUID(r)
 	target := chi.URLParam(r, "userUID")
-	if _, err := a.store.Unassign(r.Context(), uid, target,
+	if _, err := a.store.Unassign(r.Context(), projectOf(r), uid, target,
 		taskEntry(r, user.UID, audit.ActionTaskUnassign, uid)); err != nil {
 		writeTaskError(w, err, "unassigning failed")
 		return
@@ -83,9 +83,9 @@ func (a *API) handleUnassign(w http.ResponseWriter, r *http.Request) {
 // writeParticipants answers a membership change with the list as it now stands,
 // so the caller never has to follow a write with a read to redraw.
 func (a *API) writeParticipants(w http.ResponseWriter, r *http.Request, uid string) {
-	people, err := a.store.Participants(r.Context(), uid)
+	people, err := a.store.Participants(r.Context(), projectOf(r), uid)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "reading participants failed")
+		writeTaskError(w, err, "reading participants failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, participantListResponse{Participants: people})
@@ -101,7 +101,7 @@ func (a *API) writeParticipants(w http.ResponseWriter, r *http.Request, uid stri
 // must not be reported as failed over its bookkeeping, and the next thing the
 // author does to the task puts them on it anyway.
 func (a *API) joinAuthor(r *http.Request, taskUID, authorUID string) {
-	if err := a.store.Join(r.Context(), taskUID, authorUID); err != nil {
+	if err := a.store.Join(r.Context(), projectOf(r), taskUID, authorUID); err != nil {
 		logJoinFailure(taskUID, authorUID, err)
 	}
 }

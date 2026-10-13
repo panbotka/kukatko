@@ -35,7 +35,18 @@ func joinParticipant(ctx context.Context, tx pgx.Tx, taskUID, actorUID string) e
 	return nil
 }
 
-// Join puts userUID on the task as somebody who acted on it, outside any
+// joinInProjectSQL is joinSQL for a caller outside the task's transaction: the
+// row is written only when the task belongs to the project $3, so a join can
+// never reach into another project. A task that is not there writes nothing. The
+// casts pin $1 and $2 to one type: each is used both as a value and in a
+// comparison, and PostgreSQL refuses to deduce two types for one parameter.
+const joinInProjectSQL = `
+INSERT INTO photo_task_participants (task_uid, user_uid, added_by)
+SELECT $1::text, $2::text, NULL
+WHERE EXISTS (SELECT 1 FROM photo_tasks t WHERE t.uid = $1::text AND t.project_id = $3)
+ON CONFLICT DO NOTHING`
+
+// Join puts userUID on the project's task as somebody who acted on it, outside any
 // transaction of the caller's. It is the path for an act the task store does not
 // own — writing in the thread, which belongs to internal/comments — and it is
 // idempotent, so the caller may replay it freely.
@@ -43,11 +54,14 @@ func joinParticipant(ctx context.Context, tx pgx.Tx, taskUID, actorUID string) e
 // It is deliberately not audited: what is worth recording is the act (the
 // comment), and the participation is a consequence of it that the row itself
 // already dates.
-func (s *Store) Join(ctx context.Context, taskUID, userUID string) error {
+func (s *Store) Join(ctx context.Context, projectUID, taskUID, userUID string) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
 	if userUID == "" {
 		return nil
 	}
-	if _, err := s.pool.Exec(ctx, joinSQL, taskUID, userUID, nil); err != nil {
+	if _, err := s.pool.Exec(ctx, joinInProjectSQL, taskUID, userUID, projectUID); err != nil {
 		return translate(err, "joining task participant")
 	}
 	return nil
@@ -81,14 +95,19 @@ func (s *Store) ask(ctx context.Context, tx pgx.Tx, taskUID, userUID, actorUID, 
 }
 
 // Assign puts userUID on the task on purpose — asking a particular person —
-// and writes entry in the same transaction. A missing task yields ErrNotFound
+// and writes entry in the same transaction. A missing task — or one of another
+// project — yields ErrNotFound
 // and a person with no account ErrUserNotFound; in either case nothing is
 // written. Assigning somebody already on the task is not an error. An assign
 // observer (WithAssignObserver) hears the change only when the person was not
 // on the task before — re-asking is silent.
-func (s *Store) Assign(ctx context.Context, taskUID, userUID string, entry audit.Entry) error {
+func (s *Store) Assign(ctx context.Context, projectUID, taskUID, userUID string, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	entry = withProject(entry, projectUID)
 	return s.inTx(ctx, "assigning task participant", func(tx pgx.Tx) error {
-		if err := lockTask(ctx, tx, taskUID); err != nil {
+		if err := lockTask(ctx, tx, projectUID, taskUID); err != nil {
 			return err
 		}
 		if err := s.ask(ctx, tx, taskUID, userUID, entry.ActorUID, "inserting task participant"); err != nil {
@@ -120,7 +139,7 @@ func (s *Store) askParticipants(
 		}
 		asked := audit.Entry{
 			ActorUID: entry.ActorUID, Action: audit.ActionTaskAssign,
-			IP: entry.IP, UserAgent: entry.UserAgent,
+			IP: entry.IP, UserAgent: entry.UserAgent, ProjectUID: entry.ProjectUID,
 		}
 		if err := audit.Write(ctx, tx, withTarget(asked, taskUID, "user_uid", userUID)); err != nil {
 			return fmt.Errorf("auditing asked participant: %w", err)
@@ -156,11 +175,15 @@ func uniqueUIDs(uids []string) []string {
 // participation is a statement about who is involved now, not an archive of who
 // once touched it. The audit trail is that archive.
 func (s *Store) Unassign(
-	ctx context.Context, taskUID, userUID string, entry audit.Entry,
+	ctx context.Context, projectUID, taskUID, userUID string, entry audit.Entry,
 ) (bool, error) {
+	if err := requireProject(projectUID); err != nil {
+		return false, err
+	}
+	entry = withProject(entry, projectUID)
 	var removed bool
 	err := s.inTx(ctx, "unassigning task participant", func(tx pgx.Tx) error {
-		if err := lockTask(ctx, tx, taskUID); err != nil {
+		if err := lockTask(ctx, tx, projectUID, taskUID); err != nil {
 			return err
 		}
 		tag, err := tx.Exec(ctx,
@@ -187,11 +210,18 @@ LEFT JOIN users au ON au.uid = p.added_by
 WHERE p.task_uid = $1
 ORDER BY p.joined_at, p.user_uid`
 
-// Participants returns the people on a task, oldest membership first. A task
-// nobody is on yields an empty slice, not nil, and a task that does not exist is
-// indistinguishable from one with nobody on it — the caller has already read the
-// task by the time it asks.
-func (s *Store) Participants(ctx context.Context, taskUID string) ([]Participant, error) {
+// Participants returns the people on the project's task, oldest membership
+// first. A task nobody is on yields an empty slice, not nil; a task that does not
+// exist — or belongs to another project — is ErrNotFound, so the participants of
+// a foreign task are answered exactly like a missing one.
+func (s *Store) Participants(ctx context.Context, projectUID, taskUID string) ([]Participant, error) {
+	found, err := s.InProject(ctx, projectUID, []string{taskUID})
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrNotFound
+	}
 	rows, err := s.pool.Query(ctx, participantsSQL, taskUID)
 	if err != nil {
 		return nil, fmt.Errorf("phototask: listing participants of %s: %w", taskUID, err)

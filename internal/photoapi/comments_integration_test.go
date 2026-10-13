@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // apiComment is the wire shape of one comment, decoding only what the assertions
@@ -412,7 +413,7 @@ func TestCommentsAPI_cascadeOnPurge(t *testing.T) {
 	mustStatus(t, admin, http.MethodPost,
 		e.server.URL+"/api/v1/photos/"+doomed.UID+"/purge?confirm=true", http.StatusNoContent)
 
-	counts, err := e.comments.CountsAmong(t.Context(), comments.SubjectPhoto, []string{doomed.UID, kept.UID})
+	counts, err := e.comments.CountsAmong(t.Context(), project.BootstrapUID, comments.SubjectPhoto, []string{doomed.UID, kept.UID})
 	if err != nil {
 		t.Fatalf("CountsAmong: %v", err)
 	}
@@ -422,7 +423,7 @@ func TestCommentsAPI_cascadeOnPurge(t *testing.T) {
 	if counts[kept.UID] != 1 {
 		t.Errorf("the other photo has %d comments, want 1", counts[kept.UID])
 	}
-	if _, err := e.comments.Get(t.Context(), survivor.UID); err != nil {
+	if _, err := e.comments.Get(t.Context(), project.BootstrapUID, survivor.UID); err != nil {
 		t.Errorf("the other photo's comment did not survive the purge: %v", err)
 	}
 }

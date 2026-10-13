@@ -244,8 +244,8 @@ func TestMessage(t *testing.T) {
 
 	svc := New(Config{DB: panicDB{t: t}, Albums: fakeAlbums{}, Deliver: fakeDeliver{}})
 	album := organize.FeaturedAlbum{Album: organize.Album{UID: "al1", Title: "Pouť 2026"}, CoverUID: new("ph1")}
-	msg := svc.message(album)
-	if msg.Kind != notification.KindAlbumFeatured || msg.SelfLink || msg.SkipMail {
+	msg := svc.message("pj1", album)
+	if msg.Kind != notification.KindAlbumFeatured || msg.SelfLink || msg.SkipMail || msg.ProjectUID != "pj1" {
 		t.Fatalf("message = %+v", msg)
 	}
 	if msg.Text.Title != "Nové doporučené album: Pouť 2026" || msg.Link != "/albums/al1" {
@@ -264,7 +264,7 @@ func TestMessage(t *testing.T) {
 
 	english := New(Config{DB: panicDB{t: t}, Albums: fakeAlbums{}, Deliver: fakeDeliver{},
 		Language: notification.LanguageEnglish})
-	bare := english.message(organize.FeaturedAlbum{Album: organize.Album{UID: "al2", Title: "Fair"}})
+	bare := english.message("pj1", organize.FeaturedAlbum{Album: organize.Album{UID: "al2", Title: "Fair"}})
 	if bare.PhotoUIDs != nil || bare.Text.Title != "New featured album: Fair" {
 		t.Fatalf("no cover, English: %+v", bare)
 	}

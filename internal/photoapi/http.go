@@ -530,6 +530,9 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if favorite {
 		params.FavoriteOf = user.UID
 	}
+	if !a.requireTaskScope(w, r, params) {
+		return
+	}
 	notices := applyMeTokens(&params, user)
 	a.writeFavoritePage(w, r, user.UID, params, pageHints{unknown: unknown, notices: notices})
 }
@@ -597,6 +600,9 @@ func (a *API) handleSearch(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if !a.requireTaskScope(w, r, params) {
 		return
 	}
 	// Scope the per-user rating filters, the query language's per-user filters

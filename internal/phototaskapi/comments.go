@@ -43,7 +43,7 @@ func (a *API) handleListComments(w http.ResponseWriter, r *http.Request) {
 	if !a.commentsAvailable(w) {
 		return
 	}
-	list, err := a.comments.List(r.Context(), comments.TaskSubject(taskUID(r)))
+	list, err := a.comments.List(r.Context(), projectOf(r), comments.TaskSubject(taskUID(r)))
 	if err != nil {
 		writeCommentError(w, err, "listing comments failed")
 		return
@@ -80,7 +80,7 @@ func (a *API) handleCreateComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	created, err := a.comments.CreateAlong(r.Context(), comments.TaskSubject(uid), user.UID, body.Body,
+	created, err := a.comments.CreateAlong(r.Context(), projectOf(r), comments.TaskSubject(uid), user.UID, body.Body,
 		commentEntry(r, user.UID, audit.ActionCommentCreate, uid), along)
 	if err != nil {
 		writeAnswerError(w, err)
@@ -116,8 +116,9 @@ func (a *API) stateMove(
 		return nil, false
 	}
 	entry := taskEntry(r, user.UID, audit.ActionTaskUpdate, uid)
+	projectUID := projectOf(r)
 	return func(ctx context.Context, tx pgx.Tx) error {
-		return phototask.UpdateTx(ctx, tx, uid, phototask.Update{State: &state}, entry)
+		return phototask.UpdateTx(ctx, tx, projectUID, uid, phototask.Update{State: &state}, entry)
 	}, true
 }
 
@@ -151,7 +152,7 @@ func (a *API) handleUpdateComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	updated, err := a.comments.Update(r.Context(), existing.UID, body.Body,
+	updated, err := a.comments.Update(r.Context(), projectOf(r), existing.UID, body.Body,
 		commentEntry(r, user.UID, audit.ActionCommentUpdate, existing.TaskUID))
 	if err != nil {
 		writeCommentError(w, err, "updating comment failed")
@@ -171,7 +172,7 @@ func (a *API) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only the author or an admin may delete a comment")
 		return
 	}
-	if err := a.comments.Delete(r.Context(), existing.UID,
+	if err := a.comments.Delete(r.Context(), projectOf(r), existing.UID,
 		commentEntry(r, user.UID, audit.ActionCommentDelete, existing.TaskUID)); err != nil {
 		writeCommentError(w, err, "deleting comment failed")
 		return
@@ -190,7 +191,7 @@ func (a *API) resolveComment(w http.ResponseWriter, r *http.Request) (comments.C
 	if !ok {
 		return comments.Comment{}, auth.User{}, false
 	}
-	existing, err := a.comments.Get(r.Context(), chi.URLParam(r, "commentUID"))
+	existing, err := a.comments.Get(r.Context(), projectOf(r), chi.URLParam(r, "commentUID"))
 	if err != nil {
 		writeCommentError(w, err, "reading comment failed")
 		return comments.Comment{}, auth.User{}, false

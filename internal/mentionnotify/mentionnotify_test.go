@@ -108,9 +108,10 @@ func TestMessage(t *testing.T) {
 		UID: "cm1", TaskUID: "pt1", AuthorUID: "us-tom", AuthorName: "Pan Botka",
 		Body: "Hele @[Anna](user:us-anna), víš to?",
 	}
-	p := place{kind: notification.MentionPlaceTask, title: "Kdy to bylo?", visible: true}
+	p := place{kind: notification.MentionPlaceTask, title: "Kdy to bylo?", visible: true, projectUID: "pj1"}
 	msg := New(Config{Deliver: fakeDeliver{}}).message(c, c.Subject(), p)
-	if msg.Kind != notification.KindCommentMention || msg.SelfLink || msg.SkipMail || msg.PhotoUIDs != nil {
+	if msg.Kind != notification.KindCommentMention || msg.SelfLink || msg.SkipMail || msg.PhotoUIDs != nil ||
+		msg.ProjectUID != "pj1" {
 		t.Fatalf("message = %+v", msg)
 	}
 	wantText := notification.Text{

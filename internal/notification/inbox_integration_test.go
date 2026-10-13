@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // inbox records one notification for userUID, listed in the inbox or not, and
@@ -15,7 +16,7 @@ import (
 func (f *fixture) inbox(t *testing.T, userUID, title string, inApp bool, minutesAgo int) notification.Notification {
 	t.Helper()
 	created, err := f.store.Create(context.Background(), notification.New{
-		UserUID: userUID, Kind: notification.KindRegistrationPending, Title: title, Link: "/users", InApp: inApp,
+		ProjectUID: project.BootstrapUID, UserUID: userUID, Kind: notification.KindRegistrationPending, Title: title, Link: "/users", InApp: inApp,
 	})
 	if err != nil {
 		t.Fatalf("Create %s: %v", title, err)
@@ -45,7 +46,7 @@ func TestList_onlyTheOwnersInboxNewestFirst(t *testing.T) {
 	f.inbox(t, owner, "new", true, 10)
 	f.inbox(t, stranger, "not yours", true, 5)
 
-	page, err := f.store.List(ctx, owner, notification.ListOptions{})
+	page, err := f.store.List(ctx, project.BootstrapUID, owner, notification.ListOptions{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestList_onlyTheOwnersInboxNewestFirst(t *testing.T) {
 		t.Fatalf("page = %+v, want listed rows and the default bounds", page)
 	}
 
-	empty, err := f.store.List(ctx, "us-nobody", notification.ListOptions{})
+	empty, err := f.store.List(ctx, project.BootstrapUID, "us-nobody", notification.ListOptions{})
 	if err != nil || empty.Notifications == nil || len(empty.Notifications) != 0 || empty.Total != 0 {
 		t.Fatalf("List(nobody) = %+v, %v; want an empty non-nil page", empty, err)
 	}
@@ -71,22 +72,22 @@ func TestList_pagesAndUnreadFilter(t *testing.T) {
 		f.inbox(t, owner, fmt.Sprintf("n%d", i), true, 50-i)
 	}
 	read := f.inbox(t, owner, "read", true, 1)
-	if _, err := f.store.MarkRead(ctx, owner, read.UID); err != nil {
+	if _, err := f.store.MarkRead(ctx, project.BootstrapUID, owner, read.UID); err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 
-	first, err := f.store.List(ctx, owner, notification.ListOptions{Limit: 2})
+	first, err := f.store.List(ctx, project.BootstrapUID, owner, notification.ListOptions{Limit: 2})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	second, err := f.store.List(ctx, owner, notification.ListOptions{Limit: 2, Offset: 2})
+	second, err := f.store.List(ctx, project.BootstrapUID, owner, notification.ListOptions{Limit: 2, Offset: 2})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if fmt.Sprint(titles(first)) != "[read n4]" || fmt.Sprint(titles(second)) != "[n3 n2]" || first.Total != 6 {
 		t.Fatalf("pages = %v %v (total %d), want [read n4] [n3 n2] (6)", titles(first), titles(second), first.Total)
 	}
-	unread, err := f.store.List(ctx, owner, notification.ListOptions{Unread: true, Limit: 500, Offset: -3})
+	unread, err := f.store.List(ctx, project.BootstrapUID, owner, notification.ListOptions{Unread: true, Limit: 500, Offset: -3})
 	if err != nil {
 		t.Fatalf("List(unread): %v", err)
 	}
@@ -112,34 +113,34 @@ func TestUnreadCountAndMarkAllRead(t *testing.T) {
 	f.inbox(t, owner, "a", true, 3)
 	f.inbox(t, owner, "b", true, 2)
 	alreadyRead := f.inbox(t, owner, "c", true, 1)
-	firstRead, err := f.store.MarkRead(ctx, owner, alreadyRead.UID)
+	firstRead, err := f.store.MarkRead(ctx, project.BootstrapUID, owner, alreadyRead.UID)
 	if err != nil {
 		t.Fatalf("MarkRead: %v", err)
 	}
 	pushOnly := f.inbox(t, owner, "push only", false, 1)
 	f.inbox(t, stranger, "theirs", true, 1)
 
-	if n, err := f.store.UnreadCount(ctx, owner); err != nil || n != 2 {
+	if n, err := f.store.UnreadCount(ctx, project.BootstrapUID, owner); err != nil || n != 2 {
 		t.Fatalf("UnreadCount = %d, %v; want 2", n, err)
 	}
-	marked, err := f.store.MarkAllRead(ctx, owner)
+	marked, err := f.store.MarkAllRead(ctx, project.BootstrapUID, owner)
 	if err != nil || marked != 2 {
 		t.Fatalf("MarkAllRead = %d, %v; want 2", marked, err)
 	}
-	if n, err := f.store.UnreadCount(ctx, owner); err != nil || n != 0 {
+	if n, err := f.store.UnreadCount(ctx, project.BootstrapUID, owner); err != nil || n != 0 {
 		t.Fatalf("UnreadCount after MarkAllRead = %d, %v; want 0", n, err)
 	}
-	if again, err := f.store.MarkAllRead(ctx, owner); err != nil || again != 0 {
+	if again, err := f.store.MarkAllRead(ctx, project.BootstrapUID, owner); err != nil || again != 0 {
 		t.Fatalf("second MarkAllRead = %d, %v; want 0", again, err)
 	}
-	kept, err := f.store.Get(ctx, owner, alreadyRead.UID)
+	kept, err := f.store.Get(ctx, project.BootstrapUID, owner, alreadyRead.UID)
 	if err != nil || kept.ReadAt == nil || !kept.ReadAt.Equal(*firstRead.ReadAt) {
 		t.Fatalf("already-read notification = %+v, %v; want its first reading kept", kept, err)
 	}
-	if got, err := f.store.Get(ctx, owner, pushOnly.UID); err != nil || got.ReadAt != nil || got.InApp {
+	if got, err := f.store.Get(ctx, project.BootstrapUID, owner, pushOnly.UID); err != nil || got.ReadAt != nil || got.InApp {
 		t.Fatalf("record outside the inbox = %+v, %v; want it untouched and readable by uid", got, err)
 	}
-	if n, err := f.store.UnreadCount(ctx, stranger); err != nil || n != 1 {
+	if n, err := f.store.UnreadCount(ctx, project.BootstrapUID, stranger); err != nil || n != 1 {
 		t.Fatalf("stranger's UnreadCount = %d, %v; want their 1 untouched", n, err)
 	}
 }

@@ -82,6 +82,45 @@ const mutationColumns = `uid, photo_uid, task_uid, album_uid, author_uid, body, 
 const authorJoin = ` LEFT JOIN users u ON u.uid = c.author_uid` +
 	` LEFT JOIN subjects s ON s.uid = u.subject_uid`
 
+// parentTables maps each subject column to the root table its uid names. A
+// comment carries no project of its own: it belongs to the project of the
+// photo, task or album it hangs off, and every statement reads that parent's
+// project_id.
+var parentTables = map[string]string{
+	"photo_uid": "photos",
+	"task_uid":  "photo_tasks",
+	"album_uid": "albums",
+}
+
+// inProjectSQL is the predicate confining a comment row, aliased alias, to the
+// project bound to placeholder: whichever of its three subject columns is set
+// must name a row of that project. It serves the reads and writes addressed by
+// the comment's own uid, which do not know the subject kind in advance.
+func inProjectSQL(alias, placeholder string) string {
+	return "(EXISTS (SELECT 1 FROM photos pp WHERE pp.uid = " + alias + ".photo_uid AND pp.project_id = " +
+		placeholder + ") OR EXISTS (SELECT 1 FROM photo_tasks pt WHERE pt.uid = " + alias +
+		".task_uid AND pt.project_id = " + placeholder + ") OR EXISTS (SELECT 1 FROM albums pa WHERE pa.uid = " +
+		alias + ".album_uid AND pa.project_id = " + placeholder + "))"
+}
+
+// requireProject returns ErrNoProject when projectUID is empty and nil
+// otherwise. Every Store method calls it before touching the database.
+func requireProject(projectUID string) error {
+	if projectUID == "" {
+		return ErrNoProject
+	}
+	return nil
+}
+
+// withProject defaults entry's ProjectUID to projectUID, so every audited
+// comment write records the project it happened in.
+func withProject(entry audit.Entry, projectUID string) audit.Entry {
+	if entry.ProjectUID == "" {
+		entry.ProjectUID = projectUID
+	}
+	return entry
+}
+
 // subjectStatements holds the four statements whose text depends on which
 // column carries the subject. They are built once per kind at package
 // initialisation rather than formatted per call, so no request ever assembles
@@ -102,6 +141,13 @@ var statements = map[SubjectKind]subjectStatements{
 	SubjectAlbum: buildStatements("album_uid"),
 }
 
+// parentJoin joins the subject row of column, aliased px, confined to the
+// project bound to placeholder: a comment whose subject is another project's
+// drops out of the read.
+func parentJoin(column, placeholder string) string {
+	return " JOIN " + parentTables[column] + " px ON px.uid = c." + column + " AND px.project_id = " + placeholder
+}
+
 // buildStatements returns the per-kind statements for the subject stored in
 // column: the thread listing (oldest first — a conversation reads forwards — with
 // the UID as a stable tie-break for comments written in the same instant), the
@@ -109,28 +155,31 @@ var statements = map[SubjectKind]subjectStatements{
 // index the listing reads, newest first — the mirror image of the thread's
 // tie-break, so the two never disagree about which of two same-instant comments
 // is the last word), and the insert. Soft-deleted rows are filtered out of every
-// read, as on every read path.
+// read, as on every read path. Every read joins the subject confined to the
+// project ($2), and the insert writes nothing unless the subject is a row of the
+// project ($5) — so a thread never reads or grows across projects.
 func buildStatements(column string) subjectStatements {
 	return subjectStatements{
 		list: `
 SELECT ` + commentColumns + `
-FROM comments c` + authorJoin + `
+FROM comments c` + parentJoin(column, "$2") + authorJoin + `
 WHERE c.` + column + ` = $1 AND c.deleted_at IS NULL
 ORDER BY c.created_at, c.uid`,
 		countsAmong: `
-SELECT ` + column + `, count(*)
-FROM comments
-WHERE ` + column + ` = ANY($1) AND deleted_at IS NULL
-GROUP BY ` + column,
+SELECT c.` + column + `, count(*)
+FROM comments c` + parentJoin(column, "$2") + `
+WHERE c.` + column + ` = ANY($1) AND c.deleted_at IS NULL
+GROUP BY c.` + column,
 		latestAmong: `
 SELECT DISTINCT ON (c.` + column + `) ` + commentColumns + `
-FROM comments c` + authorJoin + `
+FROM comments c` + parentJoin(column, "$2") + authorJoin + `
 WHERE c.` + column + ` = ANY($1) AND c.deleted_at IS NULL
 ORDER BY c.` + column + `, c.created_at DESC, c.uid DESC`,
 		create: `
 WITH inserted AS (
     INSERT INTO comments (uid, ` + column + `, author_uid, body)
-    VALUES ($1, $2, $3, $4)
+    SELECT $1::text, $2::text, $3::text, $4::text
+    WHERE EXISTS (SELECT 1 FROM ` + parentTables[column] + ` px WHERE px.uid = $2::text AND px.project_id = $5)
     RETURNING ` + mutationColumns + `
 )
 SELECT ` + commentColumns + `
@@ -151,18 +200,21 @@ func statementsFor(subj Subject) (subjectStatements, error) {
 	return stmts, nil
 }
 
-// List returns the live comments on subj, oldest first, each carrying its
-// author's resolved name. A subject with no comments — or one that does not
-// exist — yields an empty slice and a nil error: a thread is a view of a photo, a
-// task or an album, not a claim that it exists, and the caller has already
-// resolved it.
+// List returns the live comments on subj, a subject of the project, oldest
+// first, each carrying its author's resolved name. A subject with no comments —
+// or one that does not exist, or belongs to another project — yields an empty
+// slice and a nil error: a thread is a view of a photo, a task or an album, not a
+// claim that it exists, and the caller has already resolved it.
 // An unknown subject kind yields ErrInvalidSubject.
-func (s *Store) List(ctx context.Context, subj Subject) ([]Comment, error) {
+func (s *Store) List(ctx context.Context, projectUID string, subj Subject) ([]Comment, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	stmts, err := statementsFor(subj)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, stmts.list, subj.UID)
+	rows, err := s.pool.Query(ctx, stmts.list, subj.UID, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("comments: listing comments of %s %s: %w", subj.Kind, subj.UID, err)
 	}
@@ -182,8 +234,9 @@ func (s *Store) List(ctx context.Context, subj Subject) ([]Comment, error) {
 	return out, nil
 }
 
-// CountsAmong returns how many live comments each of uids has within the thread
-// kind, keyed by subject UID. Subjects without a comment are absent from the map
+// CountsAmong returns how many live comments each of uids — subjects of the
+// project — has within the thread kind, keyed by subject UID; a subject of
+// another project counts nothing. Subjects without a comment are absent from the map
 // (a missing key reads as zero), and an empty input yields an empty map without
 // querying. An unknown kind yields ErrInvalidSubject.
 //
@@ -191,7 +244,12 @@ func (s *Store) List(ctx context.Context, subj Subject) ([]Comment, error) {
 // single photo: a per-photo count would be one query per item the moment a
 // listing wanted the same badge, and this way that N+1 cannot be written by
 // accident.
-func (s *Store) CountsAmong(ctx context.Context, kind SubjectKind, uids []string) (map[string]int, error) {
+func (s *Store) CountsAmong(
+	ctx context.Context, projectUID string, kind SubjectKind, uids []string,
+) (map[string]int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	out := make(map[string]int, len(uids))
 	if len(uids) == 0 {
 		return out, nil
@@ -200,7 +258,7 @@ func (s *Store) CountsAmong(ctx context.Context, kind SubjectKind, uids []string
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, stmts.countsAmong, uids)
+	rows, err := s.pool.Query(ctx, stmts.countsAmong, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("comments: counting comments: %w", err)
 	}
@@ -222,15 +280,16 @@ func (s *Store) CountsAmong(ctx context.Context, kind SubjectKind, uids []string
 	return out, nil
 }
 
-// getSQL reads one live comment by UID. It needs no per-kind variant: a comment
-// is addressed by its own UID, whatever it hangs off.
-const getSQL = `
+// getSQL reads one live comment by UID within the project $2. It needs no
+// per-kind variant: a comment is addressed by its own UID, whatever it hangs
+// off, and inProjectSQL checks whichever subject it has.
+var getSQL = `
 SELECT ` + commentColumns + `
 FROM comments c` + authorJoin + `
-WHERE c.uid = $1 AND c.deleted_at IS NULL`
+WHERE c.uid = $1 AND c.deleted_at IS NULL AND ` + inProjectSQL("c", "$2")
 
-// LatestAmong returns the newest live comment on each of uids within the thread
-// kind, keyed by subject UID. Subjects without a live comment are absent from
+// LatestAmong returns the newest live comment on each of uids — subjects of the
+// project — within the thread kind, keyed by subject UID. Subjects without a live comment are absent from
 // the map, and an empty input yields an empty map without querying. An unknown
 // kind yields ErrInvalidSubject.
 //
@@ -239,7 +298,12 @@ WHERE c.uid = $1 AND c.deleted_at IS NULL`
 // and a per-row lookup would be the N+1 that shape invites. The DISTINCT ON
 // walks idx_comments_photo / idx_comments_task / idx_comments_album backwards,
 // so the cost is one index probe per subject rather than a sort over its thread.
-func (s *Store) LatestAmong(ctx context.Context, kind SubjectKind, uids []string) (map[string]Comment, error) {
+func (s *Store) LatestAmong(
+	ctx context.Context, projectUID string, kind SubjectKind, uids []string,
+) (map[string]Comment, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	out := make(map[string]Comment, len(uids))
 	if len(uids) == 0 {
 		return out, nil
@@ -248,7 +312,7 @@ func (s *Store) LatestAmong(ctx context.Context, kind SubjectKind, uids []string
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, stmts.latestAmong, uids)
+	rows, err := s.pool.Query(ctx, stmts.latestAmong, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("comments: reading latest comments: %w", err)
 	}
@@ -267,12 +331,16 @@ func (s *Store) LatestAmong(ctx context.Context, kind SubjectKind, uids []string
 	return out, nil
 }
 
-// Get returns the live comment with the given UID, or ErrNotFound when it does
-// not exist or has been soft-deleted. The HTTP layer reads the comment before
+// Get returns the live comment of the project with the given UID, or
+// ErrNotFound when it does not exist, has been soft-deleted or hangs off a
+// subject of another project. The HTTP layer reads the comment before
 // editing or deleting it, both to answer 404 for a comment that is not there and
 // to decide authorship from the stored row rather than from the request.
-func (s *Store) Get(ctx context.Context, uid string) (Comment, error) {
-	c, err := scanComment(s.pool.QueryRow(ctx, getSQL, uid))
+func (s *Store) Get(ctx context.Context, projectUID, uid string) (Comment, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Comment{}, err
+	}
+	c, err := scanComment(s.pool.QueryRow(ctx, getSQL, uid, projectUID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Comment{}, ErrNotFound
 	}
@@ -282,20 +350,22 @@ func (s *Store) Get(ctx context.Context, uid string) (Comment, error) {
 	return c, nil
 }
 
-// Create stores a new comment by authorUID on subj and writes entry to the audit
+// Create stores a new comment by authorUID on subj, a subject of the project,
+// and writes entry to the audit
 // log in the same transaction, so a comment that exists always has a record of
 // who wrote it. The body is trimmed and validated (ErrEmptyBody /
-// ErrBodyTooLong); a subject that does not exist yields ErrSubjectNotFound, and
-// an unknown kind ErrInvalidSubject. An empty authorUID stores SQL NULL, which
+// ErrBodyTooLong); a subject that does not exist — or belongs to another project
+// — yields ErrSubjectNotFound and writes nothing, and an unknown kind
+// ErrInvalidSubject. An empty authorUID stores SQL NULL, which
 // only a caller without a principal can produce.
 //
 // The new comment's UID is stamped into the audit entry's details as
 // "comment_uid" — the caller cannot know it in advance, and without it a
 // create entry could not be tied to the row it created.
 func (s *Store) Create(
-	ctx context.Context, subj Subject, authorUID, body string, entry audit.Entry,
+	ctx context.Context, projectUID string, subj Subject, authorUID, body string, entry audit.Entry,
 ) (Comment, error) {
-	return s.CreateAlong(ctx, subj, authorUID, body, entry, nil)
+	return s.CreateAlong(ctx, projectUID, subj, authorUID, body, entry, nil)
 }
 
 // Along is a further write a caller wants committed together with a comment: it
@@ -312,8 +382,11 @@ type Along func(ctx context.Context, tx pgx.Tx) error
 // The comment is written first: a subject that does not exist fails it with
 // ErrSubjectNotFound before along is asked to do anything.
 func (s *Store) CreateAlong(
-	ctx context.Context, subj Subject, authorUID, body string, entry audit.Entry, along Along,
+	ctx context.Context, projectUID string, subj Subject, authorUID, body string, entry audit.Entry, along Along,
 ) (Comment, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Comment{}, err
+	}
 	stmts, err := statementsFor(subj)
 	if err != nil {
 		return Comment{}, err
@@ -326,57 +399,73 @@ func (s *Store) CreateAlong(
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "creating comment", s.mentionsThen(along), stmts.create,
-		uid, subj.UID, nullableUID(authorUID), trimmed)
+	c, err := s.mutateAudited(ctx, withProject(entry, projectUID), "creating comment", s.mentionsThen(along),
+		stmts.create, uid, subj.UID, nullableUID(authorUID), trimmed, projectUID)
+	if errors.Is(err, ErrNotFound) {
+		// The insert wrote no row: its subject is not one of the project's.
+		return Comment{}, ErrSubjectNotFound
+	}
+	return c, err
 }
 
 // updateSQL rewrites a live comment's body and stamps edited_at, reading the row
-// back with its author resolved. A soft-deleted comment matches nothing, so
-// editing one is a not-found rather than a resurrection.
-const updateSQL = `
+// back with its author resolved. A soft-deleted comment, or one on a subject of
+// another project than $3, matches nothing, so editing one is a not-found rather
+// than a resurrection.
+var updateSQL = `
 WITH updated AS (
-    UPDATE comments
+    UPDATE comments c
     SET body = $2, edited_at = now()
-    WHERE uid = $1 AND deleted_at IS NULL
+    WHERE c.uid = $1 AND c.deleted_at IS NULL AND ` + inProjectSQL("c", "$3") + `
     RETURNING ` + mutationColumns + `
 )
 SELECT ` + commentColumns + `
 FROM updated c` + authorJoin
 
-// Update rewrites the body of the live comment uid, stamps its edited_at and
+// Update rewrites the body of the live comment uid of the project, stamps its edited_at and
 // writes entry to the audit log in the same transaction. The body is validated
-// exactly as on create; a missing or already-deleted comment yields ErrNotFound.
+// exactly as on create; a missing, already-deleted or foreign comment yields
+// ErrNotFound.
 // Authorization (only the author may edit) is the caller's decision — the store
 // enforces existence, not policy.
-func (s *Store) Update(ctx context.Context, uid, body string, entry audit.Entry) (Comment, error) {
+func (s *Store) Update(ctx context.Context, projectUID, uid, body string, entry audit.Entry) (Comment, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Comment{}, err
+	}
 	trimmed, err := normalizeBody(body)
 	if err != nil {
 		return Comment{}, err
 	}
-	return s.mutateAudited(ctx, entry, "updating comment", s.mentionsThen(nil), updateSQL, uid, trimmed)
+	return s.mutateAudited(ctx, withProject(entry, projectUID), "updating comment", s.mentionsThen(nil),
+		updateSQL, uid, trimmed, projectUID)
 }
 
-// deleteSQL soft-deletes a live comment, returning the row it stamped so the
-// caller can tell a real delete from a no-op.
-const deleteSQL = `
+// deleteSQL soft-deletes a live comment on a subject of the project $2,
+// returning the row it stamped so the caller can tell a real delete from a
+// no-op.
+var deleteSQL = `
 WITH removed AS (
-    UPDATE comments
+    UPDATE comments c
     SET deleted_at = now()
-    WHERE uid = $1 AND deleted_at IS NULL
+    WHERE c.uid = $1 AND c.deleted_at IS NULL AND ` + inProjectSQL("c", "$2") + `
     RETURNING ` + mutationColumns + `
 )
 SELECT ` + commentColumns + `
 FROM removed c` + authorJoin
 
-// Delete soft-deletes the live comment uid — the row stays with deleted_at
+// Delete soft-deletes the live comment uid of the project — the row stays with deleted_at
 // stamped and drops out of every read path — and writes entry to the audit log in
 // the same transaction, so a removal is always explainable afterwards. A missing
 // or already-deleted comment yields ErrNotFound rather than succeeding silently:
 // deleting twice is a client bug, and the second attempt has nothing to audit.
 // Who may delete (the author, or an admin removing anyone's) is the caller's
 // decision.
-func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error {
-	_, err := s.mutateAudited(ctx, entry, "deleting comment", nil, deleteSQL, uid)
+func (s *Store) Delete(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	_, err := s.mutateAudited(ctx, withProject(entry, projectUID), "deleting comment", nil, deleteSQL, uid,
+		projectUID)
 	return err
 }
 

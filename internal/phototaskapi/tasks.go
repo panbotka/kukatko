@@ -21,7 +21,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	tasks, total, err := a.store.List(r.Context(), filter)
+	tasks, total, err := a.store.List(r.Context(), projectOf(r), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing tasks failed")
 		return
@@ -39,7 +39,7 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	task, err := a.store.Get(r.Context(), taskUID(r), user.UID)
+	task, err := a.store.Get(r.Context(), projectOf(r), taskUID(r), user.UID)
 	if err != nil {
 		writeTaskError(w, err, "reading task failed")
 		return
@@ -64,7 +64,7 @@ func (a *API) handleCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "photo_uids is over the limit")
 		return
 	}
-	created, err := a.store.Create(r.Context(), phototask.Task{
+	created, err := a.store.Create(r.Context(), projectOf(r), phototask.Task{
 		Title: body.Title, Body: body.Body, Query: body.Query,
 		State: phototask.State(body.State), Options: body.Options,
 	}, phototask.Opening{PhotoUIDs: body.PhotoUIDs, AskedUIDs: body.Participants},
@@ -90,7 +90,7 @@ func (a *API) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := taskUID(r)
-	updated, err := a.store.Update(r.Context(), uid, body.toUpdate(),
+	updated, err := a.store.Update(r.Context(), projectOf(r), uid, body.toUpdate(),
 		taskEntry(r, user.UID, audit.ActionTaskUpdate, uid))
 	if err != nil {
 		writeTaskError(w, err, "updating task failed")
@@ -106,7 +106,8 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := taskUID(r)
-	if err := a.store.Delete(r.Context(), uid, taskEntry(r, user.UID, audit.ActionTaskDelete, uid)); err != nil {
+	entry := taskEntry(r, user.UID, audit.ActionTaskDelete, uid)
+	if err := a.store.Delete(r.Context(), projectOf(r), uid, entry); err != nil {
 		writeTaskError(w, err, "deleting task failed")
 		return
 	}
@@ -128,7 +129,7 @@ func (a *API) handleRemovePhotos(w http.ResponseWriter, r *http.Request) {
 
 // membershipFunc is the shape both membership store methods share.
 type membershipFunc func(
-	ctx context.Context, uid string, photoUIDs []string, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, photoUIDs []string, entry audit.Entry,
 ) (int, error)
 
 // changeMembership runs one of the two membership mutations and writes the
@@ -147,12 +148,12 @@ func (a *API) changeMembership(
 		return
 	}
 	uid := taskUID(r)
-	changed, err := change(r.Context(), uid, photoUIDs, taskEntry(r, user.UID, action, uid))
+	changed, err := change(r.Context(), projectOf(r), uid, photoUIDs, taskEntry(r, user.UID, action, uid))
 	if err != nil {
 		writeTaskError(w, err, failMsg)
 		return
 	}
-	task, err := a.store.Get(r.Context(), uid, user.UID)
+	task, err := a.store.Get(r.Context(), projectOf(r), uid, user.UID)
 	if err != nil {
 		writeTaskError(w, err, failMsg)
 		return

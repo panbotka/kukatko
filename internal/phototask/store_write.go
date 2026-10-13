@@ -22,8 +22,8 @@ const foreignKeyViolation = "23503"
 // what newFields validated.
 const insertTaskSQL = `
 INSERT INTO photo_tasks (uid, title, body, state, resolution, source_query,
-	created_by, state_at, state_by, closed_at, closed_by, options)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	created_by, state_at, state_by, closed_at, closed_by, options, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 // insertMembersSQL adds photographs to a task, ignoring the ones already there
 // so adding the same batch twice is not an error.
@@ -48,7 +48,7 @@ type Opening struct {
 	AskedUIDs []string
 }
 
-// Create opens a task over opening.PhotoUIDs and writes entry to the audit log
+// Create opens a task of the project over opening.PhotoUIDs and writes entry to the audit log
 // in the same transaction, so a task that exists always has a record of who
 // opened it and over which photographs. The actor joins the task's participants
 // in that same transaction — acting on a question is what puts somebody on it —
@@ -56,12 +56,19 @@ type Opening struct {
 // as an assign each. The text fields are trimmed and validated (ErrEmptyTitle,
 // ErrTooLong); a task opened in a closed state must carry a resolution
 // (ErrClosedNeedsResolution) and an unknown state is ErrInvalidState. A
-// photograph that does not exist yields ErrPhotoNotFound, a person with no
-// account ErrUserNotFound, and in either case nothing is written.
+// photograph that does not exist — or belongs to another project — yields
+// ErrPhotoNotFound, a person with no account ErrUserNotFound, and in either case
+// nothing is written.
 //
 // The new task's UID becomes the audit entry's target when the caller left it
 // empty — it cannot be known in advance.
-func (s *Store) Create(ctx context.Context, t Task, opening Opening, entry audit.Entry) (Task, error) {
+func (s *Store) Create(
+	ctx context.Context, projectUID string, t Task, opening Opening, entry audit.Entry,
+) (Task, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Task{}, err
+	}
+	entry = withProject(entry, projectUID)
 	photoUIDs := opening.PhotoUIDs
 	if len(photoUIDs) > MaxPhotos {
 		return Task{}, fmt.Errorf("%w: %d over the limit of %d", ErrTooManyPhotos, len(photoUIDs), MaxPhotos)
@@ -75,27 +82,43 @@ func (s *Store) Create(ctx context.Context, t Task, opening Opening, entry audit
 		return Task{}, err
 	}
 	err = s.inTx(ctx, "creating task", func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, insertTaskSQL, uid, f.Title, f.Body, string(f.State),
-			f.Resolution, f.Query, nullableUID(entry.ActorUID), f.StateAt, nullableUID(f.StateBy),
-			f.ClosedAt, nullableUID(f.ClosedBy), f.Options); err != nil {
-			return fmt.Errorf("inserting task row: %w", err)
-		}
-		if err := addMembers(ctx, tx, uid, photoUIDs); err != nil {
-			return err
-		}
-		// Opening a question is the strongest statement of being on it.
-		if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
-			return err
-		}
-		if err := s.askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
-			return err
-		}
-		return audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs))
+		return s.createIn(ctx, tx, projectUID, uid, f, opening, entry)
 	})
 	if err != nil {
 		return Task{}, err
 	}
-	return s.Get(ctx, uid, entry.ActorUID)
+	return s.Get(ctx, projectUID, uid, entry.ActorUID)
+}
+
+// createIn is the body of Create on tx: it proves the photographs belong to the
+// project, writes the task row and its frozen group, puts the actor and the
+// asked people on it and audits the opening.
+func (s *Store) createIn(
+	ctx context.Context, tx pgx.Tx, projectUID, uid string, f fields, opening Opening, entry audit.Entry,
+) error {
+	photoUIDs := opening.PhotoUIDs
+	if err := requirePhotosInProject(ctx, tx, projectUID, photoUIDs); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, insertTaskSQL, uid, f.Title, f.Body, string(f.State),
+		f.Resolution, f.Query, nullableUID(entry.ActorUID), f.StateAt, nullableUID(f.StateBy),
+		f.ClosedAt, nullableUID(f.ClosedBy), f.Options, projectUID); err != nil {
+		return fmt.Errorf("inserting task row: %w", err)
+	}
+	if err := addMembers(ctx, tx, uid, photoUIDs); err != nil {
+		return err
+	}
+	// Opening a question is the strongest statement of being on it.
+	if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
+		return err
+	}
+	if err := s.askParticipants(ctx, tx, uid, opening.AskedUIDs, entry); err != nil {
+		return err
+	}
+	if err := audit.Write(ctx, tx, withTarget(entry, uid, "photo_uids", photoUIDs)); err != nil {
+		return fmt.Errorf("writing task audit entry: %w", err)
+	}
+	return nil
 }
 
 // updateTaskSQL rewrites every field an edit may touch. state_at, state_by,
@@ -114,9 +137,9 @@ WHERE uid = $1`
 const currentSQL = `
 SELECT title, body, state, resolution, source_query, state_at, COALESCE(state_by, ''),
 	closed_at, COALESCE(closed_by, ''), options
-FROM photo_tasks WHERE uid = $1 FOR UPDATE`
+FROM photo_tasks WHERE uid = $1 AND project_id = $2 FOR UPDATE`
 
-// Update folds upd onto the stored task, writes entry — stamped with the
+// Update folds upd onto the stored task of the project, writes entry — stamped with the
 // field-level diff — in the same transaction, and returns the task as it now
 // stands. A missing task yields ErrNotFound; the validation errors are the same
 // ones Create raises, and closing without a resolution is refused
@@ -125,14 +148,19 @@ FROM photo_tasks WHERE uid = $1 FOR UPDATE`
 // Changing the state moves state_at and names the actor in state_by, which is
 // what resets "has anybody replied since" and makes the move theirs; an edit that
 // leaves the state alone deliberately does neither.
-func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.Entry) (Task, error) {
+func (s *Store) Update(
+	ctx context.Context, projectUID, uid string, upd Update, entry audit.Entry,
+) (Task, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Task{}, err
+	}
 	err := s.inTx(ctx, "updating task", func(tx pgx.Tx) error {
-		return updateIn(ctx, tx, uid, upd, entry)
+		return updateIn(ctx, tx, projectUID, uid, upd, entry)
 	})
 	if err != nil {
 		return Task{}, err
 	}
-	return s.Get(ctx, uid, entry.ActorUID)
+	return s.Get(ctx, projectUID, uid, entry.ActorUID)
 }
 
 // UpdateTx is Update on the caller's transaction: the same rules, the same
@@ -141,17 +169,21 @@ func (s *Store) Update(ctx context.Context, uid string, upd Update, entry audit.
 // hands the task on in one action — the comment and the move are one commit, so
 // neither can land without the other. It returns only an error, with the
 // package's sentinels unwrapped; read the task back with Get after the commit.
-func UpdateTx(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audit.Entry) error {
-	if err := updateIn(ctx, tx, uid, upd, entry); err != nil {
+func UpdateTx(ctx context.Context, tx pgx.Tx, projectUID, uid string, upd Update, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	if err := updateIn(ctx, tx, projectUID, uid, upd, entry); err != nil {
 		return translate(err, "updating task")
 	}
 	return nil
 }
 
-// updateIn is the body of an update on tx: it locks and reads the row, folds
-// upd onto it, writes it back, puts the actor on the task and audits the diff.
-func updateIn(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audit.Entry) error {
-	cur, err := scanCurrent(tx.QueryRow(ctx, currentSQL, uid))
+// updateIn is the body of an update on tx: it locks and reads the row — a task
+// of another project reads as missing — folds upd onto it, writes it back, puts
+// the actor on the task and audits the diff.
+func updateIn(ctx context.Context, tx pgx.Tx, projectUID, uid string, upd Update, entry audit.Entry) error {
+	cur, err := scanCurrent(tx.QueryRow(ctx, currentSQL, uid, projectUID))
 	if err != nil {
 		return err
 	}
@@ -167,7 +199,7 @@ func updateIn(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audi
 	if err := joinParticipant(ctx, tx, uid, entry.ActorUID); err != nil {
 		return err
 	}
-	if err := audit.Write(ctx, tx, withChanges(entry, uid, changes)); err != nil {
+	if err := audit.Write(ctx, tx, withChanges(withProject(entry, projectUID), uid, changes)); err != nil {
 		return fmt.Errorf("writing task audit entry: %w", err)
 	}
 	return nil
@@ -180,9 +212,13 @@ func updateIn(ctx context.Context, tx pgx.Tx, uid string, upd Update, entry audi
 // Deleting is the exception, not the way work ends. A finished task is closed:
 // its frozen list of photographs is the record of what a batch of edits touched,
 // and that record is the reason the task outlives the question.
-func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error {
+func (s *Store) Delete(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
+	if err := requireProject(projectUID); err != nil {
+		return err
+	}
+	entry = withProject(entry, projectUID)
 	return s.inTx(ctx, "deleting task", func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, "DELETE FROM photo_tasks WHERE uid = $1", uid)
+		tag, err := tx.Exec(ctx, "DELETE FROM photo_tasks WHERE uid = $1 AND project_id = $2", uid, projectUID)
 		if err != nil {
 			return fmt.Errorf("deleting task row: %w", err)
 		}
@@ -196,12 +232,22 @@ func (s *Store) Delete(ctx context.Context, uid string, entry audit.Entry) error
 // AddPhotos adds photoUIDs to the task and writes entry in the same
 // transaction, returning how many were actually new. Photographs already in the
 // task are ignored, so replaying a batch is harmless. A missing task yields
-// ErrNotFound, a missing photograph ErrPhotoNotFound, and a membership that
-// would grow past MaxPhotos ErrTooManyPhotos — in every case nothing is written.
-func (s *Store) AddPhotos(ctx context.Context, uid string, photoUIDs []string, entry audit.Entry) (int, error) {
+// ErrNotFound, a missing photograph — or one of another project —
+// ErrPhotoNotFound, and a membership that would grow past MaxPhotos
+// ErrTooManyPhotos — in every case nothing is written.
+func (s *Store) AddPhotos(
+	ctx context.Context, projectUID, uid string, photoUIDs []string, entry audit.Entry,
+) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	entry = withProject(entry, projectUID)
 	var added int
 	err := s.inTx(ctx, "adding photos to task", func(tx pgx.Tx) error {
-		if err := lockTask(ctx, tx, uid); err != nil {
+		if err := lockTask(ctx, tx, projectUID, uid); err != nil {
+			return err
+		}
+		if err := requirePhotosInProject(ctx, tx, projectUID, photoUIDs); err != nil {
 			return err
 		}
 		if err := checkRoom(ctx, tx, uid, len(photoUIDs)); err != nil {
@@ -227,11 +273,15 @@ func (s *Store) AddPhotos(ctx context.Context, uid string, photoUIDs []string, e
 // transaction, returning how many were actually removed. Photographs that were
 // not part of it are ignored. A missing task yields ErrNotFound.
 func (s *Store) RemovePhotos(
-	ctx context.Context, uid string, photoUIDs []string, entry audit.Entry,
+	ctx context.Context, projectUID, uid string, photoUIDs []string, entry audit.Entry,
 ) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	entry = withProject(entry, projectUID)
 	var removed int
 	err := s.inTx(ctx, "removing photos from task", func(tx pgx.Tx) error {
-		if err := lockTask(ctx, tx, uid); err != nil {
+		if err := lockTask(ctx, tx, projectUID, uid); err != nil {
 			return err
 		}
 		tag, err := tx.Exec(ctx,
@@ -265,10 +315,12 @@ func addMembers(ctx context.Context, tx pgx.Tx, uid string, photoUIDs []string) 
 }
 
 // lockTask takes the row lock and reports ErrNotFound for a task that is not
-// there, so a membership change on a missing task fails before it writes.
-func lockTask(ctx context.Context, tx pgx.Tx, uid string) error {
+// there — or belongs to another project — so a membership change on it fails
+// before it writes.
+func lockTask(ctx context.Context, tx pgx.Tx, projectUID, uid string) error {
 	var found string
-	err := tx.QueryRow(ctx, "SELECT uid FROM photo_tasks WHERE uid = $1 FOR UPDATE", uid).Scan(&found)
+	err := tx.QueryRow(ctx,
+		"SELECT uid FROM photo_tasks WHERE uid = $1 AND project_id = $2 FOR UPDATE", uid, projectUID).Scan(&found)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -401,7 +453,7 @@ func isSentinel(err error) bool {
 	for _, sentinel := range []error{
 		ErrNotFound, ErrPhotoNotFound, ErrEmptyTitle, ErrTooLong,
 		ErrInvalidState, ErrClosedNeedsResolution, ErrTooManyPhotos,
-		ErrUserNotFound, ErrTooManyOptions, ErrEmptyOption, ErrDuplicateOption,
+		ErrUserNotFound, ErrTooManyOptions, ErrEmptyOption, ErrDuplicateOption, ErrNoProject,
 	} {
 		if errors.Is(err, sentinel) {
 			return true

@@ -1563,7 +1563,14 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   so the route cannot be used to probe which comment UIDs exist; `writeDetail` stamps **`comment_count`** via
   `commentCount`, which asks the bulk `CountsAmong` for the one UID so the detail can never grow an N+1)),
   `internal/comments/`
-  (the store behind those endpoints — with `LatestAmong(ctx, subject, uids)`, the **newest live comment
+  (the store behind those endpoints — **project scope:** a comment carries no project of its own and
+  belongs to the project of the photo, task or album it hangs off; every `Store` method takes
+  `projectUID` after `ctx` (`List`/`CountsAmong`/`LatestAmong`/`Get`/`Create`/`CreateAlong`/`Update`/
+  `Delete`), never defaulted (`ErrNoProject`); the per-kind reads **join the parent confined to the
+  project** (`parentJoin`), the uid-addressed reads and writes check whichever subject the row has
+  (`inProjectSQL`), and the insert is an `INSERT … SELECT … WHERE EXISTS (parent in project)` — a subject
+  of another project is `ErrSubjectNotFound` with nothing written, another project's comment is the same
+  `ErrNotFound` as a missing one, and audited writes default the entry's `ProjectUID`; with `LatestAmong(ctx, subject, uids)`, the **newest live comment
   per subject** for a whole page in one `DISTINCT ON (subject uid) … ORDER BY created_at DESC, uid DESC`
   query joined to the author's name, soft-deleted rows excluded, a map keyed by subject uid with no entry
   for a thread that has none — the task-scoped listing's `last_comment` is built from it —
@@ -3749,7 +3756,19 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `ErrTargetNotFound`→404, `ErrEmptyKey`→400,
   otherwise 500; mounted by another `server.WithAPI` (`buildFeedbackAPI` in `cmd/kukatko/feedback.go`)),
   `internal/phototask/`
-  (the DB layer for the **work queue**: a question about a frozen group of photographs — what the
+  (**project scope (`store_project.go`, the photos convention):** `photo_tasks.project_id` is the task's
+  project, and its photos, participants and thread belong to it through the task; every `Store` method
+  takes `projectUID` after `ctx` (`Get`/`List`/`Summary`/`WaitingOnMe`/`OpenForPhotos`/`Create`/`Update`/
+  `UpdateTx(ctx, tx, projectUID, …)`/`Delete`/`AddPhotos`/`RemovePhotos`/`Participants`/`Assign`/
+  `Unassign`/`Join`), never defaulted (`ErrNoProject`); a task of another project is the same `ErrNotFound`
+  as a missing one (`Participants` included, `Join` writes nothing), listings, filters and the summary
+  behind the navbar badge count only the project (`Filter.conditions(projectUID)` binds `t.project_id` as
+  `$2`), `Create` writes `project_id` explicitly and **freezes only photos of its project** — the batch is
+  proved in one statement (`photosInProjectSQL`) before anything is written, one foreign uid is
+  `ErrPhotoNotFound` and nothing is created or added (`AddPhotos` likewise); `InProject(ctx, projectUID,
+  taskUIDs)` tells a foreign or missing task from an empty one for `GET /photos?task=`; audited writes default
+  the entry's `ProjectUID`. `Digests` (the daily task digest) stays instance-wide until the digest step;
+  the DB layer for the **work queue**: a question about a frozen group of photographs — what the
   curation of an inherited library actually ends at, "in which year was this rebuilt", which only a
   person can answer; two tables from migration `0079_photo_tasks.sql`: `photo_tasks` (`uid PK` (prefix
   `tk`), `title` CHECK 1–200 (the question in one line — it is the page heading and the text of the
@@ -3845,9 +3864,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   user joins are left out) — `WaitingOnMe` is the `waitingSQL` fragment, `Answered` is `answeredSQL` over the
   open states, so the navigation badge, the chips and the lists behind them are one predicate;
   `summarySQL` is *built* from `States` (`buildSummarySQL`, guarded by a unit test) so a sixth state could
-  not be forgotten. `WaitingOnMe(ctx, callerUID)` is the same query narrowed to the one number
-  `internal/whatsnew` asks for), `internal/phototaskapi/`
-  (the HTTP API over tasks, their threads and their people; `Store` + `CommentStore` interfaces →
+  not be forgotten. `WaitingOnMe(ctx, projectUID, callerUID)` is the same query narrowed to the one number
+  `internal/whatsnew` asks for — through `cmd/kukatko`'s `requestTaskCounter`, which counts in the
+  request's project until the digest is scoped itself), `internal/phototaskapi/`
+  (the HTTP API over tasks, their threads and their people; every handler passes the request's project
+  (`projectOf(r)` = `auth.ProjectUIDFromContext`) to the task and comment stores, so through
+  `/p/{project}/tasks/…` another project's task — its detail, edits, photos, participants (now a 404 instead
+  of an empty list) and thread — is the very 404 a missing one gets, and a comment on it writes nothing; `Store` + `CommentStore` interfaces →
   unit-testable with fakes;
   `NewAPI(Config{Store,Comments,RequireAuth,RequireWrite,CommentThrottle})`+`RegisterRoutes` mounts
   `/tasks` with the guards split where the feature needs them: `GET /tasks` (filters `state` (repeatable
@@ -6070,6 +6093,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/notificationapi`. Tables `notifications`, `notification_photos`, `notification_prefs`
   (migrations `0087`, `0093` for the channel, `0095` for `notifications.in_app`,
   [`ARCHITECTURE.md`](ARCHITECTURE.md) §5.2). The shape follows `internal/phototask`.
+  - **Project scope.** A notification belongs to one project (`notifications.project_id`): `New` carries
+    `ProjectUID` (required, `ErrNoProject`) and `ProjectSlug`, and its own page is `Path(slug, uid)` =
+    `/p/<slug>/n/<uid>` (`project.AppPath`), so a `SelfLink` opens inside its project. The inbox reads —
+    `List`/`UnreadCount`/`MarkAllRead`, and `Get`/`MarkRead`/`Photos` by uid — take `projectUID` after `ctx`
+    and see only that project's notifications; another project's is the same `ErrNotFound` as another
+    account's. `Photos` keeps its visibility filter. **`notification_prefs` and the push subscriptions stay
+    per account and instance-wide**: a person chooses once which kinds reach them through which channel,
+    whichever project the notification comes from. The retention purge stays instance-wide too (a pure
+    age rule).
   - **Kinds** are `Kind` string constants — **`KindTagged`** ("you were tagged in photos", its set is those
     photos), **`KindRegistrationPending`** ("a registration is waiting for approval", no photos),
     **`KindAlbumFeatured`** ("a new album is featured on the homepage", its set is the album's cover, the
@@ -6099,8 +6131,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     **`WantsTx(ctx, tx, userUID, kind, channel)`** and **`WantedTx(ctx, tx, userUID, kind)`** (every wanted
     channel in one read) are the same on the caller's open transaction, for a notification that must commit with the mutation that caused
     it (self-service registration in `internal/auth`); a caller that must survive a failed insert runs
-    them under a savepoint. **`New.SelfLink`** stores the notification's own page, **`Path(uid)`** =
-    `PathPrefix` (`/n/`) + uid, as its link — the uid is assigned by the store, so a producer cannot spell
+    them under a savepoint. **`New.SelfLink`** stores the notification's own page, **`Path(slug, uid)`** =
+    `/p/<slug>` + `PathPrefix` (`/n/`) + uid, as its link — the uid is assigned by the store, so a producer cannot spell
     it; the short route is the frontend's deeplink page (it must stay short: it rides in the push
     payload). Setting both `SelfLink` and `Link` is `ErrInvalid`.
   - **`VisiblePhotoSQL`** is the zero `Visibility` (not archived, not hidden, not private) as a predicate
@@ -6171,7 +6203,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `readAPIOptions`, every route behind `RequireAuth` (all roles).
   - **Interfaces, not stores:** `SubscriptionStore` (`Upsert`/`ListForUser`/`DeleteByID` of
     `push.Store`), `NotificationStore` (`Get`/`MarkRead`/`List`/`UnreadCount`/`MarkAllRead`/`Photos`/
-    `Preferences`/`ReplacePreferences` of `notification.Store`) and `PhotoStore` (`ListByUIDs`). `Storage` feeds an `internal/mediaurl` builder
+    `Preferences`/`ReplacePreferences` of `notification.Store`) and `PhotoStore` (`ListByUIDsInProject`).
+    The inbox routes (`RegisterInboxRoutes`, mounted under `/p/{project}`) pass the request's project
+    (`projectOf(r)`) to every read and mark, so another project's notification is the very 404 a missing one
+    gets and the inbox, the unread count and read-all are per project; the preferences ignore the project
+    (one set per account) and the push routes stay instance-wide. `Storage` feeds an `internal/mediaurl` builder
     that stamps the media URLs on the returned photos.
   - **Two secrets kept out by construction.** `PushSettings{Enabled, PublicKey}` is all of the push
     configuration the package is given — there is no field the VAPID private key could travel in
@@ -6200,8 +6236,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     account alone, malformed query → 400), anonymous 401 on every route.
 
 - **Tagging window (`internal/tagnotifyjob`):** "you were tagged" — a handful of notifications per
-  **window**, grouped by album, not one per photo, so an afternoon of naming faces from a village event is
-  one message per album it was filed into, not forty. Table `tag_notices` (migration 0088:
+  **window**, grouped by project and then by album, not one per photo. **Project scope:** a notice carries
+  no project column — it is its photo's (`tag_notices` is a child of `photos`); the job stays keyed per
+  account, but `consumeSQL` returns each photo's `project_id` and the pure **`groupByProject`** (table-tested)
+  splits the window into one `projectWindow` per project, ordered by its newest photo; each is announced
+  on its own — the recipient's role and the albums read in that project, the notifications in that
+  project's inbox with `/p/<slug>/n/<uid>` links, one mail per project — so nothing about one project is
+  said inside another. An afternoon of naming faces from a village event is one message per album it was
+  filed into, not forty. Table `tag_notices` (migration 0088:
   `(user_uid, photo_uid)` PK, `recorded_at`, both sides `ON DELETE CASCADE`), job type `tag_notify`
   (payload `{user_uid}`, dedup index migration 0089), config `notifications.tags.window` (default **1h**;
   `push.tags.window` is its deprecated alias). The flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §8.
@@ -6282,13 +6324,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   feature while it waits collapses into that job. **`Service`** (`New(Config{DB, Albums, Deliver,
   Language, Logger})`, `Handle` → **`Announce(ctx, albumUID)`**) runs in one transaction: it reads the album
   through `organize.Store.FeaturedAlbumTx` — `ErrNotFeatured` (unfeatured before the run, lapsed, deleted)
-  completes with nothing sent — then walks every account (`SELECT uid, role, disabled FROM users`) through
-  the pure **`recipients`** rules: never `featured_by` (nobody is told about their own work), never a
+  completes with nothing sent — then reads the album's project and walks the accounts **of that project**
+  (its members and the maintainers; an account of another project only is not read) with their role there,
+  through the pure **`recipients`** rules: never `featured_by` (nobody is told about their own work), never a
   disabled account, and a **private album only to curator+** (the strip's own rule); whether an account wants
   the kind is `notifydeliver.Deliver`'s per-account question. Each delivery runs **under a savepoint**, so
   one failing account is logged and skipped, never costing the others. The message: `KindAlbumFeatured`,
   `notification.RenderAlbumFeatured` ("Nové doporučené album: <title>", the title cut at
-  `MaxAlbumNameLen`), `Link` = `AlbumPath(uid)` (`/albums/<uid>`), `PhotoUIDs` = the album's cover (none
+  `MaxAlbumNameLen`), `ProjectUID` = the album's project, `Link` = `AlbumPath(uid)` (`/albums/<uid>`, stored
+  under `/p/<slug>` by `notifydeliver`), `PhotoUIDs` = the album's cover (none
   without one) and the `album_featured` mail (`mailer.AlbumFeaturedData{DisplayName, Title, URL}`) with the
   absolute album link. A payload naming no album is `worker.Terminal`.
   - Wired in `cmd/kukatko/albumfeatured.go`: the scheduler onto the organize store in `buildOrganizeAPI`,
@@ -6309,13 +6353,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   nothing here. **`Assigned(ctx, tx, Assignment)`** runs under a **savepoint** of the assignment's
   transaction (the tagging recorder's rule: a notification is worth less than the assignment, so a
   failed delivery is rolled back to the savepoint, logged and swallowed; only a broken transaction is
-  returned), reads one row — the task's title, the asker's name (display name, else username) and the
+  returned), reads one row — the task's project and title, the asker's name (display name, else username) and the
   asked account's `disabled`/`approved_at` — and applies the pure **`wanted`** rules: never without an
   actor (a NULL `added_by` is joined by acting, not asked), never the person who asked themselves,
   never a disabled or unapproved account. Whether the person wants the kind at all is
   `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
   `KindTaskAssigned`, `notification.RenderTaskAssigned` ("Pan Botka tě přidal(a) k úkolu: Kdy to
-  bylo?"), `Link` = **`TaskPath(uid)`** (`/tasks/<uid>`), no photographs, and the `task_assigned` mail
+  bylo?"), `ProjectUID` = the task's project, `Link` = **`TaskPath(uid)`** (`/tasks/<uid>`, stored under
+  `/p/<slug>` by `notifydeliver`), no photographs, and the `task_assigned` mail
   (`mailer.TaskAssignedData{DisplayName, Who, Title, URL}`) with the absolute task link. The daily
   `task_digest` mail (`internal/taskdigestjob`) is untouched: a separate digest with its own switch.
   Tests: the rules table, the path, the defaults and the message as unit tests; over a real database —
@@ -6333,7 +6378,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   so an edit that fixes a typo costs nothing here. **`Mentioned(ctx, tx, Comment, []Mention)`** runs under
   a **savepoint** of the comment's transaction (a notification is worth less than the remark: a failed
   delivery is rolled back to it, logged and swallowed; only a broken transaction is returned), reads the
-  **place** (`photoPlaceSQL`: the photo's title and whether it may be named at all —
+  **place** with its project (`photoPlaceSQL`: the photo's title and whether it may be named at all —
   `notification.VisiblePhotoSQL`, not private, hidden or archived; `taskPlaceSQL`: the title, always
   visible) and the mentioned accounts' **standing** in one query (`standingSQL`: enabled and approved),
   and applies the pure **`wanted(userUID, authorUID, standing, place)`** rules: never the writer, never an
@@ -6341,7 +6386,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the thread, only the announcement is skipped. Whether the person wants the kind at all is
   `notifydeliver.Deliver`'s per-account question (every channel off by default). The message:
   `KindCommentMention`, `notification.RenderCommentMention` with the writer's resolved name, the place and
-  `comments.Excerpt` of the body, `Link` = **`CommentPath(subject, commentUID)`**
+  `comments.Excerpt` of the body, `ProjectUID` = the subject's project, `Link` =
+  **`CommentPath(subject, commentUID)`** (a path inside the project, stored under `/p/<slug>`)
   (`/photos/<uid>?panel=info#comment-<cuid>` — the drawer must be open for the thread to mount — or
   `/tasks/<uid>#comment-<cuid>`), no photographs, and the `comment_mention` mail
   (`mailer.CommentMentionData{DisplayName, Who, OnTask, Title, Excerpt, URL}`) with the absolute link.
@@ -6353,11 +6399,19 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   archived photo → the mention stored, nobody told; an edit → only the newly named account.
 
 - **Notification delivery (`internal/notifydeliver`):** the **one way a notification leaves Kukátko**.
-  A producer builds a `Message{Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and calls
-  **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
-  itself. `New(Config{Notifications, Push, Mail, BaseURL, Logger})` (panicking on a missing dependency;
-  wired once as `buildDeliverer` in `cmd/kukatko/notifydeliver.go` over `notification.Store`, the push
-  and mail enqueuers and `mail.base_url`).
+  A producer builds a `Message{ProjectUID, Kind, Text, Link | SelfLink, PhotoUIDs, Mail, SkipMail}` and
+  calls **`Deliverer.Deliver(ctx, tx, userUID, msg)`**; it never checks a preference or touches a queue
+  itself. `New(Config{Notifications, Projects, Push, Mail, BaseURL, Logger})` (panicking on a missing
+  dependency; wired once as `buildDeliverer` in `cmd/kukatko/notifydeliver.go` over `notification.Store`,
+  `project.Store`, the push and mail enqueuers and `mail.base_url`).
+  - **Project and deep links.** `Message.ProjectUID` is required (`notification.ErrNoProject`, nothing
+    delivered) and `Message.Link` is the path **inside** the project (`/tasks/tk1`); `Deliver` loads the
+    project (`Projects.Get` = `project.Store.Get`) and stores the link under its root (`projectLink` →
+    `/p/<slug>/tasks/tk1`), a `SelfLink` as `/p/<slug>/n/<uid>` — so the record, the push's `URL` and the
+    mail's absolute link all open in the notification's project, and no producer spells or hard-codes a
+    slug. Producers: the tagging window (the photos' project), mentions (the subject's), task hand-over
+    (the task's), featured albums (the album's), registration (the project registered into — the
+    bootstrap project until registration is per project).
   - **`ChannelsTx(ctx, tx, userUID, kind)`** → `Channels{InApp, Push, Email}`: the channels the account
     wants (`notification.Store.WantedTx`, one read) **and** the instance can deliver — push counts only
     with `push.enabled`, e-mail only with `mail.enabled`, in-app always. The tagging recorder asks it
@@ -6404,6 +6458,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     the reserved words `p`, `api`, `u`, `invite`, `system`, `login`, `register`, `projects`, `account`,
     `healthz`, `metrics` — path segments the app itself needs next to `/p/<slug>/`), `ValidateStoragePrefix`
     (empty, or relative and ending in `/` — the CHECK again), `StoragePrefixFor(uid)` = `projects/<uid>/`;
+    `AppPath(slug, path)` = `/p/<slug>` + path, the in-app address of a project's page that every deep link
+    leaving the app (push, e-mail, a notification's link) carries (`AppPathPrefix = "/p/"`);
     the `pj` uid generator (the `internal/photos` pattern: 24 base32 chars, 26 total). Sentinels
     `ErrNotFound`, `ErrSlugTaken`, `ErrInvalidSlug`, `ErrInvalidName`, `ErrInvalidLimit`,
     `ErrInvalidStoragePrefix`.

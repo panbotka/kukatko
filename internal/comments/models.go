@@ -112,6 +112,9 @@ var (
 	ErrEmptyBody = errors.New("comments: comment body is empty")
 	// ErrBodyTooLong indicates the body exceeded MaxBodyLen characters.
 	ErrBodyTooLong = errors.New("comments: comment body is too long")
+	// ErrNoProject indicates a store call without a project: a programming
+	// error, never "every project of the instance".
+	ErrNoProject = errors.New("comments: no project given")
 )
 
 // Comment is one stored comment as read back for a client: the body plus who

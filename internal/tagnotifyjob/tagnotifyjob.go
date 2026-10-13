@@ -15,14 +15,22 @@
 //   - Everything tagged inside the window is counted: later tags add rows and
 //     find the job already queued.
 //   - When the window closes, Service.Handle consumes the account's rows,
-//     groups the photos by the hand-made albums they are in (a private album
-//     only for a recipient who may curate; at most MaxAlbumGroups albums, the
-//     rest collapse) and delivers one notification per album — "you were
-//     tagged in 5 photos in the album Pouť 2026", its frozen photo set newest
-//     first — then one for the photos no album notification names, to the
-//     account's channels; the e-mail is one for the whole window, listing the
-//     albums with their counts. All in one transaction, so a crash part-way
+//     splits the photos by project (groupByProject: a notice belongs to its
+//     photo's project), and inside each project groups them by the hand-made
+//     albums they are in (a private album only for a recipient who may curate
+//     there; at most MaxAlbumGroups albums, the rest collapse) and delivers one
+//     notification per album — "you were tagged in 5 photos in the album Pouť
+//     2026", its frozen photo set newest first — then one for the photos no
+//     album notification names, into that project's inbox and to the account's
+//     channels, each opening its own page under the project's slug
+//     (/p/<slug>/n/<uid>); the e-mail is one per project of the window, listing
+//     the albums with their counts. All in one transaction, so a crash part-way
 //     re-runs cleanly instead of losing the notices or announcing them twice.
+//
+// The window itself stays one per account (the job is keyed by user_uid, the
+// dedup index of migration 0089): a person tagged in two libraries inside one
+// window gets one job, which announces each library on its own, so nothing
+// about one project is ever said inside another.
 //
 // The rules the recorder enforces are what keeps the message honest: an account
 // is never told about its own work, a photo it may not see (private, hidden,

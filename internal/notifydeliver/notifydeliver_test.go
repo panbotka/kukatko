@@ -13,9 +13,22 @@ import (
 	"github.com/panbotka/kukatko/internal/mailer"
 	"github.com/panbotka/kukatko/internal/mailjob"
 	"github.com/panbotka/kukatko/internal/notification"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
 )
+
+// fakeProjects is a Projects that knows every uid as the project "rodina", or
+// fails with err.
+type fakeProjects struct{ err error }
+
+// Get returns the project uid as "rodina", or the configured failure.
+func (f fakeProjects) Get(_ context.Context, uid string) (*project.Project, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &project.Project{UID: uid, Slug: "rodina"}, nil
+}
 
 // fakeNotes is a Recorder over an in-memory choice of channels.
 type fakeNotes struct {
@@ -38,7 +51,7 @@ func (f *fakeNotes) CreateTx(_ context.Context, _ pgx.Tx, n notification.New) (n
 	f.created = append(f.created, n)
 	link := n.Link
 	if n.SelfLink {
-		link = notification.Path("nt1")
+		link = notification.Path(n.ProjectSlug, "nt1")
 	}
 	return notification.Notification{
 		UID: "nt1", UserUID: n.UserUID, Kind: n.Kind, Title: n.Title, Body: n.Body, Link: link, InApp: n.InApp,
@@ -104,7 +117,7 @@ func (r fakeRow) Scan(dest ...any) error {
 // message is the notification every fan-out case delivers.
 func message() Message {
 	return Message{
-		Kind: notification.KindTagged, Text: notification.Text{Title: "Title", Body: "Body"},
+		ProjectUID: "pj1", Kind: notification.KindTagged, Text: notification.Text{Title: "Title", Body: "Body"},
 		SelfLink: true, PhotoUIDs: []string{"p1", "p2"},
 	}
 }
@@ -149,7 +162,7 @@ func TestDeliver_fanOut(t *testing.T) {
 			notes := &fakeNotes{wanted: tt.wanted}
 			pusher := &fakePush{on: true}
 			mail := &fakeMail{on: true}
-			d := New(Config{Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example/"})
+			d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example/"})
 
 			got, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", name: "Anna"}, "us1", message())
 			if err != nil {
@@ -188,22 +201,78 @@ func TestDeliver_payloads(t *testing.T) {
 	notes := &fakeNotes{wanted: notification.AllChannels()}
 	pusher := &fakePush{on: true}
 	mail := &fakeMail{on: true}
-	d := New(Config{Notifications: notes, Push: pusher, Mail: mail, BaseURL: " https://k.example/ "})
+	d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail, BaseURL: " https://k.example/ "})
 	if _, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", name: "Anna"}, "us1", message()); err != nil {
 		t.Fatalf("Deliver: %v", err)
 	}
-	wantPush := push.Notification{Title: "Title", Body: "Body", URL: "/n/nt1", Kind: "tagged", Tag: "nt1"}
+	wantPush := push.Notification{Title: "Title", Body: "Body", URL: "/p/rodina/n/nt1", Kind: "tagged", Tag: "nt1"}
 	if !reflect.DeepEqual(pusher.sent, []push.Notification{wantPush}) {
 		t.Errorf("push = %+v, want %+v", pusher.sent, wantPush)
 	}
 	wantMail := mailjob.Notification("anna@example.org", mailer.NotificationData{
-		DisplayName: "Anna", Title: "Title", Body: "Body", URL: "https://k.example/n/nt1",
+		DisplayName: "Anna", Title: "Title", Body: "Body", URL: "https://k.example/p/rodina/n/nt1",
 	})
 	if !reflect.DeepEqual(mail.sent, []mailjob.Mail{wantMail}) {
 		t.Errorf("mail = %+v, want %+v", mail.sent, wantMail)
 	}
-	if got := notes.created[0]; !slices.Equal(got.PhotoUIDs, []string{"p1", "p2"}) || !got.SelfLink {
-		t.Errorf("recorded %+v, want the photo set and the self link", got)
+	if got := notes.created[0]; !slices.Equal(got.PhotoUIDs, []string{"p1", "p2"}) || !got.SelfLink ||
+		got.ProjectUID != "pj1" || got.ProjectSlug != "rodina" {
+		t.Errorf("recorded %+v, want the photo set, the self link and the project", got)
+	}
+}
+
+// TestDeliver_linkUnderTheProject checks a producer's path inside the project
+// is stored — and pushed and mailed — under the project's root, with the slug
+// loaded from the project rather than spelled by the producer.
+func TestDeliver_linkUnderTheProject(t *testing.T) {
+	t.Parallel()
+
+	notes := &fakeNotes{wanted: notification.AllChannels()}
+	pusher := &fakePush{on: true}
+	mail := &fakeMail{on: true}
+	d := New(Config{
+		Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example",
+	})
+	msg := message()
+	msg.SelfLink, msg.Link = false, "/tasks/tk1#comment-cm1"
+	if _, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org"}, "us1", msg); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	const want = "/p/rodina/tasks/tk1#comment-cm1"
+	if got := notes.created[0].Link; got != want {
+		t.Errorf("stored link = %q, want %q", got, want)
+	}
+	if len(pusher.sent) != 1 || pusher.sent[0].URL != want {
+		t.Errorf("push = %+v, want URL %q", pusher.sent, want)
+	}
+	if len(mail.sent) != 1 || !reflect.DeepEqual(mail.sent[0], mailjob.Notification("anna@example.org",
+		mailer.NotificationData{Title: "Title", Body: "Body", URL: "https://k.example" + want})) {
+		t.Errorf("mail = %+v, want the link under the base URL", mail.sent)
+	}
+
+	msg.Link = ""
+	if _, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org"}, "us1", msg); err != nil {
+		t.Fatalf("Deliver without a link: %v", err)
+	}
+	if got := notes.created[1].Link; got != "" {
+		t.Errorf("stored link without one = %q, want empty", got)
+	}
+}
+
+// TestDeliver_needsAProject checks a message without a project delivers
+// nothing and says why.
+func TestDeliver_needsAProject(t *testing.T) {
+	t.Parallel()
+
+	notes := &fakeNotes{wanted: notification.AllChannels()}
+	d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: &fakePush{on: true}, Mail: &fakeMail{on: true}})
+	msg := message()
+	msg.ProjectUID = ""
+	if _, err := d.Deliver(t.Context(), fakeTx{}, "us1", msg); !errors.Is(err, notification.ErrNoProject) {
+		t.Fatalf("Deliver without a project = %v, want ErrNoProject", err)
+	}
+	if len(notes.created) != 0 {
+		t.Errorf("recorded %d notifications without a project, want none", len(notes.created))
 	}
 }
 
@@ -214,6 +283,7 @@ func TestDeliver_customMailAndNoBaseURL(t *testing.T) {
 
 	mail := &fakeMail{on: true}
 	d := New(Config{
+		Projects:      fakeProjects{},
 		Notifications: &fakeNotes{wanted: []notification.Channel{notification.ChannelEmail}},
 		Push:          &fakePush{on: true}, Mail: mail,
 	})
@@ -241,7 +311,7 @@ func TestDeliver_skipMail(t *testing.T) {
 	notes := &fakeNotes{wanted: notification.AllChannels()}
 	pusher := &fakePush{on: true}
 	mail := &fakeMail{on: true}
-	d := New(Config{Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example/"})
+	d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail, BaseURL: "https://k.example/"})
 	msg := message()
 	msg.SkipMail = true
 	got, err := d.Deliver(t.Context(), fakeTx{email: "anna@example.org", name: "Anna"}, "us1", msg)
@@ -255,7 +325,7 @@ func TestDeliver_skipMail(t *testing.T) {
 	if want := (Channels{InApp: true, Push: true}); got.Channels != want {
 		t.Errorf("channels = %+v, want %+v", got.Channels, want)
 	}
-	if u := d.Absolute(got.Notification.Link); u != "https://k.example/n/nt1" {
+	if u := d.Absolute(got.Notification.Link); u != "https://k.example/p/rodina/n/nt1" {
 		t.Errorf("Absolute = %q, want the link under the base URL", u)
 	}
 	if u := d.Absolute(""); u != "" {
@@ -271,7 +341,7 @@ func TestDeliver_instanceSwitches(t *testing.T) {
 	notes := &fakeNotes{wanted: []notification.Channel{notification.ChannelPush, notification.ChannelEmail}}
 	pusher := &fakePush{on: false}
 	mail := &fakeMail{on: false}
-	d := New(Config{Notifications: notes, Push: pusher, Mail: mail})
+	d := New(Config{Projects: fakeProjects{}, Notifications: notes, Push: pusher, Mail: mail})
 	got, err := d.Deliver(t.Context(), fakeTx{}, "us1", message())
 	if err != nil || got.Notification != nil || len(notes.created) != 0 || len(pusher.sent)+len(mail.sent) != 0 {
 		t.Fatalf("Deliver with both switches off = %+v, %v; want nothing at all", got, err)
@@ -289,6 +359,7 @@ func TestDeliver_noAddressSkipsOnlyTheMail(t *testing.T) {
 
 	mail := &fakeMail{on: true}
 	d := New(Config{
+		Projects:      fakeProjects{},
 		Notifications: &fakeNotes{wanted: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail}},
 		Push:          &fakePush{on: true}, Mail: mail,
 	})
@@ -304,11 +375,18 @@ func TestDeliver_errors(t *testing.T) {
 
 	boom := errors.New("boom")
 	tests := []struct {
-		name  string
-		notes *fakeNotes
-		push  *fakePush
+		name     string
+		projects fakeProjects
+		notes    *fakeNotes
+		push     *fakePush
 	}{
 		{name: "preferences", notes: &fakeNotes{wantedErr: boom}, push: &fakePush{on: true}},
+		{
+			name:     "project",
+			projects: fakeProjects{err: boom},
+			notes:    &fakeNotes{wanted: []notification.Channel{notification.ChannelInApp}},
+			push:     &fakePush{on: true},
+		},
 		{
 			name:  "record",
 			notes: &fakeNotes{wanted: []notification.Channel{notification.ChannelInApp}, createErr: boom},
@@ -323,7 +401,7 @@ func TestDeliver_errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			d := New(Config{Notifications: tt.notes, Push: tt.push, Mail: &fakeMail{on: true}})
+			d := New(Config{Projects: tt.projects, Notifications: tt.notes, Push: tt.push, Mail: &fakeMail{on: true}})
 			if _, err := d.Deliver(t.Context(), fakeTx{}, "us1", message()); !errors.Is(err, boom) {
 				t.Fatalf("Deliver = %v, want the wrapped failure", err)
 			}
@@ -340,7 +418,7 @@ func TestNew_requiresDependencies(t *testing.T) {
 			t.Fatal("New without Mail did not panic")
 		}
 	}()
-	New(Config{Notifications: &fakeNotes{}, Push: &fakePush{}})
+	New(Config{Projects: fakeProjects{}, Notifications: &fakeNotes{}, Push: &fakePush{}})
 }
 
 // TestChannelsAny checks Any is true exactly when one channel is set.

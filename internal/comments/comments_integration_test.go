@@ -89,7 +89,7 @@ func entry(action, actorUID, photoUID string) audit.Entry {
 // mustCreate writes a comment and fails the test if the store rejects it.
 func (f *fixture) mustCreate(t *testing.T, photoUID, authorUID, body string) comments.Comment {
 	t.Helper()
-	c, err := f.comments.Create(context.Background(), comments.PhotoSubject(photoUID), authorUID, body,
+	c, err := f.comments.Create(context.Background(), project.BootstrapUID, comments.PhotoSubject(photoUID), authorUID, body,
 		entry(audit.ActionCommentCreate, authorUID, photoUID))
 	if err != nil {
 		t.Fatalf("Create(%s, %q): %v", photoUID, body, err)
@@ -133,7 +133,7 @@ func TestCreateAndList(t *testing.T) {
 	second := f.mustCreate(t, photo.UID, bob, "  To je stryc Josef.  ")
 	f.mustCreate(t, other.UID, alice, "jiná fotka")
 
-	list, err := f.comments.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := f.comments.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestList_emptyThread(t *testing.T) {
 	photo := f.makePhoto(t, "one")
 
 	for _, uid := range []string{photo.UID, "ph_missing"} {
-		list, err := f.comments.List(context.Background(), comments.PhotoSubject(uid))
+		list, err := f.comments.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(uid))
 		if err != nil {
 			t.Fatalf("List(%s): %v", uid, err)
 		}
@@ -212,7 +212,7 @@ func TestCreate_validation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := f.comments.Create(context.Background(), comments.PhotoSubject(tt.photoUID), alice,
+			_, err := f.comments.Create(context.Background(), project.BootstrapUID, comments.PhotoSubject(tt.photoUID), alice,
 				tt.body, entry(audit.ActionCommentCreate, alice, tt.photoUID))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Create error = %v, want %v", err, tt.wantErr)
@@ -243,7 +243,7 @@ func TestUpdate(t *testing.T) {
 	photo := f.makePhoto(t, "one")
 	created := f.mustCreate(t, photo.UID, alice, "stryc Josef")
 
-	updated, err := f.comments.Update(context.Background(), created.UID, "  strýc Josef  ",
+	updated, err := f.comments.Update(context.Background(), project.BootstrapUID, created.UID, "  strýc Josef  ",
 		entry(audit.ActionCommentUpdate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Update: %v", err)
@@ -261,11 +261,11 @@ func TestUpdate(t *testing.T) {
 		t.Errorf("author name = %q after an edit, want it resolved", updated.AuthorName)
 	}
 
-	if _, err := f.comments.Update(context.Background(), "cm_missing", "text",
+	if _, err := f.comments.Update(context.Background(), project.BootstrapUID, "cm_missing", "text",
 		entry(audit.ActionCommentUpdate, alice, photo.UID)); !errors.Is(err, comments.ErrNotFound) {
 		t.Fatalf("Update of a missing comment error = %v, want ErrNotFound", err)
 	}
-	if _, err := f.comments.Update(context.Background(), created.UID, " ",
+	if _, err := f.comments.Update(context.Background(), project.BootstrapUID, created.UID, " ",
 		entry(audit.ActionCommentUpdate, alice, photo.UID)); !errors.Is(err, comments.ErrEmptyBody) {
 		t.Fatalf("Update with a blank body error = %v, want ErrEmptyBody", err)
 	}
@@ -284,7 +284,7 @@ func TestDelete(t *testing.T) {
 	kept := f.mustCreate(t, photo.UID, alice, "first")
 	removed := f.mustCreate(t, photo.UID, alice, "second")
 
-	if err := f.comments.Delete(context.Background(), removed.UID,
+	if err := f.comments.Delete(context.Background(), project.BootstrapUID, removed.UID,
 		entry(audit.ActionCommentDelete, alice, photo.UID)); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -292,17 +292,17 @@ func TestDelete(t *testing.T) {
 	if n := f.rawCount(t, "uid = $1 AND deleted_at IS NOT NULL", removed.UID); n != 1 {
 		t.Errorf("the deleted row is gone from the table (%d rows with deleted_at), want it kept", n)
 	}
-	list, err := f.comments.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := f.comments.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(list) != 1 || list[0].UID != kept.UID {
 		t.Errorf("List after delete = %v, want only %s", list, kept.UID)
 	}
-	if _, err := f.comments.Get(context.Background(), removed.UID); !errors.Is(err, comments.ErrNotFound) {
+	if _, err := f.comments.Get(context.Background(), project.BootstrapUID, removed.UID); !errors.Is(err, comments.ErrNotFound) {
 		t.Errorf("Get of a deleted comment error = %v, want ErrNotFound", err)
 	}
-	counts, err := f.comments.CountsAmong(context.Background(), comments.SubjectPhoto, []string{photo.UID})
+	counts, err := f.comments.CountsAmong(context.Background(), project.BootstrapUID, comments.SubjectPhoto, []string{photo.UID})
 	if err != nil {
 		t.Fatalf("CountsAmong: %v", err)
 	}
@@ -310,14 +310,14 @@ func TestDelete(t *testing.T) {
 		t.Errorf("count after delete = %d, want 1", counts[photo.UID])
 	}
 
-	if err := f.comments.Delete(context.Background(), removed.UID,
+	if err := f.comments.Delete(context.Background(), project.BootstrapUID, removed.UID,
 		entry(audit.ActionCommentDelete, alice, photo.UID)); !errors.Is(err, comments.ErrNotFound) {
 		t.Errorf("second Delete error = %v, want ErrNotFound", err)
 	}
 	if rows := f.auditRows(t, audit.ActionCommentDelete); len(rows) != 1 {
 		t.Errorf("comment.delete audit rows = %d, want 1 (the repeat writes none)", len(rows))
 	}
-	if _, err := f.comments.Update(context.Background(), removed.UID, "back from the dead",
+	if _, err := f.comments.Update(context.Background(), project.BootstrapUID, removed.UID, "back from the dead",
 		entry(audit.ActionCommentUpdate, alice, photo.UID)); !errors.Is(err, comments.ErrNotFound) {
 		t.Errorf("editing a deleted comment error = %v, want ErrNotFound", err)
 	}
@@ -337,12 +337,12 @@ func TestCountsAmong(t *testing.T) {
 	f.mustCreate(t, first.UID, alice, "b")
 	gone := f.mustCreate(t, first.UID, alice, "c")
 	f.mustCreate(t, second.UID, alice, "d")
-	if err := f.comments.Delete(context.Background(), gone.UID,
+	if err := f.comments.Delete(context.Background(), project.BootstrapUID, gone.UID,
 		entry(audit.ActionCommentDelete, alice, first.UID)); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	counts, err := f.comments.CountsAmong(context.Background(), comments.SubjectPhoto,
+	counts, err := f.comments.CountsAmong(context.Background(), project.BootstrapUID, comments.SubjectPhoto,
 		[]string{first.UID, second.UID, third.UID, "ph_missing"})
 	if err != nil {
 		t.Fatalf("CountsAmong: %v", err)
@@ -360,7 +360,7 @@ func TestCountsAmong(t *testing.T) {
 		t.Errorf("counts = %v, want only the two commented photos", counts)
 	}
 
-	empty, err := f.comments.CountsAmong(context.Background(), comments.SubjectPhoto, nil)
+	empty, err := f.comments.CountsAmong(context.Background(), project.BootstrapUID, comments.SubjectPhoto, nil)
 	if err != nil || len(empty) != 0 {
 		t.Errorf("CountsAmong(nil) = %v, %v, want an empty map and no error", empty, err)
 	}
@@ -386,7 +386,7 @@ func TestCascadeOnPhotoDelete(t *testing.T) {
 	if n := f.rawCount(t, "photo_uid = $1", doomed.UID); n != 0 {
 		t.Errorf("comments rows for the purged photo = %d, want 0 (ON DELETE CASCADE)", n)
 	}
-	if _, err := f.comments.Get(context.Background(), survivor.UID); err != nil {
+	if _, err := f.comments.Get(context.Background(), project.BootstrapUID, survivor.UID); err != nil {
 		t.Errorf("the other photo's comment did not survive: %v", err)
 	}
 }
@@ -403,7 +403,7 @@ func TestAuthorDeleted(t *testing.T) {
 		t.Fatalf("deleting the author: %v", err)
 	}
 
-	got, err := f.comments.Get(context.Background(), created.UID)
+	got, err := f.comments.Get(context.Background(), project.BootstrapUID, created.UID)
 	if err != nil {
 		t.Fatalf("Get after the author was deleted: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestAuthorPhoto_onlyWhenTheLinkedPersonHasACover(t *testing.T) {
 	f.mustCreate(t, photo.UID, noCover, "a to já")
 	f.mustCreate(t, photo.UID, unlinked, "a já nikdo")
 
-	list, err := f.comments.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := f.comments.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestAuthorPhoto_clearedWithTheSubject(t *testing.T) {
 		t.Fatalf("deleting the subject: %v", err)
 	}
 
-	list, err := f.comments.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := f.comments.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -518,7 +518,7 @@ func TestCreateAlong(t *testing.T) {
 	ctx := context.Background()
 
 	refused := errors.New("refused")
-	_, err := f.comments.CreateAlong(ctx, subj, alice, "zahodit",
+	_, err := f.comments.CreateAlong(ctx, project.BootstrapUID, subj, alice, "zahodit",
 		entry(audit.ActionCommentCreate, alice, photo.UID), func(ctx context.Context, tx pgx.Tx) error {
 			return refused
 		})
@@ -533,7 +533,7 @@ func TestCreateAlong(t *testing.T) {
 	}
 
 	var seen int
-	created, err := f.comments.CreateAlong(ctx, subj, alice, "ponechat",
+	created, err := f.comments.CreateAlong(ctx, project.BootstrapUID, subj, alice, "ponechat",
 		entry(audit.ActionCommentCreate, alice, photo.UID), func(ctx context.Context, tx pgx.Tx) error {
 			return tx.QueryRow(ctx, "SELECT count(*) FROM comments WHERE photo_uid = $1", photo.UID).Scan(&seen)
 		})

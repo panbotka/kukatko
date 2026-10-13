@@ -72,7 +72,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, err := a.notifications.List(r.Context(), user.UID, opts)
+	page, err := a.notifications.List(r.Context(), projectOf(r), user.UID, opts)
 	if err != nil {
 		log.Printf("notificationapi: listing the inbox of %s: %v", user.UID, err)
 		writeError(w, http.StatusInternalServerError, "listing notifications failed")
@@ -94,7 +94,7 @@ func (a *API) handleUnreadCount(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	count, err := a.notifications.UnreadCount(r.Context(), user.UID)
+	count, err := a.notifications.UnreadCount(r.Context(), projectOf(r), user.UID)
 	if err != nil {
 		log.Printf("notificationapi: counting the unread of %s: %v", user.UID, err)
 		writeError(w, http.StatusInternalServerError, "counting notifications failed")
@@ -110,7 +110,7 @@ func (a *API) handleMarkAllRead(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	marked, err := a.notifications.MarkAllRead(r.Context(), user.UID)
+	marked, err := a.notifications.MarkAllRead(r.Context(), projectOf(r), user.UID)
 	if err != nil {
 		log.Printf("notificationapi: marking the inbox of %s read: %v", user.UID, err)
 		writeError(w, http.StatusInternalServerError, "marking notifications read failed")

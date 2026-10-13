@@ -50,9 +50,10 @@ type Page struct {
 	Offset int
 }
 
-// inboxWhere is the predicate of every inbox read: the owner's listed rows,
-// optionally only the unread ones. $1 is the owner, $2 the unread switch.
-const inboxWhere = `n.user_uid = $1 AND n.in_app AND (NOT $2 OR n.read_at IS NULL)`
+// inboxWhere is the predicate of every inbox read: the owner's listed rows in
+// one project, optionally only the unread ones. $1 is the owner, $2 the unread
+// switch, $3 the project.
+const inboxWhere = `n.user_uid = $1 AND n.project_id = $3 AND n.in_app AND (NOT $2 OR n.read_at IS NULL)`
 
 // listSQL reads one page of an inbox, newest first; the uid breaks a tie in
 // created_at so a page boundary never repeats or skips a row.
@@ -60,22 +61,26 @@ const listSQL = `SELECT ` + selectColumns + `
 FROM notifications n
 WHERE ` + inboxWhere + `
 ORDER BY n.created_at DESC, n.uid DESC
-LIMIT $3 OFFSET $4`
+LIMIT $4 OFFSET $5`
 
 // countSQL counts the selection a listSQL page is taken from.
 const countSQL = `SELECT count(*) FROM notifications n WHERE ` + inboxWhere
 
-// List returns one page of ownerUID's inbox — the notifications delivered
-// in-app, newest first — and how many the selection holds. A record that only
+// List returns one page of ownerUID's inbox in the project — the notifications
+// of that project delivered in-app, newest first — and how many the selection
+// holds; another project's notifications are never listed nor counted. A record that only
 // backs a push or an e-mail (InApp false) is never listed. An account with an
 // empty inbox, or no account at all, yields an empty, non-nil page.
-func (s *Store) List(ctx context.Context, ownerUID string, opts ListOptions) (Page, error) {
+func (s *Store) List(ctx context.Context, projectUID, ownerUID string, opts ListOptions) (Page, error) {
+	if projectUID == "" {
+		return Page{}, ErrNoProject
+	}
 	opts = opts.normalized()
 	page := Page{Notifications: []Notification{}, Limit: opts.Limit, Offset: opts.Offset}
-	if err := s.pool.QueryRow(ctx, countSQL, ownerUID, opts.Unread).Scan(&page.Total); err != nil {
+	if err := s.pool.QueryRow(ctx, countSQL, ownerUID, opts.Unread, projectUID).Scan(&page.Total); err != nil {
 		return Page{}, fmt.Errorf("notification: counting the inbox of %s: %w", ownerUID, err)
 	}
-	rows, err := s.pool.Query(ctx, listSQL, ownerUID, opts.Unread, opts.Limit, opts.Offset)
+	rows, err := s.pool.Query(ctx, listSQL, ownerUID, opts.Unread, projectUID, opts.Limit, opts.Offset)
 	if err != nil {
 		return Page{}, fmt.Errorf("notification: listing the inbox of %s: %w", ownerUID, err)
 	}
@@ -93,11 +98,15 @@ func (s *Store) List(ctx context.Context, ownerUID string, opts ListOptions) (Pa
 	return page, nil
 }
 
-// UnreadCount returns how many notifications in ownerUID's inbox are unread —
-// the number on the bell. Records outside the inbox do not count.
-func (s *Store) UnreadCount(ctx context.Context, ownerUID string) (int, error) {
+// UnreadCount returns how many notifications in ownerUID's inbox in the project
+// are unread — the number on the bell. Records outside the inbox, and another
+// project's notifications, do not count.
+func (s *Store) UnreadCount(ctx context.Context, projectUID, ownerUID string) (int, error) {
+	if projectUID == "" {
+		return 0, ErrNoProject
+	}
 	var count int
-	if err := s.pool.QueryRow(ctx, countSQL, ownerUID, true).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx, countSQL, ownerUID, true, projectUID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("notification: counting the unread of %s: %w", ownerUID, err)
 	}
 	return count, nil
@@ -108,12 +117,16 @@ const markAllReadSQL = `
 UPDATE notifications n SET read_at = now()
 WHERE ` + inboxWhere
 
-// MarkAllRead marks every unread notification in ownerUID's inbox read and
-// returns how many it marked. Already-read ones keep the moment they were
-// first read, and records outside the inbox are left alone — "read everything"
-// is about the list the owner is looking at.
-func (s *Store) MarkAllRead(ctx context.Context, ownerUID string) (int64, error) {
-	tag, err := s.pool.Exec(ctx, markAllReadSQL, ownerUID, true)
+// MarkAllRead marks every unread notification in ownerUID's inbox in the
+// project read and returns how many it marked. Already-read ones keep the
+// moment they were first read, and records outside the inbox — or of another
+// project — are left alone: "read everything" is about the list the owner is
+// looking at.
+func (s *Store) MarkAllRead(ctx context.Context, projectUID, ownerUID string) (int64, error) {
+	if projectUID == "" {
+		return 0, ErrNoProject
+	}
+	tag, err := s.pool.Exec(ctx, markAllReadSQL, ownerUID, true, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("notification: marking the inbox of %s read: %w", ownerUID, err)
 	}

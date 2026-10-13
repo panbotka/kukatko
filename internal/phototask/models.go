@@ -138,6 +138,9 @@ var (
 	// ErrDuplicateOption indicates the same answer option given twice; the wrapped
 	// message names it.
 	ErrDuplicateOption = errors.New("phototask: duplicate option")
+	// ErrNoProject indicates a store call without a project: a programming
+	// error, never "every project of the instance".
+	ErrNoProject = errors.New("phototask: no project given")
 )
 
 // The two built-in answers of a review task. A task in StateReview that offers

@@ -57,8 +57,8 @@ func scanNotification(r row) (Notification, error) {
 
 // insertSQL records one notification; its photo set follows in insertPhotosSQL.
 const insertSQL = `
-INSERT INTO notifications (uid, user_uid, kind, title, body, link, in_app)
-VALUES ($1, $2, $3, $4, $5, $6, $7)`
+INSERT INTO notifications (uid, user_uid, kind, title, body, link, in_app, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 // insertPhotosSQL writes the frozen set in one statement. WITH ORDINALITY turns
 // the array order into the stored position (zero-based), so the set reads back
@@ -68,14 +68,16 @@ INSERT INTO notification_photos (notification_uid, photo_uid, position)
 SELECT $1, u.photo_uid, u.ord - 1
 FROM unnest($2::text[]) WITH ORDINALITY AS u (photo_uid, ord)`
 
-// getSQL reads one notification scoped to its owner.
+// getSQL reads one notification scoped to its owner and its project.
 const getSQL = `SELECT ` + selectColumns + `
 FROM notifications n
-WHERE n.uid = $1 AND n.user_uid = $2`
+WHERE n.uid = $1 AND n.user_uid = $2 AND n.project_id = $3`
 
-// Create records n together with its photo set in one transaction: either the
+// Create records n, a notification of the project n.ProjectUID, together with
+// its photo set in one transaction: either the
 // notification and every photograph of its set are written, or nothing is. The
-// fields are validated first (ErrInvalid, ErrUnknownKind, ErrTooManyPhotos); a
+// fields are validated first (ErrNoProject, ErrInvalid, ErrUnknownKind,
+// ErrTooManyPhotos); a
 // photograph that does not exist yields ErrPhotoNotFound and an account that
 // does not exist ErrUserNotFound, and in either case nothing is written. A
 // photograph given twice keeps its first position.
@@ -110,7 +112,8 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 	if err != nil {
 		return Notification{}, err
 	}
-	_, err = tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid), n.InApp)
+	_, err = tx.Exec(ctx, insertSQL, uid, n.UserUID, string(n.Kind), n.Title, n.Body, n.link(uid), n.InApp,
+		n.ProjectUID)
 	if err != nil {
 		return Notification{}, mapForeignKey(err)
 	}
@@ -119,14 +122,18 @@ func (s *Store) CreateTx(ctx context.Context, tx pgx.Tx, n New) (Notification, e
 			return Notification{}, mapForeignKey(err)
 		}
 	}
-	return scanNotification(tx.QueryRow(ctx, getSQL, uid, n.UserUID))
+	return scanNotification(tx.QueryRow(ctx, getSQL, uid, n.UserUID, n.ProjectUID))
 }
 
-// Get returns the notification uid if it belongs to ownerUID. A notification
-// that does not exist and one that belongs to somebody else are the same
-// ErrNotFound, so a uid cannot be probed for existence.
-func (s *Store) Get(ctx context.Context, ownerUID, uid string) (Notification, error) {
-	return scanNotification(s.pool.QueryRow(ctx, getSQL, uid, ownerUID))
+// Get returns the notification uid if it belongs to ownerUID and to the
+// project. A notification that does not exist, one that belongs to somebody
+// else and one of another project are the same ErrNotFound, so a uid cannot be
+// probed for existence.
+func (s *Store) Get(ctx context.Context, projectUID, ownerUID, uid string) (Notification, error) {
+	if projectUID == "" {
+		return Notification{}, ErrNoProject
+	}
+	return scanNotification(s.pool.QueryRow(ctx, getSQL, uid, ownerUID, projectUID))
 }
 
 // markReadSQL stamps read_at once. COALESCE keeps the first reading, so marking
@@ -134,14 +141,18 @@ func (s *Store) Get(ctx context.Context, ownerUID, uid string) (Notification, er
 const markReadSQL = `
 UPDATE notifications n
 SET read_at = COALESCE(n.read_at, now())
-WHERE n.uid = $1 AND n.user_uid = $2
+WHERE n.uid = $1 AND n.user_uid = $2 AND n.project_id = $3
 RETURNING ` + selectColumns
 
-// MarkRead marks the notification uid of ownerUID read and returns it. It is
-// idempotent: a notification already read keeps the moment it was first read.
-// A missing or foreign uid is ErrNotFound.
-func (s *Store) MarkRead(ctx context.Context, ownerUID, uid string) (Notification, error) {
-	return scanNotification(s.pool.QueryRow(ctx, markReadSQL, uid, ownerUID))
+// MarkRead marks the notification uid of ownerUID in the project read and
+// returns it. It is idempotent: a notification already read keeps the moment it
+// was first read. A missing uid, another account's and another project's are
+// ErrNotFound.
+func (s *Store) MarkRead(ctx context.Context, projectUID, ownerUID, uid string) (Notification, error) {
+	if projectUID == "" {
+		return Notification{}, ErrNoProject
+	}
+	return scanNotification(s.pool.QueryRow(ctx, markReadSQL, uid, ownerUID, projectUID))
 }
 
 // photosSQL reads the visible part of a frozen set, in its stored order. The
@@ -157,7 +168,8 @@ WHERE np.notification_uid = $1
   AND ($4 OR NOT p.private)
 ORDER BY np.position`
 
-// Photos returns the photographs of ownerUID's notification uid that vis lets
+// Photos returns the photographs of ownerUID's notification uid in the project
+// that vis lets
 // through, in the order the set was frozen in. It is the only way to read a set:
 // a photograph archived, hidden or made private after the notification was sent
 // is still in the set, and whether it may be shown depends on who is asking, so
@@ -165,9 +177,10 @@ ORDER BY np.position`
 // blindly. A deleted photograph is gone from the set already (the cascade).
 //
 // A notification whose whole set is gone — or that never had one — yields an
-// empty, non-nil slice and no error. A missing or foreign uid is ErrNotFound.
-func (s *Store) Photos(ctx context.Context, ownerUID, uid string, vis Visibility) ([]string, error) {
-	if _, err := s.Get(ctx, ownerUID, uid); err != nil {
+// empty, non-nil slice and no error. A missing uid, another account's and
+// another project's are ErrNotFound.
+func (s *Store) Photos(ctx context.Context, projectUID, ownerUID, uid string, vis Visibility) ([]string, error) {
+	if _, err := s.Get(ctx, projectUID, ownerUID, uid); err != nil {
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, photosSQL, uid, vis.IncludeArchived, vis.IncludeHidden, vis.IncludePrivate)

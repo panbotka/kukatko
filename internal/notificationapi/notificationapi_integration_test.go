@@ -24,6 +24,7 @@ import (
 	"github.com/panbotka/kukatko/internal/notification"
 	"github.com/panbotka/kukatko/internal/notificationapi"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/ratelimit"
 )
@@ -447,7 +448,7 @@ func TestNotification_detailFiltersByVisibilityNow(t *testing.T) {
 	p := e.seedPhotos(t, 5)
 	set := []string{p[4], p[0], p[2], p[1], p[3]}
 	n, err := notification.NewStore(e.db.Pool()).Create(t.Context(), notification.New{
-		UserUID: owner.uid, Kind: notification.KindTagged, Title: "You were tagged in 5 photos",
+		ProjectUID: project.BootstrapUID, UserUID: owner.uid, Kind: notification.KindTagged, Title: "You were tagged in 5 photos",
 		Link: "/notifications/x", PhotoUIDs: set,
 	})
 	if err != nil {
@@ -498,7 +499,7 @@ func TestNotification_scopedToOwner(t *testing.T) {
 	owner := e.login(t, "vera", auth.AccountViewer)
 	admin := e.login(t, "ada", auth.AccountAdmin)
 	n, err := notification.NewStore(e.db.Pool()).Create(t.Context(), notification.New{
-		UserUID: owner.uid, Kind: notification.KindRegistrationPending, Title: "Someone registered",
+		ProjectUID: project.BootstrapUID, UserUID: owner.uid, Kind: notification.KindRegistrationPending, Title: "Someone registered",
 	})
 	if err != nil {
 		t.Fatalf("Create notification: %v", err)

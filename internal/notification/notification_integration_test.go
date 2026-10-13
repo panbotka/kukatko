@@ -109,7 +109,7 @@ func (f *fixture) count(t *testing.T, sql string, args ...any) int {
 func (f *fixture) tagged(t *testing.T, photoUIDs ...string) notification.Notification {
 	t.Helper()
 	n, err := f.store.Create(context.Background(), notification.New{
-		UserUID: owner, Kind: notification.KindTagged,
+		ProjectUID: project.BootstrapUID, UserUID: owner, Kind: notification.KindTagged,
 		Title: "Byl jste označen", Body: "na 3 fotkách", Link: "/notifications/x",
 		PhotoUIDs: photoUIDs,
 	})
@@ -134,14 +134,14 @@ func TestCreateKeepsOrder(t *testing.T) {
 		created.ReadAt != nil || created.CreatedAt.IsZero() || created.PhotoCount != 4 {
 		t.Fatalf("unexpected created record: %+v", created)
 	}
-	got, err := f.store.Photos(ctx, owner, created.UID, notification.Visibility{})
+	got, err := f.store.Photos(ctx, project.BootstrapUID, owner, created.UID, notification.Visibility{})
 	if err != nil {
 		t.Fatalf("Photos: %v", err)
 	}
 	if !reflect.DeepEqual(got, order) {
 		t.Fatalf("Photos = %v, want %v", got, order)
 	}
-	read, err := f.store.Get(ctx, owner, created.UID)
+	read, err := f.store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -155,12 +155,12 @@ func TestCreateWithoutPhotos(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	created, err := f.store.Create(ctx, notification.New{
-		UserUID: owner, Kind: notification.KindRegistrationPending, Title: "Nová registrace",
+		ProjectUID: project.BootstrapUID, UserUID: owner, Kind: notification.KindRegistrationPending, Title: "Nová registrace",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	got, err := f.store.Photos(ctx, owner, created.UID, notification.Visibility{})
+	got, err := f.store.Photos(ctx, project.BootstrapUID, owner, created.UID, notification.Visibility{})
 	if err != nil || got == nil || len(got) != 0 || created.PhotoCount != 0 {
 		t.Fatalf("Photos = %v, %v (count %d), want an empty non-nil set", got, err, created.PhotoCount)
 	}
@@ -174,13 +174,13 @@ func TestCreateIsAtomic(t *testing.T) {
 	p := f.makePhotos(t, "a")
 
 	_, err := f.store.Create(ctx, notification.New{
-		UserUID: owner, Kind: notification.KindTagged, Title: "t",
+		ProjectUID: project.BootstrapUID, UserUID: owner, Kind: notification.KindTagged, Title: "t",
 		PhotoUIDs: []string{p[0], "ph-missing"},
 	})
 	if !errors.Is(err, notification.ErrPhotoNotFound) {
 		t.Fatalf("Create with a missing photo = %v, want ErrPhotoNotFound", err)
 	}
-	_, err = f.store.Create(ctx, notification.New{UserUID: "us-nobody", Kind: notification.KindTagged, Title: "t"})
+	_, err = f.store.Create(ctx, notification.New{ProjectUID: project.BootstrapUID, UserUID: "us-nobody", Kind: notification.KindTagged, Title: "t"})
 	if !errors.Is(err, notification.ErrUserNotFound) {
 		t.Fatalf("Create for a missing account = %v, want ErrUserNotFound", err)
 	}
@@ -200,17 +200,17 @@ func TestForeignUIDIsNotFound(t *testing.T) {
 	mine := f.tagged(t, f.makePhotos(t, "a")...)
 
 	for _, uid := range []string{mine.UID, "nt-does-not-exist"} {
-		if _, err := f.store.Get(ctx, stranger, uid); !errors.Is(err, notification.ErrNotFound) {
+		if _, err := f.store.Get(ctx, project.BootstrapUID, stranger, uid); !errors.Is(err, notification.ErrNotFound) {
 			t.Errorf("Get(%s) as stranger = %v, want ErrNotFound", uid, err)
 		}
-		if _, err := f.store.MarkRead(ctx, stranger, uid); !errors.Is(err, notification.ErrNotFound) {
+		if _, err := f.store.MarkRead(ctx, project.BootstrapUID, stranger, uid); !errors.Is(err, notification.ErrNotFound) {
 			t.Errorf("MarkRead(%s) as stranger = %v, want ErrNotFound", uid, err)
 		}
-		if _, err := f.store.Photos(ctx, stranger, uid, notification.Visibility{}); !errors.Is(err, notification.ErrNotFound) {
+		if _, err := f.store.Photos(ctx, project.BootstrapUID, stranger, uid, notification.Visibility{}); !errors.Is(err, notification.ErrNotFound) {
 			t.Errorf("Photos(%s) as stranger = %v, want ErrNotFound", uid, err)
 		}
 	}
-	after, err := f.store.Get(ctx, owner, mine.UID)
+	after, err := f.store.Get(ctx, project.BootstrapUID, owner, mine.UID)
 	if err != nil || after.ReadAt != nil {
 		t.Fatalf("the stranger's MarkRead touched the owner's notification: %+v, %v", after, err)
 	}
@@ -222,12 +222,12 @@ func TestMarkReadIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	created := f.tagged(t)
 
-	first, err := f.store.MarkRead(ctx, owner, created.UID)
+	first, err := f.store.MarkRead(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil || first.ReadAt == nil {
 		t.Fatalf("MarkRead = %+v, %v; want it read", first, err)
 	}
 	time.Sleep(5 * time.Millisecond)
-	second, err := f.store.MarkRead(ctx, owner, created.UID)
+	second, err := f.store.MarkRead(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil || second.ReadAt == nil || !second.ReadAt.Equal(*first.ReadAt) {
 		t.Fatalf("second MarkRead = %+v, %v; want read_at kept at %v", second, err, first.ReadAt)
 	}
@@ -263,7 +263,7 @@ func TestPhotosAppliesVisibility(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		got, err := f.store.Photos(ctx, owner, created.UID, tt.vis)
+		got, err := f.store.Photos(ctx, project.BootstrapUID, owner, created.UID, tt.vis)
 		if err != nil {
 			t.Fatalf("%s: Photos: %v", tt.name, err)
 		}
@@ -271,7 +271,7 @@ func TestPhotosAppliesVisibility(t *testing.T) {
 			t.Errorf("%s: Photos = %v, want %v", tt.name, got, tt.want)
 		}
 	}
-	read, err := f.store.Get(ctx, owner, created.UID)
+	read, err := f.store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil || read.PhotoCount != 4 {
 		t.Fatalf("Get = %+v, %v; want a photo count of 4 (the deleted one gone)", read, err)
 	}
@@ -285,11 +285,11 @@ func TestWholeSetDeleted(t *testing.T) {
 	created := f.tagged(t, p...)
 	f.exec(t, "DELETE FROM photos")
 
-	read, err := f.store.Get(ctx, owner, created.UID)
+	read, err := f.store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil || read.PhotoCount != 0 {
 		t.Fatalf("Get = %+v, %v; want the record with no photos", read, err)
 	}
-	got, err := f.store.Photos(ctx, owner, created.UID, notification.Visibility{IncludeArchived: true})
+	got, err := f.store.Photos(ctx, project.BootstrapUID, owner, created.UID, notification.Visibility{IncludeArchived: true})
 	if err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("Photos = %v, %v; want an empty non-nil set", got, err)
 	}
@@ -515,7 +515,7 @@ func TestPurgeRespectsBothThresholds(t *testing.T) {
 	}
 	wantDeleted := 0
 	for i, c := range cases {
-		_, getErr := f.store.Get(ctx, owner, uids[i])
+		_, getErr := f.store.Get(ctx, project.BootstrapUID, owner, uids[i])
 		gone := errors.Is(getErr, notification.ErrNotFound)
 		if c.purge {
 			wantDeleted++
@@ -559,7 +559,7 @@ func TestCreateTxSharesTheCallersFate(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	n := notification.New{
-		UserUID: owner, Kind: notification.KindRegistrationPending,
+		ProjectUID: project.BootstrapUID, UserUID: owner, Kind: notification.KindRegistrationPending,
 		Title: "Nová registrace čeká na schválení", Link: "/users",
 	}
 
@@ -613,7 +613,7 @@ func TestCreateTxSharesTheCallersFate(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
-	got, err := f.store.Get(ctx, owner, created.UID)
+	got, err := f.store.Get(ctx, project.BootstrapUID, owner, created.UID)
 	if err != nil {
 		t.Fatalf("Get after commit: %v", err)
 	}

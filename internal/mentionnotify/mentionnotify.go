@@ -99,8 +99,9 @@ func New(cfg Config) *Notifier {
 // comment uid appended: the thread scrolls to it and marks it.
 const AnchorPrefix = "#comment-"
 
-// CommentPath returns the in-app path that opens the comment commentUID in
-// the thread of subj: a photograph's viewer with its drawer open (the thread
+// CommentPath returns the path inside the subject's project that opens the
+// comment commentUID in the thread of subj (internal/notifydeliver puts it
+// under the project's root /p/<slug>): a photograph's viewer with its drawer open (the thread
 // mounts only while it is), the task's page, or the album's page with its
 // comments drawer open (the same reason as the viewer's), each anchored to the
 // comment.
@@ -125,6 +126,8 @@ type place struct {
 	// visible is whether an account may be told about the subject at all: a
 	// task or an album always, a photograph unless private, hidden or archived.
 	visible bool
+	// projectUID is the subject's project, the one the notification belongs to.
+	projectUID string
 }
 
 // wanted is the rule of who is told about a mention: the mentioned account,
@@ -146,17 +149,18 @@ func wanted(userUID, authorUID string, standing bool, p place) bool {
 	}
 }
 
-// photoPlaceSQL reads a photograph's title and whether it may be named in a
-// notification, by the one definition every producer uses.
-const photoPlaceSQL = `SELECT p.title, ` + notification.VisiblePhotoSQL + ` FROM photos p WHERE p.uid = $1`
+// photoPlaceSQL reads a photograph's title, whether it may be named in a
+// notification, by the one definition every producer uses, and its project.
+const photoPlaceSQL = `SELECT p.title, ` + notification.VisiblePhotoSQL + `, p.project_id
+FROM photos p WHERE p.uid = $1`
 
-// taskPlaceSQL reads a task's title; a task is always announceable.
-const taskPlaceSQL = `SELECT t.title, true FROM photo_tasks t WHERE t.uid = $1`
+// taskPlaceSQL reads a task's title and project; a task is always announceable.
+const taskPlaceSQL = `SELECT t.title, true, t.project_id FROM photo_tasks t WHERE t.uid = $1`
 
-// albumPlaceSQL reads an album's title; an album is announceable to every
+// albumPlaceSQL reads an album's title and project; an album is announceable to every
 // signed-in account, exactly as its page is open to every one (see the package
 // comment).
-const albumPlaceSQL = `SELECT a.title, true FROM albums a WHERE a.uid = $1`
+const albumPlaceSQL = `SELECT a.title, true, a.project_id FROM albums a WHERE a.uid = $1`
 
 // standingSQL reads, of the given accounts, the ones in good standing: enabled
 // and approved.
@@ -234,7 +238,7 @@ func readPlace(ctx context.Context, sp pgx.Tx, subj comments.Subject) (place, er
 		return place{}, fmt.Errorf("unknown subject kind %q", subj.Kind)
 	}
 	p := place{kind: q.kind}
-	err := sp.QueryRow(ctx, q.query, subj.UID).Scan(&p.title, &p.visible)
+	err := sp.QueryRow(ctx, q.query, subj.UID).Scan(&p.title, &p.visible, &p.projectUID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return place{}, fmt.Errorf("%s %s not found", subj.Kind, subj.UID)
 	}
@@ -273,10 +277,11 @@ func readStanding(ctx context.Context, sp pgx.Tx, mentioned []comments.Mention) 
 func (n *Notifier) message(c comments.Comment, subj comments.Subject, p place) notifydeliver.Message {
 	excerpt := comments.Excerpt(c.Body, comments.MaxExcerptLen)
 	return notifydeliver.Message{
-		Kind: notification.KindCommentMention,
-		Text: notification.RenderCommentMention(n.lang, c.AuthorName, p.kind, p.title, excerpt),
-		Link: CommentPath(subj, c.UID),
-		Mail: mailBuilder(c.AuthorName, p, excerpt),
+		ProjectUID: p.projectUID,
+		Kind:       notification.KindCommentMention,
+		Text:       notification.RenderCommentMention(n.lang, c.AuthorName, p.kind, p.title, excerpt),
+		Link:       CommentPath(subj, c.UID),
+		Mail:       mailBuilder(c.AuthorName, p, excerpt),
 	}
 }
 

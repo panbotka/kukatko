@@ -96,15 +96,20 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 	return s.Announce(ctx, albumUID)
 }
 
-// accountsSQL reads every account with what the recipient rules need, in a
-// stable order so a retry delivers in the same sequence. The role is the one in
-// the bootstrap project (transition: the album's own project once albums are
-// scoped) — admin for a maintainer, "" for an account that is no member.
+// accountsSQL reads every account of the album's project $1 — its members and
+// the maintainers, who see every project — with what the recipient rules need,
+// in a stable order so a retry delivers in the same sequence. The role is the
+// one in that project, admin for a maintainer. An account of another project
+// only is not read at all: an album is news only inside its own library.
 const accountsSQL = `
 SELECT u.uid, CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE COALESCE(m.role, '') END, u.disabled
 FROM users u
-LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = '` + project.BootstrapUID + `'
+LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = $1
+WHERE u.role = 'maintainer' OR m.user_uid IS NOT NULL
 ORDER BY u.uid`
+
+// albumProjectSQL reads the project an album belongs to.
+const albumProjectSQL = `SELECT project_id FROM albums WHERE uid = $1`
 
 // Announce delivers the "a new album is featured" notification for albumUID,
 // in one transaction, to every account the rules allow (see recipients) that
@@ -132,11 +137,15 @@ func (s *Service) Announce(ctx context.Context, albumUID string) error {
 	if err != nil {
 		return fmt.Errorf("albumfeaturedjob: reading album %s: %w", albumUID, err)
 	}
-	accounts, err := readAccounts(ctx, tx)
+	var projectUID string
+	if err := tx.QueryRow(ctx, albumProjectSQL, album.UID).Scan(&projectUID); err != nil {
+		return fmt.Errorf("albumfeaturedjob: reading the project of album %s: %w", album.UID, err)
+	}
+	accounts, err := readAccounts(ctx, tx, projectUID)
 	if err != nil {
 		return err
 	}
-	msg := s.message(album)
+	msg := s.message(projectUID, album)
 	var actor string
 	if album.FeaturedBy != nil {
 		actor = *album.FeaturedBy
@@ -176,9 +185,9 @@ func (s *Service) announceTo(ctx context.Context, tx pgx.Tx, userUID, albumUID s
 		slog.Bool("in_app", result.Channels.InApp), slog.Bool("email", result.Channels.Email))
 }
 
-// readAccounts runs accountsSQL on tx.
-func readAccounts(ctx context.Context, tx pgx.Tx) ([]account, error) {
-	rows, err := tx.Query(ctx, accountsSQL)
+// readAccounts runs accountsSQL for the project projectUID on tx.
+func readAccounts(ctx context.Context, tx pgx.Tx, projectUID string) ([]account, error) {
+	rows, err := tx.Query(ctx, accountsSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("albumfeaturedjob: reading the accounts: %w", err)
 	}
@@ -197,16 +206,18 @@ func readAccounts(ctx context.Context, tx pgx.Tx) ([]account, error) {
 	return out, nil
 }
 
-// message is the notification every recipient gets for album: the kind, the
+// message is the notification every recipient gets for album, in the album's
+// project projectUID: the kind, the
 // text in the service's language, the album's page as the link, the cover as
 // the frozen photo set (none for an album with nothing to show) and the mail
 // builder for the e-mail channel.
-func (s *Service) message(album organize.FeaturedAlbum) notifydeliver.Message {
+func (s *Service) message(projectUID string, album organize.FeaturedAlbum) notifydeliver.Message {
 	msg := notifydeliver.Message{
-		Kind: notification.KindAlbumFeatured,
-		Text: notification.RenderAlbumFeatured(s.lang, album.Title),
-		Link: AlbumPath(album.UID),
-		Mail: albumFeaturedMail(album.Title),
+		ProjectUID: projectUID,
+		Kind:       notification.KindAlbumFeatured,
+		Text:       notification.RenderAlbumFeatured(s.lang, album.Title),
+		Link:       AlbumPath(album.UID),
+		Mail:       albumFeaturedMail(album.Title),
 	}
 	if album.CoverUID != nil && *album.CoverUID != "" {
 		msg.PhotoUIDs = []string{*album.CoverUID}

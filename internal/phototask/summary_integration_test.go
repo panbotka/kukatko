@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestSummary_countsTheQueuePerCaller builds a small queue and reads it as the
@@ -21,7 +22,7 @@ func TestSummary_countsTheQueuePerCaller(t *testing.T) {
 
 	// Asked and untouched: waits on the agent.
 	asked := f.mustCreate(t, "V kterém roce?")
-	if err := f.tasks.Assign(ctx, asked.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, asked.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 	// The agent asked back: waits on the person, and is an answer for them.
@@ -36,11 +37,11 @@ func TestSummary_countsTheQueuePerCaller(t *testing.T) {
 	f.move(t, done.UID, agentUID, phototask.StateDone, "Opraveno.")
 	f.comment(t, done.UID, agentUID, "Díky.")
 
-	person, err := f.tasks.Summary(ctx, actor)
+	person, err := f.tasks.Summary(ctx, project.BootstrapUID, actor)
 	if err != nil {
 		t.Fatalf("Summary(person): %v", err)
 	}
-	agent, err := f.tasks.Summary(ctx, agentUID)
+	agent, err := f.tasks.Summary(ctx, project.BootstrapUID, agentUID)
 	if err != nil {
 		t.Fatalf("Summary(agent): %v", err)
 	}
@@ -74,7 +75,7 @@ func TestSummary_countsTheQueuePerCaller(t *testing.T) {
 	}
 
 	// The badge count is the same number under its own name.
-	waiting, err := f.tasks.WaitingOnMe(ctx, actor)
+	waiting, err := f.tasks.WaitingOnMe(ctx, project.BootstrapUID, actor)
 	if err != nil {
 		t.Fatalf("WaitingOnMe: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestSummary_countsTheQueuePerCaller(t *testing.T) {
 
 	// A reader on nothing: every state still named, nothing waits on them, and
 	// — the convention every read shares — every comment is somebody else's.
-	stranger, err := f.tasks.Summary(ctx, "us-nobody")
+	stranger, err := f.tasks.Summary(ctx, project.BootstrapUID, "us-nobody")
 	if err != nil {
 		t.Fatalf("Summary(stranger): %v", err)
 	}

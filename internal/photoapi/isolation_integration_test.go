@@ -82,7 +82,7 @@ func TestPhotoReadSubroutes_foreignPhotoIsInvisible(t *testing.T) {
 func TestPhotoComments_foreignThreadReadsAsMissing(t *testing.T) {
 	e := newEnv(t)
 	f := projecttest.Seed(t, e.db.Pool())
-	if _, err := e.comments.Create(t.Context(), comments.PhotoSubject(f.A.PhotoUID), f.A.UserUID,
+	if _, err := e.comments.Create(t.Context(), f.A.ProjectUID, comments.PhotoSubject(f.A.PhotoUID), f.A.UserUID,
 		"A secret about "+f.A.Token, audit.Entry{ActorUID: f.A.UserUID, Action: audit.ActionCommentCreate,
 			TargetType: "photos", TargetUID: f.A.PhotoUID}); err != nil {
 		t.Fatalf("commenting A's photo: %v", err)
@@ -131,8 +131,9 @@ func TestPhotoSearch_everyKeyKindStaysInTheProject(t *testing.T) {
 
 // TestPhotoListing_neighboursStayInTheProject covers the listing the viewer and
 // the slideshow page through for prev/next — every ordering, page by page —
-// and the album, task and favourite scopes: none may hand B a photo of A, even
-// when the scope names A's album or task outright.
+// and the album, label, person and favourite scopes: none may hand B a photo of
+// A, even when the scope names A's album outright. A's task as a scope is a 404
+// (TestPhotoList_foreignTaskScopeIsMissing); B's own task scopes B's photo.
 func TestPhotoListing_neighboursStayInTheProject(t *testing.T) {
 	e := newEnv(t)
 	f := projecttest.Seed(t, e.db.Pool())
@@ -140,7 +141,7 @@ func TestPhotoListing_neighboursStayInTheProject(t *testing.T) {
 
 	for _, query := range []string{
 		"", "?sort=added", "?sort=oldest", "?sort=title", "?sort=size", "?sort=random&seed=s1",
-		"?limit=1&offset=0", "?limit=1&offset=1", "?album=" + f.A.AlbumUID, "?task=" + f.A.TaskUID,
+		"?limit=1&offset=0", "?limit=1&offset=1", "?album=" + f.A.AlbumUID,
 		"?label=" + f.A.LabelUID, "?person=" + f.A.SubjectUID,
 	} {
 		f.AssertListExcludes(t, client, f.PathFor(projecttest.SideB, "photos"+query), f.A.PhotoUID, f.A.PhotoFileHash)
@@ -194,4 +195,34 @@ func decodeTotal(t *testing.T, resp *http.Response) int {
 		t.Fatalf("decoding the total: %v", err)
 	}
 	return body.Total
+}
+
+// TestPhotoList_foreignTaskScopeIsMissing scopes the photo listing and the
+// search to A's task from inside B: each is the very 404 a task that does not
+// exist gets, naming nothing of A, while B's own task scopes B's listing.
+func TestPhotoList_foreignTaskScopeIsMissing(t *testing.T) {
+	e := newEnv(t)
+	f := projecttest.Seed(t, e.db.Pool())
+	client := f.ClientFor(t, e.server, projecttest.SideB)
+
+	for _, route := range []string{"photos?task=", "search?q=x&task="} {
+		foreign := f.PathFor(projecttest.SideB, route+f.A.TaskUID)
+		f.AssertInvisible(t, client, foreign)
+		projecttest.AssertSameShape(t, f.Get(t, client, foreign),
+			f.Get(t, client, f.PathFor(projecttest.SideB, route+projecttest.MissingUID("tk"))))
+	}
+
+	own := f.Get(t, client, f.PathFor(projecttest.SideB, "photos?task="+f.B.TaskUID))
+	defer func() { _ = own.Body.Close() }()
+	var page struct {
+		Photos []struct {
+			UID string `json:"uid"`
+		} `json:"photos"`
+	}
+	if err := json.NewDecoder(own.Body).Decode(&page); err != nil {
+		t.Fatalf("decoding B's task listing: %v", err)
+	}
+	if own.StatusCode != http.StatusOK || len(page.Photos) != 1 || page.Photos[0].UID != f.B.PhotoUID {
+		t.Fatalf("B's task listing = %d %+v, want 200 and B's photo", own.StatusCode, page.Photos)
+	}
 }

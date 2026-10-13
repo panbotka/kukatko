@@ -10,6 +10,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/comments"
 	"github.com/panbotka/kukatko/internal/phototask"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests cover "whose turn is it": the caller-relative has_new_answer, the
@@ -30,13 +31,13 @@ func settle() { time.Sleep(10 * time.Millisecond) }
 func (f *fixture) comment(t *testing.T, taskUID, author, body string) comments.Comment {
 	t.Helper()
 	settle()
-	c, err := f.comments.Create(context.Background(), comments.TaskSubject(taskUID), author, body,
+	c, err := f.comments.Create(context.Background(), project.BootstrapUID, comments.TaskSubject(taskUID), author, body,
 		audit.Entry{ActorUID: author, Action: audit.ActionCommentCreate,
 			TargetType: "photo_tasks", TargetUID: taskUID})
 	if err != nil {
 		t.Fatalf("commenting as %s: %v", author, err)
 	}
-	if err := f.tasks.Join(context.Background(), taskUID, author); err != nil {
+	if err := f.tasks.Join(context.Background(), project.BootstrapUID, taskUID, author); err != nil {
 		t.Fatalf("Join(%s): %v", author, err)
 	}
 	return c
@@ -45,7 +46,7 @@ func (f *fixture) comment(t *testing.T, taskUID, author, body string) comments.C
 // read returns the task as caller sees it.
 func (f *fixture) read(t *testing.T, taskUID, caller string) phototask.Task {
 	t.Helper()
-	task, err := f.tasks.Get(context.Background(), taskUID, caller)
+	task, err := f.tasks.Get(context.Background(), project.BootstrapUID, taskUID, caller)
 	if err != nil {
 		t.Fatalf("Get(%s as %s): %v", taskUID, caller, err)
 	}
@@ -60,7 +61,7 @@ func (f *fixture) move(t *testing.T, taskUID, actorUID string, state phototask.S
 	if resolution != "" {
 		upd.Resolution = &resolution
 	}
-	if _, err := f.tasks.Update(context.Background(), taskUID, upd,
+	if _, err := f.tasks.Update(context.Background(), project.BootstrapUID, taskUID, upd,
 		audit.Entry{ActorUID: actorUID, Action: audit.ActionTaskUpdate}); err != nil {
 		t.Fatalf("moving to %s as %s: %v", state, actorUID, err)
 	}
@@ -97,11 +98,11 @@ func TestHasNewAnswer_isCallerRelative(t *testing.T) {
 	}
 
 	// The same semantic in the listing filter.
-	forAuthor, _, err := f.tasks.List(ctx, phototask.Filter{Answered: true, CallerUID: actor})
+	forAuthor, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Answered: true, CallerUID: actor})
 	if err != nil {
 		t.Fatalf("List(answered as author): %v", err)
 	}
-	forAgent, _, err := f.tasks.List(ctx, phototask.Filter{Answered: true, CallerUID: agentUID})
+	forAgent, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Answered: true, CallerUID: agentUID})
 	if err != nil {
 		t.Fatalf("List(answered as agent): %v", err)
 	}
@@ -121,7 +122,7 @@ func TestHasNewAnswer_isCallerRelative(t *testing.T) {
 	if got := f.read(t, task.UID, agentUID); !got.HasNewAnswer {
 		t.Fatal("a fresh reply did not flag the task")
 	}
-	if err := f.comments.Delete(ctx, late.UID,
+	if err := f.comments.Delete(ctx, project.BootstrapUID, late.UID,
 		audit.Entry{ActorUID: actor, Action: audit.ActionCommentDelete}); err != nil {
 		t.Fatalf("deleting the comment: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestWaitingOnMe_followsTheConversation(t *testing.T) {
 	expectTurn(t, "fresh, opener", f.read(t, task.UID, actor), false, false)
 
 	// Asked and untouched: waits on the agent, not on the person who asked.
-	if err := f.tasks.Assign(ctx, task.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 	asked := f.read(t, task.UID, agentUID)
@@ -181,14 +182,14 @@ func TestWaitingOnMe_followsTheConversation(t *testing.T) {
 	}
 
 	// The waiting filter is the same predicate, evaluated server-side.
-	waiting, total, err := f.tasks.List(ctx, phototask.Filter{Waiting: true, CallerUID: agentUID})
+	waiting, total, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Waiting: true, CallerUID: agentUID})
 	if err != nil {
 		t.Fatalf("List(waiting as agent): %v", err)
 	}
 	if total != 1 || len(waiting) != 1 || waiting[0].UID != task.UID || !waiting[0].WaitingOnMe {
 		t.Errorf("waiting listing for the agent = %v (total %d), want just this task", uids(waiting), total)
 	}
-	none, _, err := f.tasks.List(ctx, phototask.Filter{Waiting: true, CallerUID: actor})
+	none, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Waiting: true, CallerUID: actor})
 	if err != nil {
 		t.Fatalf("List(waiting as person): %v", err)
 	}
@@ -221,7 +222,7 @@ func TestStateBy_legacyRowReadsAsCreator(t *testing.T) {
 	if _, err := f.db.Pool().Exec(ctx, "UPDATE photo_tasks SET state_by = NULL WHERE uid = $1", task.UID); err != nil {
 		t.Fatalf("clearing state_by: %v", err)
 	}
-	if err := f.tasks.Assign(ctx, task.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
+	if err := f.tasks.Assign(ctx, project.BootstrapUID, task.UID, agentUID, entry(audit.ActionTaskAssign)); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 	legacy := f.read(t, task.UID, agentUID)

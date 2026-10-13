@@ -77,13 +77,13 @@ func New(cfg Config) *Service {
 // consumeSQL reads and deletes every pending notice of the account in one
 // statement, and returns the photos that may still be named — visible under the
 // notification reading and still carrying the account's linked person on a
-// valid marker — newest photo first. Notices that no longer qualify are deleted
+// valid marker — with their project, newest photo first. Notices that no longer qualify are deleted
 // all the same: they are what the window collected, and the window is closing.
 const consumeSQL = `
 WITH consumed AS (
     DELETE FROM tag_notices WHERE user_uid = $1 RETURNING photo_uid
 )
-SELECT p.uid
+SELECT p.uid, p.project_id
 FROM consumed c
 JOIN photos p ON p.uid = c.photo_uid
 WHERE ` + notification.VisiblePhotoSQL + `
@@ -106,11 +106,12 @@ func (s *Service) Handle(ctx context.Context, job jobs.Job) error {
 }
 
 // Close closes userUID's tagging window, in one transaction: it consumes every
-// pending notice, keeps the photos that still qualify, groups them by album
-// and delivers one notification per group — one per album the photos are in
-// (visible to the account; at most MaxAlbumGroups of them), then one for the
-// photos outside those albums — each with its frozen photo set, newest first,
-// to every channel the account wants; the e-mail is one for the whole window.
+// pending notice, keeps the photos that still qualify, splits them by project
+// and, inside each project, groups them by album and delivers one notification
+// per group — one per album the photos are in (visible to the account; at most
+// MaxAlbumGroups of them), then one for the photos outside those albums — each
+// with its frozen photo set, newest first, into that project's inbox and to
+// every channel the account wants; the e-mail is one per project of the window.
 // Either all of it commits or none of it does, so a failure part-way leaves the
 // notices for the retry instead of losing them, and a success cannot announce
 // them twice.
@@ -136,12 +137,12 @@ func (s *Service) Close(ctx context.Context, userUID string) error {
 	if err != nil {
 		return err
 	}
-	if len(photos) > 0 {
-		groups, err := collect(ctx, tx, userUID, photos)
+	for _, w := range groupByProject(photos) {
+		groups, err := collect(ctx, tx, userUID, w)
 		if err != nil {
 			return err
 		}
-		if err := s.announce(ctx, tx, userUID, groups, len(photos)); err != nil {
+		if err := s.announce(ctx, tx, userUID, w.ProjectUID, groups, len(w.Photos)); err != nil {
 			return err
 		}
 	}
@@ -152,49 +153,49 @@ func (s *Service) Close(ctx context.Context, userUID string) error {
 }
 
 // consume runs consumeSQL for userUID on tx.
-func consume(ctx context.Context, tx pgx.Tx, userUID string) ([]string, error) {
+func consume(ctx context.Context, tx pgx.Tx, userUID string) ([]consumedPhoto, error) {
 	rows, err := tx.Query(ctx, consumeSQL, userUID)
 	if err != nil {
 		return nil, fmt.Errorf("tagnotifyjob: consuming the notices of %s: %w", userUID, err)
 	}
-	photos, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	photos, err := pgx.CollectRows(rows, pgx.RowToStructByPos[consumedPhoto])
 	if err != nil {
 		return nil, fmt.Errorf("tagnotifyjob: consuming the notices of %s: %w", userUID, err)
 	}
 	return photos, nil
 }
 
-// albumsSQL reads, for the window's photos, the albums each is in — the
-// hand-made ones (type album), the ones a person knows by name, as the "what's
-// new" digest and the featured strip count them — with what decides whether
-// the recipient may be told about them.
+// albumsSQL reads, for the window's photos, the albums of the project $2 each
+// is in — the hand-made ones (type album), the ones a person knows by name, as
+// the "what's new" digest and the featured strip count them — with what decides
+// whether the recipient may be told about them.
 const albumsSQL = `
 SELECT ap.photo_uid, a.uid, a.title, a.private
 FROM album_photos ap
 JOIN albums a ON a.uid = ap.album_uid
-WHERE ap.photo_uid = ANY($1) AND a.type = 'album'
+WHERE ap.photo_uid = ANY($1) AND a.project_id = $2 AND a.type = 'album'
 ORDER BY ap.photo_uid, a.title, a.uid`
 
-// roleSQL reads the recipient's role in the bootstrap project (transition: the
-// photos' own project once they are scoped) — admin for a maintainer, "" for an
-// account that is no member — which decides whether a private album may be
-// named to them.
+// roleSQL reads the recipient's role in the project $2 the photos belong to —
+// admin for a maintainer, "" for an account that is no member — which decides
+// whether a private album may be named to them.
 const roleSQL = `
 SELECT CASE WHEN u.role = 'maintainer' THEN 'admin' ELSE COALESCE(m.role, '') END
 FROM users u
-LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = '` + project.BootstrapUID + `'
+LEFT JOIN project_members m ON m.user_uid = u.uid AND m.project_uid = $2
 WHERE u.uid = $1`
 
-// collect reads on tx what the grouping needs — the albums of photos and
-// whether userUID may see a private one (a curator or above, the rule the
-// album surfaces apply) — and returns the window's groups. photos is the
-// window's order, newest first, which the groups keep.
-func collect(ctx context.Context, tx pgx.Tx, userUID string, photos []string) ([]group, error) {
+// collect reads on tx what the grouping of one project's window needs — the
+// albums of its photos and whether userUID may see a private one there (a
+// curator or above, the rule the album surfaces apply) — and returns its
+// groups. The window's photos are newest first, an order the groups keep.
+func collect(ctx context.Context, tx pgx.Tx, userUID string, w projectWindow) ([]group, error) {
+	photos := w.Photos
 	var role string
-	if err := tx.QueryRow(ctx, roleSQL, userUID).Scan(&role); err != nil {
+	if err := tx.QueryRow(ctx, roleSQL, userUID, w.ProjectUID).Scan(&role); err != nil {
 		return nil, fmt.Errorf("tagnotifyjob: reading the role of %s: %w", userUID, err)
 	}
-	rows, err := tx.Query(ctx, albumsSQL, photos)
+	rows, err := tx.Query(ctx, albumsSQL, photos, w.ProjectUID)
 	if err != nil {
 		return nil, fmt.Errorf("tagnotifyjob: reading the albums of the photos of %s: %w", userUID, err)
 	}
@@ -221,14 +222,18 @@ type mailGroup struct {
 	url string
 }
 
-// announce delivers one notification per group on tx, in order, to whichever
-// channels the account still wants (none: nothing is sent). A group's set over
+// announce delivers one notification per group of the project projectUID on
+// tx, in order, into that project's inbox and to whichever channels the account
+// still wants (none: nothing is sent). A group's set over
 // notification.MaxPhotos keeps its newest MaxPhotos photos, and its count says
 // what the set holds, so no message promises more than tapping it opens. The
-// e-mail is one per window: every delivery but the last skips the mail, and
-// the last one's mail lists every group with its count and link. total is how
-// many distinct photos the window holds, which the mail reports.
-func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, groups []group, total int) error {
+// e-mail is one per project of the window: every delivery but the last skips
+// the mail, and the last one's mail lists every group with its count and link.
+// total is how many distinct photos the project's window holds, which the mail
+// reports.
+func (s *Service) announce(
+	ctx context.Context, tx pgx.Tx, userUID, projectUID string, groups []group, total int,
+) error {
 	delivered := make([]mailGroup, 0, len(groups))
 	for i, g := range groups {
 		if len(g.Photos) > notification.MaxPhotos {
@@ -236,8 +241,8 @@ func (s *Service) announce(ctx context.Context, tx pgx.Tx, userUID string, group
 		}
 		last := i == len(groups)-1
 		msg := notifydeliver.Message{
-			Kind: notification.KindTagged, Text: s.text(g, len(groups)), SelfLink: true, PhotoUIDs: g.Photos,
-			SkipMail: !last,
+			ProjectUID: projectUID, Kind: notification.KindTagged, Text: s.text(g, len(groups)), SelfLink: true,
+			PhotoUIDs: g.Photos, SkipMail: !last,
 		}
 		if last {
 			msg.Mail = s.taggedMail(delivered, g, total)

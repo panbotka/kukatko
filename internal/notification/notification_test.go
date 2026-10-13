@@ -91,7 +91,10 @@ func TestKindsReturnsFreshSlice(t *testing.T) {
 func TestNewValidate(t *testing.T) {
 	t.Parallel()
 
-	valid := New{UserUID: "us1", Kind: KindTagged, Title: "Tagged", Link: "/photos?notification=nt1"}
+	valid := New{
+		ProjectUID: "pj1", ProjectSlug: "v", UserUID: "us1", Kind: KindTagged, Title: "Tagged",
+		Link: "/p/v/photos?notification=nt1",
+	}
 	tests := []struct {
 		name    string
 		mutate  func(n *New)
@@ -99,6 +102,7 @@ func TestNewValidate(t *testing.T) {
 	}{
 		{name: "valid", mutate: func(*New) {}},
 		{name: "empty link is allowed", mutate: func(n *New) { n.Link = "" }},
+		{name: "no project", mutate: func(n *New) { n.ProjectUID = "" }, wantErr: ErrNoProject},
 		{name: "no account", mutate: func(n *New) { n.UserUID = " " }, wantErr: ErrInvalid},
 		{name: "unknown kind", mutate: func(n *New) { n.Kind = "later" }, wantErr: ErrUnknownKind},
 		{name: "blank title", mutate: func(n *New) { n.Title = "  " }, wantErr: ErrInvalid},
@@ -116,6 +120,11 @@ func TestNewValidate(t *testing.T) {
 			wantErr: ErrInvalid,
 		},
 		{name: "self link", mutate: func(n *New) { n.Link = ""; n.SelfLink = true }},
+		{
+			name:    "self link without the project's slug",
+			mutate:  func(n *New) { n.Link = ""; n.SelfLink = true; n.ProjectSlug = "" },
+			wantErr: ErrInvalid,
+		},
 		{name: "self link and a link", mutate: func(n *New) { n.SelfLink = true }, wantErr: ErrInvalid},
 		{name: "absolute URL", mutate: func(n *New) { n.Link = "https://evil.test/" }, wantErr: ErrInvalid},
 		{name: "scheme-relative", mutate: func(n *New) { n.Link = "//evil.test/" }, wantErr: ErrInvalid},
@@ -154,7 +163,10 @@ func TestNewValidate(t *testing.T) {
 func TestNewValidateDedupesPhotos(t *testing.T) {
 	t.Parallel()
 
-	n := New{UserUID: "us1", Kind: KindTagged, Title: "t", PhotoUIDs: []string{"b", "a", "", "b", "c", "a"}}
+	n := New{
+		ProjectUID: "pj1", UserUID: "us1", Kind: KindTagged, Title: "t",
+		PhotoUIDs: []string{"b", "a", "", "b", "c", "a"},
+	}
 	got, err := n.validate()
 	if err != nil {
 		t.Fatalf("validate: %v", err)
@@ -307,21 +319,21 @@ func TestPrefsEntry(t *testing.T) {
 	}
 }
 
-// TestPath checks a notification's own page and that New stores it only when
-// asked to.
+// TestPath checks a notification's own page lives under its project and that
+// New stores it only when asked to.
 func TestPath(t *testing.T) {
 	t.Parallel()
 
-	if got := Path("ntabc"); got != "/n/ntabc" {
-		t.Fatalf("Path = %q, want /n/ntabc", got)
+	if got := Path("rodina", "ntabc"); got != "/p/rodina/n/ntabc" {
+		t.Fatalf("Path = %q, want /p/rodina/n/ntabc", got)
 	}
-	if err := validateLink(Path("ntabc")); err != nil {
+	if err := validateLink(Path("v", "ntabc")); err != nil {
 		t.Fatalf("Path is not a valid in-app link: %v", err)
 	}
-	if got := (New{SelfLink: true}).link("ntabc"); got != "/n/ntabc" {
-		t.Errorf("self link = %q, want /n/ntabc", got)
+	if got := (New{ProjectSlug: "v", SelfLink: true}).link("ntabc"); got != "/p/v/n/ntabc" {
+		t.Errorf("self link = %q, want /p/v/n/ntabc", got)
 	}
-	if got := (New{Link: "/users"}).link("ntabc"); got != "/users" {
-		t.Errorf("plain link = %q, want /users", got)
+	if got := (New{ProjectSlug: "v", Link: "/p/v/users"}).link("ntabc"); got != "/p/v/users" {
+		t.Errorf("plain link = %q, want /p/v/users", got)
 	}
 }

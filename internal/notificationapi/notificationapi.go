@@ -59,23 +59,27 @@ type SubscriptionStore interface {
 }
 
 // NotificationStore is the subset of notification.Store the notification and
-// preference routes need. Every method is scoped to the owning account.
+// preference routes need. Every method is scoped to the owning account; the
+// notification reads and marks are scoped to the request's project as well,
+// while the preferences are the account's own, one set across every project.
 type NotificationStore interface {
 	// Get returns ownerUID's notification uid, or notification.ErrNotFound.
-	Get(ctx context.Context, ownerUID, uid string) (notification.Notification, error)
+	Get(ctx context.Context, projectUID, ownerUID, uid string) (notification.Notification, error)
 	// MarkRead stamps ownerUID's notification uid read (idempotently) and
 	// returns it, or notification.ErrNotFound.
-	MarkRead(ctx context.Context, ownerUID, uid string) (notification.Notification, error)
+	MarkRead(ctx context.Context, projectUID, ownerUID, uid string) (notification.Notification, error)
 	// List returns one page of ownerUID's inbox, newest first.
-	List(ctx context.Context, ownerUID string, opts notification.ListOptions) (notification.Page, error)
+	List(ctx context.Context, projectUID, ownerUID string, opts notification.ListOptions) (notification.Page, error)
 	// UnreadCount returns how many notifications in ownerUID's inbox are unread.
-	UnreadCount(ctx context.Context, ownerUID string) (int, error)
+	UnreadCount(ctx context.Context, projectUID, ownerUID string) (int, error)
 	// MarkAllRead marks every unread notification in ownerUID's inbox read and
 	// returns how many it marked.
-	MarkAllRead(ctx context.Context, ownerUID string) (int64, error)
+	MarkAllRead(ctx context.Context, projectUID, ownerUID string) (int64, error)
 	// Photos returns the photo uids of the frozen set that vis lets through,
 	// in their frozen order, or notification.ErrNotFound.
-	Photos(ctx context.Context, ownerUID, uid string, vis notification.Visibility) ([]string, error)
+	Photos(
+		ctx context.Context, projectUID, ownerUID, uid string, vis notification.Visibility,
+	) ([]string, error)
 	// Preferences returns userUID's effective preferences, one per known kind.
 	Preferences(ctx context.Context, userUID string) ([]notification.Preference, error)
 	// ReplacePreferences replaces userUID's stored choices, audited in the same
@@ -88,8 +92,9 @@ type NotificationStore interface {
 // PhotoStore is the subset of photos.Store that resolves a frozen set's uids
 // into full photo records.
 type PhotoStore interface {
-	// ListByUIDs returns the photos for the given uids in unspecified order.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photos among the given uids in
+	// unspecified order; a uid of another project is dropped like a missing one.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
 }
 
 // PushSettings is the part of the push configuration a client may learn. It has
@@ -209,6 +214,15 @@ func (a *API) RegisterInboxRoutes(r chi.Router) {
 // currentUser returns the authenticated user from the request context, writing a
 // 401 and reporting ok=false when none is present (a defensive guard;
 // RequireAuth should already have rejected the request).
+// projectOf returns the uid of the request's project, which auth.WithProject
+// resolved from the {project} segment of the path. The inbox routes read and
+// mark only that project's notifications, so another project's notification is
+// the very 404 a missing one gets; the preferences and the push subscriptions
+// are the account's own across every project and never consult it.
+func projectOf(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
+}
+
 func currentUser(w http.ResponseWriter, r *http.Request) (auth.User, bool) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {

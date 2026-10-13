@@ -207,3 +207,22 @@ func TestApplyPatch(t *testing.T) {
 		t.Errorf("applyPatch with a blank name = %v, want ErrInvalidName", err)
 	}
 }
+
+// TestAppPath verifies a project page's address is the page's own path under
+// the project's root.
+func TestAppPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		slug, path, want string
+	}{
+		{slug: "v", path: "/n/nt1", want: "/p/v/n/nt1"},
+		{slug: "rodina", path: "/tasks/tk1#comment-cm1", want: "/p/rodina/tasks/tk1#comment-cm1"},
+		{slug: "v", path: "/photos/ph1?panel=info", want: "/p/v/photos/ph1?panel=info"},
+	}
+	for _, tt := range tests {
+		if got := AppPath(tt.slug, tt.path); got != tt.want {
+			t.Errorf("AppPath(%q, %q) = %q, want %q", tt.slug, tt.path, got, tt.want)
+		}
+	}
+}

@@ -37,7 +37,7 @@ func TestRenderRegistrationPending(t *testing.T) {
 			if got.Body != tt.body {
 				t.Errorf("Body = %q, want %q", got.Body, tt.body)
 			}
-			if _, err := (New{UserUID: "us-x", Kind: KindRegistrationPending, Title: got.Title, Body: got.Body}).
+			if _, err := (New{ProjectUID: "pj-x", UserUID: "us-x", Kind: KindRegistrationPending, Title: got.Title, Body: got.Body}).
 				validate(); err != nil {
 				t.Errorf("the rendered text does not validate: %v", err)
 			}
@@ -86,7 +86,7 @@ func TestRenderTagged(t *testing.T) {
 			if got.Title != tt.title || got.Body != tt.body {
 				t.Fatalf("RenderTagged(%q, %d) = %+v, want title %q body %q", tt.lang, tt.count, got, tt.title, tt.body)
 			}
-			if _, err := (New{UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
+			if _, err := (New{ProjectUID: "pj-x", UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
 				validate(); err != nil {
 				t.Errorf("the rendered text does not validate: %v", err)
 			}
@@ -130,7 +130,7 @@ func TestRenderTaggedInAlbum(t *testing.T) {
 				t.Fatalf("RenderTaggedInAlbum(%q, %d, %q) = %+v, want title %q body %q",
 					tt.lang, tt.count, tt.album, got, tt.title, tt.body)
 			}
-			if _, err := (New{UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
+			if _, err := (New{ProjectUID: "pj-x", UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
 				validate(); err != nil {
 				t.Errorf("the rendered text does not validate: %v", err)
 			}
@@ -142,7 +142,7 @@ func TestRenderTaggedInAlbum(t *testing.T) {
 	if n := utf8.RuneCountInString(got.Title); n > MaxTitleLen || !strings.HasSuffix(got.Title, "…") {
 		t.Errorf("long album: title %d runes %q, want cut with an ellipsis under %d", n, got.Title, MaxTitleLen)
 	}
-	if _, err := (New{UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).validate(); err != nil {
+	if _, err := (New{ProjectUID: "pj-x", UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).validate(); err != nil {
 		t.Errorf("long album: the rendered text does not validate: %v", err)
 	}
 	if name := albumName(LanguageCzech, long); utf8.RuneCountInString(name) != MaxAlbumNameLen {
@@ -180,7 +180,7 @@ func TestRenderTaggedOther(t *testing.T) {
 			if got.Title != tt.title || got.Body != tt.body {
 				t.Fatalf("RenderTaggedOther(%q, %d) = %+v, want title %q body %q", tt.lang, tt.count, got, tt.title, tt.body)
 			}
-			if _, err := (New{UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
+			if _, err := (New{ProjectUID: "pj-x", UserUID: "us-x", Kind: KindTagged, Title: got.Title, Body: got.Body}).
 				validate(); err != nil {
 				t.Errorf("the rendered text does not validate: %v", err)
 			}

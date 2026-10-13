@@ -74,44 +74,48 @@ func TestFilterPage(t *testing.T) {
 
 // TestFilterConditions verifies each filter compiles to its own clause, that the
 // placeholders are numbered in the order the arguments are collected, and that
-// the zero filter adds nothing.
+// the zero filter adds nothing but the project.
 func TestFilterConditions(t *testing.T) {
 	t.Parallel()
 
 	// The caller is always the first argument, bound by the projection whether
-	// or not a clause needs it — so even the zero filter carries one.
-	if where, args := (Filter{}).conditions(); len(where) != 0 || len(args) != 1 {
-		t.Errorf("the zero filter compiled to %v / %v, want no clauses and just the caller", where, args)
+	// or not a clause needs it, and the project the second — so even the zero
+	// filter carries both, and confines the listing to the project.
+	where, args := (Filter{}).conditions("pj-a")
+	if len(where) != 1 || where[0] != "t.project_id = $2" || len(args) != 2 || args[1] != "pj-a" {
+		t.Errorf("the zero filter compiled to %v / %v, want the project clause, the caller and the project",
+			where, args)
 	}
 
-	where, args := Filter{
+	where, args = Filter{
 		CallerUID: "us-me", States: []State{StateQuestion, StateReview}, Answered: true, Waiting: true,
 		Search: "dům", PhotoUID: "ph1",
-	}.conditions()
+	}.conditions("pj-a")
 	joined := strings.Join(where, " AND ")
 	for _, want := range []string{
-		"t.state = ANY($2)",
+		"t.project_id = $2",
+		"t.state = ANY($3)",
 		// Both caller-relative filters are the very fragments the projection
 		// computes the flags from, so a badge and a listing cannot disagree.
 		answeredSQL,
 		waitingSQL,
 		// Both sides pass through immutable_unaccent, so "dum" finds "dům" —
 		// the same shape every other text search in the library uses.
-		"immutable_unaccent(t.title) ILIKE immutable_unaccent($3)",
-		"immutable_unaccent(t.body) ILIKE immutable_unaccent($3)",
-		"tp.photo_uid = $4",
+		"immutable_unaccent(t.title) ILIKE immutable_unaccent($4)",
+		"immutable_unaccent(t.body) ILIKE immutable_unaccent($4)",
+		"tp.photo_uid = $5",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("clauses %q do not contain %q", joined, want)
 		}
 	}
-	if len(args) != 4 {
-		t.Fatalf("args = %v, want four (caller, states, pattern, photo)", args)
+	if len(args) != 5 {
+		t.Fatalf("args = %v, want five (caller, project, states, pattern, photo)", args)
 	}
 	if got, ok := args[0].(string); !ok || got != "us-me" {
 		t.Errorf("first argument = %v, want the caller", args[0])
 	}
-	if got, ok := args[2].(string); !ok || got != "%dům%" {
+	if got, ok := args[3].(string); !ok || got != "%dům%" {
 		t.Errorf("search argument = %v, want the wrapped pattern", args[2])
 	}
 }

@@ -24,7 +24,7 @@ type Summary struct {
 	Answered    int           `json:"answered"`
 }
 
-// summarySQL counts the whole table once, one FILTER per number, over the two
+// summarySQL counts the project's tasks ($2) once, one FILTER per number, over the two
 // caller-relative fragments the listing itself uses — the thread and the last
 // activity — so the badge, the chips and the list can never disagree. The
 // per-state columns come first in the order of States, then waiting, then
@@ -43,13 +43,18 @@ func buildSummarySQL() string {
 		"count(*) FILTER (WHERE "+waitingSQL+")",
 		"count(*) FILTER (WHERE t.state NOT IN ('done', 'rejected') AND "+answeredSQL+")",
 	)
-	return "SELECT " + strings.Join(cols, ",\n  ") + "\nFROM photo_tasks t" + threadJoin + activityJoin
+	return "SELECT " + strings.Join(cols, ",\n  ") + "\nFROM photo_tasks t" + threadJoin + activityJoin +
+		"\nWHERE t.project_id = $2"
 }
 
-// Summary returns the queue's counts as callerUID sees them, in one query. An
-// empty caller reads a queue where nothing waits on anybody and every comment
-// is somebody else's — the same convention as List and Get.
-func (s *Store) Summary(ctx context.Context, callerUID string) (Summary, error) {
+// Summary returns the project's queue counts as callerUID sees them, in one
+// query; a task of another project counts nowhere. An empty caller reads a
+// queue where nothing waits on anybody and every comment is somebody else's —
+// the same convention as List and Get.
+func (s *Store) Summary(ctx context.Context, projectUID, callerUID string) (Summary, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Summary{}, err
+	}
 	dest := make([]any, 0, len(States)+2)
 	perState := make([]int, len(States))
 	for i := range perState {
@@ -57,7 +62,7 @@ func (s *Store) Summary(ctx context.Context, callerUID string) (Summary, error) 
 	}
 	var out Summary
 	dest = append(dest, &out.WaitingOnMe, &out.Answered)
-	if err := s.pool.QueryRow(ctx, summarySQL, callerUID).Scan(dest...); err != nil {
+	if err := s.pool.QueryRow(ctx, summarySQL, callerUID, projectUID).Scan(dest...); err != nil {
 		return Summary{}, fmt.Errorf("phototask: summarising tasks: %w", err)
 	}
 	out.ByState = make(map[State]int, len(States))
@@ -74,8 +79,8 @@ func (s *Store) Summary(ctx context.Context, callerUID string) (Summary, error) 
 // for on its own — the digest of what's new draws it as "N tasks wait on you".
 // It is the same query; a second, narrower one would be a second place for the
 // semantic to drift.
-func (s *Store) WaitingOnMe(ctx context.Context, callerUID string) (int, error) {
-	summary, err := s.Summary(ctx, callerUID)
+func (s *Store) WaitingOnMe(ctx context.Context, projectUID, callerUID string) (int, error) {
+	summary, err := s.Summary(ctx, projectUID, callerUID)
 	if err != nil {
 		return 0, err
 	}

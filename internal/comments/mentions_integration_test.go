@@ -104,7 +104,7 @@ func TestCreate_storesAndResolvesMentions(t *testing.T) {
 
 	body := "Hele @[Bob](user:us_bob), @[Alice](user:us_alice) a @[Bob](user:us_bob) — " +
 		"@[Nikdo](user:us_nobody), @[Vypnutý](user:us_off), @[Nováček](user:us_new), v kódu `@[Bob](user:us_bob)`"
-	created, err := store.Create(context.Background(), comments.PhotoSubject(photo.UID), alice, body,
+	created, err := store.Create(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID), alice, body,
 		entry(audit.ActionCommentCreate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -129,14 +129,14 @@ func TestCreate_storesAndResolvesMentions(t *testing.T) {
 
 	// A read resolves the mentions afresh: a rename shows the new name.
 	f.exec(t, `UPDATE users SET display_name = 'Robert B.' WHERE uid = $1`, bob)
-	list, err := store.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := store.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(list) != 1 || list[0].Mentions[0].Name != "Robert B." {
 		t.Errorf("List mentions = %+v, want Bob under his new name", list)
 	}
-	got, err := store.Get(context.Background(), created.UID)
+	got, err := store.Get(context.Background(), project.BootstrapUID, created.UID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestCreate_storesAndResolvesMentions(t *testing.T) {
 
 	// A deleted account drops out of the mentions; the token in the body stays.
 	f.exec(t, `DELETE FROM users WHERE uid = $1`, bob)
-	got, err = store.Get(context.Background(), created.UID)
+	got, err = store.Get(context.Background(), project.BootstrapUID, created.UID)
 	if err != nil {
 		t.Fatalf("Get after delete: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestCreate_noMentions(t *testing.T) {
 	alice := f.makeApprovedUser(t, "us_alice", "alice", "Alice", false)
 	photo := f.makePhoto(t, "one")
 
-	created, err := store.Create(context.Background(), comments.PhotoSubject(photo.UID), alice, "@alice? ne",
+	created, err := store.Create(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID), alice, "@alice? ne",
 		entry(audit.ActionCommentCreate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -175,7 +175,7 @@ func TestCreate_noMentions(t *testing.T) {
 	if len(observer.calls) != 0 {
 		t.Errorf("observer called for a comment without mentions: %+v", observer.calls)
 	}
-	list, err := store.List(context.Background(), comments.PhotoSubject(photo.UID))
+	list, err := store.List(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID))
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -196,12 +196,12 @@ func TestUpdate_syncsMentions(t *testing.T) {
 	carol := f.makeApprovedUser(t, "us_carol", "carol", "Carol", false)
 	photo := f.makePhoto(t, "one")
 
-	created, err := store.Create(context.Background(), comments.PhotoSubject(photo.UID), alice,
+	created, err := store.Create(context.Background(), project.BootstrapUID, comments.PhotoSubject(photo.UID), alice,
 		"@[Bob](user:us_bob) víš to?", entry(audit.ActionCommentCreate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	edited, err := store.Update(context.Background(), created.UID, "@[Bob](user:us_bob) a @[Carol](user:us_carol) víte to?",
+	edited, err := store.Update(context.Background(), project.BootstrapUID, created.UID, "@[Bob](user:us_bob) a @[Carol](user:us_carol) víte to?",
 		entry(audit.ActionCommentUpdate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Update: %v", err)
@@ -209,7 +209,7 @@ func TestUpdate_syncsMentions(t *testing.T) {
 	if !reflect.DeepEqual(mentionUIDs(edited.Mentions), []string{bob, carol}) {
 		t.Errorf("edited mentions = %v, want [%s %s]", mentionUIDs(edited.Mentions), bob, carol)
 	}
-	again, err := store.Update(context.Background(), created.UID, "@[Carol](user:us_carol) víš to?",
+	again, err := store.Update(context.Background(), project.BootstrapUID, created.UID, "@[Carol](user:us_carol) víš to?",
 		entry(audit.ActionCommentUpdate, alice, photo.UID))
 	if err != nil {
 		t.Fatalf("Update again: %v", err)
@@ -229,7 +229,7 @@ func TestUpdate_syncsMentions(t *testing.T) {
 	}
 
 	// Mentioning Bob again after he was dropped is fresh again.
-	if _, err := store.Update(context.Background(), created.UID, "@[Bob](user:us_bob) znovu",
+	if _, err := store.Update(context.Background(), project.BootstrapUID, created.UID, "@[Bob](user:us_bob) znovu",
 		entry(audit.ActionCommentUpdate, alice, photo.UID)); err != nil {
 		t.Fatalf("Update third time: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestMentions_taskThread(t *testing.T) {
 	bob := f.makeApprovedUser(t, "us_bob", "bob", "Bob", false)
 	f.exec(t, `INSERT INTO photo_tasks (uid, title, created_by) VALUES ('pt_one', 'Kdy to bylo?', $1)`, alice)
 
-	created, err := store.Create(context.Background(), comments.TaskSubject("pt_one"), alice,
+	created, err := store.Create(context.Background(), project.BootstrapUID, comments.TaskSubject("pt_one"), alice,
 		"@[Bob](user:us_bob)?", audit.Entry{ActorUID: alice, Action: audit.ActionCommentCreate, TargetType: "photo_tasks"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -257,7 +257,7 @@ func TestMentions_taskThread(t *testing.T) {
 	if !reflect.DeepEqual(mentionUIDs(created.Mentions), []string{bob}) || created.TaskUID != "pt_one" {
 		t.Errorf("created = %+v", created)
 	}
-	if err := store.Delete(context.Background(), created.UID,
+	if err := store.Delete(context.Background(), project.BootstrapUID, created.UID,
 		audit.Entry{ActorUID: alice, Action: audit.ActionCommentDelete, TargetType: "photo_tasks"}); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}

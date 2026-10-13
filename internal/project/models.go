@@ -149,6 +149,18 @@ type Usage struct {
 	OriginalsBytes int64 `json:"originals_bytes"`
 }
 
+// AppPathPrefix is the frontend route every page of a project hangs off: the
+// SPA serves a library's pages under /p/<slug>/.
+const AppPathPrefix = "/p/"
+
+// AppPath returns the in-app address of a project's page: path, the page's
+// address inside the project (starting with "/", e.g. "/tasks/tk1"), under the
+// project's own root /p/<slug>. It is what a deep link that leaves the app — a
+// push, an e-mail — must carry, so it opens in the project it is about.
+func AppPath(slug, path string) string {
+	return AppPathPrefix + slug + path
+}
+
 // ValidateSlug reports whether slug may name a project: it must match the slug
 // format and must not be a reserved word. It returns an error wrapping
 // ErrInvalidSlug that says which rule failed, or nil.

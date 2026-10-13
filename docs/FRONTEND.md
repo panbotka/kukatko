@@ -2465,7 +2465,8 @@ here.
   sent a link finds the question again here once the link has scrolled out of their chat — and only
   `canWrite` sees **Nový úkol**, which opens `NewTaskModal`,
   `NotificationPage` = `/n/:uid`, the **deeplink a push opens** (`notification.PathPrefix` on the server
-  writes it; the path is two characters because it rides in a push payload with a hard size limit), inside
+  writes it under the notification's project, `/p/<slug>/n/<uid>` — `projectPathFor` passes such a link
+  through unchanged; the path is two characters because it rides in a push payload with a hard size limit), inside
   the shell, any signed-in role — the server scopes it to the reader's own notifications. **A junction, not a
   destination:** it reads `GET /notifications/{uid}` (the **frozen** set in its stored order, filtered by
   what the reader may see *now*) and with **exactly one visible photograph and nothing dropped** it

@@ -76,6 +76,7 @@ func newFixture(t *testing.T) *fixture {
 // delivery path with push and mail switched on or off instance-wide.
 func (f *fixture) useDeliverer(pushOn, mailOn bool) {
 	deliverer := notifydeliver.New(notifydeliver.Config{
+		Projects:      project.NewStore(f.db.Pool()),
 		Notifications: notification.NewStore(f.db.Pool()),
 		Push:          pushjob.NewEnqueuer(pushjob.EnqueuerConfig{Enabled: pushOn}),
 		Mail:          mailjob.NewEnqueuer(mailjob.EnqueuerConfig{Enabled: mailOn}),
@@ -257,8 +258,8 @@ func TestWindow_manyTagsCollapseIntoOneNotification(t *testing.T) {
 	if n.title != "Označili vás na fotkách" || n.body != "Přibylo 12 fotek, na kterých vás označili." {
 		t.Errorf("text = %q / %q", n.title, n.body)
 	}
-	if n.link != notification.Path(n.uid) {
-		t.Errorf("link = %q, want %q", n.link, notification.Path(n.uid))
+	if n.link != notification.Path(project.BootstrapSlug, n.uid) {
+		t.Errorf("link = %q, want %q", n.link, notification.Path(project.BootstrapSlug, n.uid))
 	}
 	if !slices.Equal(n.photos, want) {
 		t.Errorf("photos = %v, want newest first %v", n.photos, want)

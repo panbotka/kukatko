@@ -93,7 +93,7 @@ func entry(action string) audit.Entry {
 // store refuses it.
 func (f *fixture) mustCreate(t *testing.T, title string, photoUIDs ...string) phototask.Task {
 	t.Helper()
-	task, err := f.tasks.Create(context.Background(),
+	task, err := f.tasks.Create(context.Background(), project.BootstrapUID,
 		phototask.Task{Title: title, Body: "kontext", Query: "camera:Olympus"},
 		phototask.Opening{PhotoUIDs: photoUIDs}, entry(audit.ActionTaskCreate))
 	if err != nil {
@@ -175,14 +175,14 @@ func TestCreate_rejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := f.tasks.Create(context.Background(), tt.task, phototask.Opening{PhotoUIDs: tt.photoUIDs},
+			_, err := f.tasks.Create(context.Background(), project.BootstrapUID, tt.task, phototask.Opening{PhotoUIDs: tt.photoUIDs},
 				entry(audit.ActionTaskCreate))
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("Create error = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}
-	list, total, err := f.tasks.List(context.Background(), phototask.Filter{})
+	list, total, err := f.tasks.List(context.Background(), project.BootstrapUID, phototask.Filter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -199,13 +199,13 @@ func TestUpdate_closingAndReopening(t *testing.T) {
 	task := f.mustCreate(t, "V kterém roce?")
 	ctx := context.Background()
 
-	if _, err := f.tasks.Update(ctx, task.UID,
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID,
 		phototask.Update{State: statePtr(phototask.StateDone)},
 		entry(audit.ActionTaskUpdate)); !errors.Is(err, phototask.ErrClosedNeedsResolution) {
 		t.Fatalf("closing without a resolution: error = %v", err)
 	}
 
-	closed, err := f.tasks.Update(ctx, task.UID, phototask.Update{
+	closed, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID, phototask.Update{
 		State:      statePtr(phototask.StateDone),
 		Resolution: new("1987 podle kroniky"),
 	}, entry(audit.ActionTaskUpdate))
@@ -219,7 +219,7 @@ func TestUpdate_closingAndReopening(t *testing.T) {
 		t.Errorf("state_at did not move: %v, was %v", closed.StateAt, task.StateAt)
 	}
 
-	reopened, err := f.tasks.Update(ctx, task.UID,
+	reopened, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID,
 		phototask.Update{State: statePtr(phototask.StateQuestion)}, entry(audit.ActionTaskUpdate))
 	if err != nil {
 		t.Fatalf("reopening: %v", err)
@@ -239,7 +239,7 @@ func statePtr(s phototask.State) *phototask.State { return &s }
 // TestUpdate_missing verifies editing a task that is not there is a not-found.
 func TestUpdate_missing(t *testing.T) {
 	f := newFixture(t)
-	_, err := f.tasks.Update(context.Background(), "tk-missing",
+	_, err := f.tasks.Update(context.Background(), project.BootstrapUID, "tk-missing",
 		phototask.Update{Title: new("Kdy?")}, entry(audit.ActionTaskUpdate))
 	if !errors.Is(err, phototask.ErrNotFound) {
 		t.Fatalf("Update error = %v, want ErrNotFound", err)
@@ -255,7 +255,7 @@ func TestMembership(t *testing.T) {
 	two := f.makePhoto(t, "b")
 	task := f.mustCreate(t, "Kdy?", one.UID)
 
-	added, err := f.tasks.AddPhotos(ctx, task.UID, []string{one.UID, two.UID},
+	added, err := f.tasks.AddPhotos(ctx, project.BootstrapUID, task.UID, []string{one.UID, two.UID},
 		entry(audit.ActionTaskAddPhotos))
 	if err != nil {
 		t.Fatalf("AddPhotos: %v", err)
@@ -264,16 +264,16 @@ func TestMembership(t *testing.T) {
 		t.Errorf("added = %d, want 1 (the other was already there)", added)
 	}
 
-	if _, err := f.tasks.AddPhotos(ctx, task.UID, []string{"ph-missing"},
+	if _, err := f.tasks.AddPhotos(ctx, project.BootstrapUID, task.UID, []string{"ph-missing"},
 		entry(audit.ActionTaskAddPhotos)); !errors.Is(err, phototask.ErrPhotoNotFound) {
 		t.Errorf("adding a missing photo: error = %v, want ErrPhotoNotFound", err)
 	}
-	if _, err := f.tasks.AddPhotos(ctx, "tk-missing", []string{one.UID},
+	if _, err := f.tasks.AddPhotos(ctx, project.BootstrapUID, "tk-missing", []string{one.UID},
 		entry(audit.ActionTaskAddPhotos)); !errors.Is(err, phototask.ErrNotFound) {
 		t.Errorf("adding to a missing task: error = %v, want ErrNotFound", err)
 	}
 
-	removed, err := f.tasks.RemovePhotos(ctx, task.UID, []string{two.UID, "ph-missing"},
+	removed, err := f.tasks.RemovePhotos(ctx, project.BootstrapUID, task.UID, []string{two.UID, "ph-missing"},
 		entry(audit.ActionTaskRemovePhotos))
 	if err != nil {
 		t.Fatalf("RemovePhotos: %v", err)
@@ -281,7 +281,7 @@ func TestMembership(t *testing.T) {
 	if removed != 1 {
 		t.Errorf("removed = %d, want 1", removed)
 	}
-	after, err := f.tasks.Get(ctx, task.UID, actor)
+	after, err := f.tasks.Get(ctx, project.BootstrapUID, task.UID, actor)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -297,16 +297,16 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	photo := f.makePhoto(t, "a")
 	task := f.mustCreate(t, "Kdy?", photo.UID)
-	if _, err := f.comments.Create(ctx, comments.TaskSubject(task.UID), actor, "odpověď",
+	if _, err := f.comments.Create(ctx, project.BootstrapUID, comments.TaskSubject(task.UID), actor, "odpověď",
 		audit.Entry{ActorUID: actor, Action: audit.ActionCommentCreate,
 			TargetType: "photo_tasks", TargetUID: task.UID}); err != nil {
 		t.Fatalf("commenting: %v", err)
 	}
 
-	if err := f.tasks.Delete(ctx, task.UID, entry(audit.ActionTaskDelete)); err != nil {
+	if err := f.tasks.Delete(ctx, project.BootstrapUID, task.UID, entry(audit.ActionTaskDelete)); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if err := f.tasks.Delete(ctx, task.UID, entry(audit.ActionTaskDelete)); !errors.Is(
+	if err := f.tasks.Delete(ctx, project.BootstrapUID, task.UID, entry(audit.ActionTaskDelete)); !errors.Is(
 		err, phototask.ErrNotFound,
 	) {
 		t.Errorf("deleting twice: error = %v, want ErrNotFound", err)
@@ -337,19 +337,19 @@ func TestList_filtersAndOrder(t *testing.T) {
 
 	open := f.mustCreate(t, "Otevřená otázka o domě", photo.UID)
 	working := f.mustCreate(t, "Rozpracovaná")
-	if _, err := f.tasks.Update(ctx, working.UID,
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, working.UID,
 		phototask.Update{State: statePtr(phototask.StateWorking)},
 		entry(audit.ActionTaskUpdate)); err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
 	done := f.mustCreate(t, "Hotová")
-	if _, err := f.tasks.Update(ctx, done.UID, phototask.Update{
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, done.UID, phototask.Update{
 		State: statePtr(phototask.StateDone), Resolution: new("hotovo"),
 	}, entry(audit.ActionTaskUpdate)); err != nil {
 		t.Fatalf("closing: %v", err)
 	}
 
-	all, total, err := f.tasks.List(ctx, phototask.Filter{})
+	all, total, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestList_filtersAndOrder(t *testing.T) {
 		t.Errorf("the closed task is not last: %v", uids(all))
 	}
 
-	openOnly, openTotal, err := f.tasks.List(ctx, phototask.Filter{Open: true})
+	openOnly, openTotal, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Open: true})
 	if err != nil {
 		t.Fatalf("List(open): %v", err)
 	}
@@ -373,7 +373,7 @@ func TestList_filtersAndOrder(t *testing.T) {
 		}
 	}
 
-	byPhoto, _, err := f.tasks.List(ctx, phototask.Filter{PhotoUID: photo.UID})
+	byPhoto, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{PhotoUID: photo.UID})
 	if err != nil {
 		t.Fatalf("List(photo): %v", err)
 	}
@@ -381,7 +381,7 @@ func TestList_filtersAndOrder(t *testing.T) {
 		t.Errorf("List(photo) = %v, want just the task the photo is in", uids(byPhoto))
 	}
 
-	found, _, err := f.tasks.List(ctx, phototask.Filter{Search: "o domě"})
+	found, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Search: "o domě"})
 	if err != nil {
 		t.Fatalf("List(search): %v", err)
 	}
@@ -392,7 +392,7 @@ func TestList_filtersAndOrder(t *testing.T) {
 	// The search is as forgiving as the rest of the library: neither the
 	// diacritics nor the case of the query have to match what was written.
 	for _, term := range []string{"o dome", "OTEVŘENÁ", "otevrena"} {
-		loose, _, err := f.tasks.List(ctx, phototask.Filter{Search: term})
+		loose, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Search: term})
 		if err != nil {
 			t.Fatalf("List(search %q): %v", term, err)
 		}
@@ -401,7 +401,7 @@ func TestList_filtersAndOrder(t *testing.T) {
 		}
 	}
 
-	page, pageTotal, err := f.tasks.List(ctx, phototask.Filter{Limit: 1, Offset: 1})
+	page, pageTotal, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Limit: 1, Offset: 1})
 	if err != nil {
 		t.Fatalf("List(page): %v", err)
 	}
@@ -428,13 +428,13 @@ func TestList_answered(t *testing.T) {
 	task := f.mustCreate(t, "V kterém roce?")
 	f.mustCreate(t, "Bez odpovědi")
 
-	if _, err := f.comments.Create(ctx, comments.TaskSubject(task.UID), actor, "1987",
+	if _, err := f.comments.Create(ctx, project.BootstrapUID, comments.TaskSubject(task.UID), actor, "1987",
 		audit.Entry{ActorUID: actor, Action: audit.ActionCommentCreate,
 			TargetType: "photo_tasks", TargetUID: task.UID}); err != nil {
 		t.Fatalf("commenting: %v", err)
 	}
 
-	answered, total, err := f.tasks.List(ctx, phototask.Filter{Answered: true})
+	answered, total, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Answered: true})
 	if err != nil {
 		t.Fatalf("List(answered): %v", err)
 	}
@@ -448,12 +448,12 @@ func TestList_answered(t *testing.T) {
 
 	// Advancing the state means "seen": the reply is now older than the move.
 	time.Sleep(10 * time.Millisecond)
-	if _, err := f.tasks.Update(ctx, task.UID,
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, task.UID,
 		phototask.Update{State: statePtr(phototask.StateWorking)},
 		entry(audit.ActionTaskUpdate)); err != nil {
 		t.Fatalf("advancing: %v", err)
 	}
-	stillAnswered, _, err := f.tasks.List(ctx, phototask.Filter{Answered: true})
+	stillAnswered, _, err := f.tasks.List(ctx, project.BootstrapUID, phototask.Filter{Answered: true})
 	if err != nil {
 		t.Fatalf("List(answered): %v", err)
 	}
@@ -473,13 +473,13 @@ func TestOpenForPhotos(t *testing.T) {
 
 	open := f.mustCreate(t, "Otevřená", one.UID, two.UID)
 	closed := f.mustCreate(t, "Zavřená", one.UID)
-	if _, err := f.tasks.Update(ctx, closed.UID, phototask.Update{
+	if _, err := f.tasks.Update(ctx, project.BootstrapUID, closed.UID, phototask.Update{
 		State: statePtr(phototask.StateRejected), Resolution: new("nedohledatelné"),
 	}, entry(audit.ActionTaskUpdate)); err != nil {
 		t.Fatalf("closing: %v", err)
 	}
 
-	got, err := f.tasks.OpenForPhotos(ctx, []string{one.UID, two.UID, lonely.UID})
+	got, err := f.tasks.OpenForPhotos(ctx, project.BootstrapUID, []string{one.UID, two.UID, lonely.UID})
 	if err != nil {
 		t.Fatalf("OpenForPhotos: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestOpenForPhotos(t *testing.T) {
 	if _, ok := got[lonely.UID]; ok {
 		t.Errorf("a photo in no task appears in the map: %v", got[lonely.UID])
 	}
-	if empty, err := f.tasks.OpenForPhotos(ctx, nil); err != nil || len(empty) != 0 {
+	if empty, err := f.tasks.OpenForPhotos(ctx, project.BootstrapUID, nil); err != nil || len(empty) != 0 {
 		t.Errorf("OpenForPhotos(nil) = %v, %v, want an empty map and no error", empty, err)
 	}
 }

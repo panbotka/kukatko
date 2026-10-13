@@ -108,3 +108,47 @@ func describe(groups []group) string {
 	}
 	return out.String()
 }
+
+// TestGroupByProject walks the split of a closing window by project: one
+// project, two interleaved projects, the order of the projects (by their newest
+// photo), a photo listed twice and an empty window.
+func TestGroupByProject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		photos []consumedPhoto
+		want   []projectWindow
+	}{
+		{name: "empty window", photos: nil, want: nil},
+		{
+			name:   "one project keeps the order",
+			photos: []consumedPhoto{{"p1", "pj-a"}, {"p2", "pj-a"}, {"p3", "pj-a"}},
+			want:   []projectWindow{{ProjectUID: "pj-a", Photos: []string{"p1", "p2", "p3"}}},
+		},
+		{
+			name:   "two projects interleaved, newest project first",
+			photos: []consumedPhoto{{"p1", "pj-b"}, {"p2", "pj-a"}, {"p3", "pj-b"}, {"p4", "pj-a"}},
+			want: []projectWindow{
+				{ProjectUID: "pj-b", Photos: []string{"p1", "p3"}},
+				{ProjectUID: "pj-a", Photos: []string{"p2", "p4"}},
+			},
+		},
+		{
+			name:   "a photo listed twice counts once",
+			photos: []consumedPhoto{{"p1", "pj-a"}, {"p1", "pj-a"}, {"p2", "pj-c"}},
+			want: []projectWindow{
+				{ProjectUID: "pj-a", Photos: []string{"p1"}},
+				{ProjectUID: "pj-c", Photos: []string{"p2"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := groupByProject(tt.photos); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("groupByProject(%v) = %+v, want %+v", tt.photos, got, tt.want)
+			}
+		})
+	}
+}

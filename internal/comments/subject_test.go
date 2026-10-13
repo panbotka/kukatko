@@ -133,18 +133,42 @@ func TestStoreRefusesInvalidSubject(t *testing.T) {
 	bad := Subject{Kind: "label", UID: "lb1"}
 	ctx := context.Background()
 
-	if _, err := store.List(ctx, bad); !errors.Is(err, ErrInvalidSubject) {
+	if _, err := store.List(ctx, "pj-a", bad); !errors.Is(err, ErrInvalidSubject) {
 		t.Errorf("List(bad) error = %v, want ErrInvalidSubject", err)
 	}
-	if _, err := store.CountsAmong(ctx, "label", []string{"lb1"}); !errors.Is(err, ErrInvalidSubject) {
+	if _, err := store.CountsAmong(ctx, "pj-a", "label", []string{"lb1"}); !errors.Is(err, ErrInvalidSubject) {
 		t.Errorf("CountsAmong(bad) error = %v, want ErrInvalidSubject", err)
 	}
-	if _, err := store.Create(ctx, bad, "us1", "hello", audit.Entry{}); !errors.Is(err, ErrInvalidSubject) {
+	if _, err := store.Create(ctx, "pj-a", bad, "us1", "hello", audit.Entry{}); !errors.Is(err, ErrInvalidSubject) {
 		t.Errorf("Create(bad) error = %v, want ErrInvalidSubject", err)
 	}
 	// An empty input short-circuits before the kind is ever looked at, which is
 	// what lets a caller pass an empty page without special-casing it.
-	if got, err := store.CountsAmong(ctx, "label", nil); err != nil || len(got) != 0 {
+	if got, err := store.CountsAmong(ctx, "pj-a", "label", nil); err != nil || len(got) != 0 {
 		t.Errorf("CountsAmong(bad, nil) = %v, %v, want an empty map and no error", got, err)
+	}
+}
+
+// TestStoreRefusesNoProject verifies every entry point refuses a call without a
+// project before it reaches the database — the store has no pool, so a query
+// would panic — rather than reading or writing across every project.
+func TestStoreRefusesNoProject(t *testing.T) {
+	t.Parallel()
+
+	store := &Store{}
+	ctx := context.Background()
+	subj := PhotoSubject("ph1")
+	checks := map[string]error{}
+	_, checks["List"] = store.List(ctx, "", subj)
+	_, checks["CountsAmong"] = store.CountsAmong(ctx, "", SubjectPhoto, []string{"ph1"})
+	_, checks["LatestAmong"] = store.LatestAmong(ctx, "", SubjectPhoto, []string{"ph1"})
+	_, checks["Get"] = store.Get(ctx, "", "cm1")
+	_, checks["Create"] = store.Create(ctx, "", subj, "us1", "hello", audit.Entry{})
+	_, checks["Update"] = store.Update(ctx, "", "cm1", "hello", audit.Entry{})
+	checks["Delete"] = store.Delete(ctx, "", "cm1", audit.Entry{})
+	for op, err := range checks {
+		if !errors.Is(err, ErrNoProject) {
+			t.Errorf("%s without a project = %v, want ErrNoProject", op, err)
+		}
 	}
 }
