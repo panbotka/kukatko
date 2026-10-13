@@ -170,14 +170,23 @@ writing each atomically (temp file under `.tmp/` then rename). **It is resumable
 interrupted (network drop, Ctrl-C), just run it again — completed files are skipped and only the
 remainder is fetched. Database dumps under `db/` are never downloaded as originals.
 
+**Both storage layouts come back key for key.** A multi-project instance keeps the bootstrap project
+at the root of the store until its storage move and every other project under `projects/<uid>/`;
+the backup and the restore treat the two trees alike (the classification strips the
+`projects/<uid>/` prefix first), so a created project's originals, sidecars and `families.yaml`
+return under exactly the keys its catalogue rows name. `internal/backup`'s
+`TestBackupRestore_roundTripsBothLayouts` backs up both trees, restores them onto an empty root and
+verifies the result against a catalogue naming photos of both.
+
 A backup taken before the derived prefixes were classified also holds thumbnails and HLS segments.
 They come back with everything else and are harmless — the restore tolerates extra objects rather
 than refusing to run over regenerable junk — and no later backup run copies them up again.
 
 ### What the backup does not contain
 
-The backup carries the originals and the metadata sidecars, and nothing else from the store. Two
-prefixes are deliberately omitted, because both are reproducible from an original by an ordinary
+The backup carries the originals, the metadata sidecars and each project's `families.yaml` — in
+both layouts — and nothing else from the store. Two prefixes are deliberately omitted (at the root
+and inside every `projects/<uid>/` tree), because both are reproducible from an original by an ordinary
 background job and neither is worth its weight in a second bucket:
 
 | Prefix | What it is | How it comes back |
@@ -204,7 +213,12 @@ If there are mismatches the report lists a bounded sample of each:
   `kukatko restore originals` (the object may have failed to download), or check the original was
   actually backed up.
 - **extra on disk** — a file on disk with no catalogue row. Usually harmless (e.g. an original whose
-  photo row predates the chosen DB dump); confirm before deleting anything.
+  photo row predates the chosen DB dump); confirm before deleting anything. Metadata sidecars and
+  `families.yaml` exports are never counted here (no file row names them), in either layout.
+
+Once the service is up, `kukatko maintenance scan` gives the per-project picture of the same
+reconciliation, and reports anything under `projects/<uid>/` for a project the restored database
+does not have as `orphan_project` (a dump older than that project's creation, typically).
 
 `kukatko restore verify` reconciles the catalogue against originals **on local disk**, so it only
 means anything on the `fs` backend. On `r2`, compare object counts as shown in the next section.

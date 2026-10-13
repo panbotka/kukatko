@@ -190,6 +190,7 @@ func buildMaintenanceService(
 		Vectors:   instanceVectors{Store: vectors.NewStore(db.Pool()), projects: projects},
 		Originals: store,
 		Store:     storeScanner,
+		Projects:  projects,
 		Thumbs:    maintenance.NewThumbCache(thumbnailer),
 		Enqueuer:  enqueuer,
 		Embed:     instanceEmbed{svc: embedSvc, projects: projects},

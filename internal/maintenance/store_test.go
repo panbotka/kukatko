@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // fakeLister is a KeyLister over a fixed key list, or one that fails the way an
@@ -32,38 +33,51 @@ func (f fakeLister) Keys(_ context.Context, yield func(key string) error) error 
 
 // storeKeys is what either backend holds for a two-photo library: the originals
 // under YYYY/MM, the metadata sidecar beside each, the published thumbnails (only
-// an object store holds these), and an object something else put in the bucket.
+// an object store holds these), a created project's tree, and objects that are
+// nobody's — something else put in the bucket, a dump, a bare directory marker.
 var storeKeys = []string{
 	"2024/05/one.jpg",
 	"2024/05/two.jpg",
 	"sidecars/2024/05/one.jpg.yaml",
 	"thumb/ab/cd/ef/abcdef_tile_224.jpg",
+	"projects/pj00000000000000000000000b/2024/05/three.jpg",
+	"projects/pj00000000000000000000000b/families.yaml",
 	"exports/report.pdf",
 	"stray.jpg",
+	"db/kukatko-20260101T000000Z.dump",
 	"2024/05/",
 }
 
-// TestStoreOriginals_listsOnlyOriginals verifies the scanner yields the originals
-// and nothing else the store holds, on both backends — a sidecar, a published
-// thumbnail, a foreign object and a bare directory marker are all not originals,
-// and an orphan-import repair must never be offered any of them.
-func TestStoreOriginals_listsOnlyOriginals(t *testing.T) {
+// TestStoreOriginals_listsProjectObjects verifies the scanner yields every
+// object a project's tree owns, classified with its kind and project, and
+// nothing else the store holds, on both backends — a foreign object, a dump and a
+// bare directory marker are nobody's, and an orphan-import repair must never be
+// offered any of them.
+func TestStoreOriginals_listsProjectObjects(t *testing.T) {
 	t.Parallel()
 
+	const projectB = "pj00000000000000000000000b"
 	for _, kind := range []StoreKind{StoreDisk, StoreObject} {
 		t.Run(string(kind), func(t *testing.T) {
 			t.Parallel()
 			scanner := NewStoreOriginals(kind, fakeLister{keys: storeKeys})
-			var got []string
-			if err := scanner.ListOriginals(context.Background(), func(key string) error {
-				got = append(got, key)
+			var got []StoreEntry
+			if err := scanner.ListObjects(context.Background(), func(obj StoreEntry) error {
+				got = append(got, obj)
 				return nil
 			}); err != nil {
-				t.Fatalf("ListOriginals: %v", err)
+				t.Fatalf("ListObjects: %v", err)
 			}
-			want := []string{"2024/05/one.jpg", "2024/05/two.jpg"}
+			want := []StoreEntry{
+				{Key: "2024/05/one.jpg", Kind: storekeys.KindOriginal},
+				{Key: "2024/05/two.jpg", Kind: storekeys.KindOriginal},
+				{Key: "sidecars/2024/05/one.jpg.yaml", Kind: storekeys.KindSidecar},
+				{Key: "thumb/ab/cd/ef/abcdef_tile_224.jpg", Kind: storekeys.KindThumbnail},
+				{Key: "projects/" + projectB + "/2024/05/three.jpg", Kind: storekeys.KindOriginal, ProjectUID: projectB},
+				{Key: "projects/" + projectB + "/families.yaml", Kind: storekeys.KindFamilies, ProjectUID: projectB},
+			}
 			if !reflect.DeepEqual(got, want) {
-				t.Errorf("ListOriginals yielded %v, want %v", got, want)
+				t.Errorf("ListObjects yielded %+v, want %+v", got, want)
 			}
 			if scanner.Kind() != kind {
 				t.Errorf("Kind() = %q, want %q", scanner.Kind(), kind)
@@ -79,11 +93,11 @@ func TestStoreOriginals_emptyStore(t *testing.T) {
 
 	scanner := NewStoreOriginals(StoreObject, fakeLister{})
 	count := 0
-	if err := scanner.ListOriginals(context.Background(), func(string) error {
+	if err := scanner.ListObjects(context.Background(), func(StoreEntry) error {
 		count++
 		return nil
 	}); err != nil {
-		t.Fatalf("ListOriginals: %v", err)
+		t.Fatalf("ListObjects: %v", err)
 	}
 	if count != 0 {
 		t.Errorf("yielded %d keys, want 0", count)
@@ -98,9 +112,9 @@ func TestStoreOriginals_listingError(t *testing.T) {
 
 	boom := errors.New("listing bucket kukatko: connection refused")
 	scanner := NewStoreOriginals(StoreObject, fakeLister{keys: storeKeys, err: boom})
-	err := scanner.ListOriginals(context.Background(), func(string) error { return nil })
+	err := scanner.ListObjects(context.Background(), func(StoreEntry) error { return nil })
 	if !errors.Is(err, boom) {
-		t.Errorf("ListOriginals error = %v, want %v", err, boom)
+		t.Errorf("ListObjects error = %v, want %v", err, boom)
 	}
 }
 
@@ -112,12 +126,12 @@ func TestStoreOriginals_yieldErrorStops(t *testing.T) {
 	stop := errors.New("enough")
 	scanner := NewStoreOriginals(StoreDisk, fakeLister{keys: storeKeys})
 	seen := 0
-	err := scanner.ListOriginals(context.Background(), func(string) error {
+	err := scanner.ListObjects(context.Background(), func(StoreEntry) error {
 		seen++
 		return stop
 	})
 	if !errors.Is(err, stop) {
-		t.Errorf("ListOriginals error = %v, want %v", err, stop)
+		t.Errorf("ListObjects error = %v, want %v", err, stop)
 	}
 	if seen != 1 {
 		t.Errorf("yielded %d keys before stopping, want 1", seen)

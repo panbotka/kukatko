@@ -133,3 +133,26 @@ func (s *Store) MarkMigrated(ctx context.Context, uid string) error {
 	}
 	return nil
 }
+
+// StoragePrefixes returns the distinct storage prefixes of the instance's
+// projects. See Catalogue.
+func (s *Store) StoragePrefixes(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT DISTINCT storage_prefix FROM projects ORDER BY storage_prefix`)
+	if err != nil {
+		return nil, fmt.Errorf("storagemigrate: querying storage prefixes: %w", err)
+	}
+	defer rows.Close()
+
+	var prefixes []string
+	for rows.Next() {
+		var prefix string
+		if err := rows.Scan(&prefix); err != nil {
+			return nil, fmt.Errorf("storagemigrate: scanning a storage prefix: %w", err)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storagemigrate: iterating storage prefixes: %w", err)
+	}
+	return prefixes, nil
+}

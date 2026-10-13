@@ -37,6 +37,8 @@ type memCatalogue struct {
 	migrated map[string]bool
 	marks    []string
 	markErr  error
+	// prefixes are the projects' storage prefixes StoragePrefixes reports.
+	prefixes []string
 }
 
 // newMemCatalogue returns a catalogue holding items, none of them migrated.
@@ -86,6 +88,12 @@ func (c *memCatalogue) MarkMigrated(_ context.Context, uid string) error {
 	c.migrated[uid] = true
 	c.marks = append(c.marks, uid)
 	return nil
+}
+
+func (c *memCatalogue) StoragePrefixes(context.Context) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.prefixes), nil
 }
 
 // isMigrated reports whether uid carries the stamp.
@@ -1081,5 +1089,68 @@ func TestRun_dryRunMeasuresStreamingSegments(t *testing.T) {
 	}
 	if keys := objectKeys(t, fixture.destRoot); len(keys) != 0 {
 		t.Errorf("a dry run wrote %v to the destination", keys)
+	}
+}
+
+// TestRun_preservesProjectPrefixes moves a library of two layouts — a photo of
+// the root layout and one of a created project's projects/<uid>/ tree, each with
+// its thumbnail and sidecar, and each layout with its own genealogy export — and
+// checks every object lands under exactly the key it had, prefix and all: the
+// object store is the same layout as the disk, nothing is re-keyed, and no
+// project's objects end up in another's tree.
+func TestRun_preservesProjectPrefixes(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "projects/pj00000000000000000000000b/"
+	fixture := newFixture(t, 1)
+	content := []byte("original bytes of a created project's photo")
+	hash := hashOf(content)
+	relPath := prefix + "2024/05/photob.jpg"
+	writeFile(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(relPath)), content)
+	thumbRel, err := thumb.RelPath(prefix, hash, gridSize)
+	if err != nil {
+		t.Fatalf("thumb.RelPath: %v", err)
+	}
+	writeFile(t, filepath.Join(fixture.cacheDir, filepath.FromSlash(thumbRel)), []byte("thumbnail of photob"))
+	fixture.catalogue = newMemCatalogue(append(slices.Clone(fixture.catalogue.items), storagemigrate.Item{
+		UID: "photob", FilePath: relPath, FileHash: hash, FileSize: int64(len(content)), FileMIME: "image/jpeg",
+	})...)
+	fixture.catalogue.prefixes = []string{"", prefix}
+
+	sidecarA := writeSidecar(t, fixture.sourceRoot, "2024/05/photoa.jpg", []byte("sidecar of photoa"))
+	sidecarB := writeSidecar(t, fixture.sourceRoot, relPath, []byte("sidecar of photob"))
+	writeFile(t, filepath.Join(fixture.sourceRoot, familyexport.Key), []byte("families: [root]"))
+	writeFile(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(prefix+familyexport.Key)), []byte("families: [b]"))
+
+	cfg := fixture.config()
+	cfg.DeleteLocal = true
+	result, err := run(t, cfg)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Failures) != 0 {
+		t.Fatalf("failures = %v", result.Failures)
+	}
+
+	rootThumb, err := thumb.RelPath("", fixture.catalogue.items[0].FileHash, gridSize)
+	if err != nil {
+		t.Fatalf("thumb.RelPath: %v", err)
+	}
+	want := []string{
+		"2024/05/photoa.jpg", familyexport.Key, prefix + "2024/05/photob.jpg", prefix + familyexport.Key,
+		sidecarB, thumbRel, sidecarA, rootThumb,
+	}
+	sort.Strings(want)
+	if got := objectKeys(t, fixture.destRoot); !slices.Equal(got, want) {
+		t.Errorf("destination keys = %v, want %v", got, want)
+	}
+	if sidecarB != prefix+"sidecars/2024/05/photob.jpg.yml" || !strings.HasPrefix(thumbRel, prefix+"thumb/") {
+		t.Errorf("the created project's derived keys left its tree: sidecar %q, thumbnail %q", sidecarB, thumbRel)
+	}
+	// --delete-local emptied both trees on disk of what it moved.
+	for _, key := range []string{relPath, sidecarB, prefix + familyexport.Key, familyexport.Key} {
+		if exists(t, filepath.Join(fixture.sourceRoot, filepath.FromSlash(key))) {
+			t.Errorf("local %s survived --delete-local", key)
+		}
 	}
 }

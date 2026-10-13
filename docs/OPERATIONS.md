@@ -50,7 +50,9 @@ configuration key both here **and** into `config.example.yaml`.
   every active project, since the backfill listings it reads are per project (`cmd/kukatko/allprojects.go`); the store it
   inventories is the configured backend, the originals root under `fs` and the bucket under `r2`, and the
   summary line names the one it read; a listing it could not run prints `originals …: unknown (reason)`
-  instead of a zero, because an unreadable store must not pass for an empty one),
+  instead of a zero, because an unreadable store must not pass for an empty one; a `per project:` block
+  follows with each project's share and the `orphan project` / `legacy layout` findings — see
+  "`maintenance scan` — the per-project report" below),
   **`maintenance reset`** (the **guarded library wipe** — `internal/reset`; dry run by default, `--execute` +
   a typed database name — and, on a bucket-backed store, a typed bucket name — to delete, `--force` for a
   non-interactive run, `--orphan-sweep` for the leftovers the catalogue never referenced;
@@ -188,6 +190,10 @@ configuration key both here **and** into `config.example.yaml`.
   fails the same way when `sidecar.enabled: false`, and it has no HTTP counterpart,
   **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
   `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),
+  **`kukatko project purge <slug>`** (removes one project outright — its catalogue rows, members, invitations,
+  the project row and everything under its `projects/<uid>/` prefix — `internal/reset`; dry run by default,
+  `--yes --confirm <slug>` to execute, refuses the bootstrap project without `--allow-bootstrap` and any
+  project with an empty storage prefix; see below),
   **`kukatko push generate-keys`** (mints a fresh **VAPID key pair** for Web Push — `internal/push`
   `GenerateKeys`; reads no config, touches no DB, so it runs anywhere the binary does). It prints the two
   environment assignments `KUKATKO_PUSH_VAPID_PUBLIC_KEY=…` and `KUKATKO_PUSH_VAPID_PRIVATE_KEY=…` on
@@ -292,7 +298,10 @@ the **sidecar report** (see above), and the run duration.
 A one-off move of ~120 GB of originals (with their metadata sidecars and already-cached thumbnails)
 from the local disk to the R2 bucket. It runs for hours and may be killed and restarted at any time.
 Object keys = `file_path` from Postgres (and the parallel `sidecars/…` key for each sidecar), so
-nothing is re-keyed — the bucket gets the same layout as the disk.
+nothing is re-keyed — the bucket gets the same layout as the disk, **prefix included**: a created project's
+`projects/<uid>/…` originals, sidecars and thumbnails land under the same `projects/<uid>/` keys, and the
+`families.yaml` of the root layout and of every project's prefix (`Catalogue.StoragePrefixes`) is moved once
+per run.
 
 It needs `storage.r2.{endpoint,bucket,access_key,secret_key}` and `storage.temp_path`, otherwise
 it ends on `errStorageR2NotConfigured` (the message names the keys, never their values).
@@ -419,6 +428,23 @@ any other. Both jobs carry `project_uid` in their payload, and their dedup key i
 (`idx_jobs_nameless_dedup`, migration 0105), so scheduling the same detach or restore twice while the first
 is still queued collapses into it.
 
+### `maintenance scan` — the per-project report
+
+The scan is instance-wide, but it lists the store **once**, classifies every key with the project whose tree
+holds it (`internal/storekeys`: the root layout or `projects/<uid>/`) and reconciles it against the catalogue
+**per project**. The report (`maintenance.Report`, also `GET /api/v1/maintenance/scan`) carries, next to the
+instance-wide findings:
+
+| Field | Meaning |
+| --- | --- |
+| `projects[]` | One entry per project (deactivated ones included), in listing order: `uid`, `slug`, `name`, `storage_prefix`, `photos` (with a primary file), `files_in_db`, `originals` (in the store, attributed to it), and its share of `missing_originals`, `orphan_files` and `missing_thumbnails`. The shares add up to the instance-wide findings. |
+| `orphan_project` | Objects of any kind under `projects/<uid>/` for a uid no project has — e.g. what a purge whose store half failed left behind. Never repaired: a maintainer decides. |
+| `legacy_layout` | Root-layout objects once **no** project uses the root layout (the bootstrap project's storage has moved): an original no catalogue row points at, and — once no catalogued file lives at the root any more — every thumbnail, sidecar, segment or `families.yaml` still there. Half-way through the move a root original the catalogue still points at is the project's own, and the root's derived objects are still in use. Never repaired. |
+
+`orphan_files` (and so `repair --import-orphans`) counts only originals of a **real** project's tree; an original
+under an orphan project or in the legacy layout is reported by the two findings above instead and never offered
+for import — no project would receive it. Both findings make the report non-clean.
+
 ### `kukatko maintenance reset` — the guarded library wipe
 
 Empties this instance's library — every catalogue table and every object the configured store owns
@@ -437,10 +463,14 @@ per-user curation (`user_favorites`, `user_ratings`, `saved_searches`) and the r
 (no `CASCADE`: every FK between them is inside the list, so a future table that references one of them and was
 not classified makes Postgres refuse the statement instead of silently widening the blast radius). In the store
 it deletes the `YYYY/MM` originals, the `thumb/` thumbnails and the `sidecars/` metadata, plus the local
-thumbnail cache under `storage.cache_path`.
+thumbnail cache under `storage.cache_path` — in **both layouts**: at the root and under every `projects/<uid>/`
+tree (a catalogued key carries its prefix; `families.yaml` is named at the root and under every project's
+prefix; the `--orphan-sweep` classifies `projects/<uid>/…` exactly as the root, an orphan project's tree
+included, and a non-uid directory under `projects/` or a `db/` inside a tree stays foreign). To empty **one**
+project instead, use `kukatko project purge`.
 
-**What it never touches.** `users`, `sessions`, `api_tokens`, `announcements`, `instance_settings`,
-`audit_log` and `schema_migrations` — a wipe must not lock you out of the instance you just wiped, nor close
+**What it never touches.** `users`, `sessions`, `api_tokens`, `projects`, `project_members`, `announcements`,
+`instance_settings`, `audit_log` and `schema_migrations` — a wipe must not lock you out of the instance you just wiped, nor close
 self-service registration and throw away its shared secret, nor erase the record of the wipe.
 
 **The guards** (all on by default):
@@ -485,6 +515,39 @@ object keys come from), and if any object fails to delete the truncation is skip
 nonzero with `ErrStorageIncomplete` — the catalogue still describes the store, so the fix is to make the store
 reachable and run it again. It is deliberately **not exposed over HTTP**, for the same reason `restore db` is
 not: it pulls the tables out from under a running server.
+
+### `kukatko project purge <slug>` — remove one project
+
+The per-project wipe (`internal/reset` `Purger`): it removes **one** project outright and leaves every other one
+exactly as it was. It deletes, in one transaction with its audit entry, the project's queued/failed jobs
+(by `payload.project_uid` and by the photo/album/subject they are about — a **running** job is left to fail on
+its own), every catalogue table of `internal/reset`'s list that carries `project_id` (ordered so a table is
+deleted before the tables it references — the order is read from the live foreign keys; child rows such as
+files, markers, album members and comments go with their parent through `ON DELETE CASCADE`), then
+`project_members` and `project_invites`, then the project row (which cascades its settings and announcement).
+Only once that has committed does it delete **every object under the prefix** and the project's tree in the
+local cache (`storage.cache_path`/`projects/<uid>/`). The accounts stay; the audit trail stays and gains a
+`project.purge` entry (target = the project, `project_id` = the project, details: operator, slug, name, prefix,
+rows per table, objects, bytes).
+
+| Guard | Behaviour |
+| --- | --- |
+| Dry run is the default | Without `--yes` it prints **on stderr** the row count per table (in deletion order) and the number and size of the objects under the prefix, and deletes nothing. |
+| Typed slug | `--yes` requires `--confirm <slug>` (the slug typed again, exactly); without it the command refuses before it opens anything, a mismatch → `ErrPurgeNotConfirmed`. |
+| Bootstrap | The bootstrap project (`v`) is refused (`ErrPurgeBootstrap`) unless `--allow-bootstrap`. |
+| Empty prefix | A project whose `storage_prefix` is empty lives in the store root — its "prefix" would be the whole store — and is refused outright (`ErrPurgeRootPrefix`), `--allow-bootstrap` or not. |
+| Schema drift | The same table classification as `maintenance reset`: an unclassified table aborts before anything is deleted. |
+| Report | After the database half commits, a JSON report (`reset.PurgeResult`: the plan, the time, the store outcome) is written to `--report <path>`, by default `project-purge-<slug>-<UTC time>.json` in the current directory — also when the store half fails. |
+
+```bash
+kukatko project purge b-test                              # dry run: what would be deleted (stderr)
+kukatko project purge b-test --yes --confirm b-test       # purge, write the report
+kukatko project purge v --allow-bootstrap                 # still refused while v lives in the root layout
+```
+
+Deactivate the project first so nobody uploads into it while it goes. If the store half fails (exit nonzero, the
+report lists the failures), the database is already gone: the leftover objects are what the next
+`maintenance scan` reports as `orphan_project`.
 
 ### Upgrade runbook — multi-tenancy
 

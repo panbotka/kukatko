@@ -19,6 +19,7 @@ import {
   purgeAuditLog,
   runMaintenanceRepair,
   type Finding,
+  type ProjectScanReport,
   type RepairOptions,
   type RepairResult,
   type ScanReport,
@@ -39,6 +40,8 @@ const FINDING_KEYS = [
   'missing_places',
   'unscheduled_steps',
   'impossible_dates',
+  'orphan_project',
+  'legacy_layout',
 ] as const
 
 /** A finding key, narrowing {@link ScanReport} access to the Finding fields only. */
@@ -82,6 +85,10 @@ const REPAIR_FOR_FINDING: Record<FindingKey, RepairKey | null> = {
   missing_places: 'places',
   unscheduled_steps: 'unscheduled_steps',
   impossible_dates: 'impossible_dates',
+  // Neither has a repair: whose an orphaned tree or a leftover of the old layout
+  // is, and whether it is rubbish, is a maintainer's decision.
+  orphan_project: null,
+  legacy_layout: null,
 }
 
 /** Lifecycle of the integrity-scan request. */
@@ -171,14 +178,7 @@ function ScanResult({ report }: { report: ScanReport }) {
       key: 'count',
       header: t('maintenance.findings.count'),
       cellStyle: { width: '6rem' },
-      cell: (key) => {
-        const { count } = findingOf(report, key)
-        return (
-          <Badge bg={count > 0 ? 'warning' : 'secondary'} text="dark">
-            {count}
-          </Badge>
-        )
-      },
+      cell: (key) => <CountBadge count={findingOf(report, key).count} />,
     },
     {
       key: 'samples',
@@ -216,7 +216,76 @@ function ScanResult({ report }: { report: ScanReport }) {
           hideHeader
         />
       )}
+      {report.projects.length > 0 && <ProjectBreakdown projects={report.projects} />}
     </>
+  )
+}
+
+/** A count rendered the way the findings table renders one: amber when non-zero. */
+function CountBadge({ count }: { count: number }) {
+  return (
+    <Badge bg={count > 0 ? 'warning' : 'secondary'} text="dark">
+      {count}
+    </Badge>
+  )
+}
+
+/**
+ * The per-project breakdown of a scan: for every project of the instance, its
+ * photos and the originals of its tree, and its share of the three store-facing
+ * findings. The instance-wide table above adds these up; this one says whose
+ * library a drift is in. Like the findings table it reflows into cards on a
+ * phone.
+ */
+function ProjectBreakdown({ projects }: { projects: ProjectScanReport[] }) {
+  const { t } = useTranslation()
+  const columns: RecordColumn<ProjectScanReport>[] = [
+    {
+      key: 'project',
+      header: t('maintenance.projects.project'),
+      cell: (p) => (
+        <>
+          <span className="fw-semibold">{p.name !== '' ? p.name : p.slug}</span>
+          <div className="fw-normal text-secondary small font-monospace text-break">
+            {p.storage_prefix !== '' ? p.storage_prefix : t('maintenance.projects.rootLayout')}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: 'photos',
+      header: t('maintenance.projects.photos'),
+      cell: (p) => p.photos,
+    },
+    {
+      key: 'originals',
+      header: t('maintenance.projects.originals'),
+      cell: (p) => p.originals,
+    },
+    {
+      key: 'missing_originals',
+      header: t('maintenance.findings.missing_originals'),
+      cell: (p) => <CountBadge count={p.missing_originals.count} />,
+    },
+    {
+      key: 'orphan_files',
+      header: t('maintenance.findings.orphan_files'),
+      cell: (p) => <CountBadge count={p.orphan_files.count} />,
+    },
+    {
+      key: 'missing_thumbnails',
+      header: t('maintenance.findings.missing_thumbnails'),
+      cell: (p) => <CountBadge count={p.missing_thumbnails.count} />,
+    },
+  ]
+  return (
+    <section aria-labelledby="maintenance-projects-title" className="mt-3">
+      <h3 id="maintenance-projects-title" className="h6">
+        {t('maintenance.projects.title')}
+      </h3>
+      <p className="text-secondary small">{t('maintenance.projects.hint')}</p>
+      <RecordTable records={projects} columns={columns} rowKey={(p) => p.uid} size="sm" />
+    </section>
   )
 }
 

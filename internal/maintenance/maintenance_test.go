@@ -11,6 +11,8 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -21,6 +23,7 @@ type fakePhotos struct {
 	count        int
 	primary      []photos.PrimaryFile
 	filePaths    []string
+	fileProjects map[string]string
 	missingPhash []string
 	// mismatches are the transposed-dimension rows the scan reports and the
 	// dimension repair rewrites; repaired records the uids actually written.
@@ -44,10 +47,33 @@ type fakePhotos struct {
 
 func (f *fakePhotos) CountPhotos(context.Context) (int, error) { return f.count, nil }
 func (f *fakePhotos) CountVideos(context.Context) (int, error) { return f.videos, nil }
+
+// ListPrimaryFiles returns the configured primary files, a file without a
+// project being the bootstrap project's.
 func (f *fakePhotos) ListPrimaryFiles(context.Context) ([]photos.PrimaryFile, error) {
-	return f.primary, nil
+	out := make([]photos.PrimaryFile, len(f.primary))
+	for i, pf := range f.primary {
+		if pf.ProjectUID == "" {
+			pf.ProjectUID = project.BootstrapUID
+		}
+		out[i] = pf
+	}
+	return out, nil
 }
-func (f *fakePhotos) ListFilePaths(context.Context) ([]string, error) { return f.filePaths, nil }
+
+// ListCataloguedFiles returns the configured file paths, each in the project
+// fileProjects names for it and otherwise in the bootstrap project.
+func (f *fakePhotos) ListCataloguedFiles(context.Context) ([]photos.CataloguedFile, error) {
+	out := make([]photos.CataloguedFile, len(f.filePaths))
+	for i, path := range f.filePaths {
+		owner := f.fileProjects[path]
+		if owner == "" {
+			owner = project.BootstrapUID
+		}
+		out[i] = photos.CataloguedFile{ProjectUID: owner, FilePath: path}
+	}
+	return out, nil
+}
 func (f *fakePhotos) ListPhotosMissingPhash(context.Context, int) ([]string, error) {
 	return f.missingPhash, nil
 }
@@ -150,8 +176,10 @@ func (f fakeOriginals) Stat(_ context.Context, relPath string) (os.FileInfo, err
 	return nil, os.ErrNotExist
 }
 
-// fakeStore lists a fixed set of originals as the configured store kind, or
-// fails the listing when err is set.
+// fakeStore lists a fixed set of keys as the configured store kind, or fails the
+// listing when err is set. A key in one of Kukátko's layouts is classified the
+// way the real scanner classifies it; any other key (the short names the
+// fixtures use) stands for a root-layout original.
 type fakeStore struct {
 	kind StoreKind
 	keys []string
@@ -165,12 +193,16 @@ func (f fakeStore) Kind() StoreKind {
 	return f.kind
 }
 
-func (f fakeStore) ListOriginals(_ context.Context, yield func(key string) error) error {
+func (f fakeStore) ListObjects(_ context.Context, yield func(StoreEntry) error) error {
 	if f.err != nil {
 		return f.err
 	}
 	for _, key := range f.keys {
-		if err := yield(key); err != nil {
+		obj, ok := projectObject(key)
+		if !ok {
+			obj = StoreEntry{Key: key, Kind: storekeys.KindOriginal}
+		}
+		if err := yield(obj); err != nil {
 			return err
 		}
 	}

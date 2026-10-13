@@ -38,6 +38,41 @@ func (i StoreInventory) Listed() bool {
 	return i.Error == ""
 }
 
+// ProjectReport is one project's share of an integrity scan: the findings that
+// reconcile its catalogue against the objects of its own tree in the store.
+//
+// The findings here are the same objects the instance-wide ones in Report count,
+// split by project — they add up to those — so a maintainer can see whose library
+// a drift is in without reading the keys.
+type ProjectReport struct {
+	// UID is the project's uid.
+	UID string `json:"uid"`
+	// Slug is the project's URL slug.
+	Slug string `json:"slug"`
+	// Name is the project's display name.
+	Name string `json:"name"`
+	// StoragePrefix is the project's current storage prefix: "" for the root
+	// layout, projects/<uid>/ otherwise.
+	StoragePrefix string `json:"storage_prefix"`
+	// Photos is the number of the project's photos that have a primary file
+	// (archived ones included).
+	Photos int `json:"photos"`
+	// FilesInDB is the number of files the project's catalogue records.
+	FilesInDB int `json:"files_in_db"`
+	// Originals is the number of originals the store holds that belong to the
+	// project: those in its tree, and — for the project half-way through its
+	// storage move — the root-layout originals its catalogue still points at. It
+	// is zero when the store listing failed (see Report.Store).
+	Originals int `json:"originals"`
+	// MissingOriginals are the project's photos whose primary original is absent.
+	MissingOriginals Finding `json:"missing_originals"`
+	// OrphanFiles are originals in the project's tree with no catalogue row.
+	OrphanFiles Finding `json:"orphan_files"`
+	// MissingThumbnails are the project's photos whose representative thumbnail
+	// is not cached.
+	MissingThumbnails Finding `json:"missing_thumbnails"`
+}
+
 // Report is the result of an integrity scan: the catalogue/store totals plus one
 // Finding per problem class. A library with no problems has a zero Count in every
 // Finding.
@@ -50,9 +85,29 @@ type Report struct {
 	// on a filesystem instance, the bucket on an object-store one — together with
 	// the reason it could not be read, if it could not.
 	Store StoreInventory `json:"store"`
+	// Projects is the per-project breakdown of the store-facing findings, one
+	// entry per project of the instance in listing order. Its findings add up to
+	// MissingOriginals, OrphanFiles and MissingThumbnails.
+	Projects []ProjectReport `json:"projects"`
+	// OrphanProject are objects under projects/<uid>/ for a uid no project has:
+	// the tree of a project whose row is gone (a purge interrupted between the
+	// database and the store, or a foreign copy). Sampled by key; every object of
+	// such a tree counts, whatever its kind. Nothing repairs them: a maintainer
+	// decides whether the tree is rubbish or a library to restore.
+	OrphanProject Finding `json:"orphan_project"`
+	// LegacyLayout are root-layout objects left behind once no project uses the
+	// root layout any more — after the bootstrap project's storage move: an
+	// original no catalogue row points at, and, once no catalogued file lives at
+	// the root, every thumbnail, sidecar, segment or genealogy export still there.
+	// Sampled by key. Like OrphanProject it is reported and never repaired; a
+	// maintainer decides.
+	LegacyLayout Finding `json:"legacy_layout"`
 	// MissingOriginals are photos whose primary original is absent on disk.
 	MissingOriginals Finding `json:"missing_originals"`
-	// OrphanFiles are originals on disk with no catalogue row.
+	// OrphanFiles are originals in some project's tree with no catalogue row —
+	// the ones the orphan-import repair offers to catalogue. An original under an
+	// orphan project's tree or left in the legacy layout is not one of them: it is
+	// counted by OrphanProject or LegacyLayout instead.
 	OrphanFiles Finding `json:"orphan_files"`
 	// MissingThumbnails are photos whose representative thumbnail is not cached.
 	MissingThumbnails Finding `json:"missing_thumbnails"`
@@ -151,6 +206,7 @@ func (r Report) findings() []Finding {
 		r.MissingFaces, r.MissingPhashes, r.MissingPlaces, r.TransposedDimensions,
 		r.TransposedFaceBoxes, r.DuplicateFaceMarkers, r.SidewaysFaceDetections,
 		r.ImpossibleDates, r.MissingRenditions, r.OrphanSegments.Finding, r.UnscheduledSteps,
+		r.OrphanProject, r.LegacyLayout,
 	}
 }
 

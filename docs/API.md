@@ -2754,7 +2754,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   originals in — `{kind,originals,error?}`, `kind` being `disk` (the local originals root) or `object` (the
   bucket) — so an `r2` instance reports what the bucket holds instead of the empty local root. `error` is set
   when the listing failed; `originals` is then 0 and means "unknown", not "empty", and the UI shows the reason
-  instead of a clean verdict.
+  instead of a clean verdict. **Per project** (the scan lists the store once and reconciles it per project):
+  `projects` is one entry per project, deactivated ones included —
+  `{uid,slug,name,storage_prefix,photos,files_in_db,originals,missing_originals,orphan_files,missing_thumbnails}`,
+  whose findings add up to the instance-wide ones — and two findings belong to no project: `orphan_project`
+  (objects under `projects/<uid>/` for a project that does not exist) and `legacy_layout` (root-layout objects
+  once no project uses the root layout). Neither has a repair; both make the report non-clean, and
+  `orphan_files` / `import_orphans` never include them.
   `POST /maintenance/repair`
   `{thumbnails,embeddings,faces,phashes,import_orphans,places,dimensions,face_markers,sideways_faces,`
   `impossible_dates,missing_renditions,delete_orphan_segments,unscheduled_steps}`

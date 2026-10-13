@@ -249,6 +249,17 @@ shared library is tidied by more than one person.
   registration is closed — and land in the project. Registering through an invitation grants editor
   at most; an administrator invitation makes an administrator only of somebody who already has an
   account.
+- **The maintenance check knows whose files it is looking at.** The check on the maintenance page
+  (and `kukatko maintenance scan`) now splits its findings by project — *Podle projektů* lists every
+  project with its photos, the originals it holds in storage and its share of missing originals,
+  unknown files and missing thumbnails. Two new rows catch what belongs to nobody: files of a project
+  that no longer exists, and files left in the old shared layout after a project moved into its own
+  folder; both are for the system administrator to decide about, nothing repairs them on its own.
+- **A project can be removed for good — from the command line only.** `kukatko project purge <slug>`
+  deletes one project with its photos, people, albums, members, invitations and every stored file
+  under its folder, and leaves the other projects untouched. It only reports what it would delete
+  until it is run with `--yes --confirm <slug>`, it refuses the first project of the instance unless
+  told otherwise, and it writes a report of what it removed.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

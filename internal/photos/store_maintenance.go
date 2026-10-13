@@ -9,10 +9,13 @@ import (
 // library maintenance scan: the owning photo's uid plus the storage key
 // (file_path, a slash-separated path relative to the originals root) and SHA256
 // content hash needed to check the original's presence on disk and locate its
-// cached thumbnails.
+// cached thumbnails — and the project the photo belongs to, so the scan can
+// report per project.
 type PrimaryFile struct {
 	// PhotoUID is the uid of the owning photo.
 	PhotoUID string `json:"photo_uid"`
+	// ProjectUID is the uid of the project the owning photo belongs to.
+	ProjectUID string `json:"project_uid"`
 	// FilePath is the storage key of the primary original file.
 	FilePath string `json:"file_path"`
 	// FileHash is the lowercase hex SHA256 digest of the original, which keys the
@@ -25,11 +28,15 @@ type PrimaryFile struct {
 // as a PrimaryFile. It backs the maintenance integrity scan, which stats each
 // original on disk and checks each photo's thumbnails. The slice is empty (not
 // nil) when there are no photos.
+//
+// It deliberately reads every project: the scan is instance-wide and groups the
+// rows by their ProjectUID itself.
 func (s *Store) ListPrimaryFiles(ctx context.Context) ([]PrimaryFile, error) {
-	const q = `SELECT photo_uid, file_path, file_hash
-		FROM photo_files
-		WHERE is_primary = true
-		ORDER BY photo_uid`
+	const q = `SELECT f.photo_uid, p.project_id, f.file_path, f.file_hash
+		FROM photo_files f
+		JOIN photos p ON p.uid = f.photo_uid
+		WHERE f.is_primary = true
+		ORDER BY f.photo_uid`
 	rows, err := s.pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying primary files: %w", err)
@@ -39,7 +46,7 @@ func (s *Store) ListPrimaryFiles(ctx context.Context) ([]PrimaryFile, error) {
 	files := make([]PrimaryFile, 0)
 	for rows.Next() {
 		var f PrimaryFile
-		if err := rows.Scan(&f.PhotoUID, &f.FilePath, &f.FileHash); err != nil {
+		if err := rows.Scan(&f.PhotoUID, &f.ProjectUID, &f.FilePath, &f.FileHash); err != nil {
 			return nil, fmt.Errorf("photos: scanning primary file: %w", err)
 		}
 		files = append(files, f)

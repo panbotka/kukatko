@@ -490,7 +490,8 @@ func (s *Service) plan(ctx context.Context, opts Options) (StoragePlan, error) {
 // catalogueFiles reads the storage key of every file the catalogue references and
 // the storage prefix and content hash every thumbnail set is keyed by, from both
 // the photo rows and the per-file rows — a stacked RAW sibling lives only in the
-// second. A thumbnail set's prefix is that of its own original's key.
+// second. A thumbnail set's prefix is that of its own original's key. It also
+// reads every project's storage prefix, under which a genealogy export may sit.
 func (s *Service) catalogueFiles(ctx context.Context) (catalogueFiles, error) {
 	const pathQuery = `SELECT file_path FROM photos WHERE file_path <> ''
 		UNION SELECT file_path FROM photo_files WHERE file_path <> ''`
@@ -505,7 +506,11 @@ func (s *Service) catalogueFiles(ctx context.Context) (catalogueFiles, error) {
 	if err != nil {
 		return catalogueFiles{}, fmt.Errorf("reset: reading catalogued file hashes: %w", err)
 	}
-	return catalogueFiles{paths: paths, hashes: hashes}, nil
+	prefixes, err := queryStrings(ctx, s.pool, `SELECT DISTINCT storage_prefix FROM projects`)
+	if err != nil {
+		return catalogueFiles{}, fmt.Errorf("reset: reading the projects' storage prefixes: %w", err)
+	}
+	return catalogueFiles{paths: paths, hashes: hashes, prefixes: prefixes}, nil
 }
 
 // queryThumbSets runs a (file path, file hash) query and collects the distinct

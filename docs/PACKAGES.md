@@ -673,8 +673,11 @@ to `## Package map` in `CLAUDE.md`.
   `ListArchivedUIDs(before,limit,offset)` (uids of archived photos oldest-archived-first,
   `before` nil = all / non-nil = only `archived_at <= before` retention cutoff — the basis of trash/purge),
   `CountPhotos()` (total photos incl. archived) + `ListFilePaths()` (all `photo_files.file_path`)
-  — the basis of the post-restore integrity report (`backup.PhotoCatalog`),
-  maintenance listers (`store_maintenance.go`): `ListPrimaryFiles()`,
+  — the basis of the post-restore integrity report (`backup.PhotoCatalog`) — and `ListCataloguedFiles()` (every
+  `photo_files` row as `CataloguedFile{ProjectUID,FilePath}`, ordered by key, every project: the instance-wide
+  maintenance scan groups by project itself),
+  maintenance listers (`store_maintenance.go`): `ListPrimaryFiles()` (`PrimaryFile{PhotoUID,ProjectUID,FilePath,
+  FileHash}`, every project, for the same reason),
   `ListPhotosMissingPhash(limit)` (uids of non-archived photos without a pHash — the basis of thumbnail
   backfill/repair), `ListPhotosMissingFileMetadata(limit)` (uids of non-archived photos with
   `metadata_extracted_at IS NULL`, i.e. whose **file has never been read** — the basis of metadata
@@ -865,7 +868,9 @@ to `## Package map` in `CLAUDE.md`.
   catalogue's rendition rows are not touched by a migration, so segments left behind would turn every video
   into a playlist of 404s). `KindFamilies` is the one kind `planKind` **declines**: the genealogy export
   belongs to the library rather than to a photo, so planning it per photo would upload the same file once
-  per photo in the archive. `planLibrary` moves it instead, once per run and **after** the walk — the
+  per photo in the archive. `planLibrary` moves it instead — the root layout's `families.yaml` and the one at
+  the root of every project's tree, `Catalogue.StoragePrefixes()` (`SELECT DISTINCT storage_prefix FROM
+  projects`) naming the prefixes, every key moved verbatim like an original's — once per run and **after** the walk — the
   running server rewrites it whenever a relation changes, so the end of the run is the smallest window in
   which an edit lands on a disk the migration has already emptied — and a failure there aborts with an error
   rather than joining the per-photo failures: there is one such object and no later photo to retry it beside.
@@ -917,8 +922,8 @@ to `## Package map` in `CLAUDE.md`.
   foreign. **Why it exists:** the streaming segments were added to the store and two whole-store operations
   (the backup and the storage migration) went on not knowing about them for four commits. Consumers —
   `internal/backup` (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/reset`
-  (`classifyKey`) and `internal/maintenance` (`isOriginalKey`) — switch over or match on `Kind`, the first
-  three **without a default clause**, so a new member fails the `exhaustive` linter in each of
+  (`classifyKey`) and `internal/maintenance` (`projectObject`) — switch over or match on `Kind`, all four
+  **without a default clause**, so a new member fails the `exhaustive` linter in each of
   them until that operation says what it does about the new prefix; per-kind tests in each package back this
   up with a length check against `Kinds()`),
   `internal/mediaurl/`
@@ -4806,7 +4811,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   as if each segment were an original: 470 MB of regenerable data against 1.9 GB of video originals on
   staging, growing with every encode); `db/` and `.tmp/` are not library content; a **foreign** object *is*
   backed up, since its value is not this package's to judge. `skippedDir` lets the disk walk turn away at
-  the root of a derived prefix instead of statting everything inside it;
+  the root of a derived prefix instead of statting everything inside it. Every verdict holds in **both layouts**
+  (`storekeys.Classify` strips a `projects/<uid>/` prefix first): a created project's originals, sidecars and
+  `families.yaml` travel, its `thumb/` and `hls/` are skipped whole by the walk, and a `db/` or `.tmp/` inside a
+  project's tree is foreign — so it is backed up. `reconciledKey` decides what the post-restore `Verify` holds
+  against the catalogue's file rows: originals (either layout) and foreign files, **never** sidecars or
+  genealogy exports, which no file row names (they used to come back as "extra on disk", one per photo);
   **`DiskOriginals`** (`NewDiskOriginals(root)`, backend `fs`) = a walk of the storage (skipping the derived and
   temporary prefixes whole, confining keys against traversal), `CopyTo` streams the file up via `Put` —
   **it also serves the restore** through `Stat(key)` (exists + size, for skip-existing) and `Write(key,r)`
@@ -4859,12 +4869,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   it reveals drift between the catalogue and the originals the store holds and fills in/regenerates derived data; it mirrors
   the previous system's `cache build-thumbs`, but is broader and safer (**it never deletes originals** — that is the
   job of the trash/purge), idempotent, with repairs going through the persistent job queue; all behind the interfaces
-  `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListFilePaths`/`ListPhotosMissingPhash`/
+  `PhotoCatalog` (`CountPhotos`/`ListPrimaryFiles`/`ListCataloguedFiles`/`ListPhotosMissingPhash`/
   `ListDimensionMismatches`/`RepairDimensions`/`ListImpossibleTakenAt`/`ClearImpossibleTakenAtAudited`,
   satisfied by `photos.Store`)/`VectorCatalog` (`ListPhotosMissingEmbedding`/`ListPhotosMissingFaces`/
   `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`/`ListSidewaysDetections`/
   `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`StoreScanner`
-  (`Kind`+`ListOriginals`, satisfied by `NewStoreOriginals(kind, storage.KeyLister)`)/
+  (`Kind`+`ListObjects`, yielding every object a project's tree owns as `StoreEntry{Key,Kind,ProjectUID}`;
+  satisfied by `NewStoreOriginals(kind, storage.KeyLister)`)/`ProjectLister` (`List`, `project.Store`; optional,
+  **nil = one library, the bootstrap project in the root layout**)/
   `ThumbChecker` (`HasThumbnail(filePath,fileHash)` — the cache entry under the prefix of the original at
   `filePath` —, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`SidecarScheduler`
@@ -4880,7 +4892,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   = `video.hls.enabled: false`**, which reports nothing and asks the store nothing) →
   unit-testable with fakes without DB/disk/queue; `Service` = `New(Config{...,SampleLimit})`
   (panics on a nil mandatory collaborator; default `SampleLimit` 20); **`Scan(ctx)`** (read-only) returns
-  `Report{Photos,FilesInDB,Store,MissingOriginals,OrphanFiles,MissingThumbnails,
+  `Report{Photos,FilesInDB,Store,Projects,OrphanProject,LegacyLayout,MissingOriginals,OrphanFiles,MissingThumbnails,
   MissingEmbeddings,MissingFaces,MissingPhashes,MissingPlaces,TransposedDimensions,TransposedFaceBoxes,
   DuplicateFaceMarkers,SidewaysFaceDetections,ImpossibleDates,MissingRenditions,OrphanSegments,
   UnscheduledSteps}` — each class is a
@@ -4898,7 +4910,17 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   bucket of twenty thousand objects costs no more memory than a small one. A **failed listing is carried, not
   returned** (`Error`, `Originals` stays 0): the rest of the scan is still reported, but `Clean()` is false and
   the UI shows the failure instead of a green verdict — a store nobody could read must not pass for an empty one.
-  The orphan *import* does abort on that failure, since importing nothing is not success;
+  The orphan *import* does abort on that failure, since importing nothing is not success.
+  **Per project** (`projects.go`): the store is listed **once** and every object attributed by a `reconciler` —
+  a `projects/<uid>/` key to that project, or to `OrphanProject` when no such project exists; a root-layout key
+  to the project still using the root layout (`StoragePrefix == ""`); once none does (the bootstrap project's
+  storage moved), a root original to the project whose catalogue row still points at it (the move is per photo)
+  and otherwise to `LegacyLayout`, and a root derived object is "in use" while any catalogued file lives at the
+  root and `LegacyLayout` once none does. A `projectLedger` folds the attributed originals, orphans, missing
+  originals and missing thumbnails into one `ProjectReport{UID,Slug,Name,StoragePrefix,Photos,FilesInDB,Originals,
+  MissingOriginals,OrphanFiles,MissingThumbnails}` per project (deactivated ones included), whose findings add up
+  to the instance-wide ones. `OrphanFiles` and the orphan import cover only the originals of a **real** project's
+  tree; `OrphanProject`/`LegacyLayout` are reported, never repaired, and make `Clean()` false;
   **`Repair(ctx,RepairOptions{Thumbnails,Embeddings,Faces,Phashes,ImportOrphans,Places,Dimensions,FaceMarkers,
   SidewaysFaces,ImpossibleDates,MissingRenditions,DeleteOrphanSegments,UnscheduledSteps},meta audit.Meta)`**
   (each opt-in,
@@ -5059,7 +5081,24 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   sweep. `Options{Execute,Confirm,ConfirmBucket,OrphanSweep,Concurrency,ActorUID,Operator}` — a CLI run has no session, so
   `ActorUID` stays empty (a system action) and `Operator` carries `$USER@$HOSTNAME` into the entry's details
   together with the target, the per-table row counts and the object counts. Deliberately **no HTTP surface**,
-  for the reason `restore db` has none: it pulls the tables out from under a running server), `internal/thumbjob/`
+  for the reason `restore db` has none: it pulls the tables out from under a running server.
+  **Both layouts:** `catalogueFiles` also reads every project's `storage_prefix`, and `objectKeys` names
+  `families.yaml` at the root, under every project prefix and under the prefix of every catalogued file
+  (`familyPrefixes`, malformed prefixes skipped); a catalogued key carries its prefix, a thumbnail set the prefix
+  of its own original, and the sweep classifies `projects/<uid>/…` exactly as the root.
+  **`kukatko project purge`** (`purge.go`): `NewPurger(PurgeConfig{Pool,Store PurgeStore,CacheDir,Concurrency})`
+  (`PurgeStore` = `ObjectStore` + `storage.SizedKeyLister`) removes **one** project. `Plan(ctx,PurgeOptions)`
+  resolves the slug, refuses the bootstrap project without `AllowBootstrap` (`ErrPurgeBootstrap`) and any project
+  with an empty prefix (`ErrPurgeRootPrefix` — its "prefix" is the whole store), and counts `PurgePlan{Project,
+  Tables,Objects,Bytes}`: the rows of `jobs` (payload `project_uid`, or the photo/album/subject it is about;
+  running ones excluded), of every `catalogueTables` entry that carries `project_id` (filtered against the live
+  schema, `classifySchema` first; ordered by `referencingFirst` over the live foreign keys, so a table goes before
+  the tables it references), of `project_members` and `project_invites`; the objects/bytes under the prefix
+  from one `KeySizes` listing. `Execute(ctx,opts,plan)` (`ErrPurgeNotExecuted` without `Execute`,
+  `ErrPurgeNotConfirmed` unless `Confirm` is the slug) deletes those rows, then the project row (cascading its
+  settings and announcement), and writes the `project.purge` audit entry (`ProjectUID` = the project) **in one
+  transaction**; only then every object under the prefix (`deleteKeys`) and `<cache_dir>/projects/<uid>`. Returns
+  `PurgeResult{Plan,PurgedAt,Storage,CacheRemoved}`, the CLI's JSON report), `internal/thumbjob/`
   (the worker handler of the `thumbnail` job — the **repair path** for maintenance: it regenerates a photo's derived
   data from the original, the **thumbnails** (`Thumbnailer.GenerateAll`, cached ones skipped), the **pHash/dHash** (only when
   they are missing, `phash.Compute` over the decoded original) and the **blurred placeholder**

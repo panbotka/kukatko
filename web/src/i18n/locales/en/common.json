@@ -3302,6 +3302,8 @@
       "missing_places": "Photos with coordinates but no place",
       "unscheduled_steps": "Processing nobody has scheduled",
       "impossible_dates": "Photos with an impossible capture date",
+      "orphan_project": "Files of a project that no longer exists",
+      "legacy_layout": "Files left in the old layout",
       "problem": "What drifted",
       "count": "How many",
       "samples": "Examples",
@@ -3314,8 +3316,18 @@
         "missing_phashes": "The photo has no short fingerprint of how it looks; that is what near-identical copies are found by.",
         "missing_places": "The photo knows where it was taken but has no place name yet, so it is missing from the places overview. It is filled in in the background; turning coordinates into a name costs credits, so it runs in batches and the rest waits.",
         "unscheduled_steps": "The photo is missing a processing step (thumbnails, photo content, faces, text…) and nothing has it planned — it will never be filled in on its own. An upload interrupted after the file was already stored leaves exactly this behind. The examples read photo/step. The “Schedule the missing processing” repair fixes it. Missing places are not counted here; they have their own row above.",
-        "impossible_dates": "The photo claims a year no photograph can have been taken in — before 1826, or further ahead than next year. It comes from reading a date out of a Facebook or WhatsApp download name, where the long number is only an identifier. Such a photo sorts ahead of the whole library and stretches the year axis. The “Clear impossible capture dates” repair withdraws the date — the photo then has none and you find it with dated:no."
+        "impossible_dates": "The photo claims a year no photograph can have been taken in — before 1826, or further ahead than next year. It comes from reading a date out of a Facebook or WhatsApp download name, where the long number is only an identifier. Such a photo sorts ahead of the whole library and stretches the year axis. The “Clear impossible capture dates” repair withdraws the date — the photo then has none and you find it with dated:no.",
+        "orphan_project": "The file sits in storage under projects/<id>/ for a project the instance does not have — typically what a deleted project left behind when its files could not all be removed. Nothing repairs it: decide whether it is rubbish or a library to restore.",
+        "legacy_layout": "The file sits in the old shared layout at the root of storage although no project uses that layout any more — a leftover of moving a project into its own folder. Nothing repairs it: decide whether it can go."
       }
+    },
+    "projects": {
+      "title": "By project",
+      "hint": "The same findings, split by the project whose library they are in.",
+      "project": "Project",
+      "rootLayout": "root layout",
+      "photos": "Photos",
+      "originals": "Originals in storage"
     },
     "repair": {
       "title": "What to repair",

@@ -49,6 +49,9 @@ func TestListPrimaryFiles(t *testing.T) {
 	if got.PhotoUID != photoA.UID || got.FilePath != "2023/06/prim-a.jpg" || got.FileHash != "prim-a" {
 		t.Errorf("primary file = %+v, want uid %s / 2023/06/prim-a.jpg / prim-a", got, photoA.UID)
 	}
+	if got.ProjectUID != project.BootstrapUID {
+		t.Errorf("primary file project = %q, want %q", got.ProjectUID, project.BootstrapUID)
+	}
 }
 
 // TestListPhotosMissingPhash verifies only non-archived photos without a

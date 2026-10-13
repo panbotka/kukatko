@@ -522,8 +522,12 @@ func (s *Service) repairPlaces(ctx context.Context, opts RepairOptions, res *Rep
 }
 
 // repairOrphans catalogues every orphan original in the store through the upload
-// pipeline when selected, tallying created/duplicate/failed without aborting on a
-// single file's failure. It returns ErrOrphanImportUnavailable when no importer
+// pipeline when selected — the originals of a project's tree that no catalogue
+// row claims, exactly the scan's OrphanFiles. An original under an orphan
+// project's tree or left in the legacy layout is not offered: no project would
+// receive it, and which one should is a maintainer's decision, not this repair's.
+// It tallies created/duplicate/failed without aborting on a single file's
+// failure. It returns ErrOrphanImportUnavailable when no importer
 // is configured.
 //
 // Unlike the scan, a failed store listing aborts here: a repair that imported
@@ -535,15 +539,19 @@ func (s *Service) repairOrphans(ctx context.Context, opts RepairOptions, res *Re
 	if s.importer == nil {
 		return ErrOrphanImportUnavailable
 	}
-	dbPaths, err := s.photos.ListFilePaths(ctx)
-	if err != nil {
-		return fmt.Errorf("maintenance: listing catalogued files: %w", err)
-	}
-	orphans, _, err := s.storeOrphans(ctx, keySet(dbPaths))
+	projects, err := s.listProjects(ctx)
 	if err != nil {
 		return err
 	}
-	for _, key := range orphans {
+	files, err := s.photos.ListCataloguedFiles(ctx)
+	if err != nil {
+		return fmt.Errorf("maintenance: listing catalogued files: %w", err)
+	}
+	rec, err := s.reconcileStore(ctx, newProjectLedger(projects, s.sampleLimit), files)
+	if err != nil {
+		return err
+	}
+	for _, key := range rec.orphanKeys() {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("maintenance: orphan import interrupted: %w", ctxErr)
 		}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 
 	"github.com/panbotka/kukatko/internal/familyexport"
 	"github.com/panbotka/kukatko/internal/hls"
@@ -196,32 +197,72 @@ func (m *Migrator) planSidecar(ctx context.Context, item Item) ([]object, error)
 	}}, nil
 }
 
-// planLibrary returns the objects that belong to the library as a whole rather
+// planLibrary returns the objects that belong to a project as a whole rather
 // than to any photo: today only the genealogy export, families.yaml at the root
-// of the store.
+// of each project's tree — the store root for the root layout,
+// projects/<uid>/families.yaml for every other project. The key is moved
+// verbatim, prefix and all, exactly as an original's is.
 //
 // It is planned separately from every photo and moved once per run. Like a
 // sidecar it is disaster-recovery data rather than a regenerable artifact — it
 // is the only copy of the family tree outside the database — so it travels with
-// the originals instead of being left on the emptied disk. A library that has
+// the originals instead of being left on the emptied disk. A project that has
 // never written one has nothing to move, which is not an error.
 func (m *Migrator) planLibrary(ctx context.Context) ([]object, error) {
-	key := familyexport.Key
+	prefixes, err := m.libraryPrefixes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var objects []object
+	for _, prefix := range prefixes {
+		obj, found, err := m.planFamilies(ctx, storekeys.Join(prefix, familyexport.Key))
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			objects = append(objects, obj)
+		}
+	}
+	return objects, nil
+}
+
+// libraryPrefixes returns, sorted and without duplicates, the root layout and
+// every well-formed project prefix the catalogue names. The root is always
+// included: a genealogy export written there before the bootstrap project's
+// storage move must not stay behind on the emptied disk.
+func (m *Migrator) libraryPrefixes(ctx context.Context) ([]string, error) {
+	listed, err := m.cfg.Catalogue.StoragePrefixes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("storagemigrate: listing the projects' storage prefixes: %w", err)
+	}
+	prefixes := []string{""}
+	for _, prefix := range listed {
+		if prefix != "" && storekeys.ValidatePrefix(prefix) == nil && !slices.Contains(prefixes, prefix) {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	slices.Sort(prefixes)
+	return prefixes, nil
+}
+
+// planFamilies plans the genealogy export at key, reporting false when the
+// project has none.
+func (m *Migrator) planFamilies(ctx context.Context, key string) (object, bool, error) {
 	info, err := m.cfg.Source.Stat(ctx, key)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return object{}, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("storagemigrate: stat family export %s: %w", key, err)
+		return object{}, false, fmt.Errorf("storagemigrate: stat family export %s: %w", key, err)
 	}
-	return []object{{
+	return object{
 		relPath: key,
 		kind:    storekeys.KindFamilies,
 		size:    info.Size(),
 		mime:    familyexport.MIME,
 		digest:  func(ctx context.Context) (string, error) { return hashSource(ctx, m.cfg.Source, key) },
 		open:    func(ctx context.Context) (io.ReadCloser, error) { return m.cfg.Source.Open(ctx, key) },
-	}}, nil
+	}, true, nil
 }
 
 // planThumbs lists the cached thumbnails of the photo with the given file hash,

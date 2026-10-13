@@ -120,6 +120,11 @@ type Catalogue interface {
 	PendingBatch(ctx context.Context, cursor string, limit int) ([]Item, error)
 	// MarkMigrated stamps a photo as verified present in the object store.
 	MarkMigrated(ctx context.Context, uid string) error
+	// StoragePrefixes returns the storage prefix of every project of the
+	// instance — "" for the root layout, projects/<uid>/ otherwise — so the
+	// objects that belong to a project rather than to a photo (its genealogy
+	// export) are found in every project's tree.
+	StoragePrefixes(ctx context.Context) ([]string, error)
 }
 
 // compile-time assertions that the real backends satisfy the narrow interfaces

@@ -156,6 +156,7 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 		Vectors:   bootstrapVectors{vectorStore},
 		Originals: store,
 		Store:     maintenance.NewStoreOriginals(kind, lister),
+		Projects:  project.NewStore(db.Pool()),
 		Thumbs:    maintenance.NewThumbCache(thumbnailer),
 		Enqueuer:  enqueuer,
 		Embed:     bootstrapEmbed{embedSvc},
@@ -309,6 +310,19 @@ func TestScanDetectsDrift(t *testing.T) {
 	}
 	if report.Store.Kind != maintenance.StoreDisk || !report.Store.Listed() {
 		t.Errorf("store inventory = %+v, want a listed disk inventory", report.Store)
+	}
+	// The one project of a fresh database is the bootstrap project in the root
+	// layout, and the whole drift is its own.
+	if len(report.Projects) != 1 || report.Projects[0].UID != project.BootstrapUID {
+		t.Fatalf("projects = %+v, want the bootstrap project alone", report.Projects)
+	}
+	v := report.Projects[0]
+	if v.Photos != 3 || v.Originals != 3 || v.OrphanFiles.Count != 1 || v.MissingOriginals.Count != 1 ||
+		v.MissingThumbnails.Count != 1 {
+		t.Errorf("bootstrap project = %+v, want 3 photos, 3 originals, 1 orphan, 1 missing original, 1 thumbnail", v)
+	}
+	if report.OrphanProject.Count != 0 || report.LegacyLayout.Count != 0 {
+		t.Errorf("orphan project/legacy = %+v/%+v, want none", report.OrphanProject, report.LegacyLayout)
 	}
 }
 

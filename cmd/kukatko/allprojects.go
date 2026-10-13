@@ -23,8 +23,9 @@ import (
 // active project and fold the answers together. A deactivated project is
 // skipped: nobody can enter it, and its photos wait until it is reactivated.
 //
-// Transition: maintenance becomes project-aware in its own step (storage prefix
-// in scan/repair), which replaces the maintenance adapters here.
+// The maintenance scan reconciles the store per project itself (it is wired
+// with the project store); these adapters only fold its derived-data backlogs —
+// embeddings, faces, pHashes, places, unscheduled steps — into instance totals.
 
 // projectLister enumerates the instance's projects. *project.Store satisfies it.
 type projectLister interface {

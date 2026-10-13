@@ -454,6 +454,12 @@ const (
 	// being replaced (the storage move). The target is the project; the details
 	// carry the old and the new prefix.
 	ActionProjectStoragePrefix = "project.storage_prefix"
+	// ActionProjectPurge records `kukatko project purge` removing a project
+	// outright: its catalogue, memberships, invitations, the project row and its
+	// storage prefix. The target is the purged project; the details carry the
+	// operator, the slug, name and prefix it had, and the rows per table and the
+	// objects/bytes it counted before deleting them.
+	ActionProjectPurge = "project.purge"
 	// ActionProjectMemberAdd records an account being added to a project. The
 	// target is the account (target type "project_member"); the details carry
 	// project_uid, the role and whether the membership starts approved.
@@ -542,7 +548,7 @@ var knownActions = map[string]struct{}{
 	ActionUploadLinkUpload: {}, ActionUploadLinkRestoreCode: {}, ActionUploadLinkRotateCode: {},
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
-	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectMemberAdd: {},
+	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectPurge: {}, ActionProjectMemberAdd: {},
 	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
 	ActionProjectMemberSubject: {}, ActionProjectInviteCreate: {}, ActionProjectInviteRevoke: {},
 	ActionProjectInviteAccept: {},

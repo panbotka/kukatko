@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -122,10 +123,13 @@ func (p PrefixCounts) with(kind keyKind) PrefixCounts {
 // storage key of each original, and the storage prefix and content hash each set
 // of thumbnails is keyed by. Both are needed because the two layouts are
 // addressed differently — originals and sidecars by path, thumbnails by hash
-// under the prefix of the file's own original.
+// under the prefix of the file's own original. prefixes are the storage
+// prefixes of the instance's projects, each of which may hold a genealogy export
+// that no photo row implies.
 type catalogueFiles struct {
-	paths  []string
-	hashes []thumbSet
+	paths    []string
+	hashes   []thumbSet
+	prefixes []string
 }
 
 // thumbSet names one set of cached thumbnails: the storage prefix of the
@@ -137,10 +141,11 @@ type thumbSet struct {
 
 // objectKeys expands the catalogued files into every store key the wipe should
 // attempt: each original, the sidecar beside it, one thumbnail per registered
-// size, and the one object that belongs to no photo at all — the library's
-// genealogy export, which is named unconditionally because no catalogue row
-// implies it and a tree that survived a wipe would restore itself over the empty
-// library.
+// size, and the one object per project tree that belongs to no photo at all — the
+// genealogy export, which is named unconditionally (at the root, under every
+// project's prefix and under the prefix of every catalogued file) because no
+// catalogue row implies it and a tree that survived a wipe would restore itself
+// over the empty library.
 //
 // The expansion is deliberately blind to what the store actually holds. Probing
 // first would cost one request per candidate on an object store — for a library
@@ -163,8 +168,10 @@ func (c catalogueFiles) objectKeys() ([]string, PrefixCounts) {
 		keys = append(keys, sidecar)
 		counts.Sidecars++
 	}
-	keys = append(keys, familyexport.Key)
-	counts.Families++
+	for _, prefix := range c.familyPrefixes() {
+		keys = append(keys, storekeys.Join(prefix, familyexport.Key))
+		counts.Families++
+	}
 	for _, set := range c.hashes {
 		for _, size := range sizes {
 			key, err := thumb.RelPath(set.prefix, set.hash, size)
@@ -177,6 +184,30 @@ func (c catalogueFiles) objectKeys() ([]string, PrefixCounts) {
 		}
 	}
 	return keys, counts
+}
+
+// familyPrefixes returns, sorted and without duplicates, every storage prefix a
+// genealogy export may sit under: the root layout always, every project's
+// current prefix, and the prefix of every catalogued file — a project half-way
+// through its storage move may still have an export in its old tree. A prefix
+// that is not a well-formed one is skipped, so a corrupt row can never name a key
+// outside a project's tree.
+func (c catalogueFiles) familyPrefixes() []string {
+	seen := map[string]struct{}{"": {}}
+	for _, prefix := range c.prefixes {
+		seen[prefix] = struct{}{}
+	}
+	for _, filePath := range c.paths {
+		seen[storekeys.PrefixOf(filePath)] = struct{}{}
+	}
+	out := make([]string, 0, len(seen))
+	for prefix := range seen {
+		if storekeys.ValidatePrefix(prefix) == nil {
+			out = append(out, prefix)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // StorageResult reports what the wipe did to the store.

@@ -62,7 +62,8 @@ type VerifyReport struct {
 	PhotosInDB int `json:"photos_in_db"`
 	// FilesInDB is the number of catalogued files (originals plus sidecars).
 	FilesInDB int `json:"files_in_db"`
-	// OriginalsOnDisk is the number of files found under the originals root.
+	// OriginalsOnDisk is the number of files found under the originals root that
+	// the check reconciles: originals of either layout, and foreign files.
 	OriginalsOnDisk int `json:"originals_on_disk"`
 	// MissingOnDisk lists catalogued file keys with no file on disk.
 	MissingOnDisk []string `json:"missing_on_disk"`
@@ -264,7 +265,10 @@ func (s *RestoreService) downloadOriginal(ctx context.Context, key string) error
 
 // Verify reconciles the catalogue against the originals on disk and reports the
 // counts plus any mismatches (catalogued files missing on disk, and files on
-// disk with no catalogue row). It is read-only.
+// disk with no catalogue row). It is read-only. Both layouts are reconciled
+// alike — a catalogue row names its key prefix and all — and the metadata
+// sidecars and genealogy exports the backup also restored are left out of it:
+// no file row ever names them (see reconciledKey).
 func (s *RestoreService) Verify(ctx context.Context) (VerifyReport, error) {
 	if s.photos == nil || s.originals == nil {
 		return VerifyReport{}, errors.New("backup: integrity check needs both catalogue and originals")
@@ -281,9 +285,11 @@ func (s *RestoreService) Verify(ctx context.Context) (VerifyReport, error) {
 	if err != nil {
 		return VerifyReport{}, fmt.Errorf("backup: listing originals on disk: %w", err)
 	}
-	diskKeys := make([]string, len(diskFiles))
-	for i, f := range diskFiles {
-		diskKeys[i] = f.Key
+	diskKeys := make([]string, 0, len(diskFiles))
+	for _, f := range diskFiles {
+		if reconciledKey(f.Key) {
+			diskKeys = append(diskKeys, f.Key)
+		}
 	}
 	missing, extra := reconcile(dbPaths, diskKeys)
 	return VerifyReport{

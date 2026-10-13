@@ -8,6 +8,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 )
 
 // TestCountPhotosAndListFilePaths exercises the post-restore integrity helpers:
@@ -91,5 +92,37 @@ func TestCountPhotosAndListFilePaths(t *testing.T) {
 		if paths[i] != want[i] {
 			t.Errorf("ListFilePaths()[%d] = %q, want %q", i, paths[i], want[i])
 		}
+	}
+}
+
+// TestListCataloguedFiles verifies every photo_files row of every project comes
+// back with the project of the photo that owns it, ordered by key — the shape the
+// per-project maintenance scan reconciles against.
+func TestListCataloguedFiles(t *testing.T) {
+	store, db := newStore(t)
+	f := projecttest.Seed(t, db.Pool())
+
+	files, err := store.ListCataloguedFiles(t.Context())
+	if err != nil {
+		t.Fatalf("ListCataloguedFiles(): %v", err)
+	}
+	got := map[string]string{}
+	for _, file := range files {
+		got[file.FilePath] = file.ProjectUID
+	}
+	want := map[string]string{
+		"2026/10/" + f.A.PhotoUID + ".jpg": f.A.ProjectUID,
+		"2026/10/" + f.B.PhotoUID + ".jpg": f.B.ProjectUID,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ListCataloguedFiles() = %+v, want %+v", files, want)
+	}
+	for key, projectUID := range want {
+		if got[key] != projectUID {
+			t.Errorf("file %s project = %q, want %q", key, got[key], projectUID)
+		}
+	}
+	if !sort.SliceIsSorted(files, func(i, j int) bool { return files[i].FilePath < files[j].FilePath }) {
+		t.Errorf("ListCataloguedFiles() not ordered by key: %+v", files)
 	}
 }

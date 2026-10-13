@@ -50,14 +50,17 @@ var (
 const resetLong = `Empty this Kukátko instance's library: every catalogue table (photos, files,
 albums, labels, people, faces, embeddings, places, edits, import history, the
 job queue and the per-user curation) and every object the configured store owns
-(the YYYY/MM originals, the thumb/ thumbnails and the sidecars/ metadata).
+(the YYYY/MM originals, the thumb/ thumbnails, the sidecars/ metadata, the hls/
+segments and families.yaml) — in both layouts: at the root of the store and
+under every projects/<uid>/ tree. To empty one project only, use
+'kukatko project purge'.
 
 It is the only command here that deletes the library on purpose, and the only
 way back is re-walking the folders it was imported from. There is no S3 backup
 of this deployment either, so a wipe is final.
 
-It never touches the accounts (users, sessions, API tokens), the announcement,
-the instance settings, the audit trail or the import-run history — a wipe must
+It never touches the accounts (users, sessions, API tokens), the projects and
+their memberships, the announcement, the instance settings, the audit trail or the import-run history — a wipe must
 not lock you out of the instance you just wiped, nor close self-service
 registration and throw away its shared secret, nor erase the record of the wipe
 or of where the library originally came from.

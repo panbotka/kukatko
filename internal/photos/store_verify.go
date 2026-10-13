@@ -41,3 +41,43 @@ func (s *Store) ListFilePaths(ctx context.Context) ([]string, error) {
 	}
 	return paths, nil
 }
+
+// CataloguedFile is one photo_files row as the maintenance scan reconciles it:
+// the storage key and the project of the photo that owns it.
+type CataloguedFile struct {
+	// ProjectUID is the uid of the project the owning photo belongs to.
+	ProjectUID string `json:"project_uid"`
+	// FilePath is the file's storage key.
+	FilePath string `json:"file_path"`
+}
+
+// ListCataloguedFiles returns every photo_files row — originals, sidecars and
+// edits alike — with the project of the photo it belongs to, ordered by key. It
+// is ListFilePaths with the project attached, for the maintenance scan, which
+// reconciles the store against the catalogue per project and so has to know
+// whose a catalogued key is. It reads every project on purpose: the scan is
+// instance-wide. The slice is empty (not nil) when there are no files.
+func (s *Store) ListCataloguedFiles(ctx context.Context) ([]CataloguedFile, error) {
+	const q = `SELECT p.project_id, f.file_path
+		FROM photo_files f
+		JOIN photos p ON p.uid = f.photo_uid
+		ORDER BY f.file_path`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("photos: querying catalogued files: %w", err)
+	}
+	defer rows.Close()
+
+	files := make([]CataloguedFile, 0)
+	for rows.Next() {
+		var f CataloguedFile
+		if err := rows.Scan(&f.ProjectUID, &f.FilePath); err != nil {
+			return nil, fmt.Errorf("photos: scanning catalogued file: %w", err)
+		}
+		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("photos: iterating catalogued files: %w", err)
+	}
+	return files, nil
+}

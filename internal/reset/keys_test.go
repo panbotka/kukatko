@@ -151,6 +151,43 @@ func TestSweepKeys_confinedToOwnedPrefixes(t *testing.T) {
 	}
 }
 
+// TestSweepKeys_coversBothLayouts verifies the sweep takes every project's
+// tree as well as the root layout — a created project's, and one whose project
+// row is already gone — and still leaves alone what is foreign inside projects/:
+// a directory that is not a project uid, and a dump that only the root may hold.
+func TestSweepKeys_coversBothLayouts(t *testing.T) {
+	t.Parallel()
+
+	const tree = "projects/pj00000000000000000000000b/"
+	lister := fakeLister{keys: []string{
+		"2024/05/IMG_1.jpg",
+		"families.yaml",
+		tree + "2024/05/IMG_2.jpg",
+		tree + "sidecars/2024/05/IMG_2.jpg.yml",
+		tree + "thumb/aa/bb/cc/aabbcc_tile_500.jpg",
+		tree + "hls/aabbccddeeff/1080p/init.mp4",
+		tree + "families.yaml",
+		"projects/pj0000000000000000000000go/2024/05/IMG_3.jpg",
+		tree + "db/kukatko-20260101T000000Z.dump",
+		"projects/not-a-project/2024/05/IMG_4.jpg",
+	}}
+
+	keys, counts, foreign, err := sweepKeys(t.Context(), lister)
+	if err != nil {
+		t.Fatalf("sweepKeys: %v", err)
+	}
+	wantCounts := PrefixCounts{Originals: 3, Thumbnails: 1, Sidecars: 1, Families: 2, HLS: 1}
+	if counts != wantCounts {
+		t.Errorf("counts = %+v, want %+v", counts, wantCounts)
+	}
+	if foreign != 2 {
+		t.Errorf("foreign = %d, want 2 (the non-uid directory and the in-tree dump)", foreign)
+	}
+	if len(keys) != wantCounts.Total() {
+		t.Errorf("swept %d keys, want %d: %v", len(keys), wantCounts.Total(), keys)
+	}
+}
+
 // TestSweepKeys_listingError verifies a store that cannot be listed fails the
 // sweep rather than reporting an empty one, which would read as "nothing to
 // delete" against a store that is simply unreachable.
@@ -307,5 +344,40 @@ func TestPrefixCounts_with(t *testing.T) {
 	}
 	if counts.Total() != 5 {
 		t.Errorf("Total() = %d, want 5", counts.Total())
+	}
+}
+
+// TestObjectKeys_namesEveryProjectsFamilyExport verifies the wipe names a
+// genealogy export at the root and under every project tree it knows of — each
+// project's prefix and each catalogued file's — and never under a malformed one.
+func TestObjectKeys_namesEveryProjectsFamilyExport(t *testing.T) {
+	t.Parallel()
+
+	const (
+		projectB = "projects/pj00000000000000000000000b/"
+		projectV = "projects/pj0000000000000000veselice/"
+	)
+	files := catalogueFiles{
+		paths:    []string{"2024/05/IMG_1.jpg", projectV + "2024/05/IMG_2.jpg"},
+		prefixes: []string{"", projectB, "../escape/"},
+	}
+	keys, counts := files.objectKeys()
+
+	want := []string{familyexport.Key, projectB + familyexport.Key, projectV + familyexport.Key}
+	if counts.Families != len(want) {
+		t.Errorf("families = %d, want %d", counts.Families, len(want))
+	}
+	for _, key := range want {
+		if !slices.Contains(keys, key) {
+			t.Errorf("keys %v do not contain %q", keys, key)
+		}
+	}
+	for _, key := range keys {
+		if strings.Contains(key, "..") {
+			t.Errorf("expanded key %q escapes the project trees", key)
+		}
+		if classifyKey(key) == kindForeign {
+			t.Errorf("expanded key %q classifies as foreign", key)
+		}
 	}
 }

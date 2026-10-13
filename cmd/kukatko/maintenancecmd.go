@@ -160,6 +160,7 @@ func runMaintenanceScan(cmd *cobra.Command) error {
 		return fmt.Errorf("running integrity scan: %w", err)
 	}
 	printScanReport(cmd, report)
+	printProjectBreakdown(cmd, report)
 	return nil
 }
 
@@ -245,6 +246,33 @@ func printScanReport(cmd *cobra.Command, report maintenance.Report) {
 	}
 	if report.Clean() {
 		cmd.Println("library is consistent")
+	}
+}
+
+// printProjectBreakdown prints the per-project half of a scan report — each
+// project's store-facing findings — and the two findings that belong to no
+// project: objects in the tree of a project that does not exist, and objects
+// left in the root layout once no project uses it. Neither is repaired; the
+// sample is what a maintainer decides about.
+func printProjectBreakdown(cmd *cobra.Command, report maintenance.Report) {
+	cmd.Println("per project:")
+	for _, p := range report.Projects {
+		prefix := p.StoragePrefix
+		if prefix == "" {
+			prefix = "root layout"
+		}
+		cmd.Printf("  %s (%s): %d photos, %d files in DB, %d originals in the store; "+
+			"missing originals %d, orphan files %d, missing thumbnails %d\n",
+			p.Slug, prefix, p.Photos, p.FilesInDB, p.Originals,
+			p.MissingOriginals.Count, p.OrphanFiles.Count, p.MissingThumbnails.Count)
+	}
+	cmd.Printf("  orphan project:     %d\n", report.OrphanProject.Count)
+	if len(report.OrphanProject.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.OrphanProject.Samples)
+	}
+	cmd.Printf("  legacy layout:      %d\n", report.LegacyLayout.Count)
+	if len(report.LegacyLayout.Samples) > 0 {
+		cmd.Printf("    e.g. %v\n", report.LegacyLayout.Samples)
 	}
 }
 

@@ -47,3 +47,23 @@ func skippedDir(relDir string) bool {
 	kind := storekeys.Classify(relDir + "/")
 	return kind != storekeys.KindForeign && !backedUp(kind)
 }
+
+// reconciledKey reports whether a backed-up object at key is one the integrity
+// check holds against the catalogue's file rows. An original is, in either
+// layout, and so is a foreign object (a file no catalogue row claims is exactly
+// what the check exists to surface). A metadata sidecar and a genealogy export
+// are not: they are disaster-recovery copies *of* the catalogue, which no file
+// row ever names, so counting them would make every restored library with the
+// sidecar export on report one "extra" file per photo and per project.
+//
+// The switch has no default clause on purpose, like backedUp's.
+func reconciledKey(key string) bool {
+	switch storekeys.Classify(key) {
+	case storekeys.KindOriginal, storekeys.KindForeign:
+		return true
+	case storekeys.KindSidecar, storekeys.KindFamilies, storekeys.KindThumbnail,
+		storekeys.KindHLS, storekeys.KindDump, storekeys.KindPartial:
+		return false
+	}
+	return false // unreachable: every kind is decided above.
+}

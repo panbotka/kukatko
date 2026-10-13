@@ -2968,7 +2968,12 @@ here.
   the problem, so the desktop table stays headerless), so a phone gets **one stacked card per finding**
   (`maintenance.findings.problem`/`.count`/`.samples` are the card's labels — a card has no header row to read
   the values across from); **a finding's samples are file paths and UIDs, so they live in a `TechnicalDetail`**
-  rather than in the row —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans/
+  rather than in the row; the table ends with the two findings no project owns, **„Soubory projektu, který už
+  neexistuje"** (`orphan_project`) and **„Soubory ponechané ve starém rozložení"** (`legacy_layout`), neither with a
+  repair — and under it **`ProjectBreakdown`** (**Podle projektů**, `maintenance.projects.*`, a labelled
+  `<section>`, rendered when `report.projects` is non-empty): one `RecordTable` row per project — name + storage
+  prefix (or „kořenové rozložení"), photos, originals in storage, and its share of missing originals, orphan
+  files and missing thumbnails as the same amber `CountBadge`s —, repair checkboxes (thumbnails/embeddings/faces/hashes/**places**/import of orphans/
   **nemožná data pořízení** — annotated with the remaining count from the last check; „Určit místo u fotek se
   souřadnicemi (N)" is where the **Bez místa** tile on Stav systému leads, and N is the same number;
   **„Naplánovat chybějící zpracování (N)"** (`unscheduled_steps`) pairs with the finding row **„Zpracování,

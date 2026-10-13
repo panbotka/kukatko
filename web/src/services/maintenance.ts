@@ -49,10 +49,35 @@ export interface StoreInventory {
 }
 
 /** Result of an integrity scan (`maintenance.Report`). */
+/**
+ * One project's share of a scan: the store-facing findings of its catalogue
+ * against its own tree. Mirrors `maintenance.ProjectReport`; the findings add up
+ * to the report's instance-wide ones.
+ */
+export interface ProjectScanReport {
+  uid: string
+  slug: string
+  name: string
+  /** `''` for the root layout, `projects/<uid>/` otherwise. */
+  storage_prefix: string
+  photos: number
+  files_in_db: number
+  originals: number
+  missing_originals: Finding
+  orphan_files: Finding
+  missing_thumbnails: Finding
+}
+
 export interface ScanReport {
   photos: number
   files_in_db: number
   store: StoreInventory
+  /** The per-project breakdown, one entry per project in listing order. */
+  projects: ProjectScanReport[]
+  /** Objects under `projects/<uid>/` for a project that does not exist. */
+  orphan_project: Finding
+  /** Root-layout objects left behind once no project uses the root layout. */
+  legacy_layout: Finding
   missing_originals: Finding
   orphan_files: Finding
   missing_thumbnails: Finding

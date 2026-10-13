@@ -41,8 +41,12 @@ func TestBackedUp_decidesEveryKind(t *testing.T) {
 	}
 }
 
+// tree is a created project's storage prefix: the second layout every verdict
+// must hold for.
+const tree = "projects/pj00000000000000000000000b/"
+
 // TestBackedUpKey covers the verdict as the two listers actually reach it: from
-// a key alone.
+// a key alone, in both layouts.
 func TestBackedUpKey(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +63,14 @@ func TestBackedUpKey(t *testing.T) {
 		{key: "db/kukatko-20260101T000000Z.dump", want: false},
 		{key: ".tmp/upload-123", want: false},
 		{key: "dbx/not-a-dump.jpg", want: true},
+		{key: tree + "2026/01/a.jpg", want: true},
+		{key: tree + "sidecars/2026/01/a.jpg.yml", want: true},
+		{key: tree + "families.yaml", want: true},
+		{key: tree + "thumb/ab/cd/ef/abcdef_tile_500.jpg", want: false},
+		{key: tree + "hls/abcdef0123456789/1080p/init.mp4", want: false},
+		// A dump or a partial upload exists only at the root; inside a project's
+		// tree the name means nothing, so it is foreign — and backed up.
+		{key: tree + "db/kukatko-20260101T000000Z.dump", want: true},
 		{key: ".tmpfile.jpg", want: true},
 		{key: "hlsx/not-a-segment.jpg", want: true},
 	}
@@ -94,6 +106,11 @@ func TestSkippedDir(t *testing.T) {
 		{dir: "sidecars", want: false},
 		{dir: "sidecars/2026", want: false},
 		{dir: "somebody-elses-folder", want: false},
+		{dir: "projects", want: false},
+		{dir: tree + "2026", want: false},
+		{dir: tree + "sidecars", want: false},
+		{dir: tree + "thumb", want: true},
+		{dir: tree + "hls", want: true},
 	}
 
 	for _, tt := range tests {
@@ -101,6 +118,35 @@ func TestSkippedDir(t *testing.T) {
 			t.Parallel()
 			if got := skippedDir(tt.dir); got != tt.want {
 				t.Errorf("skippedDir(%q) = %v, want %v", tt.dir, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestReconciledKey verifies the integrity check holds originals and foreign
+// files of either layout against the catalogue, and never the sidecars or
+// genealogy exports no file row names.
+func TestReconciledKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		key  string
+		want bool
+	}{
+		{key: "2026/01/a.jpg", want: true},
+		{key: tree + "2026/01/a.jpg", want: true},
+		{key: "somebody-elses-folder/x.bin", want: true},
+		{key: "sidecars/2026/01/a.jpg.yml", want: false},
+		{key: tree + "sidecars/2026/01/a.jpg.yml", want: false},
+		{key: "families.yaml", want: false},
+		{key: tree + "families.yaml", want: false},
+		{key: "thumb/ab/cd/ef/abcdef_tile_500.jpg", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			t.Parallel()
+			if got := reconciledKey(tt.key); got != tt.want {
+				t.Errorf("reconciledKey(%q) = %v, want %v", tt.key, got, tt.want)
 			}
 		})
 	}

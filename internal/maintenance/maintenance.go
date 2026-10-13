@@ -30,7 +30,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/exif"
@@ -56,10 +55,12 @@ type PhotoCatalog interface {
 	// CountVideos returns how many videos the catalogue holds in any state,
 	// archived included — whether this library can stream anything at all.
 	CountVideos(ctx context.Context) (int, error)
-	// ListPrimaryFiles returns every photo's primary original file reference.
+	// ListPrimaryFiles returns every photo's primary original file reference,
+	// with the photo's project.
 	ListPrimaryFiles(ctx context.Context) ([]photos.PrimaryFile, error)
-	// ListFilePaths returns the storage key of every catalogued file.
-	ListFilePaths(ctx context.Context) ([]string, error)
+	// ListCataloguedFiles returns the storage key of every catalogued file, with
+	// the project of the photo it belongs to.
+	ListCataloguedFiles(ctx context.Context) ([]photos.CataloguedFile, error)
 	// ListPhotosMissingPhash returns the uids of photos with no perceptual hashes.
 	ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error)
 	// ListDimensionMismatches returns the photos whose stored pixel dimensions are
@@ -204,7 +205,8 @@ type OrphanImporter interface {
 }
 
 // Config bundles the collaborators and tunables of a Service. Every interface is
-// required except OrphanImporter (nil disables orphan import), Places (nil
+// required except Projects (nil means one library: the bootstrap project in the
+// root layout), OrphanImporter (nil disables orphan import), Places (nil
 // disables the reverse-geocode backfill), Sidecar (nil means the sidecar export
 // is off), Streaming (a zero value means this instance does not stream) and
 // Processing (nil leaves the unscheduled-steps finding empty and its repair
@@ -214,6 +216,7 @@ type Config struct {
 	Vectors     VectorCatalog
 	Originals   OriginalStore
 	Store       StoreScanner
+	Projects    ProjectLister
 	Thumbs      ThumbChecker
 	Enqueuer    Enqueuer
 	Embed       EmbedBackfiller
@@ -234,6 +237,7 @@ type Service struct {
 	vectors     VectorCatalog
 	originals   OriginalStore
 	store       StoreScanner
+	projects    ProjectLister
 	thumbs      ThumbChecker
 	enqueuer    Enqueuer
 	embed       EmbedBackfiller
@@ -263,6 +267,7 @@ func New(cfg Config) *Service {
 		vectors:     cfg.Vectors,
 		originals:   cfg.Originals,
 		store:       cfg.Store,
+		projects:    cfg.Projects,
 		thumbs:      cfg.Thumbs,
 		enqueuer:    cfg.Enqueuer,
 		embed:       cfg.Embed,
@@ -278,10 +283,11 @@ func New(cfg Config) *Service {
 }
 
 // missingCollaborator reports whether any collaborator a scan needs is left nil in
-// cfg. OrphanImporter, PlaceBackfiller, SidecarScheduler and Streaming are
-// deliberately absent: they are the optional dependencies (nil disables the
-// orphan-import and reverse-geocode repairs, the sidecar rewrite that follows a
-// repair, and the streaming check on an instance that does not stream).
+// cfg. ProjectLister, OrphanImporter, PlaceBackfiller, SidecarScheduler and
+// Streaming are deliberately absent: they are the optional dependencies (nil
+// means a single-library instance, and disables the orphan-import and
+// reverse-geocode repairs, the sidecar rewrite that follows a repair, and the
+// streaming check on an instance that does not stream).
 func missingCollaborator(cfg Config) bool {
 	required := []any{
 		cfg.Photos, cfg.Vectors, cfg.Originals, cfg.Store, cfg.Thumbs,
@@ -313,18 +319,24 @@ func (s *Service) Scan(ctx context.Context) (Report, error) {
 }
 
 // scanTotals produces the half of the report that comes from reconciling the
-// catalogue against the store: the counts, the store inventory, and the findings
-// derived from walking every photo's files or every missing piece of derived data.
+// catalogue against the store: the counts, the store inventory, the per-project
+// breakdown, and the findings derived from walking every photo's files or every
+// missing piece of derived data.
 func (s *Service) scanTotals(ctx context.Context) (Report, error) {
 	photoCount, err := s.photos.CountPhotos(ctx)
 	if err != nil {
 		return Report{}, fmt.Errorf("maintenance: counting photos: %w", err)
 	}
-	missingOriginals, missingThumbs, err := s.scanFiles(ctx)
+	projects, err := s.listProjects(ctx)
 	if err != nil {
 		return Report{}, err
 	}
-	orphans, filesInDB, inventory, err := s.scanStore(ctx)
+	ledger := newProjectLedger(projects, s.sampleLimit)
+	missingOriginals, missingThumbs, err := s.scanFiles(ctx, ledger)
+	if err != nil {
+		return Report{}, err
+	}
+	rec, filesInDB, inventory, err := s.scanStore(ctx, ledger)
 	if err != nil {
 		return Report{}, err
 	}
@@ -336,8 +348,11 @@ func (s *Service) scanTotals(ctx context.Context) (Report, error) {
 		Photos:            photoCount,
 		FilesInDB:         filesInDB,
 		Store:             inventory,
+		Projects:          ledger.reports(),
+		OrphanProject:     findingFrom(rec.orphanProject, s.sampleLimit),
+		LegacyLayout:      findingFrom(rec.legacy, s.sampleLimit),
 		MissingOriginals:  missingOriginals,
-		OrphanFiles:       findingFrom(orphans, s.sampleLimit),
+		OrphanFiles:       findingFrom(rec.orphanKeys(), s.sampleLimit),
 		MissingThumbnails: missingThumbs,
 		MissingEmbeddings: derived.embeddings,
 		MissingFaces:      derived.faces,
@@ -487,8 +502,11 @@ func (s *Service) scanDimensions(ctx context.Context) (Finding, error) {
 
 // scanFiles iterates every photo's primary original, checking the original's
 // presence in the store and its representative thumbnail in the cache, returning
-// the missing-original and missing-thumbnail findings.
-func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumbs Finding, err error) {
+// the missing-original and missing-thumbnail findings and recording each photo
+// against its project in ledger.
+func (s *Service) scanFiles(
+	ctx context.Context, ledger *projectLedger,
+) (missingOriginals, missingThumbs Finding, err error) {
 	primary, err := s.photos.ListPrimaryFiles(ctx)
 	if err != nil {
 		return Finding{}, Finding{}, fmt.Errorf("maintenance: listing primary files: %w", err)
@@ -499,12 +517,15 @@ func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumb
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Finding{}, Finding{}, fmt.Errorf("maintenance: scan interrupted: %w", ctxErr)
 		}
+		tally := ledger.tally(pf.ProjectUID)
+		tally.report.Photos++
 		present, statErr := s.originalPresent(ctx, pf.FilePath)
 		if statErr != nil {
 			return Finding{}, Finding{}, statErr
 		}
 		if !present {
 			origs.add(pf.PhotoUID)
+			tally.missingOriginals.add(pf.PhotoUID)
 		}
 		cached, thumbErr := s.thumbs.HasThumbnail(pf.FilePath, pf.FileHash)
 		if thumbErr != nil {
@@ -512,6 +533,7 @@ func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumb
 		}
 		if !cached {
 			thumbs.add(pf.PhotoUID)
+			tally.missingThumbs.add(pf.PhotoUID)
 		}
 	}
 	return origs.finding(), thumbs.finding(), nil
@@ -529,27 +551,34 @@ func (s *Service) originalPresent(ctx context.Context, relPath string) (bool, er
 	return true, nil
 }
 
-// scanStore reconciles the catalogued file keys against the originals the store
-// holds, returning the orphan keys (in the store, not catalogued), the number of
-// catalogued files and the store inventory.
+// scanStore reconciles the catalogued file keys against what the store holds,
+// per project, returning the reconciliation (orphans, orphan-project and
+// legacy-layout objects), the number of catalogued files and the store
+// inventory, and recording each project's share in ledger.
 //
 // A failed store listing is reported, not returned: it lands in the inventory as
 // an error, which keeps the rest of the scan (and its findings) while stopping
 // the report from calling itself clean. Only a failure to read the catalogue —
 // without which there is nothing to reconcile against — aborts the scan.
-func (s *Service) scanStore(ctx context.Context) (orphans []string, filesInDB int, inv StoreInventory, err error) {
-	dbPaths, err := s.photos.ListFilePaths(ctx)
+func (s *Service) scanStore(
+	ctx context.Context, ledger *projectLedger,
+) (rec storeReconciliation, filesInDB int, inv StoreInventory, err error) {
+	files, err := s.photos.ListCataloguedFiles(ctx)
 	if err != nil {
-		return nil, 0, StoreInventory{}, fmt.Errorf("maintenance: listing catalogued files: %w", err)
+		return storeReconciliation{}, 0, StoreInventory{}, fmt.Errorf("maintenance: listing catalogued files: %w", err)
 	}
-	found, originals, listErr := s.storeOrphans(ctx, keySet(dbPaths))
-	inv = storeInventory(s.store.Kind(), originals, listErr)
+	for _, f := range files {
+		ledger.tally(f.ProjectUID).report.FilesInDB++
+	}
+	rec, listErr := s.reconcileStore(ctx, ledger, files)
+	inv = storeInventory(s.store.Kind(), rec.originals, listErr)
 	if !inv.Listed() {
 		// Nothing was reconciled, so there are no orphans to report either — only
 		// the reason nobody could tell.
-		return nil, len(dbPaths), inv, nil
+		return storeReconciliation{}, len(files), inv, nil
 	}
-	return found, len(dbPaths), inv, nil
+	ledger.absorb(rec)
+	return rec, len(files), inv, nil
 }
 
 // storeInventory turns the outcome of a store listing into the inventory the
@@ -559,33 +588,6 @@ func storeInventory(kind StoreKind, originals int, err error) StoreInventory {
 		return StoreInventory{Kind: kind, Error: err.Error()}
 	}
 	return StoreInventory{Kind: kind, Originals: originals}
-}
-
-// storeOrphans streams the originals the store holds, returning the keys no
-// catalogue row claims (sorted, for a deterministic result) and how many
-// originals were seen.
-//
-// Only the orphans are retained, so a bucket of twenty thousand objects costs the
-// catalogue's key set plus however few keys are actually orphaned, whatever the
-// store's size.
-func (s *Service) storeOrphans(ctx context.Context, catalogued map[string]struct{}) ([]string, int, error) {
-	orphans := make([]string, 0)
-	originals := 0
-	err := s.store.ListOriginals(ctx, func(key string) error {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return fmt.Errorf("maintenance: store listing interrupted: %w", ctxErr)
-		}
-		originals++
-		if _, ok := catalogued[key]; !ok {
-			orphans = append(orphans, key)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("maintenance: listing originals in the store: %w", err)
-	}
-	sort.Strings(orphans)
-	return orphans, originals, nil
 }
 
 // derivedFindings groups the three derived-data findings produced from list

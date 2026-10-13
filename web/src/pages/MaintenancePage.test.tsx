@@ -41,6 +41,9 @@ function report(overrides: Partial<ScanReport> = {}): ScanReport {
     photos: 10,
     files_in_db: 11,
     store: { kind: 'disk', originals: 12 },
+    projects: [],
+    orphan_project: empty,
+    legacy_layout: empty,
     missing_originals: empty,
     orphan_files: empty,
     missing_thumbnails: empty,
@@ -191,7 +194,60 @@ describe('MaintenancePage', () => {
     // the problem, so there is nothing for a header row to add.
     const table = screen.getByRole('table')
     expect(within(table).queryAllByRole('columnheader')).toHaveLength(0)
-    expect(within(table).getAllByRole('row')).toHaveLength(9)
+    expect(within(table).getAllByRole('row')).toHaveLength(11)
+  })
+
+  it('renders the per-project breakdown and the two findings no project owns', async () => {
+    const empty = { count: 0, samples: [] as string[] }
+    scanMock.mockResolvedValue(
+      report({
+        orphan_files: { count: 1, samples: ['projects/pjb/2026/06/x.jpg'] },
+        orphan_project: { count: 2, samples: ['projects/pjgone/2026/06/y.jpg'] },
+        projects: [
+          {
+            uid: 'pj0000000000000000veselice',
+            slug: 'v',
+            name: 'Veselice',
+            storage_prefix: '',
+            photos: 7,
+            files_in_db: 8,
+            originals: 8,
+            missing_originals: empty,
+            orphan_files: empty,
+            missing_thumbnails: empty,
+          },
+          {
+            uid: 'pjb',
+            slug: 'b',
+            name: 'Projekt B',
+            storage_prefix: 'projects/pjb/',
+            photos: 3,
+            files_in_db: 3,
+            originals: 4,
+            missing_originals: empty,
+            orphan_files: { count: 1, samples: ['projects/pjb/2026/06/x.jpg'] },
+            missing_thumbnails: empty,
+          },
+        ],
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Run the check' }))
+
+    expect(await screen.findByText('Files of a project that no longer exists')).toBeInTheDocument()
+    expect(screen.getByText('Files left in the old layout')).toBeInTheDocument()
+    const breakdown = screen.getByRole('region', { name: 'By project' })
+    const rows = within(breakdown).getAllByRole('row')
+    // The header row plus one row per project.
+    expect(rows).toHaveLength(3)
+    expect(within(rows[1]).getByText('Veselice')).toBeInTheDocument()
+    expect(within(rows[1]).getByText('root layout')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('Projekt B')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('projects/pjb/')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('4')).toBeInTheDocument()
+    expect(within(rows[2]).getByText('1')).toBeInTheDocument()
   })
 
   it('reflows each finding into a stacked card on a phone', async () => {
@@ -209,7 +265,7 @@ describe('MaintenancePage', () => {
     expect(screen.queryByRole('table')).toBeNull()
 
     const cards = screen.getAllByRole('listitem')
-    expect(cards).toHaveLength(9)
+    expect(cards).toHaveLength(11)
     // The headerless table's columns still carry their labels onto the card —
     // a card has no header row to read the values across from.
     const thumbnails = cards[2]
