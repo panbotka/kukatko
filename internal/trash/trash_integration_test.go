@@ -59,7 +59,8 @@ func newPurgeEnv(t *testing.T) *purgeEnv {
 	store := photos.NewStore(db.Pool())
 	vec := vectors.NewStore(db.Pool())
 	svc := trash.New(trash.Config{
-		Photos: store, Storage: fs, Thumbnailer: thumbnailer, RetentionDays: 1, BatchSize: 2,
+		Photos: store, Projects: project.NewStore(db.Pool()), Storage: fs, Thumbnailer: thumbnailer,
+		RetentionDays: 1, BatchSize: 2,
 	})
 	return &purgeEnv{store: store, vectors: vec, fs: fs, root: root, thumb: thumbnailer, svc: svc, db: db}
 }
@@ -208,7 +209,7 @@ func TestEmptyTrash_removesAllArchived(t *testing.T) {
 	b, bOrig, bThumb := env.seedPhoto(t, "b", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	res, err := env.svc.EmptyTrash(t.Context(), audit.Meta{})
+	res, err := env.svc.EmptyTrash(t.Context(), project.BootstrapUID, audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -235,7 +236,7 @@ func TestPurgeOlderThan_removesOnlyOlder(t *testing.T) {
 	recentPhoto, _, _ := env.seedPhoto(t, "recent", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	res, err := env.svc.PurgeOlderThan(t.Context(), 100, audit.Meta{})
+	res, err := env.svc.PurgeOlderThan(t.Context(), project.BootstrapUID, 100, audit.Meta{})
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -264,7 +265,7 @@ func TestPurgeOlderThan_zeroDaysEmptiesTrash(t *testing.T) {
 	b, bOrig, bThumb := env.seedPhoto(t, "b", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	res, err := env.svc.PurgeOlderThan(t.Context(), 0, audit.Meta{})
+	res, err := env.svc.PurgeOlderThan(t.Context(), project.BootstrapUID, 0, audit.Meta{})
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -288,15 +289,15 @@ func TestPurgePhoto_singleArchived(t *testing.T) {
 	archived, origAbs, thumbAbs := env.seedPhoto(t, "arch", &recent)
 	livePhoto, _, _ := env.seedPhoto(t, "live", nil)
 
-	if err := env.svc.PurgePhoto(t.Context(), livePhoto.UID, audit.Meta{}); !errors.Is(err, trash.ErrNotArchived) {
+	if err := env.svc.PurgePhoto(t.Context(), project.BootstrapUID, livePhoto.UID, audit.Meta{}); !errors.Is(err, trash.ErrNotArchived) {
 		t.Fatalf("PurgePhoto(live) error = %v, want ErrNotArchived", err)
 	}
-	if err := env.svc.PurgePhoto(t.Context(), archived.UID, audit.Meta{}); err != nil {
+	if err := env.svc.PurgePhoto(t.Context(), project.BootstrapUID, archived.UID, audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto(archived): %v", err)
 	}
 	env.assertGone(t, archived, origAbs, thumbAbs)
 
-	if err := env.svc.PurgePhoto(t.Context(), "ph_missing", audit.Meta{}); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if err := env.svc.PurgePhoto(t.Context(), project.BootstrapUID, "ph_missing", audit.Meta{}); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("PurgePhoto(missing) error = %v, want ErrPhotoNotFound", err)
 	}
 }
@@ -339,7 +340,7 @@ func TestPurgePhoto_removesHLSObjectsFromTheStore(t *testing.T) {
 	purged = append(purged, env.writeHLSObjects(t, photo.FileHash, "720p", hls.InitName, "00000.m4s")...)
 	kept := env.writeHLSObjects(t, other.FileHash, hls.Rendition1080p, hls.InitName, "00000.m4s")
 
-	if err := env.svc.PurgePhoto(t.Context(), photo.UID, audit.Meta{}); err != nil {
+	if err := env.svc.PurgePhoto(t.Context(), project.BootstrapUID, photo.UID, audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto: %v", err)
 	}
 	env.assertGone(t, photo, originalAbs, thumbAbs)

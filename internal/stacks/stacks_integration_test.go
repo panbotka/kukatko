@@ -76,7 +76,7 @@ func TestIntegration_DetectStacksBackfill(t *testing.T) {
 	other := makePhoto(t, store, "oth1", "OTHER.jpg", "image/jpeg", 4000, 3000)
 
 	svc := detector(store)
-	created, err := svc.DetectStacks(ctx, actorEntry("", audit.ActionStacksDetect))
+	created, err := svc.DetectStacks(ctx, project.BootstrapUID, actorEntry("", audit.ActionStacksDetect))
 	if err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestIntegration_DetectStacksBackfill(t *testing.T) {
 	}
 
 	// Re-running over the settled library changes nothing.
-	if again, err := svc.DetectStacks(ctx, actorEntry("", audit.ActionStacksDetect)); err != nil || again != 0 {
+	if again, err := svc.DetectStacks(ctx, project.BootstrapUID, actorEntry("", audit.ActionStacksDetect)); err != nil || again != 0 {
 		t.Errorf("re-run created %d stacks (err %v), want 0", again, err)
 	}
 }
@@ -134,7 +134,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 
 	assertCounts(t, store, org, ppl, subject.UID, album.UID, label.UID, 2)
 
-	if _, err := detector(store).DetectStacks(ctx, actorEntry("", audit.ActionStacksDetect)); err != nil {
+	if _, err := detector(store).DetectStacks(ctx, project.BootstrapUID, actorEntry("", audit.ActionStacksDetect)); err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
 	// Every count drops to one; only the JPEG primary appears in the gallery.
@@ -144,7 +144,7 @@ func TestIntegration_CountsDropAndUnstackRestores(t *testing.T) {
 	}
 	// The duplicates node universe drops the hidden RAW, so the same-stack pair
 	// can never be offered as a near-duplicate.
-	if phashes, _ := store.ListActivePhashes(ctx); len(phashes) != 1 || phashes[0].PhotoUID != jpg.UID {
+	if phashes, _ := store.ListActivePhashes(ctx, project.BootstrapUID); len(phashes) != 1 || phashes[0].PhotoUID != jpg.UID {
 		t.Errorf("active phashes = %v, want only %s", phashes, jpg.UID)
 	}
 

@@ -41,8 +41,8 @@ import (
 // Service lists the repeated-marker findings. It is satisfied by
 // *dupmarkers.Service; a nil Service makes the listing answer 503.
 type Service interface {
-	// FindGroups returns one page of findings, worst first.
-	FindGroups(ctx context.Context, limit, offset int) (dupmarkers.Result, error)
+	// FindGroups returns one page of the project's findings, worst first.
+	FindGroups(ctx context.Context, projectUID string, limit, offset int) (dupmarkers.Result, error)
 }
 
 // MarkerStore is the marker access the repairs need: reading a photo's markers to
@@ -123,7 +123,7 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireCurator).Post("/duplicate-markers/invalid", a.handleInvalid)
 }
 
-// handleList returns a page of findings. It answers 503 when the service is not
+// handleList returns a page of the request project's findings. It answers 503 when the service is not
 // wired, 400 for an invalid limit/offset, and 500 when the scan fails.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
@@ -135,7 +135,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := a.service.FindGroups(r.Context(), limit, offset)
+	result, err := a.service.FindGroups(r.Context(), auth.ProjectUIDFromContext(r.Context()), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing repeated markers failed")
 		return

@@ -14,9 +14,9 @@ import (
 // zero, and a batch of duplicates often already sits in an album somebody filed
 // it into the first time.
 //
-// Total counts the photos that exist, each once: a UID repeated in the request
-// is one photo, and a UID of a photo that is gone is none — the same rule as
-// LocationSummary.
+// Total counts the project's photos that exist, each once: a UID repeated in the
+// request is one photo, and a UID of a photo that is gone — or of another
+// project — is none: the same rule as LocationSummary.
 type MembershipSummary struct {
 	// Total is how many of the requested photos exist.
 	Total int `json:"total"`
@@ -58,14 +58,14 @@ SELECT count(*),
            EXISTS (SELECT 1 FROM album_photos ap WHERE ap.photo_uid = p.uid)
         OR EXISTS (SELECT 1 FROM photo_labels pl WHERE pl.photo_uid = p.uid))
 FROM photos p
-WHERE p.uid = ANY($1)`
+WHERE p.uid = ANY($1) AND p.project_id = $2`
 
 // membershipAlbumsSQL lists the albums holding any of the target photos.
 const membershipAlbumsSQL = `
 SELECT a.uid, a.title, count(*)
 FROM albums a
 JOIN album_photos ap ON ap.album_uid = a.uid
-WHERE ap.photo_uid = ANY($1)
+WHERE ap.photo_uid = ANY($1) AND a.project_id = $2
 GROUP BY a.uid, a.title
 ORDER BY a.title, a.uid`
 
@@ -74,7 +74,7 @@ const membershipLabelsSQL = `
 SELECT l.uid, l.name, count(*)
 FROM labels l
 JOIN photo_labels pl ON pl.label_uid = l.uid
-WHERE pl.photo_uid = ANY($1)
+WHERE pl.photo_uid = ANY($1) AND l.project_id = $2
 GROUP BY l.uid, l.name, l.priority
 ORDER BY l.priority DESC, l.name, l.uid`
 
@@ -83,8 +83,14 @@ ORDER BY l.priority DESC, l.name, l.uid`
 // never writes, in three indexed queries whatever the batch size.
 //
 // It rejects the same batches Apply does — an empty list is ErrNoPhotos and an
-// oversized one ErrBatchTooLarge.
-func (s *Service) MembershipSummary(ctx context.Context, photoUIDs []string) (MembershipSummary, error) {
+// oversized one ErrBatchTooLarge. Only the photos, albums and labels of
+// projectUID are read; an empty projectUID is ErrNoProject.
+func (s *Service) MembershipSummary(
+	ctx context.Context, projectUID string, photoUIDs []string,
+) (MembershipSummary, error) {
+	if projectUID == "" {
+		return MembershipSummary{}, ErrNoProject
+	}
 	if len(photoUIDs) == 0 {
 		return MembershipSummary{}, ErrNoPhotos
 	}
@@ -93,21 +99,21 @@ func (s *Service) MembershipSummary(ctx context.Context, photoUIDs []string) (Me
 			"%w: %d exceeds limit %d", ErrBatchTooLarge, len(photoUIDs), s.maxBatch)
 	}
 	summary := MembershipSummary{Albums: []AlbumRef{}, Labels: []LabelRef{}}
-	row := s.pool.QueryRow(ctx, membershipCountSQL, photoUIDs)
+	row := s.pool.QueryRow(ctx, membershipCountSQL, photoUIDs, projectUID)
 	if err := row.Scan(&summary.Total, &summary.Filed); err != nil {
 		return MembershipSummary{}, fmt.Errorf("bulk: counting filed photos: %w", err)
 	}
 	if summary.Filed == 0 {
 		return summary, nil
 	}
-	albums, err := s.queryRefs(ctx, membershipAlbumsSQL, photoUIDs)
+	albums, err := s.queryRefs(ctx, membershipAlbumsSQL, projectUID, photoUIDs)
 	if err != nil {
 		return MembershipSummary{}, fmt.Errorf("bulk: listing albums of the selection: %w", err)
 	}
 	for _, ref := range albums {
 		summary.Albums = append(summary.Albums, AlbumRef{UID: ref.uid, Title: ref.name, PhotoCount: ref.count})
 	}
-	labels, err := s.queryRefs(ctx, membershipLabelsSQL, photoUIDs)
+	labels, err := s.queryRefs(ctx, membershipLabelsSQL, projectUID, photoUIDs)
 	if err != nil {
 		return MembershipSummary{}, fmt.Errorf("bulk: listing labels of the selection: %w", err)
 	}
@@ -125,9 +131,9 @@ type namedCount struct {
 	count int
 }
 
-// queryRefs runs one of the membership listings over photoUIDs.
-func (s *Service) queryRefs(ctx context.Context, sql string, photoUIDs []string) ([]namedCount, error) {
-	rows, err := s.pool.Query(ctx, sql, photoUIDs)
+// queryRefs runs one of the membership listings over the project's photoUIDs.
+func (s *Service) queryRefs(ctx context.Context, sql, projectUID string, photoUIDs []string) ([]namedCount, error) {
+	rows, err := s.pool.Query(ctx, sql, photoUIDs, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("querying: %w", err)
 	}

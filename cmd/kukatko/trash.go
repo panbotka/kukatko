@@ -6,6 +6,7 @@ import (
 	"github.com/panbotka/kukatko/internal/config"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
@@ -17,7 +18,8 @@ import (
 const trashPurgeInterval = 6 * time.Hour
 
 // buildTrashService assembles the purge service over the originals store, the
-// thumbnailer and the photo repository. It performs the permanent deletion of
+// thumbnailer, the photo repository and the project list the scheduled
+// retention purge sweeps one project at a time. It performs the permanent deletion of
 // soft-deleted photos for both the scheduled retention purge and the manual
 // admin/editor controls (purge one, empty trash).
 //
@@ -31,6 +33,7 @@ func buildTrashService(cfg *config.Config, db *database.DB) (*trash.Service, err
 	}
 	return trash.New(trash.Config{
 		Photos:      photos.NewStore(db.Pool()),
+		Projects:    project.NewStore(db.Pool()),
 		Storage:     store,
 		Thumbnailer: thumb.New(store, cfg.Storage.CachePath),
 		// A purged video's scrub-preview sprite is derived media keyed by the same

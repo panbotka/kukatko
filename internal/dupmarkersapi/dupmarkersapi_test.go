@@ -34,7 +34,7 @@ type fakeService struct {
 
 // FindGroups implements dupmarkersapi.Service, recording the paging it was asked
 // for so a test can assert the query parameters reached the service.
-func (f *fakeService) FindGroups(_ context.Context, limit, offset int) (dupmarkers.Result, error) {
+func (f *fakeService) FindGroups(_ context.Context, _ string, limit, offset int) (dupmarkers.Result, error) {
 	f.limit, f.offset = limit, offset
 	return f.result, f.err
 }

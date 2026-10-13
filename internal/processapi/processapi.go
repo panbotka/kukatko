@@ -175,11 +175,11 @@ type HLSBackfiller interface {
 // couple of indexed queries). A nil StacksDetector — the feature disabled in
 // config — makes the /process/stacks endpoint answer 503.
 type StacksDetector interface {
-	// DetectStacks groups the currently unstacked photos and returns how many
-	// stacks were created, recording the pass under entry in the same transaction
+	// DetectStacks groups the project's currently unstacked photos and returns
+	// how many stacks were created, recording the pass under entry in the same transaction
 	// that forms the stacks. It is idempotent: a re-run over a settled library
 	// creates nothing.
-	DetectStacks(ctx context.Context, entry audit.Entry) (int, error)
+	DetectStacks(ctx context.Context, projectUID string, entry audit.Entry) (int, error)
 }
 
 // LocationEstimator infers a location for photos that have none from photos
@@ -383,8 +383,9 @@ func (a *API) handleBackfillHLS(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backfillResponse{Enqueued: enqueued})
 }
 
-// handleDetectStacks groups the currently unstacked photos into stacks by the
-// enabled rules and reports how many stacks were created. It answers 503 when the
+// handleDetectStacks groups the request project's currently unstacked photos
+// into stacks by the enabled rules and reports how many stacks were created;
+// another project's photos are neither candidates nor touched. It answers 503 when the
 // stacking feature is disabled.
 //
 // Unlike its neighbours the pass mutates the catalogue rather than queueing jobs,
@@ -398,7 +399,7 @@ func (a *API) handleDetectStacks(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.UserFromContext(r.Context())
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionStacksDetect, "photos", "", nil)
-	created, err := a.stacksDetector.DetectStacks(r.Context(), entry)
+	created, err := a.stacksDetector.DetectStacks(r.Context(), auth.ProjectUIDFromContext(r.Context()), entry)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "detecting stacks failed")
 		return

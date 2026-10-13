@@ -23,6 +23,7 @@ package dupmarkers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -43,6 +44,10 @@ const (
 	// hand-drawn regions, not identity claims, so several of them are no finding.
 	MarkerTypeFace = "face"
 )
+
+// ErrNoProject indicates a listing was asked for without a project — a
+// programming error, never "the whole instance".
+var ErrNoProject = errors.New("dupmarkers: no project given")
 
 // MarkerRow is one candidate marker as loaded from the catalogue: the marker
 // itself plus the photo and subject it belongs to, flattened so the grouping is a
@@ -115,7 +120,7 @@ type Group struct {
 // Result is one page of findings plus the pagination cursor.
 type Result struct {
 	Groups []Group `json:"groups"`
-	// Total is how many groups exist across the whole library, not just this page.
+	// Total is how many groups exist across the whole project, not just this page.
 	Total      int  `json:"total"`
 	Limit      int  `json:"limit"`
 	Offset     int  `json:"offset"`
@@ -131,8 +136,9 @@ type Result struct {
 // does not have to: every rule that decides what counts as a finding is applied
 // again by the service, over the rows it is given.
 type MarkerSource interface {
-	// ListRepeatedMarkers returns candidate face markers of named subjects.
-	ListRepeatedMarkers(ctx context.Context) ([]MarkerRow, error)
+	// ListRepeatedMarkers returns candidate face markers of named subjects on
+	// the project's photos.
+	ListRepeatedMarkers(ctx context.Context, projectUID string) ([]MarkerRow, error)
 }
 
 // DismissalSource lists the (photo, subject) groups a user has already settled as
@@ -165,12 +171,16 @@ func New(cfg Config) *Service {
 // everything a user has already settled, and returns the requested page — worst
 // (most markers) first, then by person, so a curator can work top-down and watch
 // the list shrink. limit is clamped into [1, maxLimit] (defaulting when
-// non-positive); a negative offset is treated as zero. It returns a wrapped error
-// if either source fails.
-func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, error) {
+// non-positive); a negative offset is treated as zero. Only the photos of
+// projectUID are scanned; an empty projectUID is ErrNoProject. It returns a
+// wrapped error if either source fails.
+func (s *Service) FindGroups(ctx context.Context, projectUID string, limit, offset int) (Result, error) {
+	if projectUID == "" {
+		return Result{}, ErrNoProject
+	}
 	limit, offset = clampPaging(limit, offset)
 
-	rows, err := s.markers.ListRepeatedMarkers(ctx)
+	rows, err := s.markers.ListRepeatedMarkers(ctx, projectUID)
 	if err != nil {
 		return Result{}, fmt.Errorf("dupmarkers: listing markers: %w", err)
 	}

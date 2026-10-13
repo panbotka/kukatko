@@ -97,14 +97,15 @@ func (s *Service) placeQuestions(ctx context.Context, projectUID string, need in
 // A group already carrying a human confirmation is skipped for the same reason:
 // the question has been answered.
 //
-// Both photos of a pair are hydrated inside projectUID, so a pair with a photo
-// of another project has a member missing and is dropped like a vanished one.
+// The groups are detected inside projectUID and both photos of a pair are
+// hydrated inside it too, so a pair with a photo of another project can never
+// be offered — it has a member missing and is dropped like a vanished one.
 func (s *Service) duplicateQuestions(ctx context.Context, projectUID string, need int) ([]Question, int, error) {
 	if s.duplicates == nil || s.photos == nil {
 		return nil, 0, nil
 	}
 	offset := s.offset(projectUID, dupCursor)
-	res, err := s.duplicates.FindGroups(ctx, need, offset)
+	res, err := s.duplicates.FindGroups(ctx, projectUID, need, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: finding duplicate groups: %w", err)
 	}

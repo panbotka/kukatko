@@ -5,8 +5,10 @@ package vectors_test
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/projecttest"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -132,4 +134,59 @@ func candidatePhotos(found []vectors.FaceCandidate) []string {
 		out = append(out, c.PhotoUID)
 	}
 	return out
+}
+
+// TestFindDuplicatePairs_neverCrossesProjects gives each project two photos and
+// all four the IDENTICAL image embedding, so every photo is a distance-0
+// neighbour of every other: a scan that ignored the project would pair A's
+// photos with B's. Inside each project the pairs name only that project's two
+// photos.
+func TestFindDuplicatePairs_neverCrossesProjects(t *testing.T) {
+	store, photoStore, db := newStore(t)
+	f := projecttest.Seed(t, db.Pool())
+	ctx := t.Context()
+	image := imageVec(map[int]float32{5: 1, 9: 0.5})
+	own := map[projecttest.Side][]string{}
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tenant := f.Tenant(side)
+		twin, err := photoStore.Create(ctx, photos.Photo{
+			ProjectID: tenant.ProjectUID,
+			FileHash:  "dup-twin-" + tenant.Token,
+			FilePath:  "2024/01/dup-twin-" + tenant.Token + ".jpg",
+			FileName:  "dup-twin.jpg",
+		})
+		if err != nil {
+			t.Fatalf("creating %s's twin: %v", side, err)
+		}
+		own[side] = []string{tenant.PhotoUID, twin.UID}
+		for _, uid := range own[side] {
+			saveEmbedding(t, store, uid, image)
+		}
+	}
+
+	f.AssertStoreScoped(t, func(projectUID string) ([]string, error) {
+		pairs, err := store.FindDuplicatePairs(ctx, projectUID, 8, 0.05)
+		out := make([]string, 0, 2*len(pairs))
+		for _, p := range pairs {
+			out = append(out, p.A, p.B)
+		}
+		return out, err
+	})
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		pairs, err := store.FindDuplicatePairs(ctx, f.Tenant(side).ProjectUID, 8, 0.05)
+		if err != nil {
+			t.Fatalf("FindDuplicatePairs inside %s: %v", side, err)
+		}
+		if !hasPair(pairs, own[side][0], own[side][1]) {
+			t.Errorf("inside %s: want the pair %v, got %+v", side, own[side], pairs)
+		}
+		for _, p := range pairs {
+			if !slices.Contains(own[side], p.A) || !slices.Contains(own[side], p.B) {
+				t.Errorf("inside %s: pair %+v names a photo of the other project", side, p)
+			}
+		}
+	}
+	if _, err := store.FindDuplicatePairs(ctx, "", 8, 0.05); !errors.Is(err, vectors.ErrNoProject) {
+		t.Errorf("FindDuplicatePairs without a project = %v, want ErrNoProject", err)
+	}
 }

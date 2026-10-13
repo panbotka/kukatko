@@ -5,6 +5,7 @@ package vectors_test
 import (
 	"testing"
 
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -23,7 +24,7 @@ func TestFindDuplicatePairs(t *testing.T) {
 	saveEmbedding(t, store, b, imageVec(map[int]float32{0: 1, 1: 0.02}))
 	saveEmbedding(t, store, far, imageVec(map[int]float32{1: 1}))
 
-	pairs, err := store.FindDuplicatePairs(ctx, 8, 0.05)
+	pairs, err := store.FindDuplicatePairs(ctx, project.BootstrapUID, 8, 0.05)
 	if err != nil {
 		t.Fatalf("FindDuplicatePairs: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestFindDuplicatePairs_disabled(t *testing.T) {
 	saveEmbedding(t, store, a, imageVec(map[int]float32{0: 1}))
 	saveEmbedding(t, store, b, imageVec(map[int]float32{0: 1}))
 
-	pairs, err := store.FindDuplicatePairs(ctx, 8, 0)
+	pairs, err := store.FindDuplicatePairs(ctx, project.BootstrapUID, 8, 0)
 	if err != nil {
 		t.Fatalf("FindDuplicatePairs: %v", err)
 	}

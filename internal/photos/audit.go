@@ -70,24 +70,23 @@ func (s *Store) SetHiddenFromLibraryAudited(
 	})
 }
 
-// DeleteAudited permanently deletes the photo identified by uid (cascading its
-// satellite rows) and writes entry to the audit log in the same transaction, so
-// the row deletion and the record of who purged it commit atomically and roll
-// back together on failure (the durable-audit convention; see internal/audit).
-// entry's TargetUID defaults to uid. A stacked photo leaves its stack first (see
-// LeaveStackTx), in the same transaction, so the purge does not strand its
-// siblings in a primary-less stack that no default view shows and no re-stacking
-// can reach. It returns ErrPhotoNotFound when no row matched, in which case
-// nothing is deleted and no audit entry is written.
-//
-// It is not project-scoped yet: the purge (internal/trash) is scoped in its own
-// step, so it runs runAudited without a project to prove.
-func (s *Store) DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error {
-	_, err := s.runAudited(ctx, uid, entry, func(tx pgx.Tx) (Photo, error) {
+// DeleteAudited permanently deletes the project's photo identified by uid
+// (cascading its satellite rows) and writes entry to the audit log in the same
+// transaction, so the row deletion and the record of who purged it commit
+// atomically and roll back together on failure (the durable-audit convention;
+// see internal/audit). entry's TargetUID defaults to uid and its ProjectUID to
+// projectUID. A stacked photo leaves its stack first (see LeaveStackTx), in the
+// same transaction, so the purge does not strand its siblings in a
+// primary-less stack that no default view shows and no re-stacking can reach.
+// It returns ErrPhotoNotFound when no photo of the project matched — a photo of
+// another project is left untouched — in which case nothing is deleted and no
+// audit entry is written. An empty projectUID is ErrNoProject.
+func (s *Store) DeleteAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error {
+	_, err := s.mutateAudited(ctx, projectUID, uid, entry, func(tx pgx.Tx) (Photo, error) {
 		if err := LeaveStackTx(ctx, tx, uid); err != nil {
 			return Photo{}, err
 		}
-		tag, err := tx.Exec(ctx, "DELETE FROM photos WHERE uid = $1", uid)
+		tag, err := tx.Exec(ctx, "DELETE FROM photos WHERE uid = $1 AND "+projectClause("$2"), uid, projectUID)
 		if err != nil {
 			return Photo{}, fmt.Errorf("photos: deleting photo: %w", err)
 		}

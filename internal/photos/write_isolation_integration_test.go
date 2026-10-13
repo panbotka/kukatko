@@ -76,6 +76,7 @@ func writeAttempts(t *testing.T, store *photos.Store) []writeAttempt {
 			return err
 		}},
 		{"UnstackAll", func(p, uid string) error { _, err := store.UnstackAll(ctx, p, uid); return err }},
+		{"DeleteAudited", func(p, uid string) error { return store.DeleteAudited(ctx, p, uid, entry()) }},
 		{"UnstackAllAudited", func(p, uid string) error {
 			_, err := store.UnstackAllAudited(ctx, p, uid, entry())
 			return err
@@ -182,6 +183,11 @@ func TestCreateStack_neverSpansProjects(t *testing.T) {
 	if _, err := store.CreateStackAudited(ctx, f.B.ProjectUID, f.B.PhotoUID, members,
 		audit.Entry{Action: audit.ActionPhotosStack, TargetType: "photos"}); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("CreateStackAudited across projects = %v, want ErrPhotoNotFound", err)
+	}
+	plans := []photos.StackPlan{{PrimaryUID: f.B.PhotoUID, MemberUIDs: members}}
+	if _, err := store.CreateStacksAudited(ctx, f.B.ProjectUID, plans,
+		audit.Entry{Action: audit.ActionStacksDetect, TargetType: "photos"}); !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Errorf("CreateStacksAudited across projects = %v, want ErrPhotoNotFound", err)
 	}
 	for _, side := range []*projecttest.Tenant{&f.A, &f.B} {
 		photo, err := store.GetForJob(ctx, side.PhotoUID)

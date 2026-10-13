@@ -75,11 +75,18 @@ func (s *Store) CreateStackAudited(
 // worth keeping — but touches no photo.
 //
 // A plan that does not describe a stack fails the whole pass with
-// ErrStackTooSmall or ErrPhotoNotFound, as does a member that is missing or
-// archived.
+// ErrStackTooSmall or ErrPhotoNotFound, as does a member that is missing,
+// archived or a photo of another project than projectUID: every member of every
+// plan is proved in the pass's own transaction before the first stack is
+// formed, so a stack never spans projects. entry's ProjectUID defaults to
+// projectUID; an empty projectUID is ErrNoProject.
 func (s *Store) CreateStacksAudited(
-	ctx context.Context, plans []StackPlan, entry audit.Entry,
+	ctx context.Context, projectUID string, plans []StackPlan, entry audit.Entry,
 ) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	entry = withProject(entry, projectUID)
 	normalized := make([]StackPlan, len(plans))
 	for i, plan := range plans {
 		p, err := plan.normalize()
@@ -99,6 +106,9 @@ func (s *Store) CreateStacksAudited(
 		photoCount += len(plan.MemberUIDs)
 	}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := requirePlansInProject(ctx, tx, projectUID, normalized); err != nil {
+			return err
+		}
 		for i, plan := range normalized {
 			if err := applyNewStackTx(ctx, tx, stackUIDs[i], plan.PrimaryUID, plan.MemberUIDs); err != nil {
 				return err
@@ -116,6 +126,21 @@ func (s *Store) CreateStacksAudited(
 		return nil, err
 	}
 	return stackUIDs, nil
+}
+
+// requirePlansInProject proves, on tx, that every member of every plan is a
+// photo of projectUID (requirePhotosInProject over the union of the plans), so
+// one foreign uid refuses the whole detection pass with ErrPhotoNotFound before
+// any stack is formed. An empty plan list proves nothing and passes.
+func requirePlansInProject(ctx context.Context, tx pgx.Tx, projectUID string, plans []StackPlan) error {
+	var members []string
+	for _, plan := range plans {
+		members = append(members, plan.MemberUIDs...)
+	}
+	if len(members) == 0 {
+		return nil
+	}
+	return requirePhotosInProject(ctx, tx, projectUID, members)
 }
 
 // SetStackPrimaryAudited makes memberUID the primary of its stack and writes

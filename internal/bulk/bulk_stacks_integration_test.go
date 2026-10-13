@@ -57,7 +57,7 @@ func TestApply_archiveRepairsStack(t *testing.T) {
 	}
 
 	archive := true
-	res, err := svc.Apply(ctx, "", []string{primary}, bulk.Operations{Archive: &archive})
+	res, err := svc.Apply(ctx, project.BootstrapUID, "", []string{primary}, bulk.Operations{Archive: &archive})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestApply_unarchiveLeavesStacksAlone(t *testing.T) {
 	}
 
 	archive := false
-	if _, err := svc.Apply(ctx, "", []string{primary}, bulk.Operations{Archive: &archive}); err != nil {
+	if _, err := svc.Apply(ctx, project.BootstrapUID, "", []string{primary}, bulk.Operations{Archive: &archive}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 

@@ -201,13 +201,21 @@ func (s *Store) NearestPhash(ctx context.Context, phash int64) (uid string, dist
 // a video's poster-frame hash from being linked to a photograph. The result is
 // ordered by photo_uid for deterministic grouping and is empty (not nil) when no
 // visible photo has a hash.
-func (s *Store) ListActivePhashes(ctx context.Context) ([]Phash, error) {
-	const q = `SELECT ph.photo_uid, ph.phash, ph.dhash, p.media_type, ph.created_at
+//
+// Only the photos of projectUID are listed — duplicate groups are built inside
+// one project, so the banded pHash join never pairs two projects' photos. An
+// empty projectUID is ErrNoProject.
+func (s *Store) ListActivePhashes(ctx context.Context, projectUID string) ([]Phash, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	const q = `SELECT ph.photo_uid, ph.phash, ph.dhash, photos.media_type, ph.created_at
 		FROM photo_phashes ph
-		JOIN photos p ON p.uid = ph.photo_uid
-		WHERE p.archived_at IS NULL AND (p.stack_uid IS NULL OR p.stack_primary)
+		JOIN photos ON photos.uid = ph.photo_uid
+		WHERE photos.project_id = $1
+		  AND photos.archived_at IS NULL AND (photos.stack_uid IS NULL OR photos.stack_primary)
 		ORDER BY ph.photo_uid`
-	rows, err := s.pool.Query(ctx, q)
+	rows, err := s.pool.Query(ctx, q, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying active phashes: %w", err)
 	}

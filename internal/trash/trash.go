@@ -10,6 +10,17 @@
 // objects. Artifacts are always deleted before the row so an interrupted purge
 // leaves a re-purgeable orphan row rather than dangling files. Every operation is idempotent and safe
 // to re-run.
+//
+// # Projects
+//
+// Every operation works inside one project: PurgePhoto, EmptyTrash and
+// PurgeOlderThan take the project uid after the context and never reach another
+// project's archive (a foreign uid is photos.ErrPhotoNotFound, exactly like a
+// missing one). The scheduled retention purge has no request and so no project;
+// it lists the active projects and sweeps each one's trash in turn. The objects a
+// purge deletes are named by the photo's own rows — the file_path of every
+// stored file and the file_hash the derived media are keyed by — never
+// recomputed from the project, so a photo is cleaned up where it actually lives.
 package trash
 
 import (
@@ -23,6 +34,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/storyboard"
@@ -61,20 +73,31 @@ const (
 
 // PhotoStore is the subset of the photo repository the purge needs: resolving a
 // photo and its files, enumerating the archived backlog, and deleting a row.
+// Every method works inside the project it is given; a photo of another project
+// is photos.ErrPhotoNotFound. *photos.Store satisfies it.
 type PhotoStore interface {
-	// GetByUID returns the photo with uid, or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
-	// FilesForJob returns every stored file (original and sidecars) for the
-	// photo, in whichever project holds it: the purge runs without a request.
-	FilesForJob(ctx context.Context, photoUID string) ([]photos.PhotoFile, error)
-	// DeleteAudited removes the photo row (cascading its satellite rows) and writes
-	// entry to the audit log in the same transaction, so the permanent deletion and
-	// its audit record commit atomically. It returns photos.ErrPhotoNotFound when no
-	// such photo exists, in which case nothing is deleted and no audit row is written.
-	DeleteAudited(ctx context.Context, uid string, entry audit.Entry) error
-	// ListArchivedUIDs returns archived photo UIDs oldest-first; before bounds the
-	// set to archived_at <= before (nil = all archived).
-	ListArchivedUIDs(ctx context.Context, before *time.Time, limit, offset int) ([]string, error)
+	// GetByUIDInProject returns the project's photo with uid, or
+	// photos.ErrPhotoNotFound.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
+	// ListFiles returns every stored file (original and sidecars) of the
+	// project's photo.
+	ListFiles(ctx context.Context, projectUID, photoUID string) ([]photos.PhotoFile, error)
+	// DeleteAudited removes the project's photo row (cascading its satellite
+	// rows) and writes entry to the audit log in the same transaction, so the
+	// permanent deletion and its audit record commit atomically. It returns
+	// photos.ErrPhotoNotFound when the project holds no such photo, in which case
+	// nothing is deleted and no audit row is written.
+	DeleteAudited(ctx context.Context, projectUID, uid string, entry audit.Entry) error
+	// ListArchivedUIDs returns the project's archived photo UIDs oldest-first;
+	// before bounds the set to archived_at <= before (nil = all archived).
+	ListArchivedUIDs(ctx context.Context, projectUID string, before *time.Time, limit, offset int) ([]string, error)
+}
+
+// ProjectLister enumerates the projects the scheduled retention purge sweeps.
+// *project.Store satisfies it; deactivated projects are skipped by the purge.
+type ProjectLister interface {
+	// List returns every project of the instance.
+	List(ctx context.Context) ([]project.Project, error)
 }
 
 // FileStorage is the subset of storage the purge needs: deleting an original by
@@ -118,11 +141,15 @@ type Result struct {
 	Failed int `json:"failed"`
 }
 
-// Config bundles the dependencies of New. Photos, Storage and Thumbnailer are
-// required; Remote is optional (nil when no remote backup is configured).
+// Config bundles the dependencies of New. Photos, Projects, Storage and
+// Thumbnailer are required; Remote is optional (nil when no remote backup is
+// configured).
 type Config struct {
 	// Photos is the photo repository.
 	Photos PhotoStore
+	// Projects lists the projects whose trash the scheduled retention purge
+	// sweeps, one after another.
+	Projects ProjectLister
 	// Storage deletes originals from disk.
 	Storage FileStorage
 	// Thumbnailer removes cached thumbnails from disk.
@@ -145,6 +172,7 @@ type Config struct {
 // Service purges soft-deleted photos.
 type Service struct {
 	photos        PhotoStore
+	projects      ProjectLister
 	storage       FileStorage
 	thumbnailer   ThumbStore
 	storyboards   StoryboardStore
@@ -155,10 +183,10 @@ type Service struct {
 }
 
 // New returns a purge Service from cfg. It panics if a required collaborator
-// (Photos, Storage or Thumbnailer) is nil, since that is a wiring bug.
+// (Photos, Projects, Storage or Thumbnailer) is nil, since that is a wiring bug.
 func New(cfg Config) *Service {
-	if cfg.Photos == nil || cfg.Storage == nil || cfg.Thumbnailer == nil {
-		panic("trash: Photos, Storage and Thumbnailer are required")
+	if cfg.Photos == nil || cfg.Projects == nil || cfg.Storage == nil || cfg.Thumbnailer == nil {
+		panic("trash: Photos, Projects, Storage and Thumbnailer are required")
 	}
 	batch := cfg.BatchSize
 	if batch <= 0 {
@@ -170,6 +198,7 @@ func New(cfg Config) *Service {
 	}
 	return &Service{
 		photos:        cfg.Photos,
+		projects:      cfg.Projects,
 		storage:       cfg.Storage,
 		thumbnailer:   cfg.Thumbnailer,
 		storyboards:   cfg.Storyboards,
@@ -180,31 +209,33 @@ func New(cfg Config) *Service {
 	}
 }
 
-// PurgePhoto permanently deletes the archived photo identified by uid, recording
-// meta (the acting admin/editor) on the purge's audit entry. It returns
-// photos.ErrPhotoNotFound if no such photo exists, or ErrNotArchived if the photo
-// is live (not in the trash). On success the row and all its artifacts are gone.
-func (s *Service) PurgePhoto(ctx context.Context, uid string, meta audit.Meta) error {
-	photo, err := s.photos.GetByUID(ctx, uid)
+// PurgePhoto permanently deletes the project's archived photo identified by uid,
+// recording meta (the acting admin/editor) on the purge's audit entry. It returns
+// photos.ErrPhotoNotFound if the project holds no such photo — a photo of another
+// project included, which is left untouched — or ErrNotArchived if the photo is
+// live (not in the trash). On success the row and all its artifacts are gone.
+func (s *Service) PurgePhoto(ctx context.Context, projectUID, uid string, meta audit.Meta) error {
+	photo, err := s.photos.GetByUIDInProject(ctx, projectUID, uid)
 	if err != nil {
 		return fmt.Errorf("trash: resolving photo %s: %w", uid, err)
 	}
 	if photo.ArchivedAt == nil {
 		return ErrNotArchived
 	}
-	return s.purgeOne(ctx, uid, meta, sourceManual)
+	return s.purgeOne(ctx, projectUID, uid, meta, sourceManual)
 }
 
-// EmptyTrash permanently deletes every archived photo regardless of how long it
-// has been in the trash, attributing each purge to meta (the acting
-// admin/editor). It returns the count purged and failed; a per-photo failure is
-// recorded and the photo is left in the trash rather than aborting the whole run.
-func (s *Service) EmptyTrash(ctx context.Context, meta audit.Meta) (Result, error) {
-	return s.purgeArchived(ctx, nil, meta, sourceEmptyTrash)
+// EmptyTrash permanently deletes every archived photo of the project regardless
+// of how long it has been in the trash, attributing each purge to meta (the
+// acting admin/editor). Another project's trash is never touched. It returns the
+// count purged and failed; a per-photo failure is recorded and the photo is left
+// in the trash rather than aborting the whole run.
+func (s *Service) EmptyTrash(ctx context.Context, projectUID string, meta audit.Meta) (Result, error) {
+	return s.purgeArchived(ctx, projectUID, nil, meta, sourceEmptyTrash)
 }
 
-// PurgeOlderThan permanently deletes every archived photo whose archived_at is
-// older than now minus days, attributing each purge to meta (the acting admin)
+// PurgeOlderThan permanently deletes every archived photo of the project whose
+// archived_at is older than now minus days, attributing each purge to meta (the acting admin)
 // and tagging it with sourcePurgeOlder so a deliberate age-bounded purge is
 // distinguishable in the audit trail from the scheduled retention purge. Unlike
 // PurgeExpired it ignores the configured retention window — the caller chooses
@@ -215,32 +246,57 @@ func (s *Service) EmptyTrash(ctx context.Context, meta audit.Meta) (Result, erro
 // clamped to zero. days == 0 sets the cutoff at now, which matches every
 // archived photo — equivalent to EmptyTrash. It returns the count purged and
 // failed, with per-photo failures left in the trash for a later retry.
-func (s *Service) PurgeOlderThan(ctx context.Context, days int, meta audit.Meta) (Result, error) {
+func (s *Service) PurgeOlderThan(ctx context.Context, projectUID string, days int, meta audit.Meta) (Result, error) {
 	if days < 0 {
 		days = 0
 	}
 	cutoff := time.Now().Add(-time.Duration(days) * hoursPerDay * time.Hour)
-	return s.purgeArchived(ctx, &cutoff, meta, sourcePurgeOlder)
+	return s.purgeArchived(ctx, projectUID, &cutoff, meta, sourcePurgeOlder)
 }
 
-// PurgeExpired permanently deletes every archived photo whose archived_at is
-// older than the configured retention period. It runs without an HTTP actor, so
-// each purge is audited against a system actor (empty ActorUID). When retention
-// is disabled (RetentionDays <= 0) it is a no-op returning a zero Result.
+// PurgeExpired permanently deletes, in every active project, each archived
+// photo whose archived_at is older than the configured retention period. It
+// lists the projects and sweeps one project's trash at a time — a deactivated
+// project is skipped, its data kept as it is — and returns the counts summed
+// over all of them. It runs without an HTTP actor, so each purge is audited
+// against a system actor (empty ActorUID) under the photo's project. When
+// retention is disabled (RetentionDays <= 0) it is a no-op returning a zero
+// Result. A project whose sweep fails is logged and the next one still runs;
+// only a listing failure or a cancelled context ends the pass early.
 func (s *Service) PurgeExpired(ctx context.Context) (Result, error) {
 	if s.retentionDays <= 0 {
 		return Result{}, nil
 	}
 	cutoff := time.Now().Add(-time.Duration(s.retentionDays) * hoursPerDay * time.Hour)
-	return s.purgeArchived(ctx, &cutoff, audit.Meta{}, sourceRetention)
+	projects, err := s.projects.List(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("trash: listing projects: %w", err)
+	}
+	var total Result
+	for _, p := range projects {
+		if !p.Active {
+			continue
+		}
+		res, err := s.purgeArchived(ctx, p.UID, &cutoff, audit.Meta{}, sourceRetention)
+		total.Purged += res.Purged
+		total.Failed += res.Failed
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return total, fmt.Errorf("trash: purge interrupted: %w", ctxErr)
+			}
+			s.logger.Printf("trash: retention purge of project %s failed: %v", p.UID, err)
+		}
+	}
+	return total, nil
 }
 
-// purgeArchived purges archived photos in oldest-first batches until none remain
-// in scope, attributing each purge to meta with the given source. before bounds
-// the set (nil = all archived). Failed photos are skipped via a growing offset so
-// the loop always converges, and a cancelled context stops it promptly.
+// purgeArchived purges the project's archived photos in oldest-first batches
+// until none remain in scope, attributing each purge to meta with the given
+// source. before bounds the set (nil = all archived). Failed photos are skipped
+// via a growing offset so the loop always converges, and a cancelled context
+// stops it promptly.
 func (s *Service) purgeArchived(
-	ctx context.Context, before *time.Time, meta audit.Meta, source string,
+	ctx context.Context, projectUID string, before *time.Time, meta audit.Meta, source string,
 ) (Result, error) {
 	var res Result
 	offset := 0
@@ -248,29 +304,29 @@ func (s *Service) purgeArchived(
 		if err := ctx.Err(); err != nil {
 			return res, fmt.Errorf("trash: purge interrupted: %w", err)
 		}
-		uids, err := s.photos.ListArchivedUIDs(ctx, before, s.batchSize, offset)
+		uids, err := s.photos.ListArchivedUIDs(ctx, projectUID, before, s.batchSize, offset)
 		if err != nil {
 			return res, fmt.Errorf("trash: listing archived photos: %w", err)
 		}
 		if len(uids) == 0 {
 			return res, nil
 		}
-		if err := s.purgeBatch(ctx, uids, &res, &offset, meta, source); err != nil {
+		if err := s.purgeBatch(ctx, projectUID, uids, &res, &offset, meta, source); err != nil {
 			return res, err
 		}
 	}
 }
 
-// purgeBatch purges one batch of UIDs, accumulating counts into res and
-// attributing each purge to meta with the given source. A per-photo failure is
-// logged, counted and skipped (offset is advanced so the failed UID is stepped
-// past on the next batch, keeping the loop convergent); only a cancelled context
-// aborts the batch.
+// purgeBatch purges one batch of the project's UIDs, accumulating counts into
+// res and attributing each purge to meta with the given source. A per-photo
+// failure is logged, counted and skipped (offset is advanced so the failed UID
+// is stepped past on the next batch, keeping the loop convergent); only a
+// cancelled context aborts the batch.
 func (s *Service) purgeBatch(
-	ctx context.Context, uids []string, res *Result, offset *int, meta audit.Meta, source string,
+	ctx context.Context, projectUID string, uids []string, res *Result, offset *int, meta audit.Meta, source string,
 ) error {
 	for _, uid := range uids {
-		if err := s.purgeOne(ctx, uid, meta, source); err != nil {
+		if err := s.purgeOne(ctx, projectUID, uid, meta, source); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return fmt.Errorf("trash: purge interrupted: %w", ctxErr)
 			}
@@ -286,12 +342,15 @@ func (s *Service) purgeBatch(
 
 // purgeOne deletes a single photo's artifacts (originals, thumbnails and remote
 // objects) and then its row, writing an audit entry (attributed to meta, tagged
-// with source) in the same transaction as the row deletion. Artifacts are removed
+// with source, recorded under the project) in the same transaction as the row
+// deletion. The artifacts are found through the photo's own file rows — every
+// key comes from a row's file_path or file_hash, never from the project — so a
+// photo is cleaned up wherever its rows say it lives. Artifacts are removed
 // first so an interrupted purge leaves a re-purgeable orphan row rather than
 // dangling files; a hard artifact error aborts before the row is deleted so the
 // next run retries it.
-func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, source string) error {
-	files, err := s.photos.FilesForJob(ctx, uid)
+func (s *Service) purgeOne(ctx context.Context, projectUID, uid string, meta audit.Meta, source string) error {
+	files, err := s.photos.ListFiles(ctx, projectUID, uid)
 	if err != nil {
 		return fmt.Errorf("listing files: %w", err)
 	}
@@ -301,7 +360,7 @@ func (s *Service) purgeOne(ctx context.Context, uid string, meta audit.Meta, sou
 		}
 	}
 	entry := meta.Entry(audit.ActionPhotoPurge, "photos", uid, map[string]any{"source": source})
-	if err := s.photos.DeleteAudited(ctx, uid, entry); err != nil {
+	if err := s.photos.DeleteAudited(ctx, projectUID, uid, entry); err != nil {
 		return fmt.Errorf("deleting row: %w", err)
 	}
 	return nil

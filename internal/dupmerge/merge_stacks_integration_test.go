@@ -63,6 +63,7 @@ func TestMerge_archivedCopyLeavesItsStack(t *testing.T) {
 	}
 
 	res, err := svc.Merge(ctx, dupmerge.Input{
+		ProjectUID: project.BootstrapUID,
 		KeeperUID:  keeper,
 		MemberUIDs: []string{keeper, copyUID},
 	})

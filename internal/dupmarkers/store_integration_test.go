@@ -3,11 +3,14 @@
 package dupmarkers_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/dupmarkers"
+	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -50,7 +53,7 @@ func TestListRepeatedMarkers_ignoresHandAttached(t *testing.T) {
 	dbtest.TruncateAll(t, db)
 	seedRepeatFixture(t, db)
 
-	rows, err := dupmarkers.NewStore(db.Pool()).ListRepeatedMarkers(t.Context())
+	rows, err := dupmarkers.NewStore(db.Pool()).ListRepeatedMarkers(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListRepeatedMarkers: %v", err)
 	}
@@ -61,5 +64,34 @@ func TestListRepeatedMarkers_ignoresHandAttached(t *testing.T) {
 		if row.MarkerUID != "mk_1" && row.MarkerUID != "mk_2" {
 			t.Errorf("row %+v, want only the face markers", row)
 		}
+	}
+}
+
+// TestListRepeatedMarkers_staysInsideTheProject marks each seeded tenant's
+// person a second time on the tenant's own photo, so both projects hold one
+// finding, and asserts each project's listing names only its own markers.
+func TestListRepeatedMarkers_staysInsideTheProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	f := projecttest.Seed(t, db.Pool())
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tn := f.Tenant(side)
+		if _, err := db.Pool().Exec(t.Context(), `INSERT INTO markers (uid, photo_uid, subject_uid, type, x, y, w, h)
+			VALUES ($1, $2, $3, 'face', 0.6, 0.25, 0.2, 0.2)`,
+			projecttest.MissingUID("mk"), tn.PhotoUID, tn.SubjectUID); err != nil {
+			t.Fatalf("marking %s's person twice: %v", side, err)
+		}
+	}
+	store := dupmarkers.NewStore(db.Pool())
+	f.AssertStoreScoped(t, func(projectUID string) ([]string, error) {
+		rows, err := store.ListRepeatedMarkers(t.Context(), projectUID)
+		uids := make([]string, 0, 2*len(rows))
+		for _, row := range rows {
+			uids = append(uids, row.MarkerUID, row.PhotoUID)
+		}
+		return uids, err
+	})
+	if _, err := store.ListRepeatedMarkers(t.Context(), ""); !errors.Is(err, dupmarkers.ErrNoProject) {
+		t.Errorf("ListRepeatedMarkers without a project = %v, want ErrNoProject", err)
 	}
 }

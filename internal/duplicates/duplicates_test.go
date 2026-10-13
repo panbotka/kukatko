@@ -10,27 +10,38 @@ import (
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
-// fakePhashes serves a fixed set of perceptual hashes (or an error).
+// testProject is the project every unit test scans.
+const testProject = "pr-test"
+
+// fakePhashes serves a fixed set of perceptual hashes (or an error), recording
+// the project it was asked for.
 type fakePhashes struct {
-	hashes []photos.Phash
-	err    error
+	hashes  []photos.Phash
+	err     error
+	project *string
 }
 
 // ListActivePhashes returns the canned hashes or error.
-func (f fakePhashes) ListActivePhashes(_ context.Context) ([]photos.Phash, error) {
+func (f fakePhashes) ListActivePhashes(_ context.Context, projectUID string) ([]photos.Phash, error) {
+	if f.project != nil {
+		*f.project = projectUID
+	}
 	return f.hashes, f.err
 }
 
 // fakePhotos serves a fixed catalogue keyed by uid (or an error), recording the
 // uids requested.
 type fakePhotos struct {
-	byUID map[string]photos.Photo
-	err   error
-	asked []string
+	byUID   map[string]photos.Photo
+	err     error
+	asked   []string
+	project string
 }
 
-// ListByUIDs returns the known photos for uids, ignoring unknown ones.
-func (f *fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Photo, error) {
+// ListByUIDsInProject returns the known photos for uids, ignoring unknown ones,
+// and records the project it was asked for.
+func (f *fakePhotos) ListByUIDsInProject(_ context.Context, projectUID string, uids []string) ([]photos.Photo, error) {
+	f.project = projectUID
 	f.asked = append(f.asked, uids...)
 	if f.err != nil {
 		return nil, f.err
@@ -46,12 +57,18 @@ func (f *fakePhotos) ListByUIDs(_ context.Context, uids []string) ([]photos.Phot
 
 // fakeEmbeddings serves a fixed set of near-duplicate pairs (or an error).
 type fakeEmbeddings struct {
-	pairs []vectors.DuplicatePair
-	err   error
+	pairs   []vectors.DuplicatePair
+	err     error
+	project *string
 }
 
-// FindDuplicatePairs returns the canned pairs or error.
-func (f fakeEmbeddings) FindDuplicatePairs(_ context.Context, _ int, _ float64) ([]vectors.DuplicatePair, error) {
+// FindDuplicatePairs returns the canned pairs or error, recording the project.
+func (f fakeEmbeddings) FindDuplicatePairs(
+	_ context.Context, projectUID string, _ int, _ float64,
+) ([]vectors.DuplicatePair, error) {
+	if f.project != nil {
+		*f.project = projectUID
+	}
 	return f.pairs, f.err
 }
 
@@ -96,7 +113,7 @@ func TestFindGroups_phashGrouping(t *testing.T) {
 	)
 	svc := New(Config{Photos: photoCat, Phashes: fakePhashes{hashes: hashes}, PhashMaxDiff: 8})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -170,7 +187,7 @@ func TestFindGroups_embeddingGrouping(t *testing.T) {
 		PhashMaxDiff: 8, EmbeddingMaxDist: 0.05,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -208,7 +225,7 @@ func TestFindGroups_bothReason(t *testing.T) {
 		Photos: photoCat, Phashes: fakePhashes{hashes: hashes}, Embeddings: embed,
 		PhashMaxDiff: 8, EmbeddingMaxDist: 0.05,
 	})
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -235,7 +252,7 @@ func TestFindGroups_pagination(t *testing.T) {
 	)
 	svc := New(Config{Photos: photoCat, Phashes: fakePhashes{hashes: hashes}, PhashMaxDiff: 8})
 
-	first, err := svc.FindGroups(context.Background(), 2, 0)
+	first, err := svc.FindGroups(context.Background(), testProject, 2, 0)
 	if err != nil {
 		t.Fatalf("FindGroups page 1: %v", err)
 	}
@@ -246,7 +263,7 @@ func TestFindGroups_pagination(t *testing.T) {
 		t.Fatalf("page 1 next_offset = %v, want 2", first.NextOffset)
 	}
 
-	second, err := svc.FindGroups(context.Background(), 2, 2)
+	second, err := svc.FindGroups(context.Background(), testProject, 2, 2)
 	if err != nil {
 		t.Fatalf("FindGroups page 2: %v", err)
 	}
@@ -267,7 +284,7 @@ func TestFindGroups_noDuplicates(t *testing.T) {
 		makePhoto("ph_b", 100, 100, 10, baseTime),
 	)
 	svc := New(Config{Photos: photoCat, Phashes: fakePhashes{hashes: hashes}, PhashMaxDiff: 8})
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -287,7 +304,7 @@ func TestFindGroups_missingMetadataDropsGroup(t *testing.T) {
 	// Only ph_a has catalogue metadata; ph_b is missing.
 	photoCat := catalogue(makePhoto("ph_a", 100, 100, 10, baseTime))
 	svc := New(Config{Photos: photoCat, Phashes: fakePhashes{hashes: hashes}, PhashMaxDiff: 8})
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -301,7 +318,7 @@ func TestFindGroups_propagatesErrors(t *testing.T) {
 	t.Parallel()
 	sentinel := errors.New("boom")
 	svc := New(Config{Photos: catalogue(), Phashes: fakePhashes{err: sentinel}, PhashMaxDiff: 8})
-	if _, err := svc.FindGroups(context.Background(), 0, 0); !errors.Is(err, sentinel) {
+	if _, err := svc.FindGroups(context.Background(), testProject, 0, 0); !errors.Is(err, sentinel) {
 		t.Fatalf("FindGroups error = %v, want wrap of sentinel", err)
 	}
 }
@@ -338,5 +355,50 @@ func TestClampPaging(t *testing.T) {
 					tt.limit, tt.offset, gotLimit, gotOffset, tt.wantLimit, tt.wantOffset)
 			}
 		})
+	}
+}
+
+// TestFindGroups_scansOnlyTheGivenProject checks the project reaches every
+// source — the hash listing, the embedding scan and the member hydration — so
+// none of them can read another project's photos.
+func TestFindGroups_scansOnlyTheGivenProject(t *testing.T) {
+	t.Parallel()
+	hashes := []photos.Phash{{PhotoUID: "ph_a", Phash: 0}, {PhotoUID: "ph_b", Phash: 0b1}}
+	photoCat := catalogue(makePhoto("ph_a", 100, 100, 10, baseTime), makePhoto("ph_b", 100, 100, 10, baseTime))
+	var hashProject, embedProject string
+	svc := New(Config{
+		Photos:           photoCat,
+		Phashes:          fakePhashes{hashes: hashes, project: &hashProject},
+		Embeddings:       fakeEmbeddings{project: &embedProject},
+		PhashMaxDiff:     8,
+		EmbeddingMaxDist: 0.05,
+	})
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
+	if err != nil {
+		t.Fatalf("FindGroups: %v", err)
+	}
+	if res.Total != 1 {
+		t.Fatalf("got %d groups, want 1", res.Total)
+	}
+	for name, got := range map[string]string{
+		"hashes": hashProject, "embeddings": embedProject, "photos": photoCat.project,
+	} {
+		if got != testProject {
+			t.Errorf("%s asked for project %q, want %q", name, got, testProject)
+		}
+	}
+}
+
+// TestFindGroups_noProject refuses a scan without a project before any source
+// is read: an empty project is a programming error, never "the whole instance".
+func TestFindGroups_noProject(t *testing.T) {
+	t.Parallel()
+	photoCat := catalogue()
+	svc := New(Config{Photos: photoCat, Phashes: fakePhashes{err: errors.New("must not be read")}, PhashMaxDiff: 8})
+	if _, err := svc.FindGroups(context.Background(), "", 0, 0); !errors.Is(err, ErrNoProject) {
+		t.Fatalf("FindGroups without a project = %v, want ErrNoProject", err)
+	}
+	if _, err := svc.CountGroups(context.Background(), ""); !errors.Is(err, ErrNoProject) {
+		t.Fatalf("CountGroups without a project = %v, want ErrNoProject", err)
 	}
 }

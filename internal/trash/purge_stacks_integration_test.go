@@ -59,7 +59,7 @@ func TestPurgeExpired_repairsStack(t *testing.T) {
 	if len(list) != 1 || list[0].UID != sibling.UID {
 		t.Errorf("default listing = %+v, want only the live sibling %s", list, sibling.UID)
 	}
-	candidates, err := env.store.ListStackCandidates(ctx)
+	candidates, err := env.store.ListStackCandidates(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListStackCandidates: %v", err)
 	}

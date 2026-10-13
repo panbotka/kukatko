@@ -576,9 +576,9 @@ type PlaceReviewer interface {
 // DuplicateFinder returns a page of near-duplicate groups; *duplicates.Service
 // satisfies it. A nil one switches the duplicate check off.
 type DuplicateFinder interface {
-	// FindGroups returns one page of duplicate groups, largest and
-	// human-confirmed first.
-	FindGroups(ctx context.Context, limit, offset int) (duplicates.Result, error)
+	// FindGroups returns one page of the project's duplicate groups, largest
+	// and human-confirmed first.
+	FindGroups(ctx context.Context, projectUID string, limit, offset int) (duplicates.Result, error)
 }
 
 // OutlierRanker ranks one subject's assigned faces by distance from that

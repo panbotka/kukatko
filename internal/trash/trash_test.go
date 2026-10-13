@@ -10,6 +10,8 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -25,6 +27,13 @@ type fakePhotoStore struct {
 	listErr   error
 }
 
+// testProject is the project the unit tests' photos live in; otherProject is a
+// second one, for the isolation cases.
+const (
+	testProject  = "pj_test"
+	otherProject = "pj_other"
+)
+
 // newFakePhotoStore returns an empty store ready to be seeded.
 func newFakePhotoStore() *fakePhotoStore {
 	return &fakePhotoStore{
@@ -36,35 +45,57 @@ func newFakePhotoStore() *fakePhotoStore {
 	}
 }
 
-// seed adds a photo with the given archived time (nil = live) and one original
-// file whose path and hash derive from the uid.
+// seed adds a photo of testProject with the given archived time (nil = live)
+// and one original file whose path and hash derive from the uid.
 func (f *fakePhotoStore) seed(uid string, archivedAt *time.Time) {
-	f.photos[uid] = photos.Photo{UID: uid, FileHash: uid + "-hash", FilePath: uid + ".jpg", ArchivedAt: archivedAt}
+	f.seedIn(testProject, uid, archivedAt)
+}
+
+// seedIn is seed for a photo of projectUID.
+func (f *fakePhotoStore) seedIn(projectUID, uid string, archivedAt *time.Time) {
+	f.photos[uid] = photos.Photo{
+		UID: uid, ProjectID: projectUID, FileHash: uid + "-hash", FilePath: uid + ".jpg", ArchivedAt: archivedAt,
+	}
 	f.files[uid] = []photos.PhotoFile{{PhotoUID: uid, FilePath: uid + ".jpg", FileHash: uid + "-hash"}}
 }
 
-// GetByUID returns the seeded photo or photos.ErrPhotoNotFound.
-func (f *fakePhotoStore) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+// inProject returns the seeded photo when it belongs to projectUID, like the
+// real store's project-scoped reads.
+func (f *fakePhotoStore) inProject(projectUID, uid string) (photos.Photo, bool) {
 	p, ok := f.photos[uid]
+	if !ok || p.ProjectID != projectUID {
+		return photos.Photo{}, false
+	}
+	return p, true
+}
+
+// GetByUIDInProject returns the project's seeded photo or
+// photos.ErrPhotoNotFound.
+func (f *fakePhotoStore) GetByUIDInProject(_ context.Context, projectUID, uid string) (photos.Photo, error) {
+	p, ok := f.inProject(projectUID, uid)
 	if !ok {
 		return photos.Photo{}, photos.ErrPhotoNotFound
 	}
 	return p, nil
 }
 
-// FilesForJob returns the seeded files for uid.
-func (f *fakePhotoStore) FilesForJob(_ context.Context, uid string) ([]photos.PhotoFile, error) {
+// ListFiles returns the seeded files for the project's uid.
+func (f *fakePhotoStore) ListFiles(_ context.Context, projectUID, uid string) ([]photos.PhotoFile, error) {
+	if _, ok := f.inProject(projectUID, uid); !ok {
+		return []photos.PhotoFile{}, nil
+	}
 	return f.files[uid], nil
 }
 
-// DeleteAudited removes the seeded photo and records the audit entry it carried,
-// honouring a configured per-uid error. A configured error leaves the row (and
-// records no audit entry), mirroring the real store's atomic rollback.
-func (f *fakePhotoStore) DeleteAudited(_ context.Context, uid string, entry audit.Entry) error {
+// DeleteAudited removes the project's seeded photo and records the audit entry
+// it carried, honouring a configured per-uid error. A configured error leaves
+// the row (and records no audit entry), mirroring the real store's atomic
+// rollback.
+func (f *fakePhotoStore) DeleteAudited(_ context.Context, projectUID, uid string, entry audit.Entry) error {
 	if err := f.deleteErr[uid]; err != nil {
 		return err
 	}
-	if _, ok := f.photos[uid]; !ok {
+	if _, ok := f.inProject(projectUID, uid); !ok {
 		return photos.ErrPhotoNotFound
 	}
 	delete(f.photos, uid)
@@ -76,7 +107,7 @@ func (f *fakePhotoStore) DeleteAudited(_ context.Context, uid string, entry audi
 // ListArchivedUIDs returns archived UIDs oldest-first, applying the before cutoff
 // and limit/offset over a deterministic snapshot.
 func (f *fakePhotoStore) ListArchivedUIDs(
-	_ context.Context, before *time.Time, limit, offset int,
+	_ context.Context, projectUID string, before *time.Time, limit, offset int,
 ) ([]string, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
@@ -87,7 +118,7 @@ func (f *fakePhotoStore) ListArchivedUIDs(
 	}
 	var entries []entry
 	for uid, p := range f.photos {
-		if p.ArchivedAt == nil {
+		if p.ArchivedAt == nil || p.ProjectID != projectUID {
 			continue
 		}
 		if before != nil && p.ArchivedAt.After(*before) {
@@ -169,6 +200,7 @@ func newService(t *testing.T, store *fakePhotoStore, fs FileStorage, th *fakeThu
 	t.Helper()
 	return New(Config{
 		Photos:        store,
+		Projects:      fakeProjects{active(testProject)},
 		Storage:       fs,
 		Thumbnailer:   th,
 		Remote:        remote,
@@ -203,7 +235,7 @@ func TestPurgePhoto_states(t *testing.T) {
 			fs, th := newFakeStorage(), newFakeThumb()
 			svc := newService(t, store, fs, th, nil)
 
-			err := svc.PurgePhoto(context.Background(), tt.uid, audit.Meta{ActorUID: "usr_admin"})
+			err := svc.PurgePhoto(context.Background(), testProject, tt.uid, audit.Meta{ActorUID: "usr_admin"})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("PurgePhoto error = %v, want %v", err, tt.wantErr)
 			}
@@ -238,7 +270,7 @@ func TestPurgePhoto_removesRemoteObject(t *testing.T) {
 	remote := &fakeRemote{removed: map[string]bool{}}
 	svc := newService(t, store, fs, th, remote)
 
-	if err := svc.PurgePhoto(context.Background(), "ph_a", audit.Meta{}); err != nil {
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_a", audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto: %v", err)
 	}
 	if !remote.removed["ph_a.jpg"] {
@@ -257,7 +289,7 @@ func TestEmptyTrash_purgesAllArchived(t *testing.T) {
 	fs, th := newFakeStorage(), newFakeThumb()
 	svc := newService(t, store, fs, th, nil)
 
-	res, err := svc.EmptyTrash(context.Background(), audit.Meta{})
+	res, err := svc.EmptyTrash(context.Background(), testProject, audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -308,7 +340,7 @@ func TestPurgeOlderThan_removesOnlyOlder(t *testing.T) {
 	fs, th := newFakeStorage(), newFakeThumb()
 	svc := newService(t, store, fs, th, nil)
 
-	res, err := svc.PurgeOlderThan(context.Background(), 1, audit.Meta{ActorUID: "usr_admin"})
+	res, err := svc.PurgeOlderThan(context.Background(), testProject, 1, audit.Meta{ActorUID: "usr_admin"})
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -338,7 +370,7 @@ func TestPurgeOlderThan_zeroDaysEmptiesAll(t *testing.T) {
 	svc := newService(t, store, fs, th, nil)
 
 	// days == 0 means "everything currently in trash", equivalent to EmptyTrash.
-	res, err := svc.PurgeOlderThan(context.Background(), 0, audit.Meta{})
+	res, err := svc.PurgeOlderThan(context.Background(), testProject, 0, audit.Meta{})
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -363,7 +395,7 @@ func TestPurgeOlderThan_negativeDaysClampedToZero(t *testing.T) {
 
 	// A negative age is clamped to 0 (the cutoff never lands in the future), so it
 	// behaves like days=0 rather than purging photos archived "after now".
-	res, err := svc.PurgeOlderThan(context.Background(), -5, audit.Meta{})
+	res, err := svc.PurgeOlderThan(context.Background(), testProject, -5, audit.Meta{})
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -381,7 +413,9 @@ func TestPurgeExpired_disabledWhenRetentionNonPositive(t *testing.T) {
 	store := newFakePhotoStore()
 	store.seed("ph_old", &old)
 	fs, th := newFakeStorage(), newFakeThumb()
-	svc := New(Config{Photos: store, Storage: fs, Thumbnailer: th, RetentionDays: 0})
+	svc := New(Config{
+		Photos: store, Projects: fakeProjects{active(testProject)}, Storage: fs, Thumbnailer: th, RetentionDays: 0,
+	})
 
 	res, err := svc.PurgeExpired(context.Background())
 	if err != nil {
@@ -405,7 +439,7 @@ func TestPurgeArchived_keepsRowWhenArtifactDeleteFails(t *testing.T) {
 	fs.failOn["ph_bad.jpg"] = errors.New("disk on fire")
 	svc := newService(t, store, fs, th, nil)
 
-	res, err := svc.EmptyTrash(context.Background(), audit.Meta{})
+	res, err := svc.EmptyTrash(context.Background(), testProject, audit.Meta{})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -469,7 +503,9 @@ var _ storage.PrefixLister = (*fakeListingStorage)(nil)
 // seedHashed adds an archived photo whose file hash is a real hex digest, which
 // is what the HLS layout requires to address a video's segments.
 func (f *fakePhotoStore) seedHashed(uid, hash string, archivedAt *time.Time) {
-	f.photos[uid] = photos.Photo{UID: uid, FileHash: hash, FilePath: uid + ".mp4", ArchivedAt: archivedAt}
+	f.photos[uid] = photos.Photo{
+		UID: uid, ProjectID: testProject, FileHash: hash, FilePath: uid + ".mp4", ArchivedAt: archivedAt,
+	}
 	f.files[uid] = []photos.PhotoFile{{PhotoUID: uid, FilePath: uid + ".mp4", FileHash: hash}}
 }
 
@@ -497,7 +533,7 @@ func TestPurgePhoto_removesHLSObjects(t *testing.T) {
 	// wired with is the listing one.
 	svc := newService(t, store, fs, newFakeThumb(), nil)
 
-	if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err != nil {
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_video", audit.Meta{}); err != nil {
 		t.Fatalf("PurgePhoto: %v", err)
 	}
 	for _, key := range []string{
@@ -532,7 +568,7 @@ func TestPurgePhoto_hlsListingFailureIsReported(t *testing.T) {
 	fs.listErr = errors.New("bucket unreachable")
 	svc := newService(t, store, fs, newFakeThumb(), nil)
 
-	if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err == nil {
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_video", audit.Meta{}); err == nil {
 		t.Fatal("PurgePhoto succeeded, want the listing failure reported")
 	}
 	if store.deleted["ph_video"] {
@@ -552,7 +588,7 @@ func TestPurgePhoto_hlsSkippedWhenUnaddressable(t *testing.T) {
 		store := newFakePhotoStore()
 		store.seedHashed("ph_video", "aabbccddeeff", &old)
 		svc := newService(t, store, newFakeStorage(), newFakeThumb(), nil)
-		if err := svc.PurgePhoto(context.Background(), "ph_video", audit.Meta{}); err != nil {
+		if err := svc.PurgePhoto(context.Background(), testProject, "ph_video", audit.Meta{}); err != nil {
 			t.Fatalf("PurgePhoto: %v", err)
 		}
 		if !store.deleted["ph_video"] {
@@ -566,7 +602,7 @@ func TestPurgePhoto_hlsSkippedWhenUnaddressable(t *testing.T) {
 		store.seed("ph_odd", &old) // seed gives a non-hex "ph_odd-hash"
 		fs := newFakeListingStorage("hls/aabbccddeeff/1080p/init.mp4")
 		svc := newService(t, store, fs, newFakeThumb(), nil)
-		if err := svc.PurgePhoto(context.Background(), "ph_odd", audit.Meta{}); err != nil {
+		if err := svc.PurgePhoto(context.Background(), testProject, "ph_odd", audit.Meta{}); err != nil {
 			t.Fatalf("PurgePhoto: %v", err)
 		}
 		if !store.deleted["ph_odd"] {
@@ -576,4 +612,116 @@ func TestPurgePhoto_hlsSkippedWhenUnaddressable(t *testing.T) {
 			t.Error("an unrelated video's HLS objects were deleted")
 		}
 	})
+}
+
+// fakeProjects is a ProjectLister over a fixed project list.
+type fakeProjects []project.Project
+
+// List returns the fixed projects.
+func (f fakeProjects) List(context.Context) ([]project.Project, error) {
+	return f, nil
+}
+
+// active returns an active project with the given uid.
+func active(uid string) project.Project {
+	return project.Project{UID: uid, Active: true}
+}
+
+// TestPurgePhoto_foreignPhotoIsNotFound checks a photo of another project is
+// answered exactly like a missing one and is left in its own trash untouched.
+func TestPurgePhoto_foreignPhotoIsNotFound(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	store := newFakePhotoStore()
+	store.seedIn(otherProject, "ph_theirs", &old)
+	fs, th := newFakeStorage(), newFakeThumb()
+	svc := newService(t, store, fs, th, nil)
+
+	err := svc.PurgePhoto(context.Background(), testProject, "ph_theirs", audit.Meta{})
+	if !errors.Is(err, photos.ErrPhotoNotFound) {
+		t.Fatalf("PurgePhoto of a foreign photo = %v, want ErrPhotoNotFound", err)
+	}
+	if store.deleted["ph_theirs"] || fs.deleted["ph_theirs.jpg"] || len(th.removed) != 0 {
+		t.Errorf("a refused purge touched the other project's photo or its files")
+	}
+}
+
+// TestEmptyTrash_onlyTheProject empties one project's trash and leaves the
+// other project's archived photo — older, and listed in no other way — alone.
+func TestEmptyTrash_onlyTheProject(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	store := newFakePhotoStore()
+	store.seed("ph_mine", &old)
+	store.seedIn(otherProject, "ph_theirs", &old)
+	svc := newService(t, store, newFakeStorage(), newFakeThumb(), nil)
+
+	res, err := svc.EmptyTrash(context.Background(), testProject, audit.Meta{})
+	if err != nil {
+		t.Fatalf("EmptyTrash: %v", err)
+	}
+	if res.Purged != 1 || !store.deleted["ph_mine"] || store.deleted["ph_theirs"] {
+		t.Errorf("EmptyTrash = %+v, deleted %v; want only ph_mine purged", res, store.deleted)
+	}
+}
+
+// TestPurgeExpired_sweepsEveryActiveProject checks the scheduled retention purge
+// visits each active project's trash in turn and skips a deactivated project,
+// whose data is kept as it is.
+func TestPurgeExpired_sweepsEveryActiveProject(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-72 * time.Hour)
+	store := newFakePhotoStore()
+	store.seedIn(testProject, "ph_a", &old)
+	store.seedIn(otherProject, "ph_b", &old)
+	store.seedIn("pj_closed", "ph_closed", &old)
+	svc := New(Config{
+		Photos: store,
+		Projects: fakeProjects{
+			active(testProject), active(otherProject), {UID: "pj_closed", Active: false},
+		},
+		Storage: newFakeStorage(), Thumbnailer: newFakeThumb(), RetentionDays: 1,
+	})
+
+	res, err := svc.PurgeExpired(context.Background())
+	if err != nil {
+		t.Fatalf("PurgeExpired: %v", err)
+	}
+	if res.Purged != 2 || !store.deleted["ph_a"] || !store.deleted["ph_b"] {
+		t.Errorf("PurgeExpired = %+v, deleted %v; want ph_a and ph_b", res, store.deleted)
+	}
+	if store.deleted["ph_closed"] {
+		t.Errorf("the retention purge swept a deactivated project")
+	}
+}
+
+// TestPurgePhoto_keysComeFromTheRow seeds a photo whose original lives under a
+// project's storage prefix and asserts the purge deletes exactly the key its
+// file row names — and the sidecar derived from that key — rather than any key
+// recomputed from the project or the hash, so a photo is cleaned up where it
+// actually lives, whichever layout it was stored in.
+func TestPurgePhoto_keysComeFromTheRow(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	const key = "projects/pj_test/2026/10/ph_pref.jpg"
+	store := newFakePhotoStore()
+	store.photos["ph_pref"] = photos.Photo{
+		UID: "ph_pref", ProjectID: testProject, FileHash: "ph_pref-hash", FilePath: key, ArchivedAt: &old,
+	}
+	store.files["ph_pref"] = []photos.PhotoFile{{PhotoUID: "ph_pref", FilePath: key, FileHash: "ph_pref-hash"}}
+	fs := newFakeStorage()
+	svc := newService(t, store, fs, newFakeThumb(), nil)
+
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_pref", audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	sidecar, err := sidecarexport.KeyFor(key)
+	if err != nil {
+		t.Fatalf("KeyFor: %v", err)
+	}
+	for _, want := range []string{key, sidecar} {
+		if !fs.deleted[want] {
+			t.Errorf("purge did not delete %s; deleted %v", want, fs.deleted)
+		}
+	}
 }

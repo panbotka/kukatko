@@ -11,6 +11,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/dupmerge"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // seedMedia creates a minimal photo of the given media type and returns its UID.
@@ -51,7 +52,7 @@ func TestMerge_refusesToArchiveAVideoForAStill(t *testing.T) {
 	still := seedMedia(t, store, "mk01", photos.MediaImage)
 	clip := seedMedia(t, store, "mk02", photos.MediaVideo)
 
-	in := dupmerge.Input{KeeperUID: still, MemberUIDs: []string{still, clip}}
+	in := dupmerge.Input{ProjectUID: project.BootstrapUID, KeeperUID: still, MemberUIDs: []string{still, clip}}
 	if _, err := svc.Preview(ctx, in); !errors.Is(err, dupmerge.ErrCrossKindGroup) {
 		t.Errorf("Preview error = %v, want ErrCrossKindGroup", err)
 	}
@@ -81,7 +82,7 @@ func TestMerge_refusesToArchiveAStillForAVideo(t *testing.T) {
 	clip := seedMedia(t, store, "mk03", photos.MediaVideo)
 	still := seedMedia(t, store, "mk04", photos.MediaImage)
 
-	_, err := svc.Merge(ctx, dupmerge.Input{KeeperUID: clip, MemberUIDs: []string{clip, still}})
+	_, err := svc.Merge(ctx, dupmerge.Input{ProjectUID: project.BootstrapUID, KeeperUID: clip, MemberUIDs: []string{clip, still}})
 	if !errors.Is(err, dupmerge.ErrCrossKindGroup) {
 		t.Fatalf("Merge error = %v, want ErrCrossKindGroup", err)
 	}
@@ -100,7 +101,7 @@ func TestMerge_twoVideosStillMerge(t *testing.T) {
 	keeper := seedMedia(t, store, "mk05", photos.MediaVideo)
 	copyUID := seedMedia(t, store, "mk06", photos.MediaVideo)
 
-	res, err := svc.Merge(ctx, dupmerge.Input{KeeperUID: keeper, MemberUIDs: []string{keeper, copyUID}})
+	res, err := svc.Merge(ctx, dupmerge.Input{ProjectUID: project.BootstrapUID, KeeperUID: keeper, MemberUIDs: []string{keeper, copyUID}})
 	if err != nil {
 		t.Fatalf("Merge: %v", err)
 	}

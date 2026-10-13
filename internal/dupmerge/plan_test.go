@@ -1,6 +1,7 @@
 package dupmerge
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -130,5 +131,30 @@ func TestPlanResult(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("result() = %+v, want %+v", got, want)
+	}
+}
+
+// TestValidate checks the request shape is refused before a transaction opens:
+// a merge without a project is a programming error, and the keeper rules hold.
+func TestValidate(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   Input
+		want error
+	}{
+		{"no project", Input{KeeperUID: "a", MemberUIDs: []string{"a", "b"}}, ErrNoProject},
+		{"no keeper", Input{ProjectUID: "p", MemberUIDs: []string{"a", "b"}}, ErrNoKeeper},
+		{"one member", Input{ProjectUID: "p", KeeperUID: "a", MemberUIDs: []string{"a"}}, ErrTooFewMembers},
+		{"keeper outside", Input{ProjectUID: "p", KeeperUID: "c", MemberUIDs: []string{"a", "b"}}, ErrKeeperNotInGroup},
+		{"valid", Input{ProjectUID: "p", KeeperUID: "a", MemberUIDs: []string{"a", "b"}}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := validate(tt.in); !errors.Is(err, tt.want) {
+				t.Errorf("validate(%+v) = %v, want %v", tt.in, err, tt.want)
+			}
+		})
 	}
 }

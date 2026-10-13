@@ -53,10 +53,16 @@ const stackCandidateColumns = `uid, file_name, original_name, taken_at, lat, lng
 // unstacked, non-archived rows, each projected to the fields the detection rules
 // need. Already-stacked photos are excluded so a re-run never disturbs existing
 // (or manually curated) stacks — the property that makes the backfill idempotent
-// and resumable. The result is empty (not nil) when nothing is stackable.
-func (s *Store) ListStackCandidates(ctx context.Context) ([]StackCandidate, error) {
+// and resumable. Only the photos of projectUID are candidates, so a detection
+// pass never forms a stack across two projects. The result is empty (not nil)
+// when nothing is stackable; an empty projectUID is ErrNoProject.
+func (s *Store) ListStackCandidates(ctx context.Context, projectUID string) ([]StackCandidate, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx,
-		"SELECT "+stackCandidateColumns+" FROM photos WHERE archived_at IS NULL AND stack_uid IS NULL ORDER BY uid")
+		"SELECT "+stackCandidateColumns+" FROM photos WHERE "+projectClause("$1")+
+			" AND archived_at IS NULL AND stack_uid IS NULL ORDER BY uid", projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying stack candidates: %w", err)
 	}
@@ -66,11 +72,17 @@ func (s *Store) ListStackCandidates(ctx context.Context) ([]StackCandidate, erro
 // StackInfoByUIDs returns the stack-candidate projection for the given (non-
 // archived) uids, in uid order. Unlike ListStackCandidates it does not exclude
 // already-stacked photos, so manual stacking can rank a selection that mixes
-// standalone and previously-stacked photos. Missing or archived uids are simply
-// absent, letting the caller detect a bad selection by the returned count.
-func (s *Store) StackInfoByUIDs(ctx context.Context, uids []string) ([]StackCandidate, error) {
+// standalone and previously-stacked photos. Missing, archived or foreign uids (a
+// photo of another project than projectUID) are simply absent, letting the
+// caller detect a bad selection by the returned count. An empty projectUID is
+// ErrNoProject.
+func (s *Store) StackInfoByUIDs(ctx context.Context, projectUID string, uids []string) ([]StackCandidate, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx,
-		"SELECT "+stackCandidateColumns+" FROM photos WHERE uid = ANY($1) AND archived_at IS NULL ORDER BY uid", uids)
+		"SELECT "+stackCandidateColumns+" FROM photos WHERE "+projectClause("$1")+
+			" AND uid = ANY($2) AND archived_at IS NULL ORDER BY uid", projectUID, uids)
 	if err != nil {
 		return nil, fmt.Errorf("photos: querying stack info: %w", err)
 	}

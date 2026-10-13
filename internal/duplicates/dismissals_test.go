@@ -64,7 +64,7 @@ func TestFindGroups_dismissedPairDropped(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFindGroups_dismissalIsUnordered(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestFindGroups_dismissedEmbeddingPairDropped(t *testing.T) {
 		EmbeddingMaxDist: 0.2,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestFindGroups_dismissedPairKeepsLargerGroup(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestFindGroups_dismissalOfUnknownPhotoIgnored(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestFindGroups_feedbackError(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	if _, err := svc.FindGroups(context.Background(), 0, 0); !errors.Is(err, sentinel) {
+	if _, err := svc.FindGroups(context.Background(), testProject, 0, 0); !errors.Is(err, sentinel) {
 		t.Fatalf("FindGroups error = %v, want it to wrap %v", err, sentinel)
 	}
 }
@@ -247,7 +247,7 @@ func TestFindGroups_confirmedPairIsMarkedAndRankedFirst(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestFindGroups_confirmationIsUnordered(t *testing.T) {
 		PhashMaxDiff: 8,
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, 0)
+	res, err := svc.FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}

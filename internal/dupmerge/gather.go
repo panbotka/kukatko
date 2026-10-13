@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -17,7 +18,10 @@ const (
 	subjectSourceSQL = `SELECT DISTINCT subject_uid FROM markers ` +
 		`WHERE photo_uid = ANY($1) AND subject_uid IS NOT NULL AND invalid = FALSE`
 	loadPhotosSQL = `SELECT uid, title, description, media_type, archived_at IS NOT NULL ` +
-		`FROM photos WHERE uid = ANY($1)`
+		`FROM photos WHERE uid = ANY($1) AND project_id = $2`
+	// countInProjectSQL counts how many of the distinct member uids ($1) are
+	// photos of the project ($2): the one query that proves the whole group.
+	countInProjectSQL = `SELECT count(*) FROM photos WHERE uid = ANY($1) AND project_id = $2`
 )
 
 // buildPlan gathers the current album/label/people/scalar state of the keeper and
@@ -26,8 +30,16 @@ const (
 // fill, and the still-active copies to archive. It returns ErrKeeperNotFound when
 // the keeper photo does not exist and ErrCrossKindGroup when a copy it would
 // archive is not the same kind of media as the keeper.
+//
+// Before anything else it proves that every member is a photo of in.ProjectUID
+// (requireGroupInProject) and returns ErrPhotoNotFound otherwise, so a group
+// mixing two projects — or naming a photo that does not exist — is refused
+// whole and no association of another project is ever read, let alone copied.
 func buildPlan(ctx context.Context, q querier, in Input) (plan, error) {
-	photos, err := loadPhotos(ctx, q, in.MemberUIDs)
+	if err := requireGroupInProject(ctx, q, in.ProjectUID, in.MemberUIDs); err != nil {
+		return plan{}, err
+	}
+	photos, err := loadPhotos(ctx, q, in.ProjectUID, in.MemberUIDs)
 	if err != nil {
 		return plan{}, err
 	}
@@ -79,10 +91,27 @@ func checkSameKind(keeper photoRow, archive []string, photos map[string]photoRow
 	return nil
 }
 
-// loadPhotos reads the scalar fields of every member that exists, keyed by UID.
-// Unknown UIDs are simply absent from the map.
-func loadPhotos(ctx context.Context, q querier, uids []string) (map[string]photoRow, error) {
-	rows, err := q.Query(ctx, loadPhotosSQL, uids)
+// requireGroupInProject returns ErrPhotoNotFound unless every distinct uid of
+// members names a photo of projectUID, counted in one query. A foreign uid and a
+// missing one are the same answer, and neither is named in it.
+func requireGroupInProject(ctx context.Context, q querier, projectUID string, members []string) error {
+	distinct := slices.Clone(members)
+	slices.Sort(distinct)
+	distinct = slices.Compact(distinct)
+	var found int
+	if err := q.QueryRow(ctx, countInProjectSQL, distinct, projectUID).Scan(&found); err != nil {
+		return fmt.Errorf("dupmerge: checking the group's project: %w", err)
+	}
+	if found != len(distinct) {
+		return ErrPhotoNotFound
+	}
+	return nil
+}
+
+// loadPhotos reads the scalar fields of every member of the project, keyed by
+// UID. A uid the project does not hold is simply absent from the map.
+func loadPhotos(ctx context.Context, q querier, projectUID string, uids []string) (map[string]photoRow, error) {
+	rows, err := q.Query(ctx, loadPhotosSQL, uids, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("dupmerge: loading photos: %w", err)
 	}

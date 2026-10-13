@@ -27,7 +27,7 @@ func findGroups(t *testing.T, hashes []photos.Phash, cat *fakePhotos, embed Embe
 		cfg.Embeddings = embed
 		cfg.EmbeddingMaxDist = 0.1
 	}
-	res, err := New(cfg).FindGroups(context.Background(), 0, 0)
+	res, err := New(cfg).FindGroups(context.Background(), testProject, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}

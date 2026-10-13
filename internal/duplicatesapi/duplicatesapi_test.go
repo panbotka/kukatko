@@ -26,7 +26,7 @@ type fakeService struct {
 }
 
 // FindGroups records the paging arguments and returns the canned response.
-func (f *fakeService) FindGroups(_ context.Context, limit, offset int) (duplicates.Result, error) {
+func (f *fakeService) FindGroups(_ context.Context, _ string, limit, offset int) (duplicates.Result, error) {
 	f.calls++
 	f.gotLimit, f.gotOffset = limit, offset
 	return f.result, f.err
@@ -217,14 +217,28 @@ func TestHandleMerge_validationError(t *testing.T) {
 	}
 }
 
-// TestHandleMerge_keeperNotFound maps a missing keeper to 404.
-func TestHandleMerge_keeperNotFound(t *testing.T) {
+// TestHandleMerge_notFound maps a missing keeper and a member outside the
+// request's project to the same 404 with the same body, naming no uid: a photo
+// of another project must be indistinguishable from one that does not exist.
+func TestHandleMerge_notFound(t *testing.T) {
 	t.Parallel()
-	merge := &fakeMerge{err: dupmerge.ErrKeeperNotFound}
-	rec := doMerge(t, mountMerge(merge),
-		`{"keeper_uid":"ph_gone","member_uids":["ph_gone","ph_b"]}`)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want 404", rec.Code)
+	bodies := map[string]string{}
+	for name, err := range map[string]error{
+		"keeper missing": dupmerge.ErrKeeperNotFound,
+		"member foreign": dupmerge.ErrPhotoNotFound,
+	} {
+		rec := doMerge(t, mountMerge(&fakeMerge{err: err}),
+			`{"keeper_uid":"ph_gone","member_uids":["ph_gone","ph_b"]}`)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", name, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), "ph_") {
+			t.Errorf("%s: body %q names a uid", name, rec.Body.String())
+		}
+		bodies[name] = rec.Body.String()
+	}
+	if bodies["keeper missing"] != bodies["member foreign"] {
+		t.Errorf("bodies differ: %q vs %q", bodies["keeper missing"], bodies["member foreign"])
 	}
 }
 

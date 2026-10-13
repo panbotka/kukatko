@@ -24,7 +24,8 @@ import (
 // claims; a non-empty s.name drops the nameless catch-all subject, which exists to
 // hold thousands of untagged regions and would bury every real finding; archived_at IS
 // NULL drops photos already in the trash, whose markers are not worth a curator's
-// time. Non-primary stack members are deliberately kept: a RAW sibling with the
+// time. The project predicate keeps the scan inside the request's project.
+// Non-primary stack members are deliberately kept: a RAW sibling with the
 // same person tagged twice is the same mistake and deserves the same fix.
 const listRepeatedMarkersSQL = `
 SELECT t.marker_uid, t.photo_uid, t.subject_uid, t.subject_name, t.type,
@@ -38,7 +39,8 @@ FROM (
     FROM markers m
     JOIN subjects s ON s.uid = m.subject_uid
     JOIN photos p ON p.uid = m.photo_uid
-    WHERE m.invalid = FALSE
+    WHERE p.project_id = $1
+      AND m.invalid = FALSE
       AND m.type = 'face'
       AND s.name <> ''
       AND p.archived_at IS NULL
@@ -60,10 +62,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 // ListRepeatedMarkers returns every valid face marker of a named subject that
 // shares its photo with another marker of the same person, ordered by (photo,
-// subject, x, uid). A library with no such markers yields an empty (non-nil)
-// slice and a nil error.
-func (s *Store) ListRepeatedMarkers(ctx context.Context) ([]MarkerRow, error) {
-	rows, err := s.pool.Query(ctx, listRepeatedMarkersSQL)
+// subject, x, uid). Only the photos of projectUID are read — a marker has no
+// project of its own and belongs to its photo's. A project with no such markers
+// yields an empty (non-nil) slice and a nil error; an empty projectUID is
+// ErrNoProject.
+func (s *Store) ListRepeatedMarkers(ctx context.Context, projectUID string) ([]MarkerRow, error) {
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
+	rows, err := s.pool.Query(ctx, listRepeatedMarkersSQL, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("dupmarkers: querying repeated markers: %w", err)
 	}

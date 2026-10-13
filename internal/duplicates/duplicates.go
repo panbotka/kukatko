@@ -48,6 +48,7 @@ package duplicates
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -67,27 +68,35 @@ const (
 	maxLimit = 100
 )
 
+// ErrNoProject indicates a scan was asked for without a project — a
+// programming error, never "the whole instance".
+var ErrNoProject = errors.New("duplicates: no project given")
+
 // PhashSource lists the perceptual hashes of the photos eligible for duplicate
 // detection. It is satisfied by *photos.Store.
 type PhashSource interface {
-	// ListActivePhashes returns the pHash/dHash of every non-archived photo.
-	ListActivePhashes(ctx context.Context) ([]photos.Phash, error)
+	// ListActivePhashes returns the pHash/dHash of every non-archived photo of
+	// the project.
+	ListActivePhashes(ctx context.Context, projectUID string) ([]photos.Phash, error)
 }
 
 // PhotoSource fetches photo metadata for the grouped members. It is satisfied by
 // *photos.Store.
 type PhotoSource interface {
-	// ListByUIDs returns the photos for the given uids, ignoring unknown ones.
-	ListByUIDs(ctx context.Context, uids []string) ([]photos.Photo, error)
+	// ListByUIDsInProject returns the project's photos for the given uids,
+	// ignoring unknown ones and those of another project.
+	ListByUIDsInProject(ctx context.Context, projectUID string, uids []string) ([]photos.Photo, error)
 }
 
 // EmbeddingSource finds near-duplicate pairs by embedding cosine distance. It is
 // satisfied by *vectors.Store. A nil EmbeddingSource disables embedding-based
 // grouping (pHash still runs).
 type EmbeddingSource interface {
-	// FindDuplicatePairs returns photo pairs within maxDist cosine distance,
-	// using up to neighbours nearest neighbours per photo.
-	FindDuplicatePairs(ctx context.Context, neighbours int, maxDist float64) ([]vectors.DuplicatePair, error)
+	// FindDuplicatePairs returns pairs of the project's photos within maxDist
+	// cosine distance, using up to neighbours nearest neighbours per photo.
+	FindDuplicatePairs(
+		ctx context.Context, projectUID string, neighbours int, maxDist float64,
+	) ([]vectors.DuplicatePair, error)
 }
 
 // FeedbackStore is the subset of feedback.Store the service reads: the photo pairs
@@ -212,22 +221,31 @@ type Result struct {
 	NextOffset *int    `json:"next_offset"`
 }
 
-// FindGroups scans the catalogue, builds duplicate groups, and returns the
-// requested page (groups ordered human-confirmed first, then largest, then
-// newest keeper, then id).
+// FindGroups scans one project's catalogue, builds duplicate groups, and
+// returns the requested page (groups ordered human-confirmed first, then
+// largest, then newest keeper, then id).
+//
+// Groups are built within the project: the pHash candidates and the embedding
+// neighbours both come from projectUID only, and the members are hydrated inside
+// it, so a picture uploaded to two projects is two separate non-groups, never a
+// pair. An empty projectUID is ErrNoProject.
+//
 // limit is clamped into [1, maxLimit] (defaulting when non-positive); a negative
 // offset is treated as zero. It returns a wrapped error if any source fails.
-func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, error) {
+func (s *Service) FindGroups(ctx context.Context, projectUID string, limit, offset int) (Result, error) {
+	if projectUID == "" {
+		return Result{}, ErrNoProject
+	}
 	limit, offset = clampPaging(limit, offset)
 
-	g, err := s.buildGraph(ctx)
+	g, err := s.buildGraph(ctx, projectUID)
 	if err != nil {
 		return Result{}, err
 	}
 
 	comps := g.components()
 	uids := memberUIDs(g.nodes, comps)
-	byUID, err := s.fetchPhotos(ctx, uids)
+	byUID, err := s.fetchPhotos(ctx, projectUID, uids)
 	if err != nil {
 		return Result{}, err
 	}
@@ -237,25 +255,31 @@ func (s *Service) FindGroups(ctx context.Context, limit, offset int) (Result, er
 	return paginate(groups, limit, offset), nil
 }
 
-// CountGroups returns how many duplicate groups the catalogue currently holds.
-// It is the same scan FindGroups runs — detection is derived state and there is
-// no cheaper way to count it — so a caller must treat it as expensive and never
-// put it on a request path (the admin dashboard scans in the background, see
-// internal/system.DuplicateScan).
-func (s *Service) CountGroups(ctx context.Context) (int, error) {
-	result, err := s.FindGroups(ctx, 1, 0)
+// CountGroups returns how many duplicate groups the project's catalogue
+// currently holds. It is the same scan FindGroups runs — detection is derived
+// state and there is no cheaper way to count it — so a caller must treat it as
+// expensive and never put it on a request path (the admin dashboard scans in the
+// background, see internal/system.DuplicateScan). An empty projectUID is
+// ErrNoProject.
+func (s *Service) CountGroups(ctx context.Context, projectUID string) (int, error) {
+	result, err := s.FindGroups(ctx, projectUID, 1, 0)
 	if err != nil {
 		return 0, err
 	}
 	return result.Total, nil
 }
 
-// buildGraph loads the pHash entries and embedding pairs and links them into a
-// union-find, returning the populated graph. The user's dismissed pairs are
-// registered before either linking step, so a dismissed edge is never drawn in the
-// first place rather than being unpicked afterwards — a union cannot be undone.
-func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
-	hashes, err := s.cfg.Phashes.ListActivePhashes(ctx)
+// buildGraph loads the project's pHash entries and embedding pairs and links
+// them into a union-find, returning the populated graph. The user's dismissed
+// pairs are registered before either linking step, so a dismissed edge is never
+// drawn in the first place rather than being unpicked afterwards — a union
+// cannot be undone.
+//
+// The graph's node set is the project's hashed photos, and an embedding pair or
+// a feedback pair naming a uid outside it is ignored by construction, so the
+// project boundary holds even if a source were to hand back a foreign uid.
+func (s *Service) buildGraph(ctx context.Context, projectUID string) (*graph, error) {
+	hashes, err := s.cfg.Phashes.ListActivePhashes(ctx, projectUID)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: listing phashes: %w", err)
 	}
@@ -274,7 +298,7 @@ func (s *Service) buildGraph(ctx context.Context) (*graph, error) {
 	}
 	g.addConfirmations(confirmed)
 
-	pairs, err := s.embeddingPairs(ctx)
+	pairs, err := s.embeddingPairs(ctx, projectUID)
 	if err != nil {
 		return nil, err
 	}
@@ -310,27 +334,29 @@ func (s *Service) confirmedPairs(ctx context.Context) ([]feedback.DuplicateConfi
 	return pairs, nil
 }
 
-// embeddingPairs returns the near-duplicate embedding pairs, or nil when
-// embedding grouping is disabled (no source or non-positive threshold).
-func (s *Service) embeddingPairs(ctx context.Context) ([]vectors.DuplicatePair, error) {
+// embeddingPairs returns the project's near-duplicate embedding pairs, or nil
+// when embedding grouping is disabled (no source or non-positive threshold).
+func (s *Service) embeddingPairs(ctx context.Context, projectUID string) ([]vectors.DuplicatePair, error) {
 	if s.cfg.Embeddings == nil || s.cfg.EmbeddingMaxDist <= 0 {
 		return nil, nil
 	}
-	pairs, err := s.cfg.Embeddings.FindDuplicatePairs(ctx, s.cfg.Neighbours, s.cfg.EmbeddingMaxDist)
+	pairs, err := s.cfg.Embeddings.FindDuplicatePairs(ctx, projectUID, s.cfg.Neighbours, s.cfg.EmbeddingMaxDist)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: finding embedding pairs: %w", err)
 	}
 	return pairs, nil
 }
 
-// fetchPhotos loads the given photos keyed by uid. An empty input yields an empty
-// map without a query.
-func (s *Service) fetchPhotos(ctx context.Context, uids []string) (map[string]photos.Photo, error) {
+// fetchPhotos loads the given photos of the project keyed by uid. An empty input
+// yields an empty map without a query.
+func (s *Service) fetchPhotos(
+	ctx context.Context, projectUID string, uids []string,
+) (map[string]photos.Photo, error) {
 	byUID := make(map[string]photos.Photo, len(uids))
 	if len(uids) == 0 {
 		return byUID, nil
 	}
-	list, err := s.cfg.Photos.ListByUIDs(ctx, uids)
+	list, err := s.cfg.Photos.ListByUIDsInProject(ctx, projectUID, uids)
 	if err != nil {
 		return nil, fmt.Errorf("duplicates: loading photos: %w", err)
 	}

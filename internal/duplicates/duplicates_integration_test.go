@@ -3,15 +3,18 @@
 package duplicates_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/duplicates"
 	"github.com/panbotka/kukatko/internal/feedback"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
 
@@ -21,6 +24,7 @@ import (
 
 // fixture bundles the real stores and a Service over a freshly truncated DB.
 type fixture struct {
+	db       *database.DB
 	svc      *duplicates.Service
 	photos   *photos.Store
 	vectors  *vectors.Store
@@ -45,7 +49,7 @@ func newFixture(t *testing.T) fixture {
 		PhashMaxDiff:     8,
 		EmbeddingMaxDist: 0.05,
 	})
-	return fixture{svc: svc, photos: ps, vectors: vs, feedback: fs}
+	return fixture{db: db, svc: svc, photos: ps, vectors: vs, feedback: fs}
 }
 
 // dismiss records a "these two are not duplicates" decision for the pair.
@@ -109,7 +113,7 @@ func TestService_phashGrouping(t *testing.T) {
 	f.setPhash(t, big, 0b111)                   // 3 bits from small -> grouped
 	f.setPhash(t, distinct, 0x7FFFFFFFFFFFFFFF) // 63 bits -> distant
 
-	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	res, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -146,7 +150,7 @@ func TestService_embeddingGrouping(t *testing.T) {
 	f.setEmbedding(t, a, map[int]float32{0: 1, 1: 0.01})
 	f.setEmbedding(t, b, map[int]float32{0: 1, 1: 0.02})
 
-	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	res, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups: %v", err)
 	}
@@ -180,7 +184,7 @@ func TestService_pagination(t *testing.T) {
 		f.setPhash(t, y, base|0x1)
 	}
 
-	first, err := f.svc.FindGroups(t.Context(), 2, 0)
+	first, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 2, 0)
 	if err != nil {
 		t.Fatalf("FindGroups page 1: %v", err)
 	}
@@ -191,7 +195,7 @@ func TestService_pagination(t *testing.T) {
 		t.Fatalf("page 1 next_offset = %v, want 2", first.NextOffset)
 	}
 
-	second, err := f.svc.FindGroups(t.Context(), 2, 2)
+	second, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 2, 2)
 	if err != nil {
 		t.Fatalf("FindGroups page 2: %v", err)
 	}
@@ -219,7 +223,7 @@ func TestService_dismissedPairStaysGoneAcrossRescan(t *testing.T) {
 	f.setPhash(t, big, 0b111) // 3 bits apart -> grouped
 
 	// The pair is offered before the user says anything.
-	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	res, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups (before): %v", err)
 	}
@@ -232,7 +236,7 @@ func TestService_dismissedPairStaysGoneAcrossRescan(t *testing.T) {
 	// Every subsequent scan is a full re-scan, so running twice proves the
 	// exclusion is re-read rather than cached from the first call.
 	for i, label := range []string{"first re-scan", "second re-scan"} {
-		res, err = f.svc.FindGroups(t.Context(), 0, 0)
+		res, err = f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 		if err != nil {
 			t.Fatalf("FindGroups (%s): %v", label, err)
 		}
@@ -257,7 +261,7 @@ func TestService_dismissalIsIdempotentAndReversible(t *testing.T) {
 	// Dismissing again, with the uids the other way round, must stay one decision.
 	f.dismiss(t, b, a)
 
-	res, err := f.svc.FindGroups(t.Context(), 0, 0)
+	res, err := f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups (dismissed): %v", err)
 	}
@@ -271,11 +275,75 @@ func TestService_dismissalIsIdempotentAndReversible(t *testing.T) {
 		t.Fatalf("UndismissDuplicate: %v", err)
 	}
 
-	res, err = f.svc.FindGroups(t.Context(), 0, 0)
+	res, err = f.svc.FindGroups(t.Context(), project.BootstrapUID, 0, 0)
 	if err != nil {
 		t.Fatalf("FindGroups (undismissed): %v", err)
 	}
 	if res.Total != 1 {
 		t.Fatalf("groups after undismiss = %d, want 1 — the pair did not come back", res.Total)
 	}
+}
+
+// TestService_groupsStayInsideTheirProject seeds two projects whose photos all
+// carry the SAME perceptual hash and the SAME embedding, so every photo is a
+// perfect duplicate of every other by both signals. A scan that ignored the
+// project would put all four into one group; each project must instead see one
+// group of its own two photos, and never the other project's.
+func TestService_groupsStayInsideTheirProject(t *testing.T) {
+	f := newFixture(t)
+	seeded := projecttest.Seed(t, f.db.Pool())
+	own := map[projecttest.Side][]string{}
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tenant := seeded.Tenant(side)
+		twin, err := f.photos.Create(t.Context(), photos.Photo{
+			ProjectID: tenant.ProjectUID,
+			FileHash:  "twin-" + tenant.Token,
+			FilePath:  "2024/01/twin-" + tenant.Token + ".jpg",
+			FileName:  "twin.jpg",
+		})
+		if err != nil {
+			t.Fatalf("creating %s's twin: %v", side, err)
+		}
+		own[side] = []string{tenant.PhotoUID, twin.UID}
+		for _, uid := range own[side] {
+			f.setPhash(t, uid, 0x0F0F)
+			f.setEmbedding(t, uid, map[int]float32{3: 1, 8: 0.5})
+		}
+	}
+
+	seeded.AssertStoreScoped(t, func(projectUID string) ([]string, error) {
+		res, err := f.svc.FindGroups(t.Context(), projectUID, 0, 0)
+		var uids []string
+		for _, g := range res.Groups {
+			for _, m := range g.Members {
+				uids = append(uids, m.UID)
+			}
+		}
+		return uids, err
+	})
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		res, err := f.svc.FindGroups(t.Context(), seeded.Tenant(side).ProjectUID, 0, 0)
+		if err != nil {
+			t.Fatalf("FindGroups inside %s: %v", side, err)
+		}
+		if res.Total != 1 {
+			t.Fatalf("inside %s: got %d groups, want 1: %+v", side, res.Total, res.Groups)
+		}
+		got := groupUIDs(res.Groups[0])
+		if len(got) != 2 || !slices.Contains(got, own[side][0]) || !slices.Contains(got, own[side][1]) {
+			t.Errorf("inside %s: group members = %v, want exactly %v", side, got, own[side])
+		}
+		if res.Groups[0].Reason != duplicates.ReasonBoth {
+			t.Errorf("inside %s: reason = %q, want %q", side, res.Groups[0].Reason, duplicates.ReasonBoth)
+		}
+	}
+}
+
+// groupUIDs returns the uids of a group's members, in member order.
+func groupUIDs(g duplicates.Group) []string {
+	uids := make([]string, 0, len(g.Members))
+	for _, m := range g.Members {
+		uids = append(uids, m.UID)
+	}
+	return uids
 }

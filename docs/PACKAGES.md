@@ -427,7 +427,9 @@ to `## Package map` in `CLAUDE.md`.
   (`TestQueryKeys_compileInsideTheProject` walks `query.Keys()`, so a new key is covered the day it is
   added); the single-row lookups `GetByUIDInProject`, `GetByFileHashInProject`, `GetByPhotoprismUID`,
   `GetByPhotoprismFileHash`, `GetByPhotosorterUID`, `GetByPhotoprismAlias` (the alias table's own
-  `project_id` in the sub-select); `ListByUIDsInProject`, `ListStackMembers`, `StackCounts`, `GetOCR`.
+  `project_id` in the sub-select); `ListByUIDsInProject`, `ListStackMembers`, `StackCounts`, `GetOCR`;
+  the scans behind duplicate detection, stacking and the trash — `ListActivePhashes`,
+  `ListStackCandidates`, `StackInfoByUIDs`, `ListArchivedUIDs` — list only the project's photos.
   **Writes** follow the same rule: a mutation takes `projectUID` after `ctx` and touches a row only
   inside that project — `UpdateMetadata`(`Audited`), `Archive`/`Unarchive`(`Audited`),
   `SetHiddenFromLibrary`(`Audited`) carry `projectClause` in the `UPDATE`'s `WHERE` (0 rows =
@@ -435,23 +437,26 @@ to `## Package map` in `CLAUDE.md`.
   ingest, which passes the fresh row's `ProjectID`) insert through `INSERT … SELECT … FROM photos WHERE
   uid = $1 AND project_id = $n`, so the parent is proved in the same statement; the transactional ones —
   the audited mutations (`mutateAudited`) and the stack operations `CreateStack`(`Audited`),
-  `SetStackPrimary`/`UnstackMember`/`UnstackAll`(`Audited`, through `inProjectTx`) — first run
-  `requirePhotosInProject` on their own transaction, so a foreign uid is refused before a stack it would
-  leave is touched, writes no audit row, and **a stack never spans projects**. An audited write defaults
+  `SetStackPrimary`/`UnstackMember`/`UnstackAll`(`Audited`, through `inProjectTx`), the purge's
+  `DeleteAudited(ctx, projectUID, uid, entry)` (`mutateAudited`, its `DELETE` carrying the project too)
+  and the detection pass `CreateStacksAudited(ctx, projectUID, plans, entry)` (`requirePlansInProject`:
+  every member of every plan, before the first stack) — first run `requirePhotosInProject` on their own
+  transaction, so a foreign uid is refused before a stack it would leave is touched, writes no audit row,
+  and **a stack never spans projects**. An audited write defaults
   the entry's `ProjectUID` to the project (`withProject`). `ListFiles(ctx, projectUID, uid)` is scoped by
   an `EXISTS` on the parent. **Worker loaders:** a background job has no request and so no project;
   it loads through the explicitly named, unscoped **`GetForJob(ctx, uid)`** / **`FilesForJob(ctx, uid)`**
   and learns the project from the row — every read now fills **`Photo.ProjectID`** (`photos.project_id`
   is the last of `photoColumns`; `json:"-"`, it never leaves the server). `thumbjob`, `embedjob`, `facejob`,
-  `metajob`, `ocrjob`, `sidecarjob`, `placesjob`, `storyboardjob`, `hlsjob` and the purge (`internal/trash`)
+  `metajob`, `ocrjob`, `sidecarjob`, `placesjob`, `storyboardjob` and `hlsjob`
   use them (`tagnotifyjob` reads its rows with its own SQL). `forjob_guard_test.go` walks every
   `internal/*api` package's non-test source and fails on `ForJob(` / `.…ForJob`: a handler loads through
   the scoped lookups, never these. The job-side write-backs keyed by a uid the job just loaded
   (`SaveBlurhash`, `SetPhash`, `MarkThumbnailsBuilt`, `FillFileMetadata`, `SaveOCR`, `MarkSidecarWritten`,
   …) stay unscoped for the same reason. **Still unscoped, for callers scoped in later steps:** `GetByUID`
-  (trash, profile picture, directory import, geoestimate review), `GetByFileHash`
-  (ingest), `ListByUIDs` (review/candidates/expand/duplicates/notifications), `Delete`/`DeleteAudited`
-  (the purge), `CreateStacksAudited` (stack detection) and the maintenance scans. The pure builders are tested through
+  (profile picture, directory import, geoestimate review), `GetByFileHash`
+  (ingest), `ListByUIDs` (review/candidates/expand/notifications), `Delete` (ingest's rollback of
+  its own fresh row) and the maintenance scans. The pure builders are tested through
   `stripProject` (store_project_test.go), which removes the scope and renumbers, so the filter tests keep
   reading as the filter they test while the scope itself is asserted on the real output.
   Typed models `Photo`/`PhotoFile`/`Phash`/`Edit`/`MetadataUpdate`
@@ -687,7 +692,7 @@ to `## Package map` in `CLAUDE.md`.
   per `stack_uid` — the tile badge)/`CreateStack`/`SetStackPrimary`/`UnstackMember`/`UnstackAll`
   (reversible bookkeeping over `stack_uid`/`stack_primary`) and their **audited variants**
   (`store_stacks_audit.go`): `CreateStackAudited`/`SetStackPrimaryAudited`/`UnstackMemberAudited`/
-  `UnstackAllAudited` plus `CreateStacksAudited(plans,entry)`, which applies a whole detection pass
+  `UnstackAllAudited` plus `CreateStacksAudited(projectUID,plans,entry)`, which applies a whole detection pass
   (`StackPlan{PrimaryUID,MemberUIDs}`, decided purely by `internal/stacks`) and its one entry in a single
   transaction. Each writes `entry` on the **mutation's own transaction**, so a refused operation leaves no
   row, and each fills the details in itself — the `stack_uid`, the promoted photo's `previous_primary_uid`,
@@ -1666,22 +1671,31 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   and **brightness/contrast** (a linear scale around 0.5, maps 1:1 to the frontend CSS `brightness(1+b)`/
   `contrast(1+c)`), pure-Go via `golang.org/x/image`; `IsIdentity(edit)` skips a no-op; `orient.go`
   = EXIF orientation; identity = passthrough of the original, otherwise render to a JPEG), `internal/trash/`
-  (permanent deletion (purge) of soft-deleted photos, all behind the interfaces `PhotoStore`/`FileStorage`/
-  `ThumbStore`/`RemoteRemover` (unit-testable with fakes): `Service` = `New(Config{Photos,Storage,
-  Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panics on nil Photos/Storage/Thumbnailer);
+  (permanent deletion (purge) of soft-deleted photos, all behind the interfaces `PhotoStore`/`ProjectLister`/
+  `FileStorage`/`ThumbStore`/`RemoteRemover` (unit-testable with fakes): `Service` = `New(Config{Photos,Projects,
+  Storage,Thumbnailer,Remote?,RetentionDays,BatchSize,Logger})` (panics on nil Photos/Projects/Storage/Thumbnailer);
+  **project scope:** every operation works inside one project — `PhotoStore` is the scoped
+  `GetByUIDInProject`/`ListFiles`/`DeleteAudited(projectUID,…)`/`ListArchivedUIDs(projectUID,…)`, so a foreign
+  uid is `photos.ErrPhotoNotFound` exactly like a missing one and emptying one project's trash never reaches
+  another's; the scheduled retention purge has no request, so `PurgeExpired` lists the projects
+  (`ProjectLister`, `*project.Store`) and sweeps **each active one** in turn (a deactivated project's data is
+  kept; one project's failure is logged and the next still runs); the keys a purge deletes come from the
+  photo's own file rows (`file_path` for the original and its sidecar, `file_hash` for the derived media),
+  never recomputed from the project, so a photo is cleaned up wherever its rows say it lives;
   **purgeOne** deletes a photo's artifacts (the original via `Storage.Delete`, the cached thumbnails via
   `Thumbnailer.Remove`, the scrub-preview sprite via `StoryboardStore.Remove`, the **HLS segments** —
   everything the store holds under `hls.PrefixFor(file_hash)`, found by listing that prefix when the backend
   is a `storage.PrefixLister`, because their keys are not derivable from the catalogue; a backend that cannot
   list and a hash the layout cannot address leave them behind rather than failing the purge, while a failed
   listing or deletion is reported — optionally the S3 object via `RemoteRemover`) **and then** the DB row via
-  `photos.DeleteAudited(uid,entry)` — deletes the row (cascading embeddings/faces/markers/album_photos/
+  `photos.DeleteAudited(projectUID,uid,entry)` — deletes the row (cascading embeddings/faces/markers/album_photos/
   photo_labels/phashes/edits/favorites via `ON DELETE CASCADE`) **and writes a `photo.purge` audit row
   in the same transaction** (durable-audit; rollback ⇒ no audit row); artifacts first, so an
   interrupted purge leaves a re-purgeable row instead of dangling files; idempotent (a missing
-  file/`os.ErrNotExist`/`thumb.ErrInvalidHash` is ignored); `PurgePhoto(uid,meta)` (404
-  `photos.ErrPhotoNotFound`, `ErrNotArchived` for a live photo), `EmptyTrash(meta)` (purge of all
-  archived) and `PurgeExpired()` (only `archived_at` older than `RetentionDays`, ≤ 0 = no-op)
+  file/`os.ErrNotExist`/`thumb.ErrInvalidHash` is ignored); `PurgePhoto(projectUID,uid,meta)` (404
+  `photos.ErrPhotoNotFound`, `ErrNotArchived` for a live photo), `EmptyTrash(projectUID,meta)` (purge of all
+  the project's archived), `PurgeOlderThan(projectUID,days,meta)` and `PurgeExpired()` (only `archived_at`
+  older than `RetentionDays`, ≤ 0 = no-op, every active project)
   iterate `photos.ListArchivedUIDs` in oldest-first batches (`BatchSize`, default 200) →
   `Result{Purged,Failed}`; **each purge = one `photo.purge` audit row** (`audit.Meta` with an
   actor for manual purges, an empty system actor for the scheduled `PurgeExpired`; `details.source` =
@@ -1926,7 +1940,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   and `Embedding` carry `ProjectID` on read, so a job or a later-scoped caller searches the neighbours of a
   face inside that face's own project (`embedjob`'s duplicate pass, `internal/cluster`). Everything keyed by
   a photo uid (`ListFaces`, `SaveFaces`, `UpdateFaceMarker`, …) stays unscoped — child rows of a photo the
-  caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) is not scoped yet.
+  caller has already loaded inside its project. `FindDuplicatePairs` (the duplicates scan) filters
+  `project_id` on both sides of its lateral join — the outer row and, inside the HNSW scan, the neighbour —
+  under the same iterative-scan transaction, so a pair never names two projects.
   `Store` = `NewStore(pool)` over the shared pgx pool:
   `SaveEmbedding`(upsert)/`GetEmbedding`(`ErrEmbeddingNotFound`)/`FindSimilar(projectUID,vec,limit,maxDistance)`
   for 1152-dim image embeddings (768 until migration `0057` swapped the image tower),
@@ -1984,9 +2000,10 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `ErrEmbeddingNotFound`/`ErrDimMismatch` (validation 1152/512)/
   `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
   uids of non-archived photos without an embedding (LEFT JOIN, newest first, `limit<=0`=all) for
-  backfill; `FindDuplicatePairs(neighbours,maxDist)` = near-duplicate pairs by embedding cosine
+  backfill; `FindDuplicatePairs(projectUID,neighbours,maxDist)` = the project's near-duplicate pairs by embedding cosine
   distance (`duplicate.go`, `CROSS JOIN LATERAL` + HNSW `LIMIT` neighbours per photo, no
-  O(n²) scan; `maxDist<=0`→no pairs; a read-only tx with `hnsw.ef_search`) — the basis of
+  O(n²) scan; `maxDist<=0`→no pairs; `ErrNoProject` without a project; a read-only tx with `hnsw.ef_search`
+  and the iterative scan, `withProjectReadTx`) — the basis of
   `internal/duplicates`; **face-detection tracking** in the `face_detections` table (migration
   `0009_face_detections.sql`: `photo_uid PK` FK `ON DELETE CASCADE`, `face_count`, `model`,
   `detected_at`, + `detect_width`/`detect_height` from `0061_face_detection_frame.sql`) — because `faces`
@@ -3035,7 +3052,8 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   rejections, negative exemplar, min. face size), label questions via `Expander` (satisfied by
   `*expand.Service` → excludes members and rejected ones), and the **three checks over work the machine already
   did** (`extras.go`): `place` via `PlaceReviewer` (`*geoestimate.Reviewer`), `duplicate` via `DuplicateFinder`
-  (`*duplicates.Service`) and `outlier` via `OutlierRanker`+`SubjectLister` (`*outliers.Service` +
+  (`*duplicates.Service`; `FindGroups(ctx, projectUID, …)` — the groups are detected inside the session's
+  project) and `outlier` via `OutlierRanker`+`SubjectLister` (`*outliers.Service` +
   `*people.Store`), all hydrating their photos through `PhotoStore.ListByUIDs`+`Media`. **Each of the three is
   optional** — a nil dependency simply switches that question type off, so a half-wired server still serves the
   other kinds. Writes via `Assigner` (`*facematch.Service`),
@@ -4332,18 +4350,24 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   records are returned whole, `ip`/`user_agent` included — the caller's own request metadata; read-only — writes go through
   mutation transactions elsewhere; always mounted by the last `server.WithAPI` (`buildAuditAPI` in
   `cmd/kukatko/audit.go`)), `internal/bulk/`
-  (bulk metadata editing: `Service` = `NewService(pool, maxBatch)` with `Apply(ctx, actorUID,
+  (bulk metadata editing: `Service` = `NewService(pool, maxBatch)` with `Apply(ctx, projectUID, actorUID,
   photoUIDs, ops Operations) (Result, error)` — **the whole batch in a single transaction** with an audit
-  record; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
+  record under the project; **project scope:** the batch must consist of the project's photos —
+  `requireBatchInProject` proves it in **one query** (`count(*) … WHERE uid = ANY($1) AND project_id = $2`
+  over the distinct uids equals their number), otherwise the **whole batch** is refused with
+  `ErrPhotoNotFound` before anything is written (no row, no audit entry), and the error names no uid — a
+  foreign photo and a missing one are one answer, so the response never tells which uid was foreign; the
+  albums/labels an add operation names must be the project's (`requireAllExist` filters `project_id`), and an
+  empty `projectUID` is `ErrNoProject`; `Operations` = the optional fields `AddAlbums`/`RemoveAlbums`/`AddLabels`/`RemoveLabels`,
   `Title`/`Description *string` (nil=unchanged, ""=clear), **`TakenAt *TakenAt{At,Precision}`**,
   `Location *Location{Lat,Lng,OnlyMissing}`+`ClearLocation`,
   `Archive`/`Hide`/`Favorite *bool` (`Hide` = `photos.hidden_from_library`, the operation the
   hide-from-library feature actually needs — the real use is fifty document scans at once),
   **`Rating *int` (0–5) + `Flag *string` (none/pick/reject/eye)**;
   `Apply` validates the batch (ErrNoPhotos/ErrNoOperations/
-  ErrBatchTooLarge), checks that the albums/labels of the add operations exist (ErrAlbumNotFound/ErrLabelNotFound),
-  then per photo: a duplicate uid → `skipped`, a non-existent photo → `error` **without aborting the rest**,
-  otherwise it applies and `updated`; its own idempotent SQL (its own tx for atomicity, it does not use
+  ErrBatchTooLarge), proves the batch (above), checks that the albums/labels of the add operations exist in
+  the project (ErrAlbumNotFound/ErrLabelNotFound), then per photo: a duplicate uid → `skipped`, a photo
+  that vanished since the proof → `error`, otherwise it applies and `updated`; its own idempotent SQL (its own tx for atomicity, it does not use
   the organize/photos store methods, which have their own connection); favorites **and ratings** are
   **per-user** (`actorUID`) — the rating/flag upsert + the all-defaults row prune mirror the `organize` store;
   `Result{Results:[{photo_uid,status,error?}],Counts{total,updated,skipped,errored}}`; a real DB
@@ -4371,15 +4395,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   field rule: does the batch ask for anything beyond album/label membership and the per-user
   `Favorite`/`Rating`/`Flag` (which a viewer already sets one photo at a time)? It is an **allow-list**: it
   blanks the fields a curator may touch and asks `IsEmpty()` of the rest, so a field added to `Operations`
-  later is an editor's until somebody decides otherwise; `LocationSummary(ctx, photoUIDs) (LocationSummary{Total,WithLocation},
-  error)` is the read-only preview behind the dialog: how many of the selection exist (a repeated uid
-  counts once) and how many already carry a full coordinate, validated against the same batch limits as
-  `Apply`; `MembershipSummary(ctx, photoUIDs) (MembershipSummary{Total,Filed,Albums,Labels}, error)` is the
-  read-only "where is this batch already" behind the upload page's done stage: how many exist, how many are in
-  an album or under a label, and the albums/labels (`AlbumRef`/`LabelRef` with a per-selection `PhotoCount`),
+  later is an editor's until somebody decides otherwise; `LocationSummary(ctx, projectUID, photoUIDs) (LocationSummary{Total,WithLocation},
+  error)` is the read-only preview behind the dialog: how many of the selection exist in the project (a
+  repeated uid counts once, a foreign one not at all) and how many already carry a full coordinate, validated against the same batch limits as
+  `Apply`; `MembershipSummary(ctx, projectUID, photoUIDs) (MembershipSummary{Total,Filed,Albums,Labels}, error)` is the
+  read-only "where is this batch already" behind the upload page's done stage: how many of the project's
+  photos exist, how many are in an album or under a label, and the project's albums/labels (`AlbumRef`/`LabelRef` with a per-selection `PhotoCount`),
   same batch limits; the lists are skipped — and returned empty, never nil — when nothing is filed),
   `internal/bulkapi/`
-  (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary + MembershipSummary) — fakeable; `NewAPI(Config{Service,
+  (HTTP over `bulk.Service`: the `Service` interface (Apply + LocationSummary + MembershipSummary, each
+  handed `auth.ProjectUIDFromContext`) — fakeable; `NewAPI(Config{Service,
   Sidecar, Places, RequireWrite, RequireCurator, RateLimit})`+`RegisterRoutes` mounts `POST /photos/bulk` behind
   `RequireCurator` and the read-only `POST /photos/bulk/location-summary` (a POST because its argument is the
   whole selection) behind `RequireWrite` — it only feeds the bulk location operation, which a curator may not
@@ -4400,8 +4425,11 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `set_taken_at` → 400 (one states a date, the other states that nobody knows it),
   **`set_location {lat,lng,only_missing?}`** with coordinate validation (lat −90..90, lng −180..180 → 400)
   and `only_missing` deciding what happens to the targets that already have a location, `DisallowUnknownFields` (an unknown operation → 400) + 4 MiB limit; errors mapped
-  `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413, otherwise 500;
-  per-photo errors return 200 with the detail in the body; mounted by a further `server.WithAPI`
+  `ErrNoPhotos`/`ErrNoOperations`/`ErrAlbum/LabelNotFound`→400, `ErrBatchTooLarge`→413,
+  **`ErrPhotoNotFound`→404 `{"error":"photo not found"}`** (a batch with any uid outside the request's
+  project, foreign or missing — one body, no uid, nothing changed), otherwise 500;
+  `isolation_integration_test.go` proves the foreign batch against the missing one with
+  `projecttest.AssertSameShape` and that the summaries count only the project; mounted by a further `server.WithAPI`
   (`buildBulkAPI` in `cmd/kukatko/bulk.go`)),
   `internal/mapy/`
   (a server-side HTTP client of the mapy.com REST API, **the key never leaves the server** — it is sent only
@@ -5299,7 +5327,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (`algo.go` disjoint-set + path compression/union by rank); **without O(n²)**: pHash through **banded-LSH**
   buckets (`bandCount`=`maxDiff+1` bands, which by the pigeonhole principle guarantees a shared bucket for pairs within the threshold,
   and the candidates are verified by the full Hamming distance), embeddings through HNSW (`vectors.FindDuplicatePairs`).
-  All behind the interfaces `PhotoSource` (`ListByUIDs`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
+  All behind the interfaces `PhotoSource` (`ListByUIDsInProject`)/`PhashSource` (`ListActivePhashes`)/`EmbeddingSource`
   (`FindDuplicatePairs`, nil turns embedding grouping off)/`FeedbackStore` (`DismissedDuplicatePairs` +
   `ConfirmedDuplicatePairs`, nil leaves every edge in place and marks nothing) → unit-testable with fakes; `Service` =
   `New(Config{Photos,Phashes,Embeddings,Feedback,PhashMaxDiff,EmbeddingMaxDist,Neighbours})` (panics on nil
@@ -5331,7 +5359,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   compare screen says what the candidates are, and `dupmerge` guards the archive. A live photo is a still
   (`photos.MediaKind`), and an empty `media_type` — a row from before the column was read — reads as a still,
   so nothing that used to group stops grouping;
-  **`FindGroups(ctx,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
+  **Project scope: groups are built within one project.** `FindGroups`/`CountGroups` take `projectUID` after
+  `ctx` (`ErrNoProject` without one) and hand it to every source: the pHash candidates
+  (`photos.ListActivePhashes(ctx, projectUID)`), the embedding neighbours
+  (`vectors.FindDuplicatePairs(ctx, projectUID, …)`, the project predicate inside the HNSW lateral scan) and
+  the member hydration (`ListByUIDsInProject`), so the same picture uploaded to two projects is never a pair;
+  the graph's nodes are the project's hashed photos, so a feedback pair naming another project's uid is
+  ignored by construction. `TestService_groupsStayInsideTheirProject` gives four photos of two projects the
+  identical hash *and* embedding and asserts each project sees one group of its own two;
+  **`FindGroups(ctx,projectUID,limit,offset)`** (backing `GET /duplicates`) → `Result{Groups,Total,Limit,Offset,
   NextOffset}`; each `Group{ID (the smallest uid),Reason (phash/embedding/both),KeeperUID,Confirmed,Members}`,
   a `Member` carries dimensions/size/`taken_at`/`media_type`/`duration_ms` (the clip length, videos only —
   the compare screen and the listing say what a candidate is *before* the keep-or-archive answer) + `is_keeper`
@@ -5342,13 +5378,14 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   whole component (the curator answered about the group they were shown), and `sortGroups` puts confirmed groups
   **first**: confirmation is the only ordering key here that is not a guess, so it outranks size. Groups then
   ordered largest-first/newest-keeper/id,
-  `limit` clamped to `[1,100]`; **`CountGroups(ctx)`** = the same scan reduced to `Result.Total` (detection is
+  `limit` clamped to `[1,100]`; **`CountGroups(ctx,projectUID)`** = the same scan reduced to `Result.Total` (detection is
   derived state, so there is no cheaper way to count it) — which is why its one caller, the admin dashboard's
-  duplicates tile, runs it in the background and never on a request (`system.DuplicateScan`);
+  duplicates tile, runs it in the background and never on a request (`system.DuplicateScan`; until the
+  dashboard is scoped, `cmd/kukatko`'s `bootstrapDuplicateCounter` counts the bootstrap project — transition);
   it only reads, **never mutates** (resolution goes through `dupmerge`); archived
   photos are not scanned (`ListActivePhashes` filters `archived_at IS NULL`)), `internal/dupmerge/`
   (**the transactional merge of a near-duplicate group into the keeper** — the mutating counterpart of the read-only `duplicates`;
-  `Service=NewService(pool)`, `Merge(ctx,Input{KeeperUID,MemberUIDs,ActorUID})→Result{albums_added,
+  `Service=NewService(pool)`, `Merge(ctx,Input{ProjectUID,KeeperUID,MemberUIDs,ActorUID})→Result{albums_added,
   labels_added,people_added,metadata_filled[],archived,dry_run}` and `Preview` (a dry run, tx rollback).
   In **one `pgx.Tx`** (like `bulk` — the audited store methods open their own tx and cannot be composed)
   it computes a `plan`: the union of the copies' albums/labels/people minus what the keeper already has, `pickFill` of the missing scalars
@@ -5358,6 +5395,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   marker's box is pixel-specific to the copy it came from; a new marker has no `faces` row, no cache needed,
   and the `ON CONFLICT` on migration 0071's partial unique index makes a concurrent attach harmless),
   archives (with an `archived_at IS NULL` guard) and writes `audit.ActionPhotosMerge`.
+  **Project scope:** before anything else `buildPlan` proves the **whole group** is the project's photos
+  (`requireGroupInProject`: one `count(*) … WHERE uid = ANY($1) AND project_id = $2` over the distinct
+  members), so a group mixing two projects — or naming a photo that does not exist — is refused whole with
+  `ErrPhotoNotFound` (no uid in it) before any association of another project is read, let alone copied; the
+  member load is scoped too, and the audit entry carries the project. An already-archived copy still counts
+  (it is still the project's photo), so the idempotent re-run holds.
   **`checkSameKind` refuses to archive across the still/video boundary** (`ErrCrossKindGroup`, → 400): `loadPhotos`
   reads `media_type`, and a copy the plan would archive whose `photoRow.kind()` differs from the keeper's fails the
   whole merge before anything is written. It is a **guard, not a convention** — detection no longer offers such a
@@ -5368,14 +5411,18 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   archived also leaves its stack via `photos.LeaveStackTx` in the same tx (skipped for an already-archived
   copy, which left its stack back then), so archiving a copy that happened to be a stack's primary does not
   hide that stack's still-live members. **An empty plan = a no-op**
-  (it writes nothing → an idempotent re-run on a resolved group); validation `ErrNoKeeper`/`ErrTooFewMembers`/
-  `ErrKeeperNotInGroup`/`ErrKeeperNotFound`/`ErrCrossKindGroup`), `internal/duplicatesapi/`
+  (it writes nothing → an idempotent re-run on a resolved group); validation `ErrNoProject`/`ErrNoKeeper`/
+  `ErrTooFewMembers`/`ErrKeeperNotInGroup`/`ErrPhotoNotFound`/`ErrKeeperNotFound`/`ErrCrossKindGroup`), `internal/duplicatesapi/`
   (an editor/admin HTTP API over duplicate detection and resolution: the interfaces `Service` (`FindGroups`, satisfied by
   `*duplicates.Service`, **nil → 503**) and `MergeService` (`Merge`/`Preview`, satisfied by `*dupmerge.Service`,
   **nil → 503**); `NewAPI(Config{Service,Merge,RequireWrite})`+`RegisterRoutes` mounts `GET /duplicates`
   and `POST /duplicates/merge` behind `RequireWrite` (listing: `limit`≤100/`offset`, invalid → 400, a failed scan
   → 500; merge: a bad group → 400 — including one mixing a video with a still (`ErrCrossKindGroup`), whose
-  reason is passed through to the body — a non-existent keeper → 404, the actor from `auth.UserFromContext`);
+  reason is passed through to the body — a member outside the request's project, the keeper included,
+  foreign or missing alike → **404 `{"error":"photo not found"}`**, one body naming no uid, nothing
+  changed; the actor from `auth.UserFromContext`, the project from `auth.ProjectUIDFromContext` for both the
+  listing and the merge; `isolation_integration_test.go` drives B's listing past A's identical hashes and a
+  mixed-group merge against `projecttest.AssertSameShape`);
   mounted in `serve` (`buildDuplicatesAPI` in `cmd/kukatko/duplicates.go`, `Merge` always, `Service` nil when
   `duplicate.enabled=false`)),
   `internal/dupmarkers/`
@@ -5387,7 +5434,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   fixed. Read-only: it finds the groups, every repair goes through an existing write path.
   `MarkerSource` (`ListRepeatedMarkers`, satisfied by `*Store`)/`DismissalSource`
   (`DismissedDuplicateMarkerGroups`, satisfied by `*feedback.Store`) →
-  `Service = New(Config{Markers,Dismissals})`, **`FindGroups(ctx,limit,offset)`** →
+  `Service = New(Config{Markers,Dismissals})`, **`FindGroups(ctx,projectUID,limit,offset)`** (the project's
+  photos only — `ListRepeatedMarkers(ctx, projectUID)` filters `p.project_id`; `ErrNoProject` without one) →
   `Result{Groups,Total,Limit,Offset,NextOffset}`; a `Group{PhotoUID,PhotoTitle,TakenAt,Width,Height,
   Orientation,SubjectUID,SubjectName,Markers[]{uid,bbox,score,reviewed}}` with the markers ordered **left to
   right** so a client's numbering reads in reading order, `limit` clamped to `[1,200]` (default 50).
@@ -5400,7 +5448,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   every real finding, cf. the 6 767 photos in `docs/API.md`); archived photos are excluded, **non-primary stack
   members are not** — a RAW sibling with the same person twice is the same mistake),
   `internal/dupmarkersapi/`
-  (the HTTP surface of the repeated-marker review: `Service` (`FindGroups`, **nil → 503**)/`MarkerStore`
+  (the HTTP surface of the repeated-marker review, every route inside the request's project — the listing
+  passes `auth.ProjectUIDFromContext`, the repairs read and write markers through the project-scoped people
+  store: `Service` (`FindGroups`, **nil → 503**)/`MarkerStore`
   (`ListMarkersByPhoto`/`GetMarkerByUID`/`SetMarkerInvalidAudited`, satisfied by `*people.Store`)/`Assigner`
   (`Apply`, satisfied by `*facematch.Service`); `NewAPI(Config{Service,Markers,Assigner,RequireAuth,
   RequireCurator})`+`RegisterRoutes` mounts `GET /duplicate-markers` behind **RequireAuth** (reading is not a write)
@@ -5426,12 +5476,16 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   nil store). **Every mutating method takes the `audit.Entry` its change is recorded with** and only carries it
   through — who acted is the caller's knowledge, the stack uid and the members are the store's, and the store
   writes the entry in the mutation's own transaction:
-  **`DetectStacks(ctx,entry) (created,error)`** (backing `POST /process/stacks`) groups the **not-yet-stacked
-  non-archived** photos by the enabled rules — synchronous, incremental and **idempotent**: a re-run over a
+  **Project scope:** every `Store` method takes the project, so the candidates and a selection are read from
+  that project only and every write proves its photos belong to it — **a stack never contains photos of two
+  projects** (asserted in the store: `requirePhotosInProject`/`requirePlansInProject` in the write's own
+  transaction). **`DetectStacks(ctx,projectUID,entry) (created,error)`** (backing `POST /process/stacks`, which
+  passes the request's project) groups the project's **not-yet-stacked non-archived** photos by the enabled
+  rules — synchronous, incremental and **idempotent**: a re-run over a
   settled library creates nothing and does not touch an existing/manual stack; a no-op (0) when the feature or
   every rule is off, and then it records nothing either, because nothing ran. It decides the whole pass as pure
   `photos.StackPlan`s (`planComponent`) and hands them to `CreateStacksAudited`, so the stacks and the single
-  `stacks.detect` entry share **one** transaction; **`StackSelection(ctx,uids,entry)`** groups a selection
+  `stacks.detect` entry share **one** transaction; **`StackSelection(ctx,projectUID,uids,entry)`** groups a selection
   manually (`photos.ErrStackTooSmall` below 2 distinct, `photos.ErrPhotoNotFound` when one is
   missing/archived), **`SetPrimary`/`Unstack`/`UnstackWhole`** (each `(ctx,uid,entry)`) delegate to the store;
   **pure detection** (`rules.go`): four independently switchable rules
@@ -5450,7 +5504,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
   (`mapy.Health.Snapshot`, **nil = no mapy.com key**)/`GeocodeReporter`
   (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**)/`DashboardCounter` (`Store.CountDashboard`)/
-  `DuplicateCounter` (`duplicates.Service.CountGroups`, **nil = detection off**) → unit-testable with fakes
+  `DuplicateCounter` (`CountGroups(ctx)`; the detector counts per project, so `cmd/kukatko` wires
+  `bootstrapDuplicateCounter` — the bootstrap project's groups — until the dashboard is scoped; **nil =
+  detection off**) → unit-testable with fakes
   without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,Charts,
   Dashboard,Duplicates,StreamingEnabled,OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,
   DashboardTTL,DuplicateTTL,DuplicateTimeout,Clock})`; **`Collect(ctx) (Status,error)`** gathers

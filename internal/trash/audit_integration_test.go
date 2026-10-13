@@ -72,7 +72,7 @@ func TestPurgePhoto_writesAuditRow(t *testing.T) {
 	archived, _, _ := env.seedPhoto(t, "arch", &recent)
 
 	meta := audit.Meta{ActorUID: actor, IP: "203.0.113.7", UserAgent: "purge-agent"}
-	if err := env.svc.PurgePhoto(ctx, archived.UID, meta); err != nil {
+	if err := env.svc.PurgePhoto(ctx, project.BootstrapUID, archived.UID, meta); err != nil {
 		t.Fatalf("PurgePhoto: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestEmptyTrash_writesAuditRowPerPhoto(t *testing.T) {
 	b, _, _ := env.seedPhoto(t, "b", &recent)
 	env.seedPhoto(t, "live", nil) // live photo: not purged, not audited
 
-	res, err := env.svc.EmptyTrash(ctx, audit.Meta{ActorUID: actor})
+	res, err := env.svc.EmptyTrash(ctx, project.BootstrapUID, audit.Meta{ActorUID: actor})
 	if err != nil {
 		t.Fatalf("EmptyTrash: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestPurgeOlderThan_writesAuditRow(t *testing.T) {
 	env.seedPhoto(t, "recent", &recent) // within the cutoff: not purged, not audited
 
 	meta := audit.Meta{ActorUID: actor, IP: "203.0.113.9", UserAgent: "purge-older-agent"}
-	res, err := env.svc.PurgeOlderThan(ctx, 100, meta)
+	res, err := env.svc.PurgeOlderThan(ctx, project.BootstrapUID, 100, meta)
 	if err != nil {
 		t.Fatalf("PurgeOlderThan: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestDeleteAudited_rollbackWritesNoAudit(t *testing.T) {
 
 	entry := audit.Meta{ActorUID: actor}.Entry(audit.ActionPhotoPurge, "photos", "ph_missing",
 		map[string]any{"source": "manual"})
-	if err := env.store.DeleteAudited(ctx, "ph_missing", entry); !errors.Is(err, photos.ErrPhotoNotFound) {
+	if err := env.store.DeleteAudited(ctx, project.BootstrapUID, "ph_missing", entry); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Fatalf("DeleteAudited(missing) err = %v, want ErrPhotoNotFound", err)
 	}
 	if recs := purgeAuditRows(t, ctx, auditStore); len(recs) != 0 {

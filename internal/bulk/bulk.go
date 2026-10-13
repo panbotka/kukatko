@@ -3,9 +3,19 @@
 // membership, description/caption, location, archive state and the caller's
 // per-user favorite). The whole batch runs in one transaction together
 // with a durable audit_log entry, so it commits or rolls back atomically. Each
-// photo is reported individually (updated/skipped/error): a missing photo is
-// recorded as an error without aborting the valid ones, while a genuine database
+// photo is reported individually (updated/skipped), while a genuine database
 // failure rolls the whole batch back. See ARCHITECTURE.md §1 (bulk editing).
+//
+// # Projects
+//
+// A batch lives inside one project. Before anything is written, one query proves
+// that every distinct uid of the batch names a photo of the project; if any does
+// not — a photo of another project, or one that does not exist — the whole batch
+// is refused with ErrPhotoNotFound, which names no uid, so the answer never says
+// which photo was foreign. The albums and labels an operation adds must be the
+// project's too (ErrAlbumNotFound/ErrLabelNotFound otherwise), the summaries
+// count only the project's photos, and the audit entry is recorded under the
+// project.
 package bulk
 
 import (
@@ -26,8 +36,9 @@ const (
 	// StatusSkipped marks a photo skipped without change, for example a UID
 	// repeated within the same request.
 	StatusSkipped = "skipped"
-	// StatusError marks a photo that could not be processed, for example one that
-	// does not exist.
+	// StatusError marks a photo that could not be processed. A batch naming a
+	// photo outside the project is refused whole (ErrPhotoNotFound) rather than
+	// reported per photo, so this status is kept for the response's shape.
 	StatusError = "error"
 )
 
@@ -45,6 +56,13 @@ var (
 	// ErrLabelNotFound indicates an add-label operation referenced a missing
 	// label.
 	ErrLabelNotFound = errors.New("bulk: label not found")
+	// ErrPhotoNotFound indicates the batch named a uid that is not a photo of the
+	// project — missing or foreign alike. The whole batch is refused and nothing
+	// changes; the error names no uid on purpose.
+	ErrPhotoNotFound = errors.New("bulk: photo not found")
+	// ErrNoProject indicates the batch was submitted without a project — a
+	// programming error, never "any project".
+	ErrNoProject = errors.New("bulk: no project given")
 )
 
 // Location is a geographic coordinate set by a bulk operation, together with

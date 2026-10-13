@@ -35,7 +35,7 @@ type fakeMarkers struct {
 }
 
 // ListRepeatedMarkers implements dupmarkers.MarkerSource.
-func (f fakeMarkers) ListRepeatedMarkers(context.Context) ([]dupmarkers.MarkerRow, error) {
+func (f fakeMarkers) ListRepeatedMarkers(context.Context, string) ([]dupmarkers.MarkerRow, error) {
 	return f.rows, f.err
 }
 
@@ -249,7 +249,7 @@ func TestFindGroups_paginates(t *testing.T) {
 		Dismissals: fakeDismissals{},
 	})
 
-	first, err := svc.FindGroups(context.Background(), 2, 0)
+	first, err := svc.FindGroups(context.Background(), "pr-test", 2, 0)
 	if err != nil {
 		t.Fatalf("FindGroups() error = %v", err)
 	}
@@ -260,7 +260,7 @@ func TestFindGroups_paginates(t *testing.T) {
 		t.Fatalf("first page next_offset = %v, want 2", first.NextOffset)
 	}
 
-	last, err := svc.FindGroups(context.Background(), 2, *first.NextOffset)
+	last, err := svc.FindGroups(context.Background(), "pr-test", 2, *first.NextOffset)
 	if err != nil {
 		t.Fatalf("FindGroups() error = %v", err)
 	}
@@ -283,7 +283,7 @@ func TestFindGroups_offsetPastTheEndIsAnEmptyPage(t *testing.T) {
 		Dismissals: fakeDismissals{},
 	})
 
-	res, err := svc.FindGroups(context.Background(), 10, 99)
+	res, err := svc.FindGroups(context.Background(), "pr-test", 10, 99)
 	if err != nil {
 		t.Fatalf("FindGroups() error = %v", err)
 	}
@@ -303,7 +303,7 @@ func TestFindGroups_clampsPaging(t *testing.T) {
 		Dismissals: fakeDismissals{},
 	})
 
-	res, err := svc.FindGroups(context.Background(), 0, -5)
+	res, err := svc.FindGroups(context.Background(), "pr-test", 0, -5)
 	if err != nil {
 		t.Fatalf("FindGroups() error = %v", err)
 	}
@@ -314,7 +314,7 @@ func TestFindGroups_clampsPaging(t *testing.T) {
 		t.Errorf("offset = %d, want 0 for a negative request", res.Offset)
 	}
 
-	capped, err := svc.FindGroups(context.Background(), 100000, 0)
+	capped, err := svc.FindGroups(context.Background(), "pr-test", 100000, 0)
 	if err != nil {
 		t.Fatalf("FindGroups() error = %v", err)
 	}
@@ -332,7 +332,7 @@ func TestFindGroups_propagatesSourceErrors(t *testing.T) {
 		Markers:    fakeMarkers{err: boom},
 		Dismissals: fakeDismissals{},
 	})
-	if _, err := markerErr.FindGroups(context.Background(), 0, 0); !errors.Is(err, boom) {
+	if _, err := markerErr.FindGroups(context.Background(), "pr-test", 0, 0); !errors.Is(err, boom) {
 		t.Errorf("marker source error = %v, want it wrapped", err)
 	}
 
@@ -340,7 +340,17 @@ func TestFindGroups_propagatesSourceErrors(t *testing.T) {
 		Markers:    fakeMarkers{},
 		Dismissals: fakeDismissals{err: boom},
 	})
-	if _, err := dismissalErr.FindGroups(context.Background(), 0, 0); !errors.Is(err, boom) {
+	if _, err := dismissalErr.FindGroups(context.Background(), "pr-test", 0, 0); !errors.Is(err, boom) {
 		t.Errorf("dismissal source error = %v, want it wrapped", err)
+	}
+}
+
+// TestFindGroups_noProject refuses a listing without a project before any
+// source is read.
+func TestFindGroups_noProject(t *testing.T) {
+	t.Parallel()
+	svc := dupmarkers.New(dupmarkers.Config{Markers: fakeMarkers{}, Dismissals: fakeDismissals{}})
+	if _, err := svc.FindGroups(context.Background(), "", 0, 0); !errors.Is(err, dupmarkers.ErrNoProject) {
+		t.Fatalf("FindGroups without a project = %v, want ErrNoProject", err)
 	}
 }

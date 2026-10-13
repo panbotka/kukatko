@@ -28,13 +28,26 @@ type fakeStore struct {
 	// mutated records the audit entry of every single-photo mutation, keyed by
 	// the method that took it.
 	mutated map[string]audit.Entry
+	// projects records the project every read and pass was asked for, keyed by
+	// the method.
+	projects map[string]string
 }
 
-func (f *fakeStore) ListStackCandidates(context.Context) ([]photos.StackCandidate, error) {
+// see remembers the project method was called with.
+func (f *fakeStore) see(method, projectUID string) {
+	if f.projects == nil {
+		f.projects = make(map[string]string)
+	}
+	f.projects[method] = projectUID
+}
+
+func (f *fakeStore) ListStackCandidates(_ context.Context, projectUID string) ([]photos.StackCandidate, error) {
+	f.see("candidates", projectUID)
 	return f.candidates, nil
 }
 
-func (f *fakeStore) StackInfoByUIDs(_ context.Context, uids []string) ([]photos.StackCandidate, error) {
+func (f *fakeStore) StackInfoByUIDs(_ context.Context, projectUID string, uids []string) ([]photos.StackCandidate, error) {
+	f.see("info", projectUID)
 	out := make([]photos.StackCandidate, 0, len(uids))
 	for _, uid := range uids {
 		if c, ok := f.byUID[uid]; ok {
@@ -52,8 +65,9 @@ func (f *fakeStore) CreateStackAudited(
 }
 
 func (f *fakeStore) CreateStacksAudited(
-	_ context.Context, plans []photos.StackPlan, entry audit.Entry,
+	_ context.Context, projectUID string, plans []photos.StackPlan, entry audit.Entry,
 ) ([]string, error) {
+	f.see("create_pass", projectUID)
 	f.batches = append(f.batches, entry)
 	uids := make([]string, len(plans))
 	for i, plan := range plans {
@@ -95,7 +109,7 @@ func TestService_DetectStacks_disabledIsInert(t *testing.T) {
 		{UID: "a", FileName: "IMG.CR2"}, {UID: "b", FileName: "IMG.jpg"},
 	}}
 	svc := New(store, Config{Enabled: false, Rules: RuleSet{BaseName: true}})
-	created, err := svc.DetectStacks(t.Context(), testEntry(audit.ActionStacksDetect))
+	created, err := svc.DetectStacks(t.Context(), project.BootstrapUID, testEntry(audit.ActionStacksDetect))
 	if err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
@@ -114,7 +128,7 @@ func TestService_DetectStacks_formsStackAndPicksPrimary(t *testing.T) {
 		{UID: "jpg", FileName: "IMG.jpg", FileWidth: 6000, FileHeight: 4000},
 	}}
 	svc := New(store, Config{Enabled: true, Rules: RuleSet{BaseName: true}})
-	created, err := svc.DetectStacks(t.Context(), testEntry(audit.ActionStacksDetect))
+	created, err := svc.DetectStacks(t.Context(), project.BootstrapUID, testEntry(audit.ActionStacksDetect))
 	if err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
@@ -134,7 +148,7 @@ func TestService_DetectStacks_idempotentWhenSettled(t *testing.T) {
 	// A settled library exposes no unstacked candidates, so detection is a no-op.
 	store := &fakeStore{candidates: nil}
 	svc := New(store, Config{Enabled: true, Rules: RuleSet{BaseName: true}})
-	created, err := svc.DetectStacks(t.Context(), testEntry(audit.ActionStacksDetect))
+	created, err := svc.DetectStacks(t.Context(), project.BootstrapUID, testEntry(audit.ActionStacksDetect))
 	if err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
@@ -174,7 +188,7 @@ func TestService_DetectStacks_appliesOnePassWithItsAuditEntry(t *testing.T) {
 	svc := New(store, Config{Enabled: true, Rules: RuleSet{BaseName: true}})
 	entry := testEntry(audit.ActionStacksDetect)
 
-	created, err := svc.DetectStacks(t.Context(), entry)
+	created, err := svc.DetectStacks(t.Context(), project.BootstrapUID, entry)
 	if err != nil {
 		t.Fatalf("DetectStacks: %v", err)
 	}
@@ -256,5 +270,25 @@ func TestService_StackSelection_carriesTheAuditEntry(t *testing.T) {
 	}
 	if store.created[0].entry.Action != audit.ActionPhotosStack {
 		t.Errorf("entry action = %q, want %q", store.created[0].entry.Action, audit.ActionPhotosStack)
+	}
+}
+
+// TestService_DetectStacks_staysInsideTheProject checks the detection pass reads
+// its candidates from, and forms its stacks in, the project it was given — the
+// store's own proof (every member a photo of that project) then keeps a stack
+// from ever spanning two projects.
+func TestService_DetectStacks_staysInsideTheProject(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{candidates: []photos.StackCandidate{
+		{UID: "raw", FileName: "IMG.CR2"}, {UID: "jpg", FileName: "IMG.jpg"},
+	}}
+	svc := New(store, Config{Enabled: true, Rules: RuleSet{BaseName: true}})
+	if _, err := svc.DetectStacks(t.Context(), "pr-other", testEntry(audit.ActionStacksDetect)); err != nil {
+		t.Fatalf("DetectStacks: %v", err)
+	}
+	for _, method := range []string{"candidates", "create_pass"} {
+		if got := store.projects[method]; got != "pr-other" {
+			t.Errorf("%s asked for project %q, want pr-other", method, got)
+		}
 	}
 }

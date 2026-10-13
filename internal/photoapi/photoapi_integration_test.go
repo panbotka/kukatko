@@ -189,6 +189,7 @@ func newEnvWithMedia(t *testing.T, media storage.Storage) *env {
 		Stacker: stacks.New(store, stacks.Config{Enabled: true, Rules: stacks.RuleSet{BaseName: true}}),
 		Purger: trash.New(trash.Config{
 			Photos:      store,
+			Projects:    project.NewStore(db.Pool()),
 			Storage:     fs,
 			Thumbnailer: thumb.New(fs, t.TempDir()),
 		}),

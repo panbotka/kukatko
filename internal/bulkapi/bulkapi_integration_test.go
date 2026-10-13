@@ -254,9 +254,11 @@ func assertAuditWritten(t *testing.T, ctx context.Context, env *env, actorUID st
 	t.Fatalf("no %s audit entry for actor %s in %+v", audit.ActionPhotosBulk, actorUID, records)
 }
 
-// TestBulk_partialFailureReportsPerPhoto verifies a missing photo is reported as
-// an error per-photo while the valid photos are still updated and committed.
-func TestBulk_partialFailureReportsPerPhoto(t *testing.T) {
+// TestBulk_missingPhotoRefusesTheBatch verifies a batch naming a photo that
+// does not exist is refused whole with 404 — the valid photo stays untouched —
+// since the batch must consist of the project's photos, and a missing uid is
+// answered exactly like a foreign one.
+func TestBulk_missingPhotoRefusesTheBatch(t *testing.T) {
 	env := newEnv(t, 1000)
 	editor, _ := env.login(t, "editor", auth.AccountEditor)
 	ctx := t.Context()
@@ -267,21 +269,17 @@ func TestBulk_partialFailureReportsPerPhoto(t *testing.T) {
 		"operations": map[string]any{"archive": true},
 	})
 	resp := env.mustDo(t, editor, http.MethodPost, "/api/v1/photos/bulk", body)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("bulk status = %d, want 200", resp.StatusCode)
-	}
-	var result bulk.Result
-	decodeBody(t, resp, &result)
-	if result.Counts.Updated != 1 || result.Counts.Errored != 1 {
-		t.Fatalf("counts = %+v, want updated=1 errored=1", result.Counts)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("bulk status = %d, want 404", resp.StatusCode)
 	}
 
 	photo, err := env.photos.GetByUID(ctx, good)
 	if err != nil {
 		t.Fatalf("get good photo: %v", err)
 	}
-	if photo.ArchivedAt == nil {
-		t.Errorf("valid photo not archived despite partial failure")
+	if photo.ArchivedAt != nil {
+		t.Errorf("valid photo archived by a refused batch")
 	}
 }
 

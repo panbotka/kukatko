@@ -178,11 +178,12 @@ func archiveCopies(ctx context.Context, tx pgx.Tx, copies []string) error {
 }
 
 // writeAudit records the merge in the audit trail within the open transaction, so
-// the record commits atomically with the mutations. The keeper is the target; the
+// the record commits atomically with the mutations, under the merge's project. The keeper is the target; the
 // archived copies and the counts of what moved are in the details.
 func writeAudit(ctx context.Context, tx pgx.Tx, in Input, p plan) error {
 	entry := audit.Entry{
 		ActorUID:   in.ActorUID,
+		ProjectUID: in.ProjectUID,
 		Action:     audit.ActionPhotosMerge,
 		TargetType: "photos",
 		TargetUID:  in.KeeperUID,

@@ -43,6 +43,14 @@ var (
 	ErrKeeperNotInGroup = errors.New("dupmerge: keeper is not a member of the group")
 	// ErrKeeperNotFound indicates the keeper photo does not exist.
 	ErrKeeperNotFound = errors.New("dupmerge: keeper photo not found")
+	// ErrPhotoNotFound indicates a member of the group is not a photo of the
+	// project the merge runs in — missing, or a photo of another project. It names
+	// no uid: a merge is refused as a whole, before anything is touched, and the
+	// answer must not tell a foreign photo from a missing one.
+	ErrPhotoNotFound = errors.New("dupmerge: photo not found")
+	// ErrNoProject indicates the merge was asked for without a project — a
+	// programming error, never "any project".
+	ErrNoProject = errors.New("dupmerge: no project given")
 	// ErrCrossKindGroup indicates the group mixes a video with a still. Detection
 	// never offers such a group (internal/duplicates refuses the edge), so this is
 	// a guard against a request that arrived from somewhere else — a hand-written
@@ -55,11 +63,16 @@ var (
 
 // Input identifies a duplicate group to resolve and which member to keep.
 type Input struct {
+	// ProjectUID is the project the merge runs in. Every member must be one of
+	// its photos: a group naming a photo of another project (or a missing one) is
+	// refused whole with ErrPhotoNotFound before anything changes.
+	ProjectUID string
 	// KeeperUID is the member to keep; every other member is merged into it and
 	// then archived.
 	KeeperUID string
-	// MemberUIDs is the full group membership, including the keeper. Unknown or
-	// already-archived copies are tolerated so a re-run stays a safe no-op.
+	// MemberUIDs is the full group membership, including the keeper. Every uid
+	// must name a photo of the project; already-archived copies are tolerated so a
+	// re-run on a resolved group stays a safe no-op.
 	MemberUIDs []string
 	// ActorUID is the acting user, used for the per-user scalar fields (favorite,
 	// rating, flag) and recorded on the audit entry. An empty ActorUID disables
@@ -95,10 +108,12 @@ func NewService(pool *pgxpool.Pool) *Service {
 // albums, labels and people from the copies, its missing scalar fields are
 // filled, the copies are archived and the operation is audited. An empty plan
 // (nothing to add and nothing to archive, e.g. an already-resolved group) is a
-// no-op that writes nothing. It returns a validation error (ErrNoKeeper,
-// ErrTooFewMembers, ErrKeeperNotInGroup) or ErrKeeperNotFound before any change,
+// no-op that writes nothing. It returns a validation error (ErrNoProject,
+// ErrNoKeeper, ErrTooFewMembers, ErrKeeperNotInGroup) or ErrPhotoNotFound — a
+// member that is not a photo of in.ProjectUID — before any change,
 // ErrCrossKindGroup when the group would archive across the video/still boundary,
-// and a wrapped database error on failure.
+// and a wrapped database error on failure. The audit entry is recorded under
+// the project.
 func (s *Service) Merge(ctx context.Context, in Input) (Result, error) {
 	if err := validate(in); err != nil {
 		return Result{}, err
@@ -148,9 +163,13 @@ func (s *Service) Preview(ctx context.Context, in Input) (Result, error) {
 	return p.result(in.KeeperUID, true), nil
 }
 
-// validate checks the request shape before a transaction is opened: a keeper is
-// named, the group has at least two members, and the keeper is one of them.
+// validate checks the request shape before a transaction is opened: a project
+// and a keeper are named, the group has at least two members, and the keeper is
+// one of them.
 func validate(in Input) error {
+	if in.ProjectUID == "" {
+		return ErrNoProject
+	}
 	if in.KeeperUID == "" {
 		return ErrNoKeeper
 	}

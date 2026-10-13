@@ -33,15 +33,18 @@ const maxBodyBytes = 4 << 20
 // Service is the bulk behaviour the endpoints need. It is an interface so the
 // handlers are unit-testable with a fake; *bulk.Service satisfies it.
 type Service interface {
-	// Apply runs the operations against the target photos for the acting user and
-	// returns the per-photo result. See bulk.Service.Apply.
-	Apply(ctx context.Context, actorUID string, photoUIDs []string, ops bulk.Operations) (bulk.Result, error)
-	// LocationSummary counts how many of the target photos already have
-	// coordinates. See bulk.Service.LocationSummary.
-	LocationSummary(ctx context.Context, photoUIDs []string) (bulk.LocationSummary, error)
-	// MembershipSummary counts how many of the target photos are already in an
-	// album or under a label, and names them. See bulk.Service.MembershipSummary.
-	MembershipSummary(ctx context.Context, photoUIDs []string) (bulk.MembershipSummary, error)
+	// Apply runs the operations against the project's target photos for the
+	// acting user and returns the per-photo result. See bulk.Service.Apply.
+	Apply(
+		ctx context.Context, projectUID, actorUID string, photoUIDs []string, ops bulk.Operations,
+	) (bulk.Result, error)
+	// LocationSummary counts how many of the project's target photos already
+	// have coordinates. See bulk.Service.LocationSummary.
+	LocationSummary(ctx context.Context, projectUID string, photoUIDs []string) (bulk.LocationSummary, error)
+	// MembershipSummary counts how many of the project's target photos are
+	// already in an album or under a label, and names them. See
+	// bulk.Service.MembershipSummary.
+	MembershipSummary(ctx context.Context, projectUID string, photoUIDs []string) (bulk.MembershipSummary, error)
 }
 
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar — the YAML
@@ -160,7 +163,7 @@ func (a *API) handleLocationSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	summary, err := a.service.LocationSummary(r.Context(), req.PhotoUIDs)
+	summary, err := a.service.LocationSummary(r.Context(), auth.ProjectUIDFromContext(r.Context()), req.PhotoUIDs)
 	if err != nil {
 		status, msg := bulkStatus(err)
 		writeError(w, status, msg)
@@ -179,7 +182,7 @@ func (a *API) handleMembershipSummary(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	summary, err := a.service.MembershipSummary(r.Context(), req.PhotoUIDs)
+	summary, err := a.service.MembershipSummary(r.Context(), auth.ProjectUIDFromContext(r.Context()), req.PhotoUIDs)
 	if err != nil {
 		status, msg := bulkStatus(err)
 		writeError(w, status, msg)
@@ -191,9 +194,10 @@ func (a *API) handleMembershipSummary(w http.ResponseWriter, r *http.Request) {
 // handleBulk decodes the request, resolves the operation set, applies it for the
 // acting user and writes the per-photo result. A caller who may curate but not
 // write gets 403 for a batch beyond curation, before anything is applied.
-// Validation failures return 400, an oversized batch returns 413, and other
-// failures return 500. A run with
-// per-photo errors still returns 200 with the errors detailed in the body.
+// Validation failures return 400, an oversized batch returns 413, a batch
+// naming any photo that is not the request project's — foreign or missing, one
+// body for both, naming no uid — returns 404 with nothing changed, and other
+// failures return 500.
 func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -215,7 +219,7 @@ func (a *API) handleBulk(w http.ResponseWriter, r *http.Request) {
 			"only an editor may change a photo's metadata; a curator may change albums, labels and its own marks")
 		return
 	}
-	result, err := a.service.Apply(r.Context(), user.UID, req.PhotoUIDs, ops)
+	result, err := a.service.Apply(r.Context(), auth.ProjectUIDFromContext(r.Context()), user.UID, req.PhotoUIDs, ops)
 	if err != nil {
 		status, msg := bulkStatus(err)
 		writeError(w, status, msg)
@@ -287,6 +291,10 @@ func bulkStatus(err error) (int, string) {
 		return http.StatusBadRequest, err.Error()
 	case errors.Is(err, bulk.ErrBatchTooLarge):
 		return http.StatusRequestEntityTooLarge, err.Error()
+	case errors.Is(err, bulk.ErrPhotoNotFound):
+		// The very body a missing photo gets elsewhere, and no uid in it: which
+		// photo of the batch was foreign is what must not leak.
+		return http.StatusNotFound, "photo not found"
 	default:
 		return http.StatusInternalServerError, "bulk operation failed"
 	}

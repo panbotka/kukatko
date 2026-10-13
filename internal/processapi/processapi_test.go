@@ -403,7 +403,7 @@ type fakeStacksDetector struct {
 
 // DetectStacks records the call and its audit entry, then returns the canned
 // result.
-func (f *fakeStacksDetector) DetectStacks(_ context.Context, entry audit.Entry) (int, error) {
+func (f *fakeStacksDetector) DetectStacks(_ context.Context, _ string, entry audit.Entry) (int, error) {
 	f.calls++
 	f.entry = entry
 	return f.created, f.err

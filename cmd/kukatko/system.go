@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/auth"
@@ -15,6 +16,7 @@ import (
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/systemapi"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -107,12 +109,30 @@ func buildSystemDuplicatesOrNil(cfg *config.Config, db *database.DB) system.Dupl
 		return nil
 	}
 	photoStore := photos.NewStore(db.Pool())
-	return duplicates.New(duplicates.Config{
+	return bootstrapDuplicateCounter{svc: duplicates.New(duplicates.Config{
 		Photos:           photoStore,
 		Phashes:          photoStore,
 		Embeddings:       vectors.NewStore(db.Pool()),
 		Feedback:         feedback.NewStore(db.Pool()),
 		PhashMaxDiff:     cfg.Duplicate.PhashMaxDiff,
 		EmbeddingMaxDist: cfg.Duplicate.EmbeddingMaxDist,
-	})
+	})}
+}
+
+// bootstrapDuplicateCounter adapts the project-scoped duplicate detector to the
+// dashboard's project-less DuplicateCounter by counting the bootstrap project's
+// groups — duplicate groups are built inside one project, so there is no
+// instance-wide count to take. Transition: the system dashboard is scoped by
+// project in its own step, which replaces this adapter.
+type bootstrapDuplicateCounter struct {
+	svc *duplicates.Service
+}
+
+// CountGroups returns how many duplicate groups the bootstrap project holds.
+func (c bootstrapDuplicateCounter) CountGroups(ctx context.Context) (int, error) {
+	n, err := c.svc.CountGroups(ctx, project.BootstrapUID)
+	if err != nil {
+		return 0, fmt.Errorf("counting the bootstrap project's duplicate groups: %w", err)
+	}
+	return n, nil
 }

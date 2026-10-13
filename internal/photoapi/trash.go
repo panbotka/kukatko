@@ -16,19 +16,22 @@ import (
 )
 
 // Purger is the subset of the trash service the HTTP layer needs: permanently
-// deleting one archived photo and emptying the whole trash. Each mutation carries
-// the acting user (audit.Meta) so the permanent deletion is attributed in the
-// audit trail. When nil the trash mutation endpoints answer 503.
+// deleting one archived photo and emptying the whole trash, always inside the
+// request's project. Each mutation carries the acting user (audit.Meta) so the
+// permanent deletion is attributed in the audit trail. When nil the trash
+// mutation endpoints answer 503.
 type Purger interface {
-	// PurgePhoto permanently deletes the archived photo, returning
-	// photos.ErrPhotoNotFound or trash.ErrNotArchived for the obvious cases.
-	PurgePhoto(ctx context.Context, uid string, meta audit.Meta) error
-	// EmptyTrash permanently deletes every archived photo and reports the counts.
-	EmptyTrash(ctx context.Context, meta audit.Meta) (trash.Result, error)
-	// PurgeOlderThan permanently deletes every archived photo older than the given
-	// number of days (days == 0 purges the whole trash) and reports the counts,
-	// attributing each purge to the calling admin.
-	PurgeOlderThan(ctx context.Context, days int, meta audit.Meta) (trash.Result, error)
+	// PurgePhoto permanently deletes the project's archived photo, returning
+	// photos.ErrPhotoNotFound (also for a photo of another project) or
+	// trash.ErrNotArchived for the obvious cases.
+	PurgePhoto(ctx context.Context, projectUID, uid string, meta audit.Meta) error
+	// EmptyTrash permanently deletes every archived photo of the project and
+	// reports the counts.
+	EmptyTrash(ctx context.Context, projectUID string, meta audit.Meta) (trash.Result, error)
+	// PurgeOlderThan permanently deletes every archived photo of the project
+	// older than the given number of days (days == 0 purges the whole trash) and
+	// reports the counts, attributing each purge to the calling admin.
+	PurgeOlderThan(ctx context.Context, projectUID string, days int, meta audit.Meta) (trash.Result, error)
 }
 
 // trashInfo is the JSON body of the trash-info endpoint, carrying the retention
@@ -58,9 +61,10 @@ func purgeAuditMeta(r *http.Request) audit.Meta {
 	return audit.FromRequest(r, user.UID)
 }
 
-// handlePurge permanently deletes a single archived photo. It requires the
-// explicit confirm=true query parameter (400 otherwise), answers 404 for a
-// missing photo and 409 for a photo that is not archived, and 204 on success.
+// handlePurge permanently deletes a single archived photo of the request's
+// project. It requires the explicit confirm=true query parameter (400
+// otherwise), answers 404 for a missing photo — or one of another project, with
+// the same body — and 409 for a photo that is not archived, and 204 on success.
 // Without a purge backend it answers 503.
 func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 	if a.purger == nil {
@@ -72,7 +76,7 @@ func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uid := chi.URLParam(r, "uid")
-	switch err := a.purger.PurgePhoto(r.Context(), uid, purgeAuditMeta(r)); {
+	switch err := a.purger.PurgePhoto(r.Context(), auth.ProjectUIDFromContext(r.Context()), uid, purgeAuditMeta(r)); {
 	case errors.Is(err, photos.ErrPhotoNotFound):
 		writeError(w, http.StatusNotFound, "photo not found")
 	case errors.Is(err, trash.ErrNotArchived):
@@ -84,7 +88,8 @@ func (a *API) handlePurge(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleEmptyTrash permanently deletes every archived photo. It requires the
+// handleEmptyTrash permanently deletes every archived photo of the request's
+// project; another project's trash is never touched. It requires the
 // explicit confirm=true query parameter (400 otherwise) and returns the purged
 // and failed counts. Without a purge backend it answers 503.
 func (a *API) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +101,7 @@ func (a *API) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "confirmation required (confirm=true)")
 		return
 	}
-	res, err := a.purger.EmptyTrash(r.Context(), purgeAuditMeta(r))
+	res, err := a.purger.EmptyTrash(r.Context(), auth.ProjectUIDFromContext(r.Context()), purgeAuditMeta(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "emptying trash failed")
 		return
@@ -142,7 +147,7 @@ func (a *API) handlePurgeOlder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	res, err := a.purger.PurgeOlderThan(r.Context(), days, purgeAuditMeta(r))
+	res, err := a.purger.PurgeOlderThan(r.Context(), auth.ProjectUIDFromContext(r.Context()), days, purgeAuditMeta(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "purging trash failed")
 		return

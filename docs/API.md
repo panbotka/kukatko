@@ -62,6 +62,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   404, nothing created); a comment on a photo, task or album of another project is the missing
   subject's 404; and `/notifications/*` — the inbox, its unread count, read-all, one notification and its
   mark-read — sees only the project's notifications (the preferences and `/push/*` stay per account).
+  **Duplicates, stacks, bulk and the trash** too: `GET /duplicates` builds its groups from the project's
+  photos only and `POST /duplicates/merge` refuses a group with any member outside the project (404, no
+  uid named); `GET /duplicate-markers` lists the project's photos only; `POST /process/stacks` stacks only
+  the project's photos; `POST /photos/bulk` refuses a batch with any foreign uid **whole** with the missing
+  photo's 404 (a missing uid is refused the same way — no longer a per-photo `error`), and its two summaries
+  count only the project; the trash listing (`GET /photos?archived=only`), `POST /photos/{uid}/purge`,
+  `POST /trash/empty` and `POST /trash/purge-older` see only the project's archive, and the scheduled
+  retention purge sweeps every active project in turn.
   The remaining groups are scoped step by step (see `docs/PACKAGES.md`, `internal/photos`).
 - **Links follow the prefix.** Every URL a response carries to another project-scoped route — a photo's
   `thumb_url`/`preview_url`/`download_url` when the store mints no signed URL, a GeoJSON feature's
@@ -757,9 +765,11 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   Idempotent (safe to click repeatedly); recorded in the audit log as
   `photo.thumbnail` with the list of regenerated sizes in details;
   **trash / permanent deletion** (`trash.go`, backed by `internal/trash` via the `Purger` interface, nil → 503):
-  `POST /photos/{uid}/purge` (**admin** via `RequireAdmin`, `?confirm=true` otherwise 400, 404 missing,
+  `POST /photos/{uid}/purge` (**admin** via `RequireAdmin`, `?confirm=true` otherwise 400, 404 missing —
+  and 404 with the same body for a photo of another project, which is left untouched —
   409 photo not archived → 204) and `POST /trash/empty` (**admin** via `RequireAdmin`,
-  `?confirm=true` → `{purged,failed}`) permanently and irreversibly delete archived photos, so they are
+  `?confirm=true` → `{purged,failed}`, **the request project's trash only**) permanently and irreversibly
+  delete archived photos, so they are
   tightened from write to admin; `POST /trash/purge-older` (**admin** via `RequireAdmin`,
   `?days=N&confirm=true`; `N` = an integer ≥ 0, otherwise 400, missing `confirm` → 400, nil purger →
   503) permanently deletes every photo archived longer than `now − N days` via the **same** purge path as
@@ -1840,8 +1850,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   counting against it would re-schedule the whole library whenever a quality level is added — which is what
   `?all=true` is for. Idempotent (the queue dedupes an active job per photo) and resumable. **503** when
   `video.hls.enabled: false`.
-  `POST /process/stacks` → `{created}` (detection and grouping of photos into stacks over the whole library via
-  `stacks.Service.DetectStacks`; **synchronous**, the candidates are **only the not-yet-stacked non-archived**
+  `POST /process/stacks` → `{created}` (detection and grouping of photos into stacks over the **request
+  project's** library via `stacks.Service.DetectStacks` — the rules compare only the project's photos and a
+  stack never contains photos of two projects; **synchronous**, the candidates are **only the not-yet-stacked non-archived**
   photos, so a re-run is idempotent and does not break a manual or an existing stack; **503** when
   `stacks.enabled: false`). **Audited** as one `stacks.detect` entry per run — no photo is its target, the
   details carry `created`, `stack_uids` and the number of photos grouped — written in the single transaction
@@ -2341,16 +2352,20 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   per-IP `ratelimit.bulk` throttle — mounted behind the guard, and skipped for an `unlimited` API token, exactly
   as `POST /upload` above):**
   `POST /photos/bulk` `{photo_uids:[…], operations:{…}}` applies a set of operations to many photos
-  **in a single transaction** with an audit-log entry. Operations (each optional): `add_to_albums`/
+  **in a single transaction** with an audit-log entry. **The batch must consist of the request project's
+  photos** — proved in one query before anything is written; a batch naming any other uid (a photo of
+  another project, or none at all) is refused **whole** with **404 `{"error":"photo not found"}`**, the same
+  body whichever uid it was and naming none, nothing changed and nothing audited. Albums/labels in an add must
+  be the project's too (otherwise the 400 below). Operations (each optional): `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels`, `set_caption`/`clear_caption` (→title),
   `set_description`/`clear_description`, `set_taken_at {precision,value}`/`clear_taken_at` (see below),
   `set_location {lat,lng,only_missing?}`/`clear_location` (see below),
   `archive`/`unarchive`, `hide`/`unhide` (library visibility, see above),
   `set_favorite` (**per-user**), `set_rating` (0–5) / `set_flag`
   (none/pick/reject/eye) (**per-user**, invalid value → 400). Response `{results:[{photo_uid,status,
-  error?}],counts:{total,updated,skipped,errored}}` (200 even on partial errors): `updated`/
-  `skipped` (duplicate uid)/`error` (the photo does not exist — it **does not abort valid** ones); only a DB error
-  rolls back the whole batch (500). A set/clear, archive/unarchive or hide/unhide conflict, an unknown operation,
+  error?}],counts:{total,updated,skipped,errored}}`: `updated`/`skipped` (a duplicate uid, or a
+  fill-the-gaps location on a photo that has one)/`error` (a photo that vanished after the batch was proved);
+  a DB error rolls back the whole batch (500). A set/clear, archive/unarchive or hide/unhide conflict, an unknown operation,
   a missing album/label in an add → **400**; a batch above `bulk.max_batch_size` (default 1000) → **413**.
   **The field rule:** a caller who is a curator but not an editor may send only `add_to_albums`/
   `remove_from_albums`, `add_labels`/`remove_labels` and the per-user `set_favorite`/`set_rating`/`set_flag`
@@ -2381,13 +2396,14 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `PATCH`; a photo re-sent the coordinate it already had is not, because each geocode costs a metered
   mapy.com credit. The sidecar rewrite follows the usual rule (one job per updated photo).
   `POST /photos/bulk/location-summary` `{photo_uids:[…]}` → `{total, with_location}` is the read that
-  precedes it: how many of the selection exist (a repeated uid counts once, a missing photo not at all)
+  precedes it: how many of the selection exist in the request's project (a repeated uid counts once, a
+  missing photo — or one of another project — not at all)
   and how many of those already have a full coordinate, so the dialog can state what an overwrite would
   replace **before** writing. Read-only and rate-limited like the apply, same 400/413 rules, but it stays on
   **`RequireWrite`**: it exists only to feed the bulk location operation, which a curator may not use.
   `POST /photos/bulk/membership-summary` `{photo_uids:[…]}` → `{total, filed, albums:[{uid,title,photo_count}],
   labels:[{uid,name,photo_count}]}` answers where a selection already is: how many of it exist (same
-  counting as the location summary), how many of those are in **at least one album or carry at least one
+  counting as the location summary, the project's photos only), how many of those are in **at least one album or carry at least one
   label** (any label source), and every album (by title) and label (by priority, then name) holding any of
   them, each with how many of the selection it covers. `albums`/`labels` are always arrays, empty when
   `filed` is 0. Three indexed queries whatever the batch size. The upload page asks it once a batch settles
@@ -2658,7 +2674,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   like everything else.
 - **Duplicates API (`/api/v1/p/{project}`, `internal/duplicatesapi` + `internal/duplicates`, editor/admin via
   `RequireWrite`):** `GET /duplicates?limit=&offset=` → `{groups,total,limit,offset,next_offset}`
-  groups of likely duplicates from pHash Hamming distance (`duplicate.phash_max_diff`,
+  groups of likely duplicates **within the request's project** (the pHash candidates and the embedding
+  neighbours are both the project's; the same picture in two projects is never a group) from pHash Hamming distance (`duplicate.phash_max_diff`,
   banded-LSH) **and/or** embedding cosine distance (`duplicate.embedding_max_dist`, HNSW), merged by
   union-find into connected components (no O(n²) scan). Each group carries members (thumbnail/dimensions/
   size/`taken_at`/`media_type`/`duration_ms`/distances) + `reason` (phash/embedding/both) + `confirmed` (a human
@@ -2678,7 +2695,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   it came from and cannot be transferred), fills the missing scalar fields (title/description +
   per-user rating/favorite/flag; never overwrites an existing value), archives the copies (`archived_at`, originals
   to purge) and writes `photos.merge` to the audit. Idempotent (re-running on a resolved group = a no-op);
-  `dry_run:true` only computes a preview without changes. An invalid group → 400, a non-existent keeper → 404,
+  `dry_run:true` only computes a preview without changes. An invalid group → 400; a group with **any member
+  that is not a photo of the request's project** — the keeper included, foreign or missing alike — → **404
+  `{"error":"photo not found"}`**, one body naming no uid, refused before anything is read or written;
   `merge=nil` → 503. A group that would **archive across the still/video boundary** → 400 with the reason in the
   body (`dupmerge.ErrCrossKindGroup`), from `Preview` as well as `Merge`: detection never offers such a group, so
   this is a guard against a request from anywhere else, and it fails the whole merge rather than skipping the copy. The `merge` route runs even with detection off. Mounted always by `buildDuplicatesAPI` (`cmd/kukatko/duplicates.go`).
@@ -2686,7 +2705,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   duplicate — not two photos, but **one person marked more than once on one photo**. On a group shot the
   matcher puts the same name on two or three neighbouring boxes, so the people beside her lose their tag and
   her own face count is inflated; it is always a mistake.
-  `GET /duplicate-markers?limit=&offset=` (**`RequireAuth`** — reading is not a write) →
+  `GET /duplicate-markers?limit=&offset=` (**`RequireAuth`** — reading is not a write; the request project's
+  photos only) →
   `{groups,total,limit,offset,next_offset}`, each group
   `{photo_uid,photo_title,taken_at?,width,height,orientation,subject_uid,subject_name,
   markers:[{uid,bbox,score,reviewed}]}`, worst (most markers) first, then by the person's name; markers ordered

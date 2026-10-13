@@ -36,7 +36,7 @@ index memory per photo for the same reason.
 ### Query-time `ef_search`
 
 Every read query runs inside a read-only transaction that issues
-`SET LOCAL hnsw.ef_search = 100` (`internal/vectors/store.go`, `withReadTx`). The
+`SET LOCAL hnsw.ef_search = 100` (`internal/vectors/store.go`, `withTunedReadTx`). The
 value is a named constant (`efSearch = 100`) with a guard test
 (`internal/vectors/efsearch_test.go`) asserting it stays **positive and strictly
 below `efSearchMax = 400`** — the ceiling the design forbids reaching. `SET LOCAL`

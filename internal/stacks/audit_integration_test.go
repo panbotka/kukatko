@@ -201,7 +201,7 @@ func TestIntegration_DetectStacksIsAuditedOnce(t *testing.T) {
 	makePhoto(t, store, "aud_draw", "IMG_9.CR2", "image/x-canon-cr2", 6000, 4000)
 	makePhoto(t, store, "aud_djpg", "IMG_9.jpg", "image/jpeg", 6000, 4000)
 
-	created, err := detector(store).DetectStacks(ctx, actorEntry(actor, audit.ActionStacksDetect))
+	created, err := detector(store).DetectStacks(ctx, project.BootstrapUID, actorEntry(actor, audit.ActionStacksDetect))
 	if err != nil || created != 1 {
 		t.Fatalf("DetectStacks created %d (err %v), want 1", created, err)
 	}

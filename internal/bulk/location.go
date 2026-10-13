@@ -11,8 +11,9 @@ import (
 // evidence — a coordinate the camera recorded, or one somebody placed by hand —
 // so the reader is told how much of the batch that would affect and chooses.
 //
-// Total counts the photos that exist, each once: a UID repeated in the request
-// is one photo, and a UID of a photo that is gone is none.
+// Total counts the project's photos that exist, each once: a UID repeated in the
+// request is one photo, and a UID of a photo that is gone — or of another
+// project — is none.
 type LocationSummary struct {
 	// Total is how many of the requested photos exist.
 	Total int `json:"total"`
@@ -26,7 +27,7 @@ type LocationSummary struct {
 const locationSummarySQL = `
 SELECT count(*), count(*) FILTER (WHERE lat IS NOT NULL AND lng IS NOT NULL)
 FROM photos
-WHERE uid = ANY($1)`
+WHERE uid = ANY($1) AND project_id = $2`
 
 // LocationSummary reports how many of the given photos already have coordinates,
 // so a bulk set-location can state the cost of overwriting before it is applied.
@@ -34,8 +35,14 @@ WHERE uid = ANY($1)`
 //
 // It rejects the same batches Apply does — an empty list is ErrNoPhotos and an
 // oversized one ErrBatchTooLarge — so the dialog cannot promise a preview of a
-// batch the apply behind it would refuse.
-func (s *Service) LocationSummary(ctx context.Context, photoUIDs []string) (LocationSummary, error) {
+// batch the apply behind it would refuse. Only the photos of projectUID are
+// counted; an empty projectUID is ErrNoProject.
+func (s *Service) LocationSummary(
+	ctx context.Context, projectUID string, photoUIDs []string,
+) (LocationSummary, error) {
+	if projectUID == "" {
+		return LocationSummary{}, ErrNoProject
+	}
 	if len(photoUIDs) == 0 {
 		return LocationSummary{}, ErrNoPhotos
 	}
@@ -44,7 +51,7 @@ func (s *Service) LocationSummary(ctx context.Context, photoUIDs []string) (Loca
 			"%w: %d exceeds limit %d", ErrBatchTooLarge, len(photoUIDs), s.maxBatch)
 	}
 	var summary LocationSummary
-	row := s.pool.QueryRow(ctx, locationSummarySQL, photoUIDs)
+	row := s.pool.QueryRow(ctx, locationSummarySQL, photoUIDs, projectUID)
 	if err := row.Scan(&summary.Total, &summary.WithLocation); err != nil {
 		return LocationSummary{}, fmt.Errorf("bulk: summarising locations: %w", err)
 	}

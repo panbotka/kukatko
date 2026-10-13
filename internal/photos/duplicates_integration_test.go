@@ -28,7 +28,7 @@ func TestListActivePhashes(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	got, err := store.ListActivePhashes(ctx)
+	got, err := store.ListActivePhashes(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListActivePhashes: %v", err)
 	}

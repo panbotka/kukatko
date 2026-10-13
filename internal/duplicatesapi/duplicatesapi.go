@@ -31,8 +31,8 @@ const maxBodyBytes = 256 << 10
 // Service is the duplicates listing behaviour the API drives. It is satisfied by
 // *duplicates.Service; a nil Service makes the list endpoint answer 503.
 type Service interface {
-	// FindGroups returns one page of duplicate groups.
-	FindGroups(ctx context.Context, limit, offset int) (duplicates.Result, error)
+	// FindGroups returns one page of the project's duplicate groups.
+	FindGroups(ctx context.Context, projectUID string, limit, offset int) (duplicates.Result, error)
 }
 
 // MergeService resolves a duplicate group by merging the redundant copies into a
@@ -79,8 +79,10 @@ func (a *API) RegisterRoutes(r chi.Router) {
 	r.With(a.requireWrite).Post("/duplicates/merge", a.handleMerge)
 }
 
-// handleList returns a page of duplicate groups. It answers 503 when detection is
-// not configured, 400 for an invalid limit/offset, and 500 when the scan fails.
+// handleList returns a page of the request project's duplicate groups — groups
+// are built inside one project, so no group ever names another project's photo.
+// It answers 503 when detection is not configured, 400 for an invalid
+// limit/offset, and 500 when the scan fails.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	if a.service == nil {
 		writeError(w, http.StatusServiceUnavailable, "duplicate detection not available")
@@ -91,7 +93,7 @@ func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := a.service.FindGroups(r.Context(), limit, offset)
+	result, err := a.service.FindGroups(r.Context(), auth.ProjectUIDFromContext(r.Context()), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "finding duplicates failed")
 		return
@@ -114,8 +116,10 @@ type mergeRequest struct {
 // handleMerge resolves a duplicate group by merging its redundant copies into the
 // chosen keeper (or previews that when dry_run is set). It answers 503 when
 // merging is not configured, 400 for a malformed request or an invalid group
-// (including one that would archive a video in favour of a still), 404 when the
-// keeper does not exist, and 500 when the merge fails.
+// (including one that would archive a video in favour of a still), 404 when a
+// member — the keeper included — is not a photo of the request's project
+// (missing or foreign alike, the same body, nothing changed), and 500 when the
+// merge fails.
 func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
 	if a.merge == nil {
 		writeError(w, http.StatusServiceUnavailable, "duplicate resolution not available")
@@ -127,7 +131,10 @@ func (a *API) handleMerge(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	in := dupmerge.Input{KeeperUID: req.KeeperUID, MemberUIDs: req.MemberUIDs, ActorUID: user.UID}
+	in := dupmerge.Input{
+		ProjectUID: auth.ProjectUIDFromContext(r.Context()),
+		KeeperUID:  req.KeeperUID, MemberUIDs: req.MemberUIDs, ActorUID: user.UID,
+	}
 	var result dupmerge.Result
 	var err error
 	if req.DryRun {
@@ -151,8 +158,10 @@ func mergeStatus(err error) (int, string) {
 		errors.Is(err, dupmerge.ErrKeeperNotInGroup),
 		errors.Is(err, dupmerge.ErrCrossKindGroup):
 		return http.StatusBadRequest, err.Error()
-	case errors.Is(err, dupmerge.ErrKeeperNotFound):
-		return http.StatusNotFound, err.Error()
+	case errors.Is(err, dupmerge.ErrKeeperNotFound), errors.Is(err, dupmerge.ErrPhotoNotFound):
+		// One body for both, naming no uid: a member of another project must be
+		// indistinguishable from one that does not exist.
+		return http.StatusNotFound, "photo not found"
 	default:
 		return http.StatusInternalServerError, "merge failed"
 	}

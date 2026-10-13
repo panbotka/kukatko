@@ -14,7 +14,16 @@ import (
 // nil every archived photo qualifies, which backs the "empty trash" action. A
 // non-positive limit falls back to defaultListLimit. The slice is empty (not
 // nil) when nothing matches.
-func (s *Store) ListArchivedUIDs(ctx context.Context, before *time.Time, limit, offset int) ([]string, error) {
+//
+// Only the photos of projectUID are listed: emptying one project's trash, or its
+// retention sweep, never reaches another project's archive. An empty projectUID
+// is ErrNoProject.
+func (s *Store) ListArchivedUIDs(
+	ctx context.Context, projectUID string, before *time.Time, limit, offset int,
+) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
@@ -22,8 +31,8 @@ func (s *Store) ListArchivedUIDs(ctx context.Context, before *time.Time, limit, 
 		offset = 0
 	}
 
-	q := "SELECT uid FROM photos WHERE archived_at IS NOT NULL"
-	args := []any{}
+	q := "SELECT uid FROM photos WHERE " + projectClause("$1") + " AND archived_at IS NOT NULL"
+	args := []any{projectUID}
 	if before != nil {
 		args = append(args, *before)
 		q += fmt.Sprintf(" AND archived_at <= $%d", len(args))

@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // mustCreateArchived creates a photo with the given hash and stamps its
@@ -46,7 +47,7 @@ func TestListArchivedUIDs(t *testing.T) {
 
 	cutoff := now.Add(-24 * time.Hour)
 
-	expired, err := store.ListArchivedUIDs(ctx, &cutoff, 100, 0)
+	expired, err := store.ListArchivedUIDs(ctx, project.BootstrapUID, &cutoff, 100, 0)
 	if err != nil {
 		t.Fatalf("ListArchivedUIDs(before cutoff): %v", err)
 	}
@@ -54,7 +55,7 @@ func TestListArchivedUIDs(t *testing.T) {
 		t.Fatalf("expired = %v, want oldest-first %v", expired, want)
 	}
 
-	all, err := store.ListArchivedUIDs(ctx, nil, 100, 0)
+	all, err := store.ListArchivedUIDs(ctx, project.BootstrapUID, nil, 100, 0)
 	if err != nil {
 		t.Fatalf("ListArchivedUIDs(all): %v", err)
 	}
@@ -63,7 +64,7 @@ func TestListArchivedUIDs(t *testing.T) {
 	}
 
 	// Pagination: limit 1, offset 1 returns the second-oldest only.
-	page, err := store.ListArchivedUIDs(ctx, &cutoff, 1, 1)
+	page, err := store.ListArchivedUIDs(ctx, project.BootstrapUID, &cutoff, 1, 1)
 	if err != nil {
 		t.Fatalf("ListArchivedUIDs(paged): %v", err)
 	}

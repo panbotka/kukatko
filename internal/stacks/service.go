@@ -22,18 +22,24 @@ type Config struct {
 // consider and applying the reversible grouping. *photos.Store satisfies it; a
 // fake stands in for unit tests.
 //
+// Every method works inside the project it is given: the candidates and the
+// selection are read from that project only, and every write proves its photos
+// belong to it, so a stack never spans two projects.
+//
 // Every mutating method takes the audit entry its change is to be recorded with
 // and writes it in the same transaction as the change, so a stack operation can
 // never commit without leaving a trace (and a failed one leaves none). The
 // Service only carries the entry through — who acted and from where is the
 // caller's knowledge, while the stack uid and the members are the store's.
 type Store interface {
-	ListStackCandidates(ctx context.Context) ([]photos.StackCandidate, error)
-	StackInfoByUIDs(ctx context.Context, uids []string) ([]photos.StackCandidate, error)
+	ListStackCandidates(ctx context.Context, projectUID string) ([]photos.StackCandidate, error)
+	StackInfoByUIDs(ctx context.Context, projectUID string, uids []string) ([]photos.StackCandidate, error)
 	CreateStackAudited(
 		ctx context.Context, projectUID, primaryUID string, memberUIDs []string, entry audit.Entry,
 	) (string, error)
-	CreateStacksAudited(ctx context.Context, plans []photos.StackPlan, entry audit.Entry) ([]string, error)
+	CreateStacksAudited(
+		ctx context.Context, projectUID string, plans []photos.StackPlan, entry audit.Entry,
+	) ([]string, error)
 	SetStackPrimaryAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
 	UnstackMemberAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
 	UnstackAllAudited(ctx context.Context, projectUID, memberUID string, entry audit.Entry) (string, error)
@@ -57,22 +63,25 @@ func New(store Store, cfg Config) *Service {
 	return &Service{store: store, enabled: cfg.Enabled, rules: cfg.Rules}
 }
 
-// DetectStacks groups the currently unstacked, non-archived photos into stacks by
-// the enabled rules and returns how many stacks were created, recording the pass
-// under entry. It is incremental and idempotent: already-stacked photos are never
-// candidates, so a re-run over a settled library creates nothing and never
-// disturbs an existing or manually curated stack. It is a no-op returning 0 when
+// DetectStacks groups the project's currently unstacked, non-archived photos
+// into stacks by the enabled rules and returns how many stacks were created,
+// recording the pass under entry (under the project). Detection runs within
+// projectUID: the rules only ever compare two photos of the project, so a RAW in
+// one project and its JPEG in another are never stacked. It is incremental and
+// idempotent: already-stacked photos are never candidates, so a re-run over a
+// settled library creates nothing and never disturbs an existing or manually
+// curated stack. It is a no-op returning 0 when
 // the feature or every rule is off — and then writes no audit entry either,
 // because nothing ran.
 //
 // The whole pass is applied in one transaction together with its single audit
 // entry, so the trail's promise holds for a bulk decision too: what the entry
 // claims was created is exactly what committed.
-func (s *Service) DetectStacks(ctx context.Context, entry audit.Entry) (int, error) {
+func (s *Service) DetectStacks(ctx context.Context, projectUID string, entry audit.Entry) (int, error) {
 	if !s.enabled || !s.rules.Any() {
 		return 0, nil
 	}
-	candidates, err := s.store.ListStackCandidates(ctx)
+	candidates, err := s.store.ListStackCandidates(ctx, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("stacks: listing candidates: %w", err)
 	}
@@ -81,7 +90,7 @@ func (s *Service) DetectStacks(ctx context.Context, entry audit.Entry) (int, err
 	for i, component := range components {
 		plans[i] = planComponent(candidates, component)
 	}
-	created, err := s.store.CreateStacksAudited(ctx, plans, entry)
+	created, err := s.store.CreateStacksAudited(ctx, projectUID, plans, entry)
 	if err != nil {
 		return 0, fmt.Errorf("stacks: creating stacks: %w", err)
 	}
@@ -114,7 +123,7 @@ func (s *Service) StackSelection(
 	if len(distinct) < 2 {
 		return "", photos.ErrStackTooSmall
 	}
-	info, err := s.store.StackInfoByUIDs(ctx, distinct)
+	info, err := s.store.StackInfoByUIDs(ctx, projectUID, distinct)
 	if err != nil {
 		return "", fmt.Errorf("stacks: loading selection: %w", err)
 	}

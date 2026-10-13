@@ -29,20 +29,20 @@ type fakePurger struct {
 }
 
 // PurgePhoto records the uid and returns the configured error.
-func (f *fakePurger) PurgePhoto(_ context.Context, uid string, _ audit.Meta) error {
+func (f *fakePurger) PurgePhoto(_ context.Context, _, uid string, _ audit.Meta) error {
 	f.purgedUID = uid
 	return f.purgeErr
 }
 
 // EmptyTrash counts its calls and returns the configured result/error.
-func (f *fakePurger) EmptyTrash(_ context.Context, _ audit.Meta) (trash.Result, error) {
+func (f *fakePurger) EmptyTrash(_ context.Context, _ string, _ audit.Meta) (trash.Result, error) {
 	f.emptyCalls++
 	return f.emptyRes, f.emptyErr
 }
 
 // PurgeOlderThan records the days it was called with (so a test can assert the
 // parsed query parameter reached it) and returns the configured result/error.
-func (f *fakePurger) PurgeOlderThan(_ context.Context, days int, _ audit.Meta) (trash.Result, error) {
+func (f *fakePurger) PurgeOlderThan(_ context.Context, _ string, days int, _ audit.Meta) (trash.Result, error) {
 	f.olderCalls++
 	f.olderDays = days
 	return f.olderRes, f.olderErr

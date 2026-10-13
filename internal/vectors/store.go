@@ -152,14 +152,6 @@ func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl string, limit int) ([]s
 	return uids, nil
 }
 
-// withReadTx runs fn inside a read-only transaction with hnsw.ef_search tuned for
-// recall. The transaction is always rolled back (queries make no changes), so the
-// SET LOCAL never leaks beyond the call. Errors from fn are returned unwrapped so
-// callers can attribute them to the query itself.
-func (s *Store) withReadTx(ctx context.Context, fn func(pgx.Tx) error) error {
-	return s.withTunedReadTx(ctx, false, fn)
-}
-
 // withTunedReadTx opens a read-only transaction, applies the HNSW tuning (always
 // hnsw.ef_search; hnsw.iterative_scan too when iterative is true) and runs fn. The
 // transaction is always rolled back (queries make no changes), so the SET LOCAL

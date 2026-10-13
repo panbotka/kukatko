@@ -257,6 +257,7 @@ func TestBulkStatus(t *testing.T) {
 		{"no photos", bulk.ErrNoPhotos, http.StatusBadRequest},
 		{"no operations", bulk.ErrNoOperations, http.StatusBadRequest},
 		{"album not found", bulk.ErrAlbumNotFound, http.StatusBadRequest},
+		{"photo not found", bulk.ErrPhotoNotFound, http.StatusNotFound},
 		{"label not found", bulk.ErrLabelNotFound, http.StatusBadRequest},
 		{"batch too large", bulk.ErrBatchTooLarge, http.StatusRequestEntityTooLarge},
 		{"other", errors.New("boom"), http.StatusInternalServerError},
@@ -370,20 +371,20 @@ type stubService struct{}
 // Apply returns an empty result, satisfying the Service interface for tests that
 // never reach it.
 func (stubService) Apply(
-	_ context.Context, _ string, _ []string, _ bulk.Operations,
+	_ context.Context, _, _ string, _ []string, _ bulk.Operations,
 ) (bulk.Result, error) {
 	return bulk.Result{}, nil
 }
 
 // LocationSummary returns an empty summary, satisfying the Service interface for
 // tests that never reach it.
-func (stubService) LocationSummary(_ context.Context, _ []string) (bulk.LocationSummary, error) {
+func (stubService) LocationSummary(_ context.Context, _ string, _ []string) (bulk.LocationSummary, error) {
 	return bulk.LocationSummary{}, nil
 }
 
 // MembershipSummary returns an empty summary, satisfying the Service interface
 // for tests that never reach it.
-func (stubService) MembershipSummary(_ context.Context, _ []string) (bulk.MembershipSummary, error) {
+func (stubService) MembershipSummary(_ context.Context, _ string, _ []string) (bulk.MembershipSummary, error) {
 	return bulk.MembershipSummary{}, nil
 }
 

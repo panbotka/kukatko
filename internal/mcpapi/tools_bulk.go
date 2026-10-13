@@ -76,7 +76,7 @@ func (a *API) handleSetPhotoRating(
 	if ops.IsEmpty() {
 		return nil, okResult{}, errors.New("pass at least one of favorite, rating or flag")
 	}
-	res, err := a.bulk.Apply(ctx, c.user.UID, []string{uid}, ops)
+	res, err := a.bulk.Apply(ctx, c.projectUID, c.user.UID, []string{uid}, ops)
 	if err != nil {
 		return nil, okResult{}, bulkError(err, a.bulk.MaxBatch())
 	}
@@ -112,7 +112,7 @@ func (a *API) handleBulkEdit(
 	if ops.IsEmpty() {
 		return nil, bulkResult{}, errors.New("pass at least one change to apply")
 	}
-	res, err := a.bulk.Apply(ctx, c.user.UID, uids, ops)
+	res, err := a.bulk.Apply(ctx, c.projectUID, c.user.UID, uids, ops)
 	if err != nil {
 		return nil, bulkResult{}, bulkError(err, a.bulk.MaxBatch())
 	}
@@ -166,6 +166,8 @@ func bulkError(err error, maxBatch int) error {
 		return errors.New("one of those album uids does not exist; nothing was changed")
 	case errors.Is(err, bulk.ErrLabelNotFound):
 		return errors.New("one of those label uids does not exist; nothing was changed")
+	case errors.Is(err, bulk.ErrPhotoNotFound):
+		return errors.New("one of those photo uids does not exist; nothing was changed")
 	case errors.Is(err, bulk.ErrNoPhotos), errors.Is(err, bulk.ErrNoOperations):
 		return err
 	default:

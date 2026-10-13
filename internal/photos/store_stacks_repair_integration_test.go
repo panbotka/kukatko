@@ -151,7 +151,7 @@ func TestDeleteAuditedRepairsStack(t *testing.T) {
 	primaryUID, otherUID, _ := makeStack(t, store, ctx, [2]string{"stk8", "stk9"})
 
 	entry := audit.Entry{Action: audit.ActionPhotoPurge, TargetType: "photos"}
-	if err := store.DeleteAudited(ctx, primaryUID, entry); err != nil {
+	if err := store.DeleteAudited(ctx, project.BootstrapUID, primaryUID, entry); err != nil {
 		t.Fatalf("DeleteAudited: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestDeleteAuditedRepairsStack(t *testing.T) {
 	if got := listedUIDs(t, store, ctx); !slices.Equal(got, []string{otherUID}) {
 		t.Errorf("default listing = %v, want %v", got, []string{otherUID})
 	}
-	candidates, err := store.ListStackCandidates(ctx)
+	candidates, err := store.ListStackCandidates(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListStackCandidates: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -62,17 +63,23 @@ const pruneRatingSQL = `
 DELETE FROM user_ratings
 WHERE user_uid = $1 AND photo_uid = $2 AND rating = 0 AND flag = 'none'`
 
-// Apply runs the bulk operations against the target photos in a single
-// transaction. actorUID is the acting user (used for favorites and the audit
-// entry). It validates the batch, verifies that every album/label referenced by
-// an add operation exists (else ErrAlbumNotFound/ErrLabelNotFound), applies the
-// operations photo-by-photo (missing photos become per-photo errors without
-// aborting the rest), writes a durable audit_log entry in the same transaction,
-// and commits. A database failure mid-batch rolls everything back and is
-// returned. The Result carries per-photo statuses and aggregate counts.
+// Apply runs the bulk operations against the project's target photos in a
+// single transaction. actorUID is the acting user (used for favorites and the
+// audit entry). It validates the batch, proves in one query that every distinct
+// uid names a photo of projectUID (else the whole batch is ErrPhotoNotFound and
+// nothing changes — a foreign uid and a missing one are the same answer),
+// verifies that every album/label referenced by an add operation is the
+// project's (else ErrAlbumNotFound/ErrLabelNotFound), applies the operations
+// photo-by-photo, writes a durable audit_log entry under the project in the same
+// transaction, and commits. A database failure mid-batch rolls everything back
+// and is returned. The Result carries per-photo statuses and aggregate counts.
+// An empty projectUID is ErrNoProject.
 func (s *Service) Apply(
-	ctx context.Context, actorUID string, photoUIDs []string, ops Operations,
+	ctx context.Context, projectUID, actorUID string, photoUIDs []string, ops Operations,
 ) (Result, error) {
+	if projectUID == "" {
+		return Result{}, ErrNoProject
+	}
 	if err := s.validateBatch(photoUIDs, ops); err != nil {
 		return Result{}, err
 	}
@@ -83,14 +90,17 @@ func (s *Service) Apply(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := validateReferences(ctx, tx, ops); err != nil {
+	if err := requireBatchInProject(ctx, tx, projectUID, photoUIDs); err != nil {
+		return Result{}, err
+	}
+	if err := validateReferences(ctx, tx, projectUID, ops); err != nil {
 		return Result{}, err
 	}
 	result, err := applyAll(ctx, tx, actorUID, photoUIDs, ops)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := writeAudit(ctx, tx, actorUID, photoUIDs, ops, result.Counts); err != nil {
+	if err := writeAudit(ctx, tx, projectUID, actorUID, photoUIDs, ops, result.Counts); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -114,25 +124,51 @@ func (s *Service) validateBatch(photoUIDs []string, ops Operations) error {
 	return nil
 }
 
+// batchInProjectSQL counts how many of the batch's distinct uids ($1) are photos
+// of the project ($2) — the one query that proves the whole batch.
+const batchInProjectSQL = `SELECT count(*) FROM photos WHERE uid = ANY($1) AND project_id = $2`
+
+// requireBatchInProject returns ErrPhotoNotFound unless every distinct uid of
+// photoUIDs names a photo of projectUID, counted in one query on tx. A uid
+// repeated in the request counts once (it is reported skipped later). The
+// error names no uid: which photo was foreign is exactly what must not leak.
+func requireBatchInProject(ctx context.Context, tx pgx.Tx, projectUID string, photoUIDs []string) error {
+	distinct := slices.Clone(photoUIDs)
+	slices.Sort(distinct)
+	distinct = slices.Compact(distinct)
+	var found int
+	if err := tx.QueryRow(ctx, batchInProjectSQL, distinct, projectUID).Scan(&found); err != nil {
+		return fmt.Errorf("bulk: checking the batch's project: %w", err)
+	}
+	if found != len(distinct) {
+		return ErrPhotoNotFound
+	}
+	return nil
+}
+
 // validateReferences verifies that every album and label referenced by an add
-// operation exists, so the per-photo loop never trips a foreign-key violation.
-func validateReferences(ctx context.Context, tx pgx.Tx, ops Operations) error {
-	if err := requireAllExist(ctx, tx, "albums", ops.AddAlbums, ErrAlbumNotFound); err != nil {
+// operation is one of the project's, so the per-photo loop never trips a
+// foreign-key violation and never files a photo into another project's album.
+func validateReferences(ctx context.Context, tx pgx.Tx, projectUID string, ops Operations) error {
+	if err := requireAllExist(ctx, tx, "albums", projectUID, ops.AddAlbums, ErrAlbumNotFound); err != nil {
 		return err
 	}
-	return requireAllExist(ctx, tx, "labels", ops.AddLabels, ErrLabelNotFound)
+	return requireAllExist(ctx, tx, "labels", projectUID, ops.AddLabels, ErrLabelNotFound)
 }
 
 // requireAllExist returns notFound (wrapped with the offending UID) if any uid is
-// absent from table. table is an internal constant ("albums"/"labels"), never
-// user input, so interpolating it into the query is safe.
-func requireAllExist(ctx context.Context, tx pgx.Tx, table string, uids []string, notFound error) error {
+// not a row of table in the project — missing and foreign alike. table is an
+// internal constant ("albums"/"labels"), never user input, so interpolating it
+// into the query is safe.
+func requireAllExist(
+	ctx context.Context, tx pgx.Tx, table, projectUID string, uids []string, notFound error,
+) error {
 	if len(uids) == 0 {
 		return nil
 	}
-	query := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE uid = $1)", table)
+	query := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE uid = $1 AND project_id = $2)", table)
 	for _, uid := range uids {
-		ok, err := existsRow(ctx, tx, query, uid)
+		ok, err := existsRow(ctx, tx, query, uid, projectUID)
 		if err != nil {
 			return err
 		}
@@ -144,8 +180,9 @@ func requireAllExist(ctx context.Context, tx pgx.Tx, table string, uids []string
 }
 
 // applyAll iterates the target photos, applying the operations to each and
-// recording its outcome. Duplicate UIDs are skipped; missing photos are errored;
-// a database error aborts the whole batch.
+// recording its outcome. Duplicate UIDs are skipped; a photo that vanished
+// since requireBatchInProject proved the batch is errored; a database error
+// aborts the whole batch.
 func applyAll(
 	ctx context.Context, tx pgx.Tx, actorUID string, photoUIDs []string, ops Operations,
 ) (Result, error) {
@@ -454,22 +491,24 @@ func loadCoordinate(ctx context.Context, tx pgx.Tx, uid string) (coordinate, boo
 	return current, true, nil
 }
 
-// existsRow runs an EXISTS query bound to a single string argument.
-func existsRow(ctx context.Context, tx pgx.Tx, query, arg string) (bool, error) {
+// existsRow runs an EXISTS query bound to the given arguments.
+func existsRow(ctx context.Context, tx pgx.Tx, query string, args ...any) (bool, error) {
 	var ok bool
-	if err := tx.QueryRow(ctx, query, arg).Scan(&ok); err != nil {
+	if err := tx.QueryRow(ctx, query, args...).Scan(&ok); err != nil {
 		return false, fmt.Errorf("bulk: existence check: %w", err)
 	}
 	return ok, nil
 }
 
 // writeAudit appends the bulk change to the audit log within the open
-// transaction, so the record commits atomically with the mutations.
+// transaction, under the batch's project, so the record commits atomically with
+// the mutations.
 func writeAudit(
-	ctx context.Context, tx pgx.Tx, actorUID string, photoUIDs []string, ops Operations, counts Counts,
+	ctx context.Context, tx pgx.Tx, projectUID, actorUID string, photoUIDs []string, ops Operations, counts Counts,
 ) error {
 	entry := audit.Entry{
 		ActorUID:   actorUID,
+		ProjectUID: projectUID,
 		Action:     audit.ActionPhotosBulk,
 		TargetType: "photos",
 		Details: map[string]any{
