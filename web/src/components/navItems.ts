@@ -24,6 +24,9 @@ export function systemProjectPath(slug: string): string {
 /** The system administrator's list of every account of the instance. */
 export const SYSTEM_USERS_PATH = '/system/users'
 
+/** A project admin's members page — a page of the project, `/p/<slug>/members`. */
+export const MEMBERS_PATH = '/members'
+
 import type { IconName } from './Icon'
 
 /**
@@ -291,9 +294,9 @@ export const ADMIN_ITEMS: AdminEntry[] = [
     gate: 'maintainer',
   },
   {
-    to: '/users',
-    labelKey: 'nav.users',
-    titleKey: 'nav.titles.users',
+    to: MEMBERS_PATH,
+    labelKey: 'nav.members',
+    titleKey: 'nav.titles.members',
     icon: 'person-gear',
     gate: 'admin',
   },

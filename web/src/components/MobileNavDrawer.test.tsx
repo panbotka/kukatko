@@ -349,7 +349,7 @@ describe('MobileNavDrawer', () => {
       '/system',
       '/system/projects',
       '/system/users',
-      '/p/v/users',
+      '/p/v/members',
       '/p/v/audit',
       '/p/v/settings',
     ])
@@ -460,7 +460,10 @@ describe('MobileNavDrawer', () => {
 
     // The group is gated row by row, so an admin gets it — with two rows in it.
     const admin = within(drawer).getByRole('region', { name: 'Admin' })
-    expect(within(admin).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/p/v/users')
+    expect(within(admin).getByRole('link', { name: 'Members' })).toHaveAttribute(
+      'href',
+      '/p/v/members',
+    )
     expect(within(admin).getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/p/v/audit')
     expect(within(admin).getByRole('link', { name: 'Settings' })).toHaveAttribute(
       'href',

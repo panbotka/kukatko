@@ -1,10 +1,11 @@
-import { BrowserRouter, Route, Routes, createRoutesFromChildren } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, createRoutesFromChildren } from 'react-router-dom'
 
 import { AuthProvider } from './auth/AuthProvider'
 import { RequireAuth, RequireImport, RequireRole } from './auth/ProtectedRoute'
 import { CapabilitiesProvider } from './capabilities/CapabilitiesProvider'
 import { Layout } from './components/Layout'
 import { MorphProvider } from './components/morph/MorphProvider'
+import { MEMBERS_PATH } from './components/navItems'
 import { PwaStatus } from './components/pwa/PwaStatus'
 import { ToastProvider } from './components/toast/ToastProvider'
 import { ACTIVITY_PATH } from './lib/activityView'
@@ -30,6 +31,7 @@ import { LibraryPage } from './pages/LibraryPage'
 import { LibraryRedirect } from './pages/LibraryRedirect'
 import { LoginPage } from './pages/LoginPage'
 import { MaintenancePage } from './pages/MaintenancePage'
+import { MembersPage } from './pages/MembersPage'
 import { MapPage } from './pages/MapPage'
 import { MyActivityPage } from './pages/MyActivityPage'
 import { NotificationPage } from './pages/NotificationPage'
@@ -62,12 +64,18 @@ import { TrashPage } from './pages/TrashPage'
 import { UploadLinkPage } from './pages/UploadLinkPage'
 import { UploadLinksPage } from './pages/UploadLinksPage'
 import { UploadPage } from './pages/UploadPage'
-import { UsersPage } from './pages/UsersPage'
 import { NotificationInboxProvider } from './notifications/NotificationInboxProvider'
 import { EntryRedirect, LegacyRedirect } from './project/LegacyRedirect'
 import { ProjectGate } from './project/ProjectGate'
+import { useProjectPath } from './project/ProjectContext'
 import { ProjectProvider } from './project/ProjectProvider'
 import { TaskSummaryProvider } from './tasks/TaskSummaryProvider'
+
+/** Forwards the retired `/users` of a project to its members page. */
+function MembersRedirect() {
+  const projectPath = useProjectPath()
+  return <Navigate to={projectPath(MEMBERS_PATH)} replace />
+}
 
 /**
  * Every page that belongs to one library, with paths relative to the
@@ -179,9 +187,13 @@ const PROJECT_ROUTES = (
       <Route element={<RequireImport />}>
         <Route path="import" element={<ImportPage />} />
       </Route>
-      {/* Governance — user management and the audit log — is admin or higher. */}
+      {/* Governance — the project's members and the audit log — is admin or higher. */}
       <Route element={<RequireRole role="admin" />}>
-        <Route path="users" element={<UsersPage />} />
+        <Route path="members" element={<MembersPage />} />
+        {/* Retired: the instance-wide user list this page replaced. Kept so a
+            bookmark (and the unprefixed `/users` the legacy redirect forwards
+            here) lands on the members of the project instead of a 404. */}
+        <Route path="users" element={<MembersRedirect />} />
         <Route path="audit" element={<AuditPage />} />
         {/* One user's review decisions, reached by clicking a player on the
             leaderboard: inspecting who sorted what is governance, admin only. */}

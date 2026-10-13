@@ -62,6 +62,11 @@ vi.mock('./services/projects', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/projects')>()
   return { ...actual, fetchAdminProjects: vi.fn() }
 })
+// The members page lists the project's members on mount; it never needs to answer.
+vi.mock('./services/members', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/members')>()
+  return { ...actual, fetchMembers: vi.fn(() => new Promise(() => undefined)) }
+})
 vi.mock('./services/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/notifications')>()
   return {
@@ -537,6 +542,17 @@ describe('routing — projects', () => {
     })
     expect(screen.getByTestId('search')).toHaveTextContent(/^\?x=1$/)
     expect(screen.getByTestId('hash')).toHaveTextContent(/^#h$/)
+  })
+
+  it('forwards the retired user list, prefixed or not, to the members page', async () => {
+    for (const path of ['/users', '/p/v/users']) {
+      const { unmount } = renderRoutes([path], 0, adminAuth)
+      await waitFor(() => {
+        expect(screen.getByTestId('pathname')).toHaveTextContent(/^\/p\/v\/members$/)
+      })
+      expect(await screen.findByRole('heading', { name: 'Members' })).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('sends an old address to the chooser when there is no project to forward to', async () => {

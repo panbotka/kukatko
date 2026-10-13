@@ -3610,7 +3610,7 @@ body {
    Stacked record cards — the phone form of a wide admin table (`RecordTable`)
    -------------------------------------------------------------------------- */
 
-/* Below `md` the user roster and the audit log stop being tables and become one
+/* Below `md` the members list and the audit log stop being tables and become one
    card per record. The action row is the reason the reflow exists at all: on a
    table those buttons sat at the far right of eight columns, reachable only by
    dragging `.table-responsive` sideways. On the card they are full-width and
@@ -3620,33 +3620,6 @@ body {
    table it replaced. */
 .kk-record-card__actions .btn {
   min-height: 2.75rem;
-}
-
-/* The user roster's phone card (`components/users/UserCard.tsx`). Every control
-   on it — the big Approve, the "More actions" toggle and the folded buttons —
-   clears the finger-target floor unconditionally, for the same reason as the
-   record cards above. The folded actions are a two-column grid rather than a
-   stack of full-width buttons, so opening the fold does not push the next
-   person three screens down; `minmax(0, 1fr)` and a wrapping label keep a long
-   translation inside its cell at 360px instead of widening the page. */
-.kk-user-card .btn {
-  min-height: 2.75rem;
-}
-
-/* The name block of the card's header claims ~10rem before the state badges may
-   share its line; below that they wrap under it rather than break the name. */
-.kk-user-card__name {
-  flex: 1 1 10rem;
-}
-
-.kk-user-card__more {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.kk-user-card__more .btn {
-  white-space: normal;
 }
 
 /* The audit log's raw `details` payload. Pretty-printed JSON has no soft break

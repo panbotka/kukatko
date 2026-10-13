@@ -73,7 +73,7 @@
     "logout": "Odhlásit se",
     "trash": "Koš",
     "system": "Systém",
-    "users": "Uživatelé",
+    "members": "Členové",
     "audit": "Audit",
     "settings": "Nastavení",
     "titles": {
@@ -97,7 +97,7 @@
       "import": "Spustit import fotek",
       "maintenance": "Spustit údržbu knihovny",
       "system": "Zobrazit stav systému",
-      "users": "Spravovat uživatelské účty",
+      "members": "Spravovat členy projektu",
       "audit": "Zobrazit auditní log",
       "settings": "Nastavit registraci a uvítání",
       "account": "Spravovat vlastní účet",
@@ -3947,131 +3947,51 @@
       "cancel": "Zůstat tady"
     }
   },
-  "users": {
-    "title": "Uživatelé",
-    "subtitle": "Místní účty této instance. Účty se nemažou — vyřazují se zakázáním, aby jejich historie zůstala celá.",
-    "adminOnly": "Tato stránka je dostupná pouze administrátorům.",
-    "loading": "Načítání uživatelů…",
-    "error": "Uživatele se nepodařilo načíst.",
-    "retry": "Zkusit znovu",
-    "create": "Nový uživatel",
-    "edit": "Upravit",
-    "changePassword": "Změnit heslo",
-    "enable": "Povolit",
-    "disable": "Zakázat",
-    "never": "Nikdy",
-    "selfDisableHint": "Vlastní účet zakázat nelze.",
-    "maintainerManageHint": "Účet správce systému může spravovat jen jiný správce systému.",
-    "empty": {
-      "title": "Žádní uživatelé",
-      "hint": "Vytvořte první účet tlačítkem „Nový uživatel“.",
-      "noPendingTitle": "Nikdo nečeká na schválení",
-      "noPendingHint": "Všechny registrace jsou vyřízené.",
-      "showAll": "Zobrazit všechny uživatele"
-    },
+  "members": {
+    "title": "Členové",
+    "intro": "Kdo má přístup k tomuto projektu a s jakou rolí. Účty samotné tu nevznikají ani nezanikají — odebraný člen přijde jen o tento projekt.",
+    "loading": "Načítám členy…",
+    "loadFailed": "Členy se nepodařilo načíst.",
+    "empty": "Projekt zatím nemá žádné členy.",
     "columns": {
+      "name": "Jméno",
       "username": "Uživatelské jméno",
-      "displayName": "Jméno",
       "role": "Role",
       "state": "Stav",
-      "note": "Poznámka",
       "lastLogin": "Poslední přihlášení",
-      "created": "Vytvořen",
-      "actions": "Akce",
-      "subject": "Osoba",
-      "email": "E-mail"
+      "actions": "Akce"
     },
-    "state": {
-      "enabled": "Aktivní",
-      "disabled": "Zakázaný",
-      "pending": "Čeká na schválení"
-    },
-    "form": {
-      "createTitle": "Nový uživatel",
-      "editTitle": "Upravit uživatele",
-      "username": "Uživatelské jméno",
-      "usernameRenameHint": "Uživatel se pak přihlašuje novým jménem; zůstane přihlášený a dostane o změně e-mail. Ukládá se malými písmeny.",
-      "usernameLocked": "Uživatelské jméno správce systému může změnit jen jiný správce systému.",
-      "usernameRequired": "Zadejte uživatelské jméno.",
-      "password": "Heslo",
-      "passwordHint": "Alespoň {{min}} znaků.",
-      "email": "E-mail",
-      "emailHint": "Na tuto adresu chodí oznámení o účtu, například obnova hesla. Povinné.",
-      "emailRequired": "Zadejte platnou e-mailovou adresu.",
-      "role": "Role",
-      "displayName": "Jméno",
-      "note": "Poznámka",
-      "noteHint": "Interní poznámka viditelná pouze administrátorům.",
+    "roleLabel": "Role uživatele {{name}}",
+    "selfRoleReason": "Vlastní roli změnit nemůžete — musí to udělat jiný správce projektu.",
+    "pending": "Čeká na schválení",
+    "approved": "Schválený",
+    "approve": "Schválit",
+    "never": "nikdy",
+    "remove": "Odebrat",
+    "selfRemoveReason": "Sami sebe z projektu neodeberete — musí to udělat jiný správce projektu.",
+    "removeTitle": "Odebrat {{name}} z projektu?",
+    "removeBody": "Uživatel ztratí přístup k projektu; jeho účet zůstane.",
+    "roleChanged": "{{name}} má teď roli {{role}}.",
+    "approvedToast": "{{name}} teď má do projektu přístup.",
+    "removedToast": "{{name}} už v projektu není.",
+    "lastAdmin": "Projekt musí mít alespoň jednoho administrátora.",
+    "self": "Tohle nemůžete udělat sami sobě — požádejte jiného správce projektu.",
+    "notMember": "Tento člen už v projektu není — seznam jsem obnovil.",
+    "roleFailed": "Roli se nepodařilo změnit.",
+    "approveFailed": "Člena se nepodařilo schválit.",
+    "removeFailed": "Člena se nepodařilo odebrat.",
+    "add": {
+      "open": "Přidat člena",
+      "title": "Přidat člena",
+      "identifierLabel": "Uživatelské jméno nebo e-mail (přesně)",
+      "identifierHelp": "Napište ho přesně tak, jak ho účet má — nic se nedoplňuje a nenabízí.",
+      "identifierRequired": "Vyplňte uživatelské jméno nebo e-mail.",
+      "roleLabel": "Role",
+      "submit": "Přidat",
       "cancel": "Zrušit",
-      "submitCreate": "Vytvořit",
-      "submitSave": "Uložit",
-      "subject": "Osoba v knihovně",
-      "subjectPick": "Najít osobu",
-      "subjectClear": "Zrušit",
-      "subjectUnknown": "Neznámá osoba",
-      "subjectHint": "Kdo z knihovny tento účet je. Profilová fotka té osoby se pak zobrazuje u komentářů účtu. Nepovinné."
-    },
-    "password": {
-      "title": "Změnit heslo uživatele {{username}}",
-      "hint": "Nové heslo okamžitě odhlásí uživatele ze všech zařízení. Stávající heslo se nikde nezobrazuje — ukládá se jen jeho otisk.",
-      "newPassword": "Nové heslo",
-      "confirmPassword": "Nové heslo znovu",
-      "mismatch": "Hesla se neshodují.",
-      "submit": "Změnit heslo",
-      "success": "Heslo bylo změněno."
-    },
-    "confirm": {
-      "disableTitle": "Zakázat účet?",
-      "disableBody": "Uživatel {{username}} se nebude moci přihlásit a bude okamžitě odhlášen ze všech zařízení. Účet lze později znovu povolit.",
-      "enableTitle": "Povolit účet?",
-      "enableBody": "Uživatel {{username}} se bude moci znovu přihlásit."
-    },
-    "errors": {
-      "usernameTaken": "Toto uživatelské jméno je již obsazené.",
-      "usernameRequired": "Zadejte uživatelské jméno.",
-      "usernameTooLong": "Uživatelské jméno může mít nejvýše {{max}} znaků.",
-      "passwordTooShort": "Heslo musí mít alespoň {{min}} znaků.",
-      "invalidEmail": "Zadejte platnou e-mailovou adresu.",
-      "invalidRole": "Neplatná role.",
-      "noteTooLong": "Poznámka může mít nejvýše {{max}} znaků.",
-      "lastMaintainer": "Toto je poslední aktivní správce systému. Kdyby přišel o roli nebo byl zakázán, nezůstal by nikdo, kdo ji může udělit zpět, a provozní část aplikace by se stala nedostupnou. Nejdřív povyšte na správce systému někoho dalšího.",
-      "generic": "Akci se nepodařilo dokončit.",
-      "accountBlocked": "Účet je zakázaný. Nejdřív ho povolte, pak akci zopakujte.",
-      "notAllowed": "Na tenhle účet nemáte oprávnění. Účet správce systému může spravovat jen jiný správce systému.",
-      "gone": "Účet už neexistuje. Načtěte seznam znovu."
-    },
-    "email": {
-      "none": "Bez adresy",
-      "noneHint": "Zástupná adresa — nic na ni nedojde. Doplňte skutečnou."
-    },
-    "filter": {
-      "pendingOnly": "Jen čekající na schválení",
-      "waiting": "Čeká na schválení: {{pending}}"
-    },
-    "card": {
-      "more": "Další akce",
-      "registered": "Registrace"
-    },
-    "approve": {
-      "action": "Schválit",
-      "success": "Účet {{username}} je schválený a přijde mu o tom e-mail.",
-      "blockedHint": "Zakázaný účet nejde schválit. Nejdřív ho povolte.",
-      "successNoMail": "Účet {{username}} je schválený. Mail není zapnutý — dejte mu vědět sami."
-    },
-    "resetLink": {
-      "action": "Odkaz na heslo",
-      "title": "Poslat odkaz na nastavení hesla uživateli {{username}}?",
-      "body": "Uživatel {{username}} dostane e-mailem jednorázový odkaz, kterým si sám nastaví nové heslo. Dosavadní heslo platí dál, dokud si nové nenastaví. Starší nepoužité odkazy tohoto účtu přestanou platit.",
-      "bodyNoMail": "Uživatel {{username}} si jednorázovým odkazem sám nastaví nové heslo. Mail není zapnutý, odkaz tedy nikam neodejde — předáte mu ho sami. Dosavadní heslo platí dál, dokud si nové nenastaví. Starší nepoužité odkazy tohoto účtu přestanou platit.",
-      "submit": "Vytvořit odkaz",
-      "mailed": "Odkaz jsme poslali na {{email}} a platí {{days}} dní.",
-      "notMailed": "Účet nemá skutečnou e-mailovou adresu, odkaz jsme tedy nikam neposlali — předejte ho osobně. Platí {{days}} dní.",
-      "mailOff": "Mail není zapnutý, odkaz jsme tedy nikam neposlali — předejte ho osobně. Platí {{days}} dní.",
-      "expires": "Vyprší {{date}}.",
-      "linkLabel": "Odkaz na nastavení hesla",
-      "copy": "Kopírovat",
-      "copied": "Zkopírováno",
-      "close": "Hotovo"
+      "done": "Pokud takový účet existuje, byl přidán.",
+      "close": "Zavřít",
+      "failed": "Požadavek se nepodařilo odeslat — zkontrolujte připojení a zkuste to znovu."
     }
   },
   "audit": {

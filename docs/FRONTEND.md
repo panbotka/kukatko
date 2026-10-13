@@ -115,9 +115,9 @@ here.
   `STATS_ITEM`, `HELP_ITEM`, `pathMatches`), so the bar and the phone drawer below read **the same list with the same role
   gates** and cannot drift apart. The administration entries are the one registry that is **not** a
   `NavGroup`: `ADMIN_ITEMS` is a flat list of `AdminEntry` (a `NavEntry` + a `gate` of `'maintainer'` or
-  `'admin'`) in menu order — Import, Údržba, Systém, Uživatelé, Audit, Nastavení — and `adminItems({isAdmin,
+  `'admin'`) in menu order — Import, Údržba, Systém, Projekty, Účty, Členové, Audit, Nastavení — and `adminItems({isAdmin,
   isMaintainer})` returns just the ones a role clears. **The gate is per item, never on the section**: a
-  maintainer gets all six, an admin only Uživatelé + Audit + Nastavení, an editor/viewer an empty list and therefore
+  maintainer gets all eight, a project admin only Členové + Audit + Nastavení, an editor/viewer an empty list and therefore
   no section at all (no orphan heading, no stray divider). One entry is **built rather than declared**: `myPhotosItem(subjectUid)`
   ("Moje fotky") returns `null` for an account that has not said which person of the library it is, and
   otherwise a `NavEntry` pointing at that person's scoped grid (`/?person=<uid>`). It is offered **only**
@@ -756,7 +756,7 @@ here.
   `ExpandPage`, `DupComparePage`), lists (`AlbumsPage`, `LabelsPage`, `PeoplePage`,
   `SavedSearchesPage`, `ClustersPage`) — those that previously had no retry got it via `useReloadKey`
   —, and admin/power views (`FacesPage`, `OutliersPage`, `ImportPage`, `SystemStatusPage`,
-  `AuditPage`, `UsersPage`, `DuplicatesPage`) and the photo detail (`PhotoDetailPage`, Back action).
+  `AuditPage`, `MembersPage`, `DuplicatesPage`) and the photo detail (`PhotoDetailPage`, Back action).
   Retry calls either `retry` from the pagination hook, or a re-fetch via `useReloadKey`/`load()`/`refresh()`.
   Tests: `ErrorState.test.tsx`),
   `FadeInImage` (**a shared preview `<img>` that fades in and settles slightly after decoding**
@@ -956,7 +956,7 @@ here.
   reason already printed on screen — prop `reasonId`, which points `aria-describedby` at that visible
   line instead of hiding a second copy (one sentence for a screen reader, and a phone, which never gets
   a `title`, can read it at all). Used by `BulkEditControl`, `StackSelectedControl`, `PhotoLocation`
-  and `UserActions`/`UserCard` in `components/users/`. Test helpers `expectOff`/`expectLive` live in `test/reasoned.ts` —
+  and `MembersPage` (one's own Odebrat). Test helpers `expectOff`/`expectLive` live in `test/reasoned.ts` —
   jest-dom's `toBeDisabled()` only looks at the attribute and would report such a button as live.
   Tests: `ReasonedButton.test.tsx`),
   `RecordTable` (**the shared „wide admin table → stacked cards" reflow.** A many-column roster only
@@ -980,8 +980,7 @@ here.
   first column already names the record — the maintenance findings; the cards keep every `header` as their
   `<dt>`, because a card has no header row to read across from). A value that must look the same in both
   layouts (`text-danger small`, `font-monospace`) belongs **in the `cell`, not in `cellClassName`** — the
-  latter reaches the `<td>` only. Adopted by `UsersPage` (its desktop table only — the phone gets its own
-  `UserCard`), `AuditPage`, `ImportPage` (run history) and `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
+  latter reaches the `<td>` only. Adopted by `MembersPage`, `SystemUsersPage`, `AuditPage`, `ImportPage` (run history) and `MaintenancePage` (scan result); any other admin table can take it as-is. Tests: `RecordTable.test.tsx`),
   `HeaderActions` (**the shared „page-header actions → „…" overflow" collapse.** A detail header packs its
   actions next to the title, and on a phone a row of four or five ≥44px buttons wrapped into two or three rows
   — with the destructive one sitting inline among the neutral ones, a mis-tap away. `primary` is ready-made
@@ -2993,131 +2992,38 @@ here.
   where the dashboard belongs — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
   over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
   the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
-  `UsersPage` = `/users` (admin **or** maintainer, `isAdmin`) **account management**: a user table (username, full name,
-  **e-mail**, role, status, **person**, note, last login, created) over `GET /admin/users` — on a tablet/desktop
-  the shared `RecordTable` (the note column is `multiline`: it is written in a `<textarea>`, so its line breaks
-  survive), the actions column the inline cluster **`UserActions`** (`components/users/UserActions.tsx`). **On a
-  phone** (`useIsNarrowViewport`, the page decides) the roster is instead a `<ul>` of **`UserCard`**s
-  (`components/users/UserCard.tsx`), shaped around the errand the admin usually opens the page for — letting newly
-  registered people in, from a phone: the name (display name, the username under it), the state badges (they
-  wrap under a long name instead of breaking it — `.kk-user-card__name` claims ~10rem first) and a compact
-  `dl` — a **waiting** card shows only e-mail + **Registrace** (`created_at`) and then one large full-width
-  **Schválit** (`btn-success btn-lg w-100`); an approved card shows e-mail, role, person (if linked), last
-  login and note (if any), and no Approve. **Everything else is folded behind one „Další akce" per card** — a
-  disclosure button (`aria-expanded`, `aria-controls` while open) whose content is mounted only while open:
-  `SecondaryActions` (Upravit / Změnit heslo / Odkaz na heslo / Zakázat·Povolit) in a **two-column grid**
-  (`.kk-user-card__more`, `minmax(0, 1fr)` cells with wrapping labels, so 360px never scrolls sideways) plus the
-  shared reason line; every control on the card clears the 44px floor unconditionally (`.kk-user-card .btn`,
-  guarded by `styles/recordCards.test.ts`). Approve's own reason (blocked, maintainer boundary) stays under
-  Approve, outside the fold. Both layouts take their reasons from one derivation, **`useActionReasons`**
-  (`components/users/actionReasons.ts`: `outOfReach`, `toggleOff`, `approveOff`), so a row and a card can never
-  disagree. The **person** column prints the name of the subject the account is linked to, resolved through
-  **one** `useSubjects` fetch for the whole roster (`linkedPersonName` is a plain function of that map, not a
-  component with a hook, so thirty rows still cost one request) and an em dash when there is no link (a card
-  leaves the line out). The **e-mail** column goes through **`UserEmail`** (`components/users/`), which prints a real
-  address as it stands but renders a **`.invalid` placeholder as „Bez adresy" + the line asking for a real one**
-  (`isPlaceholderEmail`, the same last-label test the backend refuses to dial on — see `mailer.invalidTLD`): every
-  message the app sends goes to this field, so "there is something in the column" and "this person can be reached"
-  have to look different. The **status** column goes through **`UserStateBadges`** (`components/users/`): blocked
-  (`danger`) and **waiting for approval** (`warning`, `approved_at === null`) are independent states, never one badge —
-  an account can be both, and a waiting one is never painted the reassuring green of an active one, because it cannot
-  sign in at all. Above the list sits **`PendingFilter`** (`components/users/`): a switch narrowing the roster to the
-  waiting accounts plus **the count of them**, so an administrator who came for something else still notices that
-  self-service registration left somebody standing at the door. **The filter is on by default** and lives in the
-  URL („back always works"): no parameter = waiting only, **`?all=1`** = everybody; each switch is a history entry
-  (`setSearchParams` push), so Back restores the previous view and a reload keeps it. It filters the **already loaded** list (the backend's
-  `?pending=true` stays unused): the count needs every account anyway, so a second request could only make the two
-  disagree — and the count is always of the whole roster, never of what is on screen. Both predicates live in
-  `components/users/account.ts` (component-free, so the page can count and filter with them and Fast Refresh
-  survives). The dialogs are **Nový uživatel**
-  (username/password/**e-mail**/role/name/**person**/note) and **Upravit** (**username**/**e-mail**/role/name/**person**/note).
-  In Upravit the username is editable where the actor may manage the account (`canManage` — the same per-row
-  boundary as the action buttons) and `readOnly` `plaintext` with `users.form.usernameLocked` under it otherwise. A
-  name that differs from the stored one after trim + lower-case (what the backend stores) is sent **first** through
-  `renameUser` (`PUT /admin/users/{uid}/username`), then the profile `PATCH`; a 409/400 lands inline on the username
-  field (`fieldErrorFor` maps `username` messages to `usernameTooLong`/`usernameRequired`) and nothing else is
-  saved. If the rename went through but the `PATCH` failed, `onRenamed` already updated the row and the dialog
-  remembers the new name, so a second Save does not rename again. `upsert` re-sorts the roster only when a row is
-  new or its username changed, **Změnit heslo** for another user (logs them out of all
-  devices; the hash is never rendered anywhere) and **Povolit/Zakázat** behind a confirmation dialog
-  (`setUserDisabled`). A waiting row/card additionally offers **Schválit**, which acts on **one press — no
-  confirmation dialog, on the table or the card** (approving is the errand the page exists for, a wrong approval is
-  cheap to undo by blocking, and one rule for both layouts beats a modal only the desktop keeps):
-  `approveUser`, whose answer replaces the row **in place** (`upsert`, no re-fetch) — under the default filter the
-  account thereby leaves the waiting list at once. While it runs **that** account's button is natively `disabled`
-  with a spinner (`ApproveButton`; the in-flight set is per account, `approvingRef` guards a double tap that lands
-  before the re-render), so other cards stay tappable. A refusal (`actionErrorFor`) is printed **on that row/card**
-  (`ApproveError`, `role="alert"`), not in a page banner. Success is a **toast** (`useToast`), visible wherever the
-  reader has scrolled to, and carries what the old confirm question said: whether the person gets an e-mail
-  (`useMailEnabled()` → `users.approve.success`/`successNoMail`, the latter telling the administrator to say so
-  themselves). A blocked account's Schválit is off with `users.approve.blockedHint` on its **own** hint line (the
-  backend refuses it with 409, and letting somebody in who still cannot sign in is half a decision).
-  **Změnit heslo gained a sibling, „Odkaz na heslo"** → **`ResetLinkModal`** (`components/users/`): it asks first
-  (issuing kills the account's earlier unused link), then `issuePasswordReset`, then shows the whole link in a
-  **read-only, select-on-focus field with a Kopírovat button** (the same disclosure shape as `ApiTokensCard`'s
-  `CreatedSecret`, so it can be dragged out where the clipboard API is denied), above it the line saying where it
-  was mailed and that it lasts `PASSWORD_RESET_TTL_DAYS` days — or that **nothing was
-  sent and the link has to be passed on by hand**, for either of the two reasons `deliveryKey` tells apart: a
-  `.invalid` address (`isPlaceholderEmail`) → `users.resetLink.notMailed`, or an instance with mail off
-  (the `mailEnabled` prop) → `users.resetLink.mailOff`, which also rewords the question itself
-  (`users.resetLink.bodyNoMail`). Promising a mail nobody sends would leave the administrator waiting
-  instead of passing the link on. The link lives in that component's state only, so closing the
-  dialog takes it off the screen for good. **The two form dialogs are `scrollable fullscreen="sm-down"`** — on a phone the long
-  form takes the whole screen and only its body scrolls, so Zrušit/Uložit stay pinned above the on-screen
-  keyboard instead of under it; on `sm`+ nothing changes (the same centred 500px card, measured identical).
-  Because their `<Form>` wraps header+body+footer, it also carries `MODAL_FORM_CLASS`
-  (`d-flex flex-column overflow-hidden`): Bootstrap pins the footer by capping `.modal-content`'s height and
-  letting `.modal-body` scroll, and a plain `<form>` in between would size to its content and push the footer
-  off-screen anyway — the utility classes make it a shrinkable flex column (a scroll container's automatic
-  minimum size is 0) and hand the cap through. The **Povolit/Zakázat** question follows `ConfirmModal` instead:
-  `scrollable`, but a centred card on every screen — it has no inputs, so no keyboard can reach it.
-  **The e-mail field is required in both dialogs** and is the one profile field the edit dialog stopped
-  echoing back: the backend refuses an account without a usable address (`auth.ErrInvalidEmail` → 400,
-  see `docs/API.md`), and since `PATCH` replaces the whole profile, an update that dropped it would be
-  refused too. The dialog therefore prefills the stored address, submits it trimmed, and blocks its own
-  submit while it is blank (`emailMissing`, message `users.form.emailRequired`) rather than letting the
-  request go out to be rejected.
-  Both form dialogs carry **`SubjectField`**: the same subject typeahead as the account page (pick-only, no
-  `onCreate`) when nothing is linked, the chosen name with a „Zrušit" beside it once something is, and a hint
-  saying that the linked person's cover photo then appears next to the account's comments. It is part of the
-  **replaced** profile, so clearing it in the dialog unlinks the account.
-  **Your own row has an off toggle** + a short explanation of why
-  (`users.selfDisableHint`), **deletion is not offered** — an account is retired by disabling it, so the history
-  (photos, ratings, audit) stays whole. **The maintainer boundary** (mirrors the backend
-  `authorizeUserManagement`): the **maintainer** role may be granted only by a maintainer — the role
-  `<select>` doesn't offer it to a non-maintainer at all (`ROLES.filter`, prop `isMaintainer`; `ROLES` in
-  `services/users.ts` is the ladder in order, `viewer`, `curator`, `editor`, `admin`, `maintainer`, and any
-  admin may grant every rung below maintainer, `curator` included) — and a maintainer account may not
-  be edited / re-passworded / disabled by a non-maintainer, so its three row actions go off with the hint
-  `users.maintainerManageHint` (`canManage = isMaintainer || role !== 'maintainer'`). This is the one place
-  the app keeps the buttons on screen instead of hiding them — and rightly so: it is **not** a role gate but a
-  per-row boundary (this administrator may manage users, just not *this* one), which is exactly what the
-  printed line beside the row says. `SecondaryActions` (table and card fold alike) renders them via `ReasonedButton` with `reasonId`
-  pointing at that visible line, so the sentence exists once and is reachable by hover, by focus and by eye
-  on a phone; before, the `title` on a natively disabled Bootstrap button could be read by neither a mouse
-  (`pointer-events: none`) nor a keyboard (out of the tab order). API validation errors map to a specific field
-  (`fieldErrorFor`: 409 → username *unless* the message names the maintainer, 400 by keyword →
-  password/**email**/role/note, otherwise a form-level alert), not to a generic banner. It lives — with the
-  `ErrorKey` union and **`actionErrorFor`** — in `components/users/errors.ts`, shared by the page and by
-  `ResetLinkModal`. **`actionErrorFor` is the mapping for a row action that carries no form** (approve, issue a
-  link), where the statuses mean something else: 409 is never a taken username but always a blocked account
-  (`auth.ErrUserDisabled`), 403 is the maintainer boundary and 404 a roster that has gone stale — each with a
-  message saying what to do next. **The last-maintainer
-  refusal** (409 `auth: cannot remove the last maintainer`, see `docs/API.md`) belongs to no input — the
-  role `<select>` is only how it was triggered and the disable button has no form at all — so it renders
-  as a form-level alert with `users.errors.lastMaintainer`, which says *why* and *what to do* (promote a
-  second maintainer first). The row-action alert therefore holds an `ErrorKey`, not a boolean, so a failed
-  **Zakázat** shows that explanation instead of the generic “action could not be completed”. States: a **skeleton** (`Placeholder` in the table) while loading,
-  an error alert with **Zkusit znovu**, an empty state (`EmptyState`, practically unreachable — the bootstrap
-  admin always exists, but must not crash) and a second one for a **filter that leaves nothing**
-  („Nikdo nečeká na schválení" + a **Zobrazit všechny uživatele** button that writes `?all=1`) — the default view
-  when everybody has been let in, so it has to read as "all done", not as a broken page; self-gated on `isAdmin`.
-  Tests: `UsersPage.test.tsx` plus `components/users/{account,UserEmail,UserStateBadges,PendingFilter,ResetLinkModal}.test.tsx`,
+  `MembersPage` = **`/p/<slug>/members`** (project admin **or** maintainer, `isAdmin` — the **project** role)
+  **the members of this project** over `services/members.ts` (`GET /p/<slug>/members`, built with `apiPath`). It
+  replaced the instance-wide `/users` account roster: a project admin manages **memberships**, never accounts —
+  creating, renaming, blocking an account and the password-reset link are not on this page. The old address
+  (`/users`, and `/p/<slug>/users`) forwards here (`MembersRedirect` in `App.tsx`). One shared `RecordTable`
+  (a card per member on a phone): **picture + name** (`PersonAvatar`, initials when `has_picture` is false; the
+  display name, else the username), **username**, the **role as a `<select>`** (viewer/curator/editor/admin,
+  `MEMBER_ROLES`) that changes it at once (`setMemberRole`, success toast „{{name}} má teď roli …"; the answer
+  replaces the row in place, a refusal leaves the select on the stored role), the **approval state** — a waiting
+  membership (`approved_at === null`) shows the `warning` badge „Čeká na schválení" and a **Schválit** button
+  (`approveMember`, one press, no dialog; the backend mails the person the project's link) — the **last
+  sign-in** („nikdy" when there is none) and **Odebrat** behind a `ConfirmModal` („Uživatel ztratí přístup k
+  projektu; jeho účet zůstane."). **Your own row** keeps the role select natively `disabled` with the reason
+  („Vlastní roli změnit nemůžete…") as a `title` on a wrapper (a disabled control gets no pointer events) and as
+  the select's `aria-describedby`, and its Odebrat is a `ReasonedButton` off with its own reason — another admin
+  has to do either. Refusals arrive as **toasts** (`useToast`, mapped by `MemberApiError.code`): `last_admin` →
+  „Projekt musí mít alespoň jednoho administrátora.", `self` → „Tohle nemůžete udělat sami sobě…", `not_member` →
+  a toast plus a refetch (somebody else removed the member meanwhile), anything else → the action's own failure.
+  **„Přidat člena"** opens **`AddMemberModal`** (`components/members/`): one text input „Uživatelské jméno nebo
+  e-mail (přesně)" (no autocomplete, nothing suggested), a role select (default viewer), submit → `addMember`
+  → **always** the neutral „Pokud takový účet existuje, byl přidán." and a refetch of the list. The neutrality is
+  enforced in the service: `addMember` resolves for **any** HTTP answer and returns nothing, so no caller can tell
+  a hit from a miss; only a request that never got an answer (no network) is reported as a failure. An empty
+  identifier is refused in the dialog. The navigation entry is „Členové" (`MEMBERS_PATH`, admin-gated in
+  `ADMIN_ITEMS`); like the old one it carries no count badge. States: spinner, `ErrorState` with retry,
+  `EmptyState`. Tests: `MembersPage.test.tsx`, `services/members.test.ts` (the add resolves alike for 202, 404,
+  409, 422 and 500).
   `SettingsPage` = `/settings` (admin **or** maintainer, `isAdmin`) **the instance's own settings** —
   the three values behind `GET`/`PUT /settings`: whether self-service registration is open, the shared
   secret it asks a newcomer for, and the Markdown greeting a person meets on their first sign-in. It is
-  its own route rather than another section of `UsersPage`: that page is about accounts, this one about
-  the instance, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
+  its own route rather than another section of `MembersPage`: that page is about memberships, this one
+  about the project's settings, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
   until „Uložit nastavení"** — `isDirty(draft, saved)` drives both buttons (save + **Zahodit změny**),
   the „Máš neuložené změny" hint, and `useLeaveGuard(dirty)` + `ConfirmModal`, which holds an in-app
   link click back (and asks the browser to warn on a tab close) before the draft is lost. The secret is
@@ -6080,8 +5986,7 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   `useMailEnabled()`/`mailEnabledFrom(state)` (`hooks/useMailEnabled.ts`) is the same pair for
   `mail_enabled` → a plain boolean, **false when the instance could not be asked**: the flag only ever
   decides whether a sentence may promise an e-mail, and a promise made on a guess is what it exists to
-  prevent. `UsersPage` mounts the hook and passes the boolean down to `ResetLinkModal` as a prop rather
-  than letting the dialog fetch the same fact on every open.
+  prevent.
   It **never polls** (an administrator opening
   or closing registration is rare, and both screens that read it are short-lived) and aborts on unmount —
   an aborted request leaves the state alone, since the component is gone and `unknown` would be a claim
@@ -7756,9 +7661,7 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   mutable profile → send the fields the dialog doesn't offer as well), `setUserDisabled(user,disabled,signal)`
   (disable → the dedicated `POST /{uid}/disable`, which doesn't need the profile and won't overwrite a concurrent edit;
   enable → a `PATCH` with `disabled:false`, there is no dedicated endpoint) and `resetUserPassword(uid,pwd,signal)`
-  (`POST /{uid}/password`, 204, it logs out all of the target's sessions), **`approveUser(uid,signal)`**
-  (`POST /{uid}/approve` → the row with `approved_at` stamped; 403 = the maintainer boundary, 409 = a blocked
-  account, and approving twice is a 200 with the row unchanged, so a double click cannot fail) and
+  (`POST /{uid}/password`, 204, it logs out all of the target's sessions) and
   **`issuePasswordReset(uid,signal)`** (`POST /{uid}/password-reset` → `IssuedPasswordReset`
   = `{reset_url, expires_at, email}`; it sets **no** password — the person chooses their own behind the link —
   mails the link, kills the account's earlier unused ones, 403/404/409 as above); the constants `ROLES`
@@ -7768,7 +7671,15 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   **`subject_uid: string | null`** (which person of the library the account is), and because `PATCH` replaces
   the profile, `null` **clears** the link rather than leaving it alone, which is why `setUserDisabled`'s
   re-enabling `PATCH` echoes the row's own link back; the password hash has nowhere to leak — the backend
-  doesn't serialize it and no type has a field for it,
+  doesn't serialize it and no type has a field for it. Since `/users` became the project's members page, only
+  `AuditPage` (actor names) calls into it; the account actions wait for a home on the system side,
+  `members.ts` = the project admin's client of `/api/v1/p/<slug>/members` (`apiPath`): `fetchMembers(signal)` →
+  `ProjectMemberRow[]` (`user_uid`, `username`, `display_name`, `role`, `approved_at`, `last_login_at`,
+  `has_picture`), `setMemberRole(uid,role)` (`PATCH`), `approveMember(uid)` (`POST …/approve`), `removeMember(uid)`
+  (`DELETE`), each throwing **`MemberApiError`** with the backend's `code` (`last_admin`, `self`, `not_member`,
+  `invalid_role`), and **`addMember(identifier,role)`** (`POST`), which **resolves for any HTTP answer and returns
+  nothing** — the backend's 202 is identical for a hit and a miss, and the client keeps it that way; only a
+  request with no answer (network) rejects. `MEMBER_ROLES` = viewer/curator/editor/admin, lowest first,
   `audit.ts` = the audit client over `GET /api/v1/audit`: `fetchAuditLog(params,signal)` →
   `AuditListResponse{entries,total,limit,offset,next_offset}`, `buildAuditQuery` serializes the filters
   (it omits empty ones/a zero offset); the types `AuditRecord` (nullable `actor_uid`/`target_uid`/`ip`/
@@ -8202,8 +8113,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `MobileTabBar.test.tsx`; `installRule(path, selector)` goes one step further and hands **the real rule body** to the jsdom
   document (returning the function that removes it again), so a component test can assert what an element
   *computes to* — `getComputedStyle(el).whiteSpace` — instead of which class name it carries: it then fails
-  both when the element loses the class and when `app.css` stops declaring the rule (`MetadataPanel.test.tsx`,
-  `UsersPage.test.tsx` and the multi-line values below); it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —
+  both when the element loses the class and when `app.css` stops declaring the rule (`MetadataPanel.test.tsx`
+  and the multi-line values below); it is used by `styles/tokens.test.ts`, `styles/mapChrome.test.ts` (the Leaflet override —
   the scoping under `.kukatko-map`, colors only from tokens, the compound selectors that beat the Leaflet
   stylesheet), `styles/safeArea.test.ts`, which computes the padding of the
   fullscreen overlays (`review.css`, `compare.css`) against the iPhone's insets and asserts that the
@@ -8236,8 +8147,8 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   `/duplicates` are additionally under `RequireRole role="editor"` = write-only (and `/duplicates/compare` there too,
   but **outside `Layout`** — fullscreen like `/review`), `/import` under `RequireImport` (= maintainer,
   `canImport`), `/maintenance` and `/system` under `RequireRole role="maintainer"` = operations (maintainer
-  only), `/users` and `/audit` under `RequireRole role="admin"` = governance (admin **or**
-  maintainer)). **A role-gated route a user may not enter renders `ForbiddenPage` on that very URL** —
+  only), `/members` (the retired `/users` forwards there) and `/audit` under `RequireRole role="admin"` =
+  governance (admin **or** maintainer)). **A role-gated route a user may not enter renders `ForbiddenPage` on that very URL** —
   no redirect, so the address bar, a reload and Back all keep pointing at what was asked for
   (`App.test.tsx` covers the fullscreen `/review`, the in-shell `/upload` — where the library must *not*
   fetch behind the refusal — and Back off `/duplicates`). **A guarded route with an unreachable backend

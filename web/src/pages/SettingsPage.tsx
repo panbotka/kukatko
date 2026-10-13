@@ -72,8 +72,8 @@ function isDirty(draft: Draft, saved: InstanceSettings): boolean {
  * the shared secret it asks a newcomer for, and the Markdown greeting shown to
  * a person the first time they sign in.
  *
- * It is its own route rather than another section of {@link UsersPage} — those
- * are accounts, these are the instance — and admin-only, because the record
+ * It is its own route rather than another section of {@link MembersPage} — those
+ * are memberships, these are the project — and admin-only, because the record
  * carries the registration secret in readable form.
  *
  * Three decisions worth stating:

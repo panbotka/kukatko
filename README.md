@@ -221,6 +221,16 @@ shared library is tidied by more than one person.
   shows where in the storage its files live. *Účty* (`/system/users`) lists every account of the
   instance with its memberships, and is where another account is promoted to a system administrator
   or demoted again — never your own, somebody else has to do that.
+- **Správce projektu — a project's administrator — decides who is in it.** *Členové* in the user menu
+  (`/p/<project>/members`, where the old *Uživatelé* page used to be) lists the members of the project
+  you are in: picture, name, username, role, last sign-in. The role is a select that takes effect at
+  once (prohlížeč, kurátor, editor, správce); somebody who registered and waits shows *Čeká na
+  schválení* with a *Schválit* button, and approving mails them the project's link. *Odebrat* takes the
+  project away from a member and leaves their account alone. *Přidat člena* adds an existing account by
+  its exact username or e-mail — nothing is suggested, and the answer is always "if such an account
+  exists, it has been added", so nobody can use the form to find out who else has an account here.
+  Your own role and your own removal are left to another administrator, and a project never loses
+  its last one.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

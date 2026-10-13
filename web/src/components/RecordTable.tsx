@@ -74,7 +74,7 @@ export interface RecordTableProps<T> {
  * A record listing that is a table on tablet/desktop and a stack of cards on a
  * phone.
  *
- * A wide admin table (the user roster, the audit log) only ever survived a phone
+ * A wide admin table (the members list, the audit log) only ever survived a phone
  * by scrolling sideways inside `.table-responsive`: the later columns and — worse
  * — the per-row actions sat off-screen behind a horizontal drag. Below `md` the
  * same columns are re-laid as one card per record, each column becoming a

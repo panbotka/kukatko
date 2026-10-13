@@ -223,24 +223,6 @@ export async function resetUserPassword(
 }
 
 /**
- * Lets a waiting account in (`POST /admin/users/{uid}/approve`), returning the
- * refreshed row with `approved_at` stamped. The backend also mails the person
- * that they may now sign in — approving is therefore never silent.
- *
- * Approving an already approved account is a no-op that still answers 200 with
- * the unchanged row, so a double click cannot produce a failure.
- *
- * @throws ApiError with `status` 403 (the account is a maintainer's and the
- *   actor is not), 404, or 409 for a blocked account — unblocking is its own
- *   action, and letting in somebody who still cannot sign in would only make
- *   them wait.
- */
-export async function approveUser(uid: string, signal?: AbortSignal): Promise<AdminUser> {
-  const res = await request('POST', `/admin/users/${uid}/approve`, undefined, signal)
-  return (await res.json()) as AdminUser
-}
-
-/**
  * How long an issued reset link stays usable, in days (`auth.PasswordResetTTL`).
  * The response carries the exact instant; this is what the UI *says*, and the
  * two must agree.

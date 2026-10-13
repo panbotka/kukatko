@@ -608,6 +608,24 @@ on unexplained jargon that even a non-developer admin will struggle with.
 - **Touch:** many `size="sm"` links-as-buttons (requeue, backup, import/maintenance links) — floored
   on touch ✅.
 
+### Members (`/p/<slug>/members`, 2026-10-13)
+Replaced the instance-wide `/users` roster when accounts became global and projects got their own
+members. Decisions worth keeping:
+- **No enumeration through the add form.** „Přidat člena" takes an *exact* username or e-mail with no
+  autocomplete and always answers „Pokud takový účet existuje, byl přidán." — never "not found". The
+  service resolves alike for every HTTP answer, so a later edit of the page cannot start telling a hit
+  from a miss by accident.
+- **One's own row is off, with the reason.** The role select is disabled (tooltip on a wrapper, the
+  same sentence as its `aria-describedby`) and Odebrat is a `ReasonedButton`: another admin has to do
+  either, which is also what the backend's `self` refusal says.
+- **Refusals are toasts, not banners.** `last_admin` („Projekt musí mít alespoň jednoho
+  administrátora.") and `self` come back from a one-click action with no form to attach them to; a
+  refused role change simply leaves the select on the stored role.
+- **The removal question says what stays.** „Uživatel ztratí přístup k projektu; jeho účet zůstane."
+  — a project admin cannot delete an account and must not fear they are doing so.
+- 📋 The account record actions of the old page (create, rename, password-reset link, block, note) have
+  no screen any more; they belong on the system administrator's side. ⚪⚪
+
 ---
 
 ## Palette (2026-10-09)

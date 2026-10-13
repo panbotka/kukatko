@@ -65,7 +65,7 @@
     "logout": "Sign out",
     "trash": "Trash",
     "system": "System",
-    "users": "Users",
+    "members": "Members",
     "audit": "Audit",
     "settings": "Settings",
     "titles": {
@@ -89,7 +89,7 @@
       "import": "Run a photo import",
       "maintenance": "Run library maintenance",
       "system": "Show the system status",
-      "users": "Manage user accounts",
+      "members": "Manage the project's members",
       "audit": "View the audit log",
       "settings": "Set up registration and the welcome",
       "account": "Manage your own account",
@@ -3763,131 +3763,51 @@
       "cancel": "Stay here"
     }
   },
-  "users": {
-    "title": "Users",
-    "subtitle": "The local accounts of this instance. Accounts are never deleted — they are retired by disabling, so their history stays intact.",
-    "adminOnly": "This page is available to administrators only.",
-    "loading": "Loading users…",
-    "error": "Failed to load the users.",
-    "retry": "Try again",
-    "create": "New user",
-    "edit": "Edit",
-    "changePassword": "Change password",
-    "enable": "Enable",
-    "disable": "Disable",
-    "never": "Never",
-    "selfDisableHint": "You cannot disable your own account.",
-    "maintainerManageHint": "Only a system maintainer can manage this account.",
-    "empty": {
-      "title": "No users",
-      "hint": "Create the first account with the “New user” button.",
-      "noPendingTitle": "Nobody is waiting for approval",
-      "noPendingHint": "Every registration has been dealt with.",
-      "showAll": "Show all users"
-    },
+  "members": {
+    "title": "Members",
+    "intro": "Who has access to this project and with which role. Accounts are neither created nor deleted here — a removed member only loses this project.",
+    "loading": "Loading members…",
+    "loadFailed": "Could not load the members.",
+    "empty": "The project has no members yet.",
     "columns": {
+      "name": "Name",
       "username": "Username",
-      "displayName": "Real name",
       "role": "Role",
       "state": "State",
-      "note": "Note",
-      "lastLogin": "Last login",
-      "created": "Created",
-      "actions": "Actions",
-      "subject": "Person",
-      "email": "E-mail"
+      "lastLogin": "Last sign-in",
+      "actions": "Actions"
     },
-    "state": {
-      "enabled": "Enabled",
-      "disabled": "Disabled",
-      "pending": "Waiting for approval"
-    },
-    "form": {
-      "createTitle": "New user",
-      "editTitle": "Edit user",
-      "username": "Username",
-      "usernameRenameHint": "The user then signs in with the new name; they stay signed in and get an e-mail about the change. Stored in lower case.",
-      "usernameLocked": "Only another system maintainer can change a system maintainer's username.",
-      "usernameRequired": "Enter a username.",
-      "password": "Password",
-      "passwordHint": "At least {{min}} characters.",
-      "email": "E-mail",
-      "emailHint": "Account notices, such as a password reset, are sent here. Required.",
-      "emailRequired": "Enter a valid e-mail address.",
-      "role": "Role",
-      "displayName": "Real name",
-      "note": "Note",
-      "noteHint": "Internal note, visible to administrators only.",
+    "roleLabel": "Role of {{name}}",
+    "selfRoleReason": "You cannot change your own role — another project admin has to.",
+    "pending": "Waiting for approval",
+    "approved": "Approved",
+    "approve": "Approve",
+    "never": "never",
+    "remove": "Remove",
+    "selfRemoveReason": "You cannot remove yourself from the project — another project admin has to.",
+    "removeTitle": "Remove {{name}} from the project?",
+    "removeBody": "The user loses access to the project; their account stays.",
+    "roleChanged": "{{name}} is now {{role}}.",
+    "approvedToast": "{{name}} has been approved.",
+    "removedToast": "{{name}} has been removed from the project.",
+    "lastAdmin": "The project must have at least one administrator.",
+    "self": "You cannot do this to yourself — ask another project admin.",
+    "notMember": "This member is no longer in the project — the list has been refreshed.",
+    "roleFailed": "Could not change the role.",
+    "approveFailed": "Could not approve the member.",
+    "removeFailed": "Could not remove the member.",
+    "add": {
+      "open": "Add member",
+      "title": "Add member",
+      "identifierLabel": "Username or e-mail (exact)",
+      "identifierHelp": "Type it exactly as the account has it — nothing is completed or suggested.",
+      "identifierRequired": "Fill in a username or an e-mail address.",
+      "roleLabel": "Role",
+      "submit": "Add",
       "cancel": "Cancel",
-      "submitCreate": "Create",
-      "submitSave": "Save",
-      "subject": "Person in the library",
-      "subjectPick": "Find a person",
-      "subjectClear": "Clear",
-      "subjectUnknown": "Unknown person",
-      "subjectHint": "Which person of the library this account is. That person’s cover photo is then shown next to the account’s comments. Optional."
-    },
-    "password": {
-      "title": "Change the password of {{username}}",
-      "hint": "A new password signs the user out of every device immediately. The current password is never shown — only its hash is stored.",
-      "newPassword": "New password",
-      "confirmPassword": "Repeat the new password",
-      "mismatch": "The passwords do not match.",
-      "submit": "Change password",
-      "success": "The password has been changed."
-    },
-    "confirm": {
-      "disableTitle": "Disable the account?",
-      "disableBody": "{{username}} will no longer be able to sign in and is signed out of every device immediately. The account can be enabled again later.",
-      "enableTitle": "Enable the account?",
-      "enableBody": "{{username}} will be able to sign in again."
-    },
-    "errors": {
-      "usernameTaken": "That username is already taken.",
-      "usernameRequired": "Enter a username.",
-      "usernameTooLong": "A username can be at most {{max}} characters long.",
-      "passwordTooShort": "The password must be at least {{min}} characters.",
-      "invalidEmail": "Enter a valid e-mail address.",
-      "invalidRole": "Invalid role.",
-      "noteTooLong": "The note may be at most {{max}} characters.",
-      "lastMaintainer": "This is the last enabled maintainer. Demoting or disabling it would leave nobody able to grant the role back, and the operations part of the app would become unreachable. Promote somebody else to maintainer first.",
-      "generic": "The action could not be completed.",
-      "accountBlocked": "The account is blocked. Enable it first, then try again.",
-      "notAllowed": "You may not manage this account. Only a system maintainer can manage a maintainer account.",
-      "gone": "The account no longer exists. Reload the list."
-    },
-    "email": {
-      "none": "No address",
-      "noneHint": "A placeholder address — nothing sent to it can arrive. Fill in a real one."
-    },
-    "filter": {
-      "pendingOnly": "Only waiting for approval",
-      "waiting": "Waiting for approval: {{pending}}"
-    },
-    "card": {
-      "more": "More actions",
-      "registered": "Registered"
-    },
-    "approve": {
-      "action": "Approve",
-      "success": "{{username}} was approved and will get an e-mail about it.",
-      "blockedHint": "A blocked account cannot be approved. Enable it first.",
-      "successNoMail": "{{username}} was approved. Mail is switched off, so tell them yourself."
-    },
-    "resetLink": {
-      "action": "Reset link",
-      "title": "Issue a password link for {{username}}?",
-      "body": "{{username}} gets a one-time link by e-mail and chooses a new password themselves. The current password keeps working until they do. Any earlier unused link of this account stops working.",
-      "bodyNoMail": "{{username}} chooses a new password from a one-time link. Mail is switched off, so the link goes nowhere — you pass it on yourself. The current password keeps working until they do. Any earlier unused link of this account stops working.",
-      "submit": "Issue the link",
-      "mailed": "The link was e-mailed to {{email}} and is valid for {{days}} days.",
-      "notMailed": "The account has no real e-mail address, so nothing was sent — pass the link on yourself. It is valid for {{days}} days.",
-      "mailOff": "Mail is switched off, so nothing was sent — pass the link on yourself. It is valid for {{days}} days.",
-      "expires": "It expires on {{date}}.",
-      "linkLabel": "Password reset link",
-      "copy": "Copy",
-      "copied": "Copied",
-      "close": "Done"
+      "done": "If such an account exists, it has been added.",
+      "close": "Close",
+      "failed": "The request could not be sent — check the connection and try again."
     }
   },
   "audit": {

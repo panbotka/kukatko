@@ -439,7 +439,7 @@ describe('Layout navbar', () => {
     // hanging over nothing, none of the five destinations.
     await user.click(screen.getByRole('button', { name: 'User One' }))
     expect(screen.queryByText('Admin')).not.toBeInTheDocument()
-    for (const name of ['Import', 'Maintenance', 'System', 'Users', 'Audit']) {
+    for (const name of ['Import', 'Maintenance', 'System', 'Members', 'Audit']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
   })
@@ -489,7 +489,7 @@ describe('Layout navbar', () => {
     // None of the administration destinations is reachable from the bar itself —
     // they only appear once the user menu is opened.
     expect(screen.queryByRole('link', { name: 'Import' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Members' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'User One' }))
     expect(screen.getByRole('link', { name: 'Import' })).toBeInTheDocument()
   })
@@ -509,7 +509,7 @@ describe('Layout navbar', () => {
       'System',
       'Projects',
       'Accounts',
-      'Users',
+      'Members',
       'Audit',
       'Settings',
     ].map((name) => screen.getByRole('link', { name }))
@@ -519,7 +519,7 @@ describe('Layout navbar', () => {
       '/system',
       '/system/projects',
       '/system/users',
-      '/p/v/users',
+      '/p/v/members',
       '/p/v/audit',
       '/p/v/settings',
     ])
@@ -543,7 +543,7 @@ describe('Layout navbar', () => {
     await user.click(screen.getByRole('button', { name: 'User One' }))
 
     expect(screen.getByText('Admin')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/p/v/users')
+    expect(screen.getByRole('link', { name: 'Members' })).toHaveAttribute('href', '/p/v/members')
     expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/p/v/audit')
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/p/v/settings')
     for (const name of ['Import', 'Maintenance', 'System', 'Projects', 'Accounts']) {

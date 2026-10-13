@@ -77,7 +77,7 @@ describe('adminItems', () => {
       '/system',
       '/system/projects',
       '/system/users',
-      '/users',
+      '/members',
       '/audit',
       '/settings',
     ])
@@ -88,7 +88,7 @@ describe('adminItems', () => {
 
   it('keeps the projects and accounts pages from a project admin', () => {
     const routes = adminItems({ isAdmin: true, isMaintainer: false }).map((entry) => entry.to)
-    expect(routes).toEqual(['/users', '/audit', '/settings'])
+    expect(routes).toEqual(['/members', '/audit', '/settings'])
   })
 
   it('lights /system only on its own page, not on its sub-pages', () => {
