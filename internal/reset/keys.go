@@ -119,12 +119,20 @@ func (p PrefixCounts) with(kind keyKind) PrefixCounts {
 }
 
 // catalogueFiles is the identity of every file the catalogue references: the
-// storage key of each original, and the content hash each set of thumbnails is
-// keyed by. Both are needed because the two layouts are addressed differently —
-// originals and sidecars by path, thumbnails by hash.
+// storage key of each original, and the storage prefix and content hash each set
+// of thumbnails is keyed by. Both are needed because the two layouts are
+// addressed differently — originals and sidecars by path, thumbnails by hash
+// under the prefix of the file's own original.
 type catalogueFiles struct {
 	paths  []string
-	hashes []string
+	hashes []thumbSet
+}
+
+// thumbSet names one set of cached thumbnails: the storage prefix of the
+// original it was rendered from ("" for the root layout) and its content hash.
+type thumbSet struct {
+	prefix string
+	hash   string
 }
 
 // objectKeys expands the catalogued files into every store key the wipe should
@@ -157,9 +165,9 @@ func (c catalogueFiles) objectKeys() ([]string, PrefixCounts) {
 	}
 	keys = append(keys, familyexport.Key)
 	counts.Families++
-	for _, hash := range c.hashes {
+	for _, set := range c.hashes {
 		for _, size := range sizes {
-			key, err := thumb.RelPath(hash, size)
+			key, err := thumb.RelPath(set.prefix, set.hash, size)
 			if err != nil {
 				// A malformed hash addresses no cached thumbnail; nothing to delete.
 				continue

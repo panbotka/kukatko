@@ -25,6 +25,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/video"
 )
@@ -58,16 +59,19 @@ type PhotoStore interface {
 // Generator renders and reads storyboard sprites. It is satisfied by
 // *storyboard.Generator; tests supply a fake so no ffmpeg is needed.
 type Generator interface {
-	// Exists reports whether the sprite for the file hash is already cached.
-	Exists(hash string) (bool, error)
-	// Open returns a reader over the cached sprite, or storyboard.ErrNotGenerated.
-	Open(hash string) (io.ReadCloser, error)
+	// Exists reports whether the sprite for the file hash under the storage
+	// prefix (that of the video's own original) is already cached.
+	Exists(prefix, hash string) (bool, error)
+	// Open returns a reader over the cached sprite for the file hash under the
+	// storage prefix, or storyboard.ErrNotGenerated.
+	Open(prefix, hash string) (io.ReadCloser, error)
 	// Generate renders the sprite for the video stored at srcRelPath, keyed by
-	// hash and laid out by spec. It is a no-op when the sprite already exists.
+	// hash under srcRelPath's own storage prefix and laid out by spec. It is a
+	// no-op when the sprite already exists.
 	Generate(ctx context.Context, hash, srcRelPath string, spec storyboard.Spec) error
-	// Remove deletes the cached sprite for the file hash. It is idempotent: a hash
-	// that never had one is not an error.
-	Remove(hash string) error
+	// Remove deletes the cached sprite for the file hash under the storage prefix.
+	// It is idempotent: a hash that never had one is not an error.
+	Remove(prefix, hash string) error
 }
 
 // Enqueuer schedules storyboard jobs. It is satisfied by *jobs.Enqueuer.
@@ -162,7 +166,7 @@ func (s *Service) Status(ctx context.Context, photoUID string) (Status, error) {
 		// answer rather than a failure — the player just shows no preview.
 		return Status{State: StateUnavailable}, nil //nolint:nilerr // the "why" is not actionable for the client.
 	}
-	ready, err := s.generator.Exists(photo.FileHash)
+	ready, err := s.generator.Exists(storekeys.PrefixOf(photo.FilePath), photo.FileHash)
 	if err != nil {
 		return Status{}, fmt.Errorf("storyboardjob: checking sprite for %s: %w", photoUID, err)
 	}
@@ -194,7 +198,7 @@ func (s *Service) Open(ctx context.Context, photoUID string) (io.ReadCloser, sto
 	if err != nil {
 		return nil, storyboard.Spec{}, err
 	}
-	reader, err := s.generator.Open(photo.FileHash)
+	reader, err := s.generator.Open(storekeys.PrefixOf(photo.FilePath), photo.FileHash)
 	if err != nil {
 		return nil, storyboard.Spec{}, fmt.Errorf("storyboardjob: opening sprite for %s: %w", photoUID, err)
 	}
@@ -279,7 +283,7 @@ func (s *Service) Regenerate(ctx context.Context, photoUID string) error {
 	if s.enqueuer == nil || !s.ffmpeg() {
 		return ErrCannotRender
 	}
-	if err := s.generator.Remove(photo.FileHash); err != nil {
+	if err := s.generator.Remove(storekeys.PrefixOf(photo.FilePath), photo.FileHash); err != nil {
 		return fmt.Errorf("storyboardjob: discarding the sprite of %s: %w", photoUID, err)
 	}
 	if err := s.enqueuer.EnqueueStoryboard(ctx, photoUID); err != nil {

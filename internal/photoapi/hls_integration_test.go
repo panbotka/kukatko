@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // testPlaylist is a media playlist shaped exactly as ffmpeg writes one: relative
@@ -60,7 +61,7 @@ func seedRendition(t *testing.T, e *env, store storage.Storage, photo photos.Pho
 // gives it, the way the encode job publishes them.
 func putSegment(t *testing.T, e *env, store storage.Storage, photo photos.Photo, name string) {
 	t.Helper()
-	key, err := hls.Key(photo.FileHash, hls.Rendition1080p, name)
+	key, err := hls.Key(storekeys.PrefixOf(photo.FilePath), photo.FileHash, hls.Rendition1080p, name)
 	if err != nil {
 		t.Fatalf("hls.Key(%s): %v", name, err)
 	}
@@ -218,7 +219,7 @@ func TestHLSSegment_redirectsToSignedURL(t *testing.T) {
 	if got := resp.Header.Get("Cache-Control"); got != "private, no-store" {
 		t.Errorf("Cache-Control = %q, want private, no-store", got)
 	}
-	key, err := hls.Key(video.FileHash, hls.Rendition1080p, "00001.m4s")
+	key, err := hls.Key(storekeys.PrefixOf(video.FilePath), video.FileHash, hls.Rendition1080p, "00001.m4s")
 	if err != nil {
 		t.Fatalf("hls.Key: %v", err)
 	}

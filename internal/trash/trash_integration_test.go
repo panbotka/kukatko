@@ -20,6 +20,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/trash"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -121,7 +122,7 @@ func (e *purgeEnv) seedPhoto(t *testing.T, name string, at *time.Time) (photos.P
 	}); err != nil {
 		t.Fatalf("vectors.SaveEmbedding: %v", err)
 	}
-	tileAbs, err := e.thumb.Path(stored.Hash, "tile_224")
+	tileAbs, err := e.thumb.Path(storekeys.PrefixOf(stored.RelPath), stored.Hash, "tile_224")
 	if err != nil {
 		t.Fatalf("thumb.Path: %v", err)
 	}
@@ -309,7 +310,7 @@ func (e *purgeEnv) writeHLSObjects(t *testing.T, fileHash, rendition string, nam
 	t.Helper()
 	keys := make([]string, 0, len(names))
 	for _, name := range names {
-		key, err := hls.Key(fileHash, rendition, name)
+		key, err := hls.Key("", fileHash, rendition, name)
 		if err != nil {
 			t.Fatalf("hls.Key(%q, %q, %q): %v", fileHash, rendition, name, err)
 		}

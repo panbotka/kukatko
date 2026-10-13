@@ -121,7 +121,7 @@ func (e *resetEnv) seedLibrary(t *testing.T) {
 		}
 		e.writeObject(t, sidecarKey, "sidecar")
 		for _, size := range thumb.SizeNames() {
-			key, err := thumb.RelPath(photo.hash, size)
+			key, err := thumb.RelPath("", photo.hash, size)
 			if err != nil {
 				t.Fatalf("thumb.RelPath: %v", err)
 			}

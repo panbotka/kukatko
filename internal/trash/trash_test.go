@@ -175,11 +175,11 @@ func newFakeThumb() *fakeThumb {
 }
 
 // Remove records hash as removed unless configured to fail.
-func (f *fakeThumb) Remove(hash string) error {
+func (f *fakeThumb) Remove(prefix, hash string) error {
 	if err := f.failOn[hash]; err != nil {
 		return err
 	}
-	f.removed[hash] = true
+	f.removed[prefix+hash] = true
 	return nil
 }
 
@@ -723,5 +723,68 @@ func TestPurgePhoto_keysComeFromTheRow(t *testing.T) {
 		if !fs.deleted[want] {
 			t.Errorf("purge did not delete %s; deleted %v", want, fs.deleted)
 		}
+	}
+}
+
+// fakeSprites records the (prefix, hash) of every storyboard sprite removed.
+type fakeSprites struct {
+	removed []string
+}
+
+// Remove records prefix+hash as removed.
+func (f *fakeSprites) Remove(prefix, hash string) error {
+	f.removed = append(f.removed, prefix+hash)
+	return nil
+}
+
+// TestPurgePhoto_followsTheOriginalsLayout verifies a purge of a photo whose
+// original lives under a project prefix finds every derived object under that
+// same prefix — the thumbnails, the storyboard and the HLS segments — and leaves
+// the root-layout objects of identical bytes (one hash) alone.
+func TestPurgePhoto_followsTheOriginalsLayout(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-48 * time.Hour)
+	const (
+		prefix = "projects/pj0123456789abcdefghijklmn/"
+		hash   = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+		path   = prefix + "2024/05/clip.mp4"
+	)
+	store := newFakePhotoStore()
+	store.photos["ph_video"] = photos.Photo{
+		UID: "ph_video", ProjectID: testProject, FileHash: hash, FilePath: path, ArchivedAt: &old,
+	}
+	store.files["ph_video"] = []photos.PhotoFile{{PhotoUID: "ph_video", FilePath: path, FileHash: hash}}
+	fs := newFakeListingStorage(
+		prefix+"hls/"+hash+"/1080p/init.mp4",
+		prefix+"hls/"+hash+"/1080p/00000.m4s",
+		"hls/"+hash+"/1080p/init.mp4",
+	)
+	th, sprites := newFakeThumb(), &fakeSprites{}
+	svc := New(Config{
+		Photos: store, Projects: fakeProjects{active(testProject)}, Storage: fs,
+		Thumbnailer: th, Storyboards: sprites, RetentionDays: 1,
+	})
+
+	if err := svc.PurgePhoto(context.Background(), testProject, "ph_video", audit.Meta{}); err != nil {
+		t.Fatalf("PurgePhoto: %v", err)
+	}
+	for _, key := range []string{
+		path,
+		prefix + "sidecars/2024/05/clip.mp4.yml",
+		prefix + "hls/" + hash + "/1080p/init.mp4",
+		prefix + "hls/" + hash + "/1080p/00000.m4s",
+	} {
+		if !fs.deleted[key] {
+			t.Errorf("%s was not deleted", key)
+		}
+	}
+	if fs.deleted["hls/"+hash+"/1080p/init.mp4"] {
+		t.Error("the root-layout segments of the same hash were deleted")
+	}
+	if !th.removed[prefix+hash] || th.removed[hash] {
+		t.Errorf("thumbnails removed = %v, want only %q", th.removed, prefix+hash)
+	}
+	if len(sprites.removed) != 1 || sprites.removed[0] != prefix+hash {
+		t.Errorf("storyboards removed = %v, want [%s]", sprites.removed, prefix+hash)
 	}
 }

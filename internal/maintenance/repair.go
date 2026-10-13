@@ -432,7 +432,7 @@ func (s *Service) repairThumbnails(ctx context.Context, opts RepairOptions, res 
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return fmt.Errorf("maintenance: thumbnail repair interrupted: %w", ctxErr)
 		}
-		cached, thumbErr := s.thumbs.HasThumbnail(pf.FileHash)
+		cached, thumbErr := s.thumbs.HasThumbnail(pf.FilePath, pf.FileHash)
 		if thumbErr != nil {
 			return fmt.Errorf("maintenance: checking thumbnail for %s: %w", pf.PhotoUID, thumbErr)
 		}

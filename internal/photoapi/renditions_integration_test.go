@@ -11,6 +11,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // renditionsBody is the wire shape of the rendition-inventory endpoint.
@@ -133,7 +134,7 @@ func TestRegenerateStoryboard_discardsAndSchedules(t *testing.T) {
 		t.Errorf("body = %+v, want the storyboard step queued", body)
 	}
 
-	abs, err := env.storyboards.Path(video.FileHash)
+	abs, err := env.storyboards.Path(storekeys.PrefixOf(video.FilePath), video.FileHash)
 	if err != nil {
 		t.Fatalf("storyboard.Path: %v", err)
 	}

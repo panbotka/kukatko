@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // testHash is a SHA256-shaped file hash, the shape every catalogued file has.
@@ -46,7 +48,7 @@ func TestKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := Key(tt.hash, tt.rendition, tt.file)
+			got, err := Key("", tt.hash, tt.rendition, tt.file)
 			if err != nil {
 				t.Fatalf("Key(%q, %q, %q): %v", tt.hash, tt.rendition, tt.file, err)
 			}
@@ -92,7 +94,7 @@ func TestKey_rejects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := Key(tt.hash, tt.rendition, tt.file)
+			got, err := Key("", tt.hash, tt.rendition, tt.file)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Key(%q, %q, %q) error = %v, want %v", tt.hash, tt.rendition, tt.file, err, tt.wantErr)
 			}
@@ -108,7 +110,7 @@ func TestKey_rejects(t *testing.T) {
 func TestPrefixFor(t *testing.T) {
 	t.Parallel()
 
-	got, err := PrefixFor(testHash)
+	got, err := PrefixFor("", testHash)
 	if err != nil {
 		t.Fatalf("PrefixFor(%q): %v", testHash, err)
 	}
@@ -116,7 +118,7 @@ func TestPrefixFor(t *testing.T) {
 	if got != want {
 		t.Errorf("PrefixFor(%q) = %q, want %q", testHash, got, want)
 	}
-	key, err := Key(testHash, Rendition1080p, InitName)
+	key, err := Key("", testHash, Rendition1080p, InitName)
 	if err != nil {
 		t.Fatalf("Key: %v", err)
 	}
@@ -131,7 +133,7 @@ func TestPrefixFor_rejectsBadHash(t *testing.T) {
 	t.Parallel()
 
 	for _, hash := range []string{"", "xy", "../secret", "AABBCC", strings.Repeat("a", maxHashLen+1)} {
-		got, err := PrefixFor(hash)
+		got, err := PrefixFor("", hash)
 		if !errors.Is(err, ErrInvalidHash) {
 			t.Errorf("PrefixFor(%q) error = %v, want ErrInvalidHash", hash, err)
 		}
@@ -242,5 +244,45 @@ func TestMIMEFor(t *testing.T) {
 		if got := MIMEFor(tt.name); got != tt.want {
 			t.Errorf("MIMEFor(%q) = %q, want %q", tt.name, got, tt.want)
 		}
+	}
+}
+
+// TestKey_layouts covers one segment's key in both layouts: the root layout keeps
+// the historical hls/… key, a project prefix goes in front of it, and a malformed
+// prefix is refused rather than turned into a key.
+func TestKey_layouts(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "projects/pj0123456789abcdefghijklmn/"
+	tests := []struct {
+		name          string
+		storagePrefix string
+		wantPrefix    string
+		wantKey       string
+		wantErr       error
+	}{
+		{
+			name: "root layout", storagePrefix: "",
+			wantPrefix: "hls/" + testHash + "/", wantKey: "hls/" + testHash + "/1080p/00007.m4s",
+		},
+		{
+			name: "project prefix", storagePrefix: prefix,
+			wantPrefix: prefix + "hls/" + testHash + "/", wantKey: prefix + "hls/" + testHash + "/1080p/00007.m4s",
+		},
+		{name: "traversal prefix", storagePrefix: "../", wantErr: storekeys.ErrInvalidPrefix},
+		{name: "foreign prefix", storagePrefix: "other/", wantErr: storekeys.ErrInvalidPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotPrefix, err := PrefixFor(tt.storagePrefix, testHash)
+			if !errors.Is(err, tt.wantErr) || gotPrefix != tt.wantPrefix {
+				t.Errorf("PrefixFor(%q) = %q, %v; want %q, %v", tt.storagePrefix, gotPrefix, err, tt.wantPrefix, tt.wantErr)
+			}
+			gotKey, err := Key(tt.storagePrefix, testHash, Rendition1080p, "00007.m4s")
+			if !errors.Is(err, tt.wantErr) || gotKey != tt.wantKey {
+				t.Errorf("Key(%q) = %q, %v; want %q, %v", tt.storagePrefix, gotKey, err, tt.wantKey, tt.wantErr)
+			}
+		})
 	}
 }

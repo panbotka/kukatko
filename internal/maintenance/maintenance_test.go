@@ -180,7 +180,7 @@ func (f fakeStore) ListOriginals(_ context.Context, yield func(key string) error
 // fakeThumbs reports thumbnail presence from a hash set.
 type fakeThumbs struct{ have map[string]bool }
 
-func (f fakeThumbs) HasThumbnail(hash string) (bool, error) { return f.have[hash], nil }
+func (f fakeThumbs) HasThumbnail(_, hash string) (bool, error) { return f.have[hash], nil }
 
 // fakeEnqueuer records the photo uids it was asked to schedule jobs for, per job
 // type.

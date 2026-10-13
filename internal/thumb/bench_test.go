@@ -46,7 +46,7 @@ func BenchmarkGenerateFit720(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		b.StopTimer()
-		if err := th.Remove(photo.FileHash); err != nil {
+		if err := th.Remove("", photo.FileHash); err != nil {
 			b.Fatalf("Remove: %v", err)
 		}
 		b.StartTimer()
@@ -67,7 +67,7 @@ func BenchmarkGenerateAll(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		b.StopTimer()
-		if err := th.Remove(photo.FileHash); err != nil {
+		if err := th.Remove("", photo.FileHash); err != nil {
 			b.Fatalf("Remove: %v", err)
 		}
 		b.StartTimer()

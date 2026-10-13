@@ -10,6 +10,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/hlsjob"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // ErrStreamingUnavailable indicates a streaming repair was requested on an
@@ -133,12 +134,13 @@ func renditionID(rec hlsjob.Recorded) string {
 	return rec.PhotoUID + "/" + rec.Rendition
 }
 
-// renditionKey spells the key of rec's initialisation segment, reporting false
+// renditionKey spells the key of rec's initialisation segment — under the storage
+// prefix of the video's own original — reporting false
 // when the row cannot name an object at all — a file hash or rendition name the
 // layout would never have produced, so nothing the row describes was ever
 // fetchable.
 func renditionKey(rec hlsjob.Recorded) (string, bool) {
-	key, err := hls.Key(rec.FileHash, rec.Rendition, hls.InitName)
+	key, err := hls.Key(storekeys.PrefixOf(rec.FilePath), rec.FileHash, rec.Rendition, hls.InitName)
 	if err != nil {
 		return "", false
 	}

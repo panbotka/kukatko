@@ -47,6 +47,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -99,10 +100,13 @@ func (b *Builder) Object(relPath string) string {
 }
 
 // ThumbObject returns the signed URL of the cached thumbnail object for the
-// given file hash and size, or the empty string when the backend publishes no
-// URLs or the hash/size pair is not a valid cache key.
-func (b *Builder) ThumbObject(fileHash, size string) string {
-	rel, err := thumb.RelPath(fileHash, size)
+// photo whose original is stored at filePath, with the given file hash and size,
+// or the empty string when the backend publishes no URLs or the triple is not a
+// valid cache key. The thumbnail's key carries the storage prefix of the
+// original (storekeys.PrefixOf(filePath)), so a project's photo is addressed
+// inside the project's own tree.
+func (b *Builder) ThumbObject(filePath, fileHash, size string) string {
+	rel, err := thumb.RelPath(storekeys.PrefixOf(filePath), fileHash, size)
 	if err != nil {
 		return ""
 	}
@@ -112,9 +116,10 @@ func (b *Builder) ThumbObject(fileHash, size string) string {
 // Thumb returns where a client fetches the photo's thumbnail at size: the signed
 // edge URL when the backend publishes one, otherwise this application's thumb
 // route for uid, which streams the bytes (generating them on a cache miss),
-// below the API base ctx's request came through.
-func (b *Builder) Thumb(ctx context.Context, uid, fileHash, size string) string {
-	if signed := b.ThumbObject(fileHash, size); signed != "" {
+// below the API base ctx's request came through. filePath is the photo's
+// original key, whose storage prefix the thumbnail's key carries.
+func (b *Builder) Thumb(ctx context.Context, uid, filePath, fileHash, size string) string {
+	if signed := b.ThumbObject(filePath, fileHash, size); signed != "" {
 		return signed
 	}
 	return ownPhotoPath(ctx, uid) + "thumb/" + url.PathEscape(size)
@@ -210,8 +215,8 @@ func (b *Builder) decorateForProject(ctx context.Context, current string, photo 
 		photo.ThumbURL, photo.PreviewURL, photo.DownloadURL = "", "", ""
 		return
 	}
-	photo.ThumbURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.GridSize)
-	photo.PreviewURL = b.Thumb(ctx, photo.UID, photo.FileHash, thumb.PreviewSize)
+	photo.ThumbURL = b.Thumb(ctx, photo.UID, photo.FilePath, photo.FileHash, thumb.GridSize)
+	photo.PreviewURL = b.Thumb(ctx, photo.UID, photo.FilePath, photo.FileHash, thumb.PreviewSize)
 	photo.DownloadURL = b.Download(ctx, photo.UID, photo.FilePath, photo.FileName)
 }
 

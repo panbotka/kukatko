@@ -59,7 +59,7 @@ func (a *API) stampAlbumCovers(ctx context.Context, hits []albumHit) error {
 	for i := range hits {
 		if cover, ok := covers[hits[i].UID]; ok {
 			hits[i].Cover = &cover.PhotoUID
-			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FileHash)
+			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FilePath, cover.FileHash)
 		}
 	}
 	return nil
@@ -74,7 +74,7 @@ func (a *API) stampLabelCovers(ctx context.Context, hits []labelHit) error {
 	for i := range hits {
 		if cover, ok := covers[hits[i].UID]; ok {
 			hits[i].Cover = &cover.PhotoUID
-			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FileHash)
+			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FilePath, cover.FileHash)
 		}
 	}
 	return nil
@@ -89,7 +89,7 @@ func (a *API) stampSubjectCovers(ctx context.Context, hits []subjectHit) error {
 	for i := range hits {
 		if cover, ok := covers[hits[i].UID]; ok {
 			hits[i].Cover = &cover.PhotoUID
-			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FileHash)
+			hits[i].ThumbURL = a.coverThumb(ctx, cover.PhotoUID, cover.FilePath, cover.FileHash)
 		}
 	}
 	return nil
@@ -97,7 +97,8 @@ func (a *API) stampSubjectCovers(ctx context.Context, hits []subjectHit) error {
 
 // coverThumb is where a client fetches an entity cover's medallion: the signed
 // edge URL when the storage backend publishes one, otherwise this application's
-// own thumb route.
-func (a *API) coverThumb(ctx context.Context, photoUID, fileHash string) string {
-	return a.media.Thumb(ctx, photoUID, fileHash, thumb.AvatarSize)
+// own thumb route. filePath is the cover's original key, whose storage prefix
+// the thumbnail's key carries.
+func (a *API) coverThumb(ctx context.Context, photoUID, filePath, fileHash string) string {
+	return a.media.Thumb(ctx, photoUID, filePath, fileHash, thumb.AvatarSize)
 }

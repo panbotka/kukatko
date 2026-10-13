@@ -269,7 +269,7 @@ func writeSidecar(t *testing.T, root, relPath string, content []byte) string {
 // thumbPath returns the absolute cache path of the grid thumbnail for hash.
 func thumbPath(t *testing.T, cacheDir, hash string) string {
 	t.Helper()
-	rel, err := thumb.RelPath(hash, gridSize)
+	rel, err := thumb.RelPath("", hash, gridSize)
 	if err != nil {
 		t.Fatalf("thumb.RelPath: %v", err)
 	}
@@ -918,7 +918,7 @@ func TestThumbnailKeysAreTheCachePathsVerbatim(t *testing.T) {
 	if _, err := run(t, fixture.config()); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	want, err := thumb.RelPath(fixture.catalogue.items[0].FileHash, gridSize)
+	want, err := thumb.RelPath("", fixture.catalogue.items[0].FileHash, gridSize)
 	if err != nil {
 		t.Fatalf("thumb.RelPath: %v", err)
 	}
@@ -934,7 +934,7 @@ func TestThumbnailKeysAreTheCachePathsVerbatim(t *testing.T) {
 // those keys.
 func writeSegments(t *testing.T, root, fileHash string, n int) []string {
 	t.Helper()
-	prefix, err := hls.PrefixFor(fileHash)
+	prefix, err := hls.PrefixFor("", fileHash)
 	if err != nil {
 		t.Fatalf("hls.PrefixFor(%s): %v", fileHash, err)
 	}

@@ -30,6 +30,8 @@ package familyexport
 
 import (
 	"time"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // Version is the schema version, written as the document's first key. It is
@@ -52,7 +54,7 @@ const Version = 2
 // families would build half a tree and not know it. Its own key (rather than a
 // place inside sidecars/) is what gives it its own storekeys.Kind, so backup,
 // storage migration and the library wipe each have to say what they do with it.
-const Key = "families.yaml"
+const Key = storekeys.FamiliesKey
 
 // MIME is the media type the export is stored as.
 const MIME = "application/yaml"

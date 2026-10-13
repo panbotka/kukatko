@@ -890,31 +890,44 @@ to `## Package map` in `CLAUDE.md`.
   a second case asserts each photo's sidecar lands in the bucket and its local copy is reclaimed),
   `internal/storekeys/`
   (**the one place that says what lives in the object store and which layout owns it.** The store has no
-  per-application prefix — an original sits at `YYYY/MM/<name>` in the bucket root and the derived artefacts
-  sit beside it — so "what is this object?" cannot be answered by a single prefix test, and before this
-  package each whole-store operation carried its own list of prefixes to remember. `Kind` = `KindOriginal`
+  per-application prefix — an original sits at `YYYY/MM/<name>` and the derived artefacts sit beside it — so
+  "what is this object?" cannot be answered by a single prefix test, and before this package each whole-store
+  operation carried its own list of prefixes to remember. **A leaf package** (it imports nothing of Kukátko's
+  own), so every key builder can use it. It declares each layout's top-level name — `ThumbnailDir` (`thumb`),
+  `SidecarDir` (`sidecars`), `HLSDir` (`hls`), `FamiliesKey` (`families.yaml`), re-exported by the builders as
+  `thumb.CacheSubdir`, `sidecarexport.Prefix`, `hls.Prefix`, `familyexport.Key` — plus the store-wide
+  `DumpPrefix`=`db/`, `PartialPrefix`=`.tmp/` and `ProjectsDir`=`projects/`. `Kind` = `KindOriginal`
   /`KindSidecar`/`KindFamilies`/`KindThumbnail`/`KindHLS`/`KindDump`/`KindPartial`/`KindForeign`
-  (+`String()`),
-  `Classify(key)` (prefix tests against `thumb.CacheSubdir`, `sidecarexport.Prefix`, `hls.Prefix`,
-  `DumpPrefix`=`db/`, `PartialPrefix`=`.tmp/` and the anchored `YYYY/MM/<name>` pattern, plus the one match by
-  **exact key**: `familyexport.Key` (`families.yaml`), which is a single object rather than a layout and owns
-  no prefix, so a foreign file whose name merely begins the same way stays foreign; a leading slash and
-  surrounding whitespace are tolerated, everything else is foreign) and `Kinds()` (every kind, a fresh copy,
-  so an operation can be tested against the whole enum rather than the prefixes its author thought of).
-  It holds no layout of its own — those stay in `thumb`/`sidecarexport`/`hls`/`storage` — only the mapping.
-  **Why it exists:** the streaming segments were added to the store and two whole-store operations (the backup
-  and the storage migration) went on not knowing about them for four commits. Consumers — `internal/backup`
-  (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/reset` (`classifyKey`) and
-  `internal/maintenance` (`isOriginalKey`) — switch over or match on `Kind`, the first three **without a
-  default clause**, so a new member fails the `exhaustive` linter in each of
+  (+`String()`), `Kinds()` (every kind, a fresh copy, so an operation can be tested against the whole enum).
+  **Two layouts:** every project's tree hangs off its storage prefix — `""` (the root layout) for the
+  bootstrap project until its storage move, `projects/<uid>/` for every created one. The prefix grammar:
+  `PrefixOf(originalKey)` (`projects/<uid>/` when the key starts with a **well-formed** project prefix —
+  `pj` + 24 symbols of the uid alphabet, checked so a foreign `projects/` tree is never a project — else `""`),
+  `Strip(key)` → `(prefix, rest)`, `Join(prefix, rest)` (its inverse), `ValidatePrefix(prefix)`
+  (`ErrInvalidPrefix` unless `""` or exactly `projects/<uid>/` — every builder calls it, so a malformed
+  prefix never becomes a cache path or a key) and `ProjectUID(prefix)`. **The rule every builder follows:**
+  a photo's derived keys take `PrefixOf(photos.file_path)` — the prefix of its **own original**, never the
+  project row — so a half-moved project stays consistent per photo and no read falls back or guesses.
+  `ClassifyWithProject(key)` → `(Kind, projectUID)` accepts both layouts: it strips a project prefix and
+  classifies the rest by the root rules (prefix tests against the four layout names and the anchored
+  `YYYY/MM/<name>` pattern, plus the one match by **exact key**, `families.yaml`, which owns no prefix, so a
+  foreign file whose name merely begins the same way stays foreign); `db/` and `.tmp/` exist only at the
+  root, so inside a project's tree they are foreign, and a foreign key names no project. `Classify(key)` is
+  the same without the uid. A leading slash and surrounding whitespace are tolerated, everything else is
+  foreign. **Why it exists:** the streaming segments were added to the store and two whole-store operations
+  (the backup and the storage migration) went on not knowing about them for four commits. Consumers —
+  `internal/backup` (`backedUp`), `internal/storagemigrate` (`planKind`/`livesLocally`), `internal/reset`
+  (`classifyKey`) and `internal/maintenance` (`isOriginalKey`) — switch over or match on `Kind`, the first
+  three **without a default clause**, so a new member fails the `exhaustive` linter in each of
   them until that operation says what it does about the new prefix; per-kind tests in each package back this
   up with a length check against `Kinds()`),
   `internal/mediaurl/`
   (mints client media addresses and stamps them onto photo payloads; the only decision is made by the storage
-  backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(ctx,uid,fileHash,size)` /
+  backend via `URL`. `NewBuilder(store)` → `Builder` with `Thumb(ctx,uid,filePath,fileHash,size)` /
   `Download(ctx,uid,filePath,fileName)` (the client address: the signed Worker URL, otherwise a fallback to the own
   route `<auth.APIBase(ctx)>/photos/...` — `/api/v1/p/<slug>/photos/...` through the project prefix,
-  `/api/v1/photos/...` through the alias), `Object(relPath)` / `ThumbObject(fileHash,size)` (the **raw** backend
+  `/api/v1/photos/...` through the alias), `Object(relPath)` / `ThumbObject(filePath,fileHash,size)` (the thumbnail key under the storage prefix of
+  the original at `filePath`; the **raw** backend
   response — an empty string = "stream it yourself", non-empty = "redirect there"; the media routes use this),
   `DownloadObject(filePath,fileName)` (the same raw answer for an **original**, decorated to download)
   and `Decorate(ctx,list)` / `DecorateOne(ctx,&photo)`, which fill `Photo.ThumbURL`+`Photo.PreviewURL`+`Photo.DownloadURL`.
@@ -956,15 +969,17 @@ to `## Package map` in `CLAUDE.md`.
   (the thumbnailer, **CGO-free**: a size registry `sizes`+`sizeOrder` in two modes
   `fit` (longest-side, preserves aspect, doesn't upscale) and `crop-square` (center-crop), default set
   `fit_720/1280/1920/2560/3840` + `tile_100/224/500`; cache layout under `storage.cache_path`
-  `thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard from the hex SHA256), regenerable +
+  `<prefix>thumb/<aa>/<bb>/<cc>/<hash>_<size>.jpg` (shard from the hex SHA256; `<prefix>` =
+  `storekeys.PrefixOf(photo.FilePath)`, the storage prefix of the photo's own original — `""` for the root
+  layout — so two projects holding identical bytes never share a thumbnail), regenerable +
   **idempotent** (skips existing ones) + atomic write temp+rename; `Thumbnailer` =
   `New(store,cacheDir,WithConcurrency(n),WithMaxPixels(px),WithDecodeBudget(b))` with the API `Generate(ctx,photo,sizes...)`/
   `GenerateAll(ctx,photo)` (a size→abs-path map, skips existing)/
   `RegenerateAll(ctx,photo)` (**force** — overwrites all sizes in-place with an atomic
   temp+rename, and republishes to object store; the basis of the "regenerate thumbnail" service action)/
-  `Path(hash,size)`/`OpenCached(hash,size)` (the **local cache alone**)/
+  `Path(prefix,hash,size)`/`OpenCached(prefix,hash,size)` (the **local cache alone**)/
   `OpenOrGenerate(ctx,photo,size)` (**the backend-independent read** — see below);
-  the package-level `RelPath(hash,size)` returns the same cache path relatively — it is also the **object key**
+  the package-level `RelPath(prefix,hash,size)` returns the same cache path relatively — it is also the **object key**
   of the thumbnail in the remote backend, which is why the layout is exported instead of derived a second time elsewhere;
   `CacheSubdir` (`thumb`) exports the top of that layout for the operations that address the **whole prefix**
   rather than one file (`internal/reset` sweeping the cache directory and the bucket prefix);
@@ -1049,7 +1064,7 @@ to `## Package map` in `CLAUDE.md`.
   `vipsthumbnail` invocation is bounded by a **60s per-invocation timeout** (`runVips` wraps
   `context.WithTimeout`, matching the RAW/poster shell-outs) so a wedged vips fails the job instead of
   hanging a worker forever; `VipsAvailable(bin)`
-  for the startup log; `Remove(hash)` deletes all cached sizes for a hash
+  for the startup log; `Remove(prefix,hash)` deletes all cached sizes for a hash under a storage prefix
   (idempotent, skips missing ones — thumbnail cleanup on photo purge); sentinels
   `ErrUnknownSize`/`ErrInvalidHash`/`ErrNotCached`;
   `SizeNames()`/`IsValidSize`), `internal/imgconvert/`
@@ -1744,7 +1759,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   never recomputed from the project, so a photo is cleaned up wherever its rows say it lives;
   **purgeOne** deletes a photo's artifacts (the original via `Storage.Delete`, the cached thumbnails via
   `Thumbnailer.Remove`, the scrub-preview sprite via `StoryboardStore.Remove`, the **HLS segments** —
-  everything the store holds under `hls.PrefixFor(file_hash)`, found by listing that prefix when the backend
+  everything the store holds under `hls.PrefixFor(storekeys.PrefixOf(file_path), file_hash)` — every derived
+  object is looked for under the prefix of the file's own original — found by listing that prefix when the backend
   is a `storage.PrefixLister`, because their keys are not derivable from the catalogue; a backend that cannot
   list and a hash the layout cannot address leave them behind rather than failing the purge, while a failed
   listing or deletion is reported — optionally the S3 object via `RemoteRemover`) **and then** the DB row via
@@ -2518,7 +2534,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   uids of non-archived photos with a non-invalid marker of the subject, newest-first — the basis of the subject's
   gallery in `peopleapi`)/`SearchSubjects(q,limit)` (accent/case-insensitive ILIKE over
   `immutable_unaccent(name)`, cap limit — the basis of `globalsearchapi`)/`SubjectCovers(uids)` (`covers.go`;
-  → `map[uid]Cover{PhotoUID,FileHash}`, the photo standing for each named subject, resolved for the **whole
+  → `map[uid]Cover{PhotoUID,FileHash,FilePath}` (the path
+  so the thumbnail URL takes the prefix of the cover's own original), the photo standing for each named subject, resolved for the **whole
   batch in one query**: a `DISTINCT ON` over the batch's non-invalid markers, newest-first by
   `COALESCE(taken_at, created_at)`, restricted to the photos the subject's gallery shows and overridden by a
   hand-picked `cover_photo_uid`. It is a whole **photo**, not the `SubjectFace` the people index crops — a
@@ -3516,7 +3533,9 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   1920**) that still puts 320 px across the padded crop, measured against the photo's *display* frame
   (`displayFrame` swaps the quarter-turn orientations), and a cover takes `thumb.GridSize`; so rendering is a
   JPEG decode of at most a 1920 px preview, with no HEIC/RAW shell-out. **Storage is cache-only**, in the
-  thumbnail cache's sharded layout under its own prefix — `avatar/<aa>/<bb>/<cc>/<hash>_<variant>_320.jpg`,
+  thumbnail cache's sharded layout under its own prefix —
+  `<prefix>avatar/<aa>/<bb>/<cc>/<hash>_<variant>_320.jpg` (`RelPath(prefix,hash,variant)`, the prefix being
+  that of the photo's own original),
   `CacheSubdir` exported for the wipe (`internal/reset` sweeps it beside `thumb` and `storyboard`) — and
   deliberately **never uploaded to the object store**. `variantKey` is `cover` or a digest of the box rounded
   to four decimals, so one photo standing for two people yields two entries and float noise forks neither;
@@ -3686,7 +3705,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   default governs and a zero-valued struct literal can never create a label the game silently ignores, and
   switching it off is an explicit `UpdateLabel`. Every label read path carries it (`labelColumns`, the two
   count projections, `LabelsForPhoto`, `PhotoLabelsForPhoto`);
-  **covers** (`covers.go`) `AlbumCovers(uids)`/`LabelCovers(uids)` → `map[uid]Cover{PhotoUID,FileHash}`:
+  **covers** (`covers.go`) `AlbumCovers(uids)`/`LabelCovers(uids)` → `map[uid]Cover{PhotoUID,FileHash,FilePath}` (the path
+  so the thumbnail URL takes the prefix of the cover's own original):
   the photo standing for each named album/label, resolved for the **whole batch in one query** (a
   `DISTINCT ON` over the batch's membership rows, never a correlated `ORDER BY … LIMIT 1` per entity — the
   same trap `listAlbumsSQL` documents), ranked newest-first by `COALESCE(taken_at, created_at)` with the uid
@@ -4845,7 +4865,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `PlanFaceBoxRepair`/`ApplyFaceBoxRepair`/`ListDuplicateFaceMarkers`/`ListSidewaysDetections`/
   `ClearFaceDetection`, `vectors.Store`)/`OriginalStore` (`Stat`, `storage.Storage`)/`StoreScanner`
   (`Kind`+`ListOriginals`, satisfied by `NewStoreOriginals(kind, storage.KeyLister)`)/
-  `ThumbChecker` (`HasThumbnail`, `NewThumbCache` over `thumb.Thumbnailer`)/
+  `ThumbChecker` (`HasThumbnail(filePath,fileHash)` — the cache entry under the prefix of the original at
+  `filePath` —, `NewThumbCache` over `thumb.Thumbnailer`)/
   `Enqueuer` (`EnqueueThumbnail`+`EnqueueFaceDetect`, `jobs.Enqueuer`)/`SidecarScheduler`
   (`EnqueueSidecar`, `jobs.Enqueuer`; optional, **nil = the sidecar export is off**, so no job is scheduled
   that no handler could drain — `maintenanceSidecarOrNil` in `cmd/kukatko/maintenance.go` is the same switch
@@ -5034,7 +5055,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `sweepKeys` is the opt-in `Options.OrphanSweep` path over `storage.KeyLister` (`ErrSweepUnsupported` when the
   store cannot list) and **supersedes** the catalogue's candidates — it deletes what is actually there under the
   owned prefixes, referenced or not, which is both the correct wipe and the cheaper one. The local thumbnail
-  cache goes too: `Thumbs.Remove(hash)` per catalogued hash, or the whole `<cache_path>/thumb` tree under a
+  cache goes too: `Thumbs.Remove(prefix,hash)` per catalogued (file prefix, hash) pair, or the whole `<cache_path>/thumb` tree under a
   sweep. `Options{Execute,Confirm,ConfirmBucket,OrphanSweep,Concurrency,ActorUID,Operator}` — a CLI run has no session, so
   `ActorUID` stays empty (a system action) and `Operator` carries `$USER@$HOSTNAME` into the entry's details
   together with the target, the per-table row counts and the object counts. Deliberately **no HTTP surface**,
@@ -5120,7 +5141,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   clock — the caller collects the collaborators), `Marshal`/`Unmarshal` add/ignore the header comment
   that explains **why there are no embeddings in the file** (large, binary, cheap to recompute from
   the original — that is what the backfill jobs are for), so that nobody "fixes" it. `KeyFor(fileKey)` = the parallel
-  tree `sidecars/<key>.yml` (the extension is **appended**, not replaced → `IMG_1.jpg` and `IMG_1.png`
+  tree `<prefix>sidecars/<rest>.yml` under the original's own storage prefix (`storekeys.Strip`): the sidecar of
+  `projects/<uid>/2024/05/x.jpg` is `projects/<uid>/sidecars/2024/05/x.jpg.yml`, never `sidecars/projects/…` (the extension is **appended**, not replaced → `IMG_1.jpg` and `IMG_1.png`
   do not collide; `ErrEmptyKey` for a row without a path). `Writer` = `NewWriter(ObjectStore)` over a narrow
   interface (`Put`/`Delete`, satisfied by `storage.Storage`) → it works **on FS and on R2**;
   `Write(ctx,fileKey,doc)` marshals into memory (a few kB), computes the SHA256 and hands storage the exact
@@ -5246,10 +5268,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   and unknown dimensions fall back to 16:9. `duration <= 0` → `ErrNoDuration`, the "this clip will never have
   one" signal. `Spec.TileIndex(positionMs)` is the position→tile mapping, stated (and tested) here so the
   client mirrors a contract rather than a guess. **Storage is cache-only**, in the thumbnail cache's sharded
-  layout under its own prefix — `storyboard/<aa>/<bb>/<cc>/<hash>_sb.jpg`, `CacheSubdir` exported for the wipe —
+  layout under its own prefix — `<prefix>storyboard/<aa>/<bb>/<cc>/<hash>_sb.jpg` (`RelPath(prefix,hash)`, the
+  prefix being that of the video's own original), `CacheSubdir` exported for the wipe —
   and deliberately **never uploaded to the object store**: it adds no bucket prefix and nothing to the
   orphan-sweep contract, and a pruned cache costs one background job. `Generator` = `New(storage,cacheDir)` with
-  `Path`/`Exists`/`Open`/`Remove`/`Generate(ctx,hash,srcRelPath,spec)`; `Generate` is **idempotent** (a cached
+  `Path`/`Exists`/`Open`/`Remove` (each `(prefix,hash)`)/`Generate(ctx,hash,srcRelPath,spec)` (prefix from
+  `srcRelPath`); `Generate` is **idempotent** (a cached
   sprite returns immediately, without even materializing the source), materializes the original (ffmpeg needs a
   real file), renders via `FFmpegArgs` — `fps=1000/<interval>,scale=W:H,tile=CxR` plus `-frames:v 1`, the
   rational fps avoiding any float formatting — into a temp file and **renames it into place**, so no reader ever
@@ -5279,14 +5303,15 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `internal/hls/`
   (the **object layout of a video's HLS renditions**, and nothing else — no ffmpeg, no store, no database, so
   every layer that touches streaming (the encoder, the purge, the library wipe, the HTTP endpoints) agrees on
-  the same strings without depending on each other. Segments live under `hls/<file_hash>/<rendition>/`
-  (`Prefix` = `hls`, `PrefixFor(fileHash)` = `hls/<hash>/` **with** the trailing slash, so a prefix listing
+  the same strings without depending on each other. Segments live under
+  `<storagePrefix>hls/<file_hash>/<rendition>/`, `storagePrefix` being `storekeys.PrefixOf(photo.FilePath)`
+  (`Prefix` = `hls`, `PrefixFor(storagePrefix,fileHash)` = `<storagePrefix>hls/<hash>/` **with** the trailing slash, so a prefix listing
   cannot spill into a hash that merely starts the same), holding the fMP4 init segment `InitName` =
   `init.mp4` and zero-padded five-digit media segments `00000.m4s`, `00001.m4s`, …; rendition names are
   lowercase alphanumeric, `Rendition1080p` = `1080p` being the first. **Playlists are never stored** — the
   `.m3u8` is generated per request, a stored one being a second source of truth that goes stale the moment a
-  rendition changes. `Key(fileHash,rendition,name)` builds the key and validates all three parts →
-  `ErrInvalidHash` (lowercase hex, 6..64), `ErrInvalidRendition` (`^[a-z0-9]+$`, ≤ 16) or `ErrInvalidName`;
+  rendition changes. `Key(storagePrefix,fileHash,rendition,name)` builds the key and validates all four parts →
+  `storekeys.ErrInvalidPrefix`, `ErrInvalidHash` (lowercase hex, 6..64), `ErrInvalidRendition` (`^[a-z0-9]+$`, ≤ 16) or `ErrInvalidName`;
   `ValidateName` accepts **only** `init.mp4` or `^[0-9]{5}\.m4s$`, which is what stands between a
   client-supplied path segment and an object key — traversal, an empty name, wrong padding, a stray second
   extension, an uppercase variant and a playlist name are all refused, and the fixed padding is also what
@@ -5386,7 +5411,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   column, because the playlist of a two-hour video is tens of kilobytes and fetching it once per fragment
   would be the most expensive part of streaming the clip.
   `inventory.go` adds what a whole-library reconciliation needs (`internal/maintenance`'s streaming check):
-  `ListRecorded` → `[]Recorded{PhotoUID,Rendition,FileHash}`, every row joined with the hash naming its prefix
+  `ListRecorded` → `[]Recorded{PhotoUID,Rendition,FileHash,FilePath}`, every row joined with the hash and the
+  original's key, which together name its prefix
   in the store and **without the playlist column**, since none of it is needed to ask whether the objects are
   still there; `Delete(uid,rendition)` withdraws one row, reporting whether there was one (a second call is a
   no-op, so a repair converges); and `EncodingHashes` → the file hashes of the videos with an unfinished

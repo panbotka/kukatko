@@ -10,8 +10,8 @@ import (
 // Recorded identifies one rendition row together with the file hash whose prefix
 // holds the objects it describes. It is the smallest thing a whole-library
 // reconciliation of the catalogue against the store needs: a row promises that
-// hls/<file_hash>/<rendition>/ can be fetched, so answering "is that still true?"
-// takes exactly these three strings and none of the playlist text.
+// <prefix>hls/<file_hash>/<rendition>/ can be fetched, so answering "is that
+// still true?" takes exactly these strings and none of the playlist text.
 type Recorded struct {
 	// PhotoUID identifies the video the rendition belongs to.
 	PhotoUID string `json:"photo_uid"`
@@ -19,13 +19,16 @@ type Recorded struct {
 	Rendition string `json:"rendition"`
 	// FileHash is the video's content hash, which names its prefix in the store.
 	FileHash string `json:"file_hash"`
+	// FilePath is the video's original key, whose storage prefix
+	// (storekeys.PrefixOf) the rendition's objects live under.
+	FilePath string `json:"file_path"`
 }
 
 // listRecordedSQL selects every rendition row with the file hash of the video it
 // belongs to, in a stable order. It reads no playlist: the column holds tens of
 // kilobytes per row, and a reconciliation over the whole library needs none of it.
 const listRecordedSQL = `
-SELECT h.photo_uid, h.rendition, p.file_hash
+SELECT h.photo_uid, h.rendition, p.file_hash, p.file_path
 FROM photo_hls_renditions h
 JOIN photos p ON p.uid = h.photo_uid
 ORDER BY h.photo_uid, h.rendition`
@@ -46,7 +49,7 @@ func (s *Store) ListRecorded(ctx context.Context) ([]Recorded, error) {
 	out := []Recorded{}
 	for rows.Next() {
 		var rec Recorded
-		if scanErr := rows.Scan(&rec.PhotoUID, &rec.Rendition, &rec.FileHash); scanErr != nil {
+		if scanErr := rows.Scan(&rec.PhotoUID, &rec.Rendition, &rec.FileHash, &rec.FilePath); scanErr != nil {
 			return nil, fmt.Errorf("hlsjob: scanning recorded renditions: %w", scanErr)
 		}
 		out = append(out, rec)

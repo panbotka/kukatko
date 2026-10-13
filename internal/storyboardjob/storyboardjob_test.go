@@ -53,7 +53,7 @@ type generateCall struct {
 }
 
 // Exists reports the pretend cache state.
-func (f *fakeGenerator) Exists(string) (bool, error) {
+func (f *fakeGenerator) Exists(string, string) (bool, error) {
 	if f.existsErr != nil {
 		return false, f.existsErr
 	}
@@ -62,7 +62,7 @@ func (f *fakeGenerator) Exists(string) (bool, error) {
 
 // Open returns a fixed body when the sprite is "cached", otherwise the
 // not-generated sentinel.
-func (f *fakeGenerator) Open(string) (io.ReadCloser, error) {
+func (f *fakeGenerator) Open(string, string) (io.ReadCloser, error) {
 	if !f.ready {
 		return nil, storyboard.ErrNotGenerated
 	}
@@ -79,12 +79,12 @@ func (f *fakeGenerator) Generate(_ context.Context, hash, src string, spec story
 	return nil
 }
 
-// Remove records the discarded hash and drops the pretend cache entry.
-func (f *fakeGenerator) Remove(hash string) error {
+// Remove records the discarded prefix+hash and drops the pretend cache entry.
+func (f *fakeGenerator) Remove(prefix, hash string) error {
 	if f.removeErr != nil {
 		return f.removeErr
 	}
-	f.removed = append(f.removed, hash)
+	f.removed = append(f.removed, prefix+hash)
 	f.ready = false
 	return nil
 }
@@ -482,6 +482,38 @@ func TestRegenerate_dropsTheSpriteAndSchedules(t *testing.T) {
 	}
 	if len(gen.calls) != 0 {
 		t.Errorf("Regenerate rendered %d sprites itself, want 0", len(gen.calls))
+	}
+}
+
+// TestRegenerate_dropsTheSpriteUnderThePhotosPrefix verifies the sprite that is
+// discarded is the one under the video's own storage prefix — the prefix of its
+// file_path — for both layouts.
+func TestRegenerate_dropsTheSpriteUnderThePhotosPrefix(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "projects/pj0123456789abcdefghijklmn/"
+	tests := []struct {
+		name     string
+		filePath string
+		want     string
+	}{
+		{"root layout", "2026/01/clip.mp4", testHash},
+		{"project prefix", prefix + "2026/01/clip.mp4", prefix + testHash},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			video := videoPhoto("pht1", 20000)
+			video.FilePath = tt.filePath
+			gen := &fakeGenerator{ready: true}
+			svc := newService(&fakePhotos{rows: map[string]photos.Photo{"pht1": video}}, gen, &fakeEnqueuer{})
+			if err := svc.Regenerate(context.Background(), "pht1"); err != nil {
+				t.Fatalf("Regenerate: %v", err)
+			}
+			if len(gen.removed) != 1 || gen.removed[0] != tt.want {
+				t.Errorf("removed = %v, want one removal of %q", gen.removed, tt.want)
+			}
+		})
 	}
 }
 

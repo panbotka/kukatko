@@ -66,6 +66,7 @@ import (
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/avatar"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -125,8 +126,9 @@ type ObjectStore interface {
 // directory, and a wipe that forgot the second would leave the next import
 // serving the previous library's thumbnails.
 type ThumbCache interface {
-	// Remove deletes every cached thumbnail size for the given file hash.
-	Remove(hash string) error
+	// Remove deletes every cached thumbnail size for the given file hash under
+	// the given storage prefix.
+	Remove(prefix, hash string) error
 }
 
 // Target names the two things a reset is allowed to touch, as the loaded config
@@ -486,23 +488,53 @@ func (s *Service) plan(ctx context.Context, opts Options) (StoragePlan, error) {
 }
 
 // catalogueFiles reads the storage key of every file the catalogue references and
-// the content hash every thumbnail set is keyed by, from both the photo rows and
-// the per-file rows — a stacked RAW sibling lives only in the second.
+// the storage prefix and content hash every thumbnail set is keyed by, from both
+// the photo rows and the per-file rows — a stacked RAW sibling lives only in the
+// second. A thumbnail set's prefix is that of its own original's key.
 func (s *Service) catalogueFiles(ctx context.Context) (catalogueFiles, error) {
 	const pathQuery = `SELECT file_path FROM photos WHERE file_path <> ''
 		UNION SELECT file_path FROM photo_files WHERE file_path <> ''`
-	const hashQuery = `SELECT file_hash FROM photos WHERE file_hash <> ''
-		UNION SELECT file_hash FROM photo_files WHERE file_hash <> ''`
+	const hashQuery = `SELECT file_path, file_hash FROM photos WHERE file_hash <> ''
+		UNION SELECT file_path, file_hash FROM photo_files WHERE file_hash <> ''`
 
 	paths, err := queryStrings(ctx, s.pool, pathQuery)
 	if err != nil {
 		return catalogueFiles{}, fmt.Errorf("reset: reading catalogued file paths: %w", err)
 	}
-	hashes, err := queryStrings(ctx, s.pool, hashQuery)
+	hashes, err := queryThumbSets(ctx, s.pool, hashQuery)
 	if err != nil {
 		return catalogueFiles{}, fmt.Errorf("reset: reading catalogued file hashes: %w", err)
 	}
 	return catalogueFiles{paths: paths, hashes: hashes}, nil
+}
+
+// queryThumbSets runs a (file path, file hash) query and collects the distinct
+// thumbnail sets it names, each hash under its file's storage prefix.
+func queryThumbSets(ctx context.Context, pool *pgxpool.Pool, query string) ([]thumbSet, error) {
+	rows, err := pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("querying: %w", err)
+	}
+	defer rows.Close()
+
+	seen := make(map[thumbSet]struct{})
+	var sets []thumbSet
+	for rows.Next() {
+		var filePath, hash string
+		if err := rows.Scan(&filePath, &hash); err != nil {
+			return nil, fmt.Errorf("scanning: %w", err)
+		}
+		set := thumbSet{prefix: storekeys.PrefixOf(filePath), hash: hash}
+		if _, dup := seen[set]; dup {
+			continue
+		}
+		seen[set] = struct{}{}
+		sets = append(sets, set)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating: %w", err)
+	}
+	return sets, nil
 }
 
 // queryStrings runs a single-column query and collects its values.
@@ -576,7 +608,7 @@ func (s *Service) sweptKeys(ctx context.Context) ([]string, int, error) {
 // otherwise the cached sizes of every catalogued hash. A cache entry addressed by
 // a hash no photo has any more is harmless but occupies disk that the re-import
 // wants back.
-func (s *Service) clearThumbCache(hashes []string, opts Options, result *StorageResult) error {
+func (s *Service) clearThumbCache(hashes []thumbSet, opts Options, result *StorageResult) error {
 	if opts.OrphanSweep && s.cacheDir != "" {
 		for _, subdir := range []string{thumb.CacheSubdir, storyboard.CacheSubdir, avatar.CacheSubdir} {
 			dir := filepath.Join(s.cacheDir, subdir)
@@ -590,12 +622,12 @@ func (s *Service) clearThumbCache(hashes []string, opts Options, result *Storage
 	if s.thumbs == nil {
 		return nil
 	}
-	for _, hash := range hashes {
-		if err := s.thumbs.Remove(hash); err != nil {
+	for _, set := range hashes {
+		if err := s.thumbs.Remove(set.prefix, set.hash); err != nil {
 			if errors.Is(err, thumb.ErrInvalidHash) {
 				continue
 			}
-			return fmt.Errorf("reset: removing cached thumbnails for %s: %w", hash, err)
+			return fmt.Errorf("reset: removing cached thumbnails for %s: %w", set.hash, err)
 		}
 		result.ThumbCacheCleared++
 	}

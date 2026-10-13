@@ -375,17 +375,25 @@ func TestPublish_reportsWhatItWrote(t *testing.T) {
 func TestRenditionPrefix(t *testing.T) {
 	t.Parallel()
 
-	got, err := renditionPrefix(testHash, hls.Rendition1080p)
+	got, err := renditionPrefix("", testHash, hls.Rendition1080p)
 	if err != nil {
 		t.Fatalf("renditionPrefix: %v", err)
 	}
 	if want := "hls/" + testHash + "/1080p/"; got != want {
 		t.Errorf("renditionPrefix = %q, want %q", got, want)
 	}
-	if _, err := renditionPrefix("nope", hls.Rendition1080p); !errors.Is(err, hls.ErrInvalidHash) {
+	const project = "projects/pj0123456789abcdefghijklmn/"
+	got, err = renditionPrefix(project, testHash, hls.Rendition1080p)
+	if err != nil {
+		t.Fatalf("renditionPrefix(prefixed): %v", err)
+	}
+	if want := project + "hls/" + testHash + "/1080p/"; got != want {
+		t.Errorf("renditionPrefix(prefixed) = %q, want %q", got, want)
+	}
+	if _, err := renditionPrefix("", "nope", hls.Rendition1080p); !errors.Is(err, hls.ErrInvalidHash) {
 		t.Errorf("renditionPrefix with a bad hash = %v, want ErrInvalidHash", err)
 	}
-	if _, err := renditionPrefix(testHash, "../etc"); !errors.Is(err, hls.ErrInvalidRendition) {
+	if _, err := renditionPrefix("", testHash, "../etc"); !errors.Is(err, hls.ErrInvalidRendition) {
 		t.Errorf("renditionPrefix with a bad rendition = %v, want ErrInvalidRendition", err)
 	}
 }

@@ -24,6 +24,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 const (
@@ -37,7 +39,7 @@ const (
 	TargetType = "project"
 	// StoragePrefixRoot is the directory every created project's storage prefix
 	// lives under: "projects/<uid>/".
-	StoragePrefixRoot = "projects/"
+	StoragePrefixRoot = storekeys.ProjectsDir
 
 	// uidPrefix marks uids that identify a project row.
 	uidPrefix = "pj"

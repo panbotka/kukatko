@@ -53,7 +53,7 @@ func (h *harness) storeVideo(t *testing.T, name string, seed uint8) photos.Photo
 // the filesystem is what lets this fixture run over the object store too.
 func (h *harness) putSegment(t *testing.T, fileHash, rendition, name string, size int) string {
 	t.Helper()
-	key, err := hls.Key(fileHash, rendition, name)
+	key, err := hls.Key("", fileHash, rendition, name)
 	if err != nil {
 		t.Fatalf("hls.Key(%s, %s, %s): %v", fileHash, rendition, name, err)
 	}

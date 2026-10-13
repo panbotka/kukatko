@@ -13,9 +13,13 @@ import (
 
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/config"
+	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/sidecarexport"
+	"github.com/panbotka/kukatko/internal/storekeys"
+	"github.com/panbotka/kukatko/internal/thumb"
 )
 
 // TestIngest_dedupAndKeysArePerProject verifies the dedup key is (project,
@@ -60,6 +64,7 @@ func TestIngest_dedupAndKeysArePerProject(t *testing.T) {
 		t.Fatalf("B's photo in B: %v", err)
 	}
 	assertSeparateKeys(t, env.root, photoA, photoB, projectB.StoragePrefix)
+	assertSeparateDerivedKeys(t, env.thumbs, photoA, photoB)
 
 	if _, err := env.store.GetByUIDInProject(ctx, projectA.UID, inB.PhotoUID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Fatalf("B's photo read in A = %v, want ErrPhotoNotFound", err)
@@ -94,5 +99,43 @@ func assertSeparateKeys(t *testing.T, root string, photoA, photoB photos.Photo, 
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(key))); err != nil {
 			t.Errorf("original %s: %v", key, err)
 		}
+	}
+}
+
+// assertSeparateDerivedKeys checks the derived objects of two catalogued copies
+// of the same bytes (one hash) never share a key either: every builder takes the
+// prefix of the photo's own original, so the thumbnails, the sidecar and the
+// streaming segments of the two copies live in their own projects' trees — and
+// the thumbnails ingest generated for each are both in the cache.
+func assertSeparateDerivedKeys(t *testing.T, thumbs *thumb.Thumbnailer, photoA, photoB photos.Photo) {
+	t.Helper()
+	prefixA, prefixB := storekeys.PrefixOf(photoA.FilePath), storekeys.PrefixOf(photoB.FilePath)
+	if prefixA != "" || prefixB == "" {
+		t.Fatalf("prefixes A=%q B=%q, want the root layout for A and a project prefix for B", prefixA, prefixB)
+	}
+	thumbA, errA := thumb.RelPath(prefixA, photoA.FileHash, thumb.GridSize)
+	thumbB, errB := thumb.RelPath(prefixB, photoB.FileHash, thumb.GridSize)
+	sidecarA, errC := sidecarexport.KeyFor(photoA.FilePath)
+	sidecarB, errD := sidecarexport.KeyFor(photoB.FilePath)
+	hlsA, errE := hls.PrefixFor(prefixA, photoA.FileHash)
+	hlsB, errF := hls.PrefixFor(prefixB, photoB.FileHash)
+	if err := errors.Join(errA, errB, errC, errD, errE, errF); err != nil {
+		t.Fatalf("building derived keys: %v", err)
+	}
+	for _, pair := range [][2]string{{thumbA, thumbB}, {sidecarA, sidecarB}, {hlsA, hlsB}} {
+		if pair[0] == pair[1] {
+			t.Errorf("both projects share the derived key %q", pair[0])
+		}
+		if !strings.HasPrefix(pair[1], prefixB) {
+			t.Errorf("B's derived key %q is not under B's prefix %q", pair[1], prefixB)
+		}
+	}
+	for _, photo := range []photos.Photo{photoA, photoB} {
+		reader, err := thumbs.OpenCached(storekeys.PrefixOf(photo.FilePath), photo.FileHash, "tile_224")
+		if err != nil {
+			t.Errorf("thumbnail of %s under its own prefix: %v", photo.FilePath, err)
+			continue
+		}
+		_ = reader.Close()
 	}
 }

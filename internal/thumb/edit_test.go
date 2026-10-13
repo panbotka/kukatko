@@ -114,7 +114,7 @@ func TestGenerate_editLookupFailureFails(t *testing.T) {
 	if _, err := th.Generate(context.Background(), photo, "fit_720"); !errors.Is(err, boom) {
 		t.Fatalf("Generate error = %v, want the resolver's error", err)
 	}
-	if _, err := th.OpenCached(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
+	if _, err := th.OpenCached("", photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
 		t.Errorf("OpenCached error = %v, want ErrNotCached (nothing may be written)", err)
 	}
 }

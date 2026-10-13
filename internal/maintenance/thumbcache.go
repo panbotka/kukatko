@@ -4,15 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // thumbPathResolver is the subset of *thumb.Thumbnailer that ThumbCache needs:
-// resolving a (hash, size) pair to its absolute cache path. Keeping it as an
+// resolving a (prefix, hash, size) triple to its absolute cache path. Keeping it as an
 // interface lets ThumbCache be unit-tested without a real thumbnailer.
 type thumbPathResolver interface {
-	// Path returns the absolute cache path of the thumbnail for hash and size,
-	// whether or not it exists.
-	Path(hash, size string) (string, error)
+	// Path returns the absolute cache path of the thumbnail for hash and size
+	// under the storage prefix, whether or not it exists.
+	Path(prefix, hash, size string) (string, error)
 }
 
 // ThumbCache is a ThumbChecker backed by the on-disk thumbnail cache: it resolves
@@ -33,10 +35,11 @@ func NewThumbCache(resolver thumbPathResolver) *ThumbCache {
 }
 
 // HasThumbnail reports whether the representative thumbnail for fileHash exists in
-// the cache. A malformed hash that the resolver rejects is reported as an error;
+// the cache, under the storage prefix of the original stored at filePath
+// (storekeys.PrefixOf). A malformed hash that the resolver rejects is reported as an error;
 // a missing cache file is simply absent, not an error.
-func (c *ThumbCache) HasThumbnail(fileHash string) (bool, error) {
-	abs, err := c.resolver.Path(fileHash, c.size)
+func (c *ThumbCache) HasThumbnail(filePath, fileHash string) (bool, error) {
+	abs, err := c.resolver.Path(storekeys.PrefixOf(filePath), fileHash, c.size)
 	if err != nil {
 		return false, fmt.Errorf("maintenance: resolving thumbnail path for %s: %w", fileHash, err)
 	}

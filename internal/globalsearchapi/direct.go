@@ -103,7 +103,7 @@ func (a *API) resolveAlbum(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading album cover %s: %w", album.UID, err)
 	}
-	a.stampDirect(ctx, hit, covers[album.UID].PhotoUID, covers[album.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[album.UID].PhotoUID, covers[album.UID].FilePath, covers[album.UID].FileHash)
 	return nil
 }
 
@@ -119,7 +119,7 @@ func (a *API) resolveLabel(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading label cover %s: %w", label.UID, err)
 	}
-	a.stampDirect(ctx, hit, covers[label.UID].PhotoUID, covers[label.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[label.UID].PhotoUID, covers[label.UID].FilePath, covers[label.UID].FileHash)
 	return nil
 }
 
@@ -135,19 +135,19 @@ func (a *API) resolvePerson(ctx context.Context, hit *directHit) error {
 	if err != nil {
 		return fmt.Errorf("globalsearchapi: reading subject cover %s: %w", subject.UID, err)
 	}
-	a.stampDirect(ctx, hit, covers[subject.UID].PhotoUID, covers[subject.UID].FileHash)
+	a.stampDirect(ctx, hit, covers[subject.UID].PhotoUID, covers[subject.UID].FilePath, covers[subject.UID].FileHash)
 	return nil
 }
 
 // stampDirect puts a resolved cover onto a direct hit, doing nothing when the
 // entity has none — an absent map entry reads back as the zero cover, and an
 // empty photo uid is what says so.
-func (a *API) stampDirect(ctx context.Context, hit *directHit, photoUID, fileHash string) {
+func (a *API) stampDirect(ctx context.Context, hit *directHit, photoUID, filePath, fileHash string) {
 	if photoUID == "" {
 		return
 	}
 	hit.Cover = &photoUID
-	hit.ThumbURL = a.coverThumb(ctx, photoUID, fileHash)
+	hit.ThumbURL = a.coverThumb(ctx, photoUID, filePath, fileHash)
 }
 
 // resolvePhotoRef fills hit from whichever photo the id stands for: the photo

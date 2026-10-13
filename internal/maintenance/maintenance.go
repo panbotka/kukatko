@@ -126,8 +126,8 @@ type OriginalStore interface {
 // ThumbChecker reports whether a photo's representative thumbnail is cached.
 type ThumbChecker interface {
 	// HasThumbnail reports whether the representative thumbnail for fileHash exists
-	// in the cache.
-	HasThumbnail(fileHash string) (bool, error)
+	// in the cache, under the storage prefix of the original stored at filePath.
+	HasThumbnail(filePath, fileHash string) (bool, error)
 }
 
 // Enqueuer schedules the per-photo jobs the repairs need: thumbnail regeneration
@@ -506,7 +506,7 @@ func (s *Service) scanFiles(ctx context.Context) (missingOriginals, missingThumb
 		if !present {
 			origs.add(pf.PhotoUID)
 		}
-		cached, thumbErr := s.thumbs.HasThumbnail(pf.FileHash)
+		cached, thumbErr := s.thumbs.HasThumbnail(pf.FilePath, pf.FileHash)
 		if thumbErr != nil {
 			return Finding{}, Finding{}, fmt.Errorf("maintenance: checking thumbnail for %s: %w", pf.PhotoUID, thumbErr)
 		}

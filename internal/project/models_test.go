@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // TestValidateSlug verifies the slug format and the reserved words.
@@ -97,6 +99,31 @@ func TestStoragePrefixFor(t *testing.T) {
 	}
 	if err := ValidateStoragePrefix(got); err != nil {
 		t.Errorf("StoragePrefixFor result %q fails validation: %v", got, err)
+	}
+}
+
+// TestStoragePrefixFor_recognisedByStorekeys pins the uid shape newUID mints to
+// the one internal/storekeys accepts in a key: a prefix storekeys would not
+// recognise would put a created project's derived objects in the root layout,
+// where they collide with the bootstrap project's.
+func TestStoragePrefixFor_recognisedByStorekeys(t *testing.T) {
+	t.Parallel()
+
+	for range 50 {
+		uid, err := newUID()
+		if err != nil {
+			t.Fatalf("newUID: %v", err)
+		}
+		prefix := StoragePrefixFor(uid)
+		if got := storekeys.PrefixOf(prefix + "2024/05/x.jpg"); got != prefix {
+			t.Fatalf("storekeys.PrefixOf(%q) = %q, want %q", prefix+"2024/05/x.jpg", got, prefix)
+		}
+		if got := storekeys.ProjectUID(prefix); got != uid {
+			t.Fatalf("storekeys.ProjectUID(%q) = %q, want %q", prefix, got, uid)
+		}
+	}
+	if got := storekeys.ProjectUID(StoragePrefixFor(BootstrapUID)); got != BootstrapUID {
+		t.Errorf("the bootstrap project's future prefix names %q, want %q", got, BootstrapUID)
 	}
 }
 

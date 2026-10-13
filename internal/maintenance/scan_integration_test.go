@@ -257,7 +257,7 @@ func (h *harness) seedEmbedding(t *testing.T, uid string) {
 // thumbnail counts as present.
 func (h *harness) seedThumb(t *testing.T, fileHash string) {
 	t.Helper()
-	abs, err := h.thumbs.Path(fileHash, "tile_224")
+	abs, err := h.thumbs.Path("", fileHash, "tile_224")
 	if err != nil {
 		t.Fatalf("thumb.Path(%s): %v", fileHash, err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -127,7 +128,7 @@ func TestThumbRoute_publishedBackendRedirectsToSignedURL(t *testing.T) {
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("thumb status = %d, want 302", resp.StatusCode)
 	}
-	wantKey, err := thumb.RelPath(seeded.FileHash, "tile_100")
+	wantKey, err := thumb.RelPath(storekeys.PrefixOf(seeded.FilePath), seeded.FileHash, "tile_100")
 	if err != nil {
 		t.Fatalf("thumb.RelPath: %v", err)
 	}
@@ -224,7 +225,7 @@ func TestPhotoPayload_carriesSignedURLsOnPublishedBackend(t *testing.T) {
 
 	view := fetchFirstPhoto(t, env, client)
 
-	wantThumbKey, err := thumb.RelPath(seeded.FileHash, thumb.GridSize)
+	wantThumbKey, err := thumb.RelPath(storekeys.PrefixOf(seeded.FilePath), seeded.FileHash, thumb.GridSize)
 	if err != nil {
 		t.Fatalf("thumb.RelPath: %v", err)
 	}

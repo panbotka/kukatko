@@ -83,6 +83,9 @@ type FeaturedAlbum struct {
 	// CoverFileHash is the cover's SHA256, the thumbnail cache key. It never
 	// leaves the server: the API turns it into a thumbnail URL.
 	CoverFileHash string `json:"-"`
+	// CoverFilePath is the cover's original key, whose storage prefix is the
+	// prefix of its thumbnails. It never leaves the server either.
+	CoverFilePath string `json:"-"`
 	// CoverBlurhash is the cover's blurred placeholder, nil when it has none.
 	CoverBlurhash *string `json:"cover_blurhash,omitempty"`
 	// FeaturedBy is the account that last featured the album, nil when it is
@@ -263,6 +266,7 @@ SELECT a.uid, a.slug, a.title, a.description, a.type, a.cover_photo_uid,
        COALESCE(m.cover_uids, '{}'),
        COALESCE(picked.uid, derived.uid),
        COALESCE(picked.file_hash, derived.file_hash),
+       COALESCE(picked.file_path, derived.file_path),
        CASE WHEN picked.uid IS NOT NULL THEN picked.blurhash ELSE derived.blurhash END,
        a.featured_by
 FROM albums a
@@ -323,15 +327,16 @@ func listFeatured(
 	out := make([]FeaturedAlbum, 0)
 	for rows.Next() {
 		var fa FeaturedAlbum
-		var fileHash *string
+		var fileHash, filePath *string
 		if err := rows.Scan(
 			&fa.UID, &fa.Slug, &fa.Title, &fa.Description, &fa.Type, &fa.CoverPhotoUID,
 			&fa.Private, &fa.CreatedBy, &fa.CreatedAt, &fa.UpdatedAt, &fa.FeaturedUntil, &fa.FeaturedAt,
-			&fa.PhotoCount, &fa.CoverUIDs, &fa.CoverUID, &fileHash, &fa.CoverBlurhash, &fa.FeaturedBy,
+			&fa.PhotoCount, &fa.CoverUIDs, &fa.CoverUID, &fileHash, &filePath, &fa.CoverBlurhash, &fa.FeaturedBy,
 		); err != nil {
 			return nil, fmt.Errorf("organize: scanning featured album: %w", err)
 		}
 		fa.CoverFileHash = deref(fileHash)
+		fa.CoverFilePath = deref(filePath)
 		out = append(out, fa)
 	}
 	if err := rows.Err(); err != nil {

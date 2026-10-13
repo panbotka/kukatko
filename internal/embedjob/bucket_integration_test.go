@@ -16,6 +16,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // These tests run only under `make test-integration` and additionally need an
@@ -161,7 +162,8 @@ func TestEmbed_previewOnlyInTheBucket(t *testing.T) {
 		t.Fatalf("pruning the cache: %v", err)
 	}
 	// The state the failing jobs ran in: the size is available, but not locally.
-	if _, err := h.thumbnailer.OpenCached(photo.FileHash, embedjob.DefaultPreviewSize); err == nil {
+	prefix := storekeys.PrefixOf(photo.FilePath)
+	if _, err := h.thumbnailer.OpenCached(prefix, photo.FileHash, embedjob.DefaultPreviewSize); err == nil {
 		t.Fatal("the cache was not actually pruned; the test would prove nothing")
 	}
 
@@ -177,7 +179,7 @@ func TestEmbed_previewOnlyInTheBucket(t *testing.T) {
 	}
 
 	// Nothing was re-encoded to make that work: the bytes came from the bucket.
-	abs, err := h.thumbnailer.Path(photo.FileHash, embedjob.DefaultPreviewSize)
+	abs, err := h.thumbnailer.Path(prefix, photo.FileHash, embedjob.DefaultPreviewSize)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}

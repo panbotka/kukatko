@@ -46,7 +46,7 @@ func newHarness(t *testing.T) harness {
 // returns its absolute path, standing in for a completed generation.
 func (h harness) writeSprite(t *testing.T, hash string, data []byte) string {
 	t.Helper()
-	abs, err := h.gen.Path(hash)
+	abs, err := h.gen.Path("", hash)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestGenerator_Exists(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
-	got, err := h.gen.Exists(testHash)
+	got, err := h.gen.Exists("", testHash)
 	if err != nil {
 		t.Fatalf("Exists on empty cache: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestGenerator_Exists(t *testing.T) {
 	}
 
 	h.writeSprite(t, testHash, nil)
-	got, err = h.gen.Exists(testHash)
+	got, err = h.gen.Exists("", testHash)
 	if err != nil {
 		t.Fatalf("Exists on empty file: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestGenerator_Exists(t *testing.T) {
 	}
 
 	h.writeSprite(t, testHash, []byte("jpeg"))
-	got, err = h.gen.Exists(testHash)
+	got, err = h.gen.Exists("", testHash)
 	if err != nil {
 		t.Fatalf("Exists on a written sprite: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestGenerator_Exists_invalidHash(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
-	if _, err := h.gen.Exists("../escape"); !errors.Is(err, ErrInvalidHash) {
+	if _, err := h.gen.Exists("", "../escape"); !errors.Is(err, ErrInvalidHash) {
 		t.Errorf("Exists(../escape) error = %v, want ErrInvalidHash", err)
 	}
 }
@@ -174,7 +174,7 @@ func TestGenerator_Open_notGenerated(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t)
-	if _, err := h.gen.Open(testHash); !errors.Is(err, ErrNotGenerated) {
+	if _, err := h.gen.Open("", testHash); !errors.Is(err, ErrNotGenerated) {
 		t.Errorf("Open on empty cache error = %v, want ErrNotGenerated", err)
 	}
 }
@@ -187,7 +187,7 @@ func TestGenerator_OpenAndRemove(t *testing.T) {
 	h := newHarness(t)
 	h.writeSprite(t, testHash, []byte("sprite-bytes"))
 
-	reader, err := h.gen.Open(testHash)
+	reader, err := h.gen.Open("", testHash)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -200,13 +200,13 @@ func TestGenerator_OpenAndRemove(t *testing.T) {
 		t.Errorf("Open read %q, want %q", data, "sprite-bytes")
 	}
 
-	if err := h.gen.Remove(testHash); err != nil {
+	if err := h.gen.Remove("", testHash); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if _, err := h.gen.Open(testHash); !errors.Is(err, ErrNotGenerated) {
+	if _, err := h.gen.Open("", testHash); !errors.Is(err, ErrNotGenerated) {
 		t.Errorf("Open after Remove error = %v, want ErrNotGenerated", err)
 	}
-	if err := h.gen.Remove(testHash); err != nil {
+	if err := h.gen.Remove("", testHash); err != nil {
 		t.Errorf("second Remove = %v, want nil (idempotent)", err)
 	}
 }
@@ -265,7 +265,7 @@ func TestGenerator_Generate_missingOriginal(t *testing.T) {
 	if err := h.gen.Generate(t.Context(), testHash, "2026/01/missing.mp4", spec); err == nil {
 		t.Fatal("Generate over a missing original = nil, want an error")
 	}
-	cached, err := h.gen.Exists(testHash)
+	cached, err := h.gen.Exists("", testHash)
 	if err != nil {
 		t.Fatalf("Exists: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestGenerator_Generate_realVideo(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	abs, err := h.gen.Path(testHash)
+	abs, err := h.gen.Path("", testHash)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}

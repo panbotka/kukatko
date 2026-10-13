@@ -92,7 +92,7 @@ func vipsSupportsMime(mime string) bool {
 // orientation is applied by vipsthumbnail's built-in EXIF autorotation (the same
 // orientation Kukátko stored at import), so output matches the pure-Go engine.
 func (t *Thumbnailer) tryVips(
-	ctx context.Context, photo photos.Photo, src string, needed []string, result map[string]string,
+	ctx context.Context, photo photos.Photo, prefix, src string, needed []string, result map[string]string,
 ) bool {
 	if !t.usesVips() || !vipsSupportsMime(photo.FileMime) {
 		return false
@@ -104,7 +104,7 @@ func (t *Thumbnailer) tryVips(
 			if gctx.Err() != nil {
 				return gctx.Err()
 			}
-			return t.vipsWriteSize(gctx, src, photo.FileHash, name, result[name])
+			return t.vipsWriteSize(gctx, src, prefix, photo.FileHash, name, result[name])
 		})
 	}
 	return group.Wait() == nil
@@ -113,9 +113,9 @@ func (t *Thumbnailer) tryVips(
 // vipsWriteSize renders one size of src into absPath via vipsthumbnail, writing
 // to a sibling temp file and renaming it into place so no half-written thumbnail
 // is ever observed (matching the pure-Go atomic write), then publishes it to the
-// storage backend when that backend serves thumbnails from object URLs. hash is
-// the photo's file hash, which keys the published object.
-func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, hash, name, absPath string) error {
+// storage backend when that backend serves thumbnails from object URLs. prefix
+// and hash — the photo's storage prefix and file hash — key the published object.
+func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, prefix, hash, name, absPath string) error {
 	start := time.Now()
 	tmpPath, cleanup, err := reserveVipsTemp(absPath)
 	if err != nil {
@@ -133,7 +133,7 @@ func (t *Thumbnailer) vipsWriteSize(ctx context.Context, src, hash, name, absPat
 		return fmt.Errorf("thumb: rename vips temp: %w", err)
 	}
 	t.observer.ObserveThumbnail(time.Since(start))
-	return t.publishSize(ctx, hash, name, absPath)
+	return t.publishSize(ctx, prefix, hash, name, absPath)
 }
 
 // reserveVipsTemp creates the destination directory and a unique sibling temp

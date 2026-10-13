@@ -13,11 +13,15 @@ import (
 	"strings"
 
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // Prefix is the storage key prefix under which every sidecar lives. Sidecars form
 // a parallel tree mirroring the originals' layout: the original at
-// 2024/05/IMG_1234.jpg has its sidecar at sidecars/2024/05/IMG_1234.jpg.yml.
+// 2024/05/IMG_1234.jpg has its sidecar at sidecars/2024/05/IMG_1234.jpg.yml. The
+// tree hangs off the original's own storage prefix, so the sidecar of
+// projects/<uid>/2024/05/x.jpg is projects/<uid>/sidecars/2024/05/x.jpg.yml —
+// inside the project's tree, never sidecars/projects/….
 //
 // A parallel tree rather than a file literally beside the original, for three
 // reasons. The originals tree stays purely media, so the importers and scanners
@@ -27,7 +31,7 @@ import (
 // same root, on both the filesystem and the R2 backends — which is the property
 // that actually matters: the curation travels with the photos, and the backup
 // that syncs the originals picks the sidecars up with them.
-const Prefix = "sidecars"
+const Prefix = storekeys.SidecarDir
 
 // Extension is appended to the original's key to form the sidecar's. It is
 // appended rather than substituted for the original's extension so that
@@ -44,17 +48,20 @@ const MIME = "application/yaml"
 var ErrEmptyKey = errors.New("sidecarexport: photo has no file path")
 
 // KeyFor returns the storage key of the sidecar describing the original stored at
-// fileKey. It returns ErrEmptyKey when fileKey is empty.
+// fileKey: <storage prefix>sidecars/<rest of the key>.yml, where the storage
+// prefix is the original's own (storekeys.PrefixOf) and "" for the root layout.
+// It returns ErrEmptyKey when fileKey is empty or names a project prefix alone.
 //
-// The mapping is total and reversible: strip the prefix and the extension and the
-// original's key is back, which is what lets a rebuild walk the sidecar tree and
-// find each photo's bytes.
+// The mapping is total and reversible: strip the sidecars/ directory after the
+// storage prefix and the extension, and the original's key is back, which is
+// what lets a rebuild walk the sidecar tree and find each photo's bytes.
 func KeyFor(fileKey string) (string, error) {
-	clean := strings.TrimPrefix(path.Clean(strings.TrimSpace(fileKey)), "/")
-	if clean == "" || clean == "." {
+	prefix, rest := storekeys.Strip(fileKey)
+	rest = strings.TrimPrefix(path.Clean(rest), "/")
+	if rest == "" || rest == "." {
 		return "", ErrEmptyKey
 	}
-	return path.Join(Prefix, clean+Extension), nil
+	return storekeys.Join(prefix, path.Join(Prefix, rest+Extension)), nil
 }
 
 // ObjectStore is the subset of storage.Storage a Writer needs. It is declared

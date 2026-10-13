@@ -220,7 +220,7 @@ func TestRegenerateAll_overwritesStaleCache(t *testing.T) {
 		t.Fatalf("GenerateAll: %v", err)
 	}
 	size := SizeNames()[0]
-	abs, err := th.Path(photo.FileHash, size)
+	abs, err := th.Path("", photo.FileHash, size)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestRemove_deletesAllSizesIdempotently(t *testing.T) {
 		t.Fatalf("GenerateAll: %v", err)
 	}
 
-	if err := th.Remove(photo.FileHash); err != nil {
+	if err := th.Remove("", photo.FileHash); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	for size, abs := range generated {
@@ -336,7 +336,7 @@ func TestRemove_deletesAllSizesIdempotently(t *testing.T) {
 	}
 
 	// Removing again, with nothing cached, is a no-op.
-	if err := th.Remove(photo.FileHash); err != nil {
+	if err := th.Remove("", photo.FileHash); err != nil {
 		t.Errorf("second Remove: %v", err)
 	}
 }
@@ -345,7 +345,7 @@ func TestRemove_deletesAllSizesIdempotently(t *testing.T) {
 func TestRemove_invalidHash(t *testing.T) {
 	t.Parallel()
 	th, _ := newThumbnailer(t)
-	if err := th.Remove("xyz"); !errors.Is(err, ErrInvalidHash) {
+	if err := th.Remove("", "xyz"); !errors.Is(err, ErrInvalidHash) {
 		t.Errorf("Remove(\"xyz\") error = %v, want ErrInvalidHash", err)
 	}
 }
@@ -380,7 +380,7 @@ func TestGenerate_errors(t *testing.T) {
 func TestPath_sharding(t *testing.T) {
 	t.Parallel()
 	th, _ := newThumbnailer(t)
-	abs, err := th.Path(testHash, "fit_1280")
+	abs, err := th.Path("", testHash, "fit_1280")
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestPath_validation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := th.Path(tc.hash, tc.size); !errors.Is(err, tc.wantErr) {
+			if _, err := th.Path("", tc.hash, tc.size); !errors.Is(err, tc.wantErr) {
 				t.Errorf("Path(%q,%q) error = %v, want %v", tc.hash, tc.size, err, tc.wantErr)
 			}
 		})
@@ -421,14 +421,14 @@ func TestOpenCached(t *testing.T) {
 	th, store := newThumbnailer(t)
 	photo := storeJPEG(t, store, 400, 300, 0)
 
-	if _, err := th.OpenCached(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
+	if _, err := th.OpenCached("", photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
 		t.Errorf("OpenCached before generate error = %v, want ErrNotCached", err)
 	}
 
 	if _, err := th.Generate(context.Background(), photo, "fit_720"); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	rc, err := th.OpenCached(photo.FileHash, "fit_720")
+	rc, err := th.OpenCached("", photo.FileHash, "fit_720")
 	if err != nil {
 		t.Fatalf("OpenCached after generate: %v", err)
 	}

@@ -15,6 +15,9 @@ type Cover struct {
 	PhotoUID string
 	// FileHash is that photo's SHA256, the thumbnail cache key.
 	FileHash string
+	// FilePath is that photo's original key, whose storage prefix is the
+	// prefix of its thumbnails (storekeys.PrefixOf).
+	FilePath string
 }
 
 // subjectCoversSQL resolves the cover of a whole batch of subjects in one
@@ -40,7 +43,7 @@ type Cover struct {
 // library with no picture at all.
 const subjectCoversSQL = `
 WITH derived AS (
-    SELECT DISTINCT ON (m.subject_uid) m.subject_uid, p.uid AS photo_uid, p.file_hash
+    SELECT DISTINCT ON (m.subject_uid) m.subject_uid, p.uid AS photo_uid, p.file_hash, p.file_path
     FROM markers m
     JOIN photos p ON p.uid = m.photo_uid
     WHERE m.subject_uid = ANY($1) AND m.invalid = FALSE
@@ -50,7 +53,8 @@ WITH derived AS (
 )
 SELECT s.uid,
        COALESCE(picked.uid, derived.photo_uid),
-       COALESCE(picked.file_hash, derived.file_hash)
+       COALESCE(picked.file_hash, derived.file_hash),
+       COALESCE(picked.file_path, derived.file_path)
 FROM subjects s
 LEFT JOIN photos picked ON picked.uid = s.cover_photo_uid
 LEFT JOIN derived ON derived.subject_uid = s.uid
@@ -83,14 +87,14 @@ func (s *Store) SubjectCovers(ctx context.Context, projectUID string, uids []str
 		var uid string
 		// Both photo columns ride on a LEFT JOIN, so a subject with nothing to
 		// show still produces a row; a NULL uid is what says it has no cover.
-		var photoUID, fileHash *string
-		if err := rows.Scan(&uid, &photoUID, &fileHash); err != nil {
+		var photoUID, fileHash, filePath *string
+		if err := rows.Scan(&uid, &photoUID, &fileHash, &filePath); err != nil {
 			return nil, fmt.Errorf("people: scanning subject cover: %w", err)
 		}
 		if photoUID == nil {
 			continue
 		}
-		out[uid] = Cover{PhotoUID: *photoUID, FileHash: deref(fileHash)}
+		out[uid] = Cover{PhotoUID: *photoUID, FileHash: deref(fileHash), FilePath: deref(filePath)}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("people: iterating subject covers: %w", err)

@@ -103,7 +103,7 @@ func (f fakeFileInfo) Size() int64 { return f.size }
 // which would mean the test itself, not the code, is wrong.
 func segKey(t *testing.T, hash, rendition, name string) string {
 	t.Helper()
-	key, err := hls.Key(hash, rendition, name)
+	key, err := hls.Key("", hash, rendition, name)
 	if err != nil {
 		t.Fatalf("hls.Key(%s, %s, %s): %v", hash, rendition, name, err)
 	}

@@ -16,6 +16,9 @@ type Cover struct {
 	PhotoUID string
 	// FileHash is that photo's SHA256, the thumbnail cache key.
 	FileHash string
+	// FilePath is that photo's original key, whose storage prefix is the
+	// prefix of its thumbnails (storekeys.PrefixOf).
+	FilePath string
 }
 
 // coverVisible restricts a derived cover to a photo the entity's own grid would
@@ -44,7 +47,7 @@ const coverOrder = "COALESCE(p.taken_at, p.created_at) DESC, p.uid"
 // the album looks like — the same rule ListAlbums applies.
 const albumCoversSQL = `
 WITH derived AS (
-    SELECT DISTINCT ON (ap.album_uid) ap.album_uid, p.uid AS photo_uid, p.file_hash
+    SELECT DISTINCT ON (ap.album_uid) ap.album_uid, p.uid AS photo_uid, p.file_hash, p.file_path
     FROM album_photos ap
     JOIN photos p ON p.uid = ap.photo_uid AND p.project_id = $2
     WHERE ap.album_uid = ANY($1) AND ` + coverVisible + `
@@ -52,7 +55,8 @@ WITH derived AS (
 )
 SELECT a.uid,
        COALESCE(picked.uid, derived.photo_uid),
-       COALESCE(picked.file_hash, derived.file_hash)
+       COALESCE(picked.file_hash, derived.file_hash),
+       COALESCE(picked.file_path, derived.file_path)
 FROM albums a
 LEFT JOIN photos picked ON picked.uid = a.cover_photo_uid AND picked.project_id = $2
 LEFT JOIN derived ON derived.album_uid = a.uid
@@ -77,7 +81,7 @@ func (s *Store) AlbumCovers(ctx context.Context, projectUID string, uids []strin
 // batch that albumCoversSQL uses. A label has no cover to choose by hand, so
 // there is nothing to override the derivation with.
 const labelCoversSQL = `
-SELECT DISTINCT ON (pl.label_uid) pl.label_uid, p.uid, p.file_hash
+SELECT DISTINCT ON (pl.label_uid) pl.label_uid, p.uid, p.file_hash, p.file_path
 FROM photo_labels pl
 JOIN labels l ON l.uid = pl.label_uid AND l.project_id = $2
 JOIN photos p ON p.uid = pl.photo_uid AND p.project_id = $2
@@ -96,7 +100,7 @@ func (s *Store) LabelCovers(ctx context.Context, projectUID string, uids []strin
 }
 
 // covers runs a cover query — one whose projection is (entity uid, photo uid,
-// file hash), the project bound as $2 — over the batch of uids and collects the
+// file hash, file path), the project bound as $2 — over the batch of uids and collects the
 // rows that resolved. The
 // photo columns arrive nullable because an entity with nothing to show still
 // produces a row in the album variant; such a row is dropped rather than mapped
@@ -132,18 +136,18 @@ func (s *Store) covers(
 	return out, nil
 }
 
-// scanCover reads one (entity uid, photo uid, file hash) row, returning a nil
-// cover for an entity that has none.
+// scanCover reads one (entity uid, photo uid, file hash, file path) row,
+// returning a nil cover for an entity that has none.
 func scanCover(row pgx.Row) (string, *Cover, error) {
 	var uid string
-	var photoUID, fileHash *string
-	if err := row.Scan(&uid, &photoUID, &fileHash); err != nil {
+	var photoUID, fileHash, filePath *string
+	if err := row.Scan(&uid, &photoUID, &fileHash, &filePath); err != nil {
 		return "", nil, fmt.Errorf("organize: scanning cover: %w", err)
 	}
 	if photoUID == nil {
 		return uid, nil, nil
 	}
-	return uid, &Cover{PhotoUID: *photoUID, FileHash: deref(fileHash)}, nil
+	return uid, &Cover{PhotoUID: *photoUID, FileHash: deref(fileHash), FilePath: deref(filePath)}, nil
 }
 
 // deref returns the string ptr points at, or "" when it is nil. A cover's file

@@ -170,7 +170,7 @@ func TestObjectKeys_expandsEveryArtifact(t *testing.T) {
 	t.Parallel()
 
 	hash := strings.Repeat("ab", 32)
-	files := catalogueFiles{paths: []string{"2024/05/IMG_1.jpg"}, hashes: []string{hash}}
+	files := catalogueFiles{paths: []string{"2024/05/IMG_1.jpg"}, hashes: []thumbSet{{hash: hash}}}
 	keys, counts := files.objectKeys()
 
 	sizes := thumb.SizeNames()
@@ -198,7 +198,7 @@ func TestObjectKeys_expandsEveryArtifact(t *testing.T) {
 func TestObjectKeys_skipsUnusableRows(t *testing.T) {
 	t.Parallel()
 
-	files := catalogueFiles{paths: []string{"", "2024/05/IMG_1.jpg"}, hashes: []string{"xy", ""}}
+	files := catalogueFiles{paths: []string{"", "2024/05/IMG_1.jpg"}, hashes: []thumbSet{{hash: "xy"}, {}}}
 	keys, counts := files.objectKeys()
 
 	if counts.Thumbnails != 0 {

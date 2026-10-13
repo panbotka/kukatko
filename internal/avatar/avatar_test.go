@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // testHash is a hex file hash long enough to shard the cache tree.
@@ -85,13 +86,67 @@ func readAll(t *testing.T, reader io.ReadCloser) []byte {
 func TestRelPath_shardsAndNames(t *testing.T) {
 	t.Parallel()
 
-	got, err := RelPath(testHash, "cover")
+	got, err := RelPath("", testHash, "cover")
 	if err != nil {
 		t.Fatalf("RelPath returned an error: %v", err)
 	}
 	want := "avatar/aa/bb/cc/" + testHash + "_cover_320.jpg"
 	if got != want {
 		t.Errorf("RelPath = %q, want %q", got, want)
+	}
+}
+
+// TestRelPath_layouts covers the avatar's cache path in both layouts: the root
+// layout keeps the historical avatar/… path, a project prefix goes in front of
+// it, and a malformed prefix is refused rather than turned into a path.
+func TestRelPath_layouts(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "projects/pj0123456789abcdefghijklmn/"
+	tests := []struct {
+		name    string
+		prefix  string
+		want    string
+		wantErr error
+	}{
+		{"root layout", "", "avatar/aa/bb/cc/" + testHash + "_cover_320.jpg", nil},
+		{"project prefix", prefix, prefix + "avatar/aa/bb/cc/" + testHash + "_cover_320.jpg", nil},
+		{"traversal prefix", "../", "", storekeys.ErrInvalidPrefix},
+		{"foreign prefix", "other/", "", storekeys.ErrInvalidPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := RelPath(tt.prefix, testHash, "cover")
+			if !errors.Is(err, tt.wantErr) || got != tt.want {
+				t.Errorf("RelPath(%q) = %q, %v; want %q, %v", tt.prefix, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestOpen_cachesUnderThePhotosPrefix proves the rendition of a prefixed photo is
+// cached under the prefix of the photo's own original.
+func TestOpen_cachesUnderThePhotosPrefix(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "projects/pj0123456789abcdefghijklmn/"
+	cacheDir := t.TempDir()
+	renderer := New(&fakeSource{jpeg: gradientJPEG(t, 1200, 800)}, cacheDir)
+	photo := photos.Photo{
+		UID: "ph_1", FileHash: testHash, FilePath: prefix + "2024/05/x.jpg", FileWidth: 1200, FileHeight: 800,
+	}
+	reader, _, err := renderer.Open(t.Context(), photo, nil)
+	if err != nil {
+		t.Fatalf("Open returned an error: %v", err)
+	}
+	_ = readAll(t, reader)
+	rel, err := RelPath(prefix, testHash, variantKey(nil))
+	if err != nil {
+		t.Fatalf("RelPath returned an error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheDir, filepath.FromSlash(rel))); err != nil {
+		t.Errorf("the rendition was not cached under the photo's prefix: %v", err)
 	}
 }
 
@@ -110,7 +165,7 @@ func TestRelPath_rejectsUnusableHash(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := RelPath(tt.hash, "cover"); !errors.Is(err, ErrInvalidHash) {
+			if _, err := RelPath("", tt.hash, "cover"); !errors.Is(err, ErrInvalidHash) {
 				t.Errorf("RelPath(%q) error = %v, want ErrInvalidHash", tt.hash, err)
 			}
 		})
@@ -295,7 +350,7 @@ func TestOpen_cachesTheRenditionAndServesItBack(t *testing.T) {
 	}
 	firstData := readAll(t, first)
 
-	rel, err := RelPath(photo.FileHash, variantKey(face))
+	rel, err := RelPath("", photo.FileHash, variantKey(face))
 	if err != nil {
 		t.Fatalf("RelPath returned an error: %v", err)
 	}

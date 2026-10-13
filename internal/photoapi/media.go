@@ -94,7 +94,7 @@ func (a *API) handleThumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if signed := a.media.ThumbObject(photo.FileHash, size); signed != "" && !wantsProxy(r) {
+	if signed := a.media.ThumbObject(photo.FilePath, photo.FileHash, size); signed != "" && !wantsProxy(r) {
 		redirectToMedia(w, r, signed)
 		return
 	}

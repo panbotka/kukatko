@@ -107,7 +107,9 @@ func (a *API) handleFeaturedList(w http.ResponseWriter, r *http.Request) {
 	for _, album := range albums {
 		view := featuredAlbumView{FeaturedAlbum: album}
 		if album.CoverUID != nil && album.CoverFileHash != "" {
-			view.ThumbURL = a.media.Thumb(r.Context(), *album.CoverUID, album.CoverFileHash, thumb.GridSize)
+			view.ThumbURL = a.media.Thumb(
+				r.Context(), *album.CoverUID, album.CoverFilePath, album.CoverFileHash, thumb.GridSize,
+			)
 		}
 		views = append(views, view)
 	}

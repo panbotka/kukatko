@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/hlsjob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // playlistContentType is the media type both playlists are served as. It is the
@@ -192,7 +193,7 @@ func (a *API) handleHLSSegment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "reading streaming rendition failed")
 		return
 	}
-	key, keyErr := hls.Key(photo.FileHash, rendition, name)
+	key, keyErr := hls.Key(storekeys.PrefixOf(photo.FilePath), photo.FileHash, rendition, name)
 	if !has || keyErr != nil {
 		writeError(w, http.StatusNotFound, "no such segment")
 		return

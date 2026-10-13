@@ -349,16 +349,18 @@ because this is where you will look when the database is gone.
 
 ### Where they live
 
-Sidecars form a **parallel tree** under the `sidecars/` prefix of the storage root, mirroring the
-originals' layout:
+Sidecars form a **parallel tree** under the `sidecars/` directory of the original's own storage prefix
+(the root of the store for project `v`, `projects/<uid>/` for a created project), mirroring the originals'
+layout:
 
 | Original | Sidecar |
 | --- | --- |
 | `2024/05/IMG_1234.jpg` | `sidecars/2024/05/IMG_1234.jpg.yml` |
 | `2019/12/VID_0001.mp4` | `sidecars/2019/12/VID_0001.mp4.yml` |
+| `projects/<uid>/2024/05/IMG_1.jpg` | `projects/<uid>/sidecars/2024/05/IMG_1.jpg.yml` |
 
-The mapping is total and reversible: strip the `sidecars/` prefix and the trailing `.yml` and you
-have the original's storage key. Three consequences worth knowing:
+The mapping is total and reversible: strip the `sidecars/` directory after the prefix and the trailing
+`.yml` and you have the original's storage key. Three consequences worth knowing:
 
 - **The extension is appended, not replaced.** `IMG_1.jpg` and `IMG_1.png` are two different photos
   and get two different sidecars. Replacing the extension would collide them onto one file, and each

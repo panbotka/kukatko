@@ -15,6 +15,7 @@ import (
 	"github.com/panbotka/kukatko/internal/hls"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/video"
 )
 
@@ -63,7 +64,7 @@ func (s *Service) encodeRendition(
 	if err != nil {
 		return 0, err
 	}
-	prefix, err := renditionPrefix(photo.FileHash, r.Name)
+	prefix, err := renditionPrefix(storekeys.PrefixOf(photo.FilePath), photo.FileHash, r.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -221,9 +222,10 @@ func digest(path string) (string, int64, error) {
 }
 
 // renditionPrefix returns the key prefix holding one rendition's objects,
-// hls/<file_hash>/<rendition>/.
-func renditionPrefix(fileHash, rendition string) (string, error) {
-	prefix, err := hls.PrefixFor(fileHash)
+// <storagePrefix>hls/<file_hash>/<rendition>/, where storagePrefix is that of
+// the video's own original.
+func renditionPrefix(storagePrefix, fileHash, rendition string) (string, error) {
+	prefix, err := hls.PrefixFor(storagePrefix, fileHash)
 	if err != nil {
 		return "", fmt.Errorf("hlsjob: %w", err)
 	}

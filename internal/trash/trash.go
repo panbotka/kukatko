@@ -19,8 +19,10 @@
 // missing one). The scheduled retention purge has no request and so no project;
 // it lists the active projects and sweeps each one's trash in turn. The objects a
 // purge deletes are named by the photo's own rows — the file_path of every
-// stored file and the file_hash the derived media are keyed by — never
-// recomputed from the project, so a photo is cleaned up where it actually lives.
+// stored file and the file_hash the derived media are keyed by, under the
+// storage prefix of that file's own original (storekeys.PrefixOf(file_path)) —
+// never recomputed from the project, so a photo is cleaned up where it actually
+// lives, even in a project half-way through its storage move.
 package trash
 
 import (
@@ -37,6 +39,7 @@ import (
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecarexport"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -108,10 +111,11 @@ type FileStorage interface {
 }
 
 // ThumbStore is the subset of the thumbnailer the purge needs: removing every
-// cached size for a file hash.
+// cached size for a file hash under a storage prefix.
 type ThumbStore interface {
-	// Remove deletes every cached thumbnail size for the given file hash.
-	Remove(hash string) error
+	// Remove deletes every cached thumbnail size for the given file hash under
+	// the given storage prefix (that of the photo's own original).
+	Remove(prefix, hash string) error
 }
 
 // StoryboardStore is the subset of the storyboard generator the purge needs:
@@ -119,9 +123,10 @@ type ThumbStore interface {
 // optional — a wiring without it simply leaves the sprite behind, which is
 // regenerable derived media and never catalogue state.
 type StoryboardStore interface {
-	// Remove deletes the cached storyboard sprite for the given file hash. A hash
-	// that never had one is not an error.
-	Remove(hash string) error
+	// Remove deletes the cached storyboard sprite for the given file hash under
+	// the given storage prefix (that of the video's own original). A hash that
+	// never had one is not an error.
+	Remove(prefix, hash string) error
 }
 
 // RemoteRemover deletes a backup object from a configured remote (S3-compatible)
@@ -367,20 +372,23 @@ func (s *Service) purgeOne(ctx context.Context, projectUID, uid string, meta aud
 // thumbnails, the storyboard sprite, the HLS segments and (when configured) the
 // remote backup object for a single stored file. A missing original is ignored;
 // a malformed sidecar hash skips thumbnail removal rather than failing the purge.
+// Every derived object is looked for under the storage prefix of the file's own
+// original.
 func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) error {
+	prefix := storekeys.PrefixOf(file.FilePath)
 	if err := s.storage.Delete(ctx, file.FilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("deleting original %s: %w", file.FilePath, err)
 	}
 	if err := s.deleteSidecar(ctx, file.FilePath); err != nil {
 		return err
 	}
-	if err := s.thumbnailer.Remove(file.FileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
+	if err := s.thumbnailer.Remove(prefix, file.FileHash); err != nil && !errors.Is(err, thumb.ErrInvalidHash) {
 		return fmt.Errorf("removing thumbnails for %s: %w", file.FileHash, err)
 	}
-	if err := s.deleteStoryboard(file.FileHash); err != nil {
+	if err := s.deleteStoryboard(prefix, file.FileHash); err != nil {
 		return err
 	}
-	if err := s.deleteHLS(ctx, file.FileHash); err != nil {
+	if err := s.deleteHLS(ctx, prefix, file.FileHash); err != nil {
 		return err
 	}
 	if s.remote != nil {
@@ -396,19 +404,20 @@ func (s *Service) deleteArtifacts(ctx context.Context, file photos.PhotoFile) er
 // condition that skips thumbnail removal) is skipped rather than failing the
 // purge: the sprite is regenerable derived media, and an unrelated hash problem
 // must not strand the row.
-func (s *Service) deleteStoryboard(fileHash string) error {
+func (s *Service) deleteStoryboard(prefix, fileHash string) error {
 	if s.storyboards == nil {
 		return nil
 	}
-	if err := s.storyboards.Remove(fileHash); err != nil && !errors.Is(err, storyboard.ErrInvalidHash) {
+	if err := s.storyboards.Remove(prefix, fileHash); err != nil && !errors.Is(err, storyboard.ErrInvalidHash) {
 		return fmt.Errorf("removing storyboard for %s: %w", fileHash, err)
 	}
 	return nil
 }
 
 // deleteHLS removes every HLS object of the purged file: the initialisation and
-// media segments of each rendition, all of them under the hls/<file_hash>/ prefix
-// (see internal/hls). They are derived media like the thumbnails, but they live
+// media segments of each rendition, all of them under the
+// <storagePrefix>hls/<file_hash>/ prefix (see internal/hls), storagePrefix being
+// that of the file's own original. They are derived media like the thumbnails, but they live
 // in the object store rather than a local cache, and unlike a thumbnail their
 // keys cannot be enumerated from the catalogue — how many segments a video was
 // cut into, and in which renditions, is known only to the store. So they are
@@ -424,12 +433,12 @@ func (s *Service) deleteStoryboard(fileHash string) error {
 // The keys are collected before anything is deleted rather than deleted inside
 // the listing callback: the filesystem backend lists by walking the directory
 // tree it would be deleting from underneath itself.
-func (s *Service) deleteHLS(ctx context.Context, fileHash string) error {
+func (s *Service) deleteHLS(ctx context.Context, storagePrefix, fileHash string) error {
 	lister, ok := s.storage.(storage.PrefixLister)
 	if !ok {
 		return nil
 	}
-	prefix, err := hls.PrefixFor(fileHash)
+	prefix, err := hls.PrefixFor(storagePrefix, fileHash)
 	if err != nil {
 		// A malformed hash addresses no segments; there is nothing to clean up.
 		return nil //nolint:nilerr // an unusable hash is not a purge failure

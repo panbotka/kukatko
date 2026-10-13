@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
 	"github.com/panbotka/kukatko/internal/video"
@@ -359,7 +360,7 @@ func (h *harness) storeVideo(t *testing.T, name, filter string, width, height in
 // (white) — the cheap stand-in for looking at a thumbnail and calling it black.
 func (h *harness) meanLuminance(t *testing.T, photo photos.Photo, size string) float64 {
 	t.Helper()
-	reader, err := h.thumbnailer.OpenCached(photo.FileHash, size)
+	reader, err := h.thumbnailer.OpenCached(storekeys.PrefixOf(photo.FilePath), photo.FileHash, size)
 	if err != nil {
 		t.Fatalf("opening the %s rendition: %v", size, err)
 	}
@@ -389,7 +390,7 @@ func (h *harness) meanLuminance(t *testing.T, photo photos.Photo, size string) f
 // behind for a clip that opens on darkness.
 func (h *harness) plantBlackRendition(t *testing.T, photo photos.Photo, size string) {
 	t.Helper()
-	abs, err := h.thumbnailer.Path(photo.FileHash, size)
+	abs, err := h.thumbnailer.Path(storekeys.PrefixOf(photo.FilePath), photo.FileHash, size)
 	if err != nil {
 		t.Fatalf("thumbnail path: %v", err)
 	}

@@ -34,6 +34,19 @@ func TestKeyFor(t *testing.T) {
 		{"empty", "", "", ErrEmptyKey},
 		{"only space", "   ", "", ErrEmptyKey},
 		{"only a slash", "/", "", ErrEmptyKey},
+		{
+			"project original", "projects/pj0123456789abcdefghijklmn/2024/05/x.jpg",
+			"projects/pj0123456789abcdefghijklmn/sidecars/2024/05/x.jpg.yml", nil,
+		},
+		{
+			"project original with a leading slash", "/projects/pj0123456789abcdefghijklmn/2024/05/x.jpg",
+			"projects/pj0123456789abcdefghijklmn/sidecars/2024/05/x.jpg.yml", nil,
+		},
+		{"project prefix alone", "projects/pj0123456789abcdefghijklmn/", "", ErrEmptyKey},
+		{
+			"a projects/ tree that is no project stays in the root layout", "projects/notauid/2024/05/x.jpg",
+			"sidecars/projects/notauid/2024/05/x.jpg.yml", nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

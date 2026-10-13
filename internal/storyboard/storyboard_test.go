@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // TestPlan_layout covers the grid the planner lays out for clips of very
@@ -144,7 +146,7 @@ func TestRelPath(t *testing.T) {
 	t.Parallel()
 
 	const hash = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-	got, err := RelPath(hash)
+	got, err := RelPath("", hash)
 	if err != nil {
 		t.Fatalf("RelPath: %v", err)
 	}
@@ -157,13 +159,45 @@ func TestRelPath(t *testing.T) {
 	}
 }
 
+// TestRelPath_layouts covers the sprite's cache path in both layouts: the root
+// layout keeps the historical storyboard/… path, a project prefix goes in front
+// of it, and a malformed prefix is refused rather than turned into a path.
+func TestRelPath_layouts(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hash   = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+		prefix = "projects/pj0123456789abcdefghijklmn/"
+	)
+	tests := []struct {
+		name    string
+		prefix  string
+		want    string
+		wantErr error
+	}{
+		{"root layout", "", "storyboard/ab/cd/ef/" + hash + "_sb.jpg", nil},
+		{"project prefix", prefix, prefix + "storyboard/ab/cd/ef/" + hash + "_sb.jpg", nil},
+		{"traversal prefix", "../../", "", storekeys.ErrInvalidPrefix},
+		{"foreign prefix", "other/", "", storekeys.ErrInvalidPrefix},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := RelPath(tt.prefix, hash)
+			if !errors.Is(err, tt.wantErr) || got != tt.want {
+				t.Errorf("RelPath(%q) = %q, %v; want %q, %v", tt.prefix, got, err, tt.want, tt.wantErr)
+			}
+		})
+	}
+}
+
 // TestRelPath_invalidHash verifies a hash that could let a caller escape the cache
 // root — empty, too short, non-hex, or carrying path separators — is refused.
 func TestRelPath_invalidHash(t *testing.T) {
 	t.Parallel()
 
 	for _, hash := range []string{"", "ab", "abcde", "../../etc/passwd", "ABCDEF01", "zzzzzz"} {
-		if _, err := RelPath(hash); !errors.Is(err, ErrInvalidHash) {
+		if _, err := RelPath("", hash); !errors.Is(err, ErrInvalidHash) {
 			t.Errorf("RelPath(%q) error = %v, want ErrInvalidHash", hash, err)
 		}
 	}

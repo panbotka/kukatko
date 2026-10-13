@@ -14,6 +14,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // storyboardBody is the wire shape of the storyboard status endpoint.
@@ -57,7 +58,7 @@ func (e *env) seedTimedVideo(t *testing.T, name string, durationMs int) photos.P
 // standing in for a completed storyboard job.
 func (e *env) plantSprite(t *testing.T, photo photos.Photo, data []byte) {
 	t.Helper()
-	abs, err := e.storyboards.Path(photo.FileHash)
+	abs, err := e.storyboards.Path(storekeys.PrefixOf(photo.FilePath), photo.FileHash)
 	if err != nil {
 		t.Fatalf("storyboard.Path: %v", err)
 	}

@@ -206,7 +206,7 @@ func TestGenerate_publishesEachSizeToObjectStore(t *testing.T) {
 	}
 
 	for _, size := range SizeNames() {
-		rel, err := RelPath(photo.FileHash, size)
+		rel, err := RelPath("", photo.FileHash, size)
 		if err != nil {
 			t.Fatalf("RelPath(%s): %v", size, err)
 		}
@@ -218,7 +218,7 @@ func TestGenerate_publishesEachSizeToObjectStore(t *testing.T) {
 		if sf.MIME != thumbMIME {
 			t.Errorf("size %s published MIME = %q, want %q", size, sf.MIME, thumbMIME)
 		}
-		abs, err := th.Path(photo.FileHash, size)
+		abs, err := th.Path("", photo.FileHash, size)
 		if err != nil {
 			t.Fatalf("Path(%s): %v", size, err)
 		}
@@ -254,7 +254,7 @@ func TestGenerate_publishFailureRemovesCachedFile(t *testing.T) {
 	if _, err := th.Generate(context.Background(), photo, GridSize); err == nil {
 		t.Fatal("Generate: expected error from failed publish, got nil")
 	}
-	abs, err := th.Path(photo.FileHash, GridSize)
+	abs, err := th.Path("", photo.FileHash, GridSize)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestGenerate_skipsSizesAlreadyInTheBucket(t *testing.T) {
 		t.Errorf("second GenerateAll listed the store %d time(s) for one photo, want exactly 1", lists-firstLists)
 	}
 	for _, size := range SizeNames() {
-		abs, err := th.Path(photo.FileHash, size)
+		abs, err := th.Path("", photo.FileHash, size)
 		if err != nil {
 			t.Fatalf("Path(%s): %v", size, err)
 		}
@@ -362,7 +362,7 @@ func TestGenerate_failedPublishLeavesTheSizeUngenerated(t *testing.T) {
 	if _, err := th.Generate(t.Context(), photo, GridSize); err == nil {
 		t.Fatal("Generate: expected error from failed publish, got nil")
 	}
-	rel, err := RelPath(photo.FileHash, GridSize)
+	rel, err := RelPath("", photo.FileHash, GridSize)
 	if err != nil {
 		t.Fatalf("RelPath: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestGenerate_failedPublishLeavesTheSizeUngenerated(t *testing.T) {
 	if _, ok := pub.recorded(rel); !ok {
 		t.Errorf("retry did not publish %s; a failed upload must not count as generated", rel)
 	}
-	abs, err := th.Path(photo.FileHash, GridSize)
+	abs, err := th.Path("", photo.FileHash, GridSize)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -406,7 +406,7 @@ func TestGenerate_listingFailureFallsBackToEncoding(t *testing.T) {
 	if _, err := th.Generate(t.Context(), photo, GridSize); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	rel, err := RelPath(photo.FileHash, GridSize)
+	rel, err := RelPath("", photo.FileHash, GridSize)
 	if err != nil {
 		t.Fatalf("RelPath: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestGenerate_backendThatCannotListStillGenerates(t *testing.T) {
 	if _, lists := pub.counts(); lists != 0 {
 		t.Errorf("store was listed %d time(s) through a backend that cannot list, want 0", lists)
 	}
-	rel, err := RelPath(photo.FileHash, GridSize)
+	rel, err := RelPath("", photo.FileHash, GridSize)
 	if err != nil {
 		t.Fatalf("RelPath: %v", err)
 	}
@@ -515,7 +515,7 @@ func TestOpenOrGenerate_readsThePublishedObject(t *testing.T) {
 	publishedPuts, _ := pub.counts()
 
 	// The trap: the local cache alone says the size does not exist.
-	if _, err := th.OpenCached(photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
+	if _, err := th.OpenCached("", photo.FileHash, "fit_720"); !errors.Is(err, ErrNotCached) {
 		t.Fatalf("OpenCached over a pruned cache = %v, want ErrNotCached", err)
 	}
 
@@ -529,7 +529,7 @@ func TestOpenOrGenerate_readsThePublishedObject(t *testing.T) {
 	if puts, _ := pub.counts(); puts != publishedPuts {
 		t.Errorf("reading the published size made %d further Put(s), want 0", puts-publishedPuts)
 	}
-	abs, err := th.Path(photo.FileHash, "fit_720")
+	abs, err := th.Path("", photo.FileHash, "fit_720")
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestOpenOrGenerate_encodesWhatIsNowhereYet(t *testing.T) {
 	if bounds := decodeAll(t, reader).Bounds(); bounds.Dx() != 720 || bounds.Dy() != 540 {
 		t.Errorf("generated fit_720 decoded to %dx%d, want 720x540", bounds.Dx(), bounds.Dy())
 	}
-	rel, err := RelPath(photo.FileHash, "fit_720")
+	rel, err := RelPath("", photo.FileHash, "fit_720")
 	if err != nil {
 		t.Fatalf("RelPath: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestOpenOrGenerate_filesystemBackendServesTheCache(t *testing.T) {
 	if bounds := decodeAll(t, first).Bounds(); bounds.Dx() != 224 || bounds.Dy() != 224 {
 		t.Errorf("tile_224 decoded to %dx%d, want 224x224", bounds.Dx(), bounds.Dy())
 	}
-	abs, err := th.Path(photo.FileHash, "tile_224")
+	abs, err := th.Path("", photo.FileHash, "tile_224")
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}

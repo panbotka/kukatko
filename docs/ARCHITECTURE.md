@@ -195,8 +195,28 @@ research ([§17](#17-reference)).
     library (~120 GB).
 - **Object key = `photos.file_path` / `photo_files.file_path` verbatim.** That value is already in Postgres
   and is not derived; the key therefore *is* it → **no new column and no key migration**. Thumbnails
-  keep their hash-derived cache layout, which becomes the key directly. The key is **not a secret**:
+  keep their hash-derived cache layout (under the original's storage prefix), which becomes the key directly. The key is **not a secret**:
   a request without a valid signature is rejected by the Worker before it ever reaches the object.
+- **Two layouts, one rule (multi-tenancy).** Every project's objects form one tree under the project's
+  `storage_prefix`: `""` — the **root layout** — for the bootstrap project `v` until its storage move, and
+  `projects/<uid>/` for every created project. The tree is the same under either:
+
+  | Object | Root layout (`v`) | Created project |
+  | --- | --- | --- |
+  | original | `2024/05/x.jpg` | `projects/<uid>/2024/05/x.jpg` |
+  | sidecar | `sidecars/2024/05/x.jpg.yml` | `projects/<uid>/sidecars/2024/05/x.jpg.yml` |
+  | thumbnail | `thumb/aa/bb/cc/<hash>_<size>.jpg` | `projects/<uid>/thumb/aa/bb/cc/<hash>_<size>.jpg` |
+  | HLS segment | `hls/<hash>/<rendition>/<name>` | `projects/<uid>/hls/<hash>/<rendition>/<name>` |
+  | genealogy | `families.yaml` | `projects/<uid>/families.yaml` |
+  | local cache | `storyboard/…`, `avatar/…` | `projects/<uid>/storyboard/…`, `projects/<uid>/avatar/…` |
+
+  **The rule:** the layout of a photo's derived objects is the layout of its **own original** — every builder
+  takes `storekeys.PrefixOf(photos.file_path)`, never the project row — so a project half-way through its
+  storage move is consistent per photo and no read ever falls back or guesses. Only `families.yaml`, which
+  belongs to no photo, uses the project's current `storage_prefix`. Because a created project's prefix is
+  never empty and holds its own uid, two projects storing identical bytes (one hash) never share a key —
+  not for the original, nor for anything derived from it. `storekeys.ClassifyWithProject` reads both layouts
+  back (kind + project uid); `db/` and `.tmp/` exist only at the root.
 - **Signed URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, the signature covers
   both the key and the expiry. **Two secrets are verified at once** (current + previous), so rotation has no window
   of broken URLs. Default TTL 1 h; every API response carries a freshly signed URL.

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/video"
 )
 
@@ -48,21 +49,21 @@ func New(store storage.Storage, cacheDir string) *Generator {
 	return &Generator{originals: store, cacheDir: cacheDir}
 }
 
-// Path returns the absolute filesystem path of the sprite for the given file
-// hash, whether or not it exists yet, or ErrInvalidHash for a malformed hash.
-func (g *Generator) Path(hash string) (string, error) {
-	rel, err := RelPath(hash)
+// Path returns the absolute filesystem path of the sprite for the given storage
+// prefix and file hash, whether or not it exists yet, or the error of RelPath.
+func (g *Generator) Path(prefix, hash string) (string, error) {
+	rel, err := RelPath(prefix, hash)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(g.cacheDir, filepath.FromSlash(rel)), nil
 }
 
-// Exists reports whether the sprite for hash has already been generated. It
-// returns ErrInvalidHash for a malformed hash and a wrapped error for an I/O
-// failure that is not "absent".
-func (g *Generator) Exists(hash string) (bool, error) {
-	abs, err := g.Path(hash)
+// Exists reports whether the sprite for hash under the storage prefix has
+// already been generated. It returns the error of RelPath for a malformed prefix
+// or hash and a wrapped error for an I/O failure that is not "absent".
+func (g *Generator) Exists(prefix, hash string) (bool, error) {
+	abs, err := g.Path(prefix, hash)
 	if err != nil {
 		return false, err
 	}
@@ -76,12 +77,13 @@ func (g *Generator) Exists(hash string) (bool, error) {
 	return info.Mode().IsRegular() && info.Size() > 0, nil
 }
 
-// Open returns a reader over the generated sprite for hash. The caller owns the
-// reader and must close it. It returns ErrNotGenerated when no sprite is cached —
-// the ordinary answer for a video whose job has not run yet — or ErrInvalidHash
-// for a malformed hash.
-func (g *Generator) Open(hash string) (io.ReadCloser, error) {
-	abs, err := g.Path(hash)
+// Open returns a reader over the generated sprite for hash under the storage
+// prefix. The caller owns the reader and must close it. It returns
+// ErrNotGenerated when no sprite is cached — the ordinary answer for a video
+// whose job has not run yet — or the error of RelPath for a malformed prefix or
+// hash.
+func (g *Generator) Open(prefix, hash string) (io.ReadCloser, error) {
+	abs, err := g.Path(prefix, hash)
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +97,12 @@ func (g *Generator) Open(hash string) (io.ReadCloser, error) {
 	return file, nil
 }
 
-// Remove deletes the cached sprite for hash, leaving no derived media behind when
-// its source video is purged. It is idempotent: a hash that never had a sprite is
-// not an error. It returns ErrInvalidHash for a malformed hash, or the I/O error
-// when the deletion itself fails.
-func (g *Generator) Remove(hash string) error {
-	abs, err := g.Path(hash)
+// Remove deletes the cached sprite for hash under the storage prefix, leaving no
+// derived media behind when its source video is purged. It is idempotent: a hash
+// that never had a sprite is not an error. It returns the error of RelPath for a
+// malformed prefix or hash, or the I/O error when the deletion itself fails.
+func (g *Generator) Remove(prefix, hash string) error {
+	abs, err := g.Path(prefix, hash)
 	if err != nil {
 		return err
 	}
@@ -111,7 +113,8 @@ func (g *Generator) Remove(hash string) error {
 }
 
 // Generate produces the sprite for the video stored at srcRelPath, keyed by its
-// content hash and laid out by spec, and returns without doing anything when it
+// content hash under the original's own storage prefix (storekeys.PrefixOf of
+// srcRelPath) and laid out by spec, and returns without doing anything when it
 // is already cached — the idempotence a retried or re-enqueued job relies on.
 //
 // It materializes the original (ffmpeg needs a real file), runs one ffmpeg pass
@@ -120,11 +123,12 @@ func (g *Generator) Remove(hash string) error {
 // ffmpeg is not installed, ErrGenerateFailed when ffmpeg ran but produced nothing
 // usable, or ErrInvalidHash for a malformed hash.
 func (g *Generator) Generate(ctx context.Context, hash, srcRelPath string, spec Spec) error {
-	abs, err := g.Path(hash)
+	prefix := storekeys.PrefixOf(srcRelPath)
+	abs, err := g.Path(prefix, hash)
 	if err != nil {
 		return err
 	}
-	cached, err := g.Exists(hash)
+	cached, err := g.Exists(prefix, hash)
 	if err != nil {
 		return err
 	}

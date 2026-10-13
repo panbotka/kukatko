@@ -35,13 +35,15 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // Prefix is the top-level key prefix under which every HLS object lives. It is
 // exported so the operations that reason about whole prefixes rather than single
 // keys — the library wipe and its orphan sweep — can name the one this package
 // owns instead of hardcoding the string.
-const Prefix = "hls"
+const Prefix = storekeys.HLSDir
 
 // InitName is the fragmented-MP4 initialisation segment every rendition starts
 // with. A player fetches it once per rendition, before any media segment.
@@ -106,33 +108,40 @@ var segmentNamePattern = regexp.MustCompile(`^[0-9]{5}\.m4s$`)
 // video's prefix or masquerade as a file.
 var renditionPattern = regexp.MustCompile(`^[a-z0-9]+$`)
 
-// PrefixFor returns the key prefix hls/<file_hash>/ holding every rendition of
-// the video with the given file hash, or ErrInvalidHash for a malformed one.
+// PrefixFor returns the key prefix <storagePrefix>hls/<file_hash>/ holding every
+// rendition of the video with the given file hash, or ErrInvalidHash for a
+// malformed hash and storekeys.ErrInvalidPrefix for a malformed storage prefix.
+// storagePrefix is that of the video's own original,
+// storekeys.PrefixOf(photo.FilePath): "" for the root layout.
 //
 // The trailing slash is part of the answer: it confines a prefix listing to this
 // video's objects, where a bare hls/<hash> would also match the objects of any
 // hash that happens to start with it.
-func PrefixFor(fileHash string) (string, error) {
+func PrefixFor(storagePrefix, fileHash string) (string, error) {
+	if err := storekeys.ValidatePrefix(storagePrefix); err != nil {
+		return "", fmt.Errorf("hls: %w", err)
+	}
 	if err := validateHash(fileHash); err != nil {
 		return "", err
 	}
-	return Prefix + "/" + fileHash + "/", nil
+	return storekeys.Join(storagePrefix, Prefix+"/"+fileHash+"/"), nil
 }
 
-// Key returns the object key hls/<file_hash>/<rendition>/<name> for one HLS
-// object. It validates all three parts and returns ErrInvalidHash,
-// ErrInvalidRendition or ErrInvalidName rather than a key built from anything it
-// does not recognise.
+// Key returns the object key <storagePrefix>hls/<file_hash>/<rendition>/<name>
+// for one HLS object. It validates all four parts and returns
+// storekeys.ErrInvalidPrefix, ErrInvalidHash, ErrInvalidRendition or
+// ErrInvalidName rather than a key built from anything it does not recognise.
 //
-//	key, err := hls.Key(photo.FileHash, hls.Rendition1080p, "00007.m4s")
-//	// key == "hls/<hash>/1080p/00007.m4s"
+//	prefix := storekeys.PrefixOf(photo.FilePath)
+//	key, err := hls.Key(prefix, photo.FileHash, hls.Rendition1080p, "00007.m4s")
+//	// key == "hls/<hash>/1080p/00007.m4s" for a root-layout photo
 //
 // It is the only way an HLS object key is spelled. Two of its three parts reach
 // it straight from a request path when a player asks for a segment, so the
 // validation is not a courtesy to the caller — it is what stands between that
 // path and the store.
-func Key(fileHash, rendition, name string) (string, error) {
-	prefix, err := PrefixFor(fileHash)
+func Key(storagePrefix, fileHash, rendition, name string) (string, error) {
+	prefix, err := PrefixFor(storagePrefix, fileHash)
 	if err != nil {
 		return "", err
 	}

@@ -95,7 +95,7 @@ func (m *Migrator) planKind(ctx context.Context, kind storekeys.Kind, item Item)
 		// photo would upload the same file once for every photo in the archive.
 		return nil, nil
 	case storekeys.KindThumbnail:
-		return m.planThumbs(item.FileHash, thumb.SizeNames())
+		return m.planThumbs(storekeys.PrefixOf(item.FilePath), item.FileHash, thumb.SizeNames())
 	case storekeys.KindHLS:
 		return m.planHLS(ctx, item)
 	case storekeys.KindDump, storekeys.KindPartial, storekeys.KindForeign:
@@ -122,7 +122,8 @@ func (m *Migrator) planOriginal(item Item) object {
 
 // planHLS lists the streaming segments the source already holds for the photo's
 // video: the initialisation segment and the media segments of every rendition,
-// under hls/<file_hash>/.
+// under <storage prefix>hls/<file_hash>/, the prefix being that of the photo's
+// own original.
 //
 // They are moved rather than left behind because the catalogue's rendition rows
 // are not touched by a migration. A row is a promise that a player can fetch
@@ -136,7 +137,7 @@ func (m *Migrator) planOriginal(item Item) object {
 // it is one cheap prefix lookup and the catalogue row does not reliably say
 // which photos have been encoded.
 func (m *Migrator) planHLS(ctx context.Context, item Item) ([]object, error) {
-	prefix, err := hls.PrefixFor(item.FileHash)
+	prefix, err := hls.PrefixFor(storekeys.PrefixOf(item.FilePath), item.FileHash)
 	if err != nil {
 		return nil, fmt.Errorf("storagemigrate: streaming prefix for %s: %w", item.UID, err)
 	}
@@ -223,13 +224,14 @@ func (m *Migrator) planLibrary(ctx context.Context) ([]object, error) {
 	}}, nil
 }
 
-// planThumbs lists the cached thumbnails of the photo with the given file hash.
+// planThumbs lists the cached thumbnails of the photo with the given file hash,
+// under the given storage prefix (that of the photo's own original).
 // A size that was never generated is skipped, not an error: an incomplete cache
 // is the normal state of a library that has only ever rendered the grid tile.
-func (m *Migrator) planThumbs(fileHash string, sizes []string) ([]object, error) {
+func (m *Migrator) planThumbs(prefix, fileHash string, sizes []string) ([]object, error) {
 	planned := make([]object, 0, len(sizes))
 	for _, size := range sizes {
-		relPath, err := thumb.RelPath(fileHash, size)
+		relPath, err := thumb.RelPath(prefix, fileHash, size)
 		if err != nil {
 			return nil, fmt.Errorf("storagemigrate: thumbnail key for %s/%s: %w", fileHash, size, err)
 		}

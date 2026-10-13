@@ -302,7 +302,7 @@ func (l *library) addPhoto(t *testing.T, i int, poisoned bool) libraryPhoto {
 	} else {
 		absThumb := thumbPath(t, l.cacheDir, photo.catalogueHash)
 		writeFile(t, absThumb, []byte("thumbnail bytes for "+uid))
-		rel, err := thumb.RelPath(photo.catalogueHash, gridSize)
+		rel, err := thumb.RelPath("", photo.catalogueHash, gridSize)
 		if err != nil {
 			t.Fatalf("thumb.RelPath: %v", err)
 		}

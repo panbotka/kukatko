@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/processing"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -124,7 +125,7 @@ func (e *queueEnv) hasThumbnail(t *testing.T, uid string) bool {
 	if err != nil {
 		t.Fatalf("GetByUID(%s): %v", uid, err)
 	}
-	rc, err := e.thumbs.OpenCached(photo.FileHash, "tile_224")
+	rc, err := e.thumbs.OpenCached(storekeys.PrefixOf(photo.FilePath), photo.FileHash, "tile_224")
 	if err != nil {
 		return false
 	}
@@ -179,7 +180,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByUID: %v", err)
 	}
-	if err := env.thumbs.Remove(photo.FileHash); err != nil {
+	if err := env.thumbs.Remove(storekeys.PrefixOf(photo.FilePath), photo.FileHash); err != nil {
 		t.Fatalf("removing thumbnails: %v", err)
 	}
 	if _, err := env.db.Pool().Exec(ctx, `UPDATE photos SET thumbnails_at = NULL WHERE uid = $1`,

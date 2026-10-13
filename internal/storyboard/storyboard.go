@@ -28,6 +28,8 @@ import (
 	"math"
 	"path"
 	"strings"
+
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // CacheSubdir is the top-level directory under the local cache root that holds
@@ -167,20 +169,25 @@ func (s Spec) TileIndex(positionMs int) int {
 }
 
 // RelPath returns the slash-separated cache path of the storyboard sprite for the
-// given file hash — storyboard/<aa>/<bb>/<cc>/<hash>_sb.jpg — whether or not it
-// exists yet. It returns ErrInvalidHash for a hash that is empty, non-hex or too
-// short to shard.
-func RelPath(hash string) (string, error) {
+// given storage prefix and file hash — <prefix>storyboard/<aa>/<bb>/<cc>/<hash>_sb.jpg
+// — whether or not it exists yet. prefix is the storage prefix of the video's own
+// original, storekeys.PrefixOf(photo.FilePath): "" for the root layout. It
+// returns ErrInvalidHash for a hash that is empty, non-hex or too short to shard,
+// and storekeys.ErrInvalidPrefix for a malformed prefix.
+func RelPath(prefix, hash string) (string, error) {
+	if err := storekeys.ValidatePrefix(prefix); err != nil {
+		return "", fmt.Errorf("storyboard: %w", err)
+	}
 	if err := validateHash(hash); err != nil {
 		return "", err
 	}
-	return path.Join(
+	return storekeys.Join(prefix, path.Join(
 		CacheSubdir,
 		hash[0:shardLen],
 		hash[shardLen:shardLen*2],
 		hash[shardLen*2:shardLen*3],
 		hash+"_sb.jpg",
-	), nil
+	)), nil
 }
 
 // validateHash reports whether hash is a lowercase hex digest long enough to

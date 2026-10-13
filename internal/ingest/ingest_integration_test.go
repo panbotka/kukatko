@@ -31,6 +31,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/video"
 )
@@ -257,7 +258,7 @@ func TestIngest_singleCreatesEverything(t *testing.T) {
 	}
 
 	for _, size := range []string{"tile_224", "fit_1280"} {
-		rc, err := env.thumbs.OpenCached(photo.FileHash, size)
+		rc, err := env.thumbs.OpenCached(storekeys.PrefixOf(photo.FilePath), photo.FileHash, size)
 		if err != nil {
 			t.Errorf("thumbnail %s not generated: %v", size, err)
 			continue
@@ -429,7 +430,7 @@ func TestIngest_video(t *testing.T) {
 	}
 
 	// The poster frame is fed through the thumbnailer, so the grid tile exists.
-	rc, err := env.thumbs.OpenCached(photo.FileHash, "tile_224")
+	rc, err := env.thumbs.OpenCached(storekeys.PrefixOf(photo.FilePath), photo.FileHash, "tile_224")
 	if err != nil {
 		t.Fatalf("poster thumbnail not generated: %v", err)
 	}

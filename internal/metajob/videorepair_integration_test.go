@@ -312,16 +312,18 @@ func TestReextract_completeVideoIsUntouched(t *testing.T) {
 type fakeSprites struct{}
 
 // Exists reports that no sprite is cached.
-func (fakeSprites) Exists(string) (bool, error) { return false, nil }
+func (fakeSprites) Exists(string, string) (bool, error) { return false, nil }
 
 // Open reports that no sprite is cached.
-func (fakeSprites) Open(string) (io.ReadCloser, error) { return nil, storyboard.ErrNotGenerated }
+func (fakeSprites) Open(string, string) (io.ReadCloser, error) {
+	return nil, storyboard.ErrNotGenerated
+}
 
 // Generate does nothing; these tests never render a sprite.
 func (fakeSprites) Generate(context.Context, string, string, storyboard.Spec) error { return nil }
 
 // Remove does nothing; there is never a cached sprite to discard here.
-func (fakeSprites) Remove(string) error { return nil }
+func (fakeSprites) Remove(string, string) error { return nil }
 
 // spriteEnqueuer records the photos whose sprite generation was scheduled.
 type spriteEnqueuer struct{ uids []string }

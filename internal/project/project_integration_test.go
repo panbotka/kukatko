@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/storekeys"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -120,6 +121,32 @@ func TestCreate(t *testing.T) {
 	}
 	if details := rec.Details; details["slug"] != "rodina" || details["name"] != "Rodina" {
 		t.Errorf("audit details = %v", details)
+	}
+}
+
+// TestCreate_neverYieldsAnEmptyPrefix is the guarantee that keys never collide
+// across projects: the empty prefix — the root layout — belongs to the bootstrap
+// project alone, and every created project gets a prefix of its own that the
+// storage layer recognises as naming exactly that project.
+func TestCreate_neverYieldsAnEmptyPrefix(t *testing.T) {
+	store, _, meta := newStore(t)
+
+	seen := map[string]string{"": project.BootstrapUID}
+	for _, slug := range []string{"alfa", "beta", "gama", "delta", "epsilon"} {
+		p := mustCreate(t, store, meta, slug, slug)
+		if p.StoragePrefix == "" {
+			t.Fatalf("Create(%q) yielded the empty (root) prefix", slug)
+		}
+		if err := storekeys.ValidatePrefix(p.StoragePrefix); err != nil {
+			t.Errorf("Create(%q) prefix %q is not a storage prefix: %v", slug, p.StoragePrefix, err)
+		}
+		if got := storekeys.ProjectUID(p.StoragePrefix); got != p.UID {
+			t.Errorf("Create(%q) prefix %q names project %q, want %q", slug, p.StoragePrefix, got, p.UID)
+		}
+		if other, dup := seen[p.StoragePrefix]; dup {
+			t.Errorf("Create(%q) prefix %q is already %q's", slug, p.StoragePrefix, other)
+		}
+		seen[p.StoragePrefix] = p.UID
 	}
 }
 

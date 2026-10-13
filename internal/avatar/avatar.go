@@ -49,6 +49,7 @@ import (
 	"golang.org/x/image/draw"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/storekeys"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
 
@@ -147,14 +148,15 @@ func New(source Source, cacheDir string) *Renderer {
 // out of the frame. The caller owns the reader and must close it.
 //
 // A cached rendition is served straight from disk; otherwise the avatar is
-// rendered, written to the cache and returned from memory. It returns
+// rendered, written to the cache and returned from memory. The cache entry sits
+// under the storage prefix of the photo's own original. It returns
 // ErrInvalidHash for a photo whose file hash cannot address the cache, and a
 // wrapped ErrRenderFailed when the source thumbnail yields no usable crop.
 func (r *Renderer) Open(
 	ctx context.Context, photo photos.Photo, face *Box,
 ) (io.ReadCloser, string, error) {
 	variant := variantKey(face)
-	rel, err := RelPath(photo.FileHash, variant)
+	rel, err := RelPath(storekeys.PrefixOf(photo.FilePath), photo.FileHash, variant)
 	if err != nil {
 		return nil, "", err
 	}
@@ -204,17 +206,23 @@ func (r *Renderer) render(ctx context.Context, photo photos.Photo, face *Box) ([
 	return buf.Bytes(), nil
 }
 
-// RelPath returns the slash-separated cache path of the avatar for the given file
-// hash and crop variant — avatar/<aa>/<bb>/<cc>/<hash>_<variant>_<side>.jpg —
-// whether or not it exists yet. It returns ErrInvalidHash for a hash that is
-// empty, non-hex or too short to shard.
-func RelPath(hash, variant string) (string, error) {
+// RelPath returns the slash-separated cache path of the avatar for the given
+// storage prefix, file hash and crop variant —
+// <prefix>avatar/<aa>/<bb>/<cc>/<hash>_<variant>_<side>.jpg — whether or not it
+// exists yet. prefix is the storage prefix of the photo's own original,
+// storekeys.PrefixOf(photo.FilePath): "" for the root layout. It returns
+// ErrInvalidHash for a hash that is empty, non-hex or too short to shard, and
+// storekeys.ErrInvalidPrefix for a malformed prefix.
+func RelPath(prefix, hash, variant string) (string, error) {
+	if err := storekeys.ValidatePrefix(prefix); err != nil {
+		return "", fmt.Errorf("avatar: %w", err)
+	}
 	if err := validateHash(hash); err != nil {
 		return "", err
 	}
 	name := hash + "_" + variant + "_" + strconv.Itoa(Side) + ".jpg"
-	return path.Join(CacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2],
-		hash[shardLen*2:shardLen*3], name), nil
+	return storekeys.Join(prefix, path.Join(CacheSubdir, hash[0:shardLen], hash[shardLen:shardLen*2],
+		hash[shardLen*2:shardLen*3], name)), nil
 }
 
 // validateHash reports whether hash is a lowercase hex digest long enough to
