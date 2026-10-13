@@ -87,6 +87,17 @@ storage:
     # positive. KUKATKO_STORAGE_R2_URL_TTL.
     url_ttl: "1h"
 
+  # The storage move (`kukatko storage rekey <slug>`): re-keys a project's objects
+  # from the store root under projects/<uid>/, one photo at a time, in the worker's
+  # single storage_rekey slot. Nothing starts it but an operator — see the runbook
+  # in docs/OPERATIONS.md.
+  rekey:
+    # Photos moved per second at most, and the batch one pass of the job takes, so
+    # the job holds its slot for about a second at a time. Lower it if the move
+    # competes with serving the library. Must be positive.
+    # KUKATKO_STORAGE_REKEY_PER_SECOND.
+    per_second: 10
+
 thumb:
   # Thumbnail rendering engine: "go" (default, pure-Go decode+resize, CGO-free)
   # or "vips" (shell out to vipsthumbnail for JPEG/PNG/WebP — markedly faster and

@@ -80,6 +80,9 @@ var (
 	// (media_base_url + url_signing_secret) is set, or storage.r2.url_ttl is
 	// non-positive. The error names the offending keys and never their values.
 	ErrIncompleteR2Config = errors.New("config: storage.backend is \"r2\" but its configuration is incomplete")
+	// ErrInvalidRekeyRate indicates storage.rekey.per_second is not positive: a
+	// storage move that may take no photo a second would never finish.
+	ErrInvalidRekeyRate = errors.New("config: storage.rekey.per_second must be positive")
 	// ErrInvalidLocationEstimate indicates location_estimate is enabled with a
 	// nonsensical window or radius. A negative radius would make every set of
 	// neighbours incoherent and a negative window would search backwards, so both
@@ -243,6 +246,17 @@ type StorageConfig struct {
 	TempPath string `mapstructure:"temp_path"`
 	// R2 configures the "r2" backend and is ignored by the "fs" backend.
 	R2 R2Config `mapstructure:"r2"`
+	// Rekey paces the storage move of a project (internal/rekeyjob).
+	Rekey RekeyConfig `mapstructure:"rekey"`
+}
+
+// RekeyConfig paces the storage move that re-keys a project's objects under its
+// own prefix: the storage_rekey job moves this many photos and then requeues
+// itself, so it holds its worker slot for about a second at a time.
+type RekeyConfig struct {
+	// PerSecond is how many photos the move takes per second at most — and the
+	// batch one pass of the job takes. Must be positive.
+	PerSecond int `mapstructure:"per_second"`
 }
 
 // R2Config holds the Cloudflare R2 bucket, its S3 credentials, and the settings
@@ -1486,6 +1500,8 @@ func setStorageDefaults(v *viper.Viper) {
 	v.SetDefault("storage.r2.url_signing_secret", "")
 	v.SetDefault("storage.r2.url_signing_secret_previous", "")
 	v.SetDefault("storage.r2.url_ttl", "1h")
+
+	v.SetDefault("storage.rekey.per_second", 10) // ~10 photos/s: gentle on the store being served from
 }
 
 // setThumbDefaults registers the thumbnail-engine defaults: the pure-Go engine,
@@ -1767,8 +1783,12 @@ func (l LocationEstimateConfig) validate() error {
 
 // validate checks the storage backend selection and, when the R2 backend is
 // selected, that every key it needs is present. An "fs" deployment is always
-// valid: it never looks at the R2 settings.
+// valid: it never looks at the R2 settings. The storage move's pace must be
+// positive whatever the backend.
 func (s StorageConfig) validate() error {
+	if s.Rekey.PerSecond < 1 {
+		return fmt.Errorf("%w: got %d", ErrInvalidRekeyRate, s.Rekey.PerSecond)
+	}
 	switch s.Backend {
 	case "", StorageBackendFS:
 		return nil

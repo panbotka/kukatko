@@ -62,7 +62,8 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // on the project and the person (0107), the nameless repair on the project and
 // the subject (0105). The per-account tag_notify job keys on the payload's
 // user_uid (0089) and the per-album album_featured_notify job on its album_uid
-// (0097).
+// (0097). The storage move keys on the project too, but over queued and running
+// jobs alike (0113): it requeues its own row, so a twin must never exist.
 var dedupIndexes = map[string]bool{
 	"idx_jobs_dedup":                       true,
 	"idx_jobs_family_export_dedup":         true,
@@ -75,6 +76,8 @@ var dedupIndexes = map[string]bool{
 	"idx_jobs_face_cluster_dedup": true,
 	// The nameless repair, one queued per (type, project, subject) (migration 0105).
 	"idx_jobs_nameless_dedup": true,
+	// The storage move, one queued or running per project (migration 0113).
+	"idx_jobs_storage_rekey_dedup": true,
 }
 
 // isUniqueViolation reports whether err is a PostgreSQL unique-constraint

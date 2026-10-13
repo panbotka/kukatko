@@ -133,6 +133,13 @@ const (
 	// devices — so a second slot is cheap, while a pool of its own is what keeps a
 	// notification from waiting behind a backlog of thumbnails.
 	defaultPushConcurrency = 2
+	// defaultRekeyConcurrency is how many storage_rekey jobs run at once when the
+	// configuration does not name the type. It is 1 on purpose: a storage move is
+	// paced by its own rate (storage.rekey.per_second), and a second slot would
+	// only move a second project at the same time, doubling the load on the store
+	// the application is serving from. A pool of its own also keeps the move from
+	// waiting behind a thumbnail backlog — or holding up one.
+	defaultRekeyConcurrency = 1
 	// sharedPoolName labels the pool that drains every job type without a
 	// per-type override; it appears in worker ids and in the startup log.
 	sharedPoolName = "shared"
@@ -317,17 +324,19 @@ func New(cfg Config) *Worker {
 // otherwise take the whole machine — so a batch of uploaded videos serialises
 // instead of starving every other job type. Push delivery gets a two-slot pool
 // for mail's second reason: a notification is news and must not queue behind
-// a thumbnail backlog.
+// a thumbnail backlog. The storage move gets a single slot: one project moves
+// at a time, at its configured pace.
 // Entries <= 0 are ignored, so a zero left over from an unset config field never
 // disables a pool.
 func effectiveTypeConcurrency(configured map[string]int) map[string]int {
-	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+3)
+	limits := make(map[string]int, len(sidecarBoundTypes)+len(configured)+4)
 	for _, jobType := range sidecarBoundTypes {
 		limits[jobType] = defaultSidecarBoundConcurrency
 	}
 	limits[jobs.TypeMailSend] = defaultMailConcurrency
 	limits[jobs.TypeHLSTranscode] = defaultHLSConcurrency
 	limits[jobs.TypePushSend] = defaultPushConcurrency
+	limits[jobs.TypeStorageRekey] = defaultRekeyConcurrency
 	for jobType, n := range configured {
 		if jobType != "" && n > 0 {
 			limits[jobType] = n

@@ -161,6 +161,8 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/ratelimit` — per-key token-bucket limiter + HTTP middleware
 - `internal/reachability` — cached background probe of the embeddings sidecar (atomic flag for `/capabilities`)
 - `internal/rekey` — the storage move of one project from the root layout under `projects/<uid>/`: the pure per-photo move `Plan`, the `storage_rekey_runs` state (start/pause/resume/retry/status) and `Step`: copy → verify → commit the row → only then delete the old objects; `Finish` rewrites sidecars/families and clears the root
+- `internal/rekeyapi` — maintainer-only `/projects/{uid}/rekey` (status, start, pause/resume/retry), audited by `internal/rekey`
+- `internal/rekeyjob` — the `storage_rekey` job: one batch of `storage.rekey.per_second` photos per pass, then it defers itself; one worker slot
 - `internal/reset` — the guarded library wipe (`kukatko maintenance reset`): dry run by default, typed database + bucket name, target + schema checks, storage deletion confined to Kukátko's own prefixes, audited in the truncation's transaction; never touches accounts/announcement/audit/migrations
 - `internal/restoreapi` — maintainer-only **read-only** `/restore/*` (destructive restore only via CLI)
 - `internal/review` — the review game: one-question-at-a-time queue of face/label candidates, mixed from a confident tier and the uncertainty band; answers reuse existing write paths

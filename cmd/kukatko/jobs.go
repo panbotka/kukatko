@@ -28,6 +28,7 @@ import (
 	"github.com/panbotka/kukatko/internal/processapi"
 	"github.com/panbotka/kukatko/internal/push"
 	"github.com/panbotka/kukatko/internal/pushjob"
+	"github.com/panbotka/kukatko/internal/rekeyjob"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/tagnotifyjob"
@@ -193,6 +194,10 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 	if err != nil {
 		return registryServices{}, nil, err
 	}
+	rekeySvc, err := buildRekeyJobService(d.cfg, d.db)
+	if err != nil {
+		return registryServices{}, nil, err
+	}
 	return registryServices{
 		embed: d.embed, face: d.face, thumb: thumbSvc, meta: metaSvc,
 		places: d.places, sidecar: sidecarSvc, ocr: ocrSvc, mail: mailSvc, push: pushSvc,
@@ -202,6 +207,7 @@ func buildJobServices(d jobServiceDeps) (registryServices, *maintenance.Service,
 		tagNotify:     buildTagNotifyService(d.cfg, d.db),
 		notifyPurge:   buildNotifyPurgeService(d.db),
 		albumFeatured: buildAlbumFeaturedService(d.cfg, d.db),
+		rekey:         rekeySvc,
 	}, maintenanceSvc, nil
 }
 
@@ -235,6 +241,9 @@ type registryServices struct {
 	// albumFeatured announces a newly featured album to the accounts that want
 	// the kind; always built, like tagNotify.
 	albumFeatured *albumfeaturedjob.Service
+	// rekey steps a project's storage move; always built — nothing enqueues its
+	// job but an operator starting, resuming or retrying a move.
+	rekey *rekeyjob.Service
 }
 
 // buildRegistry returns the worker registry with every configured handler
@@ -258,6 +267,7 @@ func buildRegistry(svc registryServices) *worker.Registry {
 	registry.Register(jobs.TypeTagNotify, svc.tagNotify.Handle)
 	registry.Register(jobs.TypeNotificationPurge, svc.notifyPurge.Handle)
 	registry.Register(jobs.TypeAlbumFeaturedNotify, svc.albumFeatured.Handle)
+	registry.Register(jobs.TypeStorageRekey, svc.rekey.Handle)
 	if svc.places != nil {
 		registry.Register(jobs.TypePlaces, svc.places.Handle)
 	}

@@ -398,7 +398,7 @@ func TestService_verificationFailureKeepsTheOriginal(t *testing.T) {
 	}
 
 	delete(h.mem.corrupt, bootstrapTarget+bad.filePath)
-	retried, err := h.svc.Retry(t.Context(), project.BootstrapUID)
+	retried, err := h.svc.Retry(t.Context(), audit.Meta{}, project.BootstrapUID)
 	if err != nil || retried.State != StateRunning || retried.LastKey != "" {
 		t.Fatalf("Retry = %+v, %v; want running with the cursor reset", retried, err)
 	}
@@ -446,14 +446,14 @@ func TestService_pauseAndResume(t *testing.T) {
 	photo := h.seedPhoto("ph1", "2023/01/a.jpg", false)
 	run := h.start()
 
-	paused, err := h.svc.Pause(t.Context(), project.BootstrapUID)
+	paused, err := h.svc.Pause(t.Context(), audit.Meta{}, project.BootstrapUID)
 	if err != nil || paused.State != StatePaused {
 		t.Fatalf("Pause = %+v, %v; want paused", paused, err)
 	}
-	if _, err := h.svc.Pause(t.Context(), project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
+	if _, err := h.svc.Pause(t.Context(), audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
 		t.Errorf("second Pause = %v, want ErrInvalidState", err)
 	}
-	if _, err := h.svc.Retry(t.Context(), project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
+	if _, err := h.svc.Retry(t.Context(), audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
 		t.Errorf("Retry of a paused run = %v, want ErrInvalidState", err)
 	}
 	if _, _, err := h.svc.Step(t.Context(), run, 5); !errors.Is(err, ErrNotRunning) {
@@ -466,11 +466,11 @@ func TestService_pauseAndResume(t *testing.T) {
 		t.Fatalf("a paused run moved a photo to %s", got)
 	}
 
-	resumed, err := h.svc.Resume(t.Context(), project.BootstrapUID)
+	resumed, err := h.svc.Resume(t.Context(), audit.Meta{}, project.BootstrapUID)
 	if err != nil || resumed.State != StateRunning {
 		t.Fatalf("Resume = %+v, %v; want running", resumed, err)
 	}
-	if _, err := h.svc.Resume(t.Context(), project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
+	if _, err := h.svc.Resume(t.Context(), audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrInvalidState) {
 		t.Errorf("second Resume = %v, want ErrInvalidState", err)
 	}
 	if err := h.stepToEnd(run, 5); err != nil {
@@ -485,7 +485,7 @@ func TestService_startRefusals(t *testing.T) {
 	if _, err := h.svc.Status(ctx, project.BootstrapUID); !errors.Is(err, ErrNoRun) {
 		t.Errorf("Status before any run = %v, want ErrNoRun", err)
 	}
-	if _, err := h.svc.Pause(ctx, project.BootstrapUID); !errors.Is(err, ErrNoRun) {
+	if _, err := h.svc.Pause(ctx, audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrNoRun) {
 		t.Errorf("Pause before any run = %v, want ErrNoRun", err)
 	}
 	if _, err := h.svc.Start(ctx, audit.Meta{}, "pjunknownunknownunknown00"); !errors.Is(err, ErrProjectNotFound) {
@@ -512,13 +512,13 @@ func TestService_startRefusals(t *testing.T) {
 	if _, err := h.svc.Start(ctx, audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrRunActive) {
 		t.Errorf("Start while running = %v, want ErrRunActive", err)
 	}
-	if _, err := h.svc.Pause(ctx, project.BootstrapUID); err != nil {
+	if _, err := h.svc.Pause(ctx, audit.Meta{}, project.BootstrapUID); err != nil {
 		t.Fatalf("Pause: %v", err)
 	}
 	if _, err := h.svc.Start(ctx, audit.Meta{}, project.BootstrapUID); !errors.Is(err, ErrRunActive) {
 		t.Errorf("Start while paused = %v, want ErrRunActive", err)
 	}
-	if _, err := h.svc.Resume(ctx, project.BootstrapUID); err != nil {
+	if _, err := h.svc.Resume(ctx, audit.Meta{}, project.BootstrapUID); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}
 	if err := h.stepToEnd(run, 5); err != nil {
@@ -536,5 +536,117 @@ func TestService_startRefusals(t *testing.T) {
 	if err := h.db.Pool().QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE action = $1`,
 		audit.ActionProjectStoragePrefix).Scan(&audited); err != nil || audited != 1 {
 		t.Errorf("audit entries after the second start = %d, %v; want still 1", audited, err)
+	}
+}
+
+// rekeyJobs counts the bootstrap project's storage_rekey jobs that are queued
+// or running.
+func (h *harness) rekeyJobs() int {
+	h.t.Helper()
+	var n int
+	err := h.db.Pool().QueryRow(h.t.Context(), `SELECT count(*) FROM jobs WHERE type = 'storage_rekey'
+		AND payload ->> 'project_uid' = $1 AND state IN ('queued', 'running')`, project.BootstrapUID).Scan(&n)
+	if err != nil {
+		h.t.Fatalf("counting storage_rekey jobs: %v", err)
+	}
+	return n
+}
+
+// audited counts the bootstrap project's audit entries with action.
+func (h *harness) audited(action string) int {
+	h.t.Helper()
+	var n int
+	err := h.db.Pool().QueryRow(h.t.Context(), `SELECT count(*) FROM audit_log
+		WHERE action = $1 AND target_uid = $2`, action, project.BootstrapUID).Scan(&n)
+	if err != nil {
+		h.t.Fatalf("counting %s audit entries: %v", action, err)
+	}
+	return n
+}
+
+// TestService_transitionsScheduleAndAudit verifies Start, Resume and Retry
+// schedule the one job that steps the run (never a second one), Pause
+// schedules nothing, and every one of them is audited.
+func TestService_transitionsScheduleAndAudit(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.seedPhoto("ph1", "2023/01/a.jpg", false)
+	h.start()
+	if n := h.rekeyJobs(); n != 1 {
+		t.Fatalf("jobs after Start = %d, want 1", n)
+	}
+	if _, err := h.svc.Pause(ctx, audit.Meta{}, project.BootstrapUID); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+	if _, err := h.svc.Resume(ctx, audit.Meta{}, project.BootstrapUID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if n := h.rekeyJobs(); n != 1 {
+		t.Fatalf("jobs after Pause and Resume = %d, want still 1", n)
+	}
+	h.exec(`DELETE FROM jobs`)
+	h.exec(`UPDATE storage_rekey_runs SET state = 'failed'`)
+	if _, err := h.svc.Retry(ctx, audit.Meta{}, project.BootstrapUID); err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if n := h.rekeyJobs(); n != 1 {
+		t.Errorf("jobs after Retry = %d, want 1", n)
+	}
+	for _, action := range []string{
+		audit.ActionProjectRekeyStart, audit.ActionProjectRekeyPause,
+		audit.ActionProjectRekeyResume, audit.ActionProjectRekeyRetry,
+	} {
+		if n := h.audited(action); n != 1 {
+			t.Errorf("%s audit entries = %d, want 1", action, n)
+		}
+	}
+}
+
+// TestService_preview verifies a dry run reports the totals and the first
+// photos of the pass with their planned moves, changes nothing, and refuses
+// what Start refuses.
+func TestService_preview(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	first := h.seedPhoto("ph1", "2023/01/a.jpg", false)
+	h.seedPhoto("ph2", "2023/01/b.jpg", true)
+	h.seedPhoto("ph3", "2023/02/c.jpg", false)
+
+	preview, err := h.svc.Preview(ctx, project.BootstrapUID, 2)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if preview.Photos != 3 || preview.Bytes != int64(3*len(first.content)) || preview.TargetPrefix != bootstrapTarget {
+		t.Errorf("preview totals = %+v, want 3 photos of %d bytes under %s",
+			preview, 3*len(first.content), bootstrapTarget)
+	}
+	if len(preview.First) != 2 || preview.First[0].UID != "ph1" || preview.First[1].UID != "ph2" {
+		t.Fatalf("preview first = %+v, want ph1, ph2", preview.First)
+	}
+	if got := preview.First[0].Original; got.From != first.filePath || got.To != bootstrapTarget+first.filePath {
+		t.Errorf("first move = %+v, want %s → %s%s", got, first.filePath, bootstrapTarget, first.filePath)
+	}
+	if preview.First[1].Derived <= preview.First[0].Derived {
+		t.Errorf("a video plans %d derived keys, a still %d; want more for the video",
+			preview.First[1].Derived, preview.First[0].Derived)
+	}
+	var prefix string
+	if err := h.db.Pool().QueryRow(ctx, `SELECT storage_prefix FROM projects WHERE uid = $1`,
+		project.BootstrapUID).Scan(&prefix); err != nil || prefix != "" {
+		t.Errorf("storage prefix after a preview = %q, %v; want unchanged", prefix, err)
+	}
+	if _, err := h.svc.Status(ctx, project.BootstrapUID); !errors.Is(err, ErrNoRun) {
+		t.Errorf("Status after a preview = %v, want ErrNoRun", err)
+	}
+	if n := h.rekeyJobs(); n != 0 {
+		t.Errorf("a preview scheduled %d jobs", n)
+	}
+
+	h.start()
+	if _, err := h.svc.Preview(ctx, project.BootstrapUID, 2); !errors.Is(err, ErrRunActive) {
+		t.Errorf("Preview while running = %v, want ErrRunActive", err)
+	}
+	if _, err := h.svc.Preview(ctx, "pjunknownunknownunknown00", 2); !errors.Is(err, ErrProjectNotFound) {
+		t.Errorf("Preview of an unknown project = %v, want ErrProjectNotFound", err)
 	}
 }

@@ -409,6 +409,28 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
     404 `not_found`.
   - Blocking an account stays `POST /admin/users/{uid}/disable`, now **maintainer-only** (it locks the
     account out of every project).
+- **Storage move (`/api/v1/projects/{uid}/rekey`, `internal/rekeyapi`):** the system administrator's control
+  of a project's move from the store root under `projects/<uid>/` (`internal/rekey`; runbook in
+  [`OPERATIONS.md`](OPERATIONS.md)). Instance-level, mounted once beside the routes above (flat routes; chi
+  routes them past `internal/projectapi`'s `/projects` sub-router), every route **`RequireMaintainer`**
+  (401 anonymous, 403 anybody else, a project admin included). Every action is audited by `internal/rekey`
+  in its own transaction, with the project (`project.rekey.start|pause|resume|retry`, details `rekey_run`,
+  `target_prefix`); start, resume and retry queue the `storage_rekey` job in that same transaction. The
+  worker does the moving; these routes only steer it. Refusals are `{"error":"<code>"}`.
+  A **run** is `{uid, project_uid, state: running|paused|done|failed, target_prefix, total_photos,
+  total_bytes, done_photos, done_bytes, last_key, pending_photo_uid?, pending_old_key?, errors: [{key,
+  message, at}] (the last 50, oldest first), error_count, started_at, updated_at, finished_at?}`.
+  - `GET /projects/{uid}/rekey` → the project's latest run; **404 `not_found`** when it never had one
+    (or the project does not exist).
+  - `POST /projects/{uid}/rekey` (no body) → **201** + the new `running` run: switches the project's
+    `storage_prefix` (new uploads land under it at once; `project.storage_prefix` audited) and counts the
+    photos still in the old layout. **409 `already_running`** while a run is running or paused; **409
+    `already_prefixed`** for a project that has its own prefix and was never moved (a created project);
+    404 `not_found` for an unknown project. A project whose last run is done or failed may be started again.
+  - `POST /projects/{uid}/rekey/pause` → 200 + the run, now `paused` (the job stops after the photo in
+    hand); `POST …/resume` → `running` again; `POST …/retry` → a `failed` run back to `running` with its
+    cursor reset (its error count and ring kept). **409 `invalid_state`** when the latest run is not in the
+    state the action starts from; 404 `not_found` when there is no run.
 - **Members (project admin) (`/api/v1/p/{project}/members`, `internal/memberapi`):** a project admin's
   management of the members of **their** project. Mounted **only under `/p/{project}`** (no transition
   alias) and every route **`RequireAdmin`** — the project's admin, or a maintainer, who enters every project

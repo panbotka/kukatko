@@ -218,9 +218,11 @@ const (
 	// else. See internal/hlsjob.
 	TypeHLSTranscode = "hls_transcode"
 	// TypeStorageRekey moves one project's objects from the root layout to its
-	// own projects/<uid>/ prefix. It is reserved here — library-wide, so its
-	// payload must name the project — ahead of the step that implements it; no
-	// handler is registered for it yet.
+	// own projects/<uid>/ prefix (internal/rekey). It is library-wide — its
+	// payload names the project — and one job drives one run: it does about a
+	// second of work and requeues itself until the run is done or failed, so it
+	// dedupes over queued and running jobs alike (EnqueueStorageRekey). It has a
+	// one-slot pool of its own. See internal/rekeyjob.
 	TypeStorageRekey = "storage_rekey"
 )
 

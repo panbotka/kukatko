@@ -229,7 +229,11 @@ research ([§17](#17-reference)).
   and the pending mark makes the next step re-verify and finish the deletion. A failing photo is recorded and
   skipped (over 100 errors fail the run; retry starts another pass). At the end the sidecars and
   `families.yaml` are rewritten by their jobs, and the root ones are deleted only once a listing shows their
-  prefixed replacements. The worker job, CLI, API and progress page drive this model (later steps).
+  prefixed replacements. It is driven by the `storage_rekey` job (`internal/rekeyjob`, one worker slot): a
+  pass moves `storage.rekey.per_second` photos and defers itself for the rest of that second, so a restart
+  loses at most the photo in hand. Only an operator starts, pauses, resumes or retries it —
+  `kukatko storage rekey`, `ctl projects rekey` or the maintainer's `/projects/{uid}/rekey`
+  (`internal/rekeyapi`); the progress page is a later step.
 - **Signed URL:** `https://<media_base_url>/<key>?exp=<unix>&sig=<hex HMAC-SHA256>`, the signature covers
   both the key and the expiry. **Two secrets are verified at once** (current + previous), so rotation has no window
   of broken URLs. Default TTL 1 h; every API response carries a freshly signed URL.
@@ -921,7 +925,7 @@ lost on restart).
   `image_embed`, `face_detect`, `metadata`, `ocr`, `sidecar`, `places`, `storyboard`, `hls_transcode`) —
   payload `{photo_uid}`, deduped on (type, photo), the handler reads the project from the photo row it loads;
   **library-wide** (`face_cluster`, `family_export`, `nameless_detach`/`nameless_restore`, `task_digest`,
-  `notification_purge`, the future `storage_rekey`) — the payload names the project as `project_uid`,
+  `notification_purge`, `storage_rekey`) — the payload names the project as `project_uid`,
   `jobs.Enqueue` refuses one without it (`ErrProjectRequired`), the dedup index keys on (type, `project_uid`)
   (migration 0108) so one project's queued job never swallows another's, and the handler reads it with
   `jobs.ProjectUIDOf(job)`, never from a global; **instance-wide** (`backup`, `mail_send`, `push_send`,

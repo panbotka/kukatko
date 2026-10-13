@@ -239,8 +239,8 @@ func setupAuth(ctx context.Context, cmd *cobra.Command, cfg *config.Config, db *
 	return authAPI, nil
 }
 
-// appendOpsAPIs mounts the always-on backup, restore and system-status APIs
-// onto apis and puts the capabilities API — project-scoped — into projectAPIs.
+// appendOpsAPIs mounts the always-on backup, restore, storage-move and
+// system-status APIs onto apis and puts the capabilities API — project-scoped — into projectAPIs.
 // The backup API self-reports "not configured" and the restore service is nil
 // (503) when no destination is set; the returned
 // backup service drives the scheduler (nil when not configured). It also builds
@@ -263,6 +263,12 @@ func appendOpsAPIs(
 		return nil, nil, nil, err
 	}
 	apis = append(apis, server.WithAPI(restoreAPI.RegisterRoutes))
+
+	rekeyAPI, err := buildRekeyAPI(cfg, db, authAPI)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	apis = append(apis, server.WithAPI(rekeyAPI.RegisterRoutes))
 
 	systemAPI, systemSvc, err := buildSystemAPI(cfg, db, authAPI, backupSvc, mapsHealth, geocodeBudget)
 	if err != nil {

@@ -189,7 +189,10 @@ configuration key both here **and** into `config.example.yaml`.
   or a subject in one — changes in that project; this is the "before I do something risky" button. It
   fails the same way when `sidecar.enabled: false`, and it has no HTTP counterpart,
   **`kukatko storage`** (operations over the storage of originals — `internal/storagemigrate`):
-  `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below),
+  `storage migrate-to-r2` (a one-off **resumable** move of the library to R2, see below) and
+  `storage rekey <slug>` (the **storage move** of one project from the store root under `projects/<uid>/` —
+  `internal/rekey`, stepped by the worker's `storage_rekey` job; `--dry-run`, `--status`, `--pause`,
+  `--resume`, `--retry`; reports on stderr, exit nonzero only for a `failed` run; see the runbook below),
   **`kukatko project purge <slug>`** (removes one project outright — its catalogue rows, members, invitations,
   the project row and everything under its `projects/<uid>/` prefix — `internal/reset`; dry run by default,
   `--yes --confirm <slug>` to execute, refuses the bootstrap project without `--allow-bootstrap` and any
@@ -604,11 +607,72 @@ The owner's checklist — in this order, and the storage move only at the very e
 5. **Inventory B** the same way (`--out /inv/B`), then **diff** with the expectation set above; it must exit 0
    once the live drift has been read and allowed.
 6. **UI spot-check:** sign in, the library grid, a search, one album, one person, the timeline, `/auth/me`.
-7. **Only then** consider starting the storage move — it is a separate job, started by hand.
+7. **Only then** consider starting the storage move — it is a separate job, started by hand (runbook below).
 
 **Rollback** without restoring a backup: [`docs/migrations-rollback/`](migrations-rollback/README.md) holds
 the hand-run down scripts (newest first, each `psql -1`), proven to return inventory A exactly; then start
 the previous release.
+
+### `kukatko storage rekey <slug>` — the storage move (runbook)
+
+Moves one project's objects from the **store root** (an empty `projects.storage_prefix`) under its own prefix
+`projects/<uid>/`: originals, thumbnails, streaming segments, sidecars and `families.yaml`. Only a project
+that predates projects needs it — on an existing instance that is the bootstrap project `v`; a project
+created since always had its own prefix and is refused (`already_prefixed`). **Nothing ever starts it
+automatically.** Design: `internal/rekey` (the safe per-photo move) and `internal/rekeyjob` (the job).
+
+| Invocation | Does |
+| --- | --- |
+| `kukatko storage rekey v --dry-run` | Changes nothing. Prints how many photos and bytes of originals would move, the target prefix and the first 20 planned moves (`old → new (+N derived keys)`); refuses exactly what a start would refuse. |
+| `kukatko storage rekey v` | **Starts** the move: switches the project's storage prefix (new uploads land in the new layout at once), records a `running` run with its totals, queues the `storage_rekey` job — all in one transaction, audited (`project.storage_prefix`, `project.rekey.start`). |
+| `kukatko storage rekey v --status` | Prints the latest run: state, photos and bytes moved of the total, timestamps, the error count and the last 5 errors. |
+| `kukatko storage rekey v --pause` / `--resume` | Pauses the running move (the job stops after the photo in hand and re-reads the run once a minute) / resumes it (the waiting job is made runnable at once). Audited. |
+| `kukatko storage rekey v --retry` | Starts another pass of a **failed** move over every photo still in the old layout. Audited. |
+
+The same actions over the API: `GET`/`POST /projects/{uid}/rekey`, `POST …/rekey/{pause,resume,retry}`
+(maintainer, [`API.md`](API.md)), and `kukatko ctl projects rekey <slug> [--status|--pause|--resume|--retry]`.
+Every report goes to **stderr**; the command exits **0 unless the run it reports is `failed`** (or the
+action was refused — `already_running`, `already_prefixed`, a pause of a run that is not running, …).
+
+**How it moves.** The server's worker runs the `storage_rekey` job in a **one-slot pool**: one pass takes
+`storage.rekey.per_second` photos (default 10, about a second of work) and requeues itself, so the slot is
+never held for more than a few seconds and a restart loses at most the photo in hand. Per photo, in
+`file_path` order: copy the original to its new key (server-side on R2, a hard link on a disk) → **verify**
+the copy (size, and ETag or SHA-256 against `photos.file_hash`) → point the row at it (`photos.file_path`,
+`photo_files`) in one transaction → copy the thumbnails/segments/sidecar that exist → **only then** delete the
+old objects. A crash anywhere leaves both copies or only the verified new one; the next pass re-verifies and
+continues. A photo that fails is recorded (last 50 errors kept) and skipped; more than 100 errors fail the run.
+
+**When to start.** Only after the multi-tenant release is live and verified — step 7 of the upgrade runbook
+above: inventory B diffed clean, the UI spot-checked, **a fresh backup** taken. Then:
+
+1. `kukatko storage rekey v --dry-run` — the counts must match what the library holds (photos, bytes of
+   originals; `kukatko maintenance scan` beforehand should report nothing missing).
+2. Start it at a quiet time (`kukatko storage rekey v`, or the `ctl`/API equivalent). It needs the **running
+   server's worker** — the command only queues the job.
+3. **Watch** it: `--status` (photos moved / total should climb by about `per_second` a second), the
+   maintainer's `/jobs` (one `storage_rekey` job, queued/running), and the server log. The library stays
+   usable throughout; a photo whose row was just moved is served from its new key.
+4. If it competes with serving, `--pause`, lower `storage.rekey.per_second`, restart, `--resume`.
+
+**What "done" means.** The run's state is `done` and `finished_at` is set: every photo row of the project
+points under `projects/<uid>/`, the sidecar of every photo and the project's `families.yaml` have been
+re-queued for writing under the new prefix, and the root `families.yaml` and root sidecars that have their
+replacement listed under the prefix are deleted (nothing at the root is touched while another project still
+lives there). Then run `kukatko maintenance scan`: anything still in the root layout is reported as an orphan
+(a derived object that could not be copied, an object no row named) — review it before deleting anything.
+
+**What to do with `failed`.** `--status` lists the last errors (`key: message`). A run fails when it met more
+than 100 errors, or when its pass ended with photos it could not move (the error says how many). Typical
+causes: an original missing from the store (`maintenance scan` reports it — restore it from backup, or
+archive and purge the photo), a copy that does not verify (the store is corrupting writes — stop and
+investigate), a store that refuses requests (credentials, quota). Fix the cause, then `--retry`: the next
+pass takes again every photo still in the old layout; nothing already moved is redone. The old original is
+**never** deleted before the row points at a verified copy, so a failed run loses nothing.
+
+**If the job is dead.** A failure that is not about one photo (database or store unreachable) is retried by
+the queue with backoff; after its attempts are spent the job is dead while the run still says `running`.
+Requeue it from the maintainer's `/jobs`, or `--pause` and `--resume` the run, which queues a fresh one.
 
 ### `kukatko ctl` — remote API client
 
@@ -1382,6 +1446,7 @@ account by its **username** (or uid); the CLI resolves either through the list f
 | `ctl projects update <slug> [--name] [--description] [--max-file-bytes N] [--max-total-bytes N] [--clear-max-file-bytes] [--clear-max-total-bytes]` | `PATCH /projects/{uid}` with only the flags given (a clear flag sends `null`); no flag at all is refused before any request |
 | `ctl projects deactivate <slug>` / `activate <slug>` | `PATCH {"active":false}` / `{"active":true}` — a deactivated project is entered by nobody but a maintainer; its data stays |
 | `ctl projects add-member <slug> <username> --role <role>` | `POST /projects/{uid}/members` — an **approved** membership (`viewer`, `curator`, `editor`, `admin`); your own username enters the project yourself |
+| `ctl projects rekey <slug> [--status\|--pause\|--resume\|--retry]` | The storage move ([runbook](#kukatko-storage-rekey-slug--the-storage-move-runbook)): no flag = `POST /projects/{uid}/rekey` (start), `--status` = `GET …/rekey`, the others `POST …/rekey/{pause,resume,retry}`; renders the run (state, photos and bytes moved, the last 5 errors). One flag at most |
 | `ctl users list` | `GET /users` — every account: username, name, instance role (`, disabled`), its projects as `slug (role)` (`, pending` while unapproved) |
 | `ctl users promote <username>` / `demote <username>` | `PATCH /users/{uid}` `{"instance_role":"maintainer"}` / `"user"`; demoting yourself is the server's `self` refusal |
 
@@ -1738,6 +1803,11 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   **The Worker itself is not in this repo** — the bucket, its source, bindings, and hostname are defined and deployed by
   Terraform in the infra repo (root module `cloudflare-r2/`). Rotating the signing secret therefore reaches into
   **two repositories** — procedure below.
+- **Storage move key (`storage.rekey.*`, `internal/config` + `internal/rekeyjob`):** `per_second`
+  (**default 10**, must be positive — `ErrInvalidRekeyRate` at startup otherwise) is how many photos the
+  storage move (`kukatko storage rekey`, below) takes per second at most **and** the batch one pass of the
+  `storage_rekey` job takes, so the job holds its single worker slot for about a second at a time. Lower it
+  when the move competes with serving the library. Env: `KUKATKO_STORAGE_REKEY_PER_SECOND`.
 - **⚠️ Nobody uploads thumbnails to the bucket yet.** With `storage.backend: r2` the API mints `thumb_url`
   (and the route `/photos/{uid}/thumb/{size}` redirects) to the object key
   `thumb/aa/bb/cc/<hash>_<size>.jpg`, but `thumb.Thumbnailer` writes every size **locally**
@@ -1857,7 +1927,8 @@ files, one request, streamed — a walk over a disk the server cannot see is not
   notification is news; each send is one small request to a browser vendor's push service);
   **`hls_transcode` gets one for the opposite reason** — it is the job that
 would otherwise take the whole machine, so a batch of uploaded videos serialises instead of starving every
-other type; values ≤ 0 are ignored and a type
+other type; **`storage_rekey` gets a one-slot pool too** — one project's storage move at a time, at its own
+pace (`storage.rekey.per_second`), never queued behind thumbnails; values ≤ 0 are ignored and a type
   with no registered handler gets no pool at all (with `mail.enabled` false there is no `mail_send` handler,
   and nothing enqueues one either). `serve` logs the resulting layout at startup
   (`worker: pool "shared" draining [...] with N slot(s)`) — that line is how you confirm an override

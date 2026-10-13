@@ -73,10 +73,10 @@ func newStorageCmd() *cobra.Command {
 	storageCmd := &cobra.Command{
 		Use:   "storage",
 		Short: "Operate on the store that holds original media files",
-		Long:  "Inspect and migrate the store that holds Kukátko's original media files.",
+		Long:  "Inspect, migrate and re-key the store that holds Kukátko's original media files.",
 		Args:  cobra.NoArgs,
 	}
-	storageCmd.AddCommand(newStorageMigrateToR2Cmd())
+	storageCmd.AddCommand(newStorageMigrateToR2Cmd(), newStorageRekeyCmd())
 	return storageCmd
 }
 

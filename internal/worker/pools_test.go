@@ -104,8 +104,9 @@ func runUntilDrained(t *testing.T, w *Worker, q *fakeQueue, want int) {
 	}
 }
 
-// TestEffectiveTypeConcurrency verifies the sidecar-bound types, mail and the
-// HLS transcode are capped at one slot and push delivery at two unless the
+// TestEffectiveTypeConcurrency verifies the sidecar-bound types, mail, the HLS
+// transcode and the storage move are capped at one slot and push delivery at
+// two unless the
 // configuration names them, that
 // other types get a pool only when configured, and that non-positive entries are
 // ignored.
@@ -122,7 +123,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: nil,
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1,
 			},
 		},
 		{
@@ -130,7 +131,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeThumbnail: 4},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeThumbnail: 4,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1, jobs.TypeThumbnail: 4,
 			},
 		},
 		{
@@ -138,7 +139,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeImageEmbed: 3},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 3, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1,
 			},
 		},
 		{
@@ -146,7 +147,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeHLSTranscode: 2},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 2, jobs.TypePushSend: 2,
+				jobs.TypeHLSTranscode: 2, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1,
 			},
 		},
 		{
@@ -154,7 +155,15 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeMailSend: 2},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 2,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1,
+			},
+		},
+		{
+			name:       "an explicit override raises the storage move pool",
+			configured: map[string]int{jobs.TypeStorageRekey: 2},
+			want: map[string]int{
+				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 2,
 			},
 		},
 		{
@@ -162,7 +171,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypePushSend: 1},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 1,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 1, jobs.TypeStorageRekey: 1,
 			},
 		},
 		{
@@ -170,7 +179,7 @@ func TestEffectiveTypeConcurrency(t *testing.T) {
 			configured: map[string]int{jobs.TypeImageEmbed: 0, jobs.TypeThumbnail: -1, "": 5},
 			want: map[string]int{
 				jobs.TypeImageEmbed: 1, jobs.TypeFaceDetect: 1, jobs.TypeMailSend: 1,
-				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2,
+				jobs.TypeHLSTranscode: 1, jobs.TypePushSend: 2, jobs.TypeStorageRekey: 1,
 			},
 		},
 	}

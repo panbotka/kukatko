@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 )
@@ -117,9 +118,11 @@ RETURNING ` + runColumns
 
 // Start begins moving the project projectUID under projects/<uid>/ and returns
 // the new run. In one transaction it switches the project's storage prefix — so
-// every upload from this moment lands in the new layout — records the switch in
-// the audit log with meta's actor, and inserts a running run whose totals are
-// the count and summed size of the photos still in the old layout.
+// every upload from this moment lands in the new layout — records the switch
+// and the start in the audit log with meta's actor, inserts a running run whose
+// totals are the count and summed size of the photos still in the old layout,
+// and schedules the storage_rekey job that steps it (jobs.EnqueueStorageRekey,
+// a no-op when the project's job is already scheduled).
 //
 // It returns ErrProjectNotFound for an unknown project, ErrRunActive when a run
 // of the project is running or paused, and ErrAlreadyPrefixed when the project
@@ -144,7 +147,10 @@ func (s *Service) Start(ctx context.Context, meta audit.Meta, projectUID string)
 			}
 		}
 		run, err = queryRun(ctx, tx, ErrProjectNotFound, insertRunSQL, uid, projectUID, target)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.recordAndSchedule(ctx, tx, meta, audit.ActionProjectRekeyStart, run, true)
 	})
 	if err != nil {
 		return Run{}, fmt.Errorf("rekey: starting the move of %s: %w", projectUID, err)
@@ -199,39 +205,93 @@ func (s *Service) switchPrefix(
 	return nil
 }
 
-// Pause stops the project's running run; Step refuses it until Resume. It
-// returns ErrInvalidState when the latest run is not running and ErrNoRun when
-// there is none.
-func (s *Service) Pause(ctx context.Context, projectUID string) (Run, error) {
-	return s.transition(ctx, projectUID, StateRunning, StatePaused, false)
+// Pause stops the project's running run; Step refuses it until Resume. The
+// pause is audited with meta's actor in the same transaction. It returns
+// ErrInvalidState when the latest run is not running and ErrNoRun when there is
+// none.
+func (s *Service) Pause(ctx context.Context, meta audit.Meta, projectUID string) (Run, error) {
+	return s.transition(ctx, meta, projectUID, transitionPause)
 }
 
-// Resume puts the project's paused run back to running. It returns
+// Resume puts the project's paused run back to running and schedules the job
+// that steps it, audited with meta's actor, all in one transaction. It returns
 // ErrInvalidState when the latest run is not paused and ErrNoRun when there is
 // none.
-func (s *Service) Resume(ctx context.Context, projectUID string) (Run, error) {
-	return s.transition(ctx, projectUID, StatePaused, StateRunning, false)
+func (s *Service) Resume(ctx context.Context, meta audit.Meta, projectUID string) (Run, error) {
+	return s.transition(ctx, meta, projectUID, transitionResume)
 }
 
 // Retry puts the project's failed run back to running with its cursor reset, so
 // the next pass takes again every photo still in the old layout — the ones the
-// failed pass recorded errors for. Its error count and ring are kept. It returns
-// ErrInvalidState when the latest run is not failed and ErrNoRun when there is
-// none.
-func (s *Service) Retry(ctx context.Context, projectUID string) (Run, error) {
-	return s.transition(ctx, projectUID, StateFailed, StateRunning, true)
+// failed pass recorded errors for — and schedules the job that steps it,
+// audited with meta's actor, all in one transaction. Its error count and ring
+// are kept. It returns ErrInvalidState when the latest run is not failed and
+// ErrNoRun when there is none.
+func (s *Service) Retry(ctx context.Context, meta audit.Meta, projectUID string) (Run, error) {
+	return s.transition(ctx, meta, projectUID, transitionRetry)
 }
 
-// transition moves the project's latest run from one state to another.
-func (s *Service) transition(ctx context.Context, projectUID string, from, to State, reset bool) (Run, error) {
-	run, err := queryRun(ctx, s.pool, ErrInvalidState, transitionSQL, projectUID, string(from), string(to), reset)
+// stateChange is one operator transition of a run: the state it starts from,
+// the state it ends in, whether it resets the cursor and how it is audited.
+type stateChange struct {
+	from, to State
+	reset    bool
+	action   string
+}
+
+// The three operator transitions.
+var (
+	transitionPause  = stateChange{from: StateRunning, to: StatePaused, action: audit.ActionProjectRekeyPause}
+	transitionResume = stateChange{from: StatePaused, to: StateRunning, action: audit.ActionProjectRekeyResume}
+	transitionRetry  = stateChange{
+		from: StateFailed, to: StateRunning, reset: true, action: audit.ActionProjectRekeyRetry,
+	}
+)
+
+// transition moves the project's latest run along change in one transaction
+// that also audits it and, for a run that ends up running, schedules its job.
+func (s *Service) transition(ctx context.Context, meta audit.Meta, projectUID string, change stateChange) (Run, error) {
+	var run Run
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var err error
+		run, err = queryRun(ctx, tx, ErrInvalidState, transitionSQL,
+			projectUID, string(change.from), string(change.to), change.reset)
+		if err != nil {
+			return err
+		}
+		return s.recordAndSchedule(ctx, tx, meta, change.action, run, change.to == StateRunning)
+	})
+	if err == nil {
+		return run, nil
+	}
 	if !errors.Is(err, ErrInvalidState) {
-		return run, err
+		return Run{}, fmt.Errorf("rekey: %s of %s: %w", change.action, projectUID, err)
 	}
 	if _, statusErr := s.Status(ctx, projectUID); statusErr != nil {
 		return Run{}, statusErr
 	}
-	return Run{}, fmt.Errorf("%w: it is not %s", ErrInvalidState, from)
+	return Run{}, fmt.Errorf("%w: it is not %s", ErrInvalidState, change.from)
+}
+
+// recordAndSchedule writes the audit entry of an operator action on run inside
+// tx and, with schedule set, enqueues the job that steps the run in the same
+// transaction.
+func (s *Service) recordAndSchedule(
+	ctx context.Context, tx pgx.Tx, meta audit.Meta, action string, run Run, schedule bool,
+) error {
+	entry := meta.Entry(action, project.TargetType, run.ProjectUID,
+		map[string]any{"rekey_run": run.UID, "target_prefix": run.TargetPrefix})
+	entry.ProjectUID = run.ProjectUID
+	if err := audit.Write(ctx, tx, entry); err != nil {
+		return fmt.Errorf("auditing %s: %w", action, err)
+	}
+	if !schedule {
+		return nil
+	}
+	if err := jobs.EnqueueStorageRekey(ctx, tx, run.ProjectUID); err != nil {
+		return fmt.Errorf("scheduling the move: %w", err)
+	}
+	return nil
 }
 
 // Status returns the project's most recent run, or ErrNoRun.

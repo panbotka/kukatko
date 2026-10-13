@@ -460,6 +460,20 @@ const (
 	// operator, the slug, name and prefix it had, and the rows per table and the
 	// objects/bytes it counted before deleting them.
 	ActionProjectPurge = "project.purge"
+	// ActionProjectRekeyStart records a system administrator starting the storage
+	// move of a project (internal/rekey). The target is the project; the details
+	// carry the run and the prefix its objects move under. The prefix switch the
+	// start makes is recorded separately, as ActionProjectStoragePrefix.
+	ActionProjectRekeyStart = "project.rekey.start"
+	// ActionProjectRekeyPause records a storage move being paused. The target is
+	// the project; the details carry the run.
+	ActionProjectRekeyPause = "project.rekey.pause"
+	// ActionProjectRekeyResume records a paused storage move being resumed. The
+	// target is the project; the details carry the run.
+	ActionProjectRekeyResume = "project.rekey.resume"
+	// ActionProjectRekeyRetry records a failed storage move being retried. The
+	// target is the project; the details carry the run.
+	ActionProjectRekeyRetry = "project.rekey.retry"
 	// ActionProjectMemberAdd records an account being added to a project. The
 	// target is the account (target type "project_member"); the details carry
 	// project_uid, the role and whether the membership starts approved.
@@ -549,6 +563,8 @@ var knownActions = map[string]struct{}{
 	ActionAnnouncementClear: {}, ActionSettingsUpdate: {}, ActionAuditPurge: {},
 	ActionLibraryReset: {}, ActionNotificationPrefsUpdate: {}, ActionProjectCreate: {},
 	ActionProjectUpdate: {}, ActionProjectStoragePrefix: {}, ActionProjectPurge: {}, ActionProjectMemberAdd: {},
+	ActionProjectRekeyStart: {}, ActionProjectRekeyPause: {}, ActionProjectRekeyResume: {},
+	ActionProjectRekeyRetry: {},
 	ActionProjectMemberRole: {}, ActionProjectMemberApprove: {}, ActionProjectMemberRemove: {},
 	ActionProjectMemberSubject: {}, ActionProjectInviteCreate: {}, ActionProjectInviteRevoke: {},
 	ActionProjectInviteAccept: {},

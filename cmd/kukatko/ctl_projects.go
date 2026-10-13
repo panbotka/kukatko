@@ -20,7 +20,7 @@ func newCtlProjectsCmd(opts *ctlOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newCtlProjectsListCmd(opts), newCtlProjectsGetCmd(opts), newCtlProjectsCreateCmd(opts),
 		newCtlProjectsUpdateCmd(opts), newCtlProjectsActiveCmd(opts, false), newCtlProjectsActiveCmd(opts, true),
-		newCtlProjectsAddMemberCmd(opts))
+		newCtlProjectsAddMemberCmd(opts), newCtlProjectsRekeyCmd(opts))
 	return cmd
 }
 

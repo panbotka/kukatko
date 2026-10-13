@@ -78,6 +78,7 @@ func TestLoad_defaults(t *testing.T) {
 		{"storage.r2.endpoint", cfg.Storage.R2.Endpoint, ""},
 		{"storage.r2.bucket", cfg.Storage.R2.Bucket, ""},
 		{"storage.r2.url_ttl", cfg.Storage.R2.URLTTL, time.Hour},
+		{"storage.rekey.per_second", cfg.Storage.Rekey.PerSecond, 10},
 		{"thumb.engine", cfg.Thumb.Engine, ThumbEngineGo},
 		{"thumb.vips_binary", cfg.Thumb.VipsBinary, "vipsthumbnail"},
 		{"thumb.concurrency", cfg.Thumb.Concurrency, 0},
@@ -1680,5 +1681,40 @@ func TestLoad_pushValidation_namesEveryMissingKey(t *testing.T) {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("error %q does not name %s", err, key)
 		}
+	}
+}
+
+// TestLoad_storageRekeyPerSecond verifies storage.rekey.per_second takes its
+// environment override and that a non-positive pace fails startup.
+func TestLoad_storageRekeyPerSecond(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    int
+		wantErr bool
+	}{
+		{name: "override", value: "25", want: 25},
+		{name: "one is the slowest pace", value: "1", want: 1},
+		{name: "zero rejected", value: "0", wantErr: true},
+		{name: "negative rejected", value: "-3", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("KUKATKO_STORAGE_REKEY_PER_SECOND", tt.value)
+			cfg, err := Load("")
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidRekeyRate) {
+					t.Fatalf("Load error = %v, want ErrInvalidRekeyRate", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load returned unexpected error: %v", err)
+			}
+			if cfg.Storage.Rekey.PerSecond != tt.want {
+				t.Errorf("storage.rekey.per_second = %d, want %d", cfg.Storage.Rekey.PerSecond, tt.want)
+			}
+		})
 	}
 }

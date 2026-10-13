@@ -201,3 +201,72 @@ func TestErrorMessage_withMessage(t *testing.T) {
 		t.Errorf("errorMessage without a message = %q", got)
 	}
 }
+
+// TestClient_rekeyRoutes verifies each storage-move call's method and path, and
+// that a call naming no project costs no round trip.
+func TestClient_rekeyRoutes(t *testing.T) {
+	t.Parallel()
+	var method, path string
+	client := testClient(t, "kkt_a_b", func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		_, _ = w.Write([]byte(`{}`))
+	})
+	ctx := t.Context()
+	steps := []struct {
+		call                 func() error
+		wantMethod, wantPath string
+	}{
+		{func() error { _, err := client.RekeyStatus(ctx, "pj1"); return err }, "GET", "/api/v1/projects/pj1/rekey"},
+		{func() error { _, err := client.StartRekey(ctx, "pj1"); return err }, "POST", "/api/v1/projects/pj1/rekey"},
+		{func() error { _, err := client.ChangeRekey(ctx, "pj1", RekeyPause); return err },
+			"POST", "/api/v1/projects/pj1/rekey/pause"},
+		{func() error { _, err := client.ChangeRekey(ctx, "pj1", RekeyResume); return err },
+			"POST", "/api/v1/projects/pj1/rekey/resume"},
+		{func() error { _, err := client.ChangeRekey(ctx, "pj1", RekeyRetry); return err },
+			"POST", "/api/v1/projects/pj1/rekey/retry"},
+	}
+	for _, step := range steps {
+		if err := step.call(); err != nil {
+			t.Fatalf("%s %s: %v", step.wantMethod, step.wantPath, err)
+		}
+		if method != step.wantMethod || path != step.wantPath {
+			t.Errorf("request = %s %s, want %s %s", method, path, step.wantMethod, step.wantPath)
+		}
+	}
+	if _, err := client.StartRekey(ctx, ""); err == nil {
+		t.Error("StartRekey without a project succeeded, want an error")
+	}
+}
+
+// TestWriteRekeyRun verifies the run's table shows progress, sizes, the finish
+// and only the most recent errors.
+func TestWriteRekeyRun(t *testing.T) {
+	t.Parallel()
+	errorsJSON := make([]string, 0, 7)
+	for i := range 7 {
+		errorsJSON = append(errorsJSON, `{"key":"k`+string(rune('a'+i))+`","message":"m","at":"2026-10-13T10:00:00Z"}`)
+	}
+	run, err := DecodeRekeyRun([]byte(`{"uid":"rk1","state":"done","target_prefix":"projects/pj1/",
+		"total_photos":4,"total_bytes":2048,"done_photos":4,"done_bytes":2048,"error_count":7,
+		"errors":[` + strings.Join(errorsJSON, ",") + `],
+		"started_at":"2026-10-13T09:00:00Z","updated_at":"2026-10-13T10:00:00Z","finished_at":"2026-10-13T10:00:00Z"}`))
+	if err != nil {
+		t.Fatalf("DecodeRekeyRun: %v", err)
+	}
+	var buf bytes.Buffer
+	if err := WriteRekeyRun(&buf, run); err != nil {
+		t.Fatalf("WriteRekeyRun: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"rk1", "done", "4 of 4 (100.0%)", "2.0 KiB of 2.0 KiB", "kg: m", "kc: m"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("run table lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "kb: m") || strings.Contains(out, "FINISHED  -") {
+		t.Errorf("run table lists an old error or no finish:\n%s", out)
+	}
+	if got := rekeyPercent(0, 0); got != "100%" {
+		t.Errorf("rekeyPercent(0, 0) = %q, want 100%%", got)
+	}
+}

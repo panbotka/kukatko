@@ -905,8 +905,9 @@ to `## Package map` in `CLAUDE.md`.
   a second case asserts each photo's sidecar lands in the bucket and its local copy is reclaimed),
   `internal/rekey/`
   (**the storage move of one project** from the root layout (`storage_prefix = ''`, the bootstrap project
-  until its move) under `projects/<uid>/`, one photo at a time while the app runs; the model only — the
-  worker job, CLI, API and UI are later steps. **`Plan(photo PhotoFiles, newPrefix) []Move{From, To, Kind}`**
+  until its move) under `projects/<uid>/`, one photo at a time while the app runs; the model — the worker
+  job is `internal/rekeyjob`, the routes `internal/rekeyapi`, the CLI `kukatko storage rekey` (runbook in
+  `OPERATIONS.md`). **`Plan(photo PhotoFiles, newPrefix) []Move{From, To, Kind}`**
   is pure: the original first, then the sidecar (`sidecarexport.KeyFor`), every size of `thumb.SizeNames()`
   and every object of every recorded HLS rendition (`init.mp4` + `00000.m4s…` up to `segment_count`, unioned
   with the names the stored media playlist lists, invalid names dropped), each `To =
@@ -920,9 +921,15 @@ to `## Package map` in `CLAUDE.md`.
   'projects/<uid>/'` — **new uploads land in the new layout at once** — audits it
   (`project.storage_prefix`, with `old`/`new`/`rekey_run`; a second run of a moved project does not switch
   again) and inserts the run with totals = count and `sum(file_size)` of the photos whose `file_path` lacks
-  the prefix. `Pause` (running→paused), `Resume` (paused→running), `Retry` (failed→running, **cursor reset**
-  so the pass takes the photos it skipped again), `Status` (the latest run; `ErrNoRun`) act on the project's
-  latest run (`ErrInvalidState` otherwise). **`Step(ctx, run, batchSize)`** re-reads the run
+  the prefix, then audits `project.rekey.start` and queues the `storage_rekey` job
+  (`jobs.EnqueueStorageRekey`) — the run and the job that drives it commit together. `Pause(ctx, meta, …)`
+  (running→paused), `Resume` (paused→running), `Retry` (failed→running, **cursor reset** so the pass takes the
+  photos it skipped again) act on the project's latest run (`ErrInvalidState` otherwise) in one transaction
+  each that audits it (`project.rekey.pause|resume|retry`, details `rekey_run`/`target_prefix`) and, for
+  resume and retry, queues the job; `Status` returns the latest run (`ErrNoRun`). **`Preview(ctx, projectUID,
+  limit)`** is the dry run: Start's refusals checked in a transaction it always rolls back, the totals a start
+  would record and the first `limit` photos of the pass (`PreviewPhoto{UID, Original Move, Derived}`) —
+  nothing written. **`Step(ctx, run, batchSize)`** re-reads the run
   (`ErrNotRunning` unless running), finishes the **pending** photo first, then takes the next photos still in
   the old layout in `file_path` order after `last_key`; per photo, in this order and no other: copy the
   original unless a verifying copy is already there → **verify** (size = `photos.file_size`, then the copy's
@@ -944,8 +951,36 @@ to `## Package map` in `CLAUDE.md`.
   verification over an in-memory fake with S3-style ETags) and `rekey_integration_test.go` (tag
   `integration`, real DB + the fake): a full run, a crash after copy and after commit, a verification failure
   (old kept, run continues, `Finish` fails it, `Retry` completes it), the error threshold, pause/resume and
-  the `Start` refusals, with an invariant — every `photos.file_path` names an existing object of the right
-  size — checked after **every** step),
+  the `Start` refusals, the transitions' audit entries and their one queued job, the preview, with an
+  invariant — every `photos.file_path` names an existing object of the right size — checked after **every**
+  step),
+  `internal/rekeyjob/`
+  (**the `storage_rekey` job**: the scheduled half of `internal/rekey`. `New(Config{Mover, PerSecond, Clock,
+  Logger})`, `Mover` = `Status`/`Step`/`Finish`, satisfied by `*rekey.Service`; `PerSecond` is
+  `storage.rekey.per_second` (`DefaultPerSecond` 10 when not positive). **`Handle(ctx, job)`** reads the run
+  of the project the payload names (`jobs.ProjectUIDOf`; none → `worker.Terminal`): **running** → one
+  `Step` of `PerSecond` photos, then a deferral (`worker.RetryAfter`, no attempt burned) of whatever is left
+  of that batch's share of the pace (`processed/PerSecond` s minus the time the batch took, never negative),
+  so the job holds its slot for about a second and a restart loses at most the photo in hand; the pass over
+  → `Finish` and complete; **paused** → a deferral of `PausedRecheck` (1 min); **done/failed/no run** →
+  complete, nothing re-enqueues it. `ErrRunFailed` (the step failed the run) and `ErrPhotosRemain` (Finish
+  failed it) complete the job — the run says failed, `Retry` queues a new one; `ErrNotRunning` and
+  `ErrPendingCleanup` defer 0 s (read the run again); anything else (database, store) is returned so the
+  queue retries with backoff. One slot (`internal/worker`). Tests: `rekeyjob_test.go` (every state and
+  outcome over a fake mover, the pace with a frozen clock) and `rekeyjob_integration_test.go` (tag
+  `integration`, the real move over an in-memory store: progress per pass, a paused pass, the finishing
+  pass, no re-enqueue once done)),
+  `internal/rekeyapi/`
+  (**the maintainer's storage-move routes**, instance-level: `GET /projects/{uid}/rekey` (the latest run,
+  404 `not_found`), `POST /projects/{uid}/rekey` (start, 201; 409 `already_running`/`already_prefixed`, 404
+  for an unknown project), `POST …/rekey/{pause,resume,retry}` (409 `invalid_state`). `NewAPI(Config{Mover,
+  RequireMaintainer})`, `Mover` = `Status`/`Start`/`Pause`/`Resume`/`Retry` (`*rekey.Service`); the audit
+  meta is the signed-in maintainer's (`audit.FromRequest`), the auditing and the job enqueue happen in
+  `internal/rekey`'s transactions. **Flat routes** in a `Group` with the guard, not a `/projects`
+  sub-router — `internal/projectapi` owns that one, and chi routes the longer paths here in either
+  registration order (`TestRoutes_besideTheProjectsSubRouter`). Tests: unit (dispatch, guard, error codes,
+  the coexistence) and integration (403 for a project admin, 401 anonymous, the 409 cases, the whole
+  start → pause → resume → retry lifecycle with its audit entries and queued job)),
   `internal/storekeys/`
   (**the one place that says what lives in the object store and which layout owns it.** The store has no
   per-application prefix — an original sits at `YYYY/MM/<name>` and the derived artefacts sit beside it — so
@@ -1859,8 +1894,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   `storyboard`, `hls_transcode`; payload `{photo_uid}`, deduped on (type, `photo_uid`), the handler reads the
   project from the photo row through the photos store's `ForJob` loader; `album_featured_notify` is the same
   shape keyed on an album), **library-wide** (`face_cluster`, `family_export`, `nameless_detach`,
-  `nameless_restore`, `task_digest`, `notification_purge`, the reserved `storage_rekey` = `TypeStorageRekey`
-  with no handler yet; `IsLibraryWide(type)`) whose payload must name the project as `project_uid`
+  `nameless_restore`, `task_digest`, `notification_purge`, `storage_rekey` = `TypeStorageRekey`
+  (`internal/rekeyjob`); `IsLibraryWide(type)`) whose payload must name the project as `project_uid`
   (`ProjectPayload{ProjectUID}`) — **`Enqueue` and `EnqueueOrSkip` refuse one without it with
   `ErrProjectRequired`** before any SQL runs (so a caller's transaction survives), and the handler reads it
   back with **`ProjectUIDOf(job)`** (`""` for a payload naming none: the handlers read that as the bootstrap
@@ -1870,7 +1905,12 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   the job's further identifier: migration **0108** rebuilds `idx_jobs_notification_purge_dedup` (on the type
   alone since 0096), `idx_jobs_face_cluster_dedup` and `idx_jobs_family_export_dedup` (on the project alone
   since 0105/0106) to that one shape, all still `state='queued'` only; the task digest keeps (project,
-  person) from 0107 and the nameless repair (type, project, subject) from 0105. Every scheduler-style trigger
+  person) from 0107 and the nameless repair (type, project, subject) from 0105. **`storage_rekey`**
+  (migration **0113**, `idx_jobs_storage_rekey_dedup`) keys on (type, project) over **queued and running**
+  jobs alike: its one job requeues its own row (`Defer`), so a twin beside a running one would break that
+  `UPDATE`; **`EnqueueStorageRekey(ctx, exec, projectUID)`** (`rekey.go`) enqueues it through
+  `EnqueueOrSkip` on the caller's transaction and, on a duplicate, makes a queued job that waits for later
+  runnable now (a resume does not wait out a paused job's minute). Every scheduler-style trigger
   enqueues one job per **active** project (`project.Active` over `project.Store.List`): the daily digest,
   the recluster trigger, the notification purge (the trash retention purge sweeps the active projects in
   process, no job);
@@ -1980,7 +2020,8 @@ anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   explicit (config maps replace rather than merge, so the cap cannot be lost by omission). **`mail_send`
   gets the same one-slot treatment** (`defaultMailConcurrency`): one conversation at a time with a remote
   mail server, and a message that never waits behind a queue of thumbnails. **`push_send`** gets a
-  **two-slot** pool (`defaultPushConcurrency`) for the second of those reasons. A type with no
+  **two-slot** pool (`defaultPushConcurrency`) for the second of those reasons. **`storage_rekey`** gets a
+  **one-slot** pool (`defaultRekeyConcurrency`): one project's storage move at a time, at its own pace. A type with no
   handler gets no pool, and an empty shared pool is not started at all (a type-less `Claim` would mean
   "claim anything"). Worker ids are `<IDPrefix>-<pool>-<i>`, unique across pools. It
   dispatches to the handler by `job.Type`, `Complete`/`Fail` by the result **under the
