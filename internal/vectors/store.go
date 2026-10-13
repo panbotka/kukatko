@@ -110,27 +110,33 @@ const listMissingEmbeddingSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN embeddings e ON e.photo_uid = p.uid
-WHERE e.photo_uid IS NULL AND p.archived_at IS NULL
+WHERE p.project_id = $1
+  AND e.photo_uid IS NULL AND p.archived_at IS NULL
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
 // ListPhotosMissingEmbedding returns the uids of non-archived photos that do not
 // yet have an image embedding, newest first. A positive limit caps the result;
 // a non-positive limit returns every missing photo. It backs the embedding
-// backfill, which enqueues an image_embed job per returned uid.
-func (s *Store) ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error) {
-	return s.queryPhotoUIDs(ctx, listMissingEmbeddingSQL, limit)
+// backfill, which enqueues an image_embed job per returned uid. It reads one
+// project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingEmbedding(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	return s.queryPhotoUIDs(ctx, listMissingEmbeddingSQL, projectUID, limit)
 }
 
 // queryPhotoUIDs runs a uid-listing query templated with a LIMIT placeholder and
-// returns the scanned uids. tmpl must contain a single %s that receives a LIMIT
-// clause when limit is positive (and an empty string otherwise). It backs the
-// "photos missing X" backfill listings, whose only difference is the join.
-func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl string, limit int) ([]string, error) {
+// returns the scanned uids. tmpl must bind the project as $1 and contain a
+// single %s that receives a LIMIT clause when limit is positive (and an empty
+// string otherwise). It backs the "photos missing X" backfill listings, whose
+// only difference is the join; an empty projectUID is ErrNoProject.
+func (s *Store) queryPhotoUIDs(ctx context.Context, tmpl, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(tmpl, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(tmpl, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(tmpl, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

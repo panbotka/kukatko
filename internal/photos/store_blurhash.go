@@ -45,7 +45,8 @@ func (s *Store) SaveBlurhash(ctx context.Context, uid, hash string) error {
 const listMissingBlurhashSQL = `
 SELECT uid
 FROM photos
-WHERE blurhash IS NULL AND archived_at IS NULL
+WHERE photos.project_id = $1
+  AND blurhash IS NULL AND archived_at IS NULL
 ORDER BY created_at DESC, uid DESC%s`
 
 // ListPhotosMissingBlurhash returns the uids of non-archived photos that have no
@@ -61,26 +62,36 @@ ORDER BY created_at DESC, uid DESC%s`
 // Newest first is deliberate: a backfill over a large library drains for a while,
 // and the photos somebody is most likely to be looking at while it does are the
 // ones that arrived last.
-func (s *Store) ListPhotosMissingBlurhash(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingBlurhash(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listMissingBlurhashSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingBlurhashSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listMissingBlurhashSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing photos missing blurhash", query, args...)
 }
 
 // countMissingBlurhashSQL counts what ListPhotosMissingBlurhash would return.
 const countMissingBlurhashSQL = `
-SELECT count(*) FROM photos WHERE blurhash IS NULL AND archived_at IS NULL`
+SELECT count(*) FROM photos WHERE photos.project_id = $1 AND blurhash IS NULL AND archived_at IS NULL`
 
 // CountPhotosMissingBlurhash returns how many photos ListPhotosMissingBlurhash
 // would return, without materialising them. It backs the backfill's dry run, so
 // an operator can see the size of a full-library run before starting it.
-func (s *Store) CountPhotosMissingBlurhash(ctx context.Context) (int, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) CountPhotosMissingBlurhash(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
 	var count int
-	if err := s.pool.QueryRow(ctx, countMissingBlurhashSQL).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx, countMissingBlurhashSQL, projectUID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("photos: counting photos missing blurhash: %w", err)
 	}
 	return count, nil

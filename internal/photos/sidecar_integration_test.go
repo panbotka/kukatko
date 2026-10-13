@@ -25,7 +25,7 @@ func TestListPhotosMissingSidecar_neverExported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestMarkSidecarWritten_clearsPending(t *testing.T) {
 	if err := store.MarkSidecarWritten(ctx, created.UID); err != nil {
 		t.Fatalf("MarkSidecarWritten returned error: %v", err)
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestMarkSidecarWritten_doesNotBumpUpdatedAt(t *testing.T) {
 		t.Errorf("updated_at moved from %v to %v; stamping the sidecar marker must not count as an edit",
 			created.UpdatedAt, after.UpdatedAt)
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestListPhotosMissingSidecar_staleAfterEdit(t *testing.T) {
 	if _, err := store.UpdateMetadata(ctx, project.BootstrapUID, created.UID, photos.MetadataUpdate{Title: "Nový titulek"}); err != nil {
 		t.Fatalf("UpdateMetadata returned error: %v", err)
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestListPhotosMissingSidecar_excludesArchived(t *testing.T) {
 	if _, err := store.Archive(ctx, project.BootstrapUID, created.UID); err != nil {
 		t.Fatalf("Archive returned error: %v", err)
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestListPhotosMissingSidecar_limit(t *testing.T) {
 			t.Fatalf("Create returned error: %v", err)
 		}
 	}
-	uids, err := store.ListPhotosMissingSidecar(ctx, 2)
+	uids, err := store.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 2)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}

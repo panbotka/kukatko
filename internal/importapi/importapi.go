@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/importer"
 )
 
@@ -39,17 +40,17 @@ const (
 // RunLister reads the import-run history for the run-history view. It is the
 // import-facing subset of importer.Store, satisfied by *importer.Store.
 type RunLister interface {
-	// List returns a page of import runs across every source, most recently
-	// started first.
-	List(ctx context.Context, limit, offset int) ([]importer.Run, error)
+	// List returns a page of the project's import runs across every source,
+	// most recently started first.
+	List(ctx context.Context, projectUID string, limit, offset int) ([]importer.Run, error)
 }
 
 // FailureLister reads the persisted per-photo/per-file import failures for the
 // failures view. It is the import-facing subset of importer.Store, satisfied by
 // *importer.Store.
 type FailureLister interface {
-	// ListFailures returns a page of recorded import failures matching the filter,
-	// most recently recorded first.
+	// ListFailures returns a page of recorded import failures matching the filter
+	// (always within filter.ProjectUID), most recently recorded first.
 	ListFailures(ctx context.Context, filter importer.FailureFilter) ([]importer.Failure, error)
 }
 
@@ -119,15 +120,16 @@ type runsResponse struct {
 	Offset int            `json:"offset"`
 }
 
-// handleListRuns returns a page of import-run history across all sources, most
-// recently started first. A malformed limit or offset is answered with 400.
+// handleListRuns returns a page of the request project's import-run history
+// across all sources, most recently started first; another project's runs are
+// never listed. A malformed limit or offset is answered with 400.
 func (a *API) handleListRuns(w http.ResponseWriter, r *http.Request) {
 	limit, offset, err := parsePaging(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	runs, err := a.runs.List(r.Context(), limit, offset)
+	runs, err := a.runs.List(r.Context(), auth.ProjectUIDFromContext(r.Context()), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "listing import runs failed")
 		return
@@ -179,8 +181,8 @@ type failuresResponse struct {
 	Offset   int                `json:"offset"`
 }
 
-// handleListFailures returns a page of persisted per-photo/per-file import
-// failures, most recently recorded first, filtered by the optional query
+// handleListFailures returns a page of the request project's persisted
+// per-photo/per-file import failures, most recently recorded first, filtered by the optional query
 // parameters ?source=, ?run_id=, ?unresolved=true and paginated by ?limit=/?offset=.
 // A malformed parameter is answered with 400.
 func (a *API) handleListFailures(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +197,7 @@ func (a *API) handleListFailures(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter.Limit, filter.Offset = limit, offset
+	filter.ProjectUID = auth.ProjectUIDFromContext(r.Context())
 	failures, err := a.failures.ListFailures(r.Context(), filter)
 	if errors.Is(err, importer.ErrInvalidSource) {
 		writeError(w, http.StatusBadRequest, "invalid source")

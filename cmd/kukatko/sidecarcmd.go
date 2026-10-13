@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/sidecarjob"
 )
 
@@ -40,7 +42,7 @@ func newSidecarBackfillCmd() *cobra.Command {
 		Use:   "backfill",
 		Short: "Enqueue a sidecar write for every photo whose sidecar is missing or stale",
 		Long: "Enqueue a sidecar job for every photo whose sidecar has never been written or " +
-			"predates the photo's last edit. The jobs are drained by the running server's " +
+			"predates the photo's last edit, in every active project. The jobs are drained by the running server's " +
 			"worker, so this returns as soon as they are scheduled. It is idempotent: a run " +
 			"over a library whose sidecars are current schedules nothing.",
 		Args: cobra.NoArgs,
@@ -66,13 +68,18 @@ func runSidecarBackfill(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("reading --all flag: %w", err)
 	}
-	svc, cleanup, err := openSidecarService(cmd)
+	svc, projects, cleanup, err := openSidecarService(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	enqueued, err := svc.BackfillSidecars(cmd.Context(), all)
+	// The CLI is an instance-level trigger: the backfill itself is per project,
+	// so it runs once for every active project.
+	enqueued, err := sumAcrossProjects(cmd.Context(), projects,
+		func(ctx context.Context, projectUID string) (int, error) {
+			return svc.BackfillSidecars(ctx, projectUID, all)
+		})
 	if err != nil {
 		return fmt.Errorf("backfilling sidecars: %w", err)
 	}
@@ -85,35 +92,35 @@ func runSidecarBackfill(cmd *cobra.Command) error {
 }
 
 // openSidecarService loads the config, opens the database (applying migrations)
-// and builds the sidecar export service. The caller owns closing the database via
-// the returned cleanup.
+// and builds the sidecar export service plus the project list a backfill walks.
+// The caller owns closing the database via the returned cleanup.
 //
 // It fails when the export is switched off rather than silently doing nothing:
 // someone typing this command has asked for sidecars, and answering "0 scheduled"
 // to a config that writes none would be a lie of omission on the one day it
 // matters.
-func openSidecarService(cmd *cobra.Command) (*sidecarjob.Service, func(), error) {
+func openSidecarService(cmd *cobra.Command) (*sidecarjob.Service, projectLister, func(), error) {
 	cfg, err := loadConfigFromFlags(cmd)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	db, err := database.New(cmd.Context(), cfg.Database)
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting to database: %w", err)
+		return nil, nil, nil, fmt.Errorf("connecting to database: %w", err)
 	}
 	if _, err := db.Migrate(cmd.Context()); err != nil {
 		db.Close()
-		return nil, nil, fmt.Errorf("applying migrations: %w", err)
+		return nil, nil, nil, fmt.Errorf("applying migrations: %w", err)
 	}
 	svc, err := buildSidecarServiceOrNil(cfg, db, jobs.NewEnqueuer(jobs.NewStore(db.Pool())))
 	if err != nil {
 		db.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if svc == nil {
 		db.Close()
-		return nil, nil, errors.New(
+		return nil, nil, nil, errors.New(
 			"sidecar export is disabled (sidecar.enabled = false); enable it to write sidecars")
 	}
-	return svc, db.Close, nil
+	return svc, project.NewStore(db.Pool()), db.Close, nil
 }

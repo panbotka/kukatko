@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/facejob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/vectors"
 	"github.com/panbotka/kukatko/internal/worker"
@@ -305,7 +306,7 @@ func TestBackfillFaces_enqueuesOnlyUnprocessed(t *testing.T) {
 		t.Fatalf("seed detection: %v", err)
 	}
 
-	res, err := svc.BackfillFaces(ctx)
+	res, err := svc.BackfillFaces(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("BackfillFaces: %v", err)
 	}

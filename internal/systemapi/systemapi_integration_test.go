@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/importer"
 	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/systemapi"
 )
@@ -143,7 +144,7 @@ func TestSystemStatus_Aggregates(t *testing.T) {
 	}
 
 	// One completed folder import is the latest run the dashboard reports.
-	run, err := env.runs.Start(ctx, importer.SourceFolder)
+	run, err := env.runs.Start(ctx, project.BootstrapUID, importer.SourceFolder)
 	if err != nil {
 		t.Fatalf("start run: %v", err)
 	}

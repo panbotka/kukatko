@@ -3655,6 +3655,24 @@
       "title": "Library",
       "intro": "How much of the catalogue has been processed — the same counts as the statistics page."
     },
+    "projects": {
+      "title": "Projects",
+      "intro": "How the library and the job queue divide between the projects. Every other number on this page is an instance total.",
+      "project": "Project",
+      "inactive": "deactivated",
+      "photos": "Photos",
+      "videos": "Videos",
+      "trashed": "In trash",
+      "originals": "Originals",
+      "faces": "Faces",
+      "subjects": "People & more",
+      "albums": "Albums",
+      "queue": "Queue",
+      "queueValue": "{{queued}} queued · {{running}} running · {{failed}} failed",
+      "duplicates": "Duplicates",
+      "lastImport": "Last import",
+      "neverImported": "never"
+    },
     "dashboard": {
       "libraryTitle": "Library",
       "libraryIntro": "What the catalogue holds right now.",

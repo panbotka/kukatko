@@ -54,12 +54,12 @@ LEFT JOIN LATERAL (
 // evidenceSQL reads one photo's evidence; see evidenceColumns.
 const evidenceSQL = "SELECT " + evidenceColumns + "\n" + evidenceFrom + "\nWHERE p.uid = $1"
 
-// liveEvidenceSQL reads the same evidence for every live (non-archived) photo,
-// keyed by uid, for the library-wide gap scan. Archived photos are left out the
+// liveEvidenceSQL reads the same evidence for every live (non-archived) photo
+// of one project ($1), keyed by uid, for the library-wide gap scan. Archived photos are left out the
 // way every backfill leaves them out: nothing schedules work for them, so a step
 // they never got is not a gap anybody should fill.
 const liveEvidenceSQL = "SELECT p.uid, " + evidenceColumns + "\n" + evidenceFrom +
-	"\nWHERE p.archived_at IS NULL\nORDER BY p.uid"
+	"\nWHERE p.project_id = $1 AND p.archived_at IS NULL\nORDER BY p.uid"
 
 // unfinishedStepsSQL lists, for every photo, the job types it has a job of that
 // has not completed — the queue's half of "is anything going to deliver this
@@ -116,10 +116,16 @@ func scanEvidence(row pgx.Row, prefix ...any) (Evidence, error) {
 }
 
 // EachLiveEvidence calls fn with the evidence of every live (non-archived)
-// photo, in uid order, streaming the rows rather than collecting them. A non-nil
-// error from fn stops the walk and is returned as is.
-func (s *Store) EachLiveEvidence(ctx context.Context, fn func(photoUID string, ev Evidence) error) error {
-	rows, err := s.pool.Query(ctx, liveEvidenceSQL)
+// photo of the project, in uid order, streaming the rows rather than collecting
+// them. A non-nil error from fn stops the walk and is returned as is. An empty
+// projectUID is ErrNoProject — the walk is never the whole instance by accident.
+func (s *Store) EachLiveEvidence(
+	ctx context.Context, projectUID string, fn func(photoUID string, ev Evidence) error,
+) error {
+	if projectUID == "" {
+		return ErrNoProject
+	}
+	rows, err := s.pool.Query(ctx, liveEvidenceSQL, projectUID)
 	if err != nil {
 		return fmt.Errorf("processing: reading library evidence: %w", err)
 	}

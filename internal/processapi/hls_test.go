@@ -20,7 +20,7 @@ type fakeHLSBackfiller struct {
 }
 
 // BackfillHLS records the call and reports the configured outcome.
-func (f *fakeHLSBackfiller) BackfillHLS(_ context.Context, all bool) (int, error) {
+func (f *fakeHLSBackfiller) BackfillHLS(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {

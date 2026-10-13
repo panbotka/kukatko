@@ -28,7 +28,8 @@ configuration key both here **and** into `config.example.yaml`.
   once, before the server accepts anything. Run `kukatko migrate` ahead of the deploy if that
   downtime matters; see `docs/PERF.md` §3),
   `kukatko migrate` (runs pending migrations on their own and exits),
-  **`kukatko import dir <path>`** (uploads a **directory from disk** — `internal/dirimport`; see below),
+  **`kukatko import dir --project <slug> <path>`** (uploads a **directory from disk** into one project —
+  `internal/dirimport`; see below),
   `kukatko backup` (synchronous one-off **S3 backup** — `internal/backup`; pg_dump + sync of
   originals + retention; needs `backup.s3.{endpoint,bucket}`, otherwise `errBackupNotConfigured`;
   under `storage.backend: r2` the originals are **copied bucket→bucket server-side** and a backup into
@@ -45,7 +46,8 @@ configuration key both here **and** into `config.example.yaml`.
   [`docs/RESTORE.md`](RESTORE.md),
   **`kukatko maintenance`** (library integrity check & repair — `internal/maintenance`; for
   ops/cron without a running server, applies migrations and builds a service shared with the admin API):
-  `maintenance scan` (read-only integrity report — store↔DB drift + missing derived data; the store it
+  `maintenance scan` (read-only integrity report — store↔DB drift + missing derived data, the latter counted over
+  every active project, since the backfill listings it reads are per project (`cmd/kukatko/allprojects.go`); the store it
   inventories is the configured backend, the originals root under `fs` and the bucket under `r2`, and the
   summary line names the one it read; a listing it could not run prints `originals …: unknown (reason)`
   instead of a zero, because an unreadable store must not pass for an empty one),
@@ -167,7 +169,8 @@ configuration key both here **and** into `config.example.yaml`.
   (3/6 months, 1/2 years) or a custom number of days plus a confirmation),
   **`kukatko sidecar`** (metadata sidecars — `internal/sidecarjob`; the terminal entry point into the export
   that makes curation data independent of the database): `sidecar backfill` enqueues a `sidecar` job for
-  every photo with a **missing or stale** sidecar, `--all` forces a full re-run over every
+  every photo with a **missing or stale** sidecar, in **every active project** (it is an instance-level trigger, so it
+  runs the per-project backfill once per active project and adds the counts up), `--all` forces a full re-run over every
   unarchived photo (this catches up changes outside the photo's own row — album membership, a label).
   It only **enqueues**; the files are written by a running server's worker (the same queue, same handler, same
   dedup as for live edits, so the backfill cannot race the user), which is why it prints the number of
@@ -198,15 +201,23 @@ configuration key both here **and** into `config.example.yaml`.
   `kukatko version` (version + commit). The persistent `--config <path>` flag selects the YAML config.
   `server.New(addr, server.WithAPI(register))` mounts the route groups under `/api/v1`.
 
-### `kukatko import dir <path>`
+### `kukatko import dir --project <slug> <path>`
 
-Walks a directory on disk (recursively) and uploads every media file into the library **through the same
-pipeline as a browser upload** (`internal/ingest`): stream + SHA256, metadata, the original into
-`YYYY/MM`, thumbnails, `image_embed`/`face_detect` jobs onto the queue. The source directory is **read only** —
+Walks a directory on disk (recursively) and uploads every media file into the library of **one project**
+**through the same pipeline as a browser upload** (`internal/ingest`): stream + SHA256, metadata, the original into
+`<storage prefix>YYYY/MM`, thumbnails, `image_embed`/`face_detect` jobs onto the queue. The source directory is **read only** —
 originals are copied, never moved or modified. For ops/cron without a running server (it applies
-migrations and opens the DB itself); the run is recorded in `import_runs` as source `folder`, so it is visible
-in `/import` and in `GET /import/runs` alongside the finished migration's runs. It is the **only** source
-still written.
+migrations and opens the DB itself); the run is recorded in `import_runs` as source `folder` **in that project**, so it is
+visible in the project's `/import` page and in `GET /p/<slug>/import/runs` alongside the finished migration's runs (those
+belong to the bootstrap project `v`). It is the **only** source still written.
+
+**`--project <slug>` is required** — there is no default, because an import into the wrong library is a leak nobody
+notices. Everything of the run happens inside that project: the photos are catalogued there, the originals land under
+its storage prefix (an empty prefix for `v`, `projects/<uid>/` for a created project), the duplicate check looks only at
+its photos (the same bytes in another project are imported again, not reported as a duplicate), and `--album`,
+`--labels` and an export's favourites/ratings resolve there. A deactivated project is refused. The import reads only the
+foreign sidecars lying beside the media on disk (below); it never reads the exported `sidecars/` tree of the object
+store, so no other project's metadata can reach it.
 
 **It is always safe to run again.** Identity is the SHA256 of the content: anything already in the library is reported
 as a duplicate (even under a different name — the listing shows both paths) and nothing is written. The run is also
@@ -262,6 +273,7 @@ and are picked up once the box is reachable again — the summary says as much.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
+| `--project <slug>` | **required** | the project the photos, the run, the album and the labels belong to (an unknown or deactivated slug fails before anything is read) |
 | `--album <uid\|name>` | – | adds every photo to the album; a uid is used as-is, a name is looked up and **created if not found** (applies to duplicates too → this fixes a forgotten `--album`) |
 | `--labels <a,b,c>` | – | attaches labels (by name; anything that does not exist is created) to every photo in the run |
 | `--recursive`, `-r` | `true` | descends into subdirectories too |

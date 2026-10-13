@@ -193,7 +193,7 @@ func TestReviewPlaceCheck_rejectClearsTheLocationAndLeavesTheTombstoneDB(t *test
 		t.Errorf("location_source = %q, want the %q tombstone",
 			after.LocationSource, photos.LocationSourceManual)
 	}
-	candidates, err := h.photos.ListLocationCandidates(context.Background(), 0)
+	candidates, err := h.photos.ListLocationCandidates(context.Background(), project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListLocationCandidates: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestReviewPlaceCheck_rejectClearsTheLocationAndLeavesTheTombstoneDB(t *test
 // location.
 func countEstimates(t *testing.T, h *reviewHarness) int {
 	t.Helper()
-	total, err := h.photos.CountEstimatedLocations(context.Background())
+	total, err := h.photos.CountEstimatedLocations(context.Background(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("CountEstimatedLocations: %v", err)
 	}

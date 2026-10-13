@@ -67,11 +67,13 @@ type LocatedPoint struct {
 //     appears on the map or in the places hierarchy, which is the only thing an
 //     estimated location would have been for, so guessing one buys nothing and
 //     the guess is not free.
+//   - the project predicate ($1) — a backfill runs over one project's photos.
 //
 // The ordering is by uid rather than taken_at so a limited run is a stable
 // prefix, and it rides the primary key.
 const listLocationCandidatesSQL = `SELECT uid, taken_at FROM photos
-	WHERE lat IS NULL AND lng IS NULL
+	WHERE photos.project_id = $1
+	  AND lat IS NULL AND lng IS NULL
 	  AND location_source = ''
 	  AND taken_at IS NOT NULL
 	  AND NOT taken_at_estimated
@@ -80,18 +82,22 @@ const listLocationCandidatesSQL = `SELECT uid, taken_at FROM photos
 	  AND NOT hidden_from_library
 	ORDER BY uid`
 
-// ListLocationCandidates returns the photos the estimator may fill in: no
-// coordinates, no decision recorded against them, a known and non-estimated
-// capture date, not a scan and not archived. A limit above zero caps the result;
-// zero or less returns every candidate.
+// ListLocationCandidates returns the project's photos the estimator may fill
+// in: no coordinates, no decision recorded against them, a known and
+// non-estimated capture date, not a scan and not archived. A limit above zero
+// caps the result; zero or less returns every candidate. An empty projectUID is
+// ErrNoProject.
 //
 // The set shrinks as photos are estimated or decided, which is what makes the
 // backfill idempotent and cheap to re-run.
-func (s *Store) ListLocationCandidates(ctx context.Context, limit int) ([]LocationCandidate, error) {
+func (s *Store) ListLocationCandidates(ctx context.Context, projectUID string, limit int) ([]LocationCandidate, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	sql := listLocationCandidatesSQL
-	args := []any{}
+	args := []any{projectUID}
 	if limit > 0 {
-		sql += " LIMIT $1"
+		sql += " LIMIT $2"
 		args = append(args, limit)
 	}
 	rows, err := s.pool.Query(ctx, sql, args...)
@@ -124,17 +130,28 @@ func (s *Store) ListLocationCandidates(ctx context.Context, limit int) ([]Locati
 // provenance is unrecorded. So are the photos hidden from the library: hiding is
 // a statement about where a photo is shown, not about whether its GPS tag is
 // true, and dropping real measurements would only make the estimates worse.
+//
+// The project predicate keeps a neighbour inside the candidate's own project:
+// another family's trip on the same afternoon says nothing about where this
+// photo was taken.
 const listLocatedNeighboursSQL = `SELECT lat, lng FROM photos
-	WHERE lat IS NOT NULL AND lng IS NOT NULL
+	WHERE photos.project_id = $1
+	  AND lat IS NOT NULL AND lng IS NOT NULL
 	  AND location_source <> 'estimate'
 	  AND archived_at IS NULL
-	  AND taken_at >= $1 AND taken_at <= $2`
+	  AND taken_at >= $2 AND taken_at <= $3`
 
-// ListLocatedNeighbours returns the measured positions of the non-archived
-// photos captured between from and to inclusive. Estimated locations are
-// excluded, so an estimate is never derived from another estimate.
-func (s *Store) ListLocatedNeighbours(ctx context.Context, from, to time.Time) ([]LocatedPoint, error) {
-	rows, err := s.pool.Query(ctx, listLocatedNeighboursSQL, from, to)
+// ListLocatedNeighbours returns the measured positions of the project's
+// non-archived photos captured between from and to inclusive. Estimated
+// locations are excluded, so an estimate is never derived from another
+// estimate. An empty projectUID is ErrNoProject.
+func (s *Store) ListLocatedNeighbours(
+	ctx context.Context, projectUID string, from, to time.Time,
+) ([]LocatedPoint, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	rows, err := s.pool.Query(ctx, listLocatedNeighboursSQL, projectUID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("photos: listing located neighbours: %w", err)
 	}
@@ -165,33 +182,39 @@ func (s *Store) ListLocatedNeighbours(ctx context.Context, from, to time.Time) (
 // The order is by uid, so a rotating window is a stable slice rather than a
 // shuffling one, and it rides the primary key.
 var listEstimatedLocationsSQL = `SELECT ` + photoColumns + ` FROM photos
-	WHERE location_source = 'estimate'
+	WHERE photos.project_id = $1
+	  AND location_source = 'estimate'
 	  AND lat IS NOT NULL AND lng IS NOT NULL
 	  AND archived_at IS NULL
 	  AND NOT hidden_from_library
 	ORDER BY uid
-	LIMIT $1 OFFSET $2`
+	LIMIT $2 OFFSET $3`
 
 // countEstimatedLocationsSQL counts the same set listEstimatedLocationsSQL
 // pages through, so a caller can rotate a window over it without reading it all.
 const countEstimatedLocationsSQL = `SELECT count(*) FROM photos
-	WHERE location_source = 'estimate'
+	WHERE photos.project_id = $1
+	  AND location_source = 'estimate'
 	  AND lat IS NOT NULL AND lng IS NOT NULL
 	  AND archived_at IS NULL
 	  AND NOT hidden_from_library`
 
-// ListEstimatedLocations returns the non-archived, non-hidden photos whose
-// location the estimator guessed, ordered by uid, as one window of at most limit
-// rows starting at offset. A non-positive limit returns nothing (the caller
-// asked for no work), a negative offset is treated as zero.
-func (s *Store) ListEstimatedLocations(ctx context.Context, offset, limit int) ([]Photo, error) {
+// ListEstimatedLocations returns the project's non-archived, non-hidden photos
+// whose location the estimator guessed, ordered by uid, as one window of at most
+// limit rows starting at offset. A non-positive limit returns nothing (the caller
+// asked for no work), a negative offset is treated as zero. An empty projectUID
+// is ErrNoProject.
+func (s *Store) ListEstimatedLocations(ctx context.Context, projectUID string, offset, limit int) ([]Photo, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		return nil, nil
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.pool.Query(ctx, listEstimatedLocationsSQL, limit, offset)
+	rows, err := s.pool.Query(ctx, listEstimatedLocationsSQL, projectUID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("photos: listing estimated locations: %w", err)
 	}
@@ -211,11 +234,15 @@ func (s *Store) ListEstimatedLocations(ctx context.Context, offset, limit int) (
 	return out, nil
 }
 
-// CountEstimatedLocations returns how many photos carry an estimated location
-// awaiting a verdict — the size of the set ListEstimatedLocations pages through.
-func (s *Store) CountEstimatedLocations(ctx context.Context) (int, error) {
+// CountEstimatedLocations returns how many of the project's photos carry an
+// estimated location awaiting a verdict — the size of the set
+// ListEstimatedLocations pages through. An empty projectUID is ErrNoProject.
+func (s *Store) CountEstimatedLocations(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
 	var total int
-	if err := s.pool.QueryRow(ctx, countEstimatedLocationsSQL).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(ctx, countEstimatedLocationsSQL, projectUID).Scan(&total); err != nil {
 		return 0, fmt.Errorf("photos: counting estimated locations: %w", err)
 	}
 	return total, nil
@@ -229,15 +256,20 @@ func (s *Store) CountEstimatedLocations(ctx context.Context) (int, error) {
 // backfill harmless.
 const setEstimatedLocationSQL = `UPDATE photos
 	SET lat = $2, lng = $3, location_source = 'estimate', updated_at = now()
-	WHERE uid = $1 AND lat IS NULL AND lng IS NULL AND location_source = ''`
+	WHERE uid = $1 AND photos.project_id = $4
+	  AND lat IS NULL AND lng IS NULL AND location_source = ''`
 
-// SetEstimatedLocation stores lat/lng on the photo identified by uid and marks
-// them an estimate. It reports whether the row was written: false means the
-// photo gained a location or a decision since it was listed, in which case the
-// estimate is dropped rather than applied — a measured or user-set location
-// always wins.
-func (s *Store) SetEstimatedLocation(ctx context.Context, uid string, lat, lng float64) (bool, error) {
-	tag, err := s.pool.Exec(ctx, setEstimatedLocationSQL, uid, lat, lng)
+// SetEstimatedLocation stores lat/lng on the project's photo identified by uid
+// and marks them an estimate. It reports whether the row was written: false
+// means the photo gained a location or a decision since it was listed (or is
+// not the project's), in which case the estimate is dropped rather than applied
+// — a measured or user-set location always wins. An empty projectUID is
+// ErrNoProject.
+func (s *Store) SetEstimatedLocation(ctx context.Context, projectUID, uid string, lat, lng float64) (bool, error) {
+	if err := requireProject(projectUID); err != nil {
+		return false, err
+	}
+	tag, err := s.pool.Exec(ctx, setEstimatedLocationSQL, uid, lat, lng, projectUID)
 	if err != nil {
 		return false, fmt.Errorf("photos: setting estimated location for %s: %w", uid, err)
 	}

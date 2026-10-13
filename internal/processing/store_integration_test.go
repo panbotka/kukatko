@@ -11,6 +11,8 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
+	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -200,7 +202,7 @@ func TestLibraryReads(t *testing.T) {
 	}
 
 	var walked []string
-	if err := store.EachLiveEvidence(ctx, func(uid string, ev processing.Evidence) error {
+	if err := store.EachLiveEvidence(ctx, project.BootstrapUID, func(uid string, ev processing.Evidence) error {
 		walked = append(walked, uid)
 		if ev.MediaType != photos.MediaImage {
 			t.Errorf("%s media = %q, want image", uid, ev.MediaType)
@@ -232,5 +234,28 @@ func TestLibraryReads(t *testing.T) {
 	got := unfinished[live.UID]
 	if !got[processing.StepImageEmbed] || got[processing.StepFaceDetect] || len(got) != 1 {
 		t.Errorf("unfinished steps of %s = %v, want only image_embed", live.UID, got)
+	}
+}
+
+// TestLibraryReads_scopedByProject checks the library-wide gap scan walks one
+// project's photos only: each side's walk finds its own seeded photo and never
+// the other's, and a walk without a project is refused.
+func TestLibraryReads_scopedByProject(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	f := projecttest.Seed(t, db.Pool())
+	store := processing.NewStore(db.Pool())
+
+	f.AssertStoreScoped(t, func(projectUID string) ([]string, error) {
+		var uids []string
+		err := store.EachLiveEvidence(t.Context(), projectUID, func(uid string, _ processing.Evidence) error {
+			uids = append(uids, uid)
+			return nil
+		})
+		return uids, err
+	})
+	err := store.EachLiveEvidence(t.Context(), "", func(string, processing.Evidence) error { return nil })
+	if !errors.Is(err, processing.ErrNoProject) {
+		t.Errorf("EachLiveEvidence without a project = %v, want ErrNoProject", err)
 	}
 }

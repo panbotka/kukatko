@@ -94,14 +94,14 @@ type PhotoLister interface {
 	// ListPhotosMissingFileMetadata returns the uids of non-archived photos whose
 	// original has never been read out into the metadata columns (limit <= 0 returns
 	// all).
-	ListPhotosMissingFileMetadata(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingFileMetadata(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// ListActiveUIDs returns the uids of every non-archived photo, for a forced full
 	// re-run that re-reads the whole library.
-	ListActiveUIDs(ctx context.Context) ([]string, error)
+	ListActiveUIDs(ctx context.Context, projectUID string) ([]string, error)
 	// ListVideosMissingTechnicalMetadata returns the uids of non-archived videos
 	// whose container was evidently never read out — no duration, no codec, no
 	// frame size (limit <= 0 returns all).
-	ListVideosMissingTechnicalMetadata(ctx context.Context, limit int) ([]string, error)
+	ListVideosMissingTechnicalMetadata(ctx context.Context, projectUID string, limit int) ([]string, error)
 }
 
 // Enqueuer schedules metadata jobs for the backfill. It is satisfied by
@@ -299,11 +299,11 @@ func fileMetadata(photo photos.Photo, meta exif.Metadata) photos.FileMetadata {
 // halfway picks up exactly where it stopped and a second run over a drained library
 // enqueues nothing. It returns ErrBackfillUnavailable when the Service was built
 // without the Lister and Enqueuer collaborators.
-func (s *Service) BackfillMetadata(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillMetadata(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.backfillCandidates(ctx, all)
+	uids, err := s.backfillCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -324,11 +324,11 @@ func (s *Service) BackfillMetadata(ctx context.Context, all bool) (int, error) {
 // the queue dedupes an already-active job per photo and a repaired clip drops out
 // of the candidate set. It returns ErrBackfillUnavailable when the Service was
 // built without the Lister and Enqueuer collaborators.
-func (s *Service) BackfillVideoMetadata(ctx context.Context) (int, error) {
+func (s *Service) BackfillVideoMetadata(ctx context.Context, projectUID string) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.lister.ListVideosMissingTechnicalMetadata(ctx, 0)
+	uids, err := s.lister.ListVideosMissingTechnicalMetadata(ctx, projectUID, 0)
 	if err != nil {
 		return 0, fmt.Errorf("metajob: listing videos missing technical metadata: %w", err)
 	}
@@ -352,15 +352,15 @@ func (s *Service) enqueueAll(ctx context.Context, uids []string) (int, error) {
 // backfillCandidates returns the uids the backfill should schedule: every
 // non-archived photo when all is set, otherwise only those whose original has
 // never been read.
-func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) backfillCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveUIDs(ctx)
+		uids, err := s.lister.ListActiveUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("metajob: listing active photos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListPhotosMissingFileMetadata(ctx, 0)
+	uids, err := s.lister.ListPhotosMissingFileMetadata(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("metajob: listing photos missing metadata: %w", err)
 	}

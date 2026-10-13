@@ -563,14 +563,15 @@ type FeedbackStore interface {
 // to one; *geoestimate.Reviewer satisfies it. A nil one switches the place check
 // off — the queue simply never asks that kind of question.
 type PlaceReviewer interface {
-	// Pending returns one window of the photos awaiting a verdict plus the total
-	// size of that set.
-	Pending(ctx context.Context, offset, limit int) ([]geoestimate.Pending, int, error)
-	// Accept keeps an estimated location and promotes it to a decision.
-	Accept(ctx context.Context, photoUID string, meta audit.Meta) error
-	// Reject throws an estimated location away, leaving the tombstone that stops
-	// the estimator handing it back.
-	Reject(ctx context.Context, photoUID string, meta audit.Meta) error
+	// Pending returns one window of the project's photos awaiting a verdict plus
+	// the total size of that set.
+	Pending(ctx context.Context, projectUID string, offset, limit int) ([]geoestimate.Pending, int, error)
+	// Accept keeps the project photo's estimated location and promotes it to a
+	// decision.
+	Accept(ctx context.Context, projectUID, photoUID string, meta audit.Meta) error
+	// Reject throws the project photo's estimated location away, leaving the
+	// tombstone that stops the estimator handing it back.
+	Reject(ctx context.Context, projectUID, photoUID string, meta audit.Meta) error
 }
 
 // DuplicateFinder returns a page of near-duplicate groups; *duplicates.Service

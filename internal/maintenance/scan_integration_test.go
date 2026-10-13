@@ -152,18 +152,18 @@ func newHarnessOver(t *testing.T, store storage.Storage, kind maintenance.StoreK
 	}
 	renditions := hlsjob.NewStore(db.Pool())
 	cfg := maintenance.Config{
-		Photos:    photoStore,
-		Vectors:   vectorStore,
+		Photos:    bootstrapPhotos{photoStore},
+		Vectors:   bootstrapVectors{vectorStore},
 		Originals: store,
 		Store:     maintenance.NewStoreOriginals(kind, lister),
 		Thumbs:    maintenance.NewThumbCache(thumbnailer),
 		Enqueuer:  enqueuer,
-		Embed:     embedSvc,
-		Faces:     faceSvc,
+		Embed:     bootstrapEmbed{embedSvc},
+		Faces:     bootstrapFaces{faceSvc},
 		FaceCache: facematch.New(facematch.Config{
 			Photos: photoStore, Faces: vectorStore, People: peopleStore,
 		}),
-		Places:    placesSvc,
+		Places:    bootstrapPlaces{placesSvc},
 		Sidecar:   enqueuer,
 		Streaming: maintenance.Streaming{Renditions: renditions, Segments: segments},
 	}
@@ -423,4 +423,61 @@ func assertFinding(t *testing.T, name string, f maintenance.Finding, count int, 
 		}
 	}
 	t.Errorf("%s samples = %v, want to contain %q", name, f.Samples, want)
+}
+
+// The maintenance service is instance-wide while the backfill listings it reads
+// are per project; production walks every active project (cmd/kukatko's
+// allprojects.go). Every photo these tests seed lives in the bootstrap project,
+// so these adapters bind the listings to it.
+
+// bootstrapPhotos binds the photos store's pHash listing to the bootstrap project.
+type bootstrapPhotos struct{ *photos.Store }
+
+// ListPhotosMissingPhash lists the bootstrap project's photos missing pHashes.
+func (p bootstrapPhotos) ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error) {
+	return p.Store.ListPhotosMissingPhash(ctx, project.BootstrapUID, limit)
+}
+
+// bootstrapVectors binds the vectors store's listings to the bootstrap project.
+type bootstrapVectors struct{ *vectors.Store }
+
+// ListPhotosMissingEmbedding lists the bootstrap project's photos missing an
+// embedding.
+func (v bootstrapVectors) ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error) {
+	return v.Store.ListPhotosMissingEmbedding(ctx, project.BootstrapUID, limit)
+}
+
+// ListPhotosMissingFaces lists the bootstrap project's stills missing faces.
+func (v bootstrapVectors) ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error) {
+	return v.Store.ListPhotosMissingFaces(ctx, project.BootstrapUID, limit)
+}
+
+// bootstrapEmbed runs the embedding backfill over the bootstrap project.
+type bootstrapEmbed struct{ *embedjob.Service }
+
+// BackfillEmbeddings backfills the bootstrap project's embeddings.
+func (e bootstrapEmbed) BackfillEmbeddings(ctx context.Context) (int, error) {
+	return e.Service.BackfillEmbeddings(ctx, project.BootstrapUID)
+}
+
+// bootstrapFaces runs the face backfill over the bootstrap project.
+type bootstrapFaces struct{ *facejob.Service }
+
+// BackfillFaces backfills the bootstrap project's face detections.
+func (f bootstrapFaces) BackfillFaces(ctx context.Context) (facejob.BackfillResult, error) {
+	return f.Service.BackfillFaces(ctx, project.BootstrapUID)
+}
+
+// bootstrapPlaces runs the place listing and backfill over the bootstrap
+// project.
+type bootstrapPlaces struct{ *placesjob.Service }
+
+// MissingPlaces lists the bootstrap project's photos missing a place.
+func (p bootstrapPlaces) MissingPlaces(ctx context.Context) ([]string, error) {
+	return p.Service.MissingPlaces(ctx, project.BootstrapUID)
+}
+
+// BackfillPlaces backfills the bootstrap project's places.
+func (p bootstrapPlaces) BackfillPlaces(ctx context.Context) (int, error) {
+	return p.Service.BackfillPlaces(ctx, project.BootstrapUID)
 }

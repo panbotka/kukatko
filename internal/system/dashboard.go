@@ -197,6 +197,9 @@ type Dashboard struct {
 	// configuration rather than a count, so the store leaves it false and the
 	// service stamps it.
 	Video Video `json:"video"`
+	// Projects is how the catalogue and the queue divide between the projects;
+	// the three sections above are its instance totals.
+	Projects []ProjectSummary `json:"projects"`
 }
 
 // DashboardCounter reads the dashboard aggregates from the catalogue. It is

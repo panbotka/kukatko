@@ -31,7 +31,7 @@ func (stubPlaceStore) SavePlace(_ context.Context, p places.Place) (places.Place
 	return p, nil
 }
 
-func (stubPlaceStore) ListPhotosMissingPlaces(context.Context, int) ([]string, error) {
+func (stubPlaceStore) ListPhotosMissingPlaces(context.Context, string, int) ([]string, error) {
 	return nil, nil
 }
 
@@ -70,14 +70,14 @@ func TestPlacesEnqueuerOrNil(t *testing.T) {
 func TestMaintenancePlaceBackfillerOrNil(t *testing.T) {
 	t.Parallel()
 
-	if got := maintenancePlaceBackfillerOrNil(nil); got != nil {
+	if got := maintenancePlaceBackfillerOrNil(nil, nil); got != nil {
 		t.Errorf("without a places service the backfiller = %v, want nil", got)
 	}
 	svc := placesjob.New(placesjob.Config{
 		Photos: stubPlacePhotos{}, Places: stubPlaceStore{}, Geocoder: stubGeocoder{},
 		Enqueuer: stubPlaceEnqueuer{},
 	})
-	if got := maintenancePlaceBackfillerOrNil(svc); got == nil {
+	if got := maintenancePlaceBackfillerOrNil(svc, nil); got == nil {
 		t.Error("with a places service the backfiller is nil, so the repair could never run")
 	}
 }

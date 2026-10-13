@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storyboard"
 	"github.com/panbotka/kukatko/internal/storyboardjob"
 	"github.com/panbotka/kukatko/internal/video"
@@ -388,14 +389,14 @@ func TestBackfillVideoMetadata_findsAndDrainsBrokenClips(t *testing.T) {
 	env.seedLegacyPhoto(t, "ee51", nil) // a still: never a candidate here
 
 	// The ordinary backfill cannot see it: the row is stamped as read.
-	if enqueued, err := env.svc.BackfillMetadata(ctx, false); err != nil {
+	if enqueued, err := env.svc.BackfillMetadata(ctx, project.BootstrapUID, false); err != nil {
 		t.Fatalf("BackfillMetadata: %v", err)
 	} else if enqueued != 1 || enq.uids[0] == broken.UID {
 		t.Fatalf("plain backfill scheduled %v, want only the unread still", enq.uids)
 	}
 
 	enq.uids = nil
-	enqueued, err := env.svc.BackfillVideoMetadata(ctx)
+	enqueued, err := env.svc.BackfillVideoMetadata(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("BackfillVideoMetadata: %v", err)
 	}
@@ -407,7 +408,7 @@ func TestBackfillVideoMetadata_findsAndDrainsBrokenClips(t *testing.T) {
 		t.Fatalf("Reextract: %v", err)
 	}
 	enq.uids = nil
-	enqueued, err = env.svc.BackfillVideoMetadata(ctx)
+	enqueued, err = env.svc.BackfillVideoMetadata(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("second BackfillVideoMetadata: %v", err)
 	}

@@ -89,10 +89,10 @@ type ObjectStore interface {
 type PhotoLister interface {
 	// ListVideosMissingHLS returns the uids of non-archived videos with no
 	// recorded rendition (limit <= 0 returns all).
-	ListVideosMissingHLS(ctx context.Context, limit int) ([]string, error)
+	ListVideosMissingHLS(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// ListActiveVideoUIDs returns the uids of every non-archived video, for a
 	// forced full re-encode.
-	ListActiveVideoUIDs(ctx context.Context) ([]string, error)
+	ListActiveVideoUIDs(ctx context.Context, projectUID string) ([]string, error)
 }
 
 // Enqueuer schedules `hls_transcode` jobs for the backfill. It is satisfied by

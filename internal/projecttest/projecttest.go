@@ -148,6 +148,8 @@ func (f *Fixture) Tenant(which Side) *Tenant {
 type options struct {
 	// roles is each side's member role.
 	roles [2]project.Role
+	// maintainers says which side's member is an instance maintainer.
+	maintainers [2]bool
 }
 
 // Option configures Seed.
@@ -157,6 +159,15 @@ type Option func(*options)
 func WithRole(which Side, role project.Role) Option {
 	return func(o *options) {
 		o.roles[which] = role
+	}
+}
+
+// AsMaintainer makes the member of which an instance maintainer as well — the
+// account the maintainer-only project routes (import history, processing
+// backfills) admit. Its membership is still of its own project only.
+func AsMaintainer(which Side) Option {
+	return func(o *options) {
+		o.maintainers[which] = true
 	}
 }
 

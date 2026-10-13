@@ -33,6 +33,7 @@ package system
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/panbotka/kukatko/internal/backup"
@@ -75,12 +76,12 @@ type JobCounter interface {
 	CountPending(ctx context.Context, types ...string) (int, error)
 }
 
-// ImportLister exposes the most recent run per source. It is satisfied by
-// *importer.Store.
+// ImportLister exposes a project's most recent run per source. It is
+// satisfied by *importer.Store.
 type ImportLister interface {
-	// LatestRun returns the most recently started run for source, whatever its
-	// status, with ok=false when the source has never run.
-	LatestRun(ctx context.Context, source importer.Source) (importer.Run, bool, error)
+	// LatestRun returns the project's most recently started run for source,
+	// whatever its status, with ok=false when the source has never run there.
+	LatestRun(ctx context.Context, projectUID string, source importer.Source) (importer.Run, bool, error)
 }
 
 // BackupReporter reports the backup subsystem state. It is satisfied by
@@ -153,7 +154,8 @@ type Jobs struct {
 // Imports is the last-import section of the status snapshot. A nil run means
 // nothing has been imported that way yet.
 type Imports struct {
-	// Folder is the most recent `kukatko import dir` run, or nil. It is the only
+	// Folder is the most recent `kukatko import dir` run of any project, or nil;
+	// each project's own is ProjectSummary.LastImport. It is the only
 	// import that can still happen: the PhotoPrism/photo-sorter migration finished
 	// in August 2026 and its importers are gone. Its runs are still in the history
 	// (GET /import/runs); they are simply not live state a dashboard should watch.
@@ -206,6 +208,8 @@ type Geocode struct {
 // Status is the full system-status snapshot returned by GET /system/status: the
 // dashboard's two content sections (what is in the library, what is still to do)
 // followed by the operational ones (queue, backup, imports, disk, providers).
+// Every count in it is an instance total; Projects says how the catalogue
+// divides between the projects.
 type Status struct {
 	Version    version.Info   `json:"version"`
 	Database   Database       `json:"database"`
@@ -219,6 +223,9 @@ type Status struct {
 	Library    LibrarySummary `json:"library"`
 	Remaining  RemainingWork  `json:"remaining"`
 	Video      Video          `json:"video"`
+	// Projects is the per-project breakdown, one row per project (deactivated
+	// ones included), ordered by slug.
+	Projects []ProjectSummary `json:"projects"`
 }
 
 // Config bundles the dependencies of New. Backup may be nil (no destination
@@ -240,8 +247,11 @@ type Config struct {
 	// Geocode reports the reverse-geocode credit budget; nil when no mapy.com key
 	// is configured.
 	Geocode GeocodeReporter
-	// Imports supplies the latest run per source.
+	// Imports supplies each project's latest run per source.
 	Imports ImportLister
+	// Projects lists the projects whose latest import runs and duplicate groups
+	// are read one at a time; nil reads none of them.
+	Projects ProjectLister
 	// Library supplies the library-wide counts behind LibraryStats. A nil Library
 	// makes LibraryStats fail rather than panic, so a caller that only needs
 	// Collect may leave it unset.
@@ -299,16 +309,17 @@ type Service struct {
 	maps         MapsReporter
 	geocode      GeocodeReporter
 	imports      ImportLister
+	projects     ProjectLister
 	storage      *storageCache
 	library      *snapshotCache[Library]
 	charts       *snapshotCache[Charts]
 	dashboard    *snapshotCache[Dashboard]
-	duplicates   *asyncCache[int]
+	duplicates   *asyncCache[map[string]int]
 }
 
 // New constructs a Service from cfg.
 func New(cfg Config) *Service {
-	return &Service{
+	s := &Service{
 		db:           cfg.DB,
 		embeddings:   cfg.Embeddings,
 		embeddingURL: cfg.EmbeddingURL,
@@ -318,13 +329,16 @@ func New(cfg Config) *Service {
 		maps:         cfg.Maps,
 		geocode:      cfg.Geocode,
 		imports:      cfg.Imports,
+		projects:     cfg.Projects,
 		storage:      newStorageCache(cfg.OriginalsPath, cfg.CachePath, cfg.StorageTTL, cfg.Clock),
 		library:      newLibraryCache(cfg.Library, cfg.LibraryTTL, cfg.Clock),
 		charts:       newChartsCache(cfg.Charts, cfg.ChartsTTL, cfg.Clock),
 		dashboard:    newDashboardCache(cfg.Dashboard, cfg.DashboardTTL, cfg.Clock),
-		duplicates: newDuplicateCache(
-			cfg.Duplicates, cfg.DuplicateTTL, cfg.DuplicateTimeout, cfg.Clock),
 	}
+	// The duplicate scan walks the active projects, so it is built over the
+	// service that knows them.
+	s.duplicates = newDuplicateCache(s, cfg.Duplicates, cfg.DuplicateTTL, cfg.DuplicateTimeout, cfg.Clock)
+	return s
 }
 
 // LibraryStats returns the instance-wide library counts with their derived
@@ -374,12 +388,18 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	imports, err := s.collectImports(ctx)
+	dashboard, err := s.dashboard.get(ctx)
 	if err != nil {
 		return Status{}, err
 	}
-	dashboard, err := s.dashboard.get(ctx)
-	if err != nil {
+	// The breakdown rows come from the memoised aggregate, which other requests
+	// read too: they are copied before this request stamps its own fields on.
+	projects := slices.Clone(dashboard.Projects)
+	if projects == nil {
+		projects = []ProjectSummary{}
+	}
+	scan, perProject := s.collectDuplicates()
+	if err := s.fillProjects(ctx, projects, perProject, scan.Available); err != nil {
 		return Status{}, err
 	}
 	// Storage usage is best-effort: a missing or unreadable directory must not
@@ -388,7 +408,7 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 	// The two numbers the catalogue cannot count itself: the derived media is a
 	// filesystem measurement, the duplicate groups a background scan.
 	dashboard.Library.DerivedBytes = storageUsage.CacheBytes
-	dashboard.Remaining.Duplicates = s.collectDuplicates()
+	dashboard.Remaining.Duplicates = scan
 	// Whether videos are encoded at all is configuration, not something the
 	// catalogue can be asked; without it "no video has a streaming version" reads
 	// as a backlog when it is the instance working as configured.
@@ -399,13 +419,14 @@ func (s *Service) Collect(ctx context.Context) (Status, error) {
 		Embeddings: Embeddings{Online: s.embeddings.Healthy(ctx), URL: s.embeddingURL},
 		Jobs:       jobsStatus,
 		Backup:     s.collectBackup(),
-		Imports:    imports,
+		Imports:    Imports{Folder: newestRun(projects)},
 		Storage:    storageUsage,
 		Maps:       s.collectMaps(),
 		Geocode:    s.collectGeocode(),
 		Library:    dashboard.Library,
 		Remaining:  dashboard.Remaining,
 		Video:      dashboard.Video,
+		Projects:   projects,
 	}, nil
 }
 
@@ -443,8 +464,8 @@ func (s *Service) collectJobs(ctx context.Context) (Jobs, error) {
 	return status, nil
 }
 
-// LatestRuns returns the most recent run of every recognised import source,
-// keyed by source. A source that has never run is absent from the map rather
+// LatestRuns returns the most recent run of every recognised import source
+// across the active projects, keyed by source. A source that has never run is absent from the map rather
 // than present with a zero run, so a caller can tell "never imported" from
 // "imported and the tallies happen to be zero".
 //
@@ -452,33 +473,53 @@ func (s *Service) collectJobs(ctx context.Context) (Jobs, error) {
 // retired migration ones whose finished runs stay in the table, while the
 // dashboard's Imports section reports only the folder import it renders.
 func (s *Service) LatestRuns(ctx context.Context) (map[importer.Source]importer.Run, error) {
+	projectUIDs, err := s.activeProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sources := importer.AllSources()
 	runs := make(map[importer.Source]importer.Run, len(sources))
 	for _, source := range sources {
-		run, err := s.latestRun(ctx, source)
-		if err != nil {
-			return nil, err
-		}
-		if run != nil {
-			runs[source] = *run
+		for _, projectUID := range projectUIDs {
+			run, err := s.latestRun(ctx, projectUID, source)
+			if err != nil {
+				return nil, err
+			}
+			if run != nil && laterRun(*run, runs[source]) {
+				runs[source] = *run
+			}
 		}
 	}
 	return runs, nil
 }
 
-// collectImports reads the latest folder-import run for the import section;
-// LatestRuns covers every source, including the retired migration ones.
-func (s *Service) collectImports(ctx context.Context) (Imports, error) {
-	run, err := s.latestRun(ctx, importer.SourceFolder)
-	if err != nil {
-		return Imports{}, err
+// newestRun returns the most recently started of the projects' latest folder
+// imports, or nil when none of them has had one.
+func newestRun(projects []ProjectSummary) *importer.Run {
+	var newest *importer.Run
+	for i := range projects {
+		run := projects[i].LastImport
+		if run != nil && (newest == nil || laterRun(*run, *newest)) {
+			newest = run
+		}
 	}
-	return Imports{Folder: run}, nil
+	return newest
 }
 
-// latestRun returns the most recent run for source, or nil when none exists.
-func (s *Service) latestRun(ctx context.Context, source importer.Source) (*importer.Run, error) {
-	run, ok, err := s.imports.LatestRun(ctx, source)
+// laterRun reports whether candidate started after incumbent (a zero
+// incumbent always loses); the id breaks a tie the way the store's ordering
+// does.
+func laterRun(candidate, incumbent importer.Run) bool {
+	if !candidate.StartedAt.Equal(incumbent.StartedAt) {
+		return candidate.StartedAt.After(incumbent.StartedAt)
+	}
+	return candidate.ID > incumbent.ID
+}
+
+// latestRun returns the project's most recent run for source, or nil when none
+// exists.
+func (s *Service) latestRun(ctx context.Context, projectUID string, source importer.Source) (*importer.Run, error) {
+	run, ok, err := s.imports.LatestRun(ctx, projectUID, source)
 	if err != nil {
 		return nil, fmt.Errorf("latest %s run: %w", source, err)
 	}

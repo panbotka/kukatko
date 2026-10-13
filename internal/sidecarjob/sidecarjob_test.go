@@ -152,11 +152,11 @@ type fakeLister struct {
 	err     error
 }
 
-func (f fakeLister) ListPhotosMissingSidecar(context.Context, int) ([]string, error) {
+func (f fakeLister) ListPhotosMissingSidecar(context.Context, string, int) ([]string, error) {
 	return f.pending, f.err
 }
 
-func (f fakeLister) ListActiveUIDs(context.Context) ([]string, error) {
+func (f fakeLister) ListActiveUIDs(context.Context, string) ([]string, error) {
 	return f.active, f.err
 }
 
@@ -524,7 +524,7 @@ func TestBackfillSidecars_enqueuesPending(t *testing.T) {
 		Lister:   fakeLister{pending: []string{"a", "b", "c"}, active: []string{"a", "b", "c", "d"}},
 		Enqueuer: enq,
 	})
-	got, err := svc.BackfillSidecars(context.Background(), false)
+	got, err := svc.BackfillSidecars(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillSidecars returned error: %v", err)
 	}
@@ -547,7 +547,7 @@ func TestBackfillSidecars_allForcesFullRun(t *testing.T) {
 		Lister:   fakeLister{pending: []string{"a"}, active: []string{"a", "b", "c", "d"}},
 		Enqueuer: enq,
 	})
-	got, err := svc.BackfillSidecars(context.Background(), true)
+	got, err := svc.BackfillSidecars(context.Background(), "pjtest", true)
 	if err != nil {
 		t.Fatalf("BackfillSidecars returned error: %v", err)
 	}
@@ -564,7 +564,7 @@ func TestBackfillSidecars_drainedLibraryIsIdempotent(t *testing.T) {
 
 	enq := &fakeEnqueuer{}
 	svc := newTestService(t, Config{Lister: fakeLister{pending: nil}, Enqueuer: enq})
-	got, err := svc.BackfillSidecars(context.Background(), false)
+	got, err := svc.BackfillSidecars(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillSidecars returned error: %v", err)
 	}
@@ -580,7 +580,7 @@ func TestBackfillSidecars_unavailableWithoutWiring(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestService(t, Config{})
-	if _, err := svc.BackfillSidecars(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillSidecars(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("BackfillSidecars error = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -595,7 +595,7 @@ func TestBackfillSidecars_reportsPartialProgressOnFailure(t *testing.T) {
 		Lister:   fakeLister{pending: []string{"a", "b"}},
 		Enqueuer: &fakeEnqueuer{err: errors.New("queue down")},
 	})
-	got, err := svc.BackfillSidecars(context.Background(), false)
+	got, err := svc.BackfillSidecars(context.Background(), "pjtest", false)
 	if err == nil {
 		t.Fatal("BackfillSidecars returned nil despite a queue failure")
 	}

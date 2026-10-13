@@ -116,28 +116,28 @@ type PhotoLister interface {
 	// perceptual hash yet (limit <= 0 returns all). The thumbnail job computes the
 	// pHash alongside the thumbnail, so a missing pHash marks a photo whose
 	// thumbnail was never generated — the narrow "missing thumbnail" predicate.
-	ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingPhash(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// ListActiveUIDs returns the uids of every non-archived photo, for a forced
 	// full re-run that re-checks thumbnails across the whole library.
-	ListActiveUIDs(ctx context.Context) ([]string, error)
+	ListActiveUIDs(ctx context.Context, projectUID string) ([]string, error)
 	// CountPhotosMissingPhash returns how many photos ListPhotosMissingPhash would
 	// return, without materialising them.
-	CountPhotosMissingPhash(ctx context.Context) (int, error)
+	CountPhotosMissingPhash(ctx context.Context, projectUID string) (int, error)
 	// CountActivePhotos returns how many photos ListActiveUIDs would return,
 	// without materialising them.
-	CountActivePhotos(ctx context.Context) (int, error)
+	CountActivePhotos(ctx context.Context, projectUID string) (int, error)
 	// ListActiveVideoUIDs returns the uids of every non-archived video, for the
 	// video-scoped rebuild that re-picks poster frames.
-	ListActiveVideoUIDs(ctx context.Context) ([]string, error)
+	ListActiveVideoUIDs(ctx context.Context, projectUID string) ([]string, error)
 	// CountActiveVideos returns how many videos ListActiveVideoUIDs would return,
 	// without materialising them.
-	CountActiveVideos(ctx context.Context) (int, error)
+	CountActiveVideos(ctx context.Context, projectUID string) (int, error)
 	// ListPhotosMissingBlurhash returns the uids of non-archived photos with no
 	// blurred placeholder yet (limit <= 0 returns all).
-	ListPhotosMissingBlurhash(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingBlurhash(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// CountPhotosMissingBlurhash returns how many photos
 	// ListPhotosMissingBlurhash would return, without materialising them.
-	CountPhotosMissingBlurhash(ctx context.Context) (int, error)
+	CountPhotosMissingBlurhash(ctx context.Context, projectUID string) (int, error)
 }
 
 // Enqueuer schedules thumbnail jobs for the backfill. It is satisfied by
@@ -310,11 +310,11 @@ func (s *Service) ForceRegenerate(ctx context.Context, photoUID string) ([]strin
 //
 // Ask CountBackfillThumbnails first when the size of the run matters: it answers
 // the same question without scheduling anything.
-func (s *Service) BackfillThumbnails(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillThumbnails(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.backfillCandidates(ctx, all)
+	uids, err := s.backfillCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -334,18 +334,18 @@ func (s *Service) BackfillThumbnails(ctx context.Context, all bool) (int, error)
 // adding photos, and the enqueuer's dedup means the eventual run may schedule
 // fewer jobs than this if some are already queued. It returns
 // ErrBackfillUnavailable when the Service was built without the Lister.
-func (s *Service) CountBackfillThumbnails(ctx context.Context, all bool) (int, error) {
+func (s *Service) CountBackfillThumbnails(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil {
 		return 0, ErrBackfillUnavailable
 	}
 	if all {
-		count, err := s.lister.CountActivePhotos(ctx)
+		count, err := s.lister.CountActivePhotos(ctx, projectUID)
 		if err != nil {
 			return 0, fmt.Errorf("thumbjob: counting active photos: %w", err)
 		}
 		return count, nil
 	}
-	count, err := s.lister.CountPhotosMissingPhash(ctx)
+	count, err := s.lister.CountPhotosMissingPhash(ctx, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("thumbjob: counting photos missing thumbnail: %w", err)
 	}
@@ -355,15 +355,15 @@ func (s *Service) CountBackfillThumbnails(ctx context.Context, all bool) (int, e
 // backfillCandidates returns the uids the backfill should schedule: every
 // non-archived photo when all is set, otherwise only those missing a perceptual
 // hash (the narrow "no thumbnail generated" predicate).
-func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) backfillCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveUIDs(ctx)
+		uids, err := s.lister.ListActiveUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("thumbjob: listing active photos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListPhotosMissingPhash(ctx, 0)
+	uids, err := s.lister.ListPhotosMissingPhash(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("thumbjob: listing photos missing thumbnail: %w", err)
 	}
@@ -387,11 +387,11 @@ func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, e
 // and Enqueuer collaborators. Ask CountBackfillVideoPosters first: this run
 // re-decodes every video in the library, which is the most expensive of the
 // thumbnail backfills per photo.
-func (s *Service) BackfillVideoPosters(ctx context.Context) (int, error) {
+func (s *Service) BackfillVideoPosters(ctx context.Context, projectUID string) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.lister.ListActiveVideoUIDs(ctx)
+	uids, err := s.lister.ListActiveVideoUIDs(ctx, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("thumbjob: listing active videos: %w", err)
 	}
@@ -402,11 +402,11 @@ func (s *Service) BackfillVideoPosters(ctx context.Context) (int, error) {
 // schedule, without scheduling anything — the dry run for a backfill whose every
 // job re-reads a video original. It returns ErrBackfillUnavailable when the
 // Service was built without the Lister.
-func (s *Service) CountBackfillVideoPosters(ctx context.Context) (int, error) {
+func (s *Service) CountBackfillVideoPosters(ctx context.Context, projectUID string) (int, error) {
 	if s.lister == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	count, err := s.lister.CountActiveVideos(ctx)
+	count, err := s.lister.CountActiveVideos(ctx, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("thumbjob: counting active videos: %w", err)
 	}
@@ -534,11 +534,11 @@ func (s *Service) encodeBlurhash(ctx context.Context, photo photos.Photo) (strin
 // It returns ErrBackfillUnavailable when the Service was built without the Lister
 // and Enqueuer collaborators. Ask CountBackfillBlurhash first when the size of
 // the run matters.
-func (s *Service) BackfillBlurhash(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillBlurhash(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.blurhashCandidates(ctx, all)
+	uids, err := s.blurhashCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -555,18 +555,18 @@ func (s *Service) BackfillBlurhash(ctx context.Context, all bool) (int, error) {
 // adding photos, and the enqueuer's dedup means the eventual run may schedule
 // fewer jobs than this. It returns ErrBackfillUnavailable when the Service was
 // built without the Lister.
-func (s *Service) CountBackfillBlurhash(ctx context.Context, all bool) (int, error) {
+func (s *Service) CountBackfillBlurhash(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil {
 		return 0, ErrBackfillUnavailable
 	}
 	if all {
-		count, err := s.lister.CountActivePhotos(ctx)
+		count, err := s.lister.CountActivePhotos(ctx, projectUID)
 		if err != nil {
 			return 0, fmt.Errorf("thumbjob: counting active photos: %w", err)
 		}
 		return count, nil
 	}
-	count, err := s.lister.CountPhotosMissingBlurhash(ctx)
+	count, err := s.lister.CountPhotosMissingBlurhash(ctx, projectUID)
 	if err != nil {
 		return 0, fmt.Errorf("thumbjob: counting photos missing blurhash: %w", err)
 	}
@@ -576,15 +576,15 @@ func (s *Service) CountBackfillBlurhash(ctx context.Context, all bool) (int, err
 // blurhashCandidates returns the uids the placeholder backfill should schedule:
 // every non-archived photo when all is set, otherwise only those without a
 // placeholder.
-func (s *Service) blurhashCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) blurhashCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveUIDs(ctx)
+		uids, err := s.lister.ListActiveUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("thumbjob: listing active photos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListPhotosMissingBlurhash(ctx, 0)
+	uids, err := s.lister.ListPhotosMissingBlurhash(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("thumbjob: listing photos missing blurhash: %w", err)
 	}

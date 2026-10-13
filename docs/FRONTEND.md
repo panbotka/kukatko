@@ -477,6 +477,12 @@ here.
   counted by when a photo *arrived*, which is why the note says so) and **Velikost podle katalogu**
   (knihovna / koš / odvozená data), the one storage figure that is meaningful when the originals live in an
   object store; the header links on to `/stats` for the processing statistics),
+  `ProjectBreakdownPanel` (**how those totals divide between the projects** — the snapshot's `projects` rows as a
+  `RecordTable` (cards on a phone): the project name linking into its library (`projectPathFor(slug, '/')`) with
+  its slug and a „deaktivovaný" badge, live photos, videos, trash, the originals' size, faces, subjects, albums, the
+  queue as „N čeká · N běží · N chyb", its duplicate groups („—" until a scan finished, always for a deactivated
+  project) and its last import's age („nikdy" without one); it sits right under `LibraryOverview`, because every
+  other number on the page is an instance total),
   `RemainingWorkPanel` (**what is still to do**: obličeje beze jména → `/review`, shluky → `/people/clusters`,
   bez data, bez souřadnic → `/?q=geo%3Ano`, bez místa → `/maintenance` (the tile counts the photos that
   *have* coordinates and no place yet, which is exactly what the maintenance page's „Určit místo u fotek se
@@ -2903,7 +2909,9 @@ here.
   reads as a sentence keyed on how it ended (`import.history.errorSummary.failed`/`.partial`/`.generic`)
   and parks `run.last_error` verbatim in a `TechnicalDetail`; a failure row names its step in words
   (`import.failures.stages.*`) and hides the `importer.Stage` id, the extra detail and the server's message
-  behind the row's own disclosure. Even the `kukatko import dir` command sits in a disclosure under the intro rather than in its prose.
+  behind the row's own disclosure. Even the `kukatko import dir` command sits in a disclosure under the intro rather than in its prose,
+  spelled with the current project's slug (`kukatko import dir --project <slug> <path>`, `useProjectSlug`), since
+  an import lands in exactly the one project it names and the page lists that project's runs only.
   There is **nothing to start from the page**: the only import left is `kukatko import dir`, which reads a
   directory on the server's disk and therefore runs from the CLI, and the one-off import
   closed in August 2026 and was removed together with its start buttons and its completeness-check card.

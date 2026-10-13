@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/photos"
 )
 
@@ -25,10 +26,10 @@ import (
 // the handler depends on behaviour rather than the concrete store, keeping it
 // unit-testable with fakes.
 type Store interface {
-	// AggregatePlaces returns the country/city place hierarchy with per-place
-	// photo counts over non-archived photos. A non-empty country scopes the
-	// result to that one country's cities.
-	AggregatePlaces(ctx context.Context, country string) ([]photos.CountryPlaces, error)
+	// AggregatePlaces returns the project's country/city place hierarchy with
+	// per-place photo counts over non-archived photos. A non-empty country scopes
+	// the result to that one country's cities.
+	AggregatePlaces(ctx context.Context, projectUID, country string) ([]photos.CountryPlaces, error)
 }
 
 // API exposes the places browse endpoint over HTTP. The auth guard is supplied by
@@ -65,12 +66,13 @@ type placesResponse struct {
 	Places []photos.CountryPlaces `json:"places"`
 }
 
-// handleList writes the place hierarchy as {places:[…]}, optionally scoped to the
-// country query parameter. The aggregation already excludes archived photos and
-// photos without place data, and sorts countries and cities by count then name.
+// handleList writes the request project's place hierarchy as {places:[…]},
+// optionally scoped to the country query parameter. The aggregation already
+// excludes archived photos, photos without place data and every other project's
+// photos, and sorts countries and cities by count then name.
 func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
 	country := r.URL.Query().Get("country")
-	places, err := a.store.AggregatePlaces(r.Context(), country)
+	places, err := a.store.AggregatePlaces(r.Context(), auth.ProjectUIDFromContext(r.Context()), country)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "aggregating places failed")
 		return

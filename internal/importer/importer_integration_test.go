@@ -9,6 +9,7 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/importer"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // TestStore_RunLifecycle walks a run from Start through UpdateCounts to Complete
@@ -20,7 +21,7 @@ func TestStore_RunLifecycle(t *testing.T) {
 	store := importer.NewStore(db.Pool())
 	ctx := t.Context()
 
-	run, err := store.Start(ctx, importer.SourcePhotoPrism)
+	run, err := store.Start(ctx, project.BootstrapUID, importer.SourcePhotoPrism)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestStore_RunLifecycle(t *testing.T) {
 	if err := store.UpdateCounts(ctx, run.ID, progress); err != nil {
 		t.Fatalf("UpdateCounts: %v", err)
 	}
-	mid, err := store.Get(ctx, run.ID)
+	mid, err := store.Get(ctx, project.BootstrapUID, run.ID)
 	if err != nil {
 		t.Fatalf("Get after UpdateCounts: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestStore_RunLifecycle(t *testing.T) {
 	if err := store.Complete(ctx, run.ID, &watermark, final); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
-	done, err := store.Get(ctx, run.ID)
+	done, err := store.Get(ctx, project.BootstrapUID, run.ID)
 	if err != nil {
 		t.Fatalf("Get after Complete: %v", err)
 	}
@@ -80,14 +81,14 @@ func TestStore_Fail(t *testing.T) {
 	store := importer.NewStore(db.Pool())
 	ctx := t.Context()
 
-	run, err := store.Start(ctx, importer.SourcePhotoSorter)
+	run, err := store.Start(ctx, project.BootstrapUID, importer.SourcePhotoSorter)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	if err := store.Fail(ctx, run.ID, "connection refused", importer.Counts{Failed: 7}); err != nil {
 		t.Fatalf("Fail: %v", err)
 	}
-	failed, err := store.Get(ctx, run.ID)
+	failed, err := store.Get(ctx, project.BootstrapUID, run.ID)
 	if err != nil {
 		t.Fatalf("Get after Fail: %v", err)
 	}
@@ -112,7 +113,7 @@ func TestStore_LatestRun(t *testing.T) {
 	ctx := t.Context()
 
 	// No runs yet: not found.
-	if _, ok, err := store.LatestRun(ctx, importer.SourcePhotoPrism); err != nil || ok {
+	if _, ok, err := store.LatestRun(ctx, project.BootstrapUID, importer.SourcePhotoPrism); err != nil || ok {
 		t.Fatalf("LatestRun with no runs = (ok=%v, err=%v), want (false, nil)", ok, err)
 	}
 
@@ -128,7 +129,7 @@ func TestStore_LatestRun(t *testing.T) {
 		t.Fatalf("Fail: %v", err)
 	}
 
-	got, ok, err := store.LatestRun(ctx, importer.SourcePhotoPrism)
+	got, ok, err := store.LatestRun(ctx, project.BootstrapUID, importer.SourcePhotoPrism)
 	if err != nil {
 		t.Fatalf("LatestRun: %v", err)
 	}
@@ -143,12 +144,12 @@ func TestStore_LatestRun(t *testing.T) {
 	}
 
 	// A different source has its own cursor, still empty here.
-	if _, ok, err := store.LatestRun(ctx, importer.SourcePhotoSorter); err != nil || ok {
+	if _, ok, err := store.LatestRun(ctx, project.BootstrapUID, importer.SourcePhotoSorter); err != nil || ok {
 		t.Errorf("LatestRun for photosorter = (ok=%v, err=%v), want (false, nil)", ok, err)
 	}
 
 	// An unrecognised source is rejected.
-	if _, _, err := store.LatestRun(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
+	if _, _, err := store.LatestRun(ctx, project.BootstrapUID, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
 		t.Errorf("LatestRun(invalid) error = %v, want ErrInvalidSource", err)
 	}
 }
@@ -160,10 +161,10 @@ func TestStore_Errors(t *testing.T) {
 	store := importer.NewStore(db.Pool())
 	ctx := t.Context()
 
-	if _, err := store.Start(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
+	if _, err := store.Start(ctx, project.BootstrapUID, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
 		t.Errorf("Start(invalid) error = %v, want ErrInvalidSource", err)
 	}
-	if _, err := store.Get(ctx, 99999); !errors.Is(err, importer.ErrRunNotFound) {
+	if _, err := store.Get(ctx, project.BootstrapUID, 99999); !errors.Is(err, importer.ErrRunNotFound) {
 		t.Errorf("Get(missing) error = %v, want ErrRunNotFound", err)
 	}
 	if err := store.UpdateCounts(ctx, 99999, importer.Counts{}); !errors.Is(err, importer.ErrRunNotFound) {
@@ -172,7 +173,7 @@ func TestStore_Errors(t *testing.T) {
 	if err := store.Complete(ctx, 99999, nil, importer.Counts{}); !errors.Is(err, importer.ErrRunNotFound) {
 		t.Errorf("Complete(missing) error = %v, want ErrRunNotFound", err)
 	}
-	if _, _, err := store.LatestRun(ctx, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
+	if _, _, err := store.LatestRun(ctx, project.BootstrapUID, importer.Source("nope")); !errors.Is(err, importer.ErrInvalidSource) {
 		t.Errorf("LatestRun(invalid) error = %v, want ErrInvalidSource", err)
 	}
 }
@@ -187,7 +188,7 @@ func TestStore_List(t *testing.T) {
 	ctx := t.Context()
 
 	// Empty history: a non-nil, empty page.
-	empty, err := store.List(ctx, 10, 0)
+	empty, err := store.List(ctx, project.BootstrapUID, 10, 0)
 	if err != nil {
 		t.Fatalf("List(empty): %v", err)
 	}
@@ -200,7 +201,7 @@ func TestStore_List(t *testing.T) {
 	second := mustStart(t, store, importer.SourcePhotoSorter)
 	third := mustStart(t, store, importer.SourcePhotoPrism)
 
-	all, err := store.List(ctx, 10, 0)
+	all, err := store.List(ctx, project.BootstrapUID, 10, 0)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestStore_List(t *testing.T) {
 	}
 
 	// Paging: limit 1, offset 1 returns just the second-newest run.
-	page, err := store.List(ctx, 1, 1)
+	page, err := store.List(ctx, project.BootstrapUID, 1, 1)
 	if err != nil {
 		t.Fatalf("List(paged): %v", err)
 	}
@@ -241,7 +242,7 @@ func TestStore_Failures(t *testing.T) {
 	if err := store.Complete(ctx, clean, nil, importer.Counts{Imported: 1}); err != nil {
 		t.Fatalf("Complete(clean): %v", err)
 	}
-	if got, _ := store.Get(ctx, clean); got.Status != importer.StatusDone {
+	if got, _ := store.Get(ctx, project.BootstrapUID, clean); got.Status != importer.StatusDone {
 		t.Errorf("clean run status = %q, want done", got.Status)
 	}
 
@@ -273,7 +274,7 @@ func TestStore_Failures(t *testing.T) {
 	if err := store.Complete(ctx, run, &watermark, importer.Counts{Imported: 3, Failed: 2}); err != nil {
 		t.Fatalf("Complete(partial): %v", err)
 	}
-	got, err := store.Get(ctx, run)
+	got, err := store.Get(ctx, project.BootstrapUID, run)
 	if err != nil {
 		t.Fatalf("Get(partial): %v", err)
 	}
@@ -281,14 +282,14 @@ func TestStore_Failures(t *testing.T) {
 		t.Errorf("run with failures status = %q, want partial", got.Status)
 	}
 	// Listing returns both failures, newest first, and honours the source filter.
-	all, err := store.ListFailures(ctx, importer.FailureFilter{})
+	all, err := store.ListFailures(ctx, importer.FailureFilter{ProjectUID: project.BootstrapUID})
 	if err != nil {
 		t.Fatalf("ListFailures: %v", err)
 	}
 	if len(all) != 2 {
 		t.Fatalf("ListFailures returned %d, want 2", len(all))
 	}
-	byRun, err := store.ListFailures(ctx, importer.FailureFilter{RunID: run, UnresolvedOnly: true})
+	byRun, err := store.ListFailures(ctx, importer.FailureFilter{ProjectUID: project.BootstrapUID, RunID: run, UnresolvedOnly: true})
 	if err != nil {
 		t.Fatalf("ListFailures(run): %v", err)
 	}
@@ -298,7 +299,7 @@ func TestStore_Failures(t *testing.T) {
 	if byRun[0].Source != importer.SourcePhotoPrism || byRun[0].RunID != run {
 		t.Errorf("failure[0] = %+v, want source photoprism run %d", byRun[0], run)
 	}
-	sorter, err := store.ListFailures(ctx, importer.FailureFilter{Source: importer.SourcePhotoSorter})
+	sorter, err := store.ListFailures(ctx, importer.FailureFilter{ProjectUID: project.BootstrapUID, Source: importer.SourcePhotoSorter})
 	if err != nil {
 		t.Fatalf("ListFailures(sorter): %v", err)
 	}
@@ -306,7 +307,7 @@ func TestStore_Failures(t *testing.T) {
 		t.Errorf("ListFailures(photosorter) returned %d, want 0", len(sorter))
 	}
 	// Paging bounds the page.
-	page, err := store.ListFailures(ctx, importer.FailureFilter{Limit: 1})
+	page, err := store.ListFailures(ctx, importer.FailureFilter{ProjectUID: project.BootstrapUID, Limit: 1})
 	if err != nil {
 		t.Fatalf("ListFailures(paged): %v", err)
 	}
@@ -315,7 +316,7 @@ func TestStore_Failures(t *testing.T) {
 	}
 
 	// An unrecognised source filter is rejected.
-	if _, err := store.ListFailures(ctx, importer.FailureFilter{Source: importer.Source("nope")}); !errors.Is(
+	if _, err := store.ListFailures(ctx, importer.FailureFilter{ProjectUID: project.BootstrapUID, Source: importer.Source("nope")}); !errors.Is(
 		err, importer.ErrInvalidSource,
 	) {
 		t.Errorf("ListFailures(invalid source) error = %v, want ErrInvalidSource", err)
@@ -325,7 +326,7 @@ func TestStore_Failures(t *testing.T) {
 // mustStart starts a run and fails the test on error, returning the new run id.
 func mustStart(t *testing.T, store *importer.Store, source importer.Source) int64 {
 	t.Helper()
-	run, err := store.Start(t.Context(), source)
+	run, err := store.Start(t.Context(), project.BootstrapUID, source)
 	if err != nil {
 		t.Fatalf("Start(%s): %v", source, err)
 	}

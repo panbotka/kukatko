@@ -101,14 +101,14 @@ type fakeLister struct {
 	activeCalls int
 }
 
-func (f *fakeLister) ListPhotosMissingOCR(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListPhotosMissingOCR(_ context.Context, _ string, _ int) ([]string, error) {
 	if f.missingErr != nil {
 		return nil, f.missingErr
 	}
 	return append([]string(nil), f.missing...), nil
 }
 
-func (f *fakeLister) ListActiveImageUIDs(_ context.Context) ([]string, error) {
+func (f *fakeLister) ListActiveImageUIDs(_ context.Context, _ string) ([]string, error) {
 	f.activeCalls++
 	return append([]string(nil), f.active...), nil
 }
@@ -374,7 +374,7 @@ func TestBackfillOCR(t *testing.T) {
 				Lister: lister, Enqueuer: enq,
 			})
 
-			n, err := svc.BackfillOCR(context.Background(), tc.all)
+			n, err := svc.BackfillOCR(context.Background(), "pjtest", tc.all)
 			if err != nil {
 				t.Fatalf("BackfillOCR: %v", err)
 			}
@@ -395,7 +395,7 @@ func TestBackfillOCR_withoutCollaborators(t *testing.T) {
 	t.Parallel()
 
 	svc := newService(&fakePhotoStore{}, &fakeRecognizer{}, &fakePreviewer{}, Config{})
-	if _, err := svc.BackfillOCR(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillOCR(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Fatalf("err = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -409,7 +409,7 @@ func TestBackfillOCR_enqueueFailureStopsAndReportsProgress(t *testing.T) {
 		Lister: lister, Enqueuer: &fakeEnqueuer{err: boom},
 	})
 
-	n, err := svc.BackfillOCR(context.Background(), false)
+	n, err := svc.BackfillOCR(context.Background(), "pjtest", false)
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v, want the enqueue failure", err)
 	}

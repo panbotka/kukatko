@@ -56,7 +56,7 @@ func (f *fakePlaces) SavePlace(_ context.Context, p places.Place) (places.Place,
 }
 
 // ListPhotosMissingPlaces returns the canned missing-uid list.
-func (f *fakePlaces) ListPhotosMissingPlaces(_ context.Context, _ int) ([]string, error) {
+func (f *fakePlaces) ListPhotosMissingPlaces(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.missing, nil
 }
 
@@ -626,7 +626,7 @@ func TestBackfillPlaces(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := newService(&fakePhotos{}, pl, &fakeGeocoder{}, enq, nil)
 
-	n, err := svc.BackfillPlaces(context.Background())
+	n, err := svc.BackfillPlaces(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillPlaces: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestMissingPlaces(t *testing.T) {
 	geo := &fakeGeocoder{}
 	svc := newService(&fakePhotos{}, pl, geo, enq, nil)
 
-	uids, err := svc.MissingPlaces(context.Background())
+	uids, err := svc.MissingPlaces(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("MissingPlaces: %v", err)
 	}

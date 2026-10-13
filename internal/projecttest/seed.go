@@ -68,7 +68,7 @@ func Seed(tb testing.TB, pool *pgxpool.Pool, opts ...Option) *Fixture {
 		}
 		tenant := f.Tenant(side)
 		*tenant = newTenant(tb, p, o.roles[side])
-		seedMember(tb, pool, projects, tenant)
+		seedMember(tb, pool, projects, tenant, o.maintainers[side])
 		seedCatalogue(ctx, tb, pool, tenant)
 	}
 	return f
@@ -96,16 +96,20 @@ func newTenant(tb testing.TB, p *project.Project, role project.Role) Tenant {
 // seedMember creates the tenant's account with no membership at all and then
 // makes it an approved member of the tenant's project only, so the member of B
 // is not also a member of the bootstrap project.
-func seedMember(tb testing.TB, pool *pgxpool.Pool, projects *project.Store, tenant *Tenant) {
+func seedMember(tb testing.TB, pool *pgxpool.Pool, projects *project.Store, tenant *Tenant, maintainer bool) {
 	tb.Helper()
 	hash, err := auth.HashPassword(Password)
 	if err != nil {
 		tb.Fatalf("projecttest: hashing the password: %v", err)
 	}
 	approved := time.Now()
+	role := auth.RoleUser
+	if maintainer {
+		role = auth.RoleMaintainer
+	}
 	if err := auth.NewStore(pool).CreateUser(tb.Context(), auth.User{
 		UID: tenant.UserUID, Username: tenant.Username, DisplayName: "Člen " + tenant.Token,
-		Email: tenant.Username + "@example.test", PasswordHash: hash, Role: auth.RoleUser,
+		Email: tenant.Username + "@example.test", PasswordHash: hash, Role: role,
 		ApprovedAt: &approved,
 	}); err != nil {
 		tb.Fatalf("projecttest: creating member %s: %v", tenant.Username, err)

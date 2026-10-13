@@ -58,7 +58,7 @@ func TestHLS_backfillCandidates(t *testing.T) {
 		t.Fatalf("create live photo: %v", err)
 	}
 
-	uids, err := store.ListVideosMissingHLS(ctx, 0)
+	uids, err := store.ListVideosMissingHLS(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListVideosMissingHLS: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestHLS_backfillCandidates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("recording a rendition: %v", err)
 	}
-	uids, err = store.ListVideosMissingHLS(ctx, 0)
+	uids, err = store.ListVideosMissingHLS(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListVideosMissingHLS after the encode: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestHLS_backfillCandidates(t *testing.T) {
 
 	// The forced full run re-encodes every live video, encoded or not — and still
 	// never a still, a live photo or an archived video.
-	all, err := store.ListActiveVideoUIDs(ctx)
+	all, err := store.ListActiveVideoUIDs(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListActiveVideoUIDs: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestHLS_backfillCandidates(t *testing.T) {
 
 	// The count must answer for exactly that listing — it is what sizes the
 	// video-scoped thumbnail backfill before it re-decodes every video original.
-	videoCount, err := store.CountActiveVideos(ctx)
+	videoCount, err := store.CountActiveVideos(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("CountActiveVideos: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestHLS_backfillCandidates(t *testing.T) {
 	}
 
 	// A positive limit caps the page, so a caller can schedule in batches.
-	capped, err := store.ListVideosMissingHLS(ctx, 1)
+	capped, err := store.ListVideosMissingHLS(ctx, project.BootstrapUID, 1)
 	if err != nil {
 		t.Fatalf("ListVideosMissingHLS(limit=1): %v", err)
 	}

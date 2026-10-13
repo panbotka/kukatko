@@ -18,6 +18,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/metajob"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 )
 
@@ -299,7 +300,7 @@ func TestBackfillMetadata_resumes(t *testing.T) {
 	first := env.seedLegacyPhoto(t, "dd44", nil)
 	second := env.seedLegacyPhoto(t, "ee55", nil)
 
-	enqueued, err := env.svc.BackfillMetadata(ctx, false)
+	enqueued, err := env.svc.BackfillMetadata(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("BackfillMetadata: %v", err)
 	}
@@ -312,7 +313,7 @@ func TestBackfillMetadata_resumes(t *testing.T) {
 		t.Fatalf("Reextract: %v", err)
 	}
 	enq.uids = nil
-	enqueued, err = env.svc.BackfillMetadata(ctx, false)
+	enqueued, err = env.svc.BackfillMetadata(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("second BackfillMetadata: %v", err)
 	}
@@ -325,7 +326,7 @@ func TestBackfillMetadata_resumes(t *testing.T) {
 		t.Fatalf("Reextract: %v", err)
 	}
 	enq.uids = nil
-	enqueued, err = env.svc.BackfillMetadata(ctx, false)
+	enqueued, err = env.svc.BackfillMetadata(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("third BackfillMetadata: %v", err)
 	}
@@ -335,7 +336,7 @@ func TestBackfillMetadata_resumes(t *testing.T) {
 
 	// A forced full re-run still covers the whole library.
 	enq.uids = nil
-	enqueued, err = env.svc.BackfillMetadata(ctx, true)
+	enqueued, err = env.svc.BackfillMetadata(ctx, project.BootstrapUID, true)
 	if err != nil {
 		t.Fatalf("forced BackfillMetadata: %v", err)
 	}

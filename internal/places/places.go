@@ -4,6 +4,11 @@
 // photo_places side table so the library can later be browsed and filtered by
 // location without re-hitting the rate-limited geocoder.
 //
+// photo_places is a child of photos (keyed by photo uid), so it carries no
+// project of its own: the per-photo reads and writes act on a photo the caller
+// already holds, and the one library-wide read (the backfill source) takes the
+// project and filters the joined photo by it.
+//
 // The Store owns no connection; it borrows the shared pgx pool. It exposes the
 // three operations the job needs: read a photo's cached place (to decide whether
 // a re-geocode is required), upsert a place (the geocode result, or an empty
@@ -23,6 +28,10 @@ import (
 
 // ErrPlaceNotFound is returned by GetPlace when a photo has no place row yet.
 var ErrPlaceNotFound = errors.New("places: place not found")
+
+// ErrNoProject is returned by a library-wide read called without a project:
+// a programming error, never "the whole instance".
+var ErrNoProject = errors.New("places: no project given")
 
 // Place is one photo_places row: the cached place hierarchy for a photo plus the
 // coordinates the geocode was computed from. Lat and Lng are nil for a photo
@@ -140,29 +149,35 @@ func (s *Store) SavePlace(ctx context.Context, p Place) (Place, error) {
 	return saved, nil
 }
 
-// listMissingPlacesSQL selects the uids of non-archived, geotagged photos that
-// have no photo_places row yet, newest first. The %s placeholder receives a LIMIT
-// clause only when a positive limit is requested.
+// listMissingPlacesSQL selects the uids of one project's ($1) non-archived,
+// geotagged photos that have no photo_places row yet, newest first. The %s
+// placeholder receives a LIMIT clause only when a positive limit is requested.
 const listMissingPlacesSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN photo_places pp ON pp.photo_uid = p.uid
-WHERE pp.photo_uid IS NULL
+WHERE p.project_id = $1
+  AND pp.photo_uid IS NULL
   AND p.archived_at IS NULL
   AND p.lat IS NOT NULL
   AND p.lng IS NOT NULL
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
-// ListPhotosMissingPlaces returns the uids of non-archived photos that carry GPS
-// coordinates but have no cached place yet, newest first. A positive limit caps
-// the result; a non-positive limit returns every missing photo. It backs the
-// place backfill, which enqueues a `places` job per returned uid.
-func (s *Store) ListPhotosMissingPlaces(ctx context.Context, limit int) ([]string, error) {
+// ListPhotosMissingPlaces returns the uids of the project's non-archived photos
+// that carry GPS coordinates but have no cached place yet, newest first. A
+// positive limit caps the result; a non-positive limit returns every missing
+// photo. It backs the place backfill, which enqueues a `places` job per returned
+// uid. An empty projectUID is ErrNoProject: the backfill runs one project at a
+// time, never over the whole instance by accident.
+func (s *Store) ListPhotosMissingPlaces(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if projectUID == "" {
+		return nil, ErrNoProject
+	}
 	query := fmt.Sprintf(listMissingPlacesSQL, "")
-	var args []any
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingPlacesSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listMissingPlacesSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

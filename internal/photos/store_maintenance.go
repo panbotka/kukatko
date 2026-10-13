@@ -57,7 +57,8 @@ const listMissingPhashSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN photo_phashes ph ON ph.photo_uid = p.uid
-WHERE ph.photo_uid IS NULL AND p.archived_at IS NULL
+WHERE p.project_id = $1
+  AND ph.photo_uid IS NULL AND p.archived_at IS NULL
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
 // ListPhotosMissingPhash returns the uids of non-archived photos that do not yet
@@ -65,12 +66,17 @@ ORDER BY p.created_at DESC, p.uid DESC%s`
 // non-positive limit returns every missing photo. It backs the maintenance
 // pHash-recompute repair, which enqueues a thumbnail job per returned uid (the
 // thumbnail handler recomputes a missing pHash while regenerating thumbnails).
-func (s *Store) ListPhotosMissingPhash(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingPhash(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listMissingPhashSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingPhashSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listMissingPhashSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing photos missing phash", query, args...)
 }
@@ -79,7 +85,8 @@ func (s *Store) ListPhotosMissingPhash(ctx context.Context, limit int) ([]string
 const listActiveUIDsSQL = `
 SELECT uid
 FROM photos
-WHERE archived_at IS NULL
+WHERE photos.project_id = $1
+  AND archived_at IS NULL
 ORDER BY created_at DESC, uid DESC`
 
 // ListActiveUIDs returns the uids of every non-archived photo, newest first. It
@@ -87,8 +94,13 @@ ORDER BY created_at DESC, uid DESC`
 // thumbnail job per photo so any missing thumbnail size is regenerated even for
 // photos that already have a perceptual hash; the thumbnail handler skips sizes
 // already cached, so a full re-run stays cheap and never touches originals.
-func (s *Store) ListActiveUIDs(ctx context.Context) ([]string, error) {
-	return s.queryUIDs(ctx, "listing active photos", listActiveUIDsSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListActiveUIDs(ctx context.Context, projectUID string) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return s.queryUIDs(ctx, "listing active photos", listActiveUIDsSQL, projectUID)
 }
 
 // listMissingFileMetadataSQL selects the uids of non-archived photos whose
@@ -98,7 +110,8 @@ func (s *Store) ListActiveUIDs(ctx context.Context) ([]string, error) {
 const listMissingFileMetadataSQL = `
 SELECT uid
 FROM photos
-WHERE metadata_extracted_at IS NULL AND archived_at IS NULL
+WHERE photos.project_id = $1
+  AND metadata_extracted_at IS NULL AND archived_at IS NULL
 ORDER BY created_at DESC, uid DESC%s`
 
 // ListPhotosMissingFileMetadata returns the uids of non-archived photos whose own
@@ -110,12 +123,17 @@ ORDER BY created_at DESC, uid DESC%s`
 // The predicate is the extraction marker rather than "the columns are empty", so
 // the backfill converges: a photo whose file simply carries no IPTC tags is still
 // finished once it has been read, and is not re-scheduled on every run.
-func (s *Store) ListPhotosMissingFileMetadata(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingFileMetadata(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listMissingFileMetadataSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingFileMetadataSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listMissingFileMetadataSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing photos missing file metadata", query, args...)
 }
@@ -125,7 +143,8 @@ const countMissingPhashSQL = `
 SELECT count(*)
 FROM photos p
 LEFT JOIN photo_phashes ph ON ph.photo_uid = p.uid
-WHERE ph.photo_uid IS NULL AND p.archived_at IS NULL`
+WHERE p.project_id = $1
+  AND ph.photo_uid IS NULL AND p.archived_at IS NULL`
 
 // CountPhotosMissingPhash returns how many non-archived photos have no perceptual
 // hashes, which is how many jobs the narrow thumbnail backfill would schedule. It
@@ -133,27 +152,35 @@ WHERE ph.photo_uid IS NULL AND p.archived_at IS NULL`
 // library whose thumbnails were never hashed the "narrow" predicate matches
 // everything, and an operator should learn that from a number rather than from a
 // run that takes the rest of the day.
-func (s *Store) CountPhotosMissingPhash(ctx context.Context) (int, error) {
-	return s.queryCount(ctx, "counting photos missing phash", countMissingPhashSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) CountPhotosMissingPhash(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	return s.queryCount(ctx, "counting photos missing phash", countMissingPhashSQL, projectUID)
 }
 
 // countActiveSQL counts the photos ListActiveUIDs would return.
-const countActiveSQL = `SELECT count(*) FROM photos WHERE archived_at IS NULL`
+const countActiveSQL = `SELECT count(*) FROM photos WHERE photos.project_id = $1 AND archived_at IS NULL`
 
 // CountActivePhotos returns how many non-archived photos the catalogue holds,
 // which is how many jobs a forced full thumbnail backfill (?all=true) would
 // schedule.
-func (s *Store) CountActivePhotos(ctx context.Context) (int, error) {
-	return s.queryCount(ctx, "counting active photos", countActiveSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) CountActivePhotos(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	return s.queryCount(ctx, "counting active photos", countActiveSQL, projectUID)
 }
 
-// queryCount runs a single-value count query, wrapping any failure with the given
-// action for context. It takes no arguments on purpose: every count in this store
-// is over the whole catalogue or a fixed predicate, and a parameterised one would
-// belong with the query that needs it rather than in a shared helper.
-func (s *Store) queryCount(ctx context.Context, action, query string) (int, error) {
+// queryCount runs a single-value count query with args, wrapping any failure
+// with the given action for context.
+func (s *Store) queryCount(ctx context.Context, action, query string, args ...any) (int, error) {
 	var count int
-	if err := s.pool.QueryRow(ctx, query).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("photos: %s: %w", action, err)
 	}
 	return count, nil

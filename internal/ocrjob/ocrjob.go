@@ -98,10 +98,10 @@ type Previewer interface {
 type PhotoLister interface {
 	// ListPhotosMissingOCR returns the uids of non-archived, non-video photos that
 	// have never been through the recogniser (limit <= 0 returns all).
-	ListPhotosMissingOCR(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingOCR(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// ListActiveImageUIDs returns the uids of every non-archived, non-video photo,
 	// for a forced full re-run.
-	ListActiveImageUIDs(ctx context.Context) ([]string, error)
+	ListActiveImageUIDs(ctx context.Context, projectUID string) ([]string, error)
 }
 
 // Enqueuer schedules `ocr` jobs for the backfill. It is satisfied by
@@ -284,11 +284,11 @@ func (s *Service) recognize(ctx context.Context, photo photos.Photo) (embedding.
 // second run over a drained library enqueues nothing. It returns
 // ErrBackfillUnavailable when the Service was built without the Lister and
 // Enqueuer collaborators.
-func (s *Service) BackfillOCR(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillOCR(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.backfillCandidates(ctx, all)
+	uids, err := s.backfillCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -304,15 +304,15 @@ func (s *Service) BackfillOCR(ctx context.Context, all bool) (int, error) {
 
 // backfillCandidates returns the uids the backfill should schedule: every
 // non-archived still when all is set, otherwise only those never recognised.
-func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) backfillCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveImageUIDs(ctx)
+		uids, err := s.lister.ListActiveImageUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("ocrjob: listing active photos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListPhotosMissingOCR(ctx, 0)
+	uids, err := s.lister.ListPhotosMissingOCR(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("ocrjob: listing photos missing OCR: %w", err)
 	}

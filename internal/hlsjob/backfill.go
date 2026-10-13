@@ -18,11 +18,11 @@ import (
 // It returns ErrBackfillUnavailable on a Service built without the backfill
 // collaborators, and stops at the first enqueue failure — reporting how many had
 // been scheduled by then, since those jobs are already in the queue.
-func (s *Service) BackfillHLS(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillHLS(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.backfillCandidates(ctx, all)
+	uids, err := s.backfillCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -38,15 +38,15 @@ func (s *Service) BackfillHLS(ctx context.Context, all bool) (int, error) {
 
 // backfillCandidates returns the uids the backfill should schedule: every
 // non-archived video when all is set, otherwise only those with no rendition.
-func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) backfillCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveVideoUIDs(ctx)
+		uids, err := s.lister.ListActiveVideoUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("hlsjob: listing active videos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListVideosMissingHLS(ctx, 0)
+	uids, err := s.lister.ListVideosMissingHLS(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("hlsjob: listing videos missing HLS: %w", err)
 	}

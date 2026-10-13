@@ -21,10 +21,24 @@ func runDirFlags(t *testing.T, args ...string) (dirImportOptions, error) {
 	cmd.SilenceErrors = true
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	if err := cmd.Flags().Parse(args); err != nil {
+	if err := cmd.Flags().Parse(append([]string{"--project", "v"}, args...)); err != nil {
 		return dirImportOptions{}, err
 	}
 	return dirImportOptionsFromFlags(cmd, "/photos")
+}
+
+// TestDirImportOptionsFromFlags_projectIsRequired checks an import without
+// --project is refused before anything is opened: it lands in exactly one
+// project, never in a guessed one.
+func TestDirImportOptionsFromFlags_projectIsRequired(t *testing.T) {
+	t.Parallel()
+	cmd := newImportDirCmd()
+	if err := cmd.Flags().Parse(nil); err != nil {
+		t.Fatalf("parsing: %v", err)
+	}
+	if _, err := dirImportOptionsFromFlags(cmd, "/photos"); !errors.Is(err, errImportProjectRequired) {
+		t.Errorf("no --project = %v, want errImportProjectRequired", err)
+	}
 }
 
 // TestDirImportOptionsFromFlags checks the flag defaults and how --no-recursive
@@ -51,7 +65,7 @@ func TestDirImportOptionsFromFlags(t *testing.T) {
 			name: "album, labels, dry run and concurrency are read",
 			args: []string{"--album", "Scans", "--labels", "scan,1985", "--dry-run", "--concurrency", "2"},
 			want: dirImportOptions{
-				root: "/photos", recursive: true, album: "Scans",
+				root: "/photos", project: "v", recursive: true, album: "Scans",
 				labels: []string{"scan", "1985"}, dryRun: true, concurrency: 2,
 			},
 		},
@@ -59,7 +73,7 @@ func TestDirImportOptionsFromFlags(t *testing.T) {
 			name: "uploader is read",
 			args: []string{"--uploader", "botka"},
 			want: dirImportOptions{
-				root: "/photos", recursive: true,
+				root: "/photos", project: "v", recursive: true,
 				concurrency: dirimport.DefaultConcurrency, uploader: "botka",
 			},
 		},
@@ -67,7 +81,7 @@ func TestDirImportOptionsFromFlags(t *testing.T) {
 			name: "sidecars are read by default and --no-sidecars turns them off",
 			args: []string{"--no-sidecars"},
 			want: dirImportOptions{
-				root: "/photos", recursive: true, noSidecars: true,
+				root: "/photos", project: "v", recursive: true, noSidecars: true,
 				concurrency: dirimport.DefaultConcurrency,
 			},
 		},

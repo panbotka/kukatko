@@ -8,6 +8,9 @@ import (
 
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/jobs"
+	"github.com/panbotka/kukatko/internal/project"
+	"github.com/panbotka/kukatko/internal/projecttest"
 	"github.com/panbotka/kukatko/internal/system"
 	"github.com/panbotka/kukatko/internal/vectors"
 )
@@ -232,7 +235,68 @@ func TestCountDashboard_EmptyLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountDashboard: %v", err)
 	}
-	if got != (system.Dashboard{}) {
+	projects := got.Projects
+	if got.Library != (system.LibrarySummary{}) || got.Remaining != (system.RemainingWork{}) ||
+		got.Video != (system.Video{}) {
 		t.Errorf("CountDashboard() = %+v, want all zeroes", got)
+	}
+	// The bootstrap project survives a truncate, so it is the one row — and an
+	// empty project is a row of zeroes, not a missing row.
+	if len(projects) != 1 || projects[0].UID != project.BootstrapUID || projects[0].Photos != 0 ||
+		projects[0].OriginalsBytes != 0 || projects[0].Queue != (system.ProjectQueue{}) {
+		t.Errorf("CountDashboard().Projects = %+v, want one empty bootstrap row", projects)
+	}
+}
+
+// TestCountDashboard_ProjectBreakdown seeds a photo, a subject and an album in
+// each of two projects and queues a per-photo job for B's photo plus a
+// library-wide job naming A: each project's row counts only its own catalogue
+// and its own queued work, and a job naming no project is nobody's.
+func TestCountDashboard_ProjectBreakdown(t *testing.T) {
+	db := dbtest.New(t)
+	dbtest.TruncateAll(t, db)
+	pool := db.Pool()
+	f := projecttest.Seed(t, pool)
+	queue := jobs.NewStore(pool)
+	for _, job := range []struct {
+		typ, payload string
+	}{
+		{jobs.TypeThumbnail, `{"photo_uid":"` + f.B.PhotoUID + `"}`},
+		{jobs.TypeFaceCluster, `{"project_uid":"` + f.A.ProjectUID + `"}`},
+		{jobs.TypeMailSend, `{"to":"someone@example.test"}`},
+	} {
+		if _, err := queue.Enqueue(t.Context(), job.typ, []byte(job.payload), jobs.EnqueueOptions{}); err != nil {
+			t.Fatalf("enqueuing %s: %v", job.typ, err)
+		}
+	}
+
+	got, err := system.NewStore(pool).CountDashboard(t.Context())
+	if err != nil {
+		t.Fatalf("CountDashboard: %v", err)
+	}
+	if len(got.Projects) != 2 {
+		t.Fatalf("Projects = %+v, want one row per project", got.Projects)
+	}
+	for _, side := range []projecttest.Side{projecttest.SideA, projecttest.SideB} {
+		tenant := f.Tenant(side)
+		var row *system.ProjectSummary
+		for i := range got.Projects {
+			if got.Projects[i].UID == tenant.ProjectUID {
+				row = &got.Projects[i]
+			}
+		}
+		if row == nil {
+			t.Fatalf("no row for %s", side)
+		}
+		if row.Slug != tenant.Slug || !row.Active || row.Photos != 1 || row.Subjects != 1 || row.Albums != 1 ||
+			row.OriginalsBytes <= 0 {
+			t.Errorf("%s's row = %+v, want its own one photo, subject and album", side, *row)
+		}
+		if row.Queue != (system.ProjectQueue{Queued: 1}) {
+			t.Errorf("%s's queue = %+v, want its one queued job", side, row.Queue)
+		}
+		if row.Duplicates != nil || row.LastImport != nil {
+			t.Errorf("%s's row carries service-stamped fields from the store: %+v", side, *row)
+		}
 	}
 }

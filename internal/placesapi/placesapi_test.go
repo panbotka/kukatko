@@ -23,7 +23,7 @@ type fakeStore struct {
 }
 
 // AggregatePlaces records the requested country and returns the canned result.
-func (f *fakeStore) AggregatePlaces(_ context.Context, country string) ([]photos.CountryPlaces, error) {
+func (f *fakeStore) AggregatePlaces(_ context.Context, _ string, country string) ([]photos.CountryPlaces, error) {
 	f.gotCountry = country
 	return f.result, f.err
 }

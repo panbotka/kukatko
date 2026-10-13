@@ -15,6 +15,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ErrorState } from '../components/ErrorState'
 import { JobQueuePanel } from '../components/system/JobQueuePanel'
 import { LibraryOverview } from '../components/system/LibraryOverview'
+import { ProjectBreakdownPanel } from '../components/system/ProjectBreakdownPanel'
 import { RemainingWorkPanel } from '../components/system/RemainingWorkPanel'
 import { VideoEncodingPanel } from '../components/system/VideoEncodingPanel'
 import { TechnicalDetail } from '../components/TechnicalDetail'
@@ -557,6 +558,8 @@ function AnnouncementCard() {
  *  1. **Library** — what is in it, what arrived recently, what it weighs.
  *  2. **Remaining work** — the backlogs, each linking to the screen it is worked
  *     through on.
+ *     Right under it, the **per-project breakdown**: the same catalogue divided
+ *     by project, with each project's share of the queue.
  *  3. **Job queue** — the background work broken down by type *and* state, with
  *     a per-type dead-letter requeue.
  *  4. **Video** — how far the streaming encode has got, counted over videos
@@ -687,6 +690,7 @@ export function SystemStatusPage() {
       {state.status === 'ready' && (
         <>
           <LibraryOverview library={state.data.library} />
+          <ProjectBreakdownPanel projects={state.data.projects} />
           <RemainingWorkPanel remaining={state.data.remaining} video={state.data.video} />
           <JobQueuePanel
             jobs={state.data.jobs}

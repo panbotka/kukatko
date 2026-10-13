@@ -5,15 +5,19 @@ package dirimport_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
@@ -45,11 +49,23 @@ type testEnv struct {
 
 // newEnv builds the folder import over real storage, a real thumbnailer, the real
 // ingest pipeline and the integration database, plus an editor user to own the
-// imported photos (photos.uploaded_by is a foreign key).
+// imported photos (photos.uploaded_by is a foreign key). It imports into the
+// bootstrap project.
 func newEnv(t *testing.T) *testEnv {
+	t.Helper()
+	return newEnvIn(t, nil)
+}
+
+// newEnvIn is newEnv importing into the project create returns (nil = the
+// bootstrap project), which it calls once the database has been truncated.
+func newEnvIn(t *testing.T, create func(db *database.DB) *project.Project) *testEnv {
 	t.Helper()
 	db := dbtest.New(t)
 	dbtest.TruncateAll(t, db)
+	target := &project.Project{UID: project.BootstrapUID}
+	if create != nil {
+		target = create(db)
+	}
 
 	authSvc := auth.NewService(auth.NewStore(db.Pool()),
 		auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
@@ -74,14 +90,15 @@ func newEnv(t *testing.T) *testEnv {
 			Thumbnailer: thumb.New(fs, t.TempDir()),
 			TempDir:     t.TempDir(),
 		}),
-		Runs:        importer.NewStore(pool),
-		Photos:      photoStore,
-		Filler:      photoStore,
-		Curation:    organizeStore,
-		Albums:      organizeStore,
-		Labels:      organizeStore,
-		ProjectUID:  project.BootstrapUID,
-		Concurrency: 2,
+		Runs:          importer.NewStore(pool),
+		Photos:        photoStore,
+		Filler:        photoStore,
+		Curation:      organizeStore,
+		Albums:        organizeStore,
+		Labels:        organizeStore,
+		ProjectUID:    target.UID,
+		StoragePrefix: target.StoragePrefix,
+		Concurrency:   2,
 	})
 	return &testEnv{
 		svc: svc, db: db, photos: photoStore,
@@ -298,7 +315,7 @@ func photoByName(t *testing.T, env *testEnv, name string) photos.Photo {
 // from) and the tally the import reached.
 func assertRunRecorded(t *testing.T, env *testEnv, runID int64, wantImported int) {
 	t.Helper()
-	run, err := env.runs.Get(t.Context(), runID)
+	run, err := env.runs.Get(t.Context(), project.BootstrapUID, runID)
 	if err != nil {
 		t.Fatalf("Get(run %d): %v", runID, err)
 	}
@@ -419,5 +436,56 @@ func TestImport_dryRunSpotsExistingDuplicates(t *testing.T) {
 	}
 	if got := countRuns(t, env.db); got != 1 {
 		t.Errorf("import runs = %d, want 1 (the dry run records nothing)", got)
+	}
+}
+
+// TestImport_landsInTheNamedProject imports a folder into a created project
+// whose bytes the bootstrap project already holds: the import does not call
+// them duplicates (another project's photo is not this one's), catalogues the
+// photo in the created project under its storage prefix, and records the run
+// there — the bootstrap project's history stays empty.
+func TestImport_landsInTheNamedProject(t *testing.T) {
+	var target *project.Project
+	env := newEnvIn(t, func(db *database.DB) *project.Project {
+		created, err := project.NewStore(db.Pool()).Create(t.Context(), audit.Meta{},
+			project.CreateParams{Slug: "b", Name: "Projekt B"})
+		if err != nil {
+			t.Fatalf("creating project b: %v", err)
+		}
+		target = created
+		return created
+	})
+	root := t.TempDir()
+	payload := jpegBytes(t, 200, 10, 10)
+	write(t, root, "a.jpg", payload)
+	sum := sha256.Sum256(payload)
+	if _, err := env.photos.Create(t.Context(), photos.Photo{
+		FileHash: hex.EncodeToString(sum[:]), FilePath: "2020/01/a.jpg", FileName: "a.jpg",
+		FileSize: int64(len(payload)), FileMime: "image/jpeg",
+	}); err != nil {
+		t.Fatalf("seeding the bootstrap project's copy: %v", err)
+	}
+
+	result, err := env.svc.Import(t.Context(), dirimport.Options{Root: root, Recursive: true, UploadedBy: env.uploader})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Imported != 1 || result.Counts.Duplicates != 0 {
+		t.Fatalf("counts = %+v, want one import and no duplicate across projects", result.Counts)
+	}
+	listed, err := env.photos.List(t.Context(), target.UID, photos.ListParams{Limit: 10})
+	if err != nil {
+		t.Fatalf("listing project b: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ProjectID != target.UID ||
+		!strings.HasPrefix(listed[0].FilePath, target.StoragePrefix) {
+		t.Errorf("project b holds %+v, want the imported photo under %q", listed, target.StoragePrefix)
+	}
+	if runs, err := env.runs.List(t.Context(), target.UID, 10, 0); err != nil || len(runs) != 1 ||
+		runs[0].ID != result.RunID {
+		t.Errorf("project b's runs = %+v, %v; want the import's run %d", runs, err, result.RunID)
+	}
+	if runs, err := env.runs.List(t.Context(), project.BootstrapUID, 10, 0); err != nil || len(runs) != 0 {
+		t.Errorf("the bootstrap project's runs = %+v, %v; want none", runs, err)
 	}
 }

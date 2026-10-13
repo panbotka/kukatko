@@ -20,6 +20,9 @@ var (
 	// ErrLibraryUnavailable indicates Unscheduled was called on a Service built
 	// without a LibraryReader.
 	ErrLibraryUnavailable = errors.New("processing: library gap scan not configured")
+	// ErrNoProject is returned by the library-wide gap scan called without a
+	// project: a programming error, never "the whole instance".
+	ErrNoProject = errors.New("processing: no project given")
 )
 
 // EvidenceReader reads the persisted evidence of the work already done on a
@@ -37,11 +40,12 @@ type JobLister interface {
 }
 
 // LibraryReader reads the library-wide half of the gap scan: the evidence of
-// every live photo and the job types each has unfinished work of. It is satisfied
-// by *Store.
+// every live photo of one project and the job types each has unfinished work
+// of. It is satisfied by *Store.
 type LibraryReader interface {
-	// EachLiveEvidence calls fn with the evidence of every live photo.
-	EachLiveEvidence(ctx context.Context, fn func(photoUID string, ev Evidence) error) error
+	// EachLiveEvidence calls fn with the evidence of every live photo of the
+	// project.
+	EachLiveEvidence(ctx context.Context, projectUID string, fn func(photoUID string, ev Evidence) error) error
 	// UnfinishedSteps returns, per photo uid, the job types it has an unfinished
 	// job of.
 	UnfinishedSteps(ctx context.Context) (map[string]map[Step]bool, error)
@@ -212,14 +216,15 @@ func (s *Service) SchedulePending(ctx context.Context, photoUID string) ([]Step,
 	return scheduled, errors.Join(errs...)
 }
 
-// Unscheduled returns every gap in the live library — each (photo, step) the
-// report would call pending — ordered by photo uid and then by the report's step
-// order. Steps switched off on this instance are never gaps, exactly as they are
-// never pending in the report. It costs two queries however large the library
+// Unscheduled returns every gap in the project's live library — each (photo,
+// step) the report would call pending — ordered by photo uid and then by the
+// report's step order. Another project's photos are never walked. Steps
+// switched off on this instance are never gaps, exactly as they are never
+// pending in the report. It costs two queries however large the library
 // is: one walk over the evidence, one scan of the unfinished jobs.
 //
 // It returns ErrLibraryUnavailable on a Service built without a LibraryReader.
-func (s *Service) Unscheduled(ctx context.Context) ([]Gap, error) {
+func (s *Service) Unscheduled(ctx context.Context, projectUID string) ([]Gap, error) {
 	if s.library == nil {
 		return nil, ErrLibraryUnavailable
 	}
@@ -228,7 +233,7 @@ func (s *Service) Unscheduled(ctx context.Context) ([]Gap, error) {
 		return nil, fmt.Errorf("processing: library gap scan: %w", err)
 	}
 	gaps := make([]Gap, 0)
-	err = s.library.EachLiveEvidence(ctx, func(photoUID string, ev Evidence) error {
+	err = s.library.EachLiveEvidence(ctx, projectUID, func(photoUID string, ev Evidence) error {
 		skip := func(step Step) bool { return s.skips(ev, step) }
 		for _, step := range ev.pending(unfinished[photoUID], skip) {
 			gaps = append(gaps, Gap{PhotoUID: photoUID, Step: step})

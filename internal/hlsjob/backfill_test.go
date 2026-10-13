@@ -16,12 +16,12 @@ type fakeLister struct {
 }
 
 // ListVideosMissingHLS returns the pinned "never encoded" list.
-func (f *fakeLister) ListVideosMissingHLS(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListVideosMissingHLS(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.missing, f.err
 }
 
 // ListActiveVideoUIDs returns the pinned "every video" list.
-func (f *fakeLister) ListActiveVideoUIDs(_ context.Context) ([]string, error) {
+func (f *fakeLister) ListActiveVideoUIDs(_ context.Context, _ string) ([]string, error) {
 	return f.active, f.err
 }
 
@@ -73,7 +73,7 @@ func TestBackfillHLS_picksTheListForTheFlag(t *testing.T) {
 			enq := &fakeBackfillEnqueuer{}
 			lister := &fakeLister{missing: []string{"p1", "p2"}, active: []string{"p1", "p2", "p3"}}
 
-			count, err := backfillService(lister, enq).BackfillHLS(t.Context(), tt.all)
+			count, err := backfillService(lister, enq).BackfillHLS(t.Context(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("BackfillHLS(all=%v): %v", tt.all, err)
 			}
@@ -105,7 +105,7 @@ func TestBackfillHLS_withoutCollaborators(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := backfillService(tt.lister, tt.enq).BackfillHLS(t.Context(), false)
+			_, err := backfillService(tt.lister, tt.enq).BackfillHLS(t.Context(), "pjtest", false)
 			if !errors.Is(err, ErrBackfillUnavailable) {
 				t.Errorf("BackfillHLS error = %v, want ErrBackfillUnavailable", err)
 			}
@@ -120,7 +120,7 @@ func TestBackfillHLS_listFailure(t *testing.T) {
 
 	boom := errors.New("catalogue down")
 	enq := &fakeBackfillEnqueuer{}
-	count, err := backfillService(&fakeLister{err: boom}, enq).BackfillHLS(t.Context(), false)
+	count, err := backfillService(&fakeLister{err: boom}, enq).BackfillHLS(t.Context(), "pjtest", false)
 	if !errors.Is(err, boom) {
 		t.Errorf("BackfillHLS error = %v, want %v", err, boom)
 	}
@@ -138,7 +138,7 @@ func TestBackfillHLS_enqueueFailureReportsProgress(t *testing.T) {
 	enq := &fakeBackfillEnqueuer{failOn: "p3"}
 	lister := &fakeLister{missing: []string{"p1", "p2", "p3", "p4"}}
 
-	count, err := backfillService(lister, enq).BackfillHLS(t.Context(), false)
+	count, err := backfillService(lister, enq).BackfillHLS(t.Context(), "pjtest", false)
 	if !errors.Is(err, errQueueDown) {
 		t.Fatalf("BackfillHLS error = %v, want %v", err, errQueueDown)
 	}

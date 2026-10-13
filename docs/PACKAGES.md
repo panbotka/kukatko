@@ -429,7 +429,13 @@ to `## Package map` in `CLAUDE.md`.
   `GetByPhotoprismFileHash`, `GetByPhotosorterUID`, `GetByPhotoprismAlias` (the alias table's own
   `project_id` in the sub-select); `ListByUIDsInProject`, `ListStackMembers`, `StackCounts`, `GetOCR`;
   the scans behind duplicate detection, stacking and the trash — `ListActivePhashes`,
-  `ListStackCandidates`, `StackInfoByUIDs`, `ListArchivedUIDs` — list only the project's photos.
+  `ListStackCandidates`, `StackInfoByUIDs`, `ListArchivedUIDs` — list only the project's photos; so do the
+  **backfill sources** (`ListActiveUIDs`, `CountActivePhotos`, `ListPhotosMissingPhash`/`CountPhotosMissingPhash`,
+  `ListPhotosMissingBlurhash`/`CountPhotosMissingBlurhash`, `ListPhotosMissingFileMetadata`,
+  `ListVideosMissingTechnicalMetadata`, `ListPhotosMissingSidecar`, `ListPhotosMissingOCR`, `ListActiveImageUIDs`,
+  `ListVideosMissingHLS`, `ListActiveVideoUIDs`/`CountActiveVideos`), the place tree `AggregatePlaces` and the
+  location estimator's `ListLocationCandidates`/`ListLocatedNeighbours`/`SetEstimatedLocation`/
+  `ListEstimatedLocations`/`CountEstimatedLocations`.
   **Writes** follow the same rule: a mutation takes `projectUID` after `ctx` and touches a row only
   inside that project — `UpdateMetadata`(`Audited`), `Archive`/`Unarchive`(`Audited`),
   `SetHiddenFromLibrary`(`Audited`) carry `projectClause` in the `UPDATE`'s `WHERE` (0 rows =
@@ -1326,10 +1332,15 @@ to `## Package map` in `CLAUDE.md`.
   the file has none; people's names and keywords are **only stored** in the EXIF document under the key `Sidecar`
   — Google has no face boxes, so from them **no subject or marker may be created**),
   `internal/dirimport/`
-  (**import of a directory from disk** — `kukatko import dir <path>`; `Service` = `New(Config{Ingest,Runs,
-  Photos,Filler,Curation,Albums,Labels,ProjectUID,Concurrency,Logger})` — `ProjectUID` is the project
-  `--album`, `--labels` and the export's favourites/ratings are resolved and written in (`serve`'s wiring
-  passes the bootstrap project, where ingest still catalogues every new photo — transition) with `Import(ctx, Options{Root,Recursive,
+  (**import of a directory from disk** — `kukatko import dir --project <slug> <path>`; `Service` = `New(Config{Ingest,Runs,
+  Photos,Filler,Curation,Albums,Labels,ProjectUID,StoragePrefix,Concurrency,Logger})` — `ProjectUID` is **the one
+  project of the whole run** (required: `Import` without one is `ErrNoProject` and touches nothing): every file goes
+  to ingest with `ingest.Request{ProjectUID,StoragePrefix}` (catalogued there, original under the prefix), the dry
+  run and the duplicate report look up `GetByFileHashInProject`/`GetByUIDInProject` (the same bytes in another
+  project are new here), the run is `RunStore.Start(ctx, projectUID, SourceFolder)`, and `--album`, `--labels` and
+  the export's favourites/ratings resolve there; the CLI resolves `--project` by slug and refuses a deactivated
+  project (`resolveImportProject`). It reads only the foreign sidecars beside the media on disk, never the exported
+  `sidecars/` tree, so no project filter is needed for them) with `Import(ctx, Options{Root,Recursive,
   DryRun,NoSidecars,Album,Labels,UploadedBy,Progress}) (Result,error)`; **no second pipeline** —
   every media file goes
   through `ingest.IngestFile` exactly like an upload (stream, SHA256 dedup, metadata, `YYYY/MM`, thumbnails,
@@ -1998,8 +2009,8 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   scoring helper for both faces (ArcFace) and labels (image embeddings), so the feature packages don't merely hide one
   rejected row but learn something); sentinels
   `ErrEmbeddingNotFound`/`ErrDimMismatch` (validation 1152/512)/
-  `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(limit)` =
-  uids of non-archived photos without an embedding (LEFT JOIN, newest first, `limit<=0`=all) for
+  `ErrFaceIndexTaken` (UNIQUE `(photo_uid,face_index)`); `ListPhotosMissingEmbedding(projectUID,limit)` =
+  uids of **the project's** non-archived photos without an embedding (LEFT JOIN, newest first, `limit<=0`=all) for
   backfill; `FindDuplicatePairs(projectUID,neighbours,maxDist)` = the project's near-duplicate pairs by embedding cosine
   distance (`duplicate.go`, `CROSS JOIN LATERAL` + HNSW `LIMIT` neighbours per photo, no
   O(n²) scan; `maxDist<=0`→no pairs; `ErrNoProject` without a project; a read-only tx with `hnsw.ef_search`
@@ -2023,10 +2034,10 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   markers on read), so the photo would quietly drop out of that person's gallery and out of `person:` search
   in the meantime. `IoU` lives here rather than in `facematch` because both callers need it and two copies of
   a geometric primitive drift; `facematch.IoU` is a one-line delegation.
-  `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(limit)`
+  `FacesDetected(uid)` (does a row exist?), `ListPhotosMissingFaces(projectUID,limit)`
   (uids of **stills** with no `face_detections` row, like `ListPhotosMissingEmbedding`; a video is excluded —
   detection does not run on footage, so a clip would otherwise be reported as a permanent gap and rescheduled
-  forever), `CountVideosMissingFaces()` (how many live videos that listing leaves out, so a backfill can say
+  forever; both per project, `ErrNoProject` without one), `CountVideosMissingFaces(projectUID)` (how many live videos that listing leaves out, so a backfill can say
   what it passed over);
   **the detection frame** (`Detection.FrameWidth`/`FrameHeight` → `detect_width`/`detect_height`, a
   non-positive value stored as NULL) is the pixel size of the image the detector actually **saw**, in display
@@ -2633,11 +2644,16 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   `jobs.Enqueuer.EnqueueFaceDetectRebuild`), `internal/processapi/`
   (a maintainer-only HTTP API for bulk processing: `NewAPI(Config{Backfiller,FaceBackfiller,
   Reclusterer,PlacesBackfiller,ThumbnailBackfiller,MetadataBackfiller,RequireMaintainer})`+`RegisterRoutes`
-  mounts `/process`;
+  mounts `/process` — **per project**: the group is mounted with the project-scoped API, and every handler hands
+  the request's project (`projectOf` = `auth.ProjectUIDFromContext`) to its backfill, whose listing (`photos`,
+  `vectors`, `places` stores — each `List…Missing…`/`Count…` takes `projectUID` and refuses an empty one) sees that
+  project's photos only; every interface method below therefore takes `projectUID` after `ctx`. The
+  instance-level triggers that remain — the maintenance scan/repair and `kukatko sidecar backfill` — run the
+  per-project backfill once per **active** project through the adapters in `cmd/kukatko/allprojects.go`;
   `POST /process/embeddings` →
   `{enqueued}` runs `embedjob.BackfillEmbeddings`, `POST /process/faces` → `{enqueued, skipped_videos}` runs
   `facejob.BackfillFaces`, `POST /process/clusters` → **202** `{scheduled}` runs
-  `clusterjob.ScheduleRecluster` (it **queues** the `face_cluster` pass — regroup the unassigned faces,
+  `clusterjob.ScheduleProjectRecluster(projectUID)` (it **queues** the request project's `face_cluster` pass — regroup the unassigned faces,
   then prepare the cluster summaries — rather than running minutes of vector search inside the
   request; `scheduled:false` = a pass was already waiting or running; `Reclusterer` optional — nil → 503),
   `POST /process/places` → `{enqueued}` runs `placesjob.BackfillPlaces` (backfill of reverse-geocode for
@@ -2708,9 +2724,11 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   sidecar's debounce) and answers with the step's new state; the queue's dedup index makes a double click
   harmless. `SchedulePending(photoUID)` enqueues every step `Report` calls `pending` (and nothing else) and
   returns them — what a re-upload of an already-catalogued file calls through `ingest.PendingScheduler`.
-  With the optional `Config.Library` (`LibraryReader`, satisfied by `Store`: `EachLiveEvidence` streams the
-  same evidence columns for every non-archived photo, `UnfinishedSteps` reads every photo's unfinished job
-  types in one scan of `jobs`), `Unscheduled()` returns every `Gap{photo_uid,step}` in the live library —
+  With the optional `Config.Library` (`LibraryReader`, satisfied by `Store`: `EachLiveEvidence(projectUID, fn)` streams
+  the same evidence columns for every non-archived photo **of one project** (`ErrNoProject` without one),
+  `UnfinishedSteps` reads every photo's unfinished job types in one scan of `jobs`), `Unscheduled(projectUID)` returns
+  every `Gap{photo_uid,step}` in that project's live library (the per-photo `Evidence`/`Report`/`Run` act on a photo
+  the caller already proved in its project) —
   the `pending` predicate (`Evidence.pending`, kept equal to the report's by test) asked once per photo, two
   queries in all; without one it is `ErrLibraryUnavailable`. It backs the maintenance scan's
   `unscheduled_steps`. Read-only apart from those enqueues — it never runs the work itself), `internal/cluster/`
@@ -2793,8 +2811,9 @@ public upload-link upload uses it to attribute a signed-in uploader; **video str
   **Per project:** the payload is `{"project_uid":…,"recluster":…}`; `Handle` works on the project it names (a
   payload queued before the field existed names none and works on the bootstrap project, the only library
   there was) and its successor names the same project; `EnsureGrouping(ctx,projectUID)` reads and schedules
-  one project; `ScheduleRecluster(ctx)` queues **one pass per active project** (a deactivated one is skipped)
-  and reports whether any was queued. The pending check is per project (`CountPendingForProject`), backed by
+  one project; `ScheduleProjectRecluster(ctx,projectUID)` queues the one project's pass (what the per-project
+  `POST /process/clusters` calls) and `ScheduleRecluster(ctx)`, the instance-level trigger, calls it for
+  **every active project** (a deactivated one is skipped) and reports whether any was queued. The pending check is per project (`CountPendingForProject`), backed by
   the unique `idx_jobs_face_cluster_dedup` on `payload->>'project_uid'` (migration 0105, queued jobs only, so a
   running pass can enqueue its successor); a racing duplicate is read as "scheduled", never an error;
   **`ScheduleRecluster(ctx)`** queues `{"recluster":true}` (the maintainer trigger) and
@@ -4518,9 +4537,13 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   the geocode was computed from — detecting a position change → re-geocode; NULL for a photo without GPS, whose
   row only marks "processed"), `geocoded_at TIMESTAMPTZ`, indexes on `country` and `city` (grouping/
   filtering by locality); `Store` = `NewStore(pool)`: `GetPlace(photoUID)` (`ErrPlaceNotFound`)/
-  `SavePlace(Place)` (upsert on `photo_uid`, stamps `geocoded_at`)/`ListPhotosMissingPlaces(limit)`
-  (uids of non-archived **geotagged** photos with no `photo_places` row, newest-first, LEFT JOIN —
-  the basis of the backfill)), `internal/placesjob/`
+  `SavePlace(Place)` (upsert on `photo_uid`, stamps `geocoded_at`)/`ListPhotosMissingPlaces(projectUID,limit)`
+  (uids of **one project's** non-archived **geotagged** photos with no `photo_places` row, newest-first, LEFT JOIN
+  with `p.project_id = $1` — the basis of the backfill; an empty project is `places.ErrNoProject`). `photo_places`
+  is a **child** of `photos` and carries no project: the per-photo reads/writes act on a photo the caller holds, and
+  every library-wide read reaches the project through the joined photo — the place tree is
+  `photos.Store.AggregatePlaces(projectUID, country)`, the review's `PlacesByPhotoUIDs` is handed the uids of an
+  already-scoped window)), `internal/placesjob/`
   (wiring reverse geocoding into the queue, all behind the interfaces `PhotoStore`/`PlaceStore`/`Geocoder`
   (a subset of `mapy.Client`, fakeable)/`Enqueuer`/`RateLimiter`/`CreditBudget`/`CreditMeter` → unit-testable
   with fakes without network/DB; `Service` = `New(Config{Photos,Places,Geocoder,Enqueuer,Limiter,Budget,
@@ -4552,8 +4575,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   bucket: a restart starts a fresh window. `Snapshot()` → `BudgetSnapshot{Enabled,Limit,Spent,Remaining,
   Window,ResetsAt}` feeds `GET /system/status` → `geocode` and the `kukatko_geocode_credits_remaining`/
   `_limit` gauges; one instance is built in `runServe` (`newGeocodeBudget`, nil without a mapy key) and
-  shared by the job, the status service and the collector; `BackfillPlaces(ctx)` enqueues `places`
-  for every geotagged photo without a place (dedup no-op), returns the count, and `MissingPlaces(ctx)` is its
+  shared by the job, the status service and the collector; `BackfillPlaces(ctx, projectUID)` enqueues `places`
+  for every geotagged photo **of the project** without a place (dedup no-op), returns the count, and
+  `MissingPlaces(ctx, projectUID)` is its
   **dry run** — the same uids listed rather than enqueued, which is what the maintenance scan's
   `missing_places` finding counts and what labels the "fill in the places" option with how much work it is.
   Scheduling is not spending: a run over a whole library may queue thousands of jobs and the window budget
@@ -4577,16 +4601,21 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   status, the `/metrics` import gauges — cannot drift apart; both hand out a **copy**)/`Status`
   (`StatusRunning`/`StatusDone`/`StatusPartial`/`StatusFailed` + `AllStatuses()` in lifecycle order, so
   a reporter can publish one series per status instead of only the one a run happens to be in)/`Counts`/
-  `Run`; `Store` = `NewStore(pool)`: `Start(ctx,source)` opens a `running` row (`ErrInvalidSource`),
+  `Run`; **`import_runs` is a root table — every run belongs to one project**: `Start`, `Get`, `List`, `LatestRun`
+  and `ListFailures` take the project (an empty one is `ErrNoProject`) and see that project's runs only (a run of
+  another project is `ErrRunNotFound`); the lifecycle writes `UpdateCounts`/`Complete`/`Fail`/`RecordFailures` address
+  the id `Start` returned to the same caller. `import_failures` is a child of its run and is scoped through it
+  (`run_id IN (SELECT id FROM import_runs WHERE project_id = $1)`, always the first clause).
+  `Store` = `NewStore(pool)`: `Start(ctx,projectUID,source)` opens a `running` row (`ErrInvalidSource`),
   `UpdateCounts(ctx,id,counts)` overwrites the tally, `Complete(ctx,id,watermark,counts)` closes it as
   `done`/`partial` with `finished_at` stamped, `Fail(ctx,id,lastErr,counts)` as `failed`
   **without** a watermark (both match a running run only → `ErrRunNotFound` on a double close);
   every live caller passes a `nil` watermark (a folder has no source timestamp to resume from), so the
   column only carries the finished migration's values,
-  `Get(ctx,id)`, `LatestRun(ctx,source)` →
+  `Get(ctx,projectUID,id)`, `LatestRun(ctx,projectUID,source)` →
   `(Run, found bool, err)` **the newest run of the source regardless of state** (running/done/failed;
   the basis of the system-status dashboard),
-  `List(ctx,limit,offset)` a page of runs
+  `List(ctx,projectUID,limit,offset)` a page of the project's runs
   **across all sources** newest-started-first (limit clamp `[1,200]`, default 50, a non-nil empty
   page) — the basis of the admin import history; the sentinels
   `ErrRunNotFound`/`ErrInvalidSource`; **`import_failures`** (migration `0042_import_failures.sql`) keeps
@@ -4595,7 +4624,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (`RunID`/`Source`/`Stage`/`PhotoUID`/`SourceRef`/`Detail`/`Error`/`CreatedAt`/`ResolvedAt`), `Stage` ∈
   `photo|file|marker|album_member|label|thumbnail|embedding|faces|phash|edit|metadata`, the helper
   `NewFailure(runID,source,stage,photoUID,sourceRef,detail,err)`; `RecordFailures(ctx,[]Failure)` (batch),
-  `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{RunID,Source,UnresolvedOnly,Limit,Offset})`.
+  `CountUnresolvedFailures(ctx,id)`, `ListFailures(ctx,FailureFilter{ProjectUID,RunID,Source,UnresolvedOnly,Limit,Offset})`.
   `Counts` (the `counts` JSONB) is `imported`/`updated`/`skipped`/**`deduplicated`**/`failed` — the fourth bucket
   counts SOURCE photos whose content was already catalogued under another source photo (see the
   `photoprism_aliases` table in `internal/photos`); reading that as "skipped" is how 450 production
@@ -4609,7 +4638,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   interfaces `RunLister` (List) and `FailureLister` (ListFailures), both satisfied by
   `*importer.Store`; `NewAPI(Config{Runs,Failures,RequireMaintainer})`+`RegisterRoutes` mounts
   `GET /import/runs` (`parsePaging` limit≤200/offset, invalid → 400) → `{runs,limit,offset}`, a page of
-  `import_runs` newest-started-first via `importer.Store.List`, and `GET /import/failures`
+  **the request project's** `import_runs` newest-started-first via `importer.Store.List`, and `GET /import/failures`
+  (the project's failures only — `FailureFilter.ProjectUID` is the request's project; the group is mounted per
+  project, so `/api/v1/p/<slug>/import/…`)
   (`?source=&run_id=&unresolved=&limit=&offset=`, an unknown source → 400 via `importer.ErrInvalidSource`)
   → `{failures,limit,offset}`. **There is nothing to trigger.** The `POST /import/photoprism`,
   `/import/photosorter`, `/import/photosorter-feeds` triggers and `GET /import/verify` went with the
@@ -5380,8 +5411,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   ordered largest-first/newest-keeper/id,
   `limit` clamped to `[1,100]`; **`CountGroups(ctx,projectUID)`** = the same scan reduced to `Result.Total` (detection is
   derived state, so there is no cheaper way to count it) — which is why its one caller, the admin dashboard's
-  duplicates tile, runs it in the background and never on a request (`system.DuplicateScan`; until the
-  dashboard is scoped, `cmd/kukatko`'s `bootstrapDuplicateCounter` counts the bootstrap project — transition);
+  duplicates tile, runs it in the background and never on a request (`system.DuplicateScan`, once per active
+  project — the detector satisfies `system.DuplicateCounter` directly);
   it only reads, **never mutates** (resolution goes through `dupmerge`); archived
   photos are not scanned (`ListActivePhashes` filters `archived_at IS NULL`)), `internal/dupmerge/`
   (**the transactional merge of a near-duplicate group into the keeper** — the mutating counterpart of the read-only `duplicates`;
@@ -5500,18 +5531,27 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   (the aggregation of the instance's operational state for the admin **system-status dashboard** — no new data, just
   a merge of the existing subsystems; all behind the small interfaces `DBPinger` (`database.DB`)/
   `EmbeddingHealth` (`embedding.Client.Healthy`)/`JobCounter`
-  (`jobs.Store.CountsByTypeState`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun`)/
+  (`jobs.Store.CountsByTypeState`/`CountPending`)/`ImportLister` (`importer.Store.LatestRun(projectUID,source)`)/
+  `ProjectLister` (`project.Store.List`; nil = no per-project import or duplicate reads)/
   `BackupReporter` (`backup.Service.Status`, **nil = not configured**)/`MapsReporter`
   (`mapy.Health.Snapshot`, **nil = no mapy.com key**)/`GeocodeReporter`
   (`placesjob.WindowBudget.Snapshot`, **nil = no mapy.com key**)/`DashboardCounter` (`Store.CountDashboard`)/
-  `DuplicateCounter` (`CountGroups(ctx)`; the detector counts per project, so `cmd/kukatko` wires
-  `bootstrapDuplicateCounter` — the bootstrap project's groups — until the dashboard is scoped; **nil =
-  detection off**) → unit-testable with fakes
-  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Library,Charts,
+  `DuplicateCounter` (`CountGroups(ctx,projectUID)` = `duplicates.Service`; **nil = detection off**) →
+  unit-testable with fakes
+  without a DB; `Service` = `New(Config{DB,Embeddings,EmbeddingURL,Jobs,Backup,Maps,Geocode,Imports,Projects,Library,Charts,
   Dashboard,Duplicates,StreamingEnabled,OriginalsPath,CachePath,StorageTTL,LibraryTTL,ChartsTTL,
   DashboardTTL,DuplicateTTL,DuplicateTimeout,Clock})`; **`Collect(ctx) (Status,error)`** gathers
   `Status{Version,Database,
-  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode,Library,Remaining,Video}`: embeddings online/offline, the queue
+  Embeddings,Jobs,Backup,Imports,Storage,Maps,Geocode,Library,Remaining,Video,Projects}`. **Every count is an instance
+  total; `Projects` is how it divides** (`projects.go`): one `ProjectSummary{UID,Slug,Name,Active,Photos,Videos,Trashed,
+  OriginalsBytes,Faces,Subjects,Albums,Queue{Queued,Running,Failed},Duplicates,LastImport}` per project (deactivated
+  ones included, slug order), counted by `projectsBreakdownSQL` — a `jsonb_agg` column of the **same** dashboard
+  statement (one grouped pass per root table joined onto `projects`, so the dashboard stays one round trip; a job is
+  attributed through its payload's `photo_uid` or `project_uid`, a job with neither is nobody's), then stamped per
+  request on a **copy** of the memoised rows (`fillProjects`): `LastImport` = that project's `LatestRun(folder)`,
+  `Duplicates` = its share of the background scan (`asyncCache[map[projectUID]int]`, active projects only, so a
+  deactivated project's stays nil). `Imports.Folder` is the newest of the projects' last imports and
+  `Remaining.Duplicates.Groups` the scan's sum. Embeddings online/offline, the queue
   (**one** `CountsByTypeState` scan folded into `ByTypeState` + the `ByState`/`ByType`/`Total` sums over it, so the
   three views cannot disagree; `ByType`/`Total` are **lifetime** tallies because the queue keeps finished jobs —
   the UI labels them "ever run" — while `dead_letter` and `pending_embeddings` = queued+running
@@ -5527,7 +5567,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   refills, so an import's metered mapy.com spend is watchable while it happens; `Configured:false` = no key,
   `BudgetEnabled:false` = the cap is switched off), version/commit; errors while
   reading the queue/imports (which require the DB) → an error (500), an unreachable DB and unreadable storage are handled inline
-  best-effort; **`LatestRuns(ctx)`** → the newest run of **every** `importer.AllSources()` keyed by source
+  best-effort; **`LatestRuns(ctx)`** → the newest run (across the active projects) of **every** `importer.AllSources()`
+  keyed by source
   (a source that never ran is **absent**, not a zero run), which `collectImports` picks the dashboard's two
   migration paths out of and `/metrics` exports whole — one implementation, not two;
   the **dashboard half** of the same snapshot answers the two questions the page is opened with, from one
@@ -5635,7 +5676,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   satisfied by
   `*system.Service`, fakeable); `NewAPI(Config{Service,RequireMaintainer,RequireAuth})`+`RegisterRoutes`
   mounts `GET /system/status` behind `RequireMaintainer` (the whole dashboard snapshot — the operational
-  sections plus `Library`/`Remaining`; a failed collect → 500),
+  sections plus `Library`/`Remaining` as instance totals and the per-project breakdown `projects`; a failed collect → 500),
   `GET /system/stats` behind `RequireAuth` (the library counts for **every logged-in user**; a failed aggregation → 500,
   never a body of zeros) and `GET /system/stats/charts` behind `RequireAuth` (the chart series; a failed
   aggregation → 500, never empty series, which would draw as an empty library) — two endpoints rather than one
@@ -5827,7 +5868,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   exactly the case (Brno in the morning, Vienna in the evening) where a same-day estimate is wrong), the `Store` interface (satisfied by
   `*photos.Store`: `ListLocationCandidates`/`ListLocatedNeighbours`/`SetEstimatedLocation`), `Enqueuer`
   (satisfied by `*jobs.Enqueuer`, it **may be nil** = the estimates are stored but not geocoded);
-  **`BackfillLocations(ctx) (estimated,error)`** (backing `POST /process/locations`): for every
+  **`BackfillLocations(ctx, projectUID) (estimated,error)`** (backing `POST /process/locations`, which passes the
+  request's project): **everything is one project's** — `ListLocationCandidates(projectUID,limit)`,
+  `ListLocatedNeighbours(projectUID,from,to)` and the guarded `SetEstimatedLocation(projectUID,uid,…)` all carry
+  `photos.project_id`, so another project's trip on the same afternoon is never evidence; for every
   candidate it loads the neighbours in the window, calls `Estimate`, and on a match writes via `SetEstimatedLocation`
   (a **guarded UPDATE** — when the photo has gained a location in the meantime or the user has decided it, the estimate **loses**
   and is dropped) + schedules a `places` job **only after the write**, so that `placesjob` sees the new coordinates and
@@ -5841,10 +5885,12 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   if somebody eventually rules on it, and the estimator itself never revisits an estimated photo (it has stopped
   being a candidate), so without this the guess would sit on the map forever wearing a question mark.
   `NewReviewer(ReviewConfig{Catalogue,Places})` (panics on a nil catalogue; `Places` may be nil, which leaves
-  every guess unnamed), `Pending(ctx,offset,limit) ([]Pending,total,error)` (one rotating window of the
-  photos carrying an estimate + the full size of that set, each with its cached `photo_places` row resolved in
+  every guess unnamed), `Pending(ctx,projectUID,offset,limit) ([]Pending,total,error)` (one rotating window of the
+  **project's** photos carrying an estimate — `ListEstimatedLocations`/`CountEstimatedLocations` take the project + the full size of that set, each with its cached `photo_places` row resolved in
   **one** bulk read; `Pending.PlaceLabel()` = place name → city → region → country, `""` when nothing is
-  geocoded) and the two verdicts `Accept`/`Reject`. Both do a **read-modify-write** through
+  geocoded) and the two verdicts `Accept`/`Reject(ctx,projectUID,photoUID,meta)`, which load the photo through
+  `GetByUIDInProject` (a photo of another project is `ErrPhotoNotFound`, the review game's "gone"). Both do a
+  **read-modify-write** through
   `photos.UpdateMetadataAudited` — the same path a hand edit on the photo page takes, because
   `UpdateMetadata` replaces the whole editable record and building the update from anything but the live row
   would blank a title somebody typed in meanwhile. Accept keeps the coordinates and promotes
@@ -6593,8 +6639,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
     `ErrInvalidLimit`); a patch that changes nothing writes neither the row nor an audit entry;
     `SetStoragePrefix(uid, prefix)` → `project.storage_prefix` (details `old`/`new`) — the only way the
     prefix changes, meant for the storage move. `Usage(uid)` = photo rows + `sum(file_size)` (archived
-    included: their originals are still stored until purged); until `photos.project_id` exists the whole
-    library counts for `BootstrapUID` and every other project is empty (a `TODO multi-tenancy` marks it).
+    included: their originals are still stored until purged) of **that project's** photos
+    (`photos.project_id = uid`).
   - `member.go` — the per-project `Role` (`RoleViewer` < `RoleCurator` < `RoleEditor` < `RoleAdmin`, a
     strict ladder like `internal/auth`'s **without maintainer**, which stays the instance role on `users`):
     `ParseRole` (anything else, `maintainer` included = `ErrInvalidRole`), `Valid`, `CanCurate` (curator+),
@@ -6633,7 +6679,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   - `Seed(t, pool, opts...) *Fixture` (call it after `dbtest.TruncateAll`, which leaves the bootstrap
     project in place) — side **A** = the bootstrap project (`project.BootstrapUID`, slug `v`), side **B**
     = a project it creates with `project.Store.Create` (slug `b-<random>`, prefix `projects/<uid>/`). In
-    each: one approved member (admin; `WithRole(SideB, project.RoleViewer)` changes it) who belongs to
+    each: one approved member (admin; `WithRole(SideB, project.RoleViewer)` changes it; `AsMaintainer(side)` makes
+    the account an instance maintainer too, for the maintainer-only project routes) who belongs to
     **that project only** (the account is created with no membership, then `AddMember`), one photo with
     its primary `photo_files` row (no object in storage), a person with a face marker on it, an album
     holding it, a label on it, a task over it, the member's saved search and an upload link. The rows

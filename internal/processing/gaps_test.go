@@ -20,7 +20,7 @@ type fakeLibrary struct {
 }
 
 // EachLiveEvidence walks the pinned evidence in uid order.
-func (f *fakeLibrary) EachLiveEvidence(_ context.Context, fn func(string, Evidence) error) error {
+func (f *fakeLibrary) EachLiveEvidence(_ context.Context, _ string, fn func(string, Evidence) error) error {
 	if f.evidenceErr != nil {
 		return f.evidenceErr
 	}
@@ -202,7 +202,7 @@ func TestService_Unscheduled(t *testing.T) {
 		Library: lib, Disabled: []Step{StepOCR},
 	})
 
-	got, err := svc.Unscheduled(t.Context())
+	got, err := svc.Unscheduled(t.Context(), "pjtest")
 	if err != nil {
 		t.Fatalf("Unscheduled: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestService_Unscheduled(t *testing.T) {
 func TestService_Unscheduled_errors(t *testing.T) {
 	t.Parallel()
 	bare := newTestService(t, &fakeEvidence{}, &fakeJobs{}, &fakeEnqueuer{})
-	if _, err := bare.Unscheduled(t.Context()); !errors.Is(err, ErrLibraryUnavailable) {
+	if _, err := bare.Unscheduled(t.Context(), "pjtest"); !errors.Is(err, ErrLibraryUnavailable) {
 		t.Errorf("unwired: err = %v, want ErrLibraryUnavailable", err)
 	}
 	boom := errors.New("db down")
@@ -226,7 +226,7 @@ func TestService_Unscheduled_errors(t *testing.T) {
 		"unfinished": {unfinishedErr: boom},
 	} {
 		svc := New(Config{Evidence: &fakeEvidence{}, Jobs: &fakeJobs{}, Enqueuer: &fakeEnqueuer{}, Library: lib})
-		if _, err := svc.Unscheduled(t.Context()); !errors.Is(err, boom) {
+		if _, err := svc.Unscheduled(t.Context(), "pjtest"); !errors.Is(err, boom) {
 			t.Errorf("%s read failing: err = %v, want it propagated", name, err)
 		}
 	}

@@ -40,16 +40,16 @@ import (
 // its size, and the read-modify-write of one photo's metadata. *photos.Store
 // satisfies it.
 type CatalogueStore interface {
-	// ListEstimatedLocations returns one window of the photos carrying an
-	// estimated location, ordered by uid.
-	ListEstimatedLocations(ctx context.Context, offset, limit int) ([]photos.Photo, error)
-	// CountEstimatedLocations returns how many such photos there are in total.
-	CountEstimatedLocations(ctx context.Context) (int, error)
-	// GetByUID returns one photo or photos.ErrPhotoNotFound.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// ListEstimatedLocations returns one window of the project's photos
+	// carrying an estimated location, ordered by uid.
+	ListEstimatedLocations(ctx context.Context, projectUID string, offset, limit int) ([]photos.Photo, error)
+	// CountEstimatedLocations returns how many such photos the project holds.
+	CountEstimatedLocations(ctx context.Context, projectUID string) (int, error)
+	// GetByUIDInProject returns the project's photo or photos.ErrPhotoNotFound
+	// (a photo of another project included).
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
 	// UpdateMetadataAudited overwrites a photo's editable metadata, writing entry
 	// in the same transaction.
-	// The project is the photo's own (Photo.ProjectID).
 	UpdateMetadataAudited(ctx context.Context, projectUID, uid string, m photos.MetadataUpdate,
 		entry audit.Entry) (photos.Photo, error)
 }
@@ -117,20 +117,20 @@ func NewReviewer(cfg ReviewConfig) *Reviewer {
 	return &Reviewer{catalogue: cfg.Catalogue, places: cfg.Places}
 }
 
-// Pending returns one window of the photos awaiting a verdict on their estimated
-// location — at most limit of them starting at offset, ordered by uid — plus the
+// Pending returns one window of the project's photos awaiting a verdict on their
+// estimated location — at most limit of them starting at offset, ordered by uid — plus the
 // total size of that set, so a caller can rotate a cursor over it without
 // reading it all. A non-positive limit returns nothing but still reports the
 // total.
-func (r *Reviewer) Pending(ctx context.Context, offset, limit int) ([]Pending, int, error) {
-	total, err := r.catalogue.CountEstimatedLocations(ctx)
+func (r *Reviewer) Pending(ctx context.Context, projectUID string, offset, limit int) ([]Pending, int, error) {
+	total, err := r.catalogue.CountEstimatedLocations(ctx, projectUID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("geoestimate: counting pending estimates: %w", err)
 	}
 	if total == 0 || limit <= 0 {
 		return nil, total, nil
 	}
-	rows, err := r.catalogue.ListEstimatedLocations(ctx, offset, limit)
+	rows, err := r.catalogue.ListEstimatedLocations(ctx, projectUID, offset, limit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("geoestimate: listing pending estimates: %w", err)
 	}
@@ -171,13 +171,13 @@ func (r *Reviewer) placesFor(ctx context.Context, rows []photos.Photo) (map[stri
 // location_source is promoted from 'estimate' to 'manual', so nothing presents
 // them as a guess any more. It is idempotent — a photo whose location is already
 // 'manual' is simply written back unchanged — and returns
-// photos.ErrPhotoNotFound when the photo has gone.
+// photos.ErrPhotoNotFound when the photo has gone or is not the project's.
 //
 // A photo whose location is no longer an estimate (somebody edited it meanwhile)
 // is left exactly as it is: the verdict was about a guess that no longer exists,
 // and overwriting a decision with a stale one would be worse than doing nothing.
-func (r *Reviewer) Accept(ctx context.Context, photoUID string, meta audit.Meta) error {
-	return r.decide(ctx, photoUID, meta, audit.ActionLocationConfirm, func(update *photos.MetadataUpdate) {
+func (r *Reviewer) Accept(ctx context.Context, projectUID, photoUID string, meta audit.Meta) error {
+	return r.decide(ctx, projectUID, photoUID, meta, audit.ActionLocationConfirm, func(update *photos.MetadataUpdate) {
 		update.LocationSource = photos.LocationSourceManual
 	})
 }
@@ -185,10 +185,11 @@ func (r *Reviewer) Accept(ctx context.Context, photoUID string, meta audit.Meta)
 // Reject records that an estimated location is wrong: the coordinates are
 // cleared and location_source is stamped 'manual', the tombstone that keeps the
 // nightly backfill from re-adding the guess the user just threw away. It is
-// idempotent and returns photos.ErrPhotoNotFound when the photo has gone. Like
+// idempotent and returns photos.ErrPhotoNotFound when the photo has gone or is
+// not the project's. Like
 // Accept it leaves a photo whose location is no longer an estimate alone.
-func (r *Reviewer) Reject(ctx context.Context, photoUID string, meta audit.Meta) error {
-	return r.decide(ctx, photoUID, meta, audit.ActionLocationReject, func(update *photos.MetadataUpdate) {
+func (r *Reviewer) Reject(ctx context.Context, projectUID, photoUID string, meta audit.Meta) error {
+	return r.decide(ctx, projectUID, photoUID, meta, audit.ActionLocationReject, func(update *photos.MetadataUpdate) {
 		update.Lat, update.Lng, update.Altitude = nil, nil, nil
 		update.LocationSource = photos.LocationSourceManual
 	})
@@ -203,10 +204,10 @@ func (r *Reviewer) Reject(ctx context.Context, photoUID string, meta audit.Meta)
 // row would silently blank a title or a date somebody typed in between the queue
 // being built and the answer arriving.
 func (r *Reviewer) decide(
-	ctx context.Context, photoUID string, meta audit.Meta, action string,
+	ctx context.Context, projectUID, photoUID string, meta audit.Meta, action string,
 	apply func(*photos.MetadataUpdate),
 ) error {
-	current, err := r.catalogue.GetByUID(ctx, photoUID)
+	current, err := r.catalogue.GetByUIDInProject(ctx, projectUID, photoUID)
 	if err != nil {
 		return fmt.Errorf("geoestimate: loading photo %s: %w", photoUID, err)
 	}
@@ -217,7 +218,7 @@ func (r *Reviewer) decide(
 	apply(&update)
 	details := map[string]any{"via": audit.ViaReview, "lat": current.Lat, "lng": current.Lng}
 	entry := meta.Entry(action, "photos", photoUID, details)
-	if _, err := r.catalogue.UpdateMetadataAudited(ctx, current.ProjectID, photoUID, update, entry); err != nil {
+	if _, err := r.catalogue.UpdateMetadataAudited(ctx, projectUID, photoUID, update, entry); err != nil {
 		return fmt.Errorf("geoestimate: applying location verdict to %s: %w", photoUID, err)
 	}
 	return nil

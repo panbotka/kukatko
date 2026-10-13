@@ -15,6 +15,7 @@ import { RecordTable, type RecordColumn } from '../components/RecordTable'
 import { TechnicalDetail } from '../components/TechnicalDetail'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { formatDateTime } from '../lib/format'
+import { useProjectSlug } from '../project/ProjectContext'
 import {
   fetchImportFailures,
   fetchImportRuns,
@@ -233,6 +234,9 @@ export function ImportPage() {
   // Import is an operations capability, reachable by maintainers only (see
   // RequireImport); this in-page gate is a defensive fallback behind that guard.
   const { canImport } = useAuth()
+  // The import lands in exactly one project, named on the command line: the
+  // command shown is the one that fills the project this page lists.
+  const slug = useProjectSlug()
   const [state, setState] = useState<State>({ status: 'loading' })
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -286,7 +290,7 @@ export function ImportPage() {
           Alert inherits nothing and reads as invisible. */}
       <TechnicalDetail id="import-cli" className="mb-3">
         <p className="small mb-1">{t('import.cli')}</p>
-        <code>kukatko import dir</code>
+        <code>kukatko import dir --project {slug ?? '<slug>'} &lt;path&gt;</code>
       </TechnicalDetail>
 
       {state.status === 'loading' && (

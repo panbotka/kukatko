@@ -67,12 +67,12 @@ func (f *fakeVectorStore) RecordFaceDetection(
 }
 
 // ListPhotosMissingFaces returns the canned missing uids.
-func (f *fakeVectorStore) ListPhotosMissingFaces(_ context.Context, _ int) ([]string, error) {
+func (f *fakeVectorStore) ListPhotosMissingFaces(_ context.Context, _ string, _ int) ([]string, error) {
 	return append([]string(nil), f.missing...), nil
 }
 
 // CountVideosMissingFaces returns the canned count of passed-over videos.
-func (f *fakeVectorStore) CountVideosMissingFaces(_ context.Context) (int, error) {
+func (f *fakeVectorStore) CountVideosMissingFaces(_ context.Context, _ string) (int, error) {
 	return f.missingVideos, nil
 }
 
@@ -417,7 +417,7 @@ func TestBackfillFaces(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := newService(t, &fakePhotoStore{}, vs, &fakeClient{}, &fakeSource{}, enq)
 
-	res, err := svc.BackfillFaces(context.Background())
+	res, err := svc.BackfillFaces(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillFaces: %v", err)
 	}

@@ -454,35 +454,35 @@ type fakeLister struct {
 	videosErr error
 }
 
-func (f *fakeLister) ListPhotosMissingPhash(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListPhotosMissingPhash(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.missing, f.missingErr
 }
 
-func (f *fakeLister) ListActiveUIDs(context.Context) ([]string, error) {
+func (f *fakeLister) ListActiveUIDs(context.Context, string) ([]string, error) {
 	return f.active, f.activeErr
 }
 
-func (f *fakeLister) CountPhotosMissingPhash(context.Context) (int, error) {
+func (f *fakeLister) CountPhotosMissingPhash(context.Context, string) (int, error) {
 	return len(f.missing), f.missingErr
 }
 
-func (f *fakeLister) CountActivePhotos(context.Context) (int, error) {
+func (f *fakeLister) CountActivePhotos(context.Context, string) (int, error) {
 	return len(f.active), f.activeErr
 }
 
-func (f *fakeLister) ListPhotosMissingBlurhash(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListPhotosMissingBlurhash(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.missingBlurhash, f.missingBlurhashErr
 }
 
-func (f *fakeLister) CountPhotosMissingBlurhash(context.Context) (int, error) {
+func (f *fakeLister) CountPhotosMissingBlurhash(context.Context, string) (int, error) {
 	return len(f.missingBlurhash), f.missingBlurhashErr
 }
 
-func (f *fakeLister) ListActiveVideoUIDs(context.Context) ([]string, error) {
+func (f *fakeLister) ListActiveVideoUIDs(context.Context, string) ([]string, error) {
 	return f.videos, f.videosErr
 }
 
-func (f *fakeLister) CountActiveVideos(context.Context) (int, error) {
+func (f *fakeLister) CountActiveVideos(context.Context, string) (int, error) {
 	return len(f.videos), f.videosErr
 }
 
@@ -541,7 +541,7 @@ func TestBackfillThumbnails_missing(t *testing.T) {
 	enq := newFakeEnqueuer()
 	svc := newBackfillService(&fakeLister{missing: []string{"a", "b", "c"}}, enq)
 
-	n, err := svc.BackfillThumbnails(context.Background(), false)
+	n, err := svc.BackfillThumbnails(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillThumbnails: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestBackfillThumbnails_all(t *testing.T) {
 	enq := newFakeEnqueuer()
 	svc := newBackfillService(&fakeLister{missing: []string{"a"}, active: []string{"a", "b", "c", "d"}}, enq)
 
-	n, err := svc.BackfillThumbnails(context.Background(), true)
+	n, err := svc.BackfillThumbnails(context.Background(), "pjtest", true)
 	if err != nil {
 		t.Fatalf("BackfillThumbnails(all): %v", err)
 	}
@@ -577,11 +577,11 @@ func TestBackfillThumbnails_idempotent(t *testing.T) {
 	enq := newFakeEnqueuer()
 	svc := newBackfillService(&fakeLister{missing: []string{"a", "b"}}, enq)
 
-	first, err := svc.BackfillThumbnails(context.Background(), false)
+	first, err := svc.BackfillThumbnails(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillThumbnails #1: %v", err)
 	}
-	second, err := svc.BackfillThumbnails(context.Background(), false)
+	second, err := svc.BackfillThumbnails(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillThumbnails #2: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestBackfillThumbnails_idempotent(t *testing.T) {
 func TestBackfillThumbnails_listError(t *testing.T) {
 	t.Parallel()
 	svc := newBackfillService(&fakeLister{missingErr: errors.New("db down")}, newFakeEnqueuer())
-	if _, err := svc.BackfillThumbnails(context.Background(), false); err == nil {
+	if _, err := svc.BackfillThumbnails(context.Background(), "pjtest", false); err == nil {
 		t.Error("BackfillThumbnails should propagate a listing error")
 	}
 }
@@ -610,7 +610,7 @@ func TestBackfillThumbnails_listError(t *testing.T) {
 func TestBackfillThumbnails_enqueueError(t *testing.T) {
 	t.Parallel()
 	svc := newBackfillService(&fakeLister{missing: []string{"a"}}, &fakeEnqueuer{err: errors.New("queue full")})
-	if _, err := svc.BackfillThumbnails(context.Background(), false); err == nil {
+	if _, err := svc.BackfillThumbnails(context.Background(), "pjtest", false); err == nil {
 		t.Error("BackfillThumbnails should propagate an enqueue error")
 	}
 }
@@ -629,7 +629,7 @@ func TestBackfillVideoPosters(t *testing.T) {
 	}
 	svc := newBackfillService(lister, enq)
 
-	n, err := svc.BackfillVideoPosters(context.Background())
+	n, err := svc.BackfillVideoPosters(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillVideoPosters: %v", err)
 	}
@@ -648,7 +648,7 @@ func TestCountBackfillVideoPosters(t *testing.T) {
 	enq := newFakeEnqueuer()
 	svc := newBackfillService(&fakeLister{videos: []string{"v1", "v2", "v3"}}, enq)
 
-	count, err := svc.CountBackfillVideoPosters(context.Background())
+	count, err := svc.CountBackfillVideoPosters(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("CountBackfillVideoPosters: %v", err)
 	}
@@ -666,10 +666,10 @@ func TestCountBackfillVideoPosters(t *testing.T) {
 func TestBackfillVideoPosters_unavailable(t *testing.T) {
 	t.Parallel()
 	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
-	if _, err := svc.BackfillVideoPosters(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillVideoPosters(context.Background(), "pjtest"); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("BackfillVideoPosters err = %v, want ErrBackfillUnavailable", err)
 	}
-	if _, err := svc.CountBackfillVideoPosters(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.CountBackfillVideoPosters(context.Background(), "pjtest"); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("CountBackfillVideoPosters err = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -679,7 +679,7 @@ func TestBackfillVideoPosters_unavailable(t *testing.T) {
 func TestBackfillThumbnails_unavailable(t *testing.T) {
 	t.Parallel()
 	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
-	if _, err := svc.BackfillThumbnails(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillThumbnails(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -709,7 +709,7 @@ func TestCountBackfillThumbnails_matchesTheRunItPredicts(t *testing.T) {
 			enq := newFakeEnqueuer()
 			svc := newBackfillService(lister, enq)
 
-			count, err := svc.CountBackfillThumbnails(context.Background(), tt.all)
+			count, err := svc.CountBackfillThumbnails(context.Background(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("CountBackfillThumbnails: %v", err)
 			}
@@ -720,7 +720,7 @@ func TestCountBackfillThumbnails_matchesTheRunItPredicts(t *testing.T) {
 				t.Errorf("counting scheduled %d job(s), want none", enq.calls)
 			}
 
-			enqueued, err := svc.BackfillThumbnails(context.Background(), tt.all)
+			enqueued, err := svc.BackfillThumbnails(context.Background(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("BackfillThumbnails: %v", err)
 			}
@@ -736,7 +736,7 @@ func TestCountBackfillThumbnails_matchesTheRunItPredicts(t *testing.T) {
 func TestCountBackfillThumbnails_countError(t *testing.T) {
 	t.Parallel()
 	svc := newBackfillService(&fakeLister{missingErr: errors.New("db down")}, newFakeEnqueuer())
-	if _, err := svc.CountBackfillThumbnails(context.Background(), false); err == nil {
+	if _, err := svc.CountBackfillThumbnails(context.Background(), "pjtest", false); err == nil {
 		t.Error("CountBackfillThumbnails should propagate a counting error")
 	}
 }
@@ -746,7 +746,7 @@ func TestCountBackfillThumbnails_countError(t *testing.T) {
 func TestCountBackfillThumbnails_unavailable(t *testing.T) {
 	t.Parallel()
 	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
-	if _, err := svc.CountBackfillThumbnails(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.CountBackfillThumbnails(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -896,7 +896,7 @@ func TestBackfillBlurhash_missing(t *testing.T) {
 	lister := &fakeLister{missing: []string{"a"}, missingBlurhash: []string{"x", "y", "z"}}
 	svc := newBackfillService(lister, enq)
 
-	n, err := svc.BackfillBlurhash(context.Background(), false)
+	n, err := svc.BackfillBlurhash(context.Background(), "pjtest", false)
 	if err != nil {
 		t.Fatalf("BackfillBlurhash: %v", err)
 	}
@@ -916,7 +916,7 @@ func TestBackfillBlurhash_all(t *testing.T) {
 	lister := &fakeLister{missingBlurhash: []string{"x"}, active: []string{"a", "b", "c", "d"}}
 	svc := newBackfillService(lister, enq)
 
-	n, err := svc.BackfillBlurhash(context.Background(), true)
+	n, err := svc.BackfillBlurhash(context.Background(), "pjtest", true)
 	if err != nil {
 		t.Fatalf("BackfillBlurhash(all): %v", err)
 	}
@@ -933,7 +933,7 @@ func TestBackfillBlurhash_idempotent(t *testing.T) {
 	svc := newBackfillService(&fakeLister{missingBlurhash: []string{"x", "y"}}, enq)
 
 	for range 2 {
-		if _, err := svc.BackfillBlurhash(context.Background(), false); err != nil {
+		if _, err := svc.BackfillBlurhash(context.Background(), "pjtest", false); err != nil {
 			t.Fatalf("BackfillBlurhash: %v", err)
 		}
 	}
@@ -946,7 +946,7 @@ func TestBackfillBlurhash_idempotent(t *testing.T) {
 func TestBackfillBlurhash_listError(t *testing.T) {
 	t.Parallel()
 	svc := newBackfillService(&fakeLister{missingBlurhashErr: errors.New("db down")}, newFakeEnqueuer())
-	if _, err := svc.BackfillBlurhash(context.Background(), false); err == nil {
+	if _, err := svc.BackfillBlurhash(context.Background(), "pjtest", false); err == nil {
 		t.Error("BackfillBlurhash should propagate a listing error")
 	}
 }
@@ -956,10 +956,10 @@ func TestBackfillBlurhash_listError(t *testing.T) {
 func TestBackfillBlurhash_unavailable(t *testing.T) {
 	t.Parallel()
 	svc := newService(&fakePhotos{}, &fakeThumbs{}, &fakeDecoder{})
-	if _, err := svc.BackfillBlurhash(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillBlurhash(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("err = %v, want ErrBackfillUnavailable", err)
 	}
-	if _, err := svc.CountBackfillBlurhash(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.CountBackfillBlurhash(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("count err = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -988,7 +988,7 @@ func TestCountBackfillBlurhash_matchesTheRunItPredicts(t *testing.T) {
 			enq := newFakeEnqueuer()
 			svc := newBackfillService(lister, enq)
 
-			count, err := svc.CountBackfillBlurhash(context.Background(), tt.all)
+			count, err := svc.CountBackfillBlurhash(context.Background(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("CountBackfillBlurhash: %v", err)
 			}
@@ -999,7 +999,7 @@ func TestCountBackfillBlurhash_matchesTheRunItPredicts(t *testing.T) {
 				t.Errorf("counting scheduled %d job(s), want none", enq.calls)
 			}
 
-			enqueued, err := svc.BackfillBlurhash(context.Background(), tt.all)
+			enqueued, err := svc.BackfillBlurhash(context.Background(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("BackfillBlurhash: %v", err)
 			}

@@ -265,7 +265,7 @@ func TestListPhotosMissingEmbedding(t *testing.T) {
 	missing2 := makePhoto(t, photoStore, "missing-2")
 	saveEmbedding(t, store, withEmb, imageVec(map[int]float32{0: 1}))
 
-	all, err := store.ListPhotosMissingEmbedding(ctx, 0)
+	all, err := store.ListPhotosMissingEmbedding(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingEmbedding: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestListPhotosMissingEmbedding(t *testing.T) {
 		t.Errorf("missing = %v, want %s and %s but not %s", all, missing1, missing2, withEmb)
 	}
 
-	limited, err := store.ListPhotosMissingEmbedding(ctx, 1)
+	limited, err := store.ListPhotosMissingEmbedding(ctx, project.BootstrapUID, 1)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingEmbedding limited: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestListPhotosMissingEmbedding_excludesArchived(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	missing, err := store.ListPhotosMissingEmbedding(ctx, 0)
+	missing, err := store.ListPhotosMissingEmbedding(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingEmbedding: %v", err)
 	}

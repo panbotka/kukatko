@@ -1768,13 +1768,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   migration and the library wipe are unchanged. Mounted by `server.WithAPI` (`buildUserPicAPI` in
   `cmd/kukatko/userpic.go`). Not exposed over MCP.
 - **Process API (`/api/v1/p/{project}`, `internal/processapi`, maintainer-only via `RequireMaintainer`):**
+  **every backfill works on the addressed project only** — it lists, counts and schedules that project's photos
+  and never another's (`POST /p/a/process/thumbnails` cannot queue a job for a photo of `b`); there is no
+  instance-wide HTTP trigger (the CLI and the maintenance repair walk the active projects themselves).
   `POST /process/embeddings` → `{enqueued}` (backfill `image_embed` for photos without an embedding),
   `POST /process/faces` → `{enqueued, skipped_videos}` (backfill `face_detect` for the **stills** without
   face detection; a video is never scheduled — detection does not run on footage — and the count of the
   clips passed over is reported so "nothing scheduled" and "nothing to schedule" stay different answers),
-  `POST /process/clusters` → **202** `{scheduled}` (queues one `face_cluster` pass **per active project**:
-  regroup that project's unassigned faces, then prepare its cluster summaries; `scheduled:false` means every
-  active project already had a pass waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
+  `POST /process/clusters` → **202** `{scheduled}` (queues the addressed project's `face_cluster` pass:
+  regroup its unassigned faces, then prepare its cluster summaries; `scheduled:false` means the project
+  already had a pass waiting or running — the work is on its way either way), `POST /process/places` → `{enqueued}` (backfill `places` reverse-geocode for
   geotagged photos without a place via `placesjob.BackfillPlaces`; 503 when there is no mapy.com key),
   `POST /process/thumbnails` → `{enqueued,pending,dry_run}` (backfill `thumbnail` for photos **without a
   generated thumbnail** via `thumbjob.BackfillThumbnails`; "missing thumbnail" = a photo without a perceptual
@@ -1859,7 +1862,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   that forms the pass's stacks, so what the entry claims is exactly what committed.
   `POST /process/locations` → `{estimated}` (location estimation for photos without GPS from photos taken close
   in time, via `geoestimate.BackfillLocations`; **synchronous**, **503** when
-  `location_estimate.enabled: false`). The candidates are only photos **without coordinates** with an empty
+  `location_estimate.enabled: false`; candidates and neighbours are both the addressed project's photos — a photo
+  of another project taken the same hour is never evidence). The candidates are only photos **without coordinates** with an empty
   `location_source`, with a **known and non-estimated** `taken_at`, that are neither a scan nor archived.
   The neighbours are photos with a **measured** location (`location_source <> 'estimate'`) in the window
   ±`location_estimate.window`; an estimate arises **only when they are coherent** — all within
@@ -2018,7 +2022,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   reverse-geocoded place hierarchy + scoping the photo listing to a locality. `GET /places` →
   `{places:[{country, count, cover_uid, cities:[{city, count, cover_uid}]}]}` — counts aggregated over
   **non-archived**
-  photos with place data; a country's `count` also includes photos without a known city (may exceed the sum of
+  photos with place data **of the addressed project only** (another project's cities never appear, even in a
+  country both share); a country's `count` also includes photos without a known city (may exceed the sum of
   the cities), `cities` is always an array; ordered **count desc, then name** (for both countries and cities); photos
   without place data (no `photo_places` row or an empty `country` — a no-GPS "processed" marker) are excluded.
   `cover_uid` is the place's **newest visible photo** — the thumbnail the browse list draws (Places is a way
@@ -2462,8 +2467,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   works. Mounted by `server.WithAPI` (`buildMapsAPI` in `cmd/kukatko/maps.go`).
 - **Import API (`/api/v1/p/{project}`, `internal/importapi`, maintainer-only via `RequireMaintainer`):** the
   **read-only** bookkeeping of imports — there is nothing here to trigger. `GET /import/runs` →
-  `{runs,limit,offset}` — a page of `import_runs` newest-started-first (query `limit`≤200/`offset`,
-  invalid → 400). The only source still written is **`folder`** (`kukatko import dir`,
+  `{runs,limit,offset}` — a page of **the addressed project's** `import_runs` newest-started-first (query
+  `limit`≤200/`offset`, invalid → 400); `GET /import/failures` likewise lists only the failures of that project's
+  runs (`?run_id=` of another project's run → an empty page). The finished migration's runs belong to the
+  bootstrap project `v`. The only source still written is **`folder`** (`kukatko import dir --project <slug>`,
   `internal/dirimport`), which reads a directory on the server's disk and is therefore started **only
   from the CLI**. The three legacy sources in the history — `photoprism`, `photosorter`, `photosorter_feeds` —
   are the migration that closed in August 2026; its importers were removed and its runs stay as the
@@ -2748,7 +2755,16 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   photos_without_ocr,duplicate_markers,videos_without_streaming,
   duplicates{configured,available,groups,computed_at?}},
   video{streaming_enabled,videos,streamable,missing,encode_queued,encode_running,encode_failed,
-  not_scheduled,renditions,oldest_queued_at?}}`.
+  not_scheduled,renditions,oldest_queued_at?},
+  projects[{uid,slug,name,active,photos,videos,trashed,originals_bytes,faces,subjects,albums,
+  queue{queued,running,failed},duplicates (number|null),last_import (=importer.Run|null)}]}`.
+  **Every count is an instance total; `projects` is how it divides** — one row per project (deactivated ones
+  included, slug order): `photos`/`videos` live, `trashed` archived, `originals_bytes` the `sum(file_size)` of all
+  its photo rows (trash included, the number its quota counts), its faces, subjects and albums, and its share of
+  the unfinished queue (a per-photo job counts for its photo's project, a library-wide job for the project its
+  payload names, a job naming neither — mail, push — for none). `duplicates` is its share of the background scan,
+  `null` until a scan finished and always for a deactivated project (never scanned); `last_import` its latest
+  folder import. `imports.folder` is the newest of those, `remaining.duplicates.groups` the scan's sum.
   `jobs.by_type_state` (type → state → count) is what the dashboard renders; `by_type`/`total` are
   **lifetime** tallies, because the queue table keeps finished jobs — `image_embed: 41 594` against 20 930
   photos described a one-off re-embedding, not a backlog, which is why the UI labels them "ever run". All

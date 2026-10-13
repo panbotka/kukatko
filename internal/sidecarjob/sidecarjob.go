@@ -113,9 +113,9 @@ type SidecarWriter interface {
 // PhotoLister lists the photos a backfill should schedule.
 type PhotoLister interface {
 	// ListPhotosMissingSidecar returns the uids whose sidecar is missing or stale.
-	ListPhotosMissingSidecar(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingSidecar(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// ListActiveUIDs returns every non-archived photo, for a forced full re-run.
-	ListActiveUIDs(ctx context.Context) ([]string, error)
+	ListActiveUIDs(ctx context.Context, projectUID string) ([]string, error)
 }
 
 // Enqueuer schedules sidecar jobs, used by the backfill.
@@ -355,11 +355,11 @@ func (s *Service) uploadLinkOf(ctx context.Context, photoUID string) *uploadlink
 // the queue's per-photo dedup makes a re-enqueue a no-op, and the pending
 // predicate is self-clearing, so a run over a drained library schedules nothing
 // and a run interrupted halfway picks up the rest.
-func (s *Service) BackfillSidecars(ctx context.Context, all bool) (int, error) {
+func (s *Service) BackfillSidecars(ctx context.Context, projectUID string, all bool) (int, error) {
 	if s.lister == nil || s.enqueuer == nil {
 		return 0, ErrBackfillUnavailable
 	}
-	uids, err := s.backfillCandidates(ctx, all)
+	uids, err := s.backfillCandidates(ctx, projectUID, all)
 	if err != nil {
 		return 0, err
 	}
@@ -376,15 +376,15 @@ func (s *Service) BackfillSidecars(ctx context.Context, all bool) (int, error) {
 // backfillCandidates returns the uids a backfill should schedule: every
 // non-archived photo when all is set, otherwise those whose sidecar is missing or
 // stale.
-func (s *Service) backfillCandidates(ctx context.Context, all bool) ([]string, error) {
+func (s *Service) backfillCandidates(ctx context.Context, projectUID string, all bool) ([]string, error) {
 	if all {
-		uids, err := s.lister.ListActiveUIDs(ctx)
+		uids, err := s.lister.ListActiveUIDs(ctx, projectUID)
 		if err != nil {
 			return nil, fmt.Errorf("sidecarjob: listing active photos: %w", err)
 		}
 		return uids, nil
 	}
-	uids, err := s.lister.ListPhotosMissingSidecar(ctx, 0)
+	uids, err := s.lister.ListPhotosMissingSidecar(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("sidecarjob: listing photos missing a sidecar: %w", err)
 	}

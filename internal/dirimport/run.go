@@ -24,6 +24,10 @@ import (
 // run is recorded as failed; re-running finishes the rest.
 var ErrInterrupted = errors.New("dirimport: import interrupted")
 
+// ErrNoProject is returned by Import on a Service built without a project: an
+// import always lands in exactly one project, never in "the instance".
+var ErrNoProject = errors.New("dirimport: no project given")
+
 // Import walks opts.Root and ingests every media file below it, returning the
 // final tally. Each file is handed to the ingest pipeline exactly as an upload
 // would be, so the SHA256 dedup makes the whole run idempotent: files already in
@@ -38,7 +42,12 @@ var ErrInterrupted = errors.New("dirimport: import interrupted")
 // With opts.DryRun the walk classifies every file (new, duplicate, skipped) by
 // hashing it and looking the hash up, and writes nothing at all — no photos, no
 // originals, no import run.
+//
+// It returns ErrNoProject when the Service was built without a project.
 func (s *Service) Import(ctx context.Context, opts Options) (Result, error) {
+	if s.projectUID == "" {
+		return Result{}, ErrNoProject
+	}
 	entries, err := plan(opts.Root, opts.Recursive)
 	if err != nil {
 		return Result{}, err
@@ -81,7 +90,7 @@ func (s *Service) classifyAgainstCatalogue(ctx context.Context, entry planEntry,
 		res.Outcome, res.Err = OutcomeFailed, err
 		return res
 	}
-	existing, err := s.photos.GetByFileHash(ctx, hash)
+	existing, err := s.photos.GetByFileHashInProject(ctx, s.projectUID, hash)
 	if err != nil {
 		res.Outcome = OutcomeImported
 		return res
@@ -98,7 +107,7 @@ func (s *Service) classifyAgainstCatalogue(ctx context.Context, entry planEntry,
 // and returns ErrInterrupted with the partial tally — the photos already
 // committed stay in the library, which is what makes a re-run cheap.
 func (s *Service) run(ctx context.Context, entries []planEntry, opts Options) (Result, error) {
-	run, err := s.runs.Start(ctx, importer.SourceFolder)
+	run, err := s.runs.Start(ctx, s.projectUID, importer.SourceFolder)
 	if err != nil {
 		return Result{}, fmt.Errorf("dirimport: starting run: %w", err)
 	}
@@ -173,9 +182,11 @@ func (s *Service) ingestOne(
 	defer func() { _ = file.Close() }()
 
 	ingested := s.ingest.IngestFile(ctx, file, ingest.Request{
-		Filename:   filepath.Base(entry.abs),
-		UploadedBy: uploadedBy,
-		Sidecar:    sc,
+		Filename:      filepath.Base(entry.abs),
+		UploadedBy:    uploadedBy,
+		ProjectUID:    s.projectUID,
+		StoragePrefix: s.prefix,
+		Sidecar:       sc,
 	})
 	s.logWarnings(entry.rel, ingested.Warnings, tal)
 
@@ -247,7 +258,7 @@ func (s *Service) libraryPath(ctx context.Context, photoUID string) string {
 	if photoUID == "" {
 		return ""
 	}
-	photo, err := s.photos.GetByUID(ctx, photoUID)
+	photo, err := s.photos.GetByUIDInProject(ctx, s.projectUID, photoUID)
 	if err != nil {
 		return ""
 	}

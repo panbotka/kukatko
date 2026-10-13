@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/panbotka/kukatko/internal/auth"
@@ -74,6 +73,7 @@ func buildSystemAPI(
 		Maps:         mapsReporter,
 		Geocode:      geocodeReporter,
 		Imports:      importer.NewStore(pool),
+		Projects:     project.NewStore(pool),
 		Library:      libraryStore,
 		Charts:       libraryStore,
 		Dashboard:    libraryStore,
@@ -102,37 +102,19 @@ func buildSystemAPI(
 // It is built from the same config as buildDuplicatesAPI's detector rather than
 // shared with it (the two APIs are assembled in different phases of serve), the
 // way the review game's detector already is. The dashboard never scans on a
-// request: internal/system runs this in the background and reports when it last
-// finished.
+// request: internal/system runs this in the background, once per active
+// project, and reports when it last finished.
 func buildSystemDuplicatesOrNil(cfg *config.Config, db *database.DB) system.DuplicateCounter {
 	if !cfg.Duplicate.Enabled {
 		return nil
 	}
 	photoStore := photos.NewStore(db.Pool())
-	return bootstrapDuplicateCounter{svc: duplicates.New(duplicates.Config{
+	return duplicates.New(duplicates.Config{
 		Photos:           photoStore,
 		Phashes:          photoStore,
 		Embeddings:       vectors.NewStore(db.Pool()),
 		Feedback:         feedback.NewStore(db.Pool()),
 		PhashMaxDiff:     cfg.Duplicate.PhashMaxDiff,
 		EmbeddingMaxDist: cfg.Duplicate.EmbeddingMaxDist,
-	})}
-}
-
-// bootstrapDuplicateCounter adapts the project-scoped duplicate detector to the
-// dashboard's project-less DuplicateCounter by counting the bootstrap project's
-// groups — duplicate groups are built inside one project, so there is no
-// instance-wide count to take. Transition: the system dashboard is scoped by
-// project in its own step, which replaces this adapter.
-type bootstrapDuplicateCounter struct {
-	svc *duplicates.Service
-}
-
-// CountGroups returns how many duplicate groups the bootstrap project holds.
-func (c bootstrapDuplicateCounter) CountGroups(ctx context.Context) (int, error) {
-	n, err := c.svc.CountGroups(ctx, project.BootstrapUID)
-	if err != nil {
-		return 0, fmt.Errorf("counting the bootstrap project's duplicate groups: %w", err)
-	}
-	return n, nil
+	})
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/importapi"
 	"github.com/panbotka/kukatko/internal/importer"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -63,6 +64,9 @@ func newEnv(t *testing.T) *env {
 	// trusted proxy, and this harness trusts none.
 	r.Use(clientip.Middleware(nil))
 	r.Route("/api/v1", func(r chi.Router) {
+		// The unprefixed transition alias: WithProject resolves the bootstrap
+		// project, as it does for every /api/v1 route of the real server.
+		r.Use(auth.WithProject(project.NewStore(db.Pool())))
 		authAPI.RegisterRoutes(r)
 		api.RegisterRoutes(r)
 	})
@@ -118,7 +122,7 @@ func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 
 	// A finished migration run: nothing writes this source any more, but the row
 	// is the catalogue's provenance record and must keep coming back.
-	migration, err := env.runs.Start(ctx, importer.SourcePhotoPrism)
+	migration, err := env.runs.Start(ctx, project.BootstrapUID, importer.SourcePhotoPrism)
 	if err != nil {
 		t.Fatalf("start migration run: %v", err)
 	}
@@ -129,7 +133,7 @@ func TestImportRuns_servesFolderAndMigrationHistory(t *testing.T) {
 	}
 
 	// A folder import: the only source still produced.
-	folder, err := env.runs.Start(ctx, importer.SourceFolder)
+	folder, err := env.runs.Start(ctx, project.BootstrapUID, importer.SourceFolder)
 	if err != nil {
 		t.Fatalf("start folder run: %v", err)
 	}
@@ -170,7 +174,7 @@ func TestImportFailures_servesFolderFailures(t *testing.T) {
 	maint := env.login(t, "maint", auth.AccountMaintainer)
 	ctx := t.Context()
 
-	run, err := env.runs.Start(ctx, importer.SourceFolder)
+	run, err := env.runs.Start(ctx, project.BootstrapUID, importer.SourceFolder)
 	if err != nil {
 		t.Fatalf("start run: %v", err)
 	}
@@ -202,7 +206,7 @@ func TestImportFailures_servesFolderFailures(t *testing.T) {
 	}
 
 	// A run with an unresolved failure closes as partial, not done.
-	stored, err := env.runs.Get(ctx, run.ID)
+	stored, err := env.runs.Get(ctx, project.BootstrapUID, run.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}

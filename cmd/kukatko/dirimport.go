@@ -35,9 +35,18 @@ var errImportFailures = errors.New("some files failed to import")
 // errNoUploader indicates --uploader named a user that does not exist.
 var errNoUploader = errors.New("no such user")
 
+// errImportProjectRequired is returned when --project is missing: an import
+// lands in exactly one project, and guessing which would be a silent leak.
+var errImportProjectRequired = errors.New("--project <slug> is required: an import lands in exactly one project")
+
+// errProjectInactive indicates --project named a deactivated project, which
+// nobody may enter and so nothing may be imported into.
+var errProjectInactive = errors.New("project is deactivated")
+
 // dirImportOptions is the CLI's view of a folder import, read from the flags.
 type dirImportOptions struct {
 	root        string
+	project     string
 	album       string
 	labels      []string
 	recursive   bool
@@ -54,9 +63,10 @@ type dirImportOptions struct {
 // it is always safe to run it again.
 func newImportDirCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dir <path>",
-		Short: "Import a directory of photos and videos from disk",
-		Long: "Recursively walk a directory and ingest every media file into the library: " +
+		Use:   "dir --project <slug> <path>",
+		Short: "Import a directory of photos and videos from disk into one project",
+		Long: "Recursively walk a directory and ingest every media file into the library of the " +
+			"project named by --project (required): " +
 			"the original is copied into storage, its metadata and thumbnails are generated, and " +
 			"the embedding and face-detection jobs are queued.\n\n" +
 			"The source directory is only ever read — originals are copied, never moved or " +
@@ -79,6 +89,9 @@ func newImportDirCmd() *cobra.Command {
 			return runImportDir(cmd, args[0])
 		},
 	}
+	cmd.Flags().String("project", "",
+		"slug of the project to import into (required): the photos, their originals' storage prefix, "+
+			"the dedup, --album, --labels and the run all belong to it")
 	cmd.Flags().String("album", "",
 		"put every imported photo in this album, by uid or title (a title that does not exist is created)")
 	cmd.Flags().StringSlice("labels", nil,
@@ -99,27 +112,21 @@ func newImportDirCmd() *cobra.Command {
 }
 
 // dirImportOptionsFromFlags reads the "import dir" flags into a dirImportOptions.
-// --no-recursive is the negative form of --recursive (the two are mutually
-// exclusive), so a flat import is spelled either way.
 func dirImportOptionsFromFlags(cmd *cobra.Command, root string) (dirImportOptions, error) {
 	flags := cmd.Flags()
 	opts := dirImportOptions{root: root}
 	var err error
+	if opts.project, err = importProjectFlag(cmd); err != nil {
+		return opts, err
+	}
 	if opts.album, err = flags.GetString("album"); err != nil {
 		return opts, fmt.Errorf("reading --album: %w", err)
 	}
 	if opts.labels, err = flags.GetStringSlice("labels"); err != nil {
 		return opts, fmt.Errorf("reading --labels: %w", err)
 	}
-	if opts.recursive, err = flags.GetBool("recursive"); err != nil {
-		return opts, fmt.Errorf("reading --recursive: %w", err)
-	}
-	noRecursive, err := flags.GetBool("no-recursive")
-	if err != nil {
-		return opts, fmt.Errorf("reading --no-recursive: %w", err)
-	}
-	if noRecursive {
-		opts.recursive = false
+	if opts.recursive, err = recursiveFlag(cmd); err != nil {
+		return opts, err
 	}
 	if opts.dryRun, err = flags.GetBool("dry-run"); err != nil {
 		return opts, fmt.Errorf("reading --dry-run: %w", err)
@@ -165,11 +172,15 @@ func runImportDir(cmd *cobra.Command, root string) error {
 		return fmt.Errorf("applying migrations: %w", err)
 	}
 
+	target, err := resolveImportProject(ctx, project.NewStore(db.Pool()), opts.project)
+	if err != nil {
+		return err
+	}
 	uploader, err := resolveUploader(ctx, cfg, auth.NewStore(db.Pool()), opts.uploader)
 	if err != nil {
 		return err
 	}
-	svc, err := buildDirImportService(cfg, db, opts.concurrency)
+	svc, err := buildDirImportService(cfg, db, target, opts.concurrency)
 	if err != nil {
 		return err
 	}
@@ -352,11 +363,55 @@ func resolveUploader(
 	return "", nil
 }
 
+// recursiveFlag reads --recursive and its negative form --no-recursive (the two
+// are mutually exclusive), so a flat import is spelled either way.
+func recursiveFlag(cmd *cobra.Command) (bool, error) {
+	recursive, err := cmd.Flags().GetBool("recursive")
+	if err != nil {
+		return false, fmt.Errorf("reading --recursive: %w", err)
+	}
+	noRecursive, err := cmd.Flags().GetBool("no-recursive")
+	if err != nil {
+		return false, fmt.Errorf("reading --no-recursive: %w", err)
+	}
+	return recursive && !noRecursive, nil
+}
+
+// importProjectFlag reads the required --project slug, refusing an empty one
+// with errImportProjectRequired.
+func importProjectFlag(cmd *cobra.Command) (string, error) {
+	slug, err := cmd.Flags().GetString("project")
+	if err != nil {
+		return "", fmt.Errorf("reading --project: %w", err)
+	}
+	if slug == "" {
+		return "", errImportProjectRequired
+	}
+	return slug, nil
+}
+
+// resolveImportProject looks up the project --project names by slug and
+// refuses a deactivated one: nobody may enter it, so nothing is imported into
+// it either.
+func resolveImportProject(ctx context.Context, store *project.Store, slug string) (*project.Project, error) {
+	p, err := store.GetBySlug(ctx, slug)
+	if err != nil {
+		return nil, fmt.Errorf("looking up project %q: %w", slug, err)
+	}
+	if !p.Active {
+		return nil, fmt.Errorf("%w: %s", errProjectInactive, slug)
+	}
+	return p, nil
+}
+
 // buildDirImportService assembles the folder-import pipeline over the shared
 // pool: the ingest service (the very same one the upload endpoint uses, wired to
 // the configured original store, thumbnailer and persistent job queue), the
-// import-run store, the photo catalogue and the album/label catalogues.
-func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int) (*dirimport.Service, error) {
+// import-run store, the photo catalogue and the album/label catalogues, all
+// working inside target — the project --project named.
+func buildDirImportService(
+	cfg *config.Config, db *database.DB, target *project.Project, concurrency int,
+) (*dirimport.Service, error) {
 	store, err := newStorage(cfg)
 	if err != nil {
 		return nil, err
@@ -379,17 +434,15 @@ func buildDirImportService(cfg *config.Config, db *database.DB, concurrency int)
 		DecodeBudget: processDecodeBudget(cfg),
 	})
 	return dirimport.New(dirimport.Config{
-		Ingest:   ingestSvc,
-		Runs:     importer.NewStore(pool),
-		Photos:   photoStore,
-		Filler:   photoStore,
-		Curation: organizeStore,
-		Albums:   organizeStore,
-		Labels:   organizeStore,
-		// Transition: ingest still catalogues every new photo in the bootstrap
-		// project (the column default), so the import resolves its albums, labels
-		// and curation there too until the import learns a --project of its own.
-		ProjectUID:  project.BootstrapUID,
-		Concurrency: concurrency,
+		Ingest:        ingestSvc,
+		Runs:          importer.NewStore(pool),
+		Photos:        photoStore,
+		Filler:        photoStore,
+		Curation:      organizeStore,
+		Albums:        organizeStore,
+		Labels:        organizeStore,
+		ProjectUID:    target.UID,
+		StoragePrefix: target.StoragePrefix,
+		Concurrency:   concurrency,
 	}), nil
 }

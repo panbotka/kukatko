@@ -32,7 +32,7 @@ func newFakeBlurhashBackfiller(missing, active []string) *fakeBlurhashBackfiller
 
 // BackfillBlurhash schedules the appropriate candidate set and returns how many
 // candidates it iterated.
-func (f *fakeBlurhashBackfiller) BackfillBlurhash(_ context.Context, all bool) (int, error) {
+func (f *fakeBlurhashBackfiller) BackfillBlurhash(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {
@@ -47,7 +47,7 @@ func (f *fakeBlurhashBackfiller) BackfillBlurhash(_ context.Context, all bool) (
 
 // CountBackfillBlurhash reports how many candidates the same call would cover,
 // scheduling nothing.
-func (f *fakeBlurhashBackfiller) CountBackfillBlurhash(_ context.Context, all bool) (int, error) {
+func (f *fakeBlurhashBackfiller) CountBackfillBlurhash(_ context.Context, _ string, all bool) (int, error) {
 	f.counts++
 	f.lastAll = all
 	if f.err != nil {

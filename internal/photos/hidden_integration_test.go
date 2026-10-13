@@ -228,7 +228,7 @@ func TestHiddenFromLibrary_placesExcludesHidden(t *testing.T) {
 		}
 	}
 
-	places, err := lib.store.AggregatePlaces(ctx, "")
+	places, err := lib.store.AggregatePlaces(ctx, project.BootstrapUID, "")
 	if err != nil {
 		t.Fatalf("AggregatePlaces: %v", err)
 	}

@@ -231,9 +231,9 @@ func (s *Store) SetStoragePrefix(ctx context.Context, meta audit.Meta, uid, pref
 	return result, nil
 }
 
-// libraryUsageSQL sums the whole library. Every photo row counts, archived ones
-// included: their originals stay stored until a purge deletes the row.
-const libraryUsageSQL = `SELECT count(*), COALESCE(sum(file_size), 0)::bigint FROM photos`
+// libraryUsageSQL sums one project's library. Every photo row counts, archived
+// ones included: their originals stay stored until a purge deletes the row.
+const libraryUsageSQL = `SELECT count(*), COALESCE(sum(file_size), 0)::bigint FROM photos WHERE project_id = $1`
 
 // Usage returns how many photos the project uid holds and the summed size of
 // their originals. It returns ErrNotFound for an unknown uid.
@@ -241,15 +241,8 @@ func (s *Store) Usage(ctx context.Context, uid string) (Usage, error) {
 	if _, err := s.Get(ctx, uid); err != nil {
 		return Usage{}, err
 	}
-	//nolint:godox // a deliberate marker the later multi-tenancy steps look for; it goes when project_id lands
-	if uid != BootstrapUID {
-		// TODO multi-tenancy: scope by photos.project_id. Until that column
-		// exists, the whole library belongs to the bootstrap project and every
-		// other project is empty.
-		return Usage{}, nil
-	}
 	var u Usage
-	if err := s.pool.QueryRow(ctx, libraryUsageSQL).Scan(&u.Photos, &u.OriginalsBytes); err != nil {
+	if err := s.pool.QueryRow(ctx, libraryUsageSQL, uid).Scan(&u.Photos, &u.OriginalsBytes); err != nil {
 		return Usage{}, fmt.Errorf("project: measuring usage of %s: %w", uid, err)
 	}
 	return u, nil

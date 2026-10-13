@@ -292,6 +292,35 @@ export interface SystemStatus {
   library: LibrarySummary
   remaining: RemainingWork
   video: VideoStatus
+  /**
+   * How the catalogue and the queue divide between the projects: one row per
+   * project (deactivated ones included), ordered by slug. Every other section is
+   * an instance total.
+   */
+  projects: ProjectSummary[]
+}
+
+/**
+ * One project's row of the dashboard breakdown (`system.ProjectSummary`).
+ * `duplicates` is null until a background scan has finished (and always for a
+ * deactivated project, which is never scanned); `last_import` is null for a
+ * project that has never run `kukatko import dir`.
+ */
+export interface ProjectSummary {
+  uid: string
+  slug: string
+  name: string
+  active: boolean
+  photos: number
+  videos: number
+  trashed: number
+  originals_bytes: number
+  faces: number
+  subjects: number
+  albums: number
+  queue: { queued: number; running: number; failed: number }
+  duplicates: number | null
+  last_import: ImportRun | null
 }
 
 /**

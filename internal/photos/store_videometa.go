@@ -152,7 +152,8 @@ func (s *Store) RepairVideoMetadata(ctx context.Context, uid string, r VideoRepa
 const listVideosMissingTechnicalSQL = `
 SELECT uid
 FROM photos
-WHERE archived_at IS NULL AND media_type = 'video'
+WHERE photos.project_id = $1
+  AND archived_at IS NULL AND media_type = 'video'
   AND (duration_ms IS NULL OR duration_ms <= 0 OR video_codec = '' OR file_width = 0 OR file_height = 0)
 ORDER BY created_at DESC, uid DESC%s`
 
@@ -162,12 +163,19 @@ ORDER BY created_at DESC, uid DESC%s`
 // caps the result; a non-positive limit returns every one of them. It backs the
 // video half of the metadata backfill, which enqueues a `metadata` job per
 // returned uid.
-func (s *Store) ListVideosMissingTechnicalMetadata(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListVideosMissingTechnicalMetadata(
+	ctx context.Context, projectUID string, limit int,
+) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listVideosMissingTechnicalSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listVideosMissingTechnicalSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listVideosMissingTechnicalSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing videos missing technical metadata", query, args...)
 }

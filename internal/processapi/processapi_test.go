@@ -20,11 +20,14 @@ type fakeBackfiller struct {
 	enqueued int
 	err      error
 	calls    int
+	project  string
 }
 
-// BackfillEmbeddings records the call and returns the canned result.
-func (f *fakeBackfiller) BackfillEmbeddings(context.Context) (int, error) {
+// BackfillEmbeddings records the call and its project and returns the canned
+// result.
+func (f *fakeBackfiller) BackfillEmbeddings(_ context.Context, projectUID string) (int, error) {
 	f.calls++
+	f.project = projectUID
 	return f.enqueued, f.err
 }
 
@@ -37,7 +40,7 @@ type fakeFaceBackfiller struct {
 }
 
 // BackfillFaces records the call and returns the canned result.
-func (f *fakeFaceBackfiller) BackfillFaces(context.Context) (facejob.BackfillResult, error) {
+func (f *fakeFaceBackfiller) BackfillFaces(context.Context, string) (facejob.BackfillResult, error) {
 	f.calls++
 	return facejob.BackfillResult{Enqueued: f.enqueued, SkippedVideos: f.skipped}, f.err
 }
@@ -47,11 +50,14 @@ type fakeReclusterer struct {
 	scheduled bool
 	err       error
 	calls     int
+	project   string
 }
 
-// ScheduleRecluster records the call and returns the canned result.
-func (f *fakeReclusterer) ScheduleRecluster(context.Context) (bool, error) {
+// ScheduleProjectRecluster records the call and its project and returns the
+// canned result.
+func (f *fakeReclusterer) ScheduleProjectRecluster(_ context.Context, projectUID string) (bool, error) {
 	f.calls++
+	f.project = projectUID
 	return f.scheduled, f.err
 }
 
@@ -63,7 +69,7 @@ type fakePlacesBackfiller struct {
 }
 
 // BackfillPlaces records the call and returns the canned result.
-func (f *fakePlacesBackfiller) BackfillPlaces(context.Context) (int, error) {
+func (f *fakePlacesBackfiller) BackfillPlaces(context.Context, string) (int, error) {
 	f.calls++
 	return f.enqueued, f.err
 }
@@ -98,7 +104,7 @@ func newFakeThumbnailBackfiller(missing, active []string) *fakeThumbnailBackfill
 
 // BackfillThumbnails schedules the appropriate candidate set, deduping against
 // already-pending jobs, and returns how many candidates it iterated.
-func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, all bool) (int, error) {
+func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {
@@ -119,7 +125,7 @@ func (f *fakeThumbnailBackfiller) BackfillThumbnails(_ context.Context, all bool
 
 // CountBackfillThumbnails reports how many candidates the same call would cover,
 // recording that it was asked and scheduling nothing.
-func (f *fakeThumbnailBackfiller) CountBackfillThumbnails(_ context.Context, all bool) (int, error) {
+func (f *fakeThumbnailBackfiller) CountBackfillThumbnails(_ context.Context, _ string, all bool) (int, error) {
 	f.counts++
 	f.lastAll = all
 	if f.err != nil {
@@ -133,7 +139,7 @@ func (f *fakeThumbnailBackfiller) CountBackfillThumbnails(_ context.Context, all
 
 // BackfillVideoPosters schedules the video candidate set, deduping like the
 // general backfill does.
-func (f *fakeThumbnailBackfiller) BackfillVideoPosters(context.Context) (int, error) {
+func (f *fakeThumbnailBackfiller) BackfillVideoPosters(context.Context, string) (int, error) {
 	f.videoRuns++
 	if f.err != nil {
 		return 0, f.err
@@ -149,7 +155,7 @@ func (f *fakeThumbnailBackfiller) BackfillVideoPosters(context.Context) (int, er
 
 // CountBackfillVideoPosters reports how many videos the same call would cover,
 // scheduling nothing.
-func (f *fakeThumbnailBackfiller) CountBackfillVideoPosters(context.Context) (int, error) {
+func (f *fakeThumbnailBackfiller) CountBackfillVideoPosters(context.Context, string) (int, error) {
 	f.videoCounts++
 	if f.err != nil {
 		return 0, f.err
@@ -786,7 +792,7 @@ type fakeMetadataBackfiller struct {
 }
 
 // BackfillMetadata schedules the appropriate candidate set and returns its size.
-func (f *fakeMetadataBackfiller) BackfillMetadata(_ context.Context, all bool) (int, error) {
+func (f *fakeMetadataBackfiller) BackfillMetadata(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {
@@ -800,7 +806,7 @@ func (f *fakeMetadataBackfiller) BackfillMetadata(_ context.Context, all bool) (
 
 // BackfillVideoMetadata schedules the videos with no technical metadata and
 // returns how many, recording that the video scope was the one asked for.
-func (f *fakeMetadataBackfiller) BackfillVideoMetadata(_ context.Context) (int, error) {
+func (f *fakeMetadataBackfiller) BackfillVideoMetadata(_ context.Context, _ string) (int, error) {
 	f.videoCalls++
 	if f.err != nil {
 		return 0, f.err
@@ -926,7 +932,7 @@ type fakeLocationEstimator struct {
 }
 
 // BackfillLocations records the call and returns the canned result.
-func (f *fakeLocationEstimator) BackfillLocations(context.Context) (int, error) {
+func (f *fakeLocationEstimator) BackfillLocations(context.Context, string) (int, error) {
 	f.calls++
 	return f.estimated, f.err
 }

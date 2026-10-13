@@ -223,7 +223,7 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	count, err := svc.CountBackfillBlurhash(ctx, false)
+	count, err := svc.CountBackfillBlurhash(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("CountBackfillBlurhash: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 		t.Errorf("dry run counted %d, want %d", count, len(pending))
 	}
 
-	enqueued, err := svc.BackfillBlurhash(ctx, false)
+	enqueued, err := svc.BackfillBlurhash(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("BackfillBlurhash: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 	// A repeat run leans on the queue's per-photo dedup rather than piling up a
 	// second job for the same photo — what makes the backfill safe to re-run while
 	// the app is serving.
-	if _, err := svc.BackfillBlurhash(ctx, false); err != nil {
+	if _, err := svc.BackfillBlurhash(ctx, project.BootstrapUID, false); err != nil {
 		t.Fatalf("BackfillBlurhash again: %v", err)
 	}
 	if got := h.queuedThumbnailUIDs(t); !slices.Equal(got, want) {
@@ -262,7 +262,7 @@ func TestBackfillBlurhash_drainsTheLibrary(t *testing.T) {
 			t.Fatalf("Regenerate(%s): %v", uid, err)
 		}
 	}
-	left, err := svc.CountBackfillBlurhash(ctx, false)
+	left, err := svc.CountBackfillBlurhash(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("CountBackfillBlurhash after draining: %v", err)
 	}

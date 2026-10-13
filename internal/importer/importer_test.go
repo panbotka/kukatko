@@ -124,7 +124,8 @@ func TestNewFailure(t *testing.T) {
 }
 
 // TestBuildListFailuresQuery checks the WHERE clauses and the ordered argument
-// list are assembled from the filter, with the limit and offset always last.
+// list are assembled from the filter, the project always first and the limit
+// and offset always last.
 func TestBuildListFailuresQuery(t *testing.T) {
 	t.Parallel()
 
@@ -135,16 +136,19 @@ func TestBuildListFailuresQuery(t *testing.T) {
 		wantArgs   []any
 	}{
 		{
-			name:       "no filter: only limit and offset",
-			filter:     FailureFilter{},
-			wantWheres: nil,
-			wantArgs:   []any{10, 5},
+			name:       "no filter: only the project, limit and offset",
+			filter:     FailureFilter{ProjectUID: "pjA"},
+			wantWheres: []string{"run_id IN (SELECT id FROM import_runs WHERE project_id = $1)"},
+			wantArgs:   []any{"pjA", 10, 5},
 		},
 		{
-			name:       "run, source and unresolved",
-			filter:     FailureFilter{RunID: 3, Source: SourcePhotoPrism, UnresolvedOnly: true},
-			wantWheres: []string{"run_id = $1", "source = $2", "resolved_at IS NULL"},
-			wantArgs:   []any{int64(3), "photoprism", 10, 5},
+			name:   "run, source and unresolved",
+			filter: FailureFilter{ProjectUID: "pjA", RunID: 3, Source: SourcePhotoPrism, UnresolvedOnly: true},
+			wantWheres: []string{
+				"WHERE run_id IN (SELECT id FROM import_runs WHERE project_id = $1)",
+				"run_id = $2", "source = $3", "resolved_at IS NULL",
+			},
+			wantArgs: []any{"pjA", int64(3), "photoprism", 10, 5},
 		},
 	}
 
@@ -156,9 +160,6 @@ func TestBuildListFailuresQuery(t *testing.T) {
 				if !strings.Contains(sql, w) {
 					t.Errorf("query %q missing clause %q", sql, w)
 				}
-			}
-			if tt.wantWheres == nil && strings.Contains(sql, "WHERE") {
-				t.Errorf("query %q has a WHERE for an empty filter", sql)
 			}
 			if len(args) != len(tt.wantArgs) {
 				t.Fatalf("args = %v, want %v", args, tt.wantArgs)

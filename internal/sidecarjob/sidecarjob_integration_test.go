@@ -206,7 +206,7 @@ func TestExport_stampsMarkerSoBackfillDrains(t *testing.T) {
 	if err := fix.svc.Export(ctx, photo.UID); err != nil {
 		t.Fatalf("Export returned error: %v", err)
 	}
-	pending, err := fix.photos.ListPhotosMissingSidecar(ctx, 0)
+	pending, err := fix.photos.ListPhotosMissingSidecar(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingSidecar returned error: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestBackfill_isIdempotent(t *testing.T) {
 	first := makePhoto(t, fix.photos, "e2ebackfill01")
 	second := makePhoto(t, fix.photos, "e2ebackfill02")
 
-	enqueued, err := fix.svc.BackfillSidecars(ctx, false)
+	enqueued, err := fix.svc.BackfillSidecars(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("BackfillSidecars returned error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestBackfill_isIdempotent(t *testing.T) {
 	// A second run while the jobs are still queued must add nothing: the queue's
 	// per-photo dedup index swallows the repeat, which is what makes a re-run cheap
 	// rather than a duplicate write per photo.
-	again, err := fix.svc.BackfillSidecars(ctx, false)
+	again, err := fix.svc.BackfillSidecars(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("second BackfillSidecars returned error: %v", err)
 	}
@@ -254,14 +254,14 @@ func TestBackfill_isIdempotent(t *testing.T) {
 			t.Fatalf("Export returned error: %v", err)
 		}
 	}
-	drained, err := fix.svc.BackfillSidecars(ctx, true)
+	drained, err := fix.svc.BackfillSidecars(ctx, project.BootstrapUID, true)
 	if err != nil {
 		t.Fatalf("BackfillSidecars(all) returned error: %v", err)
 	}
 	if drained != 2 {
 		t.Errorf("forced full run enqueued %d, want 2 (all=true ignores the marker)", drained)
 	}
-	pending, err := fix.svc.BackfillSidecars(ctx, false)
+	pending, err := fix.svc.BackfillSidecars(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("BackfillSidecars returned error: %v", err)
 	}

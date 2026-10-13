@@ -43,7 +43,7 @@ type window struct {
 }
 
 // ListLocationCandidates returns the canned candidates or the canned error.
-func (f *fakeStore) ListLocationCandidates(_ context.Context, _ int) ([]photos.LocationCandidate, error) {
+func (f *fakeStore) ListLocationCandidates(_ context.Context, _ string, _ int) ([]photos.LocationCandidate, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -51,13 +51,13 @@ func (f *fakeStore) ListLocationCandidates(_ context.Context, _ int) ([]photos.L
 }
 
 // ListLocatedNeighbours records the window and returns the canned neighbours.
-func (f *fakeStore) ListLocatedNeighbours(_ context.Context, from, to time.Time) ([]photos.LocatedPoint, error) {
+func (f *fakeStore) ListLocatedNeighbours(_ context.Context, _ string, from, to time.Time) ([]photos.LocatedPoint, error) {
 	f.windows = append(f.windows, window{from: from, to: to})
 	return f.neighbours, nil
 }
 
 // SetEstimatedLocation records the write and reports whether it landed.
-func (f *fakeStore) SetEstimatedLocation(_ context.Context, uid string, lat, lng float64) (bool, error) {
+func (f *fakeStore) SetEstimatedLocation(_ context.Context, _ string, uid string, lat, lng float64) (bool, error) {
 	if f.writeErr != nil {
 		return false, f.writeErr
 	}
@@ -104,7 +104,7 @@ func TestBackfillLocations_estimatesFromCoherentNeighbours(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := New(Config{Store: store, Enqueuer: enq})
 
-	got, err := svc.BackfillLocations(context.Background())
+	got, err := svc.BackfillLocations(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestBackfillLocations_producesNothingWhenNeighboursDisagree(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := New(Config{Store: store, Enqueuer: enq})
 
-	got, err := svc.BackfillLocations(context.Background())
+	got, err := svc.BackfillLocations(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestBackfillLocations_producesNothingWithoutNeighbours(t *testing.T) {
 	store := &fakeStore{candidates: []photos.LocationCandidate{candidate("p1")}}
 	svc := New(Config{Store: store})
 
-	got, err := svc.BackfillLocations(context.Background())
+	got, err := svc.BackfillLocations(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestBackfillLocations_noCandidatesIsANoOp(t *testing.T) {
 	store := &fakeStore{neighbours: located(pragueCastle)}
 	svc := New(Config{Store: store})
 
-	got, err := svc.BackfillLocations(context.Background())
+	got, err := svc.BackfillLocations(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestBackfillLocations_dropsTheEstimateWhenTheRowWasDecided(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := New(Config{Store: store, Enqueuer: enq})
 
-	got, err := svc.BackfillLocations(context.Background())
+	got, err := svc.BackfillLocations(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestBackfillLocations_windowIsCentredOnTheCandidate(t *testing.T) {
 	store := &fakeStore{candidates: []photos.LocationCandidate{candidate("p1")}}
 	svc := New(Config{Store: store, Window: 2 * time.Hour})
 
-	if _, err := svc.BackfillLocations(context.Background()); err != nil {
+	if _, err := svc.BackfillLocations(context.Background(), "pjtest"); err != nil {
 		t.Fatalf("BackfillLocations returned error: %v", err)
 	}
 	if len(store.windows) != 1 {
@@ -283,7 +283,7 @@ func TestBackfillLocations_reportsErrors(t *testing.T) {
 	t.Run("a listing failure aborts the run", func(t *testing.T) {
 		t.Parallel()
 		svc := New(Config{Store: &fakeStore{listErr: errBoom}})
-		if _, err := svc.BackfillLocations(context.Background()); !errors.Is(err, errBoom) {
+		if _, err := svc.BackfillLocations(context.Background(), "pjtest"); !errors.Is(err, errBoom) {
 			t.Errorf("BackfillLocations error = %v, want it to wrap %v", err, errBoom)
 		}
 	})
@@ -295,7 +295,7 @@ func TestBackfillLocations_reportsErrors(t *testing.T) {
 			neighbours: located(pragueCastle),
 			writeErr:   errBoom,
 		}
-		got, err := New(Config{Store: store}).BackfillLocations(context.Background())
+		got, err := New(Config{Store: store}).BackfillLocations(context.Background(), "pjtest")
 		if !errors.Is(err, errBoom) {
 			t.Errorf("BackfillLocations error = %v, want it to wrap %v", err, errBoom)
 		}
@@ -310,7 +310,7 @@ func TestBackfillLocations_reportsErrors(t *testing.T) {
 			candidates: []photos.LocationCandidate{candidate("p1")},
 			neighbours: located(pragueCastle),
 		}
-		got, err := New(Config{Store: store}).BackfillLocations(context.Background())
+		got, err := New(Config{Store: store}).BackfillLocations(context.Background(), "pjtest")
 		if err != nil {
 			t.Fatalf("BackfillLocations returned error: %v", err)
 		}

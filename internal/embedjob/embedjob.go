@@ -73,7 +73,7 @@ type VectorStore interface {
 	) ([]vectors.Match, error)
 	// ListPhotosMissingEmbedding returns uids of non-archived photos with no
 	// embedding yet (limit <= 0 returns all).
-	ListPhotosMissingEmbedding(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingEmbedding(ctx context.Context, projectUID string, limit int) ([]string, error)
 }
 
 // Previewer opens a decodable preview image for a photo, producing it if it does
@@ -288,8 +288,8 @@ func (s *Service) computeEmbedding(
 // already have an embedding are never touched, and a photo whose job is already
 // queued is a harmless no-op (the enqueuer dedupes), so the backfill is safe to
 // run repeatedly.
-func (s *Service) BackfillEmbeddings(ctx context.Context) (int, error) {
-	uids, err := s.vectors.ListPhotosMissingEmbedding(ctx, 0)
+func (s *Service) BackfillEmbeddings(ctx context.Context, projectUID string) (int, error) {
+	uids, err := s.vectors.ListPhotosMissingEmbedding(ctx, projectUID, 0)
 	if err != nil {
 		return 0, fmt.Errorf("embedjob: listing photos missing embedding: %w", err)
 	}

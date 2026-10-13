@@ -122,16 +122,21 @@ SELECT
     (SELECT count(*) FROM video_streaming WHERE NOT streamable AND stage = 3),
     (SELECT count(*) FROM video_streaming WHERE NOT streamable AND stage = 4),
     (SELECT count(*) FROM photo_hls_renditions),
-    (SELECT min(created_at) FROM jobs WHERE type = 'hls_transcode' AND state = 'queued')`
+    (SELECT min(created_at) FROM jobs WHERE type = 'hls_transcode' AND state = 'queued'),
+    ` + projectsBreakdownSQL
 
 // CountDashboard returns the library summary, the remaining-work counts and the
-// video-encoding backlog in a single query. DerivedBytes, the duplicate scan and
+// video-encoding backlog — and the per-project breakdown, as one JSON column
+// (projectsBreakdownSQL) — in a single query. DerivedBytes, the duplicate scan and
 // Video.StreamingEnabled are left zero: none of them is a count the database can
 // answer, so the service fills them in — this method reports only what the
 // catalogue actually holds. It returns an error when the query fails; callers
 // must not treat a failure as an empty library.
 func (s *Store) CountDashboard(ctx context.Context) (Dashboard, error) {
-	var dash Dashboard
+	var (
+		dash     Dashboard
+		projects []byte
+	)
 	lib, rem, vid := &dash.Library, &dash.Remaining, &dash.Video
 	err := s.pool.QueryRow(ctx, countDashboardSQL).Scan(
 		&lib.Photos,
@@ -166,6 +171,7 @@ func (s *Store) CountDashboard(ctx context.Context) (Dashboard, error) {
 		&vid.NotScheduled,
 		&vid.Renditions,
 		&vid.OldestQueuedAt,
+		&projects,
 	)
 	if err != nil {
 		return Dashboard{}, fmt.Errorf("system: counting dashboard: %w", err)
@@ -173,5 +179,8 @@ func (s *Store) CountDashboard(ctx context.Context) (Dashboard, error) {
 	// The backlog list and the video card must never disagree about how many clips
 	// still play as the whole original, so the one count answers both.
 	rem.VideosWithoutStreaming = vid.Missing
+	if dash.Projects, err = decodeProjects(projects); err != nil {
+		return Dashboard{}, err
+	}
 	return dash, nil
 }

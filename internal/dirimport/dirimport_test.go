@@ -35,6 +35,8 @@ type fakeIngester struct {
 	uploaders []string
 	// sidecars records the sidecar metadata passed with each call, by filename.
 	sidecars map[string]*sidecar.Metadata
+	// projects records the project and storage prefix passed with each call.
+	projects []string
 }
 
 // IngestFile records the call, drains the reader (as the real pipeline does) and
@@ -46,6 +48,7 @@ func (f *fakeIngester) IngestFile(_ context.Context, src io.Reader, req ingest.R
 	defer f.mu.Unlock()
 	f.seen = append(f.seen, req.Filename)
 	f.uploaders = append(f.uploaders, req.UploadedBy)
+	f.projects = append(f.projects, req.ProjectUID+"|"+req.StoragePrefix)
 	if f.sidecars == nil {
 		f.sidecars = map[string]*sidecar.Metadata{}
 	}
@@ -172,12 +175,15 @@ type fakeRuns struct {
 	failures []importer.Failure
 	// status is the run's terminal status once Complete or Fail ran.
 	status importer.Status
+	// project is the project the run was started in.
+	project string
 }
 
-// Start opens a fake run with id 1.
-func (f *fakeRuns) Start(_ context.Context, source importer.Source) (importer.Run, error) {
+// Start opens a fake run with id 1, recording its project.
+func (f *fakeRuns) Start(_ context.Context, projectUID string, source importer.Source) (importer.Run, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.project = projectUID
 	if f.startErr != nil {
 		return importer.Run{}, f.startErr
 	}
@@ -232,7 +238,7 @@ type fakePhotos struct {
 }
 
 // GetByFileHash returns the photo with this content hash, or ErrPhotoNotFound.
-func (f *fakePhotos) GetByFileHash(_ context.Context, hash string) (photos.Photo, error) {
+func (f *fakePhotos) GetByFileHashInProject(_ context.Context, _, hash string) (photos.Photo, error) {
 	if photo, ok := f.byHash[hash]; ok {
 		return photo, nil
 	}
@@ -240,7 +246,7 @@ func (f *fakePhotos) GetByFileHash(_ context.Context, hash string) (photos.Photo
 }
 
 // GetByUID returns the photo with this UID, or ErrPhotoNotFound.
-func (f *fakePhotos) GetByUID(_ context.Context, uid string) (photos.Photo, error) {
+func (f *fakePhotos) GetByUIDInProject(_ context.Context, _, uid string) (photos.Photo, error) {
 	if photo, ok := f.byUID[uid]; ok {
 		return photo, nil
 	}
@@ -383,9 +389,18 @@ func newEnv(t *testing.T, script map[string]ingest.FileResult) *testEnv {
 		Curation: env.curation,
 		Albums:   env.organizer,
 		Labels:   env.organizer,
+		// A created project's layout, so the prefix is visibly passed on.
+		ProjectUID:    testProject,
+		StoragePrefix: testPrefix,
 	})
 	return env
 }
+
+// The project every unit-test import lands in, and its storage prefix.
+const (
+	testProject = "pjdirimporttest"
+	testPrefix  = "projects/pjdirimporttest/"
+)
 
 // writeFile creates a file with the given content under dir, creating any parent
 // directories, and returns its path.
@@ -863,6 +878,47 @@ func TestImport_uploaderIsPassedThrough(t *testing.T) {
 	}
 	if got := env.ingester.uploaders; len(got) != 1 || got[0] != "user-1" {
 		t.Errorf("uploadedBy = %v, want [user-1]", got)
+	}
+}
+
+// TestImport_landsInItsProject checks every file is ingested into the
+// service's project under that project's storage prefix, and the run is
+// recorded there too.
+func TestImport_landsInItsProject(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, nil)
+	root := t.TempDir()
+	writeFile(t, root, "a.jpg", "aaa")
+	writeFile(t, root, "b.jpg", "bbb")
+
+	if _, err := env.svc.Import(t.Context(), Options{Root: root, Recursive: true}); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	want := testProject + "|" + testPrefix
+	if got := env.ingester.projects; len(got) != 2 || got[0] != want || got[1] != want {
+		t.Errorf("ingest requests named %v, want both %q", got, want)
+	}
+	if env.runs.project != testProject {
+		t.Errorf("run started in %q, want %q", env.runs.project, testProject)
+	}
+}
+
+// TestImport_refusesWithoutAProject checks a Service built without a project
+// imports nothing and opens no run: an import never lands in "the instance".
+func TestImport_refusesWithoutAProject(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, nil)
+	svc := New(Config{Ingest: env.ingester, Runs: env.runs, Photos: env.photos})
+	root := t.TempDir()
+	writeFile(t, root, "a.jpg", "aaa")
+
+	if _, err := svc.Import(t.Context(), Options{Root: root, Recursive: true}); !errors.Is(err, ErrNoProject) {
+		t.Errorf("Import without a project = %v, want ErrNoProject", err)
+	}
+	if len(env.ingester.seen) != 0 || env.runs.started != 0 {
+		t.Errorf("a refused import ingested %v and started %d runs", env.ingester.seen, env.runs.started)
 	}
 }
 

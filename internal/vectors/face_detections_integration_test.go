@@ -168,7 +168,7 @@ func TestListPhotosMissingFaces(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	uids, err := store.ListPhotosMissingFaces(ctx, 0)
+	uids, err := store.ListPhotosMissingFaces(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingFaces: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestCountVideosMissingFaces(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	count, err := store.CountVideosMissingFaces(ctx)
+	count, err := store.CountVideosMissingFaces(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("CountVideosMissingFaces: %v", err)
 	}

@@ -81,9 +81,9 @@ type PlaceStore interface {
 	GetPlace(ctx context.Context, photoUID string) (places.Place, error)
 	// SavePlace inserts or replaces a photo's place row.
 	SavePlace(ctx context.Context, p places.Place) (places.Place, error)
-	// ListPhotosMissingPlaces returns uids of non-archived, geotagged photos with
-	// no cached place yet (limit <= 0 returns all).
-	ListPhotosMissingPlaces(ctx context.Context, limit int) ([]string, error)
+	// ListPhotosMissingPlaces returns uids of the project's non-archived,
+	// geotagged photos with no cached place yet (limit <= 0 returns all).
+	ListPhotosMissingPlaces(ctx context.Context, projectUID string, limit int) ([]string, error)
 }
 
 // Geocoder reverse-geocodes a coordinate into a place. It is the subset of
@@ -367,7 +367,8 @@ func (s *Service) savePlace(ctx context.Context, p places.Place) error {
 }
 
 // BackfillPlaces enqueues a `places` job for every non-archived, geotagged photo
-// that has no cached place yet, returning how many uids it scheduled. Photos that
+// of the project that has no cached place yet, returning how many uids it
+// scheduled; another project's photos are never listed. Photos that
 // are already geocoded are never touched, and a photo whose job is already queued
 // is a harmless no-op (the enqueuer dedupes), so the backfill is safe to run
 // repeatedly.
@@ -378,8 +379,8 @@ func (s *Service) savePlace(ctx context.Context, p places.Place) error {
 // per window — the rest are *deferred* until the window refills, not failed, so
 // they burn no retry attempt and no credit and simply drain over the following
 // windows.
-func (s *Service) BackfillPlaces(ctx context.Context) (int, error) {
-	uids, err := s.MissingPlaces(ctx)
+func (s *Service) BackfillPlaces(ctx context.Context, projectUID string) (int, error) {
+	uids, err := s.MissingPlaces(ctx, projectUID)
 	if err != nil {
 		return 0, err
 	}
@@ -393,13 +394,13 @@ func (s *Service) BackfillPlaces(ctx context.Context) (int, error) {
 	return enqueued, nil
 }
 
-// MissingPlaces returns the uids of the live, geotagged photos that have no
-// cached place yet — exactly the set BackfillPlaces would schedule, listed rather
+// MissingPlaces returns the uids of the project's live, geotagged photos that
+// have no cached place yet — exactly the set BackfillPlaces would schedule, listed rather
 // than enqueued. It is the dry run of the backfill: the library-maintenance scan
 // counts it so the "fill in the places" option can say how much work it is before
 // anybody starts it. It is read-only and spends no mapy.com credit.
-func (s *Service) MissingPlaces(ctx context.Context) ([]string, error) {
-	uids, err := s.places.ListPhotosMissingPlaces(ctx, 0)
+func (s *Service) MissingPlaces(ctx context.Context, projectUID string) ([]string, error) {
+	uids, err := s.places.ListPhotosMissingPlaces(ctx, projectUID, 0)
 	if err != nil {
 		return nil, fmt.Errorf("placesjob: listing photos missing places: %w", err)
 	}

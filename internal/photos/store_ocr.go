@@ -85,7 +85,8 @@ func (s *Store) GetOCR(ctx context.Context, projectUID, uid string) (OCR, error)
 const listMissingOCRSQL = `
 SELECT uid
 FROM photos
-WHERE ocr_at IS NULL AND archived_at IS NULL AND media_type <> 'video'
+WHERE photos.project_id = $1
+  AND ocr_at IS NULL AND archived_at IS NULL AND media_type <> 'video'
 ORDER BY created_at DESC, uid DESC%s`
 
 // ListPhotosMissingOCR returns the uids of non-archived photos that have never
@@ -100,12 +101,17 @@ ORDER BY created_at DESC, uid DESC%s`
 // The predicate is the recognition marker rather than "the text is empty", so the
 // backfill converges: a photograph with no writing in it is finished once it has
 // been looked at, and is not re-scheduled on every run.
-func (s *Store) ListPhotosMissingOCR(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingOCR(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listMissingOCRSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listMissingOCRSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listMissingOCRSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing photos missing OCR", query, args...)
 }
@@ -115,13 +121,19 @@ func (s *Store) ListPhotosMissingOCR(ctx context.Context, limit int) ([]string, 
 const listActiveImageUIDsSQL = `
 SELECT uid
 FROM photos
-WHERE archived_at IS NULL AND media_type <> 'video'
+WHERE photos.project_id = $1
+  AND archived_at IS NULL AND media_type <> 'video'
 ORDER BY created_at DESC, uid DESC`
 
 // ListActiveImageUIDs returns the uids of every non-archived photo that is not a
 // video, newest first. It backs the forced full OCR backfill (`?all=true`), which
 // re-reads photos the recogniser has already seen — how a library picks up a
 // better recognition model.
-func (s *Store) ListActiveImageUIDs(ctx context.Context) ([]string, error) {
-	return s.queryUIDs(ctx, "listing active image photos", listActiveImageUIDsSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListActiveImageUIDs(ctx context.Context, projectUID string) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return s.queryUIDs(ctx, "listing active image photos", listActiveImageUIDsSQL, projectUID)
 }

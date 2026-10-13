@@ -113,15 +113,16 @@ func placesEnqueuerOrNil(cfg *config.Config, enqueuer *jobs.Enqueuer) ingest.Pla
 	return enqueuer
 }
 
-// maintenancePlaceBackfillerOrNil returns svc as a maintenance.PlaceBackfiller,
-// or a nil interface when no places service was built, so the maintenance scan
-// reports no reverse-geocode backlog and `repair --places` refuses instead of
-// holding a typed nil.
-func maintenancePlaceBackfillerOrNil(svc *placesjob.Service) maintenance.PlaceBackfiller {
+// maintenancePlaceBackfillerOrNil returns svc as an instance-wide
+// maintenance.PlaceBackfiller over every active project, or a nil interface when
+// no places service was built, so the maintenance scan reports no
+// reverse-geocode backlog and `repair --places` refuses instead of holding a
+// typed nil.
+func maintenancePlaceBackfillerOrNil(svc *placesjob.Service, projects projectLister) maintenance.PlaceBackfiller {
 	if svc == nil {
 		return nil
 	}
-	return svc
+	return instancePlaces{svc: svc, projects: projects}
 }
 
 // geocodeBudgetOrNil returns budget as a placesjob.CreditBudget, or a nil

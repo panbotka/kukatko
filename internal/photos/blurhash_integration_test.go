@@ -49,7 +49,7 @@ func TestBlurhashRoundTrip(t *testing.T) {
 	if cleared.Blurhash != "" {
 		t.Errorf("blurhash after clear = %q, want empty", cleared.Blurhash)
 	}
-	pending, err := store.ListPhotosMissingBlurhash(ctx, 0)
+	pending, err := store.ListPhotosMissingBlurhash(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingBlurhash: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestListPhotosMissingBlurhash(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	uids, err := store.ListPhotosMissingBlurhash(ctx, 0)
+	uids, err := store.ListPhotosMissingBlurhash(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingBlurhash: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestListPhotosMissingBlurhash(t *testing.T) {
 		t.Errorf("pending uids = %v, want [%s]", uids, pending.UID)
 	}
 
-	count, err := store.CountPhotosMissingBlurhash(ctx)
+	count, err := store.CountPhotosMissingBlurhash(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("CountPhotosMissingBlurhash: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestListPhotosMissingBlurhash(t *testing.T) {
 		t.Errorf("count = %d, want %d (what the listing returns)", count, len(uids))
 	}
 
-	limited, err := store.ListPhotosMissingBlurhash(ctx, 1)
+	limited, err := store.ListPhotosMissingBlurhash(ctx, project.BootstrapUID, 1)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingBlurhash(limit): %v", err)
 	}

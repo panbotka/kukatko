@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // brokenVideo is a video row the way a failed probe leaves it: the file is
@@ -152,7 +153,7 @@ func TestListVideosMissingTechnicalMetadata_picksTheBrokenClips(t *testing.T) {
 		t.Fatalf("Create still: %v", err)
 	}
 
-	uids, err := store.ListVideosMissingTechnicalMetadata(ctx, 0)
+	uids, err := store.ListVideosMissingTechnicalMetadata(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListVideosMissingTechnicalMetadata: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestListVideosMissingTechnicalMetadata_picksTheBrokenClips(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RepairVideoMetadata: %v", err)
 	}
-	uids, err = store.ListVideosMissingTechnicalMetadata(ctx, 0)
+	uids, err = store.ListVideosMissingTechnicalMetadata(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("second ListVideosMissingTechnicalMetadata: %v", err)
 	}

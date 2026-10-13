@@ -80,10 +80,10 @@ type VectorStore interface {
 	RecordFaceDetection(ctx context.Context, photoUID string, det vectors.Detection) error
 	// ListPhotosMissingFaces returns uids of non-archived stills that have never
 	// had face detection run (limit <= 0 returns all).
-	ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error)
+	ListPhotosMissingFaces(ctx context.Context, projectUID string, limit int) ([]string, error)
 	// CountVideosMissingFaces returns how many non-archived videos that listing
 	// leaves out, so the backfill can report what it passed over.
-	CountVideosMissingFaces(ctx context.Context) (int, error)
+	CountVideosMissingFaces(ctx context.Context, projectUID string) (int, error)
 }
 
 // ImageSource opens an upright copy of a photo's original image. It is satisfied
@@ -384,12 +384,12 @@ type BackfillResult struct {
 //
 // A video is never scheduled: detection does not run on footage, so enqueuing one
 // would only queue a job whose whole body is a skip.
-func (s *Service) BackfillFaces(ctx context.Context) (BackfillResult, error) {
-	uids, err := s.vectors.ListPhotosMissingFaces(ctx, 0)
+func (s *Service) BackfillFaces(ctx context.Context, projectUID string) (BackfillResult, error) {
+	uids, err := s.vectors.ListPhotosMissingFaces(ctx, projectUID, 0)
 	if err != nil {
 		return BackfillResult{}, fmt.Errorf("facejob: listing photos missing faces: %w", err)
 	}
-	skipped, err := s.vectors.CountVideosMissingFaces(ctx)
+	skipped, err := s.vectors.CountVideosMissingFaces(ctx, projectUID)
 	if err != nil {
 		return BackfillResult{}, fmt.Errorf("facejob: counting videos without faces: %w", err)
 	}

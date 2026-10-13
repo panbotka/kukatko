@@ -87,7 +87,7 @@ func TestAggregatePlaces(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("full hierarchy counts and sorting", func(t *testing.T) {
-		got, err := store.AggregatePlaces(ctx, "")
+		got, err := store.AggregatePlaces(ctx, project.BootstrapUID, "")
 		if err != nil {
 			t.Fatalf("AggregatePlaces(all): %v", err)
 		}
@@ -110,7 +110,7 @@ func TestAggregatePlaces(t *testing.T) {
 	})
 
 	t.Run("country drill-down scopes to one country", func(t *testing.T) {
-		got, err := store.AggregatePlaces(ctx, "Czechia")
+		got, err := store.AggregatePlaces(ctx, project.BootstrapUID, "Czechia")
 		if err != nil {
 			t.Fatalf("AggregatePlaces(Czechia): %v", err)
 		}
@@ -123,7 +123,7 @@ func TestAggregatePlaces(t *testing.T) {
 	})
 
 	t.Run("unknown country yields empty hierarchy", func(t *testing.T) {
-		got, err := store.AggregatePlaces(ctx, "Narnia")
+		got, err := store.AggregatePlaces(ctx, project.BootstrapUID, "Narnia")
 		if err != nil {
 			t.Fatalf("AggregatePlaces(Narnia): %v", err)
 		}
@@ -133,7 +133,7 @@ func TestAggregatePlaces(t *testing.T) {
 	})
 
 	t.Run("every level carries its newest live photo as a cover", func(t *testing.T) {
-		got, err := store.AggregatePlaces(ctx, "")
+		got, err := store.AggregatePlaces(ctx, project.BootstrapUID, "")
 		if err != nil {
 			t.Fatalf("AggregatePlaces(all): %v", err)
 		}

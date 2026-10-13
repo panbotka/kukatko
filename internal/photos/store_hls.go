@@ -41,7 +41,8 @@ const listVideosMissingHLSSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN photo_hls_renditions h ON h.photo_uid = p.uid
-WHERE p.media_type = 'video' AND p.archived_at IS NULL AND h.photo_uid IS NULL
+WHERE p.project_id = $1
+  AND p.media_type = 'video' AND p.archived_at IS NULL AND h.photo_uid IS NULL
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
 // ListVideosMissingHLS returns the uids of non-archived videos with no recorded
@@ -52,12 +53,17 @@ ORDER BY p.created_at DESC, p.uid DESC%s`
 // Live photos are deliberately excluded (media_type is exactly 'video'): their
 // motion clip is a one-to-three second hover preview, not something anybody
 // streams, and the transcode job skips them for the same reason.
-func (s *Store) ListVideosMissingHLS(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListVideosMissingHLS(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listVideosMissingHLSSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listVideosMissingHLSSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listVideosMissingHLSSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing videos missing HLS", query, args...)
 }
@@ -67,7 +73,8 @@ func (s *Store) ListVideosMissingHLS(ctx context.Context, limit int) ([]string, 
 const listActiveVideoUIDsSQL = `
 SELECT uid
 FROM photos
-WHERE media_type = 'video' AND archived_at IS NULL
+WHERE photos.project_id = $1
+  AND media_type = 'video' AND archived_at IS NULL
 ORDER BY created_at DESC, uid DESC`
 
 // ListActiveVideoUIDs returns the uids of every non-archived video, newest
@@ -75,19 +82,30 @@ ORDER BY created_at DESC, uid DESC`
 // videos that already have renditions — how a library picks up a newly enabled
 // quality level or a changed segment length — and the video-scoped thumbnail
 // backfill (`/process/thumbnails?videos=true`), which re-picks poster frames.
-func (s *Store) ListActiveVideoUIDs(ctx context.Context) ([]string, error) {
-	return s.queryUIDs(ctx, "listing active videos", listActiveVideoUIDsSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListActiveVideoUIDs(ctx context.Context, projectUID string) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
+	return s.queryUIDs(ctx, "listing active videos", listActiveVideoUIDsSQL, projectUID)
 }
 
 // countActiveVideosSQL counts the videos ListActiveVideoUIDs would return.
-const countActiveVideosSQL = `SELECT count(*) FROM photos WHERE media_type = 'video' AND archived_at IS NULL`
+const countActiveVideosSQL = `SELECT count(*) FROM photos
+WHERE photos.project_id = $1 AND media_type = 'video' AND archived_at IS NULL`
 
 // CountActiveVideos returns how many non-archived videos the catalogue holds,
 // which is how many jobs a video-scoped backfill would schedule. It exists so
 // that cost can be reported before it is paid: every such job re-decodes a video
 // original, which is the most expensive thing a thumbnail job can do.
-func (s *Store) CountActiveVideos(ctx context.Context) (int, error) {
-	return s.queryCount(ctx, "counting active videos", countActiveVideosSQL)
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) CountActiveVideos(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
+	return s.queryCount(ctx, "counting active videos", countActiveVideosSQL, projectUID)
 }
 
 // countVideosSQL counts every video the catalogue holds, archived ones included.

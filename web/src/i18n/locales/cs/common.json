@@ -3839,6 +3839,24 @@
       "title": "Knihovna",
       "intro": "Kolik z katalogu je zpracováno — stejná čísla jako na stránce statistik."
     },
+    "projects": {
+      "title": "Projekty",
+      "intro": "Jak se knihovna a fronta úloh dělí mezi projekty. Všechna ostatní čísla na stránce jsou součty za celou instanci.",
+      "project": "Projekt",
+      "inactive": "deaktivovaný",
+      "photos": "Fotky",
+      "videos": "Videa",
+      "trashed": "V koši",
+      "originals": "Originály",
+      "faces": "Obličeje",
+      "subjects": "Lidé a další",
+      "albums": "Alba",
+      "queue": "Fronta",
+      "queueValue": "{{queued}} čeká · {{running}} běží · {{failed}} chyb",
+      "duplicates": "Duplicity",
+      "lastImport": "Poslední import",
+      "neverImported": "nikdy"
+    },
     "dashboard": {
       "libraryTitle": "Knihovna",
       "libraryIntro": "Co katalog právě teď obsahuje.",

@@ -140,9 +140,27 @@ var (
 	ErrRunNotFound = errors.New("importer: run not found")
 	// ErrInvalidSource is returned when an unrecognised source is supplied.
 	ErrInvalidSource = errors.New("importer: invalid source")
+	// ErrNoProject is returned by every read or start that is not given a
+	// project: a programming error, never "the whole instance".
+	ErrNoProject = errors.New("importer: no project given")
 )
 
+// requireProject returns ErrNoProject when projectUID is empty.
+func requireProject(projectUID string) error {
+	if projectUID == "" {
+		return ErrNoProject
+	}
+	return nil
+}
+
 // Store persists import runs on a shared pgx pool.
+//
+// import_runs is a root table: every run belongs to one project. Start records
+// it, and every read (Get, List, LatestRun, ListFailures) takes the project and
+// sees only that project's runs — a run of another project is the same
+// ErrRunNotFound as a missing one. The lifecycle writes (UpdateCounts, Complete,
+// Fail, RecordFailures) address the run by the id Start returned to the same
+// caller, so they carry no project of their own.
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -168,18 +186,22 @@ const (
 
 // startSQL inserts a new running run and returns the full row.
 const startSQL = `
-INSERT INTO import_runs (source, status, counts)
-VALUES ($1, 'running', '{}'::jsonb)
+INSERT INTO import_runs (project_id, source, status, counts)
+VALUES ($1, $2, 'running', '{}'::jsonb)
 RETURNING ` + runColumns
 
-// Start opens a new run for source in the running state and returns it with its
-// assigned id and started_at. It returns ErrInvalidSource if source is not a
-// recognised import source.
-func (s *Store) Start(ctx context.Context, source Source) (Run, error) {
+// Start opens a new run of the project for source in the running state and
+// returns it with its assigned id and started_at. It returns ErrNoProject
+// without a project and ErrInvalidSource if source is not a recognised import
+// source.
+func (s *Store) Start(ctx context.Context, projectUID string, source Source) (Run, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Run{}, err
+	}
 	if !source.Valid() {
 		return Run{}, fmt.Errorf("%w: %q", ErrInvalidSource, source)
 	}
-	row := s.pool.QueryRow(ctx, startSQL, string(source))
+	row := s.pool.QueryRow(ctx, startSQL, projectUID, string(source))
 	run, err := scanRun(row)
 	if err != nil {
 		return Run{}, fmt.Errorf("importer: starting run: %w", err)
@@ -264,12 +286,16 @@ func (s *Store) Fail(ctx context.Context, id int64, lastErr string, counts Count
 	return s.finish(ctx, id, StatusFailed, nil, counts, lastErr)
 }
 
-// getSQL reads a single run by id.
-const getSQL = `SELECT ` + runColumns + ` FROM import_runs WHERE id = $1`
+// getSQL reads a single run of one project by id.
+const getSQL = `SELECT ` + runColumns + ` FROM import_runs WHERE id = $1 AND project_id = $2`
 
-// Get returns the run identified by id, or ErrRunNotFound if none exists.
-func (s *Store) Get(ctx context.Context, id int64) (Run, error) {
-	row := s.pool.QueryRow(ctx, getSQL, id)
+// Get returns the project's run identified by id, or ErrRunNotFound if none
+// exists — a run of another project included.
+func (s *Store) Get(ctx context.Context, projectUID string, id int64) (Run, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Run{}, err
+	}
+	row := s.pool.QueryRow(ctx, getSQL, id, projectUID)
 	run, err := scanRun(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Run{}, fmt.Errorf("%w: %d", ErrRunNotFound, id)
@@ -280,20 +306,25 @@ func (s *Store) Get(ctx context.Context, id int64) (Run, error) {
 	return run, nil
 }
 
-// listSQL reads a page of runs across all sources, most recently started first.
-// The id tiebreaker keeps the order stable when two runs share a started_at.
+// listSQL reads a page of one project's runs across all sources, most recently
+// started first. The id tiebreaker keeps the order stable when two runs share a
+// started_at.
 const listSQL = `
 SELECT ` + runColumns + `
 FROM import_runs
+WHERE project_id = $1
 ORDER BY started_at DESC, id DESC
-LIMIT $1 OFFSET $2`
+LIMIT $2 OFFSET $3`
 
-// List returns a page of import runs across every source, ordered most recently
+// List returns a page of the project's import runs across every source, ordered most recently
 // started first, for the admin history view. limit is clamped to
 // [1, maxListLimit] (a non-positive limit defaults to defaultListLimit) and a
 // negative offset is treated as zero, so the result set is always bounded. An
 // empty history yields a non-nil, empty slice.
-func (s *Store) List(ctx context.Context, limit, offset int) ([]Run, error) {
+func (s *Store) List(ctx context.Context, projectUID string, limit, offset int) ([]Run, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		limit = defaultListLimit
 	}
@@ -303,7 +334,7 @@ func (s *Store) List(ctx context.Context, limit, offset int) ([]Run, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.pool.Query(ctx, listSQL, limit, offset)
+	rows, err := s.pool.Query(ctx, listSQL, projectUID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("importer: listing runs: %w", err)
 	}
@@ -323,26 +354,30 @@ func (s *Store) List(ctx context.Context, limit, offset int) ([]Run, error) {
 	return runs, nil
 }
 
-// latestRunSQL reads the most recently started run for a source regardless of
-// its status, so the admin dashboard can show the last run (running, done or
-// failed) of each source. The id tiebreaker keeps the order stable when two runs
+// latestRunSQL reads one project's most recently started run for a source
+// regardless of its status, so the admin dashboard can show the last run
+// (running, done or failed) of each source. The id tiebreaker keeps the order stable when two runs
 // share a started_at.
 const latestRunSQL = `
 SELECT ` + runColumns + `
 FROM import_runs
-WHERE source = $1
+WHERE project_id = $1 AND source = $2
 ORDER BY started_at DESC, id DESC
 LIMIT 1`
 
-// LatestRun returns the most recently started run for source, whatever its
-// status. The boolean is false when the source has never run. It returns
-// ErrInvalidSource if source is not recognised. It does not filter on status, so
-// a running or failed run is reported too.
-func (s *Store) LatestRun(ctx context.Context, source Source) (Run, bool, error) {
+// LatestRun returns the project's most recently started run for source,
+// whatever its status. The boolean is false when the source has never run in
+// the project. It returns ErrNoProject without a project and ErrInvalidSource if
+// source is not recognised. It does not filter on status, so a running or failed
+// run is reported too.
+func (s *Store) LatestRun(ctx context.Context, projectUID string, source Source) (Run, bool, error) {
+	if err := requireProject(projectUID); err != nil {
+		return Run{}, false, err
+	}
 	if !source.Valid() {
 		return Run{}, false, fmt.Errorf("%w: %q", ErrInvalidSource, source)
 	}
-	row := s.pool.QueryRow(ctx, latestRunSQL, string(source))
+	row := s.pool.QueryRow(ctx, latestRunSQL, projectUID, string(source))
 	run, err := scanRun(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Run{}, false, nil

@@ -188,7 +188,7 @@ func TestRecognize_emptyReadingClearsTheBacklog(t *testing.T) {
 	client, _ := fakeSidecar(t, 0, "")
 	svc := h.newService(client)
 
-	pending, err := h.photos.ListPhotosMissingOCR(ctx, 0)
+	pending, err := h.photos.ListPhotosMissingOCR(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingOCR: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestRecognize_emptyReadingClearsTheBacklog(t *testing.T) {
 	if err := svc.Recognize(ctx, photo.UID); err != nil {
 		t.Fatalf("Recognize: %v", err)
 	}
-	if pending, err = h.photos.ListPhotosMissingOCR(ctx, 0); err != nil {
+	if pending, err = h.photos.ListPhotosMissingOCR(ctx, project.BootstrapUID, 0); err != nil {
 		t.Fatalf("ListPhotosMissingOCR: %v", err)
 	}
 	if len(pending) != 0 {
@@ -225,7 +225,7 @@ func TestRecognize_offlineSidecarDefersTheJob(t *testing.T) {
 	if _, err := h.photos.GetOCR(ctx, project.BootstrapUID, photo.UID); !errors.Is(err, photos.ErrPhotoNotFound) {
 		t.Errorf("GetOCR = %v, want nothing stored while the box is down", err)
 	}
-	pending, err := h.photos.ListPhotosMissingOCR(ctx, 0)
+	pending, err := h.photos.ListPhotosMissingOCR(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingOCR: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestBackfillOCR_enqueuesRealJobs(t *testing.T) {
 	client, _ := fakeSidecar(t, 0, "text")
 	svc := h.newService(client)
 
-	n, err := svc.BackfillOCR(ctx, false)
+	n, err := svc.BackfillOCR(ctx, project.BootstrapUID, false)
 	if err != nil {
 		t.Fatalf("BackfillOCR: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestBackfillOCR_enqueuesRealJobs(t *testing.T) {
 	}
 
 	// A second run re-lists the same photos but the queue absorbs the duplicates.
-	if _, err := svc.BackfillOCR(ctx, false); err != nil {
+	if _, err := svc.BackfillOCR(ctx, project.BootstrapUID, false); err != nil {
 		t.Fatalf("BackfillOCR again: %v", err)
 	}
 	if counts, err = h.jobs.CountsByType(ctx); err != nil {

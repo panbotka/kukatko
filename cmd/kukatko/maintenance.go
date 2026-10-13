@@ -23,6 +23,7 @@ import (
 	"github.com/panbotka/kukatko/internal/people"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/thumbjob"
@@ -167,23 +168,29 @@ func buildMaintenanceService(
 	if err != nil {
 		return nil, err
 	}
+	// The scan and the repair are instance-wide; the backfill listings they
+	// read are per project, so the adapters walk every active project.
+	projects := project.NewStore(db.Pool())
 	return maintenance.New(maintenance.Config{
-		Photos:    photoStore,
-		Vectors:   vectors.NewStore(db.Pool()),
+		Photos:    instancePhotos{Store: photoStore, projects: projects},
+		Vectors:   instanceVectors{Store: vectors.NewStore(db.Pool()), projects: projects},
 		Originals: store,
 		Store:     storeScanner,
 		Thumbs:    maintenance.NewThumbCache(thumbnailer),
 		Enqueuer:  enqueuer,
-		Embed:     embedSvc,
-		Faces:     faceSvc,
+		Embed:     instanceEmbed{svc: embedSvc, projects: projects},
+		Faces:     instanceFaces{svc: faceSvc, projects: projects},
 		FaceCache: buildFaceMatch(cfg, db),
 		Importer:  orphanImporter{storage: store, ingest: ingestSvc},
-		Places:    maintenancePlaceBackfillerOrNil(placesSvc),
+		Places:    maintenancePlaceBackfillerOrNil(placesSvc, projects),
 		Sidecar:   maintenanceSidecarOrNil(cfg, enqueuer),
 		Streaming: streaming,
 		// The same service a photo's processing report runs on, so the scan's
 		// unscheduled steps are exactly the steps the report calls pending.
-		Processing: buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
+		Processing: instanceProcessing{
+			Service:  buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
+			projects: projects,
+		},
 	}), nil
 }
 

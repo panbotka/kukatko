@@ -17,6 +17,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/processing"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -193,7 +194,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 		processing.StepImageEmbed: processing.StatePending,
 		processing.StepFaceDetect: processing.StatePending,
 	})
-	gaps, err := env.processing.Unscheduled(ctx)
+	gaps, err := env.processing.Unscheduled(ctx, project.BootstrapUID)
 	if err != nil || len(gaps) != 3 {
 		t.Errorf("Unscheduled = %v, %v; want the photo's three gaps", gaps, err)
 	}
@@ -210,7 +211,7 @@ func TestIngest_duplicateCompletesAnInterruptedPhoto(t *testing.T) {
 		processing.StepImageEmbed: processing.StateQueued,
 		processing.StepFaceDetect: processing.StateQueued,
 	})
-	if gaps, err := env.processing.Unscheduled(ctx); err != nil || len(gaps) != 0 {
+	if gaps, err := env.processing.Unscheduled(ctx, project.BootstrapUID); err != nil || len(gaps) != 0 {
 		t.Errorf("Unscheduled after the re-upload = %v, %v; want none", gaps, err)
 	}
 

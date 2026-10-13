@@ -64,7 +64,7 @@ func (f *fakeVectorStore) FindSimilar(
 }
 
 // ListPhotosMissingEmbedding returns the canned missing uids.
-func (f *fakeVectorStore) ListPhotosMissingEmbedding(_ context.Context, _ int) ([]string, error) {
+func (f *fakeVectorStore) ListPhotosMissingEmbedding(_ context.Context, _ string, _ int) ([]string, error) {
 	return append([]string(nil), f.missing...), nil
 }
 
@@ -366,7 +366,7 @@ func TestBackfillEmbeddings(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := newService(t, &fakePhotoStore{}, vs, &fakeClient{}, &fakePreviewer{}, enq)
 
-	n, err := svc.BackfillEmbeddings(context.Background())
+	n, err := svc.BackfillEmbeddings(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillEmbeddings: %v", err)
 	}

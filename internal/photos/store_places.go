@@ -50,8 +50,10 @@ type placeCell struct {
 // and city. Rows whose country is empty (a photo without geocoded place data, or
 // a no-GPS "processed" marker) are excluded, so only photos with real place data
 // contribute. The %s placeholder receives a country filter only when one is
-// requested. A country's empty-city group still contributes to that country's
-// total, which the caller folds into Count.
+// requested. photo_places is keyed by photo, so the project predicate on the
+// joined photo ($1) is what confines the hierarchy to one project. A country's
+// empty-city group still contributes to that country's total, which the caller
+// folds into Count.
 //
 // This query builds its own WHERE clause instead of going through
 // buildListQuery, so the library-visibility predicates have to be repeated by
@@ -74,7 +76,8 @@ SELECT pp.country, pp.city, count(*),
        MAX(p.taken_at) AS cover_taken_at
 FROM photo_places pp
 JOIN photos p ON p.uid = pp.photo_uid
-WHERE p.archived_at IS NULL
+WHERE p.project_id = $1
+  AND p.archived_at IS NULL
   AND (p.stack_uid IS NULL OR p.stack_primary)
   AND NOT p.hidden_from_library
   AND pp.country <> ''%s
@@ -85,13 +88,17 @@ GROUP BY pp.country, pp.city`
 // photos that have place data. Countries are sorted by count descending then
 // name, and each country's cities likewise. When country is non-empty the result
 // is scoped to that one country (drilling into its cities only); an unknown
-// country yields an empty slice. Photos without place data are excluded entirely.
-func (s *Store) AggregatePlaces(ctx context.Context, country string) ([]CountryPlaces, error) {
+// country yields an empty slice. Photos without place data are excluded entirely,
+// and so is every photo of another project. An empty projectUID is ErrNoProject.
+func (s *Store) AggregatePlaces(ctx context.Context, projectUID, country string) ([]CountryPlaces, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(aggregatePlacesSQL, "")
-	var args []any
+	args := []any{projectUID}
 	if country != "" {
-		query = fmt.Sprintf(aggregatePlacesSQL, "\n  AND pp.country = $1")
-		args = []any{country}
+		query = fmt.Sprintf(aggregatePlacesSQL, "\n  AND pp.country = $2")
+		args = append(args, country)
 	}
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {

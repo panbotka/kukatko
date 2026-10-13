@@ -241,7 +241,7 @@ func TestIngest_singleCreatesEverything(t *testing.T) {
 	if photo.Blurhash == "" {
 		t.Error("uploaded photo has no blurhash placeholder")
 	}
-	pending, err := env.store.ListPhotosMissingBlurhash(ctx, 0)
+	pending, err := env.store.ListPhotosMissingBlurhash(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingBlurhash: %v", err)
 	}

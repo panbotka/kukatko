@@ -22,6 +22,7 @@ import (
 	"github.com/panbotka/kukatko/internal/embedjob"
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/vectors"
@@ -267,7 +268,7 @@ func TestBackfillEmbeddings_enqueuesOnlyMissing(t *testing.T) {
 		t.Fatalf("seed embedding: %v", err)
 	}
 
-	n, err := svc.BackfillEmbeddings(ctx)
+	n, err := svc.BackfillEmbeddings(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("BackfillEmbeddings: %v", err)
 	}

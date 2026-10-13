@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -18,13 +19,14 @@ const defaultDuplicateTTL = 15 * time.Minute
 // to hold a database connection indefinitely.
 const defaultDuplicateTimeout = 2 * time.Minute
 
-// DuplicateCounter counts the near-duplicate photo groups. It is satisfied by
-// *duplicates.Service; an interface (returning a plain count rather than the
-// finder's Result) so this package neither imports the duplicates package nor
-// grows a second opinion about what a duplicate is.
+// DuplicateCounter counts one project's near-duplicate photo groups — a group
+// never spans projects, so there is no instance-wide count to take. It is
+// satisfied by *duplicates.Service; an interface (returning a plain count
+// rather than the finder's Result) so this package neither imports the
+// duplicates package nor grows a second opinion about what a duplicate is.
 type DuplicateCounter interface {
-	// CountGroups returns how many duplicate groups the catalogue currently holds.
-	CountGroups(ctx context.Context) (int, error)
+	// CountGroups returns how many duplicate groups the project currently holds.
+	CountGroups(ctx context.Context, projectUID string) (int, error)
 }
 
 // DuplicateScan is the near-duplicate finder's last answer, and the one section
@@ -39,37 +41,58 @@ type DuplicateScan struct {
 	// Available is true once a scan has finished. Until then Groups is not a
 	// count of zero — it is no count at all, and must not be rendered as one.
 	Available bool `json:"available"`
-	// Groups is how many duplicate groups the last finished scan found.
+	// Groups is how many duplicate groups the last finished scan found, summed
+	// over the active projects (each project's own is in ProjectSummary).
 	Groups int `json:"groups"`
 	// ComputedAt is when that scan finished; nil while none has.
 	ComputedAt *time.Time `json:"computed_at,omitempty"`
 }
 
-// newDuplicateCache returns the background-refreshed duplicate-group count over
-// counter, or nil when no counter is wired (an instance without a duplicate
-// finder reports the section as not configured rather than as an empty scan).
+// newDuplicateCache returns the background-refreshed duplicate-group counts
+// over counter — one count per active project, keyed by project uid, which svc
+// enumerates — or nil when no counter is wired (an instance without a
+// duplicate finder reports the section as not configured rather than as an
+// empty scan).
 func newDuplicateCache(
-	counter DuplicateCounter, ttl, timeout time.Duration, now func() time.Time,
-) *asyncCache[int] {
+	svc *Service, counter DuplicateCounter, ttl, timeout time.Duration, now func() time.Time,
+) *asyncCache[map[string]int] {
 	if counter == nil {
 		return nil
 	}
-	return newAsyncCache(counter.CountGroups,
-		ttl, defaultDuplicateTTL, timeout, defaultDuplicateTimeout, now)
+	scan := func(ctx context.Context) (map[string]int, error) {
+		projectUIDs, err := svc.activeProjects(ctx)
+		if err != nil {
+			return nil, err
+		}
+		counts := make(map[string]int, len(projectUIDs))
+		for _, projectUID := range projectUIDs {
+			n, err := counter.CountGroups(ctx, projectUID)
+			if err != nil {
+				return nil, fmt.Errorf("counting the duplicate groups of project %s: %w", projectUID, err)
+			}
+			counts[projectUID] = n
+		}
+		return counts, nil
+	}
+	return newAsyncCache(scan, ttl, defaultDuplicateTTL, timeout, defaultDuplicateTimeout, now)
 }
 
 // collectDuplicates reads the last finished scan, scheduling a fresh one when the
-// answer has gone stale. It never waits for the scan: an unconfigured or
-// not-yet-scanned instance is reported as such.
-func (s *Service) collectDuplicates() DuplicateScan {
+// answer has gone stale, and returns the instance total together with the
+// per-project counts. It never waits for the scan: an unconfigured or
+// not-yet-scanned instance is reported as such (and with no per-project counts).
+func (s *Service) collectDuplicates() (DuplicateScan, map[string]int) {
 	if s.duplicates == nil {
-		return DuplicateScan{}
+		return DuplicateScan{}, nil
 	}
-	groups, computedAt, ok := s.duplicates.get()
-	scan := DuplicateScan{Configured: true, Available: ok, Groups: groups}
+	perProject, computedAt, ok := s.duplicates.get()
+	scan := DuplicateScan{Configured: true, Available: ok}
+	for _, n := range perProject {
+		scan.Groups += n
+	}
 	if ok {
 		at := computedAt
 		scan.ComputedAt = &at
 	}
-	return scan
+	return scan, perProject
 }

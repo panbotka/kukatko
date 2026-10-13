@@ -18,7 +18,8 @@ import (
 const listSidecarPendingSQL = `
 SELECT uid
 FROM photos
-WHERE archived_at IS NULL
+WHERE photos.project_id = $1
+  AND archived_at IS NULL
   AND (sidecar_written_at IS NULL OR sidecar_written_at < updated_at)
 ORDER BY created_at DESC, uid DESC%s`
 
@@ -37,12 +38,17 @@ ORDER BY created_at DESC, uid DESC%s`
 // membership or a label attached without its enqueue landing leaves updated_at
 // untouched and the photo looks current here. Recovering that is what the forced
 // full run (ListActiveUIDs) is for.
-func (s *Store) ListPhotosMissingSidecar(ctx context.Context, limit int) ([]string, error) {
+//
+// It reads one project only: an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingSidecar(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	if err := requireProject(projectUID); err != nil {
+		return nil, err
+	}
 	query := fmt.Sprintf(listSidecarPendingSQL, "")
-	args := []any(nil)
+	args := []any{projectUID}
 	if limit > 0 {
-		query = fmt.Sprintf(listSidecarPendingSQL, "\nLIMIT $1")
-		args = []any{limit}
+		query = fmt.Sprintf(listSidecarPendingSQL, "\nLIMIT $2")
+		args = append(args, limit)
 	}
 	return s.queryUIDs(ctx, "listing photos missing a sidecar", query, args...)
 }

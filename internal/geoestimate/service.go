@@ -24,14 +24,15 @@ const DefaultRadiusMeters = 5000.0
 // Store is the catalogue access the estimator needs. It is satisfied by
 // photos.Store.
 type Store interface {
-	// ListLocationCandidates returns the photos eligible for estimation, capped at
-	// limit (zero or less means all).
-	ListLocationCandidates(ctx context.Context, limit int) ([]photos.LocationCandidate, error)
-	// ListLocatedNeighbours returns the measured positions captured in [from, to].
-	ListLocatedNeighbours(ctx context.Context, from, to time.Time) ([]photos.LocatedPoint, error)
+	// ListLocationCandidates returns the project's photos eligible for
+	// estimation, capped at limit (zero or less means all).
+	ListLocationCandidates(ctx context.Context, projectUID string, limit int) ([]photos.LocationCandidate, error)
+	// ListLocatedNeighbours returns the project's measured positions captured in
+	// [from, to].
+	ListLocatedNeighbours(ctx context.Context, projectUID string, from, to time.Time) ([]photos.LocatedPoint, error)
 	// SetEstimatedLocation writes an estimate onto a photo that still has none,
 	// reporting whether the row was written.
-	SetEstimatedLocation(ctx context.Context, uid string, lat, lng float64) (bool, error)
+	SetEstimatedLocation(ctx context.Context, projectUID, uid string, lat, lng float64) (bool, error)
 }
 
 // Enqueuer schedules `places` jobs so a newly estimated location is reverse
@@ -84,9 +85,11 @@ func New(cfg Config) *Service {
 	return s
 }
 
-// BackfillLocations estimates a location for every eligible photo and returns
-// how many it filled in. Photos whose neighbours are missing or disagree are
-// skipped silently — refusing is the normal outcome, not an error.
+// BackfillLocations estimates a location for every eligible photo of the
+// project and returns how many it filled in. Photos whose neighbours are missing
+// or disagree are skipped silently — refusing is the normal outcome, not an
+// error. Both the candidates and their neighbours come from the one project: a
+// photo of another project taken the same afternoon is never evidence.
 //
 // It is safe to re-run: an estimated photo stops being a candidate, and a photo
 // whose estimate the user cleared carries a 'manual' tombstone that keeps it out
@@ -95,14 +98,14 @@ func New(cfg Config) *Service {
 // a run that dies halfway simply leaves a smaller job for the next one. On
 // failure the count of what was already committed is returned alongside the
 // error.
-func (s *Service) BackfillLocations(ctx context.Context) (int, error) {
-	candidates, err := s.store.ListLocationCandidates(ctx, 0)
+func (s *Service) BackfillLocations(ctx context.Context, projectUID string) (int, error) {
+	candidates, err := s.store.ListLocationCandidates(ctx, projectUID, 0)
 	if err != nil {
 		return 0, fmt.Errorf("geoestimate: listing candidates: %w", err)
 	}
 	estimated := 0
 	for _, c := range candidates {
-		ok, err := s.estimateOne(ctx, c)
+		ok, err := s.estimateOne(ctx, projectUID, c)
 		if err != nil {
 			return estimated, err
 		}
@@ -117,8 +120,9 @@ func (s *Service) BackfillLocations(ctx context.Context) (int, error) {
 // reporting whether it wrote one. A candidate with no neighbours, or with
 // neighbours that disagree, yields (false, nil): there is nothing to say about
 // that photo, which is a normal result and not a failure.
-func (s *Service) estimateOne(ctx context.Context, c photos.LocationCandidate) (bool, error) {
-	neighbours, err := s.store.ListLocatedNeighbours(ctx, c.TakenAt.Add(-s.window), c.TakenAt.Add(s.window))
+func (s *Service) estimateOne(ctx context.Context, projectUID string, c photos.LocationCandidate) (bool, error) {
+	neighbours, err := s.store.ListLocatedNeighbours(
+		ctx, projectUID, c.TakenAt.Add(-s.window), c.TakenAt.Add(s.window))
 	if err != nil {
 		return false, fmt.Errorf("geoestimate: listing neighbours of %s: %w", c.UID, err)
 	}
@@ -126,7 +130,7 @@ func (s *Service) estimateOne(ctx context.Context, c photos.LocationCandidate) (
 	if !ok {
 		return false, nil
 	}
-	written, err := s.store.SetEstimatedLocation(ctx, c.UID, point.Lat, point.Lng)
+	written, err := s.store.SetEstimatedLocation(ctx, projectUID, c.UID, point.Lat, point.Lng)
 	if err != nil {
 		return false, fmt.Errorf("geoestimate: storing estimate for %s: %w", c.UID, err)
 	}

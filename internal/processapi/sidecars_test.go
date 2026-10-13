@@ -20,7 +20,7 @@ type fakeSidecarBackfiller struct {
 }
 
 // BackfillSidecars records the call and reports the configured outcome.
-func (f *fakeSidecarBackfiller) BackfillSidecars(_ context.Context, all bool) (int, error) {
+func (f *fakeSidecarBackfiller) BackfillSidecars(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {

@@ -1,5 +1,8 @@
 // Package processapi exposes maintainer-only HTTP endpoints that kick off bulk
-// catalogue processing. Its first action is the embedding backfill, which
+// catalogue processing. Every endpoint is mounted per project and works on the
+// request's project only (auth.ProjectUIDFromContext): a backfill under
+// /api/v1/p/<slug>/process/… lists and schedules that project's photos and never
+// another's. Its first action is the embedding backfill, which
 // enqueues an image_embed job for every photo that still lacks an embedding —
 // the recovery path for photos uploaded while the embeddings box was offline or
 // imported before embeddings existed. It depends only on a Backfiller behaviour
@@ -28,7 +31,7 @@ import (
 type Backfiller interface {
 	// BackfillEmbeddings enqueues an image_embed job for every photo missing an
 	// embedding and returns how many were scheduled.
-	BackfillEmbeddings(ctx context.Context) (int, error)
+	BackfillEmbeddings(ctx context.Context, projectUID string) (int, error)
 }
 
 // FaceBackfiller enqueues a face_detect job for every still that has not yet had
@@ -37,7 +40,7 @@ type FaceBackfiller interface {
 	// BackfillFaces enqueues a face_detect job for every unprocessed still and
 	// returns how many were scheduled together with how many videos it passed
 	// over (detection does not run on footage).
-	BackfillFaces(ctx context.Context) (facejob.BackfillResult, error)
+	BackfillFaces(ctx context.Context, projectUID string) (facejob.BackfillResult, error)
 }
 
 // Reclusterer schedules the pass that groups the currently unassigned,
@@ -48,10 +51,10 @@ type FaceBackfiller interface {
 // plus one per resulting group, minutes of work on a real library, so it belongs
 // in the queue and not in the request that asks for it.
 type Reclusterer interface {
-	// ScheduleRecluster queues one clustering pass per active project — the pass
-	// groups one project's faces — and reports whether any job was queued (false
-	// when every active project already has one waiting or running).
-	ScheduleRecluster(ctx context.Context) (bool, error)
+	// ScheduleProjectRecluster queues one clustering pass for the project and
+	// reports whether a job was queued (false when the project already has one
+	// waiting or running).
+	ScheduleProjectRecluster(ctx context.Context, projectUID string) (bool, error)
 }
 
 // PlacesBackfiller enqueues a `places` job for every geotagged photo missing
@@ -61,7 +64,7 @@ type Reclusterer interface {
 type PlacesBackfiller interface {
 	// BackfillPlaces enqueues a `places` job for every geotagged photo missing a
 	// cached place and returns how many were scheduled.
-	BackfillPlaces(ctx context.Context) (int, error)
+	BackfillPlaces(ctx context.Context, projectUID string) (int, error)
 }
 
 // ThumbnailBackfiller enqueues a thumbnail job for every photo missing a
@@ -75,16 +78,16 @@ type ThumbnailBackfiller interface {
 	// BackfillThumbnails enqueues a thumbnail job for every photo missing a
 	// thumbnail (or, when all is true, for every non-archived photo) and returns
 	// how many were scheduled.
-	BackfillThumbnails(ctx context.Context, all bool) (int, error)
+	BackfillThumbnails(ctx context.Context, projectUID string, all bool) (int, error)
 	// CountBackfillThumbnails returns how many photos BackfillThumbnails would
 	// schedule for the same value of all, scheduling nothing. It backs ?dry_run.
-	CountBackfillThumbnails(ctx context.Context, all bool) (int, error)
+	CountBackfillThumbnails(ctx context.Context, projectUID string, all bool) (int, error)
 	// BackfillVideoPosters enqueues a forced thumbnail rebuild for every
 	// non-archived video and returns how many were scheduled. It backs ?videos.
-	BackfillVideoPosters(ctx context.Context) (int, error)
+	BackfillVideoPosters(ctx context.Context, projectUID string) (int, error)
 	// CountBackfillVideoPosters returns how many videos BackfillVideoPosters would
 	// schedule, scheduling nothing. It backs ?videos together with ?dry_run.
-	CountBackfillVideoPosters(ctx context.Context) (int, error)
+	CountBackfillVideoPosters(ctx context.Context, projectUID string) (int, error)
 }
 
 // BlurhashBackfiller enqueues a thumbnail job for every photo that has no
@@ -100,10 +103,10 @@ type BlurhashBackfiller interface {
 	// BackfillBlurhash enqueues a thumbnail job for every photo missing a
 	// placeholder (or, when all is true, for every non-archived photo) and returns
 	// how many were scheduled.
-	BackfillBlurhash(ctx context.Context, all bool) (int, error)
+	BackfillBlurhash(ctx context.Context, projectUID string, all bool) (int, error)
 	// CountBackfillBlurhash returns how many photos BackfillBlurhash would
 	// schedule for the same value of all, scheduling nothing. It backs ?dry_run.
-	CountBackfillBlurhash(ctx context.Context, all bool) (int, error)
+	CountBackfillBlurhash(ctx context.Context, projectUID string, all bool) (int, error)
 }
 
 // MetadataBackfiller enqueues a `metadata` job for every photo whose original has
@@ -116,11 +119,11 @@ type MetadataBackfiller interface {
 	// BackfillMetadata enqueues a `metadata` job for every photo whose file metadata
 	// has never been read (or, when all is true, for every non-archived photo) and
 	// returns how many were scheduled.
-	BackfillMetadata(ctx context.Context, all bool) (int, error)
+	BackfillMetadata(ctx context.Context, projectUID string, all bool) (int, error)
 	// BackfillVideoMetadata enqueues a `metadata` job for every non-archived video
 	// whose container was evidently never probed — no duration, no codec, no frame
 	// size — and returns how many were scheduled. It backs ?videos.
-	BackfillVideoMetadata(ctx context.Context) (int, error)
+	BackfillVideoMetadata(ctx context.Context, projectUID string) (int, error)
 }
 
 // OCRBackfiller enqueues an `ocr` job for every photo the text recogniser has
@@ -135,7 +138,7 @@ type OCRBackfiller interface {
 	// BackfillOCR enqueues an `ocr` job for every photo never recognised (or, when
 	// all is true, for every non-archived still) and returns how many were
 	// scheduled.
-	BackfillOCR(ctx context.Context, all bool) (int, error)
+	BackfillOCR(ctx context.Context, projectUID string, all bool) (int, error)
 }
 
 // SidecarBackfiller enqueues a sidecar job for every photo whose metadata sidecar
@@ -150,7 +153,7 @@ type SidecarBackfiller interface {
 	// BackfillSidecars enqueues a sidecar job for every photo whose sidecar is
 	// missing or stale (or, when all is true, for every non-archived photo) and
 	// returns how many were scheduled.
-	BackfillSidecars(ctx context.Context, all bool) (int, error)
+	BackfillSidecars(ctx context.Context, projectUID string, all bool) (int, error)
 }
 
 // HLSBackfiller enqueues an `hls_transcode` job for every video that has never
@@ -166,7 +169,7 @@ type HLSBackfiller interface {
 	// BackfillHLS enqueues an `hls_transcode` job for every video with no
 	// rendition (or, when all is true, for every non-archived video) and returns
 	// how many were scheduled.
-	BackfillHLS(ctx context.Context, all bool) (int, error)
+	BackfillHLS(ctx context.Context, projectUID string, all bool) (int, error)
 }
 
 // StacksDetector groups the several files of one shot (RAW+JPEG, exported edits,
@@ -191,7 +194,7 @@ type LocationEstimator interface {
 	// BackfillLocations estimates a location for every eligible photo and returns
 	// how many it filled in. It is idempotent: an estimated photo stops being a
 	// candidate, and one whose estimate the user cleared is never estimated again.
-	BackfillLocations(ctx context.Context) (int, error)
+	BackfillLocations(ctx context.Context, projectUID string) (int, error)
 }
 
 // API exposes the processing endpoints over HTTP. The maintainer guard is
@@ -341,7 +344,7 @@ func (a *API) handleBackfillSidecars(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "sidecar backfill not available")
 		return
 	}
-	enqueued, err := a.sidecarBackfill.BackfillSidecars(r.Context(), queryFlag(r, "all"))
+	enqueued, err := a.sidecarBackfill.BackfillSidecars(r.Context(), projectOf(r), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling sidecars failed")
 		return
@@ -358,7 +361,7 @@ func (a *API) handleBackfillOCR(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "OCR not available")
 		return
 	}
-	enqueued, err := a.ocrBackfiller.BackfillOCR(r.Context(), queryFlag(r, "all"))
+	enqueued, err := a.ocrBackfiller.BackfillOCR(r.Context(), projectOf(r), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling OCR failed")
 		return
@@ -375,7 +378,7 @@ func (a *API) handleBackfillHLS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "HLS not available")
 		return
 	}
-	enqueued, err := a.hlsBackfiller.BackfillHLS(r.Context(), queryFlag(r, "all"))
+	enqueued, err := a.hlsBackfiller.BackfillHLS(r.Context(), projectOf(r), queryFlag(r, "all"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling HLS failed")
 		return
@@ -399,7 +402,7 @@ func (a *API) handleDetectStacks(w http.ResponseWriter, r *http.Request) {
 	}
 	user, _ := auth.UserFromContext(r.Context())
 	entry := audit.FromRequest(r, user.UID).Entry(audit.ActionStacksDetect, "photos", "", nil)
-	created, err := a.stacksDetector.DetectStacks(r.Context(), auth.ProjectUIDFromContext(r.Context()), entry)
+	created, err := a.stacksDetector.DetectStacks(r.Context(), projectOf(r), entry)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "detecting stacks failed")
 		return
@@ -423,7 +426,7 @@ func (a *API) handleEstimateLocations(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "location estimation not available")
 		return
 	}
-	estimated, err := a.locationEstim.BackfillLocations(r.Context())
+	estimated, err := a.locationEstim.BackfillLocations(r.Context(), projectOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "estimating locations failed")
 		return
@@ -442,7 +445,7 @@ func (a *API) handleRecluster(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "face clustering not available")
 		return
 	}
-	scheduled, err := a.reclusterer.ScheduleRecluster(r.Context())
+	scheduled, err := a.reclusterer.ScheduleProjectRecluster(r.Context(), projectOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "scheduling the clustering pass failed")
 		return
@@ -453,7 +456,7 @@ func (a *API) handleRecluster(w http.ResponseWriter, r *http.Request) {
 // handleBackfillEmbeddings enqueues image_embed jobs for all photos missing an
 // embedding and reports how many were scheduled.
 func (a *API) handleBackfillEmbeddings(w http.ResponseWriter, r *http.Request) {
-	enqueued, err := a.backfiller.BackfillEmbeddings(r.Context())
+	enqueued, err := a.backfiller.BackfillEmbeddings(r.Context(), projectOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling embeddings failed")
 		return
@@ -466,7 +469,7 @@ func (a *API) handleBackfillEmbeddings(w http.ResponseWriter, r *http.Request) {
 // many videos it passed over — detection does not run on footage, and a caller
 // that sees a small number is owed the reason.
 func (a *API) handleBackfillFaces(w http.ResponseWriter, r *http.Request) {
-	res, err := a.faceBackfiller.BackfillFaces(r.Context())
+	res, err := a.faceBackfiller.BackfillFaces(r.Context(), projectOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling faces failed")
 		return
@@ -484,7 +487,7 @@ func (a *API) handleBackfillPlaces(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "place geocoding not available")
 		return
 	}
-	enqueued, err := a.placesBackfiller.BackfillPlaces(r.Context())
+	enqueued, err := a.placesBackfiller.BackfillPlaces(r.Context(), projectOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "backfilling places failed")
 		return
@@ -542,8 +545,16 @@ func (a *API) handleBackfillThumbnails(w http.ResponseWriter, r *http.Request) {
 
 // ignoreAll adapts a backfill operation that takes no scope flag to the signature
 // serveCountedBackfill drives, discarding the ?all flag.
-func ignoreAll(op func(ctx context.Context) (int, error)) func(ctx context.Context, all bool) (int, error) {
-	return func(ctx context.Context, _ bool) (int, error) { return op(ctx) }
+func ignoreAll(
+	op func(ctx context.Context, projectUID string) (int, error),
+) func(ctx context.Context, projectUID string, all bool) (int, error) {
+	return func(ctx context.Context, projectUID string, _ bool) (int, error) { return op(ctx, projectUID) }
+}
+
+// projectOf returns the project the request addresses — the only project a
+// backfill under it may list or schedule.
+func projectOf(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }
 
 // handleBackfillBlurhash enqueues thumbnail jobs for all photos that have no
@@ -571,10 +582,10 @@ func (a *API) handleBackfillBlurhash(w http.ResponseWriter, r *http.Request) {
 // schedule them — plus the message each failure reports, so serveCountedBackfill
 // can drive any of them.
 type countedBackfill struct {
-	// count answers how many photos a real run would cover.
-	count func(ctx context.Context, all bool) (int, error)
-	// run schedules the jobs and returns how many it scheduled.
-	run func(ctx context.Context, all bool) (int, error)
+	// count answers how many of the project's photos a real run would cover.
+	count func(ctx context.Context, projectUID string, all bool) (int, error)
+	// run schedules the project's jobs and returns how many it scheduled.
+	run func(ctx context.Context, projectUID string, all bool) (int, error)
 	// countFail and runFail are the 500 messages for each step.
 	countFail string
 	runFail   string
@@ -585,7 +596,7 @@ type countedBackfill struct {
 // reported whether or not it was started, and only then schedules them.
 func (a *API) serveCountedBackfill(w http.ResponseWriter, r *http.Request, b countedBackfill) {
 	all := queryFlag(r, "all")
-	pending, err := b.count(r.Context(), all)
+	pending, err := b.count(r.Context(), projectOf(r), all)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, b.countFail)
 		return
@@ -594,7 +605,7 @@ func (a *API) serveCountedBackfill(w http.ResponseWriter, r *http.Request, b cou
 		writeJSON(w, http.StatusOK, countedBackfillResponse{Pending: pending, DryRun: true})
 		return
 	}
-	enqueued, err := b.run(r.Context(), all)
+	enqueued, err := b.run(r.Context(), projectOf(r), all)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, b.runFail)
 		return
@@ -630,13 +641,13 @@ func (a *API) handleBackfillMetadata(w http.ResponseWriter, r *http.Request) {
 // ?all=true already does — so the two flags do not combine.
 func (a *API) runMetadataBackfill(r *http.Request) (int, error) {
 	if queryFlag(r, "videos") {
-		enqueued, err := a.metaBackfiller.BackfillVideoMetadata(r.Context())
+		enqueued, err := a.metaBackfiller.BackfillVideoMetadata(r.Context(), projectOf(r))
 		if err != nil {
 			return 0, fmt.Errorf("processapi: backfilling video metadata: %w", err)
 		}
 		return enqueued, nil
 	}
-	enqueued, err := a.metaBackfiller.BackfillMetadata(r.Context(), queryFlag(r, "all"))
+	enqueued, err := a.metaBackfiller.BackfillMetadata(r.Context(), projectOf(r), queryFlag(r, "all"))
 	if err != nil {
 		return 0, fmt.Errorf("processapi: backfilling metadata: %w", err)
 	}

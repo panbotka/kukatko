@@ -127,9 +127,8 @@ func (p payload) projectOf() string {
 // scheduling a second would only repeat its work. A deactivated project is
 // skipped: nobody can open its face-groups page.
 //
-// It is what the maintainer-only recluster endpoint calls: the pass itself takes
-// minutes on a real library and must not be run inside the request that asks
-// for it.
+// It is the instance-level trigger; the maintainer-only recluster endpoint,
+// which is mounted per project, calls ScheduleProjectRecluster instead.
 func (s *Service) ScheduleRecluster(ctx context.Context) (bool, error) {
 	if s.projects == nil {
 		return false, errors.New("clusterjob: no project lister wired")
@@ -143,13 +142,29 @@ func (s *Service) ScheduleRecluster(ctx context.Context) (bool, error) {
 		if !all[i].Active {
 			continue
 		}
-		ok, err := s.schedule(ctx, payload{ProjectUID: all[i].UID, Recluster: true})
+		ok, err := s.ScheduleProjectRecluster(ctx, all[i].UID)
 		if err != nil {
 			return queued, err
 		}
 		queued = queued || ok
 	}
 	return queued, nil
+}
+
+// ScheduleProjectRecluster queues a full pass for the one project projectUID:
+// regroup its currently unassigned faces, then prepare the summaries of its
+// groups that have none. It reports whether a job was actually queued — false
+// means the project already has a pass waiting or running. An empty projectUID
+// is refused: a pass always works on exactly one project.
+//
+// It is what the maintainer-only recluster endpoint calls: the pass itself takes
+// minutes on a real library and must not be run inside the request that asks
+// for it.
+func (s *Service) ScheduleProjectRecluster(ctx context.Context, projectUID string) (bool, error) {
+	if projectUID == "" {
+		return false, errors.New("clusterjob: scheduling a recluster without a project")
+	}
+	return s.schedule(ctx, payload{ProjectUID: projectUID, Recluster: true})
 }
 
 // EnsureGrouping queues the grouping work the project projectUID is missing, if

@@ -106,17 +106,17 @@ type fakeLister struct {
 }
 
 // ListPhotosMissingFileMetadata returns the pending uids.
-func (f *fakeLister) ListPhotosMissingFileMetadata(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListPhotosMissingFileMetadata(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.pending, f.err
 }
 
 // ListActiveUIDs returns every active uid.
-func (f *fakeLister) ListActiveUIDs(_ context.Context) ([]string, error) {
+func (f *fakeLister) ListActiveUIDs(_ context.Context, _ string) ([]string, error) {
 	return f.active, f.err
 }
 
 // ListVideosMissingTechnicalMetadata returns the videos with no technical metadata.
-func (f *fakeLister) ListVideosMissingTechnicalMetadata(_ context.Context, _ int) ([]string, error) {
+func (f *fakeLister) ListVideosMissingTechnicalMetadata(_ context.Context, _ string, _ int) ([]string, error) {
 	return f.videos, f.err
 }
 
@@ -347,7 +347,7 @@ func TestBackfillMetadata(t *testing.T) {
 				Lister: tt.lister, Enqueuer: enq,
 			})
 
-			enqueued, err := svc.BackfillMetadata(context.Background(), tt.all)
+			enqueued, err := svc.BackfillMetadata(context.Background(), "pjtest", tt.all)
 			if err != nil {
 				t.Fatalf("BackfillMetadata() error = %v", err)
 			}
@@ -373,7 +373,7 @@ func TestBackfillMetadata_unavailable(t *testing.T) {
 	t.Parallel()
 
 	svc := New(Config{Photos: &fakePhotos{}, Extractor: &fakeExtractor{}})
-	if _, err := svc.BackfillMetadata(context.Background(), false); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := svc.BackfillMetadata(context.Background(), "pjtest", false); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("BackfillMetadata() error = %v, want ErrBackfillUnavailable", err)
 	}
 }
@@ -507,7 +507,7 @@ func TestBackfillVideoMetadata(t *testing.T) {
 		Enqueuer:  enq,
 	})
 
-	enqueued, err := svc.BackfillVideoMetadata(context.Background())
+	enqueued, err := svc.BackfillVideoMetadata(context.Background(), "pjtest")
 	if err != nil {
 		t.Fatalf("BackfillVideoMetadata() error = %v", err)
 	}
@@ -516,7 +516,7 @@ func TestBackfillVideoMetadata(t *testing.T) {
 	}
 
 	bare := New(Config{Photos: &fakePhotos{}, Extractor: &fakeExtractor{}})
-	if _, err := bare.BackfillVideoMetadata(context.Background()); !errors.Is(err, ErrBackfillUnavailable) {
+	if _, err := bare.BackfillVideoMetadata(context.Background(), "pjtest"); !errors.Is(err, ErrBackfillUnavailable) {
 		t.Errorf("BackfillVideoMetadata() error = %v, want ErrBackfillUnavailable", err)
 	}
 }

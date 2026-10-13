@@ -41,15 +41,14 @@ import (
 // a place anybody can answer about. Those photos come back once the `places` job
 // has caught up — which is exactly the right time to ask.
 //
-// The estimate list is the instance's, so a photo of another project is
-// dropped here (Photo.ProjectID): the game only ever asks about its own
-// project's photos.
+// The estimate list is the project's own (geoestimate.Reviewer.Pending takes
+// it); the Photo.ProjectID check below is the defensive second lock.
 func (s *Service) placeQuestions(ctx context.Context, projectUID string, need int) ([]Question, int, error) {
 	if s.places == nil {
 		return nil, 0, nil
 	}
 	offset := s.offset(projectUID, placeCursor)
-	pending, total, err := s.places.Pending(ctx, offset, need)
+	pending, total, err := s.places.Pending(ctx, projectUID, offset, need)
 	if err != nil {
 		return nil, 0, fmt.Errorf("review: listing estimated locations: %w", err)
 	}

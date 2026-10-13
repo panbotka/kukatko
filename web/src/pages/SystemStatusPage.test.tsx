@@ -117,6 +117,24 @@ function status(overrides: Partial<SystemStatus> = {}): SystemStatus {
       window_seconds: 86400,
       resets_at: '2026-06-02T09:00:00Z',
     },
+    projects: [
+      {
+        uid: 'pj0000000000000000veselice',
+        slug: 'v',
+        name: 'Veselice',
+        active: true,
+        photos: 20930,
+        videos: 145,
+        trashed: 0,
+        originals_bytes: 91_000_000_000,
+        faces: 16585,
+        subjects: 87,
+        albums: 132,
+        queue: { queued: 4, running: 1, failed: 2 },
+        duplicates: null,
+        last_import: null,
+      },
+    ],
     ...overrides,
   }
 }

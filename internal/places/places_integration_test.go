@@ -120,7 +120,7 @@ func TestListPhotosMissingPlaces(t *testing.T) {
 		t.Fatalf("archive: %v", err)
 	}
 
-	uids, err := store.ListPhotosMissingPlaces(ctx, 0)
+	uids, err := store.ListPhotosMissingPlaces(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingPlaces: %v", err)
 	}

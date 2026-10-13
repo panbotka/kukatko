@@ -13,6 +13,7 @@ import (
 	"github.com/panbotka/kukatko/internal/jobs"
 	"github.com/panbotka/kukatko/internal/mapy"
 	"github.com/panbotka/kukatko/internal/placesjob"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // fakeDB is a DBPinger whose Ping returns the configured error.
@@ -59,29 +60,54 @@ func (f *fakeDashboard) CountDashboard(context.Context) (Dashboard, error) {
 	return f.dashboard, f.err
 }
 
-// fakeDuplicates is a DuplicateCounter returning a fixed group count or error.
+// fakeDuplicates is a DuplicateCounter returning a fixed group count per
+// project (groups for any project byProject does not name) or an error.
 type fakeDuplicates struct {
-	groups int
-	err    error
+	groups    int
+	byProject map[string]int
+	err       error
 }
 
-// CountGroups returns the configured group count or error.
-func (f fakeDuplicates) CountGroups(context.Context) (int, error) { return f.groups, f.err }
+// CountGroups returns the configured group count of the project or error.
+func (f fakeDuplicates) CountGroups(_ context.Context, projectUID string) (int, error) {
+	if n, ok := f.byProject[projectUID]; ok {
+		return n, f.err
+	}
+	return f.groups, f.err
+}
 
-// fakeImports is an ImportLister returning a fixed run per source.
+// fakeImports is an ImportLister returning a fixed run per source, of the
+// project testProject only (another project has never imported anything).
 type fakeImports struct {
 	runs map[importer.Source]importer.Run
 	err  error
 }
 
 // LatestRun returns the configured run for source, ok=false when absent.
-func (f fakeImports) LatestRun(_ context.Context, source importer.Source) (importer.Run, bool, error) {
+func (f fakeImports) LatestRun(
+	_ context.Context, projectUID string, source importer.Source,
+) (importer.Run, bool, error) {
 	if f.err != nil {
 		return importer.Run{}, false, f.err
+	}
+	if projectUID != testProject {
+		return importer.Run{}, false, nil
 	}
 	run, ok := f.runs[source]
 	return run, ok, nil
 }
+
+// testProject is the one active project of healthyConfig.
+const testProject = "pjsystemtest"
+
+// fakeProjects is a ProjectLister returning a fixed project list or error.
+type fakeProjects struct {
+	projects []project.Project
+	err      error
+}
+
+// List returns the configured projects or error.
+func (f fakeProjects) List(context.Context) ([]project.Project, error) { return f.projects, f.err }
 
 // fakeBackup is a BackupReporter returning a fixed status.
 type fakeBackup struct{ status backup.Status }
@@ -134,7 +160,9 @@ func healthyConfig(originals string) Config {
 		Dashboard: &fakeDashboard{dashboard: Dashboard{
 			Library:   LibrarySummary{Photos: 20, Videos: 2, Trashed: 3, LibraryBytes: 4096},
 			Remaining: RemainingWork{FacesUnassigned: 9, Clusters: 2},
+			Projects:  []ProjectSummary{{UID: testProject, Slug: "v", Name: "Veselice", Active: true, Photos: 20}},
 		}},
+		Projects: fakeProjects{projects: []project.Project{{UID: testProject, Slug: "v", Active: true}}},
 		Imports: fakeImports{runs: map[importer.Source]importer.Run{
 			importer.SourceFolder: {ID: 7, Source: importer.SourceFolder, Status: importer.StatusDone},
 			// A finished migration run is still in the table; the dashboard section
@@ -643,4 +671,105 @@ func TestLatestRuns_Error(t *testing.T) {
 	if _, err := New(cfg).LatestRuns(t.Context()); err == nil {
 		t.Error("LatestRuns with a failing lister = nil error, want error")
 	}
+}
+
+// TestCollect_ProjectBreakdown verifies the per-project rows: each active
+// project carries its own duplicate count and latest import, a deactivated one
+// is never scanned (its count stays absent, not zero), the instance totals are
+// the sums, and stamping one request's rows never writes into the memoised
+// aggregate another request reads.
+func TestCollect_ProjectBreakdown(t *testing.T) {
+	t.Parallel()
+
+	cfg := healthyConfig(t.TempDir())
+	cfg.Dashboard = &fakeDashboard{dashboard: Dashboard{Projects: []ProjectSummary{
+		{UID: "pjother", Slug: "jiny", Active: true, Photos: 4},
+		{UID: "pjoff", Slug: "stary", Active: false, Photos: 2},
+		{UID: testProject, Slug: "v", Active: true, Photos: 20},
+	}}}
+	cfg.Projects = fakeProjects{projects: []project.Project{
+		{UID: testProject, Active: true}, {UID: "pjother", Active: true}, {UID: "pjoff", Active: false},
+	}}
+	cfg.Duplicates = fakeDuplicates{byProject: map[string]int{testProject: 5, "pjother": 2, "pjoff": 99}}
+	svc := New(cfg)
+	svc.duplicates.spawn = func(f func()) { f() }
+
+	if _, err := svc.Collect(t.Context()); err != nil { // schedules the scan
+		t.Fatalf("Collect: %v", err)
+	}
+	status, err := svc.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(status.Projects) != 3 {
+		t.Fatalf("projects = %+v, want three rows", status.Projects)
+	}
+	byUID := map[string]ProjectSummary{}
+	for _, row := range status.Projects {
+		byUID[row.UID] = row
+	}
+	if d := byUID[testProject].Duplicates; d == nil || *d != 5 {
+		t.Errorf("v's duplicates = %v, want 5", d)
+	}
+	if d := byUID["pjother"].Duplicates; d == nil || *d != 2 {
+		t.Errorf("jiny's duplicates = %v, want 2", d)
+	}
+	if d := byUID["pjoff"].Duplicates; d != nil {
+		t.Errorf("the deactivated project's duplicates = %d, want none (it is never scanned)", *d)
+	}
+	if status.Remaining.Duplicates.Groups != 7 {
+		t.Errorf("instance duplicates = %d, want 7 (the active projects' sum)", status.Remaining.Duplicates.Groups)
+	}
+	if run := byUID[testProject].LastImport; run == nil || run.ID != 7 {
+		t.Errorf("v's last import = %+v, want run 7", run)
+	}
+	if run := byUID["pjother"].LastImport; run != nil {
+		t.Errorf("jiny's last import = %+v, want none", run)
+	}
+	if status.Imports.Folder == nil || status.Imports.Folder.ID != 7 {
+		t.Errorf("instance folder import = %+v, want the newest of the projects' (run 7)", status.Imports.Folder)
+	}
+	cached := cfg.Dashboard.(*fakeDashboard).dashboard.Projects
+	for _, row := range cached {
+		if row.Duplicates != nil || row.LastImport != nil {
+			t.Errorf("the memoised row %s was stamped by a request: %+v", row.UID, row)
+		}
+	}
+}
+
+// TestLatestRuns_newestAcrossProjects verifies the metrics view of the import
+// history takes, per source, the newest run of any active project.
+func TestLatestRuns_newestAcrossProjects(t *testing.T) {
+	t.Parallel()
+
+	early := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cfg := healthyConfig(t.TempDir())
+	cfg.Imports = perProjectImports{
+		testProject: {ID: 3, Source: importer.SourceFolder, StartedAt: early},
+		"pjother":   {ID: 9, Source: importer.SourceFolder, StartedAt: early.Add(time.Hour)},
+	}
+	cfg.Projects = fakeProjects{projects: []project.Project{
+		{UID: testProject, Active: true}, {UID: "pjother", Active: true},
+	}}
+	runs, err := New(cfg).LatestRuns(t.Context())
+	if err != nil {
+		t.Fatalf("LatestRuns: %v", err)
+	}
+	if got := runs[importer.SourceFolder]; got.ID != 9 {
+		t.Errorf("latest folder run = %+v, want the later one (9)", got)
+	}
+}
+
+// perProjectImports is an ImportLister holding one folder run per project.
+type perProjectImports map[string]importer.Run
+
+// LatestRun returns the project's folder run, ok=false for any other source.
+func (p perProjectImports) LatestRun(
+	_ context.Context, projectUID string, source importer.Source,
+) (importer.Run, bool, error) {
+	run, ok := p[projectUID]
+	if !ok || run.Source != source {
+		return importer.Run{}, false, nil
+	}
+	return run, true, nil
 }

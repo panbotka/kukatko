@@ -234,7 +234,7 @@ func TestOCR_backfillCandidates(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	uids, err := store.ListPhotosMissingOCR(ctx, 0)
+	uids, err := store.ListPhotosMissingOCR(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingOCR: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestOCR_backfillCandidates(t *testing.T) {
 	if err := store.SaveOCR(ctx, empty.UID, photos.OCR{Model: "m"}); err != nil {
 		t.Fatalf("SaveOCR(empty): %v", err)
 	}
-	uids, err = store.ListPhotosMissingOCR(ctx, 0)
+	uids, err = store.ListPhotosMissingOCR(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingOCR: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestOCR_backfillCandidates(t *testing.T) {
 
 	// The forced full run re-reads every live still, recognised or not — and
 	// still never a video or an archived photo.
-	all, err := store.ListActiveImageUIDs(ctx)
+	all, err := store.ListActiveImageUIDs(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListActiveImageUIDs: %v", err)
 	}

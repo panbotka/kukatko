@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/geoestimate"
 	"github.com/panbotka/kukatko/internal/photos"
@@ -46,6 +47,8 @@ type fixture struct {
 	dateEstimated bool
 	// scan marks a digitised print.
 	scan bool
+	// project is the photo's project; empty means the bootstrap one.
+	project string
 }
 
 // backfillEnv bundles the store under test and its counters.
@@ -104,6 +107,7 @@ func (e *backfillEnv) seed(t *testing.T, f fixture) photos.Photo {
 		LocationSource:   f.source,
 		TakenAtEstimated: f.dateEstimated,
 		Scan:             f.scan,
+		ProjectID:        f.project,
 	}
 	if !f.at.IsZero() {
 		at := f.at
@@ -133,7 +137,7 @@ func (e *backfillEnv) get(t *testing.T, uid string) photos.Photo {
 // run executes the backfill and returns how many photos it estimated.
 func (e *backfillEnv) run(t *testing.T) int {
 	t.Helper()
-	n, err := e.svc.BackfillLocations(t.Context())
+	n, err := e.svc.BackfillLocations(t.Context(), project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("BackfillLocations: %v", err)
 	}
@@ -365,5 +369,42 @@ func metadataFrom(p photos.Photo) photos.MetadataUpdate {
 		Altitude:         p.Altitude,
 		LocationSource:   p.LocationSource,
 		Private:          p.Private,
+	}
+}
+
+// TestBackfill_neverLooksAcrossProjects seeds a dateable photo without
+// coordinates in the bootstrap project and two coherent measured neighbours
+// taken the same hour in another project: the bootstrap project's backfill finds
+// no neighbour (another project's trip is no evidence) and leaves the photo
+// alone, while the other project's own candidate is estimated from them.
+func TestBackfill_neverLooksAcrossProjects(t *testing.T) {
+	e := newBackfillEnv(t)
+	db := dbtest.New(t)
+	other, err := project.NewStore(db.Pool()).Create(t.Context(), audit.Meta{},
+		project.CreateParams{Slug: "jiny", Name: "Jiný"})
+	if err != nil {
+		t.Fatalf("creating the other project: %v", err)
+	}
+	lonely := e.seed(t, fixture{name: "lonely", at: anchor})
+	e.seed(t, fixture{name: "b-near-1", at: anchor.Add(-time.Hour), loc: &pragueA, project: other.UID})
+	e.seed(t, fixture{name: "b-near-2", at: anchor.Add(time.Hour), loc: &pragueB, project: other.UID})
+	theirs := e.seed(t, fixture{name: "b-candidate", at: anchor, project: other.UID})
+
+	if n := e.run(t); n != 0 {
+		t.Errorf("the bootstrap backfill estimated %d photos from another project's neighbours, want 0", n)
+	}
+	if got := e.get(t, lonely.UID); got.Lat != nil || got.LocationSource != "" {
+		t.Errorf("lonely photo got %v,%v (%q), want no location", got.Lat, got.Lng, got.LocationSource)
+	}
+
+	n, err := e.svc.BackfillLocations(t.Context(), other.UID)
+	if err != nil || n != 1 {
+		t.Fatalf("the other project's backfill = %d, %v; want 1 estimate", n, err)
+	}
+	if got := e.get(t, theirs.UID); got.Lat == nil || got.LocationSource != photos.LocationSourceEstimate {
+		t.Errorf("the other project's candidate = %+v, want an estimate from its own neighbours", got)
+	}
+	if _, err := e.svc.BackfillLocations(t.Context(), ""); err == nil {
+		t.Error("a backfill without a project succeeded, want ErrNoProject")
 	}
 }

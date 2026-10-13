@@ -18,16 +18,18 @@ import (
 // fakeRuns is a RunLister whose List returns a fixed page or error and records
 // the paging it was called with.
 type fakeRuns struct {
-	runs      []importer.Run
-	err       error
-	gotLimit  int
-	gotOffset int
-	wasCalled bool
+	runs       []importer.Run
+	err        error
+	gotLimit   int
+	gotOffset  int
+	gotProject string
+	wasCalled  bool
 }
 
-// List records the paging and returns the configured result.
-func (f *fakeRuns) List(_ context.Context, limit, offset int) ([]importer.Run, error) {
+// List records the project and the paging and returns the configured result.
+func (f *fakeRuns) List(_ context.Context, projectUID string, limit, offset int) ([]importer.Run, error) {
 	f.wasCalled = true
+	f.gotProject = projectUID
 	f.gotLimit = limit
 	f.gotOffset = offset
 	return f.runs, f.err

@@ -20,7 +20,7 @@ type fakeOCRBackfiller struct {
 }
 
 // BackfillOCR records the call and reports the configured outcome.
-func (f *fakeOCRBackfiller) BackfillOCR(_ context.Context, all bool) (int, error) {
+func (f *fakeOCRBackfiller) BackfillOCR(_ context.Context, _ string, all bool) (int, error) {
 	f.calls++
 	f.lastAll = all
 	if f.err != nil {

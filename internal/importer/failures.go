@@ -135,11 +135,14 @@ func (s *Store) CountUnresolvedFailures(ctx context.Context, id int64) (int, err
 	return n, nil
 }
 
-// FailureFilter narrows a ListFailures query. A zero RunID matches every run; an
-// empty Source matches every source; UnresolvedOnly restricts to outstanding
-// failures. Limit is clamped to [1, maxListLimit] (a non-positive Limit defaults
-// to defaultListLimit) and a negative Offset is treated as zero.
+// FailureFilter narrows a ListFailures query. ProjectUID is required: a failure
+// belongs to its run's project and is listed only within it. A zero RunID
+// matches every run of the project; an empty Source matches every source;
+// UnresolvedOnly restricts to outstanding failures. Limit is clamped to
+// [1, maxListLimit] (a non-positive Limit defaults to defaultListLimit) and a
+// negative Offset is treated as zero.
 type FailureFilter struct {
+	ProjectUID     string
 	RunID          int64
 	Source         Source
 	UnresolvedOnly bool
@@ -149,9 +152,13 @@ type FailureFilter struct {
 
 // ListFailures returns a page of recorded import failures matching filter, most
 // recently recorded first (id tiebreaker keeps the order stable). It returns a
-// non-nil, empty slice when nothing matches. It returns ErrInvalidSource if
-// filter.Source is set but unrecognised.
+// non-nil, empty slice when nothing matches. It returns ErrNoProject without
+// filter.ProjectUID and ErrInvalidSource if filter.Source is set but
+// unrecognised.
 func (s *Store) ListFailures(ctx context.Context, filter FailureFilter) ([]Failure, error) {
+	if err := requireProject(filter.ProjectUID); err != nil {
+		return nil, err
+	}
 	if filter.Source != "" && !filter.Source.Valid() {
 		return nil, fmt.Errorf("%w: %q", ErrInvalidSource, filter.Source)
 	}
@@ -186,12 +193,11 @@ func (s *Store) ListFailures(ctx context.Context, filter FailureFilter) ([]Failu
 
 // buildListFailuresQuery assembles the ListFailures SELECT and its ordered
 // arguments from filter, appending only the WHERE clauses the filter enables so
-// every predicate stays parameterised.
+// every predicate stays parameterised. The first clause is always the project:
+// import_failures is a child of import_runs and is scoped through its run.
 func buildListFailuresQuery(filter FailureFilter, limit, offset int) (string, []any) {
-	var (
-		args   []any
-		wheres []string
-	)
+	args := []any{filter.ProjectUID}
+	wheres := []string{"run_id IN (SELECT id FROM import_runs WHERE project_id = $1)"}
 	if filter.RunID != 0 {
 		args = append(args, filter.RunID)
 		wheres = append(wheres, fmt.Sprintf("run_id = $%d", len(args)))
@@ -204,11 +210,8 @@ func buildListFailuresQuery(filter FailureFilter, limit, offset int) (string, []
 		wheres = append(wheres, "resolved_at IS NULL")
 	}
 	var b strings.Builder
-	b.WriteString(`SELECT ` + failureColumns + ` FROM import_failures`)
-	if len(wheres) > 0 {
-		b.WriteString(" WHERE ")
-		b.WriteString(strings.Join(wheres, " AND "))
-	}
+	b.WriteString(`SELECT ` + failureColumns + ` FROM import_failures WHERE `)
+	b.WriteString(strings.Join(wheres, " AND "))
 	args = append(args, limit, offset)
 	fmt.Fprintf(&b, " ORDER BY created_at DESC, id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
 	return b.String(), args

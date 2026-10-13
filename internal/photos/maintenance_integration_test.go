@@ -81,7 +81,7 @@ func TestListPhotosMissingPhash(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	uids, err := store.ListPhotosMissingPhash(ctx, 0)
+	uids, err := store.ListPhotosMissingPhash(ctx, project.BootstrapUID, 0)
 	if err != nil {
 		t.Fatalf("ListPhotosMissingPhash(0): %v", err)
 	}
@@ -92,7 +92,7 @@ func TestListPhotosMissingPhash(t *testing.T) {
 		t.Errorf("ListPhotosMissingPhash(0) = %v, want %v", uids, want)
 	}
 
-	limited, err := store.ListPhotosMissingPhash(ctx, 1)
+	limited, err := store.ListPhotosMissingPhash(ctx, project.BootstrapUID, 1)
 	if err != nil || len(limited) != 1 {
 		t.Errorf("ListPhotosMissingPhash(1) = (%v, %v), want one uid", limited, err)
 	}
@@ -105,7 +105,7 @@ func TestListActiveUIDs(t *testing.T) {
 	store, _ := newStore(t)
 	ctx := t.Context()
 
-	if uids, err := store.ListActiveUIDs(ctx); err != nil || len(uids) != 0 {
+	if uids, err := store.ListActiveUIDs(ctx, project.BootstrapUID); err != nil || len(uids) != 0 {
 		t.Fatalf("ListActiveUIDs() on empty = (%v, %v), want ([], nil)", uids, err)
 	}
 
@@ -128,7 +128,7 @@ func TestListActiveUIDs(t *testing.T) {
 		t.Fatalf("Archive: %v", err)
 	}
 
-	uids, err := store.ListActiveUIDs(ctx)
+	uids, err := store.ListActiveUIDs(ctx, project.BootstrapUID)
 	if err != nil {
 		t.Fatalf("ListActiveUIDs(): %v", err)
 	}

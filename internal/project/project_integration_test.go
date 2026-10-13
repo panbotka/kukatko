@@ -337,8 +337,8 @@ func TestSetStoragePrefix(t *testing.T) {
 	}
 }
 
-// TestUsage verifies the bootstrap project counts the whole library (archived
-// photos included), another project is empty and an unknown uid is ErrNotFound.
+// TestUsage verifies a project counts its own photos (archived ones included)
+// and none of another project's, and an unknown uid is ErrNotFound.
 func TestUsage(t *testing.T) {
 	store, db, meta := newStore(t)
 	ctx := context.Background()
@@ -365,6 +365,17 @@ func TestUsage(t *testing.T) {
 	other := mustCreate(t, store, meta, "jiny", "Jiný")
 	if usage, err := store.Usage(ctx, other.UID); err != nil || usage != (project.Usage{}) {
 		t.Errorf("Usage(other) = %+v, %v; want zeros", usage, err)
+	}
+	if _, err := db.Pool().Exec(ctx, `
+		INSERT INTO photos (uid, project_id, file_hash, file_path, file_size) VALUES
+		('phusage00000000000000003', $1, 'h3', 'projects/x/2020/01/c.jpg', 7)`, other.UID); err != nil {
+		t.Fatalf("seeding the other project's photo: %v", err)
+	}
+	if usage, err := store.Usage(ctx, other.UID); err != nil || usage.Photos != 1 || usage.OriginalsBytes != 7 {
+		t.Errorf("Usage(other) = %+v, %v; want 1 photo / 7 bytes", usage, err)
+	}
+	if usage, err := store.Usage(ctx, project.BootstrapUID); err != nil || usage.Photos != 2 {
+		t.Errorf("Usage(bootstrap) after the other project's upload = %+v, %v; want 2 photos", usage, err)
 	}
 	if _, err := store.Usage(ctx, "pjnope"); !errors.Is(err, project.ErrNotFound) {
 		t.Errorf("Usage(unknown) = %v, want ErrNotFound", err)

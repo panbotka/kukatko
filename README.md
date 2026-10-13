@@ -832,10 +832,10 @@ optional YAML file with environment overrides — prefix `KUKATKO_`, dots become
 Upload from the browser (or from an Android share sheet), or point the CLI at a folder:
 
 ```bash
-kukatko import dir /mnt/photos/2019
+kukatko import dir --project v /mnt/photos/2019
 ```
 
-It walks the directory recursively, uploads through the same pipeline as a browser upload, and
+It imports into the one project `--project` names, walks the directory recursively, uploads through the same pipeline as a browser upload, and
 **never touches the source**. Identity is the SHA256 of the content, so re-running it is always safe:
 anything already in the library is reported as a duplicate and nothing is written. It is resumable,
 and it reads **Google Takeout `.json`** and Apple `.xmp` sidecars — which is the difference between

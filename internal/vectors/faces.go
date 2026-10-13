@@ -198,7 +198,8 @@ const listMissingFacesSQL = `
 SELECT p.uid
 FROM photos p
 LEFT JOIN face_detections fd ON fd.photo_uid = p.uid
-WHERE fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type <> 'video'
+WHERE p.project_id = $1
+  AND fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type <> 'video'
 ORDER BY p.created_at DESC, p.uid DESC%s`
 
 // ListPhotosMissingFaces returns the uids of non-archived stills that have not
@@ -208,9 +209,10 @@ ORDER BY p.created_at DESC, p.uid DESC%s`
 //
 // A video is never returned: it is not a photo the detector has not got to, it is
 // a photo the detector will never be asked about. CountVideosMissingFaces counts
-// them, so a backfill can say how many it left alone.
-func (s *Store) ListPhotosMissingFaces(ctx context.Context, limit int) ([]string, error) {
-	return s.queryPhotoUIDs(ctx, listMissingFacesSQL, limit)
+// them, so a backfill can say how many it left alone. It reads one project only:
+// an empty projectUID is ErrNoProject.
+func (s *Store) ListPhotosMissingFaces(ctx context.Context, projectUID string, limit int) ([]string, error) {
+	return s.queryPhotoUIDs(ctx, listMissingFacesSQL, projectUID, limit)
 }
 
 // countVideosMissingFacesSQL counts the non-archived videos ListPhotosMissingFaces
@@ -220,16 +222,21 @@ const countVideosMissingFacesSQL = `
 SELECT COUNT(*)
 FROM photos p
 LEFT JOIN face_detections fd ON fd.photo_uid = p.uid
-WHERE fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type = 'video'`
+WHERE p.project_id = $1
+  AND fd.photo_uid IS NULL AND p.archived_at IS NULL AND p.media_type = 'video'`
 
 // CountVideosMissingFaces returns how many non-archived videos the face-detection
 // backfill passes over. It is the counterpart of ListPhotosMissingFaces: the two
 // together partition the photos with no detection record into the ones that get a
 // job and the ones that are deliberately left alone, so a backfill can report the
-// second number instead of silently dropping it.
-func (s *Store) CountVideosMissingFaces(ctx context.Context) (int, error) {
+// second number instead of silently dropping it. It counts one project only: an
+// empty projectUID is ErrNoProject.
+func (s *Store) CountVideosMissingFaces(ctx context.Context, projectUID string) (int, error) {
+	if err := requireProject(projectUID); err != nil {
+		return 0, err
+	}
 	var count int
-	if err := s.pool.QueryRow(ctx, countVideosMissingFacesSQL).Scan(&count); err != nil {
+	if err := s.pool.QueryRow(ctx, countVideosMissingFacesSQL, projectUID).Scan(&count); err != nil {
 		return 0, fmt.Errorf("counting videos skipped by face detection: %w", err)
 	}
 	return count, nil

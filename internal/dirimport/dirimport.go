@@ -19,8 +19,13 @@
 //     finishes the rest. A per-file failure is recorded and the walk continues —
 //     one corrupt JPEG never aborts a 2000-file run.
 //
-// The run is recorded through internal/importer under importer.SourceFolder, so
-// it shows up in /import and GET /import/runs beside the finished PhotoPrism and
+// Every import lands in one project (Config.ProjectUID, the CLI's required
+// --project): the photos are catalogued there, their originals stored under the
+// project's storage prefix, the dedup looks only at that project's photos, and
+// the album, labels and per-user marks resolve inside it.
+//
+// The run is recorded through internal/importer under importer.SourceFolder, in
+// the same project, so it shows up in /import and GET /p/<slug>/import/runs beside the finished PhotoPrism and
 // photo-sorter migration runs. It is the only source still written. It records no
 // high-watermark: a folder has no source timestamp to resume from, the content
 // hash does that job.
@@ -225,8 +230,8 @@ type Ingester interface {
 
 // RunStore records the run in import_runs, satisfied by *importer.Store.
 type RunStore interface {
-	// Start opens a run in the running state.
-	Start(ctx context.Context, source importer.Source) (importer.Run, error)
+	// Start opens a run of the project in the running state.
+	Start(ctx context.Context, projectUID string, source importer.Source) (importer.Run, error)
 	// UpdateCounts checkpoints the running tally.
 	UpdateCounts(ctx context.Context, id int64, counts importer.Counts) error
 	// Complete closes the run as done with its final tally. A folder run passes a
@@ -240,14 +245,15 @@ type RunStore interface {
 	RecordFailures(ctx context.Context, failures []importer.Failure) error
 }
 
-// PhotoLookup reads the catalogue to classify a file without ingesting it (the
-// dry run) and to resolve what an already-imported duplicate is a duplicate of.
-// It is satisfied by *photos.Store.
+// PhotoLookup reads the project's catalogue to classify a file without
+// ingesting it (the dry run) and to resolve what an already-imported duplicate
+// is a duplicate of. It is satisfied by *photos.Store.
 type PhotoLookup interface {
-	// GetByFileHash returns the photo holding this SHA256 content hash.
-	GetByFileHash(ctx context.Context, hash string) (photos.Photo, error)
-	// GetByUID returns the photo with this UID.
-	GetByUID(ctx context.Context, uid string) (photos.Photo, error)
+	// GetByFileHashInProject returns the project's photo holding this SHA256
+	// content hash: the same bytes in another project are not a duplicate here.
+	GetByFileHashInProject(ctx context.Context, projectUID, hash string) (photos.Photo, error)
+	// GetByUIDInProject returns the project's photo with this UID.
+	GetByUIDInProject(ctx context.Context, projectUID, uid string) (photos.Photo, error)
 }
 
 // PhotoFiller backfills the metadata gaps of a photo that is already catalogued,
@@ -318,9 +324,13 @@ type Config struct {
 	Albums AlbumStore
 	// Labels resolves and attaches --labels (required only when --labels is used).
 	Labels LabelStore
-	// ProjectUID is the project --album, --labels and an export's favourites and
-	// ratings are resolved and written in (required whenever any of them is used).
+	// ProjectUID is the project every photo is imported into, the run recorded
+	// in, and --album, --labels and an export's favourites and ratings resolved
+	// and written in (required: Import refuses with ErrNoProject without one).
 	ProjectUID string
+	// StoragePrefix is that project's object-store prefix ("" for the root
+	// layout), under which the originals are stored.
+	StoragePrefix string
 	// Concurrency is how many files are ingested in parallel; a non-positive value
 	// means DefaultConcurrency and anything above MaxConcurrency is clamped to it.
 	Concurrency int
@@ -340,6 +350,7 @@ type Service struct {
 	albums      AlbumStore
 	labels      LabelStore
 	projectUID  string
+	prefix      string
 	concurrency int
 	log         *slog.Logger
 }
@@ -360,6 +371,7 @@ func New(cfg Config) *Service {
 		albums:      cfg.Albums,
 		labels:      cfg.Labels,
 		projectUID:  cfg.ProjectUID,
+		prefix:      cfg.StoragePrefix,
 		concurrency: clampConcurrency(cfg.Concurrency),
 		log:         log,
 	}

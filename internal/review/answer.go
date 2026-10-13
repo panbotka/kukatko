@@ -112,7 +112,7 @@ func (s *Service) apply(
 		}
 		return s.applyLabelNo(ctx, projectUID, ref, meta)
 	case KindPlace:
-		return s.applyPlace(ctx, ref, yes, meta)
+		return s.applyPlace(ctx, projectUID, ref, yes, meta)
 	case KindDuplicate:
 		return s.applyDuplicate(ctx, projectUID, ref, yes, meta)
 	case KindOutlier:
@@ -218,16 +218,16 @@ func (s *Service) applyLabelNo(
 // the live row — so a photo somebody edited meanwhile is not clobbered, and a
 // photo whose location is no longer an estimate is left exactly as it is.
 func (s *Service) applyPlace(
-	ctx context.Context, ref questionRef, yes bool, meta audit.Meta,
+	ctx context.Context, projectUID string, ref questionRef, yes bool, meta audit.Meta,
 ) (string, error) {
 	if s.places == nil {
 		return resultGone, nil
 	}
 	if yes {
-		return decided(resultConfirmed, s.places.Accept(ctx, ref.PhotoUID, meta),
+		return decided(resultConfirmed, s.places.Accept(ctx, projectUID, ref.PhotoUID, meta),
 			"accepting an estimated location")
 	}
-	return decided(resultCleared, s.places.Reject(ctx, ref.PhotoUID, meta),
+	return decided(resultCleared, s.places.Reject(ctx, projectUID, ref.PhotoUID, meta),
 		"clearing an estimated location")
 }
 
