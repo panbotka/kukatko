@@ -181,10 +181,14 @@ func (s *Service) ingestOne(
 	}
 	defer func() { _ = file.Close() }()
 
+	// The size on disk is the declared size: a file over the project's (or the
+	// instance's) per-file cap, or one its quota has no room for, is refused
+	// before a byte of it is read — and recorded as a failure like any other.
 	ingested := s.ingest.IngestFile(ctx, s.project, file, ingest.Request{
-		Filename:   filepath.Base(entry.abs),
-		UploadedBy: uploadedBy,
-		Sidecar:    sc,
+		Filename:     filepath.Base(entry.abs),
+		UploadedBy:   uploadedBy,
+		Sidecar:      sc,
+		DeclaredSize: fileSize(file),
 	})
 	s.logWarnings(entry.rel, ingested.Warnings, tal)
 
@@ -207,6 +211,16 @@ func (s *Service) ingestOne(
 		return s.recordFailed(res, entry.rel, errors.New(ingested.Error), tal)
 	}
 	return s.recordFailed(res, entry.rel, fmt.Errorf("dirimport: unknown ingest outcome %q", ingested.Outcome), tal)
+}
+
+// fileSize returns the size of the open file, or 0 (unknown) when it cannot be
+// read — the pipeline then enforces the caps while streaming alone.
+func fileSize(file *os.File) int64 {
+	info, err := file.Stat()
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 // failed marks a result as a per-file failure, keeping whatever the run already

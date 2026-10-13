@@ -107,9 +107,11 @@ describe('uploadFile', () => {
     const xhr = xhrs.instances[0]
     expect(xhr.url).toBe('/api/v1/u/Ab3dEf7h/upload')
     const form = xhr.sent as FormData
-    // The backend reads the stream once, in order: the name must precede the file.
-    expect([...form.keys()]).toEqual(['name', 'files'])
+    // The backend reads the stream once, in order: the name and the declared
+    // size must precede the file.
+    expect([...form.keys()]).toEqual(['name', 'size', 'files'])
     expect(form.get('name')).toBe('Jana')
+    expect(form.get('size')).toBe('4')
 
     xhr.respond(200, created('a.jpg'))
     await expect(promise).resolves.toMatchObject({ outcome: 'created' })
@@ -201,6 +203,39 @@ describe('uploadFile', () => {
 
     await expect(promise).rejects.toBeInstanceOf(ApiError)
     await expect(promise).rejects.toMatchObject({ status: 413, message: 'file too large' })
+  })
+
+  it("resolves a request-level quota refusal as the file's own refusal", async () => {
+    const xhrs = installFakeXHR()
+    const promise = uploadFile(file('a.jpg'))
+    xhrs.instances[0].respond(413, {
+      error: 'quota_exceeded',
+      limit_bytes: 1000,
+      used_bytes: 1000,
+    })
+
+    await expect(promise).resolves.toEqual({
+      filename: 'a.jpg',
+      status: 413,
+      outcome: 'error',
+      code: 'quota_exceeded',
+      error: 'quota_exceeded',
+      limit_bytes: 1000,
+      used_bytes: 1000,
+    })
+  })
+
+  it('resolves a number-free quota refusal (the public upload link)', async () => {
+    const xhrs = installFakeXHR()
+    const promise = uploadFile(file('a.jpg'), { url: '/api/v1/u/Ab3dEf7h/upload' })
+    xhrs.instances[0].respond(413, { error: 'quota_exceeded' })
+
+    await expect(promise).resolves.toMatchObject({
+      outcome: 'error',
+      code: 'quota_exceeded',
+      limit_bytes: undefined,
+      used_bytes: undefined,
+    })
   })
 
   it('throws ApiError on a network error', async () => {

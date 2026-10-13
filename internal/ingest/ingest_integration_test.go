@@ -155,6 +155,7 @@ func newEnvWithPlaces(t *testing.T, dup config.DuplicateConfig, places *recordin
 		Thumbnailer: thumbs,
 		Enqueuer:    enq,
 		Duplicate:   dup,
+		Usage:       project.NewStore(db.Pool()),
 		TempDir:     t.TempDir(),
 	}
 	// A typed nil would satisfy the interface and defeat the "geocoding off"

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +39,8 @@ type fakeIngester struct {
 	sidecars map[string]*sidecar.Metadata
 	// projects records the project and storage prefix passed with each call.
 	projects []string
+	// declared records the DeclaredSize passed with each call.
+	declared []int64
 }
 
 // IngestFile records the call, drains the reader (as the real pipeline does) and
@@ -50,6 +53,7 @@ func (f *fakeIngester) IngestFile(
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.seen = append(f.seen, req.Filename)
+	f.declared = append(f.declared, req.DeclaredSize)
 	f.uploaders = append(f.uploaders, req.UploadedBy)
 	f.projects = append(f.projects, proj.UID+"|"+proj.StoragePrefix)
 	if f.sidecars == nil {
@@ -977,5 +981,62 @@ func TestCountsTotal(t *testing.T) {
 
 	if got := (Counts{Imported: 2, Duplicates: 3, Skipped: 4, Failed: 5}).Total(); got != 14 {
 		t.Errorf("Total() = %d, want 14", got)
+	}
+}
+
+// TestImport_declaresTheSizeOnDisk checks each file is handed to the pipeline
+// with its size on disk, which lets the pipeline refuse an oversized file
+// before reading it.
+func TestImport_declaresTheSizeOnDisk(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, nil)
+	root := t.TempDir()
+	writeFile(t, root, "a.jpg", "12345")
+
+	if _, err := env.svc.Import(t.Context(), Options{Root: root, Recursive: true}); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if got := env.ingester.declared; len(got) != 1 || got[0] != 5 {
+		t.Errorf("declared sizes = %v, want [5]", got)
+	}
+}
+
+// TestImport_projectLimitRefusal runs the real pipeline under a project whose
+// per-file cap the file exceeds: the file is refused as file_too_large from its
+// size on disk, before the pipeline reads it or touches the catalogue, and the
+// run records it as a failed file and closes partial.
+func TestImport_projectLimitRefusal(t *testing.T) {
+	t.Parallel()
+
+	env := newEnv(t, nil)
+	limit := int64(4)
+	target := testTarget()
+	target.MaxFileBytes = &limit
+	svc := New(Config{
+		Ingest: ingest.New(ingest.Config{TempDir: t.TempDir()}), Runs: env.runs, Photos: env.photos,
+		Filler: env.filler, Curation: env.curation, Albums: env.organizer, Labels: env.organizer,
+		Project: target,
+	})
+	root := t.TempDir()
+	writeFile(t, root, "big.jpg", "far more than four bytes")
+
+	var seen []FileResult
+	result, err := svc.Import(t.Context(), Options{
+		Root: root, Recursive: true,
+		Progress: func(res FileResult, _, _ int) { seen = append(seen, res) },
+	})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if result.Counts.Failed != 1 || result.Counts.Imported != 0 {
+		t.Fatalf("counts = %+v, want failed=1", result.Counts)
+	}
+	res := findResult(t, seen, "big.jpg")
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "maximum upload size of 4 bytes") {
+		t.Errorf("result error = %v, want the cap refusal", res.Err)
+	}
+	if env.runs.status != importer.StatusPartial {
+		t.Errorf("run status = %q, want partial", env.runs.status)
 	}
 }

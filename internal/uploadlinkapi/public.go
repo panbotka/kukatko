@@ -87,6 +87,10 @@ type publicLink struct {
 	// where it can succeed. It is the same flag the project's own public
 	// settings publish, so it tells the holder nothing new.
 	RegistrationEnabled bool `json:"registration_enabled"`
+	// StorageFull is whether the link's project has used up its storage quota,
+	// so the page says nothing can be uploaded before anybody picks a file. It
+	// is a yes/no only: the holder of a link learns no sizes.
+	StorageFull bool `json:"storage_full"`
 }
 
 // goneBody is the 410 of a link that exists but no longer accepts uploads. It
@@ -131,7 +135,19 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, publicLink{
 		Title: link.Title, Note: link.Note, Albums: names(link.Albums), Labels: names(link.Labels),
 		ExpiresAt: link.ExpiresAt, RegistrationEnabled: a.registrationOpen(r, link.ProjectUID),
+		StorageFull: a.storageFull(r, link),
 	})
+}
+
+// storageFull reports whether link's project has no room left for another
+// original. Without a QuotaChecker wired, or on a failed usage read, it reports
+// room: the upload itself is checked again file by file.
+func (a *API) storageFull(r *http.Request, link liveTarget) bool {
+	if a.quota == nil {
+		return false
+	}
+	_, full := ingest.QuotaRefusal(r.Context(), a.quota, link.project)
+	return full
 }
 
 // registrationOpen reports whether projectUID, a live link's project, takes
@@ -153,8 +169,10 @@ func (a *API) registrationOpen(r *http.Request, projectUID string) bool {
 // handleUpload ingests the files of a multipart upload through a live link and
 // files each resulting photo — new or duplicate — into the link's albums and
 // labels. Like the ingest endpoint it answers 200 with one result per file; it
-// answers 404/410 for a dead link, 429 when the link's budget is spent, and 400
-// for a body that is not a multipart upload carrying a file.
+// answers 404/410 for a dead link, 429 when the link's budget is spent, 413
+// {"error":"quota_exceeded"} before reading the body when the link's project has
+// used up its storage quota, and 400 for a body that is not a multipart upload
+// carrying a file.
 func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	link, ok := a.liveLink(w, r)
 	if !ok {
@@ -168,6 +186,11 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	reader, err := r.MultipartReader()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "expected multipart/form-data upload")
+		return
+	}
+	// Before a byte of the body: a project with no room left refuses every file.
+	if a.storageFull(r, link) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, quotaFullBody)
 		return
 	}
 	who, err := a.uploaderFor(w, r)
@@ -276,14 +299,16 @@ func SessionHash(r *http.Request) string {
 }
 
 // ingestParts walks the multipart stream: the name field sets the uploader's
-// name, every part carrying a filename is ingested and filed, other fields are
-// skipped. It returns the per-file results in order, or an error for a
-// malformed stream. A file part past maxFilesPerRequest is refused and ends the
-// walk: nothing after it is read.
+// name, an ingest.SizeField declares the size of the file part after it, every
+// part carrying a filename is ingested and filed, other fields are skipped. It
+// returns the per-file results in order, or an error for a malformed stream. A
+// file part past maxFilesPerRequest is refused and ends the walk: nothing after
+// it is read.
 func (a *API) ingestParts(
 	r *http.Request, reader *multipart.Reader, link liveTarget, who uploader,
 ) ([]ingest.FileResult, error) {
 	var results []ingest.FileResult
+	var declared int64
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -293,8 +318,11 @@ func (a *API) ingestParts(
 			return nil, fmt.Errorf("uploadlinkapi: reading multipart part: %w", err)
 		}
 		if part.FileName() == "" {
-			if part.FormName() == nameField {
+			switch part.FormName() {
+			case nameField:
 				who.name = readName(part)
+			case ingest.SizeField:
+				declared = ingest.ReadSizeField(part)
 			}
 			_ = part.Close()
 			continue
@@ -303,7 +331,8 @@ func (a *API) ingestParts(
 			return append(results,
 				refused(part.FileName(), http.StatusRequestEntityTooLarge, "", errTooManyFiles)), nil
 		}
-		results = append(results, a.ingestOne(r, part, link, who))
+		results = append(results, a.ingestOne(r, part, ingest.PartSize(part, declared), link, who))
+		declared = 0
 		_ = part.Close()
 	}
 }
@@ -331,7 +360,13 @@ func readName(part io.Reader) string {
 // last byte used to leave a photo with no record of the upload — no provenance,
 // not filed into the link's album, no audit entry — and a slot that was neither
 // used nor given back.
-func (a *API) ingestOne(r *http.Request, part *multipart.Part, link liveTarget, who uploader) ingest.FileResult {
+//
+// The file is held to the smallest of the project's, the instance's and the
+// link's per-file caps; declared is the size it announced (0 for none), which
+// lets an oversized file be refused before its body is read.
+func (a *API) ingestOne(
+	r *http.Request, part *multipart.Part, declared int64, link liveTarget, who uploader,
+) ingest.FileResult {
 	filename := part.FileName()
 	if !imgconvert.IsSupportedFormat(path.Ext(filename)) {
 		// ingest.CodeUnsupportedType: the code the pipeline gives a type it refuses by
@@ -341,18 +376,14 @@ func (a *API) ingestOne(r *http.Request, part *multipart.Part, link liveTarget, 
 	if err := a.store.ReserveUpload(r.Context(), link.UID, a.maxUploads, a.now()); err != nil {
 		return a.reservationRefused(r, link, filename, err)
 	}
-	var src io.Reader = part
-	if a.maxFileSize > 0 {
-		src = &cappedReader{src: part, remaining: a.maxFileSize}
-	}
 	// The photo goes into the link's project, under that project's prefix,
 	// whoever is uploading: the public route has no project of its own.
-	res := a.ingest.IngestFile(r.Context(), link.project, src, ingest.Request{
-		Filename: filename, UploadedBy: who.userUID,
+	res := a.ingest.IngestFile(r.Context(), link.project, part, ingest.Request{
+		Filename: filename, UploadedBy: who.userUID, DeclaredSize: declared, MaxFileSize: a.maxFileSize,
 	})
 	if res.Outcome == ingest.OutcomeError || res.PhotoUID == "" {
 		a.release(r, link)
-		return res
+		return withoutUsage(res)
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), recordTimeout)
 	defer cancel()
@@ -444,23 +475,17 @@ func names(targets []uploadlink.Target) []string {
 	return out
 }
 
-// cappedReader reads src until more than remaining bytes have passed, then
-// fails with ingest.ErrFileTooLarge, which the pipeline reports as a 413 for the
-// file. It is the link's own size cap, on top of the pipeline's.
-type cappedReader struct {
-	src       io.Reader
-	remaining int64
-}
+// quotaFullBody is the request-level 413 of an upload into a project with no
+// room left. Unlike the signed-in upload's it names no sizes: whoever holds a
+// link learns that the project is full, not how large its library is.
+var quotaFullBody = errorBody{Error: ingest.CodeQuotaExceeded}
 
-// Read reads from src, failing once the cap is exceeded.
-func (c *cappedReader) Read(p []byte) (int, error) {
-	if int64(len(p)) > c.remaining+1 {
-		p = p[:c.remaining+1]
+// withoutUsage strips the numbers off a quota refusal for the public route, for
+// the reason quotaFullBody carries none; any other result is returned as is.
+func withoutUsage(res ingest.FileResult) ingest.FileResult {
+	if res.Code == ingest.CodeQuotaExceeded {
+		res.LimitBytes, res.UsedBytes = 0, nil
+		res.Error = ingest.ErrQuotaExceeded.Error()
 	}
-	n, err := c.src.Read(p)
-	c.remaining -= int64(n)
-	if c.remaining < 0 {
-		return n, ingest.ErrFileTooLarge
-	}
-	return n, err //nolint:wrapcheck // io.EOF must reach io.Copy unwrapped.
+	return res
 }

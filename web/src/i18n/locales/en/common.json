@@ -2906,7 +2906,14 @@
       "not_media": "This is not a photo or a video",
       "unsupported_type": "This type of file cannot be uploaded",
       "damaged": "This file is damaged or incomplete",
-      "interrupted": "The connection dropped"
+      "interrupted": "The connection dropped",
+      "file_too_large": "The file is larger than the allowed {{limit}}",
+      "file_too_large_unknown": "The file is larger than the project allows",
+      "quota_exceeded": "The project has reached its storage limit"
+    },
+    "toast": {
+      "fileTooLarge": "Some files are larger than the project allows and were not uploaded.",
+      "quotaExceeded": "The project has reached its storage limit; no more files will be uploaded."
     },
     "progress": {
       "barLabel": "Overall upload progress",
@@ -3775,7 +3782,10 @@
       "maxTotal": "Limit on all originals",
       "unlimited": "unlimited",
       "note": "Limits are set by the system administrator.",
-      "loadFailed": "Usage could not be loaded."
+      "loadFailed": "Usage could not be loaded.",
+      "barLabel": "Storage used",
+      "barText": "{{used}} of {{limit}} used ({{percent}} %)",
+      "full": "The storage is full — no more photos can be uploaded until space is freed or the limit is raised."
     },
     "leave": {
       "title": "Leave without saving?",
@@ -4263,6 +4273,7 @@
       "error_other": "{{count}} errors"
     },
     "diedMidway": "The link stopped being valid meanwhile and accepts no more files.",
+    "storageFull": "This project's storage is full, uploading is not possible.",
     "registerTitle": "Want to see all the photos?",
     "registerBody": "Register. Through this link you need no registration word, and the photos you just uploaded will be kept under your account. An administrator still approves the account.",
     "registerAction": "Register",

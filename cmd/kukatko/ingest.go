@@ -66,6 +66,7 @@ func buildIngest(
 		Pending:      buildProcessingService(cfg, db, jobs.NewStore(db.Pool()), enqueuer),
 		Duplicate:    cfg.Duplicate,
 		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
+		Usage:        project.NewStore(db.Pool()),
 		MaxPixels:    cfg.Thumb.MaxPixels,
 		DecodeBudget: processDecodeBudget(cfg),
 	})
@@ -112,6 +113,7 @@ func buildUploadLinkAPI(
 		IPLimit:           ratelimit.New(cfg.RateLimit.UploadLink.RatePerSec, cfg.RateLimit.UploadLink.Burst),
 		LinkLimit:         ratelimit.New(cfg.RateLimit.UploadLinkPerLink.RatePerSec, cfg.RateLimit.UploadLinkPerLink.Burst),
 		MaxFileSize:       cfg.UploadLinks.MaxFileSizeBytes(),
+		Quota:             svc,
 		MaxUploadsPerLink: cfg.UploadLinks.MaxUploadsPerLink,
 		DefaultDays:       cfg.UploadLinks.DefaultDays,
 		MaxDays:           cfg.UploadLinks.MaxDays,

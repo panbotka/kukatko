@@ -221,6 +221,14 @@ shared library is tidied by more than one person.
   shows where in the storage its files live. *Účty* (`/system/users`) lists every account of the
   instance with its memberships, and is where another account is promoted to a system administrator
   or demoted again — never your own, somebody else has to do that.
+- **The limits hold at every upload.** A project's largest-file limit and its quota are enforced on
+  the upload page, through an upload link and by `kukatko import dir` alike, together with the
+  instance's own file cap (the smallest cap wins). A file over the limit is refused before its bytes
+  are stored and marked in the upload list — "Soubor je větší než povolených 50,0 MB" — and a project
+  that has filled its quota takes nothing more ("Projekt dosáhl limitu úložiště"); the other files of the
+  batch still go in, and nothing already stored is ever deleted. Somebody uploading through a link into
+  a full project learns only that: "Tento projekt má plné úložiště, nahrávání není možné." The project's
+  settings page shows how full the quota is as a bar.
 - **Správce projektu — a project's administrator — decides who is in it.** *Členové* in the user menu
   (`/p/<project>/members`, where the old *Uživatelé* page used to be) lists the members of the project
   you are in: picture, name, username, role, last sign-in. The role is a select that takes effect at

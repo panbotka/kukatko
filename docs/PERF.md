@@ -502,6 +502,40 @@ go test -tags integration -run TestListQueryPlan_usesLiveIndexes ./internal/phot
   `(user_uid, photo_uid)`.
 - **Full-text search**: `idx_photos_fts` GIN over the generated `fts` tsvector.
 
+### The project usage sum (the quota check at ingest)
+
+Every upload into a project with a quota (`projects.max_total_bytes`) reads the project's usage —
+`project.Store.Usage`:
+
+```sql
+SELECT count(*), COALESCE(sum(file_size), 0)::bigint FROM photos WHERE project_id = $1
+```
+
+— before the file is staged and again before its original is stored (`internal/ingest`, `CheckQuota`),
+and the public upload-link page reads it once per visit. Archived photos count (their originals stay stored
+until a purge), so the two `project_id` indexes, both partial on `archived_at IS NULL`, cannot serve it,
+and the `(project_id, file_hash)` unique key holds no `file_size`.
+
+Measured 2026-10-13 on `kukatko_test` (Pi 5): a throwaway schema with `photos` cloned `LIKE … INCLUDING
+DEFAULTS`, **50 000 rows** across two projects (40 000 + 10 000, 5 % archived), the production
+`project_id` indexes recreated, `VACUUM ANALYZE`, then `EXPLAIN (ANALYZE, BUFFERS)`:
+
+| Project | Before | After `idx_photos_project_file_size` |
+| --- | --- | --- |
+| 40 000 photos | **Seq Scan**, 34.6 ms | Index Only Scan, Heap Fetches 0, 10.9 ms |
+| 10 000 photos | Bitmap Heap Scan via the unique key, 5.7 ms | Index Only Scan, Heap Fetches 0, 2.7 ms |
+
+The large project sequentially scanned the table — what production's single ~21k-photo project would do on
+every quota-checked upload. Migration `0111_photos_project_usage_index.sql` adds
+
+```sql
+CREATE INDEX idx_photos_project_file_size ON photos (project_id) INCLUDE (file_size);
+```
+
+which answers both the count and the sum from the index alone (~1.5 MB per 50k rows). Index-only needs the
+visibility map, which autovacuum keeps current; a freshly bulk-loaded table falls back to a bitmap heap scan
+over the same index until it is vacuumed (measured inside a transaction: 6.8 ms for the 10k project).
+
 ### Pagination
 
 Listing uses `LIMIT/OFFSET` (the established API contract:

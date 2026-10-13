@@ -321,6 +321,57 @@ describe('SettingsPage', () => {
     expect(within(usage).queryByRole('textbox')).not.toBeInTheDocument()
   })
 
+  it('draws a usage bar against the quota, filled to the percentage', async () => {
+    usageMock.mockResolvedValue({
+      photos: 10,
+      originals_bytes: 256 * 1024 * 1024,
+      max_file_bytes: null,
+      max_total_bytes: 1024 * 1024 * 1024,
+    })
+    renderPage()
+
+    const bar = await screen.findByTestId('settings-usage-bar')
+    expect(bar).toHaveTextContent('256.0 MB of 1.0 GB used (25 %)')
+    expect(within(bar).getByRole('progressbar', { name: 'Storage used' })).toHaveAttribute(
+      'aria-valuenow',
+      '25',
+    )
+    expect(bar).not.toHaveClass('kk-usage-bar--full')
+    expect(within(bar).queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('says the storage is full once the quota is reached, in Czech too', async () => {
+    await i18n.changeLanguage('cs')
+    usageMock.mockResolvedValue({
+      photos: 10,
+      originals_bytes: 2048,
+      max_file_bytes: null,
+      max_total_bytes: 2048,
+    })
+    renderPage()
+
+    const bar = await screen.findByTestId('settings-usage-bar')
+    expect(bar).toHaveClass('kk-usage-bar--full')
+    expect(bar).toHaveTextContent('Využito 2,0 KB z 2,0 KB (100 %)')
+    expect(within(bar).getByRole('status')).toHaveTextContent(/^Úložiště je plné/)
+  })
+
+  it('draws no usage bar for a project without a quota', async () => {
+    usageMock.mockResolvedValue({
+      photos: 10,
+      originals_bytes: 2048,
+      max_file_bytes: 1024,
+      max_total_bytes: null,
+    })
+    renderPage()
+
+    const usage = await screen.findByTestId('settings-usage')
+    await waitFor(() => {
+      expect(usage).toHaveTextContent('2.0 KB')
+    })
+    expect(screen.queryByTestId('settings-usage-bar')).not.toBeInTheDocument()
+  })
+
   it('keeps the form working when the usage cannot be read', async () => {
     usageMock.mockRejectedValue(new ApiError(500, 'boom'))
     renderPage()

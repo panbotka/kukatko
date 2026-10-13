@@ -21,7 +21,11 @@ export type UploadOutcome = 'created' | 'duplicate' | 'error'
  * `ingest.FileResult`. `status` carries HTTP-style per-file semantics (201
  * created, 409 duplicate, 413/415/500 error) so a single multi-file upload can
  * report mixed outcomes. `code` is the stable identifier of a refusal the UI can
- * translate (`not_media`, `unsupported_type`, `damaged`); `error` is the server's raw text.
+ * translate (`not_media`, `unsupported_type`, `damaged`, `file_too_large`,
+ * `quota_exceeded`); `error` is the server's raw text. A limit refusal carries
+ * the limit that refused it in `limit_bytes` and, for the quota on the signed-in
+ * upload, the project's stored bytes in `used_bytes` (the public upload link
+ * sends neither for the quota).
  */
 export interface UploadFileResult {
   filename: string
@@ -30,8 +34,19 @@ export interface UploadFileResult {
   photo_uid?: string
   code?: string
   error?: string
+  limit_bytes?: number
+  used_bytes?: number
   warnings?: UploadWarning[]
 }
+
+/** The refusal codes of the project limits, per file and for a whole request. */
+export const LIMIT_CODES: ReadonlySet<string> = new Set(['file_too_large', 'quota_exceeded'])
+
+/**
+ * The multipart field declaring the next file's size (`ingest.SizeField`), so
+ * the server can refuse a file over a limit before reading its bytes.
+ */
+export const SIZE_FIELD = 'size'
 
 /** Response body of `POST /api/v1/upload`: one result per uploaded file. */
 export interface UploadResponse {
@@ -62,9 +77,43 @@ export interface UploadFileOptions {
  */
 export type UploadFn = (file: File, options?: UploadFileOptions) => Promise<UploadFileResult>
 
-/** Standard backend error envelope (`internal/ingest/http.go`). */
+/**
+ * Standard backend error envelope (`internal/ingest/http.go`). A request-level
+ * 413 names the limit in `error` and may carry its numbers.
+ */
 interface ErrorBody {
   error?: string
+  limit_bytes?: number
+  used_bytes?: number
+}
+
+/**
+ * Turns a request-level 413 limit refusal (`{"error":"quota_exceeded",…}`,
+ * answered before the server read the body) into the same per-file error
+ * result a refusal inside the batch would be, so the queue marks the file with
+ * its reason instead of a bare failure. `undefined` for anything else.
+ */
+function limitRefusal(
+  status: number,
+  body: unknown,
+  filename: string,
+): UploadFileResult | undefined {
+  if (status !== 413 || body === null || typeof body !== 'object') {
+    return undefined
+  }
+  const { error, limit_bytes: limitBytes, used_bytes: usedBytes } = body as ErrorBody
+  if (typeof error !== 'string' || !LIMIT_CODES.has(error)) {
+    return undefined
+  }
+  return {
+    filename,
+    status,
+    outcome: 'error',
+    code: error,
+    error,
+    limit_bytes: typeof limitBytes === 'number' ? limitBytes : undefined,
+    used_bytes: typeof usedBytes === 'number' ? usedBytes : undefined,
+  }
 }
 
 /** Builds the DOMException used to signal an aborted upload (matches fetch). */
@@ -161,6 +210,9 @@ export function uploadFile(file: File, options: UploadFileOptions = {}): Promise
     for (const [name, value] of Object.entries(fields)) {
       form.append(name, value)
     }
+    // Right before the file it describes: the server reads the stream once, in
+    // order, and refuses an oversized file from this alone.
+    form.append(SIZE_FIELD, String(file.size))
     form.append('files', file, file.name)
 
     const xhr = new XMLHttpRequest()
@@ -196,6 +248,11 @@ export function uploadFile(file: File, options: UploadFileOptions = {}): Promise
       // hang forever. Settle it as an error instead.
       try {
         const body = parseBody(xhr)
+        const refusal = limitRefusal(xhr.status, body, file.name)
+        if (refusal !== undefined) {
+          resolve(refusal)
+          return
+        }
         if (xhr.status < 200 || xhr.status >= 300) {
           const message =
             errorMessage(body) ?? (xhr.statusText || `upload failed: ${String(xhr.status)}`)

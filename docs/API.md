@@ -567,8 +567,24 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   let an `unlimited` API token through; the bucket key is still the client IP for everyone else, and an
   unauthenticated flood now pays one indexed credential lookup before its 401) — `multipart/form-data`
   with one+ files, **streamed**. Returns `{"results":[{filename,status,outcome,photo_uid?,code?,error?,
-  warnings?}]}` (200 overall, per-file 409 duplicate semantics). Mounted by the second `server.WithAPI`
-  in `serve` (`buildIngest` in `cmd/kukatko/ingest.go`). Limit `upload.max_file_size_mb` (0 = no limit).
+  limit_bytes?,used_bytes?,warnings?}]}` (200 overall, per-file 409 duplicate semantics). Mounted by the
+  second `server.WithAPI` in `serve` (`buildIngest` in `cmd/kukatko/ingest.go`).
+  **Project limits (413).** A file over the *effective per-file cap* — the smallest non-zero of the project's
+  `max_file_bytes`, the instance's `upload.max_file_size_mb` and (on `/u/{code}/upload`) the link's
+  `upload_links.max_file_size_mb` — is refused per file with **413** `code:"file_too_large"`,
+  `limit_bytes:N`. A file that would take the project's originals past `max_total_bytes` is refused with
+  **413** `code:"quota_exceeded"`, `limit_bytes:N`, `used_bytes:M`. Either refusal stores nothing and the
+  other files of the request go on (a refused part's bytes are skipped by the multipart reader, never
+  staged). The cap is checked **before the file's body is read** when the file declares its size — a part's own `Content-Length` header, or a plain `size` field (bytes) sent **immediately
+  before** the file part, which the web client always sends — and again **while it streams**: the copy
+  stops one byte past the cap, never buffering to find out. The quota is checked before the body is read
+  (a declared size, or with none: is the quota already used up?) and again once the file is staged and known
+  not to be a duplicate, before its original is stored — a byte-identical copy stores nothing, so it still
+  answers 409 while the project has a byte left. **A project whose quota is used up answers the whole
+  request 413** `{"error":"quota_exceeded","limit_bytes":N,"used_bytes":M}` before reading the body
+  (every file in it would be refused, a duplicate included). `max_total_bytes` NULL = no quota. The usage
+  is read without a lock, so two uploads checked at the same moment may overshoot the quota by up to one
+  file each — accepted; nothing already stored is ever deleted.
   **The client is needed only until its bytes have arrived:** everything after the staging copy runs
   detached from the request (`context.WithoutCancel`, bounded at 30 min), so a browser that hangs up after
   its last byte still gets a photo with its thumbnails and its queued jobs. **A duplicate completes its
@@ -2243,7 +2259,8 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   deactivated is the unknown link's 404 — and every file is ingested **into that project** (the dedup looks
   for the same bytes there only; the original is stored under that project's storage prefix), filed into
   its albums and labels and audited under it.
-  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at, registration_enabled}` —
+  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at, registration_enabled,
+  storage_full}` — `storage_full` is whether the link's project has used up its quota (a yes/no, no sizes) —
   names only, no UIDs, counts, creator or photos; `registration_enabled` is the link's **own project's**
   registration switch (the one a registration through the link is judged by, and the same flag that
   project's public settings publish), so the page offers registering only where it can succeed; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
@@ -2256,7 +2273,13 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `{results:[…]}` exactly like `POST /upload`. Per file: an extension the pipeline does not ingest
   (`.avif` among them) or AVIF content under any name → 415 `code:"unsupported_type"`, content that is
   not a photo or a video (random bytes named `.jpg`) → 415 `code:"not_media"`, a truncated/corrupt
-  JPEG/PNG/GIF → 415 `code:"damaged"`, each with nothing stored, filed or audited, a file over `upload_links.max_file_size_mb` → 413, past `upload_links.max_uploads_per_link` →
+  JPEG/PNG/GIF → 415 `code:"damaged"`, each with nothing stored, filed or audited, a file over the
+  effective cap (`upload_links.max_file_size_mb` with the project's and the instance's, see *Project
+  limits* under `POST /upload`; a `size` field before the file declares it) → 413 `code:"file_too_large"`,
+  `limit_bytes`, a file the project's quota cannot take → 413 `code:"quota_exceeded"` **without**
+  `limit_bytes`/`used_bytes` (whoever holds a link learns the project is full, not how large it is) — and a
+  project already full answers the whole request **413** `{"error":"quota_exceeded"}` before reading the
+  body; past `upload_links.max_uploads_per_link` →
   429 `"this link accepts no more uploads"`. The cap is taken **per file, in the database, before the
   pipeline reads it**: one `UPDATE` bumps `upload_count` only while the link is not revoked, not expired and
   under the cap, so concurrent requests cannot overshoot it, and a link revoked or expired **while a request

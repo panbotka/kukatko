@@ -258,7 +258,7 @@ func TestStage_hashesAndSizes(t *testing.T) {
 	t.Parallel()
 	svc := New(Config{TempDir: t.TempDir()})
 	payload := "the quick brown fox"
-	staged, err := svc.stage(context.Background(), strings.NewReader(payload))
+	staged, err := svc.stage(context.Background(), strings.NewReader(payload), 0)
 	if err != nil {
 		t.Fatalf("stage: %v", err)
 	}
@@ -273,14 +273,72 @@ func TestStage_hashesAndSizes(t *testing.T) {
 	}
 }
 
-// TestStage_rejectsOversize verifies a file over the cap is rejected with
-// ErrFileTooLarge and leaves no temp file behind.
+// TestStage_rejectsOversize verifies a file over the cap is rejected with a
+// LimitError carrying the cap (and ErrFileTooLarge) and leaves no temp file
+// behind.
 func TestStage_rejectsOversize(t *testing.T) {
 	t.Parallel()
-	svc := New(Config{TempDir: t.TempDir(), MaxFileSize: 4})
-	_, err := svc.stage(context.Background(), strings.NewReader("too many bytes"))
+	dir := t.TempDir()
+	svc := New(Config{TempDir: dir})
+	_, err := svc.stage(context.Background(), strings.NewReader("too many bytes"), 4)
 	if !errors.Is(err, ErrFileTooLarge) {
 		t.Fatalf("stage err = %v, want ErrFileTooLarge", err)
+	}
+	var limitErr *LimitError
+	if !errors.As(err, &limitErr) || limitErr.Code != CodeFileTooLarge || limitErr.LimitBytes != 4 {
+		t.Errorf("stage err = %#v, want a file_too_large LimitError of 4 bytes", err)
+	}
+	assertEmptyDir(t, dir)
+}
+
+// TestStage_exactlyAtCap verifies a file of exactly the cap is accepted.
+func TestStage_exactlyAtCap(t *testing.T) {
+	t.Parallel()
+	svc := New(Config{TempDir: t.TempDir()})
+	staged, err := svc.stage(context.Background(), strings.NewReader("1234"), 4)
+	if err != nil {
+		t.Fatalf("stage of a file at the cap: %v", err)
+	}
+	staged.cleanup()
+}
+
+// endlessReader yields zero bytes forever and counts how many it handed out.
+type endlessReader struct{ read int64 }
+
+// Read fills p and records its length.
+func (e *endlessReader) Read(p []byte) (int, error) {
+	clear(p)
+	e.read += int64(len(p))
+	return len(p), nil
+}
+
+// TestStage_abortsStreamAtCap verifies the copy stops one byte past the cap
+// rather than reading the rest of an oversized (here: endless) upload to find
+// out how large it is.
+func TestStage_abortsStreamAtCap(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	svc := New(Config{TempDir: dir})
+	src := &endlessReader{}
+	_, err := svc.stage(context.Background(), src, 1000)
+	if !errors.Is(err, ErrFileTooLarge) {
+		t.Fatalf("stage err = %v, want ErrFileTooLarge", err)
+	}
+	if src.read > 1001 {
+		t.Errorf("read %d bytes of an oversized upload, want at most the cap + 1", src.read)
+	}
+	assertEmptyDir(t, dir)
+}
+
+// assertEmptyDir fails the test when dir holds anything (a leaked temp file).
+func assertEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("%s holds %d entries, want the partial upload removed", dir, len(entries))
 	}
 }
 
@@ -290,7 +348,7 @@ func TestStage_cancelledContext(t *testing.T) {
 	svc := New(Config{TempDir: t.TempDir()})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := svc.stage(ctx, strings.NewReader("data")); err == nil {
+	if _, err := svc.stage(ctx, strings.NewReader("data"), 0); err == nil {
 		t.Fatal("stage with cancelled context = nil error, want cancellation")
 	}
 }

@@ -93,10 +93,10 @@ function WarningLine({ warning }: { warning: UploadWarning }) {
  * a large batch stand out even without the errors-only filter.
  */
 export function UploadItem({ item, onRemove, onRetry }: UploadItemProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const percent = Math.round(item.progress * 100)
   const errored = item.status === 'error'
-  const errorText = errored ? uploadErrorMessage(item, t) : undefined
+  const errorText = errored ? uploadErrorMessage(item, t, i18n.language) : undefined
 
   return (
     <div

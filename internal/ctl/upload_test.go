@@ -230,3 +230,29 @@ func TestWriteUploadReport_empty(t *testing.T) {
 		t.Errorf("output = %q, want the empty line", got)
 	}
 }
+
+// TestFilePartHeader verifies a file part declares its size, so the server can
+// refuse a file over a project limit before reading it, and escapes its name
+// the way CreateFormFile does.
+func TestFilePartHeader(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "a.jpg")
+	if err := os.WriteFile(path, []byte("12345"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+
+	header := filePartHeader(`we"ird.jpg`, source)
+	if got := header.Get("Content-Length"); got != "5" {
+		t.Errorf("Content-Length = %q, want 5", got)
+	}
+	want := `form-data; name="files"; filename="we\"ird.jpg"`
+	if got := header.Get("Content-Disposition"); got != want {
+		t.Errorf("Content-Disposition = %s, want %s", got, want)
+	}
+}

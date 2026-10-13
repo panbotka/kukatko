@@ -38,6 +38,11 @@ export interface UploadQueueItem {
    * (for example `not_media`); see `lib/uploadErrors` for what the UI makes of it.
    */
   errorCode?: string
+  /**
+   * The limit that refused the file, in bytes, when `errorCode` is a limit
+   * refusal (`file_too_large`, `quota_exceeded`) and the server named it.
+   */
+  errorLimitBytes?: number
   /** Non-fatal backend warnings (for example a near-duplicate match). */
   warnings?: UploadWarning[]
   /**
@@ -229,6 +234,7 @@ export function useUploadQueue(
         progress: 0,
         error: undefined,
         errorCode: undefined,
+        errorLimitBytes: undefined,
         interrupted: undefined,
       })
 
@@ -247,6 +253,7 @@ export function useUploadQueue(
             warnings: result.warnings,
             error: result.outcome === 'error' ? (result.error ?? '') : undefined,
             errorCode: result.outcome === 'error' ? result.code : undefined,
+            errorLimitBytes: result.outcome === 'error' ? result.limit_bytes : undefined,
           })
         })
         .catch((error: unknown) => {

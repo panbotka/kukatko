@@ -217,11 +217,22 @@ func (f *fakeIngest) IngestFile(
 		f.hangUp()
 	}
 	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, ingest.ErrFileTooLarge) {
-			status = http.StatusRequestEntityTooLarge
+		return ingest.FileResult{
+			Filename: req.Filename, Status: http.StatusInternalServerError, Outcome: ingest.OutcomeError, Error: err.Error(),
 		}
-		return ingest.FileResult{Filename: req.Filename, Status: status, Outcome: ingest.OutcomeError, Error: err.Error()}
+	}
+	if req.MaxFileSize > 0 && int64(len(body)) > req.MaxFileSize {
+		return ingest.FileResult{
+			Filename: req.Filename, Status: http.StatusRequestEntityTooLarge, Outcome: ingest.OutcomeError,
+			Code: ingest.CodeFileTooLarge, LimitBytes: req.MaxFileSize, Error: ingest.ErrFileTooLarge.Error(),
+		}
+	}
+	if string(body) == "quota" {
+		used := int64(990)
+		return ingest.FileResult{
+			Filename: req.Filename, Status: http.StatusRequestEntityTooLarge, Outcome: ingest.OutcomeError,
+			Code: ingest.CodeQuotaExceeded, LimitBytes: 1000, UsedBytes: &used, Error: "990 of 1000 bytes stored",
+		}
 	}
 	if string(body) == "dup" {
 		return ingest.FileResult{Filename: req.Filename, Status: 409, Outcome: ingest.OutcomeDuplicate, PhotoUID: "ph_dup"}
@@ -486,7 +497,7 @@ func TestPublic(t *testing.T) {
 	body := decode(t, rec)
 	for key := range body {
 		switch key {
-		case "title", "note", "albums", "labels", "expires_at", "registration_enabled":
+		case "title", "note", "albums", "labels", "expires_at", "registration_enabled", "storage_full":
 		default:
 			t.Errorf("public description leaks %q", key)
 		}

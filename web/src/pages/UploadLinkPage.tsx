@@ -210,6 +210,11 @@ export function UploadLinkPage() {
   const linkDied = items.some(
     (item) => item.status === 'error' && item.error?.includes('no longer'),
   )
+  // The project ran out of storage — before the page opened, or during the
+  // batch: one plain sentence, no sizes, in place of per-file failures.
+  const storageFull =
+    (load.status === 'ready' && load.link.storage_full) ||
+    items.some((item) => item.status === 'error' && item.errorCode === 'quota_exceeded')
   // A file refused for what it is (not a photo at all) fails the same way
   // again: retry is offered only while some failure might go differently.
   const retryable = items.some(canRetryUpload)
@@ -360,18 +365,24 @@ export function UploadLinkPage() {
                     </Form.Group>
                   )}
 
-                  <div className="d-grid">
-                    <PickFilesButton
-                      onFiles={addFiles}
-                      label={t('uploadLink.choose')}
-                      inputLabel={t('upload.pick.ariaInput')}
-                      className="kk-upload-link__primary"
-                    />
-                  </div>
-                  {/* A phone has nothing to drag: the drop zone is a desktop extra. */}
-                  <div className="d-none d-md-block mt-3">
-                    <DropZone onFiles={addFiles} />
-                  </div>
+                  {storageFull ? (
+                    <StorageFullNotice />
+                  ) : (
+                    <>
+                      <div className="d-grid">
+                        <PickFilesButton
+                          onFiles={addFiles}
+                          label={t('uploadLink.choose')}
+                          inputLabel={t('upload.pick.ariaInput')}
+                          className="kk-upload-link__primary"
+                        />
+                      </div>
+                      {/* A phone has nothing to drag: the drop zone is a desktop extra. */}
+                      <div className="d-none d-md-block mt-3">
+                        <DropZone onFiles={addFiles} />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
@@ -433,6 +444,7 @@ export function UploadLinkPage() {
                       {t('uploadLink.diedMidway')}
                     </Alert>
                   )}
+                  {storageFull && <StorageFullNotice />}
                   <div className="d-grid gap-2">
                     {/* Outside the alert: a button on the filled warning
                       background has no contrast on this theme. */}
@@ -566,6 +578,21 @@ function BatchProgress({ fraction, done, total, seconds, processing }: BatchProg
         </span>
       </div>
     </div>
+  )
+}
+
+/**
+ * The notice of a link whose project has no storage left. It names no sizes:
+ * whoever holds the link learns that nothing can be uploaded, not how large the
+ * library is (the server sends no numbers to this page either).
+ */
+function StorageFullNotice() {
+  const { t } = useTranslation()
+  return (
+    <Alert variant="warning" role="alert" data-testid="upload-link-storage-full">
+      <Icon name="exclamation-triangle" className="me-2" />
+      {t('uploadLink.storageFull')}
+    </Alert>
   )
 }
 

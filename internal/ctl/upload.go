@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -193,13 +194,16 @@ func writeUploadBody(form *multipart.Writer, files []uploadFile) error {
 	return nil
 }
 
-// writeUploadPart copies one file into its own multipart part.
+// writeUploadPart copies one file into its own multipart part. The part
+// declares the file's size in a Content-Length header, so the server refuses a
+// file over the project's (or the instance's) size cap — or one its quota has
+// no room for — before reading its bytes, rather than after streaming them.
 func writeUploadPart(form *multipart.Writer, file uploadFile) error {
 	source, err := os.Open(file.path)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", file.path, err)
 	}
-	part, err := form.CreateFormFile(uploadField, file.name)
+	part, err := form.CreatePart(filePartHeader(file.name, source))
 	if err != nil {
 		_ = source.Close()
 		return fmt.Errorf("starting the upload of %s: %w", file.path, err)
@@ -210,6 +214,24 @@ func writeUploadPart(form *multipart.Writer, file uploadFile) error {
 		return fmt.Errorf("streaming %s: %w", file.path, joined)
 	}
 	return nil
+}
+
+// formQuoteEscaper escapes a name for a quoted Content-Disposition parameter,
+// exactly as mime/multipart's CreateFormFile does.
+var formQuoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
+
+// filePartHeader is CreateFormFile's header for a file named name, plus the
+// size of source as the part's Content-Length when it can be read (none
+// otherwise: the server then enforces its caps while the bytes stream).
+func filePartHeader(name string, source *os.File) textproto.MIMEHeader {
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", `form-data; name="`+formQuoteEscaper.Replace(uploadField)+
+		`"; filename="`+formQuoteEscaper.Replace(name)+`"`)
+	header.Set("Content-Type", "application/octet-stream")
+	if info, err := source.Stat(); err == nil {
+		header.Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	}
+	return header
 }
 
 // DecodeUploadReport decodes the {"results":[…]} answer of POST /upload.

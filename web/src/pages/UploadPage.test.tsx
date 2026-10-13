@@ -6,6 +6,7 @@ import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
+import { ToastContext, type ToastOptions } from '../components/toast/ToastContext'
 import { type UploadQueueItem } from '../hooks/useUploadQueue'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
@@ -870,5 +871,87 @@ describe('UploadPage — creating an album inline', () => {
     expect(screen.getByRole('button', { name: 'Remove Pouť 2026' })).toBeInTheDocument()
     // Nothing is created on the server until the batch is assigned.
     expect(createAlbumMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('UploadPage — project limits', () => {
+  /** Renders the page with a toast recorder in place of the app's provider. */
+  function renderWithToasts(): ToastOptions[] {
+    const toasts: ToastOptions[] = []
+    render(
+      <I18nextProvider i18n={i18n}>
+        <ToastContext.Provider
+          value={{
+            show: (options) => {
+              toasts.push(options)
+            },
+          }}
+        >
+          <AuthContext.Provider value={auth()}>
+            <MemoryRouter initialEntries={['/upload']}>
+              <Routes>
+                <Route path="/upload" element={<UploadPage />} />
+              </Routes>
+            </MemoryRouter>
+          </AuthContext.Provider>
+        </ToastContext.Provider>
+      </I18nextProvider>,
+    )
+    return toasts
+  }
+
+  function tooLarge(name: string): UploadFileResult {
+    return {
+      filename: name,
+      status: 413,
+      outcome: 'error',
+      code: 'file_too_large',
+      error: 'ingest: file exceeds maximum upload size of 5242880 bytes',
+      limit_bytes: 5242880,
+    }
+  }
+
+  function quotaFull(name: string): UploadFileResult {
+    return {
+      filename: name,
+      status: 413,
+      outcome: 'error',
+      code: 'quota_exceeded',
+      error: 'quota_exceeded',
+      limit_bytes: 1000,
+      used_bytes: 1000,
+    }
+  }
+
+  it('marks a file over the cap with the cap in Czech, and toasts it once', async () => {
+    await i18n.changeLanguage('cs')
+    uploadMock.mockResolvedValueOnce(tooLarge('a.mp4')).mockResolvedValueOnce(tooLarge('b.mp4'))
+    const user = userEvent.setup()
+    const toasts = renderWithToasts()
+
+    await pickFiles(user, [video('a.mp4'), video('b.mp4')], 'Vyberte fotky nebo videa k nahrání')
+
+    expect(await screen.findAllByText('Soubor je větší než povolených 5,0 MB')).toHaveLength(2)
+    expect(screen.queryByText(/ingest: file exceeds/)).not.toBeInTheDocument()
+    expect(toasts).toEqual([
+      {
+        message: 'Některé soubory jsou větší, než projekt povoluje, a nenahrály se.',
+        variant: 'danger',
+      },
+    ])
+  })
+
+  it('marks files refused for a full project and offers no retry for them', async () => {
+    uploadMock.mockResolvedValueOnce(created('ph1')).mockResolvedValueOnce(quotaFull('b.jpg'))
+    const user = userEvent.setup()
+    const toasts = renderWithToasts()
+
+    await pickFiles(user, [file('a.jpg'), file('b.jpg')])
+
+    expect(await screen.findByText('The project has reached its storage limit')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(toasts.map((toast) => toast.message)).toEqual([
+      'The project has reached its storage limit; no more files will be uploaded.',
+    ])
   })
 })

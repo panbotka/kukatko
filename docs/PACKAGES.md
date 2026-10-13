@@ -1237,12 +1237,12 @@ to `## Package map` in `CLAUDE.md`.
   copy (the same hash, without an 800 MB oriented copy of a 200 MP decode; what `internal/ingest` does).
   `internal/thumbjob` gets display orientation for free by reading a preview. Sub-images (non-origin bounds) encode from their own pixels), `internal/ingest/`
   (the upload/ingest pipeline: `Service` = `New(Config{Storage,Photos,Thumbnailer,Enqueuer,Sidecar,OCR,
-  Places,Duplicate,MaxFileSize,MaxPixels,DecodeBudget,TempDir,Logger?})` (`Logger` defaults to `slog.Default()`) (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
+  Places,Duplicate,MaxFileSize,Usage,MaxPixels,DecodeBudget,TempDir,Logger?})` (`Logger` defaults to `slog.Default()`) (`MaxPixels` = the same decompression-bomb cap as `thumb.max_pixels`,
   and `DecodeBudget` the process's one `imgconvert.DecodeBudget`, both applied through
   `imgconvert.ReserveDecode` to the pre-store decode (`verifyPixels`, whose reservation rides in `stagedPixels`
   and is released by `done()` right after the hashes — before the thumbnailer decodes again) and to the pHash
   decode; a rejected source becomes a `phash_failed` warning, the photo is still catalogued; the blurhash is
-  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,proj,src,Request{Filename,UploadedBy,Sidecar})`** (the full form; `proj` is the
+  encoded with `blurhash.EncodeOriented`, which orients the 64-px working copy instead of the full bitmap) with **`IngestFile(ctx,proj,src,Request{Filename,UploadedBy,Sidecar,DeclaredSize,MaxFileSize})`** (the full form; `proj` is the
   **`*project.Project`** the caller resolved — the request's project on `POST /upload`
   (`auth.ProjectFromContext`), the link's on the public upload-link route, the `--project` target of
   `import dir`, the project whose prefix an orphan key is under for the maintenance re-import
@@ -1255,7 +1255,23 @@ to `## Package map` in `CLAUDE.md`.
   (`TestIngest_dedupAndKeysArePerProject`). A nil project is refused before a byte is read (`ErrNoProject`,
   a 500 result — a wiring bug, there is no default project);
   `Ingest(ctx,proj,src,filename,uploadedBy)` = a thin wrapper for an upload without a sidecar) `→ FileResult`
-  — streams to a temp +
+  — **project limits** (`limits.go`): the effective per-file cap (`fileCap`) is the smallest non-zero of
+  `proj.MaxFileBytes`, `Config.MaxFileSize` (`upload.max_file_size_mb`) and `Request.MaxFileSize` (an upload
+  link's `upload_links.max_file_size_mb`); **`preflight`** refuses a `Request.DeclaredSize` over it — and one
+  over the quota's remainder, or (no declared size) any file into a project whose quota is used up —
+  before a byte is read; **`stage`** stops the copy one byte past the cap; **`CheckQuota(ctx,proj,incoming)`**
+  (exported — the HTTP handlers ask it with `incoming = 0` before reading a request's body, via
+  `QuotaRefusal(ctx,QuotaChecker,proj)`) reads `Config.Usage` (`project.Store.Usage`, served by the
+  `idx_photos_project_file_size` index-only scan, see `docs/PERF.md`) and refuses when stored + incoming >
+  `proj.MaxTotalBytes`; it runs again after the exact-dup check (a duplicate stores nothing) and before the
+  decode, so before the original is stored. A refusal is a **`*LimitError{Code,LimitBytes,UsedBytes}`**
+  (unwraps to `ErrFileTooLarge`/`ErrQuotaExceeded`, marshals as the request-level 413 body) and becomes a
+  per-file **413** with `Code` `CodeFileTooLarge`/`CodeQuotaExceeded` and `FileResult.LimitBytes`/`UsedBytes`.
+  No lock: concurrent uploads may overshoot the quota by a file each (accepted). A nil `Usage` enforces no
+  quota — only the maintenance orphan rescue, which re-catalogues bytes already stored. A multipart caller
+  learns the declared size with **`PartSize(part, declared)`** (the part's `Content-Length`, else the
+  preceding **`SizeField`** (`"size"`) read by `ReadSizeField`); `import dir` declares the size on disk.
+  Then it streams to a temp +
   SHA256, **`admit`** (`sniff.go`: is the content media at all? The leading 512 bytes are matched against
   every signature the pipeline ingests — `imgconvert.MagicFormat`'s rasters/HEIC/TIFF, the non-TIFF RAW
   headers (ORF/RW2/RAF/X3F/MRW), ISO-BMFF/QuickTime boxes (MP4/MOV/3GP/CR3/AVIF), EBML, AVI, ASF, FLV,
@@ -1356,7 +1372,9 @@ to `## Package map` in `CLAUDE.md`.
   (**import of a directory from disk** — `kukatko import dir --project <slug> <path>`; `Service` = `New(Config{Ingest,Runs,
   Photos,Filler,Curation,Albums,Labels,Project,Concurrency,Logger})` — `Project` (`*project.Project`) is **the one
   project of the whole run** (required: `Import` without one is `ErrNoProject` and touches nothing): every file goes
-  to `ingest.IngestFile` with that project (catalogued there, original under its prefix), the dry
+  to `ingest.IngestFile` with that project (catalogued there, original under its prefix, its size on disk passed
+  as `DeclaredSize` so a file over the project's/instance's cap or its quota is refused — a failed file of the
+  run — before it is read), the dry
   run and the duplicate report look up `GetByFileHashInProject`/`GetByUIDInProject` (the same bytes in another
   project are new here), the run is `RunStore.Start(ctx, projectUID, SourceFolder)`, and `--album`, `--labels` and
   the export's favourites/ratings resolve there; the CLI resolves `--project` by slug and refuses a deactivated
@@ -4115,7 +4133,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `last_used_at` `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
   (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Sidecar, Registration?, RequireCurator, OptionalAuth,
-  CurrentUser?, CurrentRole?, CurrentProject?, IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink,
+  CurrentUser?, CurrentRole?, CurrentProject?, IPLimit, LinkLimit, MaxFileSize, Quota?, MaxUploadsPerLink,
   DefaultDays, MaxDays, SecureCookies, Now?})` mounts
   `/upload-links` **per project** (`RegisterManagementRoutes`, under `/p/{project}`: every route works in
   the request's project, another project's link is the 404 a missing one gets; curator management incl.
@@ -4123,7 +4141,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   is an admin of the project, and the listing's `code`/`path` are set only by
   `view(user, link)` for a link `canManage` allows) and the public, **instance-level**
   `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`; the page's `GET` also reports
-  `registration_enabled`, the link's own project's switch read through `Registration` — a
+  `registration_enabled`, the link's own project's switch read through `Registration`, and `storage_full`,
+  `ingest.QuotaRefusal` over `Quota` (an `ingest.QuotaChecker`, the shared `*ingest.Service`; nil = never
+  full) — the upload asks the same before reading the body and answers a full project 413
+  `{"error":"quota_exceeded"}` with no sizes; `Registration` is a
   `RegistrationSettings`, `*settings.Store`; nil or a failed read = closed): `liveLink` resolves the link by code,
   then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
   link's 404) into a `liveTarget{Link, project}`, and every file is handed to `IngestFile` with
@@ -4131,7 +4152,10 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   field must precede the files), refuses an extension `imgconvert.IsSupportedFormat` does not know (415,
   `Code: "unsupported_type"`; content that is not media is the pipeline's own 415 `not_media`),
   caps a request at `maxFilesPerRequest` = 50 file parts (refused ones count; the 51st is a 413 and ends
-  the walk), caps the size with a `cappedReader` that fails with `ingest.ErrFileTooLarge` (413), takes the
+  the walk), hands the link's cap to the pipeline as `Request.MaxFileSize` with the file's declared size
+  (`ingest.PartSize`: its `Content-Length`, else a preceding `size` field) — the pipeline combines it with
+  the project's and the instance's caps (413 `file_too_large`) — strips `limit_bytes`/`used_bytes` off a
+  per-file `quota_exceeded` (`withoutUsage`: the link's holder learns no sizes), takes the
   file's slot with `Store.ReserveUpload` **before** the pipeline reads it (`ErrFull` → 429, a link revoked/
   expired/deleted since the request began → per-file 410 with the dead link's text, SEC-019), runs
   `ingest.Service.IngestFile`, then `Store.RecordUpload` for every photo — new or duplicate — and

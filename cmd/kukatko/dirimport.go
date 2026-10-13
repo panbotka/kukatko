@@ -430,6 +430,7 @@ func buildDirImportService(
 		Pending:      buildProcessingService(cfg, db, jobs.NewStore(pool), enqueuer),
 		Duplicate:    cfg.Duplicate,
 		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
+		Usage:        project.NewStore(pool),
 		MaxPixels:    cfg.Thumb.MaxPixels,
 		DecodeBudget: processDecodeBudget(cfg),
 	})

@@ -14,6 +14,7 @@ import { useBatchMembership } from '../hooks/useBatchMembership'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { usePasteFiles } from '../hooks/usePasteFiles'
+import { useUploadLimitToasts } from '../hooks/useUploadLimitToasts'
 import { useUploadOrganize } from '../hooks/useUploadOrganize'
 import { useUploadQueue } from '../hooks/useUploadQueue'
 import { SHARE_PARAM } from '../pwa/shareContract'
@@ -73,6 +74,9 @@ export function UploadPage() {
     retryFailed,
     clear,
   } = useUploadQueue()
+  // A file over the size cap, or a project out of storage, is marked in the list
+  // with its reason; a toast says it to someone not looking at the list.
+  useUploadLimitToasts(items)
   const {
     load: organizeLoad,
     albums,

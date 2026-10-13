@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,8 +70,11 @@ type uploadResponse struct {
 // files in memory — and ingests each file, returning a per-file result list.
 // The overall response is 200 whenever the request was a well-formed multipart
 // body carrying at least one file; individual created/duplicate/error outcomes
-// (including 409 duplicate semantics) live in each result's Status field. A
-// request that is not multipart, or carries no file parts, is a 400.
+// (including 409 duplicate semantics and the 413 limit refusals) live in each
+// result's Status field. A request that is not multipart, or carries no file
+// parts, is a 400. A project whose quota is already used up is answered 413
+// {"error":"quota_exceeded",…} before a byte of the body is read: every file in
+// it would be refused.
 func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	reader, err := r.MultipartReader()
 	if err != nil {
@@ -82,6 +86,10 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// let the caller into — under that project's storage prefix. A request with
 	// none (a wiring bug) has every file refused by the pipeline (ErrNoProject).
 	proj, _ := auth.ProjectFromContext(r.Context())
+	if refusal, full := QuotaRefusal(r.Context(), a.svc, proj); full {
+		writeJSON(w, http.StatusRequestEntityTooLarge, refusal)
+		return
+	}
 	uploadedBy := uploaderUID(r)
 	results, err := a.ingestParts(r, reader, proj, uploadedBy)
 	if err != nil {
@@ -96,13 +104,16 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // ingestParts walks the multipart stream, ingesting every part that carries a
-// filename into the project proj and skipping plain form fields. It returns the
-// per-file results in order, or an error if the multipart stream itself is
-// malformed.
+// filename into the project proj and skipping plain form fields — except a
+// SizeField, which declares the size of the file part right after it. It
+// returns the per-file results in order, or an error if the multipart stream
+// itself is malformed. A file refused for a limit is skipped (its remaining
+// bytes discarded, never stored) and the files after it still run.
 func (a *API) ingestParts(
 	r *http.Request, reader *multipart.Reader, proj *project.Project, uploadedBy string,
 ) ([]FileResult, error) {
 	var results []FileResult
+	var declared int64
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -112,12 +123,38 @@ func (a *API) ingestParts(
 			return nil, fmt.Errorf("ingest: reading multipart part: %w", err)
 		}
 		if part.FileName() == "" {
+			if part.FormName() == SizeField {
+				declared = ReadSizeField(part)
+			}
 			_ = part.Close()
 			continue
 		}
-		results = append(results, a.svc.Ingest(r.Context(), proj, part, part.FileName(), uploadedBy))
+		results = append(results, a.svc.IngestFile(r.Context(), proj, part, Request{
+			Filename: part.FileName(), UploadedBy: uploadedBy, DeclaredSize: PartSize(part, declared),
+		}))
+		declared = 0
 		_ = part.Close()
 	}
+}
+
+// QuotaChecker answers whether a project can take more originals. It is
+// satisfied by *Service.
+type QuotaChecker interface {
+	// CheckQuota returns a *LimitError when proj cannot take incoming more bytes
+	// (0 or less: a file of unknown size); see Service.CheckQuota.
+	CheckQuota(ctx context.Context, proj *project.Project, incoming int64) error
+}
+
+// QuotaRefusal answers whether proj's quota is already used up, so that a
+// request's body need not be read: when it is, it returns the 413 body to send
+// and true. A failed usage read is not a refusal here — each file is checked
+// again, and refused on that error, by the pipeline.
+func QuotaRefusal(ctx context.Context, quota QuotaChecker, proj *project.Project) (*LimitError, bool) {
+	var limitErr *LimitError
+	if err := quota.CheckQuota(ctx, proj, 0); errors.As(err, &limitErr) {
+		return limitErr, true
+	}
+	return nil, false
 }
 
 // uploaderUID returns the authenticated user's UID for attribution, or the

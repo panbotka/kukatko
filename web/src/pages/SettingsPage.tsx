@@ -57,10 +57,64 @@ type UsageState =
   | { status: 'error' }
   | { status: 'ready'; usage: ProjectUsage }
 
+/** Props of {@link UsageBar}. */
+interface UsageBarProps {
+  /** The summed size of the project's originals, in bytes. */
+  used: number
+  /** The project's quota (`max_total_bytes`), in bytes. */
+  limit: number
+}
+
+/**
+ * How full the project's storage is: a bar of the originals against the quota,
+ * the two sizes and the percentage spelled out beside it, and a sentence once
+ * the quota is reached — from then on every upload is refused. Colours come
+ * from the palette (`.kk-usage-bar` in `styles/app.css`): the accent while
+ * there is room, danger when full.
+ */
+function UsageBar({ used, limit }: UsageBarProps) {
+  const { t, i18n } = useTranslation()
+  const full = used >= limit
+  const percent = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 100
+  return (
+    <div
+      className={`kk-usage-bar mb-3${full ? ' kk-usage-bar--full' : ''}`}
+      data-testid="settings-usage-bar"
+    >
+      {/* Bootstrap's own markup rather than react-bootstrap's ProgressBar, which
+          puts aria-label on the track and leaves the progressbar unnamed. */}
+      <div className="progress">
+        <div
+          className="progress-bar"
+          role="progressbar"
+          aria-label={t('settings.usage.barLabel')}
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          style={{ width: `${String(percent)}%` }}
+        />
+      </div>
+      <p className="small mt-1 mb-0">
+        {t('settings.usage.barText', {
+          used: formatBytes(used, i18n.language),
+          limit: formatBytes(limit, i18n.language),
+          percent,
+        })}
+      </p>
+      {full && (
+        <p className="small fw-semibold mt-1 mb-0" role="status">
+          {t('settings.usage.full')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /**
  * The read-only "usage and limits" block: what the project occupies — its
  * photos and the size of their originals — next to the two limits the system
- * administrator set on it, each "unlimited" when there is none. The project's
+ * administrator set on it, each "unlimited" when there is none, and — when a
+ * quota is set — a {@link UsageBar} of how much of it is used. The project's
  * admin cannot change a limit (that is the system administrator's projects
  * page), and the block says so. It loads on its own, so a failure here never
  * keeps the settings form from working.
@@ -102,6 +156,9 @@ function UsageCard() {
         )}
         {state.status === 'ready' && (
           <>
+            {state.usage.max_total_bytes !== null && (
+              <UsageBar used={state.usage.originals_bytes} limit={state.usage.max_total_bytes} />
+            )}
             <dl className="row mb-2">
               <dt className="col-sm-6">{t('settings.usage.photos')}</dt>
               <dd className="col-sm-6">{formatCount(state.usage.photos, i18n.language)}</dd>

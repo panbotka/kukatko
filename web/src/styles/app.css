@@ -3859,6 +3859,18 @@ body {
   }
 }
 
+/* ---- Project settings: storage usage bar ----------------------------------
+   The project's originals against its quota on /p/:slug/settings. The fill is
+   the accent while there is room and turns danger once the quota is reached —
+   the moment every upload starts being refused. */
+.kk-usage-bar .progress-bar {
+  background-color: var(--kk-palette-accent);
+}
+
+.kk-usage-bar--full .progress-bar {
+  background-color: var(--kk-semantic-danger);
+}
+
 /* ---- Public upload-link page ---------------------------------------------
    `/u/:code` is opened on a phone by people who have never seen the app, so
    every control on it is a thumb-sized target (48 px at least) and the one

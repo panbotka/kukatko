@@ -3038,7 +3038,14 @@
       "not_media": "Tohle není fotka ani video",
       "unsupported_type": "Tento typ souboru se nenahrává",
       "damaged": "Soubor je poškozený nebo neúplný",
-      "interrupted": "Spojení se přerušilo"
+      "interrupted": "Spojení se přerušilo",
+      "file_too_large": "Soubor je větší než povolených {{limit}}",
+      "file_too_large_unknown": "Soubor je větší, než projekt povoluje",
+      "quota_exceeded": "Projekt dosáhl limitu úložiště"
+    },
+    "toast": {
+      "fileTooLarge": "Některé soubory jsou větší, než projekt povoluje, a nenahrály se.",
+      "quotaExceeded": "Projekt dosáhl limitu úložiště, další soubory se nenahrají."
     },
     "progress": {
       "barLabel": "Celkový průběh nahrávání",
@@ -3959,7 +3966,10 @@
       "maxTotal": "Celkový limit originálů",
       "unlimited": "neomezeno",
       "note": "Limity nastavuje správce systému.",
-      "loadFailed": "Využití se nepodařilo načíst."
+      "loadFailed": "Využití se nepodařilo načíst.",
+      "barLabel": "Zaplnění úložiště",
+      "barText": "Využito {{used}} z {{limit}} ({{percent}} %)",
+      "full": "Úložiště je plné — další fotky se nenahrají, dokud se neuvolní místo nebo se limit nezvýší."
     },
     "leave": {
       "title": "Odejít bez uložení?",
@@ -4480,6 +4490,7 @@
       "error_other": "{{count}} chyb"
     },
     "diedMidway": "Odkaz mezitím přestal platit, další soubory už nepřijme.",
+    "storageFull": "Tento projekt má plné úložiště, nahrávání není možné.",
     "registerTitle": "Chcete vidět všechny fotky?",
     "registerBody": "Zaregistrujte se. Přes tenhle odkaz nepotřebujete registrační slovo a fotky, které jste právě nahráli, budou vedené pod vaším účtem. Účet ještě schválí správce.",
     "registerAction": "Zaregistrovat se",

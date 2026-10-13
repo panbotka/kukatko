@@ -161,14 +161,16 @@ func buildMaintenanceService(
 	thumbnailer := thumb.New(store, cfg.Storage.CachePath, thumbOptions(cfg, reg, db)...)
 	photoStore := photos.NewStore(db.Pool())
 	ingestSvc := ingest.New(ingest.Config{
-		Storage:      store,
-		Photos:       photoStore,
-		Thumbnailer:  thumbnailer,
-		Enqueuer:     enqueuer,
-		OCR:          ocrEnqueuerOrNil(cfg, enqueuer),
-		Places:       placesEnqueuerOrNil(cfg, enqueuer),
-		Duplicate:    cfg.Duplicate,
-		MaxFileSize:  cfg.Upload.MaxFileSizeBytes(),
+		Storage:     store,
+		Photos:      photoStore,
+		Thumbnailer: thumbnailer,
+		Enqueuer:    enqueuer,
+		OCR:         ocrEnqueuerOrNil(cfg, enqueuer),
+		Places:      placesEnqueuerOrNil(cfg, enqueuer),
+		Duplicate:   cfg.Duplicate,
+		MaxFileSize: cfg.Upload.MaxFileSizeBytes(),
+		// No Usage: the orphan rescue catalogues bytes that are already stored,
+		// so a project's quota must not keep them out of the catalogue.
 		MaxPixels:    cfg.Thumb.MaxPixels,
 		DecodeBudget: processDecodeBudget(cfg),
 	})

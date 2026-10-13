@@ -1048,7 +1048,10 @@ here.
   (`upload.error.not_media` "Tohle není fotka ani video", `upload.error.unsupported_type`,
   `upload.error.damaged` "Soubor je poškozený nebo neúplný"; an interrupted request — `item.interrupted`,
   see `useUploadQueue` — reads `upload.error.interrupted` "Spojení se přerušilo" instead of the transport's
-  "network error") instead of the raw server string, and the three
+  "network error"; the **project limits** — `upload.error.file_too_large` "Soubor je větší než povolených
+  {{limit}}" with the server's `limit_bytes` (`item.errorLimitBytes`) through `formatBytes`,
+  `file_too_large_unknown` without it, and `upload.error.quota_exceeded` "Projekt dosáhl limitu
+  úložiště", never a number) instead of the raw server string, and the five
   permanent codes get **no Retry** (`canRetryUpload`) — the same file would be
   refused again; `useUploadQueue` keeps the code as `item.errorCode` and its `retry`/`retryFailed` skip
   them, and `UploadStageDone`/`UploadLinkPage` offer "retry the failed files" only while some failure is
@@ -1996,7 +1999,10 @@ here.
   `LoginPage` honours a **`?returnTo=`** query ahead of the guard's stashed location, but only a local path
   (one leading `/`, never `//` or `/\`), so a link cannot send a fresh sign-in to another host,
   `UploadLinkPage` (route **`/u/:code`**, **public** — whoever holds an upload link may upload without
-  an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`, shows the title, the
+  an account; outside `RequireAuth` and `Layout`): reads `fetchPublicUploadLink`; a link whose project
+  has used up its quota (`storage_full`, or a file refused `quota_exceeded` mid-batch) shows
+  `StorageFullNotice` — "Tento projekt má plné úložiště, nahrávání není možné.", no sizes — **in place of
+  the pickers** on the pick screen and under the outcome on the done screen; it shows the title, the
   note, **where the photos go** (album/label names as non-clickable chips styled from `ENTITY_STYLE` —
   an uploader may not open them) and the expiry, and nothing else; an expired/revoked/unknown link gets a
   clear message instead. An anonymous visitor may type "Od koho?" (remembered per device under
@@ -3099,7 +3105,12 @@ here.
   `formatDateTime(updated_at)`. Below the form, the read-only **„Využití a limity"** card (`UsageCard`,
   `GET /p/<slug>/settings/usage`, loaded on its own so a failure never blocks the form): photos
   (`formatCount`), the originals' size and the two limits (`formatBytes`, „neomezeno" for `null`) and the
-  note „Limity nastavuje správce systému." — and, **for a maintainer only**, the project's
+  note „Limity nastavuje správce systému."; **with a quota set**, a `UsageBar` heads the card — Bootstrap's
+  `progress`/`progress-bar` markup written out (react-bootstrap's `ProgressBar` names the track, not the
+  `role="progressbar"`) labelled „Zaplnění úložiště", „Využito X z Y (N %)" beneath, and once the quota
+  is reached `kk-usage-bar--full` plus „Úložiště je plné — …" (`role="status"`); the fill is
+  `--kk-palette-accent`, `--kk-semantic-danger` when full (`.kk-usage-bar` in `styles/app.css`) — and,
+  **for a maintainer only**, the project's
   `AnnouncementComposer` (publishing stays `RequireMaintainer` server-side). Tests: `SettingsPage.test.tsx`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
@@ -5884,7 +5895,11 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   of its share by its sent fraction, an interrupted one 0 → a smooth bar that stays **below 1 until the
   server has answered for every file**, a sent last byte is not "done"),
   `createdUids` (new ones only) for the link into the library
-  and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment.
+  and `resolvedUids` (new **and** duplicate photos) for the post-upload assignment; a refused item keeps
+  the backend's `code` as `errorCode` and a limit refusal's `limit_bytes` as `errorLimitBytes`.
+  `useUploadLimitToasts(items)` (on `UploadPage`) raises **one** translated danger toast per project-limit
+  kind while it occurs in the queue — `upload.toast.fileTooLarge` / `upload.toast.quotaExceeded` — not one
+  per file, and toasts again once the kind has left the queue (a fresh batch); the rows carry the reasons.
   **The queue starts itself** — there is no `start`: an effect tops the in-flight uploads up to the cap
   whenever the queue changes, so a file is uploading the moment it is added, retried, or freed by
   another one finishing, and adding files to a running batch appends to it rather than restarting it.
@@ -7522,7 +7537,11 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   feedback, so it lives in `feedback.ts`; `upload.ts` =
   `uploadFile(file,{onProgress,signal,url?,fields?})` (`url` defaults to `/api/v1/upload`; `fields` are plain
   form fields appended **before** the file, because the backend reads the stream once — an upload link posts
-  its `name` that way; the `UploadFn` type is the shape `useUploadQueue` drives)
+  its `name` that way; the file's own `size` field (`SIZE_FIELD`) always goes right before it, so the
+  server refuses a file over a project limit before reading its bytes; a request-level **413**
+  `{"error":"quota_exceeded"|"file_too_large",…}` resolves as that file's error result (`code`,
+  `limit_bytes`, `used_bytes`) rather than rejecting, so the queue marks it with its reason; `LIMIT_CODES`;
+  the `UploadFn` type is the shape `useUploadQueue` drives)
   over **`XMLHttpRequest`** (one file per request because of the upload-progress events, the FormData is
   streamed), `isAbortError`, the types `UploadFileResult`/`UploadResponse`/`UploadWarning`/
   `UploadOutcome`; `onload` is entirely inside `try`/`catch` and a 2xx body without a non-empty `results` array

@@ -22,6 +22,7 @@ import (
 	"github.com/panbotka/kukatko/internal/database/dbtest"
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/photos"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/storage"
 	"github.com/panbotka/kukatko/internal/thumb"
 )
@@ -32,6 +33,9 @@ type httpEnv struct {
 	server *httptest.Server
 	svc    *auth.Service
 	photos *photos.Store
+	// projects edits the bootstrap project's limits, which every upload of the
+	// harness lands in.
+	projects *project.Store
 }
 
 // newHTTPEnv builds the HTTP test environment over the integration database.
@@ -54,6 +58,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 		Photos:      photoStore,
 		Thumbnailer: thumb.New(fs, t.TempDir()),
 		Duplicate:   config.DuplicateConfig{Enabled: false},
+		Usage:       project.NewStore(db.Pool()),
 		TempDir:     t.TempDir(),
 	})
 	ingestAPI := ingest.NewAPI(ingestSvc, authAPI.RequireAuth, nil)
@@ -69,7 +74,7 @@ func newHTTPEnv(t *testing.T) *httpEnv {
 
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
-	return &httpEnv{server: server, svc: authSvc, photos: photoStore}
+	return &httpEnv{server: server, svc: authSvc, photos: photoStore, projects: project.NewStore(db.Pool())}
 }
 
 // loginClient creates a user with the given role and returns an HTTP client

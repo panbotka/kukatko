@@ -89,6 +89,11 @@ export interface PublicUploadLink {
    * where it can succeed.
    */
   registration_enabled: boolean
+  /**
+   * Whether the link's project has used up its storage quota: nothing can be
+   * uploaded until it has room again. A yes/no only — the page learns no sizes.
+   */
+  storage_full: boolean
 }
 
 /**

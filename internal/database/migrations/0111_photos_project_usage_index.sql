@@ -1,0 +1,17 @@
+-- 0111_photos_project_usage_index: an index the project usage sum can be
+-- answered from alone.
+--
+-- Every upload into a project with a quota (projects.max_total_bytes) reads
+-- the project's usage — count(*) and sum(file_size) over all of its photos,
+-- archived ones included — before the file is staged and again before its
+-- original is stored. No existing index served that: the two project_id
+-- indexes are partial (archived_at IS NULL), and the (project_id, file_hash)
+-- unique key holds no file_size, so the large project was sequentially
+-- scanned. Measured on kukatko_test with 50k seeded rows (40k + 10k across two
+-- projects, 5 % archived, VACUUM ANALYZE): 34.6 ms seq scan / 5.7 ms bitmap
+-- heap scan before, 10.9 ms / 2.7 ms index-only scan (Heap Fetches: 0) after;
+-- the index is ~1.5 MB per 50k rows. Details in docs/PERF.md.
+--
+-- Not CONCURRENTLY: a migration runs in a transaction. photos holds ~21k rows
+-- in production, so the build is a sub-second lock.
+CREATE INDEX IF NOT EXISTS idx_photos_project_file_size ON photos (project_id) INCLUDE (file_size);

@@ -130,8 +130,13 @@ type Config struct {
 	// throttles nothing.
 	LinkLimit *ratelimit.Limiter
 	// MaxFileSize caps one uploaded file in bytes on top of the pipeline's own
-	// cap; 0 sets none.
+	// caps (the instance's and the project's; the smallest wins); 0 sets none.
 	MaxFileSize int64
+	// Quota answers whether a link's project has used up its storage quota, so
+	// a full project's page says so and its upload is refused before the body
+	// is read. nil checks nothing up front; the pipeline still refuses each
+	// file the quota cannot take.
+	Quota ingest.QuotaChecker
 	// MaxUploadsPerLink caps the files one link accepts over its life, enforced
 	// per file in the database; 0 sets none.
 	MaxUploadsPerLink int
@@ -169,6 +174,7 @@ type API struct {
 	ipLimit        *ratelimit.Limiter
 	linkLimit      *ratelimit.Limiter
 	maxFileSize    int64
+	quota          ingest.QuotaChecker
 	maxUploads     int
 	defaultDays    int
 	maxDays        int
@@ -187,7 +193,7 @@ func NewAPI(cfg Config) *API {
 		requireCurator: cfg.RequireCurator, optionalAuth: cfg.OptionalAuth,
 		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, currentProject: cfg.CurrentProject,
 		ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,
-		maxFileSize: cfg.MaxFileSize, maxUploads: cfg.MaxUploadsPerLink,
+		maxFileSize: cfg.MaxFileSize, quota: cfg.Quota, maxUploads: cfg.MaxUploadsPerLink,
 		defaultDays: cfg.DefaultDays, maxDays: cfg.MaxDays,
 		secureCookies: cfg.SecureCookies, now: cfg.Now, log: cfg.Logger,
 	}

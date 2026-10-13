@@ -73,8 +73,9 @@ import (
 // step that has genuinely hung.
 const processTimeout = 30 * time.Minute
 
-// ErrFileTooLarge indicates an uploaded file exceeded the configured maximum
-// size and was rejected without being catalogued.
+// ErrFileTooLarge indicates an uploaded file exceeded the effective maximum
+// size (see Service.fileCap) and was rejected without being catalogued. The
+// pipeline returns it wrapped in a *LimitError carrying the cap.
 var ErrFileTooLarge = errors.New("ingest: file exceeds maximum upload size")
 
 // ErrNoProject indicates a file was handed to the pipeline without the project
@@ -129,15 +130,19 @@ type Warning struct {
 // so a batch upload reports each file's fate without failing the whole request.
 // Code is a stable machine identifier of a refusal a client can translate (e.g.
 // CodeNotMedia); it is empty for a failure that has none, whose Error is the
-// only description.
+// only description. A limit refusal (CodeFileTooLarge, CodeQuotaExceeded) also
+// carries the limit that refused it in LimitBytes and, for the quota, the
+// project's stored bytes in UsedBytes.
 type FileResult struct {
-	Filename string    `json:"filename"`
-	Status   int       `json:"status"`
-	Outcome  Outcome   `json:"outcome"`
-	PhotoUID string    `json:"photo_uid,omitempty"`
-	Code     string    `json:"code,omitempty"`
-	Error    string    `json:"error,omitempty"`
-	Warnings []Warning `json:"warnings,omitempty"`
+	Filename   string    `json:"filename"`
+	Status     int       `json:"status"`
+	Outcome    Outcome   `json:"outcome"`
+	PhotoUID   string    `json:"photo_uid,omitempty"`
+	Code       string    `json:"code,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	LimitBytes int64     `json:"limit_bytes,omitempty"`
+	UsedBytes  *int64    `json:"used_bytes,omitempty"`
+	Warnings   []Warning `json:"warnings,omitempty"`
 }
 
 // Config bundles the collaborators and tunables a Service needs.
@@ -170,8 +175,16 @@ type Config struct {
 	Pending PendingScheduler
 	// Duplicate gates and tunes near-duplicate warnings.
 	Duplicate config.DuplicateConfig
-	// MaxFileSize caps a single uploaded file in bytes; 0 means unlimited.
+	// MaxFileSize caps a single uploaded file in bytes (the instance's
+	// upload.max_file_size_mb); 0 means no instance cap. The project's own
+	// max_file_bytes and a request's MaxFileSize apply on top — the smallest
+	// non-zero cap wins.
 	MaxFileSize int64
+	// Usage measures a project's stored originals for the quota check
+	// (projects.max_total_bytes). nil enforces no quota — right only for a
+	// caller re-cataloguing bytes that are already stored (the maintenance
+	// orphan rescue).
+	Usage UsageReader
 	// MaxPixels caps the width×height of an original the pipeline will fully
 	// decode for its perceptual hash; a larger source is rejected before its
 	// bitmap is allocated so a decompression bomb cannot OOM the request. 0
@@ -205,6 +218,7 @@ type Service struct {
 	pending     PendingScheduler
 	dup         config.DuplicateConfig
 	maxFileSize int64
+	usage       UsageReader
 	maxPixels   int64
 	budget      *imgconvert.DecodeBudget
 	tempDir     string
@@ -234,6 +248,7 @@ func New(cfg Config) *Service {
 		pending:     cfg.Pending,
 		dup:         cfg.Duplicate,
 		maxFileSize: cfg.MaxFileSize,
+		usage:       cfg.Usage,
 		maxPixels:   cfg.MaxPixels,
 		budget:      cfg.DecodeBudget,
 		tempDir:     cfg.TempDir,
@@ -255,6 +270,16 @@ type Request struct {
 	// whose EXIF was stripped in re-encoding, is the capture date, the caption and
 	// the GPS fix. See internal/sidecar for the precedence rules.
 	Sidecar *sidecar.Metadata
+	// DeclaredSize is the size the file is known or claimed to have before it
+	// is read — a multipart part's Content-Length or SizeField, a file's size on
+	// disk — or 0 when unknown. A declared size over the per-file cap or the
+	// quota's remainder refuses the file before a byte is read; the actual
+	// count is enforced while streaming either way.
+	DeclaredSize int64
+	// MaxFileSize is the caller's own per-file cap in bytes (an upload link's),
+	// applied with the instance's and the project's — the smallest non-zero
+	// wins. 0 adds none.
+	MaxFileSize int64
 
 	// project is the project the file is catalogued in, set by IngestFile from
 	// its argument so every step below reads the one the caller resolved.
@@ -299,10 +324,17 @@ func (s *Service) IngestFile(ctx context.Context, proj *project.Project, src io.
 	return s.ingestFile(ctx, src, req)
 }
 
-// ingestFile is IngestFile's pipeline once req names its project: stage,
-// admit, dedup, decode, extract, store, catalogue and post-process.
+// ingestFile is IngestFile's pipeline once req names its project: preflight,
+// stage, admit, dedup, quota, decode, extract, store, catalogue and post-process.
+//
+// The limits are checked where each becomes knowable: a declared size against
+// the per-file cap and the quota before the body is read, the actual byte count
+// against the cap while it streams (the copy stops one byte past it), and the
+// actual size against the quota once the file is staged and known not to be a
+// duplicate — a byte-identical copy stores nothing, so a full project still
+// answers `duplicate` for it.
 func (s *Service) ingestFile(ctx context.Context, src io.Reader, req Request) FileResult {
-	staged, err := s.stage(ctx, src)
+	staged, err := s.stageWithin(ctx, src, req)
 	if err != nil {
 		return errorResult(req.Filename, err)
 	}
@@ -319,6 +351,11 @@ func (s *Service) ingestFile(ctx context.Context, src io.Reader, req Request) Fi
 
 	if dup, ok := s.existingDuplicate(ctx, req, staged.hash); ok {
 		return dup
+	}
+	// Before the decode, and so before the original is stored: a file the
+	// project has no room for costs no further work.
+	if err := s.CheckQuota(ctx, req.project, staged.size); err != nil {
+		return errorResult(req.Filename, err)
 	}
 
 	// After the dedup lookup: a byte-identical copy needs no decode to be named.
@@ -383,9 +420,10 @@ func (f *stagedFile) cleanup() {
 
 // stage streams src into a temp file under the service temp directory while
 // computing its SHA256 hash and byte count, never buffering the whole file in
-// memory. It enforces MaxFileSize (when set) and returns ErrFileTooLarge for an
-// oversized upload, removing the partial temp file.
-func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error) {
+// memory. It enforces limit (the effective per-file cap; 0 for none): the copy
+// stops one byte past it and the oversized upload is refused with a
+// *LimitError, its partial temp file removed.
+func (s *Service) stage(ctx context.Context, src io.Reader, limit int64) (*stagedFile, error) {
 	tmp, err := os.CreateTemp(s.tempDir, "kukatko-ingest-*")
 	if err != nil {
 		return nil, fmt.Errorf("ingest: creating temp file: %w", err)
@@ -393,8 +431,8 @@ func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error)
 	tmpPath := tmp.Name()
 
 	reader := ctxReader(ctx, src)
-	if s.maxFileSize > 0 {
-		reader = io.LimitReader(reader, s.maxFileSize+1)
+	if limit > 0 {
+		reader = io.LimitReader(reader, limit+1)
 	}
 	hasher := sha256.New()
 	size, copyErr := io.Copy(io.MultiWriter(tmp, hasher), reader)
@@ -403,11 +441,21 @@ func (s *Service) stage(ctx context.Context, src io.Reader) (*stagedFile, error)
 		_ = os.Remove(tmpPath)
 		return nil, fmt.Errorf("ingest: streaming upload: %w", err)
 	}
-	if s.maxFileSize > 0 && size > s.maxFileSize {
+	if limit > 0 && size > limit {
 		_ = os.Remove(tmpPath)
-		return nil, ErrFileTooLarge
+		return nil, tooLarge(limit)
 	}
 	return &stagedFile{path: tmpPath, hash: hex.EncodeToString(hasher.Sum(nil)), size: size}, nil
+}
+
+// stageWithin stages req's file from src once preflight has let it through,
+// holding the copy to the effective per-file cap; see ingestFile for where each
+// limit is checked.
+func (s *Service) stageWithin(ctx context.Context, src io.Reader, req Request) (*stagedFile, error) {
+	if err := s.preflight(ctx, req); err != nil {
+		return nil, err
+	}
+	return s.stage(ctx, src, s.fileCap(req))
 }
 
 // existingDuplicate reports whether a photo with this content hash is already
@@ -1106,7 +1154,7 @@ func duplicateResult(filename, uid string) FileResult {
 func errorResult(filename string, err error) FileResult {
 	status, code := http.StatusInternalServerError, ""
 	switch {
-	case errors.Is(err, ErrFileTooLarge):
+	case errors.Is(err, ErrFileTooLarge), errors.Is(err, ErrQuotaExceeded):
 		status = http.StatusRequestEntityTooLarge
 	case errors.Is(err, ErrNotMedia):
 		status, code = http.StatusUnsupportedMediaType, CodeNotMedia
@@ -1115,13 +1163,17 @@ func errorResult(filename string, err error) FileResult {
 	case errors.Is(err, ErrDamaged):
 		status, code = http.StatusUnsupportedMediaType, CodeDamaged
 	}
-	return FileResult{
+	res := FileResult{
 		Filename: filename,
 		Status:   status,
 		Outcome:  OutcomeError,
 		Code:     code,
 		Error:    err.Error(),
 	}
+	if status == http.StatusRequestEntityTooLarge {
+		limitFields(&res, err)
+	}
+	return res
 }
 
 // firstErr returns the first non-nil error among its arguments, or nil.

@@ -63,6 +63,7 @@ const LINK: PublicUploadLink = {
   labels: ['pouť'],
   expires_at: '2026-11-01T12:00:00Z',
   registration_enabled: true,
+  storage_full: false,
 }
 
 /** An anonymous visitor. */
@@ -293,6 +294,59 @@ describe('UploadLinkPage', () => {
     await pick(user, [new File(['cut'], 'cut.jpg', { type: 'image/jpeg' })])
 
     expect(await screen.findByText('This file is damaged or incomplete')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('says the storage is full, in Czech and without numbers, and offers no picker', async () => {
+    await i18n.changeLanguage('cs')
+    linkMock.mockReset().mockResolvedValue({ ...LINK, storage_full: true })
+    renderPage()
+
+    const notice = await screen.findByTestId('upload-link-storage-full')
+    expect(notice).toHaveTextContent('Tento projekt má plné úložiště, nahrávání není možné.')
+    expect(notice.textContent).not.toMatch(/\d/)
+    expect(document.querySelector('input[type="file"]')).toBeNull()
+  })
+
+  it('says the storage is full when the project fills up during the batch', async () => {
+    uploadMock.mockResolvedValueOnce({
+      filename: 'a.jpg',
+      status: 413,
+      outcome: 'error',
+      code: 'quota_exceeded',
+      error: 'quota_exceeded',
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [new File(['a'], 'a.jpg', { type: 'image/jpeg' })])
+
+    expect(await screen.findByTestId('upload-link-storage-full')).toHaveTextContent(
+      "This project's storage is full, uploading is not possible.",
+    )
+    expect(screen.queryByRole('button', { name: 'Retry the failed files' })).not.toBeInTheDocument()
+  })
+
+  it('says a file over the size cap is too large, naming the cap', async () => {
+    uploadMock.mockResolvedValueOnce({
+      filename: 'big.mp4',
+      status: 413,
+      outcome: 'error',
+      code: 'file_too_large',
+      error: 'ingest: file exceeds maximum upload size of 10485760 bytes',
+      limit_bytes: 10485760,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByLabelText('Who is it from?')
+
+    await pick(user, [new File(['big'], 'big.mp4', { type: 'video/mp4' })])
+
+    expect(
+      await screen.findByText('The file is larger than the allowed 10.0 MB'),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('upload-link-storage-full')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 

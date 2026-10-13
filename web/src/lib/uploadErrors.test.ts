@@ -9,6 +9,8 @@ describe('isPermanentUploadError', () => {
     expect(isPermanentUploadError('not_media')).toBe(true)
     expect(isPermanentUploadError('unsupported_type')).toBe(true)
     expect(isPermanentUploadError('damaged')).toBe(true)
+    expect(isPermanentUploadError('file_too_large')).toBe(true)
+    expect(isPermanentUploadError('quota_exceeded')).toBe(true)
     expect(isPermanentUploadError(undefined)).toBe(false)
     expect(isPermanentUploadError('something_new')).toBe(false)
   })
@@ -48,6 +50,31 @@ describe('uploadErrorMessage', () => {
     expect(uploadErrorMessage(item, i18n.t)).toBe('The connection dropped')
     // Still a failure a retry can fix.
     expect(canRetryUpload(item)).toBe(true)
+  })
+
+  it('names the size cap a file is over, in both languages', async () => {
+    const item = {
+      errorCode: 'file_too_large',
+      error: 'ingest: file exceeds maximum upload size of 1572864 bytes',
+      errorLimitBytes: 1572864,
+    }
+    await i18n.changeLanguage('cs')
+    expect(uploadErrorMessage(item, i18n.t, 'cs')).toBe('Soubor je větší než povolených 1,5 MB')
+    await i18n.changeLanguage('en')
+    expect(uploadErrorMessage(item, i18n.t, 'en')).toBe(
+      'The file is larger than the allowed 1.5 MB',
+    )
+    expect(uploadErrorMessage({ errorCode: 'file_too_large' }, i18n.t)).toBe(
+      'The file is larger than the project allows',
+    )
+  })
+
+  it('says the project storage is full without any numbers', async () => {
+    const item = { errorCode: 'quota_exceeded', error: 'quota_exceeded', errorLimitBytes: 1000 }
+    await i18n.changeLanguage('cs')
+    expect(uploadErrorMessage(item, i18n.t)).toBe('Projekt dosáhl limitu úložiště')
+    await i18n.changeLanguage('en')
+    expect(uploadErrorMessage(item, i18n.t)).toBe('The project has reached its storage limit')
   })
 
   it('falls back to the server message, and to nothing for an empty one', () => {

@@ -654,7 +654,7 @@ Neither one prints a stack trace, the response body, or the token.
 | `ctl photos edit <uid>` | `PATCH /photos/{uid}` — the whole editable metadata surface (`editor`/`admin`) |
 | `ctl photos faces <uid>` | `GET /photos/{uid}/faces` — the detections, their markers, and who they might be |
 | `ctl photos similar <uid>` | `GET /photos/{uid}/similar` — the visual neighbours with their cosine distance; `--limit` 1…100 |
-| `ctl photos upload <path>…` | `POST /upload` — streams files in through the ordinary ingest path (`editor`/`admin`) |
+| `ctl photos upload <path>…` | `POST /upload` — streams files in through the ordinary ingest path (`editor`/`admin`); each part declares its size (`Content-Length`), so a file over a project limit is refused before the server stages a byte of it |
 | `ctl photos archive` / `unarchive <uid>` | `POST /photos/{uid}/archive`+`/unarchive` — to the trash and back (reversible) |
 | `ctl photos hide` / `unhide <uid>` | `POST /photos/{uid}/hide`+`/unhide` — out of the library grid, nothing deleted |
 | `ctl photos renditions <uid>` | `GET /photos/{uid}/renditions` — a video's encoded streaming qualities, with the encode stamp of each; see below |
@@ -1878,8 +1878,9 @@ other type; values ≤ 0 are ignored and a type
   `POST /invite/{code}/accept`, `internal/inviteapi`) per client IP, ahead of the code lookup — the brake
   on guessing invite codes. An invite's URL is built from `mail.base_url` (+ `/invite/<code>`).
 - **Upload-link keys (`upload_links.*`, `internal/uploadlinkapi`):** `max_file_size_mb` (default
-  **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` — the
-  smaller wins; 0 = no cap of its own), `max_uploads_per_link` (default **2000** files over a link's life,
+  **1024**; a cap of its own on one file sent through a link, on top of `upload.max_file_size_mb` and the
+  project's `max_file_bytes` — the smallest wins, see *Upload limits* below; 0 = no cap of its own),
+  `max_uploads_per_link` (default **2000** files over a link's life,
   new photos and duplicates alike, taken per file in the database together with the link's liveness, so
   concurrent requests cannot overshoot it; 0 = no cap), `default_days` (default **30**, the validity the create
   form offers) and `max_days` (default **365**, the longest validity a link may be created or extended
@@ -2291,6 +2292,36 @@ other type; values ≤ 0 are ignored and a type
   enqueued at startup and every 24 h, it deletes read notifications older than **30 days** and unread
   ones older than **90 days** (fixed retention, not configurable); at most one is ever queued
   (migration 0096). The job shows in *System → Jobs* like every other.
+
+### Upload limits — how the three per-file caps and the project quota interact
+
+Three caps can bound **one file**, and the **smallest non-zero** of them wins (`ingest.Service.fileCap`):
+
+| Cap | Where it is set | Applies to |
+| --- | --- | --- |
+| `projects.max_file_bytes` | the system administrator, *System → Projects* (`PATCH /projects/{uid}`, `kukatko ctl projects …`) | every upload into that project: `POST /upload`, `POST /u/{code}/upload`, `kukatko import dir` |
+| `upload.max_file_size_mb` | instance config (0 = none) | every upload into every project |
+| `upload_links.max_file_size_mb` | instance config (default 1024, 0 = none) | only files sent through an upload link |
+
+So a project capped at 50 MB on an instance with `upload.max_file_size_mb: 2048` takes nothing over 50 MB,
+and a link into it takes nothing over 50 MB either, although the link's own cap is 1 GB. NULL / 0 everywhere
+= no cap at all. A refused file answers **413** `file_too_large` with `limit_bytes` = the cap that won. It is
+refused **before its body is read** when it declares its size (the web client sends a `size` field before
+every file; `import dir` declares the size on disk) and otherwise **while it streams** — the copy stops one
+byte past the cap, so an oversized upload never fills the temp directory.
+
+The **quota** `projects.max_total_bytes` bounds the sum of the project's originals (`sum(photos.file_size)`,
+archived photos included — their originals stay stored until a purge; derived files — thumbnails, HLS,
+sidecars — do not count). Before an original is stored the project's usage is read, and a file that would
+take it past the quota answers **413** `quota_exceeded` (`limit_bytes`, `used_bytes`; the public link page
+gets the code alone). Per file: in a multi-file request the files that fit still go in. A byte-identical
+re-upload stores nothing and still answers `duplicate` — unless the quota is already used up, when every
+request is refused before its body is read (it cannot know the file is a duplicate). Lowering a quota below
+the current usage deletes nothing; the project simply takes no more files until space is freed (archive +
+purge) or the quota is raised. There is **no lock**: two uploads checked at the same moment may both pass and
+overshoot the quota by up to one file each — accepted, the quota is a guard against unbounded growth, not a
+ledger. The usage read is an index-only scan of `idx_photos_project_file_size` (migration 0111, see
+`docs/PERF.md`). The maintenance orphan rescue re-catalogues bytes already stored and is not held to the quota.
 
 ### `maps.user_agent` — restricting the mapy.com key to a User-Agent
 
