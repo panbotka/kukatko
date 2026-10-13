@@ -10,6 +10,20 @@ import { PROJECTS_PATH } from '../project/paths'
  */
 export const TASKS_PATH = '/tasks'
 
+/**
+ * The system administrator's project list. An instance page (it lives under
+ * `/system`), so no project prefix is ever put on it.
+ */
+export const SYSTEM_PROJECTS_PATH = '/system/projects'
+
+/** The system administrator's page of one project, `/system/projects/<slug>`. */
+export function systemProjectPath(slug: string): string {
+  return `${SYSTEM_PROJECTS_PATH}/${encodeURIComponent(slug)}`
+}
+
+/** The system administrator's list of every account of the instance. */
+export const SYSTEM_USERS_PATH = '/system/users'
+
 import type { IconName } from './Icon'
 
 /**
@@ -29,6 +43,12 @@ export interface NavEntry {
   labelKey: ParseKeys
   titleKey: ParseKeys
   icon: IconName
+  /**
+   * Lights the entry up only on its own path, not on its sub-paths — for a
+   * destination whose children are destinations of their own (`/system` next
+   * to `/system/projects`).
+   */
+  exact?: boolean
 }
 
 /** A dropdown of related destinations, behind a labelled, icon-bearing toggle. */
@@ -222,8 +242,8 @@ export interface AdminEntry extends NavEntry {
 
 /**
  * The "Správa" (Admin) section of the user menu — what used to be two separate
- * dropdowns in the bar: the maintainer's "Provoz" (import, maintenance, system)
- * and the admin's "Správa" (users, audit). Both belong to the signed-in identity
+ * dropdowns in the bar: the maintainer's "Provoz" (import, maintenance, system,
+ * and the instance's projects and accounts) and the admin's "Správa" (users, audit). Both belong to the signed-in identity
  * rather than to browsing the library, and both spent the bar's scarcest
  * resource, width — for a maintainer the inline row overflowed its container
  * below 1400px. Folded into one labelled section of the user dropdown, in ladder
@@ -253,6 +273,21 @@ export const ADMIN_ITEMS: AdminEntry[] = [
     labelKey: 'nav.system',
     titleKey: 'nav.titles.system',
     icon: 'activity',
+    gate: 'maintainer',
+    exact: true,
+  },
+  {
+    to: SYSTEM_PROJECTS_PATH,
+    labelKey: 'nav.systemProjects',
+    titleKey: 'nav.titles.systemProjects',
+    icon: 'diagram-3',
+    gate: 'maintainer',
+  },
+  {
+    to: SYSTEM_USERS_PATH,
+    labelKey: 'nav.systemUsers',
+    titleKey: 'nav.titles.systemUsers',
+    icon: 'shield-lock',
     gate: 'maintainer',
   },
   {

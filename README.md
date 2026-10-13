@@ -211,6 +211,16 @@ shared library is tidied by more than one person.
   people — and opens the other library's home when you were looking at one photo, album or person.
   *Všechny projekty…* leads to `/projects`, a card per project with its description and your role
   there, including the ones you cannot open yet and why.
+- **Správce systému — the system administrator — runs the projects.** Under *Projekty* in the user
+  menu (`/system/projects`) every project of the instance is one row: its name and slug, whether it is
+  active, its members, photos and the size of its originals, and its limits. *Nový projekt* founds
+  one — the slug is checked as you type, because it is the project's address and cannot change
+  later — with an optional largest-file limit and a quota for all originals together. A project's own
+  page edits its name, description and limits, switches it off (its members can no longer open it;
+  nothing is deleted) or back on, adds you as its administrator when you are not a member yet, and
+  shows where in the storage its files live. *Účty* (`/system/users`) lists every account of the
+  instance with its memberships, and is where another account is promoted to a system administrator
+  or demoted again — never your own, somebody else has to do that.
 - **The library opens onto photographs, not onto its own controls.** There is no page title repeating
   what the navigation already says, the "what's new since your last visit" summary is one line you can
   unfold, and every filter — period, album, label, person and the rest — lives behind one *Filtry*

@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { isInstancePath, projectPathFor } from '../project/paths'
 
-import { PRIMARY_ITEMS, PROJECTS_ITEM, TOOLS_GROUP, toolsGroup } from './navItems'
+import {
+  adminItems,
+  PRIMARY_ITEMS,
+  PROJECTS_ITEM,
+  systemProjectPath,
+  TOOLS_GROUP,
+  toolsGroup,
+} from './navItems'
 
 /** The routes of a narrowed group, or null when there is none. */
 function routes(roles: { canCurate: boolean; canWrite: boolean }): string[] | null {
@@ -58,5 +65,42 @@ describe('PROJECTS_ITEM', () => {
     expect(projectPathFor('v', PROJECTS_ITEM.to)).toBe('/projects')
     expect(PROJECTS_ITEM.labelKey).toBe('projectSwitcher.all')
     expect(PROJECTS_ITEM.icon).toBe('folder2-open')
+  })
+})
+
+describe('adminItems', () => {
+  it('gives the system administrator the instance pages, which carry no project', () => {
+    const routes = adminItems({ isAdmin: true, isMaintainer: true }).map((entry) => entry.to)
+    expect(routes).toEqual([
+      '/import',
+      '/maintenance',
+      '/system',
+      '/system/projects',
+      '/system/users',
+      '/users',
+      '/audit',
+      '/settings',
+    ])
+    for (const route of ['/system/projects', '/system/users']) {
+      expect(projectPathFor('v', route)).toBe(route)
+    }
+  })
+
+  it('keeps the projects and accounts pages from a project admin', () => {
+    const routes = adminItems({ isAdmin: true, isMaintainer: false }).map((entry) => entry.to)
+    expect(routes).toEqual(['/users', '/audit', '/settings'])
+  })
+
+  it('lights /system only on its own page, not on its sub-pages', () => {
+    const system = adminItems({ isAdmin: true, isMaintainer: true }).find(
+      (entry) => entry.to === '/system',
+    )
+    expect(system?.exact).toBe(true)
+  })
+})
+
+describe('systemProjectPath', () => {
+  it('addresses a project detail by its slug', () => {
+    expect(systemProjectPath('rodina')).toBe('/system/projects/rodina')
   })
 })

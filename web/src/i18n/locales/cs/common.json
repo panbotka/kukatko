@@ -110,7 +110,9 @@
       "stats": "Zobrazit statistiky knihovny",
       "myPhotos": "Zobrazit fotky, na kterých jsem",
       "tasks": "Úkoly",
-      "uploadLinks": "Odkazy, přes které může kdokoli nahrát fotky do vybraných alb"
+      "uploadLinks": "Odkazy, přes které může kdokoli nahrát fotky do vybraných alb",
+      "systemProjects": "Zakládat, upravovat a vypínat projekty instance",
+      "systemUsers": "Všechny účty instance, jejich systémová role a členství"
     },
     "expand": "Rozšířit",
     "review": "Třídění",
@@ -129,7 +131,9 @@
     "versionLabel": "Verze {{version}}",
     "myPhotos": "Moje fotky",
     "tasks": "Úkoly",
-    "uploadLinks": "Odkazy pro nahrávání"
+    "uploadLinks": "Odkazy pro nahrávání",
+    "systemProjects": "Projekty",
+    "systemUsers": "Účty"
   },
   "help": {
     "title": "Nápověda",
@@ -4575,5 +4579,114 @@
     "newCodeTitle": "Vygenerovat nový kód?",
     "newCodeBody": "Současná adresa odkazu „{{title}}“ okamžitě přestane fungovat: kdo ji má, už přes ni nic nenahraje, a nový odkaz budete muset rozeslat znovu. Alba, štítky, platnost i už nahrané fotky zůstanou beze změny.",
     "done": "Hotovo"
+  },
+  "systemProjects": {
+    "title": "Projekty",
+    "intro": "Všechny projekty instance — samostatné knihovny s vlastními členy, fotkami a úložištěm.",
+    "loading": "Načítám projekty…",
+    "loadFailed": "Projekty se nepodařilo načíst.",
+    "empty": "Zatím tu není žádný projekt.",
+    "new": "Nový projekt",
+    "columns": {
+      "name": "Název",
+      "slug": "Slug",
+      "status": "Stav",
+      "members": "Členové",
+      "photos": "Fotky",
+      "originals": "Originály",
+      "limits": "Limity",
+      "created": "Založen"
+    },
+    "active": "Aktivní",
+    "inactive": "Vypnutý",
+    "unlimited": "neomezeno",
+    "limitFile": "soubor {{value}}",
+    "limitTotal": "celkem {{value}}",
+    "form": {
+      "slugLabel": "Slug",
+      "slugHint": "Adresa projektu /p/<slug>: malá písmena, číslice a pomlčky, nejvýš 40 znaků. Nelze později změnit.",
+      "nameLabel": "Název",
+      "descriptionLabel": "Popis",
+      "maxFileLabel": "Největší soubor",
+      "maxTotalLabel": "Kvóta všech originálů",
+      "limitHint": "Prázdné = neomezeno.",
+      "unitLabel": "Jednotka",
+      "create": "Založit projekt",
+      "cancel": "Zrušit"
+    },
+    "errors": {
+      "slugEmpty": "Vyplňte slug.",
+      "slugFormat": "Jen malá písmena, číslice a pomlčky (1–40 znaků), nesmí začínat pomlčkou.",
+      "slugReserved": "„{{slug}}“ je vyhrazené slovo aplikace.",
+      "slugTaken": "Tento slug už existuje",
+      "nameRequired": "Vyplňte název.",
+      "limitInvalid": "Zadejte kladné číslo, nebo pole nechte prázdné.",
+      "createFailed": "Projekt se nepodařilo založit."
+    }
+  },
+  "systemProject": {
+    "back": "Zpět na projekty",
+    "notFound": "Projekt „{{slug}}“ neexistuje.",
+    "loadFailed": "Projekt se nepodařilo načíst.",
+    "detailsTitle": "Údaje projektu",
+    "save": "Uložit změny",
+    "saved": "Změny jsou uložené.",
+    "saveFailed": "Změny se nepodařilo uložit.",
+    "statusTitle": "Stav",
+    "activeLabel": "Projekt je aktivní",
+    "activeHelp": "Vypnutý projekt neotevře nikdo kromě správce systému; jeho data zůstanou.",
+    "deactivateTitle": "Vypnout projekt {{name}}?",
+    "deactivateBody": "Členové projekt neotevřou, data zůstanou.",
+    "deactivate": "Vypnout projekt",
+    "reactivateTitle": "Znovu zapnout projekt {{name}}?",
+    "reactivateBody": "Členové projekt opět otevřou.",
+    "reactivate": "Zapnout projekt",
+    "statusFailed": "Stav projektu se nepodařilo změnit.",
+    "membersTitle": "Členové",
+    "membersCount": "Počet členů: {{count}}",
+    "membersLink": "Členové projektu",
+    "addMe": "Přidat mě jako člena",
+    "addMeHelp": "Přidá vás do projektu s rolí správce.",
+    "addMeFailed": "Členství se nepodařilo přidat.",
+    "alreadyMember": "Jste členem tohoto projektu.",
+    "usageTitle": "Využití",
+    "photos": "Fotky",
+    "originals": "Originály",
+    "storageTitle": "Úložiště",
+    "storagePrefix": "Prefix v úložišti",
+    "storageRoot": "v kořeni úložiště"
+  },
+  "systemUsers": {
+    "title": "Účty",
+    "intro": "Všechny účty instance, jejich systémová role a členství v projektech.",
+    "loading": "Načítám účty…",
+    "loadFailed": "Účty se nepodařilo načíst.",
+    "empty": "Žádné účty.",
+    "columns": {
+      "username": "Uživatelské jméno",
+      "displayName": "Jméno",
+      "email": "E-mail",
+      "role": "Systémová role",
+      "memberships": "Členství",
+      "actions": "Akce"
+    },
+    "instanceRoles": {
+      "user": "Uživatel",
+      "maintainer": "Správce systému"
+    },
+    "disabled": "Zablokovaný",
+    "membership": "{{slug}} ({{role}})",
+    "membershipPending": "Čeká na schválení",
+    "membershipInactive": "Projekt je vypnutý",
+    "noMemberships": "žádné",
+    "promote": "Povýšit na správce systému",
+    "demote": "Odebrat správce",
+    "selfReason": "Vlastní systémovou roli změnit nemůžete — musí to udělat jiný správce systému.",
+    "promoteTitle": "Povýšit {{name}} na správce systému?",
+    "promoteBody": "Účet bude spravovat celou instanci: všechny projekty, účty i provoz.",
+    "demoteTitle": "Odebrat {{name}} správu systému?",
+    "demoteBody": "Účet přijde o správu instance. Členství v projektech zůstanou beze změny.",
+    "lastMaintainer": "Instance musí mít aspoň jednoho správce systému.",
+    "roleFailed": "Roli se nepodařilo změnit."
   }
 }

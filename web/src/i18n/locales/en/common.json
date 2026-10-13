@@ -102,7 +102,9 @@
       "stats": "Show the library statistics",
       "myPhotos": "Show the photos I am on",
       "tasks": "Tasks",
-      "uploadLinks": "Links anyone can use to upload photos into chosen albums"
+      "uploadLinks": "Links anyone can use to upload photos into chosen albums",
+      "systemProjects": "Create, edit and deactivate the instance’s projects",
+      "systemUsers": "Every account of the instance, its system role and memberships"
     },
     "expand": "Expand",
     "review": "Review",
@@ -121,7 +123,9 @@
     "versionLabel": "Version {{version}}",
     "myPhotos": "My photos",
     "tasks": "Tasks",
-    "uploadLinks": "Upload links"
+    "uploadLinks": "Upload links",
+    "systemProjects": "Projects",
+    "systemUsers": "Accounts"
   },
   "help": {
     "title": "Help",
@@ -4345,5 +4349,114 @@
     "newCodeTitle": "Generate a new code?",
     "newCodeBody": "The current address of “{{title}}” stops working immediately: anyone who has it can no longer upload, and you will have to send the new link again. Albums, labels, validity and the photos already uploaded stay as they are.",
     "done": "Done"
+  },
+  "systemProjects": {
+    "title": "Projects",
+    "intro": "Every project of the instance — separate libraries with their own members, photos and storage.",
+    "loading": "Loading projects…",
+    "loadFailed": "The projects could not be loaded.",
+    "empty": "There is no project yet.",
+    "new": "New project",
+    "columns": {
+      "name": "Name",
+      "slug": "Slug",
+      "status": "Status",
+      "members": "Members",
+      "photos": "Photos",
+      "originals": "Originals",
+      "limits": "Limits",
+      "created": "Created"
+    },
+    "active": "Active",
+    "inactive": "Deactivated",
+    "unlimited": "unlimited",
+    "limitFile": "file {{value}}",
+    "limitTotal": "total {{value}}",
+    "form": {
+      "slugLabel": "Slug",
+      "slugHint": "The project’s address /p/<slug>: lowercase letters, digits and hyphens, at most 40 characters. It cannot be changed later.",
+      "nameLabel": "Name",
+      "descriptionLabel": "Description",
+      "maxFileLabel": "Largest file",
+      "maxTotalLabel": "Quota of all originals",
+      "limitHint": "Empty = unlimited.",
+      "unitLabel": "Unit",
+      "create": "Create project",
+      "cancel": "Cancel"
+    },
+    "errors": {
+      "slugEmpty": "Fill in the slug.",
+      "slugFormat": "Only lowercase letters, digits and hyphens (1–40 characters), not starting with a hyphen.",
+      "slugReserved": "“{{slug}}” is a word the application reserves.",
+      "slugTaken": "This slug already exists",
+      "nameRequired": "Fill in the name.",
+      "limitInvalid": "Enter a positive number, or leave the field empty.",
+      "createFailed": "The project could not be created."
+    }
+  },
+  "systemProject": {
+    "back": "Back to projects",
+    "notFound": "There is no project “{{slug}}”.",
+    "loadFailed": "The project could not be loaded.",
+    "detailsTitle": "Project details",
+    "save": "Save changes",
+    "saved": "The changes are saved.",
+    "saveFailed": "The changes could not be saved.",
+    "statusTitle": "Status",
+    "activeLabel": "The project is active",
+    "activeHelp": "Nobody but a system administrator opens a deactivated project; its data stays.",
+    "deactivateTitle": "Deactivate the project {{name}}?",
+    "deactivateBody": "Members will not open the project; its data stays.",
+    "deactivate": "Deactivate project",
+    "reactivateTitle": "Reactivate the project {{name}}?",
+    "reactivateBody": "Members will open the project again.",
+    "reactivate": "Reactivate project",
+    "statusFailed": "The project’s status could not be changed.",
+    "membersTitle": "Members",
+    "membersCount": "Members: {{count}}",
+    "membersLink": "Project members",
+    "addMe": "Add me as a member",
+    "addMeHelp": "Adds you to the project as its administrator.",
+    "addMeFailed": "The membership could not be added.",
+    "alreadyMember": "You are a member of this project.",
+    "usageTitle": "Usage",
+    "photos": "Photos",
+    "originals": "Originals",
+    "storageTitle": "Storage",
+    "storagePrefix": "Storage prefix",
+    "storageRoot": "in the storage root"
+  },
+  "systemUsers": {
+    "title": "Accounts",
+    "intro": "Every account of the instance, its system role and its project memberships.",
+    "loading": "Loading accounts…",
+    "loadFailed": "The accounts could not be loaded.",
+    "empty": "No accounts.",
+    "columns": {
+      "username": "Username",
+      "displayName": "Name",
+      "email": "E-mail",
+      "role": "System role",
+      "memberships": "Memberships",
+      "actions": "Actions"
+    },
+    "instanceRoles": {
+      "user": "User",
+      "maintainer": "System administrator"
+    },
+    "disabled": "Disabled",
+    "membership": "{{slug}} ({{role}})",
+    "membershipPending": "Waiting for approval",
+    "membershipInactive": "The project is deactivated",
+    "noMemberships": "none",
+    "promote": "Promote to system administrator",
+    "demote": "Remove administrator",
+    "selfReason": "You cannot change your own system role — another system administrator must.",
+    "promoteTitle": "Promote {{name}} to system administrator?",
+    "promoteBody": "The account will manage the whole instance: every project, every account and operations.",
+    "demoteTitle": "Remove system administration from {{name}}?",
+    "demoteBody": "The account loses the instance administration. Its project memberships stay as they are.",
+    "lastMaintainer": "The instance must keep at least one system administrator.",
+    "roleFailed": "The role could not be changed."
   }
 }

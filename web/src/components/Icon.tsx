@@ -42,6 +42,7 @@ export type IconName =
   | 'compass'
   | 'crosshair'
   | 'dash-lg'
+  | 'diagram-3'
   | 'exclamation-triangle'
   | 'eye'
   | 'eye-fill'

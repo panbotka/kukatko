@@ -10,17 +10,14 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { Icon } from '../components/Icon'
+import { SYSTEM_PROJECTS_PATH } from '../components/navItems'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useProject } from '../project/ProjectContext'
 import { isEnterable, projectPathFor } from '../project/paths'
 import type { ProjectMembership } from '../services/auth'
 
-/**
- * Where a maintainer manages the instance's projects. The page itself arrives
- * in a later step of the multi-tenancy work; the link is offered already, and
- * until then it lands on the ordinary not-found page.
- */
-export const PROJECT_ADMIN_PATH = '/system/projects'
+/** Where a maintainer manages the instance's projects. */
+export const PROJECT_ADMIN_PATH = SYSTEM_PROJECTS_PATH
 
 /**
  * `/projects` — the project chooser: one card per membership of the account.

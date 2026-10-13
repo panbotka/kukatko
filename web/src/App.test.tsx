@@ -58,6 +58,10 @@ vi.mock('./services/auth', async (importOriginal) => {
 
 // The notification deeplink page reads its notification and marks it read on
 // mount; stub both so the route tests exercise the wiring, not the network.
+vi.mock('./services/projects', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./services/projects')>()
+  return { ...actual, fetchAdminProjects: vi.fn() }
+})
 vi.mock('./services/notifications', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./services/notifications')>()
   return {
@@ -333,6 +337,31 @@ describe('routing', () => {
 
     expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
     expect(screen.getByTestId('pathname')).toHaveTextContent('/system')
+  })
+
+  it('opens the system project pages to a maintainer, outside any project', async () => {
+    const maintainerAuth = {
+      ...adminAuth,
+      role: 'maintainer',
+      instanceRole: 'maintainer',
+      isMaintainer: true,
+      canImport: true,
+    } as unknown as AuthContextValue
+    const { fetchAdminProjects } = await import('./services/projects')
+    vi.mocked(fetchAdminProjects).mockResolvedValue([])
+    renderRoutes(['/system/projects'], 0, maintainerAuth)
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Projects' })).toBeInTheDocument()
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/system/projects')
+  })
+
+  it('keeps the system project and account pages from an admin', async () => {
+    for (const path of ['/system/projects', '/system/projects/v', '/system/users']) {
+      const { unmount } = renderRoutes([path], 0, adminAuth)
+      expect(await screen.findByTestId('forbidden-page')).toHaveTextContent(/maintainer role/i)
+      expect(screen.getByTestId('pathname')).toHaveTextContent(path)
+      unmount()
+    }
   })
 
   it('forwards a viewer’s share from the share landing to the upload page', async () => {

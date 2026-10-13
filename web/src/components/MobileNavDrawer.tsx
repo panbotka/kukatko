@@ -139,7 +139,8 @@ export function MobileNavDrawer({
   /**
    * One tap row: icon, label, action tooltip. The root entry (the library) is
    * matched exactly — without `end` its highlight would be a prefix match and
-   * light up on every route. Upload keeps the bar's filled call-to-action look.
+   * light up on every route — and so is an entry marked `exact` (`/system`,
+   * whose sub-paths are rows of their own). Upload keeps the bar's filled call-to-action look.
    */
   function renderRow(entry: NavEntry) {
     const cta = entry.to === UPLOAD_ITEM.to
@@ -147,7 +148,7 @@ export function MobileNavDrawer({
       <NavLink
         key={entry.to}
         to={projectPath(entry.to)}
-        end={entry.to === LIBRARY_PATH}
+        end={entry.to === LIBRARY_PATH || entry.exact === true}
         title={t(entry.titleKey)}
         className={`kk-navdrawer__link${cta ? ' kk-navdrawer__link--cta' : ''}`}
         onClick={onHide}

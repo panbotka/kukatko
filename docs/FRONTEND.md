@@ -8551,7 +8551,7 @@ relative to the project root, mounted under `<Route path="/p/:slug" element={<Pr
 | project (under `/p/:slug`), immersive, no shell | `slideshow`, `photos/:uid`, `review` + `albums/:uid/faces` (curator), `duplicates/compare` (editor) |
 | project, inside `Layout` | index (= `LibraryPage`), `library/*` (`LibraryRedirect` → the project's library), `favorites`, `albums`, `albums/:uid`, `labels`, `labels/:uid`, `tasks`, `tasks/:uid`, `n/:uid`, `notifications`, `search`, `saved`, `map`, `places`, `people`, `people/:uid`, `people/:uid/tree`, `leaderboard`, `share-target`, `upload`, `stats`, `help`; curator: `upload-links`, `people/clusters`, `faces`, `expand`, `recognition`, `outliers`, `duplicate-markers`; editor: `duplicates`, `trash`; `import` (`RequireImport`); admin: `users`, `audit`, `audit/reviews`, `settings`; `*` → `NotFoundPage` |
 | instance, public | `/login`, `/register`, `/password-reset/:token`, `/u/:code` |
-| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance` + `/system` (maintainer), `*` (`LegacyRedirect`) |
+| instance, signed in | `/` (`EntryRedirect`), `/projects` (`ProjectsPage`, no shell); inside `Layout`: `/account`, `/account/activity` (`ACTIVITY_PATH` — under the account and reading the instance-wide audit trail, so it carries no project), `/maintenance`, `/system`, `/system/projects`, `/system/projects/:slug`, `/system/users` (all maintainer), `*` (`LegacyRedirect`) |
 
 **The entry rule** (`entryProjectSlug` in `project/paths.ts`): the target is `last_project_slug` when
 it is an approved membership of an active project, else the only such membership, else `null` →
@@ -8617,8 +8617,7 @@ the badges under AA) with „Nedostupné"; an unapproved membership says „Ček
 `aria-disabled` and carry no link. No membership at all is an `EmptyState` „Nejste členem žádného
 projektu. Požádejte správce projektu o pozvánku." The page header holds the ways out an account needs
 whatever it belongs to — **Účet** and **Odhlásit se** — and, for a maintainer, **Správa projektů** →
-`/system/projects` (`PROJECT_ADMIN_PATH`; the page arrives in a later step, until then the link lands
-on the not-found page).
+`/system/projects` (`PROJECT_ADMIN_PATH` = `SYSTEM_PROJECTS_PATH`).
 
 **The header switcher** (`components/ProjectSwitcher.tsx`). It reads `ProjectContext` directly and
 renders nothing outside a provider or for an account with no project. `variant="bar"` sits in the
@@ -8674,6 +8673,71 @@ pages, a visitor), `App.test.tsx` "routing — projects" (`/` → `/p/v`; `/phot
 page; the chooser's links) — the rest of `App.test.tsx` mounts `AppRoutes` inside a
 `ProjectProvider` with a `v` membership and reaches most pages through the old-address redirect;
 `build/pwa.test.ts` (a `/p/…` navigation gets the shell).
+
+## The system administrator's projects and accounts
+
+Three instance-level pages under `/system`, inside `Layout`, behind `RequireRole role="maintainer"`
+(the backend's `RequireMaintainer` on `/api/v1/projects` and the unprefixed `/api/v1/users`). Their
+nav entries sit in the user menu's „Správa" section right after **Systém** (`ADMIN_ITEMS` in
+`navItems.ts`, gate `maintainer`): **Projekty** (`SYSTEM_PROJECTS_PATH`, icon `diagram-3`) and
+**Účty** (`SYSTEM_USERS_PATH`, icon `shield-lock`); the drawer carries them in the same order. Both
+are instance paths, so `useProjectPath` leaves them alone. `NavEntry.exact` marks `/system` so the
+drawer's `NavLink` (`end`) does not light it up on its sub-pages.
+
+**Service** `services/projects.ts` (every URL through `instancePath`): `fetchAdminProjects`,
+`createProject`, `updateProject` (a key left out keeps the value, `null` clears a limit),
+`addProjectMember`, `fetchInstanceAccounts`, `setInstanceRole`; typed `AdminProject`,
+`InstanceAccount`, `AccountMembership`, `ProjectMember`. A refusal throws **`ProjectApiError`** (an
+`ApiError` whose `message` is the code) with `code` (`slug_taken`, `invalid_slug`, `last_admin`,
+`self`, `last_maintainer`, …) and `detail` (the backend's English rule, when it sends one).
+`slugProblem(slug)` mirrors `project.ValidateSlug` (`^[a-z0-9][a-z0-9-]{0,39}$` + `RESERVED_SLUGS`)
+→ `'empty' | 'format' | 'reserved' | null`; the server keeps the last word.
+
+**Limits** (`lib/byteLimit.ts`): a limit is typed as an amount + a MB/GB `Form.Select`
+(`components/system/LimitField.tsx`), empty = no limit; units are binary, like `formatBytes`.
+`limitDraft(bytes)` edits whole gigabytes in GB, anything else in MB; `parseLimit(draft)` accepts a
+decimal comma and refuses anything not positive; `formatLimits(project, t, locale)` is the table's
+one-line „soubor 50,0 MB · celkem neomezeno" / „neomezeno". Sizes go through `formatBytes`, counts
+through `formatCount` (`lib/format`) — no second byte formatter.
+
+**`SystemProjectsPage`** = `/system/projects`: a `RecordTable` (cards on a phone) — name (link to
+the detail), slug (monospace), „Aktivní"/„Vypnutý" badge, members, photos, originals, limits,
+created (`formatDate`); loading spinner, `ErrorState` with retry, `EmptyState`. **„Nový projekt"**
+opens `components/system/NewProjectModal.tsx`: slug (checked live on every keystroke; an empty field
+is only scolded on submit; hint „…Nelze později změnit."), name, description, the two limits. A
+refusal lands on its field: `slug_taken` → „Tento slug už existuje", `invalid_slug` → the format
+rule, `invalid_name` → the name, `invalid_limit` → the limits; anything else is an alert. An
+unlimited limit is left out of the body. A created project opens its detail page.
+
+**`SystemProjectPage`** = `/system/projects/:slug` (`NarrowPage`): the API addresses projects by uid,
+so the page reads the list and picks the slug (none → `ErrorState` „Projekt „x" neexistuje."). Cards:
+**Údaje projektu** (name, description, `LimitField`s; save sends **only changed fields**, so a limit
+set to the byte elsewhere is never rounded by the form), **Stav** (an `active` switch → `ConfirmModal`
+„Vypnout projekt X?" / „Členové projekt neotevřou, data zůstanou." — reactivating asks too, in
+`primary`; the dialog's target is kept while it fades out), **Členové** (link „Členové projektu" →
+`/p/<slug>/members`, the page a later step builds; **„Přidat mě jako člena"** POSTs the caller as
+`admin`, then `refresh()`es the session so the switcher learns the project — hidden when
+`useAuth().projects` already holds the project's uid), **Využití** and **Úložiště**
+(`storage_prefix` monospace, or „v kořeni úložiště" when empty — the placeholder the storage-move UI
+fills later).
+
+**`SystemUsersPage`** = `/system/users`: a `RecordTable` of every account — username (monospace),
+display name, e-mail, the instance-role badge („Správce systému"/„Uživatel") + „Zablokovaný",
+memberships as `slug (role)` chips (muted with a `title` „Čeká na schválení" / „Projekt je vypnutý"
+when they cannot be entered, else the project's name). The row action is **„Povýšit na správce
+systému"** / **„Odebrat správce"** behind a `ConfirmModal`; on the caller's own row it is a
+`ReasonedButton` greyed out with the reason (the backend's `self`). `last_maintainer` and `self`
+refusals become a dismissible alert in words; a success replaces the row with the server's answer.
+
+Tests: `pages/SystemProjectsPage.test.tsx` (table columns and values, retry, live slug validation +
+a refused empty form, create with limits in bytes → detail, `slug_taken` on the field),
+`pages/SystemProjectPage.test.tsx` (pick by slug, storage root text, unknown slug, save of changed
+fields only, deactivate confirm + cancel, add-me + hidden for a member),
+`pages/SystemUsersPage.test.tsx` (chips/badges, own row inert, promote, demote with
+`last_maintainer`), `services/projects.test.ts` (URLs, error codes, `slugProblem`),
+`lib/byteLimit.test.ts`, `navItems.test.ts` (`adminItems`, `systemProjectPath`), the admin-section
+enumeration in `Layout.test.tsx` and `MobileNavDrawer.test.tsx`, `App.test.tsx` (maintainer reaches
+`/system/projects`; an admin is refused all three).
 
 ## Theming / changing the palette
 

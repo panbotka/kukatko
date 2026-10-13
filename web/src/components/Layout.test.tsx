@@ -503,13 +503,22 @@ describe('Layout navbar', () => {
     // One labelled section, in ladder order: operations first, governance after.
     const heading = screen.getByText('Admin')
     expect(heading).toHaveClass('dropdown-header')
-    const links = ['Import', 'Maintenance', 'System', 'Users', 'Audit', 'Settings'].map((name) =>
-      screen.getByRole('link', { name }),
-    )
+    const links = [
+      'Import',
+      'Maintenance',
+      'System',
+      'Projects',
+      'Accounts',
+      'Users',
+      'Audit',
+      'Settings',
+    ].map((name) => screen.getByRole('link', { name }))
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       '/p/v/import',
       '/maintenance',
       '/system',
+      '/system/projects',
+      '/system/users',
       '/p/v/users',
       '/p/v/audit',
       '/p/v/settings',
@@ -537,7 +546,7 @@ describe('Layout navbar', () => {
     expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/p/v/users')
     expect(screen.getByRole('link', { name: 'Audit' })).toHaveAttribute('href', '/p/v/audit')
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/p/v/settings')
-    for (const name of ['Import', 'Maintenance', 'System']) {
+    for (const name of ['Import', 'Maintenance', 'System', 'Projects', 'Accounts']) {
       expect(screen.queryByRole('link', { name })).not.toBeInTheDocument()
     }
   })

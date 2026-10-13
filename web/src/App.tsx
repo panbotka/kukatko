@@ -52,7 +52,10 @@ import { ShareTargetPage } from './pages/ShareTargetPage'
 import { SlideshowPage } from './pages/SlideshowPage'
 import { StatsPage } from './pages/StatsPage'
 import { SubjectPage } from './pages/SubjectPage'
+import { SystemProjectPage } from './pages/SystemProjectPage'
+import { SystemProjectsPage } from './pages/SystemProjectsPage'
 import { SystemStatusPage } from './pages/SystemStatusPage'
+import { SystemUsersPage } from './pages/SystemUsersPage'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TasksPage } from './pages/TasksPage'
 import { TrashPage } from './pages/TrashPage'
@@ -251,6 +254,11 @@ export function AppRoutes() {
           <Route element={<RequireRole role="maintainer" />}>
             <Route path="/maintenance" element={<MaintenancePage />} />
             <Route path="/system" element={<SystemStatusPage />} />
+            {/* The instance's projects and accounts: the system administrator
+                manages every library from here, member of it or not. */}
+            <Route path="/system/projects" element={<SystemProjectsPage />} />
+            <Route path="/system/projects/:slug" element={<SystemProjectPage />} />
+            <Route path="/system/users" element={<SystemUsersPage />} />
           </Route>
           {/* Everything else is either an address from before projects existed
               — forwarded into the entry project — or simply unknown. */}
