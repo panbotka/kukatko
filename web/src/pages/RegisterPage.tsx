@@ -1,17 +1,18 @@
-import { type SyntheticEvent, useEffect, useState } from 'react'
+import { type ReactNode, type SyntheticEvent, useEffect, useState } from 'react'
 import Alert from 'react-bootstrap/Alert'
 import Button from 'react-bootstrap/Button'
 import Form from 'react-bootstrap/Form'
 import Spinner from 'react-bootstrap/Spinner'
 import { Trans, useTranslation } from 'react-i18next'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { AuthFrame } from '../components/AuthFrame'
-import { Icon } from '../components/Icon'
+import { Icon, type IconName } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
-import { mailEnabledFrom } from '../hooks/useMailEnabled'
-import { usePublicSettings } from '../hooks/usePublicSettings'
+import { useMailEnabled } from '../hooks/useMailEnabled'
+import { useProjectPublicSettings } from '../hooks/useProjectPublicSettings'
 import { registrationOpenFrom } from '../hooks/useRegistrationOpen'
+import { projectRegisterPath } from '../project/paths'
 import { ApiError, MIN_PASSWORD_LENGTH, NetworkError, register } from '../services/auth'
 import { fetchPublicInvite, InviteApiError } from '../services/invites'
 
@@ -49,6 +50,16 @@ type SubmitState =
   | { status: 'submitting' }
   | { status: 'error'; rejection: Rejection }
   | { status: 'done'; username: string; pendingApproval: boolean }
+
+/**
+ * What lets this registration in instead of an administrator creating the
+ * account: an invitation, an upload link, or a project's shared secret — the
+ * one path that shows the secret field and names the project in the request.
+ */
+type Door =
+  | { kind: 'invite'; code: string }
+  | { kind: 'link'; code: string }
+  | { kind: 'project'; slug: string }
 
 /**
  * What the invitation in the address (`/register?invite=<code>`) turned out to
@@ -228,57 +239,83 @@ function RegisterField({
   )
 }
 
+/** The sign-in page, remembering the project a registration page was for. */
+function loginPathFor(door: Door): string {
+  return door.kind === 'project' ? `/login?project=${encodeURIComponent(door.slug)}` : '/login'
+}
+
 /**
- * Registration page: the self-service way into the library for somebody the
- * community told about it, laid out like the sign-in card next to it so the two
- * read as one flow.
+ * The card's body while the page is still asking whether there is a form to
+ * show at all.
+ */
+function RegisterLoading() {
+  const { t } = useTranslation()
+  return (
+    <div className="text-center py-3">
+      <Spinner animation="border" role="status">
+        <span className="visually-hidden">{t('register.loading')}</span>
+      </Spinner>
+    </div>
+  )
+}
+
+/**
+ * The card's body when there is no form to show: one plain sentence and the
+ * way back to sign-in. A form that cannot succeed is worse than no form, since
+ * every field would be typed only to be refused.
+ */
+function RegisterBlocked({
+  testId,
+  icon,
+  loginPath,
+  children,
+}: {
+  testId: string
+  icon: IconName
+  loginPath: string
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  return (
+    <div data-testid={testId}>
+      <Alert variant="secondary" role="status">
+        <Icon name={icon} className="me-2" />
+        {children}
+      </Alert>
+      <div className="text-center">
+        <Link to={loginPath}>{t('register.backToLogin')}</Link>
+      </div>
+    </div>
+  )
+}
+
+/** What {@link RegisterForm} renders and where it sends the account. */
+interface RegisterFormProps {
+  /** What lets the registration in; decides the secret field and the request. */
+  door: Door
+  /** The paragraph above the form, saying which door this is. */
+  intro: ReactNode
+}
+
+/**
+ * The registration form and, once it succeeded, the confirmation in its place.
  *
- * The instance decides whether this screen has a form at all. While
- * `GET /settings/public` is being asked it shows a spinner, and a closed
- * instance gets a plain explanation and the way back to sign-in — a form that
- * cannot succeed is worse than no form, since every field would be typed only
- * to be refused. When the question could not be asked at all the form is shown
- * anyway: the server has the final word, and it words a closed door better than
- * a failed probe could.
+ * A successful registration deliberately does **not** sign anybody in: an
+ * account through a project's secret or an upload link exists but waits for a
+ * project admin, so there is no session to hand out and nothing to browse yet.
+ * An invitation's account is approved at once, and the confirmation says it
+ * may sign in right away.
  *
- * A successful registration replaces the form with the confirmation, and
- * deliberately does **not** sign anybody in: the account exists but is waiting
- * for an administrator, so there is no session to hand out and there is nothing
- * to browse yet.
- *
- * Arriving through an invitation (`/register?invite=<code>`, from the
- * `/invite/:code` page) the form asks `GET /invite/<code>` for the project's
- * name, greets with it, leaves out the registration word and sends the code as
- * `invite_code`. The instance's registration switch does not apply — an invite
- * is a project admin's decision about one person — and the account is created
- * approved, so the confirmation says it may sign in right away. An unusable
- * invite shows one plain sentence instead of the form.
- *
- * The same public response says whether this instance sends mail, and both the
- * e-mail field's hint and the confirmation say only what will actually happen:
- * an instance with `mail.enabled` off wires the no-op sender, so a promised
+ * The instance's public settings say whether it sends mail, and both the e-mail
+ * field's hint and the confirmation say only what will actually happen: an
+ * instance with `mail.enabled` off wires the no-op sender, so a promised
  * confirmation would never arrive.
  */
-export function RegisterPage() {
+function RegisterForm({ door, intro }: RegisterFormProps) {
   const { t } = useTranslation()
-  useDocumentTitle(t('register.title'))
-  // One fetch answers both questions this screen asks of the instance: whether
-  // there is any point showing the form, and whether it may promise an e-mail.
-  const publicSettings = usePublicSettings()
-  const registration = registrationOpenFrom(publicSettings)
-  const mailEnabled = mailEnabledFrom(publicSettings)
-  // Arriving from an upload link (/register?link=<code>): the link stands in for
-  // the shared secret, so the secret field is not asked for at all.
-  const [searchParams] = useSearchParams()
-  const uploadLink = searchParams.get('link')?.trim() ?? ''
-  // Arriving from an invitation (/register?invite=<code>): the invite stands in
-  // for the secret too, wins over a link, and works while registration is closed
-  // — it is a project admin's decision about one person. The account it makes
-  // is approved at once.
-  const inviteCode = searchParams.get('invite')?.trim() ?? ''
-  const viaInvite = inviteCode !== ''
-  const viaLink = !viaInvite && uploadLink !== ''
-  const invite = useInviteLookup(inviteCode)
+  const mailEnabled = useMailEnabled()
+  const asksSecret = door.kind === 'project'
+  const loginPath = loginPathFor(door)
 
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -315,7 +352,7 @@ export function RegisterPage() {
       email.trim() === '' ||
       password === '' ||
       passwordRepeat === '' ||
-      (!viaLink && !viaInvite && secret.trim() === '')
+      (asksSecret && secret.trim() === '')
     ) {
       setValidated(true)
       return
@@ -336,9 +373,10 @@ export function RegisterPage() {
         display_name: displayName.trim(),
         email: email.trim(),
         password,
-        secret: viaLink || viaInvite ? '' : secret.trim(),
-        ...(viaLink ? { upload_link: uploadLink } : {}),
-        ...(viaInvite ? { invite_code: inviteCode } : {}),
+        secret: asksSecret ? secret.trim() : '',
+        ...(door.kind === 'link' ? { upload_link: door.code } : {}),
+        ...(door.kind === 'invite' ? { invite_code: door.code } : {}),
+        ...(door.kind === 'project' ? { project: door.slug } : {}),
       })
       setSubmit({
         status: 'done',
@@ -351,226 +389,306 @@ export function RegisterPage() {
   }
 
   const submitting = submit.status === 'submitting'
-  // An invitation decides on its own whether the form is shown: the instance's
-  // registration switch does not apply to it.
-  const gate = viaInvite
-    ? invite.status === 'loading'
-      ? 'loading'
-      : invite.status === 'invalid'
-        ? 'invalid'
-        : 'open'
-    : registration
+
+  if (submit.status === 'done') {
+    return (
+      <div data-testid="register-done">
+        <Alert variant="success" role="status">
+          <Alert.Heading as="h2" className="h5">
+            <Icon name="person-check" className="me-2" />
+            {t('register.doneTitle', { username: submit.username })}
+          </Alert.Heading>
+          {submit.pendingApproval ? (
+            <>
+              <p className="mb-0">{t('register.donePending')}</p>
+              <p className="mb-0">
+                {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
+              </p>
+            </>
+          ) : (
+            <p className="mb-0">{t('register.doneApproved')}</p>
+          )}
+        </Alert>
+        <div className="text-center">
+          <Link to={loginPath}>{t('register.backToLogin')}</Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <AuthFrame title={t('register.title')}>
-      {gate === 'loading' && (
-        <div className="text-center py-3">
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">{t('register.loading')}</span>
-          </Spinner>
+    <>
+      <p className="text-secondary" data-testid="register-intro">
+        {intro}
+      </p>
+
+      {rejection !== null && rejection.field === null && (
+        <Alert variant="danger" role="alert">
+          {rejectionMessage}
+        </Alert>
+      )}
+
+      <Form
+        noValidate
+        validated={validated}
+        onSubmit={(event) => {
+          void handleSubmit(event)
+        }}
+      >
+        <RegisterField
+          id="register-username"
+          label={t('register.username')}
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={change(setUsername)}
+          disabled={submitting}
+          invalid={rejection?.field === 'username'}
+          feedback={
+            rejection?.field === 'username' ? rejectionMessage : t('register.usernameRequired')
+          }
+          hint={t('register.usernameHint')}
+          autoFocus
+        />
+        <RegisterField
+          id="register-display-name"
+          label={t('register.displayName')}
+          type="text"
+          autoComplete="name"
+          value={displayName}
+          onChange={change(setDisplayName)}
+          disabled={submitting}
+          invalid={rejection?.field === 'displayName'}
+          feedback={
+            rejection?.field === 'displayName'
+              ? rejectionMessage
+              : t('register.displayNameRequired')
+          }
+        />
+        <RegisterField
+          id="register-email"
+          label={t('register.email')}
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={change(setEmail)}
+          disabled={submitting}
+          invalid={rejection?.field === 'email'}
+          feedback={rejection?.field === 'email' ? rejectionMessage : t('register.emailRequired')}
+          hint={t(mailEnabled ? 'register.emailHint' : 'register.emailHintNoMail')}
+        />
+        <RegisterField
+          id="register-password"
+          label={t('register.password')}
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={change(setPassword)}
+          disabled={submitting}
+          minLength={MIN_PASSWORD_LENGTH}
+          invalid={rejection?.field === 'password'}
+          feedback={
+            rejection?.field === 'password'
+              ? rejectionMessage
+              : t('register.passwordRequired', { min: MIN_PASSWORD_LENGTH })
+          }
+        />
+        <RegisterField
+          id="register-password-repeat"
+          label={t('register.passwordRepeat')}
+          type="password"
+          autoComplete="new-password"
+          value={passwordRepeat}
+          onChange={change(setPasswordRepeat)}
+          disabled={submitting}
+          invalid={rejection?.field === 'passwordRepeat'}
+          feedback={
+            rejection?.field === 'passwordRepeat'
+              ? rejectionMessage
+              : t('register.passwordRepeatRequired')
+          }
+        />
+        {asksSecret && (
+          <RegisterField
+            id="register-secret"
+            label={t('register.secret')}
+            type="text"
+            autoComplete="off"
+            value={secret}
+            onChange={change(setSecret)}
+            disabled={submitting}
+            invalid={rejection?.field === 'secret'}
+            feedback={
+              rejection?.field === 'secret' ? rejectionMessage : t('register.secretRequired')
+            }
+            hint={t('register.secretHint')}
+          />
+        )}
+
+        <div className="d-grid mt-4">
+          <Button type="submit" variant="primary" disabled={submitting}>
+            {submitting && (
+              <Spinner
+                animation="border"
+                size="sm"
+                role="status"
+                aria-hidden="true"
+                className="me-2"
+              />
+            )}
+            {t('register.submit')}
+          </Button>
         </div>
-      )}
+      </Form>
 
-      {gate === 'invalid' && (
-        <div data-testid="register-invite-invalid">
-          <Alert variant="secondary" role="status">
-            <Icon name="slash-circle" className="me-2" />
-            {t('register.errorInvite')}
-          </Alert>
-          <div className="text-center">
-            <Link to="/login">{t('register.backToLogin')}</Link>
-          </div>
-        </div>
-      )}
-
-      {gate === 'closed' && (
-        <div data-testid="register-closed">
-          <Alert variant="secondary" role="status">
-            <Icon name="slash-circle" className="me-2" />
-            {t('register.closed')}
-          </Alert>
-          <div className="text-center">
-            <Link to="/login">{t('register.backToLogin')}</Link>
-          </div>
-        </div>
-      )}
-
-      {gate !== 'loading' && gate !== 'closed' && gate !== 'invalid' && (
-        <>
-          {submit.status === 'done' ? (
-            <div data-testid="register-done">
-              <Alert variant="success" role="status">
-                <Alert.Heading as="h2" className="h5">
-                  <Icon name="person-check" className="me-2" />
-                  {t('register.doneTitle', { username: submit.username })}
-                </Alert.Heading>
-                {submit.pendingApproval ? (
-                  <>
-                    <p className="mb-0">{t('register.donePending')}</p>
-                    <p className="mb-0">
-                      {mailEnabled ? t('register.doneMail') : t('register.doneNoMail')}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mb-0">{t('register.doneApproved')}</p>
-                )}
-              </Alert>
-              <div className="text-center">
-                <Link to="/login">{t('register.backToLogin')}</Link>
-              </div>
-            </div>
-          ) : (
-            <>
-              <p className="text-secondary" data-testid="register-intro">
-                {viaInvite ? (
-                  invite.status === 'ready' ? (
-                    <Trans
-                      i18nKey="register.introInvite"
-                      values={{ project: invite.projectName }}
-                      components={{ strong: <strong /> }}
-                    />
-                  ) : (
-                    t('register.introInviteNoName')
-                  )
-                ) : viaLink ? (
-                  t('register.introLink')
-                ) : (
-                  t('register.intro')
-                )}
-              </p>
-
-              {rejection !== null && rejection.field === null && (
-                <Alert variant="danger" role="alert">
-                  {rejectionMessage}
-                </Alert>
-              )}
-
-              <Form
-                noValidate
-                validated={validated}
-                onSubmit={(event) => {
-                  void handleSubmit(event)
-                }}
-              >
-                <RegisterField
-                  id="register-username"
-                  label={t('register.username')}
-                  type="text"
-                  autoComplete="username"
-                  value={username}
-                  onChange={change(setUsername)}
-                  disabled={submitting}
-                  invalid={rejection?.field === 'username'}
-                  feedback={
-                    rejection?.field === 'username'
-                      ? rejectionMessage
-                      : t('register.usernameRequired')
-                  }
-                  hint={t('register.usernameHint')}
-                  autoFocus
-                />
-                <RegisterField
-                  id="register-display-name"
-                  label={t('register.displayName')}
-                  type="text"
-                  autoComplete="name"
-                  value={displayName}
-                  onChange={change(setDisplayName)}
-                  disabled={submitting}
-                  invalid={rejection?.field === 'displayName'}
-                  feedback={
-                    rejection?.field === 'displayName'
-                      ? rejectionMessage
-                      : t('register.displayNameRequired')
-                  }
-                />
-                <RegisterField
-                  id="register-email"
-                  label={t('register.email')}
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={change(setEmail)}
-                  disabled={submitting}
-                  invalid={rejection?.field === 'email'}
-                  feedback={
-                    rejection?.field === 'email' ? rejectionMessage : t('register.emailRequired')
-                  }
-                  hint={t(mailEnabled ? 'register.emailHint' : 'register.emailHintNoMail')}
-                />
-                <RegisterField
-                  id="register-password"
-                  label={t('register.password')}
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={change(setPassword)}
-                  disabled={submitting}
-                  minLength={MIN_PASSWORD_LENGTH}
-                  invalid={rejection?.field === 'password'}
-                  feedback={
-                    rejection?.field === 'password'
-                      ? rejectionMessage
-                      : t('register.passwordRequired', { min: MIN_PASSWORD_LENGTH })
-                  }
-                />
-                <RegisterField
-                  id="register-password-repeat"
-                  label={t('register.passwordRepeat')}
-                  type="password"
-                  autoComplete="new-password"
-                  value={passwordRepeat}
-                  onChange={change(setPasswordRepeat)}
-                  disabled={submitting}
-                  invalid={rejection?.field === 'passwordRepeat'}
-                  feedback={
-                    rejection?.field === 'passwordRepeat'
-                      ? rejectionMessage
-                      : t('register.passwordRepeatRequired')
-                  }
-                />
-                {!viaLink && !viaInvite && (
-                  <RegisterField
-                    id="register-secret"
-                    label={t('register.secret')}
-                    type="text"
-                    autoComplete="off"
-                    value={secret}
-                    onChange={change(setSecret)}
-                    disabled={submitting}
-                    invalid={rejection?.field === 'secret'}
-                    feedback={
-                      rejection?.field === 'secret'
-                        ? rejectionMessage
-                        : t('register.secretRequired')
-                    }
-                    hint={t('register.secretHint')}
-                  />
-                )}
-
-                <div className="d-grid mt-4">
-                  <Button type="submit" variant="primary" disabled={submitting}>
-                    {submitting && (
-                      <Spinner
-                        animation="border"
-                        size="sm"
-                        role="status"
-                        aria-hidden="true"
-                        className="me-2"
-                      />
-                    )}
-                    {t('register.submit')}
-                  </Button>
-                </div>
-              </Form>
-
-              <div className="text-center mt-3">
-                <Link to="/login">{t('register.backToLogin')}</Link>
-              </div>
-            </>
-          )}
-        </>
-      )}
-    </AuthFrame>
+      <div className="text-center mt-3">
+        <Link to={loginPath}>{t('register.backToLogin')}</Link>
+      </div>
+    </>
   )
+}
+
+/**
+ * The instance-level registration page, `/register`, which belongs to no
+ * project: every self-service account is a member of one, so this address
+ * only forwards or explains.
+ *
+ * - Through an invitation (`/register?invite=<code>`, from the `/invite/:code`
+ *   page) the form asks `GET /invite/<code>` for the project's name, greets with
+ *   it, leaves out the registration word and sends the code as `invite_code`.
+ *   No project's registration switch applies — an invite is a project admin's
+ *   decision about one person — and the account is created approved. An
+ *   unusable invite shows one plain sentence instead of the form.
+ * - Through an upload link (`/register?link=<code>`) the link stands in for the
+ *   secret and names its own project; the form is shown and the server has the
+ *   final word on whether that project takes registrations.
+ * - With `?project=<slug>` it forwards to that project's own page,
+ *   `/p/<slug>/register` ({@link ProjectRegisterPage}).
+ * - Anything else gets "registration goes through an invitation or a project's
+ *   link" and the way back to sign-in: there is no instance-wide secret to ask.
+ */
+export function RegisterPage() {
+  const { t } = useTranslation()
+  useDocumentTitle(t('register.title'))
+  const [searchParams] = useSearchParams()
+  const uploadLink = searchParams.get('link')?.trim() ?? ''
+  // The invite wins over a link: it works while registration is closed, and the
+  // account it makes is approved at once.
+  const inviteCode = searchParams.get('invite')?.trim() ?? ''
+  const projectSlug = searchParams.get('project')?.trim() ?? ''
+  const invite = useInviteLookup(inviteCode)
+
+  if (inviteCode === '' && uploadLink === '' && projectSlug !== '') {
+    return <Navigate to={projectRegisterPath(projectSlug)} replace />
+  }
+
+  let body: ReactNode
+  if (inviteCode !== '') {
+    const door: Door = { kind: 'invite', code: inviteCode }
+    if (invite.status === 'loading') {
+      body = <RegisterLoading />
+    } else if (invite.status === 'invalid') {
+      body = (
+        <RegisterBlocked testId="register-invite-invalid" icon="slash-circle" loginPath="/login">
+          {t('register.errorInvite')}
+        </RegisterBlocked>
+      )
+    } else {
+      const intro =
+        invite.status === 'ready' ? (
+          <Trans
+            i18nKey="register.introInvite"
+            values={{ project: invite.projectName }}
+            components={{ strong: <strong /> }}
+          />
+        ) : (
+          t('register.introInviteNoName')
+        )
+      body = <RegisterForm door={door} intro={intro} />
+    }
+  } else if (uploadLink !== '') {
+    body = (
+      <RegisterForm door={{ kind: 'link', code: uploadLink }} intro={t('register.introLink')} />
+    )
+  } else {
+    body = (
+      <RegisterBlocked testId="register-via-project" icon="link-45deg" loginPath="/login">
+        {t('register.viaProject')}
+      </RegisterBlocked>
+    )
+  }
+
+  return <AuthFrame title={t('register.title')}>{body}</AuthFrame>
+}
+
+/**
+ * A project's own registration page, `/p/:slug/register`: public, because the
+ * whole point is that nobody signed in yet, and the one place a project's shared
+ * registration word is typed.
+ *
+ * It asks `GET /p/<slug>/settings/public` whether there is a form to show at
+ * all. While asking it shows a spinner; a slug the server does not admit
+ * (unknown, or a deactivated project — one 404) gets a plain sentence, and so
+ * does a project whose admin closed registration. When the question could not
+ * be asked at all the form is shown anyway: the server has the final word, and
+ * it words a closed door better than a failed probe could.
+ *
+ * The form greets with the project's name and posts the word with the slug; the
+ * account becomes an unapproved viewer of this project and of no other.
+ */
+export function ProjectRegisterPage() {
+  const { t } = useTranslation()
+  useDocumentTitle(t('register.title'))
+  const slug = useParams<{ slug: string }>().slug ?? ''
+  const project = useProjectPublicSettings(slug === '' ? null : slug)
+  const registration = registrationOpenFrom(project)
+  const door: Door = { kind: 'project', slug }
+  const loginPath = loginPathFor(door)
+  const projectName = project.status === 'ready' ? project.settings.project_name : slug
+
+  let body: ReactNode
+  switch (registration) {
+    case 'loading':
+      body = <RegisterLoading />
+      break
+    case 'notFound':
+      body = (
+        <RegisterBlocked
+          testId="register-project-missing"
+          icon="question-circle"
+          loginPath="/login"
+        >
+          {t('register.projectNotFound')}
+        </RegisterBlocked>
+      )
+      break
+    case 'closed':
+      body = (
+        <RegisterBlocked testId="register-closed" icon="slash-circle" loginPath={loginPath}>
+          {t('register.closed', { project: projectName })}
+        </RegisterBlocked>
+      )
+      break
+    case 'open':
+    case 'unknown':
+      body = (
+        <RegisterForm
+          door={door}
+          intro={
+            project.status === 'ready' ? (
+              <Trans
+                i18nKey="register.introProject"
+                values={{ project: projectName }}
+                components={{ strong: <strong /> }}
+              />
+            ) : (
+              t('register.intro')
+            )
+          }
+        />
+      )
+      break
+  }
+
+  return <AuthFrame title={t('register.title')}>{body}</AuthFrame>
 }

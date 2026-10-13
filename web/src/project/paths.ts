@@ -33,6 +33,15 @@ export const INSTANCE_PATH_PREFIXES = [
   PROJECTS_PATH,
 ] as const
 
+/**
+ * A project's own registration page, `/p/<slug>/register`: the address a
+ * project admin hands out, and the one the instance-level `/register?project=`
+ * forwards to. It is public, unlike every other page under `/p/<slug>`.
+ */
+export function projectRegisterPath(slug: string): string {
+  return `${PROJECT_ROUTE_PREFIX}${encodeURIComponent(slug)}/register`
+}
+
 /** The leading `/p/<slug>` of a pathname, capturing the slug. */
 const PROJECT_PREFIX = /^\/p\/([^/?#]+)/
 

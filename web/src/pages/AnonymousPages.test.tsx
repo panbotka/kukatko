@@ -10,7 +10,7 @@ import { setCurrentProjectSlug } from '../services/api'
 
 import { LoginPage } from './LoginPage'
 import { PasswordResetPage } from './PasswordResetPage'
-import { RegisterPage } from './RegisterPage'
+import { ProjectRegisterPage, RegisterPage } from './RegisterPage'
 import { UploadLinkPage } from './UploadLinkPage'
 
 // The real apiPath, watched: an anonymous page has no project, so a single call
@@ -36,7 +36,10 @@ function stubFetch() {
   // Every service passes a string URL; a Request object would be news.
   const fetchMock = vi.fn((url: string) => {
     if (url === '/api/v1/settings/public') {
-      return Promise.resolve(Response.json({ registration_open: true, passkeys: false }))
+      return Promise.resolve(Response.json({ passkeys_enabled: false, mail_enabled: false }))
+    }
+    if (url === '/api/v1/p/rodina/settings/public') {
+      return Promise.resolve(Response.json({ project_name: 'Rodina', registration_enabled: true }))
     }
     if (url === '/api/v1/u/Ab3dEf7h') {
       return Promise.resolve(Response.json(LINK))
@@ -46,6 +49,13 @@ function stubFetch() {
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
+
+/**
+ * The URLs an anonymous page may ask: instance routes, plus the one anonymous
+ * project route — a named project's public settings, which its registration
+ * page reads by slug through `instancePath`, never `apiPath`.
+ */
+const ANONYMOUS_URL = /^\/api\/v1\/((?!p\/)|p\/[^/]+\/settings\/public$)/
 
 /** A visitor nobody has signed in yet. */
 const ANONYMOUS = {
@@ -78,7 +88,20 @@ beforeEach(() => {
 
 describe.each([
   { name: 'login', url: '/login', path: '/login', page: <LoginPage /> },
-  { name: 'register', url: '/register', path: '/register', page: <RegisterPage /> },
+  // The bare /register asks nothing at all; through an upload link it shows the
+  // form, which reads the instance's mail flag.
+  {
+    name: 'register',
+    url: '/register?link=Ab3dEf7h',
+    path: '/register',
+    page: <RegisterPage />,
+  },
+  {
+    name: 'project register',
+    url: '/p/rodina/register',
+    path: '/p/:slug/register',
+    page: <ProjectRegisterPage />,
+  },
   {
     name: 'password reset',
     url: '/password-reset/tok123',
@@ -98,7 +121,7 @@ describe.each([
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument()
     expect(apiPathMock).not.toHaveBeenCalled()
     for (const [url] of fetchMock.mock.calls) {
-      expect(url).toMatch(/^\/api\/v1\/(?!p\/)/)
+      expect(url).toMatch(ANONYMOUS_URL)
     }
   })
 })

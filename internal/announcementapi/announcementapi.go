@@ -1,6 +1,9 @@
-// Package announcementapi exposes the single instance-wide announcement over
-// HTTP: any signed-in user can read the current banner message, and a maintainer
-// can publish or clear it. It mirrors internal/organizeapi's dual-guard shape —
+// Package announcementapi exposes a project's announcement over HTTP: any
+// member of the project can read its current banner message, and a maintainer
+// (the system administrator, who enters every project) can publish or clear it.
+// The routes live only under the project prefix /api/v1/p/{project}, and every
+// one acts on the project auth.ProjectFromContext names, so a banner published
+// in one project is never shown in another. It mirrors internal/organizeapi's dual-guard shape —
 // reads behind RequireAuth, mutations behind RequireMaintainer — with both guards
 // and the store injected so the package stays decoupled from auth's wiring and the
 // concrete store, and is unit-testable with fakes.
@@ -24,7 +27,6 @@ import (
 	"github.com/panbotka/kukatko/internal/announcement"
 	"github.com/panbotka/kukatko/internal/audit"
 	"github.com/panbotka/kukatko/internal/auth"
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // maxBodyBytes caps the publish request body. A banner message is a short line,
@@ -79,7 +81,7 @@ func NewAPI(cfg Config) *API {
 }
 
 // RegisterRoutes mounts the announcement endpoints onto r, which the caller has
-// scoped under the API base path (for example /api/v1):
+// scoped to one project (/api/v1/p/{project}):
 //
 //	GET    /announcement   RequireAuth         read the current banner (200 {"message":""} when none)
 //	PUT    /announcement   RequireMaintainer   publish/replace the banner
@@ -134,7 +136,7 @@ func (a *API) handleSet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(saved))
 }
 
-// handleClear takes the announcement down for all users.
+// handleClear takes the project's announcement down for all of its members.
 func (a *API) handleClear(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFromContext(r.Context())
 	entry := a.auditEntry(r, user.UID, audit.ActionAnnouncementClear, nil)
@@ -217,12 +219,8 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
 }
 
-// requestProject returns the project a request acts on. Requests do not carry a
-// project yet, so every one acts on the bootstrap project, which holds the whole
-// library.
-//
-//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
-func requestProject(*http.Request) string {
-	// TODO multi-tenancy: project from context
-	return project.BootstrapUID
+// requestProject returns the uid of the project the request was admitted
+// into by the guard in front of it.
+func requestProject(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }

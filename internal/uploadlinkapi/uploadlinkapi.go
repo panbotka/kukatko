@@ -26,6 +26,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
+	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 )
 
@@ -75,6 +76,15 @@ type ProjectResolver interface {
 	Get(ctx context.Context, uid string) (*project.Project, error)
 }
 
+// RegistrationSettings reads whether a project takes self-service
+// registrations, which the public page reports so it offers registering
+// through the link only where the link's own project would accept it. It is
+// satisfied by *settings.Store.
+type RegistrationSettings interface {
+	// Get returns the project's settings, or the defaults when none are stored.
+	Get(ctx context.Context, projectUID string) (settings.Settings, error)
+}
+
 // SidecarEnqueuer schedules a rewrite of a photo's metadata sidecar, which a
 // photo filed into new albums and labels needs. It is satisfied by jobs.Enqueuer.
 type SidecarEnqueuer interface {
@@ -96,6 +106,9 @@ type Config struct {
 	// Sidecar reschedules the sidecar of every photo an upload filed; nil
 	// schedules none.
 	Sidecar SidecarEnqueuer
+	// Registration reads the link's project's registration switch for the
+	// public page; nil reports registration closed.
+	Registration RegistrationSettings
 	// RequireCurator guards the management routes (required).
 	RequireCurator func(http.Handler) http.Handler
 	// OptionalAuth puts a signed-in caller on the context of the public upload
@@ -147,6 +160,7 @@ type API struct {
 	ingest         Ingester
 	projects       ProjectResolver
 	sidecar        SidecarEnqueuer
+	registration   RegistrationSettings
 	requireCurator func(http.Handler) http.Handler
 	optionalAuth   func(http.Handler) http.Handler
 	currentUser    func(r *http.Request) (auth.User, bool)
@@ -169,6 +183,7 @@ type API struct {
 func NewAPI(cfg Config) *API {
 	a := &API{
 		store: cfg.Store, ingest: cfg.Ingest, projects: cfg.Projects, sidecar: cfg.Sidecar,
+		registration:   cfg.Registration,
 		requireCurator: cfg.RequireCurator, optionalAuth: cfg.OptionalAuth,
 		currentUser: cfg.CurrentUser, currentRole: cfg.CurrentRole, currentProject: cfg.CurrentProject,
 		ipLimit: cfg.IPLimit, linkLimit: cfg.LinkLimit,

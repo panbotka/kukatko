@@ -14,7 +14,6 @@ import (
 	"github.com/panbotka/kukatko/internal/announcement"
 	"github.com/panbotka/kukatko/internal/announcementapi"
 	"github.com/panbotka/kukatko/internal/audit"
-	"github.com/panbotka/kukatko/internal/project"
 )
 
 // fakeStore is an in-memory announcementapi.Store for handler tests. The err
@@ -164,8 +163,10 @@ func TestSet_ok(t *testing.T) {
 	if store.lastSetMessage != "Hello" || store.lastSetLevel != "info" {
 		t.Fatalf("store got message=%q level=%q", store.lastSetMessage, store.lastSetLevel)
 	}
-	if store.lastProject != project.BootstrapUID {
-		t.Fatalf("store got project %q, want the bootstrap project", store.lastProject)
+	// Pass-through guards admit no project, so the handler asks for none;
+	// which project a real request acts on is the integration tests' business.
+	if store.lastProject != "" {
+		t.Fatalf("store got project %q, want the (empty) project of the context", store.lastProject)
 	}
 	if store.lastEntry.Action != audit.ActionAnnouncementSet {
 		t.Fatalf("audit action = %q, want %q", store.lastEntry.Action, audit.ActionAnnouncementSet)

@@ -19,6 +19,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/settingsapi"
 )
@@ -28,6 +29,10 @@ import (
 // they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// projectPath is the API prefix of the bootstrap project, where these tests'
+// accounts are members.
+const projectPath = "/api/v1/p/" + project.BootstrapSlug
 
 // env wires the auth and settings APIs behind an httptest server over the
 // integration database.
@@ -47,16 +52,23 @@ func newEnv(t *testing.T) *env {
 	authSvc := auth.NewService(authStore, auth.SessionPolicy{TTL: time.Hour, MaxLifetime: 3 * time.Hour})
 	authAPI := auth.NewAPI(auth.APIConfig{Service: authSvc, Limiter: auth.NewLimiter(100, time.Minute)})
 
+	projects := project.NewStore(db.Pool())
 	api := settingsapi.NewAPI(settingsapi.Config{
-		Store:        settings.NewStore(db.Pool()),
-		RequireAuth:  authAPI.RequireAuth,
-		RequireAdmin: authAPI.RequireAdmin,
+		Store:                settings.NewStore(db.Pool()),
+		Usage:                projects,
+		RequireActiveProject: auth.RequireActiveProject,
+		RequireAuth:          authAPI.RequireAuth,
+		RequireAdmin:         authAPI.RequireAdmin,
 	})
 
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		api.RegisterInstanceRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(projects))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -138,7 +150,7 @@ func TestAdminRoundTripAndAudit(t *testing.T) {
 	env := newEnv(t)
 	admin := env.login(t, "admin", auth.AccountAdmin)
 
-	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
+	resp := env.mustDo(t, admin, http.MethodPut, projectPath+"/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
 	}
@@ -147,7 +159,7 @@ func TestAdminRoundTripAndAudit(t *testing.T) {
 		t.Fatalf("PUT response secret = %v, want the stored secret", saved["registration_secret"])
 	}
 
-	got := decodeBody(t, env.mustDo(t, admin, http.MethodGet, "/api/v1/settings", nil))
+	got := decodeBody(t, env.mustDo(t, admin, http.MethodGet, projectPath+"/settings", nil))
 	if got["registration_enabled"] != true || got["registration_secret"] != "rodina2026" ||
 		got["welcome_markdown"] != "# Vítej" {
 		t.Fatalf("GET /settings = %v, want the saved record", got)
@@ -157,31 +169,70 @@ func TestAdminRoundTripAndAudit(t *testing.T) {
 	}
 }
 
-// TestPublicIsAnonymousAndLeaksNothing: the sign-in screen's endpoint answers
-// without a session and carries only the three flags that screen needs.
+// TestPublicIsAnonymousAndLeaksNothing: both public endpoints answer without a
+// session — the project's with its name and registration flag, the instance's
+// with the two process flags — and neither carries anything else.
 func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 	env := newEnv(t)
 	admin := env.login(t, "admin", auth.AccountAdmin)
-	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
+	resp := env.mustDo(t, admin, http.MethodPut, projectPath+"/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
 	anonymous := &http.Client{}
+	resp = env.mustDo(t, anonymous, http.MethodGet, projectPath+"/settings/public", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("anonymous GET %s/settings/public status = %d, want 200", projectPath, resp.StatusCode)
+	}
+	body := decodeBody(t, resp)
+	if len(body) != 2 || body["registration_enabled"] != true || body["project_name"] == "" {
+		t.Fatalf("project public body = %v, want project_name and registration_enabled=true only", body)
+	}
+
 	resp = env.mustDo(t, anonymous, http.MethodGet, "/api/v1/settings/public", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("anonymous GET /settings/public status = %d, want 200", resp.StatusCode)
 	}
-	body := decodeBody(t, resp)
-	if len(body) != 3 || body["registration_enabled"] != true {
-		t.Fatalf("public body = %v, want registration_enabled=true plus the two process flags", body)
+	body = decodeBody(t, resp)
+	if len(body) != 2 {
+		t.Fatalf("instance public body = %v, want exactly the two process flags", body)
 	}
 	for _, flag := range []string{"passkeys_enabled", "mail_enabled"} {
 		if _, ok := body[flag]; !ok {
-			t.Fatalf("public body = %v, want a %s flag", body, flag)
+			t.Fatalf("instance public body = %v, want a %s flag", body, flag)
 		}
 	}
+}
+
+// TestUsageIsAdminOnlyAndCarriesTheLimits: the project's admin reads the
+// photo count, the originals' size and both limits — null while none is set —
+// and a viewer is refused.
+func TestUsageIsAdminOnlyAndCarriesTheLimits(t *testing.T) {
+	env := newEnv(t)
+	limit := int64(5 << 20)
+	if _, err := project.NewStore(env.db.Pool()).Update(t.Context(), audit.Meta{}, project.BootstrapUID,
+		project.UpdatePatch{MaxFileBytes: &limit}); err != nil {
+		t.Fatalf("setting a limit: %v", err)
+	}
+	admin := env.login(t, "admin", auth.AccountAdmin)
+	resp := env.mustDo(t, admin, http.MethodGet, projectPath+"/settings/usage", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /settings/usage status = %d, want 200", resp.StatusCode)
+	}
+	body := decodeBody(t, resp)
+	if body["photos"] != float64(0) || body["originals_bytes"] != float64(0) ||
+		body["max_file_bytes"] != float64(limit) || body["max_total_bytes"] != nil {
+		t.Fatalf("usage body = %v, want zero usage, the file limit and a null total limit", body)
+	}
+
+	viewer := env.login(t, "viewer", auth.AccountViewer)
+	resp = env.mustDo(t, viewer, http.MethodGet, projectPath+"/settings/usage", nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer GET /settings/usage status = %d, want 403", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
 }
 
 // TestWelcomeNeedsASessionAndHidesTheSecret: the welcome text is behind any
@@ -189,20 +240,20 @@ func TestPublicIsAnonymousAndLeaksNothing(t *testing.T) {
 func TestWelcomeNeedsASessionAndHidesTheSecret(t *testing.T) {
 	env := newEnv(t)
 	admin := env.login(t, "admin", auth.AccountAdmin)
-	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings", openRegistration)
+	resp := env.mustDo(t, admin, http.MethodPut, projectPath+"/settings", openRegistration)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
-	resp = env.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/settings/welcome", nil)
+	resp = env.mustDo(t, &http.Client{}, http.MethodGet, projectPath+"/settings/welcome", nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous GET /settings/welcome status = %d, want 401", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
 	viewer := env.login(t, "viewer", auth.AccountViewer)
-	body := decodeBody(t, env.mustDo(t, viewer, http.MethodGet, "/api/v1/settings/welcome", nil))
+	body := decodeBody(t, env.mustDo(t, viewer, http.MethodGet, projectPath+"/settings/welcome", nil))
 	if len(body) != 1 || body["welcome_markdown"] != "# Vítej" {
 		t.Fatalf("welcome body = %v, want only welcome_markdown", body)
 	}
@@ -215,7 +266,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 	env := newEnv(t)
 
 	for _, method := range []string{http.MethodGet, http.MethodPut} {
-		resp := env.mustDo(t, &http.Client{}, method, "/api/v1/settings", openRegistration)
+		resp := env.mustDo(t, &http.Client{}, method, projectPath+"/settings", openRegistration)
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("anonymous %s /settings status = %d, want 401", method, resp.StatusCode)
 		}
@@ -225,7 +276,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountEditor} {
 		client := env.login(t, "u_"+string(role), role)
 		for _, method := range []string{http.MethodGet, http.MethodPut} {
-			resp := env.mustDo(t, client, method, "/api/v1/settings", openRegistration)
+			resp := env.mustDo(t, client, method, projectPath+"/settings", openRegistration)
 			if resp.StatusCode != http.StatusForbidden {
 				t.Fatalf("%s /settings as %s status = %d, want 403", method, role, resp.StatusCode)
 			}
@@ -234,7 +285,7 @@ func TestFullRecordIsAdminOnly(t *testing.T) {
 	}
 
 	maintainer := env.login(t, "boss", auth.AccountMaintainer)
-	resp := env.mustDo(t, maintainer, http.MethodGet, "/api/v1/settings", nil)
+	resp := env.mustDo(t, maintainer, http.MethodGet, projectPath+"/settings", nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("maintainer GET /settings status = %d, want 200", resp.StatusCode)
 	}
@@ -247,14 +298,14 @@ func TestOpeningRegistrationNeedsASecret(t *testing.T) {
 	env := newEnv(t)
 	admin := env.login(t, "admin", auth.AccountAdmin)
 
-	resp := env.mustDo(t, admin, http.MethodPut, "/api/v1/settings",
+	resp := env.mustDo(t, admin, http.MethodPut, projectPath+"/settings",
 		[]byte(`{"registration_enabled":true,"registration_secret":"  ","welcome_markdown":""}`))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("PUT with a blank secret status = %d, want 400", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
 
-	body := decodeBody(t, env.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/settings/public", nil))
+	body := decodeBody(t, env.mustDo(t, &http.Client{}, http.MethodGet, projectPath+"/settings/public", nil))
 	if body["registration_enabled"] != false {
 		t.Fatalf("registration_enabled after the refusal = %v, want false", body["registration_enabled"])
 	}

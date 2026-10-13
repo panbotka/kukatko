@@ -45,7 +45,7 @@ import { PhotoDetailPage } from './pages/PhotoDetailPage'
 import { PlacesPage } from './pages/PlacesPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { RecognitionPage } from './pages/RecognitionPage'
-import { RegisterPage } from './pages/RegisterPage'
+import { ProjectRegisterPage, RegisterPage } from './pages/RegisterPage'
 import { ReviewDecisionsPage } from './pages/ReviewDecisionsPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SavedSearchesPage } from './pages/SavedSearchesPage'
@@ -218,9 +218,9 @@ const PROJECT_ROUTES = (
 const PROJECT_ROUTE_OBJECTS = createRoutesFromChildren(PROJECT_ROUTES)
 
 /**
- * The app's route table. `/login`, `/register`, `/password-reset/:token`, the
- * upload-link page `/u/:code` and the invitation page `/invite/:code` are
- * public; everything else is gated by {@link RequireAuth}. A library's pages
+ * The app's route table. `/login`, `/register`, a project's registration page
+ * `/p/:slug/register`, `/password-reset/:token`, the upload-link page `/u/:code`
+ * and the invitation page `/invite/:code` are public; everything else is gated by {@link RequireAuth}. A library's pages
  * live under `/p/:slug` (see {@link PROJECT_ROUTES}); the account, operations and the project chooser are
  * instance-level and carry no project. `/` and every address from before
  * projects existed forward into the project the entry rule picks.
@@ -234,9 +234,14 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       {/* Self-service registration, public like sign-in: the whole point is that
-          nobody signed in yet. The page itself asks the instance whether
-          registration is open and says so when it is not. */}
+          nobody signed in yet. Every account joins a project, so the instance's
+          /register only serves invitations and upload links, forwards
+          ?project=<slug> and otherwise explains; a project's own page asks the
+          project whether registration is open and says so when it is not. It
+          is the one public page under /p/:slug, and being more specific than
+          the guarded /p/:slug/* it wins without a session. */}
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/p/:slug/register" element={<ProjectRegisterPage />} />
       {/* The landing page of a password-reset link, public for the same reason:
           whoever follows it is locked out of the account it belongs to. The page
           asks the backend whether the link is still usable before it shows a

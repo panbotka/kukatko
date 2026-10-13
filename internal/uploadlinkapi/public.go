@@ -73,14 +73,20 @@ const recordTimeout = time.Minute
 const linkGoneMessage = "upload link is no longer valid"
 
 // publicLink is what anybody holding a link learns: the curator's title and
-// note, the names of the albums and labels the photos go to, and the expiry.
-// Nothing else — no UIDs, no counts, no creator, no photos.
+// note, the names of the albums and labels the photos go to, the expiry, and
+// whether registering through the link could succeed. Nothing else — no UIDs,
+// no counts, no creator, no photos.
 type publicLink struct {
 	Title     string    `json:"title"`
 	Note      string    `json:"note"`
 	Albums    []string  `json:"albums"`
 	Labels    []string  `json:"labels"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// RegistrationEnabled is whether the link's project takes self-service
+	// registrations, so the page offers registering through the link only
+	// where it can succeed. It is the same flag the project's own public
+	// settings publish, so it tells the holder nothing new.
+	RegistrationEnabled bool `json:"registration_enabled"`
 }
 
 // goneBody is the 410 of a link that exists but no longer accepts uploads. It
@@ -124,8 +130,24 @@ func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, publicLink{
 		Title: link.Title, Note: link.Note, Albums: names(link.Albums), Labels: names(link.Labels),
-		ExpiresAt: link.ExpiresAt,
+		ExpiresAt: link.ExpiresAt, RegistrationEnabled: a.registrationOpen(r, link.ProjectUID),
 	})
+}
+
+// registrationOpen reports whether projectUID, a live link's project, takes
+// self-service registrations — the switch a registration through the link is
+// judged by. A failed read is reported closed and logged: the page then just
+// does not offer the form, and the upload itself is unaffected.
+func (a *API) registrationOpen(r *http.Request, projectUID string) bool {
+	if a.registration == nil {
+		return false
+	}
+	stored, err := a.registration.Get(r.Context(), projectUID)
+	if err != nil {
+		a.log.WarnContext(r.Context(), "uploadlinkapi: reading the link's registration switch", "error", err)
+		return false
+	}
+	return stored.RegistrationEnabled
 }
 
 // handleUpload ingests the files of a multipart upload through a live link and

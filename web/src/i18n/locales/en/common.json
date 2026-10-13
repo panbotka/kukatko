@@ -439,7 +439,7 @@
     "title": "Registration",
     "loading": "Loading…",
     "intro": "Fill in your details and send them. An administrator still has to approve the account — only then can you sign in.",
-    "closed": "Registration is closed on this Kukátko right now. An administrator can create an account for you.",
+    "closed": "Registration to the project {{project}} is closed right now. A project administrator can create an account for you.",
     "backToLogin": "Back to sign-in",
     "username": "Username",
     "usernameHint": "This is the name you will sign in with.",
@@ -477,7 +477,10 @@
     "introInvite": "You are registering through an invitation to the project <strong>{{project}}</strong>, so you do not need the registration word. The account is approved at once.",
     "introInviteNoName": "You are registering through an invitation, so you do not need the registration word. The account is approved at once.",
     "errorInvite": "This invitation is not valid. Ask whoever invited you for a new one.",
-    "doneApproved": "The account is approved already — you can sign in."
+    "doneApproved": "The account is approved already — you can sign in.",
+    "introProject": "You are registering to the project <strong>{{project}}</strong>. Fill in your details and send them. A project administrator still has to approve the account — only then can you sign in.",
+    "viaProject": "Registration goes through an invitation or a project's link. Ask whoever is inviting you to Kukátko for the link.",
+    "projectNotFound": "This project does not exist or is no longer active. Check the link you were given."
   },
   "passwordReset": {
     "title": "New password",
@@ -3733,8 +3736,8 @@
     }
   },
   "settings": {
-    "title": "Instance settings",
-    "intro": "This is where you decide who may create an account, what word they need for it, and how Kukátko greets a newcomer. Nothing is stored until you save.",
+    "title": "Project settings",
+    "intro": "This is where you decide who may create an account in this project, what word they need for it, and how Kukátko greets them. Nothing is stored until you save.",
     "loading": "Loading settings…",
     "loadFailed": "The settings could not be loaded.",
     "save": "Save settings",
@@ -3746,19 +3749,33 @@
     "registration": {
       "title": "Registration",
       "enabledLabel": "Allow self-service registration",
-      "enabledHelp": "When it is on, the sign-in screen offers creating an account. A new account still waits for an administrator to approve it.",
+      "enabledHelp": "When it is on, the project's registration page (the link below) offers to create an account. A new account still waits for a project administrator's approval.",
       "secretLabel": "Shared registration secret",
       "secretHelp": "This word is what keeps strangers out — everybody registering has to type it. Everybody in the community is expected to know it, which is why it is readable here: you need to read it back and pass it on.",
       "secretRequired": "Registration cannot be turned on while the shared secret is empty.",
       "reveal": "Show",
-      "hide": "Hide"
+      "hide": "Hide",
+      "regenerate": "Generate new",
+      "regenerateHelp": "Generates a new random word. It takes effect once saved; the old one stops working then.",
+      "pageLabel": "Project's registration page",
+      "pageHelp": "Send this link to the people who should register, together with the shared secret."
     },
     "welcome": {
       "title": "Welcome text",
-      "help": "The text everybody sees the first time they sign in. It is written in Markdown; the preview shows exactly what will be rendered.",
+      "help": "The text a member of the project sees on their very first sign-in to Kukátko (somebody who already knows Kukátko from another project is not welcomed again). It is written in Markdown; the preview shows exactly what will be displayed.",
       "editorLabel": "Welcome text (Markdown)",
       "previewLabel": "Preview",
       "previewEmpty": "Empty for now — nobody is greeted with anything."
+    },
+    "usage": {
+      "title": "Usage and limits",
+      "photos": "Photos",
+      "originals": "Size of the originals",
+      "maxFile": "Largest file allowed",
+      "maxTotal": "Limit on all originals",
+      "unlimited": "unlimited",
+      "note": "Limits are set by the system administrator.",
+      "loadFailed": "Usage could not be loaded."
     },
     "leave": {
       "title": "Leave without saving?",
@@ -4144,7 +4161,7 @@
     "dismiss": "Dismiss announcement",
     "compose": {
       "title": "Announcement",
-      "intro": "Publish a short message shown as a banner at the top of the app to every signed-in user (for example planned downtime).",
+      "intro": "Publish a short message every member of this project sees as a strip at the top of the app (e.g. planned downtime).",
       "messageLabel": "Message",
       "messagePlaceholder": "e.g. expected downtime tonight 22:00–23:00",
       "levelLabel": "Level",

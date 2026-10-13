@@ -44,7 +44,7 @@ func TestAPI_register_invitePath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := &API{registration: closed, invites: tt.gate}
-			if _, err := a.register(req, tt.in, audit.Entry{}); !errors.Is(err, tt.want) {
+			if _, err := a.register(req, tt.in, "", audit.Entry{}); !errors.Is(err, tt.want) {
 				t.Errorf("register error = %v, want %v", err, tt.want)
 			}
 		})

@@ -44,7 +44,12 @@ vi.mock('./services/invites', async (importOriginal) => {
 // both so the route tests exercise the wiring, not the network. The greeting
 // never resolves, which keeps the welcome closed over every routed page.
 vi.mock('./services/settings', () => ({
-  fetchPublicSettings: vi.fn(() => Promise.resolve({ registration_enabled: true })),
+  fetchPublicSettings: vi.fn(() =>
+    Promise.resolve({ passkeys_enabled: false, mail_enabled: true }),
+  ),
+  fetchProjectPublicSettings: vi.fn(() =>
+    Promise.resolve({ project_name: 'Rodina', registration_enabled: true }),
+  ),
   fetchWelcomeMarkdown: vi.fn(() => new Promise(() => undefined)),
 }))
 
@@ -235,6 +240,15 @@ describe('routing', () => {
       await screen.findByRole('heading', { level: 1, name: 'Registration' }),
     ).toBeInTheDocument()
     expect(screen.getByTestId('pathname')).toHaveTextContent('/register')
+  })
+
+  it("renders a project's registration page at /p/:slug/register without a session", async () => {
+    // The one public page under /p/:slug: it must resolve outside RequireAuth
+    // (and ahead of the guarded project routes) rather than bouncing to /login.
+    renderRoutes(['/p/rodina/register'], 0, unauthenticated)
+
+    expect(await screen.findByTestId('register-intro')).toHaveTextContent('Rodina')
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/p/rodina/register')
   })
 
   it('renders the upload-link page at /u/:code without a session', async () => {

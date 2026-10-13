@@ -654,10 +654,12 @@ Read notifications are kept for 30 days, unread ones for 90.
   stops working, so removing the last one strands nobody. The server keeps only public keys.
   Needs the instance's own address configured (`auth.passkey.*`, which defaults off the address
   already set for mail); without it the feature is simply not offered.
-- **People can ask for an account themselves.** Switch registration on in the settings, tell the
-  family the shared secret, and anybody who knows it can register — the sign-in screen then offers a
-  registration form (and offers it only while registration is open) — but nobody gets in until an
-  administrator approves them. They are e-mailed that they are waiting; every administrator is told
+- **People can ask for an account themselves.** A project's admin switches registration on in the
+  project's settings and hands out the project's registration page (`/p/<slug>/register`, shown there
+  to copy) with the project's shared secret; anybody who knows it can register into that project —
+  one project's secret never opens another's — and the sign-in screen offers the form whenever the
+  visit is about a project whose registration is open. The bare `/register` explains that registration
+  goes through an invitation or a project's link. Nobody gets in until a project admin approves them. They are e-mailed that they are waiting; every administrator is told
   through the channels they switched on for that kind — in the app, as a push that opens the user list,
   by e-mail with a link to approve (all off until they choose them) — and until the approval the sign-in screen says what is being waited for
   instead of blaming the password.
@@ -672,14 +674,18 @@ Read notifications are kept for 30 days, unread ones for 90.
   one from the edit dialog on the user list. They stay signed in on every device, their tokens,
   passkeys, photos and comments stay theirs, and they are e-mailed the name to sign in with from now
   on. A name somebody else holds is refused, letter case notwithstanding.
-- **The instance's own settings have a screen.** An administrator opens *Nastavení* and decides
-  there whether self-service registration is open, what the shared secret is — shown as readable
-  text, because the whole job with it is to read it back and tell people what it is — and what
-  greeting a newcomer will be met with on their first sign-in, written in Markdown with a live
-  preview beside it that renders exactly what the welcome will. Registration cannot be opened while the secret is still empty, and nothing is written until
-  it is saved.
+- **Every project's settings have a screen.** A project's admin opens *Nastavení* and decides
+  there whether self-service registration into the project is open, what the shared secret is — shown
+  as readable text, because the whole job with it is to read it back and tell people what it is, with
+  a button that drafts a fresh random one — and what greeting a newcomer will be met with on their
+  first sign-in, written in Markdown with a live preview beside it that renders exactly what the
+  welcome will. Registration cannot be opened while the secret is still empty, and nothing is written
+  until it is saved. Below, read-only, *Využití a limity* shows how many photos the project holds, how
+  much their originals weigh and the limits the system administrator set (or „neomezeno"). The system
+  administrator also publishes the project's announcement banner there: every project has its own,
+  and a banner in one is never shown in another.
 - **The first sign-in is met with a welcome, once.** Whoever signs in for the first time gets the
-  greeting the administrator wrote, and then the one question the app cannot answer on its own:
+  greeting their project's admin wrote (once per account, not once per project), and then the one question the app cannot answer on its own:
   which person of the photographs they are. It is a search over the library's people showing each
   candidate's face as well as their name, because a family archive is full of namesakes; picking one
   only marks it, and nothing is linked until it is confirmed. Saying so is what makes *moje fotky*,

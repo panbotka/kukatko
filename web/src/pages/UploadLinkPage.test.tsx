@@ -27,7 +27,6 @@ vi.mock('../services/uploadLinks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/uploadLinks')>()
   return { ...actual, fetchPublicUploadLink: vi.fn() }
 })
-vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
 // The app-wide banner is mounted beside the page in one case; its service
 // worker registration is beside the point there.
 vi.mock('../pwa/register', () => ({
@@ -53,10 +52,8 @@ vi.mock('react-virtuoso', () => ({
 
 const { uploadFile } = await import('../services/upload')
 const { fetchPublicUploadLink } = await import('../services/uploadLinks')
-const { fetchPublicSettings } = await import('../services/settings')
 const uploadMock = vi.mocked(uploadFile)
 const linkMock = vi.mocked(fetchPublicUploadLink)
-const settingsMock = vi.mocked(fetchPublicSettings)
 
 /** The link description every case starts from. */
 const LINK: PublicUploadLink = {
@@ -65,6 +62,7 @@ const LINK: PublicUploadLink = {
   albums: ['Pouť'],
   labels: ['pouť'],
   expires_at: '2026-11-01T12:00:00Z',
+  registration_enabled: true,
 }
 
 /** An anonymous visitor. */
@@ -159,11 +157,6 @@ beforeEach(async () => {
   localStorage.clear()
   uploadMock.mockReset()
   linkMock.mockReset().mockResolvedValue(LINK)
-  settingsMock.mockReset().mockResolvedValue({
-    registration_enabled: true,
-    passkeys_enabled: false,
-    mail_enabled: false,
-  })
 })
 
 describe('UploadLinkPage', () => {
@@ -324,12 +317,8 @@ describe('UploadLinkPage', () => {
     expect(screen.getByRole('heading', { name: 'Register here' })).toBeInTheDocument()
   })
 
-  it('makes no registration offer when registration is closed', async () => {
-    settingsMock.mockResolvedValue({
-      registration_enabled: false,
-      passkeys_enabled: false,
-      mail_enabled: false,
-    })
+  it("makes no registration offer when the link's project takes no registrations", async () => {
+    linkMock.mockResolvedValue({ ...LINK, registration_enabled: false })
     uploadMock.mockResolvedValue(result('created'))
     const user = userEvent.setup()
     renderPage()

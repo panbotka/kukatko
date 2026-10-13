@@ -10,7 +10,10 @@ import { fetchAnnouncement, type Announcement } from '../services/announcement'
 const POLL_INTERVAL_MS = 60_000
 
 /**
- * Polls the single instance-wide announcement that backs the top-of-app banner.
+ * Polls the announcement of the project `slug` — the one the app works in —
+ * that backs the top-of-app banner. Every project has its own, so switching
+ * projects drops the previous project's message at once and fetches the new
+ * one's; a `null` slug (an account with no project to enter) asks nothing.
  *
  * It fetches once on mount and then on a modest {@link POLL_INTERVAL_MS} interval,
  * pausing entirely while the browser tab is hidden and resuming with an immediate
@@ -22,10 +25,22 @@ const POLL_INTERVAL_MS = 60_000
  * @returns The current announcement (its `message` may be empty when nothing is
  *   published), or null while loading or after a failure.
  */
-export function useAnnouncement(): Announcement | null {
-  const [announcement, setAnnouncement] = useState<Announcement | null>(null)
+export function useAnnouncement(slug: string | null): Announcement | null {
+  // The answer is kept with the project it belongs to, so a changed slug reads
+  // as "nothing yet" until its own answer arrives — another project's banner is
+  // never shown, not even for the length of a request.
+  const [answer, setAnswer] = useState<{ slug: string; announcement: Announcement | null } | null>(
+    null,
+  )
 
   useEffect(() => {
+    if (slug === null) {
+      return
+    }
+    const project = slug
+    const setAnnouncement = (announcement: Announcement | null) => {
+      setAnswer({ slug: project, announcement })
+    }
     let active = true
     let controller: AbortController | null = null
     let timer: number | null = null
@@ -84,7 +99,7 @@ export function useAnnouncement(): Announcement | null {
       stopTimer()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [])
+  }, [slug])
 
-  return announcement
+  return slug !== null && answer?.slug === slug ? answer.announcement : null
 }

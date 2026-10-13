@@ -9,6 +9,8 @@ import Row from 'react-bootstrap/Row'
 import Spinner from 'react-bootstrap/Spinner'
 import { useTranslation } from 'react-i18next'
 
+import { useAuth } from '../auth/AuthContext'
+import { AnnouncementComposer } from '../components/AnnouncementComposer'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
@@ -16,12 +18,17 @@ import { Markdown } from '../components/Markdown'
 import { NarrowPage } from '../components/NarrowPage'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
-import { formatDateTime } from '../lib/format'
+import { formatBytes, formatCount, formatDateTime } from '../lib/format'
+import { generateRegistrationSecret } from '../lib/registrationSecret'
+import { projectRegisterPath } from '../project/paths'
+import { getCurrentProjectSlug } from '../services/api'
 import { ApiError } from '../services/auth'
 import {
-  fetchInstanceSettings,
-  type InstanceSettings,
-  updateInstanceSettings,
+  fetchProjectSettings,
+  fetchProjectUsage,
+  type ProjectSettings,
+  type ProjectUsage,
+  updateProjectSettings,
 } from '../services/settings'
 
 /** The three values the form edits, i.e. everything `PUT /settings` replaces. */
@@ -35,7 +42,7 @@ interface Draft {
 type LoadState =
   | { status: 'loading' }
   | { status: 'error' }
-  | { status: 'ready'; saved: InstanceSettings }
+  | { status: 'ready'; saved: ProjectSettings }
 
 /** What the last save attempt did, so the page can report it. */
 type SaveState =
@@ -44,8 +51,79 @@ type SaveState =
   | { status: 'saved' }
   | { status: 'failed'; message: string }
 
+/** Fetch lifecycle of the read-only usage block. */
+type UsageState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; usage: ProjectUsage }
+
+/**
+ * The read-only "usage and limits" block: what the project occupies — its
+ * photos and the size of their originals — next to the two limits the system
+ * administrator set on it, each "unlimited" when there is none. The project's
+ * admin cannot change a limit (that is the system administrator's projects
+ * page), and the block says so. It loads on its own, so a failure here never
+ * keeps the settings form from working.
+ */
+function UsageCard() {
+  const { t, i18n } = useTranslation()
+  const [state, setState] = useState<UsageState>({ status: 'loading' })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchProjectUsage(controller.signal)
+      .then((usage) => {
+        setState({ status: 'ready', usage })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setState({ status: 'error' })
+        }
+      })
+    return () => {
+      controller.abort()
+    }
+  }, [])
+
+  const limit = (bytes: number | null) =>
+    bytes === null ? t('settings.usage.unlimited') : formatBytes(bytes, i18n.language)
+
+  return (
+    <Card className="mb-4" data-testid="settings-usage">
+      <Card.Body>
+        <h2 className="kk-section-title mb-3">{t('settings.usage.title')}</h2>
+        {state.status === 'loading' && (
+          <Spinner animation="border" size="sm" role="status">
+            <span className="visually-hidden">{t('settings.loading')}</span>
+          </Spinner>
+        )}
+        {state.status === 'error' && (
+          <p className="text-secondary mb-0">{t('settings.usage.loadFailed')}</p>
+        )}
+        {state.status === 'ready' && (
+          <>
+            <dl className="row mb-2">
+              <dt className="col-sm-6">{t('settings.usage.photos')}</dt>
+              <dd className="col-sm-6">{formatCount(state.usage.photos, i18n.language)}</dd>
+              <dt className="col-sm-6">{t('settings.usage.originals')}</dt>
+              <dd className="col-sm-6">
+                {formatBytes(state.usage.originals_bytes, i18n.language)}
+              </dd>
+              <dt className="col-sm-6">{t('settings.usage.maxFile')}</dt>
+              <dd className="col-sm-6">{limit(state.usage.max_file_bytes)}</dd>
+              <dt className="col-sm-6">{t('settings.usage.maxTotal')}</dt>
+              <dd className="col-sm-6">{limit(state.usage.max_total_bytes)}</dd>
+            </dl>
+            <Form.Text className="d-block">{t('settings.usage.note')}</Form.Text>
+          </>
+        )}
+      </Card.Body>
+    </Card>
+  )
+}
+
 /** Reduces a fetched record to the editable draft the form holds. */
-function toDraft(settings: InstanceSettings): Draft {
+function toDraft(settings: ProjectSettings): Draft {
   return {
     registrationEnabled: settings.registration_enabled,
     registrationSecret: settings.registration_secret,
@@ -58,7 +136,7 @@ function toDraft(settings: InstanceSettings): Draft {
  * trimmed, because the backend stores it trimmed: typing a trailing space and
  * deleting it again must not leave the page claiming unsaved work forever.
  */
-function isDirty(draft: Draft, saved: InstanceSettings): boolean {
+function isDirty(draft: Draft, saved: ProjectSettings): boolean {
   return (
     draft.registrationEnabled !== saved.registration_enabled ||
     draft.registrationSecret.trim() !== saved.registration_secret ||
@@ -67,10 +145,13 @@ function isDirty(draft: Draft, saved: InstanceSettings): boolean {
 }
 
 /**
- * The administrator's screen for the three instance-wide settings
- * (`GET`/`PUT /api/v1/settings`): whether self-service registration is open,
- * the shared secret it asks a newcomer for, and the Markdown greeting shown to
- * a person the first time they sign in.
+ * The project admin's screen for the project's three settings
+ * (`GET`/`PUT /api/v1/p/<slug>/settings`): whether self-service registration
+ * into the project is open, the shared secret its registration page
+ * (`/p/<slug>/register`, linked here to pass on) asks a newcomer for, and the
+ * Markdown greeting shown to a member the first time they sign in. Below them a
+ * read-only "usage and limits" block, and — for the system administrator, who
+ * alone publishes it — the project's announcement banner.
  *
  * It is its own route rather than another section of {@link MembersPage} — those
  * are memberships, these are the project — and admin-only, because the record
@@ -81,7 +162,8 @@ function isDirty(draft: Draft, saved: InstanceSettings): boolean {
  * - **The secret is shown as text.** An administrator's whole job with it is to
  *   read it back and tell people what it is, so a write-only password field
  *   would make the setting useless; the eye button masks it for the moment
- *   somebody is looking over the shoulder.
+ *   somebody is looking over the shoulder, and "generate new" drafts a fresh
+ *   random word that, like everything else here, takes effect on Save.
  * - **Enabling registration with a blank secret is refused here**, in the same
  *   words the API refuses it (`settings.ErrSecretRequired`) — an open door with
  *   no lock is never what was meant, and saying so at the switch beats saying it
@@ -94,6 +176,9 @@ function isDirty(draft: Draft, saved: InstanceSettings): boolean {
 export function SettingsPage() {
   const { t, i18n } = useTranslation()
   useDocumentTitle(t('settings.title'))
+  const { isMaintainer } = useAuth()
+  const slug = getCurrentProjectSlug()
+  const registerUrl = slug === null ? null : `${window.location.origin}${projectRegisterPath(slug)}`
 
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [draft, setDraft] = useState<Draft>({
@@ -109,7 +194,7 @@ export function SettingsPage() {
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     setLoad({ status: 'loading' })
-    const settings = await fetchInstanceSettings(signal)
+    const settings = await fetchProjectSettings(signal)
     if (signal?.aborted === true) {
       return
     }
@@ -163,7 +248,7 @@ export function SettingsPage() {
     }
     setSave({ status: 'saving' })
     try {
-      const saved = await updateInstanceSettings({
+      const saved = await updateProjectSettings({
         registration_enabled: draft.registrationEnabled,
         registration_secret: draft.registrationSecret,
         welcome_markdown: draft.welcomeMarkdown,
@@ -250,9 +335,30 @@ export function SettingsPage() {
                     ? t('settings.registration.hide')
                     : t('settings.registration.reveal')}
                 </Button>
+                <Button
+                  variant="outline-secondary"
+                  title={t('settings.registration.regenerateHelp')}
+                  onClick={() => {
+                    changeSecret(generateRegistrationSecret())
+                    setSecretRevealed(true)
+                  }}
+                >
+                  <Icon name="arrow-repeat" className="me-1" />
+                  {t('settings.registration.regenerate')}
+                </Button>
               </InputGroup>
               <Form.Text className="d-block">{t('settings.registration.secretHelp')}</Form.Text>
             </Form.Group>
+
+            {registerUrl !== null && (
+              <div className="mt-3">
+                <div className="form-label mb-1">{t('settings.registration.pageLabel')}</div>
+                <a href={registerUrl} className="text-break" data-testid="settings-register-url">
+                  {registerUrl}
+                </a>
+                <Form.Text className="d-block">{t('settings.registration.pageHelp')}</Form.Text>
+              </div>
+            )}
 
             {secretRequired && (
               <Alert variant="danger" className="mt-3 mb-0">
@@ -335,6 +441,11 @@ export function SettingsPage() {
           </span>
         </div>
       </Form>
+
+      <div className="mt-4">
+        <UsageCard />
+        {isMaintainer && <AnnouncementComposer />}
+      </div>
 
       <ConfirmModal
         show={guard.asking}

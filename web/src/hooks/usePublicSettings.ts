@@ -17,15 +17,15 @@ export type PublicSettingsState =
 
 /**
  * Asks `GET /api/v1/settings/public` once what an anonymous visitor may know
- * about this instance: whether registration is open, and whether it can run a
- * passkey ceremony.
+ * about this instance: whether it can run a passkey ceremony, and whether it
+ * sends mail at all. Whether registration is open is a project's question —
+ * see `useProjectPublicSettings`.
  *
  * The endpoint is anonymous, so this works before anybody has signed in — which
  * is the whole reason those two flags live there and not only behind
- * `GET /capabilities`. It fetches exactly once per mount and never polls: neither
- * fact changes often (one is an administrator's rare decision, the other is
- * fixed for the life of the process), and the screens that read them are
- * short-lived.
+ * `GET /capabilities`. It fetches exactly once per mount and never polls: both
+ * facts are fixed for the life of the process, and the screens that read them
+ * are short-lived.
  *
  * The request is aborted on unmount, and an aborted request leaves the state
  * alone — the component is gone, and `unknown` would be a claim about the

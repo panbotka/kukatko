@@ -7,14 +7,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '../i18n'
 import { ApiError, NetworkError, type RegisteredAccount } from '../services/auth'
 
-import { RegisterPage } from './RegisterPage'
+import { ProjectRegisterPage, RegisterPage } from './RegisterPage'
 
 vi.mock('../services/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/auth')>()
   return { ...actual, register: vi.fn() }
 })
 
-vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
+vi.mock('../services/settings', () => ({
+  fetchPublicSettings: vi.fn(),
+  fetchProjectPublicSettings: vi.fn(),
+}))
 
 vi.mock('../services/invites', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/invites')>()
@@ -22,9 +25,10 @@ vi.mock('../services/invites', async (importOriginal) => {
 })
 
 const { register } = await import('../services/auth')
-const { fetchPublicSettings } = await import('../services/settings')
+const { fetchProjectPublicSettings, fetchPublicSettings } = await import('../services/settings')
 const registerMock = vi.mocked(register)
 const settingsMock = vi.mocked(fetchPublicSettings)
+const projectMock = vi.mocked(fetchProjectPublicSettings)
 const { fetchPublicInvite, InviteApiError } = await import('../services/invites')
 const inviteMock = vi.mocked(fetchPublicInvite)
 
@@ -39,13 +43,20 @@ function created(overrides: Partial<RegisteredAccount> = {}): RegisteredAccount 
   }
 }
 
-/** Mounts the page with a sign-in route behind it, so its link resolves. */
-function renderRegister(url = '/register') {
+/** The registration page of the project every secret-path case registers into. */
+const PROJECT_URL = '/p/rodina/register'
+
+/**
+ * Mounts both registration pages — the instance's `/register` and a project's
+ * `/p/:slug/register` — with a sign-in route behind them, so their links resolve.
+ */
+function renderRegister(url = PROJECT_URL) {
   return render(
     <I18nextProvider i18n={i18n}>
       <MemoryRouter initialEntries={[url]}>
         <Routes>
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/p/:slug/register" element={<ProjectRegisterPage />} />
           <Route path="/login" element={<div>sign-in page</div>} />
         </Routes>
       </MemoryRouter>
@@ -58,7 +69,7 @@ async function fillForm(
   user: ReturnType<typeof userEvent.setup>,
   overrides: Partial<Record<'password' | 'repeat' | 'secret' | 'username', string>> = {},
 ) {
-  // The form appears only once the instance has answered whether registration
+  // The form appears only once the project has answered whether registration
   // is open, so the first field is awaited rather than assumed.
   await user.type(await screen.findByLabelText('Username'), overrides.username ?? '  newcomer  ')
   await user.type(screen.getByLabelText('Display name'), 'New Comer')
@@ -80,10 +91,10 @@ function groupOf(label: string): HTMLElement {
 describe('RegisterPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
-    settingsMock.mockResolvedValue({
+    settingsMock.mockResolvedValue({ passkeys_enabled: false, mail_enabled: true })
+    projectMock.mockReset().mockResolvedValue({
+      project_name: 'Rodina Nováků',
       registration_enabled: true,
-      passkeys_enabled: false,
-      mail_enabled: true,
     })
   })
 
@@ -94,22 +105,28 @@ describe('RegisterPage', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Registration')
   })
 
-  it('creates the account and confirms it is waiting, without signing anybody in', async () => {
+  it("registers into the page's project and confirms it is waiting, signing nobody in", async () => {
     const user = userEvent.setup()
     registerMock.mockResolvedValue(created())
     renderRegister()
 
     await fillForm(user)
+    expect(projectMock).toHaveBeenCalledWith('rodina', expect.any(AbortSignal))
+    expect(screen.getByTestId('register-intro')).toHaveTextContent(
+      'registering to the project Rodina Nováků',
+    )
     await user.click(await screen.findByRole('button', { name: 'Register' }))
 
     expect(registerMock).toHaveBeenCalledWith({
       // Everything typed is trimmed, the secret included: a word copied out of a
-      // message arrives with a space more often than not.
+      // message arrives with a space more often than not. The project the page
+      // belongs to travels with it: its word is the one checked.
       username: 'newcomer',
       display_name: 'New Comer',
       email: 'newcomer@example.com',
       password: 'hunter2hunter2',
       secret: 'veselice',
+      project: 'rodina',
     })
 
     const done = await screen.findByTestId('register-done')
@@ -150,12 +167,6 @@ describe('RegisterPage', () => {
   })
 
   it('registers through an invitation: no word, the project named, the code sent', async () => {
-    // Registration is closed on the instance: an invite does not care.
-    settingsMock.mockResolvedValue({
-      registration_enabled: false,
-      passkeys_enabled: false,
-      mail_enabled: true,
-    })
     inviteMock.mockResolvedValue({
       project_name: 'Veselice',
       role: 'editor',
@@ -262,11 +273,7 @@ describe('RegisterPage', () => {
     // With mail.enabled off the mailer is the no-op sender: the confirmation the
     // page used to promise would never arrive, and the hint under the address
     // said the same thing a second time.
-    settingsMock.mockResolvedValue({
-      registration_enabled: true,
-      passkeys_enabled: false,
-      mail_enabled: false,
-    })
+    settingsMock.mockResolvedValue({ passkeys_enabled: false, mail_enabled: false })
     const user = userEvent.setup()
     registerMock.mockResolvedValue(created())
     renderRegister()
@@ -282,30 +289,73 @@ describe('RegisterPage', () => {
     expect(done).not.toHaveTextContent(/sent a confirmation/i)
   })
 
-  it('shows no form at all when the instance says registration is closed', async () => {
-    settingsMock.mockResolvedValue({
-      registration_enabled: false,
-      passkeys_enabled: false,
-      mail_enabled: true,
-    })
+  it('shows no form at all when the project says registration is closed', async () => {
+    projectMock.mockResolvedValue({ project_name: 'Rodina Nováků', registration_enabled: false })
     renderRegister()
 
     const closed = await screen.findByTestId('register-closed')
-    expect(closed).toHaveTextContent(/Registration is closed/i)
-    expect(within(closed).getByRole('link', { name: 'Back to sign-in' })).toBeInTheDocument()
+    expect(closed).toHaveTextContent(/Registration to the project Rodina Nováků is closed/i)
+    // Back to sign-in remembers the project, so the sign-in screen can offer
+    // its registration again once it opens.
+    expect(within(closed).getByRole('link', { name: 'Back to sign-in' })).toHaveAttribute(
+      'href',
+      '/login?project=rodina',
+    )
     expect(screen.queryByRole('button', { name: 'Register' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Registration word')).not.toBeInTheDocument()
   })
 
-  it('still shows the form when the instance could not be asked', async () => {
+  it('says so for a project that does not exist or is deactivated', async () => {
+    projectMock.mockRejectedValue(new ApiError(404, 'project not found'))
+    renderRegister('/p/nic/register')
+
+    expect(await screen.findByTestId('register-project-missing')).toHaveTextContent(
+      'does not exist or is no longer active',
+    )
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+  })
+
+  it('still shows the form when the project could not be asked', async () => {
     // "We could not ask" is not "the door is shut": the server has the final
     // word, and it words a refusal better than a failed probe could.
-    settingsMock.mockRejectedValue(new NetworkError('Failed to fetch'))
+    projectMock.mockRejectedValue(new NetworkError('Failed to fetch'))
     renderRegister()
 
     expect(await screen.findByRole('button', { name: 'Register' })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByTestId('register-closed')).not.toBeInTheDocument()
     })
+  })
+
+  it('asks each project about its own registration', async () => {
+    projectMock.mockImplementation((slug) =>
+      Promise.resolve({
+        project_name: slug === 'a' ? 'Projekt A' : 'Projekt B',
+        registration_enabled: slug === 'a',
+      }),
+    )
+    const first = renderRegister('/p/a/register')
+    expect(await screen.findByTestId('register-intro')).toHaveTextContent('Projekt A')
+    first.unmount()
+
+    renderRegister('/p/b/register')
+    expect(await screen.findByTestId('register-closed')).toHaveTextContent('Projekt B')
+    expect(projectMock.mock.calls.map(([slug]) => slug)).toEqual(['a', 'b'])
+  })
+
+  it("forwards the instance's /register?project= to that project's page", async () => {
+    renderRegister('/register?project=rodina')
+
+    expect(await screen.findByTestId('register-intro')).toHaveTextContent('Rodina Nováků')
+    expect(projectMock).toHaveBeenCalledWith('rodina', expect.any(AbortSignal))
+  })
+
+  it('explains that registration goes through a project when /register names none', () => {
+    renderRegister('/register')
+
+    const notice = screen.getByTestId('register-via-project')
+    expect(notice).toHaveTextContent(/through an invitation or a project's link/i)
+    expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
+    expect(projectMock).not.toHaveBeenCalled()
   })
 })

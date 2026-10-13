@@ -87,6 +87,12 @@ type RegisterInput struct {
 	// for Secret and for the approval (see RegisterWithInvite); the handler
 	// resolves it, the service never reads it.
 	InviteCode string
+	// ProjectUID is the project a secret registration is into: its switch and
+	// its secret decide, and the account becomes an unapproved viewer of it and
+	// of no other. Empty is the bootstrap project. The handler resolves it from
+	// the slug the registration page sent; the link and invite paths ignore it,
+	// because their grant names the project.
+	ProjectUID string
 }
 
 // InviteGate lets an invitation link stand in for the shared registration
@@ -204,7 +210,9 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 	}
 }
 
-// Register creates the account described by in and returns it, unapproved.
+// Register creates the account described by in and returns it, unapproved:
+// an unapproved viewer of in.ProjectUID (the bootstrap project when empty),
+// whose switch and secret are the ones checked.
 //
 // The account, the audit entry (entry, whose actor and target are stamped with
 // the new account — nobody else was involved), the confirmation mail and the
@@ -218,10 +226,14 @@ func NewRegistration(cfg RegistrationConfig) *Registration {
 // the validation errors of the admin user API (ErrUsernameTooLong,
 // ErrInvalidEmail, ErrPasswordTooShort) for input it will not store.
 func (rg *Registration) Register(ctx context.Context, in RegisterInput, entry audit.Entry) (User, error) {
-	if err := rg.checkSecret(ctx, in.Secret); err != nil {
+	projectUID := in.ProjectUID
+	if projectUID == "" {
+		projectUID = project.BootstrapUID
+	}
+	if err := rg.checkSecret(ctx, projectUID, in.Secret); err != nil {
 		return User{}, err
 	}
-	return rg.register(ctx, registrationProject(ctx), in, entry, nil)
+	return rg.register(ctx, projectUID, in, entry, nil)
 }
 
 // RegisterWithLink creates the account described by in exactly as Register
@@ -241,7 +253,7 @@ func (rg *Registration) RegisterWithLink(
 ) (User, error) {
 	projectUID := grant.ProjectUID
 	if projectUID == "" {
-		projectUID = registrationProject(ctx)
+		projectUID = project.BootstrapUID
 	}
 	stored, err := rg.settings.Get(ctx, projectUID)
 	if err != nil {
@@ -386,8 +398,8 @@ func (rg *Registration) register(
 // The comparison is constant-time, so the time an answer takes says nothing
 // about how much of the secret was right — the one thing that would turn a
 // guessing game into a search.
-func (rg *Registration) checkSecret(ctx context.Context, secret string) error {
-	stored, err := rg.settings.Get(ctx, registrationProject(ctx))
+func (rg *Registration) checkSecret(ctx context.Context, projectUID, secret string) error {
+	stored, err := rg.settings.Get(ctx, projectUID)
 	if err != nil {
 		return fmt.Errorf("auth: reading the registration settings: %w", err)
 	}
@@ -506,14 +518,4 @@ func inSavepoint(ctx context.Context, tx pgx.Tx, fn func(savepoint pgx.Tx) error
 		return fmt.Errorf("auth: releasing the savepoint: %w", err)
 	}
 	return nil
-}
-
-// registrationProject returns the project whose settings govern a registration.
-// Registration does not name a project yet, so it is always the bootstrap
-// project, which holds the whole library.
-//
-//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
-func registrationProject(context.Context) string {
-	// TODO multi-tenancy: project from context
-	return project.BootstrapUID
 }

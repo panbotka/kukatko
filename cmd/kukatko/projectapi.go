@@ -86,9 +86,12 @@ func mountProjectAPI(r chi.Router, api *projectAPI) {
 // unprefixed path belongs to the system administrator's instance-wide account
 // list (internal/projectapi), so the directory is served only under
 // /p/{project} — where the frontend asks for it, and ctl (in the bootstrap
-// project until its contexts carry one). And the member management /members
-// and the invitation links /invites, which are new with projects and have no
-// old client to keep working.
+// project until its contexts carry one). The member management /members and
+// the invitation links /invites, which are new with projects and have no old
+// client to keep working. And the settings and the announcement, which are a
+// project's own and are read only through its prefix — the unprefixed
+// GET /settings/public is the instance-level route of the sign-in screen
+// (settingsapi.RegisterInstanceRoutes).
 func projectRoutes(store *project.Store, api *projectAPI) server.Option {
 	alias := aliasAPI(api)
 	return server.WithAPI(func(r chi.Router) {
@@ -103,12 +106,14 @@ func projectRoutes(store *project.Store, api *projectAPI) server.Option {
 
 // aliasAPI is the copy of api the unprefixed transition alias mounts: every
 // group but the name directory, whose unprefixed GET /users is the instance
-// account list, and the member management and invitation links, which only
-// ever lived under a project (see projectRoutes).
+// account list, and the member management, invitation links, settings and
+// announcement, which live only under a project (see projectRoutes).
 func aliasAPI(api *projectAPI) *projectAPI {
 	alias := *api
 	alias.users = func(chi.Router) {}
 	alias.members = func(chi.Router) {}
 	alias.invites = func(chi.Router) {}
+	alias.settings = func(chi.Router) {}
+	alias.announcement = func(chi.Router) {}
 	return &alias
 }

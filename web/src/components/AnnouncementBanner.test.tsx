@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
+import { ProjectContext, type ProjectContextValue } from '../project/ProjectContext'
 
 import { AnnouncementBanner } from './AnnouncementBanner'
 
@@ -19,19 +20,36 @@ vi.mock('../services/announcement', async (importOriginal) => {
 const { fetchAnnouncement } = await import('../services/announcement')
 const fetchMock = vi.mocked(fetchAnnouncement)
 
-/** The localStorage key the banner persists u1's dismissal under. */
-const DISMISS_KEY = 'kukatko.announcement.dismissedAt.u1'
+/** The localStorage key the banner persists u1's dismissal in project `v` under. */
+const DISMISS_KEY = 'kukatko.announcement.dismissedAt.u1.v'
 
-/** Renders the banner for the signed-in account `uid` (it needs no router). */
-function renderBanner(uid = 'u1') {
+/** The project context of the project `slug` the app works in. */
+function projectContext(slug: string | null): ProjectContextValue {
+  return {
+    project: slug === null ? null : { slug },
+  } as unknown as ProjectContextValue
+}
+
+/**
+ * The banner for the signed-in account `uid` in the project `slug` (it needs
+ * no router).
+ */
+function bannerTree(uid: string, slug: string | null) {
   const auth = { user: { uid } } as unknown as AuthContextValue
-  return render(
+  return (
     <I18nextProvider i18n={i18n}>
       <AuthContext.Provider value={auth}>
-        <AnnouncementBanner />
+        <ProjectContext.Provider value={projectContext(slug)}>
+          <AnnouncementBanner />
+        </ProjectContext.Provider>
       </AuthContext.Provider>
-    </I18nextProvider>,
+    </I18nextProvider>
   )
+}
+
+/** Renders the banner for the signed-in account `uid` in the project `slug`. */
+function renderBanner(uid = 'u1', slug: string | null = 'v') {
+  return render(bannerTree(uid, slug))
 }
 
 beforeEach(async () => {
@@ -144,5 +162,50 @@ describe('AnnouncementBanner', () => {
     fetchMock.mockResolvedValue({ message: 'Another one', level: 'info' })
     renderBanner()
     expect(await screen.findByText('Another one')).toBeInTheDocument()
+  })
+
+  it("shows each project's own banner and drops the previous one on a switch", async () => {
+    // The real client reads the project from the API layer's current slug; the
+    // fake answers per the slug the banner is keyed on, which is what changes.
+    let current = 'v'
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(
+        current === 'v'
+          ? { message: 'Jen pro V', level: 'info' as const, updated_at: 't1' }
+          : { message: '' },
+      ),
+    )
+    const view = renderBanner('u1', 'v')
+    expect(await screen.findByText('Jen pro V')).toBeInTheDocument()
+
+    current = 'b'
+    view.rerender(bannerTree('u1', 'b'))
+    // Gone at once, before B's answer arrives — never shown in another project.
+    expect(screen.queryByText('Jen pro V')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it("keeps one project's dismissal out of another project's banner", async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue({ message: 'Odstávka', level: 'warning', updated_at: 't1' })
+
+    const first = renderBanner('u1', 'v')
+    expect(await screen.findByText('Odstávka')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss announcement' }))
+    first.unmount()
+
+    renderBanner('u1', 'b')
+    expect(await screen.findByText('Odstávka')).toBeInTheDocument()
+    expect(window.localStorage.getItem('kukatko.announcement.dismissedAt.u1.b')).toBeNull()
+  })
+
+  it('asks nothing without a project', async () => {
+    renderBanner('u1', null)
+    await Promise.resolve()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

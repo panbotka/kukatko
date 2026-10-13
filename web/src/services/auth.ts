@@ -230,6 +230,13 @@ export interface RegisterInput {
    * member of the invite's project.
    */
   invite_code?: string
+  /**
+   * The slug of the project whose registration page the form is on: that
+   * project's switch and secret decide, and the account becomes an unapproved
+   * viewer of it. Read only on the secret path — a link or an invite names its
+   * own project.
+   */
+  project?: string
 }
 
 /**

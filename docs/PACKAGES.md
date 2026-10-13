@@ -19,7 +19,8 @@ to `## Package map` in `CLAUDE.md`.
   routes on both sides exposes the halves separately:
   `auth` `RegisterInstanceRoutes`/`RegisterDirectoryRoutes`, `notificationapi`
   `RegisterPushRoutes`/`RegisterInboxRoutes`, `uploadlinkapi` `RegisterManagementRoutes`/
-  `RegisterPublicRoutes`, `buildIngest` an `ingestRoutes` triple),
+  `RegisterPublicRoutes`, `settingsapi` `RegisterRoutes`/`RegisterInstanceRoutes`, `buildIngest` an
+  `ingestRoutes` triple),
   `internal/server/` (chi HTTP server, graceful shutdown, `WithTrustedProxies` →
   `clientip.Middleware` in place of chi's `middleware.RealIP`; the SPA catch-all
   `router.NotFound(web.Handler())` is carved out for **`/.well-known`** and **`/.well-known/*`**,
@@ -133,8 +134,13 @@ to `## Package map` in `CLAUDE.md`.
   NULL, so a repeat call can never move it backwards) and, like `SetUserSubject`, it leaves `updated_at`
   alone and records no audit entry.
   **Self-service registration** (`register.go`, `handlers_register.go`, `store_register.go`) is the
-  flow behind `POST /auth/register`: somebody who knows the instance's shared secret creates their own
-  account, which exists but cannot be used until an administrator approves it. It is a separate type,
+  flow behind `POST /auth/register`: somebody who knows a project's shared secret creates their own
+  account, an unapproved viewer of that project, which exists but cannot be used until a project admin
+  approves the membership. The secret path is **per project**: the body's `project` (the slug the
+  registration page `/p/<slug>/register` sends) is resolved by the handler (`registrationProject`; empty =
+  the bootstrap project, transition; an unknown or deactivated slug = `ErrRegistrationClosed`) into
+  `RegisterInput.ProjectUID`, whose switch and secret `checkSecret` reads — so one project's secret posted
+  with another's slug is the same `ErrRegistrationSecret` a made-up one gets. It is a separate type,
   `Registration` (built with `NewRegistration`, wired into `APIConfig.Registration`), rather than more
   methods on `Service`, because it is the only part of `auth` that consults the instance settings and
   sends mail — both injected as narrow interfaces (`SettingsSource`, satisfied by `*settings.Store`;
@@ -1565,7 +1571,13 @@ to `## Package map` in `CLAUDE.md`.
 package) puts a valid credential's principal on the context and lets an anonymous request through — the
 public upload-link upload uses it to attribute a signed-in uploader; `RequireSignedIn` (auth package)
 admits any authenticated account **without entering a project** (no membership consulted) — the
-instance-level invitation accept, for an account that belongs to no project yet; **video streaming**
+instance-level invitation accept, for an account that belongs to no project yet; `RequireActiveProject`
+(auth package, a plain function — it needs no API) admits **anybody, signed in or not**, into an
+existing, active project named by `WithProject` and records it for `PublicProjectFromContext` only —
+never as an authorised project, so `ProjectFromContext`/`ProjectUIDFromContext` stay empty behind it and
+no project-scoped store can mistake the request for an admitted one; an unknown slug, a deactivated
+project and a request that never passed `WithProject` are the one shared 404 — the guard of the one
+anonymous project route, `GET /p/{project}/settings/public`; **video streaming**
   (`video.go`): `GET /photos/{uid}/video` streams video **with HTTP Range** via `http.ServeContent`
   (206 partial, `Accept-Ranges`, seek, If-Range/If-None-Match, memory-bounded from `*os.File` via
   `storage.Materialize`, once per request — the transcode fallback shares it too) for inline HTML5
@@ -4087,7 +4099,7 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   detail's `upload_link`); `RecordUpload`'s audit details carry the link's `link_title` (read by the
   `last_used_at` `UPDATE … RETURNING title`); every mutation audits in its own transaction)),
   `internal/uploadlinkapi/`
-  (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Sidecar, RequireCurator, OptionalAuth,
+  (the HTTP half: `NewAPI(Config{Store, Ingest, Projects, Sidecar, Registration?, RequireCurator, OptionalAuth,
   CurrentUser?, CurrentRole?, CurrentProject?, IPLimit, LinkLimit, MaxFileSize, MaxUploadsPerLink,
   DefaultDays, MaxDays, SecureCookies, Now?})` mounts
   `/upload-links` **per project** (`RegisterManagementRoutes`, under `/p/{project}`: every route works in
@@ -4095,7 +4107,9 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `restore-code` (422 on `ErrCodeMismatch`) and `new-code`; somebody else's link is 404 unless the caller
   is an admin of the project, and the listing's `code`/`path` are set only by
   `view(user, link)` for a link `canManage` allows) and the public, **instance-level**
-  `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`): `liveLink` resolves the link by code,
+  `/u/{code}` pair behind the per-IP limiter (`RegisterPublicRoutes`; the page's `GET` also reports
+  `registration_enabled`, the link's own project's switch read through `Registration` — a
+  `RegistrationSettings`, `*settings.Store`; nil or a failed read = closed): `liveLink` resolves the link by code,
   then its project through `Projects` (`*project.Store`; a missing or deactivated project = the unknown
   link's 404) into a `liveTarget{Link, project}`, and every file is handed to `IngestFile` with
   **the link's project** (its audit entry names it too); the upload walks the multipart stream once (the `name`
@@ -4152,29 +4166,31 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   `DisallowUnknownFields` + an 8 KiB limit; **not audited** — a private per-user convenience list is not a
   library mutation; mounted by `server.WithAPI` (`buildSearchHistoryAPI` in `cmd/kukatko/searchhistory.go`)),
   `internal/announcement/`
-  (the DB layer for **a single instance-wide announcement** — a short message the administrator publishes and every
-  logged-in user sees as a banner at the top; the single-row `announcements` table in migration
+  (the DB layer for **a project's announcement** — a short message the system administrator publishes and every
+  member of the project sees as a banner at the top; the single-row `announcements` table in migration
   `0039_announcement.sql`: `id BOOLEAN PK DEFAULT true CHECK (id)` (a single-row invariant → publish is
   an **upsert**), `message TEXT NOT NULL`, `level TEXT NOT NULL DEFAULT 'info' CHECK (info|warning)`,
   `author_uid VARCHAR(32)` FK users `ON DELETE SET NULL` (losing the author must not take down a live announcement),
   `updated_at TIMESTAMPTZ`; **since migration 0102 one row per project**: the `id` key is gone, PK
   `project_id` (FK `projects`, the old row became the bootstrap project's) and every method takes `projectUID`
-  right after `ctx` (`internal/announcementapi` passes `project.BootstrapUID` until requests carry a project);
+  right after `ctx` (`internal/announcementapi` passes the request's `auth.ProjectUIDFromContext`);
   `Store` = `NewStore(pool)`: `Get(ctx,projectUID)` (→ the sentinel `ErrNotFound` when nothing),
   `Set(ctx,projectUID,message,level,authorUID,entry)` (upsert + validation: an empty/whitespace message → `ErrEmptyMessage`,
   an unknown level → `ErrInvalidLevel`, an empty level → `info`), `Clear(ctx,projectUID,entry)` (delete); **both publish and clear
   write the audit** (`announcement.set`/`announcement.clear`, message/level into details) in the **same transaction**
   as the change (mirrors `internal/organize`)), `internal/announcementapi/`
-  (a dual-guard HTTP API over the announcement: the `Store` interface (a subset of `announcement.Store`) → unit-testable
+  (a dual-guard HTTP API over the announcement of the request's project — `auth.ProjectUIDFromContext`, mounted
+  **only under `/p/{project}`** (the transition alias leaves it out), so a banner published in one project is never
+  read in another: the `Store` interface (a subset of `announcement.Store`) → unit-testable
   with a fake; `NewAPI(Config{Store,RequireAuth,RequireMaintainer})`+`RegisterRoutes` mounts `/announcement`:
   `GET /` behind `RequireAuth` (anyone logged in reads; when nothing is published → **200 `{"message":""}`** instead of 404,
   friendlier for the polling banner client), `PUT /` and `DELETE /` behind `RequireMaintainer` (publish/clear,
   `author_uid` = the actor from the auth context); the body `{message,level}` with `DisallowUnknownFields` + 16 KiB limit,
   `ErrEmptyMessage`/`ErrInvalidLevel` → 400, response `{message, level?, author_uid?, updated_at?}`
-  (`updated_at` RFC3339, otherwise omitted); mounted by `server.WithAPI` (`buildAnnouncementAPI` in
+  (`updated_at` RFC3339, otherwise omitted); mounted by `projectRoutes` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`)), `internal/settings/`
-  (the DB layer for **the instance-wide settings an administrator edits at runtime** — whether self-service
-  registration is open, the shared secret registration asks for, and the Markdown greeting shown on a first
+  (the DB layer for **the settings a project's admin edits at runtime** — whether self-service
+  registration into the project is open, the shared secret registration asks for, and the Markdown greeting shown on a first
   sign-in; none of the three is a deployment concern, so they live in the database and change without a
   redeploy. The single-row `instance_settings` table in migration `0062_instance_settings.sql`:
   `id BOOLEAN PK DEFAULT true CHECK (id)` (a single-row invariant → a write is an **upsert**),
@@ -4185,7 +4201,8 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   is open before anybody has ever opened the admin area. **Since migration 0102 one row per project**: the `id`
   key is gone, PK `project_id` (FK `projects`, the seeded row became the bootstrap project's; another project
   without a row reads the defaults) and every method takes `projectUID` right after `ctx` (`internal/settingsapi`
-  and `internal/auth`'s registration pass `project.BootstrapUID` until requests carry a project).
+  passes the request's project, `internal/auth`'s registration the project the registration names, the
+  upload-link page the link's).
   `Store` = `NewStore(pool)`: `Get(ctx,projectUID)` (→ the
   zero-value defaults when the row is missing rather than an error, so a hand-deleted row cannot block the
   sign-in screen), `Set(ctx,projectUID,Update{RegistrationEnabled,RegistrationSecret,WelcomeMarkdown},actorUID,entry)`
@@ -4196,25 +4213,31 @@ used by `uploadlink.RecordUpload` so filing an upload joins its audited transact
   **The secret is stored readable, not hashed** — an administrator has to read it back to tell people what
   it is — which is what makes the full record admin-only above. The table is classified **preserved** in
   `internal/reset/tables.go`: it describes the instance, not the library), `internal/settingsapi/`
-  (the HTTP API over the settings, with **three audiences and three separate wire types** rather than one
+  (the HTTP API over the settings, with **separate audiences and separate wire types** rather than one
   record filtered per role — a field added to `settings.Settings` then has to be given an audience on purpose
   instead of leaking into whichever payload happens to embed it. The `Store` interface (a subset of
-  `settings.Store`) → unit-testable with a fake;
-  `NewAPI(Config{Store,Passkeys,Mail,RequireAuth,RequireAdmin})`+`RegisterRoutes`
-  mounts `/settings`: `GET /settings/public` **unguarded** →
-  `{registration_enabled,passkeys_enabled,mail_enabled}` only — the three facts the sign-in screen needs
-  before anybody is signed in. Neither flag is a stored setting: `passkeys_enabled` is `Config.Passkeys`
+  `settings.Store`) and `UsageSource` (`Usage(ctx,uid)`, satisfied by `*project.Store`) → unit-testable with
+  fakes; `NewAPI(Config{Store,Usage,Passkeys,Mail,RequireActiveProject,RequireAuth,RequireAdmin})`.
+  `RegisterRoutes` mounts the **project's** `/settings`, only under `/p/{project}` (the transition alias
+  leaves it out), every route on the project the guard admitted (`auth.ProjectUIDFromContext`):
+  `GET /settings/public` behind `RequireActiveProject` (anonymous, `auth.PublicProjectFromContext`) →
+  `{project_name,registration_enabled}` only — what the project's registration page needs before there is
+  an account; `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` only (the project's;
+  `users.welcome_seen_at` stays per account, so a second project does not greet again); `GET /settings` and
+  `PUT /settings` behind `RequireAdmin` → the full record, secret included; the PUT body
+  `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields` + a 64 KiB limit
+  replaces all three, `ErrSecretRequired` → 400, `updated_at` RFC3339; the audit details carry the flag and
+  *whether* a secret and a greeting are set, **never the secret itself** — the trail is a permanent record
+  that outlives the secret it would copy; `GET /settings/usage` behind `RequireAdmin` →
+  `{photos,originals_bytes,max_file_bytes,max_total_bytes}`, the usage beside the admitted project's two
+  limits (`null` = none), read-only. `RegisterInstanceRoutes` mounts the **instance's** unguarded
+  `GET /settings/public` → `{passkeys_enabled,mail_enabled}` only — the two facts the sign-in screen needs
+  before anybody is signed in. Neither is a stored setting: `passkeys_enabled` is `Config.Passkeys`
   (`auth.API.PasskeysEnabled()`) because `GET /capabilities` carries the same flag for the rest of the app
   but is behind `RequireAuth`, so it cannot answer an anonymous sign-in screen; `mail_enabled` is
   `Config.Mail` (`cfg.Mail.Enabled`, the switch that decides whether `buildMailServiceOrNil` wires a real
   SMTP sender), so the screens around registration promise an e-mail only where one is actually coming.
-  `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}`
-  only, `GET /settings` and `PUT /settings` behind `RequireAdmin` → the full record, secret included;
-  the PUT body `{registration_enabled,registration_secret,welcome_markdown}` with `DisallowUnknownFields`
-  + a 64 KiB limit replaces all three, `ErrSecretRequired` → 400, `updated_at` RFC3339; the audit details
-  carry the flag and *whether* a secret and a greeting are set, **never the secret itself** — the trail is a
-  permanent record that outlives the secret it would copy; mounted by `server.WithAPI` (`buildSettingsAPI` in
-  `cmd/kukatko/settings.go`)), `internal/whatsnew/`
+  Mounted by `projectRoutes` and `server.WithAPI` (`buildSettingsAPI` in `cmd/kukatko/settings.go`)), `internal/whatsnew/`
   (**the returning-reader digest** behind the "what's new since your last visit" panel on the library home —
   a shared family library otherwise makes somebody else's evening of uploading invisible to the next person
   who opens the app; **read-only over the catalogue**, its single write is the visit bookkeeping on the

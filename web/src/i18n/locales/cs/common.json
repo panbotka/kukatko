@@ -451,7 +451,7 @@
     "title": "Registrace",
     "loading": "Načítání…",
     "intro": "Vyplňte údaje a odešlete. Účet pak ještě musí schválit správce — teprve potom se půjde přihlásit.",
-    "closed": "Registrace do tohoto Kukátka je teď zavřená. Účet vám může založit správce.",
+    "closed": "Registrace do projektu {{project}} je teď zavřená. Účet vám může založit správce projektu.",
     "backToLogin": "Zpět na přihlášení",
     "username": "Uživatelské jméno",
     "usernameHint": "Pod tímhle jménem se budete přihlašovat.",
@@ -489,7 +489,10 @@
     "introInvite": "Registrujete se přes pozvánku do projektu <strong>{{project}}</strong>, takže registrační slovo nepotřebujete. Účet bude rovnou schválený.",
     "introInviteNoName": "Registrujete se přes pozvánku, takže registrační slovo nepotřebujete. Účet bude rovnou schválený.",
     "errorInvite": "Tahle pozvánka neplatí. Požádejte toho, kdo vás zval, o novou.",
-    "doneApproved": "Účet je rovnou schválený — můžete se přihlásit."
+    "doneApproved": "Účet je rovnou schválený — můžete se přihlásit.",
+    "introProject": "Registrujete se do projektu <strong>{{project}}</strong>. Vyplňte údaje a odešlete. Účet pak ještě musí schválit správce projektu — teprve potom se půjde přihlásit.",
+    "viaProject": "Registrace probíhá přes pozvánku nebo odkaz projektu. Požádejte toho, kdo vás do Kukátka zve, o odkaz.",
+    "projectNotFound": "Tenhle projekt neexistuje nebo už není aktivní. Zkontrolujte odkaz, který jste dostali."
   },
   "passwordReset": {
     "title": "Nové heslo",
@@ -3917,8 +3920,8 @@
     }
   },
   "settings": {
-    "title": "Nastavení instance",
-    "intro": "Tady se nastavuje, kdo si smí založit účet, jaké slovo k tomu potřebuje a čím Kukátko přivítá nově příchozí. Nic se neukládá, dokud to neuložíš.",
+    "title": "Nastavení projektu",
+    "intro": "Tady se nastavuje, kdo si smí založit účet v tomhle projektu, jaké slovo k tomu potřebuje a čím ho Kukátko přivítá. Nic se neukládá, dokud to neuložíš.",
     "loading": "Načítání nastavení…",
     "loadFailed": "Nastavení se nepodařilo načíst.",
     "save": "Uložit nastavení",
@@ -3930,19 +3933,33 @@
     "registration": {
       "title": "Registrace",
       "enabledLabel": "Povolit vlastní registraci",
-      "enabledHelp": "Když je zapnutá, přihlašovací obrazovka nabídne založení účtu. Nový účet i tak čeká na schválení správcem.",
+      "enabledHelp": "Když je zapnutá, registrační stránka projektu (odkaz níže) nabídne založení účtu. Nový účet i tak čeká na schválení správcem projektu.",
       "secretLabel": "Sdílené heslo pro registraci",
       "secretHelp": "Tohle slovo drží cizí lidi venku — při registraci ho musí každý napsat. Počítá se s tím, že ho zná celá rodina, proto je tady čitelně: potřebuješ ho přečíst a říct dál.",
       "secretRequired": "Registraci nelze zapnout, dokud je sdílené heslo prázdné.",
       "reveal": "Zobrazit",
-      "hide": "Skrýt"
+      "hide": "Skrýt",
+      "regenerate": "Vygenerovat nové",
+      "regenerateHelp": "Vygeneruje nové náhodné slovo. Platit začne až po uložení; staré pak přestane fungovat.",
+      "pageLabel": "Registrační stránka projektu",
+      "pageHelp": "Tenhle odkaz pošli těm, kdo se mají zaregistrovat, spolu se sdíleným heslem pro registraci."
     },
     "welcome": {
       "title": "Uvítání",
-      "help": "Text, který každý uvidí při prvním přihlášení. Píše se v Markdownu; náhled ukazuje přesně to, co se zobrazí.",
+      "help": "Text, který člen projektu uvidí při svém úplně prvním přihlášení do Kukátka (kdo už Kukátko zná z jiného projektu, uvítání znovu nedostane). Píše se v Markdownu; náhled ukazuje přesně to, co se zobrazí.",
       "editorLabel": "Text uvítání (Markdown)",
       "previewLabel": "Náhled",
       "previewEmpty": "Zatím prázdné — nikoho nic neuvítá."
+    },
+    "usage": {
+      "title": "Využití a limity",
+      "photos": "Fotky",
+      "originals": "Velikost originálů",
+      "maxFile": "Největší povolený soubor",
+      "maxTotal": "Celkový limit originálů",
+      "unlimited": "neomezeno",
+      "note": "Limity nastavuje správce systému.",
+      "loadFailed": "Využití se nepodařilo načíst."
     },
     "leave": {
       "title": "Odejít bez uložení?",
@@ -4344,7 +4361,7 @@
     "dismiss": "Skrýt oznámení",
     "compose": {
       "title": "Oznámení",
-      "intro": "Zveřejněte krátkou zprávu, kterou uvidí jako pruh v horní části aplikace každý přihlášený uživatel (např. plánovaná odstávka).",
+      "intro": "Zveřejněte krátkou zprávu, kterou uvidí jako pruh v horní části aplikace každý člen tohoto projektu (např. plánovaná odstávka).",
       "messageLabel": "Zpráva",
       "messagePlaceholder": "Např. dnes ve 22:00–23:00 očekávejte výpadek",
       "levelLabel": "Úroveň",

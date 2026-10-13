@@ -60,7 +60,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `web/` — Vite + React 19 + TS frontend, builds into `internal/web/static/dist`
 - `internal/albumfeaturedjob` — the `album_featured_notify` job: the organize store's feature observer queues it in the feature's transaction (fresh features only, one queued job per album); the handler announces the album to every account that wants the kind — never the curator, never a disabled account, a private album only to curator+ — through `internal/notifydeliver`
 - `internal/announcement` — the banner message, one per project (`Get`/`Set`/`Clear` take the project), publish/clear audited in the mutation's transaction
-- `internal/announcementapi` — dual-guard `/announcement` (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
+- `internal/announcementapi` — dual-guard `/p/{project}/announcement`, one banner per project (`GET` RequireAuth, `PUT`/`DELETE` RequireMaintainer)
 - `internal/apitest` — the HTTP client the API packages' tests drive their `httptest` servers with; never `http.DefaultClient`, whose process-wide pool a closing test server empties under a parallel test
 - `internal/audit` — durable audit trail; `Write(ctx, exec, Entry)` runs **in the same transaction** as the mutation
 - `internal/auditapi` — read-only listings: admin-only `GET /audit`, own-actions `GET /audit/mine`
@@ -170,7 +170,7 @@ One line per package — so you know what exists without opening `docs/PACKAGES.
 - `internal/searchhistoryapi` — `/search-history` (list/record/clear), every operation scoped to the acting user
 - `internal/server` — chi HTTP server, graceful shutdown, `New(addr, WithAPI(...))`
 - `internal/settings` — the values an admin edits at runtime (registration open?, its shared secret, the first-sign-in welcome Markdown); one row per project, upsert audited in the mutation's transaction, secret stored readable
-- `internal/settingsapi` — `/settings` with three audiences: anonymous reads only what the sign-in screen needs (registration open? passkeys?), any role reads the welcome text, admin reads/replaces the full record
+- `internal/settingsapi` — a project's `/p/{project}/settings` (anonymous: name + registration open?; any role: the welcome text; its admin: the full record + usage/limits) and the instance's anonymous `/settings/public` (passkeys? mail?)
 - `internal/sidecar` — reads metadata next to the media (Google Takeout `.json`, Apple `.xmp`), pairs it with files and resolves precedence vs. EXIF
 - `internal/sidecarexport` — **writes** the metadata sidecar: the versioned YAML format + its atomic write to storage, so the catalogue survives losing the DB. Not `internal/sidecar` (that reads foreign ones)
 - `internal/sidecarjob` — worker handler `sidecar` + backfill: rewrites a photo's sidecar whenever its metadata/curation changes; idempotent, debounced by the queue's dedup

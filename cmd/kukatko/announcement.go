@@ -7,9 +7,9 @@ import (
 	"github.com/panbotka/kukatko/internal/database"
 )
 
-// buildAnnouncementAPI assembles the instance-wide announcement HTTP API over the
-// shared pool: any signed-in user reads the current banner, and a maintainer
-// publishes or clears it. The read guard and the maintainer guard are supplied via
+// buildAnnouncementAPI assembles the per-project announcement HTTP API over the
+// shared pool, mounted only under /p/{project}: any member reads the project's
+// current banner, and a maintainer publishes or clears it. The read guard and the maintainer guard are supplied via
 // authAPI so announcementapi stays decoupled from auth's wiring, and publish/clear
 // are audited in the same transaction as the change by the store.
 func buildAnnouncementAPI(db *database.DB, authAPI *auth.API) *announcementapi.API {

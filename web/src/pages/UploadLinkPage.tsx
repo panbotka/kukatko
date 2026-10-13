@@ -20,8 +20,6 @@ import { UploadQueuePanel } from '../components/upload/UploadQueuePanel'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { usePasteFiles } from '../hooks/usePasteFiles'
-import { usePublicSettings } from '../hooks/usePublicSettings'
-import { registrationOpenFrom } from '../hooks/useRegistrationOpen'
 import { useOnline } from '../hooks/useOnline'
 import { useUploadEta } from '../hooks/useUploadEta'
 import { type UploadQueueItem, useUploadQueue } from '../hooks/useUploadQueue'
@@ -122,7 +120,7 @@ type Phase = 'pick' | 'uploading' | 'done'
  *   something fails. A dropped connection resumes by itself
  *   (`useUploadResilience`), offline pauses the queue, the screen is kept awake;
  * - **done** — a big check mark, "Hotovo, nahráno N fotek", "Nahrát další" and,
- *   for an anonymous uploader on an instance with open registration, the offer
+ *   for an anonymous uploader when the link's project takes registrations, the offer
  *   to register through the same link (no secret needed, the photos just sent
  *   are claimed).
  *
@@ -133,7 +131,6 @@ export function UploadLinkPage() {
   const { t, i18n } = useTranslation()
   const { code = '' } = useParams()
   const { status: authStatus, user } = useAuth()
-  const registration = registrationOpenFrom(usePublicSettings())
   const [load, setLoad] = useState<LoadState>({ status: 'loading' })
   const [name, setName] = useState(readStoredName)
   const [lostBatch, setLostBatch] = useState(() => readInterruptedBatch(code, Date.now()))
@@ -457,7 +454,7 @@ export function UploadLinkPage() {
                   </div>
                   {details}
 
-                  {!signedIn && summary.created > 0 && registration === 'open' && (
+                  {!signedIn && summary.created > 0 && load.link.registration_enabled && (
                     <Alert variant="info" className="mt-4" data-testid="upload-link-register">
                       <Alert.Heading as="h2" className="h5">
                         <Icon name="person-plus" className="me-2" />

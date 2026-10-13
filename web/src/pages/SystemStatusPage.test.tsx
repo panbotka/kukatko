@@ -526,12 +526,12 @@ describe('SystemStatusPage', () => {
     expect(screen.getByTestId('tile-faces-unassigned')).not.toHaveClass('text-warning')
   })
 
-  it('puts the announcement box after the dashboard, not before it', async () => {
+  it('composes no announcement: the banner is per project, set on its settings page', async () => {
     renderPage()
 
     await screen.findByRole('heading', { name: 'Library' })
-    const headings = screen.getAllByRole('heading').map((heading) => heading.textContent)
-    expect(headings.indexOf('Library')).toBeLessThan(headings.indexOf('Announcement'))
+    expect(screen.queryByRole('heading', { name: 'Announcement' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Message')).not.toBeInTheDocument()
   })
 
   it('shows an error state when the snapshot fails to load', async () => {

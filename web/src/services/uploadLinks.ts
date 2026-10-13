@@ -73,13 +73,22 @@ export interface CreatedUploadLink {
   path: string
 }
 
-/** What anybody holding a link learns about it: names and the expiry, nothing else. */
+/**
+ * What anybody holding a link learns about it: names, the expiry and whether
+ * registering through it could succeed, nothing else.
+ */
 export interface PublicUploadLink {
   title: string
   note: string
   albums: string[]
   labels: string[]
   expires_at: string
+  /**
+   * Whether the link's project takes self-service registrations — the switch a
+   * registration through this link is judged by, so the page offers one only
+   * where it can succeed.
+   */
+  registration_enabled: boolean
 }
 
 /**

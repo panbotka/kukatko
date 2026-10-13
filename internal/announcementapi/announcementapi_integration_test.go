@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/auth"
 	"github.com/panbotka/kukatko/internal/database"
 	"github.com/panbotka/kukatko/internal/database/dbtest"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // These tests run only under `make test-integration` against the database named
@@ -28,6 +29,10 @@ import (
 // they do not run in parallel.
 
 const testPassword = "correct horse battery staple"
+
+// announcementPath is the announcement of the bootstrap project, where these
+// tests' accounts are members.
+const announcementPath = "/api/v1/p/" + project.BootstrapSlug + "/announcement"
 
 // env wires the auth and announcement APIs behind an httptest server over the
 // integration database.
@@ -56,7 +61,10 @@ func newEnv(t *testing.T) *env {
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		authAPI.RegisterRoutes(r)
-		api.RegisterRoutes(r)
+		r.Route("/p/{"+auth.ProjectURLParam+"}", func(r chi.Router) {
+			r.Use(auth.WithProject(project.NewStore(db.Pool())))
+			api.RegisterRoutes(r)
+		})
 	})
 	server := httptest.NewServer(r)
 	t.Cleanup(server.Close)
@@ -109,7 +117,7 @@ func (e *env) mustDo(t *testing.T, c *http.Client, method, path string, body []b
 // getMessage GETs /announcement and returns the decoded message field.
 func (e *env) getMessage(t *testing.T, c *http.Client) string {
 	t.Helper()
-	resp := e.mustDo(t, c, http.MethodGet, "/api/v1/announcement", nil)
+	resp := e.mustDo(t, c, http.MethodGet, announcementPath, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("GET /announcement status = %d, want 200", resp.StatusCode)
@@ -153,7 +161,7 @@ func TestPublishRequiresMaintainer(t *testing.T) {
 	for _, role := range []auth.AccountRole{auth.AccountViewer, auth.AccountEditor, auth.AccountAdmin} {
 		client := env.login(t, "u_"+string(role), role)
 		for _, method := range []string{http.MethodPut, http.MethodDelete} {
-			resp := env.mustDo(t, client, method, "/api/v1/announcement", body)
+			resp := env.mustDo(t, client, method, announcementPath, body)
 			if resp.StatusCode != http.StatusForbidden {
 				t.Fatalf("%s as %s status = %d, want 403", method, role, resp.StatusCode)
 			}
@@ -162,7 +170,7 @@ func TestPublishRequiresMaintainer(t *testing.T) {
 	}
 
 	maintainer := env.login(t, "boss", auth.AccountMaintainer)
-	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement", body)
+	resp := env.mustDo(t, maintainer, http.MethodPut, announcementPath, body)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("maintainer PUT status = %d, want 200", resp.StatusCode)
 	}
@@ -176,7 +184,7 @@ func TestPublishThenReadAndClear(t *testing.T) {
 	maintainer := env.login(t, "boss", auth.AccountMaintainer)
 	viewer := env.login(t, "viewer", auth.AccountViewer)
 
-	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement",
+	resp := env.mustDo(t, maintainer, http.MethodPut, announcementPath,
 		[]byte(`{"message":"Údržba ve 22:00","level":"warning"}`))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("publish status = %d, want 200", resp.StatusCode)
@@ -190,7 +198,7 @@ func TestPublishThenReadAndClear(t *testing.T) {
 		t.Fatalf("announcement.set audit rows = %d, want 1", n)
 	}
 
-	resp = env.mustDo(t, maintainer, http.MethodDelete, "/api/v1/announcement", nil)
+	resp = env.mustDo(t, maintainer, http.MethodDelete, announcementPath, nil)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("clear status = %d, want 204", resp.StatusCode)
 	}
@@ -207,7 +215,7 @@ func TestPublishThenReadAndClear(t *testing.T) {
 // TestUnauthenticatedRejected: no session cookie is 401 even for a read.
 func TestUnauthenticatedRejected(t *testing.T) {
 	env := newEnv(t)
-	resp := env.mustDo(t, &http.Client{}, http.MethodGet, "/api/v1/announcement", nil)
+	resp := env.mustDo(t, &http.Client{}, http.MethodGet, announcementPath, nil)
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous GET status = %d, want 401", resp.StatusCode)
 	}
@@ -218,7 +226,7 @@ func TestUnauthenticatedRejected(t *testing.T) {
 func TestPublishRejectsBadLevel(t *testing.T) {
 	env := newEnv(t)
 	maintainer := env.login(t, "boss", auth.AccountMaintainer)
-	resp := env.mustDo(t, maintainer, http.MethodPut, "/api/v1/announcement",
+	resp := env.mustDo(t, maintainer, http.MethodPut, announcementPath,
 		[]byte(`{"message":"x","level":"bogus"}`))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad-level publish status = %d, want 400", resp.StatusCode)

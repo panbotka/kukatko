@@ -1,19 +1,22 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/panbotka/kukatko/internal/audit"
+	"github.com/panbotka/kukatko/internal/project"
 )
 
 // registerRequest is the JSON body of POST /auth/register. display_name is
 // optional and defaults to empty; everything else is required, secret included —
 // it is what separates somebody the community told from a stranger who found the
 // address. Its field order and types mirror RegisterInput so the handler can
-// convert directly; keep the two in step.
+// convert directly — all but Project, a slug the handler resolves into
+// RegisterInput.ProjectUID; keep the rest in step.
 type registerRequest struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
@@ -26,6 +29,12 @@ type registerRequest struct {
 	// InviteCode is the short code of an invitation link; when set it replaces
 	// Secret and the approval (see RegisterWithInvite).
 	InviteCode string `json:"invite_code"`
+	// Project is the slug of the project whose registration page the form was
+	// on: its switch and its secret decide, and the account becomes a member of
+	// it. Empty is the bootstrap project (transition: removed in the
+	// alias-removal step). A link or an invite names its own project, so this is
+	// read only on the secret path.
+	Project string `json:"project"`
 }
 
 // registerResponse is the body of a successful registration. It echoes the
@@ -72,7 +81,11 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// UID: the account registers itself, so there is nobody else to attribute it
 	// to. The address and User-Agent come from here, where the request is.
 	entry := audit.FromRequest(r, "").Entry(audit.ActionUserRegister, userTargetType, "", nil)
-	user, err := a.register(r, RegisterInput(req), entry)
+	in := RegisterInput{
+		Username: req.Username, DisplayName: req.DisplayName, Email: req.Email, Password: req.Password,
+		Secret: req.Secret, UploadLink: req.UploadLink, InviteCode: req.InviteCode,
+	}
+	user, err := a.register(r, in, req.Project, entry)
 	if err != nil {
 		writeRegisterError(w, err)
 		return
@@ -87,15 +100,20 @@ func (a *API) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 // register runs the registration path in asks for: through an invitation when
 // it names one, through an upload link when it names one — the gate resolves
-// the link and the session cookie on r — and through the shared secret
-// otherwise. A link or an invite on an instance that wires no gate is
-// ErrRegistrationLink or ErrRegistrationInvite, the same answer an unknown one
-// gets.
-func (a *API) register(r *http.Request, in RegisterInput, entry audit.Entry) (User, error) {
+// the link and the session cookie on r — and through the shared secret of the
+// project slug names otherwise. A link or an invite on an instance that wires
+// no gate is ErrRegistrationLink or ErrRegistrationInvite, the same answer an
+// unknown one gets.
+func (a *API) register(r *http.Request, in RegisterInput, slug string, entry audit.Entry) (User, error) {
 	if in.InviteCode != "" {
 		return a.registerWithInvite(r, in, entry)
 	}
 	if in.UploadLink == "" {
+		projectUID, err := a.registrationProject(r.Context(), slug)
+		if err != nil {
+			return User{}, err
+		}
+		in.ProjectUID = projectUID
 		return a.registration.Register(r.Context(), in, entry)
 	}
 	if a.uploadLinks == nil {
@@ -106,6 +124,32 @@ func (a *API) register(r *http.Request, in RegisterInput, entry audit.Entry) (Us
 		return User{}, fmt.Errorf("auth: admitting the upload link: %w", err)
 	}
 	return a.registration.RegisterWithLink(r.Context(), in, grant, entry)
+}
+
+// registrationProject resolves the slug a secret registration names into the
+// project's uid. An empty slug is the bootstrap project (transition: removed in
+// the alias-removal step). A slug naming no project, or a deactivated one, is
+// ErrRegistrationClosed — a door that does not exist is as shut as one whose
+// admin closed it, and the anonymous GET /p/{project}/settings/public already
+// tells the two apart for anybody who asks.
+func (a *API) registrationProject(ctx context.Context, slug string) (string, error) {
+	if slug == "" {
+		return project.BootstrapUID, nil
+	}
+	if a.projects == nil {
+		return "", ErrRegistrationClosed
+	}
+	p, err := a.projects.GetBySlug(ctx, slug)
+	if errors.Is(err, project.ErrNotFound) {
+		return "", ErrRegistrationClosed
+	}
+	if err != nil {
+		return "", fmt.Errorf("auth: resolving the registration's project: %w", err)
+	}
+	if !p.Active {
+		return "", ErrRegistrationClosed
+	}
+	return p.UID, nil
 }
 
 // registerWithInvite admits in's invitation through the invite gate and

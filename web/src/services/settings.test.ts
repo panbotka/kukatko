@@ -1,19 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './auth'
-import { fetchInstanceSettings, fetchPublicSettings, updateInstanceSettings } from './settings'
+import {
+  fetchProjectPublicSettings,
+  fetchProjectSettings,
+  fetchProjectUsage,
+  fetchPublicSettings,
+  updateProjectSettings,
+} from './settings'
 
 describe('fetchPublicSettings', () => {
-  it('reads the registration flag from the anonymous endpoint', async () => {
+  it('reads the instance flags from the anonymous endpoint', async () => {
+    const flags = { passkeys_enabled: true, mail_enabled: false }
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ registration_enabled: true }), {
+      new Response(JSON.stringify(flags), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(fetchPublicSettings()).resolves.toEqual({ registration_enabled: true })
+    await expect(fetchPublicSettings()).resolves.toEqual(flags)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/v1/settings/public')
@@ -45,12 +52,50 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-describe('fetchInstanceSettings', () => {
+describe('fetchProjectPublicSettings', () => {
+  it("reads the named project's anonymous endpoint without credentials", async () => {
+    const body = { project_name: 'Rodina Nováků', registration_enabled: true }
+    const fetchMock = vi.fn().mockResolvedValue(json(body))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchProjectPublicSettings('rodina nováků')).resolves.toEqual(body)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/p/rodina%20nov%C3%A1k%C5%AF/settings/public')
+    expect(init.credentials).toBeUndefined()
+  })
+
+  it('rejects an unknown or deactivated project with its 404', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: 'project not found' }, 404)))
+
+    const failure: unknown = await fetchProjectPublicSettings('nic').catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(ApiError)
+    expect((failure as ApiError).status).toBe(404)
+  })
+})
+
+describe('fetchProjectUsage', () => {
+  it("reads the current project's usage with the session cookie", async () => {
+    const usage = { photos: 3, originals_bytes: 2048, max_file_bytes: null, max_total_bytes: 4096 }
+    const fetchMock = vi.fn().mockResolvedValue(json(usage))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchProjectUsage()).resolves.toEqual(usage)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/p/v/settings/usage')
+    expect(init.credentials).toBe('same-origin')
+  })
+})
+
+describe('fetchProjectSettings', () => {
   it('reads the full record, secret included, with the session cookie', async () => {
     const fetchMock = vi.fn().mockResolvedValue(json(adminRecord))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(fetchInstanceSettings()).resolves.toEqual(adminRecord)
+    await expect(fetchProjectSettings()).resolves.toEqual(adminRecord)
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/v1/p/v/settings')
@@ -62,7 +107,7 @@ describe('fetchInstanceSettings', () => {
   it('throws an ApiError carrying the status when the guard refuses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: 'forbidden' }, 403)))
 
-    await expect(fetchInstanceSettings()).rejects.toMatchObject({
+    await expect(fetchProjectSettings()).rejects.toMatchObject({
       name: 'ApiError',
       status: 403,
       message: 'forbidden',
@@ -70,13 +115,13 @@ describe('fetchInstanceSettings', () => {
   })
 })
 
-describe('updateInstanceSettings', () => {
+describe('updateProjectSettings', () => {
   it('PUTs all three values together and returns the persisted record', async () => {
     const fetchMock = vi.fn().mockResolvedValue(json(adminRecord))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      updateInstanceSettings({
+      updateProjectSettings({
         registration_enabled: true,
         registration_secret: 'veselice',
         welcome_markdown: '# Ahoj',
@@ -106,7 +151,7 @@ describe('updateInstanceSettings', () => {
         ),
     )
 
-    const failure = await updateInstanceSettings({
+    const failure = await updateProjectSettings({
       registration_enabled: true,
       registration_secret: '',
       welcome_markdown: '',

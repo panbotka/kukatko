@@ -11,7 +11,9 @@ import { AuthFrame } from '../components/AuthFrame'
 import { Icon } from '../components/Icon'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { mailEnabledFrom } from '../hooks/useMailEnabled'
+import { useProjectPublicSettings } from '../hooks/useProjectPublicSettings'
 import { usePublicSettings } from '../hooks/usePublicSettings'
+import { projectRegisterPath, projectSlugInPath } from '../project/paths'
 import { ApiError, NetworkError } from '../services/auth'
 import { isPasskeySupported, PasskeyError, type PasskeyErrorReason } from '../services/passkeys'
 
@@ -50,6 +52,20 @@ function returnTo(state: LocationState | null, query: string | null): string {
     return '/'
   }
   return `${pathname}${state?.from?.search ?? ''}`
+}
+
+/**
+ * The project this visit to the sign-in screen is about, if any: the one a
+ * project's registration page sent the reader back from (`?project=<slug>`),
+ * else the one whose page the guard bounced them off (`/p/<slug>/…`). It decides
+ * whose registration the screen may offer — there is no instance-wide one.
+ */
+function loginProjectSlug(state: LocationState | null, query: string | null): string | null {
+  const named = query?.trim() ?? ''
+  if (named !== '') {
+    return named
+  }
+  return projectSlugInPath(state?.from?.pathname ?? '')
 }
 
 type LoginErrorKey =
@@ -172,33 +188,42 @@ function errorKeyFor(error: unknown): LoginErrorKey {
  * front and keeps its hands off the keyboard: `autoFocus` raising the phone's
  * keyboard for a form that cannot succeed is an invitation to type.
  *
- * Under the form sits the way to {@link RegisterPage} — but only on an instance
- * that reports registration open. A closed one (and one that could not be asked)
- * shows nothing at all, because a link to a form that refuses every submit costs
- * the reader the whole form before they learn it.
+ * Under the form sits the way to a project's registration page — but only when
+ * the visit is about a project (`?project=<slug>`, or a guarded `/p/<slug>/…`
+ * page the reader was bounced off) and that project reports registration open.
+ * Registration always goes through a project, so a visit about none offers
+ * nothing; so does a closed project, and one that could not be asked, because a
+ * link to a form that refuses every submit costs the reader the whole form
+ * before they learn it.
  */
 export function LoginPage() {
   const { t } = useTranslation()
   useDocumentTitle(t('login.title'))
   const { status: authStatus, login, loginWithPasskey } = useAuth()
-  // Only an instance that says registration is open gets the invitation below.
-  // A closed one — and one that could not be asked at all — shows nothing: a
-  // link to a form that answers every submit with "not open" is worse than no
-  // link, because the reader fills it in before finding out.
+  // The instance's anonymous facts: whether it can run a passkey ceremony, and
+  // whether an approval is followed by an e-mail at all.
   const publicSettings = usePublicSettings()
-  const registration =
-    publicSettings.status === 'ready' && publicSettings.settings.registration_enabled
-  // The same response says whether an approval is followed by an e-mail at all.
   const mailEnabled = mailEnabledFrom(publicSettings)
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
+  // Only a project that says registration is open gets the invitation below. A
+  // closed one — and one that could not be asked at all — shows nothing: a link
+  // to a form that answers every submit with "not open" is worse than no link,
+  // because the reader fills it in before finding out.
+  const registerSlug = loginProjectSlug(
+    location.state as LocationState | null,
+    searchParams.get('project'),
+  )
+  const registerProject = useProjectPublicSettings(registerSlug)
+  const registration =
+    registerProject.status === 'ready' && registerProject.settings.registration_enabled
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [validated, setValidated] = useState(false)
   const [submit, setSubmit] = useState<SubmitState>({ status: 'idle' })
 
-  const [searchParams] = useSearchParams()
   const from = returnTo(location.state as LocationState | null, searchParams.get('returnTo'))
 
   // If an already-authenticated user lands on /login, bounce them onward.
@@ -359,10 +384,10 @@ export function LoginPage() {
         </>
       )}
 
-      {registration && (
+      {registration && registerSlug !== null && (
         <div className="text-center mt-3" data-testid="login-register-link">
           <span className="text-secondary me-1">{t('login.registerPrompt')}</span>
-          <Link to="/register">{t('login.registerLink')}</Link>
+          <Link to={projectRegisterPath(registerSlug)}>{t('login.registerLink')}</Link>
         </div>
       )}
     </AuthFrame>

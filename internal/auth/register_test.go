@@ -95,7 +95,7 @@ func TestRegistration_checkSecret(t *testing.T) {
 			rg := NewRegistration(RegistrationConfig{
 				Settings: fakeSettings{stored: tt.stored, err: tt.readErr},
 			})
-			err := rg.checkSecret(t.Context(), tt.secret)
+			err := rg.checkSecret(t.Context(), project.BootstrapUID, tt.secret)
 			if tt.wantErr == nil {
 				if err != nil {
 					t.Fatalf("checkSecret() error = %v, want nil", err)

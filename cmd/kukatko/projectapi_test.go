@@ -61,8 +61,8 @@ func TestMountProjectAPI_mountsEveryGroup(t *testing.T) {
 // TestProjectRoutes_mountsTheAPITwice proves every project-scoped group is
 // served both under /api/v1/p/{project} and through the unprefixed transition
 // alias — except the name directory, whose unprefixed path is the instance
-// account list, and the member management and invitation links, which only
-// ever lived under a project.
+// account list, and the member management, invitation links, settings and
+// announcement, which live only under a project.
 func TestProjectRoutes_mountsTheAPITwice(t *testing.T) {
 	t.Parallel()
 	api, names := fakeProjectAPI(t)
@@ -85,9 +85,9 @@ func TestProjectRoutes_mountsTheAPITwice(t *testing.T) {
 			t.Errorf("/api/v1/p/{project}/%s is not mounted", name)
 		}
 		// The name directory's unprefixed path is the instance account list;
-		// the member management and the invitation links have no unprefixed
-		// client to keep working.
-		prefixedOnly := name == "users" || name == "members" || name == "invites"
+		// the member management, the invitation links, the settings and the
+		// announcement are a project's own.
+		prefixedOnly := slices.Contains([]string{"users", "members", "invites", "settings", "announcement"}, name)
 		if aliased := got["/api/v1/"+name]; aliased == prefixedOnly {
 			t.Errorf("/api/v1/%s mounted by the alias = %v, want %v", name, aliased, !prefixedOnly)
 		}

@@ -21,6 +21,7 @@ import (
 	"github.com/panbotka/kukatko/internal/ingest"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
+	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
 )
@@ -427,6 +428,51 @@ func TestExtendAndRevoke_ownership(t *testing.T) {
 	}
 }
 
+// fakeRegistration is a settings reader answering one registration switch per
+// project uid, recording which project it was asked about.
+type fakeRegistration struct {
+	open  map[string]bool
+	err   error
+	asked string
+}
+
+// Get answers the configured switch for projectUID.
+func (f *fakeRegistration) Get(_ context.Context, projectUID string) (settings.Settings, error) {
+	f.asked = projectUID
+	return settings.Settings{RegistrationEnabled: f.open[projectUID]}, f.err
+}
+
+// TestPublic_registrationFollowsTheLinksProject: the public page learns whether
+// the link's own project takes registrations, and a failed read is "closed".
+func TestPublic_registrationFollowsTheLinksProject(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		reg  *fakeRegistration
+		want bool
+	}{
+		{name: "open", reg: &fakeRegistration{open: map[string]bool{"pr_link": true}}, want: true},
+		{name: "closed", reg: &fakeRegistration{open: map[string]bool{"pr_other": true}}, want: false},
+		{name: "unreadable", reg: &fakeRegistration{open: map[string]bool{"pr_link": true}, err: errors.New("boom")}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, func(cfg *uploadlinkapi.Config) { cfg.Registration = tt.reg })
+			h.store.link.ProjectUID = "pr_link"
+			rec := h.do(t, http.MethodGet, "/u/"+testCode, "", "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+			}
+			if got := decode(t, rec)["registration_enabled"]; got != tt.want {
+				t.Fatalf("registration_enabled = %v, want %v", got, tt.want)
+			}
+			if tt.reg.asked != "pr_link" {
+				t.Fatalf("asked about project %q, want the link's", tt.reg.asked)
+			}
+		})
+	}
+}
+
 // TestPublic verifies the public description reveals only names and expiry,
 // and that dead links say so.
 func TestPublic(t *testing.T) {
@@ -440,7 +486,7 @@ func TestPublic(t *testing.T) {
 	body := decode(t, rec)
 	for key := range body {
 		switch key {
-		case "title", "note", "albums", "labels", "expires_at":
+		case "title", "note", "albums", "labels", "expires_at", "registration_enabled":
 		default:
 			t.Errorf("public description leaks %q", key)
 		}

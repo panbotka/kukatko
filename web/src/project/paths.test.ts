@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ProjectMembership } from '../services/auth'
 
 import {
+  projectRegisterPath,
   entryProjectSlug,
   isInstancePath,
   KEEP_ON_SWITCH,
@@ -192,5 +193,12 @@ describe('routeAfterSwitch', () => {
 
   it('encodes the destination slug like every other project link', () => {
     expect(routeAfterSwitch('/p/v/albums', 'v', 'a b')).toBe('/p/a%20b/albums')
+  })
+})
+
+describe('projectRegisterPath', () => {
+  it("is the project's public registration page, slug encoded", () => {
+    expect(projectRegisterPath('rodina')).toBe('/p/rodina/register')
+    expect(projectRegisterPath('a b')).toBe('/p/a%20b/register')
   })
 })

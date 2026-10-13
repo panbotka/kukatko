@@ -15,21 +15,29 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   names the project from the slug, and **unprefixed under `/api/v1`** — the *transition alias* the
   embedded frontend, `kukatko ctl` and MCP clients still call. A request through the alias addresses the
   bootstrap project `v`. The alias is removed in the alias-removal step; until then both paths answer
-  with the same bytes. **One exception:** the alias leaves out the name directory, because the
+  with the same bytes. **Exceptions:** the alias leaves out the name directory, because the
   unprefixed `GET /users` is the system administrator's account list (`internal/projectapi`); the
-  directory is served only as `/api/v1/p/{project}/users`.
+  directory is served only as `/api/v1/p/{project}/users`. It also leaves out the member management
+  `/members`, the invitation links `/invites`, the settings `/settings` and the announcement
+  `/announcement`, which are a project's own and live only under the prefix — the unprefixed
+  `GET /api/v1/settings/public` is the separate instance-level route of the sign-in screen.
 - **Project-scoped:** photos (incl. trash, stacks, comments, edits, media), `/search/*`, albums and
   labels, subjects/people, families, subject avatars, face clusters, review, sweep, candidates, outliers,
   duplicates, duplicate markers, expand, bulk, tasks, feedback, saved searches, search history,
   `/whats-new`, places, maps (`/map/*`), `POST /upload`, the `/upload-links` management, the
-  `/notifications` inbox, `/capabilities`, `/settings`, `/announcement`, the name directory
-  `GET /users` (under the prefix only), `/import/*`, `/process/*` and `/mcp`.
+  `/notifications` inbox, `/capabilities`, `/settings` and `/announcement` (both under the prefix
+  only), the name directory `GET /users` (under the prefix only), `/import/*`, `/process/*` and `/mcp`.
 - **Instance-wide, mounted once without the prefix:** `/auth/*` (incl. `/auth/picture`),
   `/admin/users`, `/users/{uid}/avatar`, `/projects` and the account list `GET /users` +
   `PATCH /users/{uid}` (both maintainer-only), `/push/*`, `/jobs`, `/system`, `/backup`, `/maintenance`,
   `/restore`, `/audit`, the public `/u/{code}` (no prefix: **the link resolves its own project** from
-  `upload_links.project_id` and files the upload there), plus `/metrics` and `/healthz` outside
-  `/api/v1`.
+  `upload_links.project_id` and files the upload there), the sign-in screen's anonymous
+  `GET /settings/public`, plus `/metrics` and `/healthz` outside `/api/v1`.
+- **The one anonymous project route:** `GET /api/v1/p/{project}/settings/public` answers without a
+  session (`auth.RequireActiveProject`, which admits an existing, active project and records it for
+  `auth.PublicProjectFromContext` — never as an authorised project). An unknown slug and a deactivated
+  project are the same **404** `{"error":"project not found"}` every other project route gives a
+  stranger.
 - **Unknown or foreign project:** `/api/v1/p/<slug>/…` with a slug nobody uses, a project the caller is
   no member of, or a deactivated one (non-maintainer) answers **404 `{"error":"project not found"}`**,
   byte-for-byte the same in all three cases (see *Project resolution* below).
@@ -175,7 +183,9 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   reader may collapse the two: *never approved* and *approved and later blocked* are different states,
   they mean opposite things to the person holding the account, and the admin listing shows both
   columns. **`welcome_seen_at`** is when the account's owner last dismissed or completed the first-run
-  welcome (the Markdown an admin writes in `PUT /settings`), or `null` when they never have; it is in
+  welcome (the Markdown a project admin writes in `PUT /p/{project}/settings` — the text shown is the
+  project's the account first signs into), or `null` when they never have. It stays **per account**, not
+  per membership: somebody who joins a second project is not welcomed again; it is in
   the `GET /auth/me` payload for the same reason `subject_uid` is — the client cannot decide whether to
   open the welcome without it.
   **`POST /auth/welcome-seen`** (`RequireAuth`, **any role** — the welcome is shown to everybody who
@@ -220,16 +230,20 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   credentials — the check runs after the bcrypt comparison — so it tells a guesser nothing. The
   client maps it to its own message (`login.errorPendingApproval`).
   **`POST /auth/register` (no authentication) — self-service registration.** Body:
-  `{username, display_name?, email, password, secret, upload_link?, invite_code?}`; unknown fields → 400. It
-  creates the account
-  as a **viewer**, **not approved**, so it exists and cannot be used until an administrator fills
-  `approved_at`; there is no session and no cookie in the answer. **201** returns
+  `{username, display_name?, email, password, secret, upload_link?, invite_code?, project?}`; unknown fields
+  → 400. It creates the account
+  as a **viewer**, **not approved**, of the project `project` names (its slug — what the project's
+  registration page `/p/<slug>/register` sends; an empty one is the bootstrap project, transition), so it
+  exists and cannot be used until a project admin approves the membership; there is no session and no cookie in the answer. **201** returns
   `{username, display_name, email, pending_approval: true}` — the stored (normalised) values, and
   deliberately not the user payload: an anonymous caller learns neither the UID nor the role.
-  Whether it is open at all, and the shared `secret` it demands, come from the instance settings
-  (`PUT /settings`, see the Settings API) and change without a redeploy. Refusals: **403**
-  `auth: registration is not open` when registration is switched off — and equally when it is on with
-  a **blank** stored secret, an open door with no lock; **403** `auth: wrong registration secret` for
+  Whether it is open at all, and the shared `secret` it demands, come from **that project's** settings
+  (`PUT /p/{project}/settings`, see the Settings API) and change without a redeploy — one project's
+  secret posted with another project's slug is refused exactly like a made-up one (same status, same
+  body). Refusals: **403**
+  `auth: registration is not open` when the project's registration is switched off — and equally when
+  it is on with a **blank** stored secret, an open door with no lock, and for a slug naming no project
+  or a deactivated one; **403** `auth: wrong registration secret` for
   a secret that does not match (compared in **constant time**, so the answer's latency says nothing
   about how much of it was right); **409** for a username somebody already holds; **400** for the same
   input the admin user API refuses (over-long username, missing/malformed address, weak password —
@@ -2216,8 +2230,10 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   deactivated is the unknown link's 404 — and every file is ingested **into that project** (the dedup looks
   for the same bytes there only; the original is stored under that project's storage prefix), filed into
   its albums and labels and audited under it.
-  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at}` — names only, no
-  UIDs, counts, creator or photos; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
+  `GET /u/{code}` → 200 `{title, note, albums:[names], labels:[names], expires_at, registration_enabled}` —
+  names only, no UIDs, counts, creator or photos; `registration_enabled` is the link's **own project's**
+  registration switch (the one a registration through the link is judged by, and the same flag that
+  project's public settings publish), so the page offers registering only where it can succeed; for an anonymous visitor (`OptionalAuth`) it also **starts the upload
   session** (sets the `kukatko_upload_session` cookie when absent), because the page then uploads several
   files at once and each would otherwise mint a session of its own; **410** `{error, state:"expired"|"revoked"}` for a dead link, **404**
   for an unknown one. `POST /u/{code}/upload` (`OptionalAuth`, then the per-link
@@ -2272,44 +2288,62 @@ project-scoped group as `/api/v1/p/{project}`; an instance-wide one keeps `/api/
   `0056_search_history.sql`). Mounted by `server.WithAPI` (`buildSearchHistoryAPI` in
   `cmd/kukatko/searchhistory.go`).
 - **Announcement API (`/api/v1/p/{project}`, `internal/announcementapi` + `internal/announcement`, dual-guard):**
-  a single **instance-wide announcement** (a banner for everyone logged in). `GET /announcement` behind `RequireAuth`
-  (anyone authenticated reads) → `{message, level?, author_uid?, updated_at?}`; **when nothing is published it returns
+  **one announcement per project** (a banner for the project's members), mounted **only under the
+  prefix**; every route acts on the project `auth.ProjectFromContext` names, so a banner published in
+  one project is never shown in another. `GET /announcement` behind `RequireAuth` (any member reads) →
+  `{message, level?, author_uid?, updated_at?}`; **when nothing is published it returns
   `200 {"message":""}`** (not 404 — friendlier for a polling banner client). `PUT /announcement`
-  `{message,level}` behind `RequireMaintainer` → 200 with the stored record (upsert; an empty message or an unknown
-  `level` (other than `info`/`warning`) → 400, an empty level → `info`); `DELETE /announcement` behind
-  `RequireMaintainer` → 204 (removes the announcement for everyone). Body `DisallowUnknownFields` + a 16 KiB limit, `updated_at`
-  is RFC3339. **Both publish and clear are audited** (`announcement.set`/`announcement.clear`) in the same transaction
-  as the change; `author_uid` = the actor from the auth context. The single-row `announcements` table (migration
-  `0039_announcement.sql`). Mounted by `server.WithAPI` (`buildAnnouncementAPI` in
+  `{message,level}` behind `RequireMaintainer` (the system administrator, who enters every project) → 200
+  with the stored record (upsert; an empty message or an unknown `level` (other than `info`/`warning`) →
+  400, an empty level → `info`); `DELETE /announcement` behind `RequireMaintainer` → 204 (removes the
+  project's announcement for all of its members). Body `DisallowUnknownFields` + a 16 KiB limit,
+  `updated_at` is RFC3339. **Both publish and clear are audited** (`announcement.set`/`announcement.clear`)
+  in the same transaction as the change; `author_uid` = the actor from the auth context. The
+  `announcements` table, one row per project (migration `0039_announcement.sql`, keyed by `project_id`
+  since the multi-tenancy migrations). Mounted by `projectRoutes` (`buildAnnouncementAPI` in
   `cmd/kukatko/announcement.go`).
-- **Instance settings API (`/api/v1/p/{project}`, `internal/settingsapi` + `internal/settings`, three audiences):**
-  the three instance-wide values an **administrator** changes at runtime without a redeploy — whether
-  self-service registration is open, the shared secret registration asks for, and the Markdown greeting
-  shown on a first sign-in. The registration secret is stored **readable, not hashed** (an administrator has
-  to read it back to tell people what it is), which is why the responses are three separate payloads rather
-  than one record filtered per role: `GET /settings/public` **unauthenticated** →
-  `{registration_enabled, passkeys_enabled, mail_enabled}` and nothing else — the three facts the sign-in
-  screen must know before anybody is signed in. `passkeys_enabled` is **not** a stored setting but this
-  instance's `auth.API.PasskeysEnabled()`, repeated here because `GET /capabilities`, which carries the same
-  flag for the rest of the app, is behind `RequireAuth` and so cannot answer an anonymous sign-in screen; it
-  leaks nothing an anonymous caller could not already read off `POST /auth/passkeys/login/begin` answering
-  200 rather than 501. `mail_enabled` is likewise not a stored setting but `mail.enabled` from the
-  configuration — true only when a **real** sender is wired (with it off `internal/mailer`'s no-op sender is
-  used and nothing is ever sent). It is the flag the registration screen, the pending-approval sign-in
-  message and the admin approve / password-link dialogs read before promising an e-mail; it names no server,
-  no account and no address. `GET /settings/welcome`
-  behind `RequireAuth` → `{welcome_markdown}` and nothing else; `GET /settings` behind `RequireAdmin` →
-  `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the only
-  place the secret appears. `PUT /settings` behind `RequireAdmin` **replaces all three values** → 200 with
-  the stored record; a field left out of the body is written as its zero value. **Enabling registration
-  while the secret is blank (or whitespace-only) → 400** (`settings: registration secret must not be empty…`)
-  — an open door with no lock is never what the administrator meant, and the two are saved together so the
-  combination can be refused. The secret is stored trimmed, the welcome Markdown verbatim. Body
-  `DisallowUnknownFields` + a 64 KiB limit, `updated_at` is RFC3339. **The update is audited**
-  (`settings.update`) in the same transaction as the change; the details record the flag and *whether* a
-  secret and a greeting are set — **never the secret itself**. The single-row `instance_settings` table
-  (migration `0062_instance_settings.sql`, seeded so every read finds a row). Mounted by `server.WithAPI`
-  (`buildSettingsAPI` in `cmd/kukatko/settings.go`).
+- **Settings API (`internal/settingsapi` + `internal/settings`, several audiences):** the three values a
+  **project's admin** changes at runtime without a redeploy — whether self-service registration into the
+  project is open, the shared secret its registration page asks for, and the Markdown greeting shown on a
+  first sign-in — plus the project's read-only usage, and two anonymous facts about the instance. The
+  registration secret is stored **readable, not hashed** (an administrator has to read it back to tell
+  people what it is), which is why the responses are separate payloads rather than one record filtered
+  per role. Under **`/api/v1/p/{project}`** (only there; every route acts on the project the guard
+  admitted, so one project's admin never reads or writes another's):
+  - `GET /settings/public` **unauthenticated** (`auth.RequireActiveProject`) → `{project_name,
+    registration_enabled}` and nothing else — what the project's registration page must know before
+    anybody has an account. An unknown slug and a deactivated project are the same **404**.
+  - `GET /settings/welcome` behind `RequireAuth` → `{welcome_markdown}` (the project's) and nothing else.
+  - `GET /settings` behind `RequireAdmin` (the project's admin; every maintainer) →
+    `{registration_enabled, registration_secret, welcome_markdown, updated_at, updated_by_uid?}` — the
+    only place the secret appears.
+  - `PUT /settings` behind `RequireAdmin` **replaces all three values** → 200 with the stored record; a
+    field left out of the body is written as its zero value. **Enabling registration while the secret is
+    blank (or whitespace-only) → 400** (`settings: registration secret must not be empty…`) — an open door
+    with no lock is never what the administrator meant, and the two are saved together so the combination
+    can be refused. The secret is stored trimmed, the welcome Markdown verbatim. Body
+    `DisallowUnknownFields` + a 64 KiB limit, `updated_at` is RFC3339. **The update is audited**
+    (`settings.update`) in the same transaction as the change; the details record the flag and *whether*
+    a secret and a greeting are set — **never the secret itself**.
+  - `GET /settings/usage` behind `RequireAdmin` → `{photos, originals_bytes, max_file_bytes,
+    max_total_bytes}`: the project's `project.Store.Usage` next to the two limits the system
+    administrator set (`null` = no limit). Read-only — limits change only through `/projects`.
+
+  Instance-level, **unprefixed** (`RegisterInstanceRoutes`): `GET /api/v1/settings/public`
+  **unauthenticated** → `{passkeys_enabled, mail_enabled}` and nothing else — the two facts the sign-in
+  screen must know before anybody is signed in; neither is stored. `passkeys_enabled` is this instance's
+  `auth.API.PasskeysEnabled()`, repeated here because `GET /capabilities`, which carries the same flag for
+  the rest of the app, is behind `RequireAuth` and so cannot answer an anonymous sign-in screen; it leaks
+  nothing an anonymous caller could not already read off `POST /auth/passkeys/login/begin` answering 200
+  rather than 501. `mail_enabled` is `mail.enabled` from the configuration — true only when a **real**
+  sender is wired (with it off `internal/mailer`'s no-op sender is used and nothing is ever sent). It is
+  the flag the registration screen, the pending-approval sign-in message and the admin approve /
+  password-link dialogs read before promising an e-mail; it names no server, no account and no address.
+  Whether registration is open is **not** here: that is a project's decision.
+
+  The `instance_settings` table, one row per project (migration `0062_instance_settings.sql`; `POST
+  /projects` seeds a new project's row). Mounted by `projectRoutes` and, for the instance route,
+  `server.WithAPI` (`buildSettingsAPI` in `cmd/kukatko/settings.go`).
 - **What's New API (`/api/v1/p/{project}`, `internal/whatsnewapi` + `internal/whatsnew`, authenticated via
   `RequireAuth`):** the digest behind the **"what's new since your last visit"** panel on the library home.
   `GET /whats-new` → `200 {has_news, since?, photos, mine_photos, comments, albums:[{uid,title}], album_count,

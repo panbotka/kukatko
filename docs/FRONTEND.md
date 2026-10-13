@@ -273,13 +273,15 @@ here.
   matches the target: the line renders for `isMaintainer`, which is the very predicate `/system`'s
   `RequireRole role="maintainer"` guard uses, so nobody is offered a link to a page that would answer
   them with `ForbiddenPage`),
-  `AnnouncementBanner` (**instance-wide announcement at the top of the content**: in `Layout` right **before `<Outlet/>`**,
-  so every logged-in user sees it on every page **inside the shell**; routes **outside `Layout`**
+  `AnnouncementBanner` (**the project's announcement at the top of the content**: in `Layout` right **before `<Outlet/>`**,
+  so every member sees it on every page **inside the shell**; it reads the project the app works in from
+  `ProjectContext` (null-safe, no `useProject`) and keys everything on its slug — another project's banner is
+  never shown, not even while a switch's request is in flight, and without a project it asks nothing; routes **outside `Layout`**
   (`/photos/:uid`, `/slideshow`, `/review`, `/duplicates/compare`) have no banner — immersive views,
   acceptable. Via `useAnnouncement` (fetch on-mount + **polling ~60 s**, so a freshly published message
   appears without a reload) + a dismissible `<Alert>` with a variant per `level` (`info`→`info-circle`
-  icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-account dismiss keyed on `updated_at`**
-  in localStorage under `kukatko.announcement.dismissedAt.<uid>` (`lib/announcementDismissal.ts`:
+  icon, `warning`→`exclamation-triangle`, decorative `Icon`). **Per-account, per-project dismiss keyed on `updated_at`**
+  in localStorage under `kukatko.announcement.dismissedAt.<uid>.<slug>` (`lib/announcementDismissal.ts`:
   `announcementDismissalToken`/`readDismissedAnnouncement`/`writeDismissedAnnouncement`, see **Browser storage**
   below) — dismissing hides the current message for **this account only**, but a newly published one (new
   `updated_at`) **shows again** (not a plain boolean); a message **without** `updated_at` is keyed on its level +
@@ -1911,17 +1913,19 @@ here.
   `login.offlineNotice` up front (a `role="status"` warning, `data-testid="login-offline-notice"`,
   yielding to a submit error once there is one) **and drops `autoFocus`** — raising the phone
   keyboard for a form that cannot succeed is an invitation to type. **Under the form** sits the way to
-  registration — `login.registerPrompt` + a `Link` to `/register`, `data-testid="login-register-link"` —
-  rendered **only** while the instance says registration is `open`: a closed instance, and one that could not
-  be asked at all, shows nothing there. **Between the form and that invitation** sits the passkey action:
+  registration — `login.registerPrompt` + a `Link` to the project's `/p/<slug>/register`,
+  `data-testid="login-register-link"` — rendered **only** when the visit is about a project
+  (`?project=<slug>`, which the project's registration page sends back with, else the `/p/<slug>/…` page
+  the guard bounced the reader off; `loginProjectSlug`) **and** that project says registration is `open`
+  (`useProjectPublicSettings`): registration always goes through a project, so a visit about none, a
+  closed project and one that could not be asked all show nothing there. **Between the form and that invitation** sits the passkey action:
   a „nebo" rule and an outline button `login.passkeySubmit`
   (`data-testid="login-passkey-button"`, a `key` glyph, `login.passkeyHint` under it) that runs the
   discoverable WebAuthn ceremony through **`useAuth().loginWithPasskey()`** and then goes exactly where the
   password form goes. It is rendered **only when both halves are true** — `usePublicSettings()` reports
   `passkeys_enabled` **and** `isPasskeySupported()` — because a button that answers every press with "not
   available here" is worse than the password form alone; an instance that could not be asked therefore
-  shows none. The page reads `usePublicSettings()` rather than pairing `useRegistrationOpen()` with a
-  sibling hook, so both facts come from **one** request. `passkeyErrorKeyFor` maps a `PasskeyError` onto a
+  shows none. The page reads `usePublicSettings()` once for both instance facts (passkeys and mail). `passkeyErrorKeyFor` maps a `PasskeyError` onto a
   sentence, and **four reasons borrow the password form's own**: `pendingApproval` → `login.errorPendingApproval`,
   `rateLimited` → `login.errorRateLimited`, `offline` → `login.errorOffline` (the same fact about the account or
   the connection deserves the same words, not an authenticator-flavoured retelling); the rest are
@@ -1932,21 +1936,31 @@ here.
   My account. `LoginPage.test.tsx` covers the button being hidden by the instance flag and by a browser
   without WebAuthn, a successful passkey sign-in returning to the requested address, a cancelled prompt, and
   the borrowed approval sentence),
-  `RegisterPage` (route `/register`, **public like sign-in** — nobody registering has a session yet — and
-  laid out in the same `AuthFrame`, one column, so the two read as one flow): username, display name,
-  e-mail, password, password again and the **registration word** (the instance's shared registration
-  secret, `register.secretHint` explaining in one line that it is the word somebody who already uses
+  `RegisterPage` / `ProjectRegisterPage` (`pages/RegisterPage.tsx`, **public like sign-in** — nobody
+  registering has a session yet — and laid out in the same `AuthFrame`, one column, so the two read as one
+  flow). Every self-service account joins a project, so **the project's own page is
+  `/p/:slug/register`** (`ProjectRegisterPage`, the one public route under `/p/:slug`, declared before the
+  guarded tree in `App.tsx`; `projectRegisterPath(slug)` in `project/paths.ts`), and the instance's
+  **`/register`** (`RegisterPage`) only serves the invitation (`?invite=`) and upload-link (`?link=`)
+  doors, forwards `?project=<slug>` to the project's page (`Navigate replace`), and otherwise says
+  „Registrace probíhá přes pozvánku nebo odkaz projektu" (`register.viaProject`,
+  `data-testid="register-via-project"`) with the way back to sign-in. The shared `RegisterForm` takes a
+  `Door` (`invite`/`link`/`project`): username, display name,
+  e-mail, password, password again and — on the project door only — the **registration word** (the
+  project's shared registration secret, posted with `project: <slug>`; `register.secretHint` explaining in one line that it is the word somebody who already uses
   Kukátko told them). All six are required. The e-mail field's hint has **two wordings**: with
   `mail_enabled` it says the confirmation and the approval message go there, without it that the address
   only identifies the account (`register.emailHint`/`emailHintNoMail`). The two passwords are compared **here**, before anything is
   sent: the server never sees the second one, so a typo in it is the one rejection this form can word by
-  itself. `useRegistrationOpen()` decides what the card holds at all — a spinner while
-  `GET /settings/public` is being asked, and on a **closed** instance a plain explanation plus the way back
-  to sign-in (`register.closed`, `data-testid="register-closed"`) instead of a form that would refuse every
-  submit after it had been filled in; a probe that **failed** still gets the form, because "we could not
-  ask" is not "the door is shut" and the server words a refusal better than a failed probe could. It reads
-  `usePublicSettings()` directly and narrows with `registrationOpenFrom`/`mailEnabledFrom`, so one request
-  answers both of the page's questions.
+  itself. On the project page `useProjectPublicSettings(slug)` + `registrationOpenFrom` decide what the card
+  holds at all — a spinner while `GET /p/<slug>/settings/public` is being asked, a greeting naming the
+  project (`register.introProject`) over the form when it is open, on a **closed** project a plain
+  explanation naming it plus the way back to `/login?project=<slug>` (`register.closed`,
+  `data-testid="register-closed"`) instead of a form that would refuse every submit after it had been
+  filled in, and for a slug the server does not admit (unknown or deactivated — one 404)
+  `register.projectNotFound` (`register-project-missing`); a probe that **failed** still gets the form,
+  because "we could not ask" is not "the door is shut" and the server words a refusal better than a failed
+  probe could. Whether a mail may be promised is the instance's `useMailEnabled()`.
   `rejectionFor` maps a refusal onto **the field that caused it**: 409 → the username is taken, a 403 whose
   message names the secret → „Tohle není správné registrační slovo" **under the secret field** (never a
   server error — the word is the one thing the reader can fix), a 403 without it → the instance is closed,
@@ -1960,10 +1974,11 @@ here.
   says a mail went out (`register.doneMail`) or that none is coming and the administrator will say so
   themselves (`register.doneNoMail`) is `mail_enabled`: on an instance with mail off the promised message
   would never arrive. Texts in `register.*`; `RegisterPage.test.tsx` covers a successful
-  submission, mismatched passwords, a wrong secret, a taken username, the closed state and both mail
-  wordings. **Through an invitation** (`/register?invite=<code>`, from `InvitePage`) it asks
+  submission into the page's project, mismatched passwords, a wrong secret, a taken username, the closed
+  and unknown project, each project asked about its own registration, the `?project=` forward, the bare
+  `/register` notice and both mail wordings. **Through an invitation** (`/register?invite=<code>`, from `InvitePage`) it asks
   `fetchPublicInvite` for the project's name (`useInviteLookup`), greets with it (`register.introInvite`),
-  drops the secret field and posts `invite_code`; the instance's registration switch does **not** apply (an
+  drops the secret field and posts `invite_code`; no project's registration switch applies (an
   invite works while registration is closed), an unusable invite shows `register.errorInvite` instead of the
   form (`register-invite-invalid`), and the account comes back `pending_approval: false`, so the confirmation
   says it may sign in right away (`register.doneApproved`) instead of "waiting for an administrator",
@@ -2019,7 +2034,8 @@ here.
   storage**; written while uploading, removed when done, ignored for another link or after 3 days) and the
   next visit says "Nahrávání N fotek bylo přerušeno — vyberte fotky znovu, už nahrané se nezdvojí" until
   files are picked. Once an anonymous batch with a new photo
-  finishes and registration is open (`usePublicSettings`), it offers registration: a link to
+  finishes and the link's project takes registrations (the public link's `registration_enabled`), it offers
+  registration: a link to
   **`/register?link=<code>`**, where `RegisterPage` drops the secret field, explains that the link stands
   in for it and posts `upload_link` (a dead link → `register.errorLink`). Texts in `uploadLink.*`;
   `UploadLinkPage.test.tsx` (the three screens, no Remove while running, auto-resume after a dropped
@@ -2119,7 +2135,7 @@ here.
   needs one photo found by typing a word — and it does not try to predict the server's refusal of a private
   or hidden photo; the card above shows the 400. Tests: `MyPictureCard.test.tsx`,
   **plus `NotificationsCard`** (`components/account/`, right under the Jazyk section — both are about how
-  Kukátko talks to this one person; the admin-only `SettingsPage` is about the instance, so it does not
+  Kukátko talks to this one person; the admin-only `SettingsPage` is about the project, so it does not
   belong there): titled „Notifikace", in **two parts**, each **saying which scope it is**, because
   per-browser versus per-account is what people reliably get wrong about web push. **„Push do zařízení"**
   holds the per-browser master control and the device list. Its **„Tento prohlížeč"** applies to this
@@ -3006,11 +3022,11 @@ here.
   left (the queued `places` jobs then wait for that instant instead of failing); it renders nothing when
   `budget_enabled` is false, i.e. no cap is configured; the queue panel carries the shared `JobStateLegend`
   (ve frontě/zpracovává se/nepovedlo se/**trvale se nepovedlo**/hotovo/**čeká na rozpoznávací službu**) with a
-  plain-language explanation of each state (`jobStates.*` + `system.jobs.intro`); **last on the page** comes the Oznámení card
-  (`AnnouncementCard`, gated `isMaintainer`) — it used to sit above everything, which put a rare errand
-  where the dashboard belongs — a textarea + a level `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení**
-  over `setAnnouncement`/`clearAnnouncement`, prefill of the current message via `fetchAnnouncement`, feedback via
-  the same dismissible `ActionNotice` `<Alert>` pattern; loading/error/notice states, self-gated on `isMaintainer`,
+  plain-language explanation of each state (`jobStates.*` + `system.jobs.intro`). It composes **no announcement**:
+  the banner is per project, so its composer (`components/AnnouncementComposer.tsx` — a textarea + a level
+  `<select>` (info/warning) + **Zveřejnit**/**Zrušit oznámení** over `setAnnouncement`/`clearAnnouncement`,
+  prefill of the project's current message via `fetchAnnouncement`, feedback via a dismissible `<Alert>`;
+  tests `AnnouncementComposer.test.tsx`) lives on the project's `SettingsPage`; loading/error/notice states, self-gated on `isMaintainer`,
   `MembersPage` = **`/p/<slug>/members`** (project admin **or** maintainer, `isAdmin` — the **project** role)
   **the members of this project** over `services/members.ts` (`GET /p/<slug>/members`, built with `apiPath`). It
   replaced the instance-wide `/users` account roster: a project admin manages **memberships**, never accounts —
@@ -3052,9 +3068,12 @@ here.
   behind a `ConfirmModal`; a revoke flips the row to revoked in place, `not_found` toasts and refetches. A 422
   (`invalid_role|invalid_days|invalid_max_uses`) is worded under `invites.refusal.*`. Texts in `invites.*`;
   tests: `InvitesSection.test.tsx`, `services/invites.test.ts`.
-  `SettingsPage` = `/settings` (admin **or** maintainer, `isAdmin`) **the instance's own settings** —
-  the three values behind `GET`/`PUT /settings`: whether self-service registration is open, the shared
-  secret it asks a newcomer for, and the Markdown greeting a person meets on their first sign-in. It is
+  `SettingsPage` = `/p/<slug>/settings` (project admin **or** maintainer, `isAdmin`) **the project's own
+  settings** — the three values behind `GET`/`PUT /p/<slug>/settings`: whether self-service registration
+  into the project is open, the shared secret its registration page asks a newcomer for (the page's
+  absolute address, `projectRegisterPath`, is shown under it to pass on — `settings-register-url`), and
+  the Markdown greeting a member meets on their first sign-in (`welcome_seen_at` is per account, so somebody
+  who joined another project first is not greeted again). It is
   its own route rather than another section of `MembersPage`: that page is about memberships, this one
   about the project's settings, and it is long enough already. One `Form` over a local `Draft`, so **nothing is written
   until „Uložit nastavení"** — `isDirty(draft, saved)` drives both buttons (save + **Zahodit změny**),
@@ -3068,13 +3087,20 @@ here.
   text field** (`type="text"`, an eye button toggles it to `password`), never a write-only password
   box: reading it back to tell people what it is is the whole reason it is stored unhashed, and the
   helper line says out loud that this word is what keeps strangers out and that everybody in the
-  community is expected to know it. The welcome text is a monospace `textarea` beside a live preview
+  community is expected to know it. **„Vygenerovat nové"** drafts a fresh random word
+  (`lib/registrationSecret.ts` `generateRegistrationSecret`: `xxxx-xxxx` from an alphabet without `0/o/1/l/i`,
+  rejection-sampled from `crypto.getRandomValues`) and reveals it; like everything else it waits for Save.
+  The welcome text is a monospace `textarea` beside a live preview
   (`Row` + two `Col md={6}` — stacked, editor first, below `md`) rendered by the shared `Markdown`
   component — the one the welcome itself will render with — so the two cannot drift apart. A save reports
   `settings.saved`; a rejection repeats the **server's own message** (`ApiError.message`) rather than a
   generic apology, because a refusal on grounds this form does not know about is exactly what needs
   repeating. Loading spinner / `ErrorState` with retry, and a footer line with
-  `formatDateTime(updated_at)`. Tests: `SettingsPage.test.tsx`,
+  `formatDateTime(updated_at)`. Below the form, the read-only **„Využití a limity"** card (`UsageCard`,
+  `GET /p/<slug>/settings/usage`, loaded on its own so a failure never blocks the form): photos
+  (`formatCount`), the originals' size and the two limits (`formatBytes`, „neomezeno" for `null`) and the
+  note „Limity nastavuje správce systému." — and, **for a maintainer only**, the project's
+  `AnnouncementComposer` (publishing stays `RequireMaintainer` server-side). Tests: `SettingsPage.test.tsx`,
   `AuditPage` = `/audit` (admin **or** maintainer, `isAdmin`) an **audit log**: a read-only table of records from `GET /audit`
   newest first (when/who/action/target/IP) — also through the shared `RecordTable`, so a phone gets **one stacked
   card per entry** —; an entry with no actor is a dash, **except an anonymous `upload_link.upload`**, which
@@ -6004,23 +6030,26 @@ including inside the `max-height: 500px` block, which re-declares exactly those 
   (`.kk-waiting-badge`, `--over` pins it to the corner of the hamburger); renders **nothing for zero**, the
   digit is `aria-hidden` and a visually-hidden sentence (`tasks.waitingBadge`, „3 úkoly čekají na tebe")
   is what a screen reader gets, repeated as the `title`;
-  `useAnnouncement()` = a poller of the instance-wide announcement over `fetchAnnouncement` (`GET /announcement`) for
-  `AnnouncementBanner`: fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
+  `useAnnouncement(slug)` = a poller of the project `slug`'s announcement over `fetchAnnouncement`
+  (`GET /p/<slug>/announcement`) for `AnnouncementBanner`: the answer is kept with its slug, so a switch reads
+  `null` until the new project's own answer arrives, and a `null` slug asks nothing; fetch on mount + refetch after ~60 s, **pauses on a hidden tab** and refreshes immediately
   on return, swallows a failure and returns `null` (the banner hides), on unmount it cancels the timer and the in-flight request (mirrors
   `useJobStats`);
   `usePublicSettings()` = the one-shot probe of `fetchPublicSettings` (`GET /settings/public`) →
-  `{status:'loading'}|{status:'ready',settings}|{status:'unknown'}`, the anonymous view of the instance both
-  halves of the sign-in flow are built on. It **never polls** (neither fact moves often — one is an
-  administrator's rare decision, the other is fixed for the life of the process) and aborts on unmount.
-  `LoginPage` reads it directly because it needs **both** flags and must not ask twice;
-  `useRegistrationOpen()` is a narrowing of it to the one question — `loading|open|closed|unknown` —
-  and `registrationOpenFrom(state)` is that narrowing as a **pure** function, so a screen needing a second
-  public fact (`RegisterPage`) reads `usePublicSettings()` once instead of mounting two fetching hooks;
+  `{status:'loading'}|{status:'ready',settings}|{status:'unknown'}`, the anonymous view of the **instance**
+  (passkeys, mail) the sign-in flow is built on. It **never polls** (both facts are fixed for the life of
+  the process) and aborts on unmount. `LoginPage` reads it directly because it needs **both** flags and
+  must not ask twice;
+  `useProjectPublicSettings(slug)` (`hooks/useProjectPublicSettings.ts`) = the one-shot probe of
+  `fetchProjectPublicSettings` (`GET /p/<slug>/settings/public`) →
+  `none|loading|ready{settings}|notFound|unknown`, kept per slug; `registrationOpenFrom(state)`
+  (`hooks/useRegistrationOpen.ts`) narrows it as a **pure** function to `loading|open|closed|unknown|notFound`
+  (`none` = `closed`: registration always goes through a project);
   `useMailEnabled()`/`mailEnabledFrom(state)` (`hooks/useMailEnabled.ts`) is the same pair for
   `mail_enabled` → a plain boolean, **false when the instance could not be asked**: the flag only ever
   decides whether a sentence may promise an e-mail, and a promise made on a guess is what it exists to
   prevent.
-  It **never polls** (an administrator opening
+  The project probe **never polls** either (a project admin opening
   or closing registration is rare, and both screens that read it are short-lived) and aborts on unmount —
   an aborted request leaves the state alone, since the component is gone and `unknown` would be a claim
   about the instance rather than about the cancellation. That fourth state is the point: `unknown` means
@@ -7238,25 +7267,30 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `credentials:'same-origin'`; `version` is optional on the client because it is absent before the first
   answer and after a failed one, not because the endpoint may omit it),
   `settings.ts` = `fetchPublicSettings(signal)` over `GET /api/v1/settings/public` →
-  `PublicSettings{registration_enabled, passkeys_enabled, mail_enabled}` — the **three** facts about the
+  `PublicSettings{passkeys_enabled, mail_enabled}` — the **two** facts about the
   instance an anonymous visitor may learn, which is why the sign-in and registration screens may ask it before
   anybody has signed in (the full settings record carries the registration secret and stays behind
-  `RequireAdmin`). `passkeys_enabled`
+  `RequireAdmin`); `fetchProjectPublicSettings(slug, signal)` over `GET /api/v1/p/<slug>/settings/public`
+  (`instancePath`, naming the slug: its callers are anonymous and have no current project) →
+  `ProjectPublicSettings{project_name, registration_enabled}`, throwing `ApiError` (404 = unknown or
+  deactivated). `passkeys_enabled`
   is here **as well as** in `GET /capabilities` for exactly that reason: capabilities are behind `RequireAuth`,
   and the screen that has to decide whether to offer a passkey is the one nobody has signed in on.
   `mail_enabled` (the server's `mail.enabled`; with it off the mailer is the no-op sender and **nothing** is
   ever sent) is here for the same reason — the screens that would promise an e-mail are screens nobody has
   signed in on. It sends no
   credentials and **throws** rather than defaulting: "we could not ask" is not "registration is shut", and
-  the two callers of `useRegistrationOpen()` answer that difference differently. The admin half lives
-  here too: `fetchInstanceSettings(signal)` over `GET /api/v1/settings` → `InstanceSettings`
-  (`registration_enabled`, `registration_secret`, `welcome_markdown`, `updated_at`, `updated_by_uid?`)
-  and `updateInstanceSettings(update, signal)` over `PUT /api/v1/settings` → the persisted record.
+  the two readers of a project's registration flag answer that difference differently. The admin half lives
+  here too, on the current project (`apiPath`): `fetchProjectSettings(signal)` over `GET /p/<slug>/settings`
+  → `ProjectSettings` (`registration_enabled`, `registration_secret`, `welcome_markdown`, `updated_at`,
+  `updated_by_uid?`), `updateProjectSettings(update, signal)` over `PUT /p/<slug>/settings` → the persisted
+  record, and `fetchProjectUsage(signal)` over `GET /p/<slug>/settings/usage` → `ProjectUsage{photos,
+  originals_bytes, max_file_bytes, max_total_bytes}` (a limit is `null` when there is none).
   Both send the session cookie (`credentials: 'same-origin'`) and throw `ApiError` carrying the
   status **and the backend's own `error` message** — a 400 on enabling registration with a blank secret
   is meant to be shown verbatim. All three values travel together because the backend writes them
   together: the flag and the secret guard each other, so a partial update has no meaning.
-  `fetchWelcomeMarkdown(signal)` over `GET /api/v1/settings/welcome` → the greeting string alone
+  `fetchWelcomeMarkdown(signal)` over `GET /api/v1/p/<slug>/settings/welcome` (the project's) → the greeting string alone
   (`WelcomeSettings{welcome_markdown}` unwrapped): the one field of that record any signed-in role may
   read, a viewer having no business with the registration secret that travels with the admin shape. An
   instance where nobody wrote a greeting answers **200 with an empty string, not a 404** — "there is no
@@ -7439,8 +7473,8 @@ start while one runs is ignored (`batchRunning`), and moving to another photo ca
   `searchHistory.ts` = the search-history client: `fetchSearchHistory()`/`recordSearch(query)`/
   `clearSearchHistory()` over `/api/v1/search-history` + `SEARCH_HISTORY_LIMIT` (20) and the type
   `SearchHistoryEntry{query,searched_at}`; it sends no owner and addresses nothing — every call is about the
-  signed-in user's own history; `announcement.ts` = the instance-wide announcement client: `fetchAnnouncement()`/
-  `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/announcement`, the types `Announcement`
+  signed-in user's own history; `announcement.ts` = the current project's announcement client: `fetchAnnouncement()`/
+  `setAnnouncement(message,level)`/`clearAnnouncement()` over `/api/v1/p/<slug>/announcement` (`apiPath`), the types `Announcement`
   (`{message, level?, author_uid?, updated_at?}`, an empty `message` = nothing published)/`AnnouncementLevel`
   (`'info'|'warning'`); `search.ts` = the grouped **global search** client: `globalSearch(q,signal)` over
   `GET /api/v1/search/global` → `GlobalSearchResult{query,direct?,albums,labels,people,photos}` (top-N per
@@ -8412,7 +8446,7 @@ upload-link page `/u/:code` are public, the rest is under `RequireAuth`; `/slide
   is unreadable, foreign or corrupt fails the safe way (banner shown, panel shown, grid at its top, daily mix
   offered). The one other pattern in the app — a stored value that records its user and is refused on a
   mismatch — is `lib/reviewSnapshot.ts`, which keeps a single key because there is one game per tab.
-  **User-scoped, cleared at sign-out:** `kukatko.announcement.dismissedAt.<uid>` (local),
+  **User-scoped, cleared at sign-out:** `kukatko.announcement.dismissedAt.<uid>.<slug>` (local, per project),
   `kukatko.whatsNew.dismissedSince.<uid>` (local), `kukatko.review.daily.<uid>` (local),
   `kukatko.gridScroll.<uid>` (session), plus `kukatko.review.run` (session, user recorded inside) and
   `kukatko.lastPickedLocation` (session — where one account was geotagging is not where the next starts).
@@ -8457,8 +8491,8 @@ as a module-local `API_BASE` constant (there are none left).
 The split follows the backend's (`cmd/kukatko/projectapi.go`), so a module that has both halves
 splits **by call, not by module**: `notifications.ts` reads the inbox with `apiPath` and the push
 subscriptions with `instancePath`; `import.ts` reads import runs with `apiPath` and the job stats
-with `instancePath`; `settings.ts` reads `/settings/public` with `instancePath` and the rest with
-`apiPath`; `uploadLinks.ts` manages links with `apiPath` and serves the public page with
+with `instancePath`; `settings.ts` reads the instance's `/settings/public` and a named project's
+`/p/<slug>/settings/public` with `instancePath` and the rest with `apiPath`; `uploadLinks.ts` manages links with `apiPath` and serves the public page with
 `instancePath`. URLs the **backend** builds (`thumb_url`, `download_url`) already carry the prefix
 the request came through and are used as they are.
 

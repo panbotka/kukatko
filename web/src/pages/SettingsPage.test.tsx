@@ -4,9 +4,10 @@ import { I18nextProvider } from 'react-i18next'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { AuthContext, type AuthContextValue } from '../auth/AuthContext'
 import i18n from '../i18n'
 import { ApiError } from '../services/auth'
-import type { InstanceSettings } from '../services/settings'
+import type { ProjectSettings } from '../services/settings'
 
 import { SettingsPage } from './SettingsPage'
 
@@ -14,17 +15,27 @@ vi.mock('../services/settings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../services/settings')>()
   return {
     ...actual,
-    fetchInstanceSettings: vi.fn(),
-    updateInstanceSettings: vi.fn(),
+    fetchProjectSettings: vi.fn(),
+    fetchProjectUsage: vi.fn(),
+    updateProjectSettings: vi.fn(),
   }
 })
 
-const { fetchInstanceSettings, updateInstanceSettings } = await import('../services/settings')
-const fetchMock = vi.mocked(fetchInstanceSettings)
-const updateMock = vi.mocked(updateInstanceSettings)
+// The composer is the announcement banner's own component, tested on its own;
+// here only whether the page offers it matters, so its reads never resolve.
+vi.mock('../services/announcement', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/announcement')>()
+  return { ...actual, fetchAnnouncement: vi.fn(() => new Promise(() => undefined)) }
+})
+
+const { fetchProjectSettings, fetchProjectUsage, updateProjectSettings } =
+  await import('../services/settings')
+const fetchMock = vi.mocked(fetchProjectSettings)
+const usageMock = vi.mocked(fetchProjectUsage)
+const updateMock = vi.mocked(updateProjectSettings)
 
 /** A settings record, with the fields a test cares about overridden. */
-function settings(overrides: Partial<InstanceSettings> = {}): InstanceSettings {
+function settings(overrides: Partial<ProjectSettings> = {}): ProjectSettings {
   return {
     registration_enabled: false,
     registration_secret: 'veselice',
@@ -35,12 +46,33 @@ function settings(overrides: Partial<InstanceSettings> = {}): InstanceSettings {
   }
 }
 
-function renderPage() {
+/** The signed-in account: a project admin, or the system administrator. */
+function auth(isMaintainer: boolean): AuthContextValue {
+  const role = isMaintainer ? 'maintainer' : 'admin'
+  return {
+    status: 'authenticated',
+    user: { uid: 'u1', username: 'u', display_name: 'U', role },
+    role,
+    instanceRole: isMaintainer ? 'maintainer' : 'user',
+    downloadToken: null,
+    canCurate: true,
+    canWrite: true,
+    isAdmin: true,
+    isMaintainer,
+    login: vi.fn(),
+    logout: vi.fn(),
+    refresh: vi.fn(),
+  } as unknown as AuthContextValue
+}
+
+function renderPage(isMaintainer = false) {
   return render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/settings']}>
-        <SettingsPage />
-      </MemoryRouter>
+      <AuthContext.Provider value={auth(isMaintainer)}>
+        <MemoryRouter initialEntries={['/settings']}>
+          <SettingsPage />
+        </MemoryRouter>
+      </AuthContext.Provider>
     </I18nextProvider>,
   )
 }
@@ -55,6 +87,12 @@ beforeEach(async () => {
   fetchMock.mockReset()
   updateMock.mockReset()
   fetchMock.mockResolvedValue(settings())
+  usageMock.mockReset().mockResolvedValue({
+    photos: 1234,
+    originals_bytes: 5 * 1024 * 1024,
+    max_file_bytes: null,
+    max_total_bytes: 10 * 1024 * 1024 * 1024,
+  })
 })
 
 describe('SettingsPage', () => {
@@ -214,10 +252,12 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     render(
       <I18nextProvider i18n={i18n}>
-        <MemoryRouter initialEntries={['/settings']}>
-          <SettingsPage />
-          <a href="/users">Users</a>
-        </MemoryRouter>
+        <AuthContext.Provider value={auth(false)}>
+          <MemoryRouter initialEntries={['/settings']}>
+            <SettingsPage />
+            <a href="/users">Users</a>
+          </MemoryRouter>
+        </AuthContext.Provider>
       </I18nextProvider>,
     )
 
@@ -244,5 +284,58 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Discard changes' }))
     expect(editor).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled()
+  })
+
+  it('drafts a fresh random secret that waits for Save', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByDisplayValue('veselice')
+    await user.click(screen.getByRole('button', { name: 'Generate new' }))
+
+    expect(secretField().value).toMatch(/^[a-z2-9]{4}-[a-z2-9]{4}$/)
+    expect(secretField()).toHaveAttribute('type', 'text')
+    // Nothing is written until Save: the fresh word is a draft like any other.
+    expect(updateMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled()
+  })
+
+  it("links the project's registration page to pass on", async () => {
+    renderPage()
+
+    const link = await screen.findByTestId('settings-register-url')
+    expect(link).toHaveAttribute('href', `${window.location.origin}/p/v/register`)
+  })
+
+  it('shows the usage beside the limits, read-only, "unlimited" where none is set', async () => {
+    renderPage()
+
+    const usage = await screen.findByTestId('settings-usage')
+    await waitFor(() => {
+      expect(usage).toHaveTextContent('1,234')
+    })
+    expect(usage).toHaveTextContent('5.0 MB')
+    expect(usage).toHaveTextContent('10.0 GB')
+    expect(usage).toHaveTextContent('unlimited')
+    expect(usage).toHaveTextContent('Limits are set by the system administrator.')
+    expect(within(usage).queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('keeps the form working when the usage cannot be read', async () => {
+    usageMock.mockRejectedValue(new ApiError(500, 'boom'))
+    renderPage()
+
+    expect(await screen.findByText('Usage could not be loaded.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shared registration secret')).toBeEnabled()
+  })
+
+  it("offers the project's announcement only to the system administrator", async () => {
+    const { unmount } = renderPage(false)
+    await screen.findByTestId('settings-usage')
+    expect(screen.queryByRole('heading', { name: 'Announcement' })).not.toBeInTheDocument()
+    unmount()
+
+    renderPage(true)
+    expect(await screen.findByRole('heading', { name: 'Announcement' })).toBeInTheDocument()
   })
 })

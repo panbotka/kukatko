@@ -11,7 +11,10 @@ import { PasskeyError } from '../services/passkeys'
 
 import { LoginPage } from './LoginPage'
 
-vi.mock('../services/settings', () => ({ fetchPublicSettings: vi.fn() }))
+vi.mock('../services/settings', () => ({
+  fetchPublicSettings: vi.fn(),
+  fetchProjectPublicSettings: vi.fn(),
+}))
 
 // Only the feature probe is faked: jsdom has no WebAuthn at all, and without a
 // stand-in the passkey button could never render in a test. The ceremony itself
@@ -22,8 +25,9 @@ vi.mock('../services/passkeys', async (importOriginal) => {
   return { ...actual, isPasskeySupported: vi.fn() }
 })
 
-const { fetchPublicSettings } = await import('../services/settings')
+const { fetchProjectPublicSettings, fetchPublicSettings } = await import('../services/settings')
 const settingsMock = vi.mocked(fetchPublicSettings)
+const projectSettingsMock = vi.mocked(fetchProjectPublicSettings)
 const { isPasskeySupported } = await import('../services/passkeys')
 const supportedMock = vi.mocked(isPasskeySupported)
 
@@ -87,16 +91,19 @@ function renderLogin(
 describe('LoginPage', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
-    // Most of these tests are about signing in, not about who may join: a
-    // closed instance is the quieter default and keeps the card unchanged.
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: false,
       mail_enabled: true,
     })
     // A browser that has WebAuthn is the interesting default; the instance flag
     // above still keeps the button off unless a test turns it on.
     supportedMock.mockReturnValue(true)
+    // Most of these tests are about signing in, not about who may join: a
+    // closed project is the quieter default and keeps the card unchanged.
+    projectSettingsMock.mockReset().mockResolvedValue({
+      project_name: 'Rodina',
+      registration_enabled: false,
+    })
   })
 
   it('opens in the shared frame: the Kukátko wordmark over a card titled Sign in', () => {
@@ -224,7 +231,6 @@ describe('LoginPage', () => {
     // Same 403, same fact — but with mail.enabled off nobody is ever written to,
     // so the sentence says the account will simply be let in.
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: false,
       mail_enabled: false,
     })
@@ -307,39 +313,56 @@ describe('LoginPage', () => {
     expect(screen.queryByTestId('login-offline-notice')).not.toBeInTheDocument()
   })
 
-  it('invites registration only when the instance says it is open', async () => {
-    settingsMock.mockResolvedValue({
-      registration_enabled: true,
-      passkeys_enabled: false,
-      mail_enabled: true,
-    })
-    renderLogin(authValue())
+  it('invites registration into the project named by ?project= when it is open', async () => {
+    projectSettingsMock.mockResolvedValue({ project_name: 'Rodina', registration_enabled: true })
+    renderLogin(authValue(), undefined, '?project=rodina')
 
     const link = await screen.findByRole('link', { name: 'Register' })
-    expect(link).toHaveAttribute('href', '/register')
+    expect(link).toHaveAttribute('href', '/p/rodina/register')
+    expect(projectSettingsMock).toHaveBeenCalledWith('rodina', expect.any(AbortSignal))
   })
 
-  it('says nothing about registration when it is closed', async () => {
-    // A link to a form that answers every submit with "not open" is worse than
-    // no link: the reader fills the whole thing in before finding out.
+  it('invites registration into the project whose page the guard bounced the reader off', async () => {
+    projectSettingsMock.mockResolvedValue({ project_name: 'Rodina', registration_enabled: true })
+    renderLogin(authValue(), { from: { pathname: '/p/rodina/albums', search: '' } })
+
+    const link = await screen.findByRole('link', { name: 'Register' })
+    expect(link).toHaveAttribute('href', '/p/rodina/register')
+  })
+
+  it('offers no registration when the visit is about no project', async () => {
+    // Registration always goes through a project; there is no instance-wide door.
     renderLogin(authValue())
 
     await waitFor(() => {
       expect(settingsMock).toHaveBeenCalled()
+    })
+    expect(projectSettingsMock).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
+  })
+
+  it("says nothing about registration when the project's is closed", async () => {
+    // A link to a form that answers every submit with "not open" is worse than
+    // no link: the reader fills the whole thing in before finding out.
+    renderLogin(authValue(), undefined, '?project=rodina')
+
+    await waitFor(() => {
+      expect(projectSettingsMock).toHaveBeenCalled()
     })
     expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Register' })).not.toBeInTheDocument()
   })
 
-  it('says nothing about registration when the instance could not be asked', async () => {
-    settingsMock.mockRejectedValue(new NetworkError('Failed to fetch'))
-    renderLogin(authValue())
+  it('says nothing about registration when the project could not be asked', async () => {
+    projectSettingsMock.mockRejectedValue(new NetworkError('Failed to fetch'))
+    renderLogin(authValue(), undefined, '?project=rodina')
 
     await waitFor(() => {
-      expect(settingsMock).toHaveBeenCalled()
+      expect(projectSettingsMock).toHaveBeenCalled()
     })
     expect(screen.queryByTestId('login-register-link')).not.toBeInTheDocument()
   })
+
   it('offers the passkey button only on an instance that has passkeys', async () => {
     renderLogin(authValue())
 
@@ -353,7 +376,6 @@ describe('LoginPage', () => {
     // A button that answers every press with "this browser cannot" is worse than
     // no button: the password form below it works everywhere.
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: true,
       mail_enabled: true,
     })
@@ -368,7 +390,6 @@ describe('LoginPage', () => {
 
   it('signs in with a passkey and returns to the requested address', async () => {
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: true,
       mail_enabled: true,
     })
@@ -388,7 +409,6 @@ describe('LoginPage', () => {
 
   it('says a cancelled prompt in plain words, never the exception', async () => {
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: true,
       mail_enabled: true,
     })
@@ -414,7 +434,6 @@ describe('LoginPage', () => {
     // The signature was good — this is the same fact about the account, so it is
     // the same sentence, not an authenticator-flavoured retelling of it.
     settingsMock.mockResolvedValue({
-      registration_enabled: false,
       passkeys_enabled: true,
       mail_enabled: true,
     })

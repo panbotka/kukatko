@@ -12,6 +12,7 @@ import (
 	"github.com/panbotka/kukatko/internal/photos"
 	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/ratelimit"
+	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/thumb"
 	"github.com/panbotka/kukatko/internal/uploadlink"
 	"github.com/panbotka/kukatko/internal/uploadlinkapi"
@@ -105,6 +106,7 @@ func buildUploadLinkAPI(
 		Ingest:            svc,
 		Projects:          project.NewStore(db.Pool()),
 		Sidecar:           sidecar,
+		Registration:      settings.NewStore(db.Pool()),
 		RequireCurator:    authAPI.RequireCurator,
 		OptionalAuth:      authAPI.OptionalAuth,
 		IPLimit:           ratelimit.New(cfg.RateLimit.UploadLink.RatePerSec, cfg.RateLimit.UploadLink.Burst),

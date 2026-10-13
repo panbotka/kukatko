@@ -261,3 +261,46 @@ func ProjectRoleFromContext(ctx context.Context) project.Role {
 	p, _ := principalFromContext(ctx)
 	return p.projectRole
 }
+
+// publicProjectKey is the context key of the project RequireActiveProject
+// admitted an anonymous request into.
+type publicProjectKey struct{}
+
+// RequireActiveProject wraps next so it runs for anybody — signed in or not,
+// member or not — whose request names an existing, active project, which it
+// records for PublicProjectFromContext. An unknown slug and a deactivated
+// project are the same 404 every other project route answers a tenant that may
+// not see the project, so the route tells a stranger nothing a sign-in screen
+// would not. A request that did not pass through WithProject names no project
+// and is a 404 too.
+//
+// It is for the one anonymous project route, GET /p/{project}/settings/public,
+// which the project's registration page asks before anybody has an account. It
+// deliberately does not authenticate and puts no principal on the context:
+// ProjectFromContext and ProjectUIDFromContext stay empty behind it, so a
+// project-scoped store can never mistake an anonymous request for an admitted
+// one.
+func RequireActiveProject(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, ok := r.Context().Value(projectRequestKey{}).(projectRequest)
+		if !ok || errors.Is(req.err, project.ErrNotFound) || (req.err == nil && !req.project.Active) {
+			writeError(w, http.StatusNotFound, projectNotFoundMessage)
+			return
+		}
+		if req.err != nil {
+			slog.ErrorContext(r.Context(), "auth: resolving the request's project", "error", req.err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), publicProjectKey{}, req.project)))
+	})
+}
+
+// PublicProjectFromContext returns the project RequireActiveProject admitted an
+// anonymous request into, reporting whether there is one. It is the
+// anonymous route's counterpart of ProjectFromContext, kept apart from it on
+// purpose (see RequireActiveProject).
+func PublicProjectFromContext(ctx context.Context) (*project.Project, bool) {
+	p, ok := ctx.Value(publicProjectKey{}).(*project.Project)
+	return p, ok && p != nil
+}

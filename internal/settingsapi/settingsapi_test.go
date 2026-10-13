@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/panbotka/kukatko/internal/audit"
-	"github.com/panbotka/kukatko/internal/project"
 	"github.com/panbotka/kukatko/internal/settings"
 	"github.com/panbotka/kukatko/internal/settingsapi"
 )
@@ -54,25 +53,28 @@ func (f *fakeStore) Set(
 // passThrough is a no-op guard so handler behaviour is tested without auth.
 func passThrough(next http.Handler) http.Handler { return next }
 
-// newServer mounts an API backed by store behind pass-through guards, on an
-// instance with neither passkeys nor mail configured.
+// newServer mounts the project routes of an API backed by store behind
+// pass-through guards, on an instance with neither passkeys nor mail
+// configured.
 func newServer(store settingsapi.Store) http.Handler {
-	return newServerWithFlags(store, false, false)
-}
-
-// newServerWithFlags mounts the API with the two process-level facts pinned —
-// whether a WebAuthn relying party is configured and whether this instance
-// really sends mail — which only the public response reflects.
-func newServerWithFlags(store settingsapi.Store, passkeys, mail bool) http.Handler {
 	api := settingsapi.NewAPI(settingsapi.Config{
-		Store:        store,
-		Passkeys:     passkeys,
-		Mail:         mail,
-		RequireAuth:  passThrough,
-		RequireAdmin: passThrough,
+		Store:                store,
+		RequireActiveProject: passThrough,
+		RequireAuth:          passThrough,
+		RequireAdmin:         passThrough,
 	})
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
+	return r
+}
+
+// newInstanceServer mounts the instance-level route of an API with the two
+// process-level facts pinned — whether a WebAuthn relying party is configured
+// and whether this instance really sends mail — which only that route reports.
+func newInstanceServer(store settingsapi.Store, passkeys, mail bool) http.Handler {
+	api := settingsapi.NewAPI(settingsapi.Config{Store: store, Passkeys: passkeys, Mail: mail})
+	r := chi.NewRouter()
+	api.RegisterInstanceRoutes(r)
 	return r
 }
 
@@ -106,21 +108,20 @@ func full() settings.Settings {
 	}
 }
 
-// TestPublicReturnsOnlyTheThreeFlags: the anonymous endpoint answers exactly the
-// three facts the sign-in screen needs, so neither the secret nor the welcome
-// text can leak from it.
-func TestPublicReturnsOnlyTheThreeFlags(t *testing.T) {
+// TestInstancePublicReturnsOnlyTheTwoFlags: the instance's anonymous endpoint
+// answers exactly the two process facts the sign-in screen needs — no
+// registration flag (that is a project's), never the secret, never the welcome
+// text — and does not even read the settings row.
+func TestInstancePublicReturnsOnlyTheTwoFlags(t *testing.T) {
 	t.Parallel()
-	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/public", "")
+	store := &fakeStore{current: full(), getErr: errors.New("must not be read")}
+	rec := do(t, newInstanceServer(store, false, false), http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	body := decode(t, rec)
-	if len(body) != 3 {
-		t.Fatalf("public body = %v, want exactly three fields", body)
-	}
-	if body["registration_enabled"] != true {
-		t.Errorf("registration_enabled = %v, want true", body["registration_enabled"])
+	if len(body) != 2 {
+		t.Fatalf("public body = %v, want exactly two fields", body)
 	}
 	if body["passkeys_enabled"] != false {
 		t.Errorf("passkeys_enabled = %v, want false on an instance with none configured", body["passkeys_enabled"])
@@ -130,12 +131,34 @@ func TestPublicReturnsOnlyTheThreeFlags(t *testing.T) {
 	}
 }
 
+// TestProjectPublicWithoutAProjectIs404: the project's public endpoint behind a
+// guard that admitted no project answers 404 rather than another project's
+// flags — the shape an unknown slug gets from auth.RequireActiveProject.
+func TestProjectPublicWithoutAProjectIs404(t *testing.T) {
+	t.Parallel()
+	rec := do(t, newServer(&fakeStore{current: full()}), http.MethodGet, "/settings/public", "")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+// TestUsageWithoutAProjectIs500: the usage block reads the limits off the
+// admitted project, so a request with none is a wiring fault, not an empty
+// answer.
+func TestUsageWithoutAProjectIs500(t *testing.T) {
+	t.Parallel()
+	rec := do(t, newServer(&fakeStore{}), http.MethodGet, "/settings/usage", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
 // TestPublicReportsConfiguredPasskeys: an instance with a relying party says so
 // anonymously — that is what lets the sign-in screen show the passkey button
 // before anybody is signed in, since GET /capabilities is behind auth.
 func TestPublicReportsConfiguredPasskeys(t *testing.T) {
 	t.Parallel()
-	h := newServerWithFlags(&fakeStore{current: full()}, true, false)
+	h := newInstanceServer(&fakeStore{current: full()}, true, false)
 	rec := do(t, h, http.MethodGet, "/settings/public", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -160,7 +183,7 @@ func TestPublicReportsMail(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			h := newServerWithFlags(&fakeStore{current: full()}, false, tt.mail)
+			h := newInstanceServer(&fakeStore{current: full()}, false, tt.mail)
 			rec := do(t, h, http.MethodGet, "/settings/public", "")
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200", rec.Code)
@@ -213,7 +236,9 @@ func TestGetReturnsTheSecret(t *testing.T) {
 func TestGetStoreErrorIs500(t *testing.T) {
 	t.Parallel()
 	srv := newServer(&fakeStore{getErr: errors.New("boom")})
-	for _, target := range []string{"/settings/public", "/settings/welcome", "/settings"} {
+	// The project public read needs an admitted project first; its store
+	// failure is covered by the integration tests.
+	for _, target := range []string{"/settings/welcome", "/settings"} {
 		rec := do(t, srv, http.MethodGet, target, "")
 		if rec.Code != http.StatusInternalServerError {
 			t.Errorf("GET %s status = %d, want 500", target, rec.Code)
@@ -239,8 +264,10 @@ func TestPutReplacesAllThree(t *testing.T) {
 	if store.lastUpdate != want {
 		t.Fatalf("update passed down = %+v, want %+v", store.lastUpdate, want)
 	}
-	if store.lastProject != project.BootstrapUID {
-		t.Fatalf("store got project %q, want the bootstrap project", store.lastProject)
+	// Pass-through guards admit no project, so the handler asks for none;
+	// which project a real request acts on is the integration tests' business.
+	if store.lastProject != "" {
+		t.Fatalf("store got project %q, want the (empty) project of the context", store.lastProject)
 	}
 	if store.lastEntry.Action != audit.ActionSettingsUpdate || store.lastEntry.TargetType != "settings" {
 		t.Fatalf("audit entry = %+v, want a settings.update entry", store.lastEntry)

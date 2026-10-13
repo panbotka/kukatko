@@ -1,26 +1,38 @@
-// Package settingsapi exposes the instance-wide settings over HTTP with three
-// different audiences, and one rule that shapes all of them: the registration
-// secret is stored readable so an administrator can read it back, so it must
+// Package settingsapi exposes a project's settings over HTTP with several
+// audiences, and one rule that shapes all of them: the registration secret is
+// stored readable so the project's administrator can read it back, so it must
 // never reach anyone else.
 //
-// That is why the three responses are separate wire types built explicitly,
-// rather than one record filtered per role — a field added to settings.Settings
-// then has to be given an audience on purpose instead of leaking into whichever
-// payload happens to embed it:
+// That is why the responses are separate wire types built explicitly, rather
+// than one record filtered per role — a field added to settings.Settings then
+// has to be given an audience on purpose instead of leaking into whichever
+// payload happens to embed it. Every route but one lives under the project
+// prefix /p/{project} and acts on the project auth.ProjectFromContext names:
 //
-//	GET /settings/public    anonymous       only what the sign-in screen must know
-//	GET /settings/welcome   RequireAuth     only the first-sign-in welcome Markdown
-//	GET /settings           RequireAdmin    the full record, secret included
-//	PUT /settings           RequireAdmin    replaces all three values
+//	GET /settings/public    RequireActiveProject  the project's name and whether it takes registrations
+//	GET /settings/welcome   RequireAuth           only the project's first-sign-in welcome Markdown
+//	GET /settings           RequireAdmin          the full record, secret included
+//	PUT /settings           RequireAdmin          replaces all three values
+//	GET /settings/usage     RequireAdmin          what the project occupies and its two limits
 //
-// The public endpoint is deliberately unauthenticated: the sign-in screen has to
-// know whether to offer registration — whether this instance can run a passkey
-// ceremony, and whether it sends any mail at all — before anybody is signed in.
-// It answers three booleans and reads one seeded row, so it tells an anonymous
-// caller nothing beyond what the sign-in screen would show them anyway.
+// and one is instance-level (RegisterInstanceRoutes):
 //
-// The guards and the store are injected so the package stays decoupled from
-// auth's wiring and the concrete store, and is unit-testable with fakes. An
+//	GET /settings/public    anonymous             whether this instance runs passkeys and sends mail
+//
+// Both public endpoints are deliberately unauthenticated: the sign-in screen
+// has to know whether it can run a passkey ceremony and whether the instance
+// sends any mail at all before anybody is signed in, and a project's
+// registration page has to know whether that project takes registrations. Each
+// answers what the screen asking it would show anyway; the project one is a
+// 404 for an unknown or deactivated slug, the same answer every other project
+// route gives a stranger.
+//
+// The welcome text is the project's, while whether a person has seen a welcome
+// (users.welcome_seen_at) stays per account: somebody who joins a second
+// project is not greeted again.
+//
+// The guards and the stores are injected so the package stays decoupled from
+// auth's wiring and the concrete stores, and is unit-testable with fakes. An
 // update is audited in the same transaction as the change by the store.
 package settingsapi
 
@@ -60,21 +72,33 @@ type Store interface {
 	) (settings.Settings, error)
 }
 
-// API exposes the instance-settings endpoints over HTTP. The route guards are
-// supplied by the caller (the auth subsystem) so this package depends on auth's
+// UsageSource reads how much of the instance a project occupies. It is
+// satisfied by *project.Store.
+type UsageSource interface {
+	// Usage returns the project's photo count and the summed size of its
+	// originals.
+	Usage(ctx context.Context, uid string) (project.Usage, error)
+}
+
+// API exposes the settings endpoints over HTTP. The route guards are supplied
+// by the caller (the auth subsystem) so this package depends on auth's
 // behaviour, not its wiring.
 type API struct {
-	store        Store
-	passkeys     bool
-	mail         bool
-	requireAuth  func(http.Handler) http.Handler
-	requireAdmin func(http.Handler) http.Handler
+	store                Store
+	usage                UsageSource
+	passkeys             bool
+	mail                 bool
+	requireActiveProject func(http.Handler) http.Handler
+	requireAuth          func(http.Handler) http.Handler
+	requireAdmin         func(http.Handler) http.Handler
 }
 
 // Config bundles the dependencies of NewAPI.
 type Config struct {
 	// Store backs the settings read and update operations.
 	Store Store
+	// Usage backs the admin's read-only usage block (GET /settings/usage).
+	Usage UsageSource
 	// Passkeys reports whether this instance has a WebAuthn relying party
 	// configured. It is a static fact about the deployment (auth.API.PasskeysEnabled),
 	// not a stored setting, and it travels on the public response because the
@@ -89,6 +113,10 @@ type Config struct {
 	// waiting for approval) are the screens nobody is signed in on, and a promise
 	// an instance with mail off can never keep is worse than no promise at all.
 	Mail bool
+	// RequireActiveProject admits anybody, signed in or not, into an existing,
+	// active project (auth.RequireActiveProject) — the guard of the project's
+	// public settings, which its registration page reads.
+	RequireActiveProject func(http.Handler) http.Handler
 	// RequireAuth guards the welcome-text endpoint for any signed-in user.
 	RequireAuth func(http.Handler) http.Handler
 	// RequireAdmin guards the full record and the update.
@@ -98,45 +126,93 @@ type Config struct {
 // NewAPI returns an API from cfg.
 func NewAPI(cfg Config) *API {
 	return &API{
-		store:        cfg.Store,
-		passkeys:     cfg.Passkeys,
-		mail:         cfg.Mail,
-		requireAuth:  cfg.RequireAuth,
-		requireAdmin: cfg.RequireAdmin,
+		store:                cfg.Store,
+		usage:                cfg.Usage,
+		passkeys:             cfg.Passkeys,
+		mail:                 cfg.Mail,
+		requireActiveProject: cfg.RequireActiveProject,
+		requireAuth:          cfg.RequireAuth,
+		requireAdmin:         cfg.RequireAdmin,
 	}
 }
 
-// RegisterRoutes mounts the settings endpoints onto r, which the caller has
-// scoped under the API base path (for example /api/v1):
+// RegisterRoutes mounts the project's settings endpoints onto r, which the
+// caller has scoped to one project (/api/v1/p/{project}):
 //
-//	GET /settings/public    (no guard)     {"registration_enabled":…,"passkeys_enabled":…,"mail_enabled":…}
-//	GET /settings/welcome   RequireAuth    {"welcome_markdown":"…"}
-//	GET /settings           RequireAdmin   the full record, secret included
-//	PUT /settings           RequireAdmin   replaces all three values
+//	GET /settings/public    RequireActiveProject  {"project_name":"…","registration_enabled":…}
+//	GET /settings/welcome   RequireAuth           {"welcome_markdown":"…"}
+//	GET /settings           RequireAdmin          the full record, secret included
+//	PUT /settings           RequireAdmin          replaces all three values
+//	GET /settings/usage     RequireAdmin          photos, originals bytes and the two limits
 func (a *API) RegisterRoutes(r chi.Router) {
 	r.Route("/settings", func(r chi.Router) {
-		r.Get("/public", a.handlePublic)
+		r.With(a.requireActiveProject).Get("/public", a.handleProjectPublic)
 		r.With(a.requireAuth).Get("/welcome", a.handleWelcome)
+		r.With(a.requireAdmin).Get("/usage", a.handleUsage)
 		r.With(a.requireAdmin).Get("/", a.handleGet)
 		r.With(a.requireAdmin).Put("/", a.handleSet)
 	})
 }
 
-// handlePublic writes the three facts an anonymous caller is allowed to learn:
-// whether the sign-in screen should offer self-service registration, whether it
-// should offer to sign in with a passkey, and whether this instance sends mail
-// at all — the last one decides whether the registration and pending-approval
-// screens may promise an e-mail.
-func (a *API) handlePublic(w http.ResponseWriter, r *http.Request) {
-	current, err := a.store.Get(r.Context(), requestProject(r))
+// RegisterInstanceRoutes mounts the one instance-level settings endpoint onto
+// r, which the caller has scoped under the API base path (for example
+// /api/v1):
+//
+//	GET /settings/public    (no guard)     {"passkeys_enabled":…,"mail_enabled":…}
+func (a *API) RegisterInstanceRoutes(r chi.Router) {
+	r.Get("/settings/public", a.handleInstancePublic)
+}
+
+// handleInstancePublic writes the two facts about the instance an anonymous
+// caller is allowed to learn: whether the sign-in screen should offer to sign
+// in with a passkey, and whether this instance sends mail at all — the latter
+// decides whether the registration and pending-approval screens may promise an
+// e-mail. Neither is stored; both are facts about the process.
+func (a *API) handleInstancePublic(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, instancePublicResponse{PasskeysEnabled: a.passkeys, MailEnabled: a.mail})
+}
+
+// handleProjectPublic writes what the project's registration page must know
+// before anybody has an account: the project's name, to greet with, and
+// whether it takes self-service registrations at all. RequireActiveProject
+// already answered 404 for an unknown or deactivated slug.
+func (a *API) handleProjectPublic(w http.ResponseWriter, r *http.Request) {
+	p, ok := auth.PublicProjectFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusNotFound, "project not found")
+		return
+	}
+	current, err := a.store.Get(r.Context(), p.UID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "reading settings failed")
 		return
 	}
-	writeJSON(w, http.StatusOK, publicResponse{
+	writeJSON(w, http.StatusOK, projectPublicResponse{
+		ProjectName:         p.Name,
 		RegistrationEnabled: current.RegistrationEnabled,
-		PasskeysEnabled:     a.passkeys,
-		MailEnabled:         a.mail,
+	})
+}
+
+// handleUsage writes how much of the instance the project occupies next to
+// the two limits the system administrator set on it (null for "no limit"). It
+// is read-only here: only the system administrator changes a limit, through
+// /projects.
+func (a *API) handleUsage(w http.ResponseWriter, r *http.Request) {
+	p, ok := auth.ProjectFromContext(r.Context())
+	if !ok || a.usage == nil {
+		writeError(w, http.StatusInternalServerError, "reading usage failed")
+		return
+	}
+	usage, err := a.usage.Usage(r.Context(), p.UID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "reading usage failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, usageResponse{
+		Photos:         usage.Photos,
+		OriginalsBytes: usage.OriginalsBytes,
+		MaxFileBytes:   p.MaxFileBytes,
+		MaxTotalBytes:  p.MaxTotalBytes,
 	})
 }
 
@@ -154,7 +230,8 @@ func (a *API) handleWelcome(w http.ResponseWriter, r *http.Request) {
 
 // handleGet writes the full settings record, registration secret included. The
 // route is behind RequireAdmin: reading the secret back is the whole point of
-// storing it unhashed, and the reason nobody below an administrator may.
+// storing it unhashed, and the reason nobody below the project's administrator
+// may.
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	current, err := a.store.Get(r.Context(), requestProject(r))
 	if err != nil {
@@ -224,19 +301,35 @@ func writeSetError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "saving settings failed")
 }
 
-// publicResponse is the anonymous wire shape. It has exactly three fields on
-// purpose: it is served without authentication, so anything added here is added
-// to the open internet. All three are things the sign-in screen puts on that same
-// open page anyway — an invitation to register, a "sign in with a passkey"
-// button, and the sentence telling a new account how it will hear back — and the
-// passkey flag is one an anonymous caller could already read off
+// instancePublicResponse is the instance-level anonymous wire shape. It has
+// exactly two fields on purpose: it is served without authentication, so
+// anything added here is added to the open internet. Both are things the
+// sign-in screen puts on that same open page anyway — a "sign in with a
+// passkey" button, and the sentence telling a new account how it will hear
+// back — and the passkey flag is one an anonymous caller could already read off
 // POST /auth/passkeys/login/begin answering 200 rather than 501. The mail flag
 // says only whether this instance sends transactional mail at all; it names no
 // server, no account and no address.
-type publicResponse struct {
-	RegistrationEnabled bool `json:"registration_enabled"`
-	PasskeysEnabled     bool `json:"passkeys_enabled"`
-	MailEnabled         bool `json:"mail_enabled"`
+type instancePublicResponse struct {
+	PasskeysEnabled bool `json:"passkeys_enabled"`
+	MailEnabled     bool `json:"mail_enabled"`
+}
+
+// projectPublicResponse is the project's anonymous wire shape, served to
+// anybody who knows the slug: the name the registration page greets with and
+// whether it offers a form at all. Never the secret, never the welcome text.
+type projectPublicResponse struct {
+	ProjectName         string `json:"project_name"`
+	RegistrationEnabled bool   `json:"registration_enabled"`
+}
+
+// usageResponse is the admin's read-only usage block: the photo count, the
+// summed size of the originals, and the two limits (null when there is none).
+type usageResponse struct {
+	Photos         int64  `json:"photos"`
+	OriginalsBytes int64  `json:"originals_bytes"`
+	MaxFileBytes   *int64 `json:"max_file_bytes"`
+	MaxTotalBytes  *int64 `json:"max_total_bytes"`
 }
 
 // welcomeResponse is the authenticated wire shape for the first-sign-in
@@ -287,12 +380,8 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorBody{Error: message})
 }
 
-// requestProject returns the project a request acts on. Requests do not carry a
-// project yet, so every one acts on the bootstrap project, which holds the whole
-// library.
-//
-//nolint:godox // the marker below is swept for at the end of the multi-tenancy programme
-func requestProject(*http.Request) string {
-	// TODO multi-tenancy: project from context
-	return project.BootstrapUID
+// requestProject returns the uid of the project the request was admitted
+// into by the guard in front of it.
+func requestProject(r *http.Request) string {
+	return auth.ProjectUIDFromContext(r.Context())
 }
